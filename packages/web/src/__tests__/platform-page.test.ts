@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Window } from "happy-dom";
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -126,7 +127,10 @@ describe("/platform page", () => {
   });
 
   it("shows each Claude case as the record has it: run 1, its time and its pass count, and the table's counts", () => {
-    interface RunRecord { summary: { passed: number; perCase?: { id: string; runs: number; passed: number }[] }; results: { id: string; sample: number; latencyMs: number }[] }
+    interface RunRecord {
+      summary: { passed: number; perCase?: { id: string; runs: number; passed: number }[] };
+      results: { id: string; sample: number; latencyMs: number; grade: { answersTheClient: boolean } | null }[];
+    }
     const record = (id: string): RunRecord => JSON.parse(readFileSync(join(root, "public", "platform", "evaluation", "data", `${id}.json`), "utf8")) as RunRecord;
     const opus = record("heldout-opus");
     const CASES: Readonly<Record<string, string>> = {
@@ -142,8 +146,34 @@ describe("/platform page", () => {
       const counted = opus.summary.perCase?.find((entry) => entry.id === caseId);
       expect(text(panel?.querySelector(".case__tally")), panelId).toContain(`${String(counted?.passed)} of this case’s ${String(counted?.runs)} runs`);
     }
-    const passed = Array.from(doc.querySelectorAll(".results tbody tr")).map((row) => text(row.querySelector('[data-label="Passed every check"]')));
-    expect(passed.slice(0, 3)).toEqual([opus, record("heldout-sonnet-x5"), record("heldout-haiku-x5")].map((run) => String(run.summary.passed)));
+    const rows = Array.from(doc.querySelectorAll(".results tbody tr"));
+    const runs = [opus, record("heldout-sonnet-x5"), record("heldout-haiku-x5")];
+    expect(rows.slice(0, 3).map((row) => text(row.querySelector('[data-label="Passed every check"]')))).toEqual(runs.map((run) => String(run.summary.passed)));
+    const answered = (run: RunRecord): string => String(run.results.filter((result) => result.grade?.answersTheClient === true).length);
+    expect(rows.slice(0, 3).map((row) => text(row.querySelector('[data-label="Answered the client (grader)"]')))).toEqual(runs.map(answered));
+  });
+
+  it("shows the message as sent beside Claude's draft: each reads back whole from the marked edit", async () => {
+    // The sample the captures use, outside this package's sources, read as the captures read it.
+    const sample = await import(pathToFileURL(join(root, "e2e", "support", "platform-sample.ts")).href) as {
+      readonly CLAUDE_CRAWFORD_DRAFT: string; readonly CRAWFORD_SENT_MESSAGE: string;
+    };
+    const block = doc.querySelector(".edit__text");
+    expect(block?.querySelectorAll("del").length ?? 0).toBeGreaterThan(0);
+    expect(block?.querySelectorAll("ins").length ?? 0).toBeGreaterThan(0);
+    // Without the coordinator's words, Claude's draft verbatim; without Claude's cut words, the message her page shows.
+    const reading = (drop: "del" | "ins"): string => {
+      const copy = block?.cloneNode(true) as Element | undefined;
+      copy?.querySelectorAll(drop).forEach((mark) => { mark.remove(); });
+      copy?.querySelectorAll("br").forEach((br) => { br.replaceWith("\n"); });
+      return copy?.textContent ?? "";
+    };
+    expect(reading("ins")).toBe(sample.CLAUDE_CRAWFORD_DRAFT);
+    expect(reading("del")).toBe(sample.CRAWFORD_SENT_MESSAGE);
+  });
+
+  it("names the commit its counts were taken at", () => {
+    expect(text(doc.querySelector('[data-count="commit"]'))).toMatch(/^[0-9a-f]{8}$/u);
   });
 
   it("gives each story step its own note for the frame", () => {

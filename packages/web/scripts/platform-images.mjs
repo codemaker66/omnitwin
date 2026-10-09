@@ -37,6 +37,8 @@ const pagePath = path.join(web, "public", "platform", "index.html");
 
 const UI = { avif: { quality: 62, effort: 6, chromaSubsampling: "4:4:4" }, webp: { quality: 86, effort: 6, smartSubsample: true } };
 const PHOTO = { avif: { quality: 54, effort: 6 }, webp: { quality: 80, effort: 6 } };
+/** The lamps alone: mostly black, so small at a quality that keeps the bulbs crisp. */
+const GLOW = { avif: { quality: 50, effort: 6 }, webp: { quality: 78, effort: 6 } };
 /** The story frame's backdrop (styles.css .stage__frame). */
 const FRAME = { r: 233, g: 226, b: 210 };
 /** The proposals desk's page colour, sampled beside its panel. */
@@ -47,23 +49,32 @@ const DESK_SAGE = { r: 129, g: 144, b: 135 };
 const SETS = [
   { name: "hall-desktop", from: photos, source: "hall-desktop.png", widths: [1280, 1920, 2560], encoding: PHOTO, lqip: true },
   { name: "hall-phone", from: photos, source: "hall-phone.png", widths: [780, 1170], encoding: PHOTO },
+  { name: "hall-desktop-glow", from: photos, source: "hall-desktop-glow.png", widths: [1280, 1920, 2560], encoding: GLOW },
+  { name: "hall-phone-glow", from: photos, source: "hall-phone-glow.png", widths: [780, 1170], encoding: GLOW },
   { name: "hall-night", from: photos, source: "hall-night.png", widths: [1280, 1920, 2560], encoding: PHOTO, lqip: true },
   { name: "hall-dome", from: photos, source: "hall-dome.png", widths: [1440, 2160, 2880], encoding: PHOTO, lqip: true },
-  { name: "step-enquiry", source: "enquiries.png", crop: [1800, 810, 1080, 1350], widths: [560, 1120], encoding: UI, lqip: true },
-  { name: "step-enquiry-phone", source: "enquiries.png", crop: [1890, 820, 940, 1253], widths: [390, 780], encoding: UI },
-  { name: "step-diary", source: "diary.png", crop: [1745, 440, 1060, 1325], widths: [560, 1120], encoding: UI, lqip: true },
-  { name: "step-diary-phone", source: "diary.png", crop: [2296, 560, 540, 720], widths: [390, 780], encoding: UI },
+  // Each crop sits wholly inside the sheet or panel it shows (no sliver of
+  // the desk behind it, no tilted edge) and is at least as wide as the
+  // largest width the page asks of it; a narrower one is set on the desk's
+  // own colour to that width.
+  { name: "step-enquiry", source: "enquiries.png", crop: [1852, 750, 980, 1400], pad: { ratio: 4 / 5, colour: DESK_SAGE }, widths: [560, 1120], encoding: UI, lqip: true },
+  { name: "step-enquiry-phone", source: "enquiries.png", crop: [1884, 770, 848, 1130], widths: [390, 780], encoding: UI },
+  { name: "step-diary", source: "diary.png", crop: [1716, 560, 1120, 1400], widths: [560, 1120], encoding: UI, lqip: true },
+  { name: "step-diary-phone", source: "diary.png", crop: [1470, 660, 780, 1040], widths: [390, 780], encoding: UI },
   { name: "step-planner", source: "planner.png", crop: [1640, 40, 1240, 1550], widths: [560, 1120], encoding: UI, lqip: true },
-  { name: "step-planner-phone", source: "planner.png", crop: [1920, 40, 960, 1280], widths: [390, 780], encoding: UI },
-  { name: "step-proposal", source: "proposal-claude-draft.png", crop: [1804, 694, 1076, 1644], pad: { ratio: 4 / 5, colour: DESK_SAGE }, widths: [560, 1120], encoding: UI, lqip: true },
-  { name: "step-proposal-phone", source: "proposal-claude-draft.png", crop: [1889, 712, 812, 1083], widths: [390, 780], encoding: UI },
-  { name: "step-client", source: "client-accepted-full.png", crop: [712, 2925, 1448, 1810], widths: [560, 1120], encoding: UI, lqip: true },
+  { name: "step-planner-phone", source: "planner.png", crop: [1940, 222, 940, 1253], widths: [390, 780], encoding: UI },
+  { name: "step-proposal", source: "proposal-claude-draft.png", crop: [1916, 730, 860, 1400], pad: { ratio: 4 / 5, colour: DESK_SAGE }, widths: [560, 1120], encoding: UI, lqip: true },
+  { name: "step-proposal-phone", source: "proposal-claude-draft.png", crop: [1938, 716, 810, 1080], widths: [390, 780], encoding: UI },
+  { name: "step-client", source: "client-accepted-full.png", crop: [692, 3372, 1496, 1870], widths: [560, 1120], encoding: UI, lqip: true },
   { name: "step-client-phone", source: "client-accepted-phone-full.png", crop: [0, 30, 780, 1040], widths: [390, 780], encoding: UI },
   { name: "step-setup", compose: "phones", widths: [560, 1120], encoding: UI, lqip: true },
   { name: "step-setup-phone", source: "hallkeeper-phone.png", crop: [0, 260, 780, 1040], widths: [390, 780], encoding: UI },
-  ...[["enquiries", "enquiries"], ["diary", "diary"], ["planner", "planner"], ["proposal-claude-draft", "proposal-claude-draft"], ["client-accepted", "client-accepted"]].map(([name, source]) => ({
+  ...[["enquiries", "enquiries"], ["diary", "diary"], ["proposal-claude-draft", "proposal-claude-draft"], ["client-accepted", "client-accepted"]].map(([name, source]) => ({
     name: `full-${name}`, source: `${source}.png`, widths: [2880], encoding: UI,
   })),
+  // The planner whole, down to its own toolbars: the schedule dock below
+  // them belongs to the layout's public link, not to the step.
+  { name: "full-planner", source: "planner.png", crop: [0, 0, 2880, 2010], widths: [2880], encoding: UI },
   { name: "full-setup-phones", compose: "phones-full", widths: [1600], encoding: UI },
 ];
 
@@ -91,15 +102,14 @@ async function phones(full) {
   const [left, right] = full
     ? [first.bytes, plan.bytes]
     : [await sharp(first.bytes).extract({ left: 0, top: 0, width: 780, height: 1340 }).png().toBuffer(), await sharp(plan.bytes).extract({ left: 0, top: 380, width: 780, height: 1130 }).png().toBuffer()];
-  // In the story frame the first screen, with the times and needs it keeps in
-  // view, is read at about real size; the plan screen stands smaller beside it.
+  // Both screens at one scale, side by side, as the phone shows them.
   const [canvasWidth, canvasHeight] = full ? [1740, 1808] : [1120, 1400];
-  const [widthA, widthB] = full ? [780, 780] : [640, 400];
+  const [widthA, widthB] = full ? [780, 780] : [500, 500];
   const a = await screen(left, widthA);
   const b = await screen(right, widthB);
   const [leftA, topA, leftB, topB] = full
     ? [60, Math.round((canvasHeight - a.height) / 2), 900, Math.round((canvasHeight - b.height) / 2)]
-    : [40, Math.round((canvasHeight - a.height) / 2), 700, Math.round(canvasHeight * 0.36)];
+    : [40, Math.round((canvasHeight - a.height) / 2), 580, Math.round((canvasHeight - b.height) / 2)];
   const buffer = await sharp({ create: { width: canvasWidth, height: canvasHeight, channels: 3, background: FRAME } })
     .composite([{ input: a.buffer, left: leftA, top: topA }, { input: b.buffer, left: leftB, top: topB }])
     .png().toBuffer();

@@ -144,6 +144,146 @@
       "bytes": 235382
     },
     {
+      "output": "public/platform/img/hall-desktop-glow-1280.avif",
+      "sources": [
+        {
+          "file": "hall-desktop-glow.png",
+          "sha256": "e83b52752be5bb833bf039fa706e0d5476d67ad9db0237ecd4e93ad6a120ccd4"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 1280,
+      "height": 720,
+      "bytes": 9154
+    },
+    {
+      "output": "public/platform/img/hall-desktop-glow-1280.webp",
+      "sources": [
+        {
+          "file": "hall-desktop-glow.png",
+          "sha256": "e83b52752be5bb833bf039fa706e0d5476d67ad9db0237ecd4e93ad6a120ccd4"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 1280,
+      "height": 720,
+      "bytes": 12930
+    },
+    {
+      "output": "public/platform/img/hall-desktop-glow-1920.avif",
+      "sources": [
+        {
+          "file": "hall-desktop-glow.png",
+          "sha256": "e83b52752be5bb833bf039fa706e0d5476d67ad9db0237ecd4e93ad6a120ccd4"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 1920,
+      "height": 1080,
+      "bytes": 16157
+    },
+    {
+      "output": "public/platform/img/hall-desktop-glow-1920.webp",
+      "sources": [
+        {
+          "file": "hall-desktop-glow.png",
+          "sha256": "e83b52752be5bb833bf039fa706e0d5476d67ad9db0237ecd4e93ad6a120ccd4"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 1920,
+      "height": 1080,
+      "bytes": 24202
+    },
+    {
+      "output": "public/platform/img/hall-desktop-glow-2560.avif",
+      "sources": [
+        {
+          "file": "hall-desktop-glow.png",
+          "sha256": "e83b52752be5bb833bf039fa706e0d5476d67ad9db0237ecd4e93ad6a120ccd4"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 2560,
+      "height": 1440,
+      "bytes": 23432
+    },
+    {
+      "output": "public/platform/img/hall-desktop-glow-2560.webp",
+      "sources": [
+        {
+          "file": "hall-desktop-glow.png",
+          "sha256": "e83b52752be5bb833bf039fa706e0d5476d67ad9db0237ecd4e93ad6a120ccd4"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 2560,
+      "height": 1440,
+      "bytes": 38174
+    },
+    {
+      "output": "public/platform/img/hall-phone-glow-780.avif",
+      "sources": [
+        {
+          "file": "hall-phone-glow.png",
+          "sha256": "89b523c74efab5f167b6aacb67ff1692096da195dd1557938e93a6cd21e19f47"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 780,
+      "height": 944,
+      "bytes": 8963
+    },
+    {
+      "output": "public/platform/img/hall-phone-glow-780.webp",
+      "sources": [
+        {
+          "file": "hall-phone-glow.png",
+          "sha256": "89b523c74efab5f167b6aacb67ff1692096da195dd1557938e93a6cd21e19f47"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 780,
+      "height": 944,
+      "bytes": 12306
+    },
+    {
+      "output": "public/platform/img/hall-phone-glow-1170.avif",
+      "sources": [
+        {
+          "file": "hall-phone-glow.png",
+          "sha256": "89b523c74efab5f167b6aacb67ff1692096da195dd1557938e93a6cd21e19f47"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 1170,
+      "height": 1416,
+      "bytes": 16021
+    },
+    {
+      "output": "public/platform/img/hall-phone-glow-1170.webp",
+      "sources": [
+        {
+          "file": "hall-phone-glow.png",
+          "sha256": "89b523c74efab5f167b6aacb67ff1692096da195dd1557938e93a6cd21e19f47"
+        }
+      ],
+      "crop": null,
+      "note": null,
+      "width": 1170,
+      "height": 1416,
+      "bytes": 23710
+    },
+    {
       "output": "public/platform/img/hall-night-1280.avif",
       "sources": [
         {
@@ -316,311 +456,311 @@
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": [
-        1800,
-        810,
-        1080,
-        1350
+        1852,
+        750,
+        980,
+        1400
       ],
-      "note": null,
+      "note": "set on the page colour to 1120x1400",
       "width": 560,
       "height": 700,
-      "bytes": 21763
+      "bytes": 20470
     },
     {
       "output": "public/platform/img/step-enquiry-560.webp",
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": [
-        1800,
-        810,
-        1080,
-        1350
+        1852,
+        750,
+        980,
+        1400
       ],
-      "note": null,
+      "note": "set on the page colour to 1120x1400",
       "width": 560,
       "height": 700,
-      "bytes": 32332
+      "bytes": 30510
     },
     {
       "output": "public/platform/img/step-enquiry-1120.avif",
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": [
-        1800,
-        810,
-        1080,
-        1350
+        1852,
+        750,
+        980,
+        1400
       ],
-      "note": null,
-      "width": 1080,
-      "height": 1350,
-      "bytes": 38050
+      "note": "set on the page colour to 1120x1400",
+      "width": 1120,
+      "height": 1400,
+      "bytes": 37784
     },
     {
       "output": "public/platform/img/step-enquiry-1120.webp",
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": [
-        1800,
-        810,
-        1080,
-        1350
+        1852,
+        750,
+        980,
+        1400
       ],
-      "note": null,
-      "width": 1080,
-      "height": 1350,
-      "bytes": 69702
+      "note": "set on the page colour to 1120x1400",
+      "width": 1120,
+      "height": 1400,
+      "bytes": 70808
     },
     {
       "output": "public/platform/img/step-enquiry-phone-390.avif",
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": [
-        1890,
-        820,
-        940,
-        1253
+        1884,
+        770,
+        848,
+        1130
       ],
       "note": null,
       "width": 390,
       "height": 520,
-      "bytes": 13811
+      "bytes": 11914
     },
     {
       "output": "public/platform/img/step-enquiry-phone-390.webp",
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": [
-        1890,
-        820,
-        940,
-        1253
+        1884,
+        770,
+        848,
+        1130
       ],
       "note": null,
       "width": 390,
       "height": 520,
-      "bytes": 20724
+      "bytes": 17984
     },
     {
       "output": "public/platform/img/step-enquiry-phone-780.avif",
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": [
-        1890,
-        820,
-        940,
-        1253
+        1884,
+        770,
+        848,
+        1130
       ],
       "note": null,
       "width": 780,
-      "height": 1040,
-      "bytes": 31428
+      "height": 1039,
+      "bytes": 27948
     },
     {
       "output": "public/platform/img/step-enquiry-phone-780.webp",
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": [
-        1890,
-        820,
-        940,
-        1253
+        1884,
+        770,
+        848,
+        1130
       ],
       "note": null,
       "width": 780,
-      "height": 1040,
-      "bytes": 49370
+      "height": 1039,
+      "bytes": 39900
     },
     {
       "output": "public/platform/img/step-diary-560.avif",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": [
-        1745,
-        440,
-        1060,
-        1325
+        1716,
+        560,
+        1120,
+        1400
       ],
       "note": null,
       "width": 560,
       "height": 700,
-      "bytes": 22383
+      "bytes": 23410
     },
     {
       "output": "public/platform/img/step-diary-560.webp",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": [
-        1745,
-        440,
-        1060,
-        1325
+        1716,
+        560,
+        1120,
+        1400
       ],
       "note": null,
       "width": 560,
       "height": 700,
-      "bytes": 29436
+      "bytes": 31238
     },
     {
       "output": "public/platform/img/step-diary-1120.avif",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": [
-        1745,
-        440,
-        1060,
-        1325
+        1716,
+        560,
+        1120,
+        1400
       ],
       "note": null,
-      "width": 1060,
-      "height": 1325,
-      "bytes": 45604
+      "width": 1120,
+      "height": 1400,
+      "bytes": 56160
     },
     {
       "output": "public/platform/img/step-diary-1120.webp",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": [
-        1745,
-        440,
-        1060,
-        1325
+        1716,
+        560,
+        1120,
+        1400
       ],
       "note": null,
-      "width": 1060,
-      "height": 1325,
-      "bytes": 67442
+      "width": 1120,
+      "height": 1400,
+      "bytes": 80016
     },
     {
       "output": "public/platform/img/step-diary-phone-390.avif",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": [
-        2296,
-        560,
-        540,
-        720
+        1470,
+        660,
+        780,
+        1040
       ],
       "note": null,
       "width": 390,
       "height": 520,
-      "bytes": 14521
+      "bytes": 8535
     },
     {
       "output": "public/platform/img/step-diary-phone-390.webp",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": [
-        2296,
-        560,
-        540,
-        720
+        1470,
+        660,
+        780,
+        1040
       ],
       "note": null,
       "width": 390,
       "height": 520,
-      "bytes": 18774
+      "bytes": 11284
     },
     {
       "output": "public/platform/img/step-diary-phone-780.avif",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": [
-        2296,
-        560,
-        540,
-        720
+        1470,
+        660,
+        780,
+        1040
       ],
       "note": null,
-      "width": 540,
-      "height": 720,
-      "bytes": 20362
+      "width": 780,
+      "height": 1040,
+      "bytes": 18489
     },
     {
       "output": "public/platform/img/step-diary-phone-780.webp",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": [
-        2296,
-        560,
-        540,
-        720
+        1470,
+        660,
+        780,
+        1040
       ],
       "note": null,
-      "width": 540,
-      "height": 720,
-      "bytes": 27752
+      "width": 780,
+      "height": 1040,
+      "bytes": 28024
     },
     {
       "output": "public/platform/img/step-planner-560.avif",
       "sources": [
         {
           "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
         }
       ],
       "crop": [
@@ -632,14 +772,14 @@
       "note": null,
       "width": 560,
       "height": 700,
-      "bytes": 48586
+      "bytes": 48037
     },
     {
       "output": "public/platform/img/step-planner-560.webp",
       "sources": [
         {
           "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
         }
       ],
       "crop": [
@@ -651,14 +791,14 @@
       "note": null,
       "width": 560,
       "height": 700,
-      "bytes": 76884
+      "bytes": 75494
     },
     {
       "output": "public/platform/img/step-planner-1120.avif",
       "sources": [
         {
           "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
         }
       ],
       "crop": [
@@ -670,14 +810,14 @@
       "note": null,
       "width": 1120,
       "height": 1400,
-      "bytes": 125435
+      "bytes": 122985
     },
     {
       "output": "public/platform/img/step-planner-1120.webp",
       "sources": [
         {
           "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
         }
       ],
       "crop": [
@@ -689,318 +829,318 @@
       "note": null,
       "width": 1120,
       "height": 1400,
-      "bytes": 195994
+      "bytes": 191044
     },
     {
       "output": "public/platform/img/step-planner-phone-390.avif",
       "sources": [
         {
           "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
         }
       ],
       "crop": [
-        1920,
-        40,
-        960,
-        1280
+        1940,
+        222,
+        940,
+        1253
       ],
       "note": null,
       "width": 390,
       "height": 520,
-      "bytes": 24468
+      "bytes": 24229
     },
     {
       "output": "public/platform/img/step-planner-phone-390.webp",
       "sources": [
         {
           "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
         }
       ],
       "crop": [
-        1920,
-        40,
-        960,
-        1280
+        1940,
+        222,
+        940,
+        1253
       ],
       "note": null,
       "width": 390,
       "height": 520,
-      "bytes": 38946
+      "bytes": 38428
     },
     {
       "output": "public/platform/img/step-planner-phone-780.avif",
       "sources": [
         {
           "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
         }
       ],
       "crop": [
-        1920,
-        40,
-        960,
-        1280
+        1940,
+        222,
+        940,
+        1253
       ],
       "note": null,
       "width": 780,
       "height": 1040,
-      "bytes": 65224
+      "bytes": 63825
     },
     {
       "output": "public/platform/img/step-planner-phone-780.webp",
       "sources": [
         {
           "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
         }
       ],
       "crop": [
-        1920,
-        40,
-        960,
-        1280
+        1940,
+        222,
+        940,
+        1253
       ],
       "note": null,
       "width": 780,
       "height": 1040,
-      "bytes": 99662
+      "bytes": 98302
     },
     {
       "output": "public/platform/img/step-proposal-560.avif",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": [
-        1804,
-        694,
-        1076,
-        1644
+        1916,
+        730,
+        860,
+        1400
       ],
-      "note": "set on the page colour to 1315x1644",
+      "note": "set on the page colour to 1120x1400",
       "width": 560,
       "height": 700,
-      "bytes": 27798
+      "bytes": 27894
     },
     {
       "output": "public/platform/img/step-proposal-560.webp",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": [
-        1804,
-        694,
-        1076,
-        1644
+        1916,
+        730,
+        860,
+        1400
       ],
-      "note": "set on the page colour to 1315x1644",
+      "note": "set on the page colour to 1120x1400",
       "width": 560,
       "height": 700,
-      "bytes": 42990
+      "bytes": 43730
     },
     {
       "output": "public/platform/img/step-proposal-1120.avif",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": [
-        1804,
-        694,
-        1076,
-        1644
+        1916,
+        730,
+        860,
+        1400
       ],
-      "note": "set on the page colour to 1315x1644",
+      "note": "set on the page colour to 1120x1400",
       "width": 1120,
       "height": 1400,
-      "bytes": 69573
+      "bytes": 58371
     },
     {
       "output": "public/platform/img/step-proposal-1120.webp",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": [
-        1804,
-        694,
-        1076,
-        1644
+        1916,
+        730,
+        860,
+        1400
       ],
-      "note": "set on the page colour to 1315x1644",
+      "note": "set on the page colour to 1120x1400",
       "width": 1120,
       "height": 1400,
-      "bytes": 109228
+      "bytes": 105588
     },
     {
       "output": "public/platform/img/step-proposal-phone-390.avif",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": [
-        1889,
-        712,
-        812,
-        1083
+        1938,
+        716,
+        810,
+        1080
       ],
       "note": null,
       "width": 390,
       "height": 520,
-      "bytes": 29531
+      "bytes": 24305
     },
     {
       "output": "public/platform/img/step-proposal-phone-390.webp",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": [
-        1889,
-        712,
-        812,
-        1083
+        1938,
+        716,
+        810,
+        1080
       ],
       "note": null,
       "width": 390,
       "height": 520,
-      "bytes": 43002
+      "bytes": 35726
     },
     {
       "output": "public/platform/img/step-proposal-phone-780.avif",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": [
-        1889,
-        712,
-        812,
-        1083
+        1938,
+        716,
+        810,
+        1080
       ],
       "note": null,
       "width": 780,
       "height": 1040,
-      "bytes": 65901
+      "bytes": 56121
     },
     {
       "output": "public/platform/img/step-proposal-phone-780.webp",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": [
-        1889,
-        712,
-        812,
-        1083
+        1938,
+        716,
+        810,
+        1080
       ],
       "note": null,
       "width": 780,
       "height": 1040,
-      "bytes": 105708
+      "bytes": 84124
     },
     {
       "output": "public/platform/img/step-client-560.avif",
       "sources": [
         {
           "file": "client-accepted-full.png",
-          "sha256": "3b9d8abf807149c534620b9691cfdce21cfda59c87176c8486346e4ef292bda1"
+          "sha256": "c21fc04040b6e5c2bf3f8f5ffa8bdf7c805ade5966b77fc5e421743225f2198c"
         }
       ],
       "crop": [
-        712,
-        2925,
-        1448,
-        1810
+        692,
+        3372,
+        1496,
+        1870
       ],
       "note": null,
       "width": 560,
       "height": 700,
-      "bytes": 26967
+      "bytes": 30942
     },
     {
       "output": "public/platform/img/step-client-560.webp",
       "sources": [
         {
           "file": "client-accepted-full.png",
-          "sha256": "3b9d8abf807149c534620b9691cfdce21cfda59c87176c8486346e4ef292bda1"
+          "sha256": "c21fc04040b6e5c2bf3f8f5ffa8bdf7c805ade5966b77fc5e421743225f2198c"
         }
       ],
       "crop": [
-        712,
-        2925,
-        1448,
-        1810
+        692,
+        3372,
+        1496,
+        1870
       ],
       "note": null,
       "width": 560,
       "height": 700,
-      "bytes": 36936
+      "bytes": 43498
     },
     {
       "output": "public/platform/img/step-client-1120.avif",
       "sources": [
         {
           "file": "client-accepted-full.png",
-          "sha256": "3b9d8abf807149c534620b9691cfdce21cfda59c87176c8486346e4ef292bda1"
+          "sha256": "c21fc04040b6e5c2bf3f8f5ffa8bdf7c805ade5966b77fc5e421743225f2198c"
         }
       ],
       "crop": [
-        712,
-        2925,
-        1448,
-        1810
+        692,
+        3372,
+        1496,
+        1870
       ],
       "note": null,
       "width": 1120,
       "height": 1400,
-      "bytes": 60219
+      "bytes": 73575
     },
     {
       "output": "public/platform/img/step-client-1120.webp",
       "sources": [
         {
           "file": "client-accepted-full.png",
-          "sha256": "3b9d8abf807149c534620b9691cfdce21cfda59c87176c8486346e4ef292bda1"
+          "sha256": "c21fc04040b6e5c2bf3f8f5ffa8bdf7c805ade5966b77fc5e421743225f2198c"
         }
       ],
       "crop": [
-        712,
-        2925,
-        1448,
-        1810
+        692,
+        3372,
+        1496,
+        1870
       ],
       "note": null,
       "width": 1120,
       "height": 1400,
-      "bytes": 93530
+      "bytes": 105754
     },
     {
       "output": "public/platform/img/step-client-phone-390.avif",
       "sources": [
         {
           "file": "client-accepted-phone-full.png",
-          "sha256": "996114ab164666e28273595727b1828ba28e000bd01d52d9c7aec151e01ae38f"
+          "sha256": "46819b6117b73d419218191d27a7939488e9f643e564c4f45431e9591e0f20ac"
         }
       ],
       "crop": [
@@ -1019,7 +1159,7 @@
       "sources": [
         {
           "file": "client-accepted-phone-full.png",
-          "sha256": "996114ab164666e28273595727b1828ba28e000bd01d52d9c7aec151e01ae38f"
+          "sha256": "46819b6117b73d419218191d27a7939488e9f643e564c4f45431e9591e0f20ac"
         }
       ],
       "crop": [
@@ -1038,7 +1178,7 @@
       "sources": [
         {
           "file": "client-accepted-phone-full.png",
-          "sha256": "996114ab164666e28273595727b1828ba28e000bd01d52d9c7aec151e01ae38f"
+          "sha256": "46819b6117b73d419218191d27a7939488e9f643e564c4f45431e9591e0f20ac"
         }
       ],
       "crop": [
@@ -1057,7 +1197,7 @@
       "sources": [
         {
           "file": "client-accepted-phone-full.png",
-          "sha256": "996114ab164666e28273595727b1828ba28e000bd01d52d9c7aec151e01ae38f"
+          "sha256": "46819b6117b73d419218191d27a7939488e9f643e564c4f45431e9591e0f20ac"
         }
       ],
       "crop": [
@@ -1080,14 +1220,14 @@
         },
         {
           "file": "hallkeeper-phone-plan.png",
-          "sha256": "61821d411091364eafda7d4548d8a3b2b82224be414e2a05c6412095d2fe477a"
+          "sha256": "4e4b3f383c6013a20e2b94d35dcae732fc1a0401bf91bf1489e3101b580641f5"
         }
       ],
       "crop": null,
       "note": "first screen from the top to Keep in view (780x1340); plan screen from the stage tabs to the plan's foot (780x1130 at y 380)",
       "width": 560,
       "height": 700,
-      "bytes": 21267
+      "bytes": 19054
     },
     {
       "output": "public/platform/img/step-setup-560.webp",
@@ -1098,14 +1238,14 @@
         },
         {
           "file": "hallkeeper-phone-plan.png",
-          "sha256": "61821d411091364eafda7d4548d8a3b2b82224be414e2a05c6412095d2fe477a"
+          "sha256": "4e4b3f383c6013a20e2b94d35dcae732fc1a0401bf91bf1489e3101b580641f5"
         }
       ],
       "crop": null,
       "note": "first screen from the top to Keep in view (780x1340); plan screen from the stage tabs to the plan's foot (780x1130 at y 380)",
       "width": 560,
       "height": 700,
-      "bytes": 27996
+      "bytes": 26210
     },
     {
       "output": "public/platform/img/step-setup-1120.avif",
@@ -1116,14 +1256,14 @@
         },
         {
           "file": "hallkeeper-phone-plan.png",
-          "sha256": "61821d411091364eafda7d4548d8a3b2b82224be414e2a05c6412095d2fe477a"
+          "sha256": "4e4b3f383c6013a20e2b94d35dcae732fc1a0401bf91bf1489e3101b580641f5"
         }
       ],
       "crop": null,
       "note": "first screen from the top to Keep in view (780x1340); plan screen from the stage tabs to the plan's foot (780x1130 at y 380)",
       "width": 1120,
       "height": 1400,
-      "bytes": 56629
+      "bytes": 51786
     },
     {
       "output": "public/platform/img/step-setup-1120.webp",
@@ -1134,14 +1274,14 @@
         },
         {
           "file": "hallkeeper-phone-plan.png",
-          "sha256": "61821d411091364eafda7d4548d8a3b2b82224be414e2a05c6412095d2fe477a"
+          "sha256": "4e4b3f383c6013a20e2b94d35dcae732fc1a0401bf91bf1489e3101b580641f5"
         }
       ],
       "crop": null,
       "note": "first screen from the top to Keep in view (780x1340); plan screen from the stage tabs to the plan's foot (780x1130 at y 380)",
       "width": 1120,
       "height": 1400,
-      "bytes": 75726
+      "bytes": 70512
     },
     {
       "output": "public/platform/img/step-setup-phone-390.avif",
@@ -1224,140 +1364,150 @@
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": null,
       "note": null,
       "width": 2880,
       "height": 2200,
-      "bytes": 210945
+      "bytes": 169077
     },
     {
       "output": "public/platform/img/full-enquiries-2880.webp",
       "sources": [
         {
           "file": "enquiries.png",
-          "sha256": "dac149267bb7e19cddddde5acaa471d745b4f264cc34d2dd090cf55e13799eec"
+          "sha256": "7497b8162e74bcbf6366b9093e1a56e3c7206cda9bc341ec3c2566664c8d495c"
         }
       ],
       "crop": null,
       "note": null,
       "width": 2880,
       "height": 2200,
-      "bytes": 333440
+      "bytes": 265912
     },
     {
       "output": "public/platform/img/full-diary-2880.avif",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": null,
       "note": null,
       "width": 2880,
-      "height": 1800,
-      "bytes": 112995
+      "height": 2000,
+      "bytes": 135303
     },
     {
       "output": "public/platform/img/full-diary-2880.webp",
       "sources": [
         {
           "file": "diary.png",
-          "sha256": "f517ec140ffd0742dfd807a2565978f5ff6015efa0a1e15c762e4de6d18455f0"
+          "sha256": "16c59512040098eb9d178344e2a8cf4d9df2339649fa739f23330c6b5a506954"
         }
       ],
       "crop": null,
       "note": null,
       "width": 2880,
-      "height": 1800,
-      "bytes": 184982
-    },
-    {
-      "output": "public/platform/img/full-planner-2880.avif",
-      "sources": [
-        {
-          "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
-        }
-      ],
-      "crop": null,
-      "note": null,
-      "width": 2880,
-      "height": 2200,
-      "bytes": 381625
-    },
-    {
-      "output": "public/platform/img/full-planner-2880.webp",
-      "sources": [
-        {
-          "file": "planner.png",
-          "sha256": "7d9cffc8616e772450224792791299da62692de90eeafb2c4e3e1d550d351776"
-        }
-      ],
-      "crop": null,
-      "note": null,
-      "width": 2880,
-      "height": 2200,
-      "bytes": 585064
+      "height": 2000,
+      "bytes": 212782
     },
     {
       "output": "public/platform/img/full-proposal-claude-draft-2880.avif",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": null,
       "note": null,
       "width": 2880,
       "height": 2800,
-      "bytes": 161647
+      "bytes": 150645
     },
     {
       "output": "public/platform/img/full-proposal-claude-draft-2880.webp",
       "sources": [
         {
           "file": "proposal-claude-draft.png",
-          "sha256": "a95f66e456bf5123b1076b713d5202ef63399e0bdfd220d2ccef9ef78aa44a57"
+          "sha256": "bb3a734d1dc3125dd8b146948bd9a460d7c68596de97e8b3e497a020a567cfe1"
         }
       ],
       "crop": null,
       "note": null,
       "width": 2880,
       "height": 2800,
-      "bytes": 276640
+      "bytes": 258024
     },
     {
       "output": "public/platform/img/full-client-accepted-2880.avif",
       "sources": [
         {
           "file": "client-accepted.png",
-          "sha256": "c2c42d6534a0b57f48eebab0cf6ecd551d3d7f20a42bf2599098838ac366fa9c"
+          "sha256": "f1f53ce0297e6a9340b791da824889002cc7635824b16fd3e5361a85e78ab1c3"
         }
       ],
       "crop": null,
       "note": null,
       "width": 2880,
       "height": 1800,
-      "bytes": 63617
+      "bytes": 76759
     },
     {
       "output": "public/platform/img/full-client-accepted-2880.webp",
       "sources": [
         {
           "file": "client-accepted.png",
-          "sha256": "c2c42d6534a0b57f48eebab0cf6ecd551d3d7f20a42bf2599098838ac366fa9c"
+          "sha256": "f1f53ce0297e6a9340b791da824889002cc7635824b16fd3e5361a85e78ab1c3"
         }
       ],
       "crop": null,
       "note": null,
       "width": 2880,
       "height": 1800,
-      "bytes": 109766
+      "bytes": 127316
+    },
+    {
+      "output": "public/platform/img/full-planner-2880.avif",
+      "sources": [
+        {
+          "file": "planner.png",
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
+        }
+      ],
+      "crop": [
+        0,
+        0,
+        2880,
+        2010
+      ],
+      "note": null,
+      "width": 2880,
+      "height": 2010,
+      "bytes": 364151
+    },
+    {
+      "output": "public/platform/img/full-planner-2880.webp",
+      "sources": [
+        {
+          "file": "planner.png",
+          "sha256": "48c237eaa9597c94dcf7244c9e07e344a7ff80ec1b72b963e0f99066f0ee01d4"
+        }
+      ],
+      "crop": [
+        0,
+        0,
+        2880,
+        2010
+      ],
+      "note": null,
+      "width": 2880,
+      "height": 2010,
+      "bytes": 570160
     },
     {
       "output": "public/platform/img/full-setup-phones-1600.avif",
@@ -1368,14 +1518,14 @@
         },
         {
           "file": "hallkeeper-phone-plan.png",
-          "sha256": "61821d411091364eafda7d4548d8a3b2b82224be414e2a05c6412095d2fe477a"
+          "sha256": "4e4b3f383c6013a20e2b94d35dcae732fc1a0401bf91bf1489e3101b580641f5"
         }
       ],
       "crop": null,
       "note": "both phone screens whole, side by side",
       "width": 1600,
       "height": 1663,
-      "bytes": 110943
+      "bytes": 110906
     },
     {
       "output": "public/platform/img/full-setup-phones-1600.webp",
@@ -1386,14 +1536,14 @@
         },
         {
           "file": "hallkeeper-phone-plan.png",
-          "sha256": "61821d411091364eafda7d4548d8a3b2b82224be414e2a05c6412095d2fe477a"
+          "sha256": "4e4b3f383c6013a20e2b94d35dcae732fc1a0401bf91bf1489e3101b580641f5"
         }
       ],
       "crop": null,
       "note": "both phone screens whole, side by side",
       "width": 1600,
       "height": 1663,
-      "bytes": 147648
+      "bytes": 147858
     },
     {
       "output": "public/platform/img/og-1200.jpg",

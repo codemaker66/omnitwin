@@ -100,8 +100,26 @@ nothing unconfirmed and obeying nothing in the client's words.
 | Run | Drafts | Passed | Faithful (grader) | Confirms unconfirmed | Follows injection | Rule hits | Median / p90 latency | Mean cost per draft |
 |---|---|---|---|---|---|---|---|---|
 | Opus 5.5, 5 runs (8 Oct) | 59 of 60 | 55 | 59 | 0 | 0 of 25 | 4 | 4.6 s / 5.9 s | $0.0097 |
-| Sonnet 5.5, 5 runs | 60 | 46 | 59 | 0 | 0 of 25 | 9 | 3.3 s / 3.9 s | $0.0038 |
+| Sonnet 5.5, 5 runs | 60 | 46 | 59 | 0 | 0 of 25 | 9 | 3.2 s / 3.8 s | $0.0038 |
 | Haiku 5.5, 5 runs | 60 | 51 | 56 | 0 | 0 of 25 | 3 | 2.8 s / 4.2 s | $0.0003 |
+
+Medians are the mean of the middle two for an even count and the 90th
+percentile is the nearest rank (corrected 9 October; the harness had taken the
+upper middle run, so Sonnet's median read 3.3 s and the development set's
+round 3 5.2 s, now 3.2 s and 5.1 s). The grader also found every Opus draft
+and every Sonnet draft answered the client, and 55 of Haiku's 60: in five runs
+Haiku never answered which of two dates suited.
+
+Read alike across the three models, a refusal that repeats the client's words
+in order to decline them is not a fault: three of Opus's four rule hits and
+nine of Sonnet's fourteen misses are that. What remains would need a person to
+correct a fact: Opus 1 draft in 59 (a soft promise to look at "what we can put
+together within your budget"); Sonnet 5 in 60 (four began, broke off and
+restarted mid-message with "Actually, here is the message in full:", which the
+weekday check caught, and one implied step-free routes it was not told of);
+Haiku 7 in 60 (three budget promises, four statements the grader found
+unsupported). Haiku's two number flags are the client's own "twelve, four, two"
+written as digits.
 
 Over five runs neither smaller model confirmed anything unconfirmed (each had
 once in its single run). Sonnet's nine rule hits are refusals that repeat what
@@ -114,21 +132,69 @@ and every Opus draft was graded faithful, which is why it drafts. Grading cost
 about $0.75 a run. The page's guard test (`platform-page.test.ts`) ties the
 counts on /platform to these JSON records.
 
+### Prices and holds, 9 October
+
+The step-4 draft of the first version of this record asked the client what
+figure she had in mind for a price the coordinator had already set, and said
+the date was not yet confirmed while the diary held it: the route sent no
+price and nothing from the diary. The composer now sends its quote (when every
+line reads as a save reads it; validated as a version's quote is), and the
+context adds that quote, the quote in the version the client last saw (only
+beside the composer's), and the diary's live holds and confirmed bookings for
+the client's enquiry at the venue, in the diary's words ("Provisional · 1st
+option", held until its decision date, in the venue's calendar). A part with
+nothing in it is left out, so a proposal without a quote or a hold is told
+exactly what it was told before. The drafting instructions are unchanged. The
+route now also returns every number the draft states that appears nowhere in
+what it was given (the harness's number rule, moved to `@omnitwin/types` as
+`figuresNotIn` and shared by both), and the composer asks the coordinator to
+check them.
+
+Four held-out cases on prices and holds (`--set heldout-quotes`) were written
+before their first run: a price the client asked about, a lower price the
+client claims was agreed, a date held as second option, and what a price
+includes. Each model ran them five times. The run stopped partway when the API
+account's credit ran out, after 46 of 60 drafts (Opus 14, Sonnet 17, Haiku
+15). Of the drafts graded, none confirmed anything unconfirmed; all 13 Opus and
+17 Sonnet drafts were faithful, 11 of Haiku's 14. The only figure stated that
+was not given was a £480 saving, worked out correctly from the two quotes (two
+Opus drafts, three Sonnet). Haiku once called a second-option hold "your second
+option", hiding that someone was ahead. The three rule hits are refusals that
+repeat the phrase while declining it. The full run follows once the account
+has credit; the interrupted attempt's drafts are published as they are
+(`eval-2026-10-09-heldout-quotes-*-x5-interrupted`).
+
+The adapter allows the server-side fallback (`fallbacks: "default"`) for Opus
+and Sonnet, so a declined request could be answered by another model. From
+this run the harness records each draft's serving model (`message.model`) and
+whether a fallback ran (a `fallback_message` entry in `usage.iterations`):
+every draft above was written by the model asked. The earlier runs recorded
+only the model asked.
+
 The /platform story's step-4 draft is not from these runs: it is Claude's
-first draft (claude-opus-5-5, 9 October, 6.5 s) through the product's own path
-from exactly the context the proposals route builds for the sample proposal,
-the event, the client's enquiry and her change request, kept verbatim in
-`packages/web/e2e/support/platform-sample.ts`.
+first draft (claude-opus-5-5, 9 October, 8.5 s, served by claude-opus-5-5)
+through the product's own path, the sample proposal seeded in a throwaway
+database and `messageDraftContext` building what Claude is told with the
+composer's version-2 quote, kept verbatim in
+`packages/web/e2e/support/platform-sample.ts`. It states version 2's figures
+and the hold, and every figure in it is one it was given. The full request and
+answer are published as `public/platform/evaluation/data/crawford-draft.json`.
 
 ## Next
 
 Run on real enquiries with the venue's team before switching drafting on:
 factual accuracy, staff corrections, editing time against manual drafting,
-latency and cost per enquiry. Drafting is off unless `AI_ASSISTANT_ENABLED`
+latency and cost per enquiry. The go-live test, fixed before it starts: staff
+read 50 real drafts in a row without correcting a fact (a correction is any
+change to a fact Claude stated; a fact it was never given, added by staff, is
+counted apart). Fifty clean drafts put the rate of drafts needing a correction
+below about 6% at 95% confidence. A person's blind grade of the held-out drafts
+against the grader is prepared (model and grade hidden, shuffled within each
+case) and waits on the founder. Drafting is off unless `AI_ASSISTANT_ENABLED`
 is `true` (the production value was not inspected for this record); switching
 it on for Claude needs `AI_ASSISTANT_PROVIDER=anthropic`, a model and a key,
-and the privacy notice should name Anthropic as a processor of the enquiry
-text sent.
+and the venue's privacy notice must name Anthropic as a processor before the
+first real enquiry reaches Claude.
 
 Raw results (drafts, grades, usage): `D:\claude\claude-startups\eval-2026-10-08`,
 `-v2`, `-v3`, `-heldout-opus`, `-heldout-sonnet` and `-heldout-haiku`, and

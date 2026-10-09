@@ -1,17 +1,22 @@
 // ---------------------------------------------------------------------------
 // The one sample event the /platform captures follow: the Crawford wedding,
 // 160 guests in the Grand Hall on Saturday 5 June 2027. Her enquiry arrives
-// on Monday 21 September 2026; version 1 of the proposal goes on the 29th;
-// on 5 October she asks for the dinner to cost a little less per head.
+// on Monday 21 September 2026; the date is held for her as first option on
+// the 24th, until Thursday 22 October; version 1 of the proposal goes on the
+// 29th; on 5 October she asks for the dinner to cost a little less per head.
 //
 // CLAUDE_CRAWFORD_DRAFT is the first draft Claude wrote for version 2,
-// through the product's own path (generateAIDraft and the Anthropic adapter,
-// claude-opus-5-5, 9 October 2026, 6.5 s) from exactly the context the
-// proposals route builds: the event, her enquiry and her request. It is kept
-// verbatim, so the captures show Claude's own words, not a stand-in. Claude
-// is never sent a price, so it asks what figure she has in mind;
-// CRAWFORD_SENT_MESSAGE is that draft as Catherine edited it before sending,
-// with version 2's price and the hold she knows of.
+// through the product's own path (claude-opus-5-5, 9 October 2026, 8.5 s):
+// the proposal seeded in a throwaway database, messageDraftContext() building
+// what the AI is told exactly as the route does (the event, the composer's
+// quote with the dinner at £82.50, the quote she was last sent, the diary's
+// hold, her enquiry and her request), and generateAIDraft() calling Claude
+// through the Anthropic adapter. It is kept verbatim, so the captures show
+// Claude's own words, not a stand-in; every figure in it is in what it was
+// given (CLAUDE_CRAWFORD_FIGURES, the route's own check, is empty). The full
+// request and answer are published as evaluation/data/crawford-draft.json.
+// CRAWFORD_SENT_MESSAGE is that draft as the coordinator might edit it before
+// sending: our sample edit, shown as one, never as Claude's.
 // ---------------------------------------------------------------------------
 
 export const CRAWFORD_FACTS = {
@@ -30,29 +35,45 @@ export const CRAWFORD_CHANGE_REQUEST = "Could the dinner be a little less per he
 export const CLAUDE_CRAWFORD_DRAFT = [
   "Dear Elaine,",
   "",
-  "Thank you for your message, and for thinking of us for your wedding on 5 June 2027.",
+  "Thank you for your message. We've looked again at the dinner and brought it down from £87.50 to £82.50 per head. For 160 guests the dinner now comes to £13,200.00, rather than £14,000.00.",
   "",
-  "We'd be glad to look at ways of bringing the dinner cost per head down. Before we suggest options, it would help to know roughly what figure you have in mind, and whether there are courses or extras you'd be happy to change or simplify. We can then come back to you with some alternatives for the wedding breakfast in the Grand Hall for around 160 guests.",
+  "Your updated proposal:",
   "",
-  "We've also noted the other points from your enquiry. We haven't yet confirmed that 5 June 2027 is available, and we'll come back to you on that. Two of your guests are coeliac, and we'll make sure their needs are part of any menu we suggest. Two guests use wheelchairs, and we'd like to talk through their access arrangements with you in detail so we can plan properly for them.",
+  "Grand Hall hire: £4,400.00",
+  "Dinner, 160 guests at £82.50: £13,200.00",
+  "Total: £17,600.00 (previously £18,400.00)",
   "",
-  "Do let us know your thoughts on budget, and we'll take it from there.",
+  "The Grand Hall is provisionally held for you as first option for 5 June 2027 until 22 October 2026.",
   "",
-  "Warm wishes,",
+  "We've noted that two of your guests use wheelchairs and two are coeliac. We'd like to talk through their needs with you so we can plan for them properly.",
   "",
+  "This proposal covers the hall hire and dinner. If you'd like us to include anything for the evening, just let us know.",
+  "",
+  "Warm regards,",
   "The Events Team",
 ].join("\n");
+
+/** The figures in Claude's draft that appear nowhere in what it was given. */
+export const CLAUDE_CRAWFORD_FIGURES: readonly string[] = [];
 
 export const CRAWFORD_SENT_MESSAGE = [
   "Dear Elaine,",
   "",
-  "Thank you for your message, and for thinking of us for your wedding on 5 June 2027.",
+  "Thank you for your message. We've looked again at the dinner and brought it down from £87.50 to £82.50 per head. For 160 guests the dinner now comes to £13,200, rather than £14,000.",
   "",
-  "We've brought the dinner down to £82.50 a head, which takes version 2 of the proposal to £17,600. If there are courses or extras you'd be happy to change or simplify, we can look at those too.",
+  "Your updated proposal:",
   "",
-  "Your date is held for you as our first option until Thursday 22 October. Two of your guests are coeliac, and their needs are part of the menu. Two guests use wheelchairs, and we'd like to talk through their access arrangements with you in detail so we can plan properly for them.",
+  "Grand Hall hire: £4,400",
+  "Dinner, 160 guests at £82.50: £13,200",
+  "Total: £17,600 (previously £18,400)",
   "",
-  "Warm wishes,",
+  "The Grand Hall is provisionally held for you as our first option for Saturday 5 June 2027, until Thursday 22 October.",
   "",
-  "Catherine Tait, Events Team",
+  "We've noted that two of your guests use wheelchairs and two are coeliac. I'll ring you next week to talk through what they need, so we can plan for them properly.",
+  "",
+  "This proposal covers the hall hire and dinner. If you'd like us to include anything for the evening, just let me know.",
+  "",
+  "Warm regards,",
+  "Catherine Tait",
+  "Events Team",
 ].join("\n");

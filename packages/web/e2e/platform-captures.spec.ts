@@ -477,7 +477,9 @@ function clientProposal(accepted: { by: string; at: string } | null): Record<str
     facts: { ...CRAWFORD_FACTS },
     accepted,
     clientMessage: CRAWFORD_SENT_MESSAGE,
-    capacityNote: "Grand Hall: the venue's published dinner capacity is 180.",
+    // The note the composer's capacity guidance writes for her layout
+    // (buildProposalCapacityNote with the planner's figures, step 3).
+    capacityNote: "Grand Hall: comfortable for around 147 guests as seated dinner on round tables — for 160 guests: Tight — below comfortable spacing, review circulation. Planning estimate only; human review required; final capacity confirmed by the venue team.",
     layoutSnapshot: LAYOUT_SNAPSHOT,
     comments: [{ kind: "request_changes", authorName: "Elaine Crawford", body: CRAWFORD_CHANGE_REQUEST, createdAt: "2026-10-05T15:00:00.000Z", from: "client" }],
     quote: {
@@ -624,7 +626,8 @@ test.describe("/platform captures", () => {
   });
 
   test("the Diary week of the wedding", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+    // Tall enough that a full 4:5 frame fits below the toolbar.
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await openDiaryWeek(page);
     await page.waitForFunction(() => Array.from(document.images).every((image) => image.complete));
     await capture(page, "diary");
@@ -641,6 +644,15 @@ test.describe("/platform captures", () => {
     // As on venviewer.com: the room captures stay out of a production build,
     // so the planner draws its scale model and reports no capture failure.
     await expect(page.getByTestId("room-resolve-caption")).toHaveAttribute("data-visible", "false");
+    // The planner's own section control, lowered just below the ceiling: the
+    // hanging chandeliers go with the ceiling, so from above the top table and
+    // the rounds read whole.
+    const more = page.getByRole("button", { name: "More planner tools" });
+    await more.click();
+    await page.getByText("Model section height", { exact: true }).click();
+    await page.getByRole("slider", { name: "Section plane height" }).fill("86");
+    await more.click();
+    await expect(page.locator("#reference-extra-tools")).toBeHidden();
     await page.waitForTimeout(1500);
     await capture(page, "planner");
     expect(planner.saved()).toHaveLength(CRAWFORD_LAYOUT.length);

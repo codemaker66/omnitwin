@@ -8,11 +8,39 @@
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const began = performance.now();
 
-  // The hero: the hall stays dark for a moment, its lights come up from the
-  // chandeliers, and the layout is drawn onto the floor. A scene switch
-  // redraws the other layout; both captions keep one place.
+  // The hero: the hall stays dark for a moment, its lamps come up and then the
+  // room, and the layout is drawn onto the floor. A scene switch redraws the
+  // other layout; both captions keep one place.
   const hall = document.querySelector(".hall");
   if (hall !== null) {
+    // Where the words and buttons end in the photograph's frame, measured by
+    // the lines of text themselves (their boxes run the full measure), so the
+    // drawing under them is a ghost on every screen and clear beyond them.
+    const frame = hall.querySelector(".hall__frame");
+    const copy = hall.querySelector(".hall__copy");
+    const measure = () => {
+      if (frame === null || copy === null) return;
+      const box = frame.getBoundingClientRect();
+      if (box.width === 0) return;
+      let right = 0;
+      let bottom = 0;
+      const walk = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+      for (let text = walk.nextNode(); text !== null; text = walk.nextNode()) {
+        const lines = document.createRange();
+        lines.selectNodeContents(text);
+        for (const line of lines.getClientRects()) { right = Math.max(right, line.right); bottom = Math.max(bottom, line.bottom); }
+      }
+      for (const button of copy.querySelectorAll(".button")) {
+        const edge = button.getBoundingClientRect();
+        right = Math.max(right, edge.right);
+        bottom = Math.max(bottom, edge.bottom);
+      }
+      hall.style.setProperty("--copy-r", `${((100 * (right + 24 - box.left)) / box.width).toFixed(1)}%`);
+      hall.style.setProperty("--copy-b", `${((100 * (bottom + 20 - box.top)) / box.height).toFixed(1)}%`);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    document.fonts?.ready.then(measure);
     const show = (scene, start) => {
       const groups = hall.querySelectorAll(".hall-ink .ink");
       groups.forEach((group) => group.classList.remove("is-on"));
@@ -42,6 +70,8 @@
     else {
       photo.addEventListener("load", light, { once: true });
       photo.addEventListener("error", light, { once: true });
+      // A photograph that stalls never keeps the hall dark.
+      window.setTimeout(light, 2500);
     }
 
     const radios = [...hall.querySelectorAll('.scenes [role="radio"]')];
@@ -127,8 +157,8 @@
     wide.addEventListener("change", inline);
   }
 
-  // The last step: its plan is drawn onto the floor as it comes into view,
-  // and stands drawn at once under reduced motion.
+  // The last step: its plan is drawn onto the floor once its far rows are
+  // well in view, and stands drawn at once under reduced motion.
   const finale = document.querySelector(".finale");
   const plan = finale?.querySelector(".hall-ink .ink");
   if (finale !== null && plan !== null && plan !== undefined) {
@@ -143,8 +173,8 @@
         if (!entries.some((entry) => entry.isIntersecting)) return;
         watch.disconnect();
         draw();
-      }, { threshold: 0.35 });
-      watch.observe(finale.querySelector(".finale__view") ?? finale);
+      }, { rootMargin: "0px 0px -20% 0px" });
+      watch.observe(finale.querySelector(".finale__far") ?? finale);
     }
   }
 

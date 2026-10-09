@@ -1,7 +1,7 @@
 # `/platform` — the page an Anthropic reviewer reads
 
 8 October 2026 · T-646 · approved by Blake the same day; revised after the
-first review round (8 October) and the second (9 October)
+first review round (8 October), the second and the third (9 October)
 
 ## Purpose
 
@@ -19,25 +19,30 @@ decision.
 
 1. **The room.** A real photograph of the Grand Hall from Venviewer's own
    capture (scan 44 of the tour's 149 panoramas) is held dark for a moment;
-   the veil opens first round its three chandeliers, then lifts, and a sample
+   its own lamps come up first (the photograph's highlights alone, screened
+   over the dark), then the whole exposure rises under them, and a sample
    wedding breakfast for 160 is drawn onto the floor in the camera's exact
-   perspective. A switch in the band beneath the photograph redraws the same
-   160 as their ceremony. The lede names the job and its consequence (seats
-   and spacing checked before a chair is moved; the layout a client approves
-   is the one the hallkeepers set); Claude is "in testing".
+   perspective, a ghost wherever the words and buttons sit (measured from the
+   text's own lines on every screen). A switch in the band beneath the
+   photograph redraws the same 160 as their ceremony. The lede is the promise
+   (the layout a client approves is the one the hallkeepers set); the band
+   says Claude, in testing, drafts each proposal's message.
 2. **One wedding, from first enquiry to the morning of the day.** Elaine
    Crawford, 160 guests, the Grand Hall, Saturday 5 June 2027, with Catherine
    Tait as coordinator. Each step is captured on its own day of the sample
    timeline and names it: the enquiry in her own words (Monday 21 September
-   2026), the first-option hold with a second couple behind (24 September),
-   her layout in the planner, tight against a comfortable capacity of 147
-   (28 September), version 2 after her request for less per head with
-   Claude's first draft from her words (8 October), her page with her
-   acceptance (12 October), and the hallkeeper's sheet on a phone (5 June
-   2027). Step 7, "Where Elaine will sit", closes the story full width: the
-   same plan drawn into a second photograph from the top table.
-3. **The first venue.** The Grand Hall's dome full width (scan 39), the
-   building's eight rooms, links to the tour, the planner and the venue's site.
+   2026), the first-option hold Catherine places with a second couple behind
+   (24 September), her layout in the planner, tight against a comfortable
+   capacity of 147 (28 September), Claude's first draft of the reply to her
+   request for less per head, from version 2's quote and the diary's hold
+   (8 October), her page with its capacity note and her acceptance, beside
+   the message as sent, Claude's draft with the coordinator's edits marked
+   (12 October), and the hallkeeper's sheet on a phone (5 June 2027). Step 7,
+   "Where Elaine will sit", closes the story full width: the same plan drawn
+   into a second photograph from the top table.
+3. **The first venue.** The building's eight rooms between the two full-width
+   photographs, the top table above and the Grand Hall's dome below (scan 39),
+   with links to the tour, the planner and the venue's site.
 4. **Claude drafts the message. A person sends it.** Five held-out cases, each
    its first run, unedited, with its time, cost and how many of its five runs
    passed every check; how it was measured (development and held-out sets,
@@ -65,10 +70,17 @@ decision.
   (the diary's decisions due within seven days; what a draft drew on). Room
   pictures inside the product are the venue's supplied images and are
   described as such.
-- The step-4 draft is Claude's first draft through the product's own path from
-  exactly the context the proposals route sends for that proposal, kept
-  verbatim in `e2e/support/platform-sample.ts`; the message on her page is
-  that draft as the coordinator edited it, and is shown as hers.
+- The step-4 draft is Claude's first draft through the product's own path
+  (the sample proposal seeded in a throwaway database, the route's context
+  builder with the composer's version-2 quote and the diary's hold, the
+  Anthropic adapter), kept verbatim in `e2e/support/platform-sample.ts`, its
+  request and answer published as `evaluation/data/crawford-draft.json`. The
+  message on her page is that draft as the coordinator might edit it: our
+  sample edit, shown in step 5 word by word against Claude's draft
+  (`scripts/platform-edit.mjs`), never as Claude's. The guard test reads both
+  texts back from the marked block.
+- Captures come from the production build with its clock set to each step's
+  day and its API answered by test fixtures, and the page says so.
 - The hero and last-step photographs are from Venviewer's capture; the earlier
   hero (`images/venue/grand-hall-dark.jpg`, an edited image) is no longer used.
   The hero is shown as photographed, shaded only behind the words, and its
@@ -93,10 +105,12 @@ the wainscot bases and the walls' distances read from the photograph agree
 with the mesh to within 15 cm. Floor circles map to exact conics. The desktop
 frame's horizon sits at 55% of its height, so the vault is clear above the
 words and the floor below them; the plan's strength rises with distance (a
-sixth at the frame's foot, full from 8 m) so the far rows carry the gold. The
-script finds each hero frame's chandeliers (clusters of clipped-white pixels in
-the ceiling region) and writes their positions into the page, where the dark
-veil opens round them first. The breakfast layout is
+sixth at the frame's foot, full from 8 m) so the far rows carry the gold. For
+each hero frame the script also writes the lamps alone (each pixel kept in
+proportion to how near it is to clipping, luminance 238 to 254, with a soft
+halo): the chandeliers' bulbs, the dome's lamps, the picture lights and the
+cornice strip, which the page screens over the dark hall before the exposure
+comes up. The breakfast layout is
 `e2e/support/crawford-layout.json` in the planner's frame (fifteen 6 ft rounds,
 3.55 by 3.35 m between centres, and a top table of three trestles), turned a
 half-turn into the tour's so the fireplace ends agree; the same file is the
@@ -130,13 +144,22 @@ room captures stay out of the planner, as on venviewer.com), served by the
 ```
 $env:VITE_ENABLE_E2E_AUTH_BYPASS="true"; pnpm exec vite build --mode capture --outDir dist-capture
 pnpm exec vite preview --mode capture --outDir dist-capture --host 127.0.0.1 --port 4177 --strictPort
-$env:CAPTURE_PLATFORM_DIR="D:/claude/claude-startups/captures-r3"; $env:E2E_START_SERVER="false"; $env:E2E_BASE_URL="http://127.0.0.1:4177"
+$env:CAPTURE_PLATFORM_DIR="D:/claude/claude-startups/captures-r4"; $env:E2E_START_SERVER="false"; $env:E2E_BASE_URL="http://127.0.0.1:4177"
 pnpm exec playwright test platform-captures proposals-desk -g "platform captures"
 node scripts/platform-hall.mjs D:/claude/claude-startups/captures
 node scripts/platform-pace.mjs
-node scripts/platform-images.mjs D:/claude/claude-startups/captures D:/claude/claude-startups/captures-r3
+node scripts/platform-edit.mjs
+node scripts/platform-images.mjs D:/claude/claude-startups/captures D:/claude/claude-startups/captures-r4
 node scripts/platform-evaluation.mjs D:/claude/claude-startups
 ```
+
+Every crop sits wholly inside the sheet or panel it shows and is at least as
+wide as the largest width the page asks of it (1120 for the 4:5 frames, 780
+for the phone details), set on the desk's own colour where narrower; the diary
+is captured 1000 px tall so its frame fits below the toolbar. The planner is
+captured with its own section control lowered below the ceiling, so the
+hanging chandeliers go with the ceiling; its enlargement stops at the
+planner's toolbars.
 
 `dist-capture/` is a local build output; delete it afterwards. The evaluation
 runs themselves come from `packages/api/src/scripts/eval-proposal-drafts.ts`
@@ -172,3 +195,20 @@ each; what it could not do (a person's blind grade of the drafts, a line on
 the founder's background and on how the venue's team works today) needs the
 founder and is stated as not done. Sending only the client's first name was
 considered and declined: contact names hold titles and organisations.
+
+Round 3 (9 October): scores 7 to 9, mostly 8. All eight found a hard seam
+across the hero floor (the copy's backing gradient was cut off by its own box)
+and asked to see the message as sent beside Claude's draft; most asked that
+"Why Opus" read all three models' flags alike, and five asked for a person's
+blind grade. Two showed that the step-4 draft exposed a design limit (no price
+and no hold sent, so it asked for a figure already set and called a held date
+unconfirmed). The fourth revision gives Claude the quote and the diary's holds
+(instructions unchanged; a held-out set on prices and holds; a figure check
+returned to the composer), regenerates the draft, marks the coordinator's
+edits in step 5, reads the models alike (Opus 58 of 59 needing no correction
+of fact, Sonnet 55 of 60, Haiku 53 of 60), corrects the medians, adds the
+answered-the-client column, lights the hero lamps-first, keeps the plan off
+the buttons on every screen, fixes the phone chart, kicker, room names and
+crops, and moves the venue's words between the two photographs. A blind
+grading page for the founder is published privately; his grade, a line on his
+work before 2026 and one on how the venue's team works today wait on him.

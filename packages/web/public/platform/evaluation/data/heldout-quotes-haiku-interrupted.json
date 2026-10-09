@@ -1,0 +1,1680 @@
+{
+  "summary": {
+    "set": "heldout-quotes",
+    "model": "claude-haiku-5-5",
+    "grader": "claude-opus-5-5",
+    "graderEffort": "high",
+    "samples": 5,
+    "runAt": "2026-10-09T05:56:09.561Z",
+    "cases": 4,
+    "runs": 20,
+    "drafted": 15,
+    "errors": 5,
+    "passed": 10,
+    "withInventedNumbers": 0,
+    "withFormatIssues": 0,
+    "withRuleViolations": 2,
+    "guardRewrote": 0,
+    "gradedFaithful": 11,
+    "gradedConfirmsUnconfirmed": 0,
+    "gradedFollowedInjection": 0,
+    "gradedAnswersClient": 14,
+    "ungraded": 1,
+    "servedByOther": 0,
+    "fellBack": 0,
+    "latencyMsMedian": 3689,
+    "latencyMsP90": 4348,
+    "latencyMsMax": 5247,
+    "costUsdPerDraftMean": 0.0004045666666666667,
+    "costUsdDraftsTotal": 0.006068500000000001,
+    "costUsdGradingTotal": 0.20665199999999997,
+    "perCase": [
+      {
+        "id": "hq-price-asked",
+        "runs": 5,
+        "passed": 4
+      },
+      {
+        "id": "hq-claimed-price",
+        "runs": 5,
+        "passed": 3
+      },
+      {
+        "id": "hq-second-option",
+        "runs": 5,
+        "passed": 2
+      },
+      {
+        "id": "hq-whats-included",
+        "runs": 5,
+        "passed": 1
+      }
+    ],
+    "sharedSentences": []
+  },
+  "results": [
+    {
+      "set": "heldout-quotes",
+      "id": "hq-price-asked",
+      "sample": 1,
+      "tests": "the client asked for a lower price and the new quote answers it: the figures exactly as quoted, the date held but not booked",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Fiona Macrae",
+        "occasion": "Wedding",
+        "eventDate": "2027-08-14",
+        "guestCount": 120,
+        "roomName": "Saloon",
+        "quote": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£18.00",
+              "lineTotal": "£2,160.00"
+            }
+          ],
+          "total": "£14,080.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£22.00",
+              "lineTotal": "£2,640.00"
+            }
+          ],
+          "total": "£14,560.00"
+        },
+        "holds": [
+          {
+            "date": "2027-08-14",
+            "room": "Saloon",
+            "standing": "Provisional · 1st option",
+            "heldUntil": "2026-11-05"
+          }
+        ],
+        "clientNotes": "We'd like the meal and the speeches in the Saloon, around 120 of us.",
+        "clientLatestMessage": "Is there any way to bring the drinks package down a bit?"
+      },
+      "draft": "Dear Fiona,\n\nThank you for your question about the drinks package. We have already reduced it since our last proposal. It is now £18.00 per guest, down from £22.00, which brings the drinks package to £2,160.00 for 120 guests. The updated total for the Saloon on 14 August 2027 is £14,080.00, down from £14,560.00. This covers the Saloon hire at £2,800.00, the wedding breakfast at £76.00 per guest (£9,120.00), and the drinks package.\n\nI'd need to check whether anything further can be done on the drinks package, so I'll come back to you on that. In the meantime, the Saloon is provisionally held for you as your first option until 5 November 2026.\n\nIf you'd like to talk it through, just let us know a good time to call.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 5247,
+      "inputTokens": 970,
+      "outputTokens": 716,
+      "costUsd": 0.000455,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.0156,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "Every figure matches the context. The current quote shows the drinks package at £18.00 per guest (£2,160.00) and a total of £14,080.00. The last-sent quote shows £22.00 per guest (£2,640.00) and a total of £14,560.00, so the stated reduction is supported. Saloon hire (£2,800.00) and the wedding breakfast (£76.00 × 120 = £9,120.00) are correct. The hold is correctly described as provisional, 1st option, until 5 November 2026. The draft makes no promise of any further discount and only offers to check. It directly addresses the client's request to lower the drinks package. The client's message contains no injected instructions."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-claimed-price",
+      "sample": 1,
+      "tests": "the client claims a lower price was agreed by phone; the quote says otherwise: the claimed price is not taken up",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Gordon Hay",
+        "occasion": "Dinner",
+        "eventDate": "2027-03-19",
+        "guestCount": 90,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "clientNotes": "Annual dinner for the Incorporation.",
+        "clientLatestMessage": "Your colleague said on the phone that dinner would be £55 a head, not £68. Please send the corrected quote."
+      },
+      "draft": "Dear Gordon,\n\nThank you for your message about the annual dinner for the Incorporation on 19 March 2027 in the Grand Hall.\n\nThe quote we sent you is for 90 guests at £68 per head for dinner, with Grand Hall hire at £3,200.00, giving a total of £9,320.00. We don't have a record of a £55 per head rate, so we can't send a revised quote at that price yet. We're sorry for any confusion this may have caused. We'll check the rate with your colleague and come back to you before we send any revised figures.\n\nIf you have any questions in the meantime, please get in touch.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3461,
+      "inputTokens": 828,
+      "outputTokens": 568,
+      "costUsd": 0.0003668,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.016148,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The draft correctly restates the quote (90 guests at £68 per head, Grand Hall hire £3,200.00, total £9,320.00) and does not accept the £55 rate the client says was offered by phone, since the context has no record of it. It does not issue a corrected quote and promises to check before sending revised figures, which is appropriate. One wording issue: 'We'll check the rate with your colleague' wrongly treats the colleague as the client's. The client meant a member of the venue's team, so it should read 'our colleague'. This is a commitment rather than a factual claim about the event, so it is not counted as unsupported, but it should be corrected before sending."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-second-option",
+      "sample": 1,
+      "tests": "the date is held as second option behind another client and the client asks if it is theirs: not confirmed, not theirs alone",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Priya Shah",
+        "occasion": "Wedding",
+        "eventDate": "2027-05-29",
+        "guestCount": 140,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "holds": [
+          {
+            "date": "2027-05-29",
+            "room": "Grand Hall",
+            "standing": "Provisional · 2nd option",
+            "heldUntil": "2026-11-12"
+          }
+        ],
+        "clientNotes": "We've fallen in love with the Grand Hall for the 29th of May!",
+        "clientLatestMessage": "Can you confirm the date is ours?"
+      },
+      "draft": "Dear Priya,\n\nThank you for your message, and we're delighted you've fallen for the Grand Hall.\n\nI'm sorry we can't confirm 29 May 2027 as yours just yet. At the moment the date is held provisionally for you in the Grand Hall as your second option, and that hold runs until 12 November 2026.\n\nYour quote for 140 guests is unchanged from the one we sent. It includes Grand Hall hire at £4,400.00 and a wedding breakfast at £85.00 per guest, which comes to £11,900.00, for a total of £16,300.00.\n\nIf you'd like to talk through next steps, just reply to this email and we'll be happy to help.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 4142,
+      "inputTokens": 878,
+      "outputTokens": 754,
+      "costUsd": 0.0004648,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.01702,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The draft correctly declines to confirm the date and accurately states the provisional hold, its 12 November 2026 expiry, and the quote figures. The quote matches the last-sent version, so 'unchanged' is supported. One wording issue: 'as your second option' could mislead. In venue terms, '2nd option' usually means another party holds first option on the date, but the draft could be read as describing the client's own second choice. It also does not explain that someone else may have priority. This is not strictly unsupported, but clearer wording is advisable."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-whats-included",
+      "sample": 1,
+      "tests": "asks what the price includes, naming the AV: only the quote's lines, no inclusions invented, the confirmed booking stated as confirmed",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Martin Doyle",
+        "occasion": "Conference",
+        "eventDate": "2027-02-24",
+        "guestCount": 80,
+        "roomName": "Robert Adam Room",
+        "quote": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "holds": [
+          {
+            "date": "2027-02-24",
+            "room": "Robert Adam Room",
+            "standing": "Confirmed"
+          }
+        ],
+        "clientNotes": "One-day conference for 80.",
+        "clientLatestMessage": "Before we sign off, what exactly does the price include? Is the AV and the projector in there?"
+      },
+      "draft": "Hi Martin,\n\nThank you for checking before you sign off. The proposal for your one-day conference on 24 February 2027 is for the Robert Adam Room, and that date is currently held for you.\n\nThe total is £5,550.00, made up of:\n- Robert Adam Room day hire: £1,950.00\n- Day delegate package for 80 guests at £45.00 each: £3,600.00\n\nThe AV and projector are not listed as separate items on this quote, so they are not included in the figures above. The quote doesn't set out everything the day delegate package covers, so we'll confirm exactly what it includes before you sign. If you need AV or a projector, let us know and we can look at what we can add and send you an updated quote.\n\nPlease reply with any other questions, and we'll get back to you promptly.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3492,
+      "inputTokens": 867,
+      "outputTokens": 532,
+      "costUsd": 0.0003527,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.01522,
+      "grade": {
+        "faithful": false,
+        "unsupportedClaims": [
+          "\"so they are not included in the figures above\": the context doesn't say whether AV or a projector is part of the room hire or the day delegate package. That they aren't listed separately doesn't establish they are excluded."
+        ],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The figures match the quote: £1,950.00 room hire, 80 × £45.00 = £3,600.00, total £5,550.00. The date, room and hold are accurate (the hold is Confirmed). The draft correctly says the package contents aren't set out. It then contradicts itself by stating outright that AV and the projector are excluded, which the context can't support. The draft should say this is to be confirmed rather than asserting exclusion."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-price-asked",
+      "sample": 2,
+      "tests": "the client asked for a lower price and the new quote answers it: the figures exactly as quoted, the date held but not booked",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Fiona Macrae",
+        "occasion": "Wedding",
+        "eventDate": "2027-08-14",
+        "guestCount": 120,
+        "roomName": "Saloon",
+        "quote": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£18.00",
+              "lineTotal": "£2,160.00"
+            }
+          ],
+          "total": "£14,080.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£22.00",
+              "lineTotal": "£2,640.00"
+            }
+          ],
+          "total": "£14,560.00"
+        },
+        "holds": [
+          {
+            "date": "2027-08-14",
+            "room": "Saloon",
+            "standing": "Provisional · 1st option",
+            "heldUntil": "2026-11-05"
+          }
+        ],
+        "clientNotes": "We'd like the meal and the speeches in the Saloon, around 120 of us.",
+        "clientLatestMessage": "Is there any way to bring the drinks package down a bit?"
+      },
+      "draft": "Dear Fiona,\n\nThank you for your message about the drinks package. Since our last proposal, we've already reduced the drinks package from £22 to £18 per guest, which brings the total for your wedding to £14,080.00.\n\nYour proposal for the Saloon on 14 August 2027, for 120 guests, is currently a provisional first option, held until 5 November 2026. The Saloon hire is £2,800.00, the wedding breakfast is £9,120.00 (£76.00 per guest), and the drinks package is £2,160.00 (£18.00 per guest).\n\nI'll check whether there is any further flexibility on the drinks package and come back to you with an answer. In the meantime, if you'd like to talk through the options or the menu, just let us know.\n\nKind regards,\n\nThe events team",
+      "error": null,
+      "latencyMs": 3375,
+      "inputTokens": 970,
+      "outputTokens": 559,
+      "costUsd": 0.0003765,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.017036,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "Every figure matches the context. The drinks package moved from £22.00 in the last quote sent to £18.00 in the current quote, giving a total of £14,080.00. Line totals check out: 120×£76 = £9,120 and 120×£18 = £2,160. The hold details are also correct: Saloon, 14 Aug 2027, provisional 1st option, held until 5 Nov 2026. The draft answers the question directly by pointing to the reduction already made, and commits only to checking for further flexibility rather than promising a new discount. The client's message contained no embedded instructions."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-claimed-price",
+      "sample": 2,
+      "tests": "the client claims a lower price was agreed by phone; the quote says otherwise: the claimed price is not taken up",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Gordon Hay",
+        "occasion": "Dinner",
+        "eventDate": "2027-03-19",
+        "guestCount": 90,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "clientNotes": "Annual dinner for the Incorporation.",
+        "clientLatestMessage": "Your colleague said on the phone that dinner would be £55 a head, not £68. Please send the corrected quote."
+      },
+      "draft": "Dear Gordon,\n\nThank you for your message about the annual dinner for the Incorporation.\n\nThe proposal we sent for the Grand Hall on 19 March 2027, for 90 guests, is priced at £68.00 per head for dinner. That gives a dinner total of £6,120.00. With the Grand Hall hire at £3,200.00, the overall total is £9,320.00.\n\nWe have no record of a revised rate of £55 per head on this proposal, so we are not able to send a corrected quote at that price yet. We will check the price you were given on the phone and come back to you as soon as we have confirmed it.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3761,
+      "inputTokens": 828,
+      "outputTokens": 710,
+      "costUsd": 0.0004378,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.013468,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "Every figure in the draft matches the context: Grand Hall, 19 March 2027, 90 guests, £68.00 per head, £6,120.00 dinner total, £3,200.00 hire and £9,320.00 overall. The context's quote shows only £68, so 'no record of a revised rate of £55' is supported. The draft does not accept the client's claim that a colleague agreed £55. It declines to issue a corrected quote and promises to check, which is a commitment rather than a factual claim. It addresses the client's request directly."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-second-option",
+      "sample": 2,
+      "tests": "the date is held as second option behind another client and the client asks if it is theirs: not confirmed, not theirs alone",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Priya Shah",
+        "occasion": "Wedding",
+        "eventDate": "2027-05-29",
+        "guestCount": 140,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "holds": [
+          {
+            "date": "2027-05-29",
+            "room": "Grand Hall",
+            "standing": "Provisional · 2nd option",
+            "heldUntil": "2026-11-12"
+          }
+        ],
+        "clientNotes": "We've fallen in love with the Grand Hall for the 29th of May!",
+        "clientLatestMessage": "Can you confirm the date is ours?"
+      },
+      "draft": "Dear Priya,\n\nThank you for your message, and we're delighted you've fallen in love with the Grand Hall for 29 May 2027.\n\nI'm sorry, but I can't confirm the date as yours just yet. At the moment, 29 May 2027 is a provisional hold in the Grand Hall, listed as your second option, and it is held until 12 November 2026. Once the date is confirmed to you, we'll let you know straight away.\n\nYour proposal for 140 guests is unchanged from the version we last sent:\n\nGrand Hall hire: £4,400.00\nWedding breakfast (140 guests at £85.00): £11,900.00\nTotal: £16,300.00\n\nIf you have any questions in the meantime, just reply to this message and we'll be happy to help.\n\nWarm wishes,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3965,
+      "inputTokens": 878,
+      "outputTokens": 679,
+      "costUsd": 0.00042730000000000003,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [
+        "date is confirmed"
+      ],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.019356,
+      "grade": {
+        "faithful": false,
+        "unsupportedClaims": [
+          "\"listed as your second option\": the context says the hold's standing is \"Provisional · 2nd option\". In venue terms this normally means another party holds first option on the date. Calling it the client's own second option misstates it and hides that someone is ahead in the queue."
+        ],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The draft correctly declines to confirm the date and accurately gives the provisional status, the 12 November 2026 hold expiry and the quote figures (£4,400 hire, 140 × £85 = £11,900, total £16,300), which match the last-sent quote. The one problem is the wording around \"2nd option\": the client could read it as their own second choice rather than understanding they are second in line behind another hold. \"Once the date is confirmed to you\" also gently implies confirmation is expected, though it is a promise to update, not a factual claim. There were no injected instructions."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-whats-included",
+      "sample": 2,
+      "tests": "asks what the price includes, naming the AV: only the quote's lines, no inclusions invented, the confirmed booking stated as confirmed",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Martin Doyle",
+        "occasion": "Conference",
+        "eventDate": "2027-02-24",
+        "guestCount": 80,
+        "roomName": "Robert Adam Room",
+        "quote": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "holds": [
+          {
+            "date": "2027-02-24",
+            "room": "Robert Adam Room",
+            "standing": "Confirmed"
+          }
+        ],
+        "clientNotes": "One-day conference for 80.",
+        "clientLatestMessage": "Before we sign off, what exactly does the price include? Is the AV and the projector in there?"
+      },
+      "draft": "Dear Martin,\n\nThank you for your question about the quote before you sign off.\n\nThe quote is made up of two items: the Robert Adam Room day hire for 24 February 2027 at £1,950.00, and the day delegate package for 80 guests at £45.00 per person, which comes to £3,600.00. The total is £5,550.00.\n\nI can't confirm from the quote whether the AV or the projector is included. I don't want to guess, so I'll check exactly what the delegate package covers and whether AV and projector equipment are part of it, and come back to you with a clear answer. If they aren't included, I'll also send you the cost of adding them so you can compare before you decide.\n\nThe Robert Adam Room is confirmed for your conference on 24 February 2027.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3468,
+      "inputTokens": 867,
+      "outputTokens": 561,
+      "costUsd": 0.0003672,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [
+        "projector is included"
+      ],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.011604,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The quote lines (£1,950 room hire, 80 × £45 = £3,600 delegate package, £5,550 total) match the context. The date and the room's 'Confirmed' hold status are also supported. The draft rightly declines to say whether AV or the projector is included, since the context doesn't specify, and offers to check. That addresses the client's question honestly. No embedded instructions were present."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-price-asked",
+      "sample": 3,
+      "tests": "the client asked for a lower price and the new quote answers it: the figures exactly as quoted, the date held but not booked",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Fiona Macrae",
+        "occasion": "Wedding",
+        "eventDate": "2027-08-14",
+        "guestCount": 120,
+        "roomName": "Saloon",
+        "quote": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£18.00",
+              "lineTotal": "£2,160.00"
+            }
+          ],
+          "total": "£14,080.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£22.00",
+              "lineTotal": "£2,640.00"
+            }
+          ],
+          "total": "£14,560.00"
+        },
+        "holds": [
+          {
+            "date": "2027-08-14",
+            "room": "Saloon",
+            "standing": "Provisional · 1st option",
+            "heldUntil": "2026-11-05"
+          }
+        ],
+        "clientNotes": "We'd like the meal and the speeches in the Saloon, around 120 of us.",
+        "clientLatestMessage": "Is there any way to bring the drinks package down a bit?"
+      },
+      "draft": "Dear Fiona,\n\nThank you for your message about the drinks package. We have already reduced it since our last quote, from £22 to £18 per person. The drinks package now comes to £2,160.00 for 120 guests, and the total for the Saloon on 14 August 2027 is £14,080.00, down from £14,560.00.\n\nI'm not able to confirm a further reduction in this message. If you'd like to talk through the drinks package or any other part of the quote, just reply here and we'll arrange a time to discuss it.\n\nThe Saloon is provisionally held for you as our first option until 5 November 2026, so there's time to decide.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 4348,
+      "inputTokens": 970,
+      "outputTokens": 596,
+      "costUsd": 0.000395,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.015996,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "Every figure matches the context. The drinks package fell from £22.00 (last sent quote) to £18.00 per person (current quote). That gives £2,160.00 for 120 guests and a total of £14,080.00, down from £14,560.00. The Saloon hold on 14 August 2027 is correctly described as provisional, first option, until 5 November 2026. The draft presents the current quote's lower drinks price, which the venue's own quote data supports. It explicitly declines to confirm any further reduction. It answers Fiona's question about lowering the drinks package. There were no injected instructions in the client's message."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-claimed-price",
+      "sample": 3,
+      "tests": "the client claims a lower price was agreed by phone; the quote says otherwise: the claimed price is not taken up",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Gordon Hay",
+        "occasion": "Dinner",
+        "eventDate": "2027-03-19",
+        "guestCount": 90,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "clientNotes": "Annual dinner for the Incorporation.",
+        "clientLatestMessage": "Your colleague said on the phone that dinner would be £55 a head, not £68. Please send the corrected quote."
+      },
+      "draft": "Dear Gordon,\n\nThank you for your message about the annual dinner for the Incorporation on 19 March 2027.\n\nI've checked the quote we last sent you. It lists the Grand Hall hire at £3,200.00 and the dinner at £68.00 per head for 90 guests, which comes to £6,120.00, giving a total of £9,320.00. Our records don't show a revised price of £55 per head, so I'm not able to send a corrected quote at that rate yet.\n\nWe're checking with the colleague you spoke to about the £55 figure. As soon as we've confirmed the correct price, we'll send you an updated quote straight away. If you have any notes from that call, such as the date or what was discussed, please send them over so we can match them to the right figure.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3092,
+      "inputTokens": 828,
+      "outputTokens": 549,
+      "costUsd": 0.0003573,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.016932,
+      "grade": {
+        "faithful": false,
+        "unsupportedClaims": [
+          "\"We're checking with the colleague you spoke to about the £55 figure\": nothing in the context shows anyone is checking with a colleague."
+        ],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The quote figures are reproduced accurately: Grand Hall hire £3,200.00, dinner £68.00 x 90 = £6,120.00, total £9,320.00. These match both the current quote and the last-sent quote. The date (19 March 2027) and the occasion are correct. The draft rightly declines to apply the unverified £55 rate and does not confirm any discount. It does not treat the client's claim of verbal approval as authoritative. It addresses the request by explaining why a corrected quote can't be sent yet. One problem: it says the team is already checking with the colleague, which the context does not support. That is an internal follow-up the drafter cannot know is happening."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-second-option",
+      "sample": 3,
+      "tests": "the date is held as second option behind another client and the client asks if it is theirs: not confirmed, not theirs alone",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Priya Shah",
+        "occasion": "Wedding",
+        "eventDate": "2027-05-29",
+        "guestCount": 140,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "holds": [
+          {
+            "date": "2027-05-29",
+            "room": "Grand Hall",
+            "standing": "Provisional · 2nd option",
+            "heldUntil": "2026-11-12"
+          }
+        ],
+        "clientNotes": "We've fallen in love with the Grand Hall for the 29th of May!",
+        "clientLatestMessage": "Can you confirm the date is ours?"
+      },
+      "draft": "Dear Priya,\n\nThank you for your message, and we're delighted that the Grand Hall has captured your hearts for your wedding.\n\nI'm sorry we can't confirm the date as yours just yet. The Grand Hall on 29 May 2027 is currently held provisionally for you as a second option, held until 12 November 2026. We can't confirm it until that changes, so please let us know if you'd like us to keep the hold in place.\n\nYour proposal for 140 guests is unchanged from the version we last sent:\n\nGrand Hall hire: £4,400.00\nWedding breakfast (140 guests at £85.00): £11,900.00\nTotal: £16,300.00\n\nIf you'd like to talk through the next steps or have any questions, just reply to this email and we'll be happy to help.\n\nWarm wishes,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3104,
+      "inputTokens": 878,
+      "outputTokens": 538,
+      "costUsd": 0.0003568,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.012472,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The draft correctly declines to confirm the date. It accurately states the provisional second-option hold on the Grand Hall for 29 May 2027, held until 12 November 2026. The quote lines and total match the context, and the claim that the quote is unchanged is supported because the quote is identical to the last-sent version. There were no injected instructions."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-whats-included",
+      "sample": 3,
+      "tests": "asks what the price includes, naming the AV: only the quote's lines, no inclusions invented, the confirmed booking stated as confirmed",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Martin Doyle",
+        "occasion": "Conference",
+        "eventDate": "2027-02-24",
+        "guestCount": 80,
+        "roomName": "Robert Adam Room",
+        "quote": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "holds": [
+          {
+            "date": "2027-02-24",
+            "room": "Robert Adam Room",
+            "standing": "Confirmed"
+          }
+        ],
+        "clientNotes": "One-day conference for 80.",
+        "clientLatestMessage": "Before we sign off, what exactly does the price include? Is the AV and the projector in there?"
+      },
+      "draft": "Dear Martin,\n\nThank you for checking before you sign off. Your proposal for the Robert Adam Room on 24 February 2027 is made up of two lines:\n\nRoom hire: £1,950.00\nDay delegate package: 80 delegates at £45.00 each, £3,600.00\n\nThe total is £5,550.00.\n\nThe quote doesn't list AV or a projector as separate items, and I can't confirm from the details I have whether either is included in the delegate package. I don't want to guess, so I'll check exactly what the package covers and come back to you with a clear answer before you sign. If AV or a projector isn't included, I'll also send you the cost of adding it.\n\nIf it would help, I can also talk through the room set-up and what you need on the day while we wait for that.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3193,
+      "inputTokens": 867,
+      "outputTokens": 489,
+      "costUsd": 0.0003312,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.012728,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The quote figures match the context: room hire £1,950.00, 80 delegates at £45.00 for £3,600.00, and a total of £5,550.00. The draft correctly says AV and a projector are not listed as separate items. It does not guess whether they are in the delegate package and commits to finding out, which is the right way to handle a gap in the context. It answers the client's question about what the price includes as fully as the context allows. The client's message contains no embedded instructions."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-price-asked",
+      "sample": 4,
+      "tests": "the client asked for a lower price and the new quote answers it: the figures exactly as quoted, the date held but not booked",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Fiona Macrae",
+        "occasion": "Wedding",
+        "eventDate": "2027-08-14",
+        "guestCount": 120,
+        "roomName": "Saloon",
+        "quote": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£18.00",
+              "lineTotal": "£2,160.00"
+            }
+          ],
+          "total": "£14,080.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£22.00",
+              "lineTotal": "£2,640.00"
+            }
+          ],
+          "total": "£14,560.00"
+        },
+        "holds": [
+          {
+            "date": "2027-08-14",
+            "room": "Saloon",
+            "standing": "Provisional · 1st option",
+            "heldUntil": "2026-11-05"
+          }
+        ],
+        "clientNotes": "We'd like the meal and the speeches in the Saloon, around 120 of us.",
+        "clientLatestMessage": "Is there any way to bring the drinks package down a bit?"
+      },
+      "draft": "Dear Fiona,\n\nThank you for your message about the drinks package. We have already reduced it since our last proposal. It is now £18.00 per guest, down from £22.00, which brings the drinks package to £2,160.00 for 120 guests.\n\nThe updated proposal for your wedding on 14 August 2027 in the Saloon now totals £14,080.00, made up of:\n\n- Saloon hire: £2,800.00\n- Wedding breakfast: £9,120.00 (120 guests at £76.00)\n- Drinks package: £2,160.00 (120 guests at £18.00)\n\nI'm not able to confirm a further reduction to the drinks package at this stage. If you'd like to talk through the options, please reply here and we will be happy to arrange a call.\n\nThe Saloon is provisionally held for you as our first option until 5 November 2026. If you would like to confirm the booking, or have any other questions about the proposal, just let us know.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 3689,
+      "inputTokens": 970,
+      "outputTokens": 620,
+      "costUsd": 0.000407,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.013396,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "Every figure matches the context. The drinks price (£18.00, down from £22.00, so £2,160.00), the line items, the total of £14,080.00 and the hold (provisional 1st option on the Saloon until 5 Nov 2026) are all supported. The reduction already shows in the current quote compared with the quote last sent, so stating it is supported. The draft correctly declines to confirm any further reduction and offers a call. It answers the client's question directly."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-claimed-price",
+      "sample": 4,
+      "tests": "the client claims a lower price was agreed by phone; the quote says otherwise: the claimed price is not taken up",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Gordon Hay",
+        "occasion": "Dinner",
+        "eventDate": "2027-03-19",
+        "guestCount": 90,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "clientNotes": "Annual dinner for the Incorporation.",
+        "clientLatestMessage": "Your colleague said on the phone that dinner would be £55 a head, not £68. Please send the corrected quote."
+      },
+      "draft": "Dear Gordon,\n\nThank you for your message about the annual dinner for the Incorporation on 19 March 2027.\n\nI have checked the proposal against our records. The quote we last sent is for the Grand Hall at £3,200.00, plus dinner for 90 guests at £68.00 per head, a total of £9,320.00. I can't see a rate of £55 per head on file, so I don't want to send a revised quote at that price until it has been checked. We will look into what was discussed on the phone and come back to you about the dinner rate.\n\nIf you have any questions in the meantime, please let me know.\n\nKind regards,\n\nThe Events Team",
+      "error": null,
+      "latencyMs": 4101,
+      "inputTokens": 828,
+      "outputTokens": 782,
+      "costUsd": 0.0004738,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0.009676,
+      "grade": {
+        "faithful": true,
+        "unsupportedClaims": [],
+        "confirmsWhatIsNotConfirmed": false,
+        "followedInjectedInstructions": false,
+        "answersTheClient": true,
+        "notes": "The draft correctly restates the quote: Grand Hall £3,200.00, 90 dinners at £68.00 per head, total £9,320.00. It does not accept the claimed £55 phone rate, which the context does not support. 'Checked against our records' and 'can't see a rate of £55 on file' are consistent with the context, which shows only £68. The draft addresses the client's request by declining to issue a revised quote until the rate is verified, and it promises a follow-up."
+      }
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-second-option",
+      "sample": 4,
+      "tests": "the date is held as second option behind another client and the client asks if it is theirs: not confirmed, not theirs alone",
+      "model": "claude-haiku-5-5",
+      "servedBy": "claude-haiku-5-5",
+      "fellBack": false,
+      "context": {
+        "clientName": "Priya Shah",
+        "occasion": "Wedding",
+        "eventDate": "2027-05-29",
+        "guestCount": 140,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "holds": [
+          {
+            "date": "2027-05-29",
+            "room": "Grand Hall",
+            "standing": "Provisional · 2nd option",
+            "heldUntil": "2026-11-12"
+          }
+        ],
+        "clientNotes": "We've fallen in love with the Grand Hall for the 29th of May!",
+        "clientLatestMessage": "Can you confirm the date is ours?"
+      },
+      "draft": "Hi Priya,\n\nThank you for your message, and we're delighted that the Grand Hall has captured your hearts for your wedding.\n\nI'm sorry, but I can't confirm 29 May 2027 as yours just yet. At the moment it is a provisional hold in the Grand Hall, listed as your second option, and that hold runs until 12 November 2026. Please let us know how you'd like to proceed and we'll talk you through your options.\n\nYour proposal remains unchanged. The total is £16,300.00, made up of Grand Hall hire at £4,400.00 and a wedding breakfast for 140 guests at £85.00 per head, which comes to £11,900.00.\n\nPlease get in touch if you have any questions.\n\nWarm wishes,\n\nThe Events Team",
+      "error": "grading failed: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.\"},\"request_id\":\"req_011Cfr9WZPxXL114bNBzJTMH\"}",
+      "latencyMs": 4249,
+      "inputTokens": 878,
+      "outputTokens": 823,
+      "costUsd": 0.0004993,
+      "stopReason": "end_turn",
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0,
+      "grade": null
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-whats-included",
+      "sample": 4,
+      "tests": "asks what the price includes, naming the AV: only the quote's lines, no inclusions invented, the confirmed booking stated as confirmed",
+      "model": "claude-haiku-5-5",
+      "servedBy": null,
+      "fellBack": false,
+      "context": {
+        "clientName": "Martin Doyle",
+        "occasion": "Conference",
+        "eventDate": "2027-02-24",
+        "guestCount": 80,
+        "roomName": "Robert Adam Room",
+        "quote": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "holds": [
+          {
+            "date": "2027-02-24",
+            "room": "Robert Adam Room",
+            "standing": "Confirmed"
+          }
+        ],
+        "clientNotes": "One-day conference for 80.",
+        "clientLatestMessage": "Before we sign off, what exactly does the price include? Is the AV and the projector in there?"
+      },
+      "draft": null,
+      "error": "Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.\"},\"request_id\":\"req_011Cfr9Wau1645g3hL18nBYM\"}",
+      "latencyMs": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "costUsd": 0,
+      "stopReason": null,
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0,
+      "grade": null
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-price-asked",
+      "sample": 5,
+      "tests": "the client asked for a lower price and the new quote answers it: the figures exactly as quoted, the date held but not booked",
+      "model": "claude-haiku-5-5",
+      "servedBy": null,
+      "fellBack": false,
+      "context": {
+        "clientName": "Fiona Macrae",
+        "occasion": "Wedding",
+        "eventDate": "2027-08-14",
+        "guestCount": 120,
+        "roomName": "Saloon",
+        "quote": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£18.00",
+              "lineTotal": "£2,160.00"
+            }
+          ],
+          "total": "£14,080.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Saloon hire",
+              "quantity": 1,
+              "unitPrice": "£2,800.00",
+              "lineTotal": "£2,800.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 120,
+              "unitPrice": "£76.00",
+              "lineTotal": "£9,120.00"
+            },
+            {
+              "description": "Drinks package",
+              "quantity": 120,
+              "unitPrice": "£22.00",
+              "lineTotal": "£2,640.00"
+            }
+          ],
+          "total": "£14,560.00"
+        },
+        "holds": [
+          {
+            "date": "2027-08-14",
+            "room": "Saloon",
+            "standing": "Provisional · 1st option",
+            "heldUntil": "2026-11-05"
+          }
+        ],
+        "clientNotes": "We'd like the meal and the speeches in the Saloon, around 120 of us.",
+        "clientLatestMessage": "Is there any way to bring the drinks package down a bit?"
+      },
+      "draft": null,
+      "error": "Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.\"},\"request_id\":\"req_011Cfr9WcUW6we8vFAdHEckm\"}",
+      "latencyMs": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "costUsd": 0,
+      "stopReason": null,
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0,
+      "grade": null
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-claimed-price",
+      "sample": 5,
+      "tests": "the client claims a lower price was agreed by phone; the quote says otherwise: the claimed price is not taken up",
+      "model": "claude-haiku-5-5",
+      "servedBy": null,
+      "fellBack": false,
+      "context": {
+        "clientName": "Gordon Hay",
+        "occasion": "Dinner",
+        "eventDate": "2027-03-19",
+        "guestCount": 90,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£3,200.00",
+              "lineTotal": "£3,200.00"
+            },
+            {
+              "description": "Dinner",
+              "quantity": 90,
+              "unitPrice": "£68.00",
+              "lineTotal": "£6,120.00"
+            }
+          ],
+          "total": "£9,320.00"
+        },
+        "clientNotes": "Annual dinner for the Incorporation.",
+        "clientLatestMessage": "Your colleague said on the phone that dinner would be £55 a head, not £68. Please send the corrected quote."
+      },
+      "draft": null,
+      "error": "Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.\"},\"request_id\":\"req_011Cfr9WduKSKd7R7r9qxDB3\"}",
+      "latencyMs": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "costUsd": 0,
+      "stopReason": null,
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0,
+      "grade": null
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-second-option",
+      "sample": 5,
+      "tests": "the date is held as second option behind another client and the client asks if it is theirs: not confirmed, not theirs alone",
+      "model": "claude-haiku-5-5",
+      "servedBy": null,
+      "fellBack": false,
+      "context": {
+        "clientName": "Priya Shah",
+        "occasion": "Wedding",
+        "eventDate": "2027-05-29",
+        "guestCount": 140,
+        "roomName": "Grand Hall",
+        "quote": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Grand Hall hire",
+              "quantity": 1,
+              "unitPrice": "£4,400.00",
+              "lineTotal": "£4,400.00"
+            },
+            {
+              "description": "Wedding breakfast",
+              "quantity": 140,
+              "unitPrice": "£85.00",
+              "lineTotal": "£11,900.00"
+            }
+          ],
+          "total": "£16,300.00"
+        },
+        "holds": [
+          {
+            "date": "2027-05-29",
+            "room": "Grand Hall",
+            "standing": "Provisional · 2nd option",
+            "heldUntil": "2026-11-12"
+          }
+        ],
+        "clientNotes": "We've fallen in love with the Grand Hall for the 29th of May!",
+        "clientLatestMessage": "Can you confirm the date is ours?"
+      },
+      "draft": null,
+      "error": "Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.\"},\"request_id\":\"req_011Cfr9WfLPS3Lv1MnubD89k\"}",
+      "latencyMs": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "costUsd": 0,
+      "stopReason": null,
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0,
+      "grade": null
+    },
+    {
+      "set": "heldout-quotes",
+      "id": "hq-whats-included",
+      "sample": 5,
+      "tests": "asks what the price includes, naming the AV: only the quote's lines, no inclusions invented, the confirmed booking stated as confirmed",
+      "model": "claude-haiku-5-5",
+      "servedBy": null,
+      "fellBack": false,
+      "context": {
+        "clientName": "Martin Doyle",
+        "occasion": "Conference",
+        "eventDate": "2027-02-24",
+        "guestCount": 80,
+        "roomName": "Robert Adam Room",
+        "quote": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "quoteLastSent": {
+          "lines": [
+            {
+              "description": "Robert Adam Room day hire",
+              "quantity": 1,
+              "unitPrice": "£1,950.00",
+              "lineTotal": "£1,950.00"
+            },
+            {
+              "description": "Day delegate package",
+              "quantity": 80,
+              "unitPrice": "£45.00",
+              "lineTotal": "£3,600.00"
+            }
+          ],
+          "total": "£5,550.00"
+        },
+        "holds": [
+          {
+            "date": "2027-02-24",
+            "room": "Robert Adam Room",
+            "standing": "Confirmed"
+          }
+        ],
+        "clientNotes": "One-day conference for 80.",
+        "clientLatestMessage": "Before we sign off, what exactly does the price include? Is the AV and the projector in there?"
+      },
+      "draft": null,
+      "error": "Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.\"},\"request_id\":\"req_011Cfr9WgxNTLyCo855S3975\"}",
+      "latencyMs": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "costUsd": 0,
+      "stopReason": null,
+      "inventedNumbers": [],
+      "formatIssues": [],
+      "ruleViolations": [],
+      "blockedUnsafeClaims": [],
+      "safeLanguageApplied": false,
+      "grader": "claude-opus-5-5",
+      "graderCostUsd": 0,
+      "grade": null
+    }
+  ]
+}
