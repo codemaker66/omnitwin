@@ -9,8 +9,9 @@ plane at every orthophoto texel (the walls' position tiles). Before meshing:
   - the main door, open in the scan, becomes a plain recess for the modelled
     leaves;
   - movable equipment is patched out exactly as in the atlas;
-  - a neighbouring wall's bench, seen end-on in a corner, reads as a block
-    at the depth limit; its own wall draws it, so this wall keeps its face.
+  - where a neighbouring wall's bench, seen end-on in a corner, stands out
+    to the depth limit, this wall keeps its own face; the bench's own wall
+    draws it.
 Writes relief/<wall>.f32 at 100 px/m (rows from v = 7.0 down) and .json.
 Usage (in the work directory): python3 $SURVEY/wall-depth.py window door end fire"""
 import json, os, sys
@@ -70,18 +71,21 @@ def patch(D, u0, u1, v0, v1, mode, arg):
 
 
 CORNER_ZONE = 0.9   # metres from a corner where a neighbour's fittings can reach
-INTRUSION = 0.8     # deeper than any fitting of the wall's own, short of the limit
+INTRUSION = 0.8     # further proud than any fitting of the wall's own, short of the 0.9 m limit
 
 
 def clear_corner_intrusions(D, length):
-    """Gives each corner zone back its own face where the neighbouring wall's
-    benches, seen end-on, stand at the depth limit: those texels take their
-    row's depth just beyond the zone."""
+    """Gives each corner zone back its own face where a neighbouring wall's
+    bench, seen end-on, stands out to the depth limit (or was filled from it
+    where the scan saw nothing): those texels take their row's depth just
+    beyond the zone, never behind the wall's plane, so a window there cannot
+    open a hole. What is left of the bench lies inside the one its own wall
+    draws."""
     u = (np.arange(D.shape[1]) + 0.5) / PPM
     for dist in (u, length - u):
         zone = (dist >= 0) & (dist < CORNER_ZONE)
         beyond = (dist >= CORNER_ZONE) & (dist < CORNER_ZONE + 0.1)
-        reference = np.median(D[:, beyond], axis=1)
+        reference = np.maximum(np.median(D[:, beyond], axis=1), 0.0)
         rows, cols = np.nonzero(zone[None, :] & (D > INTRUSION))
         D[rows, cols] = reference[rows]
     return D

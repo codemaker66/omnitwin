@@ -206,7 +206,8 @@ def nadir_patch_radius(sid, lod=8192):
     smooth = [float((quality[(rr >= a) & (rr < a + 2)] < SMOOTH).mean()) for a in starts]
     radius = 0.0
     if max(smooth) >= 0.35:
-        radius = max(float(a) + 2 for a, f in zip(starts, smooth) if f > 0.25)
+        # Kept inside the cap, so the 4-degree ease back in ends within it.
+        radius = min(max(float(a) + 2 for a, f in zip(starts, smooth) if f > 0.25), NADIR_DEG - 4)
     _patch_cache[sid] = radius
     return radius
 
@@ -228,9 +229,13 @@ def nadir_weight(sid, v, lo=0.35, hi=0.6, lod=8192):
     col = np.clip(((rr * np.cos(az) + 1) / 2 * NADIR_SIZE).astype(int), 0, NADIR_SIZE - 1)
     row = np.clip(((rr * np.sin(az) + 1) / 2 * NADIR_SIZE).astype(int), 0, NADIR_SIZE - 1)
     t = np.clip((quality[row, col] - lo) / (hi - lo), 0, 1)
+    w[cap] = t * t * (3 - 2 * t)
     # Inside a strong patch nothing counts, easing back in over 4 degrees.
-    u = np.clip((np.degrees(r[cap]) - nadir_patch_radius(sid, lod)) / 4.0, 0, 1)
-    w[cap] = t * t * (3 - 2 * t) * u * u * (3 - 2 * u)
+    # A clean or lightly patched nadir keeps its view straight down.
+    radius = nadir_patch_radius(sid, lod)
+    if radius > 0:
+        u = np.clip((np.degrees(r[cap]) - radius) / 4.0, 0, 1)
+        w[cap] *= u * u * (3 - 2 * u)
     return w
 
 

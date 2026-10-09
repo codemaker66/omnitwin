@@ -91,8 +91,9 @@ proud of the profile are coloured where they are.
   sees the floor well, and those with a strong tripod patch (`floor-patches.json`), where only
   the neighbours' oblique, softer views remained, out to where the station's own view counts
   again (0.4–0.9 m).
-- In the relief, a neighbouring wall's bench seen end-on in a corner is cleared to the wall's own
-  face (`wall-depth.py`); the bench's own wall draws it.
+- In the relief, where a neighbouring wall's bench seen end-on in a corner stands out to the depth
+  limit, the wall keeps its own face (`wall-depth.py`); what is left of the bench lies inside the
+  one its own wall draws.
 - Texels no station saw (behind the chandeliers' stems) are filled from their neighbours.
 
 ## Accuracy
