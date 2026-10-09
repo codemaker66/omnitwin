@@ -5,7 +5,7 @@ import { useBookmarkStore } from "../../../stores/bookmark-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useHallViewStore } from "../../../stores/hall-view-store.js";
 import { HALL_CUTS, resolveHallView, wallCutHeight } from "../GrandHallModel.js";
-import { HALL_MAX_FRAME_STEP, moodBlendStep } from "../hall-mood.js";
+import { HALL_MAX_FRAME_STEP, hallFrameStep } from "../hall-mood.js";
 import { HALL_ELEVATION, HALL_HALF_WIDTH, HALL_HEIGHT, hallWall } from "../hall-spec.js";
 
 const three = vi.hoisted(() => ({ state: null as null | { camera: unknown; controls: unknown; invalidate: () => void } }));
@@ -66,11 +66,19 @@ describe("the hall's framing and cutaway", () => {
   });
 });
 
-describe("mood blends", () => {
+describe("blends and easings", () => {
   it("do not spend the demand loop's idle gap, nor skip ahead on a stalled frame", () => {
-    expect(moodBlendStep(20, true)).toBe(0);
-    expect(moodBlendStep(1 / 60, false)).toBeCloseTo(1 / 60, 10);
-    expect(moodBlendStep(3, false)).toBe(HALL_MAX_FRAME_STEP);
-    expect(moodBlendStep(-1, false)).toBe(0);
+    expect(hallFrameStep(20, true)).toBe(0);
+    expect(hallFrameStep(1 / 60, false)).toBeCloseTo(1 / 60, 10);
+    expect(hallFrameStep(3, false)).toBe(HALL_MAX_FRAME_STEP);
+    expect(hallFrameStep(-1, false)).toBe(0);
+  });
+
+  it("keep real time on a slow device's steady frames", () => {
+    // A software rasteriser draws the hall at a few frames a second; a 1.6 s
+    // blend must not stretch to many times its length there.
+    expect(hallFrameStep(0.2, false)).toBeCloseTo(0.2, 10);
+    const frames = Math.ceil(1.6 / hallFrameStep(0.3, false));
+    expect(frames).toBeLessThanOrEqual(8);
   });
 });

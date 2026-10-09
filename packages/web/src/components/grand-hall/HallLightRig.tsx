@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Color, type DirectionalLight, type HemisphereLight, type PointLight } from "three";
-import { HALL_MOODS, HallMoodUniforms, moodBlendStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
+import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HallEnvironment } from "./HallEnvironment.js";
 import { HALL_CHANDELIERS } from "./hall-spec.js";
 import { CHANDELIER_POWER, chandelierScale } from "./hall-lighting-model.js";
@@ -70,7 +70,7 @@ export function HallLightRig({ mood, moodSeconds = 1.6, finish }: HallLightRigPr
   useFrame((_, delta) => {
     const active = blend.current;
     if (active !== null) {
-      active.t = Math.min(1, active.t + moodBlendStep(delta, !active.started) / Math.max(0.05, moodSeconds));
+      active.t = Math.min(1, active.t + hallFrameStep(delta, !active.started) / Math.max(0.05, moodSeconds));
       active.started = true;
       uniforms.apply(active.from, active.to, moodEase(active.t));
       if (active.t >= 1) blend.current = null;
