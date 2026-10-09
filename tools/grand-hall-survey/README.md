@@ -61,9 +61,10 @@ neighbourhood, so thin occluders are not missed) and the ray misses the five cha
 crystal is finer than any depth map. Colours are read from the panoramas bilinearly, corrected by
 each station's manifest exposure and averaged in linear light, weighted towards head-on and near
 views (cos⁴/d³ by default). A second pass down-weights any station that disagrees with the
-consensus, an occluder the depth maps missed. The floor also skips each station's nadir, where
-the panorama is patched over the tripod, and down-weights views brighter than the consensus
-(reflections on the polished boards).
+consensus, an occluder the depth maps missed. On the floor, each panorama's view near its nadir
+counts only where it holds real detail: the patch that hides the tripod is smooth where real
+boards are not, and covers anything from nothing to 30 degrees around straight down. Views
+brighter than the consensus (reflections on the polished boards) are down-weighted.
 
 The dome is unrolled by angle and arc length along its measured profile; each texel is first moved
 along its normal onto the scanned surface (`surface-offset.mjs`), so the coats of arms that stand

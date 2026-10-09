@@ -136,6 +136,72 @@ def linear_to_srgb(c):
 
 
 _pano_cache = {}
+_nadir_cache = {}
+NADIR_DEG = 40.0     # the cap around straight down that nadir_quality maps
+NADIR_SIZE = 1200    # its resolution: about 1.5 mm on the floor below a station
+
+
+def _gauss(a, s):
+    """Separable Gaussian blur of a 2-D array (sigma `s` pixels)."""
+    r = max(1, int(3 * s))
+    x = np.arange(-r, r + 1)
+    k = np.exp(-0.5 * (x / s) ** 2)
+    k /= k.sum()
+    p = np.pad(a, ((r, r), (0, 0)), mode="edge")
+    a = sum(w * p[i:i + a.shape[0]] for i, w in enumerate(k))
+    p = np.pad(a, ((0, 0), (r, r)), mode="edge")
+    return sum(w * p[:, i:i + a.shape[1]] for i, w in enumerate(k))
+
+
+def nadir_quality(sid, lod=8192):
+    """How much fine detail the panorama holds in each direction near its
+    nadir, relative to the floor it sees 25-40 degrees out. Every panorama
+    hides the tripod under an inpainting, smooth where real boards are not,
+    and its extent varies from none to 30 degrees. Returns a NADIR_SIZE map
+    over the cap (azimuthal equidistant, on sample_pano's axes)."""
+    if sid in _nadir_cache:
+        return _nadir_cache[sid]
+    lum = load_pano(sid, lod).astype(np.float32) @ np.array([0.2126, 0.7152, 0.0722], np.float32) / 255.0
+    H, W = lum.shape
+    n = NADIR_SIZE
+    ys, xs = np.mgrid[0:n, 0:n]
+    u = (xs + 0.5) / n * 2 - 1
+    v = (ys + 0.5) / n * 2 - 1
+    r = np.hypot(u, v) * np.radians(NADIR_DEG)
+    fy = np.clip((np.pi - r) / np.pi * H - 0.5, 0, H - 1.001)
+    fx = (np.arctan2(v, u) % (2 * np.pi)) / (2 * np.pi) * W - 0.5
+    y0 = np.floor(fy).astype(int)
+    x0 = np.floor(fx).astype(int) % W
+    x1 = (x0 + 1) % W
+    ty = fy - y0
+    tx = fx - np.floor(fx)
+    cap = (lum[y0, x0] * (1 - tx) + lum[y0, x1] * tx) * (1 - ty) + (lum[y0 + 1, x0] * (1 - tx) + lum[y0 + 1, x1] * tx) * ty
+    detail = _gauss(np.abs(cap - _gauss(cap, 1.5)), 12) / np.maximum(_gauss(cap, 12), 1e-3)
+    ring = (np.hypot(u, v) > 25 / NADIR_DEG) & (np.hypot(u, v) <= 1)
+    quality = (detail / max(float(np.median(detail[ring])), 1e-6)).astype(np.float32)
+    _nadir_cache[sid] = quality
+    return quality
+
+
+def nadir_weight(sid, v, lo=0.35, hi=0.6, lod=8192):
+    """Weights (N,) for rays v (N,3) from station `sid`: 1 beyond the nadir
+    cap, falling smoothly to 0 where the panorama is as smooth as the patch
+    over the tripod, so each station keeps its sharpest view of the floor
+    around it wherever that view is real."""
+    dist = np.linalg.norm(v, axis=1)
+    r = np.arccos(np.clip(-v[:, 2] / np.maximum(dist, 1e-9), -1, 1))
+    w = np.ones(len(v))
+    cap = r < np.radians(NADIR_DEG)
+    if not cap.any():
+        return w
+    quality = nadir_quality(sid, lod)
+    az = np.arctan2(v[cap, 1], v[cap, 0])
+    rr = r[cap] / np.radians(NADIR_DEG)
+    col = np.clip(((rr * np.cos(az) + 1) / 2 * NADIR_SIZE).astype(int), 0, NADIR_SIZE - 1)
+    row = np.clip(((rr * np.sin(az) + 1) / 2 * NADIR_SIZE).astype(int), 0, NADIR_SIZE - 1)
+    t = np.clip((quality[row, col] - lo) / (hi - lo), 0, 1)
+    w[cap] = t * t * (3 - 2 * t)
+    return w
 
 
 def load_pano(sid, lod=8192):
@@ -169,17 +235,11 @@ def sample_pano(img, v):
     return (c00 * (1 - tx) + c10 * tx) * (1 - ty) + (c01 * (1 - tx) + c11 * tx) * ty
 
 
-def _station_samples(st, points, normals, cos_min, p_cos, q_dist, max_dist, lod, nadir=0.0):
+def _station_samples(st, points, normals, cos_min, p_cos, q_dist, max_dist, lod, nadir=False):
     v = points - st["t"]
     dist = np.linalg.norm(v, axis=1)
     cos = -np.einsum("ij,ij->i", v, normals) / np.maximum(dist, 1e-6)
     ok = (cos > cos_min) & (dist < max_dist)
-    down = -v[:, 2] / np.maximum(dist, 1e-6)
-    if nadir > 0:
-        # The panoramas' nadirs are patched over the tripod: rays within
-        # `nadir` radians of straight down are skipped, fading in over the
-        # next 12 degrees so no seam marks the patch's edge.
-        ok &= down < np.cos(nadir)
     if not ok.any():
         return None
     idx = np.nonzero(ok)[0]
@@ -197,19 +257,20 @@ def _station_samples(st, points, normals, cos_min, p_cos, q_dist, max_dist, lod,
     img = load_pano(st["id"], lod)
     col = srgb_to_linear(sample_pano(img, v[idx])) * st["gain"][None, :]
     w = (cos[idx] ** p_cos) / (dist[idx] ** q_dist)
-    if nadir > 0:
-        angle = np.arccos(np.clip(down[idx], -1, 1))
-        fade = np.clip((angle - nadir) / np.radians(12), 0, 1)
-        w = w * fade * fade * (3 - 2 * fade)
+    if nadir:
+        # Near its nadir each panorama hides the tripod under a smooth patch.
+        w = w * nadir_weight(st["id"], v[idx], lod=lod)
     return idx, col, w
 
 
-def project(points, normals, station_list=None, lod=8192, cos_min=0.2, p_cos=4.0, q_dist=3.0, max_dist=16.0, report=False, robust=True, nadir=0.0, glare=0):
+def project(points, normals, station_list=None, lod=8192, cos_min=0.2, p_cos=4.0, q_dist=3.0, max_dist=16.0, report=False, robust=True, nadir=False, glare=0):
     """Returns linear RGB (N,3) and the total weight (N,) per texel. A second
     pass down-weights any station whose colour disagrees with the consensus
     (an occluder the depth maps missed). With `glare` > 0, that many further
     passes down-weight only samples brighter than the consensus — reflections
-    on a polished surface, which only ever add light."""
+    on a polished surface, which only ever add light. With `nadir`, rays near
+    each station's nadir count only where the panorama holds real detail
+    (nadir_weight), for surfaces seen from above: the floor."""
     if station_list is None:
         station_list = stations()
     N = len(points)

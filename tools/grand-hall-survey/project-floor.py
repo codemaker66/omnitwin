@@ -16,7 +16,7 @@ Xp, Zp = np.meshgrid(x, z)
 pts = np.stack([XC - Xp, Zp + YC, np.full_like(Xp, FLOOR)], -1).reshape(-1, 3)
 nrm = np.tile(np.array([[0, 0, 1.0]]), (len(pts), 1))
 t0 = time.time()
-rgb, ws = project(pts, nrm, stations(), cos_min=0.12, p_cos=2.0, q_dist=2.0, nadir=np.radians(22), glare=1)
+rgb, ws = project(pts, nrm, stations(), cos_min=0.12, p_cos=2.0, q_dist=2.0, nadir=True, glare=1)
 suffix = '' if PPM == 120.0 else f'-{int(PPM)}'
 np.savez_compressed(f'proj/floor{suffix}.npz', rgb=rgb.reshape(h, w, 3).astype(np.float32), weight=ws.reshape(h, w).astype(np.float32))
 save_rgb(f'proj/floor{suffix}.png', rgb, w, h)
