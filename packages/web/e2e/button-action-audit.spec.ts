@@ -2130,9 +2130,14 @@ test.describe("SS++ representative button behavior", () => {
     await page.goto(`/plan/${CONFIG_ID}`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("[data-testid='cockpit-shell']", { timeout: 20_000 });
 
-    const visualLayer = page.getByRole("group", { name: "Room view" });
-    await visualLayer.getByRole("button", { name: "Capture", exact: true }).click();
-    await expect(visualLayer.getByRole("button", { name: "Capture", exact: true })).toHaveAttribute("aria-pressed", "true");
+    // The Grand Hall is drawn as the surveyed room, with its own views and light.
+    const hallView = page.getByRole("toolbar", { name: "Grand Hall view" });
+    const candlelight = hallView.getByRole("button", { name: "Candlelight", exact: true });
+    await candlelight.click();
+    await expect(candlelight).toHaveAttribute("aria-pressed", "true");
+    const plan = hallView.getByRole("button", { name: "Plan", exact: true });
+    await plan.click();
+    await expect(plan).toHaveAttribute("aria-pressed", "true");
 
     await page.locator("[data-testid='cockpit-rail']").getByRole("button", { name: "Flow" }).click();
     await expect(page.locator(".cockpit-stage")).toHaveAttribute("data-cockpit-mode", "flow");

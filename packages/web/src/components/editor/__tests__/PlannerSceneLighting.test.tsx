@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SpaceSchema } from "@omnitwin/types";
 
 const sceneState = vi.hoisted(() => ({ width: 1440, hasAsset: true, roomSlug: "grand-hall", source: "staged" }));
+// The device's finish is read from the live renderer, which this harness lacks.
+const finishState = vi.hoisted(() => ({ photoQuality: 1, liveLight: true }));
 
 // Mount the real room and lighting components selected by PlannerScene. Other
 // Canvas children need a WebGL renderer; filtering them keeps this a CPU-only
@@ -14,7 +16,7 @@ function roomChildren(children: ReactNode): ReactNode {
     if (!isValidElement<{ children?: ReactNode }>(child)) return null;
     if (child.type === Fragment) return roomChildren(child.props.children);
     if (typeof child.type !== "function") return null;
-    return ["RoomMesh", "GrandHallRoom", "RoomLighting", "FurnitureLightingExperiment", "FurnitureReflectionExperiment"].includes(child.type.name)
+    return ["RoomMesh", "GrandHallRoom", "RoomLighting", "HallLightRig", "GrandHallModel", "FurnitureLightingExperiment", "FurnitureReflectionExperiment"].includes(child.type.name)
       ? child
       : null;
   });
@@ -37,6 +39,17 @@ vi.mock("../../GrandHallDome.js", async (importOriginal) => ({
   GrandHallDome: () => null,
 }));
 vi.mock("../CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
+// The surveyed hall builds GPU resources; its presence is what matters here.
+// Its light rig is the real one.
+vi.mock("../../grand-hall/GrandHallModel.js", () => ({
+  GrandHallModel: function GrandHallModel() { return <div data-room="grand-hall-model" />; },
+}));
+// Reflections need a native renderer; the rig's lights are what this checks.
+vi.mock("../../grand-hall/HallEnvironment.js", () => ({ HallEnvironment: () => null }));
+vi.mock("../../grand-hall/hall-finish.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../grand-hall/hall-finish.js")>(),
+  useHallFinish: () => finishState,
+}));
 vi.mock("../FurnitureReflectionExperiment.js", () => ({
   FurnitureReflectionExperiment: function FurnitureReflectionExperiment() { return <div data-testid="reflection-experiment" />; },
 }));
@@ -59,6 +72,7 @@ const { useEditorStore } = await import("../../../stores/editor-store.js");
 const { useDeviceStore } = await import("../../../stores/device-store.js");
 const { useLayoutTimelinePreviewStore } = await import("../../../stores/layout-timeline-preview-store.js");
 const { resolveRoomGeometry } = await import("../../../data/room-geometries.js");
+const { HALL_CHANDELIERS } = await import("../../grand-hall/hall-spec.js");
 
 function spaceNamed(name: string) {
   return SpaceSchema.parse({
@@ -75,7 +89,7 @@ function spaceNamed(name: string) {
 }
 
 function lightSignature(container: HTMLElement) {
-  return Array.from(container.querySelectorAll("hemisphereLight, ambientLight, directionalLight"))
+  return Array.from(container.querySelectorAll("hemisphereLight, ambientLight, directionalLight, pointLight"))
     .map((light) => ({
       type: light.tagName.toLowerCase(),
       args: light.getAttribute("args"),
@@ -83,6 +97,14 @@ function lightSignature(container: HTMLElement) {
       color: light.getAttribute("color"),
       position: light.getAttribute("position"),
     }));
+}
+
+/** The surveyed Grand Hall's own rig: a light in every chandelier and the windows' daylight. */
+function expectHallRig(container: HTMLElement): void {
+  expect(container.querySelectorAll('[name="grand-hall-lights"]')).toHaveLength(1);
+  expect(container.querySelectorAll("pointLight")).toHaveLength(HALL_CHANDELIERS.length);
+  expect(container.querySelectorAll("directionalLight")).toHaveLength(1);
+  expect(container.querySelectorAll("hemisphereLight, ambientLight")).toHaveLength(0);
 }
 
 function expectLightCount(container: HTMLElement, directionalCount: number): void {
@@ -93,6 +115,7 @@ function expectLightCount(container: HTMLElement, directionalCount: number): voi
 
 beforeEach(() => {
   window.history.replaceState({}, "", "/");
+  finishState.liveLight = true;
   useCockpitStore.getState().reset();
   useCockpitStore.getState().setLayerMode("mesh");
   useEditorStore.setState({ space: null });
@@ -171,14 +194,14 @@ describe("planner lighting ownership", () => {
     for (const mode of ["hybrid", "mesh"] as const) {
       act(() => { useCockpitStore.getState().setLayerMode(mode); });
       expect(container.querySelector('[name="furniture-lighting-panorama-experiment"]')).toBeNull();
-      expectLightCount(container, 0);
+      expectHallRig(container);
       expect(container.querySelector('[data-testid="lighting-canvas"]')?.getAttribute("data-shadows")).toBe("false");
     }
     act(() => { useCockpitStore.getState().setLayerMode("splat"); });
     expect(container.querySelectorAll('[name="furniture-lighting-panorama-experiment"]')).toHaveLength(1);
     sceneState.hasAsset = false;
     act(() => { useCockpitStore.getState().setLayerMode("mesh"); });
-    expectLightCount(container, 0);
+    expectHallRig(container);
     expect(container.querySelector('[name="furniture-lighting-panorama-experiment"]')).toBeNull();
   });
   for (const width of [768, 1440]) {
@@ -187,13 +210,18 @@ describe("planner lighting ownership", () => {
         sceneState.width = width;
         useEditorStore.setState({ space: name === null ? null : spaceNamed(name) });
         const { container } = render(<PlannerScene />);
-        const roomSelector = name === null ? '[name="grand-hall-room"]' : '[name="room-mesh"]';
-        expectLightCount(container, name === null ? 2 : 0);
+        const roomSelector = name === null ? '[name="grand-hall-room"]'
+          : name === "Grand Hall" ? '[data-room="grand-hall-model"]' : '[name="room-mesh"]';
+        const expectRig = (): void => {
+          if (name === "Grand Hall") expectHallRig(container);
+          else expectLightCount(container, name === null ? 2 : 0);
+        };
+        expectRig();
         const initialLights = lightSignature(container);
         for (const mode of ["splat", "hybrid", "mesh", "splat"] as const) {
           act(() => { useCockpitStore.getState().setLayerMode(mode); });
           expect(container.querySelectorAll(roomSelector)).toHaveLength(mode === "splat" ? 0 : 1);
-          expectLightCount(container, name === null ? 2 : 0);
+          expectRig();
           expect(lightSignature(container)).toEqual(initialLights);
         }
       });
@@ -201,7 +229,7 @@ describe("planner lighting ownership", () => {
   }
 
   it("keeps lights when camera motion swaps the detailed polygon room to its lean shell", () => {
-    useEditorStore.setState({ space: spaceNamed("Grand Hall") });
+    useEditorStore.setState({ space: spaceNamed("Custom room") });
     const { container } = render(<PlannerScene />);
     const initialLights = lightSignature(container);
     for (const active of [true, false, true]) {
@@ -209,6 +237,27 @@ describe("planner lighting ownership", () => {
       expectLightCount(container, 0);
       expect(lightSignature(container)).toEqual(initialLights);
     }
+  });
+
+  it("keeps the surveyed Grand Hall's rig unchanged through camera motion", () => {
+    useEditorStore.setState({ space: spaceNamed("Grand Hall") });
+    const { container } = render(<PlannerScene />);
+    const initialLights = lightSignature(container);
+    for (const active of [true, false, true]) {
+      act(() => { useCockpitStore.setState({ cameraInteractionActive: active }); });
+      expectHallRig(container);
+      expect(lightSignature(container)).toEqual(initialLights);
+    }
+  });
+
+  it("lights the furniture with a soft fill where the hall renders in software", () => {
+    finishState.liveLight = false;
+    useEditorStore.setState({ space: spaceNamed("Grand Hall") });
+    const { container } = render(<PlannerScene />);
+    expect(container.querySelectorAll('[name="grand-hall-lights"]')).toHaveLength(1);
+    expect(container.querySelectorAll("pointLight")).toHaveLength(0);
+    expect(container.querySelectorAll("hemisphereLight")).toHaveLength(1);
+    expect(container.querySelectorAll("directionalLight")).toHaveLength(1);
   });
 
   it("keeps exactly one rig with the procedural fallback when no captured asset is available", () => {

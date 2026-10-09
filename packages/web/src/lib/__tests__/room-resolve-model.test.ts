@@ -7,6 +7,8 @@ import {
   captureAvailability,
   roomResolveCaption,
   roomResolvePhase,
+  hallSurfacesCaption,
+  hallSurfacesLoading,
 } from "../room-resolve-model.js";
 
 describe("captureAvailability", () => {
@@ -172,5 +174,30 @@ describe("motion constants (02 §6)", () => {
 
   it("maps reduced motion to the 120 ms fade the design language mandates", () => {
     expect(ROOM_RESOLVE_REDUCED_MOTION_MS).toBe(120);
+  });
+});
+
+describe("hallSurfacesCaption", () => {
+  it("counts the drawn hall's surfaces in as they really arrive", () => {
+    const loading = { total: 5, loaded: 2, failed: 0 };
+    expect(hallSurfacesCaption(loading)).toBe("Loading the Grand Hall's surfaces · 2 of 5");
+    expect(hallSurfacesLoading(loading)).toBe(true);
+  });
+
+  it("falls silent once every surface has arrived", () => {
+    const done = { total: 5, loaded: 5, failed: 0 };
+    expect(hallSurfacesCaption(done)).toBeNull();
+    expect(hallSurfacesLoading(done)).toBe(false);
+    expect(hallSurfacesCaption(null)).toBeNull();
+  });
+
+  it("keeps a calm note, without working motion, when a surface could not load", () => {
+    const partial = { total: 5, loaded: 4, failed: 1 };
+    expect(hallSurfacesLoading(partial)).toBe(false);
+    const note = hallSurfacesCaption(partial) ?? "";
+    expect(note).toMatch(/could not load/);
+    expect(note).toMatch(/planning is unaffected/);
+    for (const phrase of FORBIDDEN_PHRASES) expect(note.toLowerCase()).not.toContain(phrase);
+    expect(note).not.toMatch(/%|\bMB\b/);
   });
 });

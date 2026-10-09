@@ -311,6 +311,9 @@ function devFixtureRoutes(): readonly RouteObject[] {
   const TimeMachineFixturePage = lazy(() =>
     import("./pages/TimeMachineFixturePage.js").then((m) => ({ default: m.TimeMachineFixturePage })),
   );
+  const GrandHallLabPage = lazy(() =>
+    cockpitImport(() => import("./pages/GrandHallLabPage.js").then((m) => ({ default: m.GrandHallLabPage }))),
+  );
 
   return [
     {
@@ -331,6 +334,12 @@ function devFixtureRoutes(): readonly RouteObject[] {
       // guest draft, so this is where it gets reviewed.
       path: "/dev/time-machine",
       element: withSuspense(<TimeMachineFixturePage />),
+    },
+    {
+      // The Grand Hall's real-time room in every mood and view, posed by a
+      // window bridge for headless visual review.
+      path: "/dev/grand-hall",
+      element: withSuspense(<GrandHallLabPage />),
     },
   ];
 }

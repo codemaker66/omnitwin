@@ -64,3 +64,15 @@
   font: 11px/1.4 "Inter", system-ui, sans-serif;
   text-align: center;
 }
+
+/* Grand Hall: views, light and (where it may be shown) the captured room. */
+.hall-view-controls {
+  align-items: center;
+}
+.hall-view-controls__group {
+  display: inline-flex;
+  gap: 2px;
+}
+.reference-layer-controls .hall-view-controls__mood {
+  padding: 7px 9px;
+}

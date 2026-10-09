@@ -281,7 +281,8 @@ describe("PlannerScene", () => {
     arrivals.failedCount = 1;
     rerender(<PlannerScene />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(sceneComponent("RoomMesh")).toBeDefined();
+    // The Grand Hall's fallback is the surveyed hall itself.
+    expect(sceneComponent("GrandHallModel")).toBeDefined();
     expect(sceneComponent("PlannerScenePrecompiler")?.props.signature).not.toBe(capturedSignature);
   });
 
@@ -333,7 +334,7 @@ describe("PlannerScene", () => {
     arrivals.failedOverride = new Set(roomUrls);
     rerender(<PlannerScene />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(sceneComponent("RoomMesh")).toBeDefined();
+    expect(sceneComponent("GrandHallModel")).toBeDefined();
     expect(namedSceneNode("live-room-capture")?.props.visible).toBe(false);
     // The real Canvas child owns the store handoff. This structural Canvas
     // mock deliberately never mounts it: assert the command and removed owner.

@@ -71,6 +71,34 @@ export function roomResolveCaption(
     : `Loading captured room · ${progress}`;
 }
 
+/** How far the drawn Grand Hall's surveyed surfaces (its photographs and
+ * the walls' relief) have arrived. */
+export interface HallSurfacesProgress {
+  readonly total: number;
+  readonly loaded: number;
+  readonly failed: number;
+}
+
+/**
+ * The drawn Grand Hall's own caption: real counts while its surveyed
+ * surfaces stream in, a lasting note if any could not load (the room keeps
+ * its plain colours there), and silence once everything has arrived.
+ */
+export function hallSurfacesCaption(progress: HallSurfacesProgress | null): string | null {
+  if (progress === null || progress.total <= 0) return null;
+  const settled = progress.loaded + progress.failed;
+  if (settled < progress.total) {
+    return `Loading the Grand Hall's surfaces · ${String(progress.loaded)} of ${String(progress.total)}`;
+  }
+  if (progress.failed > 0) return "Some of the hall's surfaces could not load. Plain colours are shown; planning is unaffected.";
+  return null;
+}
+
+/** Whether the hall's surfaces are still arriving (working motion shows only then). */
+export function hallSurfacesLoading(progress: HallSurfacesProgress | null): boolean {
+  return progress !== null && progress.total > 0 && progress.loaded + progress.failed < progress.total;
+}
+
 export interface InkTargetInput {
   /** Whether the captured splat layer is mounted and allowed by layer mode. */
   readonly splatActive: boolean;
