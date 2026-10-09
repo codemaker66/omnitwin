@@ -882,7 +882,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         )}
       </header>
 
-      {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent === true} onOpen={openSlot} />}
+      {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent} onOpen={openSlot} />}
 
       {!wall && (
         <div className="dayboard-controls">
