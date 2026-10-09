@@ -19,7 +19,7 @@ development builds only) shows the room alone, posed through a window bridge for
 ## What it draws
 
 - **Walls** (`hall-walls.ts`, `hall-relief.ts`): `walls-relief.bin`, four height-field meshes
-  (35,225 triangles) simplified to within 5 mm of the scan, coloured by the wall atlas projected
+  (35,185 triangles) simplified to within 5 mm of the scan, coloured by the wall atlas projected
   along each wall's normal, as the orthophotos were made. Faces the orthophotos see edge-on (the
   sides of doorcases and boards) take a coarser mip, so a single row of texels never streaks. The
   varnished dado and attic panelling are glossy; plaster and frieze are matte. The main door stood
