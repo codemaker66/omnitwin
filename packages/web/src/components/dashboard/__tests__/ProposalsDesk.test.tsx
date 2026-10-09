@@ -4483,16 +4483,18 @@ describe("proposal templates", () => {
 describe("Draft the message with AI", () => {
   const BODY = "Dear Elaine, thank you for thinking of Trades Hall for your wedding on Friday 20 November.";
   const WRITTEN = "Dear Elaine, here is the hall for your day.";
-  const DREW_ON = { event: true, enquiry: true, clientWords: false };
-  /** A draft as the API answers one, with what it drew on; only its words,
-   *  its notes and what it drew on are read here. */
-  const draft = (overrides: Record<string, unknown> = {}, drewOn: Record<string, boolean> = DREW_ON): Record<string, unknown> => ({
+  const DREW_ON = { event: true, quote: false, holds: false, enquiry: true, clientWords: false };
+  /** A draft as the API answers one, with what it drew on and the figures in
+   *  it to check; only its words, its notes, what it drew on and its figures
+   *  are read here. */
+  const draft = (overrides: Record<string, unknown> = {}, drewOn: Record<string, boolean> = DREW_ON, figuresToCheck: readonly string[] = []): Record<string, unknown> => ({
     draft: {
       schemaVersion: "ai_assistant.v0", useCase: "proposal_draft", title: "Proposal draft", body: BODY,
       blockedUnsafeClaims: [], safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated",
       evidenceStatus: "unverified", sendState: "draft_only", generatedAt: NOW, digest: "c".repeat(64), ...overrides,
     },
     drewOn,
+    figuresToCheck,
   });
   function later<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
     let resolve: (value: T) => void = () => undefined;
@@ -4807,6 +4809,41 @@ describe("Draft the message with AI", () => {
       "Written by AI from the event's details. Not checked.",
       "Written by AI from the event's details, the client's enquiry and the client's latest message. Not checked.",
     ]);
+  });
+
+  it("sends the composer's quote, read as a save reads it, and no price while a line cannot be read yet", async () => {
+    carried();
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    await drafted(element);
+    expect(mocks.draftProposalMessage).toHaveBeenLastCalledWith("p1", {
+      currency: "GBP", lineItems: [{ description: "Grand Hall hire", quantity: 1, unitAmountMinor: 240_000 }],
+    });
+    fireEvent.click(panel.getByTestId("ai-draft-away"));
+    fireEvent.change(await panel.findByTestId("quote-price-0"), { target: { value: "12.345" } });
+    await drafted(element);
+    expect(mocks.draftProposalMessage).toHaveBeenLastCalledWith("p1");
+  });
+
+  it("names the quote and the diary's holds when a draft drew on them, and asks for any figure the AI was not given to be checked", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    let block = await drafted(element, draft({}, { event: true, quote: true, holds: true, enquiry: true, clientWords: true }, ["80", "19"]));
+    expect(within(block).getByTestId("ai-draft-from").textContent)
+      .toBe("Written by AI from the event's details, the quote, the diary's holds, the client's enquiry and the client's latest message. Not checked.");
+    expect(within(block).getByTestId("ai-draft-figures").textContent)
+      .toBe("The figures 80 and 19 are not in anything the AI was given. Check them before you use the draft.");
+    fireEvent.click(within(block).getByTestId("ai-draft-away"));
+    await panel.findByTestId("ai-draft-ask");
+    block = await drafted(element, draft({}, DREW_ON, ["80"]));
+    expect(within(block).getByTestId("ai-draft-figures").textContent)
+      .toBe("The figure 80 is not in anything the AI was given. Check it before you use the draft.");
+    fireEvent.click(within(block).getByTestId("ai-draft-away"));
+    await panel.findByTestId("ai-draft-ask");
+    block = await drafted(element);
+    expect(within(block).queryByTestId("ai-draft-figures")).toBeNull();
   });
 
   it("says when there is nothing to draft from, and leaves the message as it is", async () => {

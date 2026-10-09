@@ -10,7 +10,7 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { commentAuthor } from "../../proposal/proposal-document-format.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, aiWordsWatch, checkIsFor, lineHasWords, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
+  EMPTY_LINE, aiWordsWatch, checkIsFor, lineHasWords, composerLayoutLine, composerQuote, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
   layoutChoice, layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, savedLayoutWords, type ComposerDraft,
   type KeptVersion, type LayoutChoice, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
@@ -995,7 +995,8 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
           </p>
         )}
         <p className="vv-sr-only" role="status" data-testid="ai-said">{aiSaid !== null && <span key={aiSaid.n}>{aiSaid.text}</span>}</p>
-        <AIMessageDraft proposalId={proposal.id} canUse={!held} onUse={takeAIDraft} onShown={seeAI} />
+        <AIMessageDraft proposalId={proposal.id} quote={composerQuote(draft.lines, from?.quote?.currency ?? "GBP")}
+          canUse={!held} onUse={takeAIDraft} onShown={seeAI} />
         <label className="pr-field">
           <span>Capacity note</span>
           <input data-testid="composer-capacity" maxLength={500} value={draft.capacityNote} disabled={saving}

@@ -76,6 +76,14 @@
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
+/* In a narrow dock the source chip takes the line under the title, so a
+   title such as "Guests & seating" keeps its words together instead of
+   breaking a word to a line beside the chip. */
+@container lens-panel (max-width: 320px) {
+  .lens-panel__head { grid-template-columns: 40px minmax(0, 1fr); row-gap: 8px; }
+  .lens-panel__title { font-size: 21px; text-wrap: balance; }
+  .lens-panel__source { grid-column: 2; justify-self: start; }
+}
 
 .lens-panel__body { display: flex; flex-direction: column; gap: 18px; }
 

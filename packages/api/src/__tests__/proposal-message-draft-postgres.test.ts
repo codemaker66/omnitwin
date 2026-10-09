@@ -86,10 +86,11 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
   const adapter = new RecordingAdapter();
   const fixtureSchema = `proposal_message_draft_${randomUUID().replaceAll("-", "")}`;
   const looseTables: PgTable[] = [schema.venues, schema.users, schema.spaces, schema.proposals, schema.enquiries,
-    schema.opportunities, schema.configurations, schema.contacts, schema.proposalComments, schema.proposalVersions, schema.proposalStatusHistory];
+    schema.opportunities, schema.configurations, schema.contacts, schema.proposalComments, schema.proposalVersions, schema.proposalStatusHistory,
+    schema.bookings];
 
   async function ask(who: Person | null, id = PROPOSAL, payload?: Record<string, unknown>): Promise<{
-    statusCode: number; code?: string; draft?: AIDraft; drewOn?: ProposalMessageDraft["drewOn"];
+    statusCode: number; code?: string; draft?: AIDraft; drewOn?: ProposalMessageDraft["drewOn"]; figuresToCheck?: readonly string[];
   }> {
     const res = await server.inject({
       method: "POST", url: `/proposals/${id}/message-draft`,
@@ -98,7 +99,27 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
     const body = res.body === "" ? {} : JSON.parse(res.body) as { data?: unknown; code?: string };
     if (body.data === undefined) return { statusCode: res.statusCode, code: body.code };
     const answer = ProposalMessageDraftSchema.parse(body.data);
-    return { statusCode: res.statusCode, code: body.code, draft: answer.draft, drewOn: answer.drewOn };
+    return { statusCode: res.statusCode, code: body.code, draft: answer.draft, drewOn: answer.drewOn, figuresToCheck: answer.figuresToCheck };
+  }
+
+  /** A line of a quote as the composer sends it. */
+  const line = (description: string, quantity: number, unitAmountMinor: number): Record<string, unknown> => ({ description, quantity, unitAmountMinor });
+  /** Version 2's quote in the sample: the dinner brought from £87.50 to £82.50 a head. */
+  const VERSION_TWO_QUOTE = { currency: "GBP", lineItems: [
+    line("Grand Hall hire", 1, 240_000), line("Wedding breakfast", 160, 8_250), line("Drinks package", 160, 1_250),
+  ] };
+
+  async function booking(row: {
+    readonly enquiryId: string | null; readonly kind: string; readonly startsAt: string; readonly rank?: number | null;
+    readonly jointFlag?: boolean; readonly decisionAt?: string | null; readonly status?: string; readonly venueId?: string;
+    readonly spaceId?: string; readonly deletedAt?: string | null;
+  }): Promise<void> {
+    await pool.query(
+      `INSERT INTO bookings (id, venue_id, space_id, kind, status, title, starts_at, ends_at, rank, joint_flag, decision_at, enquiry_id, deleted_at)
+       VALUES ($1, $2, $3, $4, $5, 'Crawford wedding', $6, ($6::timestamptz + interval '16 hours'), $7, $8, $9, $10, $11)`,
+      [randomUUID(), row.venueId ?? VENUE, row.spaceId ?? HALL, row.kind, row.status ?? "active", row.startsAt, row.rank ?? null,
+        row.jointFlag ?? false, row.decisionAt ?? null, row.enquiryId, row.deletedAt ?? null],
+    );
   }
 
   async function proposal(links: { enquiryId?: string; opportunityId?: string; status?: string } = {}): Promise<void> {
@@ -267,7 +288,8 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       await proposal({ opportunityId: await dealWithContact(enquiryId, "Elaine Crawford-Bell") });
       const answer = await ask(STAFF);
       expect(answer.statusCode).toBe(200);
-      expect(answer.drewOn).toEqual({ event: true, enquiry: true, clientWords: false });
+      expect(answer.drewOn).toEqual({ event: true, quote: false, holds: false, enquiry: true, clientWords: false });
+      expect(answer.figuresToCheck).toEqual([]);
       expect(adapter.calls).toHaveLength(1);
       const told = adapter.calls[0];
       expect(told?.useCase).toBe("proposal_draft");
@@ -372,7 +394,7 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
         [randomUUID(), other],
       );
       const answer = await ask(STAFF);
-      expect(answer.drewOn).toEqual({ event: true, enquiry: true, clientWords: true });
+      expect(answer.drewOn).toEqual({ event: true, quote: false, holds: false, enquiry: true, clientWords: true });
       expect(adapter.calls[0]?.context["clientLatestMessage"]).toBe("And could we finish at one rather than midnight?");
 
       // A version saved since and not yet sent has not answered them.
@@ -468,7 +490,115 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       await proposal({ enquiryId });
       const answer = await ask(STAFF);
       expect(answer.statusCode).toBe(200);
-      expect(answer.drewOn).toEqual({ event: false, enquiry: true, clientWords: false });
+      expect(answer.drewOn).toEqual({ event: false, quote: false, holds: false, enquiry: true, clientWords: false });
+    });
+  });
+
+  describe("the quote and the diary", () => {
+    it("tells it the composer's quote as the client will read it, worked out in whole pence, and the quote the client last saw", async () => {
+      await proposal({ enquiryId: await enquiry(), status: "changes_requested" });
+      await pool.query("UPDATE proposals SET sent_version = 1 WHERE id = $1", [PROPOSAL]);
+      await pool.query("INSERT INTO proposal_versions (id, proposal_id, version, payload) VALUES ($1, $2, 1, $3)", [randomUUID(), PROPOSAL, JSON.stringify({
+        quote: { quoteId: null, currency: "GBP", subtotalMinor: 1_840_000, totalMinor: 1_840_000, lineItems: [
+          { description: "Grand Hall hire", quantity: 1, unitAmountMinor: 240_000, lineTotalMinor: 240_000 },
+          { description: "Wedding breakfast", quantity: 160, unitAmountMinor: 8_750, lineTotalMinor: 1_400_000 },
+          { description: "Drinks package", quantity: 160, unitAmountMinor: 1_250, lineTotalMinor: 200_000 },
+        ] },
+      })]);
+      const answer = await ask(STAFF, PROPOSAL, { quote: VERSION_TWO_QUOTE });
+      expect(answer.statusCode).toBe(200);
+      expect(answer.drewOn).toMatchObject({ quote: true, holds: false });
+      const told = adapter.calls[0]?.context;
+      expect(told?.["quote"]).toEqual({ total: "£17,600.00", lines: [
+        { description: "Grand Hall hire", quantity: 1, unitPrice: "£2,400.00", lineTotal: "£2,400.00" },
+        { description: "Wedding breakfast", quantity: 160, unitPrice: "£82.50", lineTotal: "£13,200.00" },
+        { description: "Drinks package", quantity: 160, unitPrice: "£12.50", lineTotal: "£2,000.00" },
+      ] });
+      expect(told?.["quoteLastSent"]).toMatchObject({ total: "£18,400.00" });
+    });
+
+    it("tells it no price at all without the composer's quote: the one last sent would be a price nobody is sending", async () => {
+      await proposal({ enquiryId: await enquiry() });
+      await pool.query("UPDATE proposals SET sent_version = 1 WHERE id = $1", [PROPOSAL]);
+      await pool.query("INSERT INTO proposal_versions (id, proposal_id, version, payload) VALUES ($1, $2, 1, $3)", [randomUUID(), PROPOSAL, JSON.stringify({
+        quote: { quoteId: null, currency: "GBP", subtotalMinor: 240_000, totalMinor: 240_000, lineItems: [
+          { description: "Grand Hall hire", quantity: 1, unitAmountMinor: 240_000, lineTotalMinor: 240_000 },
+        ] },
+      })]);
+      const answer = await ask(STAFF);
+      expect(answer.drewOn).toMatchObject({ quote: false });
+      expect(Object.keys(adapter.calls[0]?.context ?? {})).not.toContain("quoteLastSent");
+      expect(adapter.calls[0]?.prompt).not.toContain("£");
+    });
+
+    it("takes contact details out of a quote's lines", async () => {
+      await proposal({ enquiryId: await enquiry() });
+      await ask(STAFF, PROPOSAL, { quote: { currency: "GBP", lineItems: [line("Piper (book on 07700 900123)", 1, 30_000)] } });
+      const quote = adapter.calls[0]?.context["quote"] as { lines: { description: string }[] } | undefined;
+      expect(quote?.lines[0]?.description).toBe("Piper (book on (phone number))");
+    });
+
+    it.each([
+      ["a line with no words", { currency: "GBP", lineItems: [line(" ", 1, 100)] }],
+      ["a quantity of nought", { currency: "GBP", lineItems: [line("Hire", 0, 100)] }],
+      ["a negative price", { currency: "GBP", lineItems: [line("Hire", 1, -100)] }],
+      ["a price in fractions of a penny", { currency: "GBP", lineItems: [line("Hire", 1, 100.5)] }],
+      ["no lines", { currency: "GBP", lineItems: [] }],
+      ["a currency the venue does not take", { currency: "XYZ", lineItems: [line("Hire", 1, 100)] }],
+      ["a line with a total of its own", { currency: "GBP", lineItems: [{ ...line("Hire", 1, 100), lineTotalMinor: 1 }] }],
+    ])("refuses %s, and asks the provider nothing", async (_, quote) => {
+      await proposal({ enquiryId: await enquiry() });
+      const answer = await ask(STAFF, PROPOSAL, { quote });
+      expect(answer.statusCode).toBe(400);
+      expect(answer.code).toBe("VALIDATION_ERROR");
+      expect(adapter.calls).toEqual([]);
+    });
+
+    it("tells it the diary's holds for this client's enquiry, in the diary's words and the venue's calendar", async () => {
+      const enquiryId = await enquiry();
+      await proposal({ enquiryId });
+      // 23:30 on 4 June in UTC is half past midnight on 5 June in Glasgow.
+      await booking({ enquiryId, kind: "hold", startsAt: "2027-06-04T23:30:00Z", rank: 1, decisionAt: "2026-10-22T22:30:00Z" });
+      await booking({ enquiryId, kind: "hold", startsAt: "2027-06-12T09:00:00Z", rank: 1, jointFlag: true, decisionAt: "2026-10-29T12:00:00Z" });
+      await booking({ enquiryId, kind: "hold", startsAt: "2027-06-19T09:00:00Z", rank: 2, decisionAt: null });
+      await booking({ enquiryId, kind: "ink", startsAt: "2027-06-26T09:00:00Z" });
+      const answer = await ask(STAFF);
+      expect(answer.drewOn).toMatchObject({ holds: true, quote: false });
+      expect(adapter.calls[0]?.context["holds"]).toEqual([
+        { date: "2027-06-05", room: "Grand Hall", standing: "Provisional · 1st option", heldUntil: "2026-10-22" },
+        { date: "2027-06-12", room: "Grand Hall", standing: "Provisional · Joint 1st", heldUntil: "2026-10-29" },
+        { date: "2027-06-19", room: "Grand Hall", standing: "Provisional · 2nd option" },
+        { date: "2027-06-26", room: "Grand Hall", standing: "Confirmed" },
+      ]);
+    });
+
+    it("never tells it another client's or another venue's holds, a hold released or removed, or a block or a prospect", async () => {
+      const enquiryId = await enquiry();
+      await proposal({ enquiryId });
+      const theirs = await enquiry(VENUE, "Another client's words.", { name: "Someone Else" });
+      const elsewhere = await enquiry(OTHER_VENUE, "Words from another venue.", { name: "Other Venue Client" });
+      const otherHall = randomUUID();
+      await pool.query("INSERT INTO spaces (id, venue_id, name, slug, sort_order) VALUES ($1, $2, 'Their Hall', 'their-hall', 0)", [otherHall, OTHER_VENUE]);
+      await booking({ enquiryId: theirs, kind: "hold", startsAt: "2027-06-05T09:00:00Z", rank: 2 });
+      await booking({ enquiryId: elsewhere, kind: "hold", startsAt: "2027-06-05T09:00:00Z", rank: 1, venueId: OTHER_VENUE, spaceId: otherHall });
+      // Their room at this venue's booking, which no real row could hold, is still not read.
+      await booking({ enquiryId, kind: "hold", startsAt: "2027-06-06T09:00:00Z", rank: 1, spaceId: otherHall });
+      await booking({ enquiryId, kind: "hold", startsAt: "2027-06-07T09:00:00Z", rank: 1, status: "released" });
+      await booking({ enquiryId, kind: "hold", startsAt: "2027-06-08T09:00:00Z", rank: 1, deletedAt: "2026-10-01T09:00:00Z" });
+      await booking({ enquiryId, kind: "internal_block", startsAt: "2027-06-09T09:00:00Z" });
+      await booking({ enquiryId, kind: "prospect", startsAt: "2027-06-10T09:00:00Z" });
+      const answer = await ask(STAFF);
+      expect(answer.drewOn).toMatchObject({ holds: false });
+      expect(Object.keys(adapter.calls[0]?.context ?? {})).not.toContain("holds");
+    });
+
+    it("lists the figures a draft states that it was not given, for a person to check", async () => {
+      await proposal({ enquiryId: await enquiry() });
+      adapter.reply = "Dear Elaine, the dinner would be £80 a head for your 150 guests, and we can hold 19 June.";
+      const answer = await ask(STAFF, PROPOSAL, { quote: VERSION_TWO_QUOTE });
+      expect(answer.statusCode).toBe(200);
+      // 150 is the enquiry's guest count; 80 and 19 appear nowhere in what it was given.
+      expect(answer.figuresToCheck).toEqual(["80", "19"]);
     });
   });
 });

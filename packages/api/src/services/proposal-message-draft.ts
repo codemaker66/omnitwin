@@ -1,6 +1,24 @@
-import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { occasionLabel, type CanonicalJsonValue, type ProposalMessageDraft } from "@omnitwin/types";
-import { contacts, enquiries, opportunities, proposalComments, proposalStatusHistory, proposals } from "../db/schema.js";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import {
+  moneyWords,
+  occasionLabel,
+  rotaLocalDate,
+  type CanonicalJsonValue,
+  type ProposalMessageDraft,
+  type ProposalMessageDraftQuote,
+} from "@omnitwin/types";
+import {
+  bookings,
+  contacts,
+  enquiries,
+  opportunities,
+  proposalComments,
+  proposalStatusHistory,
+  proposalVersions,
+  proposals,
+  spaces,
+  venues,
+} from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { clientEvent } from "./proposal-taken.js";
 
@@ -9,20 +27,30 @@ import { clientEvent } from "./proposal-taken.js";
 // (roadmap X1, "Use in proposal"): the event as the venue holds it, the
 // client's name, the client's words from their enquiry and their latest
 // words on the proposal since it was last sent (a change they asked for, not
-// one a version sent since has answered). It is built here, at the
-// proposal's own venue, never taken from the browser, so nothing of another
-// venue's can be sent and nothing can be added to it. It carries no id, no
-// price and no email address or phone number: a name holding either (a
-// public enquiry sent without a name stores its email as the name) is left
-// out, and contact details in the client's words and occasion are taken
-// out. Anything else the client typed (a date, a budget) goes as written.
+// one a version sent since has answered). With a quote from the composer, the
+// figures the coordinator is about to send, it is told that quote and the
+// one the client last saw; and it is told the diary's holds for the client's
+// enquiry, in the diary's own words ("Provisional · 1st option", until its
+// decision date). Everything but the composer's quote is built here, at the
+// proposal's own venue, so nothing of another venue's or another client's
+// can be sent. It carries no id and no email address or phone number: a name
+// holding either (a public enquiry sent without a name stores its email as
+// the name) is left out, and contact details in the client's words, the
+// occasion and the quote's lines are taken out. Anything else the client
+// typed (a date, a budget) goes as written. A part with nothing in it is
+// left out rather than sent empty, so a proposal without a quote or a hold
+// is told exactly what it was told before either was added.
 // ---------------------------------------------------------------------------
 
 /** The longest part of the client's words passed on: enough for the draft to
  *  answer what they asked, without sending a long thread. */
 export const MAX_CLIENT_NOTES_LENGTH = 2000;
 
-type DraftFrom = Pick<typeof proposals.$inferSelect, "id" | "venueId" | "opportunityId" | "enquiryId" | "configurationId">;
+/** The most holds passed on: a client holding more dates than this is rare,
+ *  and the earliest are the ones in play. */
+export const MAX_HOLDS_TOLD = 10;
+
+type DraftFrom = Pick<typeof proposals.$inferSelect, "id" | "venueId" | "opportunityId" | "enquiryId" | "configurationId" | "sentVersion">;
 
 export interface MessageDraftContext {
   readonly context: Record<string, CanonicalJsonValue>;
@@ -184,7 +212,114 @@ function nameOf(...candidates: readonly (string | null | undefined)[]): string |
   return null;
 }
 
-export async function messageDraftContext(db: Database, proposal: DraftFrom): Promise<MessageDraftContext> {
+export interface QuoteLineIn { readonly description: string; readonly quantity: number; readonly unitAmountMinor: number }
+
+/** A quote as the client reads it: each line's words (contact details taken
+ *  out), how many, the price of one and of all, and the total, in the quote's
+ *  money. Totals are worked out in whole pence; a line too long is cut. The
+ *  evaluation builds its cases' quotes with it too. */
+export function quoteWords(currency: string, lines: readonly QuoteLineIn[]): Record<string, CanonicalJsonValue> {
+  let total = 0;
+  const told = lines.map((line) => {
+    const lineTotal = line.quantity * line.unitAmountMinor;
+    total += lineTotal;
+    return {
+      description: scrub(line.description).slice(0, MAX_CLIENT_NOTES_LENGTH),
+      quantity: line.quantity,
+      unitPrice: moneyWords(line.unitAmountMinor, currency),
+      lineTotal: moneyWords(lineTotal, currency),
+    };
+  });
+  return { lines: told, total: moneyWords(total, currency) };
+}
+
+function ordinal(rank: number): string {
+  const tens = rank % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : rank % 10 === 1 ? "st" : rank % 10 === 2 ? "nd" : rank % 10 === 3 ? "rd" : "th";
+  return `${String(rank)}${suffix}`;
+}
+
+/** A hold's standing in the diary's words, as its reminders say it:
+ *  "Provisional · 1st option", "Provisional · Joint 1st", "Provisional", or
+ *  "Confirmed" for a booking in ink. The evaluation words its cases' holds
+ *  with it too. */
+export function standingWords(kind: string, rank: number | null, jointFlag: boolean): string {
+  if (kind === "ink") return "Confirmed";
+  if (rank === null) return "Provisional";
+  if (rank === 1 && jointFlag) return "Provisional · Joint 1st";
+  return `Provisional · ${ordinal(rank)} option`;
+}
+
+/** A hold as the diary holds it, its dates already in the venue's calendar. */
+export interface HoldIn {
+  readonly date: string;
+  readonly room: string;
+  readonly kind: string;
+  readonly rank: number | null;
+  readonly jointFlag: boolean;
+  readonly heldUntil: string | null;
+}
+
+/** A hold as the AI is told it: the date and room, its standing in the
+ *  diary's words and, for a hold, the date it is held until. The evaluation
+ *  words its cases' holds with it too. */
+export function holdWords(hold: HoldIn): Record<string, CanonicalJsonValue> {
+  return {
+    date: hold.date,
+    room: hold.room,
+    standing: standingWords(hold.kind, hold.rank, hold.jointFlag),
+    ...(hold.kind === "hold" && hold.heldUntil !== null ? { heldUntil: hold.heldUntil } : {}),
+  };
+}
+
+/** The diary's live holds and confirmed bookings for one enquiry at the
+ *  venue: the date and room each holds, its standing and, for a hold, the
+ *  date it is held until, in the venue's own calendar. */
+async function holdsFor(db: Database, venueId: string, enquiryId: string): Promise<Record<string, CanonicalJsonValue>[]> {
+  const [venue] = await db.select({ timezone: venues.timezone }).from(venues).where(eq(venues.id, venueId)).limit(1);
+  const timeZone = venue?.timezone ?? "Europe/London";
+  const rows = await db.select({
+    kind: bookings.kind,
+    rank: bookings.rank,
+    jointFlag: bookings.jointFlag,
+    startsAt: bookings.startsAt,
+    decisionAt: bookings.decisionAt,
+    room: spaces.name,
+  })
+    .from(bookings)
+    .innerJoin(spaces, and(eq(spaces.id, bookings.spaceId), eq(spaces.venueId, venueId)))
+    .where(and(
+      eq(bookings.venueId, venueId),
+      eq(bookings.enquiryId, enquiryId),
+      eq(bookings.status, "active"),
+      isNull(bookings.deletedAt),
+      inArray(bookings.kind, ["hold", "ink"]),
+    ))
+    .orderBy(asc(bookings.startsAt))
+    .limit(MAX_HOLDS_TOLD);
+  return rows.map((row) => holdWords({
+    date: rotaLocalDate(row.startsAt.getTime(), timeZone),
+    room: row.room,
+    kind: row.kind,
+    rank: row.rank,
+    jointFlag: row.jointFlag,
+    heldUntil: row.decisionAt === null ? null : rotaLocalDate(row.decisionAt.getTime(), timeZone),
+  }));
+}
+
+/** The quote in the version the client was last sent, if it has one. */
+async function quoteLastSent(db: Database, proposal: DraftFrom): Promise<Record<string, CanonicalJsonValue> | null> {
+  if (proposal.sentVersion === null) return null;
+  const [sent] = await db.select({ payload: proposalVersions.payload })
+    .from(proposalVersions)
+    .where(and(eq(proposalVersions.proposalId, proposal.id), eq(proposalVersions.version, proposal.sentVersion)))
+    .limit(1);
+  const quote = sent?.payload.quote ?? null;
+  if (quote === null || quote.lineItems.length === 0) return null;
+  return quoteWords(quote.currency, quote.lineItems);
+}
+
+export async function messageDraftContext(db: Database, proposal: DraftFrom, quote?: ProposalMessageDraftQuote): Promise<MessageDraftContext> {
   const { facts } = await clientEvent(db, proposal);
   const [deal] = proposal.opportunityId === null ? [] : await db.select({
     sourceEnquiryId: opportunities.sourceEnquiryId,
@@ -234,6 +369,10 @@ export async function messageDraftContext(db: Database, proposal: DraftFrom): Pr
   // free on the public form is scrubbed like the client's other words.
   const occasion = scrub(occasionLabel(facts.occasion));
   const event = facts.occasion !== null || facts.eventDate !== null || facts.guestCount !== null || facts.roomName !== null;
+  // The quote the client last saw goes only beside the composer's, so the
+  // draft can say what changed; alone it would be a price nobody is sending.
+  const sentQuote = quote === undefined ? null : await quoteLastSent(db, proposal);
+  const holds = enquiryId === null ? [] : await holdsFor(db, proposal.venueId, enquiryId);
   return {
     context: {
       clientName: nameOf(deal?.contactName, enquiry?.guestName, enquiry?.name),
@@ -241,9 +380,18 @@ export async function messageDraftContext(db: Database, proposal: DraftFrom): Pr
       eventDate: facts.eventDate,
       guestCount: facts.guestCount,
       roomName: facts.roomName,
+      ...(quote === undefined ? {} : { quote: quoteWords(quote.currency, quote.lineItems) }),
+      ...(sentQuote === null ? {} : { quoteLastSent: sentQuote }),
+      ...(holds.length === 0 ? {} : { holds }),
       clientNotes,
       clientLatestMessage,
     },
-    drewOn: { event, enquiry: clientNotes !== null, clientWords: clientLatestMessage !== null },
+    drewOn: {
+      event,
+      quote: quote !== undefined,
+      holds: holds.length > 0,
+      enquiry: clientNotes !== null,
+      clientWords: clientLatestMessage !== null,
+    },
   };
 }

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { isProposalEditable, type ProposalStatus } from "@omnitwin/types";
+import { ProposalMessageDraftRequestSchema, figuresNotIn, isProposalEditable, type ProposalStatus } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { proposals } from "../db/schema.js";
 import type { Env } from "../env.js";
@@ -21,10 +21,14 @@ import { canManageCommercial } from "../utils/query.js";
 // may ask, only while the proposal can take a new version, and only where a
 // provider is configured. What the AI is told is built on the server from the
 // proposal's own venue (services/proposal-message-draft.ts); the browser sends
-// nothing but the proposal's id. With nothing to draw on (no event details,
-// enquiry or words from the client) it is refused rather than invented. The
-// answer says what the AI drew on. The draft is review-gated and never sent:
-// the composer shows it, and the booker chooses to use it.
+// the proposal's id and, optionally, the quote in its composer, read as a
+// version's quote is, and anything else it sends is dropped. With nothing to
+// draw on (no event details, enquiry or words from the client) it is refused
+// rather than invented. The answer says what the AI drew on, and lists any
+// figure the draft states that appears nowhere in what it was given (the
+// evaluation's number rule), for the booker to check. The draft is
+// review-gated and never sent: the composer shows it, and the booker chooses
+// to use it.
 // ---------------------------------------------------------------------------
 
 const IdParam = z.object({ id: z.string().uuid() });
@@ -59,7 +63,11 @@ export async function proposalMessageDraftRoutes(
         code: "AI_ASSISTANT_DISABLED",
       });
     }
-    const { context, drewOn } = await messageDraftContext(db, proposal);
+    const body = ProposalMessageDraftRequestSchema.safeParse(request.body ?? {});
+    if (!body.success) {
+      return reply.status(400).send({ error: "The quote sent with the request could not be read", code: "VALIDATION_ERROR" });
+    }
+    const { context, drewOn } = await messageDraftContext(db, proposal, body.data.quote);
     if (!drewOn.event && !drewOn.enquiry && !drewOn.clientWords) {
       return reply.status(422).send({
         error: "This proposal has no event details, enquiry or words from the client to draft from yet",
@@ -68,7 +76,7 @@ export async function proposalMessageDraftRoutes(
     }
     try {
       const draft = await generateAIDraft(adapter, { useCase: "proposal_draft", context });
-      return { data: { draft, drewOn } };
+      return { data: { draft, drewOn, figuresToCheck: figuresNotIn(draft.body, context) } };
     } catch (err) {
       if (err instanceof AIAssistantDisabledError) {
         return reply.status(503).send({ error: err.message, code: "AI_ASSISTANT_DISABLED" });

@@ -1,6 +1,12 @@
 import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import { Sparkles } from "lucide-react";
-import { MAX_CLIENT_MESSAGE_LENGTH, findUnsupportedProposalClaim, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
+import {
+  MAX_CLIENT_MESSAGE_LENGTH,
+  findUnsupportedProposalClaim,
+  type AIDraft,
+  type ProposalMessageDraft,
+  type ProposalMessageDraftQuote,
+} from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import { draftProposalMessage } from "../../../api/ai-assistant.js";
 import { markAIDraftsUnavailable, useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
@@ -10,12 +16,15 @@ import { ActivityIndicator } from "../../shared/Activity.js";
 // Draft the message with AI (roadmap X1, "Use in proposal"), under the
 // composer's message. Offered only where a provider is configured; with none,
 // nothing about AI is shown or stored. The server writes the draft from what
-// the venue holds of the proposal (the event, the client's name, their
-// enquiry's words and their latest message on it), and refuses when it holds
-// none of them rather than have the AI invent an event. The draft is shown in
-// heather, saying what it was written from and that it is not checked, and the
-// booker chooses to use it or put it away; used, the message stays marked
-// until they say they have read it through.
+// the venue holds of the proposal (the event, the client's name, the diary's
+// holds for them, their enquiry's words and their latest message on it) and
+// from the quote in the composer when every line of it can be read, and
+// refuses when it holds none of the event, the enquiry or the client's words
+// rather than have the AI invent an event. The draft is shown in heather,
+// saying what it was written from, which of its figures are in nothing it was
+// given, and that it is not checked; the booker chooses to use it or put it
+// away, and used, the message stays marked until they say they have read it
+// through.
 // ---------------------------------------------------------------------------
 
 type DrewOn = ProposalMessageDraft["drewOn"];
@@ -23,23 +32,37 @@ type DrewOn = ProposalMessageDraft["drewOn"];
 type Step =
   | { readonly kind: "idle" }
   | { readonly kind: "drafting" }
-  | { readonly kind: "ready"; readonly draft: AIDraft; readonly drewOn: DrewOn }
+  | { readonly kind: "ready"; readonly draft: AIDraft; readonly drewOn: DrewOn; readonly figuresToCheck: readonly string[] }
   | { readonly kind: "failed" }
   | { readonly kind: "refused" }
   | { readonly kind: "nothing" }
   | { readonly kind: "gone" };
 
+function listOf(parts: readonly string[]): string {
+  const last = parts[parts.length - 1] ?? "";
+  return parts.length === 1 ? last : `${parts.slice(0, -1).join(", ")} and ${last}`;
+}
+
 /** What a draft was written from, in words: only what the AI was given. */
 export function drewOnWords(drewOn: DrewOn): string {
   const parts = [
     drewOn.event ? "the event's details" : null,
+    drewOn.quote ? "the quote" : null,
+    drewOn.holds ? "the diary's holds" : null,
     drewOn.enquiry ? "the client's enquiry" : null,
     drewOn.clientWords ? "the client's latest message" : null,
   ].filter((part): part is string => part !== null);
   if (parts.length === 0) return "Written by AI. Not checked.";
-  const last = parts[parts.length - 1] ?? "";
-  const list = parts.length === 1 ? last : `${parts.slice(0, -1).join(", ")} and ${last}`;
-  return `Written by AI from ${list}. Not checked.`;
+  return `Written by AI from ${listOf(parts)}. Not checked.`;
+}
+
+/** The figures a draft states that the AI was not given, to check before it
+ *  is used; null when there are none. */
+export function figuresWords(figures: readonly string[]): string | null {
+  if (figures.length === 0) return null;
+  return figures.length === 1
+    ? `The figure ${figures[0] ?? ""} is not in anything the AI was given. Check it before you use the draft.`
+    : `The figures ${listOf(figures)} are not in anything the AI was given. Check them before you use the draft.`;
 }
 
 /** Focus moves to what an answer brings only from where it was when asked,
@@ -52,6 +75,9 @@ function focusFree(from: Element | null, card: Element | null): boolean {
 
 interface AIMessageDraftProps {
   readonly proposalId: string;
+  /** The composer's quote as a save would read it, or null when it has no
+   *  lines or one cannot be read yet: then no price is sent. */
+  readonly quote: ProposalMessageDraftQuote | null;
   /** False while the composer holds what would replace it (a save on its
    *  way, template work): Use waits. */
   readonly canUse: boolean;
@@ -62,7 +88,7 @@ interface AIMessageDraftProps {
   readonly onShown: (body: string | null) => void;
 }
 
-export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessageDraftProps): ReactElement | null {
+export function AIMessageDraft({ proposalId, quote, canUse, onUse, onShown }: AIMessageDraftProps): ReactElement | null {
   const available = useAIDraftsAvailable();
   const [step, setStep] = useState<Step>({ kind: "idle" });
   // Said to a screen reader: the draft on its way, or ready where focus could not go.
@@ -103,11 +129,11 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
     setStep({ kind: "drafting" });
     setSaid("Drafting the message with AI.");
     if (again) setFocusTo("button");
-    draftProposalMessage(proposalId)
-      .then(({ draft, drewOn }) => {
+    (quote === null ? draftProposalMessage(proposalId) : draftProposalMessage(proposalId, quote))
+      .then(({ draft, drewOn, figuresToCheck }) => {
         if (askNumber.current !== mine) return;
         setSaid("");
-        setStep({ kind: "ready", draft, drewOn });
+        setStep({ kind: "ready", draft, drewOn, figuresToCheck });
         setFocusTo("draft");
       })
       .catch((error: unknown) => {
@@ -146,6 +172,7 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
   const draft = ready?.draft ?? null;
   const tooLong = draft !== null && draft.body.length > MAX_CLIENT_MESSAGE_LENGTH;
   const claim = draft === null ? null : findUnsupportedProposalClaim(draft.body);
+  const figures = ready === null ? null : figuresWords(ready.figuresToCheck);
   return (
     <div className="pr-ai" ref={cardRef} data-testid="ai-draft">
       <p className="vv-sr-only" role="status" data-testid="ai-draft-said">{said}</p>
@@ -190,6 +217,7 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
           </p>
           <p className="pr-ai__about" data-testid="ai-draft-from">{drewOnWords(ready.drewOn)}</p>
           <textarea className="pr-ai__body" aria-label="AI draft of the message" data-testid="ai-draft-body" rows={6} readOnly value={draft.body} />
+          {figures !== null && <p className="pr-ai__about" data-testid="ai-draft-figures">{figures}</p>}
           {draft.safeLanguageApplied && <p className="pr-ai__about">Unsupported certainty was taken out of it.</p>}
           {claim !== null && (
             <p className="pr-ai__about" data-testid="ai-draft-claim">

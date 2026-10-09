@@ -8,7 +8,7 @@ import {
   expectAccessibilityAuditClean,
   watchPageProblems,
 } from "./support/accessibility-audit.js";
-import { CLAUDE_CRAWFORD_DRAFT, CRAWFORD_CHANGE_REQUEST, CRAWFORD_ENQUIRY_MESSAGE, CRAWFORD_FACTS } from "./support/platform-sample.js";
+import { CLAUDE_CRAWFORD_DRAFT, CLAUDE_CRAWFORD_FIGURES, CRAWFORD_CHANGE_REQUEST, CRAWFORD_ENQUIRY_MESSAGE, CRAWFORD_FACTS } from "./support/platform-sample.js";
 
 // ---------------------------------------------------------------------------
 // E2E: the Proposals desk (roadmap X1).
@@ -91,6 +91,11 @@ interface World {
   readonly events?: Readonly<Record<string, ProposalEvent>>;
   /** The client's words in each proposal's enquiry, as the venue holds them. */
   readonly enquiryMessages?: Readonly<Record<string, string>>;
+  /** Whether the diary holds a date for each proposal's client. */
+  readonly holds?: Readonly<Record<string, boolean>>;
+  /** The figures each proposal's draft states that its context does not
+   *  hold, as the route reports them. */
+  readonly figures?: Readonly<Record<string, readonly string[]>>;
   /** An AI provider, and what each draft request answers in turn. */
   readonly ai?: readonly (string | number)[];
 }
@@ -361,8 +366,11 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
       if (rest === "/message-draft" && method === "POST") {
         // As the route: only while the proposal is in hand, with a provider,
         // and with something to draw on; the draft is written from the
-        // proposal, not the request, and says what it drew on.
-        emulator.aiAsks.push({ id, body: request.postDataJSON() as unknown });
+        // proposal and the composer's quote alone, and says what it drew on
+        // and which of its figures to check.
+        const asked = request.postDataJSON() as unknown;
+        emulator.aiAsks.push({ id, body: asked });
+        const quote = typeof asked === "object" && asked !== null && "quote" in asked;
         if (current.status !== "draft" && current.status !== "changes_requested") {
           void route.fulfill({ status: 422, json: { error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" } });
           return;
@@ -396,7 +404,8 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
             safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated", evidenceStatus: "unverified",
             sendState: "draft_only", generatedAt: NOW.toISOString(), digest: "d".repeat(64),
           },
-          drewOn: { event, enquiry, clientWords },
+          drewOn: { event, quote, holds: world.holds?.[id] === true, enquiry, clientWords },
+          figuresToCheck: [...(world.figures?.[id] ?? [])],
         } } });
         return;
       }
@@ -1012,7 +1021,11 @@ test.describe("Proposals desk", () => {
     await expect(composer.getByTestId("ai-draft-gone")).toHaveText("AI drafts are not available now. The message is unchanged.");
     await expect(composer.getByRole("button", { name: "Draft the message with AI" })).toHaveCount(0);
     await expect(message).toHaveValue(WORDS);
-    expect(emulator.aiAsks.map((asked) => [asked.id, asked.body])).toEqual([[CRAWFORD, {}], [CRAWFORD, {}], [CRAWFORD, {}]]);
+    // Each ask carries the composer's quote, read as a save reads it.
+    const quote = { quote: { currency: "GBP", lineItems: [
+      { description: "Grand Hall hire", quantity: 1, unitAmountMinor: 440_000 }, { description: "Dinner", quantity: 160, unitAmountMinor: 8_750 },
+    ] } };
+    expect(emulator.aiAsks.map((asked) => [asked.id, asked.body])).toEqual([[CRAWFORD, quote], [CRAWFORD, quote], [CRAWFORD, quote]]);
   });
 
   test("on a phone the proposal replaces the ledger, Back to proposals returns to it, and nothing scrolls sideways", async ({ page }) => {
@@ -1064,6 +1077,8 @@ test.describe("Proposals desk, /platform captures", () => {
       ai: [CLAUDE_CRAWFORD_DRAFT],
       events: { [CRAWFORD]: { facts: { ...CRAWFORD_FACTS }, spaceId: null } },
       enquiryMessages: { [CRAWFORD]: CRAWFORD_ENQUIRY_MESSAGE },
+      holds: { [CRAWFORD]: true },
+      figures: { [CRAWFORD]: CLAUDE_CRAWFORD_FIGURES },
     });
     // 16:30 in Glasgow on Thursday 8 October 2026.
     await page.clock.setFixedTime(new Date("2026-10-08T15:30:00.000Z"));
@@ -1087,7 +1102,7 @@ test.describe("Proposals desk, /platform captures", () => {
     const words = draft.getByRole("textbox", { name: "AI draft of the message" });
     await expect(words).toHaveValue(CLAUDE_CRAWFORD_DRAFT);
     await expect(draft.getByTestId("ai-draft-from"))
-      .toHaveText("Written by AI from the event's details, the client's enquiry and the client's latest message. Not checked.");
+      .toHaveText("Written by AI from the event's details, the quote, the diary's holds, the client's enquiry and the client's latest message. Not checked.");
     await composer.getByTestId("composer-start").evaluate((element) => { element.scrollIntoView({ block: "start" }); });
     const box = await words.boundingBox();
     const hidden = await words.evaluate((element) => element.scrollHeight - element.clientHeight);

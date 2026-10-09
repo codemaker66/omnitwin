@@ -2523,3 +2523,7 @@ export * from "./requests.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";
+
+// T-646: the composer's quote sent with a request for an AI draft, and the
+// figure check run on every draft.
+export * from "./proposal-message-draft.js";

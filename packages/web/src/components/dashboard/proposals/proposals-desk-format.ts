@@ -1,4 +1,11 @@
-import { occasionLabel, type PricingType, type ProposalNextVersion, type ProposalVersionPayload } from "@omnitwin/types";
+import {
+  ProposalMessageDraftQuoteSchema,
+  occasionLabel,
+  type PricingType,
+  type ProposalMessageDraftQuote,
+  type ProposalNextVersion,
+  type ProposalVersionPayload,
+} from "@omnitwin/types";
 import type { DeskProposal, ProposalDeskGroup, ProposalHistoryEntry } from "../../../api/proposals.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
 import { documentFacts } from "../../proposal/proposal-document-format.js";
@@ -401,6 +408,19 @@ function readLines(lines: readonly QuoteLineDraft[]): readonly ReadLine[] | null
     read.push({ description: line.description.trim(), quantity, unitMinor });
   }
   return read;
+}
+
+/** The composer's quote as a request for an AI draft sends it: its lines
+ *  read as a save reads them, or null when there are none or any one cannot
+ *  be read yet, so a half-typed price never reaches the draft. */
+export function composerQuote(lines: readonly QuoteLineDraft[], currency: string): ProposalMessageDraftQuote | null {
+  const read = readLines(lines);
+  if (read === null || read.length === 0) return null;
+  const quote = ProposalMessageDraftQuoteSchema.safeParse({
+    currency,
+    lineItems: read.map((line) => ({ description: line.description, quantity: line.quantity, unitAmountMinor: line.unitMinor })),
+  });
+  return quote.success ? quote.data : null;
 }
 
 function sameLines(a: readonly ReadLine[], b: readonly ReadLine[]): boolean {

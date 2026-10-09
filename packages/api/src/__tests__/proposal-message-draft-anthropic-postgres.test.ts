@@ -74,10 +74,11 @@ describe.skipIf(testUrl === undefined)("proposal message drafts with the Anthrop
   let offServer: FastifyInstance;
   const fixtureSchema = `proposal_message_draft_anthropic_${randomUUID().replaceAll("-", "")}`;
   const looseTables: PgTable[] = [schema.venues, schema.users, schema.spaces, schema.proposals, schema.enquiries,
-    schema.opportunities, schema.configurations, schema.contacts, schema.proposalComments, schema.proposalVersions, schema.proposalStatusHistory];
+    schema.opportunities, schema.configurations, schema.contacts, schema.proposalComments, schema.proposalVersions, schema.proposalStatusHistory,
+    schema.bookings];
 
-  async function ask(who: { readonly id: string; readonly role: string }, target: FastifyInstance = server): Promise<{ statusCode: number; body: Record<string, unknown> }> {
-    const res = await target.inject({ method: "POST", url: `/proposals/${PROPOSAL}/message-draft`, headers: as(who) });
+  async function ask(who: { readonly id: string; readonly role: string }, target: FastifyInstance = server, payload?: Record<string, unknown>): Promise<{ statusCode: number; body: Record<string, unknown> }> {
+    const res = await target.inject({ method: "POST", url: `/proposals/${PROPOSAL}/message-draft`, headers: as(who), ...(payload === undefined ? {} : { payload }) });
     return { statusCode: res.statusCode, body: res.json<Record<string, unknown>>() };
   }
 
@@ -153,10 +154,24 @@ describe.skipIf(testUrl === undefined)("proposal message drafts with the Anthrop
       useCase: "proposal_draft", body: "Dear Elaine, thank you for thinking of the Grand Hall.",
       humanReviewRequired: true, provenance: "ai_generated", evidenceStatus: "unverified", sendState: "draft_only",
     });
-    expect(draft.drewOn).toEqual({ event: true, enquiry: true, clientWords: false });
+    expect(draft.drewOn).toEqual({ event: true, quote: false, holds: false, enquiry: true, clientWords: false });
+    expect(draft.figuresToCheck).toEqual([]);
     // The rules in the system prompt; the venue's facts, as data, in the user turn.
     expect(JSON.stringify(sent[0]?.["system"])).toContain("You are drafting the message a venue's events team sends their client with a proposal");
     expect(JSON.stringify(sent[0]?.["messages"])).toContain("ceilidh after dinner");
+  });
+
+  it("sends Claude the composer's quote as the client will read it, inside the data", async () => {
+    await proposalWithEnquiry("Could the dinner be a little less per head?");
+    const answer = await ask(STAFF, server, { quote: { currency: "GBP", lineItems: [
+      { description: "Wedding breakfast", quantity: 160, unitAmountMinor: 8250 },
+    ] } });
+    expect(answer.statusCode).toBe(200);
+    expect(ProposalMessageDraftSchema.parse(answer.body["data"]).drewOn.quote).toBe(true);
+    const turn = JSON.stringify(sent[0]?.["messages"]);
+    expect(turn).toContain("£82.50");
+    expect(turn).toContain("£13,200.00");
+    expect(JSON.stringify(sent[0]?.["system"])).not.toContain("£");
   });
 
   it("never sends the provider an email address or phone number from the client's words", async () => {

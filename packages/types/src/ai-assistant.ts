@@ -91,15 +91,20 @@ export type AIDraft = z.infer<typeof AIDraftSchema>;
 
 /** An AI draft of a proposal's message to its client, with what the server
  *  gave the AI to draw on, so the screen claims only what was used: the
- *  event's details, the client's enquiry, the client's latest words on the
- *  proposal. */
+ *  event's details, the quote in the composer, the diary's holds for the
+ *  client, the client's enquiry, the client's latest words on the proposal.
+ *  `figuresToCheck` are numbers the draft states that appear nowhere in what
+ *  the AI was given. */
 export const ProposalMessageDraftSchema = z.object({
   draft: AIDraftSchema,
   drewOn: z.object({
     event: z.boolean(),
+    quote: z.boolean(),
+    holds: z.boolean(),
     enquiry: z.boolean(),
     clientWords: z.boolean(),
   }).strict(),
+  figuresToCheck: z.array(z.string().min(1).max(40)).max(50),
 }).strict();
 export type ProposalMessageDraft = z.infer<typeof ProposalMessageDraftSchema>;
 
