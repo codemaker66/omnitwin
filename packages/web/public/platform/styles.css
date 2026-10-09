@@ -165,7 +165,7 @@ main:focus { outline: none; }
 .scenes button { appearance: none; border: 0; background: transparent; cursor: pointer; padding: 8px 16px; border-radius: 999px; font: 500 14px/1.2 var(--sans); color: rgba(242, 237, 221, 0.82); transition: background-color 0.25s ease, color 0.25s ease; }
 .scenes button:hover { color: var(--ivory); }
 .scenes button[aria-checked="true"] { background: var(--gold-ink); color: #1d170c; }
-.hall__note { max-width: 64em; margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(242, 237, 221, 0.86); text-align: right; }
+.hall__note { max-width: 64em; margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(242, 237, 221, 0.86); text-align: right; text-wrap: balance; }
 /* Both captions hold one cell, so switching scenes moves nothing. */
 .hall__drawns { display: grid; }
 .hall__drawn { grid-area: 1 / 1; visibility: hidden; }
@@ -241,16 +241,18 @@ main:focus { outline: none; }
 .step__words { max-width: 32em; margin: 0 0 14px; padding-left: 16px; border-left: 2px solid var(--copper); font: 400 18px/1.5 var(--serif); color: var(--ink); }
 .step__link { display: inline-block; margin-top: 6px; font-weight: 550; }
 /* Step 5: Claude's draft with the coordinator's edits marked. A screen
-   reader hears each mark named, since strikethrough alone is not read. */
+   reader hears each mark named, since strikethrough alone is not read; the
+   names are the marks' alternative text, which draws nothing, so no line
+   wraps round them. */
 .edit { margin: 22px 0 0; padding: 16px 18px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--sheet); }
 .edit figcaption { margin: 0 0 10px; font: 600 12px/1.4 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--copper-ink); }
 .step .edit__text { max-width: none; margin: 0; font-size: 15px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
-.edit del, .edit__cut { color: #8a3522; text-decoration: line-through; text-decoration-thickness: 1px; background: rgba(180, 81, 58, 0.09); }
-.edit ins, .edit__add { color: var(--pass); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; background: rgba(31, 90, 63, 0.09); }
-.edit del::before, .edit del::after, .edit ins::before, .edit ins::after { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.edit del::before { content: " [Claude wrote: "; }
-.edit ins::before { content: " [Catherine wrote: "; }
-.edit del::after, .edit ins::after { content: "] "; }
+.edit del, .edit__cut { color: #8a3522; text-decoration: line-through; text-decoration-thickness: 1px; background: rgba(180, 81, 58, 0.1); border-radius: 2px; }
+.edit ins, .edit__add { color: var(--pass); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; background: rgba(31, 90, 63, 0.1); border-radius: 2px; }
+.edit del::before { content: "" / "Removed: "; }
+.edit ins::before { content: "" / "Added: "; }
+.edit del::after { content: "" / " end removed. "; }
+.edit ins::after { content: "" / " end added. "; }
 .step .edit__key { margin: 12px 0 0; font-size: 13px; color: var(--ink-soft); }
 .shot { margin: 24px 0 0; }
 .shot__open { appearance: none; display: block; width: 100%; padding: 0; border: 0; background: #e9e2d2; cursor: zoom-in; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px var(--line), 0 22px 48px -28px rgba(23, 36, 30, 0.45); }
@@ -354,7 +356,9 @@ main:focus { outline: none; }
 .results th[scope="row"], .results thead th:first-child { text-align: left; }
 .results th[scope="row"] { font-weight: 500; }
 .results tbody tr:first-child { background: rgba(226, 192, 127, 0.16); }
-.measure__notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 48px; margin-top: 30px; font-size: 15px; color: var(--ink-soft); }
+/* Two columns read down, each note whole, so no row waits on its neighbour. */
+.measure__notes { columns: 2; column-gap: 48px; margin-top: 30px; font-size: 15px; color: var(--ink-soft); }
+.measure__notes > p { break-inside: avoid; margin: 0 0 22px; }
 .measure__notes strong { color: var(--ink); font-weight: 600; }
 
 /* ----------------------------------------------------------- engineering */
@@ -408,7 +412,7 @@ main:focus { outline: none; }
 
 @media (max-width: 999px) {
   .case, .founder__grid, .venue__grid { grid-template-columns: 1fr; }
-  .measure__notes { grid-template-columns: 1fr; }
+  .measure__notes { columns: 1; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 32px; }
   .practice { grid-template-columns: 1fr 1fr; }
   .ledger__rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }

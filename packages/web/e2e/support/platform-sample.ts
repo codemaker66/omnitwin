@@ -67,7 +67,7 @@ export const CRAWFORD_SENT_MESSAGE = [
   "Dinner, 160 guests at £82.50: £13,200",
   "Total: £17,600 (previously £18,400)",
   "",
-  "The Grand Hall is provisionally held for you as our first option for Saturday 5 June 2027, until Thursday 22 October.",
+  "The Grand Hall is provisionally held for you as first option for Saturday 5 June 2027, until Thursday 22 October.",
   "",
   "We've noted that two of your guests use wheelchairs and two are coeliac. I'll ring you next week to talk through what they need, so we can plan for them properly.",
   "",
