@@ -58,11 +58,14 @@ const SCANS = {
   scan_039: { x: 8.9266, y: -9.5346, z: 1.5191 },
 };
 
+// The desktop frame's horizon sits low (cy) so the vault stays clear above the
+// words and the floor, with its drawing, below them; lights marks the views
+// whose chandeliers the page lights first.
 const VIEWS = [
-  { name: "desktop", scan: "scan_044", heading: 0, yaw: 179.811, tilt: -0.244, width: 2560, height: 1440, f: 1150, cx: 0.56 * 2560, cy: 0.47 * 1440, scenes: ["breakfast", "ceremony"], markers: "hall-ink" },
-  { name: "phone", scan: "scan_044", heading: 0, yaw: 179.811, tilt: -0.244, width: 1170, height: 1416, f: 1000, cx: 0.5 * 1170, cy: 0.43 * 1416, scenes: ["breakfast", "ceremony"], markers: "hall-ink" },
-  { name: "night", scan: "scan_034", heading: 180, yaw: -0.045, tilt: 0.121, width: 2400, height: 1800, f: 1150, cx: 0.5 * 2400, cy: 0.5 * 1800, scenes: ["breakfast"], markers: "night-ink" },
-  { name: "dome", scan: "scan_039", heading: 90, yaw: 89.811, tilt: 50, width: 1800, height: 1800, f: 1300, cx: 900, cy: 900, scenes: [], markers: null },
+  { name: "desktop", scan: "scan_044", heading: 0, yaw: 179.811, tilt: -0.244, width: 2560, height: 1440, f: 1150, cx: 0.56 * 2560, cy: 0.55 * 1440, scenes: ["breakfast", "ceremony"], markers: "hall-ink", lights: { as: "desktop", region: [0.3, 0.05, 0.85, 0.5], apart: 0.09 } },
+  { name: "phone", scan: "scan_044", heading: 0, yaw: 179.811, tilt: -0.244, width: 1170, height: 1416, f: 1000, cx: 0.5 * 1170, cy: 0.43 * 1416, scenes: ["breakfast", "ceremony"], markers: "hall-ink", lights: { as: "phone", region: [0.2, 0.05, 0.85, 0.42], apart: 0.16 } },
+  { name: "night", scan: "scan_034", heading: 180, yaw: -0.045, tilt: 0.121, width: 2560, height: 1440, f: 1150, cx: 0.5 * 2560, cy: 0.52 * 1440, scenes: ["breakfast"], markers: "night-ink" },
+  { name: "dome", scan: "scan_039", heading: 90, yaw: 89.811, tilt: 45, width: 2880, height: 1620, f: 1100, cx: 1440, cy: 810, scenes: [], markers: null },
 ];
 
 // ---------------------------------------------------------------- photograph
@@ -263,8 +266,49 @@ const SCENES = { breakfast: await breakfast(), ceremony: ceremony() };
 
 const one = (n) => (Math.round(n * 10) / 10).toString();
 
-/** Nearer pieces read stronger, as light falls away down the hall. */
-const strength = (metres) => Math.max(0.62, Math.min(1, 1 - (metres - 4) / 30));
+/** Nearer pieces read fainter, so the plan gathers where the hall's
+ *  perspective leads: full strength from 8 m out, a sixth at the frame's foot. */
+const strength = (metres) => Math.max(0.16, Math.min(1, (metres - 2.6) / 5.4));
+
+/** The view's chandeliers, as fractions of the frame. Their crystals clip to
+ *  white in tight clusters where a lit wall only glows, so within the view's
+ *  ceiling region (lights.region, fractions x0 y0 x1 y1) the cells with most
+ *  near-white pixels around them win, each with its neighbours set aside. */
+function lightsOf(pixels, view, count = 3) {
+  const [x0, y0, x1, y1] = view.lights.region;
+  const cell = 16;
+  const c0 = Math.floor((x0 * view.width) / cell), c1 = Math.floor((x1 * view.width) / cell);
+  const r0 = Math.floor((y0 * view.height) / cell), r1 = Math.floor((y1 * view.height) / cell);
+  const white = new Map();
+  for (let r = r0 - 1; r <= r1 + 1; r += 1) {
+    for (let c = c0 - 1; c <= c1 + 1; c += 1) {
+      let n = 0;
+      for (let y = Math.max(0, r * cell); y < Math.min(view.height, (r + 1) * cell); y += 2) {
+        for (let x = Math.max(0, c * cell); x < Math.min(view.width, (c + 1) * cell); x += 2) {
+          const k = (y * view.width + x) * 3;
+          if (0.2126 * pixels[k] + 0.7152 * pixels[k + 1] + 0.0722 * pixels[k + 2] >= 246) n += 1;
+        }
+      }
+      white.set(`${String(c)},${String(r)}`, n);
+    }
+  }
+  const cells = [];
+  for (let r = r0; r <= r1; r += 1) {
+    for (let c = c0; c <= c1; c += 1) {
+      let score = 0;
+      for (let dr = -1; dr <= 1; dr += 1) for (let dc = -1; dc <= 1; dc += 1) score += white.get(`${String(c + dc)},${String(r + dr)}`) ?? 0;
+      cells.push({ x: (c + 0.5) * cell, y: (r + 0.5) * cell, score });
+    }
+  }
+  cells.sort((a, b) => b.score - a.score);
+  const found = [];
+  const apart = view.lights.apart * view.width;
+  for (const candidate of cells) {
+    if (found.every((light) => Math.hypot(light.x - candidate.x, light.y - candidate.y) > apart)) found.push(candidate);
+    if (found.length === count) break;
+  }
+  return found.map((light) => ({ x: light.x / view.width, y: light.y / view.height }));
+}
 
 function inkFor(view) {
   const { point, depth, circle } = projector(view);
@@ -319,10 +363,16 @@ function standalone(svg, view, keep) {
 await fs.mkdir(work, { recursive: true });
 let page = await fs.readFile(pagePath, "utf8");
 const inks = new Map();
+const lights = new Map();
 for (const view of VIEWS) {
   const pano = await panorama(view.scan);
   const pixels = render(pano, view);
   await sharp(pixels, { raw: { width: view.width, height: view.height, channels: 3 } }).png({ compressionLevel: 9 }).toFile(path.join(work, `hall-${view.name}.png`));
+  if (view.lights !== undefined) {
+    const found = lightsOf(pixels, view);
+    lights.set(view.lights.as, found);
+    console.log(`${view.name}: lights at ${found.map((light) => `${(light.x * 100).toFixed(1)}% ${(light.y * 100).toFixed(1)}%`).join(", ")}`);
+  }
   if (view.markers === null) {
     console.log(`${view.name}: ${pano.tile} ${pano.sha256.slice(0, 12)}…, ${String(view.width)}x${String(view.height)}`);
     continue;
@@ -331,9 +381,9 @@ for (const view of VIEWS) {
   inks.set(view.markers, [...(inks.get(view.markers) ?? []), ink.svg]);
   console.log(`${view.name}: ${pano.tile} ${pano.sha256.slice(0, 12)}…, ${String(view.width)}x${String(view.height)}, f ${String(view.f)} px; ${ink.groups.map((g) => `${g.name} ${String(g.shown)}/${String(g.total)}`).join(", ")}`);
   if (view.name === "desktop") {
-    // The link card's source: the frame at its evening brightness with the
-    // wedding breakfast inked, as the page settles.
-    const dim = await sharp(pixels, { raw: { width: view.width, height: view.height, channels: 3 } }).linear(0.6, 0).png().toBuffer();
+    // The link card's source: the frame a little shaded so the gold reads,
+    // with the wedding breakfast inked, as the page settles.
+    const dim = await sharp(pixels, { raw: { width: view.width, height: view.height, channels: 3 } }).linear(0.8, 0).png().toBuffer();
     await sharp(dim).composite([{ input: Buffer.from(standalone(ink.svg, view, "breakfast")) }]).png().toFile(path.join(work, "og-source.png"));
   }
 }
@@ -344,6 +394,18 @@ for (const [markers, svgs] of inks) {
   const to = page.indexOf(end);
   if (from === -1 || to === -1 || to < from) throw new Error(`Markers ${start} … ${end} not found in ${pagePath}`);
   page = `${page.slice(0, from + start.length)}${svgs.join("")}${page.slice(to)}`;
+}
+// Where each frame's chandeliers are, so the lights come up from them first.
+const position = (light) => `${(light.x * 100).toFixed(1)}% ${(light.y * 100).toFixed(1)}%`;
+const lightRules = (found) => found.map((light, index) => `--l${String(index + 1)}:${position(light)}`).join(";");
+const css = `.hall{${lightRules(lights.get("desktop") ?? [])}}@media (max-aspect-ratio: 5/6){.hall{${lightRules(lights.get("phone") ?? [])}}}`;
+{
+  const start = "/* hall-lights:start */";
+  const end = "/* hall-lights:end */";
+  const from = page.indexOf(start);
+  const to = page.indexOf(end);
+  if (from === -1 || to === -1 || to < from) throw new Error(`Markers ${start} … ${end} not found in ${pagePath}`);
+  page = `${page.slice(0, from + start.length)}${css}${page.slice(to)}`;
 }
 await fs.writeFile(pagePath, page);
 console.log(`ink ${[...inks.values()].flat().join("").length.toString()} bytes`);

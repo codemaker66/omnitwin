@@ -4,22 +4,27 @@ import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { HallkeeperSheetV2Schema, type CalendarBookingEntry, type CalendarResponse } from "@omnitwin/types";
 import type { Enquiry } from "../src/api/enquiries.js";
-import { CLAUDE_CRAWFORD_DRAFT, CRAWFORD_FACTS } from "./support/platform-sample.js";
+import { CRAWFORD_CHANGE_REQUEST, CRAWFORD_ENQUIRY_MESSAGE, CRAWFORD_FACTS, CRAWFORD_SENT_MESSAGE } from "./support/platform-sample.js";
 
 // ---------------------------------------------------------------------------
 // Product images for venviewer.com/platform, captured from emulated API
 // answers the way the end-to-end tests render the app: every image is the
 // current product drawing sample data, never a mock-up. One wedding runs
 // through them all (Elaine Crawford, 160 guests, the Grand Hall, Saturday
-// 5 June 2027), on one day (Thursday 8 October 2026) with one coordinator
-// (Catherine Tait). Her layout (support/crawford-layout.json) is the saved
-// draft the planner opens and the plan on the hallkeeper's sheet; the
+// 5 June 2027) with one coordinator (Catherine Tait), and each step is taken
+// on its own day of that wedding's timeline (DAY below). Her layout
+// (support/crawford-layout.json) is the saved draft the planner opens, the
+// plan on her proposal page and the plan on the hallkeeper's sheet; the
 // /platform hero draws the same layout into a photograph of the hall.
 // Skipped unless CAPTURE_PLATFORM_DIR names a folder, so no CI run takes it.
 // The proposals desk images are taken beside their emulator, in
 // proposals-desk.spec.ts.
 //
-//   $env:CAPTURE_PLATFORM_DIR="D:/captures"; $env:E2E_PORT="5197"
+// Take them from a production build, as venviewer.com runs it (the room
+// captures stay out of the planner there):
+//   $env:VITE_ENABLE_E2E_AUTH_BYPASS="true"; pnpm --filter @omnitwin/web exec vite build --mode capture --outDir dist-capture
+//   pnpm --filter @omnitwin/web exec vite preview --mode capture --outDir dist-capture --host 127.0.0.1 --port 4177 --strictPort
+//   $env:CAPTURE_PLATFORM_DIR="D:/captures"; $env:E2E_START_SERVER="false"; $env:E2E_BASE_URL="http://127.0.0.1:4177"
 //   pnpm --filter @omnitwin/web exec playwright test platform-captures proposals-desk -g "platform captures"
 // ---------------------------------------------------------------------------
 
@@ -42,8 +47,22 @@ const GRAND_HALL = "00000000-0000-4000-8000-00000000c002";
 const SALOON = "00000000-0000-4000-8000-00000000c003";
 const ROBERT_ADAM = "00000000-0000-4000-8000-00000000c004";
 const CONFIG_ID = "10000000-0000-4000-8000-00000000c201";
-/** 16:30 in Glasgow on Thursday 8 October 2026. */
-const NOW = new Date("2026-10-08T15:30:00.000Z");
+
+/** The wedding's timeline, each step at the hour it is taken (UTC; Glasgow
+ *  is an hour ahead until 25 October). The proposal, Thursday 8 October, is
+ *  taken in proposals-desk.spec.ts. */
+const DAY = {
+  /** Monday 21 September 2026, 15:30: her enquiry came in at 13:12. */
+  enquiry: new Date("2026-09-21T14:30:00.000Z"),
+  /** Thursday 24 September, 15:30: her date held, a second couple behind. */
+  hold: new Date("2026-09-24T14:30:00.000Z"),
+  /** Monday 28 September, 15:30: the layout, the day before version 1 goes. */
+  layout: new Date("2026-09-28T14:30:00.000Z"),
+  /** Monday 12 October, 20:30: she accepts version 2. */
+  decision: new Date("2026-10-12T19:30:00.000Z"),
+  /** Saturday 5 June 2027, 09:30: the setup. */
+  setup: new Date("2027-06-05T08:30:00.000Z"),
+} as const;
 
 const COORDINATOR = {
   id: "00000000-0000-4000-8000-00000000c091",
@@ -74,7 +93,7 @@ async function seedCoordinator(page: Page): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// The planner: the Grand Hall laid out by the planner itself for 160 guests
+// The layout: the Crawford wedding breakfast, as the planner saves it
 // ---------------------------------------------------------------------------
 
 interface SavedObject {
@@ -111,18 +130,19 @@ interface LayoutPiece {
   readonly group: string;
 }
 
+const LAYOUT_PIECES: readonly LayoutPiece[] = (JSON.parse(readFileSync(fileURLToPath(new URL("./support/crawford-layout.json", import.meta.url)), "utf8")) as { breakfast: LayoutPiece[] }).breakfast;
+
 /** The Crawford layout as the planner saves it: tables dressed for dinner,
  *  each table grouped with its chairs. */
-const CRAWFORD_LAYOUT: readonly SavedObject[] = (JSON.parse(readFileSync(fileURLToPath(new URL("./support/crawford-layout.json", import.meta.url)), "utf8")) as { breakfast: LayoutPiece[] })
-  .breakfast.map((piece, index) => ({
-    assetDefinitionId: piece.asset,
-    positionX: piece.x, positionY: 0, positionZ: piece.z,
-    rotationX: 0, rotationY: piece.rotationY, rotationZ: 0,
-    scale: 1, sortOrder: index,
-    metadata: piece.kind === "chair"
-      ? { groupId: `crawford-${piece.group}` }
-      : { groupId: `crawford-${piece.group}`, clothed: true, clothStyle: "white", tableSetting: "dinner" },
-  }));
+const CRAWFORD_LAYOUT: readonly SavedObject[] = LAYOUT_PIECES.map((piece, index) => ({
+  assetDefinitionId: piece.asset,
+  positionX: piece.x, positionY: 0, positionZ: piece.z,
+  rotationX: 0, rotationY: piece.rotationY, rotationZ: 0,
+  scale: 1, sortOrder: index,
+  metadata: piece.kind === "chair"
+    ? { groupId: `crawford-${piece.group}` }
+    : { groupId: `crawford-${piece.group}`, clothed: true, clothStyle: "white", tableSetting: "dinner" },
+}));
 
 /** The catalogue's footprints for the pieces the layout uses. */
 const FOOTPRINTS: Readonly<Record<string, { name: string; category: string; widthM: number; depthM: number; collisionType: "box" | "cylinder" }>> = {
@@ -131,15 +151,21 @@ const FOOTPRINTS: Readonly<Record<string, { name: string; category: string; widt
   "7f1fb7a2-5210-57b1-9108-11255c059520": { name: "Burgess Turini 18/3", category: "chair", widthM: 0.42, depthM: 0.58, collisionType: "box" },
 };
 
+function footprintOf(assetDefinitionId: string): (typeof FOOTPRINTS)[string] {
+  const footprint = FOOTPRINTS[assetDefinitionId];
+  if (footprint === undefined) throw new Error(`No footprint for ${assetDefinitionId}`);
+  return footprint;
+}
+
 /** Boots /plan on the Grand Hall with the Crawford draft saved. */
 async function openPlanner(page: Page): Promise<{ saved: () => SavedObject[] }> {
   let objects: SavedObject[] = [...CRAWFORD_LAYOUT];
   let revision = 1;
   const config = (): Record<string, unknown> => ({
     id: CONFIG_ID, spaceId: GRAND_HALL, venueId: VENUE_ID, userId: null, name: "Crawford wedding",
-    isPublicPreview: true, revision, updatedAt: NOW.toISOString(), objects: placed(objects),
+    isPublicPreview: true, revision, updatedAt: DAY.layout.toISOString(), objects: placed(objects),
   });
-  await page.clock.setFixedTime(NOW);
+  await page.clock.setFixedTime(DAY.layout);
   await page.route(`${API}/**`, (route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
@@ -179,7 +205,7 @@ async function countGuests(page: Page): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Enquiries: the Crawford enquiry open beside the desk
+// Enquiries: the Crawford enquiry open beside the desk, the afternoon it came
 // ---------------------------------------------------------------------------
 
 function enquiry(n: number, name: string, fields: Partial<Enquiry>): Enquiry {
@@ -190,7 +216,7 @@ function enquiry(n: number, name: string, fields: Partial<Enquiry>): Enquiry {
     name, email, guestEmail: email, guestPhone: null, guestName: null,
     eventType: "wedding", preferredDate: null, estimatedGuests: null, message: null,
     state: "submitted", source: "website", roomChosen: true,
-    createdAt: NOW.toISOString(), updatedAt: NOW.toISOString(),
+    createdAt: DAY.enquiry.toISOString(), updatedAt: DAY.enquiry.toISOString(),
     ...fields,
   };
 }
@@ -198,54 +224,54 @@ function enquiry(n: number, name: string, fields: Partial<Enquiry>): Enquiry {
 const CRAWFORD_ENQUIRY = enquiry(1, "Elaine Crawford", {
   source: "planner", configurationId: CONFIG_ID, eventType: "wedding",
   estimatedGuests: CRAWFORD_FACTS.guestCount, preferredDate: CRAWFORD_FACTS.eventDate,
-  createdAt: "2026-10-08T13:12:00.000Z", updatedAt: "2026-10-08T13:12:00.000Z",
-  message: "We'd love our wedding breakfast and the evening in the Grand Hall, for about 160. Two guests use wheelchairs and two are coeliac. Is Saturday 5 June 2027 free?",
+  createdAt: "2026-09-21T12:12:00.000Z", updatedAt: "2026-09-21T12:12:00.000Z",
+  message: CRAWFORD_ENQUIRY_MESSAGE,
 });
 
 const ENQUIRIES: readonly Enquiry[] = [
   CRAWFORD_ENQUIRY,
   enquiry(2, "Dr Aileen Murray", {
-    eventType: "dinner", estimatedGuests: 160, preferredDate: "2027-03-12", createdAt: "2026-10-08T10:40:00.000Z", updatedAt: "2026-10-08T10:40:00.000Z",
+    eventType: "dinner", estimatedGuests: 160, preferredDate: "2027-03-12", createdAt: "2026-09-21T09:40:00.000Z", updatedAt: "2026-09-21T09:40:00.000Z",
     message: "Our society's annual dinner: black tie, four courses and a piper. We would also like the Saloon for drinks beforehand.",
   }),
   enquiry(3, "Callum Fraser", {
     source: "phone", spaceId: SALOON, eventType: "Burns supper", estimatedGuests: 60, preferredDate: "2027-01-23",
-    createdAt: "2026-10-07T16:05:00.000Z", updatedAt: "2026-10-07T16:05:00.000Z",
+    createdAt: "2026-09-20T15:05:00.000Z", updatedAt: "2026-09-20T15:05:00.000Z",
     message: "A traditional Burns supper for the rugby club: haggis, the address, the lot.",
   }),
   enquiry(4, "Priya Raman", {
     source: "email", spaceId: ROBERT_ADAM, eventType: "conference", estimatedGuests: 40, preferredDate: "2027-03-04",
-    createdAt: "2026-10-07T09:20:00.000Z", updatedAt: "2026-10-07T09:20:00.000Z",
+    createdAt: "2026-09-20T08:20:00.000Z", updatedAt: "2026-09-20T08:20:00.000Z",
     message: "A day conference: registration from half past eight, a projector and lectern, and lunch for everyone.",
   }),
   enquiry(5, "Tom Baird", {
     source: "walkthrough", roomChosen: false, eventType: "private", estimatedGuests: 60,
-    createdAt: "2026-10-05T18:30:00.000Z", updatedAt: "2026-10-05T18:30:00.000Z",
+    createdAt: "2026-09-18T17:30:00.000Z", updatedAt: "2026-09-18T17:30:00.000Z",
     message: "My dad's 70th next spring, a Saturday evening ideally.",
   }),
   enquiry(6, "Ruth Brennan", {
     state: "under_review", eventType: "Exhibition", estimatedGuests: 200, preferredDate: "2027-10-02",
-    createdAt: "2026-10-04T11:00:00.000Z", updatedAt: "2026-10-06T14:00:00.000Z",
+    createdAt: "2026-09-17T10:00:00.000Z", updatedAt: "2026-09-19T13:00:00.000Z",
     message: "A two-day exhibition of Glasgow silversmiths, with a private view on the first evening.",
   }),
   enquiry(7, "Iain Robertson", {
     state: "approved", eventType: "dinner", estimatedGuests: 90, preferredDate: "2026-11-20",
-    createdAt: "2026-09-29T10:15:00.000Z", updatedAt: "2026-10-02T11:00:00.000Z",
+    createdAt: "2026-09-12T09:15:00.000Z", updatedAt: "2026-09-15T10:00:00.000Z",
     message: "The Merchants' dinner in November, three courses for about ninety.",
   }),
   enquiry(8, "Sophie Tait", {
     state: "approved", source: "planner", configurationId: "00000000-0000-4000-8000-00000000c108", eventType: "wedding",
-    estimatedGuests: 120, preferredDate: "2027-08-21", createdAt: "2026-09-27T16:40:00.000Z", updatedAt: "2026-10-01T09:30:00.000Z",
+    estimatedGuests: 120, preferredDate: "2027-08-21", createdAt: "2026-09-10T15:40:00.000Z", updatedAt: "2026-09-14T08:30:00.000Z",
     message: "Ceremony in the Saloon and dinner in the Grand Hall, if both are free.",
   }),
   enquiry(9, "Graham Hunter", {
     state: "rejected", eventType: "corporate", estimatedGuests: 400, preferredDate: "2027-02-11",
-    createdAt: "2026-09-25T13:00:00.000Z", updatedAt: "2026-09-26T10:00:00.000Z",
+    createdAt: "2026-09-08T12:00:00.000Z", updatedAt: "2026-09-09T09:00:00.000Z",
     message: "A product launch for four hundred with a stage and lighting rig.",
   }),
   enquiry(10, "Anna Kowalska", {
     state: "withdrawn", spaceId: SALOON, eventType: "reception", estimatedGuests: 70, preferredDate: "2026-12-12",
-    createdAt: "2026-09-24T19:20:00.000Z", updatedAt: "2026-09-30T08:45:00.000Z",
+    createdAt: "2026-09-07T18:20:00.000Z", updatedAt: "2026-09-13T07:45:00.000Z",
     message: "Christmas drinks for the office, around seventy.",
   }),
 ];
@@ -265,7 +291,7 @@ function enquiryPage(url: URL): { data: Enquiry[]; meta: { total: number; limit:
 }
 
 async function openEnquiries(page: Page): Promise<void> {
-  await page.clock.setFixedTime(NOW);
+  await page.clock.setFixedTime(DAY.enquiry);
   await seedCoordinator(page);
   await page.route(`${API}/**`, (route) => {
     const url = new URL(route.request().url());
@@ -310,7 +336,7 @@ function booking(id: string, fields: Partial<CalendarBookingEntry> & { title: st
 const CRAWFORD_HOLD = booking("00000000-0000-4000-8000-00000000c301", {
   title: "Crawford wedding", eventType: "wedding", clientName: "Elaine Crawford", guestCount: 160,
   startsAt: "2027-06-05T11:00:00.000Z", endsAt: "2027-06-05T22:30:00.000Z",
-  nextAction: "Send version 2 of the proposal.", nextActionDueAt: "2026-10-09T09:00:00.000Z",
+  nextAction: "Send the proposal.", nextActionDueAt: "2026-09-29T09:00:00.000Z",
   notes: "Wedding breakfast and evening. Two guests use wheelchairs.",
 });
 const HUGHES_HOLD = booking("00000000-0000-4000-8000-00000000c302", {
@@ -338,8 +364,18 @@ const DIARY_WEEK: readonly CalendarBookingEntry[] = [
   }),
 ];
 
-function diaryCalendar(from: string, to: string): CalendarResponse {
+/** As the calendar route answers: holds whose decision or next action is
+ *  overdue or due within seven days of now, whatever the booking's date. */
+const DUE_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
+function dueBy(at: string | null, now: Date): boolean {
+  return at !== null && Date.parse(at) <= now.getTime() + DUE_HORIZON_MS;
+}
+
+function diaryCalendar(from: string, to: string, now: Date): CalendarResponse {
   const start = Date.parse(from), end = Date.parse(to);
+  const holds = DIARY_WEEK.filter((row) => row.kind === "hold");
+  const decisions = holds.filter((row) => dueBy(row.decisionAt, now));
+  const nextActions = holds.filter((row) => dueBy(row.nextActionDueAt, now));
   return {
     venueId: VENUE_ID,
     range: { from: new Date(start).toISOString(), to: new Date(end).toISOString() },
@@ -358,8 +394,8 @@ function diaryCalendar(from: string, to: string): CalendarResponse {
       },
     },
     turnaroundRules: [{ spaceId: null, eventType: null, name: "All rooms", minutes: 120, isActive: true }],
-    decisionsDue: { holds: [CRAWFORD_HOLD, HUGHES_HOLD], total: 2 },
-    nextActionsDue: { holds: [CRAWFORD_HOLD], total: 1 },
+    decisionsDue: { holds: decisions, total: decisions.length },
+    nextActionsDue: { holds: nextActions, total: nextActions.length },
     contested: {
       dates: [{ spaceId: GRAND_HALL, startsAt: CRAWFORD_HOLD.startsAt, endsAt: CRAWFORD_HOLD.endsAt, bookings: [CRAWFORD_HOLD, HUGHES_HOLD] }],
       total: 1,
@@ -368,12 +404,12 @@ function diaryCalendar(from: string, to: string): CalendarResponse {
 }
 
 async function openDiaryWeek(page: Page): Promise<void> {
-  await page.clock.setFixedTime(NOW);
+  await page.clock.setFixedTime(DAY.hold);
   await seedCoordinator(page);
   await page.route(`${API}/**`, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/calendar") {
-      void route.fulfill({ json: { data: diaryCalendar(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "") } });
+      void route.fulfill({ json: { data: diaryCalendar(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "", DAY.hold) } });
     } else if (url.pathname === "/enquiries") {
       void route.fulfill({ json: { data: [] } });
     } else if (url.pathname === `/venues/${VENUE_ID}`) {
@@ -381,7 +417,7 @@ async function openDiaryWeek(page: Page): Promise<void> {
     } else if (url.pathname === `/venues/${VENUE_ID}/turnaround-rules`) {
       void route.fulfill({ json: { data: {
         rules: [{ id: "00000000-0000-4000-8000-00000000c501", venueId: VENUE_ID, spaceId: null, eventType: null, name: "All rooms",
-          minutes: 120, isActive: true, confirmedAt: null, updatedByName: null, createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() }],
+          minutes: 120, isActive: true, confirmedAt: null, updatedByName: null, createdAt: DAY.hold.toISOString(), updatedAt: DAY.hold.toISOString() }],
         rooms: [{ id: GRAND_HALL, name: "Grand Hall" }, { id: SALOON, name: "Saloon" }, { id: ROBERT_ADAM, name: "Robert Adam Room" }],
         eventTypes: ["wedding", "dinner"],
       } } });
@@ -405,35 +441,75 @@ async function openDiaryWeek(page: Page): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// The client's proposal page: version 2, its message as Claude drafted it for
-// this sample, and the quote the proposals desk holds
+// Her proposal page: version 2 as Catherine sent it on 8 October, with her
+// layout and her request on version 1, which she accepts on the 12th
 // ---------------------------------------------------------------------------
 
 const SHARE_CODE = "crawfd";
-const CLIENT_PROPOSAL = {
-  title: "Crawford wedding — Grand Hall",
-  status: "sent",
-  sentAt: "2026-10-08T10:00:00.000Z",
-  venueName: "Trades Hall Glasgow",
-  venueSlug: "trades-hall-glasgow",
-  venueAddress: "85 Glassford Street, Glasgow G1 1UH",
-  preparedAt: "2026-10-08T09:30:00.000Z",
-  facts: { ...CRAWFORD_FACTS },
-  accepted: null,
-  clientMessage: CLAUDE_CRAWFORD_DRAFT,
-  capacityNote: "Grand Hall: the venue's published dinner capacity is 180.",
-  quote: {
-    quoteId: null,
-    currency: "GBP",
-    lineItems: [
-      { description: "Grand Hall hire", quantity: 1, unitAmountMinor: 440_000, lineTotalMinor: 440_000 },
-      { description: "Dinner", quantity: 160, unitAmountMinor: 8_750, lineTotalMinor: 1_400_000 },
-    ],
-    subtotalMinor: 1_840_000,
-    totalMinor: 1_840_000,
-  },
-  version: 2,
+const ROOM_WIDTH_M = 21;
+const ROOM_LENGTH_M = 10.5;
+
+/** The layout as a proposal version freezes it: room-origin metres. */
+const LAYOUT_SNAPSHOT = {
+  roomWidthM: ROOM_WIDTH_M,
+  roomLengthM: ROOM_LENGTH_M,
+  items: LAYOUT_PIECES.map((piece) => {
+    const footprint = footprintOf(piece.asset);
+    return {
+      shape: piece.kind === "round" ? "round" : "rect",
+      kind: piece.kind === "chair" ? "chair" : "table",
+      xM: piece.x + ROOM_WIDTH_M / 2, zM: piece.z + ROOM_LENGTH_M / 2,
+      widthM: footprint.widthM, depthM: footprint.depthM,
+      rotationDeg: (piece.rotationY * 180) / Math.PI,
+    };
+  }),
 };
+
+function clientProposal(accepted: { by: string; at: string } | null): Record<string, unknown> {
+  return {
+    title: "Crawford wedding — Grand Hall",
+    status: accepted === null ? "sent" : "accepted",
+    sentAt: "2026-10-08T15:10:00.000Z",
+    venueName: "Trades Hall Glasgow",
+    venueSlug: "trades-hall-glasgow",
+    venueAddress: "85 Glassford Street, Glasgow G1 1UH",
+    preparedAt: "2026-10-08T14:55:00.000Z",
+    facts: { ...CRAWFORD_FACTS },
+    accepted,
+    clientMessage: CRAWFORD_SENT_MESSAGE,
+    capacityNote: "Grand Hall: the venue's published dinner capacity is 180.",
+    layoutSnapshot: LAYOUT_SNAPSHOT,
+    comments: [{ kind: "request_changes", authorName: "Elaine Crawford", body: CRAWFORD_CHANGE_REQUEST, createdAt: "2026-10-05T15:00:00.000Z", from: "client" }],
+    quote: {
+      quoteId: null,
+      currency: "GBP",
+      lineItems: [
+        { description: "Grand Hall hire", quantity: 1, unitAmountMinor: 440_000, lineTotalMinor: 440_000 },
+        { description: "Dinner", quantity: 160, unitAmountMinor: 8_250, lineTotalMinor: 1_320_000 },
+      ],
+      subtotalMinor: 1_760_000,
+      totalMinor: 1_760_000,
+    },
+    version: 2,
+  };
+}
+
+/** /proposal/:code as the public routes answer it, until and after she accepts. */
+async function openClientPage(page: Page): Promise<void> {
+  let accepted: { by: string; at: string } | null = null;
+  await page.clock.setFixedTime(DAY.decision);
+  await page.route(`${API}/public/proposals/${SHARE_CODE}`, (route) => { void route.fulfill({ json: { data: clientProposal(accepted) } }); });
+  await page.route(`${API}/public/proposals/${SHARE_CODE}/respond`, (route) => {
+    const body = route.request().postDataJSON() as { action: string; name?: string | null };
+    if (body.action !== "accept") {
+      void route.fulfill({ status: 422, json: { error: "Not emulated", code: "NOT_EMULATED" } });
+      return;
+    }
+    accepted = { by: body.name ?? "Elaine Crawford", at: DAY.decision.toISOString() };
+    void route.fulfill({ json: { data: { status: "accepted" } } });
+  });
+  await page.goto(`/proposal/${SHARE_CODE}`);
+}
 
 // ---------------------------------------------------------------------------
 // The hallkeeper's sheet for the same wedding, its plan the planner's own
@@ -486,18 +562,14 @@ const SHEET = HallkeeperSheetV2Schema.parse({
   floorPlan: {
     coordinateSpace: "real_m_v1",
     outline: [{ x: -10.5, z: -5.25 }, { x: 10.5, z: -5.25 }, { x: 10.5, z: 5.25 }, { x: -10.5, z: 5.25 }],
-    objects: CRAWFORD_LAYOUT.map((object, index) => {
-      const footprint = FOOTPRINTS[object.assetDefinitionId];
-      if (footprint === undefined) throw new Error(`No footprint for ${object.assetDefinitionId}`);
-      return {
-        objectId: `20000000-0000-4000-8000-${String(index).padStart(12, "0")}`, assetDefinitionId: object.assetDefinitionId,
-        ...footprint, x: object.positionX, z: object.positionZ, rotationY: object.rotationY, scale: 1,
-      };
-    }),
+    objects: CRAWFORD_LAYOUT.map((object, index) => ({
+      objectId: `20000000-0000-4000-8000-${String(index).padStart(12, "0")}`, assetDefinitionId: object.assetDefinitionId,
+      ...footprintOf(object.assetDefinitionId), x: object.positionX, z: object.positionZ, rotationY: object.rotationY, scale: 1,
+    })),
   },
   diagramUrl: null,
   webViewUrl: `http://localhost:5173/hallkeeper/${CONFIG_ID}`,
-  generatedAt: "2026-10-08T10:00:00.000Z",
+  generatedAt: "2026-10-12T19:45:00.000Z",
   approval: null,
 });
 
@@ -519,7 +591,7 @@ async function openSheet(page: Page): Promise<void> {
   await page.route(`${API}/configurations/${CONFIG_ID}`, (route) => {
     void route.fulfill({ json: { data: {
       id: CONFIG_ID, spaceId: GRAND_HALL, venueId: VENUE_ID, userId: null, name: "Crawford wedding",
-      isPublicPreview: false, revision: 3, updatedAt: "2026-10-08T10:00:00.000Z", objects,
+      isPublicPreview: false, revision: 3, updatedAt: "2026-10-12T19:45:00.000Z", objects,
     } } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/available-transitions`, (route) => {
@@ -539,22 +611,10 @@ async function openSheet(page: Page): Promise<void> {
 }
 
 test.describe("/platform captures", () => {
-  test("the planner with the Crawford layout", async ({ page }) => {
-    test.setTimeout(180_000);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const planner = await openPlanner(page);
-    await countGuests(page);
-    await expect(page.getByTestId("guests-seat-summary")).toContainText("160");
-    // The captured layer is not served here, so the planner shows its model view.
-    await page.getByRole("button", { name: "Model", exact: true }).click();
-    await expect(page.getByText("Room capture could not load", { exact: false })).toHaveCount(0, { timeout: 15_000 }).catch(() => undefined);
-    await page.waitForTimeout(1500);
-    await capture(page, "planner");
-    expect(planner.saved()).toHaveLength(CRAWFORD_LAYOUT.length);
-  });
-
   test("the Enquiries desk with the Crawford enquiry open", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+    // A taller screen, so the open enquiry's panel shows its facts, next step
+    // and contact below the room picture.
+    await page.setViewportSize({ width: 1440, height: 1100 });
     await openEnquiries(page);
     await page.getByRole("button", { name: /^Elaine Crawford,/u }).click();
     const panel = page.getByRole("region", { name: "Elaine Crawford" });
@@ -570,22 +630,49 @@ test.describe("/platform captures", () => {
     await capture(page, "diary");
   });
 
-  test("the client's proposal page", async ({ page }) => {
+  test("the planner with the Crawford layout", async ({ page }) => {
+    test.setTimeout(180_000);
+    // A taller screen keeps the toolbars below the seating panel and the room.
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    const planner = await openPlanner(page);
+    await countGuests(page);
+    await expect(page.getByTestId("guests-seat-summary")).toContainText("160");
+    await page.getByRole("button", { name: "Model", exact: true }).click();
+    // As on venviewer.com: the room captures stay out of a production build,
+    // so the planner draws its scale model and reports no capture failure.
+    await expect(page.getByTestId("room-resolve-caption")).toHaveAttribute("data-visible", "false");
+    await page.waitForTimeout(1500);
+    await capture(page, "planner");
+    expect(planner.saved()).toHaveLength(CRAWFORD_LAYOUT.length);
+  });
+
+  test("her proposal page, and her acceptance", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.clock.setFixedTime(NOW);
-    await page.route(`${API}/public/proposals/${SHARE_CODE}`, (route) => { void route.fulfill({ json: { data: CLIENT_PROPOSAL } }); });
-    await page.goto(`/proposal/${SHARE_CODE}`);
-    await expect(page.getByRole("heading", { level: 1, name: CLIENT_PROPOSAL.title })).toBeVisible();
+    await openClientPage(page);
+    await expect(page.getByRole("heading", { level: 1, name: "Crawford wedding — Grand Hall" })).toBeVisible();
     await page.waitForFunction(() => Array.from(document.images).every((image) => image.complete));
     await capture(page, "client");
-    const accept = page.getByRole("button", { name: /accept/iu }).first();
-    await accept.evaluate((element) => { element.scrollIntoView({ block: "center" }); });
-    await capture(page, "client-respond");
+    const decision = page.getByTestId("proposal-decision");
+    await decision.evaluate((element) => { element.scrollIntoView({ block: "center" }); });
+    const name = decision.getByRole("textbox", { name: "Your name" });
+    if (await name.count() > 0) await name.fill("Elaine Crawford");
+    await decision.getByTestId("accept-button").click();
+    await expect(page.getByText("You accepted this version. The venue team has been told.")).toBeVisible();
+    await page.getByText("You accepted this version. The venue team has been told.").evaluate((element) => { element.scrollIntoView({ block: "center" }); });
+    await page.waitForTimeout(400);
+    await capture(page, "client-accepted");
+    if (OUT !== undefined) await page.screenshot({ path: join(OUT, "client-accepted-full.png"), fullPage: true, animations: "disabled" });
+    // Her page is built for a phone first: the same accepted page at phone size.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(page.getByTestId("proposal-standing")).toHaveText("Accepted by Elaine Crawford on 12 October 2026.");
+    await page.waitForFunction(() => Array.from(document.images).every((image) => image.complete));
+    if (OUT !== undefined) await page.screenshot({ path: join(OUT, "client-accepted-phone-full.png"), fullPage: true, animations: "disabled" });
   });
 
   test("the hallkeeper's sheet, on a desk and on a phone", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.clock.setFixedTime(new Date("2027-06-05T08:30:00.000Z"));
+    await page.clock.setFixedTime(DAY.setup);
     await openSheet(page);
     await page.getByRole("button", { name: "Event layout" }).click();
     await page.waitForTimeout(1500);

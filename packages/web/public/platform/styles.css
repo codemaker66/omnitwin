@@ -1,9 +1,10 @@
 /* /platform — Venviewer's own page.
    House type: Newsreader and Inter, the same self-hosted Latin faces as the
    app (src/styles/fonts/provenance.json), licences beside them. Palette from
-   the desk style, with a dark register for the hall at night. One container
-   (.wrap) sets every left edge; motion is kept to the hero's light and ink,
-   the story's frame and the scene switch, and reduced motion stills them. */
+   the desk style, with a dark register for the hall. One container (.wrap)
+   sets every left edge; motion is kept to the hero's light and ink, the
+   story's frame, the scene switch and the last step's ink, and reduced motion
+   stills them. */
 @font-face {
   font-family: "Newsreader";
   font-style: normal;
@@ -26,6 +27,13 @@
   src: url("/platform/fonts/inter-normal-latin.woff2") format("woff2");
 }
 
+/* The veil's openings round the chandeliers grow as the lights come up. */
+@property --lit {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
 :root {
   --night: #0b100d;
   --night-2: #121a15;
@@ -41,6 +49,7 @@
   --gold: #e2c07f;
   --gold-ink: #f1d39b;
   --pass: #1f5a3f;
+  --flag: #7a5512;
   --bar: 60px;
   --wrap: 1200px;
   --gutter: clamp(16px, 4vw, 56px);
@@ -67,8 +76,10 @@ a { color: var(--copper-ink); text-underline-offset: 3px; text-decoration-thickn
 a:hover { text-decoration-thickness: 2px; }
 h1, h2, h3 { font-family: var(--serif); font-weight: 420; margin: 0; text-wrap: balance; }
 p { margin: 0 0 1em; text-wrap: pretty; }
+q { quotes: "‘" "’"; }
 :focus-visible { outline: 2px solid var(--copper); outline-offset: 3px; border-radius: 4px; }
 main:focus { outline: none; }
+.nowrap { white-space: nowrap; }
 
 .wrap { width: 100%; max-width: var(--wrap); margin-inline: auto; padding-inline: var(--gutter); }
 
@@ -92,124 +103,184 @@ main:focus { outline: none; }
 
 /* ----------------------------------------------------------------- hero */
 
-.hall { position: relative; min-height: max(100svh, 640px); display: grid; grid-template-rows: 1fr auto; background: var(--night); color: var(--ivory); overflow: hidden; isolation: isolate; }
-.hall__stage { position: absolute; inset: 0; z-index: -1; overflow: hidden; container-type: size; }
+/* The photograph fills the screen below the bar; its caption and the scene
+   switch sit in a band beneath it, never on the drawing. */
+.hall { display: grid; grid-template-rows: minmax(520px, 1fr) auto; min-height: 100svh; padding-top: var(--bar); background: var(--night); color: var(--ivory); }
+.hall__stage { position: relative; display: flex; align-items: flex-start; isolation: isolate; }
+.hall__view { position: absolute; inset: 0; z-index: -1; overflow: hidden; container-type: size; background: var(--night) center / cover no-repeat; }
 .hall__frame { position: absolute; left: 50%; top: 50%; width: max(100cqw, calc(100cqh * 16 / 9)); aspect-ratio: 16 / 9; transform: translate(-50%, -50%); }
 .hall__photo { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
-.hall-ink { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.hall-ink { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; transition: filter 1200ms var(--ease); }
 .hall-ink--phone { display: none; }
-/* Where the words sit, the drawing is a faint ghost: masked to a fifth of its
-   strength in the upper left, at full strength to the right and below. */
-.hall-ink--desktop { -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0 45%, #000 57%), linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0 67%, #000 77%); mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0 45%, #000 57%), linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0 67%, #000 77%); -webkit-mask-composite: source-over; mask-composite: add; }
+/* The ceremony's left block runs under the buttons, so it keeps more of its
+   strength there than the breakfast's far tables do: both blocks read. */
+.hall { --ghost: rgba(0, 0, 0, 0.12); }
+.hall[data-scene="ceremony"] { --ghost: rgba(0, 0, 0, 0.4); }
+/* Where the words sit (the upper left), the drawing is a faint ghost; the
+   floor below them and the hall to their right carry it at full strength. */
+.hall-ink--desktop {
+  -webkit-mask-image: linear-gradient(90deg, var(--ghost) 0 48%, #000 60%), linear-gradient(180deg, var(--ghost) 0 70%, #000 80%);
+  mask-image: linear-gradient(90deg, var(--ghost) 0 48%, #000 60%), linear-gradient(180deg, var(--ghost) 0 70%, #000 80%);
+  -webkit-mask-composite: source-over;
+  mask-composite: add;
+}
+/* The dark before the lights: a veil that opens first round the chandeliers
+   (positions from scripts/platform-hall.mjs), then lifts. */
 .hall__night { position: absolute; inset: 0; background: #030504; opacity: 0; }
-.js .hall__night { opacity: 0.94; }
-.js .hall.is-lit .hall__night { animation: lights-up 1000ms var(--ease) 700ms both; }
+.js .hall__night {
+  opacity: 0.94;
+  --hole: calc(var(--lit) * 1%);
+  --edge: calc(var(--lit) * 1% + 16%);
+  -webkit-mask-image: radial-gradient(circle at var(--l1, 56% 22%), transparent var(--hole), #000 var(--edge)), radial-gradient(circle at var(--l2, 48% 40%), transparent var(--hole), #000 var(--edge)), radial-gradient(circle at var(--l3, 64% 40%), transparent var(--hole), #000 var(--edge));
+  mask-image: radial-gradient(circle at var(--l1, 56% 22%), transparent var(--hole), #000 var(--edge)), radial-gradient(circle at var(--l2, 48% 40%), transparent var(--hole), #000 var(--edge)), radial-gradient(circle at var(--l3, 64% 40%), transparent var(--hole), #000 var(--edge));
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+.js .hall.is-lit .hall__night { animation: lights-up 1500ms var(--ease) 600ms both; }
+.js .hall.is-lit.is-late .hall__night { animation-delay: 0ms; }
+/* Shade behind the words only: the hall itself is shown as photographed. */
 .hall__shade {
   position: absolute; inset: 0;
   background:
-    linear-gradient(90deg, rgba(5, 8, 6, 0.84) 0%, rgba(5, 8, 6, 0.6) 28%, rgba(5, 8, 6, 0.14) 54%, rgba(5, 8, 6, 0) 100%),
-    linear-gradient(180deg, rgba(5, 8, 6, 0.46) 0%, rgba(5, 8, 6, 0) 16%, rgba(5, 8, 6, 0.18) 50%, rgba(5, 8, 6, 0.5) 82%, rgba(5, 8, 6, 0.72) 100%),
-    rgba(5, 8, 6, 0.4);
+    linear-gradient(90deg, rgba(5, 8, 6, 0.86) 0%, rgba(5, 8, 6, 0.72) 26%, rgba(5, 8, 6, 0.36) 46%, rgba(5, 8, 6, 0) 62%),
+    linear-gradient(180deg, rgba(5, 8, 6, 0) 84%, rgba(5, 8, 6, 0.4) 100%);
 }
 
-.hall__copy { position: relative; align-self: center; padding-top: calc(var(--bar) + 48px); padding-bottom: 24px; }
-/* Scrims above the drawing, so the words never sit on gold lines. */
-.hall__copy::before { content: ""; position: absolute; z-index: -1; inset: 0 -12% -6% -40%; background: radial-gradient(ellipse 62% 58% at 34% 56%, rgba(5, 8, 6, 0.78), rgba(5, 8, 6, 0.5) 52%, rgba(5, 8, 6, 0) 100%); pointer-events: none; }
-.hall__key::before { content: ""; position: absolute; z-index: -1; inset: -70px -100vw 0; background: linear-gradient(180deg, rgba(5, 8, 6, 0), rgba(5, 8, 6, 0.82) 70%); pointer-events: none; }
-.hall h1 { max-width: 11.5em; font-size: clamp(44px, 6.4vw, 96px); line-height: 1.02; font-weight: 380; letter-spacing: -0.012em; }
+.hall__copy { position: relative; padding-block: clamp(28px, 6svh, 72px); }
+/* A dark backing just behind the words, over the photograph and its drawing,
+   for screens short enough that the floor rises behind them. */
+.hall__copy::before { content: ""; position: absolute; z-index: -1; inset: -4% -10% -8% -30%; background: radial-gradient(ellipse 58% 62% at 36% 52%, rgba(5, 8, 6, 0.62), rgba(5, 8, 6, 0.34) 56%, rgba(5, 8, 6, 0) 100%); pointer-events: none; }
+.eyebrow__part { display: block; }
+.eyebrow__sep { display: none; }
+.hall h1 { max-width: 11.5em; font-size: clamp(44px, 6.2vw, 92px); line-height: 1.02; font-weight: 380; letter-spacing: -0.012em; text-shadow: 0 1px 24px rgba(5, 8, 6, 0.45); }
 .hall h1 em { font-style: italic; font-weight: 360; color: var(--gold-ink); }
-.hall__lede { max-width: 33em; margin: 26px 0 0; font-size: clamp(17px, 1.3vw, 20px); line-height: 1.55; color: rgba(242, 237, 221, 0.9); }
-.hall__actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.hall__lede { max-width: 32em; margin: 24px 0 0; font-size: clamp(17px, 1.25vw, 19.5px); line-height: 1.55; color: rgba(242, 237, 221, 0.92); text-shadow: 0 1px 14px rgba(5, 8, 6, 0.6); }
+.hall__actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
 .button { display: inline-flex; align-items: center; gap: 0.5em; min-height: 46px; padding: 12px 22px; border-radius: 999px; font: 550 15px/1.2 var(--sans); text-decoration: none; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; }
 .button--gold { background: var(--gold-ink); color: #1d170c; }
 .button--gold:hover { background: #f7e2b6; text-decoration: none; }
-.button--line { border: 1px solid rgba(242, 237, 221, 0.42); color: var(--ivory); }
+.button--line { border: 1px solid rgba(242, 237, 221, 0.5); color: var(--ivory); background: rgba(5, 8, 6, 0.5); }
 .button--line:hover { border-color: var(--ivory); text-decoration: none; }
 .hall :focus-visible { outline-color: var(--gold-ink); }
 
-.hall__key { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; padding-bottom: 30px; }
-.scenes { display: inline-flex; flex: none; gap: 2px; padding: 4px; border: 1px solid rgba(242, 237, 221, 0.2); border-radius: 999px; background: rgba(5, 8, 6, 0.6); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.hall__band { border-top: 1px solid rgba(242, 237, 221, 0.08); background: var(--night); }
+.hall__key { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding-block: 18px; }
+.scenes { display: inline-flex; flex: none; gap: 2px; padding: 4px; border: 1px solid rgba(242, 237, 221, 0.2); border-radius: 999px; }
+.no-js .scenes { display: none; }
 .scenes button { appearance: none; border: 0; background: transparent; cursor: pointer; padding: 8px 16px; border-radius: 999px; font: 500 14px/1.2 var(--sans); color: rgba(242, 237, 221, 0.82); transition: background-color 0.25s ease, color 0.25s ease; }
 .scenes button:hover { color: var(--ivory); }
 .scenes button[aria-checked="true"] { background: var(--gold-ink); color: #1d170c; }
-.hall__note { max-width: 44em; margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(242, 237, 221, 0.86); text-align: right; text-shadow: 0 1px 2px rgba(5, 8, 6, 0.9), 0 0 12px rgba(5, 8, 6, 0.7); }
-.hall__source { display: block; margin-top: 4px; color: rgba(242, 237, 221, 0.62); }
+.hall__note { max-width: 64em; margin: 0; font-size: 13.5px; line-height: 1.5; color: rgba(242, 237, 221, 0.86); text-align: right; }
+/* Both captions hold one cell, so switching scenes moves nothing. */
+.hall__drawns { display: grid; }
+.hall__drawn { grid-area: 1 / 1; visibility: hidden; }
+.hall__drawn.is-shown { visibility: visible; }
+.hall__source { display: block; margin-top: 4px; color: rgba(242, 237, 221, 0.6); }
 
 /* The ink: each scene a group, drawn when on. Without script the wedding
-   breakfast stands drawn. */
+   breakfast stands drawn, and so does the last step's plan. */
 .hall-ink .ink { opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
-.hall-ink .ink.is-on, .no-js .hall-ink .ink[data-scene="breakfast"], .night .hall-ink .ink { opacity: 1; visibility: visible; transition: opacity 0.3s ease; }
-.hall-ink .t { fill: none; stroke: #f7dfaa; stroke-width: 2.25px; vector-effect: non-scaling-stroke; stroke-opacity: calc(0.4 + 0.6 * var(--o, 1)); stroke-dasharray: 1; stroke-dashoffset: 0; }
-.hall-ink .c { fill: rgba(247, 223, 170, 0.12); stroke: #f7dfaa; stroke-width: 1.4px; vector-effect: non-scaling-stroke; stroke-opacity: calc(0.4 + 0.6 * var(--o, 1)); }
+.hall-ink .ink.is-on, .no-js .hall-ink .ink[data-scene="breakfast"] { opacity: 1; visibility: visible; transition: opacity 0.3s ease; }
+.hall-ink .t { fill: none; stroke: #f7dfaa; stroke-width: 2.25px; vector-effect: non-scaling-stroke; stroke-opacity: var(--o, 1); stroke-dasharray: 1; stroke-dashoffset: 0; }
+.hall-ink .c { fill: rgba(247, 223, 170, calc(0.14 * var(--o, 1))); stroke: #f7dfaa; stroke-width: 1.4px; vector-effect: non-scaling-stroke; stroke-opacity: var(--o, 1); }
 .js .hall-ink .ink.is-on .t { animation: ink-draw 600ms var(--ease) both; animation-delay: calc(var(--start, 1100ms) + var(--d, 0ms)); }
 .js .hall-ink .ink.is-on .c { animation: ink-seat 360ms ease-out both; animation-delay: calc(var(--start, 1100ms) + var(--d, 0ms)); }
-.hall.is-inked .hall-ink { filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 4px rgba(247, 223, 170, 0.45)); }
-@keyframes lights-up { from { opacity: 0.94; } to { opacity: 0; } }
+.is-inked .hall-ink { filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 4px rgba(247, 223, 170, 0.45)); }
+@keyframes lights-up {
+  0% { --lit: 0; opacity: 0.94; }
+  40% { --lit: 16; opacity: 0.9; }
+  100% { --lit: 100; opacity: 0; }
+}
 @keyframes ink-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes ink-seat { from { opacity: 0; } to { opacity: 1; } }
 
 /* Portrait screens: the phone frame above the words, not under them. */
 @media (max-aspect-ratio: 5/6) {
-  .hall { display: block; min-height: 0; padding-top: var(--bar); }
-  .hall__stage { position: relative; z-index: 0; height: min(121vw, 68svh); }
+  .hall { display: block; min-height: 0; }
+  .hall__stage { display: block; }
+  .hall__view { position: relative; z-index: 0; height: min(121vw, 68svh); }
   .hall__frame { width: max(100cqw, calc(100cqh * 1170 / 1416)); aspect-ratio: 1170 / 1416; }
   .hall-ink--desktop { display: none; }
   .hall-ink--phone { display: block; }
-  .hall__shade { background: linear-gradient(180deg, rgba(5, 8, 6, 0.35) 0%, rgba(5, 8, 6, 0) 22%, rgba(5, 8, 6, 0) 74%, var(--night) 100%), rgba(5, 8, 6, 0.16); }
-  .hall__copy { padding-top: 4px; margin-top: -28px; }
-  .hall h1 { font-size: clamp(40px, 11vw, 64px); }
-  .hall__key { flex-direction: column; align-items: flex-start; gap: 16px; padding-top: 8px; padding-bottom: 40px; }
-  .hall__note { text-align: left; }
+  .hall__shade { background: linear-gradient(180deg, rgba(5, 8, 6, 0) 70%, var(--night) 100%); }
+  .hall__copy { padding-block: 4px 32px; margin-top: -24px; }
   .hall__copy::before { display: none; }
+  .hall h1 { font-size: clamp(40px, 11vw, 64px); }
+  .hall__key { flex-direction: column; align-items: flex-start; gap: 14px; padding-block: 22px 32px; }
+  .hall__note { text-align: left; }
 }
-
 /* --------------------------------------------------------------- sections */
 
-.story, .claude, .build, .venue, .founder { padding-block: clamp(84px, 10vw, 148px); }
+.story, .claude, .build, .founder { padding-block: clamp(84px, 10vw, 148px); }
 .section-head { max-width: 48rem; margin-bottom: clamp(40px, 5vw, 72px); }
 .section-head h2, .venue h2, .founder h2 { font-size: clamp(34px, 4.2vw, 58px); line-height: 1.06; letter-spacing: -0.01em; }
 .section-lede { max-width: 40em; margin: 22px 0 0; font-size: clamp(17px, 1.3vw, 19px); color: var(--ink-soft); }
 
 /* ----------------------------------------------------------------- story */
 
-.story { background: var(--paper); }
+.story { background: var(--paper); padding-bottom: 0; }
 .story__steps { list-style: none; margin: 0; padding: 0; }
 .step { padding-block: 30px; border-top: 1px solid var(--line); }
-.step__kicker { display: flex; align-items: center; gap: 10px; margin: 0; font: 600 12.5px/1.4 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--copper-ink); }
+.step__kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; font: 600 12.5px/1.4 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--copper-ink); }
 .step__n { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 1px solid currentColor; border-radius: 50%; font-size: 12px; letter-spacing: 0; }
+.step__day { font-weight: 500; letter-spacing: 0.02em; text-transform: none; color: var(--ink-soft); }
+.step__day::before { content: "·"; margin-right: 10px; color: var(--copper-ink); }
 .step h3 { margin: 12px 0 12px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.16; font-weight: 450; }
 .step p { max-width: 34em; color: var(--ink-soft); }
-.step q { quotes: "‘" "’"; }
+.step__words { max-width: 32em; margin: 0 0 14px; padding-left: 16px; border-left: 2px solid var(--copper); font: 400 18px/1.5 var(--serif); color: var(--ink); }
+.step__link { display: inline-block; margin-top: 6px; font-weight: 550; }
 .shot { margin: 24px 0 0; }
-.shot__open { appearance: none; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px var(--line), 0 22px 48px -28px rgba(23, 36, 30, 0.45); }
-.shot img, .night__photo { display: block; width: 100%; height: auto; }
-.shot--phone { max-width: 290px; margin-inline: auto; }
-.shot--phone img { border-radius: 28px; box-shadow: 0 0 0 9px #141915, 0 0 0 10px #2a312c, 0 26px 50px -22px rgba(0, 0, 0, 0.55); }
-.night { position: relative; overflow: hidden; border-radius: 12px; background: var(--night); }
-.night__photo { filter: brightness(0.6) saturate(0.95); }
+.shot__open { appearance: none; display: block; width: 100%; padding: 0; border: 0; background: #e9e2d2; cursor: zoom-in; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px var(--line), 0 22px 48px -28px rgba(23, 36, 30, 0.45); }
+/* A blurred thumbnail of each image (data-lqip) holds its place while it loads. */
+.shot img, .stage__shot img, .finale__photo, .venue__dome img { background-size: cover; background-position: center; }
+.shot img { display: block; width: 100%; height: auto; }
 .story__foot { max-width: 46em; margin: 28px 0 0; font-size: 13.5px; color: var(--ink-soft); }
-.stage__note { margin: 14px 0 0; font-size: 13px; color: var(--ink-soft); }
+.stage__note { margin: 12px 0 0; font-size: 13px; color: var(--ink-soft); }
 .story__stage { display: none; }
 
-/* Wide screens: the words scroll past a frame that holds each screen. */
+/* Wide screens: the words scroll past a tall frame that holds each screen
+   at about the size it is used. */
 @media (min-width: 1000px) {
   .js .story__body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(40px, 5vw, 88px); }
-  .js .step { min-height: 64vh; display: flex; flex-direction: column; justify-content: center; border-top: 0; padding-block: 8vh; }
+  .js .step { min-height: 72vh; display: flex; flex-direction: column; justify-content: center; border-top: 0; padding-block: 8vh; }
   .js .step .shot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }
   .js .story__stage { display: block; }
-  .js .stage { position: sticky; top: calc(var(--bar) + 7vh); height: calc(86vh - var(--bar)); display: flex; flex-direction: column; justify-content: center; }
-  .stage__frame { position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: #ece6d6; cursor: zoom-in; box-shadow: 0 0 0 1px var(--line), 0 30px 60px -34px rgba(23, 36, 30, 0.5); }
+  .js .stage { position: sticky; top: calc(var(--bar) + 3vh); height: calc(94svh - var(--bar)); display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  .stage__frame { position: relative; display: block; width: min(100%, calc((88svh - var(--bar) - 40px) * 0.8)); aspect-ratio: 4 / 5; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: #e9e2d2; cursor: zoom-in; box-shadow: 0 0 0 1px var(--line), 0 30px 60px -34px rgba(23, 36, 30, 0.5); }
   .stage__frame:disabled { cursor: default; }
   .stage__shot { position: absolute; inset: 0; opacity: 0; transition: opacity 420ms var(--ease); }
   .stage__shot.is-current { opacity: 1; }
   .stage__shot picture, .stage__shot img { display: block; width: 100%; height: 100%; }
   .stage__shot img { object-fit: cover; object-position: center top; }
-  .stage__shot--phone { display: flex; align-items: center; justify-content: center; background: #ddd5c2; }
-  .stage__shot--phone picture { display: contents; }
-  .stage__shot--phone img { width: auto; height: 86%; object-fit: contain; border-radius: 24px; box-shadow: 0 0 0 8px #141915, 0 0 0 9px #2a312c, 0 24px 44px -20px rgba(0, 0, 0, 0.5); }
-  .stage__shot .night { position: absolute; inset: 0; border-radius: 0; }
-  .stage__shot .night picture, .stage__shot .night img { height: 100%; object-fit: cover; }
+  .stage__note { width: min(100%, calc((88svh - var(--bar) - 40px) * 0.8)); }
 }
+
+/* The last step: the plan drawn into the hall from the top table, full width. */
+.finale { margin: clamp(72px, 9vw, 128px) 0 0; background: var(--night); color: var(--ivory); }
+.finale__copy { padding-block: clamp(56px, 7vw, 96px) clamp(28px, 3vw, 40px); }
+.finale__copy h3 { max-width: 18em; margin: 14px 0 14px; font-size: clamp(30px, 3.6vw, 50px); line-height: 1.08; font-weight: 420; }
+.finale__copy p { max-width: 40em; color: rgba(242, 237, 221, 0.84); }
+.finale .step__kicker { color: var(--gold-ink); }
+.finale .step__day { color: rgba(242, 237, 221, 0.7); }
+.finale .step__day::before { color: var(--gold-ink); }
+.finale__view { position: relative; height: min(100svh, 56.25vw); overflow: hidden; container-type: size; }
+.finale__frame { position: absolute; left: 50%; top: 50%; width: max(100cqw, calc(100cqh * 16 / 9)); aspect-ratio: 16 / 9; transform: translate(-50%, -50%); }
+.finale__photo { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.finale__source { padding-block: 14px 0; margin-block: 0; font-size: 13px; color: rgba(242, 237, 221, 0.6); }
+.finale__foot { padding-bottom: 28px; }
+
+/* ----------------------------------------------------------------- venue */
+
+.venue { background: var(--paper); padding-bottom: clamp(84px, 10vw, 148px); }
+.venue__dome { margin: 0; background: var(--night); }
+.venue__dome img { display: block; width: 100%; height: min(100svh, 56.25vw); object-fit: cover; }
+.venue__dome figcaption { padding-block: 14px 16px; font-size: 13.5px; color: rgba(242, 237, 221, 0.7); }
+.venue__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(36px, 6vw, 96px); align-items: start; padding-top: clamp(64px, 8vw, 112px); }
+.venue__intro p { color: var(--ink-soft); max-width: 32em; font-size: clamp(17px, 1.3vw, 19px); }
+.venue__intro h2 { margin-bottom: 22px; }
+.venue__rooms-title { margin: 6px 0 8px; font: 600 12px/1.4 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--copper-ink); }
+.venue__rooms { columns: 2; column-gap: 28px; margin: 0; padding: 0; list-style: none; font: 400 18px/1.75 var(--serif); }
+.venue__links { display: grid; gap: 8px; margin-top: 28px; }
 
 /* ---------------------------------------------------------------- claude */
 
@@ -234,15 +305,20 @@ main:focus { outline: none; }
 .case__text { padding: 18px 20px 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); font-size: 15.5px; line-height: 1.6; }
 .case__text p { margin: 0 0 0.8em; }
 .case__checks { margin: 14px 0 0; font-size: 13.5px; color: var(--ink-soft); }
-.pass { display: inline-flex; align-items: center; gap: 7px; margin-right: 10px; font-weight: 600; color: var(--pass); }
-.pass::before { content: ""; width: 16px; height: 16px; border-radius: 50%; background: var(--pass) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.4l2.2 2.2 4.8-5' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 16px no-repeat; }
+.case__tally { margin: 6px 0 0; font-size: 13.5px; font-weight: 550; color: var(--ink); }
+.pass, .flag { display: inline-flex; align-items: center; gap: 7px; margin-right: 10px; font-weight: 600; }
+.pass { color: var(--pass); }
+.flag { color: var(--flag); }
+.pass::before, .flag::before { content: ""; width: 16px; height: 16px; flex: none; border-radius: 50%; background: var(--pass) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.4l2.2 2.2 4.8-5' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 16px no-repeat; }
+.flag::before { background: #b9822a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 4.2v4.6M8 11.2v.6' fill='none' stroke='%23fff' stroke-width='1.9' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px no-repeat; }
 .cases__note { margin: 16px 0 0; font-size: 14px; color: var(--ink-soft); }
 
 .measure { margin-top: clamp(56px, 7vw, 96px); }
 .measure__title { margin-bottom: 18px; font-size: clamp(24px, 2.2vw, 31px); line-height: 1.2; font-weight: 450; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
-.results { width: 100%; min-width: 760px; border-collapse: collapse; font: 400 14.5px/1.4 var(--sans); font-variant-numeric: tabular-nums; }
+.results { width: 100%; min-width: 860px; border-collapse: collapse; font: 400 14.5px/1.4 var(--sans); font-variant-numeric: tabular-nums; }
 .results th, .results td { padding: 13px 16px; border-bottom: 1px solid var(--line); text-align: right; }
+.results td { white-space: nowrap; }
 .results tbody tr:last-child > * { border-bottom: 0; }
 .results thead th { vertical-align: bottom; font: 600 11.5px/1.35 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
 .results th[scope="row"], .results thead th:first-child { text-align: left; }
@@ -250,7 +326,6 @@ main:focus { outline: none; }
 .results tbody tr:first-child { background: rgba(226, 192, 127, 0.16); }
 .measure__notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 48px; margin-top: 30px; font-size: 15px; color: var(--ink-soft); }
 .measure__notes strong { color: var(--ink); font-weight: 600; }
-.measure__notes q { quotes: "‘" "’"; }
 
 /* ----------------------------------------------------------- engineering */
 
@@ -266,18 +341,14 @@ main:focus { outline: none; }
 .practice { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin: 48px 0 0; padding: 0; list-style: none; font-size: 15.5px; color: rgba(242, 237, 221, 0.84); }
 .practice li { padding-top: 14px; border-top: 1px solid rgba(242, 237, 221, 0.16); }
 
-/* ----------------------------------------------------------------- venue */
+/* ---------------------------------------------------------------- ledger */
 
-.venue { background: var(--paper); }
-.venue__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(36px, 6vw, 96px); align-items: center; }
-.venue__dome { margin: 0; }
-.venue__dome img { display: block; width: 100%; height: auto; border-radius: 14px; box-shadow: 0 0 0 1px var(--line), 0 40px 80px -46px rgba(23, 36, 30, 0.6); }
-.venue__dome figcaption { margin-top: 14px; font-size: 13.5px; color: var(--ink-soft); }
-.venue__copy p { color: var(--ink-soft); max-width: 32em; }
-.venue__copy h2 { margin-bottom: 22px; }
-.venue__copy .venue__rooms-title { margin: 28px 0 8px; font: 600 12px/1.4 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--copper-ink); }
-.venue__rooms { columns: 2; column-gap: 28px; margin: 0; padding: 0; list-style: none; font: 400 18px/1.75 var(--serif); }
-.venue__links { display: grid; gap: 8px; margin-top: 28px; }
+.ledger { padding-block: 72px; background: var(--forest); color: var(--ivory); }
+.ledger__title { margin-bottom: 26px; font-size: clamp(26px, 2.4vw, 34px); font-weight: 420; }
+.ledger__rows { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 24px; margin: 0; }
+.ledger__rows div { padding-top: 14px; border-top: 1px solid rgba(242, 237, 221, 0.26); }
+.ledger__rows dt { font: 600 12px/1.4 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); }
+.ledger__rows dd { margin: 8px 0 0; font-size: 15.5px; color: rgba(242, 237, 221, 0.9); }
 
 /* --------------------------------------------------------------- founder */
 
@@ -285,15 +356,6 @@ main:focus { outline: none; }
 .founder__grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(28px, 5vw, 80px); }
 .founder__copy p { max-width: 36em; font-size: clamp(17px, 1.3vw, 19px); line-height: 1.65; color: var(--ink); }
 .founder__contact a { font-weight: 550; }
-
-/* ---------------------------------------------------------------- ledger */
-
-.ledger { padding-block: 72px; background: var(--forest); color: var(--ivory); }
-.ledger__title { margin-bottom: 26px; font-size: clamp(26px, 2.4vw, 34px); font-weight: 420; }
-.ledger__rows { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin: 0; }
-.ledger__rows div { padding-top: 14px; border-top: 1px solid rgba(242, 237, 221, 0.26); }
-.ledger__rows dt { font: 600 12px/1.4 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); }
-.ledger__rows dd { margin: 8px 0 0; font-size: 15.5px; color: rgba(242, 237, 221, 0.9); }
 
 /* ---------------------------------------------------------------- footer */
 
@@ -317,16 +379,27 @@ main:focus { outline: none; }
   .case, .founder__grid, .venue__grid { grid-template-columns: 1fr; }
   .measure__notes { grid-template-columns: 1fr; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 32px; }
-  .practice, .ledger__rows { grid-template-columns: 1fr 1fr; }
-  .venue__dome { max-width: 520px; margin-inline: auto; }
+  .practice { grid-template-columns: 1fr 1fr; }
+  .ledger__rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 699px) {
   .bar__inner { gap: 16px; }
-  .bar__nav { gap: 18px; overflow-x: auto; scrollbar-width: none; font-size: 13.5px; -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); padding-right: 24px; }
-  .bar__nav::-webkit-scrollbar { display: none; }
+  .bar__nav { gap: 18px; font-size: 14px; }
+  .bar__wide { display: none; }
   .practice, .ledger__rows { grid-template-columns: 1fr; }
   .facts dd { font-size: 40px; }
   .venue__rooms { font-size: 17px; }
+  /* The results as one card a run, every column named beside its value. */
+  .table-wrap { overflow: visible; border: 0; background: none; }
+  .results { min-width: 0; display: block; }
+  .results thead { display: none; }
+  .results tbody { display: grid; gap: 12px; }
+  .results tr { display: block; padding: 6px 16px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+  .results th[scope="row"] { display: block; padding: 10px 0 8px; border-bottom: 1px solid var(--line); font-weight: 600; }
+  .results td { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 0; }
+  .results td::before { content: attr(data-label); color: var(--ink-soft); white-space: normal; text-align: left; }
+  .results tbody tr:first-child { background: rgba(226, 192, 127, 0.16); }
+  .pace svg text { font-size: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -334,6 +407,6 @@ main:focus { outline: none; }
   .js .hall__night { opacity: 0; }
   .js .hall.is-lit .hall__night { animation: none; }
   .js .hall-ink .ink.is-on .t, .js .hall-ink .ink.is-on .c { animation: none; }
-  .hall-ink .ink, .hall-ink .ink.is-on { transition: none; }
+  .hall-ink, .hall-ink .ink, .hall-ink .ink.is-on { transition: none; }
   .stage__shot { transition: none; }
 }

@@ -1,1442 +1,1442 @@
 {
- "description": "The Crawford wedding breakfast for 160 in the Grand Hall: fifteen 6 ft rounds of ten and a top table of ten on three 6 ft trestles. Sample data for venviewer.com/platform, shared by the product captures (e2e/platform-captures.spec.ts) and the hero drawing (scripts/platform-hall.mjs).",
- "frame": "The planner's: metres from the room centre, x along the 21 m length (the fireplace end at -10.5), z across the 10.5 m width.",
- "footprints": {
-  "round": {
-   "radiusM": 0.915
-  },
-  "top-table": {
-   "widthM": 1.83,
-   "depthM": 0.76
-  },
-  "chair": {
-   "radiusM": 0.21
-  }
- },
- "breakfast": [
-  {
-   "asset": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
-   "kind": "top-table",
-   "x": -9.03,
-   "z": -1.83,
-   "rotationY": 1.571,
-   "group": "top"
-  },
-  {
-   "asset": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
-   "kind": "top-table",
-   "x": -9.03,
-   "z": 0,
-   "rotationY": 1.571,
-   "group": "top"
-  },
-  {
-   "asset": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
-   "kind": "top-table",
-   "x": -9.03,
-   "z": 1.83,
-   "rotationY": 1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": -2.475,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": -1.925,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": -1.375,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": -0.825,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": -0.275,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": 0.275,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": 0.825,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": 1.375,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": 1.925,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -9.76,
-   "z": 2.475,
-   "rotationY": -1.571,
-   "group": "top"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -6.305,
-   "z": -3,
-   "rotationY": 0,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.05,
-   "z": -3,
-   "rotationY": 1.571,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.29,
-   "z": -2.262,
-   "rotationY": 0.942,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.917,
-   "z": -1.806,
-   "rotationY": 0.314,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -6.693,
-   "z": -1.806,
-   "rotationY": -0.314,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.32,
-   "z": -2.262,
-   "rotationY": -0.942,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.56,
-   "z": -3,
-   "rotationY": -1.571,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.32,
-   "z": -3.738,
-   "rotationY": -2.199,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -6.693,
-   "z": -4.194,
-   "rotationY": -2.827,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.917,
-   "z": -4.194,
-   "rotationY": 2.827,
-   "group": "t01"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.29,
-   "z": -3.738,
-   "rotationY": 2.199,
-   "group": "t01"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -6.305,
-   "z": 0,
-   "rotationY": 0,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.065,
-   "z": 0.196,
-   "rotationY": 1.414,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.418,
-   "z": 0.887,
-   "rotationY": 0.785,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -6.109,
-   "z": 1.24,
-   "rotationY": 0.157,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -6.875,
-   "z": 1.118,
-   "rotationY": -0.471,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.423,
-   "z": 0.57,
-   "rotationY": -1.1,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.545,
-   "z": -0.196,
-   "rotationY": -1.728,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.192,
-   "z": -0.887,
-   "rotationY": -2.356,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -6.501,
-   "z": -1.24,
-   "rotationY": -2.985,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.735,
-   "z": -1.118,
-   "rotationY": 2.67,
-   "group": "t02"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.187,
-   "z": -0.57,
-   "rotationY": 2.042,
-   "group": "t02"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -6.305,
-   "z": 3,
-   "rotationY": 0,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.111,
-   "z": 3.388,
-   "rotationY": 1.257,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.567,
-   "z": 4.015,
-   "rotationY": 0.628,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -6.305,
-   "z": 4.255,
-   "rotationY": 0,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.043,
-   "z": 4.015,
-   "rotationY": -0.628,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.499,
-   "z": 3.388,
-   "rotationY": -1.257,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.499,
-   "z": 2.612,
-   "rotationY": -1.885,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -7.043,
-   "z": 1.985,
-   "rotationY": -2.513,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -6.305,
-   "z": 1.745,
-   "rotationY": -3.142,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.567,
-   "z": 1.985,
-   "rotationY": 2.513,
-   "group": "t03"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -5.111,
-   "z": 2.612,
-   "rotationY": 1.885,
-   "group": "t03"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -3.355,
-   "z": -3,
-   "rotationY": 0,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.237,
-   "z": -2.43,
-   "rotationY": 1.1,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.785,
-   "z": -1.882,
-   "rotationY": 0.471,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -3.551,
-   "z": -1.76,
-   "rotationY": -0.157,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.242,
-   "z": -2.113,
-   "rotationY": -0.785,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.595,
-   "z": -2.804,
-   "rotationY": -1.414,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.473,
-   "z": -3.57,
-   "rotationY": -2.042,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -3.925,
-   "z": -4.118,
-   "rotationY": -2.67,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -3.159,
-   "z": -4.24,
-   "rotationY": 2.985,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.468,
-   "z": -3.887,
-   "rotationY": 2.356,
-   "group": "t04"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.115,
-   "z": -3.196,
-   "rotationY": 1.728,
-   "group": "t04"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -3.355,
-   "z": 0,
-   "rotationY": 0,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.1,
-   "z": 0,
-   "rotationY": 1.571,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.34,
-   "z": 0.738,
-   "rotationY": 0.942,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.967,
-   "z": 1.194,
-   "rotationY": 0.314,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -3.743,
-   "z": 1.194,
-   "rotationY": -0.314,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.37,
-   "z": 0.738,
-   "rotationY": -0.942,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.61,
-   "z": 0,
-   "rotationY": -1.571,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.37,
-   "z": -0.738,
-   "rotationY": -2.199,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -3.743,
-   "z": -1.194,
-   "rotationY": -2.827,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.967,
-   "z": -1.194,
-   "rotationY": 2.827,
-   "group": "t05"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.34,
-   "z": -0.738,
-   "rotationY": 2.199,
-   "group": "t05"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -3.355,
-   "z": 3,
-   "rotationY": 0,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.115,
-   "z": 3.196,
-   "rotationY": 1.414,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.468,
-   "z": 3.887,
-   "rotationY": 0.785,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -3.159,
-   "z": 4.24,
-   "rotationY": 0.157,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -3.925,
-   "z": 4.118,
-   "rotationY": -0.471,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.473,
-   "z": 3.57,
-   "rotationY": -1.1,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.595,
-   "z": 2.804,
-   "rotationY": -1.728,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -4.242,
-   "z": 2.113,
-   "rotationY": -2.356,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -3.551,
-   "z": 1.76,
-   "rotationY": -2.985,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.785,
-   "z": 1.882,
-   "rotationY": 2.67,
-   "group": "t06"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -2.237,
-   "z": 2.43,
-   "rotationY": 2.042,
-   "group": "t06"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -0.405,
-   "z": -3,
-   "rotationY": 0,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.789,
-   "z": -2.612,
-   "rotationY": 1.257,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.333,
-   "z": -1.985,
-   "rotationY": 0.628,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.405,
-   "z": -1.745,
-   "rotationY": 0,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.143,
-   "z": -1.985,
-   "rotationY": -0.628,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.599,
-   "z": -2.612,
-   "rotationY": -1.257,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.599,
-   "z": -3.388,
-   "rotationY": -1.885,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.143,
-   "z": -4.015,
-   "rotationY": -2.513,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.405,
-   "z": -4.255,
-   "rotationY": -3.142,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.333,
-   "z": -4.015,
-   "rotationY": 2.513,
-   "group": "t07"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.789,
-   "z": -3.388,
-   "rotationY": 1.885,
-   "group": "t07"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -0.405,
-   "z": 0,
-   "rotationY": 0,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.713,
-   "z": 0.57,
-   "rotationY": 1.1,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.165,
-   "z": 1.118,
-   "rotationY": 0.471,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.601,
-   "z": 1.24,
-   "rotationY": -0.157,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.292,
-   "z": 0.887,
-   "rotationY": -0.785,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.645,
-   "z": 0.196,
-   "rotationY": -1.414,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.523,
-   "z": -0.57,
-   "rotationY": -2.042,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.975,
-   "z": -1.118,
-   "rotationY": -2.67,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.209,
-   "z": -1.24,
-   "rotationY": 2.985,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.482,
-   "z": -0.887,
-   "rotationY": 2.356,
-   "group": "t08"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.835,
-   "z": -0.196,
-   "rotationY": 1.728,
-   "group": "t08"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": -0.405,
-   "z": 3,
-   "rotationY": 0,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.85,
-   "z": 3,
-   "rotationY": 1.571,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.61,
-   "z": 3.738,
-   "rotationY": 0.942,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.017,
-   "z": 4.194,
-   "rotationY": 0.314,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.793,
-   "z": 4.194,
-   "rotationY": -0.314,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.42,
-   "z": 3.738,
-   "rotationY": -0.942,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.66,
-   "z": 3,
-   "rotationY": -1.571,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -1.42,
-   "z": 2.262,
-   "rotationY": -2.199,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.793,
-   "z": 1.806,
-   "rotationY": -2.827,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": -0.017,
-   "z": 1.806,
-   "rotationY": 2.827,
-   "group": "t09"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 0.61,
-   "z": 2.262,
-   "rotationY": 2.199,
-   "group": "t09"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": 2.545,
-   "z": -3,
-   "rotationY": 0,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.785,
-   "z": -2.804,
-   "rotationY": 1.414,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.432,
-   "z": -2.113,
-   "rotationY": 0.785,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 2.741,
-   "z": -1.76,
-   "rotationY": 0.157,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.975,
-   "z": -1.882,
-   "rotationY": -0.471,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.427,
-   "z": -2.43,
-   "rotationY": -1.1,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.305,
-   "z": -3.196,
-   "rotationY": -1.728,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.658,
-   "z": -3.887,
-   "rotationY": -2.356,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 2.349,
-   "z": -4.24,
-   "rotationY": -2.985,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.115,
-   "z": -4.118,
-   "rotationY": 2.67,
-   "group": "t10"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.663,
-   "z": -3.57,
-   "rotationY": 2.042,
-   "group": "t10"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": 2.545,
-   "z": 0,
-   "rotationY": 0,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.739,
-   "z": 0.388,
-   "rotationY": 1.257,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.283,
-   "z": 1.015,
-   "rotationY": 0.628,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 2.545,
-   "z": 1.255,
-   "rotationY": 0,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.807,
-   "z": 1.015,
-   "rotationY": -0.628,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.351,
-   "z": 0.388,
-   "rotationY": -1.257,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.351,
-   "z": -0.388,
-   "rotationY": -1.885,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.807,
-   "z": -1.015,
-   "rotationY": -2.513,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 2.545,
-   "z": -1.255,
-   "rotationY": -3.142,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.283,
-   "z": -1.015,
-   "rotationY": 2.513,
-   "group": "t11"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.739,
-   "z": -0.388,
-   "rotationY": 1.885,
-   "group": "t11"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": 2.545,
-   "z": 3,
-   "rotationY": 0,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.663,
-   "z": 3.57,
-   "rotationY": 1.1,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.115,
-   "z": 4.118,
-   "rotationY": 0.471,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 2.349,
-   "z": 4.24,
-   "rotationY": -0.157,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.658,
-   "z": 3.887,
-   "rotationY": -0.785,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.305,
-   "z": 3.196,
-   "rotationY": -1.414,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.427,
-   "z": 2.43,
-   "rotationY": -2.042,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 1.975,
-   "z": 1.882,
-   "rotationY": -2.67,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 2.741,
-   "z": 1.76,
-   "rotationY": 2.985,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.432,
-   "z": 2.113,
-   "rotationY": 2.356,
-   "group": "t12"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 3.785,
-   "z": 2.804,
-   "rotationY": 1.728,
-   "group": "t12"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": 5.495,
-   "z": -3,
-   "rotationY": 0,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.75,
-   "z": -3,
-   "rotationY": 1.571,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.51,
-   "z": -2.262,
-   "rotationY": 0.942,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 5.883,
-   "z": -1.806,
-   "rotationY": 0.314,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 5.107,
-   "z": -1.806,
-   "rotationY": -0.314,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.48,
-   "z": -2.262,
-   "rotationY": -0.942,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.24,
-   "z": -3,
-   "rotationY": -1.571,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.48,
-   "z": -3.738,
-   "rotationY": -2.199,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 5.107,
-   "z": -4.194,
-   "rotationY": -2.827,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 5.883,
-   "z": -4.194,
-   "rotationY": 2.827,
-   "group": "t13"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.51,
-   "z": -3.738,
-   "rotationY": 2.199,
-   "group": "t13"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": 5.495,
-   "z": 0,
-   "rotationY": 0,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.735,
-   "z": 0.196,
-   "rotationY": 1.414,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.382,
-   "z": 0.887,
-   "rotationY": 0.785,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 5.691,
-   "z": 1.24,
-   "rotationY": 0.157,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.925,
-   "z": 1.118,
-   "rotationY": -0.471,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.377,
-   "z": 0.57,
-   "rotationY": -1.1,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.255,
-   "z": -0.196,
-   "rotationY": -1.728,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.608,
-   "z": -0.887,
-   "rotationY": -2.356,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 5.299,
-   "z": -1.24,
-   "rotationY": -2.985,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.065,
-   "z": -1.118,
-   "rotationY": 2.67,
-   "group": "t14"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.613,
-   "z": -0.57,
-   "rotationY": 2.042,
-   "group": "t14"
-  },
-  {
-   "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
-   "kind": "round",
-   "x": 5.495,
-   "z": 3,
-   "rotationY": 0,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.689,
-   "z": 3.388,
-   "rotationY": 1.257,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.233,
-   "z": 4.015,
-   "rotationY": 0.628,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 5.495,
-   "z": 4.255,
-   "rotationY": 0,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.757,
-   "z": 4.015,
-   "rotationY": -0.628,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.301,
-   "z": 3.388,
-   "rotationY": -1.257,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.301,
-   "z": 2.612,
-   "rotationY": -1.885,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 4.757,
-   "z": 1.985,
-   "rotationY": -2.513,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 5.495,
-   "z": 1.745,
-   "rotationY": -3.142,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.233,
-   "z": 1.985,
-   "rotationY": 2.513,
-   "group": "t15"
-  },
-  {
-   "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
-   "kind": "chair",
-   "x": 6.689,
-   "z": 2.612,
-   "rotationY": 1.885,
-   "group": "t15"
-  }
- ]
+  "description": "The Crawford wedding breakfast for 160 in the Grand Hall: fifteen 6 ft rounds of ten, 3.55 m apart along the hall and 3.35 m across it (about the usual minimum for 6 ft rounds), and a top table of ten on three 6 ft trestles set end to end. Sample data for venviewer.com/platform, shared by the product captures (e2e/platform-captures.spec.ts) and the hero drawing (scripts/platform-hall.mjs).",
+  "frame": "The planner's: metres from the room centre, x along the 21 m length (the fireplace end at -10.5), z across the 10.5 m width.",
+  "footprints": {
+    "round": {
+      "radiusM": 0.915
+    },
+    "top-table": {
+      "widthM": 1.83,
+      "depthM": 0.76
+    },
+    "chair": {
+      "radiusM": 0.21
+    }
+  },
+  "breakfast": [
+    {
+      "asset": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
+      "kind": "top-table",
+      "x": -9.03,
+      "z": -1.83,
+      "rotationY": 1.571,
+      "group": "top"
+    },
+    {
+      "asset": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
+      "kind": "top-table",
+      "x": -9.03,
+      "z": 0,
+      "rotationY": 1.571,
+      "group": "top"
+    },
+    {
+      "asset": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
+      "kind": "top-table",
+      "x": -9.03,
+      "z": 1.83,
+      "rotationY": 1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": -2.475,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": -1.925,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": -1.375,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": -0.825,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": -0.275,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": 0.275,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": 0.825,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": 1.375,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": 1.925,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -9.76,
+      "z": 2.475,
+      "rotationY": -1.571,
+      "group": "top"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": -6,
+      "z": -3.35,
+      "rotationY": 0,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.745,
+      "z": -3.35,
+      "rotationY": 1.571,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.985,
+      "z": -2.612,
+      "rotationY": 0.942,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -5.612,
+      "z": -2.156,
+      "rotationY": 0.314,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -6.388,
+      "z": -2.156,
+      "rotationY": -0.314,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.015,
+      "z": -2.612,
+      "rotationY": -0.942,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.255,
+      "z": -3.35,
+      "rotationY": -1.571,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.015,
+      "z": -4.088,
+      "rotationY": -2.199,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -6.388,
+      "z": -4.544,
+      "rotationY": -2.827,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -5.612,
+      "z": -4.544,
+      "rotationY": 2.827,
+      "group": "t01"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.985,
+      "z": -4.088,
+      "rotationY": 2.199,
+      "group": "t01"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": -6,
+      "z": 0,
+      "rotationY": 0,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.745,
+      "z": 0,
+      "rotationY": 1.571,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.985,
+      "z": 0.738,
+      "rotationY": 0.942,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -5.612,
+      "z": 1.194,
+      "rotationY": 0.314,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -6.388,
+      "z": 1.194,
+      "rotationY": -0.314,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.015,
+      "z": 0.738,
+      "rotationY": -0.942,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.255,
+      "z": 0,
+      "rotationY": -1.571,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.015,
+      "z": -0.738,
+      "rotationY": -2.199,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -6.388,
+      "z": -1.194,
+      "rotationY": -2.827,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -5.612,
+      "z": -1.194,
+      "rotationY": 2.827,
+      "group": "t02"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.985,
+      "z": -0.738,
+      "rotationY": 2.199,
+      "group": "t02"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": -6,
+      "z": 3.35,
+      "rotationY": 0,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.745,
+      "z": 3.35,
+      "rotationY": 1.571,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.985,
+      "z": 4.088,
+      "rotationY": 0.942,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -5.612,
+      "z": 4.544,
+      "rotationY": 0.314,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -6.388,
+      "z": 4.544,
+      "rotationY": -0.314,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.015,
+      "z": 4.088,
+      "rotationY": -0.942,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.255,
+      "z": 3.35,
+      "rotationY": -1.571,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -7.015,
+      "z": 2.612,
+      "rotationY": -2.199,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -6.388,
+      "z": 2.156,
+      "rotationY": -2.827,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -5.612,
+      "z": 2.156,
+      "rotationY": 2.827,
+      "group": "t03"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -4.985,
+      "z": 2.612,
+      "rotationY": 2.199,
+      "group": "t03"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": -2.45,
+      "z": -3.35,
+      "rotationY": 0,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.195,
+      "z": -3.35,
+      "rotationY": 1.571,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.435,
+      "z": -2.612,
+      "rotationY": 0.942,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.062,
+      "z": -2.156,
+      "rotationY": 0.314,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.838,
+      "z": -2.156,
+      "rotationY": -0.314,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.465,
+      "z": -2.612,
+      "rotationY": -0.942,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.705,
+      "z": -3.35,
+      "rotationY": -1.571,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.465,
+      "z": -4.088,
+      "rotationY": -2.199,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.838,
+      "z": -4.544,
+      "rotationY": -2.827,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.062,
+      "z": -4.544,
+      "rotationY": 2.827,
+      "group": "t04"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.435,
+      "z": -4.088,
+      "rotationY": 2.199,
+      "group": "t04"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": -2.45,
+      "z": 0,
+      "rotationY": 0,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.195,
+      "z": 0,
+      "rotationY": 1.571,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.435,
+      "z": 0.738,
+      "rotationY": 0.942,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.062,
+      "z": 1.194,
+      "rotationY": 0.314,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.838,
+      "z": 1.194,
+      "rotationY": -0.314,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.465,
+      "z": 0.738,
+      "rotationY": -0.942,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.705,
+      "z": 0,
+      "rotationY": -1.571,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.465,
+      "z": -0.738,
+      "rotationY": -2.199,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.838,
+      "z": -1.194,
+      "rotationY": -2.827,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.062,
+      "z": -1.194,
+      "rotationY": 2.827,
+      "group": "t05"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.435,
+      "z": -0.738,
+      "rotationY": 2.199,
+      "group": "t05"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": -2.45,
+      "z": 3.35,
+      "rotationY": 0,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.195,
+      "z": 3.35,
+      "rotationY": 1.571,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.435,
+      "z": 4.088,
+      "rotationY": 0.942,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.062,
+      "z": 4.544,
+      "rotationY": 0.314,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.838,
+      "z": 4.544,
+      "rotationY": -0.314,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.465,
+      "z": 4.088,
+      "rotationY": -0.942,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.705,
+      "z": 3.35,
+      "rotationY": -1.571,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -3.465,
+      "z": 2.612,
+      "rotationY": -2.199,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.838,
+      "z": 2.156,
+      "rotationY": -2.827,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -2.062,
+      "z": 2.156,
+      "rotationY": 2.827,
+      "group": "t06"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -1.435,
+      "z": 2.612,
+      "rotationY": 2.199,
+      "group": "t06"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 1.1,
+      "z": -3.35,
+      "rotationY": 0,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.355,
+      "z": -3.35,
+      "rotationY": 1.571,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.115,
+      "z": -2.612,
+      "rotationY": 0.942,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 1.488,
+      "z": -2.156,
+      "rotationY": 0.314,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.712,
+      "z": -2.156,
+      "rotationY": -0.314,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.085,
+      "z": -2.612,
+      "rotationY": -0.942,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -0.155,
+      "z": -3.35,
+      "rotationY": -1.571,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.085,
+      "z": -4.088,
+      "rotationY": -2.199,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.712,
+      "z": -4.544,
+      "rotationY": -2.827,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 1.488,
+      "z": -4.544,
+      "rotationY": 2.827,
+      "group": "t07"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.115,
+      "z": -4.088,
+      "rotationY": 2.199,
+      "group": "t07"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 1.1,
+      "z": 0,
+      "rotationY": 0,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.355,
+      "z": 0,
+      "rotationY": 1.571,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.115,
+      "z": 0.738,
+      "rotationY": 0.942,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 1.488,
+      "z": 1.194,
+      "rotationY": 0.314,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.712,
+      "z": 1.194,
+      "rotationY": -0.314,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.085,
+      "z": 0.738,
+      "rotationY": -0.942,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -0.155,
+      "z": 0,
+      "rotationY": -1.571,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.085,
+      "z": -0.738,
+      "rotationY": -2.199,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.712,
+      "z": -1.194,
+      "rotationY": -2.827,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 1.488,
+      "z": -1.194,
+      "rotationY": 2.827,
+      "group": "t08"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.115,
+      "z": -0.738,
+      "rotationY": 2.199,
+      "group": "t08"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 1.1,
+      "z": 3.35,
+      "rotationY": 0,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.355,
+      "z": 3.35,
+      "rotationY": 1.571,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.115,
+      "z": 4.088,
+      "rotationY": 0.942,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 1.488,
+      "z": 4.544,
+      "rotationY": 0.314,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.712,
+      "z": 4.544,
+      "rotationY": -0.314,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.085,
+      "z": 4.088,
+      "rotationY": -0.942,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": -0.155,
+      "z": 3.35,
+      "rotationY": -1.571,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.085,
+      "z": 2.612,
+      "rotationY": -2.199,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 0.712,
+      "z": 2.156,
+      "rotationY": -2.827,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 1.488,
+      "z": 2.156,
+      "rotationY": 2.827,
+      "group": "t09"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 2.115,
+      "z": 2.612,
+      "rotationY": 2.199,
+      "group": "t09"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 4.65,
+      "z": -3.35,
+      "rotationY": 0,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.905,
+      "z": -3.35,
+      "rotationY": 1.571,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.665,
+      "z": -2.612,
+      "rotationY": 0.942,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.038,
+      "z": -2.156,
+      "rotationY": 0.314,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 4.262,
+      "z": -2.156,
+      "rotationY": -0.314,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.635,
+      "z": -2.612,
+      "rotationY": -0.942,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.395,
+      "z": -3.35,
+      "rotationY": -1.571,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.635,
+      "z": -4.088,
+      "rotationY": -2.199,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 4.262,
+      "z": -4.544,
+      "rotationY": -2.827,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.038,
+      "z": -4.544,
+      "rotationY": 2.827,
+      "group": "t10"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.665,
+      "z": -4.088,
+      "rotationY": 2.199,
+      "group": "t10"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 4.65,
+      "z": 0,
+      "rotationY": 0,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.905,
+      "z": 0,
+      "rotationY": 1.571,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.665,
+      "z": 0.738,
+      "rotationY": 0.942,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.038,
+      "z": 1.194,
+      "rotationY": 0.314,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 4.262,
+      "z": 1.194,
+      "rotationY": -0.314,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.635,
+      "z": 0.738,
+      "rotationY": -0.942,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.395,
+      "z": 0,
+      "rotationY": -1.571,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.635,
+      "z": -0.738,
+      "rotationY": -2.199,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 4.262,
+      "z": -1.194,
+      "rotationY": -2.827,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.038,
+      "z": -1.194,
+      "rotationY": 2.827,
+      "group": "t11"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.665,
+      "z": -0.738,
+      "rotationY": 2.199,
+      "group": "t11"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 4.65,
+      "z": 3.35,
+      "rotationY": 0,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.905,
+      "z": 3.35,
+      "rotationY": 1.571,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.665,
+      "z": 4.088,
+      "rotationY": 0.942,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.038,
+      "z": 4.544,
+      "rotationY": 0.314,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 4.262,
+      "z": 4.544,
+      "rotationY": -0.314,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.635,
+      "z": 4.088,
+      "rotationY": -0.942,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.395,
+      "z": 3.35,
+      "rotationY": -1.571,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 3.635,
+      "z": 2.612,
+      "rotationY": -2.199,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 4.262,
+      "z": 2.156,
+      "rotationY": -2.827,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.038,
+      "z": 2.156,
+      "rotationY": 2.827,
+      "group": "t12"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 5.665,
+      "z": 2.612,
+      "rotationY": 2.199,
+      "group": "t12"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 8.2,
+      "z": -3.35,
+      "rotationY": 0,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.455,
+      "z": -3.35,
+      "rotationY": 1.571,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.215,
+      "z": -2.612,
+      "rotationY": 0.942,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 8.588,
+      "z": -2.156,
+      "rotationY": 0.314,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.812,
+      "z": -2.156,
+      "rotationY": -0.314,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.185,
+      "z": -2.612,
+      "rotationY": -0.942,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 6.945,
+      "z": -3.35,
+      "rotationY": -1.571,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.185,
+      "z": -4.088,
+      "rotationY": -2.199,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.812,
+      "z": -4.544,
+      "rotationY": -2.827,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 8.588,
+      "z": -4.544,
+      "rotationY": 2.827,
+      "group": "t13"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.215,
+      "z": -4.088,
+      "rotationY": 2.199,
+      "group": "t13"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 8.2,
+      "z": 0,
+      "rotationY": 0,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.455,
+      "z": 0,
+      "rotationY": 1.571,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.215,
+      "z": 0.738,
+      "rotationY": 0.942,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 8.588,
+      "z": 1.194,
+      "rotationY": 0.314,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.812,
+      "z": 1.194,
+      "rotationY": -0.314,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.185,
+      "z": 0.738,
+      "rotationY": -0.942,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 6.945,
+      "z": 0,
+      "rotationY": -1.571,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.185,
+      "z": -0.738,
+      "rotationY": -2.199,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.812,
+      "z": -1.194,
+      "rotationY": -2.827,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 8.588,
+      "z": -1.194,
+      "rotationY": 2.827,
+      "group": "t14"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.215,
+      "z": -0.738,
+      "rotationY": 2.199,
+      "group": "t14"
+    },
+    {
+      "asset": "aec69e97-d577-5931-ba13-8258dbdd9050",
+      "kind": "round",
+      "x": 8.2,
+      "z": 3.35,
+      "rotationY": 0,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.455,
+      "z": 3.35,
+      "rotationY": 1.571,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.215,
+      "z": 4.088,
+      "rotationY": 0.942,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 8.588,
+      "z": 4.544,
+      "rotationY": 0.314,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.812,
+      "z": 4.544,
+      "rotationY": -0.314,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.185,
+      "z": 4.088,
+      "rotationY": -0.942,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 6.945,
+      "z": 3.35,
+      "rotationY": -1.571,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.185,
+      "z": 2.612,
+      "rotationY": -2.199,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 7.812,
+      "z": 2.156,
+      "rotationY": -2.827,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 8.588,
+      "z": 2.156,
+      "rotationY": 2.827,
+      "group": "t15"
+    },
+    {
+      "asset": "7f1fb7a2-5210-57b1-9108-11255c059520",
+      "kind": "chair",
+      "x": 9.215,
+      "z": 2.612,
+      "rotationY": 2.199,
+      "group": "t15"
+    }
+  ]
 }

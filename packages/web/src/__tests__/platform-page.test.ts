@@ -22,7 +22,7 @@ const parserWindow = new Window({ settings: {
 afterAll(async () => { await parserWindow.happyDOM.close(); });
 const doc = new parserWindow.DOMParser().parseFromString(html, "text/html");
 
-const STORY = ["room", "event", "claude", "engineering", "venue", "founder"] as const;
+const STORY = ["room", "event", "venue", "claude", "engineering", "founder"] as const;
 const SCRIPT_BUDGET_BYTES = 10 * 1024;
 
 /** Every URL the page asks for: src, poster, href and each srcset candidate. */
@@ -68,7 +68,7 @@ describe("/platform page", () => {
     expect(missing).toEqual([]);
   });
 
-  it("tells the story in order: the room, one wedding, Claude, the engineering, the venue, the founder", () => {
+  it("tells the story in order: the room, one wedding, the venue, Claude, the engineering, the founder", () => {
     const order = Array.from(doc.querySelectorAll("main > section[id]")).map((section) => section.id);
     expect(order.filter((id) => (STORY as readonly string[]).includes(id))).toEqual([...STORY]);
   });
@@ -78,6 +78,8 @@ describe("/platform page", () => {
     expect(text(doc.getElementById("event"))).toContain("sample data");
     expect(text(doc.querySelector("footer")).toLowerCase()).toContain("concept film");
     expect(text(doc.getElementById("founder"))).toContain("Its chief executive is my father.");
+    // The wedding drawn in the hero is a sample, not a client.
+    expect(text(doc.querySelector('.hall__drawn[data-for="breakfast"]'))).toContain("a sample wedding breakfast");
     // The planner draws a scale model of each room; the rooms' captures are
     // not yet in it, so the page must never say layouts are planned in them.
     expect(html).not.toMatch(/3D captures? of the real rooms/iu);
@@ -119,6 +121,33 @@ describe("/platform page", () => {
     expect(scripts[0]?.hasAttribute("defer")).toBe(true);
     expect(statSync(join(root, "public", "platform", "platform.js")).size).toBeLessThan(SCRIPT_BUDGET_BYTES);
     expect(html).not.toMatch(/\son[a-z]+=/u);
+  });
+
+  it("shows each Claude case as the record has it: run 1, its time and its pass count, and the table's counts", () => {
+    interface RunRecord { summary: { passed: number; perCase?: { id: string; runs: number; passed: number }[] }; results: { id: string; sample: number; latencyMs: number }[] }
+    const record = (id: string): RunRecord => JSON.parse(readFileSync(join(root, "public", "platform", "evaluation", "data", `${id}.json`), "utf8")) as RunRecord;
+    const opus = record("heldout-opus");
+    const CASES: Readonly<Record<string, string>> = {
+      "case-agreement": "ho-claimed-agreement", "case-tag": "ho-closing-tag", "case-occasion": "ho-occasion-field",
+      "case-dietary": "ho-dietary-detail", "case-contacts": "ho-contacts-in-long-message",
+    };
+    for (const [panelId, caseId] of Object.entries(CASES)) {
+      const panel = doc.getElementById(panelId);
+      expect(text(panel?.querySelector(".case__draft .case__label")), panelId).toContain("run 1");
+      const first = opus.results.find((result) => result.id === caseId && result.sample === 1);
+      expect(first, caseId).toBeDefined();
+      expect(text(panel?.querySelector(".case__checks")), panelId).toContain(`${((first?.latencyMs ?? 0) / 1000).toFixed(1)} s`);
+      const counted = opus.summary.perCase?.find((entry) => entry.id === caseId);
+      expect(text(panel?.querySelector(".case__tally")), panelId).toContain(`${String(counted?.passed)} of this case’s ${String(counted?.runs)} runs`);
+    }
+    const passed = Array.from(doc.querySelectorAll(".results tbody tr")).map((row) => text(row.querySelector('[data-label="Passed every check"]')));
+    expect(passed.slice(0, 3)).toEqual([opus, record("heldout-sonnet-x5"), record("heldout-haiku-x5")].map((run) => String(run.summary.passed)));
+  });
+
+  it("gives each story step its own note for the frame", () => {
+    const steps = Array.from(doc.querySelectorAll(".story__steps .step"));
+    expect(steps.length).toBe(6);
+    for (const step of steps) expect(step.getAttribute("data-note") ?? "", text(step.querySelector("h3"))).toMatch(/sample data/u);
   });
 
   it("reads completely without its script and carries no placeholder text", () => {

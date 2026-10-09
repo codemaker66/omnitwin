@@ -8,7 +8,7 @@ import {
   expectAccessibilityAuditClean,
   watchPageProblems,
 } from "./support/accessibility-audit.js";
-import { CLAUDE_CRAWFORD_DRAFT, CRAWFORD_FACTS } from "./support/platform-sample.js";
+import { CLAUDE_CRAWFORD_DRAFT, CRAWFORD_CHANGE_REQUEST, CRAWFORD_ENQUIRY_MESSAGE, CRAWFORD_FACTS } from "./support/platform-sample.js";
 
 // ---------------------------------------------------------------------------
 // E2E: the Proposals desk (roadmap X1).
@@ -89,6 +89,8 @@ interface World {
   readonly prices?: readonly Record<string, unknown>[];
   readonly templates?: readonly ProposalTemplate[];
   readonly events?: Readonly<Record<string, ProposalEvent>>;
+  /** The client's words in each proposal's enquiry, as the venue holds them. */
+  readonly enquiryMessages?: Readonly<Record<string, string>>;
   /** An AI provider, and what each draft request answers in turn. */
   readonly ai?: readonly (string | number)[];
 }
@@ -375,6 +377,12 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
           void route.fulfill({ status: 422, json: { error: "Nothing to draft from", code: "NOTHING_TO_DRAFT_FROM" } });
           return;
         }
+        // As the route reads them: the enquiry's words, and the client's
+        // latest request since the proposal was last sent.
+        const enquiry = (world.enquiryMessages?.[id] ?? "").trim() !== "";
+        const lastSent = current.sentAt === null ? -Infinity : Date.parse(current.sentAt);
+        const clientWords = (emulator.history.get(id) ?? []).some((entry) => entry.toStatus === "changes_requested"
+          && (entry.note ?? "").trim() !== "" && Date.parse(entry.createdAt) > lastSent);
         const answer = emulator.ai.shift() ?? 502;
         if (typeof answer === "number") {
           void route.fulfill({ status: answer, json: answer === 503
@@ -388,7 +396,7 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
             safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated", evidenceStatus: "unverified",
             sendState: "draft_only", generatedAt: NOW.toISOString(), digest: "d".repeat(64),
           },
-          drewOn: { event, enquiry: false, clientWords: false },
+          drewOn: { event, enquiry, clientWords },
         } } });
         return;
       }
@@ -1037,10 +1045,11 @@ test.describe("Proposals desk", () => {
 });
 
 // ---------------------------------------------------------------------------
-// /platform captures, skipped unless CAPTURE_PLATFORM_DIR names a folder: the
-// Crawford proposal as the desk shows it, and Claude's draft of its message.
-// The words are the draft Claude wrote for these facts (support/platform-sample.ts);
-// the emulator answers them as the route would.
+// /platform captures, skipped unless CAPTURE_PLATFORM_DIR names a folder: on
+// Thursday 8 October 2026 Catherine answers Elaine Crawford's request, prices
+// version 2 and asks Claude for the message. The words are the first draft
+// Claude wrote from the context the route builds for this proposal
+// (support/platform-sample.ts); the emulator answers them as the route would.
 // ---------------------------------------------------------------------------
 
 test.describe("Proposals desk, /platform captures", () => {
@@ -1048,27 +1057,48 @@ test.describe("Proposals desk, /platform captures", () => {
   test.skip(out === undefined, "Set CAPTURE_PLATFORM_DIR to capture the /platform images.");
   test.use({ deviceScaleFactor: 2 });
 
-  test("the Crawford proposal, and Claude's draft of its message", async ({ page }) => {
+  test("the Crawford proposal's version 2, and Claude's draft of its message", async ({ page }) => {
     if (out === undefined) return;
     mkdirSync(out, { recursive: true });
     await openDesk(page, 1440, 900, {
       ai: [CLAUDE_CRAWFORD_DRAFT],
       events: { [CRAWFORD]: { facts: { ...CRAWFORD_FACTS }, spaceId: null } },
+      enquiryMessages: { [CRAWFORD]: CRAWFORD_ENQUIRY_MESSAGE },
     });
-    // The day every /platform image shares: Thursday 8 October 2026, 16:30 in Glasgow.
+    // 16:30 in Glasgow on Thursday 8 October 2026.
     await page.clock.setFixedTime(new Date("2026-10-08T15:30:00.000Z"));
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/dashboard?view=proposals&proposal=${CRAWFORD}`);
     const panel = page.getByRole("region", { name: "Crawford wedding proposal" });
     await expect(panel.getByRole("heading", { level: 2, name: "Crawford wedding proposal" })).toBeVisible();
+    await expect(panel.getByText(CRAWFORD_CHANGE_REQUEST)).toBeVisible();
+
+    const composer = panel.getByTestId("composer");
+    await composer.getByTestId("quote-price-1").fill("82.50");
+    await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 1. Changed: the quote from £18,400 to £17,600.");
     await page.evaluate(async () => { await document.fonts.ready; });
     await page.screenshot({ path: join(out, "proposal.png"), animations: "disabled" });
 
-    const composer = panel.getByTestId("composer");
+    // A taller screen, and the draft's box pulled open by its grip, so the
+    // whole of Claude's note reads below the version it is for.
+    await page.setViewportSize({ width: 1440, height: 1400 });
     await composer.getByRole("button", { name: "Draft the message with AI" }).click();
     const draft = composer.getByRole("region", { name: "AI draft of the message" });
-    await expect(draft.getByRole("textbox", { name: "AI draft of the message" })).toHaveValue(CLAUDE_CRAWFORD_DRAFT);
-    await draft.evaluate((element) => { element.scrollIntoView({ block: "center" }); });
+    const words = draft.getByRole("textbox", { name: "AI draft of the message" });
+    await expect(words).toHaveValue(CLAUDE_CRAWFORD_DRAFT);
+    await expect(draft.getByTestId("ai-draft-from"))
+      .toHaveText("Written by AI from the event's details, the client's enquiry and the client's latest message. Not checked.");
+    await composer.getByTestId("composer-start").evaluate((element) => { element.scrollIntoView({ block: "start" }); });
+    const box = await words.boundingBox();
+    const hidden = await words.evaluate((element) => element.scrollHeight - element.clientHeight);
+    if (box !== null && hidden > 0) {
+      await page.mouse.move(box.x + box.width - 3, box.y + box.height - 3);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width - 3, box.y + box.height - 3 + hidden + 8, { steps: 8 });
+      await page.mouse.up();
+    }
+    await expect.poll(() => words.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(0);
+    await composer.getByTestId("composer-start").evaluate((element) => { element.scrollIntoView({ block: "start" }); });
     await page.screenshot({ path: join(out, "proposal-claude-draft.png"), animations: "disabled" });
   });
 });
