@@ -14,6 +14,7 @@ to current code and useful checks; it is not another layer of instructions.
 | Database | `packages/api/src/db/`, `packages/api/drizzle/` | Constraints, locking, migrations and explicit disposable test targets |
 | Reconstruction | `packages/reconstruction-foundry/`, `tools/reconstruction-foundry/`, `tools/capture-factory/` | Source provenance, calibration, evaluation separation and current spend gates |
 | Runtime assets | `tools/xgrids-lcc2/`, `tools/xgrids-xbag/`, `packages/web/src/components/scene/` | Frames/units, manifests, resource disposal, streaming and measured delivery |
+| Grand Hall model | [Note](grand-hall-model.md), `packages/web/src/components/grand-hall/`, [survey build](../../tools/grand-hall-survey/README.md) | Survey files are rebuilt from the scan, not hand-edited; one frame for relief and photographs; public splat hold |
 | Build and tests | [root scripts](../../package.json), [CI](../../.github/workflows/ci.yml), package scripts/configs | Same commands locally and in CI; resource contention; no production fixtures |
 | Product requirements | [current goals](../../GOAL.md), [domain authority map](../strategy/authority-map.md), [ADR index](../architecture/adr/README.md) | Current user direction and evidence supersede dated summaries |
 
