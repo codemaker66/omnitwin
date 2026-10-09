@@ -613,6 +613,23 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-09",
+      "reason": "The Day Board rebuilt on the attention system (goal 19 S3, T-651): the board breathes only where the attention system says (three dots and the live slab's overlay, every breath on one epoch phase, nothing else moving), its legend is worded as the slots are, the gaps are dimensioned and the next action is the room nearest its moment, a finished booking keeps its words, the free room is named on one line, every label reads at 12 px and 4.5:1 or better, and the arrow keys step the day; every word is kept and every breath lost under reduced motion; on a phone one room is shown at a time with the day running down the screen and a slot opened to its sheet, ready-by line and progress; and the wall wears the dark register without the day controls, readable from across the room. Two cases are restated one for one (the still board and the phone's sheet) and two are added (reduced motion and the wall).",
+      "sourceCommit": "7a2b8de483da7d8739bd758b5c68530d3f88abbb",
+      "sourceFile": "packages/web/e2e/day-board.spec.ts",
+      "sourceFileGitBlobSha256": "2e18eca9849c39f4c38d962bc4fa81294266bd8a07b78a218cf9d6553c657989",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "e98fe79e392d3d163fdacbb5e368af5bea62d65b6648398194f65312fb69f31f",
+      "caseIds": [
+        "1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918",
+        "1b07f1b6eeb3a7bdbe8c-8210e69e29a1b1d1fa8a",
+        "1b07f1b6eeb3a7bdbe8c-8bfc478dd2dc1cc21f4d",
+        "1b07f1b6eeb3a7bdbe8c-efe6e715638c5ecf202e"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; the two they restate (1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f and 1b07f1b6eeb3a7bdbe8c-542cfb6aca0a4807d9ce) are retired; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -3888,9 +3905,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f",
+      "id": "1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918",
       "file": "day-board.spec.ts",
-      "title": "stays still and readable all day, speaks its legend in the slots' words, and steps the day from the keyboard",
+      "title": "shows one room at a time on a phone, the day running down the screen, and opens a slot to its sheet",
       "suitePath": [
         "day-board.spec.ts",
         "Day Board"
@@ -3899,9 +3916,31 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "1b07f1b6eeb3a7bdbe8c-542cfb6aca0a4807d9ce",
+      "id": "1b07f1b6eeb3a7bdbe8c-8210e69e29a1b1d1fa8a",
       "file": "day-board.spec.ts",
-      "title": "shows under each room's sheet when setup must be done and how far its checklist has got",
+      "title": "keeps every word and loses every breath under reduced motion",
+      "suitePath": [
+        "day-board.spec.ts",
+        "Day Board"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "1b07f1b6eeb3a7bdbe8c-8bfc478dd2dc1cc21f4d",
+      "file": "day-board.spec.ts",
+      "title": "wears the dark register on the wall, without the day controls, readable from across the room",
+      "suitePath": [
+        "day-board.spec.ts",
+        "Day Board"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "1b07f1b6eeb3a7bdbe8c-efe6e715638c5ecf202e",
+      "file": "day-board.spec.ts",
+      "title": "breathes only where the attention system says, speaks its legend in the slots' words, and steps the day from the keyboard",
       "suitePath": [
         "day-board.spec.ts",
         "Day Board"
