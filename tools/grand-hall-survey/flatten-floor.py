@@ -5,9 +5,10 @@ every station, and each station's view dominates a disc around it; the
 result is soft blotches about a metre across. Board-scale detail (below
 ~0.35 m) and the room's broad fall of light (above ~2.5 m) are real and
 kept; the band between is divided out. Masked (normalised) blurs keep the
-wall bases from bleeding in.
+wall bases from bleeding in. Then the floor beneath poorly seen stations is
+refilled (below), reading floor-patches.json from the input's folder.
 Usage (in the work directory): python3 $SURVEY/flatten-floor.py <in.npz> <out.npz> <ppm>"""
-import sys
+import json, os, sys
 import numpy as np
 
 def gauss1d(sigma_px):
@@ -69,21 +70,31 @@ target = knee + excess / (1 + excess / (typical * 0.12))
 F = F * (np.where(lum_big > knee, target / np.maximum(lum_big, 1e-6), 1.0))[..., None]
 F = np.where(M[..., None] > 0, F, A)
 
-# Four stations stood in the window bays and doorways, where no neighbour
-# sees the floor around their tripods well: those discs are refilled with the
-# same boards 1.8 m along the hall (the boards run lengthwise, so the strips
-# continue), feathered in.
+# Beneath some stations the floor is poorly seen. Four stood in the window
+# bays and doorways, where no neighbour sees the floor around their tripods
+# well; and project-floor.py lists, beside its output, those whose tripod
+# patch is too strong to trust near straight down (floor-patches.json), where
+# only the neighbours' oblique, softer views remain. Those discs are refilled
+# with the same boards 1.8 m along the hall, towards its middle (the boards
+# run lengthwise, so the strips continue), feathered in where the station's
+# own view starts to count again.
 L, W = 21.135, 10.59
-DISCS = [(-0.13, -4.41, 0.85), (9.02, -4.10, 0.85), (-0.13, 4.93, 0.7), (8.85, 4.93, 0.7)]
+# (x, z, refilled within, feathered out to), metres
+DISCS = [(cx, cz, 0.75 * r, r) for cx, cz, r in
+         [(-0.13, -4.41, 0.85), (9.02, -4.10, 0.85), (-0.13, 4.93, 0.7), (8.85, 4.93, 0.7)]]
+with open(os.path.join(os.path.dirname(os.path.abspath(src)), 'floor-patches.json')) as f:
+    for p in json.load(f):
+        DISCS.append((p['x'], p['z'], p['height'] * np.tan(np.radians(p['radius_deg'])),
+                      p['height'] * np.tan(np.radians(p['radius_deg'] + 4))))
 H_, W_ = F.shape[:2]
 cols = (np.arange(W_) + 0.5) / ppm - L / 2
 rows = W / 2 - (np.arange(H_) + 0.5) / ppm
 X, Z = np.meshgrid(cols, rows)
 shift = int(round(1.8 * ppm))
-for cx, cz, r in DISCS:
-    d = np.hypot(X - cx, Z - cz)
-    alpha = np.clip((r - d) / (0.25 * r), 0, 1)[..., None]
-    source = np.roll(F, -shift if cx < 0 else shift, axis=1)
-    F = F * (1 - alpha) + source * alpha
+boards = F.copy()
+for cx, cz, inner, outer in DISCS:
+    alpha = np.clip((outer - np.hypot(X - cx, Z - cz)) / (outer - inner), 0, 1)[..., None]
+    if alpha.any():
+        F = F * (1 - alpha) + np.roll(boards, -shift if cx < 0 else shift, axis=1) * alpha
 np.savez_compressed(dst, rgb=F.astype(np.float32), weight=w)
 print('flattened', A.shape, 'floor texels', int(M.sum()))

@@ -8,11 +8,12 @@ plane at every orthophoto texel (the walls' position tiles). Before meshing:
     leaves (pack-atlas.py copies their photograph the same way);
   - the main door, open in the scan, becomes a plain recess for the modelled
     leaves;
-  - movable equipment is patched out exactly as in the atlas.
+  - movable equipment is patched out exactly as in the atlas;
+  - a neighbouring wall's bench, seen end-on in a corner, reads as a block
+    at the depth limit; its own wall draws it, so this wall keeps its face.
 Writes relief/<wall>.f32 at 100 px/m (rows from v = 7.0 down) and .json.
 Usage (in the work directory): python3 $SURVEY/wall-depth.py window door end fire"""
-import os
-import json, sys
+import json, os, sys
 import numpy as np
 from PIL import Image, ImageFilter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -68,6 +69,24 @@ def patch(D, u0, u1, v0, v1, mode, arg):
     D[r0:r1, c0:c0 + src.shape[1]] = src
 
 
+CORNER_ZONE = 0.9   # metres from a corner where a neighbour's fittings can reach
+INTRUSION = 0.8     # deeper than any fitting of the wall's own, short of the limit
+
+
+def clear_corner_intrusions(D, length):
+    """Gives each corner zone back its own face where the neighbouring wall's
+    benches, seen end-on, stand at the depth limit: those texels take their
+    row's depth just beyond the zone."""
+    u = (np.arange(D.shape[1]) + 0.5) / PPM
+    for dist in (u, length - u):
+        zone = (dist >= 0) & (dist < CORNER_ZONE)
+        beyond = (dist >= CORNER_ZONE) & (dist < CORNER_ZONE + 0.1)
+        reference = np.median(D[:, beyond], axis=1)
+        rows, cols = np.nonzero(zone[None, :] & (D > INTRUSION))
+        D[rows, cols] = reference[rows]
+    return D
+
+
 def fill(a, passes=60):
     a = a.copy(); valid = np.isfinite(a)
     for _ in range(passes):
@@ -109,6 +128,7 @@ def main(wall):
         if p[0] == wall:
             patch(D, *p[1:])
     D = np.clip(fill(D), -1.0, 0.9)
+    D = clear_corner_intrusions(D, LENGTH[wall])
     D = denoise(D, keep)
     # The floor and ceiling are edge-on to these views: hold the bottom and
     # top few centimetres to the skirting's and the bead's own depth, and

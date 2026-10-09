@@ -46,7 +46,7 @@ later step skips the downloads.
 | Inputs | `fetch_inputs.py`, `dump-mesh.mjs` | `data/`: manifest, mesh, 49 panoramas, each checked against the manifest's hash; the mesh as world-space arrays |
 | Occlusion | `render-depth.mjs` | `data/depth1024/`: each station's distance cubemap (six 1024² faces) rendered from the mesh |
 | Surfaces | `render.mjs` with `views-walls.json`, `views-ceiling.json` | `out-walls/`: the world position of every texel of each wall's elevation (200 px/m, seen from 1.2 m inside the room) and of the ceiling (150 px/m) |
-| Projection | `project-walls.py`, `project-ceiling.py`, `project-dome.py`, `project-floor.py` | `proj/*.npz`: linear colour and weight per texel |
+| Projection | `project-walls.py`, `project-ceiling.py`, `project-dome.py`, `project-floor.py` | `proj/*.npz`: linear colour and weight per texel; `proj/floor-patches.json`: the stations with a strong tripod patch |
 | Windows | `window-relief.py` | the glass mask and a two-layer relief (curtains, then glazing) inside each window |
 | Corners | `fix-corners.py` | each wall's corners without the neighbouring walls' fittings |
 | Walls | `pack-atlas.py`, `wall-depth.py`, `relief-mesh.mjs` | `walls-4096.webp`, `walls-2048.webp` (alpha marks glass), `walls-relief.bin` |
@@ -65,8 +65,10 @@ each station's manifest exposure and averaged in linear light, weighted towards 
 views (cos⁴/d³ by default). A second pass down-weights any station that disagrees with the
 consensus, an occluder the depth maps missed. On the floor, each panorama's view near its nadir
 counts only where it holds real detail: the patch that hides the tripod is smooth where real
-boards are not, and covers anything from nothing to 30 degrees around straight down. Views
-brighter than the consensus (reflections on the polished boards) are down-weighted.
+boards are not, and covers anything from nothing to 30 degrees around straight down. Some
+patches are a smooth band around boards that look real but were filled in too, so a strong
+patch discards everything inside its outer edge. Views brighter than the consensus (reflections
+on the polished boards) are down-weighted.
 
 The dome is unrolled by angle and arc length along its measured profile; each texel is first moved
 along its normal onto the scanned surface (`surface-offset.mjs`), so the coats of arms that stand
@@ -82,9 +84,15 @@ proud of the profile are coloured where they are.
   `hall-walls.ts` models its closed mahogany leaves.
 - The end arch's glazing was not reconstructed (the mesh closes it with a plane); it takes the
   glass depth of its twin at the fireplace end.
-- The floor's soft reflection blotches (0.35–2.5 m across) are divided out, broad window glare is
-  rolled off, and the four discs where a tripod stood in a bay or doorway are refilled with the same
-  boards 1.8 m along the hall. Board-scale detail and the room's broad fall of light are kept.
+- The floor's soft reflection blotches (0.35–2.5 m across) are divided out and broad window glare
+  is rolled off; board-scale detail and the room's broad fall of light are kept. Beneath some
+  stations the floor is refilled with the same boards 1.8 m along the hall, towards its middle
+  (the boards run lengthwise): the four that stood in a window bay or doorway, where no neighbour
+  sees the floor well, and those with a strong tripod patch (`floor-patches.json`), where only
+  the neighbours' oblique, softer views remained, out to where the station's own view counts
+  again (0.4–0.9 m).
+- In the relief, a neighbouring wall's bench seen end-on in a corner is cleared to the wall's own
+  face (`wall-depth.py`); the bench's own wall draws it.
 - Texels no station saw (behind the chandeliers' stems) are filled from their neighbours.
 
 ## Accuracy

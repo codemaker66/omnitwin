@@ -137,8 +137,10 @@ def linear_to_srgb(c):
 
 _pano_cache = {}
 _nadir_cache = {}
+_patch_cache = {}
 NADIR_DEG = 40.0     # the cap around straight down that nadir_quality maps
 NADIR_SIZE = 1200    # its resolution: about 1.5 mm on the floor below a station
+SMOOTH = 0.45        # nadir_quality below this reads as inpainting
 
 
 def _gauss(a, s):
@@ -183,6 +185,32 @@ def nadir_quality(sid, lod=8192):
     return quality
 
 
+def _cap_radius_deg():
+    n = NADIR_SIZE
+    ys, xs = np.mgrid[0:n, 0:n]
+    return np.hypot((xs + 0.5) / n * 2 - 1, (ys + 0.5) / n * 2 - 1) * NADIR_DEG
+
+
+def nadir_patch_radius(sid, lod=8192):
+    """The radius (degrees from straight down) inside which a station's nadir
+    is not trusted at all. Some patches are rings around a textured centre;
+    that centre is inpainted too, and does not meet the boards around it. A
+    strong patch (some 2-degree annulus beyond 4 degrees at least 35% smooth)
+    encloses everything out to its last annulus more than 25% smooth; a clean
+    or lightly patched nadir returns 0."""
+    if sid in _patch_cache:
+        return _patch_cache[sid]
+    quality = nadir_quality(sid, lod)
+    rr = _cap_radius_deg()
+    starts = np.arange(4.0, NADIR_DEG, 2.0)
+    smooth = [float((quality[(rr >= a) & (rr < a + 2)] < SMOOTH).mean()) for a in starts]
+    radius = 0.0
+    if max(smooth) >= 0.35:
+        radius = max(float(a) + 2 for a, f in zip(starts, smooth) if f > 0.25)
+    _patch_cache[sid] = radius
+    return radius
+
+
 def nadir_weight(sid, v, lo=0.35, hi=0.6, lod=8192):
     """Weights (N,) for rays v (N,3) from station `sid`: 1 beyond the nadir
     cap, falling smoothly to 0 where the panorama is as smooth as the patch
@@ -200,7 +228,9 @@ def nadir_weight(sid, v, lo=0.35, hi=0.6, lod=8192):
     col = np.clip(((rr * np.cos(az) + 1) / 2 * NADIR_SIZE).astype(int), 0, NADIR_SIZE - 1)
     row = np.clip(((rr * np.sin(az) + 1) / 2 * NADIR_SIZE).astype(int), 0, NADIR_SIZE - 1)
     t = np.clip((quality[row, col] - lo) / (hi - lo), 0, 1)
-    w[cap] = t * t * (3 - 2 * t)
+    # Inside a strong patch nothing counts, easing back in over 4 degrees.
+    u = np.clip((np.degrees(r[cap]) - nadir_patch_radius(sid, lod)) / 4.0, 0, 1)
+    w[cap] = t * t * (3 - 2 * t) * u * u * (3 - 2 * u)
     return w
 
 
