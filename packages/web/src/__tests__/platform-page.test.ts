@@ -44,7 +44,9 @@ function referencedUrls(): string[] {
   return urls;
 }
 
-function text(element: Element | null | undefined): string {
+/** An element's text, whitespace folded. Typed by what it reads, so it takes
+ *  happy-dom's elements as well as the DOM's. */
+function text(element: { readonly textContent: string | null } | null | undefined): string {
   return element?.textContent?.replace(/\s+/gu, " ") ?? "";
 }
 
