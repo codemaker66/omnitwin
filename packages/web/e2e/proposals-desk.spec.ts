@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import type { ProposalEvent, ProposalTemplate } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry, StaffProposalVersion } from "../src/api/proposals.js";
@@ -6,6 +8,7 @@ import {
   expectAccessibilityAuditClean,
   watchPageProblems,
 } from "./support/accessibility-audit.js";
+import { CLAUDE_CRAWFORD_DRAFT, CRAWFORD_FACTS } from "./support/platform-sample.js";
 
 // ---------------------------------------------------------------------------
 // E2E: the Proposals desk (roadmap X1).
@@ -1030,5 +1033,42 @@ test.describe("Proposals desk", () => {
     expect(overflow).toBeLessThanOrEqual(0);
     await page.getByRole("button", { name: "Back to proposals" }).click();
     await expect(proposalRow(page, "Spring gala proposal")).toBeFocused();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// /platform captures, skipped unless CAPTURE_PLATFORM_DIR names a folder: the
+// Crawford proposal as the desk shows it, and Claude's draft of its message.
+// The words are the draft Claude wrote for these facts (support/platform-sample.ts);
+// the emulator answers them as the route would.
+// ---------------------------------------------------------------------------
+
+test.describe("Proposals desk, /platform captures", () => {
+  const out = process.env["CAPTURE_PLATFORM_DIR"];
+  test.skip(out === undefined, "Set CAPTURE_PLATFORM_DIR to capture the /platform images.");
+  test.use({ deviceScaleFactor: 2 });
+
+  test("the Crawford proposal, and Claude's draft of its message", async ({ page }) => {
+    if (out === undefined) return;
+    mkdirSync(out, { recursive: true });
+    await openDesk(page, 1440, 900, {
+      ai: [CLAUDE_CRAWFORD_DRAFT],
+      events: { [CRAWFORD]: { facts: { ...CRAWFORD_FACTS }, spaceId: null } },
+    });
+    // The day every /platform image shares: Thursday 8 October 2026, 16:30 in Glasgow.
+    await page.clock.setFixedTime(new Date("2026-10-08T15:30:00.000Z"));
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/dashboard?view=proposals&proposal=${CRAWFORD}`);
+    const panel = page.getByRole("region", { name: "Crawford wedding proposal" });
+    await expect(panel.getByRole("heading", { level: 2, name: "Crawford wedding proposal" })).toBeVisible();
+    await page.evaluate(async () => { await document.fonts.ready; });
+    await page.screenshot({ path: join(out, "proposal.png"), animations: "disabled" });
+
+    const composer = panel.getByTestId("composer");
+    await composer.getByRole("button", { name: "Draft the message with AI" }).click();
+    const draft = composer.getByRole("region", { name: "AI draft of the message" });
+    await expect(draft.getByRole("textbox", { name: "AI draft of the message" })).toHaveValue(CLAUDE_CRAWFORD_DRAFT);
+    await draft.evaluate((element) => { element.scrollIntoView({ block: "center" }); });
+    await page.screenshot({ path: join(out, "proposal-claude-draft.png"), animations: "disabled" });
   });
 });
