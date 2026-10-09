@@ -5878,7 +5878,7 @@ export const requests = pgTable("requests", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  // Goal 19 S1 (migration 0086): the request's conversation and its handover.
+  // Goal 19 S1 (migration 0087): the request's conversation and its handover.
   // Added by ALTER, so physically after updated_at.
   threadId: uuid("thread_id").references((): AnyPgColumn => threads.id, { onDelete: "set null" }),
   handoverToUserId: uuid("handover_to_user_id").references(() => users.id, { onDelete: "set null" }),
@@ -5910,7 +5910,8 @@ export const requestStatusHistory = pgTable("request_status_history", {
 ]);
 
 // ---------------------------------------------------------------------------
-// Conversations (goal 19 S1, migration 0086) — threads, messages, receipts.
+// Conversations (goal 19 S1, migration 0087; written as 0086, renumbered on
+// 9 October 2026 when PR #58 took 0086_venue_location) — threads, messages, receipts.
 //
 // A thread is a place to talk about one thing: a booking (the slot), an
 // event, a request, or later a person. Its audience is written once and no

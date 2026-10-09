@@ -1006,6 +1006,8 @@ div.dayboard-slab {
   --db-chip-tone: var(--lt-stale-text);
   border-color: var(--lt-line);
   background: var(--lt-stale-band);
+  /* The band's own words on the band's own grey, on both registers. */
+  color: var(--lt-stale-text);
 }
 
 /* --- the rooms with nothing on, the legend, the refresh ---------------------- */
@@ -1242,9 +1244,12 @@ div.dayboard-slab {
     width: 10px;
     height: 1px;
   }
+  /* The hour sits to the left of its tick, inside the ruler column, never
+     under the slabs. */
   .dayboard[data-layout="phone"] .dayboard-ruler-v .dayboard-tick-label {
     bottom: auto;
-    left: 4px;
+    left: auto;
+    right: 14px;
     top: 0;
     transform: translateY(-50%);
   }

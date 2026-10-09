@@ -23,7 +23,7 @@ stay in goal 05.
 | Slice | Local | Committed | Merged | Deployed | Accepted |
 |---|---|---|---|---|---|
 | S0 Ground (ownership, people matrix, attention system, migration numbers) | 8 Oct | 8 Oct `a573129a` | PR #56 green, merge refused by the auto-mode classifier | — | — |
-| S1 Contracts (types, 0086, capabilities, services, routes, 115 tests) | 8 Oct | 8 Oct `3607b395` | awaiting the same permission | — | — |
+| S1 Contracts (types, migration 0087 (written as 0086), capabilities, services, routes, 115 tests) | 8 Oct | 8 Oct `3607b395` | awaiting the same permission | — | — |
 | S2 Transport (commands and events on the socket, cursor replay, the one clock, client poll) | 8 Oct | 8 Oct | awaiting the same permission | — | — |
 | S3 The board, rebuilt | 8 Oct: page, stylesheet and tests rebuilt; typecheck, lint and 182 unit tests green; e2e spec and visual harness written, not yet green locally (cold dev server) | 8 Oct | — | — | — |
 | S4 Requests and conversations on the slot | — | — | — | — | — |
@@ -36,7 +36,7 @@ stay in goal 05.
 Human inputs still open: the wall register (dark as decided, or all ivory); corrections
 to [the people matrix](../docs/operations/people-matrix.md); one real hallkeeper account
 on production for the three-identity check. Migration numbering confirmed against
-origin's journal: the next tag is `0086` (journal idx 84).
+origin's journal: the next tag was `0086` (journal idx 84); renumbered to `0087` (idx 85) on 9 October 2026 after PR #58 merged `0086_venue_location`.
 
 ## Browser release confidence — T-613, 15 September 2026
 

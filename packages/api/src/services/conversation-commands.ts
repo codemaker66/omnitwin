@@ -147,15 +147,15 @@ async function freshState(
       .limit(1);
     return row === undefined ? {} : { message: serializeMessage(row, []) };
   }
-  const requestId = command.kind === "request.create" ? null : command.requestId;
+  // Narrow on the kind itself: a separate flag cannot narrow the payload.
   const [row] = await db
     .select({ request: requests, roomName: spaces.name })
     .from(requests)
     .leftJoin(spaces, eq(spaces.id, requests.roomId))
     .where(
-      requestId === null
+      command.kind === "request.create"
         ? eq(requests.idempotencyKey, command.payload.idempotencyKey)
-        : eq(requests.id, requestId),
+        : eq(requests.id, command.requestId),
     )
     .limit(1);
   if (row === undefined) return {};

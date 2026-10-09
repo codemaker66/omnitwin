@@ -21,6 +21,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:5173";
+/** The API origin the page calls, as the e2e config pins it; mocked below. */
+const API = process.env.API_URL ?? "http://localhost:3001";
 const OUT = process.env.OUT_DIR ?? join(process.cwd(), "visual-out", "day-board");
 mkdirSync(OUT, { recursive: true });
 
@@ -155,23 +157,36 @@ async function preparePage(context, path = "/hallkeeper/today") {
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
     Object.defineProperty(window, "__OMNITWIN_SEED_USER__", { value: seed, writable: false });
   }, KEEPER);
-  await page.route("**/calendar?*", (route) => {
+  // Every route is anchored to the API origin: an origin-agnostic glob such
+  // as **/notifications** also matched Vite's own /src/api/notifications.ts
+  // module URL, and a module served as JSON left the shell unable to mount.
+  await page.route(`${API}/calendar?*`, (route) => {
     void route.fulfill({ json: { data: calendarFixture(Date.now()) } });
   });
-  await page.route("**/venues/*/requests?*", (route) => {
+  await page.route(`${API}/venues/*/requests?*`, (route) => {
     void route.fulfill({ json: { data: requestsFixture(Date.now()) } });
   });
-  await page.route("**/notifications**", (route) => {
+  await page.route(`${API}/notifications**`, (route) => {
     void route.fulfill({ json: { data: [] } });
   });
-  await page.route(`**/venues/${VENUE}`, (route) => {
+  await page.route(`${API}/venues/${VENUE}`, (route) => {
     void route.fulfill({ json: { data: {
       id: VENUE, name: "Trades Hall Glasgow", slug: "trades-hall-glasgow", address: "85 Glassford Street",
       logoUrl: null, brandColour: null, timezone: "Europe/London", spaces: [],
     } } });
   });
-  await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
-  await page.waitForSelector(".dayboard-slab", { timeout: 20_000 });
+  const consoleErrors = [];
+  page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
+  page.on("pageerror", (error) => { consoleErrors.push(String(error)); });
+  await page.goto(`${BASE_URL}${path}`, { waitUntil: "load" });
+  try {
+    await page.waitForSelector(".dayboard-slab", { timeout: 20_000 });
+  } catch (error) {
+    // Say what the page showed instead, so a failure names itself.
+    const text = (await page.locator("body").innerText().catch(() => "")).slice(0, 600);
+    console.error(`No slab on ${path}. Page said:\n${text}\nConsole errors:\n${consoleErrors.slice(0, 8).join("\n")}`);
+    throw error;
+  }
   return page;
 }
 
@@ -222,7 +237,9 @@ try {
     reducedMotion: "no-preference",
   });
   const page = await preparePage(motionContext);
-  const text = await page.locator(".dayboard").innerText();
+  // textContent, not innerText: the verbs are uppercased by CSS and the NOW
+  // plaque is laid out on two lines; the words themselves are what matter.
+  const text = await page.locator(".dayboard").evaluate((board) => board.textContent ?? "");
 
   check("live verb", /LIVE · \d+ min elapsed/u.test(text));
   check("guests-due verb", /Guests · \d+ min/u.test(text));
@@ -257,12 +274,16 @@ try {
   check("an urgent request's halo pulses at 1.5 s", ringByLevel.urgent?.name === "lt-halo-pulse" && ringByLevel.urgent?.duration === "1.5s");
   check("an owned request's ring is still and names its owner", ringByLevel.owned?.name === "none" && ringByLevel.owned?.words === "Elaine has this");
 
-  const delays = [...new Set([
+  // Each breath samples its own epoch phase the moment it begins (D3 law 1);
+  // breaths that began in the same render differ by the milliseconds between
+  // their samples, never by a beat.
+  const delaysMs = [
     ...breathing.map((slab) => slab.dot.delay),
     ...(byState.live ? [byState.live.overlay.delay] : []),
     ...rings.filter((slab) => slab.ring.name !== "none").map((slab) => slab.ring.delay),
-  ])];
-  check(`phase lock: one shared epoch delay (saw ${delays.join(", ") || "none"})`, delays.length === 1);
+  ].map((delay) => Math.round(Number.parseFloat(delay) * 1000));
+  const spread = delaysMs.length === 0 ? Number.NaN : Math.max(...delaysMs) - Math.min(...delaysMs);
+  check(`phase lock: every breath on one epoch phase within 50 ms (spread ${String(spread)} ms over ${String(delaysMs.length)} breaths)`, delaysMs.length >= 5 && spread <= 50);
 
   await page.screenshot({ path: join(OUT, "motion-on.png"), fullPage: true });
 

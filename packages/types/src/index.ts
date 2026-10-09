@@ -1437,6 +1437,28 @@ export {
 } from "./hallkeeper-instructions.js";
 
 export {
+  PROTECTION_PROCEDURES,
+  ProtectionProcedureSchema,
+  PROTECTION_PROCEDURE_COPY,
+  PROCEDURE_NOTE_MAX,
+  PROTECTED_PREMISES_NOTES_MAX,
+  ProcedureBriefingSchema,
+  ProtectedPremisesSchema,
+  PROTECTED_PREMISES_HEADING,
+  MARTYNS_LAW_THRESHOLDS,
+  hasProtectedPremisesContent,
+  normalizeProtectedPremises,
+  formatBriefingTime,
+  buildProtectedPremisesSummary,
+  type ProtectionProcedure,
+  type ProcedureBriefing,
+  type ProtectedPremises,
+  type ProtectedPremisesLine,
+  type ProtectedPremisesSummary,
+  type ProtectedPremisesSummaryOptions,
+} from "./protected-premises.js";
+
+export {
   PhotoIdSchema,
   ALLOWED_PHOTO_CONTENT_TYPES,
   PhotoContentTypeSchema,
@@ -2465,6 +2487,7 @@ export * from "./capture-intake.js";
 export * from "./layout-validator.js";
 export * from "./event-architect.js";
 export * from "./event-architect-engine.js";
+export * from "./event-brief-draft.js";
 export * from "./reconstruction-release.js";
 export * from "./reconstruction-review-evidence.js";
 export * from "./omnitwin-foundry.js";

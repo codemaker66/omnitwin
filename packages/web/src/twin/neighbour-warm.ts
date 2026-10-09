@@ -46,8 +46,13 @@
 //
 // The cap is a hard per-arrival budget. At 33.5 MB a base, warming a degree-8
 // node uncapped commits ~268 MB of GPU residency and ~300 ms of upload on one
-// arrival; NEIGHBOUR_WARM_BUDGET holds that to ~101 MB and, because the runner
-// spends one upload per idle slice, no single block is longer than one upload.
+// arrival; NEIGHBOUR_WARM_BUDGET holds that to ~101 MB.
+//
+// One upload per slice was still one ~33.5 MB call per slice: on the PR GPU
+// gate (WSL2, Mesa D3D12) a 136-165 ms block each, at the hop test's 150 ms
+// budget. Since 8 October the upload is a bounded STEP (texture-residency.ts:
+// at most 8 MiB, then a GPU fence), so a slice blocks for one step, not one
+// texture, and a base becomes resident over several slices.
 //
 // WHAT IS PRESERVED. `isEquirectBaseWarm` keys off registry residency, so
 // every id the queue ACQUIRES still lets a hop start on the sharp base instead
@@ -89,6 +94,20 @@ export const NEIGHBOUR_WARM_SLICE_MS = 12;
  */
 export const NEIGHBOUR_WARM_TIMEOUT_MS = 1000;
 
+/**
+ * How long a disposed queue keeps its textures before releasing them.
+ *
+ * The queue is disposed when the walk moves — exactly when the node just
+ * walked to needs the base the queue prepared for it. A hop holds its
+ * arriving node at the preview unless that base is already on the GPU, and
+ * takes the base at the settle; releasing at once let the registry dispose a
+ * base still mid-upload, and the settle fetched it again (traced on the PR GPU
+ * gate, 8 October: one extra base per room hop, over the hop's byte budget).
+ * Three seconds covers a hop and its settle with margin; the cost is at most
+ * one arrival's budget (~101 MB) of extra residency for that long.
+ */
+export const NEIGHBOUR_WARM_RELEASE_GRACE_MS = 3000;
+
 /** One neighbour, with its position in the viewer's world frame (metres). */
 export interface WarmCandidate {
   readonly id: string;
@@ -112,11 +131,16 @@ export interface NeighbourWarmQueueOptions<T> {
   readonly ids: readonly string[];
   /** Decode + registry-acquire one base. Resolves null when the load failed. */
   readonly acquire: (id: string) => Promise<WarmAcquisition<T> | null>;
-  /** The SYNCHRONOUS GPU upload. Only ever called from a slice that passed
-   *  {@link canUploadInSlice} — this is the call the defect was about. */
-  readonly upload: (texture: T) => void;
+  /** One bounded, synchronous step of the GPU upload; true once the texture
+   *  is resident. Only ever called from a slice that passed
+   *  {@link canUploadInSlice}, and handed that slice's deadline so it can stop
+   *  early. */
+  readonly upload: (texture: T, deadline: IdleDeadlineLike) => boolean;
   readonly requestSlice: (run: (deadline: IdleDeadlineLike) => void) => number;
   readonly cancelSlice: (handle: number) => void;
+  /** How dispose hands back the textures it held — at once by default; the
+   *  viewer defers them by NEIGHBOUR_WARM_RELEASE_GRACE_MS. */
+  readonly releaseOnDispose?: (releases: readonly (() => void)[]) => void;
 }
 
 /**
@@ -157,7 +181,7 @@ export function planNeighbourWarm(
 }
 
 /**
- * May this idle slice afford one ~33.5 MB synchronous upload?
+ * May this idle slice afford an upload step?
  *
  * A timed-out slice is admitted deliberately: without that escape a page that
  * never idles would never pre-warm at all, and the hop would fall back to the
@@ -171,18 +195,25 @@ export function canUploadInSlice(deadline: IdleDeadlineLike): boolean {
 /**
  * Drive the warm queue: one unit of work per idle slice, always yielding
  * between them. A slice either starts ONE acquire (cheap — the fetch and
- * decode are off the main thread) or performs ONE upload (expensive, and only
- * after {@link canUploadInSlice} says the window is real). Acquires are
- * strictly sequential, so at most one decoded pano is held in RAM awaiting
- * upload rather than the whole neighbour set at once.
+ * decode are off the main thread) or performs ONE upload step (bounded, and
+ * only after {@link canUploadInSlice} says the window is real); the next
+ * acquire waits until the pending texture is resident. Acquires are strictly
+ * sequential, so at most one decoded pano is held in RAM awaiting upload
+ * rather than the whole neighbour set at once.
  *
  * Returns the dispose handle: it cancels the pending slice and releases every
- * registry ref taken, including one still in flight.
+ * registry ref taken (through `releaseOnDispose`), including one still in
+ * flight.
  */
 export function runNeighbourWarmQueue<T>(
   options: NeighbourWarmQueueOptions<T>,
 ): () => void {
   const { ids, acquire, upload, requestSlice, cancelSlice } = options;
+  const releaseOnDispose =
+    options.releaseOnDispose ??
+    ((held: readonly (() => void)[]) => {
+      for (const release of held) release();
+    });
   const releases: (() => void)[] = [];
   let disposed = false;
   let handle: number | null = null;
@@ -202,15 +233,15 @@ export function runNeighbourWarmQueue<T>(
       return;
     }
     if (pending !== null) {
-      // THE upload. Never more than one per slice, and never without a
+      // THE upload step. Never more than one per slice, and never without a
       // deadline that can pay for it.
       if (!canUploadInSlice(deadline)) {
         schedule();
         return;
       }
-      const texture = pending;
-      pending = null;
-      upload(texture);
+      if (upload(pending, deadline)) {
+        pending = null;
+      }
       schedule();
       return;
     }
@@ -225,7 +256,9 @@ export function runNeighbourWarmQueue<T>(
         return;
       }
       if (disposed) {
-        acquisition.release();
+        // Landed after the walk moved on: the node walked to may be the one
+        // this base was for, so it gets the same grace as the rest.
+        releaseOnDispose([acquisition.release]);
         return;
       }
       releases.push(acquisition.release);
@@ -246,9 +279,7 @@ export function runNeighbourWarmQueue<T>(
       handle = null;
     }
     pending = null;
-    for (const release of releases) {
-      release();
-    }
+    releaseOnDispose([...releases]);
     releases.length = 0;
   };
 }
