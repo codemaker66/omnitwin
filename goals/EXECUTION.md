@@ -22,10 +22,10 @@ stay in goal 05.
 
 | Slice | Local | Committed | Merged | Deployed | Accepted |
 |---|---|---|---|---|---|
-| S0 Ground (ownership, people matrix, attention system, migration numbers) | 8 Oct | 8 Oct `a573129a` | PR #56 green, merge refused by the auto-mode classifier | — | — |
-| S1 Contracts (types, migration 0087 (written as 0086), capabilities, services, routes, 115 tests) | 8 Oct | 8 Oct `3607b395` | awaiting the same permission | — | — |
-| S2 Transport (commands and events on the socket, cursor replay, the one clock, client poll) | 8 Oct | 8 Oct | awaiting the same permission | — | — |
-| S3 The board, rebuilt | 8 Oct: page, stylesheet and tests rebuilt; typecheck, lint and 182 unit tests green; e2e spec and visual harness written, not yet green locally (cold dev server) | 8 Oct | — | — | — |
+| S0 Ground (ownership, people matrix, attention system, migration numbers) | 8 Oct | 8 Oct `a573129a` | 9 Oct 0586ab03 (PR #56) | 9 Oct: web on Vercel 02:35 UTC, API on Railway 02:37 (health/version reports 0586ab03), migration 0087 applied by Deploy run 37876171234 at 02:48 | — (the three-identity production check waits on human input 3 and Blake's eyes) |
+| S1 Contracts (types, migration 0087 (written as 0086), capabilities, services, routes, 115 tests) | 8 Oct | 8 Oct `3607b395` | 9 Oct 0586ab03 (PR #56) | 9 Oct, as S0 | — (as S0) |
+| S2 Transport (commands and events on the socket, cursor replay, the one clock, client poll) | 8 Oct | 8 Oct | 9 Oct 0586ab03 (PR #56) | 9 Oct, as S0 | — (as S0) |
+| S3 The board, rebuilt | 8–9 Oct: page, stylesheet and tests rebuilt; typecheck, lint and 182 unit tests green; e2e 4 of 4 and visual harness 28 of 28 against a warm dev server, screenshots read on office, wall and phone | 8–9 Oct 7a2b8de4, e5637090 (master merged, 0087), 69c2fbc3, 02074ee2 (gate admission) | 9 Oct 0586ab03 (PR #56) | 9 Oct, as S0; venviewer.com serves the rebuilt Day Board chunk | — (as S0) |
 | S4 Requests and conversations on the slot | — | — | — | — | — |
 | S5 Observations | — | — | — | — | — |
 | S6 The When, made fun and complete | — | — | — | — | — |
