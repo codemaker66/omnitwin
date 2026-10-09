@@ -3,8 +3,10 @@
  * browser readback, image-guard and timing receipts establish GPU correctness,
  * visual parity and performance.
  */
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BufferAttribute, BufferGeometry, ComputeNode, Group, PerspectiveCamera, StorageBufferAttribute, Vector3, WebGPURenderer } from "three/webgpu";
+import { BufferAttribute, BufferGeometry, ComputeNode, Group, PerspectiveCamera, Scene, StorageBufferAttribute, Vector3, WebGPURenderer } from "three/webgpu";
 import { instanceIndex, uint } from "three/tsl";
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
 import { CountingSort } from "three/addons/gpgpu/CountingSort.js";
@@ -334,5 +336,53 @@ describe("accepted lazy CPU scratch ownership", () => {
       expect(sort.orderAttribute.array).toBe(order);
       scratch().forEach((array, index) => { expect(array).toBe(retained[index]); });
     } finally { sort.dispose(); }
+  });
+});
+
+describe("native SH for the drawn set", () => {
+  // The typed hook names WebGLRenderer; the addon's receives whichever renderer draws it.
+  const beforeRender = (mesh: GaussianSplat, renderer: WebGPURenderer, camera: PerspectiveCamera): void => {
+    const hook: unknown = Reflect.get(mesh, "onBeforeRender");
+    if (typeof hook !== "function") throw new Error("Missing onBeforeRender hook");
+    Reflect.apply(hook, mesh, [renderer, new Scene(), camera, mesh.geometry, mesh.material, null]);
+  };
+
+  it("sorts before lighting so the lighting pass sees the order it will draw", () => {
+    const f = fixture();
+    try {
+      f.mesh.autoSort = true;
+      f.mesh.updateWorldMatrix(true, false);
+      f.camera.updateWorldMatrix(true, false);
+      beforeRender(f.mesh, f.renderer, f.camera);
+      const calls = f.compute.mock.calls.map((call) => call[0]);
+      expect(calls).toHaveLength(2);
+      expect(Array.isArray(calls[0])).toBe(true); // the six-stage sort group
+      expect(calls[1]).toBeInstanceOf(ComputeNode);
+      expect(Array.isArray(calls[1]) ? "" : calls[1]?.name).toBe("GaussianSplatSphericalHarmonics");
+    } finally { f.cleanup(); }
+  });
+
+  it("re-lights after a new sort even when the camera did not move", () => {
+    const f = fixture();
+    try {
+      f.camera.updateWorldMatrix(true, false);
+      expect(f.mesh.updateSort(f.renderer, f.camera)).toBe(true);
+      expect(f.update()).toBe(true);
+      expect(f.update()).toBe(false);
+      f.camera.rotateY(0.2); // beyond the re-sort direction threshold, position unchanged
+      f.camera.updateWorldMatrix(true, false);
+      expect(f.mesh.updateSort(f.renderer, f.camera)).toBe(true);
+      expect(f.update()).toBe(true);
+      expect(f.update()).toBe(false);
+    } finally { f.cleanup(); }
+  });
+
+  it("shades only the draw order's kept slots", () => {
+    const require = createRequire(import.meta.url);
+    const source = readFileSync(require.resolve("three/examples/jsm/objects/GaussianSplat.js"), "utf8");
+    expect(source).toContain("If( instanceIndex.lessThan( drawCount.element( 5 ) ), () => {");
+    expect(source).toContain("const splatIndex = sort.orderRead.element( instanceIndex ).toVar( 'splatIndex' );");
+    // A split band-3 store lights every splat in place instead (storage-buffer limit).
+    expect(source).toContain("if ( buffers.sphericalHarmonics3TailRead !== undefined ) {");
   });
 });

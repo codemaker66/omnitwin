@@ -256,6 +256,35 @@ describe("HallkeeperSheetV2Schema — full roundtrip", () => {
     expect(parsed.success).toBe(true);
   });
 
+  // T-648: approved snapshots frozen before Martyn's Law readiness existed
+  // carry instructions with no protectedPremises key. They must still parse,
+  // and must not gain the key, or the approved sheet would change on re-read.
+  it("parses a pre-T-648 snapshot whose instructions have no protectedPremises key", () => {
+    const legacyInstructions = {
+      specialInstructions: "Fire exits must remain clear at all times.",
+      dayOfContact: { name: "Sarah Wright", role: "Planner", phone: "", email: "" },
+      phaseDeadlines: [],
+      accessNotes: "",
+      accessibility: null,
+      dietary: null,
+      doorSchedule: null,
+    };
+    const parsed = HallkeeperSheetV2Schema.safeParse({ ...(SAMPLE as Record<string, unknown>), instructions: legacyInstructions });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.instructions).toEqual(legacyInstructions);
+    expect(parsed.data.instructions !== null && "protectedPremises" in parsed.data.instructions).toBe(false);
+  });
+
+  it("parses a snapshot that carries Martyn's Law entries", () => {
+    const parsed = HallkeeperSheetV2Schema.safeParse({
+      ...(SAMPLE as Record<string, unknown>),
+      instructions: { protectedPremises: { procedures: { evacuation: { briefed: true, note: "Plan v3" } } } },
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.instructions?.protectedPremises?.procedures?.evacuation).toEqual({ briefed: true, note: "Plan v3" });
+  });
+
   // ---- Pre-Phase-4c snapshot compatibility + jsonb guard contracts --
   //
   // `loadLatestApprovedSnapshotPayload` in the api package parses stored

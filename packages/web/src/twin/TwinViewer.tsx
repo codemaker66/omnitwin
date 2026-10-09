@@ -45,6 +45,8 @@ import {
 } from "./first-light.js";
 import { NavMarkers } from "./NavMarkers.js";
 import {
+  canUploadInSlice,
+  NEIGHBOUR_WARM_RELEASE_GRACE_MS,
   NEIGHBOUR_WARM_SLICE_MS,
   NEIGHBOUR_WARM_TIMEOUT_MS,
   planNeighbourWarm,
@@ -91,6 +93,7 @@ import { TwinCoachHint } from "./TwinCoachHint.js";
 import { TwinViewerControls } from "./TwinViewerControls.js";
 import { useDive, type DiveDirection } from "./useDive.js";
 import { useTwinMode, type TwinMode } from "./useTwinMode.js";
+import { advanceTextureResidency } from "./texture-residency.js";
 import { warmEquirectBase } from "./useEquirectTexture.js";
 import { useTwinPrefetch } from "./useTwinPrefetch.js";
 import { useTwinWalk } from "./useTwinWalk.js";
@@ -764,6 +767,14 @@ function requestWarmSlice(run: (deadline: IdleDeadlineLike) => void): number {
   }, WARM_FALLBACK_SLICE_MS);
 }
 
+/** Hold a moved-on warm queue's textures briefly, so the node just walked to
+ *  still finds the base prepared for it (NEIGHBOUR_WARM_RELEASE_GRACE_MS). */
+function deferWarmReleases(releases: readonly (() => void)[]): void {
+  window.setTimeout(() => {
+    for (const release of releases) release();
+  }, NEIGHBOUR_WARM_RELEASE_GRACE_MS);
+}
+
 function cancelWarmSlice(handle: number): void {
   if (HAS_IDLE_CALLBACK) {
     cancelIdleCallback(handle);
@@ -781,11 +792,11 @@ function cancelWarmSlice(handle: number): void {
  * neighbour-warm.ts, where the cap and the deadline gate are unit-tested
  * without a GPU. This component is only the wiring: it turns nav-graph
  * adjacency into ranked candidates, and turns "acquire" and "upload" into the
- * two real operations. Crucially the initTexture upload is NOT run in the
- * acquire's promise continuation (which lands long after the idle window has
- * closed) but stashed and performed in its own later slice, behind a live
- * deadline check. The previous neighbour set's registry refs are released as
- * the walk moves on.
+ * two real operations. Crucially the upload is NOT run in the acquire's
+ * promise continuation (which lands long after the idle window has closed) but
+ * stashed and performed in later slices, behind a live deadline check, one
+ * bounded texture-residency step per slice. The previous neighbour set's
+ * registry refs are released as the walk moves on.
  */
 function NeighborWarmer({
   neighbors,
@@ -817,7 +828,7 @@ function NeighborWarmer({
         acquire: async (id) => {
           // warmEquirectBase hands the texture to its callback synchronously
           // once decoded; stash it rather than uploading, so the ~33.5 MB
-          // initTexture can be spent inside a slice that has time for it.
+          // upload can be spent in slices that have time for it.
           const slot: { texture: Texture | null } = { texture: null };
           const release = await warmEquirectBase(id, assetBase, (texture) => {
             slot.texture = texture;
@@ -829,11 +840,11 @@ function NeighborWarmer({
           }
           return { texture, release };
         },
-        upload: (texture) => {
-          gl.initTexture(texture);
-        },
+        upload: (texture, deadline) =>
+          advanceTextureResidency(gl, texture, () => canUploadInSlice(deadline)),
         requestSlice: requestWarmSlice,
         cancelSlice: cancelWarmSlice,
+        releaseOnDispose: deferWarmReleases,
       }),
     [queue, assetBase, gl],
   );

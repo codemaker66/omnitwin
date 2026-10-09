@@ -162,6 +162,9 @@ describe("canUploadInSlice — the deadline gate", () => {
 
 interface Harness {
   readonly acquired: string[];
+  /** Every upload step, in order — one entry per call. */
+  readonly steps: string[];
+  /** Textures whose upload has completed. */
   readonly uploaded: string[];
   readonly released: string[];
   /** Run the next queued idle slice with the given deadline. */
@@ -177,10 +180,12 @@ const ROOMY: IdleDeadlineLike = { didTimeout: false, timeRemaining: () => 49 };
 
 function harness(
   ids: readonly string[],
-  opts: { readonly failing?: readonly string[] } = {},
+  opts: { readonly failing?: readonly string[]; readonly stepsPerTexture?: number } = {},
 ): Harness {
   const acquired: string[] = [];
+  const steps: string[] = [];
   const uploaded: string[] = [];
+  const stepsPerTexture = opts.stepsPerTexture ?? 1;
   const released: string[] = [];
   const slices: ((deadline: IdleDeadlineLike) => void)[] = [];
   const resolvers = new Map<string, (value: WarmAcquisition<string> | null) => void>();
@@ -195,7 +200,12 @@ function harness(
       });
     },
     upload: (texture) => {
-      uploaded.push(texture);
+      steps.push(texture);
+      const done = steps.filter((step) => step === texture).length >= stepsPerTexture;
+      if (done) {
+        uploaded.push(texture);
+      }
+      return done;
     },
     requestSlice: (run) => {
       slices.push(run);
@@ -208,6 +218,7 @@ function harness(
 
   return {
     acquired,
+    steps,
     uploaded,
     released,
     pendingSlices: () => slices.length,
@@ -386,6 +397,104 @@ describe("runNeighbourWarmQueue — lifecycle", () => {
   });
 });
 
+describe("runNeighbourWarmQueue — a texture that needs several upload steps", () => {
+  it("spends one step per slice and starts the next acquire only once resident", async () => {
+    const h = harness(["a", "b"], { stepsPerTexture: 3 });
+    await h.slice(); // acquire a
+    await h.settle("a");
+    await h.slice();
+    expect(h.steps).toEqual(["a"]);
+    expect(h.uploaded).toEqual([]);
+    expect(h.acquired).toEqual(["a"]);
+    await h.slice();
+    expect(h.steps).toEqual(["a", "a"]);
+    expect(h.acquired).toEqual(["a"]); // b waits for a to be resident
+    await h.slice();
+    expect(h.steps).toEqual(["a", "a", "a"]);
+    expect(h.uploaded).toEqual(["a"]);
+    await h.slice();
+    expect(h.acquired).toEqual(["a", "b"]);
+  });
+
+  it("spends no step in a starved slice and resumes where it left off", async () => {
+    const h = harness(["a"], { stepsPerTexture: 2 });
+    await h.slice();
+    await h.settle("a");
+    await h.slice();
+    await h.slice({ didTimeout: false, timeRemaining: () => 1 });
+    expect(h.steps).toEqual(["a"]);
+    expect(h.pendingSlices()).toBe(1);
+    await h.slice();
+    expect(h.uploaded).toEqual(["a"]);
+  });
+
+  it("stops stepping and releases the texture when disposed mid-upload", async () => {
+    const h = harness(["a"], { stepsPerTexture: 4 });
+    await h.slice();
+    await h.settle("a");
+    await h.slice();
+    h.dispose();
+    expect(h.released).toEqual(["a"]);
+    expect(h.cancelled()).toBe(1);
+    expect(h.pendingSlices()).toBe(1); // the cancelled request, never run
+    expect(h.steps).toEqual(["a"]);
+  });
+});
+
+describe("runNeighbourWarmQueue — releasing through releaseOnDispose", () => {
+  function deferringQueue(acquire: (id: string) => Promise<WarmAcquisition<string> | null>): {
+    readonly slices: ((deadline: IdleDeadlineLike) => void)[];
+    readonly handedBack: (readonly (() => void)[])[];
+    readonly dispose: () => void;
+  } {
+    const slices: ((deadline: IdleDeadlineLike) => void)[] = [];
+    const handedBack: (readonly (() => void)[])[] = [];
+    const dispose = runNeighbourWarmQueue<string>({
+      ids: ["a"],
+      acquire,
+      upload: () => true,
+      requestSlice: (run) => {
+        slices.push(run);
+        return slices.length;
+      },
+      cancelSlice: () => undefined,
+      releaseOnDispose: (releases) => {
+        handedBack.push(releases);
+      },
+    });
+    return { slices, handedBack, dispose };
+  }
+
+  it("hands the held textures to releaseOnDispose instead of releasing them", async () => {
+    const release = vi.fn();
+    const q = deferringQueue(() => Promise.resolve({ texture: "a", release }));
+    q.slices.shift()?.(ROOMY);
+    await Promise.resolve();
+    await Promise.resolve();
+    q.dispose();
+    expect(release).not.toHaveBeenCalled();
+    expect(q.handedBack).toEqual([[release]]);
+  });
+
+  it("gives an acquire that lands after dispose the same deferred release", async () => {
+    const release = vi.fn();
+    let land: (value: WarmAcquisition<string> | null) => void = () => undefined;
+    const q = deferringQueue(
+      () =>
+        new Promise<WarmAcquisition<string> | null>((resolve) => {
+          land = resolve;
+        }),
+    );
+    q.slices.shift()?.(ROOMY); // acquire a starts
+    q.dispose();
+    land({ texture: "a", release });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(release).not.toHaveBeenCalled();
+    expect(q.handedBack.at(-1)).toEqual([release]);
+  });
+});
+
 describe("plan + queue together", () => {
   it("acquires at most NEIGHBOUR_WARM_BUDGET bases for a degree-8 node", async () => {
     const plan = planNeighbourWarm(at(0), ladder(8));
@@ -405,7 +514,7 @@ describe("plan + queue together", () => {
 
 describe("the upload is the only synchronous GPU call", () => {
   it("calls upload with the texture the acquire resolved", async () => {
-    const upload = vi.fn<(texture: string) => void>();
+    const upload = vi.fn<(texture: string, deadline: IdleDeadlineLike) => boolean>(() => true);
     const slices: ((deadline: IdleDeadlineLike) => void)[] = [];
     runNeighbourWarmQueue<string>({
       ids: ["a"],
@@ -424,6 +533,6 @@ describe("the upload is the only synchronous GPU call", () => {
     await Promise.resolve();
     expect(upload).not.toHaveBeenCalled(); // not in the acquire slice
     slices.shift()?.(ROOMY);
-    expect(upload).toHaveBeenCalledExactlyOnceWith("tex:a");
+    expect(upload).toHaveBeenCalledExactlyOnceWith("tex:a", ROOMY);
   });
 });

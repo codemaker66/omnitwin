@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BufferAttribute, BufferGeometry, Matrix4, OrthographicCamera, StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
+import { BufferAttribute, BufferGeometry, Matrix4, OrthographicCamera, PerspectiveCamera, StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
 import { CountingSort } from "three/addons/gpgpu/CountingSort.js";
 import { mergeNativeSplatSources, nativeSplatLargestStorageBuffer } from "../native-splat-merge.js";
@@ -58,7 +58,7 @@ describe("exact contiguous SH3 storage ranges", () => {
         expect(actual).toBe(source[i * 6 + word]);
       }
       expect(source).toEqual(original);
-      expect(f.mesh.geometry.instanceCount).toBe(count);
+      expect(f.mesh.splatCount).toBe(count);
     } finally { f.cleanup(); }
   });
 
@@ -143,5 +143,41 @@ describe("native preflight mirrors the exact SH3 layout", () => {
     expect(nativeSplatLargestStorageBuffer(1, 3, 16)).toBe(24);
     expect(nativeSplatLargestStorageBuffer(3, 3, 48)).toBe(48);
     expect(nativeSplatLargestStorageBuffer(3, 2, 48)).toBe(48);
+  });
+});
+
+describe("lighting a split band-3 store (T-644)", () => {
+  // Following the draw order adds the order and kept-count buffers; with the split band-3 tail
+  // that would be nine storage buffers in one compute stage, one over WebGPU's default limit.
+  it("follows the draw order only when band 3 is not split", () => {
+    const split = fixture(16, 16 * 16);
+    const whole = fixture(16);
+    try {
+      expect(internal(split.mesh, "sphericalHarmonics3TailRead")).toBeDefined();
+      expect(Reflect.get(split.mesh, "_sphericalHarmonicsFollowsOrder")).toBe(false);
+      expect(internal(whole.mesh, "sphericalHarmonics3TailRead")).toBeUndefined();
+      expect(Reflect.get(whole.mesh, "_sphericalHarmonicsFollowsOrder")).toBe(true);
+    } finally { split.cleanup(); whole.cleanup(); }
+  });
+
+  it("re-lights a split store when the camera moves, not for a new draw order alone", () => {
+    const f = fixture(16, 16 * 16);
+    const renderer = new WebGPURenderer();
+    vi.spyOn(renderer, "compute").mockImplementation(() => undefined);
+    const camera = new PerspectiveCamera();
+    camera.position.set(0.2, 0.1, 1);
+    try {
+      f.mesh.updateWorldMatrix(true, false);
+      camera.updateWorldMatrix(true, false);
+      expect(f.mesh.updateSort(renderer, camera)).toBe(true);
+      expect(f.mesh.updateSphericalHarmonics(renderer, camera)).toBe(true);
+      camera.rotateY(0.2); // a new order from turning in place
+      camera.updateWorldMatrix(true, false);
+      expect(f.mesh.updateSort(renderer, camera)).toBe(true);
+      expect(f.mesh.updateSphericalHarmonics(renderer, camera)).toBe(false);
+      camera.position.x += 0.1;
+      camera.updateWorldMatrix(true, false);
+      expect(f.mesh.updateSphericalHarmonics(renderer, camera)).toBe(true);
+    } finally { vi.restoreAllMocks(); f.cleanup(); }
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useEscapeToClose, useFocusTrap } from "../../lib/use-focus-trap.js";
 import type {
@@ -10,6 +10,9 @@ import type {
   DoorScheduleEntry,
   EventInstructions,
   PhaseDeadline,
+  ProcedureBriefing,
+  ProtectedPremises,
+  ProtectionProcedure,
   SetupPhase,
   Zone,
 } from "@omnitwin/types";
@@ -17,12 +20,17 @@ import {
   ConfigurationMetadataSchema,
   DOOR_EVENT_TYPES,
   PHASE_METADATA,
+  PROCEDURE_NOTE_MAX,
+  PROTECTED_PREMISES_NOTES_MAX,
+  PROTECTION_PROCEDURES,
+  PROTECTION_PROCEDURE_COPY,
   SETUP_PHASES,
   ZONES,
   emptyAccessibilityRequirements,
   emptyDietarySummary,
   emptyDoorSchedule,
   emptyEventInstructions,
+  normalizeProtectedPremises,
 } from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
@@ -115,7 +123,13 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
           // Spread the parsed blob verbatim — Zod .default()s on the
           // EventInstructions fields guarantee dayOfContact/phaseDeadlines
           // are present post-parse, so no `??` fallbacks are needed here.
-          const hydrated = { ...emptyEventInstructions(), ...loaded };
+          // Martyn's Law entries (T-648) are held in their saved, normalised
+          // form so an untouched block never reads as an unsaved change.
+          const hydrated = {
+            ...emptyEventInstructions(),
+            ...loaded,
+            protectedPremises: normalizeProtectedPremises(loaded.protectedPremises),
+          };
           serverStateRef.current = hydrated;
           setState(hydrated);
         } else {
@@ -387,6 +401,26 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
     });
   };
 
+  // -------------------------------------------------------------------------
+  // Martyn's Law readiness (T-648) — operator-entered prompts for the
+  // hallkeeper sheet. Nothing is pre-filled: "+ Add" opens an empty record,
+  // every choice starts unset, and "Remove" drops the key entirely. Saving
+  // an empty record writes nothing (normalizeForSave).
+  // -------------------------------------------------------------------------
+
+  const addProtectedPremises = (): void => {
+    setState((prev) => (prev === null ? prev : { ...prev, protectedPremises: {} }));
+  };
+  const clearProtectedPremises = (): void => {
+    setState((prev) => (prev === null ? prev : { ...prev, protectedPremises: undefined }));
+  };
+  const updateProtectedPremises = (change: (current: ProtectedPremises) => ProtectedPremises): void => {
+    setState((prev) => {
+      if (prev === null || prev.protectedPremises === undefined || prev.protectedPremises === null) return prev;
+      return { ...prev, protectedPremises: change(prev.protectedPremises) };
+    });
+  };
+
   const signInRequired = isPublicPreview;
   const saveBlocked = computeSaveBlocked({ saving, loading, configId, state });
 
@@ -608,6 +642,23 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
                   />
                 )}
               </Section>
+
+              <Section
+                title="Martyn's Law readiness"
+                hint="Prompts for the hallkeeper sheet, from what you enter here. Not a legal assessment: the venue's responsible person decides what the Act requires."
+              >
+                {state.protectedPremises === undefined || state.protectedPremises === null ? (
+                  <button type="button" onClick={addProtectedPremises} style={secondaryBtnStyle}>
+                    + Add Martyn's Law readiness
+                  </button>
+                ) : (
+                  <ProtectedPremisesEditor
+                    value={state.protectedPremises}
+                    onChange={updateProtectedPremises}
+                    onClear={clearProtectedPremises}
+                  />
+                )}
+              </Section>
             </>
           )}
         </div>
@@ -678,7 +729,12 @@ export function normalizeForSave(state: EventInstructions): EventInstructions {
   const dayOfContact = state.dayOfContact !== null && state.dayOfContact.name.trim().length === 0
     ? null
     : state.dayOfContact;
-  return { ...state, dayOfContact };
+  // T-648: Martyn's Law entries are trimmed and an empty record is dropped
+  // (undefined is omitted from the PATCH body), so opening the block without
+  // entering anything never writes a key or moves the sheet's sourceHash.
+  // An entered record always travels with the save: the PATCH replaces the
+  // whole instructions object, so leaving it out would erase it.
+  return { ...state, dayOfContact, protectedPremises: normalizeProtectedPremises(state.protectedPremises) };
 }
 
 /**
@@ -1059,6 +1115,208 @@ function DoorScheduleEditor(props: DoorScheduleEditorProps): React.ReactElement 
         Remove door schedule
       </button>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Martyn's Law readiness editor (T-648). Every control starts unset and
+// says so ("Not checked", "Not set"); the operator chooses each value. The
+// briefing time clears back to unset rather than to a guessed hour.
+// ---------------------------------------------------------------------------
+
+type TriState = "unset" | "yes" | "no";
+
+function toTriState(value: boolean | undefined): TriState {
+  return value === undefined ? "unset" : value ? "yes" : "no";
+}
+
+function fromTriState(value: TriState): boolean | undefined {
+  return value === "unset" ? undefined : value === "yes";
+}
+
+interface ProtectedPremisesEditorProps {
+  readonly value: ProtectedPremises;
+  readonly onChange: (change: (current: ProtectedPremises) => ProtectedPremises) => void;
+  readonly onClear: () => void;
+}
+
+function ProtectedPremisesEditor({ value, onChange, onClear }: ProtectedPremisesEditorProps): React.ReactElement {
+  const updateProcedure = (procedure: ProtectionProcedure, patch: Partial<ProcedureBriefing>): void => {
+    onChange((current) => ({
+      ...current,
+      procedures: { ...current.procedures, [procedure]: { ...current.procedures?.[procedure], ...patch } },
+    }));
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Field label="Responsible person">
+        <input
+          type="text" value={value.responsiblePerson ?? ""}
+          onChange={(e) => { const next = e.target.value.slice(0, 200); onChange((current) => ({ ...current, responsiblePerson: next })); }}
+          placeholder="Person or organisation in control of the premises for this event"
+          style={inputStyle}
+        />
+      </Field>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <Field label="Lead on duty">
+          <input
+            type="text" value={value.dutyLead?.name ?? ""}
+            onChange={(e) => { const name = e.target.value.slice(0, 120); onChange((current) => ({ ...current, dutyLead: { ...current.dutyLead, name } })); }}
+            placeholder="Who leads the procedures"
+            style={inputStyle}
+          />
+        </Field>
+        <Field label="Their role">
+          <input
+            type="text" value={value.dutyLead?.role ?? ""}
+            onChange={(e) => { const role = e.target.value.slice(0, 120); onChange((current) => ({ ...current, dutyLead: { ...current.dutyLead, role } })); }}
+            placeholder="Duty manager, head of security…"
+            style={inputStyle}
+          />
+        </Field>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 11, color: TEXT_MUT, textTransform: "uppercase", letterSpacing: "0.04em" }}>Staff briefed on</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
+          {PROTECTION_PROCEDURES.map((procedure) => {
+            const briefing = value.procedures?.[procedure];
+            const copy = PROTECTION_PROCEDURE_COPY[procedure];
+            return (
+              <div key={procedure} style={{ padding: 10, border: `1px solid ${BORDER}`, borderRadius: 6, background: "rgba(255,255,255,0.02)" }}>
+                <ChoiceGroup
+                  legend={copy.label}
+                  description={copy.description}
+                  value={toTriState(briefing?.briefed)}
+                  options={[
+                    { value: "unset", label: "Not checked" },
+                    { value: "yes", label: "Briefed" },
+                    { value: "no", label: "Not briefed" },
+                  ]}
+                  onChange={(next) => { updateProcedure(procedure, { briefed: fromTriState(next) }); }}
+                />
+                <input
+                  type="text" value={briefing?.note ?? ""}
+                  aria-label={`${copy.label} note or document reference`}
+                  onChange={(e) => { updateProcedure(procedure, { note: e.target.value.slice(0, PROCEDURE_NOTE_MAX) }); }}
+                  placeholder="Note or document reference (optional)"
+                  style={{ ...inputStyle, marginTop: 8 }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "end" }}>
+        <Field label="Team briefing time">
+          <input
+            type="datetime-local"
+            value={value.briefingAt === undefined ? "" : toDateTimeLocal(value.briefingAt)}
+            onChange={(e) => {
+              const local = e.target.value;
+              const parsed = local === "" ? undefined : new Date(local);
+              const briefingAt = parsed === undefined || Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+              onChange((current) => ({ ...current, briefingAt }));
+            }}
+            style={inputStyle}
+          />
+        </Field>
+        {value.briefingAt !== undefined && (
+          <button type="button" onClick={() => { onChange((current) => ({ ...current, briefingAt: undefined })); }} style={secondaryBtnStyle}>
+            Clear time
+          </button>
+        )}
+      </div>
+
+      <div style={{ padding: 10, border: `1px solid ${BORDER}`, borderRadius: 6, background: "rgba(255,255,255,0.02)" }}>
+        <ChoiceGroup
+          legend="Door supervision"
+          value={toTriState(value.doorSupervision?.arranged)}
+          options={[
+            { value: "unset", label: "Not set" },
+            { value: "yes", label: "Arranged" },
+            { value: "no", label: "Not arranged" },
+          ]}
+          onChange={(next) => { onChange((current) => ({ ...current, doorSupervision: { ...current.doorSupervision, arranged: fromTriState(next) } })); }}
+        />
+        <input
+          type="text" value={value.doorSupervision?.note ?? ""}
+          aria-label="Door supervision note"
+          onChange={(e) => { const note = e.target.value.slice(0, PROCEDURE_NOTE_MAX); onChange((current) => ({ ...current, doorSupervision: { ...current.doorSupervision, note } })); }}
+          placeholder="Note (optional)"
+          style={{ ...inputStyle, marginTop: 8 }}
+        />
+      </div>
+
+      <Field label="Notes">
+        <textarea
+          value={value.notes ?? ""}
+          onChange={(e) => { const notes = e.target.value.slice(0, PROTECTED_PREMISES_NOTES_MAX); onChange((current) => ({ ...current, notes })); }}
+          rows={3}
+          style={textareaStyle}
+        />
+      </Field>
+
+      <button type="button" onClick={onClear} style={secondaryBtnStyle}>
+        Remove Martyn's Law block
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ChoiceGroup — a labelled set of native radios (arrow keys move between
+// them; the focus ring is the browser's own).
+// ---------------------------------------------------------------------------
+
+interface ChoiceGroupProps<T extends string> {
+  readonly legend: string;
+  readonly description?: string;
+  readonly value: T;
+  readonly options: readonly { readonly value: T; readonly label: string }[];
+  readonly onChange: (next: T) => void;
+}
+
+function ChoiceGroup<T extends string>({ legend, description, value, options, onChange }: ChoiceGroupProps<T>): React.ReactElement {
+  const name = useId();
+  const descriptionId = `${name}-description`;
+  return (
+    <fieldset
+      aria-describedby={description === undefined ? undefined : descriptionId}
+      style={{ border: "none", margin: 0, padding: 0, minWidth: 0 }}
+    >
+      <legend style={{ padding: 0, fontSize: 13, fontWeight: 600, color: "#eee" }}>{legend}</legend>
+      {description !== undefined && (
+        <div id={descriptionId} style={{ fontSize: 11, color: TEXT_MUT, marginTop: 1 }}>{description}</div>
+      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+        {options.map((option) => {
+          const checked = option.value === value;
+          return (
+            <label
+              key={option.value}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "4px 10px", borderRadius: 999, fontSize: 12, cursor: "pointer",
+                border: `1px solid ${checked ? GOLD : BORDER}`,
+                background: checked ? "rgba(201, 138, 91,0.12)" : "transparent",
+                color: checked ? "#fff" : TEXT_SEC,
+              }}
+            >
+              <input
+                type="radio" name={name} value={option.value} checked={checked}
+                onChange={() => { onChange(option.value); }}
+                style={{ accentColor: GOLD, margin: 0, cursor: "pointer" }}
+              />
+              {option.label}
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 

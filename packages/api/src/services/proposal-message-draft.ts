@@ -165,6 +165,15 @@ export function clientWords(text: string | null | undefined): string | null {
   return scrubbed.length > MAX_CLIENT_NOTES_LENGTH ? `${scrubbed.slice(0, MAX_CLIENT_NOTES_LENGTH)}…` : scrubbed;
 }
 
+/** Free text with any email address or phone number taken out by the same
+ *  scrub as the client's words, nothing cut, and whether anything was taken
+ *  out: for a planner's description of an event before an AI reads it
+ *  (T-650). */
+export function scrubContactDetails(text: string): { readonly text: string; readonly removed: boolean } {
+  const scrubbed = scrub(text);
+  return { text: scrubbed, removed: scrubbed !== plain(text).trim() };
+}
+
 /** The first name given that is a name: one holding an email address or a
  *  phone number is not. */
 function nameOf(...candidates: readonly (string | null | undefined)[]): string | null {

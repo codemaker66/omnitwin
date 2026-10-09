@@ -29,6 +29,8 @@ const SCAN_ROOTS: readonly string[] = [
   "../api/emails",
   "../api/src/services/email-templates.tsx",
   "../api/src/services/hallkeeper-pdf-v2.ts",
+  // T-648: the shared Martyn's Law wording the sheet, print and PDF all draw.
+  "../types/src/protected-premises.ts",
 ];
 
 const TEXT_EXTENSIONS = new Set([
@@ -125,6 +127,13 @@ const CLAIM_PATTERNS: readonly ClaimPattern[] = [
     id: "stale-onboard-query-link",
     pattern: /\/onboard\?/giu,
     guidance: "Public CTAs must use the current register/onboard route semantics, not stale query links.",
+  },
+  {
+    // T-648: the Martyn's Law readiness section prompts; it never claims.
+    // docs/engineering/martyns-law-readiness.md holds the rule and sources.
+    id: "martyns-law-claim",
+    pattern: /\b(?:Martyn[’']s Law[- ](?:compliant|approved|certified|ready)\b|(?:compliant|complies) with (?:Martyn[’']s Law|the Act)|(?:meets|satisfies|fulfils) (?:Martyn[’']s Law|the Act|the (?:standard|enhanced) (?:tier|duty))|SIA[- ](?:approved|certified|accredited)|protected premises (?:compliant|approved|certified)|(?:terror(?:ism)?|attack)[- ]proof|(?:standard|enhanced)[- ]tier (?:applies|confirmed|met)|(?:this|the) event (?:triggers|is in scope|is a qualifying event|qualifies)|in scope of (?:Martyn[’']s Law|the Act))/giu,
+    guidance: "Martyn's Law copy gives prompts only: never claim or imply compliance, approval, certification, safety or a tier determination. The venue's responsible person decides.",
   },
 ];
 
@@ -226,6 +235,34 @@ describe("public claim guard", () => {
   it("keeps claim-lint allowlist entries explicit, owned, and unexpired", () => {
     for (const entry of CLAIM_ALLOWLIST) {
       assertValidAllowlistEntry(entry);
+    }
+  });
+
+  it("recognises Martyn's Law claim wording and passes the readiness prompts (T-648)", () => {
+    const pattern = CLAIM_PATTERNS.find((entry) => entry.id === "martyns-law-claim")?.pattern;
+    if (pattern === undefined) throw new Error("martyns-law-claim pattern missing");
+    const matches = (text: string): boolean => { pattern.lastIndex = 0; return pattern.test(text); };
+    for (const claim of [
+      "This venue is Martyn's Law compliant",
+      "Martyn’s Law ready",
+      "The event complies with the Act",
+      "Meets the enhanced tier",
+      "SIA approved security",
+      "Enhanced tier applies",
+      "This event triggers the enhanced duty",
+      "The event qualifies",
+      "Venue in scope of Martyn's Law",
+    ]) {
+      expect(matches(claim), claim).toBe(true);
+    }
+    for (const prompt of [
+      "Martyn's Law readiness",
+      "Prompts only, from what has been entered for this event.",
+      "The venue's responsible person decides what applies.",
+      "A public event with entry checks where 800 or more may be present can be a qualifying event.",
+      "Not checked",
+    ]) {
+      expect(matches(prompt), prompt).toBe(false);
     }
   });
 

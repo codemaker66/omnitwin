@@ -27,6 +27,25 @@ export interface AIGenerationInput {
   readonly context: Record<string, CanonicalJsonValue>;
 }
 
+/** A request for an answer in a given JSON shape (structured output, T-650).
+ *  The answer is returned parsed but unvalidated: the caller owns its contract. */
+export interface AIStructuredGenerationInput {
+  readonly useCase: "event_brief";
+  readonly system: string;
+  readonly prompt: string;
+  /** JSON Schema of the answer: every object closed and every key required. */
+  readonly schema: Record<string, unknown>;
+  /** Aborts the provider request, e.g. when the person who asked has gone. */
+  readonly signal?: AbortSignal;
+}
+
+/** A provider that can answer in a given JSON shape. Only the Anthropic
+ *  provider can; the gateway's bespoke protocol carries text alone. */
+export interface AIStructuredGenerationAdapter {
+  readonly status: AIAssistantStatus;
+  generateStructured(input: AIStructuredGenerationInput): Promise<unknown>;
+}
+
 const AdapterResponseSchema = z.object({
   text: z.string().trim().min(1).max(8000),
 }).strict();
@@ -38,7 +57,7 @@ export class AIAssistantDisabledError extends Error {
   }
 }
 
-export class DisabledAIGenerationAdapter implements AIGenerationAdapter {
+export class DisabledAIGenerationAdapter implements AIGenerationAdapter, AIStructuredGenerationAdapter {
   readonly status: AIAssistantStatus;
 
   constructor(reason = "AI drafts are disabled until provider environment is configured.") {
@@ -51,6 +70,10 @@ export class DisabledAIGenerationAdapter implements AIGenerationAdapter {
   }
 
   generateText(): Promise<string> {
+    return Promise.reject(new AIAssistantDisabledError(this.status.disabledReason ?? "AI assistant is disabled."));
+  }
+
+  generateStructured(): Promise<unknown> {
     return Promise.reject(new AIAssistantDisabledError(this.status.disabledReason ?? "AI assistant is disabled."));
   }
 }
@@ -130,6 +153,14 @@ export function createAIGenerationAdapterFromEnv(env: Env): AIGenerationAdapter 
     baseUrl: env.AI_ASSISTANT_BASE_URL,
     apiKey: env.AI_ASSISTANT_API_KEY,
   });
+}
+
+/** The provider that reads event briefs (T-650): the Anthropic provider, or
+ *  a disabled one saying why. The gateway cannot answer in a given shape. */
+export function createAIStructuredGenerationAdapterFromEnv(env: Env): AIStructuredGenerationAdapter {
+  const adapter = createAIGenerationAdapterFromEnv(env);
+  if (adapter instanceof AnthropicAIGenerationAdapter || adapter instanceof DisabledAIGenerationAdapter) return adapter;
+  return new DisabledAIGenerationAdapter("Reading event briefs needs the Anthropic provider.");
 }
 
 export function titleForAIDraft(useCase: AIDraftUseCase): string {

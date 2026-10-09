@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   CreateEventArchitectRunInputSchema,
   CreateEventArchitectOpsReviewInputSchema,
+  CreateEventBriefDraftInputSchema,
   EventArchitectCandidateSelectionSchema,
   EventArchitectOpsReviewGateSchema,
   PersistedEventArchitectRunSchema,
@@ -10,7 +11,15 @@ import {
   type EventArchitectOpsReviewerAuthority,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
+import type { Env } from "../env.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
+import {
+  AIAssistantDisabledError,
+  DisabledAIGenerationAdapter,
+  createAIStructuredGenerationAdapterFromEnv,
+  type AIStructuredGenerationAdapter,
+} from "../services/ai-assistant.js";
+import { loadEventBriefRoom, readEventBrief } from "../services/event-brief-draft.js";
 import { canAccessInternalEvent } from "../utils/query.js";
 import {
   EventArchitectCandidateNotFoundError,
@@ -165,9 +174,77 @@ async function runArchitectCommand<T>(
 
 export async function eventArchitectRoutes(
   server: FastifyInstance,
-  opts: { db: Database },
+  opts: {
+    db: Database;
+    /** Configures the provider that reads event briefs; absent, it is off. */
+    env?: Env;
+    /** A provider a test supplies in place of the environment's. */
+    briefReader?: AIStructuredGenerationAdapter;
+  },
 ): Promise<void> {
   const { db } = opts;
+  const briefReader = opts.briefReader
+    ?? (opts.env === undefined ? new DisabledAIGenerationAdapter() : createAIStructuredGenerationAdapterFromEnv(opts.env));
+
+  // -------------------------------------------------------------------------
+  // Typed event briefs (T-650). A planner's description is read by the AI
+  // into a draft of the brief, with what it assumed and what the engine
+  // cannot represent. The same authority as creating a run may ask; the
+  // server's own "AI is off" status hides the feature; contact details are
+  // scrubbed before the description is sent; the answer is an unchecked
+  // draft, and nothing runs or is stored until a person generates options.
+  // -------------------------------------------------------------------------
+
+  server.get("/brief-drafts/status", { preHandler: [authenticate] }, async () => {
+    return { data: briefReader.status };
+  });
+
+  server.post("/brief-drafts", {
+    preHandler: [authenticate],
+    // Each read is a paid model call; a person reading briefs by hand never
+    // comes near this.
+    config: { rateLimit: { max: 12, timeWindow: "1 minute" } },
+  }, async (request, reply) => {
+    const body = CreateEventBriefDraftInputSchema.safeParse(request.body);
+    if (!body.success) return validationError(reply, body.error.issues);
+    if (!requireArchitectAccess(request, reply, body.data.venueId)) return;
+    if (!briefReader.status.configured) {
+      return reply.status(503).send({
+        error: briefReader.status.disabledReason ?? "AI assistant is not configured",
+        code: "AI_ASSISTANT_DISABLED",
+      });
+    }
+    const room = await loadEventBriefRoom(db, body.data.venueId, body.data.spaceId);
+    if (room === null) return reply.status(404).send({ error: "Event Architect resource not found", code: "NOT_FOUND" });
+
+    // The person who asked going away (Stop, or leaving the page) stops the
+    // provider request too.
+    const abandoned = new AbortController();
+    const onClose = (): void => { if (!reply.raw.writableEnded) abandoned.abort(); };
+    reply.raw.once("close", onClose);
+    try {
+      const draft = await readEventBrief(briefReader, {
+        description: body.data.description,
+        room,
+        signal: abandoned.signal,
+      });
+      return { data: draft };
+    } catch (err) {
+      if (err instanceof AIAssistantDisabledError) {
+        return reply.status(503).send({ error: err.message, code: "AI_ASSISTANT_DISABLED" });
+      }
+      // The errors carry a status, a reason or contract paths, never the
+      // description itself.
+      if (abandoned.signal.aborted) {
+        request.log.info({ err }, "Event brief reading stopped by the requester");
+      } else {
+        request.log.error({ err }, "Event brief reading failed");
+      }
+      return reply.status(502).send({ error: "AI draft generation failed", code: "AI_DRAFT_GENERATION_FAILED" });
+    } finally {
+      reply.raw.off("close", onClose);
+    }
+  });
 
   server.post("/runs", { preHandler: [authenticate] }, async (request, reply) => {
     const body = CreateEventArchitectRunInputSchema.safeParse(request.body);

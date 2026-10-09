@@ -18,9 +18,13 @@ In the order shown, for what the person typed:
 
 1. **A date.** When the words name a date (the Diary's own reader, `parseGoToDate`: "14 Nov", "the 5th
    of June 27", "05/06/27", "today", counted from the venue's day), and the person opens the Diary:
-   "Saturday 14 November 2026 · See each room in the Diary". It opens the Diary on that date with Go to
-   date answering room by room ("Grand Hall — Free", "Saloon — 1st option …"), the question asked most
-   on the phone. A bare month or a name ("June", "May Henderson") is not a date.
+   "Saturday 14 November 2026". Find reads the Diary for that day and answers in place, room by room,
+   in the Diary's own words ("Grand Hall — Confirmed, Fraser wedding, 13:00–23:00", "Saloon — Free"),
+   so the question asked most on the phone needs no page to be left (added 8 October, after the first
+   release; `pages/diary/lib/day-answer.ts` gives Go to date and Find one wording). Enter opens the
+   Diary on that date with Go to date answering. A day is read once while Find is open and a newer
+   date cancels an older read; if the Diary cannot be read, Find says so and Enter still opens it. A
+   bare month or a name ("June", "May Henderson") is not a date.
 2. **On the board** (the Diary only): its rooms, the bookings it has read and the open enquiries, as its
    own palette found them. That palette retires: one Ctrl/⌘K everywhere.
 3. **Pages.** Every place this person can open, from the header's own list and gates, found by its name
@@ -69,8 +73,9 @@ before it. A booking or room on the board is brought into view and focused there
   961 px: the compact row now starts at 1365 px, and below 1100 px the items draw in a little. This
   also clears an overflow production had for admins with unread notices at 1151–1200 and 961–980 px.
 - **Calm.** An ivory overlay sheet under the header in the register's own tokens; the active row is the
-  forest band with cream words; 16 px input (no phone zoom), nothing under 12 px, AA throughout; no
-  entrance motion beyond a short fade, none under reduced motion.
+  forest band with cream words; 16 px input (no phone zoom), nothing under 12 px, AA throughout. No
+  entrance motion at all: a tool opened from the keyboard many times a day answers at once (the house
+  motion rules, emil-design-eng). A free room reads in the register's sage ink, the word saying it.
 - **The board's render budget holds.** The query lives inside Find, so a keystroke renders Find alone
   and never the Diary's overview (pinned by `DiaryBoardPage.render.test.tsx`).
 

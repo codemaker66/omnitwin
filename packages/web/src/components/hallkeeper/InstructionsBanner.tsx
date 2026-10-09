@@ -21,6 +21,17 @@ export interface InstructionsBannerProps {
   readonly timezone?: string;
 }
 
+/** True when the planner wrote something this banner shows: special
+ *  instructions, a day-of contact, access notes or phase deadlines. Other
+ *  blocks on EventInstructions (accessibility, dietary, doors, Martyn's Law)
+ *  render elsewhere, so they alone are not a planner brief. */
+export function hasPlannerBrief(instructions: EventInstructions): boolean {
+  return instructions.specialInstructions.trim().length > 0
+    || instructions.dayOfContact !== null
+    || instructions.accessNotes.trim().length > 0
+    || instructions.phaseDeadlines.length > 0;
+}
+
 export function InstructionsBanner({ instructions, timezone }: InstructionsBannerProps): React.ReactElement {
   const [expanded, setExpanded] = useState(true);
 
@@ -28,8 +39,7 @@ export function InstructionsBanner({ instructions, timezone }: InstructionsBanne
   const hasContact = instructions.dayOfContact !== null;
   const hasAccess = instructions.accessNotes.trim().length > 0;
   const hasDeadlines = instructions.phaseDeadlines.length > 0;
-  const anyContent = hasSpecial || hasContact || hasAccess || hasDeadlines;
-  if (!anyContent) return <></>;
+  if (!hasPlannerBrief(instructions)) return <></>;
 
   return (
     <section

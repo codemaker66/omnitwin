@@ -12,7 +12,8 @@
   align-items: flex-start;
   padding: min(12vh, 112px) 16px 16px;
   background: #14302a47;
-  animation: find-fade 120ms ease-out;
+  /* No entrance: Find is opened from the keyboard many times a day, and such
+     a tool answers at once (the house motion rules, emil-design-eng). */
 }
 
 .find {
@@ -127,6 +128,30 @@
   white-space: nowrap;
 }
 .find__out { grid-column: 2; grid-row: 1 / span 2; color: var(--house-ink-2); }
+
+/* A date answered in place: each room on its own line, its name then what it
+   holds that day. Free reads in the register's sage ink; the word says it. */
+/* One grid for every room, so the names keep one column however long. */
+.find__answer {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(7.5em, max-content) minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 4px;
+  margin: 6px 0 4px;
+  padding: 8px 0 2px;
+  border-top: 1px solid var(--vv-rule);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.find__answer-room { display: contents; }
+.find__answer-name { grid-column: 1; font-weight: 550; }
+.find__answer-lines { display: grid; grid-column: 2; gap: 1px; min-width: 0; }
+.find__answer-text { min-width: 0; overflow-wrap: anywhere; color: var(--house-ink-2); }
+.find__answer-room--free .find__answer-text { color: var(--vv-sage-ink); font-weight: 550; }
+.find__row--active .find__answer { border-top-color: #ffffff33; }
+.find__row--active .find__answer-text,
+.find__row--active .find__answer-room--free .find__answer-text { color: #cfd9cc; }
 .find__row--search .find__title { font-weight: 500; }
 
 .find__row--active { background: var(--house-forest); color: var(--house-cream); }
@@ -173,6 +198,7 @@
 }
 .find__retry:hover { background: var(--house-sheet-hover); }
 .find__retry:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+.find__quiet { margin: 0; }
 
 .find__keys {
   display: flex;
@@ -215,8 +241,6 @@
   .find__input:focus { outline: 2px solid Highlight; outline-offset: 2px; }
 }
 
-@keyframes find-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .find-backdrop { animation: none; }
   .find__row, .find__close { transition: none; }
 }

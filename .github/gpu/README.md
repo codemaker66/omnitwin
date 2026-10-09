@@ -135,6 +135,11 @@ iPhone, iPad, ordinary office PC, photographic reconstruction or aesthetic
 acceptance. Frame intervals measure renderer submissions and RAF, not physical
 display presentation. All original pixel sizes, fixtures and limits remain.
 
+On 8 October 2026 Blake approved re-pinning the profile's WSL kernel from
+6.18.33.2 to 6.18.40.1 after WSL updated itself; Node, Playwright, Chromium, the
+NVIDIA driver and the renderer were unchanged, and the five cases passed on the
+new kernel (CI run 37691663611, attempt 2) before the re-pin.
+
 ## One explicitly admitted local run
 
 This is an operator-invoked, temporary process. No self-hosted GitHub runner,

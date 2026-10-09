@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import {
@@ -15,7 +15,7 @@ import {
   type Object3D,
   type Texture,
 } from "three";
-import type { TwinScanNode } from "@omnitwin/types";
+import { TWIN_EQUIRECT_LODS, type TwinEquirectLod, type TwinScanNode } from "@omnitwin/types";
 import {
   E57_TO_THREE_QUAT,
   EQUIRECT_U_FLIP,
@@ -24,7 +24,16 @@ import {
   e57PointToThree,
 } from "./twin-basis.js";
 import { gradeGLSL, makeGradeUniforms, type GradeUniforms } from "./PanoStage.js";
-import { useEquirectTexture } from "./useEquirectTexture.js";
+import {
+  ensureTextureResident,
+  isTextureResident,
+  whenTextureResident,
+} from "./texture-residency.js";
+import {
+  isEquirectBaseWarm,
+  retainEquirectTexture,
+  useEquirectTexture,
+} from "./useEquirectTexture.js";
 
 // -----------------------------------------------------------------------------
 // ParallaxStage — true 3D movement: the moonshot that kills the photo bubble.
@@ -270,8 +279,14 @@ export function updateParallaxCorridor(
   return visibleCount;
 }
 
-/** Streams one node's base pano into the given uniform slot (child component
- *  so the target feed can mount only while a hop is in flight). */
+/** Streams one node's pano into the given uniform slot (child component so
+ *  the target feed can mount only while a hop is in flight). The base is
+ *  requested only once it is fully on the GPU — until then the 512 preview,
+ *  the same hold PanoStage gives an arriving node. Drawing a base that is not
+ *  resident would upload all ~33.5 MB inside the hop: a 160-187 ms block on
+ *  the PR GPU gate, traced on 8 October, and the hop's single longest task.
+ *  The feed holds its own ref on whatever it shows, because the stream
+ *  releases the preview when the base lands. */
 function PanoFeed({
   nodeId,
   assetBase,
@@ -284,14 +299,53 @@ function PanoFeed({
   readonly uniforms: ParallaxUniforms;
 }): null {
   const invalidate = useThree((state) => state.invalidate);
-  const { texture } = useEquirectTexture(nodeId, assetBase);
-  useEffect(() => {
-    uniforms[slot].value = texture;
-    invalidate();
-    return () => {
+  const gl = useThree((state) => state.gl);
+  const maxLod: TwinEquirectLod = isEquirectBaseWarm(nodeId, assetBase, gl)
+    ? TWIN_EQUIRECT_LODS[1]
+    : TWIN_EQUIRECT_LODS[0];
+  const { texture, lod } = useEquirectTexture(nodeId, assetBase, maxLod);
+  const shownRef = useRef<(() => void) | null>(null);
+  // A different node (or unmount) clears the slot: never draw the last
+  // node's pano from this node's position.
+  useEffect(
+    () => () => {
       uniforms[slot].value = null;
+      shownRef.current?.();
+      shownRef.current = null;
+    },
+    [nodeId, assetBase, uniforms, slot],
+  );
+  useEffect(() => {
+    if (texture === null || lod === 0) return;
+    let release = retainEquirectTexture(nodeId, assetBase, lod);
+    const drop = (): void => {
+      release?.();
+      release = null;
     };
-  }, [texture, uniforms, slot, invalidate]);
+    const show = (): void => {
+      try {
+        ensureTextureResident(gl, texture);
+      } catch {
+        drop();
+        return;
+      }
+      uniforms[slot].value = texture;
+      shownRef.current?.();
+      shownRef.current = release ?? (() => undefined);
+      release = null;
+      invalidate();
+    };
+    let cancel: (() => void) | null = null;
+    if (lod >= TWIN_EQUIRECT_LODS[1] && !isTextureResident(gl, texture)) {
+      cancel = whenTextureResident(gl, texture, show, drop);
+    } else {
+      show();
+    }
+    return () => {
+      cancel?.();
+      drop();
+    };
+  }, [texture, lod, nodeId, assetBase, uniforms, slot, invalidate, gl]);
   return null;
 }
 

@@ -35,6 +35,7 @@ import {
 } from "../api/event-architect.js";
 import { getVenue, listVenues, type Space, type Venue } from "../api/spaces.js";
 import { EventArchitectOpsReviewPanel } from "../components/event-architect/EventArchitectOpsReviewPanel.js";
+import { EventBriefReader, type BriefFormValues } from "../components/event-architect/EventBriefReader.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import "./EventArchitectPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
@@ -416,6 +417,15 @@ export function EventArchitectPage(): ReactElement {
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const createKeyRef = useRef<{ readonly fingerprint: string; readonly key: string } | null>(null);
   const selectionKeysRef = useRef<Map<string, string>>(new Map());
+  const eventNameRef = useRef<HTMLInputElement>(null);
+
+  // A brief read from the planner's own words, checked in its preview, fills
+  // the form; nothing runs until the planner generates the options here.
+  const fillFromBrief = useCallback((values: BriefFormValues) => {
+    setDraft((current) => ({ ...current, ...values }));
+    setRunError(null);
+    window.requestAnimationFrame(() => { eventNameRef.current?.focus(); });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -599,6 +609,13 @@ export function EventArchitectPage(): ReactElement {
         ) : workspace.kind === "error" ? (
           <div className="event-architect-inline-state event-architect-inline-state--error" role="alert"><AlertTriangle aria-hidden="true" /> {workspace.message}</div>
         ) : (
+          <>
+          <EventBriefReader
+            venueId={draft.venueId}
+            spaceId={draft.spaceId}
+            roomName={workspace.spaces.find((space) => space.id === draft.spaceId)?.name ?? null}
+            onFill={fillFromBrief}
+          />
           <form onSubmit={submit} className="event-architect-form">
             <div className="event-architect-field-grid">
               <label>
@@ -620,7 +637,7 @@ export function EventArchitectPage(): ReactElement {
               </label>
               <label className="event-architect-field-wide">
                 <span>Event name</span>
-                <input value={draft.eventName} onChange={(event) => { setDraft((current) => ({ ...current, eventName: event.target.value })); }} maxLength={200} placeholder="Founders' dinner" required />
+                <input ref={eventNameRef} value={draft.eventName} onChange={(event) => { setDraft((current) => ({ ...current, eventName: event.target.value })); }} maxLength={200} placeholder="Founders' dinner" required />
               </label>
               <label>
                 <span>Event type</span>
@@ -685,6 +702,7 @@ export function EventArchitectPage(): ReactElement {
               {submitting ? "Generating options…" : "Generate three options"}
             </button>
           </form>
+          </>
         )}
       </section>
 

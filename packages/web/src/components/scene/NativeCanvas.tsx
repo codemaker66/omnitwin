@@ -10,10 +10,10 @@ import { installNativeMaterialClipping } from "../../lib/native-material-clippin
 import { registerNativeSceneRenderer, withNativeRenderScope } from "../../lib/native-renderer.js";
 import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-frame-pacer.js";
 import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
-import { nativeScenePerfStats } from "../../lib/native-splat-scene.js";
+import { nativeSceneDrawnSplats, nativeScenePerfStats } from "../../lib/native-splat-scene.js";
 import {
   beginGpuProfile, endGpuProfile, recordRenderedFrame, registerProfilerRenderer,
-  shouldProfileFrames, type GpuProfileToken,
+  sampleDrawnSplats, shouldProfileFrames, type GpuProfileToken,
 } from "../../lib/perf-runtime.js";
 import {
   createNativeRendererLifecycle, nativeRendererError, type NativeRendererLifecycle,
@@ -158,12 +158,14 @@ export function NativeCanvas({
           try {
             if (successful) {
               const finishedAt = performance.now();
-              const stats = isProfilerScene(args[0]) ? nativeScenePerfStats(args[0], finishedAt) : null;
+              const scene = isProfilerScene(args[0]) ? args[0] : null;
+              const stats = scene === null ? null : nativeScenePerfStats(scene, finishedAt);
               recordRenderedFrame({
                 timestampMs: startedAt, cpuSubmitMs: finishedAt - startedAt,
                 drawCalls: native.info.render.drawCalls, triangles: native.info.render.triangles,
                 rendererBytes: native.info.memory.total, ...stats,
               }, native);
+              if (scene !== null && stats !== null) sampleDrawnSplats(native, startedAt, () => nativeSceneDrawnSplats(scene, native));
             }
           } catch { /* Missing diagnostics cannot turn a successful draw into an error. */ }
         }

@@ -28,10 +28,12 @@ vi.mock("three/addons/objects/GaussianSplat.js", async () => {
   return { GaussianSplat: class extends Mesh {
     minSortIntervalMs = 0;
     cpuSort: ((request: GaussianSplatCpuSortRequest) => void) | null = null;
+    readonly splatCount: number;
     constructor(source: BufferGeometry, options: { kernelRadius: number; antialias?: boolean }) {
       const draw = new InstancedBufferGeometry();
       draw.instanceCount = source.getAttribute("position").count;
       super(draw, new NodeMaterial());
+      this.splatCount = draw.instanceCount;
       evidence.created++;
       evidence.radii.push(options.kernelRadius);
       evidence.antialias.push(options.antialias);

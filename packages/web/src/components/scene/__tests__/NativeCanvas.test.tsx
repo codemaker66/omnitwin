@@ -26,13 +26,14 @@ const profiling = vi.hoisted(() => ({
   record: vi.fn<(sample: RenderedFrameSample, renderer: object) => void>(),
   release: vi.fn(), register: vi.fn(),
   sceneStats: vi.fn(() => ({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 })),
+  sampleDrawn: vi.fn(), drawn: vi.fn(() => Promise.resolve(45)),
 }));
 vi.mock("../../../lib/perf-runtime.js", () => ({
   shouldProfileFrames: profiling.enabled, beginGpuProfile: profiling.begin,
   endGpuProfile: profiling.end, recordRenderedFrame: profiling.record,
-  registerProfilerRenderer: profiling.register,
+  registerProfilerRenderer: profiling.register, sampleDrawnSplats: profiling.sampleDrawn,
 }));
-vi.mock("../../../lib/native-splat-scene.js", () => ({ nativeScenePerfStats: profiling.sceneStats }));
+vi.mock("../../../lib/native-splat-scene.js", () => ({ nativeScenePerfStats: profiling.sceneStats, nativeSceneDrawnSplats: profiling.drawn }));
 
 const gpuCompletion = vi.hoisted(() => {
   class Ticket {
