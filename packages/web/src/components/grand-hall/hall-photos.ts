@@ -31,7 +31,7 @@ export const HALL_PHOTO_BASE = "/rooms/grand-hall/survey-2026-07-11";
  * served with an hour's cache and a week's stale-while-revalidate, so a new
  * build must never meet an old atlas or relief kept by a browser.
  */
-export const HALL_SURVEY_REVISION = 1;
+export const HALL_SURVEY_REVISION = 2;
 
 /** A survey file's URL, at this revision. */
 export function hallSurveyUrl(file: string): string {
