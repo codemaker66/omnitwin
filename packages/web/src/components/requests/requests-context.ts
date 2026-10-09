@@ -47,6 +47,9 @@ export interface SlotRequestsApi {
   /** The clock the slabs read. Refreshed whenever a snapshot lands, so an
    *  arrival is always judged against a current instant. */
   readonly nowMs: number;
+  /** Every open request in the venue (goal 19 S3): the board derives each
+   *  slot's ring and the UNOWNED rail from this one list. */
+  readonly requests: readonly VenueRequest[];
   readonly requestsFor: (bookingId: string) => readonly VenueRequest[];
   /** Ask for the venue's open requests again after a failed load. Resolves
    *  once the answer, or the failure, has landed. */
@@ -71,6 +74,7 @@ const NONE_ASKING: ReadonlySet<string> = new Set<string>();
 export const SLOT_REQUESTS_UNAVAILABLE: SlotRequestsApi = {
   status: "loading",
   nowMs: 0,
+  requests: EMPTY,
   requestsFor: () => EMPTY,
   retry: () => Promise.resolve(),
   ask: () => Promise.resolve(false),

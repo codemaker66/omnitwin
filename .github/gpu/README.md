@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 383 cases. Four hosted CPU shards execute
-378 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 385 cases. Four hosted CPU shards execute
+380 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -99,7 +99,14 @@ the board found from the keyboard on a desk with the accessibility audit open,
 and on phones a magnifier opening a sheet that fits 390 and 320 px, with sales
 offered dates and pages and never the client search, and an admin's full
 header row held without overflow at every width it changes at
-(`find-anything.spec.ts`).
+(`find-anything.spec.ts`). The next, on 9 October 2026, restates the Day
+Board's two cases one for one and adds two, as the board is rebuilt on the
+attention system (goal 19 S3, T-651): the board breathing only where the
+attention system says, with its legend in the slots' words and the keyboard
+stepping the day; one room at a time on a phone with the day running down the
+screen and a slot opened to its sheet; every word kept and every breath lost
+under reduced motion; and the dark wall register without the day controls,
+readable from across the room (`day-board.spec.ts`).
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

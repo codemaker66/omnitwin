@@ -51,9 +51,9 @@ describe("the request ladder", () => {
   });
 
   it("keeps the vocabulary the plan fixed", () => {
-    expect([...REQUEST_KINDS]).toEqual(["refreshments", "temperature", "cleaning", "av", "access", "other"]);
+    expect([...REQUEST_KINDS]).toEqual(["refreshments", "temperature", "cleaning", "av", "access", "chairs", "tables", "setup", "other"]);
     expect([...REQUEST_URGENCIES]).toEqual(["routine", "soon", "now"]);
-    expect([...REQUEST_STATES]).toEqual(["sent", "acknowledged", "accepted", "resolved"]);
+    expect([...REQUEST_STATES]).toEqual(["sent", "acknowledged", "accepted", "underway", "handed-over", "resolved", "reopened"]);
   });
 });
 

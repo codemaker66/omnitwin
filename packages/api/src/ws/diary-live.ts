@@ -1,20 +1,28 @@
-import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { z } from "zod";
-import { DiaryCommandSchema } from "@omnitwin/types";
-import { users } from "../db/schema.js";
+import {
+  ConversationCommandSchema,
+  DiaryCommandSchema,
+  threadAudienceAdmits,
+  type PlatformRole,
+  type ThreadAudience,
+  type ThreadSubject,
+} from "@omnitwin/types";
+import { messages, threads, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { emit, subscribe } from "../observability/event-bus.js";
 import {
   executeDiaryCommand,
   realDiaryCommandDeps,
 } from "../services/diary-commands.js";
+import { executeConversationCommand, type ConversationChanged } from "../services/conversation-commands.js";
 import type { MutationActor } from "../services/booking-mutations.js";
 import { runRequestEscalationPass } from "../services/requests.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 // ---------------------------------------------------------------------------
-// The Diary live channel (T-497; Canon §9/§15).
+// The Diary live channel (T-497; Canon §9/§15; goal 19 S2).
 //
 // /ws/diary carries EVENTS, PRESENCE, and — since T-537 — the Canon §9
 // COMMAND channel: "Mutations = commands validated in a Neon transaction
@@ -27,18 +35,32 @@ import { AuthMessage, resolveWsUser } from "./auto-save.js";
 // the same fan-out path REST mutations use, so every venue connection sees
 // one consistent stream.
 //
+// Goal 19 S2 adds the conversation half on the same socket and the same
+// ledger: `conversation.command` (a send, a request, a request step) and
+// `conversation.event` (a message landed; the frame says where and carries
+// its cursor, never the body). Every hello and every frame carries
+// `serverNowMs`, the one clock (D9). A connection that re-authenticates with
+// `afterCursor` is replayed every event it missed that its audience admits,
+// then told `conversation.caughtUp`, and only then refetches its snapshot.
+//
 // Protocol:
-//   client → { type: "auth", token, presence? }   first message, auto-save
-//            style; presence: false marks a connection that only listens
-//            (the requests and notifications channel), which hears what its
-//            role may hear but is nobody "here" on the Diary
+//   client → { type: "auth", token, presence?, afterCursor? }   first message,
+//            auto-save style; presence: false marks a connection that only
+//            listens (the requests and notifications channel), which hears
+//            what its role may hear but is nobody "here" on the Diary;
+//            afterCursor asks for a replay of the conversation stream
 //   client → { type: "ping" }                 keepalive (any message touches)
-//   client → { type: "diary.command", command }   T-537 mutation envelope
-//   server → { type: "hello", venueId, presence }
+//   client → { type: "diary.command", command }          T-537 mutation envelope
+//   client → { type: "conversation.command", command }   goal 19 S2 envelope
+//   server → { type: "hello", venueId, presence, serverNowMs }
 //   server → { type: "presence", users }      on every join/leave
 //   server → { type: "diary.event", ... }     after a committed mutation
 //   server → { type: "diary.ack", ... }       the command's outcome envelope
+//   server → { type: "conversation.event", ... }   a message landed (cursor)
+//   server → { type: "conversation.caughtUp", cursor }   replay finished
+//   server → { type: "conversation.ack", ... }     the command's outcome
 //   server → { type: "ping" } / { type: "pong" }
+//   every server frame also carries serverNowMs
 //
 // Presence is ADVISORY display only — never a correctness mechanism
 // (Canon §9). The registry is single-process state; a Redis backplane is the
@@ -51,6 +73,9 @@ const STALE_AFTER_MS = 65_000; // three missed beats and the connection is gone
  *  Short against the shortest sensible venue window, cheap because the query
  *  is a partial index on exactly those rows. */
 const ESCALATION_SWEEP_INTERVAL_MS = 15_000;
+/** How much of the conversation stream a reconnecting screen is replayed
+ *  before it is told to refetch its snapshot instead. */
+const REPLAY_LIMIT = 500;
 
 /** Read roles: who may watch the live diary. Everyone who works the venue's
  *  day or its pipeline; caterers are event-scoped and never see the
@@ -67,6 +92,8 @@ export interface DiaryLiveUser {
   readonly userId: string;
   readonly name: string;
   readonly role: string;
+  /** Absent means "none": a venue person, not a Venviewer operator. */
+  readonly platformRole?: PlatformRole;
 }
 
 export interface DiaryLiveConnection {
@@ -86,10 +113,16 @@ export interface DiaryLiveJoinOptions {
 
 /**
  * Per-venue connection registry. Pure of timers — callers pass the clock —
- * so every behaviour is unit-testable without sockets or fake timers.
+ * so every behaviour is unit-testable without sockets or fake timers. The
+ * clock given to the constructor stamps every frame with `serverNowMs`.
  */
 export class DiaryLiveHub {
   readonly #byVenue = new Map<string, Set<DiaryLiveConnection>>();
+  readonly #clock: () => number;
+
+  constructor(clock: () => number = () => Date.now()) {
+    this.#clock = clock;
+  }
 
   join(
     venueId: string,
@@ -182,8 +215,22 @@ export class DiaryLiveHub {
     this.#send(targets, payload);
   }
 
+  /** Send to the venue's connections a predicate admits — a thread's
+   *  audience, decided per connection by the one arbiter. Returns how many
+   *  were sent to, for the landed-within-a-second measure. */
+  broadcastWhere(
+    venueId: string,
+    admits: (user: DiaryLiveUser) => boolean,
+    payload: Record<string, unknown>,
+  ): number {
+    const targets = [...this.#byVenue.get(venueId) ?? []].filter((connection) => admits(connection.user));
+    this.#send(targets, payload);
+    return targets.length;
+  }
+
   #send(connections: Iterable<DiaryLiveConnection>, payload: Record<string, unknown>): void {
-    const text = JSON.stringify(payload);
+    // D9: every frame carries the server's clock.
+    const text = JSON.stringify({ ...payload, serverNowMs: this.#clock() });
     for (const connection of connections) {
       try {
         connection.socket.send(text);
@@ -219,17 +266,26 @@ export class DiaryLiveHub {
   }
 }
 
-/** The house auth frame, plus whether the connection is presence. Absent
- *  means present, which is what the Diary and the Day Board send; the
- *  requests channel sends false. */
+/** The house auth frame, plus whether the connection is presence and the
+ *  conversation cursor to replay from. Absent presence means present, which
+ *  is what the Diary and the Day Board send; the requests channel sends
+ *  false. Absent afterCursor means "no replay; tell me where the stream is". */
 export const DiaryAuthMessage = AuthMessage.extend({
   presence: z.boolean().optional(),
+  afterCursor: z.number().int().nonnegative().optional(),
 });
 
 const IncomingLiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ping") }),
   z.object({ type: z.literal("diary.command"), command: DiaryCommandSchema }),
+  z.object({ type: z.literal("conversation.command"), command: ConversationCommandSchema }),
 ]);
+
+/** The audience actor a connection is, for the one arbiter: its venue is the
+ *  venue it joined, its platform role what the token said. */
+function audienceActorOf(user: DiaryLiveUser, venueId: string): { role: string; venueId: string; platformRole: PlatformRole } {
+  return { role: user.role, venueId, platformRole: user.platformRole ?? "none" };
+}
 
 /**
  * Ship Friday slice 10. Requests ride the same venue channel the Diary uses —
@@ -282,6 +338,164 @@ export function subscribeRequestFrames(hub: DiaryLiveHub): () => void {
   };
 }
 
+interface ConversationFrameSource {
+  readonly venueId: string;
+  readonly threadId: string;
+  readonly audience: ThreadAudience;
+  readonly subject: ThreadSubject;
+  readonly bookingId: string | null;
+  readonly eventId: string | null;
+  readonly requestId: string | null;
+  readonly messageId: string;
+  readonly cursor: number;
+  readonly actorUserId: string | null;
+  readonly at: string;
+}
+
+function conversationFrame(source: ConversationFrameSource): Record<string, unknown> {
+  return {
+    type: "conversation.event",
+    venueId: source.venueId,
+    kind: "message.sent",
+    threadId: source.threadId,
+    audience: source.audience,
+    subject: source.subject,
+    bookingId: source.bookingId,
+    eventId: source.eventId,
+    requestId: source.requestId,
+    messageId: source.messageId,
+    cursor: source.cursor,
+    actorUserId: source.actorUserId,
+    at: source.at,
+  };
+}
+
+/**
+ * Goal 19 S2. A message landed: the frame reaches only the venue's
+ * connections the thread's stored audience admits, decided per connection by
+ * threadAudienceAdmits — the same arbiter the API applies on every read. A
+ * hallkeeper hears a client's request thread and never a client's booking
+ * thread; sales hears nothing. The frame says where and carries the cursor,
+ * never the words. The landed-within-a-second measure is logged per frame:
+ * how many screens, how long after the commit.
+ */
+export function subscribeConversationFrames(hub: DiaryLiveHub, log?: FastifyBaseLogger): () => void {
+  return subscribe("conversation.changed", {
+    name: "diary-live-conversations",
+    handle: (payload) => {
+      const thread = { venueId: payload.venueId, audience: payload.audience, subject: payload.subject };
+      const screens = hub.broadcastWhere(
+        payload.venueId,
+        (user) => threadAudienceAdmits(audienceActorOf(user, payload.venueId), thread, { holdsEventLink: false }),
+        conversationFrame(payload),
+      );
+      log?.info(
+        {
+          event: "conversation.fanout",
+          venueId: payload.venueId,
+          threadId: payload.threadId,
+          cursor: payload.cursor,
+          screens,
+          latencyMs: Math.max(0, Date.now() - Date.parse(payload.at)),
+        },
+        "conversation.fanout",
+      );
+    },
+  });
+}
+
+/** The replay a reconnecting screen asks for: every message after its
+ *  cursor that its audience admits, oldest first, then caughtUp with the
+ *  newest cursor the venue has. Without a cursor, only caughtUp, so the
+ *  screen learns where the stream is and refetches its snapshot. */
+async function replayConversation(
+  db: Database,
+  venueId: string,
+  user: DiaryLiveUser,
+  afterCursor: number | undefined,
+  send: (payload: Record<string, unknown>) => void,
+): Promise<void> {
+  const actor = audienceActorOf(user, venueId);
+  let cursor = afterCursor ?? 0;
+  if (afterCursor !== undefined) {
+    const rows = await db
+      .select({ message: messages, thread: threads })
+      .from(messages)
+      .innerJoin(threads, eq(threads.id, messages.threadId))
+      .where(and(eq(messages.venueId, venueId), gt(messages.cursor, afterCursor)))
+      .orderBy(asc(messages.cursor))
+      .limit(REPLAY_LIMIT);
+    for (const { message, thread } of rows) {
+      cursor = message.cursor;
+      if (!threadAudienceAdmits(actor, thread, { holdsEventLink: false })) continue;
+      send(conversationFrame({
+        venueId,
+        threadId: thread.id,
+        audience: thread.audience,
+        subject: thread.subject,
+        bookingId: thread.bookingId,
+        eventId: thread.eventId,
+        requestId: thread.requestId,
+        messageId: message.id,
+        cursor: message.cursor,
+        actorUserId: message.authorUserId,
+        at: message.createdAt.toISOString(),
+      }));
+    }
+  }
+  const [top] = await db
+    .select({ cursor: sql<string | number | null>`COALESCE(MAX(${messages.cursor}), 0)` })
+    .from(messages)
+    .where(eq(messages.venueId, venueId));
+  const newest = Number(top?.cursor ?? 0);
+  send({ type: "conversation.caughtUp", cursor: Math.max(cursor, Number.isFinite(newest) ? newest : 0) });
+}
+
+/** Commit → broadcast, on the same bus paths REST uses. */
+function announceConversationChange(log: FastifyBaseLogger, actorUserId: string, changed: ConversationChanged): void {
+  const at = new Date().toISOString();
+  if (changed.kind === "message.sent") {
+    emit(log, "conversation.changed", {
+      venueId: changed.thread.venueId,
+      kind: "message.sent",
+      threadId: changed.thread.id,
+      audience: changed.thread.audience,
+      subject: changed.thread.subject,
+      bookingId: changed.thread.bookingId,
+      eventId: changed.thread.eventId,
+      requestId: changed.thread.requestId,
+      messageId: changed.message.id,
+      cursor: changed.message.cursor,
+      actorUserId,
+      at: changed.message.createdAt,
+    });
+    return;
+  }
+  emit(log, "request.changed", {
+    venueId: changed.request.venueId,
+    kind: changed.kind,
+    requestId: changed.request.id,
+    bookingId: changed.request.bookingId,
+    roomId: changed.request.roomId,
+    state: changed.request.state,
+    audienceRoles: changed.request.audienceRoles,
+    actorUserId,
+    at,
+  });
+  if (changed.notificationIds.length === 0) return;
+  emit(log, "notification.created", {
+    venueId: changed.request.venueId,
+    audienceRoles: changed.request.audienceRoles,
+    recipientUserIds: [],
+    notificationIds: changed.notificationIds,
+    title: changed.request.roomName === null
+      ? "A request was made"
+      : `A request was made in ${changed.request.roomName}`,
+    severity: changed.request.urgency === "now" ? "urgent" : "attention",
+    at,
+  });
+}
+
 export async function registerDiaryLive(server: FastifyInstance, db: Database): Promise<void> {
   const hub = new DiaryLiveHub();
 
@@ -293,6 +507,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
   });
 
   const unsubscribeRequestFrames = subscribeRequestFrames(hub);
+  const unsubscribeConversationFrames = subscribeConversationFrames(hub, server.log);
 
   const heartbeat = setInterval(() => {
     hub.pingAll();
@@ -359,6 +574,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
     clearInterval(escalationSweep);
     unsubscribe();
     unsubscribeRequestFrames();
+    unsubscribeConversationFrames();
   });
 
   server.get("/ws/diary", { websocket: true }, (socket, _request) => {
@@ -369,7 +585,8 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
     let closed = false;
 
     function send(payload: Record<string, unknown>): void {
-      if (socket.readyState === 1) socket.send(JSON.stringify(payload));
+      // D9: every frame carries the server's clock, direct sends included.
+      if (socket.readyState === 1) socket.send(JSON.stringify({ ...payload, serverNowMs: Date.now() }));
     }
 
     socket.on("message", (raw: Buffer | string) => {
@@ -421,14 +638,21 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
               venueId: user.userVenueId,
               platformRole: user.platformRole,
             };
-            connection = hub.join(
-              venueId,
-              socket,
-              { userId: user.userId, name: profile?.name ?? "Colleague", role: user.userRole },
-              Date.now(),
-              { present: auth.data.presence !== false },
+            const liveUser: DiaryLiveUser = {
+              userId: user.userId,
+              name: profile?.name ?? "Colleague",
+              role: user.userRole,
+              platformRole: user.platformRole,
+            };
+            connection = hub.join(venueId, socket, liveUser, Date.now(), { present: auth.data.presence !== false });
+            server.log.info(
+              { event: "diary-live.connections", venueId, connections: hub.connectionCount(venueId) },
+              "diary-live.joined",
             );
             send({ type: "hello", venueId, presence: hub.presenceFor(venueId) });
+            // Replay first, snapshot second: the screen refetches only once
+            // caughtUp says the stream is complete.
+            await replayConversation(db, venueId, liveUser, auth.data.afterCursor, send);
           } catch {
             send({
               type: "error",
@@ -454,13 +678,46 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
         return;
       }
 
+      const commandActor = actor;
+      const commandVenueId = venueId;
+      const commandUser = connection.user;
+      if (commandActor === null || commandVenueId === null) return;
+
+      if (message.data.type === "conversation.command") {
+        // Goal 19 S2: the same ledger, the same guarded async shape as the
+        // Diary's commands — every path ends in a sent ack.
+        const { command } = message.data;
+        void (async () => {
+          try {
+            const execution = await executeConversationCommand(
+              db,
+              { ...commandActor, name: commandUser.name },
+              commandVenueId,
+              command,
+            );
+            send(execution.ack);
+            if (execution.changed !== null) {
+              announceConversationChange(server.log, commandActor.id, execution.changed);
+            }
+          } catch {
+            send({
+              type: "conversation.ack",
+              commandId: command.commandId,
+              outcome: "rejected",
+              replay: false,
+              status: 500,
+              code: "COMMAND_FAILED",
+              error: "The message could not be sent — try again",
+            });
+          }
+        })();
+        return;
+      }
+
       // T-537 command envelope. All async work fully guarded (the Slice-3
       // ws law): every path ends in a sent ack — executeDiaryCommand never
       // throws by contract, and the outer catch covers the send itself.
       const { command } = message.data;
-      const commandActor = actor;
-      const commandVenueId = venueId;
-      if (commandActor === null || commandVenueId === null) return;
       void (async () => {
         try {
           const execution = await executeDiaryCommand(
@@ -500,6 +757,10 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
       closed = true;
       if (connection !== null && venueId !== null) {
         hub.leave(venueId, connection);
+        server.log.info(
+          { event: "diary-live.connections", venueId, connections: hub.connectionCount(venueId) },
+          "diary-live.left",
+        );
       }
     });
   });

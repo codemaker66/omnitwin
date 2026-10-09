@@ -78,6 +78,9 @@ import type {
   RequestOutcome,
   RequestState,
   RequestUrgency,
+  MessageKind,
+  ThreadAudience,
+  ThreadSubject,
   RuntimePackageManifestJson,
   RuntimePackageRevisionIdentityKind,
   RuntimeQaRecordV0,
@@ -5875,6 +5878,14 @@ export const requests = pgTable("requests", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  // Goal 19 S1 (migration 0087): the request's conversation and its handover.
+  // Added by ALTER, so physically after updated_at.
+  threadId: uuid("thread_id").references((): AnyPgColumn => threads.id, { onDelete: "set null" }),
+  handoverToUserId: uuid("handover_to_user_id").references(() => users.id, { onDelete: "set null" }),
+  handoverToName: varchar("handover_to_name", { length: 160 }),
+  handedOverAt: timestamp("handed_over_at", { withTimezone: true }),
+  underwayAt: timestamp("underway_at", { withTimezone: true }),
+  reopenedAt: timestamp("reopened_at", { withTimezone: true }),
 }, (table) => [
   uniqueIndex("requests_venue_idempotency_unique").on(table.venueId, table.idempotencyKey),
   index("requests_venue_state_created_idx").on(table.venueId, table.state, table.createdAt),
@@ -5896,4 +5907,84 @@ export const requestStatusHistory = pgTable("request_status_history", {
   at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("request_status_history_request_idx").on(table.requestId, table.at),
+]);
+
+// ---------------------------------------------------------------------------
+// Conversations (goal 19 S1, migration 0087; written as 0086, renumbered on
+// 9 October 2026 when PR #58 took 0086_venue_location) — threads, messages, receipts.
+//
+// A thread is a place to talk about one thing: a booking (the slot), an
+// event, a request, or later a person. Its audience is written once and no
+// statement widens it. A message is words with one monotonic cursor per
+// venue; a receipt is a fact about one recipient. The CHECK lists match the
+// vocabularies in @omnitwin/types conversations.ts.
+// ---------------------------------------------------------------------------
+
+export const threads = pgTable("threads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  audience: varchar("audience", { length: 20 }).$type<ThreadAudience>().notNull(),
+  subject: varchar("subject", { length: 20 }).$type<ThreadSubject>().notNull(),
+  bookingId: uuid("booking_id").references(() => bookings.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
+  requestId: uuid("request_id").references((): AnyPgColumn => requests.id, { onDelete: "cascade" }),
+  subjectUserId: uuid("subject_user_id").references(() => users.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 160 }),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  messageCount: integer("message_count").notNull().default(0),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+  lastCursor: bigint("last_cursor", { mode: "number" }).notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  // One thread per audience per thing: get-or-create decided by the index. The
+  // most specific id first, so a request thread (which also carries its
+  // booking and event) never collides with another request on the same slot.
+  uniqueIndex("threads_one_per_subject").on(
+    table.venueId,
+    table.audience,
+    table.subject,
+    sql`COALESCE(${table.requestId}, ${table.subjectUserId}, ${table.bookingId}, ${table.eventId})`,
+  ),
+  index("threads_venue_booking_idx").on(table.venueId, table.bookingId),
+  index("threads_venue_event_idx").on(table.venueId, table.eventId),
+  index("threads_request_idx").on(table.requestId),
+  check("threads_audience", sql`${table.audience} IN ('staff-private', 'client-facing')`),
+  check("threads_subject", sql`${table.subject} IN ('booking', 'event', 'request', 'person')`),
+]);
+
+export const messages = pgTable("messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  threadId: uuid("thread_id").notNull().references(() => threads.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  /** One sequence for every venue's conversations. */
+  cursor: bigserial("cursor", { mode: "number" }).notNull(),
+  kind: varchar("kind", { length: 10 }).$type<MessageKind>().notNull(),
+  /** Null for a message the system wrote. */
+  authorUserId: uuid("author_user_id").references(() => users.id, { onDelete: "set null" }),
+  authorName: varchar("author_name", { length: 160 }).notNull(),
+  authorRole: varchar("author_role", { length: 30 }).notNull(),
+  body: text("body").notNull(),
+  idempotencyKey: uuid("idempotency_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("messages_cursor_unique").on(table.cursor),
+  uniqueIndex("messages_thread_idempotency_unique")
+    .on(table.threadId, table.idempotencyKey)
+    .where(sql`${table.idempotencyKey} IS NOT NULL`),
+  index("messages_thread_cursor_idx").on(table.threadId, table.cursor),
+  index("messages_venue_cursor_idx").on(table.venueId, table.cursor),
+  check("messages_kind", sql`${table.kind} IN ('text', 'request', 'system')`),
+  check("messages_body_length", sql`length(${table.body}) BETWEEN 1 AND 2000`),
+]);
+
+export const messageReceipts = pgTable("message_receipts", {
+  messageId: uuid("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  recipientUserId: uuid("recipient_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }).defaultNow().notNull(),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+}, (table) => [
+  primaryKey({ columns: [table.messageId, table.recipientUserId] }),
+  index("message_receipts_recipient_idx").on(table.recipientUserId, table.readAt),
 ]);

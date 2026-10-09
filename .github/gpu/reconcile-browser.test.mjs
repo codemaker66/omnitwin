@@ -60,11 +60,11 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full383 union requires378 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
+test('full385 union requires380 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 383, cpu: 378, gpu: 5, ordinaryPasses: 337,
+  assert.deepEqual(result.totals, { inventory: 385, cpu: 380, gpu: 5, ordinaryPasses: 339,
     expectedFailures: 4, originalSkips: 42, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 378);
+  assert.equal(result.totals.cpu, 380);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 332);
+  assert.equal(result.totals.ordinaryPasses, 334);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 38);
+  assert.equal(baseline.inventoryAdmissions.length, 39);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -420,23 +420,19 @@ rejected('the rejected-band case cannot become a skip', (input) => {
   spec.tests[0].status = 'skipped';
 }, /policy changed/);
 const dayBoardAddition = '1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f';
-test('the Day Board admission adds exactly one ordinary case in its own spec', () => {
+test('the Day Board admission added one ordinary case in its own spec, since restated by the living-timetable admission', () => {
   const admission = baseline.inventoryAdmissions[15];
   assert.equal(admission.date, '2026-09-27');
   assert.equal(admission.sourceFile, 'packages/web/e2e/day-board.spec.ts');
   assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
   assert.deepEqual(admission.caseIds, [dayBoardAddition]);
-  const row = baseline.cases.find((entry) => entry.id === dayBoardAddition);
-  assert.equal(row?.file, 'day-board.spec.ts');
-  assert.equal(row?.expectedStatus, 'passed');
+  // Restated one for one on 9 October 2026 (the thirty-ninth admission): the identity is retired.
+  assert.equal(baseline.cases.some((entry) => entry.id === dayBoardAddition), false);
   assert.equal(baseline.cases.length, BROWSER_POLICY.total);
 });
-rejected('the Day Board case cannot become a skip', (input) => {
-  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === dayBoardAddition);
-  spec.tests[0].expectedStatus = 'skipped';
-  spec.tests[0].results[0].status = 'skipped';
-  spec.tests[0].status = 'skipped';
-}, /policy changed/);
+rejected('the retired Day Board identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === '1b07f1b6eeb3a7bdbe8c-efe6e715638c5ecf202e').id = dayBoardAddition;
+}, /missing or extra/);
 const missionControlAddition = '02d795642a60b2700198-a0dbff5f707516a8cab6';
 test('the Mission Control admission adds exactly one ordinary case in its own spec', () => {
   const admission = baseline.inventoryAdmissions[16];
@@ -474,23 +470,19 @@ rejected('the handoff print case cannot become a skip', (input) => {
   spec.tests[0].status = 'skipped';
 }, /policy changed/);
 const sheetProgressAddition = '1b07f1b6eeb3a7bdbe8c-542cfb6aca0a4807d9ce';
-test('the Day Board progress admission adds exactly one ordinary case to its spec', () => {
+test('the Day Board progress admission added one ordinary case to its spec, since restated by the living-timetable admission', () => {
   const admission = baseline.inventoryAdmissions[18];
   assert.equal(admission.date, '2026-09-27');
   assert.equal(admission.sourceFile, 'packages/web/e2e/day-board.spec.ts');
   assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
   assert.deepEqual(admission.caseIds, [sheetProgressAddition]);
-  const row = baseline.cases.find((entry) => entry.id === sheetProgressAddition);
-  assert.equal(row?.file, 'day-board.spec.ts');
-  assert.equal(row?.expectedStatus, 'passed');
+  // Restated one for one on 9 October 2026 as the phone's case: the identity is retired.
+  assert.equal(baseline.cases.some((entry) => entry.id === sheetProgressAddition), false);
   assert.equal(baseline.cases.length, BROWSER_POLICY.total);
 });
-rejected('the Day Board progress case cannot become a skip', (input) => {
-  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === sheetProgressAddition);
-  spec.tests[0].expectedStatus = 'skipped';
-  spec.tests[0].results[0].status = 'skipped';
-  spec.tests[0].status = 'skipped';
-}, /policy changed/);
+rejected('the retired Day Board progress identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === '1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918').id = sheetProgressAddition;
+}, /missing or extra/);
 const offlineAddition = '02e2c49c5135f0c0642b-6b5e71904176cd01affe';
 test('the event-day offline admission adds exactly one ordinary case in its own spec', () => {
   const admission = baseline.inventoryAdmissions[19];
@@ -907,6 +899,37 @@ test('the Find admission adds exactly two ordinary staff header cases', () => {
 });
 for (const id of findAdditions) {
   rejected(`new Find case ${id} cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+}
+const livingTimetableAdditions = [
+  '1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918',
+  '1b07f1b6eeb3a7bdbe8c-8210e69e29a1b1d1fa8a',
+  '1b07f1b6eeb3a7bdbe8c-8bfc478dd2dc1cc21f4d',
+  '1b07f1b6eeb3a7bdbe8c-efe6e715638c5ecf202e',
+];
+const livingTimetableRetirements = ['1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f', '1b07f1b6eeb3a7bdbe8c-542cfb6aca0a4807d9ce'];
+test("the living-timetable admission restates the Day Board's two cases one for one and adds two", () => {
+  const admission = baseline.inventoryAdmissions[38];
+  assert.equal(admission.date, '2026-10-09');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/day-board.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.deepEqual(admission.caseIds, livingTimetableAdditions);
+  for (const id of livingTimetableAdditions) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'day-board.spec.ts');
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+  for (const id of livingTimetableRetirements) assert.equal(baseline.cases.find((entry) => entry.id === id), undefined);
+  assert.equal(baseline.cases.filter((row) => row.file === 'day-board.spec.ts').length, 4);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+for (const id of livingTimetableAdditions) {
+  rejected(`new Day Board case ${id} cannot become a skip`, (input) => {
     const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
     spec.tests[0].expectedStatus = 'skipped';
     spec.tests[0].results[0].status = 'skipped';

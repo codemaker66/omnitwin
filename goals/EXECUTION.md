@@ -1,5 +1,43 @@
 # Venviewer execution board
 
+## The living timetable — T-651 (goal 19), 8 October 2026
+
+[Goal 19](19-the-living-timetable.md) is active. Owner: the Fable 5.1 session Blake
+gave the goal block to on 8 October. Worktree `D:/claude/goal19-living-timetable/repo`,
+branch `claude/living-timetable`, cut from origin/master `01a779b8` (the goal file named
+`5eec476e`; three commits newer, none touching the timetable). The goal carried the id
+T-646, which origin/master had already allocated to the Startups application, so it is
+recorded as **T-651**; T-647 is taken on `origin/claude/t647-sky` and T-648 to T-650 are
+reserved by local worktrees.
+
+S0 re-verification corrected one premise: Ship Friday slice 10 (migration 0077,
+`services/requests.ts`, `routes/requests.ts`, the Day Board slab, `request.changed`
+frames and the "now" escalation sweep) shipped a staff-only requests model before this
+goal was written. Goal 19 therefore extends `requests` rather than `event_day_issues`;
+the goal file records the revision.
+
+Absorbed here so nothing has two owners: goal 04 (all slices); goal 05 S1, S2, S3 and S5;
+the Day Board plan's S3 to S5; plan 18's F-04, F-05, F-06 and F-08. Goal 05 S4, S6 and S7
+stay in goal 05.
+
+| Slice | Local | Committed | Merged | Deployed | Accepted |
+|---|---|---|---|---|---|
+| S0 Ground (ownership, people matrix, attention system, migration numbers) | 8 Oct | 8 Oct `a573129a` | PR #56 green, merge refused by the auto-mode classifier | — | — |
+| S1 Contracts (types, migration 0087 (written as 0086), capabilities, services, routes, 115 tests) | 8 Oct | 8 Oct `3607b395` | awaiting the same permission | — | — |
+| S2 Transport (commands and events on the socket, cursor replay, the one clock, client poll) | 8 Oct | 8 Oct | awaiting the same permission | — | — |
+| S3 The board, rebuilt | 8 Oct: page, stylesheet and tests rebuilt; typecheck, lint and 182 unit tests green; e2e spec and visual harness written, not yet green locally (cold dev server) | 8 Oct | — | — | — |
+| S4 Requests and conversations on the slot | — | — | — | — | — |
+| S5 Observations | — | — | — | — | — |
+| S6 The When, made fun and complete | — | — | — | — | — |
+| S7 Beyond the glass | — | — | — | — | — |
+| S8 Kiosk and phone hardening | — | — | — | — | — |
+| S9 Delivery and the run | — | — | — | — | — |
+
+Human inputs still open: the wall register (dark as decided, or all ivory); corrections
+to [the people matrix](../docs/operations/people-matrix.md); one real hallkeeper account
+on production for the three-identity check. Migration numbering confirmed against
+origin's journal: the next tag was `0086` (journal idx 84); renumbered to `0087` (idx 85) on 9 October 2026 after PR #58 merged `0086_venue_location`.
+
 ## Browser release confidence — T-613, 15 September 2026
 
 [Goal17](17-browser-release-confidence.md) is active in **Build next-gen venue

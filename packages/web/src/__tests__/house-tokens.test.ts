@@ -828,3 +828,111 @@ describe("one accent, but never one colour for two states", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// The living timetable's attention tokens (goal 19 D3;
+// docs/design/living-timetable/attention-system.md). Every colour the Day
+// Board draws state with is a `--lt-*` token in day-board.css. Dots, edges
+// and rings clear 3:1 on the ground and on a raised slab; labels clear
+// 4.5:1 where they are read; on both registers. The cadences are the doc's.
+// ---------------------------------------------------------------------------
+
+describe("the living timetable's attention tokens (goal 19 D3)", () => {
+  const DAY_BOARD_CSS = "src/pages/hallkeeper/day-board.css";
+  const REGISTER_CSS = "src/styles/hallkeeper-register.css";
+
+  /** The `--lt-*` tokens of one register, var() chains resolved through the
+   *  board's own block, the hallkeeper register and the house. The wall
+   *  block redefines some tokens and inherits the rest from paper. */
+  async function registerTokens(register: "paper" | "wall"): Promise<Map<string, string>> {
+    const css = stripCssComments(await readFile(resolve(DAY_BOARD_CSS), "utf-8"));
+    const [house, hallkeeper] = await Promise.all([readTokens(HOUSE_CSS, "--"), readTokens(REGISTER_CSS, "--")]);
+    const blockOf = (selector: RegExp): Map<string, string> => {
+      const body = selector.exec(css)?.[1] ?? "";
+      const own = new Map<string, string>();
+      for (const match of body.matchAll(/(--lt-[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
+        own.set(match[1] ?? "", (match[2] ?? "").trim());
+      }
+      return own;
+    };
+    const paper = blockOf(/\.dayboard\s*\{([\s\S]*?)\}/);
+    const own = register === "paper" ? paper : blockOf(/\.dayboard\[data-register="wall"\]\s*\{([\s\S]*?)\}/);
+    expect(own.size, `${register} block declares --lt-* tokens`).toBeGreaterThan(5);
+    if (register === "wall") {
+      for (const [name, value] of paper) if (!own.has(name)) own.set(name, value);
+    }
+    const resolveValue = (value: string, depth = 0): string => {
+      const ref = /^var\((--[a-z0-9-]+)(?:,\s*(.+))?\)$/.exec(value.trim());
+      if (ref === null) return value.trim();
+      if (depth > 8) throw new Error(`var() chain too deep: ${value}`);
+      const name = ref[1] ?? "";
+      const next = own.get(name) ?? hallkeeper.get(name) ?? house.get(name) ?? ref[2];
+      if (next === undefined) throw new Error(`Unresolved token ${name} in ${register} register`);
+      return resolveValue(next, depth + 1);
+    };
+    const resolved = new Map<string, string>();
+    for (const [name, value] of own) resolved.set(name, resolveValue(value));
+    return resolved;
+  }
+
+  it.each(["paper", "wall"] as const)("holds every %s dot, edge and ring to 3:1 and every label to 4.5:1", async (register) => {
+    const tokens = await registerTokens(register);
+    const colour = (name: string): string => tokenValue(tokens, name);
+    const surfaces = [["the ground", colour("--lt-ground")], ["a raised slab", colour("--lt-raised")]] as const;
+    expect(contrastRatio(colour("--lt-ground"), colour("--lt-ink")), `${register} ground and ink are a dark and a light`).toBeGreaterThan(9);
+
+    // Dots, edges and rings. The hairline (a scheduled slot's edge, with no
+    // words of its own) is audited on the ground only, and the faded edge of
+    // a finished slot, whose words say Ended, is a hairline by design.
+    for (const name of ["--lt-green", "--lt-amber", "--lt-amber-deep", "--lt-live", "--lt-red", "--lt-ring", "--lt-sage-ink"]) {
+      for (const [where, surface] of surfaces) {
+        expect(contrastRatio(colour(name), surface), `${register} ${name} on ${where}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+    expect(contrastRatio(colour("--lt-hairline"), colour("--lt-ground")), `${register} hairline on the ground`).toBeGreaterThanOrEqual(3);
+
+    // Labels, where they are read: the ink everywhere, the dim ink for times
+    // and counts, the clear-down label and the URGENT word on both surfaces;
+    // copper words (the ring's count, the rail's title, a lane's name) only
+    // ever sit on a raised fill, where the paper copper clears 4.5:1 (it is
+    // 4.46:1 on the ivory ground, by design a dot and edge colour there).
+    for (const name of ["--lt-ink", "--lt-ink-dim", "--lt-sage-ink", "--lt-urgent-label"]) {
+      for (const [where, surface] of surfaces) {
+        expect(contrastRatio(colour(name), surface), `${register} ${name} as a label on ${where}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    expect(contrastRatio(colour("--lt-ring"), colour("--lt-raised")), `${register} copper words on a raised fill`).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(colour("--lt-stale-text"), colour("--lt-stale-band")), `${register} stale band`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps the cadences and amplitudes the attention system wrote down", async () => {
+    const tokens = await registerTokens("paper");
+    expect(tokenValue(tokens, "--lt-breath-organisers")).toBe("4s");
+    expect(tokenValue(tokens, "--lt-breath-guests")).toBe("3s");
+    expect(tokenValue(tokens, "--lt-breath-imminent")).toBe("2s");
+    expect(tokenValue(tokens, "--lt-breath-live")).toBe("4s");
+    expect(tokenValue(tokens, "--lt-breath-attention")).toBe("4s");
+    expect(tokenValue(tokens, "--lt-pulse-urgent")).toBe("1.5s");
+    expect(tokenValue(tokens, "--lt-arrival")).toBe("200ms");
+    // Nothing strobes and nothing shouts: the live overlay peaks at 12 % and
+    // a dot never drops under 65 % opacity (D3 law 5).
+    expect(Number(tokenValue(tokens, "--lt-live-amplitude"))).toBeLessThanOrEqual(0.12);
+    expect(Number(tokenValue(tokens, "--lt-dot-amplitude"))).toBeLessThanOrEqual(0.35);
+  });
+
+  it("breathes only on opacity and transform, phase-locked to the epoch (D3 laws 1 and 2)", async () => {
+    const css = stripCssComments(await readFile(resolve(DAY_BOARD_CSS), "utf-8"));
+    const keyframes = [...css.matchAll(/@keyframes\s+(lt-[a-z-]+)\s*\{([\s\S]*?)\}\s*\}/g)];
+    expect(keyframes.length, "the board declares its breaths").toBeGreaterThanOrEqual(5);
+    for (const [, name, body] of keyframes) {
+      const properties = [...(body ?? "").matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1]);
+      expect(properties.every((property) => property === "opacity" || property === "transform"), `${name ?? ""} animates only opacity and transform`).toBe(true);
+    }
+    // Every infinite breath declares the epoch delay, so two screens breathe together.
+    const infinite = [...css.matchAll(/animation:[^;]*infinite;\s*animation-delay:\s*([^;]+);/g)];
+    expect(infinite.length, "the breaths are declared with their delay").toBeGreaterThanOrEqual(6);
+    for (const [, delay] of infinite) {
+      expect(delay ?? "", "phase-locked to --lt-epoch-phase-ms").toContain("var(--lt-epoch-phase-ms)");
+    }
+  });
+});
