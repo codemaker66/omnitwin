@@ -332,9 +332,28 @@ export function subscribeRequestFrames(hub: DiaryLiveHub): () => void {
     },
   });
 
+  // Goal 19 S5: a fact about the room reaches everyone who reads the board;
+  // the frame says what landed and where, never a time for the booking.
+  const unsubscribeObservations = subscribe("observation.changed", {
+    name: "diary-live-observations",
+    handle: (payload) => {
+      hub.broadcastToRoles(payload.venueId, [...DIARY_READ_ROLES], {
+        type: "observation.event",
+        venueId: payload.venueId,
+        bookingId: payload.bookingId,
+        spaceId: payload.spaceId,
+        kind: payload.kind,
+        observationId: payload.observationId,
+        observedAt: payload.observedAt,
+        at: payload.at,
+      });
+    },
+  });
+
   return () => {
     unsubscribeRequests();
     unsubscribeNotifications();
+    unsubscribeObservations();
   };
 }
 
@@ -468,6 +487,19 @@ function announceConversationChange(log: FastifyBaseLogger, actorUserId: string,
       cursor: changed.message.cursor,
       actorUserId,
       at: changed.message.createdAt,
+    });
+    return;
+  }
+  if (changed.kind === "observation.recorded") {
+    emit(log, "observation.changed", {
+      venueId: changed.observation.venueId,
+      bookingId: changed.observation.bookingId,
+      spaceId: changed.observation.spaceId,
+      kind: changed.observation.kind,
+      observationId: changed.observation.id,
+      observedAt: changed.observation.observedAt,
+      actorUserId,
+      at: changed.observation.recordedAt,
     });
     return;
   }

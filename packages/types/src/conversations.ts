@@ -6,6 +6,7 @@ import {
   VenueRequestSchema,
 } from "./requests.js";
 import type { PlatformRole } from "./user.js";
+import { RecordObservationSchema, SlotObservationSchema } from "./observations.js";
 
 // ---------------------------------------------------------------------------
 // Conversations — threads, messages and receipts (goal 19 S1; D4, D6).
@@ -238,6 +239,9 @@ export const ConversationCommandSchema = z.discriminatedUnion("kind", [
     requestId: UUID,
     payload: z.object({ note: z.string().trim().min(1).max(500).nullish() }).strict(),
   }),
+  // Goal 19 S5: a fact about the room, on the same ledger, so a tap that left
+  // over a dying socket and arrived again over REST is one fact.
+  z.object({ kind: z.literal("observation.record"), commandId: UUID, payload: RecordObservationSchema }),
 ]);
 export type ConversationCommand = z.infer<typeof ConversationCommandSchema>;
 export type ConversationCommandKind = ConversationCommand["kind"];
@@ -286,6 +290,8 @@ export const ConversationCommandAckSchema = z.object({
   status: z.number().int(),
   message: MessageSchema.optional(),
   request: VenueRequestSchema.optional(),
+  /** On observation.record: the fact recorded, or the first fact under a replayed key. */
+  observation: SlotObservationSchema.optional(),
   code: z.string().optional(),
   error: z.string().optional(),
   /** On REQUEST_TAKEN and NOT_OWNER: who has it. */

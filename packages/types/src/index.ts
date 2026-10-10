@@ -2521,6 +2521,7 @@ export * from "./client-event-schedule.js";
 // Ship Friday slice 10: the one-tap request from the floor and its ladder.
 export * from "./requests.js";
 export * from "./conversations.js";
+export * from "./observations.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";
