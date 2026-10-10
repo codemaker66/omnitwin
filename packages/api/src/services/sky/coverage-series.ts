@@ -24,12 +24,26 @@ export interface Series {
 export type AxisValue = string | number;
 export type AxisSelector = (axisName: string, values: readonly AxisValue[] | null, length: number) => number | null;
 
+/** An extra axis a series was read from: its name, its labels (at most 30,
+ *  printable, 40 characters each) and the index chosen. Metadata only. */
+export interface AxisChoice {
+  readonly name: string;
+  readonly values: readonly AxisValue[];
+  readonly chosen: number;
+}
+
 export type SeriesRead =
   | { readonly status: "absent" }
   | { readonly status: "invalid"; readonly problem: string }
-  | { readonly status: "ok"; readonly series: Series };
+  | { readonly status: "ok"; readonly series: Series; readonly axes: readonly AxisChoice[] };
 
 const SITE_AXES = new Set(["x", "y", "z", "locationId"]);
+const AXIS_LABELS = 30;
+const AXIS_LABEL_CHARS = 40;
+
+function axisLabel(value: AxisValue): AxisValue {
+  return typeof value === "number" ? value : value.replace(/[^ -~]+/gu, "?").slice(0, AXIS_LABEL_CHARS);
+}
 
 function siteAxisIndex(name: string, length: number): number | null | undefined {
   if (!SITE_AXES.has(name)) return undefined;
@@ -121,6 +135,7 @@ export function readSeries(collection: CoverageCollection, key: string, select: 
     strides[i] = (strides[i + 1] ?? 1) * (range.shape[i + 1] ?? 1);
   }
   let base = 0;
+  const axes: AxisChoice[] = [];
   for (let i = 0; i < range.axisNames.length; i += 1) {
     if (i === tAxis) continue;
     const name = range.axisNames[i] ?? "";
@@ -134,10 +149,11 @@ export function readSeries(collection: CoverageCollection, key: string, select: 
       return { status: "invalid", problem: `${key}: no usable value on axis ${name}` };
     }
     base += index * (strides[i] ?? 1);
+    if (!SITE_AXES.has(name)) axes.push({ name, values: (axisValues ?? []).slice(0, AXIS_LABELS).map(axisLabel), chosen: index });
   }
   const tStride = strides[tAxis] ?? 1;
   const values = times.map((_, k) => range.values[base + k * tStride] ?? null);
-  return { status: "ok", series: { times, bounds, values } };
+  return { status: "ok", series: { times, bounds, values }, axes };
 }
 
 export interface Step {
@@ -179,10 +195,4 @@ export function valueAt(series: Series, at: number): number | null | undefined {
   }
   const step = locateStep(series.times, at);
   return typeof step === "string" ? undefined : series.values[step.index] ?? null;
-}
-
-/** The [start, end] of the period containing `at`, for period parameters. */
-export function periodAt(series: Series, at: number): readonly [number, number] | null {
-  if (series.bounds === null) return null;
-  return series.bounds.find(([lower, upper]) => lower <= at && at < upper) ?? null;
 }

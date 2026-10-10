@@ -12,7 +12,7 @@ import {
   type EdrCollections,
   type EdrInstances,
 } from "./bpf-schemas.js";
-import { medianSelector, readSeries, thresholdSelector, type AxisSelector, type Series } from "./coverage-series.js";
+import { medianSelector, readSeries, thresholdSelector, type AxisChoice, type AxisSelector, type Series } from "./coverage-series.js";
 
 // ---------------------------------------------------------------------------
 // Met Office Site-Specific Blended Probabilistic Forecast v2 client (T-647).
@@ -242,7 +242,10 @@ export const PERCENTILE_PARAMETERS = {
   wind: { key: "windSpeed10m", documentedUnit: "m/s", units: speedUnits(nonNegative) },
   weatherCode1h: { key: "weatherCodePt01h", documentedUnit: "1", units: { "1": identity, "n/a": identity } },
   weatherCode3h: { key: "weatherCodePt03h", documentedUnit: "1", units: { "1": identity, "n/a": identity } },
-  sunshine24h: { key: "durationOfSunshineSumPt24h", documentedUnit: "s", units: { s: nonNegative } },
+  // Sunshine is not read. BPF v2's only sunshine parameter (the DataHub
+  // "parameter name changes" table) is durationOfSunshineSumPt24h, a sum
+  // over the 24 h ending at each step. It says nothing about the sky at an
+  // instant, so a forecast's sunshineFraction is null.
 } as const satisfies Record<string, ParameterSpec>;
 
 export const PROBABILITY_PARAMETERS = {
@@ -275,11 +278,66 @@ export interface ForecastSnapshot {
   readonly site: GeoPoint | null;
   /** Each series in the sky contract's units; absent when unusable. */
   readonly series: Readonly<Partial<Record<ForecastSeriesName, Series>>>;
+  /** What each series was read from (no values), for the metadata log. */
+  readonly metadata: readonly SeriesMetadata[];
   /** Why parameters were dropped, for the log. */
   readonly problems: readonly string[];
 }
 
-function convertSeries(collection: CoverageCollection, spec: ParameterSpec, select: AxisSelector, problems: string[]): Series | null {
+/** What a series was read from: its key, unit, axis labels and the chosen
+ *  index, and the shape of its time axis. Never a forecast value. */
+export interface SeriesMetadata {
+  readonly field: ForecastSeriesName;
+  readonly key: string;
+  readonly collection: string;
+  /** The unit applied: as declared in scope, else the glossary's. */
+  readonly unit: string;
+  readonly unitDeclared: boolean;
+  readonly axes: readonly AxisChoice[];
+  readonly times: {
+    readonly count: number;
+    readonly first: string | null;
+    readonly last: string | null;
+    /** Distinct spacings between steps, in minutes. */
+    readonly stepsMinutes: readonly number[];
+  };
+  /** Distinct period lengths in hours for a period parameter, else null. */
+  readonly periodsHours: readonly number[] | null;
+}
+
+function distinctSorted(values: readonly number[], limit = 10): number[] {
+  return [...new Set(values)].sort((a, b) => a - b).slice(0, limit);
+}
+
+function seriesMetadata(field: ForecastSeriesName, key: string, collection: string, unit: string, unitDeclared: boolean, axes: readonly AxisChoice[], series: Series): SeriesMetadata {
+  const { times, bounds } = series;
+  const first = times[0];
+  const last = times.at(-1);
+  return {
+    field,
+    key,
+    collection,
+    unit,
+    unitDeclared,
+    axes,
+    times: {
+      count: times.length,
+      first: first === undefined ? null : new Date(first).toISOString(),
+      last: last === undefined ? null : new Date(last).toISOString(),
+      stepsMinutes: distinctSorted(times.slice(1).map((t, i) => Math.round((t - (times[i] ?? t)) / 60_000))),
+    },
+    periodsHours: bounds === null ? null : distinctSorted(bounds.map(([lower, upper]) => Math.round(((upper - lower) / 3_600_000) * 100) / 100)),
+  };
+}
+
+function convertSeries(
+  collectionId: string,
+  field: ForecastSeriesName,
+  collection: CoverageCollection,
+  spec: ParameterSpec,
+  select: AxisSelector,
+  problems: string[],
+): { readonly series: Series; readonly metadata: SeriesMetadata } | null {
   const read = readSeries(collection, spec.key, select);
   if (read.status === "absent") {
     problems.push(`${spec.key}: absent`);
@@ -289,13 +347,15 @@ function convertSeries(collection: CoverageCollection, spec: ParameterSpec, sele
     problems.push(read.problem);
     return null;
   }
-  const declared = unitSymbol(collection, spec.key) ?? spec.documentedUnit;
-  const convert = spec.units[declared];
+  const declaredUnit = unitSymbol(collection, spec.key);
+  const unit = declaredUnit ?? spec.documentedUnit;
+  const convert = spec.units[unit];
   if (convert === undefined) {
-    problems.push(`${spec.key}: unexpected unit ${declared}`);
+    problems.push(`${spec.key}: unexpected unit ${unit}`);
     return null;
   }
-  return { ...read.series, values: read.series.values.map((value) => (value === null ? null : convert(value))) };
+  const series = { ...read.series, values: read.series.values.map((value) => (value === null ? null : convert(value))) };
+  return { series, metadata: seriesMetadata(field, spec.key, collectionId, unit, declaredUnit !== null, read.axes, series) };
 }
 
 function siteOf(collection: CoverageCollection): GeoPoint | null {
@@ -331,9 +391,12 @@ export async function fetchForecastSnapshot(
   const percentileKeys = Object.values(PERCENTILE_PARAMETERS).map((spec) => spec.key);
   const percentiles = await client.position(collections.percentiles, instance.id, point, percentileKeys, "50");
   const series: Partial<Record<ForecastSeriesName, Series>> = {};
+  const metadata: SeriesMetadata[] = [];
   for (const [name, spec] of Object.entries(PERCENTILE_PARAMETERS) as [keyof typeof PERCENTILE_PARAMETERS, ParameterSpec][]) {
-    const converted = convertSeries(percentiles, spec, medianSelector, problems);
-    if (converted !== null) series[name] = converted;
+    const converted = convertSeries(collections.percentiles, name, percentiles, spec, medianSelector, problems);
+    if (converted === null) continue;
+    series[name] = converted.series;
+    metadata.push(converted.metadata);
   }
   if (series.cloudTotal === undefined && series.temperature === undefined) {
     throw new UpstreamError("unavailable", `position ${collections.percentiles}`, 200, ["neither total cloud nor temperature is usable", ...problems]);
@@ -348,9 +411,10 @@ export async function fetchForecastSnapshot(
       const probabilityKeys = Object.values(PROBABILITY_PARAMETERS).map((spec) => spec.key);
       const probabilities = await client.position(collections.probabilities, probabilityInstance.id, point, probabilityKeys, null);
       for (const [name, spec] of Object.entries(PROBABILITY_PARAMETERS) as [keyof typeof PROBABILITY_PARAMETERS, ParameterSpec][]) {
-        const converted = convertSeries(probabilities, spec, PROBABILITY_SELECTORS[name], problems);
+        const converted = convertSeries(collections.probabilities, name, probabilities, spec, PROBABILITY_SELECTORS[name], problems);
         if (converted === null) continue;
-        series[name] = converted;
+        series[name] = converted.series;
+        metadata.push(converted.metadata);
         probabilityCollection = collections.probabilities;
       }
     } catch (error) {
@@ -367,6 +431,7 @@ export async function fetchForecastSnapshot(
     requestedAt,
     site: siteOf(percentiles),
     series,
+    metadata,
     problems,
   };
 }

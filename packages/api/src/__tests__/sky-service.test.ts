@@ -204,12 +204,30 @@ describe("forecast body", () => {
     expect(body.cloud.total).toBe(0.5);
   });
 
-  it("gives the sunshine fraction of the day containing the instant", async () => {
-    const { service } = harness();
-    // The fixture's first full day (8 Oct) has 3 h of sunshine.
+  it("states no sunshine fraction for a forecast: the BPF has sunshine only as a 24 h sum", async () => {
+    const { service, calls } = harness();
     const { body } = await service.skyFor(VENUE, ISSUED + HOUR);
-    expect(body.sunshineFraction).toBeGreaterThan(0.25);
-    expect(body.sunshineFraction).toBeLessThan(0.3);
+    expect(body.kind).toBe("forecast");
+    expect(body.sunshineFraction).toBeNull();
+    expect(calls.some((call) => call.url.includes("durationOfSunshineSumPt24h"))).toBe(false);
+  });
+
+  it("logs what the first forecast was read from once per process, with no forecast values", async () => {
+    const { service, logger, clock, calls } = harness();
+    await service.skyFor(VENUE, ISSUED + HOUR);
+    clock.now += FORECAST_REFRESH_MS + 1;
+    await service.skyFor(VENUE, clock.now + HOUR);
+    expect(calls.filter((call) => call.url.includes("/position"))).toHaveLength(4);
+    const entries = logger.entries.filter((entry) => entry.details["event"] === "venue_sky_forecast_metadata");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.level).toBe("info");
+    expect(entries[0]?.details).toMatchObject({ collection: "uk-spot-percentiles", probabilityCollection: "uk-spot-probabilities" });
+    expect(entries[0]?.details["series"]).toEqual(expect.arrayContaining([expect.objectContaining({
+      field: "fogProbability",
+      axes: [{ name: "probabilityOfVisibilityInAirBelowThreshold1p5mValues", values: ["<200.0", "<1000.0", "<5000.0"], chosen: 1 }],
+    })]));
+    const logged = JSON.stringify(entries[0]);
+    for (const value of ["284.15", "15000", "4.5", KEY]) expect(logged).not.toContain(value);
   });
 
   it("sets the preset hint from total cloud only", () => {
@@ -266,6 +284,19 @@ describe("collections", () => {
     expect(selected?.["percentiles"]).toEqual({ id: "uk-spot-percentiles", region: "uk", basis: "name" });
     expect(selected?.["probabilities"]).toEqual({ id: "uk-spot-probabilities", region: "uk", basis: "name" });
     expect(selected?.["offered"]).toEqual(V2_COLLECTION_IDS.map((id) => ({ id, title: id, parameters: null })));
+  });
+
+  it("names the sunshine parameters the chosen percentile collection declares", async () => {
+    const { service, logger } = harness({
+      collections: collectionsBody(V2_COLLECTION_IDS, {
+        "uk-spot-percentiles": ["airTemperature1p5m", "cloudAreaFraction", "durationOfSunshineSumPt24h"],
+      }),
+    });
+    await service.skyFor(VENUE, ISSUED + HOUR);
+    expect(logged(logger, "venue_sky_collections_selected")?.["sunshineParameters"]).toEqual(["durationOfSunshineSumPt24h"]);
+    const undeclared = harness();
+    await undeclared.service.skyFor(VENUE, ISSUED + HOUR);
+    expect(logged(undeclared.logger, "venue_sky_collections_selected")?.["sunshineParameters"]).toBeNull();
   });
 
   it("still reads a listing with the v1 names", async () => {

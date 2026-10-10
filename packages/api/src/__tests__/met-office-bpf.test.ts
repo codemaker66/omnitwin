@@ -343,6 +343,55 @@ describe("readSeries", () => {
     expect(axisNumber(50)).toBe(50);
     expect(axisNumber("fifty")).toBeNull();
   });
+
+  it("reports the label and index it chose on each extra axis", () => {
+    const fog = readSeries(CoverageCollectionSchema.parse(probabilitiesBody(times)), "probabilityOfVisibilityInAirBelowThreshold1p5m", thresholdSelector(1000));
+    expect(fog.status === "ok" && fog.axes).toEqual([
+      { name: "probabilityOfVisibilityInAirBelowThreshold1p5mValues", values: ["<200.0", "<1000.0", "<5000.0"], chosen: 1 },
+    ]);
+  });
+
+  it("reads a threshold-major range at the chosen threshold for every time", () => {
+    // axisNames [threshold, t]: every time of the first threshold, then the next.
+    const body = {
+      type: "CoverageCollection",
+      coverages: [{
+        type: "Coverage",
+        domain: {
+          type: "Domain",
+          axes: {
+            t: { values: times.slice(0, 3).map((ms) => new Date(ms).toISOString()) },
+            visibilityThresholds: { values: ["<200.0", "<1000.0", "<5000.0"] },
+          },
+        },
+        parameters: { probabilityOfVisibilityInAirBelowThreshold1p5m: { type: "Parameter", unit: { symbol: "1" } } },
+        ranges: {
+          probabilityOfVisibilityInAirBelowThreshold1p5m: {
+            type: "NdArray",
+            axisNames: ["visibilityThresholds", "t"],
+            shape: [3, 3],
+            values: [0.01, 0.02, 0.03, 0.11, 0.12, 0.13, 0.51, 0.52, 0.53],
+          },
+        },
+      }],
+    };
+    const fog = readSeries(CoverageCollectionSchema.parse(body), "probabilityOfVisibilityInAirBelowThreshold1p5m", thresholdSelector(1000));
+    expect(fog.status === "ok" && fog.series.values).toEqual([0.11, 0.12, 0.13]);
+  });
+
+  it("never takes the nearest threshold, or one in other units", () => {
+    for (const labels of [["<500.0", "<2000.0"], ["<0.2", "<1.0", "<5.0"]]) {
+      const body = coverageCollectionBody(times.slice(0, 2), {
+        probabilityOfVisibilityInAirBelowThreshold1p5m: {
+          unit: "1",
+          values: [0.3, 0.3],
+          extraAxis: { name: "probabilityOfVisibilityInAirBelowThreshold1p5mValues", values: labels, at: 1 },
+        },
+      });
+      expect(readSeries(CoverageCollectionSchema.parse(body), "probabilityOfVisibilityInAirBelowThreshold1p5m", thresholdSelector(1000)))
+        .toMatchObject({ status: "invalid" });
+    }
+  });
 });
 
 describe("locateStep and valueAt", () => {
@@ -422,6 +471,55 @@ describe("fetchForecastSnapshot", () => {
     expect(snapshot.series.temperature?.values[0]).toBeCloseTo(11, 9);
     expect(snapshot.series.wind?.values[0]).toBe(4.5);
     expect(snapshot.problems.filter((problem) => problem.includes("unit"))).toEqual([]);
+  });
+
+  it("reads each probability at its own time steps, which need not match the percentiles'", async () => {
+    // Probabilities start an hour after the percentiles, with a different value at each step.
+    const later = times.map((t) => t + 3_600_000);
+    const { fetch } = routedFetch((url) => {
+      if (url.pathname.endsWith("/instances")) return { status: 200, body: instancesBody(["2026-10-08T09:00:00Z"]) };
+      if (url.pathname.includes("uk-spot-percentiles")) return { status: 200, body: percentilesBody(times) };
+      return {
+        status: 200,
+        body: coverageCollectionBody(later, {
+          probabilityOfVisibilityInAirBelowThreshold1p5m: {
+            unit: "1",
+            values: later.map((_, i) => i / 10),
+            extraAxis: { name: "probabilityOfVisibilityInAirBelowThreshold1p5mValues", values: ["<200.0", "<1000.0", "<5000.0"], at: 1 },
+          },
+        }),
+      };
+    });
+    const snapshot = await fetchForecastSnapshot(client(fetch), collections, POINT, NOW);
+    const fog = snapshot.series.fogProbability;
+    if (fog === undefined) throw new Error("fog was not read");
+    expect(fog.times).toEqual(later);
+    expect(valueAt(fog, later[2] ?? 0)).toBe(0.2);
+    expect(valueAt(fog, ISSUED + 2 * 3_600_000)).toBe(0.1);
+  });
+
+  it("describes what it read for each field, with no forecast values", async () => {
+    const { fetch } = router();
+    const snapshot = await fetchForecastSnapshot(client(fetch), collections, POINT, NOW);
+    expect(snapshot.metadata.find((entry) => entry.field === "fogProbability")).toEqual({
+      field: "fogProbability",
+      key: "probabilityOfVisibilityInAirBelowThreshold1p5m",
+      collection: "uk-spot-probabilities",
+      unit: "1",
+      unitDeclared: true,
+      axes: [{ name: "probabilityOfVisibilityInAirBelowThreshold1p5mValues", values: ["<200.0", "<1000.0", "<5000.0"], chosen: 1 }],
+      times: { count: 5, first: "2026-10-08T09:00:00.000Z", last: "2026-10-08T17:00:00.000Z", stepsMinutes: [60, 180] },
+      periodsHours: null,
+    });
+    expect(snapshot.metadata.find((entry) => entry.field === "temperature")).toMatchObject({
+      key: "airTemperature1p5m",
+      collection: "uk-spot-percentiles",
+      unit: "K",
+      axes: [{ name: "percentile", values: [50], chosen: 0 }],
+    });
+    expect(snapshot.metadata.find((entry) => entry.field === "weatherCode1h")?.periodsHours).toEqual([1]);
+    const logged = JSON.stringify(snapshot.metadata);
+    for (const value of ["284.15", "15000", "0.05", "4.5"]) expect(logged).not.toContain(value);
   });
 
   it("reads the percentiles alone when no probability collection is offered", async () => {
