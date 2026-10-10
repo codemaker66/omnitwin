@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { GeoPoint } from "../../lib/venue-site.js";
+import type { ListedCollection, WantedParameters } from "./bpf-collections.js";
 import {
   CoverageCollectionSchema,
   EdrCollectionsSchema,
@@ -7,6 +8,7 @@ import {
   issuePaths,
   unitSymbol,
   type CoverageCollection,
+  type EdrCollections,
   type EdrInstances,
 } from "./bpf-schemas.js";
 import { medianSelector, readSeries, thresholdSelector, type AxisSelector, type Series } from "./coverage-series.js";
@@ -25,10 +27,11 @@ import { medianSelector, readSeries, thresholdSelector, type AxisSelector, type 
 //   transfer my API key"), so a key for another product is answered 401.
 // - Free plan: up to 55 calls a day, one site, hourly (DataHub pricing,
 //   Site-specific). Limits reset at 00:00 UTC; over the limit is 429.
-// - Collections (glossary model ids, Met Office weather_datahub_utilities):
-//   improver-percentiles-spot-uk (percentiles of each parameter) and
-//   improver-probabilities-spot-uk (probabilities above/below thresholds).
-//   Their ids are confirmed from /collections, not assumed.
+// - Collections: one of percentiles of each parameter, one of probabilities
+//   above or below thresholds, for UK and global spot sites. Their v2 ids
+//   are read from /collections and chosen by bpf-collections.ts from what
+//   each declares; the v1 ids (improver-percentiles-spot-uk, …) are not
+//   offered by v2.
 // - Horizon (glossary, UK percentiles): hourly to T+120 h, then three-hourly
 //   to T+186 h or T+192 h depending on the parameter.
 //
@@ -37,8 +40,6 @@ import { medianSelector, readSeries, thresholdSelector, type AxisSelector, type 
 // ---------------------------------------------------------------------------
 
 export const BPF_V2_BASE_URL = "https://data.hub.api.metoffice.gov.uk/mo-blended-prob-forecast-feature-svc/2.0.0";
-export const BPF_PERCENTILES_COLLECTION = "improver-percentiles-spot-uk";
-export const BPF_PROBABILITIES_COLLECTION = "improver-probabilities-spot-uk";
 
 /** The 0.1 mm/h precipitation threshold, in the m/s the thresholds use. */
 export const PRECIPITATION_THRESHOLD_M_S = 0.1 / 3_600_000;
@@ -135,8 +136,9 @@ export class MetOfficeBpfClient {
     return parsed.data;
   }
 
-  collections(): Promise<{ collections: { id: string }[] }> {
-    return this.getJson("collections", "/collections", EdrCollectionsSchema);
+  async collections(): Promise<ListedCollection[]> {
+    const body = await this.getJson("collections", "/collections", EdrCollectionsSchema);
+    return body.collections.map(listedCollection);
   }
 
   instances(collection: string): Promise<EdrInstances> {
@@ -158,6 +160,17 @@ export class MetOfficeBpfClient {
     const path = `/collections/${encodeURIComponent(collection)}/instances/${encodeURIComponent(instanceId)}/position?${query}`;
     return this.getJson(`position ${collection}`, path, CoverageCollectionSchema);
   }
+}
+
+/** A listed collection as the selection reads it. Its title and its EDR
+ *  parameter_names are used only when present and of the documented shape
+ *  (a string; an object keyed by parameter); an empty declaration counts as
+ *  none. */
+export function listedCollection(raw: EdrCollections["collections"][number]): ListedCollection {
+  const title = typeof raw.title === "string" && raw.title.trim() !== "" ? raw.title : null;
+  const names = raw.parameter_names;
+  const keys = typeof names === "object" && names !== null && !Array.isArray(names) ? Object.keys(names) : [];
+  return { id: raw.id, title, parameters: keys.length === 0 ? null : keys };
 }
 
 /** The newest instance: by its id when ids are date-times (the run time),
@@ -232,6 +245,13 @@ export const PROBABILITY_PARAMETERS = {
   fogProbability: { key: "probabilityOfVisibilityInAirBelowThreshold1p5m", documentedUnit: "1", units: fractionUnits },
 } as const satisfies Record<string, ParameterSpec>;
 
+/** The parameters a collection must declare to be chosen for its kind. */
+export const WANTED_COLLECTION_PARAMETERS: WantedParameters = {
+  percentilesEssential: [PERCENTILE_PARAMETERS.cloudTotal.key, PERCENTILE_PARAMETERS.temperature.key],
+  percentiles: Object.values(PERCENTILE_PARAMETERS).map((spec) => spec.key),
+  probabilities: Object.values(PROBABILITY_PARAMETERS).map((spec) => spec.key),
+};
+
 export type ForecastSeriesName = keyof typeof PERCENTILE_PARAMETERS | keyof typeof PROBABILITY_PARAMETERS;
 
 const PROBABILITY_SELECTORS: Record<keyof typeof PROBABILITY_PARAMETERS, AxisSelector> = {
@@ -241,6 +261,9 @@ const PROBABILITY_SELECTORS: Record<keyof typeof PROBABILITY_PARAMETERS, AxisSel
 
 export interface ForecastSnapshot {
   readonly collection: string;
+  /** The probability collection that supplied values, or null when none was
+   *  offered, its read failed or none of its values were usable. */
+  readonly probabilityCollection: string | null;
   readonly instanceId: string;
   readonly issuedAt: string | null;
   readonly requestedAt: number;
@@ -284,14 +307,6 @@ async function newestInstance(client: MetOfficeBpfClient, collection: string): P
   return instance;
 }
 
-/** Collection ids found on the service, matched by the documented names
- *  (an exact id, or one carrying a prefix such as "mo-"). */
-export function resolveCollections(ids: readonly string[]): { percentiles: string | null; probabilities: string | null } {
-  const find = (name: string): string | null =>
-    ids.find((id) => id === name) ?? ids.find((id) => id.endsWith(`-${name}`)) ?? null;
-  return { percentiles: find(BPF_PERCENTILES_COLLECTION), probabilities: find(BPF_PROBABILITIES_COLLECTION) };
-}
-
 /**
  * Fetches the newest forecast for a point: the percentile collection's
  * newest instance (median of each parameter) and, when available, the
@@ -319,6 +334,7 @@ export async function fetchForecastSnapshot(
     throw new UpstreamError("unavailable", `position ${collections.percentiles}`, 200, ["neither total cloud nor temperature is usable", ...problems]);
   }
 
+  let probabilityCollection: string | null = null;
   if (collections.probabilities === null) {
     problems.push("probability collection not offered");
   } else {
@@ -328,7 +344,9 @@ export async function fetchForecastSnapshot(
       const probabilities = await client.position(collections.probabilities, probabilityInstance.id, point, probabilityKeys, null);
       for (const [name, spec] of Object.entries(PROBABILITY_PARAMETERS) as [keyof typeof PROBABILITY_PARAMETERS, ParameterSpec][]) {
         const converted = convertSeries(probabilities, spec, PROBABILITY_SELECTORS[name], problems);
-        if (converted !== null) series[name] = converted;
+        if (converted === null) continue;
+        series[name] = converted;
+        probabilityCollection = collections.probabilities;
       }
     } catch (error) {
       if (!(error instanceof UpstreamError)) throw error;
@@ -338,6 +356,7 @@ export async function fetchForecastSnapshot(
 
   return {
     collection: collections.percentiles,
+    probabilityCollection,
     instanceId: instance.id,
     issuedAt: instance.issuedAt,
     requestedAt,

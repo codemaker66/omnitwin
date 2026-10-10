@@ -24,8 +24,15 @@ import { z } from "zod";
 // documents do not promise are optional and checked where they are used.
 // ---------------------------------------------------------------------------
 
+/** A collection's title (documented) and EDR parameter_names (OGC 19-086r6,
+ *  not in the OpenAPI definition) are taken in any shape and checked by
+ *  listedCollection(), so an unexpected one never fails the whole list. */
 export const EdrCollectionsSchema = z.object({
-  collections: z.array(z.object({ id: z.string().min(1) })),
+  collections: z.array(z.object({
+    id: z.string().min(1),
+    title: z.unknown().optional(),
+    parameter_names: z.unknown().optional(),
+  })),
 });
 export type EdrCollections = z.infer<typeof EdrCollectionsSchema>;
 
