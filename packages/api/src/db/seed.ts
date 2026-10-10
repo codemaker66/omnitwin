@@ -202,6 +202,31 @@ async function seed(): Promise<void> {
       role: "staff",
       venueId: venue.id,
     },
+    // The living timetable's three identities (goal 19 S4, T-651): the
+    // office, a hallkeeper and a client, for the three-identities live e2e.
+    // Same Clerk test-user mechanics as the coordinators above; the client
+    // holds no venue and reaches an event only through a linked plan.
+    {
+      clerkId: null,
+      email: "office+clerk_test@tradeshall.co.uk",
+      name: "Isla Office",
+      role: "admin",
+      venueId: venue.id,
+    },
+    {
+      clerkId: null,
+      email: "hallkeeper+clerk_test@tradeshall.co.uk",
+      name: "Callum Hallkeeper",
+      role: "hallkeeper",
+      venueId: venue.id,
+    },
+    {
+      clerkId: null,
+      email: "client+clerk_test@tradeshall.co.uk",
+      name: "Morag Client",
+      role: "client",
+      venueId: null,
+    },
   ]).returning();
 
   for (const u of insertedUsers) {

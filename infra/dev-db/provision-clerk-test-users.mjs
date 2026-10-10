@@ -23,6 +23,11 @@ const API = "https://api.clerk.com/v1";
 const COORDINATORS = [
   { email: "fiona.coordinator+clerk_test@tradeshall.co.uk", username: "fiona-coordinator", first: "Fiona", last: "Coordinator" },
   { email: "graham.coordinator+clerk_test@tradeshall.co.uk", username: "graham-coordinator", first: "Graham", last: "Coordinator" },
+  // The living timetable's three identities (goal 19 S4, T-651); seeded in
+  // packages/api/src/db/seed.ts with the matching roles, clerkId NULL.
+  { email: "office+clerk_test@tradeshall.co.uk", username: "isla-office", first: "Isla", last: "Office" },
+  { email: "hallkeeper+clerk_test@tradeshall.co.uk", username: "callum-hallkeeper", first: "Callum", last: "Hallkeeper" },
+  { email: "client+clerk_test@tradeshall.co.uk", username: "morag-client", first: "Morag", last: "Client" },
 ];
 const E2E_PASSWORD = "TradesHall-diary-e2e-2026!"; // must match e2e/support/diary-live.ts
 
