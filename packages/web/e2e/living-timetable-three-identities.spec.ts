@@ -27,10 +27,10 @@ import {
 // docs/sessions/2026-10-10.md). The default e2e run has none of that, so the
 // file self-gates with E2E_LIVING_TIMETABLE=1 instead of failing.
 //
-// Latency is measured by timestamps, never felt: the client's page stamps the
-// instant its request is sent and the instant the API answers; a
-// MutationObserver on the hallkeeper's board stamps the first paint of the
-// ring on that slab. Every page shares the machine's clock.
+// Latency is measured by timestamps, never felt: the runner stamps the instant
+// the client presses "Send it" in their composer and the instant the API
+// answers the request; a MutationObserver on the hallkeeper's board stamps the
+// first paint of the ring on that slab. Every clock here is the machine's.
 // ---------------------------------------------------------------------------
 
 test.describe.configure({ mode: "serial" });
@@ -169,7 +169,7 @@ async function openBoard(page: Page): Promise<void> {
 }
 
 function slabOf(page: Page) {
-  return page.locator(".dayboard-slab", { hasText: TITLE });
+  return page.locator(`.dayboard-slab[data-booking="${run.bookingId}"]`);
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -189,42 +189,44 @@ test("the client's request rings the hallkeeper's slab within a second", async (
   await expect(slabOf(hallkeeper).locator(".dayboard-ring")).toHaveCount(0);
 
   // Stamp the first paint of the ring on this slab, before anything is asked.
-  await hallkeeper.evaluate((title) => {
+  await hallkeeper.evaluate((bookingId) => {
     const stamps: { ringSeenAt: number | null } = { ringSeenAt: null };
     (window as { __livingTimetable?: typeof stamps }).__livingTimetable = stamps;
-    const seen = (): boolean => Array.from(document.querySelectorAll(".dayboard-slab"))
-      .some((slab) => (slab.textContent ?? "").includes(title) && slab.querySelector(".dayboard-ring") !== null);
+    const seen = (): boolean => document.querySelector(`.dayboard-slab[data-booking="${bookingId}"] .dayboard-ring`) !== null;
     new MutationObserver(() => {
       if (stamps.ringSeenAt === null && seen()) stamps.ringSeenAt = Date.now();
     }).observe(document.body, { subtree: true, childList: true, attributes: true });
-  }, TITLE);
+  }, run.bookingId);
 
-  const asked = await client.evaluate(async (input: { readonly apiOrigin: string; readonly eventId: string; readonly bookingId: string }) => {
-    const clerk = (window as { Clerk?: { session?: { getToken: () => Promise<string | null> } } }).Clerk;
-    const token = (await clerk?.session?.getToken()) ?? null;
-    if (token === null) throw new Error("no Clerk session token in the client's page");
-    const key = crypto.randomUUID();
-    const sentAt = Date.now();
-    const response = await fetch(`${input.apiOrigin}/events/${input.eventId}/requests`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Idempotency-Key": key },
-      body: JSON.stringify({ bookingId: input.bookingId, kind: "chairs", quantity: 10, urgency: "soon", idempotencyKey: key }),
-    });
-    const answeredAt = Date.now();
-    const body = (await response.json()) as { readonly data?: { readonly id?: string } };
-    return { status: response.status, id: body.data?.id ?? null, sentAt, answeredAt };
-  }, { apiOrigin: API, eventId: run.eventId, bookingId: run.bookingId });
-  expect(asked.status).toBe(201);
-  expect(asked.id).not.toBeNull();
-  requestId = asked.id ?? "";
+  // The client asks through their composer: kind, quantity and urgency in one
+  // gesture, the slot prefilled (one booking on the event), then "Send it".
+  const requests = client.getByRole("region", { name: "Requests" });
+  await requests.getByRole("button", { name: "Ask for something" }).click();
+  const composer = client.getByRole("form", { name: "Ask the house for something" });
+  await composer.getByRole("button", { name: "Chairs", exact: true }).click();
+  await composer.getByLabel("How many").fill("10");
+  await composer.getByRole("button", { name: "Soon", exact: true }).click();
+  const answered = client.waitForResponse((response) =>
+    response.request().method() === "POST" && response.url().endsWith(`/events/${run.eventId}/requests`));
+  const sentAt = Date.now();
+  await composer.getByRole("button", { name: "Send it" }).click();
+  const response = await answered;
+  const answeredAt = Date.now();
+  expect(response.status()).toBe(201);
+  const made = (await response.json()) as { readonly data?: { readonly id?: string } };
+  requestId = made.data?.id ?? "";
+  expect(requestId).not.toBe("");
+  // Local feedback gives way to the true state: the ask on the client's list.
+  const mine = client.getByRole("list", { name: "Your requests" }).getByRole("listitem").filter({ hasText: "Chairs × 10" });
+  await expect(mine).toContainText("Sent · waiting for the house");
 
   await expect.poll(
     () => hallkeeper.evaluate(() => (window as { __livingTimetable?: { ringSeenAt: number | null } }).__livingTimetable?.ringSeenAt ?? null),
     { timeout: 10_000, message: "the ring never painted on the hallkeeper's slab" },
   ).not.toBeNull();
   const ringSeenAt = await hallkeeper.evaluate(() => (window as { __livingTimetable?: { ringSeenAt: number | null } }).__livingTimetable?.ringSeenAt ?? 0);
-  const fromSend = ringSeenAt - asked.sentAt;
-  const fromAnswer = ringSeenAt - asked.answeredAt;
+  const fromSend = ringSeenAt - sentAt;
+  const fromAnswer = ringSeenAt - answeredAt;
   const measure = `ring painted ${String(fromSend)} ms after the client pressed send (${String(fromAnswer)} ms after the API answered)`;
   test.info().annotations.push({ type: "latency", description: measure });
   await test.info().attach("ring-latency.txt", { body: measure, contentType: "text/plain" });
@@ -275,6 +277,10 @@ test("two hands reach for the request and exactly one owns it; the client sees w
     readonly messages: readonly { readonly kind: string; readonly body: string }[];
   };
   expect(conversation.messages.some((message) => message.kind === "system" && message.body === `${owned.ownerName ?? ""} has this.`)).toBe(true);
+
+  // And on the client's own page, in the house's words, on the next poll.
+  await expect(client.getByRole("list", { name: "Your requests" }).getByRole("listitem").filter({ hasText: "Chairs × 10" }))
+    .toContainText(`${owned.ownerName ?? ""} has this.`, { timeout: 2 * CLIENT_SEES_OWNER_MS });
 });
 
 test("a staff-private note never reaches the client", async () => {
@@ -307,4 +313,9 @@ test("revoking the client's plan closes their door at once", async () => {
     body: { bookingId: run.bookingId, kind: "chairs", quantity: 2, urgency: "routine", idempotencyKey: crypto.randomUUID() },
   });
   expect(refused.status).toBe(403);
+
+  // The client's page says why on its next poll, and will not ask again.
+  await expect(client.getByRole("alert").filter({ hasText: "This event is no longer linked to your account." }))
+    .toBeVisible({ timeout: 3 * CLIENT_SEES_OWNER_MS });
+  await expect(client.getByRole("button", { name: "Ask for something" })).toBeDisabled();
 });
