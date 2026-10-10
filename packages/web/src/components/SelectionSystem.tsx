@@ -29,6 +29,7 @@ import {
 import { beginFurnitureSettle, clearFurnitureSettle } from "../lib/furniture-motion.js";
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
+import { intersectSelectable } from "../lib/raycast-gate.js";
 import {
   snapRotation,
   ROTATION_SNAP_RAD,
@@ -310,7 +311,9 @@ export function SelectionSystem(): null {
       const ndcY = -((clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
       raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
-      const allIntersects = raycaster.intersectObjects(scene.children, true);
+      // Only furniture and keyed walls can answer, so a subtree that holds
+      // neither (the drawn hall) is not tested at all.
+      const allIntersects = intersectSelectable(raycaster, scene.children);
       const found: { itemId: string | null; wallKey: WallKey | null } = { itemId: null, wallKey: null };
       for (const inter of allIntersects) {
         if (found.itemId === null) {

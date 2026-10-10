@@ -93,8 +93,30 @@ outside the repository.
   table, records frame intervals and long tasks, and lists every pipeline compiled
   after the planner settles, naming the scene objects drawing it in a development
   build. Run it against a `vite preview` of a build for production numbers
-  (`--drag-at` with the point a development run prints).
+  (`--drag-at` with the point a development run prints). `--cpu-throttle 4`
+  slows the main thread as on a mid-range phone; the GPU is not slowed.
 
 Production build, desktop profile, this tour: table drag worst frame 17 ms with
 none over 20 ms (698 ms before), marquee 23 ms (33 ms), no long task while
 interacting (five before), 61 pipelines compiled while loading (84).
+
+## Pressing
+
+A press picks what lies under it through `intersectSelectable`
+(`lib/raycast-gate.ts`): three's own recursive raycast, except that it never
+enters a subtree flagged `SELECTION_PICK_IGNORED`. Three tests a mesh's
+triangles one by one, and the pick only answers to furniture and keyed walls, so
+the drawn hall's root carries the flag; the measuring tools still raycast its
+real surfaces. On the phone profile a press cost 15.2 ms of raycasting, 13 of
+them on the hall's walls, dome, ceiling and floor, and now costs 2.1 ms.
+
+Phone profile, production build, CPU slowed 4x, three interleaved runs each
+(this PC, other sessions running): the worst frame of a table drag fell from a
+median 44.6 ms to 22.1 ms and of a marquee from 43.5 ms to 22.7 ms. What is left
+is the steady cost of a rendered frame, about 22 ms at 4x (5.5 ms at full speed),
+mostly three's per-pass render work and submission; orbit and zoom stay under
+7 ms. The demo layout draws 22 objects: 17 for the hall (74k triangles) and 5
+instanced furniture meshes (504 instances, 1.06 million triangles, the chairs
+7.6k each). A phone's GPU time has not been measured; if it proves the limit,
+the crafted builders' segment counts (`crafted-geometry.ts`) are the lever for a
+lighter phone tier.

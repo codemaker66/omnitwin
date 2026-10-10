@@ -5,6 +5,7 @@ import { createPlacedItem } from "../../lib/placement.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
 import { findFurnitureItemId } from "../SelectionSystem.js";
+import { intersectSelectable } from "../../lib/raycast-gate.js";
 import { mountInStubRoot, type StubRoot } from "./stub-r3f-root.js";
 
 let mounted: StubRoot | null = null;
@@ -32,7 +33,7 @@ function isWithin(object: Object3D, ancestor: Object3D): boolean {
 /** SelectionSystem's pick: the whole scene, every hit in distance order. */
 function pickDown(scene: Object3D, x: number, z: number): Intersection[] {
   scene.updateMatrixWorld(true);
-  return new Raycaster(new Vector3(x, 10, z), new Vector3(0, -1, 0)).intersectObjects(scene.children, true);
+  return intersectSelectable(new Raycaster(new Vector3(x, 10, z), new Vector3(0, -1, 0)), scene.children);
 }
 
 describe("furniture picking", () => {
