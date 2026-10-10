@@ -25,6 +25,16 @@ FLAG_ISO = 1 << 3
 FLAG_SUN = 1 << 4
 FLAG_CH_CENTRE = 1 << 5
 
+# Skins (R1c, amendment A1): a splat a skin covers is class 7, its wall group in bits 5-7 (0 door wall, 1 window wall,
+# 2 end_xmin, 3 end_xmax, 4 ceiling; 7 reserved, so no record's flags byte is R1b's pass-through 0xff), lit exactly as
+# class 0 and hidden while its group's skins draw. Any other class may carry a toggle in bits 6-7 (bit 5 stays the
+# chandelier group): 1 the loose clutter, 2 the AV cabinet; a toggled splat is hidden while its toggle is.
+CLASS_SKIN = 7
+SKIN_GROUP_SHIFT = 5
+SKIN_GROUP_MAX = 6
+TOGGLE_SHIFT = 6
+TOGGLE_NONE, TOGGLE_CLUTTER, TOGGLE_CABINET = 0, 1, 2
+
 MULT_LO, MULT_HI = -4.0, 3.0   # 1/16 .. 8, the spec's clamp
 
 
@@ -93,6 +103,37 @@ def unpack_records(buf, ranges):
     rec = np.frombuffer(buf, dtype=np.uint8).reshape(-1, RECORD_BYTES)
     direct = np.stack([decode_log(rec[:, k], *ranges[k]) for k in range(len(SOURCES))], axis=1)
     return direct, decode_octahedral(rec[:, 9:11]), rec[:, 11].copy()
+
+
+def cover_flags(flags, group):
+    """Class 7 in wall group `group` for the interior splats (class 0) among `flags`, ISO and SUN kept; others unchanged."""
+    f = np.asarray(flags, dtype=np.uint8)
+    g = np.broadcast_to(np.asarray(group, dtype=np.int64), f.shape)
+    if (g < 0).any() or (g > SKIN_GROUP_MAX).any():
+        raise ValueError("a wall group is 0..6")
+    covered = (f & CLASS_MASK) == CLASS_INTERIOR
+    out = (f & (FLAG_ISO | FLAG_SUN)) | CLASS_SKIN | (g.astype(np.uint8) << SKIN_GROUP_SHIFT)
+    return np.where(covered, out, f).astype(np.uint8)
+
+
+def toggle_flags(flags, toggle):
+    """The toggle in bits 6-7 of every splat that is not class 7 (whose bits 5-7 hold its wall group)."""
+    f = np.asarray(flags, dtype=np.uint8)
+    t = np.broadcast_to(np.asarray(toggle, dtype=np.int64), f.shape)
+    if (t < 0).any() or (t > 3).any():
+        raise ValueError("a toggle is 0..3")
+    skin = (f & CLASS_MASK) == CLASS_SKIN
+    return np.where(skin, f, (f & 0b0011_1111) | (t.astype(np.uint8) << TOGGLE_SHIFT)).astype(np.uint8)
+
+
+def skin_group_of(flags):
+    f = np.asarray(flags, dtype=np.uint8)
+    return np.where((f & CLASS_MASK) == CLASS_SKIN, (f >> SKIN_GROUP_SHIFT).astype(np.int64), -1)
+
+
+def toggle_of(flags):
+    f = np.asarray(flags, dtype=np.uint8)
+    return np.where((f & CLASS_MASK) == CLASS_SKIN, 0, f >> TOGGLE_SHIFT).astype(np.int64)
 
 
 def pack_multiplier(rgb, alpha) -> np.ndarray:

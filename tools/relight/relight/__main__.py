@@ -67,6 +67,34 @@ def _finite(x):
     return x
 
 
+def _artifact(path: str) -> dict:
+    """An artifact's record for its evidence JSON (Task 4c): its exact path, SHA-256 and size. Task 5 packages a work
+    artifact only when its bytes still have the SHA-256 its evidence records."""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return {"path": os.path.abspath(path).replace("\\", "/"), "sha256": h.hexdigest(), "bytes": os.path.getsize(path)}
+
+
+def _host() -> str:
+    """The host an evidence JSON is written on (R1a's Global Constraints, "Execution host", amended 10 October): the
+    RunPod pod by its id when RUNPOD_POD_ID is set (RunPod sets it on every pod), else the PC."""
+    pod = os.environ.get("RUNPOD_POD_ID")
+    return f"pod:{pod}" if pod else "pc"
+
+
+def _write_evidence(path: str, data: dict) -> None:
+    """An evidence JSON, written after the artifact it describes and through a partial file renamed over the target, with
+    non-finite numbers as null (so a failure never leaves a half-written or stale 'pass'). It records its host (_host),
+    or keeps the host the evidence already records: record-artifacts rewrites evidence an earlier run measured."""
+    part = path + ".part"
+    with open(part, "w", encoding="utf-8") as f:
+        json.dump(_finite({**data, "host": data.get("host") or _host()}), f, indent=1, allow_nan=False)
+    os.replace(part, path)
+
+
 def split_tables(cfg: config.Config) -> None:
     """work/{splats,geom,bases}.npz -> work/npy/<archive>_<key>.npy, dtypes unchanged. sun_cap_E.npy (the
     capture-period sun) is written as NaN: 03b_window_fresnel.py computes it, but store.Store maps it first."""
@@ -165,6 +193,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("command")
     ap.add_argument("step", nargs="?")
     ap.add_argument("--config", required=True)
+    ap.add_argument("--skins", default=None)          # R1c: skin-light takes light-grids.json; records takes the geometry folder
+    ap.add_argument("--skin-light", default=None)     # R1c: records' <work>/skin-light, for package v2's skins section
+    ap.add_argument("--skin-package", default=None)   # R1c: the skin package folder package v2 names
+    ap.add_argument("--out", default=None)            # R1c: the package's folder (default the config's out)
+    ap.add_argument("--package", default=None)        # R1c: the package check reads (default the config's out)
     ap.add_argument("--from", dest="source", default=None)   # refit-house promote: the staging work folder (Task 4b)
     ap.add_argument("--w-crown", dest="w_crown", type=float, default=None)   # refit-house refit: a sensitivity run's w_crown
     ap.add_argument("--tag", default=None)                    # refit-house compare | install: a refit's folder (default refit)
@@ -224,6 +257,8 @@ def cmd_windows(cfg, args) -> int:
               f"{int(np.count_nonzero(vol.alpha))} occupied, {vol.alpha.nbytes} bytes", flush=True)
     save["fresnel"] = np.array(W.fresnel_table(lambda c: float(lt.glass_t(c))), np.float32)
     np.savez_compressed(os.path.join(cfg.paths["work"], "windows.npz"), **save)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "windows.json"),
+                    {"windows": list(cfg.room["windows"]), "artifact": _artifact(os.path.join(cfg.paths["work"], "windows.npz"))})
     print("windows.npz written", flush=True)
     return 0
 
@@ -349,8 +384,7 @@ def cmd_check_sun(cfg, args) -> int:
                         "randomMoons": len(lit_moon), "litMoonSampleShareMean": float(np.mean([on.mean() for on in lit_moon])),
                         "missedMoon": missed_moon},
            "directions": report}
-    with open(os.path.join(cfg.paths["evidence"], "sun-check.json"), "w") as f:
-        json.dump(out, f, indent=1)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "sun-check.json"), out)
     print("sun reach", json.dumps(out["sunReach"]), "PASS" if ok else "FAIL", flush=True)
     return 0 if ok else 1
 
@@ -429,10 +463,10 @@ def cmd_probes(cfg, args) -> int:
     out = {"linearityMedianRel": float(np.median(rel)), "linearityP99Rel": float(np.percentile(rel, 99)),
            "linearityMaxRel": float(rel.max()), "probes": int(scored.sum()), "threshold": LINEARITY_GATE}
     out["pass"] = bool(out["linearityMedianRel"] <= LINEARITY_GATE)
-    with open(os.path.join(cfg.paths["evidence"], "probes-check.json"), "w", encoding="utf-8") as f:
-        json.dump(_finite(out), f, indent=1, allow_nan=False)
     kept = _save_npz_if(os.path.join(work, "probes-coarse.npz"), out["pass"], cfg.paths["evidence"], cubes=cubes16, valid=valid,
                         origin=origin, shape=np.asarray(shape, np.int64), spacing=np.float64(spacing))
+    out["artifact"] = _artifact(kept) if out["pass"] else None   # the evidence follows its artifact (Task 4c)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "probes-check.json"), out)
     print(f"linearity: {json.dumps(out)} (capture bounce luminance median {float(np.median(lum_proof[scored])):.4g}), "
           f"{'PASS' if out['pass'] else 'FAIL'}; {'probes-coarse.npz written' if out['pass'] else 'the failing cubes kept at ' + kept}, "
           f"{time.time() - started:.0f} s", flush=True)
@@ -679,14 +713,14 @@ def cmd_sun_bounce(cfg, args) -> int:
                     "worstBright": r["worstBright"]} for k, r in enumerate(results)],
            "power": {"medianRelErr": float(np.median(power_err)), "maxRelErr": float(max(power_err))},
            "floorMean": {"medianRelErr": float(np.median(floor_err)), "maxRelErr": float(max(floor_err))}}
-    with open(os.path.join(cfg.paths["evidence"], "sun-bounce-check.json"), "w", encoding="utf-8") as f:
-        json.dump(_finite(out), f, indent=1, allow_nan=False)
     kept = _save_npz_if(os.path.join(work, "sun-bounce.npz"), ok, cfg.paths["evidence"], basis=basis[:K],
                         coeffs=baked.coeffs[..., :K], floorMean=floor_mean[:K].astype(np.float32), needed=needed,
                         azimuth0=np.float64(az0), elevation0=np.float64(el0), step=np.float64(SB.STEP), gridOrigin=origin1,
                         gridShape=np.asarray(shape1, np.int64), gridSpacing=np.float64(SB.SPACING), valid=valid1,
                         real=baked.real, nodePower=node_power_grid, patchRays=room.rays, patchNormal=room.normals,
                         patchArea=room.areas)
+    out["artifact"] = _artifact(kept) if ok else None            # the evidence follows its artifact (Task 4c)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "sun-bounce-check.json"), out)
 
     def line(name, c):
         return (f"{name} ({c['suns']} suns and {c['moons']} moons of {c['drawn']} drawn, {c['skippedReused']} reused skipped) "
@@ -764,6 +798,9 @@ def cmd_floor(cfg, args) -> int:
               f"non-zero on {share[name]:.4f} of the texels", flush=True)
     lit_ok = share["W3"] > FLOOR_W3_SHARE
     kept = _save_npz_if(os.path.join(work, "floor-light.npz"), lit_ok, cfg.paths["evidence"], D=D, texelToModel=texel_to_model)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "floor-light.json"),
+                    {"shares": share, "w3Share": share["W3"], "threshold": FLOOR_W3_SHARE, "pass": lit_ok,
+                     "artifact": _artifact(kept) if lit_ok else None})
     print(f"floor: D {D.shape} float32; W3 lights {share['W3']:.4f} of the floor ({'PASS' if lit_ok else 'FAIL'}: above "
           f"{FLOOR_W3_SHARE}); {'floor-light.npz written' if lit_ok else 'the failing light maps kept at ' + kept}, "
           f"{time.time() - started:.0f} s", flush=True)
@@ -771,6 +808,67 @@ def cmd_floor(cfg, args) -> int:
 
 
 COMMANDS["floor"] = cmd_floor
+
+
+def cmd_skin_light(cfg, args) -> int:
+    """<work>/skin-light/<id>.records and index.json (R1c, amendment A4): every skin light texel's nine sources' direct
+    light, cmd_floor's model at the skins' texel centres and normals (tools/skins' light-grids.json), as R1a records with
+    the skins' own ranges; each skin's sun-reachable share on its 2 cm sun grid (windows.sun_reach), its sun grid named
+    only when some texel is reachable. CPU only."""
+    import importlib
+    from . import codec, floorlight as FL, probes as PR, skinlight as SL
+    from . import windows as W
+    if args.skins is None:
+        print("skin-light needs --skins <tools/skins work>/geometry/light-grids.json", flush=True)
+        return 2
+    common, lt, _radiosity, fit04 = _proof_modules()
+    b3 = importlib.import_module("03_bases")
+    started, work = time.time(), cfg.paths["work"]
+    with np.load(os.path.join(work, "probes.npz")) as z:
+        volume = {"cubes": z["win_cubes"], "origin": tuple(float(v) for v in z["origin"]),
+                  "shape": tuple(int(v) for v in z["shape"]), "keep": z["keep"]}
+    with np.load(os.path.join(work, "geom.npz")) as z:
+        house = {"chandeliers": z["chandeliers"], "dome_c": z["dome_c"]}
+    with np.load(os.path.join(work, "bases.npz")) as z:
+        house["ring"] = z["ring"]
+    box = (common.X0, common.X1, common.Y0, common.Y1, common.FLOOR_Z)
+    grids = SL.skin_light_grids(args.skins)
+    lights = []
+    for g in grids:
+        q, n = SL.grid_points(g["texelToModel"], g["size"]), g["normals"].reshape(-1, 3)
+        direct = FL.patch_direct(lt, b3.trilinear_weights, volume, house, box, q, n)
+        D = PR.patch_direct_by_source(direct, np.array(fit04.SKY_W))
+        if not np.isfinite(D).all() or (D < 0).any():
+            print(f"FAIL: {g['id']}: the direct light is not finite and non-negative", flush=True)
+            return 1
+        lights.append(D)
+    ranges = [codec.source_range(np.concatenate([D[:, k] for D in lights])) for k in range(len(SOURCES))]
+    vols, _horizons, _fresnel = windows_volumes(cfg)
+    out = os.path.join(work, "skin-light")
+    os.makedirs(out, exist_ok=True)
+    index = {"ranges": [list(r) for r in ranges], "skins": []}
+    for g, D in zip(grids, lights):
+        with open(os.path.join(out, f"{g['id']}.records"), "wb") as f:
+            f.write(SL.pack_skin_records(D, g["normals"].reshape(-1, 3), ranges))
+        reach, sun = 0.0, None
+        if g["sun"] is not None:
+            P = SL.grid_points(g["sun"]["texelToModel"], g["sun"]["size"])
+            reach = float(np.mean(W.sun_reach(vols, P, cfg.room["site"]["latitude"])))
+            if reach > 0:
+                sun = {"size": list(g["sun"]["size"]), "texelToModel": [float(x) for x in g["sun"]["texelToModel"].ravel()]}
+        index["skins"].append({"id": g["id"], "group": g["group"], "lightTexel": g["lightTexel"], "size": list(g["size"]),
+                               "texelToModel": [float(x) for x in g["texelToModel"].ravel()], "reachShare": reach, "sun": sun})
+        print(f"skin-light {g['id']}: {g['size'][0]} x {g['size'][1]} texels, sun reach {reach:.3f}", flush=True)
+    with open(os.path.join(out, "index.json"), "w", encoding="utf-8") as f:
+        json.dump(index, f, indent=1, allow_nan=False)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "skin-light.json"),
+                    {"skins": len(grids), "texels": int(sum(len(D) for D in lights)), "ranges": index["ranges"],
+                     "seconds": round(time.time() - started, 1), "artifact": _artifact(os.path.join(out, "index.json")),
+                     "records": {g["id"]: _artifact(os.path.join(out, f"{g['id']}.records"))["sha256"] for g in grids}})
+    return 0
+
+
+COMMANDS["skin-light"] = cmd_skin_light
 
 
 def cmd_refit_house(cfg, args) -> int:
@@ -950,6 +1048,41 @@ def cmd_refit_house(cfg, args) -> int:
 
 
 COMMANDS["refit-house"] = cmd_refit_house
+
+
+ARTIFACTS = (("windows.npz", "windows.json"), ("probes-coarse.npz", "probes-check.json"),
+             ("sun-bounce.npz", "sun-bounce-check.json"), ("floor-light.npz", "floor-light.json"))
+
+
+def cmd_record_artifacts(cfg, args) -> int:
+    """Each work artifact written before the commands recorded it themselves (Task 4c), added to its evidence JSON with
+    its exact path, SHA-256 and size. Refuses an evidence file that records a failing run or another hash; a record it
+    already holds must equal the file's in every field (path and size too), so it is rewritten identically, never
+    differently."""
+    for name, evidence in ARTIFACTS:
+        path, ev = os.path.join(cfg.paths["work"], name), os.path.join(cfg.paths["evidence"], evidence)
+        data = {}
+        if os.path.exists(ev):
+            with open(ev, encoding="utf-8") as f:
+                data = json.load(f)
+        if data.get("pass") is False:
+            print(f"FAIL: {evidence} records a failing run; {name} is not recorded", flush=True)
+            return 1
+        record = _artifact(path)
+        old = data.get("artifact")
+        if old and old.get("sha256") != record["sha256"]:
+            print(f"FAIL: {evidence} records {old['sha256']} but {name} is {record['sha256']}", flush=True)
+            return 1
+        if old and old != record:
+            print(f"FAIL: {evidence} records {json.dumps(old)} but {name} is {json.dumps(record)}", flush=True)
+            return 1
+        data["artifact"] = record
+        _write_evidence(ev, data)
+        print(f"{name}: {record['sha256']} -> {evidence}", flush=True)
+    return 0
+
+
+COMMANDS["record-artifacts"] = cmd_record_artifacts
 
 
 if __name__ == "__main__":
