@@ -31,6 +31,8 @@ const POSES = {
   eye: [[4.2, 2.6, 3.4], [-1.8, 0.2, -1.2]],
   low: [[8.6, 1.5, 3.9], [-2.0, 1.6, -0.8]],
   corner: [[-9.0, 6.5, -4.4], [1.0, 0.4, 0.8]],
+  // One table of the dense dinner close up (rounds sit on a 3.24 x 3.35 m grid).
+  table: [[3.55, 1.45, 1.75], [1.62, 0.62, 0]],
 };
 
 const DEVICES = {
