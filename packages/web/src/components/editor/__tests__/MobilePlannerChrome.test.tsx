@@ -13,6 +13,7 @@ import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import { useHallViewStore } from "../../../stores/hall-view-store.js";
 
 const media = vi.hoisted(() => ({ narrow: true, coarse: false }));
 
@@ -20,6 +21,15 @@ vi.mock("../../../hooks/use-media-query.js", () => ({
   useIsNarrowViewport: () => media.narrow,
   useIsCoarsePointer: () => media.coarse,
 }));
+
+// The Grand Hall's venue reads as Trades Hall without a network request.
+vi.mock("../../../hooks/use-trades-hall-venue.js", () => ({ useTradesHallVenue: () => true }));
+
+const GRAND_HALL = {
+  id: "space-grand-hall", venueId: "venue-trades-hall", name: "Grand Hall", slug: "grand-hall",
+  widthM: "21", lengthM: "10.5", heightM: "7",
+  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+};
 
 function Fixture({ view = "3d" }: { readonly view?: "3d" | "2d" }): React.ReactElement {
   const preview = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
@@ -49,6 +59,40 @@ beforeEach(() => {
 afterEach(() => { cleanup(); useLayoutTimelinePreviewStore.getState().clear(); useSelectionStore.getState().clearSelection(); useEditorStore.getState().reset(); });
 
 describe("mobile planner chrome", () => {
+  it("puts the Grand Hall's views and light in a phone's View sheet", () => {
+    act(() => {
+      useSelectionStore.getState().clearSelection();
+      useEditorStore.setState({ space: GRAND_HALL, selectedObjectId: null });
+      useHallViewStore.getState().setMood("daylight");
+    });
+    render(<Fixture />);
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    const sheet = screen.getByTestId("hall-view-sheet");
+    for (const name of ["Plan", "Room", "Walk", "Daylight", "Evening", "Candlelight"]) {
+      expect(within(sheet).getByRole("button", { name })).toBeTruthy();
+    }
+    // A touch screen has no hover title, so each light is named in words.
+    expect(within(sheet).getByText("Candlelight")).toBeTruthy();
+    // A light leaves the sheet open, to compare it with the next.
+    fireEvent.click(within(sheet).getByRole("button", { name: "Candlelight" }));
+    expect(useHallViewStore.getState().mood).toBe("candlelight");
+    expect(screen.getByRole("button", { name: "View" }).getAttribute("aria-pressed")).toBe("true");
+    // A view closes it, as a saved view does, so the glide can be watched.
+    fireEvent.click(within(sheet).getByRole("button", { name: "Plan" }));
+    expect(useHallViewStore.getState().viewRequest?.preset).toBe("plan");
+    expect(screen.getByRole("button", { name: "View" }).getAttribute("aria-pressed")).toBeNull();
+  });
+
+  it("offers no hall controls in a phone's View sheet outside the Grand Hall", () => {
+    act(() => {
+      useSelectionStore.getState().clearSelection();
+      useEditorStore.setState({ space: { ...GRAND_HALL, id: "space-saloon", name: "Saloon", slug: "saloon" }, selectedObjectId: null });
+    });
+    render(<Fixture />);
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    expect(screen.queryByTestId("hall-view-sheet")).toBeNull();
+  });
+
   it("reattaches the same unsaved table note after cancelling a catalogue placement", () => {
     const { container } = render(<Fixture />);
     const note = container.querySelector("textarea");
