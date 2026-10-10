@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { VenueSkySchema } from "@omnitwin/types";
 import {
+  COLLECTIONS_UNMATCHED_RETRY_MS,
   FORECAST_FAILURE_BACKOFF_MS,
   FORECAST_REFRESH_MS,
   MET_OFFICE_ATTRIBUTION,
@@ -12,9 +13,12 @@ import {
 } from "../services/sky/sky-service.js";
 import type { SkyNormalsFile } from "../services/sky/normals.js";
 import {
+  V1_COLLECTION_IDS,
+  V2_COLLECTION_IDS,
   collectionsBody,
   forecastTimes,
   instancesBody,
+  listingWithoutPercentilesBody,
   percentilesBody,
   probabilitiesBody,
   routedFetch,
@@ -79,6 +83,7 @@ function harness(options: {
   apiKey?: string | undefined;
   normals?: readonly SkyNormalsFile[];
   status?: (url: URL) => number;
+  collections?: unknown;
   percentiles?: unknown;
   dailyCallCap?: number;
   now?: number;
@@ -88,7 +93,7 @@ function harness(options: {
   const { fetch, calls } = routedFetch((url) => {
     const status = options.status?.(url) ?? 200;
     if (status !== 200) return { status, body: { message: "no" } };
-    if (url.pathname.endsWith("/collections")) return { status, body: collectionsBody() };
+    if (url.pathname.endsWith("/collections")) return { status, body: options.collections ?? collectionsBody() };
     if (url.pathname.endsWith("/instances")) return { status, body: instancesBody(["2026-10-08T08:00:00Z", "2026-10-08T09:00:00Z"]) };
     if (url.pathname.includes("percentiles")) return { status, body: options.percentiles ?? percentilesBody(times) };
     return { status, body: probabilitiesBody(times) };
@@ -243,6 +248,71 @@ describe("degraded reasons and logging", () => {
     await expect(service.skyFor(VENUE, ISSUED + HOUR)).rejects.toBeInstanceOf(SkyUnavailableError);
     const far = harness({ apiKey: undefined, normals: [{ ...SYNTHETIC_NORMALS, cell: { ...SYNTHETIC_NORMALS.cell, latitude: 51.5, longitude: -0.12 } }] });
     await expect(far.service.skyFor(VENUE, ISSUED + HOUR)).rejects.toMatchObject({ forecastReason: "forecast_not_configured" });
+  });
+});
+
+describe("collections", () => {
+  function logged(logger: RecordingLogger, event: string): Record<string, unknown> | undefined {
+    return logger.entries.find((entry) => entry.details["event"] === event)?.details;
+  }
+
+  it("reads the forecast from the v2 collections and logs the choice with the listing", async () => {
+    const { service, logger, calls } = harness();
+    const { body } = await service.skyFor(VENUE, ISSUED + HOUR);
+    expect(body.kind).toBe("forecast");
+    expect(body.source).toContain("(uk-spot-percentiles, 50th percentile; probabilities from uk-spot-probabilities)");
+    expect(calls.some((call) => call.url.includes("/collections/uk-spot-percentiles/instances"))).toBe(true);
+    const selected = logged(logger, "venue_sky_collections_selected");
+    expect(selected?.["percentiles"]).toEqual({ id: "uk-spot-percentiles", region: "uk", basis: "name" });
+    expect(selected?.["probabilities"]).toEqual({ id: "uk-spot-probabilities", region: "uk", basis: "name" });
+    expect(selected?.["offered"]).toEqual(V2_COLLECTION_IDS.map((id) => ({ id, title: id, parameters: null })));
+  });
+
+  it("still reads a listing with the v1 names", async () => {
+    const { service } = harness({ collections: collectionsBody(V1_COLLECTION_IDS) });
+    const { body } = await service.skyFor(VENUE, ISSUED + HOUR);
+    expect(body.kind).toBe("forecast");
+    expect(body.source).toContain("improver-percentiles-spot-uk");
+  });
+
+  it("falls back to the global spot set when the listing has no UK set", async () => {
+    const { service, logger } = harness({ collections: collectionsBody(["global-spot-percentiles", "global-spot-probabilities"]) });
+    const { body } = await service.skyFor(VENUE, ISSUED + HOUR);
+    expect(body.kind).toBe("forecast");
+    expect(body.source).toContain("(global-spot-percentiles, 50th percentile; probabilities from global-spot-probabilities)");
+    expect(logged(logger, "venue_sky_collections_selected")?.["percentiles"])
+      .toEqual({ id: "global-spot-percentiles", region: "global", basis: "name" });
+  });
+
+  it("serves normals and logs what was offered when no percentile collection is usable", async () => {
+    const { service, logger, calls } = harness({ collections: listingWithoutPercentilesBody() });
+    const answer = await service.skyFor(VENUE, ISSUED + HOUR);
+    expect(answer.body.kind).toBe("normals");
+    expect(answer.body.degraded).toEqual({ reason: "upstream_unavailable" });
+    expect(calls).toHaveLength(1);
+    expect(logged(logger, "venue_sky_collections_unmatched")?.["offered"]).toEqual([
+      { id: "uk-spot-probabilities", title: "uk-spot-probabilities", parameters: null },
+      { id: "global-spot-probabilities", title: "global-spot-probabilities", parameters: null },
+      { id: "uk-spot-percentiles-wind", title: "uk-spot-percentiles-wind", parameters: 2 },
+      { id: "uk-spot-summary", title: "uk-spot-summary", parameters: 1 },
+    ]);
+    expect(logged(logger, "venue_sky_upstream_failed")?.["detail"]).toEqual([
+      "percentile collection not offered",
+      "offered: uk-spot-probabilities, global-spot-probabilities, uk-spot-percentiles-wind, uk-spot-summary",
+    ]);
+    expect(JSON.stringify(logger.entries)).not.toContain(KEY);
+  });
+
+  it("holds an unmatched listing for six hours instead of asking on every retry", async () => {
+    const { service, calls, clock } = harness({ collections: listingWithoutPercentilesBody() });
+    await service.skyFor(VENUE, clock.now + HOUR);
+    expect(calls).toHaveLength(1);
+    clock.now += FORECAST_FAILURE_BACKOFF_MS + 1;
+    expect((await service.skyFor(VENUE, clock.now + HOUR)).body.degraded).toEqual({ reason: "upstream_unavailable" });
+    expect(calls).toHaveLength(1);
+    clock.now += COLLECTIONS_UNMATCHED_RETRY_MS;
+    expect((await service.skyFor(VENUE, clock.now + HOUR)).body.degraded).toEqual({ reason: "upstream_unavailable" });
+    expect(calls).toHaveLength(2);
   });
 });
 
