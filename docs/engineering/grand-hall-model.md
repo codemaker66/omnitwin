@@ -67,7 +67,13 @@ planner's pipeline grades each mood ([planner rendering](planner-rendering.md)).
 `HallViewControls` offers Plan, Room and Walk, the three moods and, where the captured room may be
 shown, Capture. `hall-view-store` carries the request; `HallViewDirector` glides the camera through
 the planner's existing transition (reduced motion respected; the views wait while a saved viewpoint
-holds the camera) and Walk uses `InteriorCamera` with the hall's own arrival point. The cutaway
+holds the camera) and Walk uses `InteriorCamera` with the hall's own arrival point. A phone's stage
+docks no layer controls, so the dock's View sheet leads with the same choices
+(`HallViewSheetControls`): views over lights as two rows of tiles that fit a 320 px screen, a view
+closing the sheet as a saved view does and a light leaving it open. On a touch screen one finger
+turns the head in Walk and two fingers walk: spreading them steps forward along the heading and
+closing them steps back (`pinchStepMetres`: 6 m for a spread across the whole screen, at most 1 m
+an event). The cutaway
 (`wallCutHeight`) lowers the walls between the camera and the room to the dado rail and, in plan,
 cuts every wall at 3.12 m, above the doors. Gaussian splats stay off the public site
 (`lib/splat-access.ts`), so production shows only the model; where a capture fails to load, Capture
@@ -77,7 +83,11 @@ The three photographs and the relief stream in after the first frame. `hall-view
 and `RoomResolveCaption` reports "Loading the Grand Hall's surfaces · N of 4" through the shared
 `Activity` indicator; if one fails, the room is drawn more simply there (a plain colour for a
 photograph, flat walls for the relief) and the caption says planning is unaffected. The files are
-fetched at a revision (`HALL_SURVEY_REVISION`), raised whenever they are rebuilt in place.
+fetched at a revision (`HALL_SURVEY_REVISION`), raised whenever they are rebuilt in place. The
+photographs decode off the main thread (`ImageBitmapLoader`, flipped in the decode, each bitmap
+closed with its texture), and the window-light bake samples flat buffers without allocating: on the
+RTX 4090's production-build load the main thread's decoding fell from 345 ms to 37 ms and the bake
+from about 120 ms to 57 ms.
 
 How much of the finish a device carries is `hall-finish.ts`: phones load the half-size photographs
 (0.67 MB instead of 2.06 MB); a software rasteriser, read from the canvas's own WebGL context with
@@ -96,7 +106,12 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
 - `stores/__tests__/hall-view-store.test.ts`, `lib/__tests__/room-resolve-model.test.ts`,
   `cockpit/__tests__/HallViewControls.test.tsx`, `cockpit/__tests__/RoomResolveCaption.test.tsx`,
   `editor/__tests__/PlannerScene*.test.tsx` and `CameraRig.showcase.test.tsx` cover the views,
-  loading caption, capture fallback, device tier and camera glides.
+  loading caption, capture fallback, device tier and camera glides;
+  `editor/__tests__/MobilePlannerChrome.test.tsx` the phone's View sheet, and
+  `rooms/__tests__/InteriorCamera.test.tsx` and `interior-camera.test.ts` the pinch walk.
+- `grand-hall/__tests__/hall-photos.test.ts` covers the off-thread decode and every bitmap's
+  release; `hall-lighting-model.test.ts` holds the allocation-free bake to the original to 12
+  decimals over 4000 samples.
 - The rendered room needs browser evidence: `/dev/grand-hall`, `/dev/planner-lab` (with
   `scripts/planner-lab.mjs`) or the planner itself (`scripts/planner-tour.mjs`).
 
