@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RecordObservation } from "@omnitwin/types";
 import type { QueuedEventDayOp, EventDayOpOutcome } from "../../../../lib/event-day-offline-queue.js";
 import type { RequestsLiveEvent } from "../../../../lib/requests-live.js";
 import { ApiError } from "../../../../api/client.js";
@@ -42,7 +43,7 @@ vi.mock("../../../../lib/requests-live.js", () => ({
 }));
 
 vi.mock("../../../../lib/event-day-offline-queue.js", () => ({
-  enqueueEventDayObservation: (venueId: string, input: QueuedEventDayOp extends { kind: "observation_record"; input: infer I } ? I : never) => {
+  enqueueEventDayObservation: (venueId: string, input: RecordObservation) => {
     seams.queued.push({
       kind: "observation_record",
       queueKey: `observation:${input.idempotencyKey}`,
@@ -72,7 +73,7 @@ vi.mock("../../../../lib/event-day-offline-queue.js", () => ({
 
 import { useSlotObservations } from "../use-slot-observations.js";
 
-function fact(kind: "set" | "doors-open" | "live", observedAt: string, idempotencyKey = crypto.randomUUID()) {
+function fact(kind: "set" | "doors-open" | "live", observedAt: string, idempotencyKey: string = crypto.randomUUID()) {
   return {
     id: crypto.randomUUID(),
     venueId: VENUE,
