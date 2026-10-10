@@ -15,10 +15,12 @@ import {
   UpstreamError,
   fetchForecastSnapshot,
   latestInstance,
-  resolveCollections,
+  listedCollection,
 } from "../services/sky/met-office-bpf.js";
 import { weatherCodeEntry } from "../services/sky/weather-codes.js";
 import {
+  V2_COLLECTION_IDS,
+  collectionsBody,
   coverageCollectionBody,
   forecastTimes,
   instancesBody,
@@ -56,12 +58,12 @@ describe("MetOfficeBpfClient requests", () => {
   it("sends the key in the apikey header and asks for the venue point and the median", async () => {
     const times = forecastTimes(ISSUED, 3, 0);
     const { fetch, calls } = routedFetch(() => ({ status: 200, body: percentilesBody(times) }));
-    await client(fetch).position("improver-percentiles-spot-uk", "2026-10-08T09:00:00Z", POINT, ["cloudAreaFraction", "airTemperature1p5m"], "50");
+    await client(fetch).position("uk-spot-percentiles", "2026-10-08T09:00:00Z", POINT, ["cloudAreaFraction", "airTemperature1p5m"], "50");
     expect(calls).toHaveLength(1);
     const call = calls[0];
     expect(call?.apikey).toBe(KEY);
     const url = new URL(call?.url ?? "");
-    expect(url.href.startsWith(`${BPF_V2_BASE_URL}/collections/improver-percentiles-spot-uk/instances/`)).toBe(true);
+    expect(url.href.startsWith(`${BPF_V2_BASE_URL}/collections/uk-spot-percentiles/instances/`)).toBe(true);
     expect(url.pathname.endsWith("/position")).toBe(true);
     expect(url.searchParams.get("coords")).toBe("POINT(-4.2491 55.8593)");
     expect(url.searchParams.get("parameter-name")).toBe("cloudAreaFraction,airTemperature1p5m");
@@ -130,7 +132,7 @@ describe("Zod rejection of malformed upstream data", () => {
     }],
   ])("rejects %s", async (_label, body) => {
     const { fetch } = routedFetch(() => ({ status: 200, body }));
-    const error = await failure(client(fetch).position("improver-percentiles-spot-uk", "i", POINT, ["cloudAreaFraction"], "50"));
+    const error = await failure(client(fetch).position("uk-spot-percentiles", "i", POINT, ["cloudAreaFraction"], "50"));
     expect(error.kind).toBe("unavailable");
     expect(error.detail.length).toBeGreaterThan(0);
   });
@@ -139,7 +141,7 @@ describe("Zod rejection of malformed upstream data", () => {
     const collections = routedFetch(() => ({ status: 200, body: { collections: [{ title: "no id" }] } }));
     expect((await failure(client(collections.fetch).collections())).kind).toBe("unavailable");
     const instances = routedFetch(() => ({ status: 200, body: { instances: "latest" } }));
-    expect((await failure(client(instances.fetch).instances("improver-percentiles-spot-uk"))).kind).toBe("unavailable");
+    expect((await failure(client(instances.fetch).instances("uk-spot-percentiles"))).kind).toBe("unavailable");
   });
 
   it("accepts the documented collection body", () => {
@@ -171,13 +173,24 @@ describe("latestInstance", () => {
   });
 });
 
-describe("resolveCollections", () => {
-  it("finds the documented collections, with or without a prefix, and nothing else", () => {
-    expect(resolveCollections(["improver-percentiles-spot-uk", "improver-probabilities-spot-uk"]))
-      .toEqual({ percentiles: "improver-percentiles-spot-uk", probabilities: "improver-probabilities-spot-uk" });
-    expect(resolveCollections(["mo-improver-percentiles-spot-uk"]))
-      .toEqual({ percentiles: "mo-improver-percentiles-spot-uk", probabilities: null });
-    expect(resolveCollections(["improver-percentiles-spot-global"])).toEqual({ percentiles: null, probabilities: null });
+describe("the collections listing", () => {
+  it("reads each collection's id, title and declared EDR parameter keys", async () => {
+    const { fetch } = routedFetch(() => ({
+      status: 200,
+      body: collectionsBody(V2_COLLECTION_IDS, { "uk-spot-percentiles": ["airTemperature1p5m", "cloudAreaFraction"] }),
+    }));
+    const listed = await client(fetch).collections();
+    expect(listed.map((collection) => collection.id)).toEqual([...V2_COLLECTION_IDS]);
+    expect(listed.find((collection) => collection.id === "uk-spot-percentiles"))
+      .toEqual({ id: "uk-spot-percentiles", title: "uk-spot-percentiles", parameters: ["airTemperature1p5m", "cloudAreaFraction"] });
+    expect(listed.find((collection) => collection.id === "uk-spot-probabilities")?.parameters).toBeNull();
+  });
+
+  it("ignores a title or parameter_names of another shape instead of failing the list", () => {
+    expect(listedCollection({ id: "a", title: 42, parameter_names: ["airTemperature1p5m"] }))
+      .toEqual({ id: "a", title: null, parameters: null });
+    expect(listedCollection({ id: "b", title: "  ", parameter_names: {} })).toEqual({ id: "b", title: null, parameters: null });
+    expect(listedCollection({ id: "c" })).toEqual({ id: "c", title: null, parameters: null });
   });
 });
 
@@ -281,12 +294,12 @@ describe("weather codes", () => {
 
 describe("fetchForecastSnapshot", () => {
   const times = forecastTimes(ISSUED, 3, 2);
-  const collections = { percentiles: "improver-percentiles-spot-uk", probabilities: "improver-probabilities-spot-uk" };
+  const collections = { percentiles: "uk-spot-percentiles", probabilities: "uk-spot-probabilities" };
 
   function router(overrides: { percentiles?: unknown; probabilitiesStatus?: number } = {}) {
     return routedFetch((url) => {
       if (url.pathname.endsWith("/instances")) return { status: 200, body: instancesBody(["2026-10-08T08:00:00Z", "2026-10-08T09:00:00Z"]) };
-      if (url.pathname.includes("improver-percentiles-spot-uk")) return { status: 200, body: overrides.percentiles ?? percentilesBody(times) };
+      if (url.pathname.includes("uk-spot-percentiles")) return { status: 200, body: overrides.percentiles ?? percentilesBody(times) };
       return overrides.probabilitiesStatus === undefined
         ? { status: 200, body: probabilitiesBody(times) }
         : { status: overrides.probabilitiesStatus, body: {} };
@@ -304,6 +317,18 @@ describe("fetchForecastSnapshot", () => {
     expect(snapshot.series.precipitationProbability?.values[0]).toBe(0.2);
     expect(snapshot.series.fogProbability?.values[0]).toBe(0.05);
     expect(snapshot.site).toEqual({ latitude: 55.8611, longitude: -4.2502 });
+    expect(snapshot.collection).toBe("uk-spot-percentiles");
+    expect(snapshot.probabilityCollection).toBe("uk-spot-probabilities");
+  });
+
+  it("reads the percentiles alone when no probability collection is offered", async () => {
+    const { fetch, calls } = router();
+    const snapshot = await fetchForecastSnapshot(client(fetch), { percentiles: "uk-spot-percentiles", probabilities: null }, POINT, NOW);
+    expect(calls).toHaveLength(2);
+    expect(snapshot.series.cloudTotal).toBeDefined();
+    expect(snapshot.series.precipitationProbability).toBeUndefined();
+    expect(snapshot.probabilityCollection).toBeNull();
+    expect(snapshot.problems).toContain("probability collection not offered");
   });
 
   it("converts a precipitation rate from m/s to mm/h", async () => {
@@ -333,6 +358,7 @@ describe("fetchForecastSnapshot", () => {
     const snapshot = await fetchForecastSnapshot(client(fetch), collections, POINT, NOW);
     expect(snapshot.series.cloudTotal).toBeDefined();
     expect(snapshot.series.fogProbability).toBeUndefined();
+    expect(snapshot.probabilityCollection).toBeNull();
     expect(snapshot.problems.some((problem) => problem.startsWith("probabilities dropped"))).toBe(true);
   });
 

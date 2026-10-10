@@ -42,7 +42,7 @@ import {
   type UnownedRequest,
 } from "./lib/day-board-state.js";
 import {
-  boardWindow, gapGeometry, nowPlaque, rulerTicks, slabGeometry, type BoardWindow, type RulerTick, type Span,
+  boardWindow, gapGeometry, gapWordsOffset, nowPlaque, rulerTicks, slabGeometry, type BoardWindow, type RulerTick, type Span,
 } from "./lib/day-board-layout.js";
 import { boardFreshness, useBoardClock, useBreathPhase, useConnectionState } from "./lib/use-board-clock.js";
 import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
@@ -337,6 +337,26 @@ function SlotSheetLink({ eventId, roomSlug, roomName, timeZone }: {
 }
 
 /** The ring's words: who has it, or how many wait and for how long. */
+/** The state in a word or two, for a slab too narrow to carry its verb: the
+ *  Hallkeeper Test reads state before name, so the title yields first. */
+function shortVerb(slot: DayBoardSlot): string {
+  switch (slot.state) {
+    case "exception": return slot.exception === "overrun" ? "Overrun" : "At risk";
+    case "live": return "Live";
+    case "imminent": return "Doors";
+    case "guests-due": return "Guests";
+    case "organisers-due": return "Setup";
+    case "clear-down": return "Clearing";
+    case "done": return "Ended";
+    // The slot's own venue-local range, "19:52 – 21:52": the start is enough.
+    case "scheduled": return slot.timeRange.split(" – ")[0] ?? slot.stateLabel;
+    default: {
+      const exhausted: never = slot.state;
+      return exhausted;
+    }
+  }
+}
+
 function ringWords(slot: DayBoardSlot, nowMs: number): string | null {
   const ring = slot.attention;
   if (ring === null) return null;
@@ -417,6 +437,8 @@ function Slab({ slot, view, nowMs, selected, onOpen, wall, vertical, frozen }: {
           <span className="dayboard-dot" aria-hidden="true" />
           <StateIcon icon={slot.icon} size={wall ? 18 : 14} />
           <span className="dayboard-verb-words">{slot.countdown}</span>
+          {/* A slab too narrow for the verb keeps its state in a word or two. */}
+          <span className="dayboard-verb-short">{shortVerb(slot)}</span>
         </span>
         <span className="dayboard-slab-title">{slot.title}</span>
         <span className="dayboard-slab-time">
@@ -441,21 +463,31 @@ function Slab({ slot, view, nowMs, selected, onOpen, wall, vertical, frozen }: {
 }
 
 /** The dimensioned gap between two slabs: "45 min", or "45 min · needs 1 h 30". */
-function Gap({ previous, slot, view, vertical }: {
+function Gap({ previous, slot, view, vertical, staggered }: {
   readonly previous: DayBoardSlot | undefined;
   readonly slot: DayBoardSlot;
   readonly view: BoardWindow;
   readonly vertical: boolean;
+  /** Every other gap in a lane, so two covered dimensions in a row never overlap. */
+  readonly staggered: boolean;
 }): ReactElement | null {
   const geometry = gapGeometry(previous, slot, view);
   const gap = slot.gapBefore;
-  if (geometry === null || gap === null || geometry.width <= 0) return null;
+  if (previous === undefined || geometry === null || gap === null || geometry.width <= 0) return null;
   const words = gap.short && gap.neededMinutes !== null
     ? `${formatMinutes(gap.minutes)} · needs ${formatMinutes(gap.neededMinutes)}`
     : formatMinutes(gap.minutes);
+  // The words sit in the open lane after the previous slab's clear-down; when
+  // the clear-down reaches this setup they sit over the slab instead.
+  const place = gapWordsOffset(previous, slot, view);
+  const wordsStyle: CSSProperties = vertical ? { top: percent(place.at) } : { left: percent(place.at) };
   return (
-    <span className={`dayboard-gap${gap.short ? " is-short" : ""}`} style={placement(geometry, vertical)} aria-hidden="true">
-      <span className="dayboard-gap-words">{words}</span>
+    <span
+      className={`dayboard-gap${gap.short ? " is-short" : ""}${place.covered ? " is-covered" : ""}${staggered ? " is-staggered" : ""}`}
+      style={placement(geometry, vertical)}
+      aria-hidden="true"
+    >
+      <span className="dayboard-gap-words" style={wordsStyle}>{words}</span>
     </span>
   );
 }
@@ -533,7 +565,7 @@ function Lane({ lane, view, ticks, nowMs, plaque, timeZone, venueSlug, selectedI
           {plaque !== null && <span className="dayboard-now-line" aria-hidden="true" style={vertical ? { top: percent(plaque) } : { left: percent(plaque) }} />}
           {lane.slots.map((slot, index) => (
             <Fragment key={slot.bookingId}>
-              <Gap previous={lane.slots[index - 1]} slot={slot} view={view} vertical={vertical} />
+              <Gap previous={lane.slots[index - 1]} slot={slot} view={view} vertical={vertical} staggered={index % 2 === 0} />
               <Slab
                 slot={slot}
                 view={view}

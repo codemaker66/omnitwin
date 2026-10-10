@@ -8,14 +8,15 @@ import {
   type VenueSky,
 } from "@omnitwin/types";
 import { haversineDistanceM, type GeoPoint } from "../../lib/venue-site.js";
+import { describeListing, offeredIds, selectCollections } from "./bpf-collections.js";
 import { locateStep, periodAt, valueAt, type Series } from "./coverage-series.js";
 import { dayLengthHours, sunshineFraction, utcDayOfYear } from "./daylength.js";
 import {
   DailyCallBudget,
   MetOfficeBpfClient,
   UpstreamError,
+  WANTED_COLLECTION_PARAMETERS,
   fetchForecastSnapshot,
-  resolveCollections,
   type ForecastSnapshot,
 } from "./met-office-bpf.js";
 import { buildNormalsSky, normalsFor, type SkyNormalsFile } from "./normals.js";
@@ -44,7 +45,14 @@ import { weatherCodeEntry } from "./weather-codes.js";
 // 30 min for an unavailable upstream, 1 h for a refused key, and until the
 // next 00:00 UTC for a spent quota (when the Met Office resets it). A cap of
 // 40 calls per UTC day on this process keeps a restart loop or a burst of
-// new locations inside the plan. The collection list is refetched daily.
+// new locations inside the plan.
+//
+// Collections: the listing is read once a day and the percentile and
+// probability collections are chosen from it by bpf-collections.ts; the
+// choice and the whole listing (ids, titles, parameter counts) are logged.
+// A listing with no usable percentile collection is logged with what it
+// offered and held for 6 h, so retries cost 4 calls a day, not one per
+// failed forecast.
 // ---------------------------------------------------------------------------
 
 const HOUR_MS = 3_600_000;
@@ -53,6 +61,7 @@ export const FORECAST_REFRESH_MS = 4 * BPF_ISSUE_CADENCE_MS;
 export const FORECAST_FAILURE_BACKOFF_MS = 30 * 60_000;
 export const FORECAST_KEY_REJECTED_BACKOFF_MS = HOUR_MS;
 export const COLLECTIONS_REFRESH_MS = 24 * HOUR_MS;
+export const COLLECTIONS_UNMATCHED_RETRY_MS = 6 * HOUR_MS;
 export const DAILY_UPSTREAM_CALL_CAP = 40;
 export const FORECAST_MAX_HORIZON_MS = 192 * HOUR_MS;
 export const FORECAST_PAST_GRACE_MS = 6 * HOUR_MS;
@@ -105,6 +114,12 @@ export interface VenueSkyServiceOptions {
   readonly dailyCallCap?: number;
 }
 
+/** The collection ids a forecast is read from. */
+interface ChosenCollections {
+  readonly percentiles: string;
+  readonly probabilities: string | null;
+}
+
 type ForecastEntry =
   | { readonly ok: true; readonly snapshot: ForecastSnapshot; readonly expiresAt: number }
   | { readonly ok: false; readonly reason: SkyDegradedReason; readonly retryAt: number };
@@ -154,7 +169,8 @@ export function buildForecastSky(
   return {
     venueId: venue.id,
     kind: "forecast",
-    source: `Met Office Site-Specific Blended Probabilistic Forecast v2 (${snapshot.collection}, 50th percentile; probabilities from the probability collection)`,
+    source: `Met Office Site-Specific Blended Probabilistic Forecast v2 (${snapshot.collection}, 50th percentile${
+      snapshot.probabilityCollection === null ? "" : `; probabilities from ${snapshot.probabilityCollection}`})`,
     issuedAt: snapshot.issuedAt,
     validFrom: new Date(step.validFrom).toISOString(),
     validTo: new Date(step.validTo).toISOString(),
@@ -217,17 +233,34 @@ export function createVenueSkyService(options: VenueSkyServiceOptions): VenueSky
     });
   const entries = new Map<string, ForecastEntry>();
   const inFlight = new Map<string, Promise<ForecastEntry>>();
-  let collections: { ids: { percentiles: string; probabilities: string | null }; expiresAt: number } | null = null;
+  let collections:
+    | { readonly ok: true; readonly ids: ChosenCollections; readonly expiresAt: number }
+    | { readonly ok: false; readonly error: UpstreamError; readonly expiresAt: number }
+    | null = null;
 
-  async function collectionIds(bpf: MetOfficeBpfClient): Promise<{ percentiles: string; probabilities: string | null }> {
-    if (collections !== null && now() < collections.expiresAt) return collections.ids;
-    const listed = await bpf.collections();
-    const resolved = resolveCollections(listed.collections.map((collection) => collection.id));
-    if (resolved.percentiles === null) {
-      throw new UpstreamError("unavailable", "collections", 200, ["percentile collection not offered"]);
+  async function collectionIds(bpf: MetOfficeBpfClient): Promise<ChosenCollections> {
+    if (collections !== null && now() < collections.expiresAt) {
+      if (!collections.ok) throw collections.error;
+      return collections.ids;
     }
-    const ids = { percentiles: resolved.percentiles, probabilities: resolved.probabilities };
-    collections = { ids, expiresAt: now() + COLLECTIONS_REFRESH_MS };
+    const listed = await bpf.collections();
+    const selection = selectCollections(listed, WANTED_COLLECTION_PARAMETERS);
+    const offered = describeListing(listed);
+    if (selection.percentiles === null) {
+      options.logger.warn(
+        { event: "venue_sky_collections_unmatched", offered, probabilities: selection.probabilities },
+        "Met Office listed no usable percentile collection; serving normals",
+      );
+      const error = new UpstreamError("unavailable", "collections", 200, ["percentile collection not offered", `offered: ${offeredIds(listed)}`]);
+      collections = { ok: false, error, expiresAt: now() + COLLECTIONS_UNMATCHED_RETRY_MS };
+      throw error;
+    }
+    options.logger.info(
+      { event: "venue_sky_collections_selected", percentiles: selection.percentiles, probabilities: selection.probabilities, offered },
+      "Met Office collections chosen for the sky",
+    );
+    const ids = { percentiles: selection.percentiles.id, probabilities: selection.probabilities?.id ?? null };
+    collections = { ok: true, ids, expiresAt: now() + COLLECTIONS_REFRESH_MS };
     return ids;
   }
 
