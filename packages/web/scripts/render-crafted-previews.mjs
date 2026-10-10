@@ -9,13 +9,17 @@
 // public/models/furniture/<slug>/<CRAFTED_PREVIEW_VERSION>/preview.webp; that
 // folder is served immutable, so a change to how a piece looks needs a new
 // CRAFTED_PREVIEW_VERSION (src/lib/crafted-furniture.ts), not new bytes in
-// the old folder.
+// the old folder. The script refuses to replace a preview that exists unless
+// OVERWRITE=1 is set, which is only right before that version has shipped
+// anywhere, previews included.
+//
+// 800 px square: the dashboard's featured inventory picture is 360 CSS px.
 //
 // Needs the dev server running. CHROMIUM_PATH may name a Chromium binary when
 // Playwright's own browser for this version is not installed.
 //   node scripts/render-crafted-previews.mjs [baseUrl] [slug ...]
 import { chromium } from "@playwright/test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,7 +36,14 @@ for (const slug of selected) {
   if (!SLUGS.includes(slug)) throw new Error(`Not a crafted slug: ${slug}`);
 }
 
-const SIZE = 600;
+const SIZE = 800;
+const overwrite = process.env.OVERWRITE === "1";
+for (const slug of selected) {
+  const existing = join(WEB, "public/models/furniture", slug, version[1], "preview.webp");
+  if (existsSync(existing) && !overwrite) {
+    throw new Error(`${existing} exists; render a new CRAFTED_PREVIEW_VERSION, or set OVERWRITE=1 if this version has never shipped`);
+  }
+}
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH,
   args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],

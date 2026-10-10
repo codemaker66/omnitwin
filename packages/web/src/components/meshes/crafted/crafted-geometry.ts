@@ -148,9 +148,16 @@ export function post(
   return normalizeAttributes(geometry);
 }
 
-/** A surface of revolution about the y axis from a [radius, y] profile (top to bottom or bottom to top). */
+/**
+ * A surface of revolution about the y axis from a [radius, y] profile. Three
+ * faces a lathe outward only when its profile climbs, so a profile written
+ * from the top down is turned round first.
+ */
 export function lathe(profile: readonly (readonly [number, number])[], segments = 48): BufferGeometry {
-  const points = profile.map(([r, y]) => new Vector2(Math.max(0, r), y));
+  const first = profile[0];
+  const last = profile[profile.length - 1];
+  const climbing = first === undefined || last === undefined || last[1] >= first[1];
+  const points = (climbing ? profile : [...profile].reverse()).map(([r, y]) => new Vector2(Math.max(0, r), y));
   const geometry = new LatheGeometry(points, segments);
   // Metric UVs: u around the widest circumference, v along the profile.
   let arc = 0;

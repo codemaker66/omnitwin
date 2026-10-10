@@ -149,7 +149,8 @@ export function banquetChairParts(size: ChairSize, fabric: ChairFabric): Crafted
       [side * xs, seatRail - 0.03, frontTopZ],
       [side * xs, seatRail - 0.004, frontTopZ + 0.022],
       [side * xs, seatRail, frontTopZ + 0.06],
-      [side * xs, seatRail, junctionZ - 0.02],
+      // Into the rear leg, so the rail's open end is hidden inside it.
+      [side * xs, seatRail, junctionZ],
     ]);
   }
   // Seat cross rails, front and back, under the cushion.

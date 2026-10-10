@@ -9,7 +9,14 @@ import {
   roundCafeParts,
   squareCafeParts,
 } from "./crafted-tables.js";
-import { buildCraftedModel, type CraftedFurnitureInstance, type CraftedPart } from "./crafted-model.js";
+import type { BufferGeometry } from "three";
+import type { CraftedMaterialId } from "./crafted-materials.js";
+import {
+  instantiateCraftedModel,
+  mergeCraftedParts,
+  type CraftedFurnitureInstance,
+  type CraftedPart,
+} from "./crafted-model.js";
 import {
   CRAFTED_FURNITURE_SLUGS,
   isCraftedFurnitureSlug,
@@ -59,12 +66,50 @@ const FACTORIES: Readonly<Record<CraftedFurnitureSlug, CraftedFactory>> = {
 
 export { CRAFTED_FURNITURE_SLUGS, isCraftedFurnitureSlug };
 
-/** A new crafted model for a catalogue item; throws for a slug it does not draw. */
+// Building a piece takes 2–80 ms, and the planner mounts the same piece many
+// times (instancing templates, the placement ghost, every chair of a brush
+// preview), so each size of each piece is built once and shared. Pieces are
+// drawn at catalogue sizes, so the cache holds a few dozen entries at most; a
+// size evicted past the limit has its GPU buffers released, and three uploads
+// them again if a copy still on screen draws it.
+const GEOMETRY_CACHE_LIMIT = 48;
+const geometryCache = new Map<string, ReadonlyMap<CraftedMaterialId, BufferGeometry>>();
+
+function sharedGeometries(slug: CraftedFurnitureSlug, size: CraftedSize): ReadonlyMap<CraftedMaterialId, BufferGeometry> {
+  const key = `${slug}|${String(size.width)}|${String(size.depth)}|${String(size.height)}`;
+  const cached = geometryCache.get(key);
+  if (cached !== undefined) {
+    // Most recently used last.
+    geometryCache.delete(key);
+    geometryCache.set(key, cached);
+    return cached;
+  }
+  const built = mergeCraftedParts(FACTORIES[slug](size));
+  geometryCache.set(key, built);
+  for (const [oldest, geometries] of geometryCache) {
+    if (geometryCache.size <= GEOMETRY_CACHE_LIMIT) break;
+    geometryCache.delete(oldest);
+    for (const geometry of geometries.values()) geometry.dispose();
+  }
+  return built;
+}
+
+/** Drops every shared geometry (tests that build a piece afresh). */
+export function clearCraftedGeometryCache(): void {
+  for (const geometries of geometryCache.values()) {
+    for (const geometry of geometries.values()) geometry.dispose();
+  }
+  geometryCache.clear();
+}
+
+/**
+ * A crafted model for a catalogue item, drawing the piece's shared geometry
+ * with materials of its own; throws for a slug it does not draw.
+ */
 export function createCraftedFurniture(size: CraftedSize): CraftedFurnitureInstance {
   if (!isCraftedFurnitureSlug(size.slug)) throw new Error(`No crafted model for ${size.slug}`);
-  const factory = FACTORIES[size.slug];
   if (![size.width, size.depth, size.height].every((value) => Number.isFinite(value) && value > 0)) {
     throw new Error(`Crafted furniture needs positive dimensions (${size.slug})`);
   }
-  return buildCraftedModel(`crafted:${size.slug}`, factory(size));
+  return instantiateCraftedModel(`crafted:${size.slug}`, sharedGeometries(size.slug, size));
 }

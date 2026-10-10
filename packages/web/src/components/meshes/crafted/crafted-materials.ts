@@ -1,5 +1,6 @@
 import {
   Color,
+  DoubleSide,
   FrontSide,
   type Material,
   MeshPhysicalMaterial,
@@ -48,10 +49,24 @@ export type CraftedMaterialId =
   | "rubber"
   | "stainless";
 
+/**
+ * Cloth hung as a single open sheet. Drawn from the front only, but it casts
+ * shadows from both faces: the shadow pass otherwise draws only the faces
+ * turned from the light, and a skirt would cast a shadow in broken strips.
+ */
+const OPEN_SHEETS: ReadonlySet<CraftedMaterialId> = new Set<CraftedMaterialId>([
+  "linen-white",
+  "linen-black",
+  "spandex-black",
+  "spandex-white",
+  "stage-skirt",
+]);
+
 function finish<T extends Material>(id: CraftedMaterialId, material: T): T {
   material.name = `crafted:${id}`;
   material.clippingPlanes = noClipPlanes;
   material.side = FrontSide;
+  if (OPEN_SHEETS.has(id)) material.shadowSide = DoubleSide;
   return material;
 }
 

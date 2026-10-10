@@ -46,7 +46,7 @@ export function isCraftedFurnitureSlug(slug: string): slug is CraftedFurnitureSl
  * folder are served immutable (vercel.json), so a redesign that changes how
  * a piece looks re-renders the previews into a new folder.
  */
-export const CRAFTED_PREVIEW_VERSION = "crafted-v1";
+export const CRAFTED_PREVIEW_VERSION = "crafted-v2";
 
 /** The rendered preview of a crafted piece, or null for any other item. */
 export function craftedFurniturePreviewUrl(slug: string): string | null {
