@@ -46,18 +46,18 @@ describe("event-day offline queue", () => {
     await q.enqueueObservationRecord(VENUE, LIVE);
 
     // Still offline: the first replay fails and nothing is acked.
-    const failing = await q.drain(async () => { throw new Error("offline"); });
+    const failing = await q.drain(() => Promise.reject(new Error("offline")));
     expect(failing).toEqual([]);
     expect(await q.list()).toHaveLength(2);
 
     // The first reaches the server, the second does not: the first is acked,
     // the second keeps its key and its tap time for the next attempt.
     const sent: string[] = [];
-    const partial = await q.drain(async (op) => {
-      if (op.kind !== "observation_record") throw new Error("unexpected op");
+    const partial = await q.drain((op) => {
+      if (op.kind !== "observation_record") return Promise.reject(new Error("unexpected op"));
       sent.push(op.input.idempotencyKey);
-      if (op.input.idempotencyKey === KEY_B) throw new Error("socket closed");
-      return "applied";
+      if (op.input.idempotencyKey === KEY_B) return Promise.reject(new Error("socket closed"));
+      return Promise.resolve("applied" as const);
     });
     expect(partial.map((op) => op.queueKey)).toEqual([`observation:${KEY_A}`]);
     const left = await q.list();
@@ -69,7 +69,7 @@ describe("event-day offline queue", () => {
 
     // Back online: the replay carries the same key, so a fact the server
     // already has is the same fact, not a second one.
-    const rest = await q.drain(async () => "replayed");
+    const rest = await q.drain(() => Promise.resolve("replayed" as const));
     expect(rest).toHaveLength(1);
     expect(await q.list()).toEqual([]);
     expect(sent).toEqual([KEY_A, KEY_B]);

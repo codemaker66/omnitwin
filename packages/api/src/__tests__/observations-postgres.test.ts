@@ -244,8 +244,8 @@ describe.skipIf(target === undefined)("observations on migrated PostgreSQL", () 
     const otherDay = await listObservationsForVenue(db, f.hallkeeper, f.venueId, { from: "2030-01-12T04:00:00.000Z", to: "2030-01-13T04:00:00.000Z" });
     expect(otherDay).toEqual([]);
     const outsider = await listObservationsForVenue(db, f.outsider, f.venueId, DAY);
-    expect(Array.isArray(outsider)).toBe(false);
-    if (!Array.isArray(outsider)) expect(outsider.status).toBe(403);
+    expect("ok" in outsider).toBe(true);
+    if ("ok" in outsider) expect(outsider.status).toBe(403);
 
     const after = await db.select().from(schema.bookings).where(eq(schema.bookings.id, f.bookingId));
     expect(after[0]?.startsAt.toISOString()).toBe(before[0]?.startsAt.toISOString());
