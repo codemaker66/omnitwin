@@ -31,6 +31,7 @@ import { PlannerInteractionFloor } from "./PlannerInteractionFloor.js";
 import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
 import { FurnitureContactShadows } from "./FurnitureContactShadows.js";
+import { TableCandles } from "./TableCandles.js";
 import { SelectionSystem } from "../SelectionSystem.js";
 import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
@@ -590,6 +591,7 @@ export function PlannerScene(): ReactElement {
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
             {!timelinePreviewActive && <FurnitureContactShadows />}
+            {!timelinePreviewActive && hallDrawn && <TableCandles />}
             <PlacedFurniture />
           </group>
           {realHall && !timelinePreviewActive && <HallViewDirector />}

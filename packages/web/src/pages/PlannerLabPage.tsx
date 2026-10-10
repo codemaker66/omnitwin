@@ -68,6 +68,11 @@ declare global {
        * pipeline (or plainly) and waited for on the GPU, and reports their times.
        */
       measure: (frames?: number, pipeline?: boolean) => Promise<LabFrameStats>;
+      /**
+       * GPU time of `frames` frames through the pipeline, from WebGPU timestamp
+       * queries around every render pass (milliseconds; null where unsupported).
+       */
+      measureGpu: (frames?: number) => Promise<{ readonly frames: number; readonly meanMs: number; readonly p95Ms: number } | null>;
     };
   }
 }
@@ -87,10 +92,29 @@ function gpuDevice(): GpuQueue | null {
   return isGpuQueue(backend.device) ? backend.device : null;
 }
 
+/**
+ * Lays out rounds of ten for `guests`: the planner's own circulation-safe
+ * arrangement up to what it allows, or for larger dinners a dense grid of up
+ * to 6 by 3 rounds (180 guests, the hall at a full wedding).
+ */
 function furnish(guests: number, tableSlug = "round-table-6ft-white", chairsPerTable = 10): number {
   const table = getCatalogueItemBySlug(tableSlug);
   if (table === undefined) return 0;
-  usePlacementStore.getState().autoArrangeBanquet(table.id, guests, chairsPerTable);
+  const placement = usePlacementStore.getState();
+  if (guests <= 100) {
+    placement.autoArrangeBanquet(table.id, guests, chairsPerTable);
+    return usePlacementStore.getState().placedItems.length;
+  }
+  placement.clearAll();
+  const snap = usePlacementStore.getState().snapEnabled;
+  usePlacementStore.setState({ snapEnabled: false });
+  const tables = Math.min(18, Math.ceil(guests / chairsPerTable));
+  for (let index = 0; index < tables; index++) {
+    const column = index % 6;
+    const row = Math.floor(index / 6);
+    usePlacementStore.getState().placeTableGroup(table.id, -8.1 + column * 3.24, -3.35 + row * 3.35, 0, chairsPerTable);
+  }
+  usePlacementStore.setState({ snapEnabled: snap });
   return usePlacementStore.getState().placedItems.length;
 }
 
@@ -128,6 +152,41 @@ async function measure(frames = 120, pipeline = true): Promise<LabFrameStats> {
     p95Ms: Math.round((sorted[Math.floor(sorted.length * 0.95)] ?? 0) * 100) / 100,
     drawCalls,
     triangles,
+  };
+}
+
+interface TimestampBackend { trackTimestamp: boolean }
+
+function isTimestampBackend(value: unknown): value is TimestampBackend {
+  return typeof value === "object" && value !== null && "trackTimestamp" in value;
+}
+
+async function measureGpu(frames = 60): Promise<{ readonly frames: number; readonly meanMs: number; readonly p95Ms: number } | null> {
+  const perf = window.__venPerf;
+  const native = perf === undefined ? null : getNativeRenderer(perf.gl);
+  if (native === null || perf === undefined) return null;
+  const backend: unknown = native.backend;
+  if (!isTimestampBackend(backend) || !native.hasFeature("timestamp-query")) return null;
+  const composer = nativeFrameComposer(native);
+  const times: number[] = [];
+  backend.trackTimestamp = true;
+  try {
+    for (let frame = 0; frame < frames; frame++) {
+      if (composer !== null) composer();
+      else native.render(perf.scene, perf.camera);
+      const duration = await native.resolveTimestampsAsync("render");
+      if (typeof duration === "number" && Number.isFinite(duration)) times.push(duration);
+    }
+  } finally {
+    backend.trackTimestamp = false;
+  }
+  if (times.length === 0) return null;
+  const sorted = [...times].sort((a, b) => a - b);
+  const mean = times.reduce((sum, value) => sum + value, 0) / times.length;
+  return {
+    frames: times.length,
+    meanMs: Math.round(mean * 1000) / 1000,
+    p95Ms: Math.round((sorted[Math.floor(sorted.length * 0.95)] ?? 0) * 1000) / 1000,
   };
 }
 
@@ -182,6 +241,7 @@ export function PlannerLabPage(): ReactElement {
         }
       },
       measure,
+      measureGpu,
     };
     const timer = window.setTimeout(() => { if (guests > 0) furnish(guests); }, 500);
     return () => {

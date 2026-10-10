@@ -40,6 +40,8 @@ export interface HallMoodSpec {
    */
   readonly whiteBalance: ChannelGain;
   readonly saturation: number;
+  /** How strongly the tables' candles burn, 0 (unlit) to 1 (event-light.ts). */
+  readonly candles: number;
 }
 
 export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
@@ -60,6 +62,7 @@ export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
     reflections: 0.7,
     whiteBalance: [1, 1, 1],
     saturation: 1.0,
+    candles: 0,
   },
   evening: {
     label: "Evening",
@@ -78,13 +81,14 @@ export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
     reflections: 0.85,
     whiteBalance: [0.95, 1, 1.1],
     saturation: 1.02,
+    candles: 0.55,
   },
   candlelight: {
     label: "Candlelight",
     ambient: "#d9a971",
-    ambientIntensity: 0.11,
+    ambientIntensity: 0.075,
     chandelier: "#ffb766",
-    chandelierIntensity: 0.52,
+    chandelierIntensity: 0.36,
     daylight: "#33467a",
     daylightIntensity: 0.12,
     uplight: "#ffad55",
@@ -92,10 +96,11 @@ export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
     skyHorizon: "#2a2c4c",
     skyIntensity: 0.5,
     glow: 0.7,
-    exposure: 1.12,
+    exposure: 1.3,
     reflections: 0.9,
-    whiteBalance: [0.93, 1, 1.16],
+    whiteBalance: [0.9, 1, 1.22],
     saturation: 0.98,
+    candles: 1,
   },
 };
 
@@ -121,6 +126,7 @@ export class HallMoodUniforms {
   reflections = HALL_MOODS.evening.reflections;
   whiteBalance: [number, number, number] = [...HALL_MOODS.evening.whiteBalance];
   saturation = HALL_MOODS.evening.saturation;
+  candles = HALL_MOODS.evening.candles;
 
   /** Sets every uniform to `from` blended toward `to` by `t` ∈ [0, 1]. */
   apply(from: HallMoodSpec, to: HallMoodSpec, t: number): void {
@@ -146,6 +152,7 @@ export class HallMoodUniforms {
       mix(from.whiteBalance[2], to.whiteBalance[2]),
     ];
     this.saturation = mix(from.saturation, to.saturation);
+    this.candles = mix(from.candles, to.candles);
   }
 
   /** The live values as a spec, so a new blend starts exactly where this one is. */
@@ -167,6 +174,7 @@ export class HallMoodUniforms {
       reflections: this.reflections,
       whiteBalance: [...this.whiteBalance],
       saturation: this.saturation,
+      candles: this.candles,
     };
   }
 }

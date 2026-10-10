@@ -1,34 +1,22 @@
 // ---------------------------------------------------------------------------
 // GrandHallModel — the Grand Hall as a real-time room
 //
-// Draws the hall as surveyed — the walls' scanned relief, the floor, the
-// coffered ceiling and the dome, each coloured by the scan's photographs with
-// baked light — with the chandeliers and their halos, and the dollhouse
-// cutaway that lets the planner look in from above. Its real lights and
-// reflections are HallLightRig, mounted beside it. The relief and the
-// photographs stream in after the first frame (flat walls in their average
-// colour until then). Everything here renders on demand: frames are requested
-// only while a mood blends or the cutaway eases after the camera moves.
+// Draws the hall as surveyed — the walls' scanned relief, the drawn oak floor,
+// the coffered ceiling and the dome, each coloured by the scan's photographs
+// with baked light — with the gilt chandeliers and their globes, and the
+// dollhouse cutaway (with the walls' cut bodies) that lets the planner look
+// in from above. Its real lights are HallLightRig, mounted beside it; its
+// reflections are its own, captured from the room itself (hall-capture.ts).
+// The relief and the photographs stream in after the first frame (flat walls
+// in their average colour until then). Everything here renders on demand:
+// frames are requested only while a mood blends or the cutaway eases.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import {
-  AdditiveBlending,
-  BoxGeometry,
-  Color,
-  DataTexture,
-  Vector3,
-  DoubleSide,
-  InstancedBufferAttribute,
-  LinearFilter,
-  RGBAFormat,
-  Sprite,
-  type Material,
-  type Texture,
-} from "three";
-import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } from "three/webgpu";
-import { color, float, instancedBufferAttribute, texture, uv, vec3 } from "three/tsl";
+import { Color, Vector3, type Material } from "three";
+import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
+import { vec3 } from "three/tsl";
 import { hallGeometry, hallWallGeometry } from "./hall-geometry.js";
 import { loadWallRelief, type WallRelief } from "./hall-relief.js";
 import { hallChandeliers } from "./hall-chandeliers.js";
@@ -40,8 +28,10 @@ import { createHallMaterials, disposeHallMaterials, HallSectionUniforms } from "
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
 import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
+import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { HallEnvironmentCapture } from "./hall-capture.js";
+import { createHallSection, type HallSection } from "./hall-section.js";
 
 /** The dark the drawn hall stands in (the planner's background around it). */
 export const HALL_VOID = "#120e0b";
@@ -98,30 +88,6 @@ export function wallCutHeight(view: Exclude<HallView, "auto">, wall: HallWall, c
   return HALL_HEIGHT + 0.2 + (HALL_CUTS.near - HALL_HEIGHT - 0.2) * eased;
 }
 
-function glowTexture(): DataTexture {
-  const size = 64;
-  const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = (x + 0.5) / size - 0.5;
-      const dy = (y + 0.5) / size - 0.5;
-      const r = Math.sqrt(dx * dx + dy * dy) * 2;
-      // A bright core with a long soft tail, like a lamp seen through warm air.
-      const value = Math.max(0, Math.exp(-r * r * 9) * 0.75 + Math.exp(-r * 3.2) * 0.35 - 0.02 * r);
-      const i = (y * size + x) * 4;
-      data[i] = 255;
-      data[i + 1] = 255;
-      data[i + 2] = 255;
-      data[i + 3] = Math.round(Math.min(1, value) * 255);
-    }
-  }
-  const textureData = new DataTexture(data, size, size, RGBAFormat);
-  textureData.magFilter = LinearFilter;
-  textureData.minFilter = LinearFilter;
-  textureData.needsUpdate = true;
-  return textureData;
-}
-
 interface HallResources {
   readonly textures: HallTextures;
   readonly photos: HallPhotos;
@@ -129,10 +95,8 @@ interface HallResources {
   readonly section: HallSectionUniforms;
   readonly materials: ReturnType<typeof createHallMaterials>;
   readonly chandelierMaterials: ReadonlyMap<string, Material>;
-  readonly halos: Sprite;
-  readonly haloTexture: Texture;
-  readonly caps: readonly { readonly wall: HallWall; readonly geometry: BoxGeometry }[];
-  readonly capMaterial: MeshBasicNodeMaterial;
+  /** The cut walls' bodies, caps and the plinth. */
+  readonly cutaway: HallSection;
 }
 
 function createResources(quality: number, initialMood: HallMoodSpec): HallResources {
@@ -144,40 +108,18 @@ function createResources(quality: number, initialMood: HallMoodSpec): HallResour
   const materials = createHallMaterials(textures, photos, mood, section);
 
   const warm = mood.chandelier.rgb;
-  const gold = color("#d3a24d").rgb;
-  const frame = new MeshStandardNodeMaterial({ roughness: 0.26, metalness: 1 });
+  // Gilt brass reflectance in linear light (a metal's colour is its F0).
+  const gold = vec3(0.83, 0.68, 0.38);
+  // Gilt brass: a metal that reflects the room, with a share of the lamps'
+  // warmth so its scrollwork never falls to black.
+  const frame = new MeshStandardNodeMaterial({ roughness: 0.3, metalness: 1 });
   frame.colorNode = gold;
-  frame.emissiveNode = gold.mul(warm.mul(mood.glow.mul(0.18)).add(mood.ambient.rgb.mul(mood.ambientIntensity.mul(0.5))));
-  const crystal = new MeshStandardNodeMaterial({ roughness: 0.05, metalness: 0.1, side: DoubleSide });
-  crystal.colorNode = vec3(0.9, 0.92, 0.95);
-  crystal.emissiveNode = warm.mul(mood.glow.mul(0.42)).add(vec3(0.05));
-  const candle = new MeshBasicNodeMaterial();
-  candle.colorNode = color("#f3e9d6").mul(mood.glow.mul(0.6).add(0.32));
+  frame.emissiveNode = gold.mul(warm.mul(mood.glow.mul(0.16)).add(mood.ambient.rgb.mul(mood.ambientIntensity.mul(0.45))));
+  // The globes: warm white, bright enough for the pipeline's bloom to halo.
   const bulb = new MeshBasicNodeMaterial();
-  bulb.colorNode = vec3(1.0, 0.78, 0.48).mul(mood.glow.mul(5).add(0.6));
-  const chandelierMaterials = new Map<string, Material>([["frame", frame], ["crystal", crystal], ["candle", candle], ["bulb", bulb]]);
-
-  // Halos: one instanced sprite per bulb, additive, never writing depth.
-  const { bulbs } = hallChandeliers();
-  const positions = new Float32Array(bulbs.length * 3);
-  bulbs.forEach((position, index) => { positions.set(position, index * 3); });
-  const haloTexture = glowTexture();
-  const haloMaterial = new SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending });
-  haloMaterial.positionNode = instancedBufferAttribute(new InstancedBufferAttribute(positions, 3));
-  haloMaterial.scaleNode = float(0.34);
-  haloMaterial.colorNode = vec3(1.0, 0.74, 0.42).mul(texture(haloTexture, uv()).a).mul(mood.glow.mul(0.85));
-  const halos = new Sprite(haloMaterial);
-  halos.count = bulbs.length;
-  halos.frustumCulled = false;
-  halos.name = "grand-hall-chandelier-halos";
-
-  const caps = HALL_WALLS.map((wall) => {
-    const geometry = new BoxGeometry(wall.length + 1.4, 0.03, 0.64);
-    return { wall, geometry };
-  });
-  const capMaterial = new MeshBasicNodeMaterial();
-  capMaterial.colorNode = color("#2a2019");
-  return { textures, photos, mood, section, materials, chandelierMaterials, halos, haloTexture, caps, capMaterial };
+  bulb.colorNode = vec3(1.0, 0.8, 0.58).mul(mood.glow.mul(7).add(0.9));
+  const chandelierMaterials = new Map<string, Material>([["frame", frame], ["bulb", bulb]]);
+  return { textures, photos, mood, section, materials, chandelierMaterials, cutaway: createHallSection() };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -185,10 +127,7 @@ function disposeResources(resources: HallResources): void {
   resources.photos.dispose();
   disposeHallMaterials(resources.materials);
   for (const material of resources.chandelierMaterials.values()) material.dispose();
-  resources.halos.material.dispose();
-  resources.haloTexture.dispose();
-  for (const cap of resources.caps) cap.geometry.dispose();
-  resources.capMaterial.dispose();
+  resources.cutaway.dispose();
 }
 
 export function GrandHallModel({ mood, view, quality: qualityOverride, overviewChandeliers = true, moodSeconds = 1.6 }: GrandHallModelProps): ReactElement {
@@ -207,7 +146,8 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
   const settledMood = useRef<HallMoodName>(mood);
   const cutState = useRef<number[]>([HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none]);
   const cutsEasing = useRef(false);
-  const capRefs = useRef<(import("three").Mesh | null)[]>([]);
+  const skinRefs = useRef<(import("three").Mesh | null)[]>([]);
+  const capRefs = useRef<(import("three").Group | null)[]>([]);
   const resolvedView = useRef<Exclude<HallView, "auto">>(view === "auto" ? "overview" : view);
   const chandelierGroup = useRef<import("three").Group | null>(null);
   const room = useRef<import("three").Group | null>(null);
@@ -266,10 +206,12 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
     const previous = gl.toneMappingExposure;
     gl.toneMappingExposure = resources.mood.exposure;
     setSceneGrade(resources.mood.whiteBalance, resources.mood.saturation);
+    setCandleLight(resources.mood.candles);
     invalidate();
     return () => {
       gl.toneMappingExposure = previous;
       resetSceneGrade();
+      setCandleLight(0);
     };
   }, [gl, invalidate, resources]);
 
@@ -290,6 +232,7 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
       resources.mood.apply(active.from, active.to, moodEase(active.t));
       state.gl.toneMappingExposure = resources.mood.exposure;
       setSceneGrade(resources.mood.whiteBalance, resources.mood.saturation);
+      setCandleLight(resources.mood.candles);
       if (active.t >= 1) { blend.current = null; captureNeeded.current = true; }
       else moving = true;
     }
@@ -339,12 +282,18 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
     });
     cutsEasing.current = easing;
     moving = moving || easing;
-    resources.caps.forEach((_cap, index) => {
-      const mesh = capRefs.current[index];
+    resources.cutaway.pieces.forEach((_piece, index) => {
       const height = cutState.current[index] ?? HALL_CUTS.none;
-      if (mesh === null || mesh === undefined) return;
-      mesh.visible = height < HALL_HEIGHT - 0.01;
-      mesh.position.y = height - 0.015;
+      const cut = height < HALL_HEIGHT - 0.01;
+      // Uncut walls keep their full body; cut ones stop at the cut.
+      const top = cut ? Math.max(0.05, height) : HALL_HEIGHT + 0.3;
+      const skin = skinRefs.current[index];
+      if (skin !== null && skin !== undefined) skin.scale.y = top;
+      const cap = capRefs.current[index];
+      if (cap !== null && cap !== undefined) {
+        cap.visible = cut;
+        cap.position.y = top;
+      }
     });
     if (moving) invalidate();
   });
@@ -365,28 +314,23 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
         {[...chandeliers.geometries].map(([key, part]) => (
           <mesh key={key} name={`chandelier-${key}`} geometry={part} material={resources.chandelierMaterials.get(key)} />
         ))}
-        <primitive object={resources.halos} />
       </group>
-      {resources.caps.map((cap, index) => {
-        const centre: [number, number, number] = [
-          cap.wall.origin[0] + cap.wall.tangent[0] * cap.wall.length / 2 - cap.wall.normal[0] * 0.32,
-          0,
-          cap.wall.origin[2] + cap.wall.tangent[2] * cap.wall.length / 2 - cap.wall.normal[2] * 0.32,
-        ];
-        const rotationY = Math.atan2(-cap.wall.tangent[2], cap.wall.tangent[0]);
-        return (
+      <mesh name="grand-hall-plinth" geometry={resources.cutaway.plinth} material={resources.cutaway.materials.plinth} />
+      {resources.cutaway.pieces.map((piece, index) => (
+        <group key={piece.wall.id} name={`grand-hall-section-${piece.wall.id}`} position={[piece.centre[0], 0, piece.centre[1]]} rotation={[0, piece.rotationY, 0]}>
           <mesh
-            key={cap.wall.id}
-            ref={(mesh) => { capRefs.current[index] = mesh; }}
-            name={`grand-hall-section-${cap.wall.id}`}
-            geometry={cap.geometry}
-            material={resources.capMaterial}
-            position={centre}
-            rotation={[0, rotationY, 0]}
-            visible={false}
+            ref={(mesh) => { skinRefs.current[index] = mesh; }}
+            name={`grand-hall-section-skin-${piece.wall.id}`}
+            geometry={piece.skin}
+            material={resources.cutaway.materials.skin}
+            scale={[1, HALL_HEIGHT + 0.3, 1]}
           />
-        );
-      })}
+          <group ref={(group) => { capRefs.current[index] = group; }} visible={false}>
+            <mesh name={`grand-hall-section-cap-${piece.wall.id}`} geometry={piece.cap} material={resources.cutaway.materials.cap} />
+            <mesh name={`grand-hall-section-edge-${piece.wall.id}`} geometry={piece.edge} material={resources.cutaway.materials.edge} />
+          </group>
+        </group>
+      ))}
     </group>
   );
 }

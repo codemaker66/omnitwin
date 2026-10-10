@@ -79,6 +79,8 @@ try {
   if (FRAMES > 0) {
     summary.frames = await page.evaluate((frames) => window.__plannerLab.measure(frames, true), FRAMES);
     console.log(`frames: ${JSON.stringify(summary.frames)}`);
+    summary.gpu = await page.evaluate((frames) => window.__plannerLab.measureGpu(frames), FRAMES);
+    console.log(`gpu: ${JSON.stringify(summary.gpu)}`);
   }
 } finally {
   await browser.close();

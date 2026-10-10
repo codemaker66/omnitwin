@@ -31,10 +31,10 @@ const GRAIN_SPAN: readonly [number, number] = [1.6, 0.3];
 
 /** Honey oak in three tones (sRGB), from the panoramas' boards in daylight. */
 const OAK = {
-  pale: new Color("#cfa56c"),
-  honey: new Color("#b6884f"),
-  amber: new Color("#94653a"),
-  seam: new Color("#2e2014"),
+  pale: new Color("#d3b07e"),
+  honey: new Color("#bb9363"),
+  amber: new Color("#9a7248"),
+  seam: new Color("#2e2216"),
 } as const;
 
 const GRAIN_SIZE: readonly [number, number] = [1024, 192];
