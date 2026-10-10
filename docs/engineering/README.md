@@ -116,6 +116,7 @@ on future experiments.
 | V8 memory or test contention | [Windows/V8 notes](../../.claude/gotchas/windows-v8-heap.md) |
 | Zod input/output inference | [Passthrough inference](../../.claude/gotchas/zod-passthrough-inference.md) |
 | Docker build arguments | [ARG scope](../../.claude/gotchas/dockerfile-arg-scope.md) |
+| Deploying the API or adding a migration | [Deploy ordering](deploy-ordering.md) |
 | Windows pycolmap/database work | [pycolmap traps](../../.claude/gotchas/pycolmap-windows-traps.md) |
 
 The existing directories are retained for stable references. Vendored design
