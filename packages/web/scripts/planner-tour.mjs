@@ -10,6 +10,7 @@
 // Writes PNGs and tour-<device>.json to the output folder.
 //   node scripts/planner-tour.mjs --base http://127.0.0.1:5213 --out D:/claude/x \
 //     [--device desktop|phone] [--tables 12] [--drag-world x,z | --drag-at x,y] [--profile-drag]
+//     [--cpu-throttle 4]   (a slower main thread, as on a mid-range phone; the GPU is not slowed)
 import { chromium } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,6 +26,7 @@ const DEVICE = option("device", "desktop");
 const TABLES = Number(option("tables", "12"));
 const PROFILE_DRAG = process.argv.includes("--profile-drag");
 const PROFILE_LOAD = process.argv.includes("--profile-load");
+const CPU_THROTTLE = Number(option("cpu-throttle", "1"));
 const API = "http://localhost:3001";
 const CONFIG_ID = "tour-config-0001";
 const VENUE = { id: "tour-venue-trades", name: "Trades Hall", slug: "trades-hall-glasgow", address: "85 Glassford Street", logoUrl: null, brandColour: null };
@@ -160,11 +162,12 @@ const browser = await chromium.launch({
   headless: true,
   args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"],
 });
-const report = { device: DEVICE, tables: TABLES, objects: CONFIG.objects.length, steps: [], consoleErrors: [] };
+const report = { device: DEVICE, cpuThrottle: CPU_THROTTLE, tables: TABLES, objects: CONFIG.objects.length, steps: [], consoleErrors: [] };
 const consoleErrors = new Map();
 try {
   const context = await browser.newContext(device);
   const page = await context.newPage();
+  if (CPU_THROTTLE > 1) await (await context.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: CPU_THROTTLE });
   page.on("pageerror", (error) => { console.error(`page error: ${error.message}`); });
   page.on("console", (message) => {
     if (message.text().startsWith("[ghp-trace]")) console.log(message.text());
