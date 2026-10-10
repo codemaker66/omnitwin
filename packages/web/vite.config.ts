@@ -135,9 +135,14 @@ export default defineConfig(({ mode }) => {
             // The WebGPU renderer, TSL and the native splat addon stack are
             // needed only by NativeCanvas surfaces. Kept out of "three", the
             // WebGL panorama tour and other plain R3F canvases skip them.
+            // TSL addons (the planner's post-processing nodes) import both,
+            // so they live here too: left in "three" they would make the two
+            // chunks import each other, and the minified build then reads a
+            // binding before its chunk has initialised.
             if (
               normalizedId.includes("/node_modules/three/build/three.webgpu") ||
               normalizedId.includes("/node_modules/three/build/three.tsl") ||
+              normalizedId.includes("/node_modules/three/examples/jsm/tsl/") ||
               normalizedId.includes("/node_modules/three/examples/jsm/objects/GaussianSplat") ||
               normalizedId.includes("/node_modules/three/examples/jsm/utils/GaussianSplatUtils") ||
               normalizedId.includes("/node_modules/three/examples/jsm/gpgpu/")

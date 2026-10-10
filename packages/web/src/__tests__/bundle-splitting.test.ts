@@ -162,6 +162,9 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toContain(`"/node_modules/three/build/three.tsl"`);
     expect(codeOnly).toContain(`"/node_modules/three/examples/jsm/objects/GaussianSplat"`);
     expect(codeOnly).toContain(`"/node_modules/three/examples/jsm/gpgpu/"`);
+    // TSL addons import both chunks; in "three" they made the chunks import
+    // each other, which crashed the production planner on load.
+    expect(codeOnly).toContain(`"/node_modules/three/examples/jsm/tsl/"`);
     const webgpuReturn = codeOnly.indexOf(`return "three-webgpu"`);
     expect(webgpuReturn).toBeGreaterThan(-1);
     expect(webgpuReturn).toBeLessThan(codeOnly.indexOf(`return "three"`));
