@@ -20,6 +20,8 @@
     ]
   },
   "deploy": {
+    "preDeployCommand": "node --conditions=omnitwin-dist dist/scripts/migrate-before-deploy.js",
+    "preDeployTimeoutSeconds": 900,
     "startCommand": "node --conditions=omnitwin-dist dist/index.js",
     "numReplicas": 1,
     "sleepApplication": false,
