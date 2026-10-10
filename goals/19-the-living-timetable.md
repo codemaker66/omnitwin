@@ -210,9 +210,9 @@ A second clock, or any time written outside a booking. A generic chat widget, ch
 
 ## Human inputs
 
-1. **The wall register.** D7 makes the wall display dark, from your reference, and keeps the office and phone in the selected ivory register. Say "wall dark, as decided" or "all ivory".
-2. **The people matrix.** Correct `docs/operations/people-matrix.md` when S0 produces it: who receives each request kind, who covers, escalation windows, quiet hours, who may approve timing. Until then the D8 defaults apply.
-3. **A hallkeeper on production.** Invite one real hallkeeper account (or Elaine's) through the existing onboarding so S9 can run the three-identity live check without impersonation.
+1. **The wall register.** D7 makes the wall display dark, from your reference, and keeps the office and phone in the selected ivory register. Say "wall dark, as decided" or "all ivory". **Answered 10 October 2026: dark, as built.**
+2. **The people matrix.** Correct `docs/operations/people-matrix.md` when S0 produces it: who receives each request kind, who covers, escalation windows, quiet hours, who may approve timing. Until then the D8 defaults apply. **Answered 10 October 2026 on the two decisions asked: who may ink a time is staff and admin only (the code change lands with S6); escalation now 2 min, soon 5 min, routine 15 min, email quiet hours 22:00 to 07:00 (S7). The usual owner per kind, the duty admin by name and manager approvals keep the matrix's defaults until S7 asks.**
+3. **A hallkeeper on production.** Invite one real hallkeeper account (or Elaine's) through the existing onboarding so S9 can run the three-identity live check without impersonation. **In progress 10 October 2026: Blake invites a hallkeeper email and signs in once; the email follows, then the three-identity check runs.**
 4. **Already asked, not asked again:** the room tone (HUMAN.md 6) for the chime; a phone and an iPad for a day (HUMAN.md 3) so the 60 fps lines lose the word "emulated"; Elaine and a working hallkeeper for 60 to 90 minutes (HUMAN.md 1).
 
 ## Unlocks
