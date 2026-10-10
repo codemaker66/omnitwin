@@ -403,11 +403,14 @@ describe("locateStep and valueAt", () => {
     expect(step).toEqual({ index: 3, validFrom: ISSUED + 3.5 * 3_600_000, validTo: ISSUED + 6.5 * 3_600_000 });
   });
 
-  it("is before the first step and after the last", () => {
+  it("is before the first step, and ends at the last step itself without extrapolating", () => {
     expect(locateStep(times, ISSUED - 31 * 60_000)).toBe("before");
-    // The last step (17:00, three-hourly) stands until 18:30, inclusive.
-    expect(locateStep(times, ISSUED + 9.5 * 3_600_000 + 1)).toBe("after");
-    expect(locateStep(times, ISSUED + 9.5 * 3_600_000)).toMatchObject({ index: 4 });
+    // The last step (17:00) stands from the midpoint with 14:00 up to 17:00, not past it.
+    expect(locateStep(times, ISSUED + 8 * 3_600_000)).toEqual({ index: 4, validFrom: ISSUED + 6.5 * 3_600_000, validTo: ISSUED + 8 * 3_600_000 });
+    expect(locateStep(times, ISSUED + 8 * 3_600_000 + 1)).toBe("after");
+    const series = { times, bounds: null, values: times.map((_, i) => i) };
+    expect(valueAt(series, ISSUED + 8 * 3_600_000)).toBe(4);
+    expect(valueAt(series, ISSUED + 8 * 3_600_000 + 1)).toBeUndefined();
   });
 
   it("reads a period parameter from the period that contains the instant", () => {
@@ -496,6 +499,25 @@ describe("fetchForecastSnapshot", () => {
     expect(fog.times).toEqual(later);
     expect(valueAt(fog, later[2] ?? 0)).toBe(0.2);
     expect(valueAt(fog, ISSUED + 2 * 3_600_000)).toBe(0.1);
+  });
+
+  it("keeps the instance's own members by name, to show whether it states an issue time", async () => {
+    const { fetch } = routedFetch((url) => {
+      if (url.pathname.endsWith("/instances")) {
+        return {
+          status: 200,
+          body: { instances: [{ id: "blended", title: "Blended run", extent: { temporal: { interval: [["2026-10-08T09:00:00Z", "2026-10-22T09:00:00Z"]] } }, links: [] }] },
+        };
+      }
+      if (url.pathname.includes("uk-spot-percentiles")) return { status: 200, body: percentilesBody(times) };
+      return { status: 200, body: probabilitiesBody(times) };
+    });
+    const snapshot = await fetchForecastSnapshot(client(fetch), collections, POINT, NOW);
+    expect(snapshot.instanceId).toBe("blended");
+    expect(snapshot.issuedAt).toBeNull();
+    expect(snapshot.instanceShape).toEqual(expect.arrayContaining(["(root) keys: extent, id, links, title", "extent.temporal keys: interval"]));
+    const shape = JSON.stringify(snapshot.instanceShape);
+    for (const value of ["Blended run", "2026-10-22"]) expect(shape).not.toContain(value);
   });
 
   it("describes what it read for each field, with no forecast values", async () => {

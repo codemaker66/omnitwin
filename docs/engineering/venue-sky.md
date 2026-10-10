@@ -46,7 +46,7 @@ normals always carry `degraded.reason`, one of:
 | `forecast_key_rejected` | The Met Office answered 401/403, e.g. a key for another DataHub product |
 | `forecast_quota_exhausted` | 429 from the Met Office, or this server's daily cap |
 | `upstream_unavailable` | Network, timeout, 5xx, 204, or a body that failed validation |
-| `beyond_forecast_horizon` | `at` after the forecast's last step (or more than 192 h ahead) |
+| `beyond_forecast_horizon` | `at` after the last step that all the forecast's core series reach |
 | `before_forecast_window` | `at` before the forecast's first step (or more than 6 h ago) |
 
 - `fog` is a probability: P(visibility at 1.5 m < 1000 m), the WMO definition.
@@ -134,9 +134,29 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
     order.
   - **Units:** a declared unit outside the accepted spellings drops that
     parameter (logged) rather than rescaling it.
-- Horizon (glossary, UK): hourly to T+120 h, then three-hourly to T+186/192 h.
-  Each step stands for the span to the midpoints with its neighbours
-  (`validFrom`/`validTo`).
+- Horizon: read from the data, never fixed. The glossary says T+186/192 h,
+  but the live v2 series ran further on 10 October and differ by parameter:
+  - cloud, temperature, wind and precipitation rate: 203 steps to
+    25 October 00:00Z, about 14.4 days;
+  - precipitation probability: 198 steps to the same date;
+  - visibility and fog: to 18 October 12:00Z;
+  - the hourly weather code: to 15 October 16:00Z.
+
+  A forecast is served while all the core series (total cloud, temperature,
+  wind, precipitation rate) reach `at`: up to the earliest of their last
+  steps, inclusive. Later instants get normals with `beyond_forecast_horizon`.
+- Each other field is read from its own series. It is `null` once `at` passes
+  that series' last step: no value is carried past the data.
+  - **Precipitation type** comes from the hourly weather code, else the
+    3-hourly one, else `null`.
+- **Step spans:** each step stands for the span to the midpoints with its
+  neighbours (`validFrom`/`validTo`). The first step also stands for half a
+  spacing before it, so "now" is served. The last step stands only up to
+  itself, and an answer's span never runs past the core reach.
+- Because the reach comes from the data, a cold cache reads the forecast
+  once (4 calls) before it can answer even a far date. Later far dates are
+  answered from the cache. Without a key, every date is
+  `forecast_not_configured`.
 - Quota: free plan "up to 55 calls per day, one site". The API refetches every
   fourth hourly issue (4 h): 4 calls per refresh, 24 a day, plus one collection
   list. A process cap of 40 calls per UTC day protects the plan against restart
@@ -186,11 +206,19 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
   wind 5.69 m/s, visibility 26 725 m and fog 0.333, from a site 563 m away.
   Two values were questioned:
   - **Sunshine 0.929:** came from the trailing 24 h sum; now `null` (above).
-  - **Fog 0.333 against a 26.7 km median visibility:** the threshold is
-    matched by value in the axis's own units and read on the probability
-    collection's own time axis (both tested). Whether 0.333 is the
-    service's real value is open until `venue_sky_forecast_metadata` shows
-    the threshold labels and the index used.
+  - **Fog 0.333 against a 26.7 km median visibility:** genuine. After #75
+    (`75d6aecd`), `venue_sky_forecast_metadata` showed:
+    - fog chose index 14, `<1000.0` (m);
+    - precipitation probability chose index 2, `>2.7777778E-8` m/s
+      (0.1 mm/h).
+
+    Later the forecast read fog 0.0101 at 26.3 km visibility, and the
+    sunshine fraction was `null`.
+- The metadata log also showed each series' own reach (see Horizon above),
+  which replaced the fixed 192 h limit. It also logs the percentile
+  instance's members by name. EDR states no issue time, so `issuedAt` comes
+  only from a date-time instance id and stays `null` otherwise. The logged
+  members show whether the live instance offers more.
 
 No live response body has been read here, and the DataHub sample files may
 not be redistributed. The test bodies
@@ -304,6 +332,6 @@ site, and validates the sky answer against the contract.
 
 ## Out of scope
 
-ECMWF open data for days 8–14 (beyond the Met Office horizon those dates get
-normals with `beyond_forecast_horizon`); observations; a write path for other
-venues' locations (set them by migration until one is needed).
+ECMWF open data (the Met Office series already reach about 14 days; beyond
+them dates get normals with `beyond_forecast_horizon`); observations; a write
+path for other venues' locations (set them by migration until one is needed).

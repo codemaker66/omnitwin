@@ -33,8 +33,11 @@ import { medianSelector, readSeries, thresholdSelector, type AxisChoice, type Ax
 //   are read from /collections and chosen by bpf-collections.ts from what
 //   each declares; the v1 ids (improver-percentiles-spot-uk, …) are not
 //   offered by v2.
-// - Horizon (glossary, UK percentiles): hourly to T+120 h, then three-hourly
-//   to T+186 h or T+192 h depending on the parameter.
+// - Horizon: the glossary says T+186 h or T+192 h, but live v2 series run
+//   further and differ by parameter (10 October: cloud, temperature, wind
+//   and precipitation about 14.4 days, visibility and fog about 8, the
+//   hourly weather code about 5). Each series' reach is read from its own
+//   time axis, never assumed (sky-service.ts).
 //
 // The deterministic value is the 50th percentile, as the Met Office's own
 // guide "How to create a deterministic forecast" recommends.
@@ -273,7 +276,10 @@ export interface ForecastSnapshot {
    *  offered, its read failed or none of its values were usable. */
   readonly probabilityCollection: string | null;
   readonly instanceId: string;
+  /** The run's issue time from a date-time instance id; null otherwise. */
   readonly issuedAt: string | null;
+  /** The percentile instance's members by name and count (no values). */
+  readonly instanceShape: readonly string[];
   readonly requestedAt: number;
   readonly site: GeoPoint | null;
   /** Each series in the sky contract's units; absent when unusable. */
@@ -366,10 +372,18 @@ function siteOf(collection: CoverageCollection): GeoPoint | null {
   return { latitude: y, longitude: x };
 }
 
-async function newestInstance(client: MetOfficeBpfClient, collection: string): Promise<{ id: string; issuedAt: string | null }> {
-  const instance = latestInstance(await client.instances(collection));
+/** The newest instance, with its own members described by name (no values):
+ *  EDR states no issue time, so issuedAt comes only from a date-time id, and
+ *  the shape shows whether the live instance offers anything more. */
+async function newestInstance(
+  client: MetOfficeBpfClient,
+  collection: string,
+): Promise<{ id: string; issuedAt: string | null; shape: string[] }> {
+  const body = await client.instances(collection);
+  const instance = latestInstance(body);
   if (instance === null) throw new UpstreamError("unavailable", `instances ${collection}`, 200, ["no orderable instance"]);
-  return instance;
+  const chosen = body.instances.find((candidate) => candidate.id === instance.id);
+  return { ...instance, shape: describeStructure(chosen ?? null) };
 }
 
 /**
@@ -427,6 +441,7 @@ export async function fetchForecastSnapshot(
     collection: collections.percentiles,
     probabilityCollection,
     instanceId: instance.id,
+    instanceShape: instance.shape,
     issuedAt: instance.issuedAt,
     requestedAt,
     site: siteOf(percentiles),

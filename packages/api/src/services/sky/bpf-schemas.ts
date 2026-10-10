@@ -45,13 +45,16 @@ export type EdrCollections = z.infer<typeof EdrCollectionsSchema>;
 
 const TemporalIntervalSchema = z.array(z.tuple([z.string().nullable(), z.string().nullable()]));
 
+/** An instance keeps its other members (passthrough) so their names can be
+ *  logged: EDR documents no issue time, and the live instance's members are
+ *  how one would be found. They are described, never read. */
 export const EdrInstancesSchema = z.object({
   instances: z.array(z.object({
     id: z.string().min(1),
     extent: z.object({
-      temporal: z.object({ interval: TemporalIntervalSchema.optional() }).optional(),
-    }).optional(),
-  })),
+      temporal: z.object({ interval: TemporalIntervalSchema.optional() }).passthrough().optional(),
+    }).passthrough().optional(),
+  }).passthrough()),
 });
 export type EdrInstances = z.infer<typeof EdrInstancesSchema>;
 
