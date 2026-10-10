@@ -33,8 +33,13 @@ system. T-093 owns the gated v1 deploy orchestration.
 2. GitHub Actions starts `CI` for that commit.
 3. The web deployment is expected to be handled by the Vercel project connected
    to this repository, using `packages/web/vercel.json`.
-4. The API deployment is expected to be handled by Railway's GitHub integration,
-   using `railway.json` and the root `Dockerfile`.
+4. The API deployment is handled by Railway's GitHub integration, using
+   `railway.json` and the root `Dockerfile`. Railway builds on the push, runs
+   the pre-deploy command that migrates inside the image
+   ([Deploy ordering](../engineering/deploy-ordering.md), PR #63), and keeps the
+   previous container live until the new one answers `/health/ready` with a
+   2xx, which since T-653 also requires the bundled journal to be fully applied
+   (see [Readiness waits for migrations](#readiness-waits-for-migrations-t-653)).
 5. If GitHub Actions `CI` succeeds, `.github/workflows/deploy.yml` runs Drizzle
    migrations against production Neon with `DATABASE_URL`.
 6. Operators verify the live web route and API health endpoints manually.
@@ -48,8 +53,14 @@ dashboards before a release.
 
 - There is no single release controller for web, API, and database migrations.
 - The repo does not prove that Vercel waits for GitHub Actions `CI`.
-- The repo does not prove that Railway waits for the migration workflow before
-  building or replacing the API container.
+- Railway builds the API container before the migration workflow runs; the
+  pre-deploy command migrates before promotion (PR #63) and `/health/ready`
+  refuses while the image's journal is ahead of the database (T-653), so the
+  container never serves ahead of its schema. The web deployment is not gated
+  the same way: for a release that carries a
+  migration, the new web build can talk to the previous API for the CI plus
+  Deploy duration (about 15 to 20 minutes), where before it was the new API
+  that ran ahead of its migration.
 - `deploy.yml` applies migrations after CI, but it does not poll Railway,
   Vercel, or live health checks before declaring the release usable.
 - There is no repo-level release ID shared across web, API, database migration,
@@ -61,6 +72,58 @@ dashboards before a release.
   expand-contract discipline.
 - Manual database workflows exist for specific historical repairs; they are not
   a substitute for a general release process.
+
+## Readiness waits for migrations (T-653)
+
+Observed on 9 October 2026: Railway rebuilt the API on the master push and
+had it live within three minutes, while `deploy.yml` applied migration 0087
+only after master CI, fourteen minutes later. The new API selected columns
+that did not exist yet for about eleven minutes. Two layers now keep a
+container from serving ahead of its schema:
+
+1. **The pre-deploy migrate** ([Deploy ordering](../engineering/deploy-ordering.md),
+   PR #63): `railway.json`'s `preDeployCommand` runs the tail gate and applies
+   pending migrations inside the built image, with the service's own
+   `DATABASE_URL`, before Railway promotes the container. This is what does
+   the work on an ordinary release.
+2. **The readiness probe** (T-653): `GET /health/ready` still runs the
+   `SELECT 1` reachability probe (503 `DB_UNREACHABLE` on failure, as before),
+   then compares the journal the image ships
+   (`packages/api/drizzle/meta/_journal.json`, read once at start) with
+   `drizzle.__drizzle_migrations`. While any journal timestamp is not recorded
+   it answers 503 `MIGRATIONS_PENDING` with `pendingTags`,
+   `migrations.applied` and `migrations.local`; otherwise 200 with the
+   counts. A database without the migrations table counts as entirely
+   unmigrated. `/health/db` is unchanged: reachability only.
+
+On an ordinary release the pre-deploy has already migrated when the first
+probe arrives, so the probe passes at once and nothing waits. The probe
+matters when the first layer did not run: a removed or skipped pre-deploy
+command, a dashboard setting that drifted from `railway.json`, or a ledger
+the pre-deploy failed to write. Then Railway retries the probe until a 2xx
+and only then makes the new deployment active (its documented behaviour),
+so the previous container keeps serving while the Deploy workflow's own
+migration lands; `railway.json` raises `healthcheckTimeout` from 60 s to
+2700 s to cover CI plus Deploy. If the probe never passes within 45 minutes
+the deployment is marked failed and the old one stays, so a cancelled or
+red master CI never puts a migration-bearing build live. A release without
+a new migration passes the probe at once.
+
+How to watch one: the Railway deploy log shows the pre-deploy's
+`"status":"migrated"` line, or, when the probe is doing the waiting, the 503
+answers with the pending tags until `gh run watch` reports the Deploy run's
+"Migrations applied for commit <sha>"; the next probe then answers 200, the
+deployment goes active and `/health/version` reports the new `gitSha`. If
+the Deploy workflow was cancelled by a later master push, the later commit's
+own Railway deployment supersedes the waiting one; if CI failed, fix master
+and push, or re-run the Deploy workflow for a green commit and redeploy from
+the Railway dashboard.
+
+What neither layer covers: Vercel still publishes the web build on the push,
+so for a migration-bearing release the new web can talk to the previous API
+until promotion. Additive, backward-compatible API changes keep that window
+harmless; a breaking API change still needs the expand-contract discipline
+below.
 
 ## Required Operator Check Before Pushing
 
