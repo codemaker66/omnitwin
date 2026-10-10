@@ -1,5 +1,12 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { HallkeeperSheetV2, RequestState, SheetApproval, ThreadAudience, ThreadSubject } from "@omnitwin/types";
+import type {
+  HallkeeperSheetV2,
+  ObservationKind,
+  RequestState,
+  SheetApproval,
+  ThreadAudience,
+  ThreadSubject,
+} from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Typed in-process event bus
@@ -109,6 +116,20 @@ export interface EventMap {
     readonly actorUserId: string | null;
     readonly at: string;
   };
+  /** The room was observed (goal 19 S5): a hallkeeper recorded set, doors
+   *  open, live, flipping, done or cleaned against a booking. Emitted AFTER
+   *  the row commits; the hub fans it out to the venue's floor, who refetch.
+   *  An observation never carries a time for the booking. */
+  readonly "observation.changed": {
+    readonly venueId: string;
+    readonly bookingId: string;
+    readonly spaceId: string | null;
+    readonly kind: ObservationKind;
+    readonly observationId: string;
+    readonly observedAt: string;
+    readonly actorUserId: string | null;
+    readonly at: string;
+  };
   readonly "notification.created": {
     readonly venueId: string;
     readonly audienceRoles: readonly string[];
@@ -166,6 +187,9 @@ function setListFor<K extends EventName>(event: K, list: Subscriber<K>[]): void 
       return;
     case "conversation.changed":
       registry["conversation.changed"] = list as Subscriber<"conversation.changed">[];
+      return;
+    case "observation.changed":
+      registry["observation.changed"] = list as Subscriber<"observation.changed">[];
       return;
   }
 }

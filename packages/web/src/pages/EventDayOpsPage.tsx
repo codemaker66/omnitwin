@@ -447,6 +447,9 @@ export function EventDayOpsPage(): ReactElement {
     void (async () => {
       const queued = await listPendingEventDayOps();
       for (const op of queued) {
+        // A fact about a room (goal 19 S5) is the Day Board's to replay; it
+        // stays queued here, untouched, for that screen.
+        if (op.kind === "observation_record") continue;
         try {
           if (op.kind === "task_status") {
             await updateOpsTaskStatus(op.opsTaskId, op.input);

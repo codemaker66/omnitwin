@@ -603,6 +603,13 @@
       "when": 1791385200000,
       "tag": "0087_living_timetable_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1791471600000,
+      "tag": "0088_booking_observations",
+      "breakpoints": true
     }
   ]
 }
