@@ -45,6 +45,13 @@ Not here: the visual quality of the captured room (T-632, goal 13), the cinemati
 - **Migrations:** origin's journal ends at `0085_proposal_templates` (idx 83); the first migration here is `0086` (idx 84). Renumbered on 9 October 2026 to `0087_living_timetable_conversations` (idx 85) when PR #58 merged `0086_venue_location` first.
 - **Roles** now include manager, sales and caterer (`USER_ROLES`); `DIARY_WRITE_ROLES` is staff, admin, manager, sales. D2's rows apply to these as the people matrix records.
 
+### Built at S4 (10 October 2026, `claude/living-timetable-s4` from master `849b9264`)
+
+- **The thread gates stay where S1 put them.** `canManageVenue` and `canHandleRequests` admit the same set today (admin, manager, staff, hallkeeper), so the venue thread routes already admit exactly D2 row 6 and the arbiter runs on every read, write, fan-out and replay; a Postgres case holds the row as behaviour rather than a renamed gate. Blake kept the accept wording "I’ll do it" (10 October), so the slab says that rather than "I'll take this".
+- **The client's slot comes from the schedule.** `ClientEventSchedule` gains `slots` (the event's live bookings) instead of a second route; the composer prefills the live or next one and offers the rest in "Room and time".
+- **Hand over needs the floor by name**: `GET /venues/:venueId/handlers`, each row admitted by the predicate the handover itself applies to its target.
+- **The cards are paper.** Slice 10's dark request card inside the ivory slot moved onto the paper register, with the conversation's tabs and the copper badge beside it.
+
 ## The system in one breath
 
 A client plans the room and says when on the ribbon; that writes a **hold** on the Diary ladder with the plan linked. The office sees the hold, the price follows the window, and inking it is the approval. The Day Board is nothing but the inked calendar seen through one corrected clock, so the hallkeepers' timetable is set the moment the office inks. A tap on a slot opens the slot's **conversation**. A client's "we need ten more chairs" is a **request**: an event-day issue with a client-facing thread that lands on the slot within a second, is owned by exactly one person and is resolved with an outcome. Nothing said in a thread changes a time, a layout or stock; anything consequential becomes a decision the office approves. When no screen is watching, the house is told another way.

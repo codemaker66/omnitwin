@@ -1,0 +1,99 @@
+/* The client's requests on their event page (goal 19 S4): the same ivory
+   sheet and forest ink as the schedule above it; copper only where the house
+   has answered. Targets are 44 px; nothing here pushes a phone wider. */
+
+.client-requests { margin-top: 30px; }
+.client-requests h2 { font: 400 26px/1.3 var(--house-serif); margin: 0 0 6px; }
+.client-requests .client-event-disclosure { margin: 0 0 16px; }
+
+.client-request-composer {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--event-line, #d7ded4);
+  border-radius: 14px;
+  background: #fffdf8;
+}
+
+.client-request-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; }
+.client-request-choices legend { padding: 0; margin-bottom: 8px; color: var(--event-muted, #52645b); font-size: 12px; }
+
+.client-request-choice {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #c7d2c4;
+  border-radius: 999px;
+  background: #fffdf8;
+  color: var(--event-ink, #173e33);
+  font: 500 13px/1.2 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.client-request-choice[aria-pressed="true"] {
+  border-color: var(--event-ink, #173e33);
+  background: var(--event-ink, #173e33);
+  color: #fffdf8;
+  font-weight: 600;
+}
+
+.client-request-choice:focus-visible,
+.client-request-field select:focus-visible,
+.client-request-field input:focus-visible {
+  outline: var(--vv-focus-ring, 2px solid #a9622f);
+  outline-offset: var(--vv-focus-ring-offset, 2px);
+}
+
+.client-request-field { display: grid; gap: 5px; color: var(--event-muted, #52645b); font-size: 12px; }
+.client-request-field--number { max-width: 160px; }
+.client-request-field input,
+.client-request-field select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #c7d2c4;
+  border-radius: 10px;
+  background: #fffdf8;
+  color: var(--event-ink, #173e33);
+  font: 14px/1.4 "Inter", system-ui, sans-serif;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.client-request-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.client-request-send { gap: 8px; }
+.client-request-error,
+.client-request-closed { margin: 0; color: #9b3a2b; font-size: 13px; line-height: 1.5; }
+
+.client-request-list { display: grid; gap: 10px; margin: 18px 0 0; padding: 0; list-style: none; }
+.client-request {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--event-line, #d7ded4);
+  border-left: 4px solid #927058;
+  border-radius: 12px;
+  background: #fffdf8;
+}
+.client-request[data-state="resolved"] { border-left-color: #9ba994; }
+.client-request[data-state="accepted"],
+.client-request[data-state="underway"] { border-left-color: #5b745f; }
+.client-request-what { margin: 0; font-size: 15px; font-weight: 600; color: var(--event-ink, #173e33); }
+.client-request-where { font-weight: 400; color: var(--event-muted, #52645b); }
+.client-request-status { margin: 0; font-size: 13px; color: var(--event-ink, #173e33); }
+.client-request-detail { margin: 0; font-size: 13px; color: var(--event-muted, #52645b); line-height: 1.5; }
+
+.client-request-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .client-request-composer { padding: 14px; }
+  .client-request-choice { flex: 1 1 auto; padding: 0 10px; }
+}

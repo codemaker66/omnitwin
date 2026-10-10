@@ -29,6 +29,7 @@ vi.mock("../../api/client.js", () => ({ getAuthToken: () => Promise.resolve("tok
 
 interface E2EWindow extends Window {
   __OMNITWIN_E2E__?: boolean;
+  __OMNITWIN_E2E_LIVE__?: boolean;
 }
 
 /** A socket that never opens, connects or errors: we only count construction. */
@@ -58,6 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   delete (window as E2EWindow).__OMNITWIN_E2E__;
+  delete (window as E2EWindow).__OMNITWIN_E2E_LIVE__;
 });
 
 /** A socket that opens when told to and records what it was sent. */
@@ -103,6 +105,15 @@ describe("the requests live channel", () => {
     const unsubscribe = subscribeRequestsLive(vi.fn());
     expect(requestsLiveListenerCount()).toBe(1);
     expect(InertSocket.instances).toBe(0);
+    unsubscribe();
+    expect(requestsLiveListenerCount()).toBe(0);
+  });
+
+  it("opens its socket under the harness when the harness says a real server is behind it (goal 19 S4)", () => {
+    (window as E2EWindow).__OMNITWIN_E2E__ = true;
+    (window as E2EWindow).__OMNITWIN_E2E_LIVE__ = true;
+    const unsubscribe = subscribeRequestsLive(vi.fn());
+    expect(InertSocket.instances).toBe(1);
     unsubscribe();
     expect(requestsLiveListenerCount()).toBe(0);
   });

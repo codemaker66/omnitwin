@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { RequestKind, RequestTransition, RequestUrgency, VenueRequest } from "@omnitwin/types";
+import type { RequestKind, RequestTransition, RequestUrgency, VenueHandler, VenueRequest } from "@omnitwin/types";
 import type { SlotRequestsProps } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
 
 // ---------------------------------------------------------------------------
@@ -65,9 +65,13 @@ export interface SlotRequestsApi {
    *  that pressed "Send it" says "Sending…". */
   readonly askingKeys: ReadonlySet<string>;
   readonly failure: SlotRequestFailure | null;
+  /** The people a request can be handed to (goal 19 S4), read once per board
+   *  and kept; a failed read rejects, so the picker can say so and ask again. */
+  readonly handlers: () => Promise<readonly VenueHandler[]>;
 }
 
 const EMPTY: readonly VenueRequest[] = [];
+const NO_HANDLERS: readonly VenueHandler[] = [];
 const NONE_ASKING: ReadonlySet<string> = new Set<string>();
 
 /** What a slab sees when no provider is mounted: nothing, calmly. */
@@ -82,6 +86,7 @@ export const SLOT_REQUESTS_UNAVAILABLE: SlotRequestsApi = {
   busyId: null,
   askingKeys: NONE_ASKING,
   failure: null,
+  handlers: () => Promise.resolve(NO_HANDLERS),
 };
 
 export const SlotRequestsContext = createContext<SlotRequestsApi>(SLOT_REQUESTS_UNAVAILABLE);

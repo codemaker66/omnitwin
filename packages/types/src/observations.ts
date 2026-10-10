@@ -58,7 +58,7 @@ export function nextObservationKinds(latest: ObservationKind | null): readonly O
     case "cleaned": return [];
     default: {
       const exhausted: never = latest;
-      return [String(exhausted)] as unknown as readonly ObservationKind[];
+      return exhausted;
     }
   }
 }

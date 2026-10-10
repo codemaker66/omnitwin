@@ -6,10 +6,12 @@ import {
   describeRequestKind,
   describeRequestState,
   describeRequestUrgency,
+  isClientSideRole,
   nextRequestState,
   type RequestKind,
   type RequestOutcome,
   type RequestUrgency,
+  type VenueHandler,
   type VenueRequest,
 } from "@omnitwin/types";
 import type { SlotRequestsProps } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
@@ -17,12 +19,15 @@ import {
   deriveSlotRequestSignal,
   type DayBoardSlotRequest,
 } from "../../pages/hallkeeper/lib/day-board-state.js";
+import { useAuthStore } from "../../stores/auth-store.js";
+import { SlotConversation } from "../conversations/SlotConversation.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { mintRequestKey, useSlotRequests } from "./requests-context.js";
 import "./slot-requests.css";
 
 // ---------------------------------------------------------------------------
-// The request slab on a Day Board slot (Ship Friday slice 10, gate line 22).
+// The request slab on a Day Board slot (Ship Friday slice 10, gate line 22;
+// goal 19 S4 adds the longer ladder and the slot's conversation).
 //
 // What somebody standing in the room asked for, on the card for that room, on
 // every other phone within a second. Three things it is careful about:
@@ -34,11 +39,16 @@ import "./slot-requests.css";
 //   still fresh is decided by the pure day-board derivation, so the board,
 //   the slab and the tests agree.
 //
-//   NO CONFIRMATION DIALOGS, NO SOUND. Every action is one press on the slab
-//   itself: "Seen", "I'll do it", and how it finished.
+//   NO CONFIRMATION DIALOGS. Every action is one press on the slab itself:
+//   "Seen", "I’ll do it", "On it", "Hand over", and how it finished. Sound is
+//   the chime this device opted into (arrival-chime.ts), never a surprise.
 //
 //   THE WORDS CARRY THE MEANING. Under reduced motion the pulse simply does
 //   not happen and nothing is lost: the summary line says what is waiting.
+//
+// Below the cards sits the slot's conversation (SlotConversation): the floor's
+// notes on the booking and the thread of every request, each with its own
+// audience, so a client's words are read where the client's request is.
 // ---------------------------------------------------------------------------
 
 const RESOLUTIONS: readonly { readonly outcome: RequestOutcome; readonly label: string }[] = [
@@ -48,6 +58,14 @@ const RESOLUTIONS: readonly { readonly outcome: RequestOutcome; readonly label: 
 ];
 
 const COUNTABLE_KINDS: readonly RequestKind[] = COUNTABLE_REQUEST_KINDS;
+
+/** The office may step in on another person's request; the owner takes
+ *  their own forward. The same "senior" rule the API applies. */
+const OFFICE_ROLES: readonly string[] = ["admin", "manager", "staff"];
+
+function messageFor(cause: unknown): string {
+  return cause instanceof Error && cause.message !== "" ? cause.message : "That could not be read — try again in a moment.";
+}
 
 export function toBoardRequest(request: VenueRequest): DayBoardSlotRequest {
   return {
@@ -85,13 +103,42 @@ function RequestCard({ request, nowMs }: {
   readonly request: VenueRequest;
   readonly nowMs: number;
 }): ReactElement {
-  const { move, busyId, failure } = useSlotRequests();
+  const { move, busyId, failure, handlers } = useSlotRequests();
+  const me = useAuthStore((state) => state.user);
+  const meId = me?.id ?? null;
+  const senior = me !== null && (OFFICE_ROLES.includes(me.role) || me.platformRole === "admin");
+  const mine = request.ownerUserId !== null && request.ownerUserId === meId;
+  const handedToMe = request.state === "handed-over" && request.handoverToUserId !== null && request.handoverToUserId === meId;
   const busy = busyId === request.id;
   // Only this request's own failure is said on its card.
   const failed = failure?.on === "request" && failure.requestId === request.id ? failure.message : null;
   const canAcknowledge = nextRequestState(request.state, "acknowledged").ok;
-  const canAccept = nextRequestState(request.state, "accepted").ok;
+  // A handover in flight is for the person it was handed to; the ladder
+  // decides the rest here, and the server decides it again.
+  const canAccept = nextRequestState(request.state, "accepted").ok
+    && (request.state !== "handed-over" || handedToMe || me?.platformRole === "admin");
+  const canStart = nextRequestState(request.state, "underway").ok && (mine || senior);
+  const canHandOver = nextRequestState(request.state, "handed-over").ok && (mine || senior);
+  const canFinish = nextRequestState(request.state, "resolved").ok;
   const [finishing, setFinishing] = useState(false);
+  const [substituting, setSubstituting] = useState(false);
+  const [note, setNote] = useState("");
+  const [handing, setHanding] = useState(false);
+  const [floor, setFloor] = useState<readonly VenueHandler[] | null>(null);
+  const [floorError, setFloorError] = useState<string | null>(null);
+  const [target, setTarget] = useState("");
+  const asker = isClientSideRole(request.requestedByRole) ? `${request.requestedByName} (client)` : request.requestedByName;
+  const quiet = !handing && !finishing;
+
+  const openHandover = (): void => {
+    setFinishing(false);
+    setSubstituting(false);
+    setHanding(true);
+    setFloorError(null);
+    void handlers()
+      .then((people) => { setFloor(people); })
+      .catch((cause: unknown) => { setFloorError(messageFor(cause)); });
+  };
 
   return (
     <li className="vv-request" data-urgency={request.urgency} data-state={request.state}>
@@ -102,10 +149,17 @@ function RequestCard({ request, nowMs }: {
           : null}
       </p>
       <p className="vv-request-who">
-        {request.requestedByName} · {howLongAgo(request.createdAt, nowMs)}
+        {asker} · {howLongAgo(request.createdAt, nowMs)}
         {request.state === "sent" ? null : <> · {describeRequestState(request.state)}</>}
-        {request.ownerName === null ? null : <> · {request.ownerName}</>}
+        {request.ownerName === null || request.state === "handed-over" ? null : <> · {request.ownerName}</>}
       </p>
+      {request.state === "handed-over" && (
+        <p className="vv-request-handover-note">
+          {handedToMe
+            ? `${request.ownerName ?? "A colleague"} handed this to you.`
+            : `${request.ownerName ?? "A colleague"} is handing this to ${request.handoverToName ?? "a colleague"}.`}
+        </p>
+      )}
       {request.detail === null ? null : <p className="vv-request-detail">{request.detail}</p>}
 
       <div className="vv-request-actions">
@@ -113,16 +167,12 @@ function RequestCard({ request, nowMs }: {
           <ActivityStatus>Sending…</ActivityStatus>
         ) : (
           <>
-            {canAcknowledge && (
-              <button
-                type="button"
-                className="vv-request-action"
-                onClick={() => { move(request, { to: "acknowledged" }); }}
-              >
+            {canAcknowledge && quiet && (
+              <button type="button" className="vv-request-action" onClick={() => { move(request, { to: "acknowledged" }); }}>
                 Seen
               </button>
             )}
-            {canAccept && (
+            {canAccept && quiet && (
               <button
                 type="button"
                 className="vv-request-action vv-request-action--take"
@@ -131,32 +181,95 @@ function RequestCard({ request, nowMs }: {
                 I’ll do it
               </button>
             )}
-            {finishing ? (
-              RESOLUTIONS.map((resolution) => (
-                <button
-                  key={resolution.outcome}
-                  type="button"
-                  className="vv-request-action"
-                  onClick={() => {
-                    setFinishing(false);
-                    move(request, { to: "resolved", outcome: resolution.outcome });
-                  }}
-                >
-                  {resolution.label}
-                </button>
-              ))
-            ) : (
-              <button
-                type="button"
-                className="vv-request-action"
-                onClick={() => { setFinishing(true); }}
-              >
-                Finish
+            {canStart && quiet && (
+              <button type="button" className="vv-request-action" onClick={() => { move(request, { to: "underway" }); }}>
+                On it
               </button>
+            )}
+            {canHandOver && quiet && (
+              <button type="button" className="vv-request-action" onClick={openHandover}>Hand over</button>
+            )}
+            {canFinish && quiet && (
+              <button type="button" className="vv-request-action" onClick={() => { setFinishing(true); }}>Finish</button>
+            )}
+            {finishing && !substituting && (
+              <>
+                {RESOLUTIONS.map((resolution) => (
+                  <button
+                    key={resolution.outcome}
+                    type="button"
+                    className="vv-request-action"
+                    onClick={() => {
+                      setFinishing(false);
+                      move(request, { to: "resolved", outcome: resolution.outcome });
+                    }}
+                  >
+                    {resolution.label}
+                  </button>
+                ))}
+                <button type="button" className="vv-request-action" onClick={() => { setSubstituting(true); }}>Done another way</button>
+                <button type="button" className="vv-request-action" onClick={() => { setFinishing(false); }}>Not now</button>
+              </>
             )}
           </>
         )}
       </div>
+
+      {finishing && substituting && !busy && (
+        <div className="vv-request-followup">
+          <label className="vv-request-field">
+            What was done instead
+            <input type="text" maxLength={500} value={note} onChange={(event) => { setNote(event.target.value); }} />
+          </label>
+          <div className="vv-request-actions">
+            <button
+              type="button"
+              className="vv-request-action vv-request-action--take"
+              disabled={note.trim() === ""}
+              onClick={() => {
+                setFinishing(false);
+                setSubstituting(false);
+                move(request, { to: "resolved", outcome: "substituted", note: note.trim() });
+              }}
+            >
+              Finish
+            </button>
+            <button type="button" className="vv-request-action" onClick={() => { setSubstituting(false); }}>Back</button>
+          </div>
+        </div>
+      )}
+
+      {handing && !busy && (
+        <div className="vv-request-followup">
+          {floor === null && floorError === null && <ActivityStatus>Finding the floor…</ActivityStatus>}
+          {floorError !== null && <p className="vv-request-error" role="alert">{floorError}</p>}
+          {floor !== null && (
+            <label className="vv-request-field">
+              Hand to
+              <select value={target} onChange={(event) => { setTarget(event.target.value); }}>
+                <option value="">Choose a colleague</option>
+                {floor.filter((person) => person.id !== meId).map((person) => (
+                  <option key={person.id} value={person.id}>{person.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div className="vv-request-actions">
+            <button
+              type="button"
+              className="vv-request-action vv-request-action--take"
+              disabled={target === ""}
+              onClick={() => {
+                setHanding(false);
+                move(request, { to: "handed-over", toUserId: target });
+              }}
+            >
+              Hand it over
+            </button>
+            <button type="button" className="vv-request-action" onClick={() => { setHanding(false); setFloorError(null); }}>Not now</button>
+          </div>
+        </div>
+      )}
       {failed !== null && busyId === null ? <p className="vv-request-error" role="alert">{failed}</p> : null}
     </li>
   );
@@ -340,6 +453,9 @@ export function SlotRequests(props: SlotRequestsProps): ReactElement | null {
             Ask for something
           </button>
         )}
+
+      {/* Goal 19 S4: the slot's threads, one tab per audience. */}
+      <SlotConversation bookingId={props.bookingId} roomName={props.roomName} requests={requests} />
     </section>
   );
 }

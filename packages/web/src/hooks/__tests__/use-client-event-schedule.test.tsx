@@ -14,7 +14,7 @@ const VENUE = "33333333-3333-4333-8333-333333333333";
 const ROOM = "44444444-4444-4444-8444-444444444444";
 const schedule: ClientEventSchedule = { event: { id: EVENT, venueId: VENUE, name: "Autumn celebration", eventType: null, status: "draft", startsAt: null, endsAt: null, guestCount: 12 },
   venue: { id: VENUE, name: "City rooms", timezone: "Europe/London" }, scheduleState: "working", phases: [],
-  layouts: [{ id: CONFIG, name: "Dinner layout", space: { id: ROOM, name: "Ballroom" } }] };
+  layouts: [{ id: CONFIG, name: "Dinner layout", space: { id: ROOM, name: "Ballroom" } }], slots: [] };
 function user(id = "owner", role = "client"): void {
   useAuthStore.getState().setUser({ id, role, platformRole: "none", name: "Owner", venueId: null, email: "owner@example.test" });
 }

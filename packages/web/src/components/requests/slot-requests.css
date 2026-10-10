@@ -1,16 +1,19 @@
 /* ---------------------------------------------------------------------------
-   The request slab (Ship Friday slice 10, gate line 22).
+   The request slab (Ship Friday slice 10, gate line 22; goal 19 S4).
 
-   It lives inside the Day Board's reserved region, so it inherits the
-   hallkeeper register declared on `.dayboard` — ivory, forest, copper, sage.
-   Every colour here is one of those four through its token, with a literal
-   fallback for the day a slab appears on a surface that has not adopted the
-   register yet. No gold: the retired gold pair appears nowhere.
+   It lives inside the Day Board's open slot, on the register's PAPER
+   arrangement (D7: the office and the phone are ivory): raised ivory cards,
+   forest ink, a copper rule for an open ask and a sage one once somebody has
+   it. Slice 10 drew these cards on the dark tablet arrangement; inside the
+   ivory slot that read as a foreign object, so S4 moved them onto the paper.
+   Every colour is one of the register's four through its token, with a
+   literal fallback for a surface that has not adopted the register. No gold.
 
    Motion is one spring-shaped pulse when a request ARRIVES, then a steady
-   copper dot for as long as it is open. Never a repeat, never a strobe,
-   never a sound. The arrival animation is a one-shot on a freshly mounted
-   element, so there is no interval to leak and nothing to stop.
+   copper dot for as long as it is open. Never a repeat, never a strobe. Sound
+   is the chime this device opted into (arrival-chime.ts), nothing else. The
+   arrival animation is a one-shot on a freshly mounted element, so there is
+   no interval to leak and nothing to stop.
 --------------------------------------------------------------------------- */
 
 .vv-requests {
@@ -88,8 +91,8 @@
 }
 
 .vv-request {
-  background: var(--hk-forest-raised, #263028);
-  border: 1px solid var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+  background: var(--hk-ivory-raised, #fffdf8);
+  border: 1px solid var(--hk-line, #e4dcd0);
   border-left: 3px solid var(--hk-copper, #986246);
   border-radius: 8px;
   display: grid;
@@ -97,13 +100,16 @@
   padding: 10px 12px;
 }
 
+/* Somebody has said they have seen it, or has it: the rule turns sage. A
+   handover in flight keeps the copper, because nobody has it yet. */
 .vv-request[data-state="accepted"],
-.vv-request[data-state="acknowledged"] {
-  border-left-color: var(--hk-sage, #a9c3a4);
+.vv-request[data-state="acknowledged"],
+.vv-request[data-state="underway"] {
+  border-left-color: var(--hk-sage-deep, #6b8963);
 }
 
 .vv-request-what {
-  color: var(--hk-paper, #f3efe4);
+  color: var(--hk-ink, #2e382e);
   font-size: 14px;
   font-weight: 600;
   margin: 0;
@@ -122,20 +128,27 @@
 }
 
 .vv-request-who {
-  color: var(--hk-paper-faint, rgba(243, 239, 228, 0.52));
+  color: var(--hk-ink-dim, #575a4e);
   font-size: 12px;
   margin: 0;
 }
 
+.vv-request-handover-note {
+  color: var(--hk-ink, #2e382e);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
 .vv-request-detail {
-  color: var(--hk-paper-dim, rgba(243, 239, 228, 0.7));
+  color: var(--hk-ink, #2e382e);
   font-size: 13px;
   line-height: 1.4;
   margin: 2px 0 0;
 }
 
 .vv-request-error {
-  color: var(--hk-alert-light, #e0917a);
+  color: var(--hk-alert, #c2503e);
   font-size: 12px;
   margin: 4px 0 0;
 }
@@ -150,13 +163,23 @@
   margin-top: 6px;
 }
 
+/* A step that needs a word or a name (hand over, done another way) opens
+   under the actions, on the same card. */
+.vv-request-followup {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hk-line, #e4dcd0);
+}
+
 .vv-request-action,
 .vv-request-ask,
 .vv-request-choice {
   background: transparent;
-  border: 1px solid var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+  border: 1px solid var(--hk-line, #e4dcd0);
   border-radius: 8px;
-  color: var(--hk-paper, #f3efe4);
+  color: var(--hk-ink, #2e382e);
   cursor: pointer;
   font: inherit;
   font-size: 13px;
@@ -168,56 +191,46 @@
 .vv-request-action:hover,
 .vv-request-ask:hover,
 .vv-request-choice:hover {
-  background: rgba(243, 239, 228, 0.07);
-  border-color: var(--hk-copper-light, #c98a5e);
+  background: var(--hk-ivory-sunk, #eeeee2);
+  border-color: var(--hk-copper, #986246);
 }
 
 .vv-request-action:focus-visible,
 .vv-request-ask:focus-visible,
 .vv-request-choice:focus-visible {
-  outline: 2px solid var(--hk-copper-light, #c98a5e);
+  outline: 2px solid var(--hk-copper, #986246);
   outline-offset: 2px;
 }
 
+/* The press that takes the work: copper, in the deeper copper for 13 px
+   text on ivory (5.8:1). */
 .vv-request-action--take {
   align-items: center;
   border-color: var(--hk-copper, #986246);
-  color: var(--hk-copper-bright, #d8a179);
+  color: var(--hk-copper-ink, #8a5840);
   display: inline-flex;
   font-weight: 600;
   gap: 8px;
 }
 
+/* A press that is not yet possible (nothing typed, nobody chosen) keeps
+   readable words: dim ink on the same ground, never a faded ghost, so the
+   readability audit and a tired eye both still read it. */
 .vv-request-action[disabled] {
   cursor: default;
-  opacity: 0.6;
-}
-
-/* "Ask for something" is the one control that stands on the slot's own IVORY
-   card rather than inside a forest slab, so it cannot inherit the paper-on-
-   forest colours above — that reads as an invisible button on a light ground.
-   It takes the register's ink and line instead. */
-.vv-request-ask {
   border-color: var(--hk-line, #e4dcd0);
-  color: var(--hk-ink, #2e382e);
+  color: var(--hk-ink-dim, #575a4e);
+}
+
+.vv-request-ask {
   justify-self: start;
-}
-
-.vv-request-ask:hover {
-  background: var(--hk-ivory-sunk, #f3f0e5);
-  border-color: var(--hk-copper, #986246);
-  color: var(--hk-copper, #986246);
-}
-
-.vv-request-ask:focus-visible {
-  outline-color: var(--hk-copper, #986246);
 }
 
 /* --- The composer: what, how soon, how many, anything to add. ----------- */
 
 .vv-request-composer {
-  background: var(--hk-forest-raised, #263028);
-  border: 1px solid var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+  background: var(--hk-ivory-raised, #fffdf8);
+  border: 1px solid var(--hk-line, #e4dcd0);
   border-radius: 8px;
   display: grid;
   gap: 10px;
@@ -234,31 +247,32 @@
 }
 
 .vv-request-choices legend {
-  color: var(--hk-paper-faint, rgba(243, 239, 228, 0.52));
+  color: var(--hk-ink-dim, #575a4e);
   font-size: 12px;
   margin-bottom: 6px;
   padding: 0;
 }
 
 .vv-request-choice[aria-pressed="true"] {
-  background: var(--hk-copper, #986246);
-  border-color: var(--hk-copper, #986246);
+  background: var(--hk-forest, #385542);
+  border-color: var(--hk-forest, #385542);
   color: var(--hk-ivory, #f4f1e9);
   font-weight: 600;
 }
 
 .vv-request-field {
-  color: var(--hk-paper-dim, rgba(243, 239, 228, 0.7));
+  color: var(--hk-ink-dim, #575a4e);
   display: grid;
   font-size: 12px;
   gap: 4px;
 }
 
-.vv-request-field input {
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+.vv-request-field input,
+.vv-request-field select {
+  background: var(--hk-ivory-raised, #fffdf8);
+  border: 1px solid var(--hk-line, #e4dcd0);
   border-radius: 8px;
-  color: var(--hk-paper, #f3efe4);
+  color: var(--hk-ink, #2e382e);
   font: inherit;
   font-size: 14px;
   min-height: 44px;
@@ -266,9 +280,24 @@
   width: 100%;
 }
 
-.vv-request-field input:focus-visible {
-  border-color: var(--hk-copper-light, #c98a5e);
-  outline: none;
+.vv-request-field input:focus-visible,
+.vv-request-field select:focus-visible {
+  border-color: var(--hk-forest, #385542);
+  outline: 2px solid var(--hk-copper, #986246);
+  outline-offset: 1px;
+}
+
+/* --- "Chime on arrivals": the one control that makes a sound (D3). ------ */
+
+.vv-chime-toggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.vv-chime-toggle[aria-pressed="true"] {
+  border-color: var(--hk-copper, #986246);
+  color: var(--hk-copper-ink, #8a5840);
 }
 
 /* The board is read on a 390px phone: nothing here may push it wider. */
