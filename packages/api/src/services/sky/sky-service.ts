@@ -9,8 +9,7 @@ import {
 } from "@omnitwin/types";
 import { haversineDistanceM, type GeoPoint } from "../../lib/venue-site.js";
 import { describeListing, offeredIds, selectCollections } from "./bpf-collections.js";
-import { locateStep, periodAt, valueAt, type Series } from "./coverage-series.js";
-import { dayLengthHours, sunshineFraction, utcDayOfYear } from "./daylength.js";
+import { locateStep, valueAt, type Series } from "./coverage-series.js";
 import {
   DailyCallBudget,
   MetOfficeBpfClient,
@@ -52,7 +51,13 @@ import { weatherCodeEntry } from "./weather-codes.js";
 // choice and the whole listing (ids, titles, parameter counts) are logged.
 // A listing with no usable percentile collection is logged with what it
 // offered and held for 6 h, so retries cost 4 calls a day, not one per
-// failed forecast.
+// failed forecast. The selection log also names the sunshine parameters the
+// chosen collection declares.
+//
+// The first successful forecast in a process is logged once
+// (venue_sky_forecast_metadata) with what each field was read from: key,
+// unit, axis labels and the chosen index, time-axis length and spacing,
+// period lengths. Never a forecast value.
 // ---------------------------------------------------------------------------
 
 const HOUR_MS = 3_600_000;
@@ -141,19 +146,6 @@ function at(series: Series | undefined, instant: number): number | null {
   return valueAt(series, instant) ?? null;
 }
 
-function forecastSunshineFraction(series: Series | undefined, instant: number, latitude: number): number | null {
-  if (series === undefined) return null;
-  const period = periodAt(series, instant);
-  const seconds = valueAt(series, instant);
-  if (period === null || seconds === undefined || seconds === null) return null;
-  const midpoint = (period[0] + period[1]) / 2;
-  const periodHours = (period[1] - period[0]) / HOUR_MS;
-  // A 24 h period is one day's sunshine; anything else is not comparable
-  // with one day's daylight.
-  if (Math.abs(periodHours - 24) > 1e-6) return null;
-  return sunshineFraction(seconds / 3600, dayLengthHours(utcDayOfYear(midpoint), latitude));
-}
-
 /** A forecast answer for the step that stands for `instant`. */
 export function buildForecastSky(
   snapshot: ForecastSnapshot,
@@ -186,7 +178,9 @@ export function buildForecastSky(
     },
     windMs: at(series.wind, instant),
     temperatureC: at(series.temperature, instant),
-    sunshineFraction: forecastSunshineFraction(series.sunshine24h, instant, venue.latitude),
+    // BPF v2 has sunshine only as a 24 h sum ending at each step, which
+    // describes the day before the step, not the sky at `instant`.
+    sunshineFraction: null,
     weather: code === null ? null : { code: code.code, description: code.description },
     presetHint: presetHintFromCloud(cloudTotal),
     climatology: null,
@@ -237,6 +231,7 @@ export function createVenueSkyService(options: VenueSkyServiceOptions): VenueSky
     | { readonly ok: true; readonly ids: ChosenCollections; readonly expiresAt: number }
     | { readonly ok: false; readonly error: UpstreamError; readonly expiresAt: number }
     | null = null;
+  let metadataLogged = false;
 
   async function collectionIds(bpf: MetOfficeBpfClient): Promise<ChosenCollections> {
     if (collections !== null && now() < collections.expiresAt) {
@@ -255,8 +250,14 @@ export function createVenueSkyService(options: VenueSkyServiceOptions): VenueSky
       collections = { ok: false, error, expiresAt: now() + COLLECTIONS_UNMATCHED_RETRY_MS };
       throw error;
     }
+    const chosen = listed.find((collection) => collection.id === selection.percentiles?.id);
+    // The sunshine parameters it declares (null when it declares none); none
+    // is read, but the names show whether an hourly one is ever offered.
+    const sunshineParameters = chosen === undefined || chosen.parameters === null
+      ? null
+      : chosen.parameters.filter((name) => /sunshine/iu.test(name)).slice(0, 20).map((name) => name.replace(/[^ -~]+/gu, "?").slice(0, 100));
     options.logger.info(
-      { event: "venue_sky_collections_selected", percentiles: selection.percentiles, probabilities: selection.probabilities, offered },
+      { event: "venue_sky_collections_selected", percentiles: selection.percentiles, probabilities: selection.probabilities, sunshineParameters, offered },
       "Met Office collections chosen for the sky",
     );
     const ids = { percentiles: selection.percentiles.id, probabilities: selection.probabilities?.id ?? null };
@@ -267,6 +268,20 @@ export function createVenueSkyService(options: VenueSkyServiceOptions): VenueSky
   async function refresh(bpf: MetOfficeBpfClient, point: GeoPoint): Promise<ForecastEntry> {
     try {
       const snapshot = await fetchForecastSnapshot(bpf, await collectionIds(bpf), point, now);
+      if (!metadataLogged) {
+        metadataLogged = true;
+        options.logger.info(
+          {
+            event: "venue_sky_forecast_metadata",
+            collection: snapshot.collection,
+            probabilityCollection: snapshot.probabilityCollection,
+            instanceId: snapshot.instanceId,
+            issuedAt: snapshot.issuedAt,
+            series: snapshot.metadata,
+          },
+          "Met Office forecast read: keys, units, axis labels and time steps (no values)",
+        );
+      }
       if (snapshot.problems.length > 0) {
         options.logger.warn({ event: "venue_sky_forecast_partial", problems: snapshot.problems }, "Met Office forecast fetched with unusable parameters");
       }

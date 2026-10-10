@@ -57,11 +57,16 @@ normals always carry `degraded.reason`, one of:
   <https://datahub.metoffice.gov.uk/definition-of-codes>): showers and thunder
   are rain unless sleet, hail or snow is named; mist and fog are `none`; code 4
   ("Not used") and unknown codes are `null`. The code itself is in `weather`.
-- `sunshineFraction` = bright-sunshine hours ÷ astronomical day length
-  (geometric sunrise to sunset; declination 23.45° × sin(360° × (284 + n)/365),
-  day length = 2·acos(−tan φ·tan δ)/15 h). Forecast: the 24 h sunshine period
-  containing `at`. Normals: the month's sunshine hours ÷ the month's summed day
-  length at the cell latitude. An impossible ratio (> 1.01) is `null`.
+- `sunshineFraction` (normals) = the month's bright-sunshine hours ÷ the
+  month's summed astronomical day length at the cell latitude (geometric
+  sunrise to sunset; declination 23.45° × sin(360° × (284 + n)/365), day
+  length = 2·acos(−tan φ·tan δ)/15 h). An impossible ratio (> 1.01) is `null`.
+  - **Forecast: `null`.** BPF v2's only sunshine parameter is
+    `durationOfSunshineSumPt24h`, a sum over the 24 h ending at each step.
+  - It mostly describes the day before, not the sky at `at`. Live on 10
+    October it gave 0.929 under 88% cloud.
+  - It is not requested. The selection log names the sunshine parameters the
+    collection declares, so an hourly one would show.
 - `presetHint` is a weather-only hint from total cloud: `sunny` ≤ 2 oktas,
   `overcast` ≥ 6 oktas, else `null`. It is not a lighting decision.
 - `provenance` states when this server requested the forecast, its age, and
@@ -119,11 +124,16 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
   deterministic forecast" recommends. `cloudAreaFraction` (total),
   `lowTypeCloudAreaFraction` (low; mid and high are not offered, so `null`),
   `visibilityInAir1p5m`, `lwePrecipitationRate` (m/s → mm/h), `airTemperature1p5m`
-  (K → °C), `windSpeed10m`, `weatherCodePt01h`/`Pt03h`, `durationOfSunshineSumPt24h`;
-  probabilities `probabilityOfLwePrecipitationRateAboveThreshold` at 0.1 mm/h and
-  `probabilityOfVisibilityInAirBelowThreshold1p5m` at 1000 m. A declared unit
-  outside the accepted spellings drops that parameter (logged) rather than
-  rescaling it.
+  (K → °C), `windSpeed10m` and `weatherCodePt01h`/`Pt03h`. Probabilities:
+  `probabilityOfLwePrecipitationRateAboveThreshold` at 0.1 mm/h and
+  `probabilityOfVisibilityInAirBelowThreshold1p5m` at 1000 m.
+  - **Thresholds:** matched by value within 2% on the axis's own labels.
+    There is no nearest value: a missing threshold, or one in other units,
+    gives `null`.
+  - **Time steps:** each series is read on its own time axis, in any axis
+    order.
+  - **Units:** a declared unit outside the accepted spellings drops that
+    parameter (logged) rather than rescaling it.
 - Horizon (glossary, UK): hourly to T+120 h, then three-hourly to T+186/192 h.
   Each step stands for the span to the midpoints with its neighbours
   (`validFrom`/`validTo`).
@@ -148,6 +158,14 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
   member names, array lengths and `type`/`domainType`/`dataType` strings,
   four levels deep, 30 lines at most, as `body: …` lines in the failure's
   detail.
+- The first successful forecast in a process is logged once as
+  `venue_sky_forecast_metadata`, for each field:
+  - the key, the collection and the unit applied (declared or the glossary's);
+  - each extra axis's labels and the index chosen (e.g. the fog threshold);
+  - the time axis's length, first and last step and spacings;
+  - period lengths.
+
+  It never includes a forecast value.
 
 **Live state (10 October 2026).**
 - The key is accepted. #70 (`d9a80276`) chose the collections from the
@@ -163,9 +181,16 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
     (a GeoJSON body would also have failed `type` and `coverages`). It
     carries no collection-level `parameters`, as CoverageJSON allows.
   - **Fix:** reading parameters in scope (above).
-- After that deploys, check the first forecast through the deployed endpoint,
-  and in the `venue_sky_forecast_partial` and `venue_sky_upstream_failed`
-  logs.
+- #73 (`2deac5bb`) made the forecast live. At 15:50Z it read cloud 0.883 (low
+  0.680), rain at a 0.094 mm/h median rate with P(≥ 0.1 mm/h) = 0, 11.25 °C,
+  wind 5.69 m/s, visibility 26 725 m and fog 0.333, from a site 563 m away.
+  Two values were questioned:
+  - **Sunshine 0.929:** came from the trailing 24 h sum; now `null` (above).
+  - **Fog 0.333 against a 26.7 km median visibility:** the threshold is
+    matched by value in the axis's own units and read on the probability
+    collection's own time axis (both tested). Whether 0.333 is the
+    service's real value is open until `venue_sky_forecast_metadata` shows
+    the threshold labels and the index used.
 
 No live response body has been read here, and the DataHub sample files may
 not be redistributed. The test bodies

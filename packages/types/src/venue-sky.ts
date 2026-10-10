@@ -172,8 +172,10 @@ export const VenueSkySchema = z.object({
   precipitation: SkyPrecipitationSchema,
   windMs: z.number().nonnegative().nullable(),
   temperatureC: z.number().min(-100).max(70).nullable(),
-  /** Bright sunshine as a fraction of the astronomical day (sunrise to
-   *  sunset) for that day (forecast) or month (normals). */
+  /** Normals: bright sunshine as a fraction of the month's astronomical day
+   *  (sunrise to sunset). Forecast: null. The Met Office BPF v2 offers
+   *  sunshine only as a 24 h sum ending at each step, which says nothing
+   *  about the sky at `at`. */
   sunshineFraction: FractionSchema,
   weather: SkyWeatherCodeSchema.nullable(),
   presetHint: SkyPresetHintSchema.nullable(),
