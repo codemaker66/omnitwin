@@ -32,9 +32,13 @@ export interface HallViewControlsProps {
   readonly captureAvailable: boolean;
   /** Whether a saved viewpoint holds the camera (the views must wait). */
   readonly povActive: boolean;
+  /** Name each light beside its icon: a touch screen shows no hover title. */
+  readonly moodLabels?: boolean;
+  /** Called once a view has been asked for, so a sheet can step out of the way. */
+  readonly onViewChosen?: () => void;
 }
 
-export function HallViewControls({ captureAvailable, povActive }: HallViewControlsProps): ReactElement {
+export function HallViewControls({ captureAvailable, povActive, moodLabels = false, onViewChosen }: HallViewControlsProps): ReactElement {
   const walkMode = useCockpitStore((s) => s.walkMode);
   const layerMode = useCockpitStore((s) => s.layerMode);
   const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
@@ -71,11 +75,12 @@ export function HallViewControls({ captureAvailable, povActive }: HallViewContro
                 recordPlannerArrivalChoice();
                 if (id === "walk" && walkMode) {
                   useHallViewStore.getState().requestView("room");
-                  return;
+                } else {
+                  // A capture that could not load cannot be walked: walk the drawn hall.
+                  if (id === "walk" && captureUnavailable) useCockpitStore.getState().setLayerMode("mesh");
+                  useHallViewStore.getState().requestView(id);
                 }
-                // A capture that could not load cannot be walked: walk the drawn hall.
-                if (id === "walk" && captureUnavailable) useCockpitStore.getState().setLayerMode("mesh");
-                useHallViewStore.getState().requestView(id);
+                onViewChosen?.();
               }}
             >
               <Icon size={14} aria-hidden="true" />
@@ -100,6 +105,7 @@ export function HallViewControls({ captureAvailable, povActive }: HallViewContro
               onClick={() => { useHallViewStore.getState().setMood(id); }}
             >
               <Icon size={15} aria-hidden="true" />
+              {moodLabels ? label : null}
             </button>
           );
         })}

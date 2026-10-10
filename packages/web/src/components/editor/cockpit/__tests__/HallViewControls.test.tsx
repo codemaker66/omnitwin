@@ -47,6 +47,22 @@ describe("HallViewControls", () => {
     expect(screen.getByRole("button", { name: "Daylight" }).getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("tells a sheet when a view was chosen, but not a light, and can name the lights", () => {
+    let chosen = 0;
+    const { rerender } = render(<HallViewControls captureAvailable={false} povActive={false} onViewChosen={() => { chosen += 1; }} />);
+    expect(screen.queryByText("Evening")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Evening" }));
+    expect(chosen).toBe(0);
+    fireEvent.click(screen.getByTestId("hall-view-plan"));
+    expect(chosen).toBe(1);
+    act(() => { useCockpitStore.setState({ walkMode: true }); });
+    fireEvent.click(screen.getByTestId("planner-walk-toggle"));
+    expect(useHallViewStore.getState().viewRequest?.preset).toBe("room");
+    expect(chosen).toBe(2);
+    rerender(<HallViewControls captureAvailable={false} povActive={false} moodLabels />);
+    expect(screen.getByText("Evening")).toBeTruthy();
+  });
+
   it("offers the captured room only where it may be shown", () => {
     const { rerender } = render(<HallViewControls captureAvailable={false} povActive={false} />);
     expect(screen.queryByTestId("hall-capture-toggle")).toBeNull();

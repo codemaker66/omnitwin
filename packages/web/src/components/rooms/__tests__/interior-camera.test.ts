@@ -10,6 +10,7 @@ import {
   lookTarget,
   MAX_PITCH,
   moveOnFloorPlane,
+  pinchStepMetres,
   shortestAngleTo,
   smoothAngleTowards,
   smoothTowards,
@@ -252,5 +253,30 @@ describe("wheelStepMetres", () => {
 
   it("stands still for a sideways or empty scroll", () => {
     expect(wheelStepMetres(0, 0, STEP)).toBe(0);
+  });
+});
+
+describe("pinchStepMetres", () => {
+  const SPAN = 6;
+  const MAX = 1;
+
+  it("walks forward as the fingers spread and back as they close", () => {
+    expect(pinchStepMetres(39.3, 393, SPAN, MAX)).toBeCloseTo(0.6, 6);
+    expect(pinchStepMetres(-39.3, 393, SPAN, MAX)).toBeCloseTo(-0.6, 6);
+  });
+
+  it("carries the same share of any screen's width the same distance", () => {
+    expect(pinchStepMetres(32, 320, SPAN, MAX)).toBeCloseTo(pinchStepMetres(43, 430, SPAN, MAX), 6);
+  });
+
+  it("never lets one coarse event move more than the cap", () => {
+    expect(pinchStepMetres(4000, 393, SPAN, MAX)).toBe(MAX);
+    expect(pinchStepMetres(-4000, 393, SPAN, MAX)).toBe(-MAX);
+  });
+
+  it("stands still without a change of spread or a measurable screen", () => {
+    expect(pinchStepMetres(0, 393, SPAN, MAX)).toBe(0);
+    expect(pinchStepMetres(20, 0, SPAN, MAX)).toBe(0);
+    expect(pinchStepMetres(Number.NaN, 393, SPAN, MAX)).toBe(0);
   });
 });

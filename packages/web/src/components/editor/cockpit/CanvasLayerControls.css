@@ -76,3 +76,33 @@
 .reference-layer-controls .hall-view-controls__mood {
   padding: 7px 9px;
 }
+
+/* A phone's View sheet: views over lights as two aligned rows of thumb-sized
+   tiles, each icon above its name so "Candlelight" fits a narrow phone. */
+.hall-view-sheet {
+  min-width: 0;
+  padding: 2px 2px 8px;
+}
+.hall-view-sheet .hall-view-controls {
+  display: grid;
+  gap: 4px;
+}
+.hall-view-sheet .hall-view-controls__group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.hall-view-sheet .cockpit-layer-controls__divider {
+  display: none;
+}
+.hall-view-sheet .hall-view-controls__group .cockpit-layer-btn {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 8px 4px;
+}
+.hall-view-sheet .hall-view-controls > .cockpit-layer-btn {
+  justify-content: center;
+  min-height: 44px;
+}

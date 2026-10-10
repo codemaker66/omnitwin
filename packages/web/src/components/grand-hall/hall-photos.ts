@@ -12,14 +12,14 @@
 import {
   ClampToEdgeWrapping,
   DataTexture,
+  ImageBitmapLoader,
   LinearFilter,
   LinearMipmapLinearFilter,
   RepeatWrapping,
   RGBAFormat,
   SRGBColorSpace,
-  TextureLoader,
+  Texture,
   UnsignedByteType,
-  type Texture,
 } from "three";
 import { texture as textureNode } from "three/tsl";
 
@@ -91,6 +91,7 @@ export class HallPhotos {
   private readonly placeholders: Texture[];
   private readonly nodes: Record<HallPhotoKind, PhotoNode[]> = { walls: [], floor: [], ceiling: [], dome: [] };
   private readonly loaded: Texture[] = [];
+  private readonly bitmaps: ImageBitmap[] = [];
   private disposed = false;
 
   constructor() {
@@ -112,10 +113,17 @@ export class HallPhotos {
   /** Loads every photograph; `onSettled` runs as each arrives or fails. */
   load(quality: number, onSettled: (kind: HallPhotoKind, loaded: boolean) => void): void {
     const files = hallPhotoFiles(quality);
-    const loader = new TextureLoader();
+    // Decoded off the main thread: an image element is decoded on it at its
+    // first upload, hundreds of milliseconds for the 4096 px walls, a stall
+    // on a phone. The bitmap is flipped as it decodes, so either backend
+    // uploads it unflipped and sees the same orientation.
+    const loader = new ImageBitmapLoader().setOptions({ imageOrientation: "flipY", premultiplyAlpha: "none" });
     for (const kind of HALL_LOADED_PHOTOS) {
-      loader.load(files[kind], (image) => {
-        if (this.disposed) { image.dispose(); return; }
+      loader.load(files[kind], (bitmap) => {
+        if (this.disposed) { bitmap.close(); return; }
+        this.bitmaps.push(bitmap);
+        const image = new Texture(bitmap);
+        image.flipY = false;
         image.colorSpace = SRGBColorSpace;
         image.wrapS = kind === "dome" ? RepeatWrapping : ClampToEdgeWrapping;
         image.wrapT = ClampToEdgeWrapping;
@@ -138,5 +146,6 @@ export class HallPhotos {
   dispose(): void {
     this.disposed = true;
     for (const texture of [...this.placeholders, ...this.loaded]) texture.dispose();
+    for (const bitmap of this.bitmaps) bitmap.close();
   }
 }
