@@ -227,7 +227,7 @@ export const HALL_COFFERS = {
   rows: 5,
 } as const;
 
-export type ChandelierStyle = "gilt-leaf" | "crystal";
+export type ChandelierStyle = "gilt-leaf" | "scroll";
 
 export interface HallChandelier {
   readonly id: string;
@@ -246,10 +246,14 @@ export interface HallChandelier {
 const ROSE_X = 6.5 * HALL_COFFERS.pitch;
 const ROSE_Z = 3 * HALL_COFFERS.rowPitch;
 
+/**
+ * Lowest points and reaches as measured against a metric grid in the scan's
+ * panoramas (stations scan_024 and scan_029; see hall-chandeliers.ts).
+ */
 export const HALL_CHANDELIERS: readonly HallChandelier[] = [
-  { id: "chandelier-dome", style: "gilt-leaf", position: [0, 4.75, 0], suspension: HALL_DOME.plateHeight, bottom: 3.97, radius: 0.82 },
-  { id: "chandelier-fireplace-window", style: "crystal", position: [-ROSE_X, 4.45, -ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.66, radius: 0.58 },
-  { id: "chandelier-fireplace-door", style: "crystal", position: [-ROSE_X, 4.45, ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.66, radius: 0.58 },
-  { id: "chandelier-end-window", style: "crystal", position: [ROSE_X, 4.45, -ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.66, radius: 0.58 },
-  { id: "chandelier-end-door", style: "crystal", position: [ROSE_X, 4.45, ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.66, radius: 0.58 },
+  { id: "chandelier-dome", style: "gilt-leaf", position: [0, 4.75, 0], suspension: HALL_DOME.plateHeight, bottom: 3.85, radius: 0.9 },
+  { id: "chandelier-fireplace-window", style: "scroll", position: [-ROSE_X, 4.45, -ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66 },
+  { id: "chandelier-fireplace-door", style: "scroll", position: [-ROSE_X, 4.45, ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66 },
+  { id: "chandelier-end-window", style: "scroll", position: [ROSE_X, 4.45, -ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66 },
+  { id: "chandelier-end-door", style: "scroll", position: [ROSE_X, 4.45, ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66 },
 ];

@@ -112,10 +112,10 @@ describe("Grand Hall survey", () => {
     expect(DOME_PROFILE[0]?.[1]).toBeCloseTo(HALL_HEIGHT);
   });
 
-  it("hangs the crystal chandeliers from the coffer lattice's roses", () => {
-    const crystal = HALL_CHANDELIERS.filter((chandelier) => chandelier.style === "crystal");
-    expect(crystal).toHaveLength(4);
-    for (const chandelier of crystal) {
+  it("hangs the four scroll chandeliers from the coffer lattice's roses", () => {
+    const roses = HALL_CHANDELIERS.filter((chandelier) => chandelier.style === "scroll");
+    expect(roses).toHaveLength(4);
+    for (const chandelier of roses) {
       expect(Math.abs(chandelier.position[0])).toBeCloseTo(6.5 * HALL_COFFERS.pitch, 6);
       expect(Math.abs(chandelier.position[2])).toBeCloseTo(3 * HALL_COFFERS.rowPitch, 6);
       expect(chandelier.bottom).toBeLessThan(chandelier.position[1]);

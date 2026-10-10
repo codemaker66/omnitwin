@@ -74,7 +74,7 @@ export function GrandHallLabPage(): ReactElement {
         <color attach="background" args={["#0d0b09"]} />
         <CaptureToneMapping captureShown={false} photographedRoom />
         <HallLightRig mood={mood} finish={FULL_HALL_FINISH} />
-        <GrandHallModel mood={mood} view={view} quality={FULL_HALL_FINISH.photoQuality} />
+        <GrandHallModel mood={mood} view={view} finish={FULL_HALL_FINISH} />
         <OrbitControls makeDefault enableDamping target={[0, 1, 0]} />
         <PoseController pose={pose} />
       </Canvas>

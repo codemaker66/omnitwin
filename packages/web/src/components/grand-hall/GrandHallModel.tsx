@@ -18,7 +18,6 @@ import {
   BoxGeometry,
   DataTexture,
   Vector3,
-  DoubleSide,
   InstancedBufferAttribute,
   LinearFilter,
   RGBAFormat,
@@ -27,14 +26,14 @@ import {
   type Texture,
 } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } from "three/webgpu";
-import { color, float, instancedBufferAttribute, texture, uv, vec3 } from "three/tsl";
+import { color, float, instancedBufferAttribute, mix, normalWorld, texture, uv, vec3 } from "three/tsl";
 import { hallGeometry, hallWallGeometry } from "./hall-geometry.js";
 import { loadWallRelief, type WallRelief } from "./hall-relief.js";
 import { hallChandeliers } from "./hall-chandeliers.js";
 import { paintHallTextures, disposeHallTextures, type HallTextures } from "./hall-textures.js";
 import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
-import { useHallFinish } from "./hall-finish.js";
+import { useHallFinish, type HallFinish } from "./hall-finish.js";
 import { createHallMaterials, disposeHallMaterials, HallSectionUniforms } from "./hall-materials.js";
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
@@ -56,8 +55,8 @@ export function resolveHallView(position: readonly [number, number, number], loo
 export interface GrandHallModelProps {
   readonly mood: HallMoodName;
   readonly view: HallView;
-  /** Photograph resolution; by default the device's own (hall-finish.ts). */
-  readonly quality?: number;
+  /** How much finish to draw; by default the device's own (hall-finish.ts). */
+  readonly finish?: HallFinish;
   /** Chandeliers in the overview (always shown on a walk, never in plan). */
   readonly overviewChandeliers?: boolean;
   /** Seconds a mood takes to blend into the next. */
@@ -100,7 +99,7 @@ function glowTexture(): DataTexture {
       const dy = (y + 0.5) / size - 0.5;
       const r = Math.sqrt(dx * dx + dy * dy) * 2;
       // A bright core with a long soft tail, like a lamp seen through warm air.
-      const value = Math.max(0, Math.exp(-r * r * 9) * 0.75 + Math.exp(-r * 3.2) * 0.35 - 0.02 * r);
+      const value = Math.max(0, Math.exp(-r * r * 7) * 0.9 + Math.exp(-r * 3.2) * 0.35 - 0.02 * r);
       const i = (y * size + x) * 4;
       data[i] = 255;
       data[i + 1] = 255;
@@ -128,7 +127,7 @@ interface HallResources {
   readonly capMaterial: MeshBasicNodeMaterial;
 }
 
-function createResources(quality: number, initialMood: HallMoodSpec): HallResources {
+function createResources(quality: number, liveLight: boolean, initialMood: HallMoodSpec): HallResources {
   const textures = paintHallTextures(quality);
   const photos = new HallPhotos();
   const mood = new HallMoodUniforms();
@@ -136,19 +135,28 @@ function createResources(quality: number, initialMood: HallMoodSpec): HallResour
   const section = new HallSectionUniforms();
   const materials = createHallMaterials(textures, photos, mood, section);
 
+  // As scanned: pale silver-gilt fittings on dark bronze stems, and white
+  // bulbs, which warm with the mood's chandelier light.
   const warm = mood.chandelier.rgb;
-  const gold = color("#d3a24d").rgb;
-  const frame = new MeshStandardNodeMaterial({ roughness: 0.26, metalness: 1 });
-  frame.colorNode = gold;
-  frame.emissiveNode = gold.mul(warm.mul(mood.glow.mul(0.18)).add(mood.ambient.rgb.mul(mood.ambientIntensity.mul(0.5))));
-  const crystal = new MeshStandardNodeMaterial({ roughness: 0.05, metalness: 0.1, side: DoubleSide });
-  crystal.colorNode = vec3(0.9, 0.92, 0.95);
-  crystal.emissiveNode = warm.mul(mood.glow.mul(0.42)).add(vec3(0.05));
-  const candle = new MeshBasicNodeMaterial();
-  candle.colorNode = color("#f3e9d6").mul(mood.glow.mul(0.6).add(0.32));
+  const ambient = mood.ambient.rgb.mul(mood.ambientIntensity);
+  const bulbWhite = mix(vec3(1.0, 0.98, 0.95), warm, 0.15);
+  const silverGilt = color("#cdc8b8").rgb;
+  // Lit by its own lamps; faces turned down, away from them and from the lit
+  // room above, fall dark, as the fittings' undersides do in the scan.
+  const facingUp = normalWorld.y.mul(0.3).add(0.7);
+  // Without the reflection map (a software rasteriser) the metal has nothing
+  // to mirror, so its own light carries more of its brightness.
+  const selfLit = liveLight ? 1 : 2.5;
+  const gilt = new MeshStandardNodeMaterial({ roughness: 0.3, metalness: 1 });
+  gilt.colorNode = silverGilt;
+  gilt.emissiveNode = silverGilt.mul(bulbWhite.mul(mood.glow.mul(0.3)).add(ambient.mul(0.3))).mul(facingUp).mul(selfLit);
+  const darkBronze = color("#4f4234").rgb;
+  const bronze = new MeshStandardNodeMaterial({ roughness: 0.42, metalness: 1 });
+  bronze.colorNode = darkBronze;
+  bronze.emissiveNode = darkBronze.mul(ambient.mul(0.35));
   const bulb = new MeshBasicNodeMaterial();
-  bulb.colorNode = vec3(1.0, 0.78, 0.48).mul(mood.glow.mul(5).add(0.6));
-  const chandelierMaterials = new Map<string, Material>([["frame", frame], ["crystal", crystal], ["candle", candle], ["bulb", bulb]]);
+  bulb.colorNode = bulbWhite.mul(mood.glow.mul(5).add(0.6));
+  const chandelierMaterials = new Map<string, Material>([["gilt", gilt], ["bronze", bronze], ["bulb", bulb]]);
 
   // Halos: one instanced sprite per bulb, additive, never writing depth.
   const { bulbs } = hallChandeliers();
@@ -157,8 +165,8 @@ function createResources(quality: number, initialMood: HallMoodSpec): HallResour
   const haloTexture = glowTexture();
   const haloMaterial = new SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending });
   haloMaterial.positionNode = instancedBufferAttribute(new InstancedBufferAttribute(positions, 3));
-  haloMaterial.scaleNode = float(0.34);
-  haloMaterial.colorNode = vec3(1.0, 0.74, 0.42).mul(texture(haloTexture, uv()).a).mul(mood.glow.mul(0.85));
+  haloMaterial.scaleNode = float(0.26);
+  haloMaterial.colorNode = bulbWhite.mul(texture(haloTexture, uv()).a).mul(mood.glow);
   const halos = new Sprite(haloMaterial);
   halos.count = bulbs.length;
   halos.frustumCulled = false;
@@ -184,7 +192,7 @@ function disposeResources(resources: HallResources): void {
   resources.capMaterial.dispose();
 }
 
-export function GrandHallModel({ mood, view, quality: qualityOverride, overviewChandeliers = true, moodSeconds = 1.6 }: GrandHallModelProps): ReactElement {
+export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6 }: GrandHallModelProps): ReactElement {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
   const geometry = useMemo(() => hallGeometry(), []);
@@ -192,8 +200,8 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
   const walls = useMemo(() => hallWallGeometry(relief), [relief]);
   const chandeliers = useMemo(() => hallChandeliers(), []);
   const deviceFinish = useHallFinish();
-  const quality = qualityOverride ?? deviceFinish.photoQuality;
-  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood]), [quality]);
+  const { photoQuality: quality, liveLight } = finishOverride ?? deviceFinish;
+  const resources = useMemo(() => createResources(quality, liveLight, HALL_MOODS[mood]), [quality, liveLight]);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
