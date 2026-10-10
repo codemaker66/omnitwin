@@ -79,6 +79,7 @@ import type {
   RequestState,
   RequestUrgency,
   MessageKind,
+  ObservationKind,
   ThreadAudience,
   ThreadSubject,
   RuntimePackageManifestJson,
@@ -5987,4 +5988,35 @@ export const messageReceipts = pgTable("message_receipts", {
 }, (table) => [
   primaryKey({ columns: [table.messageId, table.recipientUserId] }),
   index("message_receipts_recipient_idx").on(table.recipientUserId, table.readAt),
+]);
+
+// ---------------------------------------------------------------------------
+// Observations (goal 19 S5, migration 0088) — what a hallkeeper saw in the
+// room, as facts beside the schedule: set, doors open, live, flipping, done,
+// cleaned. Never updated; the board reads the latest by observed_at, so a tap
+// replayed from an offline phone lands where it was tapped. The CHECK list
+// matches OBSERVATION_KINDS in @omnitwin/types observations.ts. Nothing here
+// writes a time on a booking.
+// ---------------------------------------------------------------------------
+
+export const bookingObservations = pgTable("booking_observations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  bookingId: uuid("booking_id").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  /** The room the booking holds, copied at the tap. */
+  spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 12 }).$type<ObservationKind>().notNull(),
+  /** The hallkeeper's own time: the corrected clock at the tap. */
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: varchar("actor_name", { length: 160 }).notNull(),
+  actorRole: varchar("actor_role", { length: 30 }).notNull(),
+  /** Minted at the tap: a replay is the same fact. */
+  idempotencyKey: uuid("idempotency_key").notNull(),
+}, (table) => [
+  uniqueIndex("booking_observations_venue_idempotency_unique").on(table.venueId, table.idempotencyKey),
+  index("booking_observations_booking_observed_idx").on(table.bookingId, table.observedAt),
+  index("booking_observations_venue_observed_idx").on(table.venueId, table.observedAt),
+  check("booking_observations_kind", sql`${table.kind} IN ('set', 'doors-open', 'live', 'flipping', 'done', 'cleaned')`),
 ]);

@@ -247,3 +247,13 @@ export function canHandleRequests(
 ): boolean {
   return holdsVenueRole(user, venueId, REQUEST_HANDLER_ROLES);
 }
+
+/** Record what the room is doing (set, doors open, live, flipping, done,
+ *  cleaned): the floor only, the same people who handle a request (goal 19
+ *  S5). A fact about the room is never a time on the booking. */
+export function canRecordObservation(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, REQUEST_HANDLER_ROLES);
+}

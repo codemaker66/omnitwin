@@ -43,6 +43,7 @@ import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
 import { clientEventScheduleRoutes } from "./routes/client-event-schedule.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { requestRoutes, venueRequestRoutes } from "./routes/requests.js";
+import { venueObservationRoutes } from "./routes/observations.js";
 import { clientConversationRoutes, messageRoutes, threadRoutes, venueThreadRoutes } from "./routes/conversations.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
 import { eventDayEventRoutes, eventDayOpsTaskRoutes } from "./routes/event-day-ops.js";
@@ -447,6 +448,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(notificationRoutes, { db, prefix: "/notifications" });
   await server.register(venueRequestRoutes, { db, prefix: "/venues" });
   await server.register(requestRoutes, { db, prefix: "/requests" });
+  await server.register(venueObservationRoutes, { db, prefix: "/venues" });
   await server.register(venueThreadRoutes, { db, prefix: "/venues" });
   await server.register(threadRoutes, { db, prefix: "/threads" });
   await server.register(messageRoutes, { db, prefix: "/messages" });

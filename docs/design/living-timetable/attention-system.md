@@ -96,6 +96,25 @@ no breath anywhere); then urgent, attention and owned rings sit on top of the ti
 which keeps its own colour and words; a slot is never two colours at once, so the ring is
 the second channel and the timed state the first.
 
+### What the room was seen doing (S5)
+
+Observations are facts beside the schedule (D1): set, doors open, live, flipping, done,
+cleaned, each with the hallkeeper's own time from the corrected clock at the tap. The slot
+reads the latest fact by that time, whatever order the facts arrived, as a marginal line
+("Doors open 18:52", "Room set 17:40"); the timed state keeps its colour and words. Three
+facts change the slab:
+
+| Seen | Trigger | Icon · verb | Colour | Resolves |
+|---|---|---|---|---|
+| Done or cleaned | the latest fact is done or cleaned | `Check` · "Done 22:48" / "Cleaned 23:10" | `--lt-faded` edge, nothing left to tick | — |
+| Overrun | the latest fact is doors open, live or flipping; five minutes past the booking's end; no done signal | `AlertTriangle` · "Overrun · 12 min past 23:00", detail "Live 19:05 · not marked done" | `--lt-red` edge, label `--lt-urgent-label` | a done or cleaned tap |
+| Changeover at risk | the room before this slot was seen and its latest fact is not cleaned, that booking has ended, and the turnaround it needs no longer fits before this setup | `AlertTriangle` · "Changeover at risk · Guests · 15 min", detail "Chamber dinner not yet cleared · 15 min until setup, 30 min needed" | `--lt-red` edge | a cleaned tap on the room before, or this slot's doors |
+
+A room nobody has recorded raises nothing: without a done signal there is no overrun, and
+without a doors-open or live signal there is nothing to overrun. The overrun threshold and
+the instant a changeover becomes at risk are boundaries like any other, so the clock ticks
+to them exactly. Nothing observed ever writes a time on the booking.
+
 ## Laws
 
 1. **Phase lock.** Every cadence (4, 3, 2 and 1.5 s) divides 60 s, so one 60-second

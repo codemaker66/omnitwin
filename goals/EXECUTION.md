@@ -27,7 +27,7 @@ stay in goal 05.
 | S2 Transport (commands and events on the socket, cursor replay, the one clock, client poll) | 8 Oct | 8 Oct | 9 Oct 0586ab03 (PR #56) | 9 Oct, as S0 | — (as S0) |
 | S3 The board, rebuilt | 8–9 Oct: page, stylesheet and tests rebuilt; typecheck, lint and 182 unit tests green; e2e 4 of 4 and visual harness 28 of 28 against a warm dev server, screenshots read on office, wall and phone | 8–9 Oct 7a2b8de4, e5637090 (master merged, 0087), 69c2fbc3, 02074ee2 (gate admission) | 9 Oct 0586ab03 (PR #56) | 9 Oct, as S0; venviewer.com serves the rebuilt Day Board chunk | — (as S0) |
 | S4 Requests and conversations on the slot | — | — | — | — | — |
-| S5 Observations | — | — | — | — | — |
+| S5 Observations (facts beside the schedule: contracts, migration 0088, service and REST door, the `observation.record` command on the ledger, the hub's `observation.event`, the board derivation with overrun and changeover from what was seen, the offline queue's ordered drain) | 10 Oct: types 2432, API 61 (observations 6 of 6 on the disposable cluster), web 18 unit tests; API and web typecheck and lint green; the slab controls and the live refetch follow S4 on master | 10 Oct, branch `claude/living-timetable-s5` (PR follows) | — | — | — |
 | S6 The When, made fun and complete | — | — | — | — | — |
 | S7 Beyond the glass | — | — | — | — | — |
 | S8 Kiosk and phone hardening | — | — | — | — | — |

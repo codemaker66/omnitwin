@@ -4,11 +4,19 @@ import type {
   CalendarResponse,
   CalendarRoom,
   CalendarTurnaroundRule,
+  ObservationKind,
   RequestKind,
   RequestState,
   RequestUrgency,
 } from "@omnitwin/types";
-import { describeRequestKind, isUnownedRequest } from "@omnitwin/types";
+import {
+  describeObservationKind,
+  describeRequestKind,
+  isUnownedRequest,
+  latestObservation,
+  observationMeansInUse,
+  observationMeansOver,
+} from "@omnitwin/types";
 import { VENUE_TIME_ZONE, formatWallTime } from "../../diary/lib/board-time.js";
 import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 
@@ -157,6 +165,9 @@ export interface DayBoardSlot {
   readonly requestSignal: DayBoardRequestSignal | null;
   /** The copper ring, or null when nothing is open. */
   readonly attention: SlotAttention | null;
+  /** What the room was last seen doing (goal 19 S5), or null when nobody
+   *  has recorded anything: a fact beside the schedule, never a time. */
+  readonly observed: SlotObserved | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +293,82 @@ export function groupRequestsByBooking(
     byBooking.set(request.bookingId, list);
   }
   return byBooking;
+}
+
+// ---------------------------------------------------------------------------
+// Observations on the slot (goal 19 S5; D1): what a hallkeeper saw, as facts
+// beside the schedule. The latest fact by the hallkeeper's own time is the
+// room's observed state; nothing here moves a time.
+// ---------------------------------------------------------------------------
+
+/** How long past its end a room seen in use may run before the board calls
+ *  it an overrun: a speech running over is not yet an exception. */
+const OVERRUN_GRACE_MIN = 5;
+
+export interface DayBoardSlotObservation {
+  readonly bookingId: string;
+  /** The room the fact was seen in, or null when it applies to the booking. */
+  readonly spaceId?: string | null;
+  readonly kind: ObservationKind;
+  /** ISO-8601 instant: the corrected clock at the tap. */
+  readonly observedAt: string;
+  /** ISO-8601 instant: when the server wrote it. */
+  readonly recordedAt?: string;
+  readonly actorName?: string | null;
+}
+
+/** What a slot was last seen doing. */
+export interface SlotObserved {
+  readonly kind: ObservationKind;
+  readonly atMs: number;
+  /** "Doors open 18:52" */
+  readonly line: string;
+  readonly actorName: string | null;
+}
+
+export function groupObservationsByBooking(
+  observations: readonly DayBoardSlotObservation[],
+): ReadonlyMap<string, readonly DayBoardSlotObservation[]> {
+  const byBooking = new Map<string, DayBoardSlotObservation[]>();
+  for (const observation of observations) {
+    const list = byBooking.get(observation.bookingId) ?? [];
+    list.push(observation);
+    byBooking.set(observation.bookingId, list);
+  }
+  return byBooking;
+}
+
+/** The facts about one booking in one room: a fact seen in another room of
+ *  the same event belongs to that room's slot. */
+function factsFor(
+  byBooking: ReadonlyMap<string, readonly DayBoardSlotObservation[]>,
+  bookingId: string,
+  roomId: string,
+): readonly DayBoardSlotObservation[] {
+  return (byBooking.get(bookingId) ?? []).filter(
+    (fact) => fact.spaceId === undefined || fact.spaceId === null || fact.spaceId === roomId,
+  );
+}
+
+function describeObserved(latest: DayBoardSlotObservation | null, timeZone: string): SlotObserved | null {
+  if (latest === null) return null;
+  const atMs = Date.parse(latest.observedAt);
+  return {
+    kind: latest.kind,
+    atMs,
+    line: `${describeObservationKind(latest.kind)} ${formatWallTime(atMs, timeZone)}`,
+    actorName: latest.actorName ?? null,
+  };
+}
+
+/** The earliest instant after now among the candidates, or null. */
+function earliestBoundary(nowMs: number, ...candidates: readonly (number | null)[]): number | null {
+  let earliest: number | null = null;
+  for (const candidate of candidates) {
+    if (candidate === null || candidate <= nowMs) continue;
+    if (earliest === null || candidate < earliest) earliest = candidate;
+  }
+  return earliest;
 }
 
 /** The board's legend: one entry per colour, each worded exactly as a slot in
@@ -508,8 +595,12 @@ export function deriveDayBoard(
   /** Requests made against this venue's bookings. Optional: a board derived
    *  without them is exactly the board that existed before requests did. */
   requests: readonly DayBoardSlotRequest[] = [],
+  /** What hallkeepers have seen in the rooms (S5). Optional for the same
+   *  reason: without facts the board is the schedule alone. */
+  observations: readonly DayBoardSlotObservation[] = [],
 ): DayBoard {
   const requestsByBooking = groupRequestsByBooking(requests);
+  const observationsByBooking = groupObservationsByBooking(observations);
   const bookings: CalendarBookingEntry[] = [];
   const phases: CalendarPhaseEntry[] = [];
   for (const entry of response.entries) {
@@ -587,13 +678,34 @@ export function deriveDayBoard(
         ? bookingStateLabel(entry)
         : entry.kind === "internal_block" ? "House block" : "Confirmed booking";
 
+      // What the room was last seen doing (S5): the latest fact by the
+      // hallkeeper's own time, for this booking in this room.
+      const observed = describeObserved(
+        latestObservation(factsFor(observationsByBooking, entry.id, room.id)),
+        timeZone,
+      );
+
       const previous = entries[index - 1];
       let gapBefore: LaneGap | null = null;
+      let changeover: string | null = null;
+      let changeoverFromMs: number | null = null;
       if (previous !== undefined) {
         const previousEnd = Date.parse(previous.endsAt);
         const needed = resolveTurnaroundMinutes(response.turnaroundRules, room.id, previous.eventType);
         const minutes = Math.max(0, Math.round((setupStartsAtMs - previousEnd) / MIN_MS));
         gapBefore = { minutes, neededMinutes: needed, short: needed !== null && minutes < needed };
+        // The room before this one was seen and has not been cleared: once
+        // the turnaround it needs no longer fits before this setup, this slot
+        // is at risk. An unseen room raises nothing: no signal, no exception.
+        const previousSeen = latestObservation(factsFor(observationsByBooking, previous.id, room.id));
+        if (needed !== null && previousSeen !== null && previousSeen.kind !== "cleaned" && nowMs < startsAtMs) {
+          const riskFromMs = Math.max(previousEnd, setupStartsAtMs - needed * MIN_MS);
+          if (nowMs >= riskFromMs) {
+            changeover = `${previous.title} not yet cleared · ${formatMinutes(minutesUntil(setupStartsAtMs, nowMs))} until setup, ${formatMinutes(needed)} needed`;
+          } else {
+            changeoverFromMs = riskFromMs;
+          }
+        }
       }
 
       const linkedRooms = entry.eventId === null
@@ -623,38 +735,99 @@ export function deriveDayBoard(
         requests: slotRequests,
         requestSignal,
         attention,
+        observed,
       };
 
-      const slot: DayBoardSlot = blocking !== undefined && timed.state !== "done"
-        ? {
-            ...base,
-            state: "exception",
-            stateLabel: "Changeover at risk",
-            tone: "red",
-            motion: "none",
-            icon: "alert-triangle",
-            // The verb says why, then where the room is in its day: a slab
-            // that only read "Scheduled 14:20" under a red edge made the
-            // reader open it to learn what was wrong.
-            countdown: `Changeover at risk · ${timed.countdown}`,
-            exception: "turnaround-at-risk",
-            exceptionDetail: blocking,
-            turnaroundWarning: null,
-            nextBoundaryMs: timed.nextBoundaryMs,
-          }
-        : {
-            ...base,
-            state: timed.state,
-            stateLabel: timed.stateLabel,
-            tone: timed.tone,
-            motion: timed.motion,
-            icon: timed.icon,
-            countdown: timed.countdown,
-            exception: null,
-            exceptionDetail: null,
-            turnaroundWarning: warningByBooking.get(entry.id) ?? null,
-            nextBoundaryMs: timed.nextBoundaryMs,
-          };
+      const overrunFromMs = endsAtMs + OVERRUN_GRACE_MIN * MIN_MS;
+      const seenInUse = observed !== null && observationMeansInUse(observed.kind);
+
+      let slot: DayBoardSlot;
+      if (observed !== null && observationMeansOver(observed.kind)) {
+        // Marked done by a hallkeeper (D3): faded ink, nothing left to tick.
+        slot = {
+          ...base,
+          state: "done",
+          stateLabel: observed.kind === "cleaned" ? "Cleaned" : "Done",
+          tone: "faded",
+          motion: "none",
+          icon: "check",
+          countdown: observed.line,
+          exception: null,
+          exceptionDetail: null,
+          turnaroundWarning: null,
+          nextBoundaryMs: null,
+        };
+      } else if (observed !== null && seenInUse && nowMs >= overrunFromMs) {
+        // Seen in use, past its end, and nobody has marked it done: an
+        // overrun (D3 urgent). Without a done signal there is no end; only a
+        // done or cleaned tap resolves it.
+        slot = {
+          ...base,
+          state: "exception",
+          stateLabel: "Overrun",
+          tone: "red",
+          motion: "none",
+          icon: "alert-triangle",
+          countdown: `Overrun · ${formatMinutes(Math.floor((nowMs - endsAtMs) / MIN_MS))} past ${formatWallTime(endsAtMs, timeZone)}`,
+          exception: "overrun",
+          exceptionDetail: `${observed.line} · not marked done`,
+          turnaroundWarning: null,
+          nextBoundaryMs: null,
+        };
+      } else if (blocking !== undefined && timed.state !== "done") {
+        slot = {
+          ...base,
+          state: "exception",
+          stateLabel: "Changeover at risk",
+          tone: "red",
+          motion: "none",
+          icon: "alert-triangle",
+          // The verb says why, then where the room is in its day: a slab
+          // that only read "Scheduled 14:20" under a red edge made the
+          // reader open it to learn what was wrong.
+          countdown: `Changeover at risk · ${timed.countdown}`,
+          exception: "turnaround-at-risk",
+          exceptionDetail: blocking,
+          turnaroundWarning: null,
+          nextBoundaryMs: timed.nextBoundaryMs,
+        };
+      } else if (changeover !== null && timed.state !== "done") {
+        slot = {
+          ...base,
+          state: "exception",
+          stateLabel: "Changeover at risk",
+          tone: "red",
+          motion: "none",
+          icon: "alert-triangle",
+          countdown: `Changeover at risk · ${timed.countdown}`,
+          exception: "turnaround-at-risk",
+          exceptionDetail: changeover,
+          turnaroundWarning: null,
+          nextBoundaryMs: timed.nextBoundaryMs,
+        };
+      } else {
+        slot = {
+          ...base,
+          state: timed.state,
+          stateLabel: timed.stateLabel,
+          tone: timed.tone,
+          motion: timed.motion,
+          icon: timed.icon,
+          countdown: timed.countdown,
+          exception: null,
+          exceptionDetail: null,
+          turnaroundWarning: warningByBooking.get(entry.id) ?? null,
+          // The next instant anything changes: the schedule's own boundary,
+          // the overrun threshold while the room is seen in use, or the
+          // moment a changeover becomes at risk.
+          nextBoundaryMs: earliestBoundary(
+            nowMs,
+            timed.nextBoundaryMs,
+            seenInUse ? overrunFromMs : null,
+            changeoverFromMs,
+          ),
+        };
+      }
       return slot;
     });
     return { room, slots };
