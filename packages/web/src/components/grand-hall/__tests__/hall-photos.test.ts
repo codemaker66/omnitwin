@@ -24,8 +24,10 @@ vi.mock("three", async (importOriginal) => {
 
 const { HallPhotos } = await import("../hall-photos.js");
 
-function bitmap(): ImageBitmap {
-  return { width: 4, height: 4, close: vi.fn() };
+/** A decoded image, with its close() kept apart for assertions. */
+function bitmap(): { readonly image: ImageBitmap; readonly close: ReturnType<typeof vi.fn> } {
+  const close = vi.fn();
+  return { image: { width: 4, height: 4, close }, close };
 }
 
 function loadFor(name: string): { onLoad: (bitmap: ImageBitmap) => void; onError: () => void } {
@@ -53,8 +55,8 @@ describe("HallPhotos", () => {
     ]);
 
     const decoded = bitmap();
-    loadFor("walls").onLoad(decoded);
-    expect(walls.value.image).toBe(decoded);
+    loadFor("walls").onLoad(decoded.image);
+    expect(walls.value.image).toBe(decoded.image);
     expect(walls.value.flipY).toBe(false);
     expect(walls.value.generateMipmaps).toBe(true);
     expect(settled).toEqual([["walls", true]]);
@@ -65,12 +67,12 @@ describe("HallPhotos", () => {
     const photos = new HallPhotos();
     photos.load(0.5, () => { /* settled */ });
     const kept = bitmap();
-    loadFor("walls-2048").onLoad(kept);
+    loadFor("walls-2048").onLoad(kept.image);
     photos.dispose();
     expect(kept.close).toHaveBeenCalledTimes(1);
 
     const late = bitmap();
-    loadFor("dome-2048").onLoad(late);
+    loadFor("dome-2048").onLoad(late.image);
     expect(late.close).toHaveBeenCalledTimes(1);
   });
 
