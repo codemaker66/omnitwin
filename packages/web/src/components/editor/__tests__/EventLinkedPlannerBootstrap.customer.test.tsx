@@ -16,7 +16,7 @@ const CONFIG = "22222222-2222-4222-8222-222222222222";
 const VENUE = "33333333-3333-4333-8333-333333333333";
 const SPACE = { id: "44444444-4444-4444-8444-444444444444", name: "Ballroom" };
 const schedule: ClientEventSchedule = { event: { id: EVENT, venueId: VENUE, name: "Autumn celebration", eventType: null, status: "draft", startsAt: null, endsAt: null, guestCount: 12 },
-  venue: { id: VENUE, name: "City rooms", timezone: "Europe/London" }, scheduleState: "working", phases: [], layouts: [{ id: CONFIG, name: "Dinner layout", space: SPACE }] };
+  venue: { id: VENUE, name: "City rooms", timezone: "Europe/London" }, scheduleState: "working", phases: [], layouts: [{ id: CONFIG, name: "Dinner layout", space: SPACE }], slots: [] };
 function Destination(): React.ReactElement {
   const location = useLocation();
   return <output>{location.pathname + location.search}</output>;

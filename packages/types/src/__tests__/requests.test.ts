@@ -6,12 +6,26 @@ import {
   REQUEST_OUTCOMES,
   REQUEST_STATES,
   RequestTransitionSchema,
+  VenueHandlerSchema,
   describeRequestKind,
   describeRequestOutcome,
   describeRequestState,
   isOpenRequest,
   nextRequestState,
 } from "../requests.js";
+
+// Goal 19 S4: the people a request can be handed to, as the picker reads
+// them. A name and a role, never an email or a phone: the picker names a
+// colleague, it does not expose the staff record.
+describe("the venue's handlers", () => {
+  it("is a name and a role, and nothing more of the person", () => {
+    const handler = { id: UUID, name: "Elaine MacGregor", role: "hallkeeper" };
+    expect(VenueHandlerSchema.parse(handler)).toEqual(handler);
+    expect(VenueHandlerSchema.safeParse({ ...handler, email: "elaine@example.test" }).success).toBe(false);
+    expect(VenueHandlerSchema.safeParse({ ...handler, venueId: UUID }).success).toBe(false);
+    expect(VenueHandlerSchema.safeParse({ ...handler, name: "" }).success).toBe(false);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Goal 19 S1 — the request vocabulary widened (D4): chairs, tables and setup

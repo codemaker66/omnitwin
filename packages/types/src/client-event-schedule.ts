@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BookingKindSchema } from "./booking.js";
 import { EventIdSchema, EventPhaseIdSchema, EventStatusSchema } from "./event-phase-graph.js";
 import { ConfigurationIdSchema } from "./configuration.js";
 import { SpaceIdSchema } from "./space.js";
@@ -8,6 +9,21 @@ const ScheduleSpaceSchema = z.object({
   id: SpaceIdSchema,
   name: z.string().trim().min(1).max(200),
 }).strict();
+
+/** One slot of the client's event (goal 19 S4): the booking the house holds
+ *  for it, with its room, window and commitment. The client asks the house
+ *  about a slot, so this is where the request composer finds its bookingId.
+ *  No notes, no ladder position, no owner, no decision date: the client reads
+ *  their when, never the Diary's internals. */
+const ScheduleSlotSchema = z.object({
+  bookingId: z.string().uuid(),
+  kind: BookingKindSchema,
+  title: z.string().trim().min(1).max(200),
+  space: ScheduleSpaceSchema,
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime(),
+}).strict();
+export type ClientEventScheduleSlot = z.infer<typeof ScheduleSlotSchema>;
 
 /** A deliberately narrow shared schedule, never the internal phase graph. */
 export const ClientEventScheduleSchema = z.object({
@@ -41,6 +57,9 @@ export const ClientEventScheduleSchema = z.object({
     name: z.string().trim().min(1).max(200),
     space: ScheduleSpaceSchema,
   }).strict()),
+  // The event's live bookings, earliest first. Empty until the house holds a
+  // slot for the event; a departed booking (released, cancelled) never appears.
+  slots: z.array(ScheduleSlotSchema),
 }).strict().superRefine((schedule, context) => {
   if (schedule.event.venueId !== schedule.venue.id) {
     context.addIssue({ code: "custom", path: ["venue", "id"], message: "Schedule venue must match its event" });
@@ -50,6 +69,10 @@ export const ClientEventScheduleSchema = z.object({
     if (new Set(ids).size !== ids.length) {
       context.addIssue({ code: "custom", path: [key], message: "Schedule identities must be unique" });
     }
+  }
+  const bookingIds = schedule.slots.map((slot) => slot.bookingId);
+  if (new Set(bookingIds).size !== bookingIds.length) {
+    context.addIssue({ code: "custom", path: ["slots"], message: "Schedule identities must be unique" });
   }
 });
 

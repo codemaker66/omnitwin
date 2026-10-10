@@ -6,6 +6,7 @@ import {
   RequestListQuerySchema,
   RequestStatusHistoryEntrySchema,
   RequestTransitionSchema,
+  VenueHandlerSchema,
   VenueRequestSchema,
   type VenueRequest,
 } from "@omnitwin/types";
@@ -16,6 +17,7 @@ import { emit } from "../observability/event-bus.js";
 import { canManageVenue } from "../utils/query.js";
 import {
   createRequestCore,
+  listRequestHandlers,
   listRequestsForVenue,
   readRequest,
   runRequestEscalationPass,
@@ -169,6 +171,17 @@ export async function venueRequestRoutes(
     const result = await listRequestsForVenue(db, actorOf(request), params.data.venueId, query.data);
     if (isDeny(result)) return sendDeny(reply, result);
     return { data: z.array(VenueRequestSchema).parse(result) };
+  });
+
+  // Goal 19 S4: who on the floor a request can be handed to, for the picker
+  // on the slab. Name and role only; the core decides who is admitted.
+  server.get("/:venueId/handlers", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const params = VenueParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const result = await listRequestHandlers(db, actorOf(request), params.data.venueId);
+    if (isDeny(result)) return sendDeny(reply, result);
+    return { data: z.array(VenueHandlerSchema).parse(result) };
   });
 
   // The escalation sweep as an endpoint, for an external cron and for a
