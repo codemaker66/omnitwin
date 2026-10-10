@@ -309,3 +309,26 @@ describe("SelectionSystem pointer history through EditorBridge", () => {
     expect(useEditorStore.getState().objects).toEqual(initial);
   });
 });
+
+describe("SelectionSystem marquee", () => {
+  it("holds the pointer while a box is drawn, so its release ends the box wherever it lands", () => {
+    render(<SelectionSystem />);
+    pointer("pointerDown", 40, 360);
+    pointer("pointerMove", 90, 380);
+    expect(useSelectionStore.getState().marqueeActive).toBe(true);
+    // Captured, the release comes back to the canvas even over a disabled
+    // button, which a browser gives no pointer events at all.
+    expect(canvas.hasPointerCapture(1)).toBe(true);
+    pointer("pointerUp", 90, 380);
+    expect(useSelectionStore.getState().marqueeActive).toBe(false);
+  });
+
+  it("ends a box whose pointer the browser takes back", () => {
+    render(<SelectionSystem />);
+    pointer("pointerDown", 40, 360);
+    pointer("pointerMove", 90, 380);
+    expect(useSelectionStore.getState().marqueeActive).toBe(true);
+    act(() => { fireEvent.lostPointerCapture(canvas, { pointerId: 1 }); });
+    expect(useSelectionStore.getState().marqueeActive).toBe(false);
+  });
+});
