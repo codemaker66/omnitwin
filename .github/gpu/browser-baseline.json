@@ -647,6 +647,21 @@
       ],
       "expectedStatus": "skipped",
       "limits": "This is reviewed inventory admission, not execution evidence. These four cases were absent from sourceRunId, sourceReports and the earlier admissions; they self-gate (skipped) unless E2E_LIVING_TIMETABLE=1 provides the live stack, exactly as diary-live.spec.ts does, so the hosted CPU shards record them as skips and every executed case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-10",
+      "reason": "Requests and conversations on the slot (goal 19 S4, T-651), route-mocked: the hallkeeper reads the client's ask on the slot's card in the paper register, sees one tab per thread with the copper badge only on the one the client can read, opens the floor's thread with the first note and sends it under one key, takes the request and hands it to a named colleague, never to themselves; and the client asks for ten more chairs on the live slot in one gesture, reads who has it in the house's own words on the poll, and is closed out in one sentence when the link is revoked, with every label readable at 12 px and 4.5:1.",
+      "sourceCommit": "678c8ea9327d35215be7aa556921937e9c14aa14",
+      "sourceFile": "packages/web/e2e/living-timetable-slot.spec.ts",
+      "sourceFileGitBlobSha256": "7adbb4c4b27ffdcfc75817335ada8f15c0a3c1a312836bef688fb0794ea6a184",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "1d771fb03aa98be4ef94ef48624bec9351b0f767f742ed2889625937281d0a1b",
+      "caseIds": [
+        "548c386e48552feb0131-08e905dd329bbda36a3b",
+        "548c386e48552feb0131-6f1f41cc25f3874e45c3"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; they intercept the API before transport, so the live path (the ring within a second over the socket) is proved by living-timetable-three-identities.spec.ts against the real stack, not here; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -4799,6 +4814,28 @@
       ],
       "project": "chromium",
       "expectedStatus": "skipped"
+    },
+    {
+      "id": "548c386e48552feb0131-6f1f41cc25f3874e45c3",
+      "file": "living-timetable-slot.spec.ts",
+      "title": "the hallkeeper reads the client's ask on the slot, notes the floor under one key, takes it and hands it over",
+      "suitePath": [
+        "living-timetable-slot.spec.ts",
+        "Requests and conversations on the slot"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "548c386e48552feb0131-08e905dd329bbda36a3b",
+      "file": "living-timetable-slot.spec.ts",
+      "title": "the client asks for ten more chairs on the live slot, reads who has it, and is closed out in one sentence when the link is revoked",
+      "suitePath": [
+        "living-timetable-slot.spec.ts",
+        "Requests and conversations on the slot"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
     }
   ]
 }

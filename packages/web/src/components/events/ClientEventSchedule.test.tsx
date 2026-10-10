@@ -19,7 +19,7 @@ const CONFIG = "22222222-2222-4222-8222-222222222222";
 const VENUE = "33333333-3333-4333-8333-333333333333";
 const SPACE = { id: "44444444-4444-4444-8444-444444444444", name: "Ballroom" };
 const data: ClientEventSchedule = { event: { id: EVENT, venueId: VENUE, name: "Autumn celebration", eventType: null, status: "draft", startsAt: null, endsAt: null, guestCount: 12 }, venue: { id: VENUE, name: "City rooms", timezone: "Europe/London" }, scheduleState: "working",
-  phases: [{ id: "55555555-5555-4555-8555-555555555555", name: "Dinner", startsAt: "2026-09-18T22:30:00.000Z", durationMinutes: 90, space: SPACE }], layouts: [{ id: CONFIG, name: "Dinner layout", space: SPACE }] };
+  phases: [{ id: "55555555-5555-4555-8555-555555555555", name: "Dinner", startsAt: "2026-09-18T22:30:00.000Z", durationMinutes: 90, space: SPACE }], layouts: [{ id: CONFIG, name: "Dinner layout", space: SPACE }], slots: [] };
 beforeEach(() => {
   request.mockReset();
   vi.mocked(getRoomLayoutTimeline).mockClear();
