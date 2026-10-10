@@ -17,7 +17,7 @@
 // shown: captures carry their own camera response.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { UnsignedByteType, type Camera, type Scene } from "three";
 import { RenderPipeline, type Node, type WebGPURenderer } from "three/webgpu";
@@ -45,7 +45,7 @@ import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 import { fxaa } from "three/examples/jsm/tsl/display/FXAANode.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { registerNativeFrameComposer } from "../../lib/native-frame-composer.js";
-import { readRenderDeviceContext, selectRenderProfile, type RenderProfile } from "../../lib/render-quality.js";
+import type { RenderProfile } from "../../lib/render-quality.js";
 import { sceneGrade } from "../../lib/scene-grade.js";
 
 interface BuiltPipeline {
@@ -145,18 +145,21 @@ export function buildPlannerPipeline(renderer: WebGPURenderer, scene: Scene, cam
 export interface PlannerRenderPipelineProps {
   /** False while a captured room is shown, or for scenes that draw plainly. */
   readonly enabled: boolean;
+  /** The device's profile (lib/render-quality.ts), chosen once by the scene. */
+  readonly profile: RenderProfile;
 }
 
 /** Installs the planner's pipeline as the canvas's frame composer. */
-export function PlannerRenderPipeline({ enabled }: PlannerRenderPipelineProps): null {
+export function PlannerRenderPipeline({ enabled, profile }: PlannerRenderPipelineProps): null {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
-  const profile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), []);
   const convergence = useRef({ remaining: 0, selfRequested: false });
 
-  useEffect(() => {
+  // A layout effect registers the composer before the next frame can draw:
+  // one plain frame would compile every visible material for the canvas too.
+  useLayoutEffect(() => {
     const native = getNativeRenderer(gl);
     if (native === null || !enabled || profile.name === "off") return undefined;
     let built: BuiltPipeline;

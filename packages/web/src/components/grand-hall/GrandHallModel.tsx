@@ -150,6 +150,11 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
   const capRefs = useRef<(import("three").Group | null)[]>([]);
   const resolvedView = useRef<Exclude<HallView, "auto">>(view === "auto" ? "overview" : view);
   const chandelierGroup = useRef<import("three").Group | null>(null);
+  const chandeliersShown = useRef(false);
+  // Hidden fittings draw vanishingly small for their first frames, so their
+  // shaders compile while the room loads, not when the camera first comes
+  // down to them (a half-second stall in the middle of a zoom otherwise).
+  const chandelierWarmFrames = useRef(4);
   const room = useRef<import("three").Group | null>(null);
   const lookDirection = useMemo(() => new Vector3(), []);
   // The room's own environment, recaptured whenever a surface or a mood settles.
@@ -242,15 +247,17 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
     if (environment !== null && captureNeeded.current && blend.current === null && roomGroup !== null) {
       captureNeeded.current = false;
       for (let index = 0; index < cutState.current.length; index++) resources.section.set(index, HALL_CUTS.none);
-      const chandeliersShown = chandelierGroup.current?.visible ?? false;
-      if (chandelierGroup.current !== null) chandelierGroup.current.visible = true;
+      const fittings = chandelierGroup.current;
+      const shownBefore = fittings?.visible ?? false;
+      const scaleBefore = fittings?.scale.x ?? 1;
+      if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
       try {
         state.scene.environment = environment.capture(roomGroup);
         state.scene.environmentIntensity = resources.mood.reflections;
       } catch {
         // Without its own reflections the room keeps the previous environment.
       } finally {
-        if (chandelierGroup.current !== null) chandelierGroup.current.visible = chandeliersShown;
+        if (fittings !== null) { fittings.visible = shownBefore; fittings.scale.setScalar(scaleBefore); }
       }
       moving = true;
     }
@@ -265,9 +272,14 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
     // once the camera comes down toward the room (with hysteresis).
     const group = chandelierGroup.current;
     if (group !== null) {
+      const shown = chandeliersShown.current;
       const show = effective === "walk" || (effective === "overview" && overviewChandeliers
-        && (group.visible ? camera[1] < 11.5 : camera[1] < 10.5));
-      if (group.visible !== show) { group.visible = show; moving = true; }
+        && (shown ? camera[1] < 11.5 : camera[1] < 10.5));
+      if (shown !== show) { chandeliersShown.current = show; moving = true; }
+      const warming = !show && chandelierWarmFrames.current > 0;
+      if (warming) { chandelierWarmFrames.current -= 1; moving = true; }
+      group.visible = show || warming;
+      group.scale.setScalar(show ? 1 : 1e-4);
     }
     // A cut that starts to move does not spend the demand loop's idle gap.
     const damping = 1 - Math.exp(-hallFrameStep(delta, !cutsEasing.current) * 7);

@@ -10,7 +10,7 @@
 // changed and nothing is saved.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   AdditiveBlending,
@@ -24,6 +24,7 @@ import {
   SphereGeometry,
   Vector3,
   type BufferGeometry,
+  type Group,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
@@ -231,17 +232,32 @@ export function TableCandles(): ReactElement {
     invalidate();
   }, [invalidate, meshes, tables]);
 
-  // Unlit candles are not drawn at all.
+  // Unlit candles are not drawn at all, except vanishingly small (and at
+  // least once) for their first frames, so their shaders compile on arrival
+  // and not on the first change of mood.
+  const group = useRef<Group | null>(null);
+  const warmFrames = useRef(4);
   useFrame(() => {
+    const all = [meshes.candles, meshes.flames, meshes.linen, meshes.floor];
     const lit = eventLight.candles.value > 0.004;
+    if (warmFrames.current > 0) {
+      warmFrames.current -= 1;
+      for (const mesh of all) { mesh.visible = true; mesh.count = Math.max(1, mesh.count); }
+      group.current?.scale.setScalar(lit ? 1 : 1e-4);
+      // The last warm frame restores the real instance counts.
+      if (warmFrames.current === 0) fillCandles(meshes, tables);
+      invalidate();
+      return;
+    }
+    group.current?.scale.setScalar(1);
     if (meshes.candles.visible !== lit) {
-      for (const mesh of [meshes.candles, meshes.flames, meshes.linen, meshes.floor]) mesh.visible = lit;
+      for (const mesh of all) mesh.visible = lit;
       invalidate();
     }
   });
 
   return (
-    <group name="table-candles">
+    <group ref={group} name="table-candles">
       <primitive object={meshes.floor} />
       <primitive object={meshes.linen} />
       <primitive object={meshes.candles} />

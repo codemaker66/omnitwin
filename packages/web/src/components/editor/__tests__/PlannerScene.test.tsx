@@ -388,14 +388,16 @@ describe("PlannerScene", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("starts at native device resolution on a compact viewport", () => {
+  it("draws a 3x screen at the render profile's 2x cap on a compact viewport", () => {
+    // Profiles cap density (lib/render-quality.ts): a phone's third device
+    // pixel costs over twice the fill of 2x for detail its density hides.
     const oldDpr = window.devicePixelRatio;
     const oldWidth = window.innerWidth;
     Object.defineProperty(window, "devicePixelRatio", { value: 3, configurable: true });
     Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
     try {
       const { getByTestId } = render(<PlannerScene />);
-      expect(getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("3");
+      expect(getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("2");
     } finally {
       Object.defineProperty(window, "devicePixelRatio", { value: oldDpr, configurable: true });
       Object.defineProperty(window, "innerWidth", { value: oldWidth, configurable: true });

@@ -36,6 +36,11 @@ export interface RenderProfile {
   readonly name: RenderProfileName;
   /** Upper bound on the canvas's device pixel ratio. */
   readonly maxPixelRatio: number;
+  /**
+   * Most device pixels a frame may draw, or null for no budget. Phones' 3x
+   * screens are drawn at 2x or below: their density hides the difference.
+   */
+  readonly pixelBudget: number | null;
   readonly antiAlias: AntiAlias;
   /** MSAA samples of the scene pass; zero whenever a pass reads its depth. */
   readonly sceneSamples: number;
@@ -53,6 +58,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
   off: {
     name: "off",
     maxPixelRatio: 2,
+    pixelBudget: null,
     antiAlias: "none",
     sceneSamples: 4,
     ambientOcclusion: null,
@@ -63,6 +69,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
   phone: {
     name: "phone",
     maxPixelRatio: 2,
+    pixelBudget: 2_200_000,
     antiAlias: "none",
     sceneSamples: 4,
     ambientOcclusion: null,
@@ -73,6 +80,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
   tablet: {
     name: "tablet",
     maxPixelRatio: 2,
+    pixelBudget: 3_200_000,
     antiAlias: "fxaa",
     sceneSamples: 0,
     ambientOcclusion: { resolutionScale: 0.5, radius: 0.45, samples: 8, intensity: 0.85 },
@@ -83,6 +91,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
   desktop: {
     name: "desktop",
     maxPixelRatio: 2,
+    pixelBudget: null,
     antiAlias: "temporal",
     sceneSamples: 0,
     ambientOcclusion: { resolutionScale: 0.5, radius: 0.5, samples: 12, intensity: 0.9 },
@@ -110,6 +119,19 @@ export function selectRenderProfile(device: RenderDeviceContext): RenderProfile 
   if (device.override !== null && isProfileName(device.override)) return RENDER_PROFILES[device.override];
   if (!device.coarsePointer) return RENDER_PROFILES.desktop;
   return device.shortSide < 600 ? RENDER_PROFILES.phone : RENDER_PROFILES.tablet;
+}
+
+/**
+ * The canvas's pixel ratio for a profile: the native ratio, at most the
+ * profile's maximum and within its pixel budget for a canvas of the given CSS
+ * size, never raised above native nor (from native 1 or more) below 1.
+ */
+export function profilePixelRatio(profile: RenderProfile, nativeRatio: number, cssWidth: number, cssHeight: number): number {
+  let ratio = Math.min(nativeRatio, profile.maxPixelRatio);
+  if (profile.pixelBudget !== null && cssWidth > 0 && cssHeight > 0) {
+    ratio = Math.min(ratio, Math.sqrt(profile.pixelBudget / (cssWidth * cssHeight)));
+  }
+  return Math.max(Math.min(1, nativeRatio), ratio);
 }
 
 /** Reads the current browser's render device context. */

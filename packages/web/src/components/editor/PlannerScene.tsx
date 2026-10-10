@@ -3,6 +3,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
+import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
+import { profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
@@ -32,6 +34,7 @@ import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
 import { FurnitureContactShadows } from "./FurnitureContactShadows.js";
 import { TableCandles } from "./TableCandles.js";
+import { PipelineRetention, PlannerWarmup } from "./PlannerWarmup.js";
 import { SelectionSystem } from "../SelectionSystem.js";
 import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
@@ -170,7 +173,9 @@ function PlannerScenePrecompiler({
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
-  const previous = useRef<{ signature: string; gl: typeof gl; scene: typeof scene; camera: typeof camera } | null>(null);
+  const previous = useRef<{
+    signature: string; gl: typeof gl; scene: typeof scene; camera: typeof camera; composed: boolean;
+  } | null>(null);
   const generation = useRef(0);
 
   useEffect(() => { invalidate(); }, [camera, gl, invalidate, scene, signature]);
@@ -183,9 +188,14 @@ function PlannerScenePrecompiler({
   // useFrame, so compiling from a mount effect warms the wrong view/frustum.
   // This zero-priority subscriber leaves R3F's demand render loop in control.
   useFrame(() => {
+    const composed = nativeFrameComposer(gl) !== null;
     const last = previous.current;
-    if (last?.signature === signature && last.gl === gl && last.scene === scene && last.camera === camera) return;
-    previous.current = { signature, gl, scene, camera };
+    if (last?.signature === signature && last.gl === gl && last.scene === scene && last.camera === camera
+      && last.composed === composed) return;
+    previous.current = { signature, gl, scene, camera, composed };
+    // Shaders compile per render target. A composer draws the scene into its
+    // own pass, so a compile for the canvas would build nothing it draws.
+    if (composed) return;
     const request = ++generation.current;
     const completed = (): void => { if (generation.current === request) invalidate(); };
     // Compilation is a warmup. NativeCanvas surfaces actual draw failures;
@@ -235,7 +245,11 @@ export function PlannerScene(): ReactElement {
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
   const viewportWidth = usePlannerViewportWidth();
-  const canvasDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
+  const nativeDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
+  // One render profile per page (phone, tablet or desktop); phones and tablets
+  // draw within a pixel budget instead of their full native density.
+  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), []);
+  const canvasDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
   const canvasGl = useMemo(plannerCanvasGlOptions, []);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
   const renderSceneOverlays = shouldRenderPlannerSceneOverlays(viewportWidth);
@@ -410,6 +424,11 @@ export function PlannerScene(): ReactElement {
     && (splatStatus === "loading" || hasAsset);
   const meshVisible = !timelinePreviewActive && (!hasAsset || captureFailed || sceneLayerMode !== "splat");
   const splatActive = !timelinePreviewActive && hasAsset && !captureFailed && sceneLayerMode !== "mesh";
+  // A capture carries its own camera response; the drawn hall and furniture
+  // take the planner's pipeline. A capture is on screen only once a chunk has
+  // drawn: switching the pipeline off for one still loading (or held, then
+  // failing) drew the first frames plainly and compiled every shader twice.
+  const captureDrawn = splatActive && loadedChunks > 0;
   // The drawn hall stands in a dark room; everything else on parchment.
   const hallDrawn = realHall && meshVisible;
   // A capture that fails behind the drawn hall changes nothing on screen: the
@@ -514,8 +533,9 @@ export function PlannerScene(): ReactElement {
           <color attach="background" args={[hallDrawn ? "#120e0b" : "#eee9de"]} />
           {!timelinePreviewActive && !hallDrawn && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
-          <CaptureToneMapping captureShown={splatActive} photographedRoom={hallDrawn} />
-          <PlannerRenderPipeline enabled={!splatActive} />
+          <CaptureToneMapping captureShown={captureDrawn} photographedRoom={hallDrawn} />
+          <PlannerRenderPipeline enabled={!captureDrawn} profile={renderProfile} />
+          <PipelineRetention />
           {furnitureReflections && <FurnitureReflectionExperiment />}
           {!timelinePreviewActive && <SectionPlane />}
           {!timelinePreviewActive && <InvalidateOnToggle />}
@@ -618,6 +638,7 @@ export function PlannerScene(): ReactElement {
           )}
           <FrozenLayoutPreviewCamera active={timelinePreviewActive} room={frozenRoom} />
           {import.meta.env.DEV && <PerfMonitor />}
+          {!timelinePreviewActive && <PlannerWarmup />}
           {/* Re-register last when a camera owner mounts or the room shell changes. */}
           <PlannerScenePrecompiler key={`${sceneWarmupSignature}:${String(walkMode)}`} signature={sceneWarmupSignature} />
         </Canvas>
