@@ -31,6 +31,14 @@ vi.mock("../../../api/spaces.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../api/spaces.js")>(),
   getVenue: () => Promise.resolve({ id: "venue", name: "Trades Hall" }),
 }));
+// The client event page also reads the event's conversation and the client's
+// own requests (goal 19 S4); admission is what is under test, so both answer
+// empty at once.
+vi.mock("../../../api/conversations.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/conversations.js")>(),
+  getEventConversation: (eventId: string) => Promise.resolve({ eventId, threads: [], messages: [], cursor: 0, serverNowMs: Date.now() }),
+  listEventRequests: () => Promise.resolve([]),
+}));
 
 // Use the actual application's route elements, rather than wrapping a fixture
 // in the desired guard: an omitted alias guard must fail this regression.
@@ -87,7 +95,7 @@ describe("client event page route admission", () => {
   const schedule = {
     event: { id: eventId, venueId, name: "Your planning event", eventType: null, status: "in_planning",
       startsAt: null, endsAt: null, guestCount: 20 },
-    venue: { id: venueId, name: "Your venue", timezone: "Europe/London" }, scheduleState: "working", phases: [], layouts: [],
+    venue: { id: venueId, name: "Your venue", timezone: "Europe/London" }, scheduleState: "working", phases: [], layouts: [], slots: [],
   };
 
   it.each([

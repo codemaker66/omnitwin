@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => ({ venue: vi.fn(), unreadCount: vi.fn(), signOut:
 vi.mock("@clerk/react", () => ({ useClerk: () => ({ signOut: mocks.signOut }) }));
 vi.mock("../../../api/spaces.js", () => ({ getVenue: mocks.venue }));
 vi.mock("../../../api/notifications.js", () => ({ getUnreadNotificationCount: mocks.unreadCount }));
-vi.mock("../../../lib/e2e-auth-bypass.js", () => ({ isE2EAuthBypassEnabled: () => true }));
+// The bypass keeps the shell's live inbox channel shut (no socket server
+// here); the second flag is what a harness with a real API would raise.
+vi.mock("../../../lib/e2e-auth-bypass.js", () => ({ isE2EAuthBypassEnabled: () => true, isE2ELiveSocketEnabled: () => false }));
 vi.mock("../NotificationCenter.js", () => ({ NotificationCenter: () => null }));
 
 const staff: AuthUser = {

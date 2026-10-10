@@ -53,7 +53,7 @@ const later = slot("00000000-0000-4000-8000-0000000000b3", HALL, new Date(NOW + 
 
 function snapshot(messages: readonly Message[] = []): ConversationSnapshot {
   const last = messages[messages.length - 1];
-  return { eventId: EVENT, threads: [], messages, cursor: last?.cursor ?? 0, serverNowMs: Date.now() };
+  return { eventId: EVENT, threads: [], messages: [...messages], cursor: last?.cursor ?? 0, serverNowMs: Date.now() };
 }
 
 function made(input: { bookingId: string; kind: VenueRequest["kind"]; quantity: number | null; urgency: VenueRequest["urgency"]; detail: string | null }): VenueRequest {
