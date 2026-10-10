@@ -395,6 +395,8 @@ try {
     check(`${label}: the floor's composer is labelled for the floor`, (await open.getByLabel("Note to the floor").count()) === 1);
     await tabs.nth(1).click();
     await open.getByLabel("Reply to the client").waitFor({ timeout: 10_000 });
+    // The composer mounts before the page of messages lands; wait for the words.
+    await open.getByText(/Ten more for the top table/u).waitFor({ timeout: 10_000 });
     check(`${label}: the client's thread shows the ask and a composer labelled for the client`,
       /Ten more for the top table/u.test(await open.innerText()) && (await open.locator(".vv-thread-badge--composer").count()) === 1);
   }
