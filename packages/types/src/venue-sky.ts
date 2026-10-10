@@ -15,6 +15,11 @@ import { z } from "zod";
 // - Fractions and probabilities are 0..1. Instants are ISO 8601 UTC ("Z").
 // - `at` lies inside [validFrom, validTo].
 // - A forecast is never degraded; normals always say why they were served.
+// - A forecast answers while its core series (total cloud, temperature,
+//   wind, precipitation rate) all reach `at`; how far is read from the data,
+//   not fixed. Later instants get normals (beyond_forecast_horizon). Within
+//   a forecast, any other field whose own series has ended before `at` is
+//   null; nothing is extrapolated.
 // - A precipitation probability states what it measures, and the definition
 //   matches the kind: a forecast's is the chance the rate reaches 0.1 mm/h at
 //   that hour; a normal's is the share of the month's days with at least
@@ -158,8 +163,8 @@ export const VenueSkySchema = z.object({
    *  source does not state it. */
   issuedAt: IsoUtcSchema.nullable(),
   /** The interval the values describe: for a forecast, the span its time
-   *  step stands for; for normals, the calendar month in the venue's time
-   *  zone. */
+   *  step stands for, never past the forecast's last core step; for normals,
+   *  the calendar month in the venue's time zone. */
   validFrom: IsoUtcSchema,
   validTo: IsoUtcSchema,
   /** The instant asked about. */

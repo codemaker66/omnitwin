@@ -16,6 +16,7 @@ import {
   UpstreamError,
   WANTED_COLLECTION_PARAMETERS,
   fetchForecastSnapshot,
+  type ForecastSeriesName,
   type ForecastSnapshot,
 } from "./met-office-bpf.js";
 import { buildNormalsSky, normalsFor, type SkyNormalsFile } from "./normals.js";
@@ -28,13 +29,17 @@ import { weatherCodeEntry } from "./weather-codes.js";
 // Selection, for a located venue and an instant `at`:
 // 1. `at` more than 6 h before now: normals, before_forecast_window (the
 //    past is not forecast; observations are reserved).
-// 2. `at` more than 192 h after now: normals, beyond_forecast_horizon,
-//    without calling the Met Office.
-// 3. No key: normals, forecast_not_configured.
-// 4. Otherwise the cached forecast; a failed fetch gives normals with
+// 2. No key: normals, forecast_not_configured.
+// 3. Otherwise the cached forecast; a failed fetch gives normals with
 //    forecast_key_rejected, forecast_quota_exhausted or upstream_unavailable.
-// 5. `at` before the forecast's first step or after its last: normals with
-//    before_forecast_window or beyond_forecast_horizon.
+// 4. The forecast reaches as far as all its core series run (total cloud,
+//    temperature, wind, precipitation rate): the earliest of their last
+//    steps. No fixed horizon is assumed (live, 10 October, they ran about
+//    14.4 days). Later instants get normals, beyond_forecast_horizon;
+//    instants before the first step get before_forecast_window.
+// 5. Within it, every other field is read from its own series and is null
+//    once `at` passes that series' last step. Nothing is extrapolated, and an
+//    answer's span never runs past the reach.
 // When normals are needed but none cover the venue, SkyUnavailableError.
 //
 // Cache: one forecast per venue location, held in process. The BPF is
@@ -68,8 +73,24 @@ export const FORECAST_KEY_REJECTED_BACKOFF_MS = HOUR_MS;
 export const COLLECTIONS_REFRESH_MS = 24 * HOUR_MS;
 export const COLLECTIONS_UNMATCHED_RETRY_MS = 6 * HOUR_MS;
 export const DAILY_UPSTREAM_CALL_CAP = 40;
-export const FORECAST_MAX_HORIZON_MS = 192 * HOUR_MS;
 export const FORECAST_PAST_GRACE_MS = 6 * HOUR_MS;
+
+/** The series a forecast answer stands on: it is a forecast only while all
+ *  of those present reach `at`. Other fields are null past their own end. */
+export const CORE_FORECAST_SERIES = ["cloudTotal", "temperature", "wind", "precipitationRate"] as const satisfies readonly ForecastSeriesName[];
+
+/** How far a forecast reaches: the earliest last step among its core series,
+ *  and the series whose steps an answer's span follows (total cloud, else
+ *  temperature). Null when it has neither. */
+export function forecastReach(series: ForecastSnapshot["series"]): { readonly grid: Series; readonly lastStep: number } | null {
+  const grid = series.cloudTotal ?? series.temperature;
+  if (grid === undefined) return null;
+  const ends = CORE_FORECAST_SERIES.flatMap((name) => {
+    const last = series[name]?.times.at(-1);
+    return last === undefined ? [] : [last];
+  });
+  return ends.length === 0 ? null : { grid, lastStep: Math.min(...ends) };
+}
 
 export const MET_OFFICE_ATTRIBUTION: SkyAttribution = {
   source: "Met Office Weather DataHub: Site-Specific Blended Probabilistic Forecast v2",
@@ -277,6 +298,7 @@ export function createVenueSkyService(options: VenueSkyServiceOptions): VenueSky
             probabilityCollection: snapshot.probabilityCollection,
             instanceId: snapshot.instanceId,
             issuedAt: snapshot.issuedAt,
+            instance: snapshot.instanceShape,
             series: snapshot.metadata,
           },
           "Met Office forecast read: keys, units, axis labels and time steps (no values)",
@@ -338,19 +360,20 @@ export function createVenueSkyService(options: VenueSkyServiceOptions): VenueSky
     async skyFor(venue, instant) {
       const current = now();
       if (instant < current - FORECAST_PAST_GRACE_MS) return normals(venue, instant, "before_forecast_window");
-      if (instant > current + FORECAST_MAX_HORIZON_MS) return normals(venue, instant, "beyond_forecast_horizon");
       if (client === null) return normals(venue, instant, "forecast_not_configured");
 
       const entry = await forecastFor(client, venue);
       if (!entry.ok) return normals(venue, instant, entry.reason);
-      const grid = entry.snapshot.series.cloudTotal ?? entry.snapshot.series.temperature;
-      if (grid === undefined) return normals(venue, instant, "upstream_unavailable");
-      const step = locateStep(grid.times, instant);
+      const reach = forecastReach(entry.snapshot.series);
+      if (reach === null) return normals(venue, instant, "upstream_unavailable");
+      if (instant > reach.lastStep) return normals(venue, instant, "beyond_forecast_horizon");
+      const step = locateStep(reach.grid.times, instant);
       if (step === "before") return normals(venue, instant, "before_forecast_window");
       if (step === "after") return normals(venue, instant, "beyond_forecast_horizon");
 
       const answeredAt = now();
-      const body = VenueSkySchema.parse(buildForecastSky(entry.snapshot, venue, instant, step, answeredAt));
+      const span = { validFrom: step.validFrom, validTo: Math.min(step.validTo, reach.lastStep) };
+      const body = VenueSkySchema.parse(buildForecastSky(entry.snapshot, venue, instant, span, answeredAt));
       const maxAge = Math.max(0, Math.min(900, Math.floor((entry.expiresAt - answeredAt) / 1000)));
       return { body, cacheControl: `public, max-age=${String(maxAge)}` };
     },
