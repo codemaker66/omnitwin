@@ -215,16 +215,26 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
     Later the forecast read fog 0.0101 at 26.3 km visibility, and the
     sunshine fraction was `null`.
 - The metadata log also showed each series' own reach (see Horizon above),
-  which replaced the fixed 192 h limit. It also logs the percentile
-  instance's members by name. EDR states no issue time, so `issuedAt` comes
-  only from a date-time instance id and stays `null` otherwise. The logged
-  members show whether the live instance offers more.
+  which replaced the fixed 192 h limit in #76 (`1003daef`). Verified live
+  with the API reporting `1003daef`:
+  - 2026-10-22T12:00Z (+12 days): kind `forecast`, 12.35 °C, cloud 0.898.
+    Visibility, fog and precipitation type were `null`, past their own series.
+  - 2026-10-26T12:00Z (+16 days): normals, `beyond_forecast_horizon`.
+  - 2026-10-10T12:00Z (6 h past): normals, `before_forecast_window`.
+- **`issuedAt` is `null` by design.**
+  - The live percentile instance's members, from `venue_sky_forecast_metadata`:
+    `crs`, `data_queries` (`locations`, `position`), `extent` (`custom`,
+    `spatial`, `temporal` with `interval`, `trs` and `values`), `id`,
+    `links`, `output_formats` and `parameter_names`.
+  - None states an issue time, and the id is not a date-time. EDR documents
+    none either.
+- T-647 is done (10 October 2026).
 
-No live response body has been read here, and the DataHub sample files may
-not be redistributed. The test bodies
+No live response body has been stored here, and the DataHub sample files
+may not be redistributed. So the test bodies
 ([fixtures](../../packages/api/src/__tests__/fixtures/met-office-bpf-v2.ts))
-are therefore still built from the documented structure, with synthetic
-numbers.
+are built from the documented structure with synthetic numbers. The live
+evidence above comes from the deployed endpoint and its metadata logs.
 
 ## Source 2: monthly normals (HadUK-Grid 1991–2020)
 
