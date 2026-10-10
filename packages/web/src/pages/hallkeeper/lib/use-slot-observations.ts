@@ -92,7 +92,7 @@ export function useSlotObservations(
   const debounceRef = useRef<number | null>(null);
 
   const refresh = useCallback((): Promise<void> => {
-    if (!active || venueId === null) return Promise.resolve();
+    if (!active) return Promise.resolve();
     sequenceRef.current += 1;
     const sequence = sequenceRef.current;
     setStatus((current) => (current === "ready" ? "ready" : "loading"));
@@ -120,7 +120,7 @@ export function useSlotObservations(
   // Replay this venue's taps in the order they were made; everything else in
   // the queue is left for the screen that owns it.
   const drain = useCallback((): Promise<void> => {
-    if (!active || venueId === null) return Promise.resolve();
+    if (!active) return Promise.resolve();
     return drainEventDayOps((op) => {
       if (op.kind !== "observation_record" || op.venueId !== venueId) return Promise.resolve("left" as const);
       return recordVenueObservation(venueId, op.input)
@@ -160,7 +160,7 @@ export function useSlotObservations(
   }, [active, venueId, refresh, countPending, drain]);
 
   const record = useCallback((bookingId: string, kind: ObservationKind): Promise<RecordOutcome> => {
-    if (!active || venueId === null) {
+    if (!active) {
       return Promise.reject(new Error("This screen cannot record what the room is doing."));
     }
     const input: RecordObservation = {
