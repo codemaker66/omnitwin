@@ -290,7 +290,7 @@ function FurnitureGallery(): ReactElement {
         <CaptureToneMapping captureShown={false} photographedRoom />
         <HallLightRig mood={mood} finish={FULL_HALL_FINISH} />
         {backdrop === "hall" ? (
-          <GrandHallModel mood={mood} view="walk" quality={FULL_HALL_FINISH.photoQuality} />
+          <GrandHallModel mood={mood} view="walk" finish={FULL_HALL_FINISH} />
         ) : (
           <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
             <planeGeometry args={[60, 30]} />

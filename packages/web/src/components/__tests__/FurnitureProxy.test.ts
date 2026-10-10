@@ -77,7 +77,7 @@ describe("furniture mesh dispatch", () => {
       expect(resolveFurnitureMeshKind(item), item.slug).toBe("crafted");
       expect(standaloneFurnitureMeshUrl(item), item.slug).toBeNull();
       // The picker shows the crafted render, not the supplied model's.
-      expect(item.thumbnailUrl, item.slug).toBe(`/models/furniture/${item.slug}/crafted-v1/preview.webp`);
+      expect(item.thumbnailUrl, item.slug).toBe(`/models/furniture/${item.slug}/crafted-v2/preview.webp`);
     }
   });
   it("routes every canonical catalogue item to its intended mesh", () => {

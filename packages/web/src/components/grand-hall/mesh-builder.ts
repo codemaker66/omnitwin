@@ -62,14 +62,32 @@ class FloatList {
   length = 0;
   constructor(initial = 1024) { this.data = new Float32Array(initial); }
   push(value: number): void {
-    if (this.length === this.data.length) {
-      const next = new Float32Array(this.data.length * 2);
-      next.set(this.data);
-      this.data = next;
-    }
+    if (this.length === this.data.length) this.grow(1);
     this.data[this.length++] = value;
   }
+  /** Appends `values`, moving each run of `shift.length` of them by `shift` when given. */
+  append(values: Float32Array, shift: readonly number[] = []): void {
+    if (this.length + values.length > this.data.length) this.grow(values.length);
+    this.data.set(values, this.length);
+    const stride = shift.length;
+    if (stride > 0) {
+      for (let i = 0; i < values.length; i++) {
+        const at = this.length + i;
+        this.data[at] = (this.data[at] ?? 0) + (shift[i % stride] ?? 0);
+      }
+    }
+    this.length += values.length;
+  }
+  /** The stored values, without copying. */
+  contents(): Float32Array { return this.data.subarray(0, this.length); }
   view(): Float32Array { return this.data.slice(0, this.length); }
+  private grow(extra: number): void {
+    let size = this.data.length * 2;
+    while (size < this.length + extra) size *= 2;
+    const next = new Float32Array(size);
+    next.set(this.data.subarray(0, this.length));
+    this.data = next;
+  }
 }
 
 class IndexList {
@@ -77,14 +95,25 @@ class IndexList {
   length = 0;
   constructor(initial = 1024) { this.data = new Uint32Array(initial); }
   push(value: number): void {
-    if (this.length === this.data.length) {
-      const next = new Uint32Array(this.data.length * 2);
-      next.set(this.data);
-      this.data = next;
-    }
+    if (this.length === this.data.length) this.grow(1);
     this.data[this.length++] = value;
   }
+  /** Appends `values`, each raised by `offset`. */
+  append(values: Uint32Array, offset: number): void {
+    if (this.length + values.length > this.data.length) this.grow(values.length);
+    for (let i = 0; i < values.length; i++) this.data[this.length + i] = (values[i] ?? 0) + offset;
+    this.length += values.length;
+  }
+  /** The stored values, without copying. */
+  contents(): Uint32Array { return this.data.subarray(0, this.length); }
   view(): Uint32Array { return this.data.slice(0, this.length); }
+  private grow(extra: number): void {
+    let size = this.data.length * 2;
+    while (size < this.length + extra) size *= 2;
+    const next = new Uint32Array(size);
+    next.set(this.data.subarray(0, this.length));
+    this.data = next;
+  }
 }
 
 export class MeshBuilder {
@@ -306,15 +335,22 @@ export class MeshBuilder {
 
   /**
    * A surface of revolution about the Y axis through `centre`. `profile` is a
-   * list of (radius, height) pairs from bottom to top; smooth normals.
+   * list of (radius, height) pairs, faced outward as it climbs: a profile
+   * drawn from the top down is turned round first. Smooth normals.
    */
   lathe(centre: V3, profile: readonly V2[], segments: number, scaleX = 1, scaleZ = 1, phase = 0): void {
+    const first = profile[0];
+    const last = profile[profile.length - 1];
+    const points = first !== undefined && last !== undefined && last[1] < first[1] ? [...profile].reverse() : profile;
     const rings: number[][] = [];
-    for (let j = 0; j < profile.length; j++) {
-      const point = profile[j];
+    // A ring on the axis is a pole: the half of each quad that meets it has no area.
+    const poles: boolean[] = [];
+    for (let j = 0; j < points.length; j++) {
+      const point = points[j];
       if (point === undefined) continue;
-      const prev = profile[Math.max(0, j - 1)] ?? point;
-      const next = profile[Math.min(profile.length - 1, j + 1)] ?? point;
+      poles.push(point[0] === 0);
+      const prev = points[Math.max(0, j - 1)] ?? point;
+      const next = points[Math.min(points.length - 1, j + 1)] ?? point;
       // Profile tangent → outward normal in the (r, y) plane.
       const dr = next[0] - prev[0];
       const dy = next[1] - prev[1];
@@ -328,7 +364,7 @@ export class MeshBuilder {
         const sin = Math.sin(angle);
         const position: V3 = [centre[0] + cos * point[0] * scaleX, centre[1] + point[1], centre[2] + sin * point[0] * scaleZ];
         const normal = normalize([cos * nr / Math.max(scaleX, 1e-6), ny, sin * nr / Math.max(scaleZ, 1e-6)]);
-        ring.push(this.vertex(position, normal, [i / segments, j / Math.max(1, profile.length - 1)]));
+        ring.push(this.vertex(position, normal, [i / segments, j / Math.max(1, points.length - 1)]));
       }
       rings.push(ring);
     }
@@ -343,8 +379,8 @@ export class MeshBuilder {
         const d = upper[i];
         if (a === undefined || b === undefined || c === undefined || d === undefined) continue;
         // Counter-clockwise seen from outside.
-        this.triangle(a, c, b);
-        this.triangle(a, d, c);
+        if (poles[j] !== true) this.triangle(a, c, b);
+        if (poles[j + 1] !== true) this.triangle(a, d, c);
       }
     }
   }
@@ -411,18 +447,15 @@ export class MeshBuilder {
     }
   }
 
-  /** Appends another builder's output (same extra layout). */
-  merge(other: MeshBuilder): void {
+  /** Appends another builder's output (same extra layout), moved by `translation`. */
+  merge(other: MeshBuilder, translation: V3 = [0, 0, 0]): void {
     const offset = this.vertexCount;
-    const data = other.arrays();
-    for (let i = 0; i < data.positions.length; i++) this.positions.push(data.positions[i] ?? 0);
-    for (let i = 0; i < data.normals.length; i++) this.normals.push(data.normals[i] ?? 0);
-    for (let i = 0; i < data.uvs.length; i++) this.uvs.push(data.uvs[i] ?? 0);
-    if (this.extraSize > 0) {
-      for (let i = 0; i < data.extras.length; i++) this.extras.push(data.extras[i] ?? 0);
-    }
-    for (let i = 0; i < data.indices.length; i++) this.indices.push((data.indices[i] ?? 0) + offset);
-    this.vertexCount += data.positions.length / 3;
+    this.positions.append(other.positions.contents(), translation);
+    this.normals.append(other.normals.contents());
+    this.uvs.append(other.uvs.contents());
+    if (this.extraSize > 0) this.extras.append(other.extras.contents());
+    this.indices.append(other.indices.contents(), offset);
+    this.vertexCount += other.vertexCount;
   }
 
   arrays(): { positions: Float32Array; normals: Float32Array; uvs: Float32Array; extras: Float32Array; indices: Uint32Array } {

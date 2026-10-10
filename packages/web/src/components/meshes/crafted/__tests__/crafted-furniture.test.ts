@@ -10,7 +10,8 @@ import {
   type CraftedFurnitureSlug,
 } from "../../../../lib/crafted-furniture.js";
 import { disposeVariant, harvestVariant } from "../../../editor/InstancedFurnitureLayer.js";
-import { createCraftedFurniture } from "../crafted-registry.js";
+import { lathe } from "../crafted-geometry.js";
+import { clearCraftedGeometryCache, createCraftedFurniture } from "../crafted-registry.js";
 
 function assetFor(slug: string): CanonicalAsset {
   const asset = CANONICAL_ASSETS.find((candidate) => candidate.slug === slug);
@@ -149,16 +150,60 @@ describe("crafted furniture", () => {
   });
 
   it("draws the same piece the same way every time", () => {
-    const first = build("trestle-6ft-white");
-    const second = build("trestle-6ft-white");
+    const positions = (): number[][] => {
+      clearCraftedGeometryCache();
+      const model = build("trestle-6ft-white");
+      try {
+        return meshesOf(model.object).map((mesh) => Array.from(mesh.geometry.getAttribute("position").array));
+      } finally {
+        model.dispose();
+      }
+    };
+    expect(positions()).toEqual(positions());
+  });
+
+  it("shares one geometry between copies of a piece, each with its own materials", () => {
+    clearCraftedGeometryCache();
+    const first = build("burgess-turini-18-3");
+    const second = build("burgess-turini-18-3");
     try {
-      const a = meshesOf(first.object).map((mesh) => Array.from(mesh.geometry.getAttribute("position").array));
-      const b = meshesOf(second.object).map((mesh) => Array.from(mesh.geometry.getAttribute("position").array));
-      expect(a).toEqual(b);
-    } finally {
+      const a = meshesOf(first.object);
+      const b = meshesOf(second.object);
+      expect(a.map((mesh) => mesh.geometry)).toEqual(b.map((mesh) => mesh.geometry));
+      a.forEach((mesh, index) => {
+        expect(mesh.geometry).toBe(b[index]?.geometry);
+        expect(mesh.material).not.toBe(b[index]?.material);
+      });
+      // Releasing one copy keeps the geometry the other is drawing.
+      let disposed = 0;
+      for (const mesh of b) mesh.geometry.addEventListener("dispose", () => { disposed += 1; });
       first.dispose();
+      expect(disposed).toBe(0);
+    } finally {
       second.dispose();
     }
+  });
+
+  it("faces a lathed part outward whichever way its profile is written", () => {
+    // Signed volume of a closed surface: positive when its faces point out.
+    const volume = (geometry: ReturnType<typeof lathe>): number => {
+      const position = geometry.getAttribute("position");
+      const index = geometry.index;
+      if (index === null) throw new Error("lathe should be indexed");
+      let total = 0;
+      for (let i = 0; i < index.count; i += 3) {
+        const [a, b, c] = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
+        total += (position.getX(a) * (position.getY(b) * position.getZ(c) - position.getZ(b) * position.getY(c))
+          - position.getY(a) * (position.getX(b) * position.getZ(c) - position.getZ(b) * position.getX(c))
+          + position.getZ(a) * (position.getX(b) * position.getY(c) - position.getY(b) * position.getX(c))) / 6;
+      }
+      return total;
+    };
+    const climbing: [number, number][] = [[0, 0], [0.05, 0], [0.05, 0.4], [0, 0.4]];
+    const falling = [...climbing].reverse();
+    const cylinder = Math.PI * 0.05 * 0.05 * 0.4;
+    expect(volume(lathe(climbing, 32))).toBeGreaterThan(cylinder * 0.95);
+    expect(volume(lathe(falling, 32))).toBeGreaterThan(cylinder * 0.95);
   });
 
   it("refuses slugs it does not draw and sizes it cannot", () => {
@@ -169,7 +214,7 @@ describe("crafted furniture", () => {
 
   it.each(CRAFTED_FURNITURE_SLUGS)("ships a rendered preview for %s", (slug) => {
     const url = craftedFurniturePreviewUrl(slug);
-    expect(url).toBe(`/models/furniture/${slug}/crafted-v1/preview.webp`);
+    expect(url).toBe(`/models/furniture/${slug}/crafted-v2/preview.webp`);
     const file = resolve(import.meta.dirname, "../../../../../public", `.${url ?? ""}`);
     expect(existsSync(file), file).toBe(true);
   });

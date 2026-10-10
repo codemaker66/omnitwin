@@ -50,7 +50,7 @@ describe("CatalogueItem meshUrl field (#28)", () => {
       // The supplied model stays catalogued; the picker shows the crafted render.
       expect(imported.find((item) => item.slug === slug)).toMatchObject({
         meshUrl: `/models/furniture/${slug}/v1/model.glb`,
-        thumbnailUrl: `/models/furniture/${slug}/crafted-v1/preview.webp`,
+        thumbnailUrl: `/models/furniture/${slug}/crafted-v2/preview.webp`,
         width: 1.22, depth: 0.76, height: 0.74,
         dimensionStatus: "approximate", tableShape: "rectangular",
       });

@@ -33,6 +33,9 @@ const POSES = {
   corner: [[-9.0, 6.5, -4.4], [1.0, 0.4, 0.8]],
   // One table of the dense dinner close up (rounds sit on a 3.24 x 3.35 m grid).
   table: [[3.55, 1.45, 1.75], [1.62, 0.62, 0]],
+  // Standing under the fittings, as the scan's panoramas see them.
+  dome: [[3.6, 1.7, 2.6], [0, 4.9, 0]],
+  rose: [[3.2, 1.7, 0.3], [6.65, 4.3, 3.0]],
 };
 
 const DEVICES = {

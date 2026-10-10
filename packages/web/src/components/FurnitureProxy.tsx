@@ -204,6 +204,16 @@ export function resolveFurnitureMeshKind(
 }
 
 /**
+ * True when what the planner draws for an item is its generated proxy: the
+ * slug has one, and neither a crafted model nor a supplied GLB replaces it.
+ */
+export function drawsGeneratedProxy(
+  item: Pick<CatalogueItem, "slug" | "category" | "tableShape" | "meshUrl">,
+): boolean {
+  return resolveFurnitureMeshKind(item) === "generated" && item.meshUrl === null;
+}
+
+/**
  * Resolve an imported furniture asset without allowing contextual catalogue
  * tools to escape their non-rendering role. Applicators stay geometry-free
  * even if future or malformed catalogue metadata supplies a mesh URL.

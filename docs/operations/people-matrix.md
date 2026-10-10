@@ -108,7 +108,7 @@ and is edited in the venue's settings, never in a migration after the first.
 
 - [ ] The usual owner per kind in §1, especially AV and access.
 - [ ] Who the duty admin is, by name.
-- [ ] The three windows in §3 and the quiet hours.
-- [ ] Whether manager and sales keep the power to ink a time (§4).
+- [x] The three windows in §3 and the quiet hours. Blake, 10 October 2026: now 2 min, soon 5 min, routine 15 min; email quiet 22:00 to 07:00.
+- [x] Whether manager and sales keep the power to ink a time (§4). Blake, 10 October 2026: no; staff and admin only (the code change lands with S6).
 - [ ] Whether manager may approve quantities beyond release and price changes (§4).
-- [ ] The day boundary and the wall's privacy default (§5).
+- [ ] The day boundary and the wall's privacy default (§5). The wall's register is settled: dark (Blake, 10 October 2026).

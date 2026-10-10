@@ -210,7 +210,8 @@ function trestleLegs(size: TableSize, underside: number, material: CraftedMateri
       });
       parts.push({ material: "rubber", geometry: post([footX, z], 0, 0.03, radius * 1.25, radius * 1.15) });
     }
-    parts.push(straight([[x, hinge, -legZ - 0.02], [x, hinge, legZ + 0.02]], radius * 0.9));
+    // Rails end inside the legs and braces they join, so no open tube end shows.
+    parts.push(straight([[x, hinge, -legZ], [x, hinge, legZ]], radius * 0.9));
     parts.push(straight([[x, crossY, -legZ], [x, crossY, legZ]], radius * 0.8));
     // The brace, from the cross bar up to the middle of the underside.
     const braceTopX = x - side * Math.min(0.42, size.width * 0.22);
@@ -218,7 +219,7 @@ function trestleLegs(size: TableSize, underside: number, material: CraftedMateri
   }
   // The rail the braces lock to, along the middle of the underside.
   const railX = size.width / 2 - inset - Math.min(0.42, size.width * 0.22);
-  parts.push(straight([[-railX - 0.03, underside - 0.012, 0], [railX + 0.03, underside - 0.012, 0]], radius * 0.7));
+  parts.push(straight([[-railX, underside - 0.012, 0], [railX, underside - 0.012, 0]], radius * 0.7));
   return parts;
 }
 
@@ -272,7 +273,8 @@ function spiderBase(columnTop: number, reach: number): CraftedPart[] {
     parts.push({
       material: "steel-black",
       geometry: tube({
-        points: [at(0.03, 0.092), at(reach * 0.45, 0.088), at(reach * 0.85, 0.06), at(reach, 0.034)],
+        // The arm ends inside its glide, which hides the tube's open end.
+        points: [at(0.03, 0.092), at(reach * 0.45, 0.088), at(reach * 0.85, 0.06), at(reach, 0.028)],
         radius: 0.014,
         tension: 0.3,
         segmentsPerMetre: 40,
@@ -280,7 +282,7 @@ function spiderBase(columnTop: number, reach: number): CraftedPart[] {
       }),
     });
     const [x, , z] = at(reach, 0);
-    parts.push({ material: "rubber", geometry: post([x, z], 0, 0.034, 0.02, 0.018) });
+    parts.push({ material: "rubber", geometry: post([x, z], 0, 0.046, 0.021, 0.019) });
   }
   return parts;
 }

@@ -38,6 +38,8 @@ to [the people matrix](../docs/operations/people-matrix.md); one real hallkeeper
 on production for the three-identity check. Migration numbering confirmed against
 origin's journal: the next tag was `0086` (journal idx 84); renumbered to `0087` (idx 85) on 9 October 2026 after PR #58 merged `0086_venue_location`.
 
+Blake, 10 October 2026, by multiple choice: the wall stays dark (human input 1 answered); staff and admin only may ink a time, and escalation runs now 2 min, soon 5 min, routine 15 min with email quiet hours 22:00 to 07:00 (human input 2 on the two decisions asked); a hallkeeper identity on production follows by invitation (human input 3 in progress).
+
 ## Browser release confidence — T-613, 15 September 2026
 
 [Goal17](17-browser-release-confidence.md) is active in **Build next-gen venue

@@ -61,7 +61,7 @@ describe("InventoryPicture supplied model", () => {
   it("shows the preview of the model the planner draws, by catalogue identity, and labels its provenance", () => {
     render(<InventoryPicture name="Burgess Turini 18/3" assetId={turiniId} hero />);
     expect(screen.getByRole("img", { name: "Burgess Turini 18/3, 3d model preview" }).getAttribute("src"))
-      .toBe("/models/furniture/burgess-turini-18-3/crafted-v1/preview.webp");
+      .toBe("/models/furniture/burgess-turini-18-3/crafted-v2/preview.webp");
     expect(screen.getByText("3D model preview")).toBeDefined();
   });
 

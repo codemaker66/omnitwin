@@ -5,11 +5,12 @@ import { mergeParts } from "./crafted-geometry.js";
 // ---------------------------------------------------------------------------
 // Crafted furniture models
 //
-// A factory returns parts (geometry + palette material). This module merges
-// the parts that share a material into one mesh, so a chair is two or three
-// meshes, and the instancing layer draws every chair of a type in two or
-// three calls. The instance owns its geometries and materials; the shared
-// maps belong to crafted-textures.ts.
+// A factory returns parts (geometry + palette material). The parts that share
+// a material merge into one geometry, so a chair is two or three meshes and
+// the instancing layer draws every chair of a type in two or three calls.
+// The merged geometry is shared by every copy of a piece (crafted-registry.ts
+// caches it); each copy owns only its materials, which the placement ghost
+// fades and tints. The maps belong to crafted-textures.ts.
 // ---------------------------------------------------------------------------
 
 export interface CraftedPart {
@@ -36,22 +37,35 @@ function colourOf(material: Material): Color | null {
   return "color" in material && material.color instanceof Color ? material.color : null;
 }
 
-/** Builds one owned model from a factory's parts. */
-export function buildCraftedModel(name: string, parts: readonly CraftedPart[]): CraftedFurnitureInstance {
+/** Merges a factory's parts into one geometry per material, in first-seen order. */
+export function mergeCraftedParts(parts: readonly CraftedPart[]): ReadonlyMap<CraftedMaterialId, BufferGeometry> {
   const byMaterial = new Map<CraftedMaterialId, BufferGeometry[]>();
   for (const part of parts) {
     const list = byMaterial.get(part.material) ?? [];
     list.push(part.geometry);
     byMaterial.set(part.material, list);
   }
-  const object = new Group();
-  object.name = name;
-  const owned: OwnedMaterial[] = [];
-  const geometries: BufferGeometry[] = [];
+  const merged = new Map<CraftedMaterialId, BufferGeometry>();
   for (const [id, list] of byMaterial) {
     const geometry = mergeParts(list);
     geometry.computeBoundingSphere();
-    geometries.push(geometry);
+    merged.set(id, geometry);
+  }
+  return merged;
+}
+
+/**
+ * A model drawing shared geometry with materials of its own. Disposing it
+ * releases the materials; the geometry belongs to whoever shared it.
+ */
+export function instantiateCraftedModel(
+  name: string,
+  geometries: ReadonlyMap<CraftedMaterialId, BufferGeometry>,
+): CraftedFurnitureInstance {
+  const object = new Group();
+  object.name = name;
+  const owned: OwnedMaterial[] = [];
+  for (const [id, geometry] of geometries) {
     const material = craftedMaterial(id);
     const mesh = new Mesh(geometry, material);
     mesh.name = `${name}:${id}`;
@@ -87,7 +101,6 @@ export function buildCraftedModel(name: string, parts: readonly CraftedPart[]): 
       }
     },
     dispose() {
-      for (const geometry of geometries) geometry.dispose();
       for (const entry of owned) entry.material.dispose();
     },
   };

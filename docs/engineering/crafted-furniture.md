@@ -38,20 +38,28 @@ the planner downloads no furniture GLB.
   instancing harvest (`InstancedFurnitureLayer`) merges by material signature, so
   each crafted type draws in one call per material. The timeline preview batches
   crafted pieces through the same layer.
-- **Ownership.** Each model owns its geometries and materials and disposes them;
-  the maps are built once per page and shared, never disposed.
+- **Ownership.** Each size of each piece is built once and its geometry shared
+  by every copy (`crafted-registry.ts`, a cache of at most 48 sizes): a first
+  build takes 8–108 ms, another copy under 1 ms, which matters to the chair
+  brush's preview and the instancing templates. Each copy owns only its
+  materials, which the placement ghost fades and tints. The maps are built once
+  per page and shared, never disposed.
+- **Shading.** Materials draw front faces only; the open cloth sheets (linen,
+  spandex, the stage skirt) cast shadows from both faces, or a skirt's shadow
+  breaks into strips. Lathe profiles may be written either way up.
 - **Metric UVs.** UVs are in metres and each map's repeat is its real tile size,
   so weave, grain and felt keep one texel density everywhere.
 - **Budgets.** Chairs at most 10,000 triangles (a hall seats hundreds), anything
-  else at most 30,000. Measured: chairs 7.6k, 6 ft rounds 17.6k, the ceremony
-  table 27k.
+  else at most 30,000. Measured: chairs 7.1k–7.6k, 6 ft rounds 17.6k, the
+  ceremony table 26.3k (supplied models: 50k–217k).
 
 ## Previews
 
 The catalogue keeps the supplied `meshUrl` and `thumbnailUrl`: the database seeds
 `asset_definitions` from it and rejects changes to either. The web maps crafted
-slugs to their own previews in `public/models/furniture/<slug>/crafted-v1/`, which
-the catalogue picker and the dashboard inventory show.
+slugs to their own previews in `public/models/furniture/<slug>/crafted-v2/` (800 px
+square, for the dashboard's 360 px featured picture), which the catalogue picker
+and the dashboard inventory show.
 
 ```sh
 pnpm --filter @omnitwin/web dev   # in one shell
@@ -59,8 +67,10 @@ node packages/web/scripts/render-crafted-previews.mjs http://localhost:5173 [slu
 ```
 
 `CHROMIUM_PATH` may name a Chromium binary when Playwright's own is missing. The
-versioned folder is served immutable (`vercel.json`): when a design change alters
-how a piece looks, bump `CRAFTED_PREVIEW_VERSION` and render into the new folder.
+versioned folder is served immutable (`vercel.json`), previews included: when a
+change alters how a piece looks, bump `CRAFTED_PREVIEW_VERSION` and render into
+the new folder. The script refuses to replace an existing preview unless
+`OVERWRITE=1`, which is only right for a version that has never been deployed.
 
 ## Comparing against the supplied models
 

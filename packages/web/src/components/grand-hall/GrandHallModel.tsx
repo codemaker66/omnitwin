@@ -3,10 +3,11 @@
 //
 // Draws the hall as surveyed — the walls' scanned relief, the drawn oak floor,
 // the coffered ceiling and the dome, each coloured by the scan's photographs
-// with baked light — with the gilt chandeliers and their globes, and the
-// dollhouse cutaway (with the walls' cut bodies) that lets the planner look
-// in from above. Its real lights are HallLightRig, mounted beside it; its
-// reflections are its own, captured from the room itself (hall-capture.ts).
+// with baked light — with the scan's gilt and bronze chandeliers and their
+// flame bulbs, and the dollhouse cutaway (with the walls' cut bodies) that
+// lets the planner look in from above. Its real lights are HallLightRig,
+// mounted beside it; its reflections are its own, captured from the room
+// itself (hall-capture.ts).
 // The relief and the photographs stream in after the first frame (flat walls
 // in their average colour until then). Everything here renders on demand:
 // frames are requested only while a mood blends or the cutaway eases.
@@ -16,14 +17,14 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Color, Vector3, type Material } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
-import { vec3 } from "three/tsl";
+import { color, lights, mix, normalWorld, uniform, vec3 } from "three/tsl";
 import { hallGeometry, hallWallGeometry } from "./hall-geometry.js";
 import { loadWallRelief, type WallRelief } from "./hall-relief.js";
 import { hallChandeliers } from "./hall-chandeliers.js";
 import { paintHallTextures, disposeHallTextures, type HallTextures } from "./hall-textures.js";
 import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
-import { useHallFinish } from "./hall-finish.js";
+import { useHallFinish, type HallFinish } from "./hall-finish.js";
 import { createHallMaterials, disposeHallMaterials, HallSectionUniforms } from "./hall-materials.js";
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
@@ -53,8 +54,8 @@ export function resolveHallView(position: readonly [number, number, number], loo
 export interface GrandHallModelProps {
   readonly mood: HallMoodName;
   readonly view: HallView;
-  /** Photograph resolution; by default the device's own (hall-finish.ts). */
-  readonly quality?: number;
+  /** How much finish to draw; by default the device's own (hall-finish.ts). */
+  readonly finish?: HallFinish;
   /** Chandeliers in the overview (always shown on a walk, never in plan). */
   readonly overviewChandeliers?: boolean;
   /** Seconds a mood takes to blend into the next. */
@@ -95,9 +96,25 @@ interface HallResources {
   readonly section: HallSectionUniforms;
   readonly materials: ReturnType<typeof createHallMaterials>;
   readonly chandelierMaterials: ReadonlyMap<string, Material>;
+  /** How far the chandeliers' metal is lit by its own lamps (1 with the reflection map). */
+  readonly selfLit: { value: number };
+  /** The bulbs' brightness: 1 on screen, CAPTURED_BULBS in the room's reflections. */
+  readonly bulbScale: { value: number };
   /** The cut walls' bodies, caps and the plinth. */
   readonly cutaway: HallSection;
 }
+
+/** The chandeliers' own light on their metal where no reflection map gives it anything to mirror. */
+const SELF_LIT_WITHOUT_REFLECTIONS = 2.5;
+
+/**
+ * The bulbs' brightness in the room's captured reflections. The capture point
+ * stands beneath the dome fitting, whose bulbs would otherwise fill the
+ * reflections' sky and burn out every gilt surface facing it; at this level
+ * they glint in the metal and varnish, and the furniture's direct light
+ * stays the point lights' alone.
+ */
+const CAPTURED_BULBS = 0.5;
 
 function createResources(quality: number, initialMood: HallMoodSpec): HallResources {
   const textures = paintHallTextures(quality);
@@ -107,19 +124,46 @@ function createResources(quality: number, initialMood: HallMoodSpec): HallResour
   const section = new HallSectionUniforms();
   const materials = createHallMaterials(textures, photos, mood, section);
 
+  // As scanned: pale silver-gilt fittings on dark bronze stems, and white
+  // bulbs, which warm with the mood's chandelier light.
   const warm = mood.chandelier.rgb;
-  // Gilt brass reflectance in linear light (a metal's colour is its F0).
-  const gold = vec3(0.83, 0.68, 0.38);
-  // Gilt brass: a metal that reflects the room, with a share of the lamps'
-  // warmth so its scrollwork never falls to black.
-  const frame = new MeshStandardNodeMaterial({ roughness: 0.3, metalness: 1 });
-  frame.colorNode = gold;
-  frame.emissiveNode = gold.mul(warm.mul(mood.glow.mul(0.16)).add(mood.ambient.rgb.mul(mood.ambientIntensity.mul(0.45))));
-  // The globes: warm white, bright enough for the pipeline's bloom to halo.
+  const ambient = mood.ambient.rgb.mul(mood.ambientIntensity);
+  // Flame bulbs: warm white, warming further with the mood's chandelier light.
+  const bulbWhite = mix(vec3(1.0, 0.95, 0.86), warm, 0.2);
+  // Gilt brass, as the panoramas show it: a metal's colour is its
+  // reflectance, here in linear light, close to gold leaf's (1, 0.77, 0.34).
+  const gilt = vec3(0.98, 0.75, 0.36);
+  // Lit by its own lamps; faces turned down, away from them and from the lit
+  // room above, fall dark, as the fittings' undersides do in the scan. The
+  // scan's foliage reads as a mass through that contrast, deep shadow between
+  // bright leaves.
+  const facingUp = normalWorld.y.mul(0.65).add(0.35).max(0.05);
+  // Without the reflection map (a software rasteriser) the metal has nothing
+  // to mirror, so its own light carries more of its brightness; the finish
+  // sets this (below).
+  const selfLit = uniform(1);
+  const giltMetal = new MeshStandardNodeMaterial({ roughness: 0.22, metalness: 1 });
+  giltMetal.colorNode = gilt;
+  // Each gilt surface sits centimetres from a bulb, light no reflection map
+  // seen from the room's centre can carry; this stands in for it.
+  giltMetal.emissiveNode = gilt.mul(bulbWhite.mul(mood.glow.mul(0.42)).add(ambient.mul(0.12))).mul(facingUp).mul(selfLit);
+  const darkBronze = color("#4f4234").rgb;
+  const bronze = new MeshStandardNodeMaterial({ roughness: 0.42, metalness: 1 });
+  bronze.colorNode = darkBronze;
+  bronze.emissiveNode = darkBronze.mul(ambient.mul(0.35)).mul(selfLit);
+  // The metal takes the room's reflections and its own lamps' light, not the
+  // point light standing in for each whole fitting (HallLightRig): a few
+  // centimetres from it, inverse-square falloff turned the gilt white.
+  const fittingLights = lights([]);
+  giltMetal.lightsNode = fittingLights;
+  bronze.lightsNode = fittingLights;
+  // Bright enough for the pipeline's bloom to halo each bulb: the glow is the
+  // camera's, so a phone's pass draws it as a desktop's does, with no sprites.
+  const bulbScale = uniform(1);
   const bulb = new MeshBasicNodeMaterial();
-  bulb.colorNode = vec3(1.0, 0.8, 0.58).mul(mood.glow.mul(7).add(0.9));
-  const chandelierMaterials = new Map<string, Material>([["frame", frame], ["bulb", bulb]]);
-  return { textures, photos, mood, section, materials, chandelierMaterials, cutaway: createHallSection() };
+  bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
+  const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
+  return { textures, photos, mood, section, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection() };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -130,7 +174,7 @@ function disposeResources(resources: HallResources): void {
   resources.cutaway.dispose();
 }
 
-export function GrandHallModel({ mood, view, quality: qualityOverride, overviewChandeliers = true, moodSeconds = 1.6 }: GrandHallModelProps): ReactElement {
+export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6 }: GrandHallModelProps): ReactElement {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
@@ -139,7 +183,7 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
   const walls = useMemo(() => hallWallGeometry(relief), [relief]);
   const chandeliers = useMemo(() => hallChandeliers(), []);
   const deviceFinish = useHallFinish();
-  const quality = qualityOverride ?? deviceFinish.photoQuality;
+  const { photoQuality: quality, liveLight } = finishOverride ?? deviceFinish;
   const resources = useMemo(() => createResources(quality, HALL_MOODS[mood]), [quality]);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
@@ -178,6 +222,12 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
       environment.dispose();
     };
   }, [environment, invalidate, scene]);
+
+  // Without the reflection map the chandeliers' metal leans on its own light.
+  useEffect(() => {
+    resources.selfLit.value = liveLight ? 1 : SELF_LIT_WITHOUT_REFLECTIONS;
+    invalidate();
+  }, [invalidate, liveLight, resources]);
 
   // The scan's photographs and the walls' relief stream in after the first
   // frame; the planner's caption counts them in.
@@ -251,12 +301,14 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
       const shownBefore = fittings?.visible ?? false;
       const scaleBefore = fittings?.scale.x ?? 1;
       if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
+      resources.bulbScale.value = CAPTURED_BULBS;
       try {
         state.scene.environment = environment.capture(roomGroup);
         state.scene.environmentIntensity = resources.mood.reflections;
       } catch {
         // Without its own reflections the room keeps the previous environment.
       } finally {
+        resources.bulbScale.value = 1;
         if (fittings !== null) { fittings.visible = shownBefore; fittings.scale.setScalar(scaleBefore); }
       }
       moving = true;
