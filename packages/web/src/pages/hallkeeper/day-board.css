@@ -634,10 +634,10 @@ div.dayboard-slab {
 
 /* Too narrow for the verb and the title: the state in two words outranks a
    title cut to one letter (the Hallkeeper Test reads state before name; the
-   aria-label and the open slot keep the title). */
-@container (max-width: 120px) {
+   aria-label and the open slot keep the title). Below 96 px: a two-hour
+   booking on a laptop's board is about 120 px and keeps its words. */
+@container (max-width: 96px) {
   .dayboard-verb-words,
-  .dayboard-slab-title,
   .dayboard-slab-time {
     display: none;
   }
@@ -646,7 +646,8 @@ div.dayboard-slab {
     align-items: flex-start;
     row-gap: 2px;
     white-space: normal;
-    font-size: 11px;
+    /* Never under the house's 12 px floor, however narrow the slab. */
+    font-size: 12px;
     line-height: 1.15;
   }
   /* On its own line under the dot and icon, where two words fit. */
