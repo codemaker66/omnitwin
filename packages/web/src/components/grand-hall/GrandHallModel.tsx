@@ -33,9 +33,13 @@ import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { HallEnvironmentCapture } from "./hall-capture.js";
 import { createHallSection, type HallSection } from "./hall-section.js";
+import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 
 /** The dark the drawn hall stands in (the planner's background around it). */
 export const HALL_VOID = "#120e0b";
+
+/** The room itself is never selected, so a press does not test its triangles. */
+const HALL_USER_DATA = { [SELECTION_PICK_IGNORED]: true };
 
 /** How the planner is looking at the room; "auto" decides from the camera. */
 export type HallView = "plan" | "overview" | "walk" | "auto";
@@ -365,7 +369,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   });
 
   return (
-    <group ref={room} name="grand-hall">
+    <group ref={room} name="grand-hall" userData={HALL_USER_DATA}>
       {[...geometry.geometries].map(([key, part]) => {
         const material = resources.materials.get(key);
         if (material === undefined) return null;
