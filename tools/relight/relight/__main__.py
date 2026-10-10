@@ -78,21 +78,55 @@ def _artifact(path: str) -> dict:
     return {"path": os.path.abspath(path).replace("\\", "/"), "sha256": h.hexdigest(), "bytes": os.path.getsize(path)}
 
 
+# The container's initial environment as RunPod set it (pod/idle-stop.sh reads RUNPOD_POD_ID there too); none off Linux.
+INIT_ENVIRON = "/proc/1/environ" if sys.platform.startswith("linux") else None
+
+
 def _host() -> str:
-    """The host an evidence JSON is written on (R1a's Global Constraints, "Execution host", amended 10 October): the
-    RunPod pod by its id when RUNPOD_POD_ID is set (RunPod sets it on every pod), else the PC."""
+    """The host an evidence JSON is written on (R1a's Global Constraints, "Execution host", amended 10 October):
+    "pod:<id>" on a RunPod pod, else "pc". The id is RUNPOD_POD_ID from this process's environment, else from the
+    container's initial environment (INIT_ENVIRON: NUL-separated NAME=value entries), because the runner starts each job
+    over a non-interactive SSH session that exports only the thread caps and RELIGHT_*, so a job's own environment
+    usually lacks it. A runner job (RELIGHT_JOB set) whose pod id is in neither raises RuntimeError rather than be
+    recorded as the PC."""
     pod = os.environ.get("RUNPOD_POD_ID")
-    return f"pod:{pod}" if pod else "pc"
+    if not pod and INIT_ENVIRON is not None:
+        try:
+            with open(INIT_ENVIRON, "rb") as f:
+                entries = f.read().split(b"\0")
+        except OSError:
+            entries = []
+        for entry in entries:
+            name, _eq, value = entry.partition(b"=")
+            if name == b"RUNPOD_POD_ID":
+                pod = value.decode("utf-8", "replace")
+                break
+    if pod:
+        return f"pod:{pod}"
+    if os.environ.get("RELIGHT_JOB"):
+        raise RuntimeError(f"runner job {os.environ['RELIGHT_JOB']}: RUNPOD_POD_ID is neither in the environment nor in "
+                           f"{INIT_ENVIRON}, so this evidence's host is unknown; refusing to record it as the PC")
+    return "pc"
 
 
 def _write_evidence(path: str, data: dict) -> None:
     """An evidence JSON, written after the artifact it describes and through a partial file renamed over the target, with
     non-finite numbers as null (so a failure never leaves a half-written or stale 'pass'). It records its host (_host),
-    or keeps the host the evidence already records: record-artifacts rewrites evidence an earlier run measured."""
+    or keeps the host the evidence already records: record-artifacts rewrites evidence an earlier run measured. The
+    partial file is flushed and fsynced before the rename, so a crash leaves the old evidence or the new, never a torn
+    file; any failure removes the partial file and re-raises, the target untouched."""
+    record = _finite({**data, "host": data.get("host") or _host()})
     part = path + ".part"
-    with open(part, "w", encoding="utf-8") as f:
-        json.dump(_finite({**data, "host": data.get("host") or _host()}), f, indent=1, allow_nan=False)
-    os.replace(part, path)
+    try:
+        with open(part, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=1, allow_nan=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(part, path)
+    except BaseException:
+        if os.path.exists(part):
+            os.remove(part)
+        raise
 
 
 def split_tables(cfg: config.Config) -> None:

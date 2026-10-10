@@ -3,6 +3,21 @@ from unittest import mock
 from relight import __main__ as M, config
 
 
+@contextlib.contextmanager
+def host_env(pod=None, init_environ=None, job=None):
+    """The host as a test names it, whatever machine runs the suite: RUNPOD_POD_ID and RELIGHT_JOB in this process's
+    environment only when given, and the container's initial environment (M.INIT_ENVIRON) at `init_environ` (None:
+    there is none to read, as on the PC)."""
+    with mock.patch.dict(os.environ), mock.patch.object(M, "INIT_ENVIRON", init_environ):
+        for name in ("RUNPOD_POD_ID", "RELIGHT_JOB"):
+            os.environ.pop(name, None)
+        if pod is not None:
+            os.environ["RUNPOD_POD_ID"] = pod
+        if job is not None:
+            os.environ["RELIGHT_JOB"] = job
+        yield
+
+
 class Artifacts(unittest.TestCase):
     def test_an_artifact_is_recorded_by_its_exact_path_hash_and_size(self):
         with tempfile.TemporaryDirectory() as d:
@@ -15,36 +30,83 @@ class Artifacts(unittest.TestCase):
             self.assertTrue(record["path"].endswith("/a.npz") and "\\" not in record["path"])
 
     def test_evidence_is_written_whole_with_non_finite_numbers_as_null(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory() as d, host_env():
             path = os.path.join(d, "e.json")
             M._write_evidence(path, {"x": float("inf"), "artifact": None})
             with open(path, encoding="utf-8") as f:
                 self.assertEqual(json.load(f), {"x": None, "artifact": None, "host": M._host()})
             self.assertFalse(os.path.exists(path + ".part"))
 
+    def test_a_dump_that_raises_leaves_the_target_untouched_and_no_partial_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "e.json")
+            M._write_evidence(path, {"pass": True, "host": "pc"})
+            with open(path, "rb") as f:
+                before = f.read()
+
+            def crash(obj, f, **kwargs):
+                f.write('{"pass": ')
+                raise OSError("disk full")
+            with mock.patch.object(M.json, "dump", side_effect=crash), self.assertRaises(OSError):
+                M._write_evidence(path, {"pass": False, "host": "pc"})
+            with open(path, "rb") as f:
+                self.assertEqual(f.read(), before)
+            self.assertEqual(os.listdir(d), ["e.json"])
+
+    def test_evidence_reaches_the_disk_before_it_replaces_the_target(self):
+        calls, fsync, replace = [], os.fsync, os.replace
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(M.os, "fsync", side_effect=lambda fd: (calls.append("fsync"), fsync(fd))[1]), \
+                mock.patch.object(M.os, "replace", side_effect=lambda a, b: (calls.append(("replace", a, b)), replace(a, b))[1]):
+            path = os.path.join(d, "e.json")
+            M._write_evidence(path, {"pass": True, "host": "pc"})
+        self.assertEqual(calls, ["fsync", ("replace", path + ".part", path)])
+
 
 class EvidenceHost(unittest.TestCase):
     """Each evidence JSON records its host (R1a's Global Constraints, "Execution host", amended 10 October): the RunPod
-    pod by RUNPOD_POD_ID, else the PC; evidence that already records the host that measured it keeps it."""
+    pod by RUNPOD_POD_ID, from this process's environment or else the container's initial environment (a runner job's
+    own environment lacks it); the PC otherwise, except that a runner job with no pod id refuses to guess. Evidence that
+    already records the host that measured it keeps it."""
 
-    def written(self, data, pod):
-        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ):
-            os.environ.pop("RUNPOD_POD_ID", None)
-            if pod is not None:
-                os.environ["RUNPOD_POD_ID"] = pod
-            path = os.path.join(d, "e.json")
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+
+    def initial_environment(self, *entries):
+        """A file like /proc/1/environ: NUL-separated NAME=value entries."""
+        path = os.path.join(self.dir, "environ")
+        with open(path, "wb") as f:
+            f.write(b"\0".join(e.encode() for e in entries) + b"\0")
+        return path
+
+    def written(self, data, **env):
+        path = os.path.join(self.dir, "e.json")
+        with host_env(**env):
             M._write_evidence(path, data)
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
 
     def test_evidence_written_on_a_pod_records_the_pod(self):
-        self.assertEqual(self.written({"pass": True}, "testpod01"), {"pass": True, "host": "pod:testpod01"})
+        self.assertEqual(self.written({"pass": True}, pod="testpod01"), {"pass": True, "host": "pod:testpod01"})
+
+    def test_a_runner_job_finds_the_pod_in_the_containers_initial_environment(self):
+        environ = self.initial_environment("PATH=/usr/bin", "RUNPOD_POD_ID=abc123xyz", "HOME=/root")
+        self.assertEqual(self.written({"pass": True}, init_environ=environ, job="probes-run1"),
+                         {"pass": True, "host": "pod:abc123xyz"})
 
     def test_evidence_written_off_a_pod_records_the_pc(self):
-        self.assertEqual(self.written({"pass": True}, None), {"pass": True, "host": "pc"})
+        for init_environ in (None, os.path.join(self.dir, "no-such-environ")):
+            self.assertEqual(self.written({"pass": True}, init_environ=init_environ), {"pass": True, "host": "pc"})
+
+    def test_a_runner_job_with_no_pod_id_refuses_to_guess(self):
+        for init_environ in (os.path.join(self.dir, "no-such-environ"), self.initial_environment("PATH=/usr/bin", "HOME=/root")):
+            with self.assertRaisesRegex(RuntimeError, "probes-run1"):
+                self.written({"pass": True}, init_environ=init_environ, job="probes-run1")
+            self.assertFalse(os.path.exists(os.path.join(self.dir, "e.json")) or os.path.exists(os.path.join(self.dir, "e.json.part")))
 
     def test_rewritten_evidence_keeps_the_host_that_measured_it(self):
-        self.assertEqual(self.written({"pass": True, "host": "pc"}, "testpod01"), {"pass": True, "host": "pc"})
+        self.assertEqual(self.written({"pass": True, "host": "pc"}, pod="testpod01"), {"pass": True, "host": "pc"})
 
 
 class RecordArtifacts(unittest.TestCase):
@@ -61,10 +123,7 @@ class RecordArtifacts(unittest.TestCase):
             with open(os.path.join(self.work, name), "wb") as f:
                 f.write(name.encode())
         self.cfg = config.Config(paths={"work": self.work, "evidence": self.ev}, room={})
-        env = mock.patch.dict(os.environ)
-        env.start()
-        self.addCleanup(env.stop)
-        os.environ.pop("RUNPOD_POD_ID", None)
+        self.enterContext(host_env())
 
     def evidence(self, name, data=None):
         """The evidence file's bytes, after writing `data` as Task 4b's stamp_host.py wrote it when given."""
