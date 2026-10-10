@@ -97,7 +97,7 @@ export function statusLine(request: VenueRequest, messages: readonly Message[]):
 }
 
 function isOffline(cause: unknown): boolean {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
   return cause instanceof ApiError && cause.code === "NETWORK_ERROR";
 }
 
