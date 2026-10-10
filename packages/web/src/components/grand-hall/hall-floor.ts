@@ -162,11 +162,11 @@ export function oakFloorNodes(): OakFloorNodes {
   const tone = board.sub(0.5).mul(detail).add(0.5);
   const honey = vec3(OAK.honey.r, OAK.honey.g, OAK.honey.b);
   const toward = mix(vec3(OAK.amber.r, OAK.amber.g, OAK.amber.b), vec3(OAK.pale.r, OAK.pale.g, OAK.pale.b), smoothstep(0.0, 1.0, tone));
-  const base = mix(honey, toward, smoothstep(0.5, 1.0, tone.sub(0.5).abs().mul(2)).mul(0.55));
+  const base = mix(honey, toward, smoothstep(0.5, 1.0, tone.sub(0.5).abs().mul(2)).mul(0.36));
   // Grain darkens and lightens within a board; light falls off a little at its ends.
-  const figure = grain.sub(0.5).mul(detail.mul(0.5)).add(1.0);
+  const figure = grain.sub(0.5).mul(detail.mul(0.38)).add(1.0);
   const endShade = smoothstep(0.0, 0.06, u).mul(smoothstep(1.0, 0.94, u)).mul(detail.mul(0.06)).add(float(1).sub(detail.mul(0.06)));
-  const boardColour = base.mul(figure).mul(endShade).mul(boardB.sub(0.5).mul(detail.mul(0.1)).add(1.0));
+  const boardColour = base.mul(figure).mul(endShade).mul(boardB.sub(0.5).mul(detail.mul(0.06)).add(1.0));
 
   // Seams along each strip and at each end joint.
   const sideDistance = v.min(float(1).sub(v)).mul(FLOOR_BOARD_WIDTH);

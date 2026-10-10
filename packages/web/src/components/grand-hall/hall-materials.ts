@@ -18,7 +18,7 @@
 
 import { Color, FrontSide, type Material, type Side, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
-import { attribute, color, float, mix, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3 } from "three/tsl";
+import { attribute, color, float, luminance, mix, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import type { HallMaterialKey } from "./hall-builders.js";
 import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
 import type { HallTextures } from "./hall-textures.js";
@@ -106,8 +106,10 @@ function scanDaylight() {
  * A wall photograph's texel for this fragment. The orthophotos look straight
  * at each wall, so faces they see edge-on — the sides of doorcases, boards
  * and reveals — would stretch a single row of texels into streaks; those
- * faces take the photograph's local average colour (five mip levels coarser,
- * about 15 cm a texel) instead.
+ * faces take the photograph's local average (six mip levels coarser, about
+ * 30 cm a texel), muted and shaded as the recess it is, since the average of
+ * a window's glass and curtains would otherwise streak blue and white down
+ * the reveal. They are never glazing.
  */
 function wallTexel(photos: HallPhotos) {
   const sample = photos.sample("walls", attribute("aAtlas", "vec2"));
@@ -116,7 +118,9 @@ function wallTexel(photos: HallPhotos) {
   // Window and door walls face along z; the end walls along x.
   const alongZ = wall.lessThan(0.5).or(wall.greaterThan(1.5).and(wall.lessThan(2.5)));
   const facing = alongZ.select(face.z.abs(), face.x.abs());
-  return mix(sample.bias(float(5)), sample, smoothstep(0.18, 0.42, facing));
+  const coarse = sample.bias(float(6)).rgb;
+  const reveal = vec4(mix(vec3(luminance(coarse)), coarse, 0.3).mul(0.62), 1);
+  return mix(reveal, sample, smoothstep(0.18, 0.42, facing));
 }
 
 /** A photographed surface's colour under the current mood. */
