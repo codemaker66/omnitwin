@@ -297,7 +297,9 @@ span.dayboard-next-line {
 .dayboard-ruler {
   display: grid;
   grid-template-columns: var(--db-lane-head) minmax(0, 1fr);
-  height: 44px;
+  /* Room for the NOW plaque above the hour labels, so the present never
+     covers the hour it is nearest to. */
+  height: 66px;
   border-bottom: 1px solid var(--lt-line);
 }
 
@@ -341,7 +343,8 @@ span.dayboard-next-line {
 
 .dayboard-now-plaque {
   position: absolute;
-  bottom: 16px;
+  /* Above the label band (labels sit at 14px, one line tall). */
+  bottom: 32px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
@@ -468,6 +471,37 @@ span.dayboard-next-line {
   font-weight: 600;
 }
 
+/* The previous slab's clear-down reaches this setup: no open lane to draw
+   the rule in, so the rule goes and the dimension moves onto the lane
+   boundary above the slabs, ending at the slab it protects, the way a
+   drawing places a dimension that will not fit between its lines. */
+.dayboard-gap.is-covered {
+  top: 0;
+  bottom: 0;
+  height: auto;
+  border-color: transparent;
+  /* Above every slab, the selected and hovered ones included (3). */
+  z-index: 4;
+}
+
+.dayboard-gap.is-covered .dayboard-gap-words {
+  top: 0 !important;
+  left: 100% !important;
+  transform: translate(-100%, -50%);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--lt-line);
+}
+
+/* Two covered dimensions in a row (a slot wedged between two short gaps)
+   would overlap on the boundary: every other one steps up a row. */
+.dayboard-gap.is-covered.is-staggered .dayboard-gap-words {
+  transform: translate(-100%, calc(-50% - 18px));
+}
+
+.dayboard[data-layout="phone"] .dayboard-gap.is-covered.is-staggered .dayboard-gap-words {
+  transform: translate(-50%, calc(-100% - 18px));
+}
+
 /* --- slabs ------------------------------------------------------------------ */
 
 .dayboard-slab {
@@ -531,6 +565,9 @@ div.dayboard-slab {
   position: relative;
   z-index: 1;
   display: grid;
+  /* One column that may shrink below its content, so the ring's words can
+     ellipsize instead of pushing the column past the slab's edge. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 3px;
   padding: 8px 10px 12px;
   min-width: 0;
@@ -582,6 +619,11 @@ div.dayboard-slab {
   margin-left: 8px;
 }
 
+/* The two-word state a narrow slab falls back to; hidden until it is needed. */
+.dayboard-verb-short {
+  display: none;
+}
+
 @container (max-width: 200px) {
   .dayboard-ring-words,
   .dayboard-linked,
@@ -590,10 +632,29 @@ div.dayboard-slab {
   }
 }
 
-@container (max-width: 120px) {
+/* Too narrow for the verb and the title: the state in two words outranks a
+   title cut to one letter (the Hallkeeper Test reads state before name; the
+   aria-label and the open slot keep the title). Below 96 px: a two-hour
+   booking on a laptop's board is about 120 px and keeps its words. */
+@container (max-width: 96px) {
   .dayboard-verb-words,
   .dayboard-slab-time {
     display: none;
+  }
+  .dayboard-verb {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 2px;
+    white-space: normal;
+    /* Never under the house's 12 px floor, however narrow the slab. */
+    font-size: 12px;
+    line-height: 1.15;
+  }
+  /* On its own line under the dot and icon, where two words fit. */
+  .dayboard-verb-short {
+    display: block;
+    flex-basis: 100%;
+    min-width: 0;
   }
 }
 
@@ -627,6 +688,8 @@ div.dayboard-slab {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* May shrink: the words inside ellipsize rather than the slab clipping them. */
+  min-width: 0;
   max-width: 100%;
   margin-top: 2px;
   padding: 2px 8px 2px 6px;
@@ -1313,5 +1376,17 @@ div.dayboard-slab {
   .dayboard[data-layout="phone"] .dayboard-gap-words {
     top: 50%;
     transform: translate(-50%, -50%);
+  }
+  /* Down a phone's lane a covered dimension ends just above the slab it
+     protects, centred on the rule it no longer draws. */
+  .dayboard[data-layout="phone"] .dayboard-gap.is-covered {
+    left: 50%;
+    right: auto;
+    width: 1px;
+  }
+  .dayboard[data-layout="phone"] .dayboard-gap.is-covered .dayboard-gap-words {
+    top: 100% !important;
+    left: 50% !important;
+    transform: translate(-50%, -100%);
   }
 }

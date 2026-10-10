@@ -1,13 +1,17 @@
 // ---------------------------------------------------------------------------
 // Met Office BPF v2 test bodies (T-647). NOT Met Office responses.
 //
-// No response from the live API has been seen: the venue has no key yet,
-// and the DataHub's own sample files may not be redistributed. These bodies
-// are built from the documented structure only, with synthetic numbers
-// chosen to exercise the code:
+// No live response body has been seen here. Production showed on 10
+// October that the key is accepted and that the v2 listing offers neither
+// improver-percentiles-spot-uk nor anything ending in it (the v1 ids). The
+// DataHub's own sample files may not be redistributed. These bodies are
+// built from the documented structure only, with synthetic numbers chosen
+// to exercise the code:
 // - /collections: the OpenAPI definition's collections schema
 //   (mo-site-specific-blended-probabilistic-forecast-v2_subscriber.json,
-//   components.schemas.MODEL3b85ce / collection).
+//   components.schemas.MODEL3b85ce / collection: id, title, links,
+//   output_formats), with EDR parameter_names where a test needs them. The
+//   v2 ids are a third-party client's (see bpf-collections.ts), unverified.
 // - /instances: OGC API - EDR Part 1 (OGC 19-086r6) instances, as the API
 //   User Guide describes ("explore available versions, time ranges").
 // - /position: the API User Guide, "Understand Forecast Data Responses"
@@ -21,11 +25,41 @@
 
 export const FIXTURE_SITE = { latitude: 55.8611, longitude: -4.2502 } as const;
 
-export function collectionsBody(ids: readonly string[] = ["improver-percentiles-spot-uk", "improver-probabilities-spot-uk"]): unknown {
+/** The v2 ids a third-party client lists (unverified against a live listing). */
+export const V2_COLLECTION_IDS = ["uk-spot-percentiles", "uk-spot-probabilities", "global-spot-percentiles", "global-spot-probabilities"] as const;
+/** The v1 ids (Met Office weather_datahub_utilities), which v2 does not offer. */
+export const V1_COLLECTION_IDS = ["improver-percentiles-spot-uk", "improver-probabilities-spot-uk"] as const;
+
+/** A /collections body; `parameters` adds EDR parameter_names to the ids it names. */
+export function collectionsBody(
+  ids: readonly string[] = V2_COLLECTION_IDS,
+  parameters: Readonly<Record<string, readonly string[]>> = {},
+): unknown {
   return {
-    collections: ids.map((id) => ({ id, title: id, links: [{ href: `/collections/${id}`, rel: "data" }] })),
+    collections: ids.map((id) => ({
+      id,
+      title: id,
+      links: [{ href: `/collections/${id}`, rel: "data" }],
+      output_formats: ["CoverageJSON"],
+      ...(parameters[id] === undefined
+        ? {}
+        : { parameter_names: Object.fromEntries((parameters[id] ?? []).map((key) => [key, { type: "Parameter" }])) }),
+    })),
     links: [],
   };
+}
+
+/** A listing with no usable percentile collection: probability sets, a
+ *  percentile set holding only wind (no total cloud or temperature, so no
+ *  forecast can stand on it) and one declaring nothing the sky reads. */
+export function listingWithoutPercentilesBody(): unknown {
+  return collectionsBody(
+    ["uk-spot-probabilities", "global-spot-probabilities", "uk-spot-percentiles-wind", "uk-spot-summary"],
+    {
+      "uk-spot-percentiles-wind": ["windSpeed10m", "windSpeedOfGust10mMaximumPt01h"],
+      "uk-spot-summary": ["ultravioletIndex"],
+    },
+  );
 }
 
 export function instancesBody(ids: readonly string[]): unknown {
