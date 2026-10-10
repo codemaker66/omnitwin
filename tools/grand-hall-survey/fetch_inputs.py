@@ -16,12 +16,16 @@ import urllib.request
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "https://twin.venviewer.com/trades-hall").rstrip("/")
 GRAND_HALL_SWEEPS = range(0, 49)
+# The twin's host answers urllib's default agent with 403 (October 2026);
+# the survey names itself instead.
+USER_AGENT = "venviewer-survey/1.0 (+https://venviewer.com)"
 
 
 def fetch(url, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
-        with urllib.request.urlopen(url, timeout=120) as response, open(path + ".part", "wb") as out:
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(request, timeout=120) as response, open(path + ".part", "wb") as out:
             out.write(response.read())
         os.replace(path + ".part", path)
     return path
