@@ -297,7 +297,9 @@ span.dayboard-next-line {
 .dayboard-ruler {
   display: grid;
   grid-template-columns: var(--db-lane-head) minmax(0, 1fr);
-  height: 44px;
+  /* Room for the NOW plaque above the hour labels, so the present never
+     covers the hour it is nearest to. */
+  height: 66px;
   border-bottom: 1px solid var(--lt-line);
 }
 
@@ -341,7 +343,8 @@ span.dayboard-next-line {
 
 .dayboard-now-plaque {
   position: absolute;
-  bottom: 16px;
+  /* Above the label band (labels sit at 14px, one line tall). */
+  bottom: 32px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
@@ -531,6 +534,9 @@ div.dayboard-slab {
   position: relative;
   z-index: 1;
   display: grid;
+  /* One column that may shrink below its content, so the ring's words can
+     ellipsize instead of pushing the column past the slab's edge. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 3px;
   padding: 8px 10px 12px;
   min-width: 0;
@@ -582,6 +588,11 @@ div.dayboard-slab {
   margin-left: 8px;
 }
 
+/* The two-word state a narrow slab falls back to; hidden until it is needed. */
+.dayboard-verb-short {
+  display: none;
+}
+
 @container (max-width: 200px) {
   .dayboard-ring-words,
   .dayboard-linked,
@@ -590,10 +601,24 @@ div.dayboard-slab {
   }
 }
 
+/* Too narrow for the verb and the title: the state in two words outranks a
+   title cut to one letter (the Hallkeeper Test reads state before name; the
+   aria-label and the open slot keep the title). */
 @container (max-width: 120px) {
   .dayboard-verb-words,
+  .dayboard-slab-title,
   .dayboard-slab-time {
     display: none;
+  }
+  .dayboard-verb {
+    align-items: flex-start;
+    white-space: normal;
+    font-size: 11px;
+    line-height: 1.15;
+  }
+  .dayboard-verb-short {
+    display: inline;
+    min-width: 0;
   }
 }
 
@@ -627,6 +652,8 @@ div.dayboard-slab {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* May shrink: the words inside ellipsize rather than the slab clipping them. */
+  min-width: 0;
   max-width: 100%;
   margin-top: 2px;
   padding: 2px 8px 2px 6px;

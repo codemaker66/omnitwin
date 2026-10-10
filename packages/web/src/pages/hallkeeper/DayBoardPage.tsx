@@ -416,6 +416,8 @@ function Slab({ slot, view, nowMs, selected, onOpen, wall, vertical, frozen }: {
           <span className="dayboard-dot" aria-hidden="true" />
           <StateIcon icon={slot.icon} size={wall ? 18 : 14} />
           <span className="dayboard-verb-words">{slot.countdown}</span>
+          {/* A slab too narrow for the verb keeps its state in two words. */}
+          <span className="dayboard-verb-short">{slot.stateLabel}</span>
         </span>
         <span className="dayboard-slab-title">{slot.title}</span>
         <span className="dayboard-slab-time">

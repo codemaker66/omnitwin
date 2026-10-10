@@ -137,10 +137,13 @@ export function slabGeometry(slot: DayBoardSlot, window: BoardWindow): SlabGeome
   };
 }
 
-/** The dimensioned gap drawn before a slot, or null for the first in a lane. */
+/** The dimensioned gap drawn before a slot, or null for the first in a lane.
+ *  Drawn from the previous slab's drawn end (its clear-down), so the words
+ *  sit in the open lane rather than under the hatched strip; the dimension
+ *  itself still counts from the previous booking's end (minutesOf). */
 export function gapGeometry(previous: DayBoardSlot | undefined, slot: DayBoardSlot, window: BoardWindow): Span | null {
   if (previous === undefined) return null;
-  return span(previous.endsAtMs, slot.segments.setupStartsAtMs, window);
+  return span(previous.segments.clearDownEndsAtMs, slot.segments.setupStartsAtMs, window);
 }
 
 /** How many minutes a span of the window is, for the gap's dimension. */
