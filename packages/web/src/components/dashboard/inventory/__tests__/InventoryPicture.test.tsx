@@ -58,10 +58,10 @@ describe("InventoryPicture illustrations", () => {
 const turiniId = "7f1fb7a2-5210-57b1-9108-11255c059520";
 
 describe("InventoryPicture supplied model", () => {
-  it("shows the actual model preview by catalogue identity and labels its provenance", () => {
+  it("shows the preview of the model the planner draws, by catalogue identity, and labels its provenance", () => {
     render(<InventoryPicture name="Burgess Turini 18/3" assetId={turiniId} hero />);
     expect(screen.getByRole("img", { name: "Burgess Turini 18/3, 3d model preview" }).getAttribute("src"))
-      .toBe("/models/furniture/burgess-turini-18-3/v1/preview.webp");
+      .toBe("/models/furniture/burgess-turini-18-3/crafted-v1/preview.webp");
     expect(screen.getByText("3D model preview")).toBeDefined();
   });
 

@@ -47,9 +47,10 @@ describe("CatalogueItem meshUrl field (#28)", () => {
     expect(imported.find((item) => item.slug === "burgess-turini-18-3")?.meshUrl)
       .toBe("/models/furniture/burgess-turini-18-3/v1/chair.glb");
     for (const slug of ["trestle-4ft-black", "trestle-4ft-white"]) {
+      // The supplied model stays catalogued; the picker shows the crafted render.
       expect(imported.find((item) => item.slug === slug)).toMatchObject({
         meshUrl: `/models/furniture/${slug}/v1/model.glb`,
-        thumbnailUrl: `/models/furniture/${slug}/v1/preview.webp`,
+        thumbnailUrl: `/models/furniture/${slug}/crafted-v1/preview.webp`,
         width: 1.22, depth: 0.76, height: 0.74,
         dimensionStatus: "approximate", tableShape: "rectangular",
       });

@@ -314,6 +314,9 @@ function devFixtureRoutes(): readonly RouteObject[] {
   const GrandHallLabPage = lazy(() =>
     cockpitImport(() => import("./pages/GrandHallLabPage.js").then((m) => ({ default: m.GrandHallLabPage }))),
   );
+  const FurnitureLabPage = lazy(() =>
+    cockpitImport(() => import("./pages/FurnitureLabPage.js").then((m) => ({ default: m.FurnitureLabPage }))),
+  );
 
   return [
     {
@@ -340,6 +343,12 @@ function devFixtureRoutes(): readonly RouteObject[] {
       // window bridge for headless visual review.
       path: "/dev/grand-hall",
       element: withSuspense(<GrandHallLabPage />),
+    },
+    {
+      // The crafted furniture beside the supplied models it replaces, in the
+      // hall's light, posed by a window bridge for headless visual review.
+      path: "/dev/furniture",
+      element: withSuspense(<FurnitureLabPage />),
     },
   ];
 }

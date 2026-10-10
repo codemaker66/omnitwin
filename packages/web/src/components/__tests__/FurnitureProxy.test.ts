@@ -8,6 +8,7 @@ import {
   standaloneFurnitureMeshUrl,
 } from "../FurnitureProxy.js";
 import { CATALOGUE_ITEMS, getCatalogueItemBySlug } from "../../lib/catalogue.js";
+import { CRAFTED_FURNITURE_SLUGS } from "../../lib/crafted-furniture.js";
 
 // Every real catalogue slug and the mesh it must render as. Asserted against
 // CATALOGUE_ITEMS (not fixtures) because the dispatch bug this pins was
@@ -15,16 +16,16 @@ import { CATALOGUE_ITEMS, getCatalogueItemBySlug } from "../../lib/catalogue.js"
 // UUID v5 rather than a slug-shaped string.
 const EXPECTED_MESH_BY_SLUG: Readonly<Record<string, FurnitureMeshKind>> = {
   "round-table-6ft": "generated",
-  "trestle-6ft": "generated",
+  "trestle-6ft": "crafted",
   "banquet-chair": "generated",
-  "burgess-turini-18-3": "chair",
-  "platform": "generated",
-  "bar-counter": "generated",
+  "burgess-turini-18-3": "crafted",
+  "platform": "crafted",
+  "bar-counter": "crafted",
   "dancefloor-panel": "generated",
   "trestle-4ft": "generated",
   "poseur-table": "generated",
-  "poseur-table-black": "generated",
-  "poseur-table-white": "generated",
+  "poseur-table-black": "crafted",
+  "poseur-table-white": "crafted",
   "platform-narrow": "generated",
   "projector-screen": "generated",
   "projector": "generated",
@@ -35,20 +36,20 @@ const EXPECTED_MESH_BY_SLUG: Readonly<Record<string, FurnitureMeshKind>> = {
   "black-table-cloth": "applicator",
   "white-table-cloth": "applicator",
   "dinner-place-setting": "applicator",
-  "trestle-6ft-black": "trestle-table",
-  "trestle-6ft-white": "trestle-table",
-  "trestle-4ft-black": "trestle-table",
-  "trestle-4ft-white": "trestle-table",
-  "trestle-6ft-wooden": "trestle-table",
-  "round-table-6ft-black": "round-table",
-  "round-table-6ft-white": "round-table",
-  "cake-cutting-table": "round-table",
-  "ceremony-table": "trestle-table",
-  "checked-banquet-chair": "chair",
-  "room-divider": "platform",
-  "round-cafe-table-white": "round-table",
-  "square-cafe-table-white": "trestle-table",
-  "servery-unit": "platform",
+  "trestle-6ft-black": "crafted",
+  "trestle-6ft-white": "crafted",
+  "trestle-4ft-black": "crafted",
+  "trestle-4ft-white": "crafted",
+  "trestle-6ft-wooden": "crafted",
+  "round-table-6ft-black": "crafted",
+  "round-table-6ft-white": "crafted",
+  "cake-cutting-table": "crafted",
+  "ceremony-table": "crafted",
+  "checked-banquet-chair": "crafted",
+  "room-divider": "crafted",
+  "round-cafe-table-white": "crafted",
+  "square-cafe-table-white": "crafted",
+  "servery-unit": "crafted",
   // Trades Hall equipment intake: no supplied models yet, so each falls to the
   // procedural mesh for its kind. The two microphones and the television are
   // dispatched by slug — without that the television would render as a
@@ -68,12 +69,15 @@ const EXPECTED_MESH_BY_SLUG: Readonly<Record<string, FurnitureMeshKind>> = {
 };
 
 describe("furniture mesh dispatch", () => {
-  it("uses supplied models ahead of generated or procedural fallbacks", () => {
-    const imported = CATALOGUE_ITEMS.filter((item) => item.meshUrl !== null);
-    expect(imported).toHaveLength(20);
-    for (const item of imported) {
-      expect(standaloneFurnitureMeshUrl(item), item.slug).toBe(item.meshUrl);
-      expect(item.thumbnailUrl, item.slug).toMatch(/^\/models\/furniture\/.+\/v1\/preview\.webp$/u);
+  it("draws every supplied design as its crafted model, downloading no GLB", () => {
+    const supplied = CATALOGUE_ITEMS.filter((item) => item.meshUrl !== null);
+    expect(supplied).toHaveLength(20);
+    expect(supplied.map((item) => item.slug).sort()).toEqual([...CRAFTED_FURNITURE_SLUGS].sort());
+    for (const item of supplied) {
+      expect(resolveFurnitureMeshKind(item), item.slug).toBe("crafted");
+      expect(standaloneFurnitureMeshUrl(item), item.slug).toBeNull();
+      // The picker shows the crafted render, not the supplied model's.
+      expect(item.thumbnailUrl, item.slug).toBe(`/models/furniture/${item.slug}/crafted-v1/preview.webp`);
     }
   });
   it("routes every canonical catalogue item to its intended mesh", () => {
@@ -91,14 +95,14 @@ describe("furniture mesh dispatch", () => {
       .toEqual(Object.keys(EXPECTED_MESH_BY_SLUG).sort());
   });
 
-  it("routes every poseur variant through its exact generated proxy", () => {
+  it("routes every poseur variant by its slug, never as a round table", () => {
     // The regression: `id.startsWith("poseur-table")` is always false because
     // id is a UUID v5, so all three poseurs fell through to the round-table
     // branch via tableShape === "round".
     const expectations: ReadonlyArray<readonly [string, FurnitureMeshKind]> = [
       ["poseur-table", "generated"],
-      ["poseur-table-black", "generated"],
-      ["poseur-table-white", "generated"],
+      ["poseur-table-black", "crafted"],
+      ["poseur-table-white", "crafted"],
     ];
     for (const [slug, expected] of expectations) {
       const item = getCatalogueItemBySlug(slug);
@@ -144,15 +148,20 @@ describe("furniture mesh dispatch", () => {
 
   it("blocks an applicator GLB escape even when malformed metadata supplies a mesh URL", () => {
     const cloth = getCatalogueItemBySlug("black-table-cloth");
+    const lectern = getCatalogueItemBySlug("lectern");
     const platform = getCatalogueItemBySlug("platform");
     expect(cloth).toBeDefined();
+    expect(lectern).toBeDefined();
     expect(platform).toBeDefined();
-    if (cloth === undefined || platform === undefined) return;
+    if (cloth === undefined || lectern === undefined || platform === undefined) return;
 
     expect(standaloneFurnitureMeshUrl({ ...cloth, meshUrl: "/unexpected-cloth.glb" }))
       .toBeNull();
+    expect(standaloneFurnitureMeshUrl({ ...lectern, meshUrl: "/lectern.glb" }))
+      .toBe("/lectern.glb");
+    // A crafted piece draws in code whatever its catalogue row supplies.
     expect(standaloneFurnitureMeshUrl({ ...platform, meshUrl: "/platform.glb" }))
-      .toBe("/platform.glb");
+      .toBeNull();
   });
 });
 
