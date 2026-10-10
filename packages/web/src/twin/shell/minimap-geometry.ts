@@ -37,7 +37,7 @@ import type { TwinScanNode } from "@omnitwin/types";
 // into 0…1) draws a long oblong room as a square, which is not a plan of
 // anything. How oblong the rooms this ships against actually are is not restated
 // here, in prose or otherwise: the figures live in TRADES_HALL_ROOM_DIMENSIONS
-// (lib/trades-hall-venue-truth.ts) and this module's tests join them from there.
+// (trades-hall-venue-truth.ts in @omnitwin/types) and this module's tests join them from there.
 // Where a host wants the box to fill a known frame exactly, pass
 // `aspect`: the box GROWS on its deficient axis about the same centre. It never
 // shrinks, so a fitted node is never cropped out of the drawing it belongs to.

@@ -18,7 +18,7 @@ import {
   TRADES_HALL_WEDDING_PRICING,
   VENUE_TRUTH_PROVENANCE,
   formatPriceGBP,
-} from "../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import { publicRoomSelectionCards } from "../../lib/trades-hall-room-showcase.js";
 import {
   FOOTER_EMAIL,
