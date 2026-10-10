@@ -67,14 +67,6 @@ function sub(a: Vec3, b: Vec3): [number, number, number] {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 }
 
-function cross(a: Vec3, b: Vec3): [number, number, number] {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
-function length(a: Vec3): number {
-  return Math.hypot(a[0], a[1], a[2]);
-}
-
 function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
 }
@@ -158,20 +150,29 @@ export function chandelierScale(chandelier: HallChandelier): number {
   return chandelier.style === "gilt-leaf" ? 1.45 : 1.0;
 }
 
+/** Each chandelier's position and power, read once: the bake samples them for every vertex. */
+const CHANDELIER_SOURCES: readonly { readonly x: number; readonly y: number; readonly z: number; readonly power: number }[] =
+  HALL_CHANDELIERS.map((chandelier) => {
+    const scale = chandelierScale(chandelier);
+    return { x: chandelier.position[0], y: chandelier.position[1], z: chandelier.position[2], power: CHANDELIER_POWER * scale * scale };
+  });
+
 export function hallChandelierIrradiance(point: Vec3, normal: Vec3): number {
+  const [px, py, pz] = point;
+  const [nx, ny, nz] = normal;
   let total = 0;
-  for (const chandelier of HALL_CHANDELIERS) {
-    const toLight = sub(chandelier.position, point);
-    const distanceSq = dot(toLight, toLight);
+  for (const source of CHANDELIER_SOURCES) {
+    const tx = source.x - px;
+    const ty = source.y - py;
+    const tz = source.z - pz;
+    const distanceSq = tx * tx + ty * ty + tz * tz;
     const distance = Math.sqrt(distanceSq);
     if (distance < 1e-4) continue;
-    const cosine = dot(normal, toLight) / distance;
+    const cosine = (nx * tx + ny * ty + nz * tz) / distance;
     if (cosine <= 0) continue;
     // Light leaving the chandelier upward is partly blocked by its own frame.
-    const upward = -toLight[1] / distance > 0 ? CHANDELIER_UPWARD_FRACTION : 1;
-    const scale = chandelierScale(chandelier);
-    const power = CHANDELIER_POWER * scale * scale * upward;
-    total += (power * cosine) / (distanceSq + CHANDELIER_SOFT_RADIUS * CHANDELIER_SOFT_RADIUS);
+    const upward = -ty / distance > 0 ? CHANDELIER_UPWARD_FRACTION : 1;
+    total += (source.power * upward * cosine) / (distanceSq + CHANDELIER_SOFT_RADIUS * CHANDELIER_SOFT_RADIUS);
   }
   return total;
 }
@@ -243,32 +244,74 @@ export function clipPolygonToHemisphere(polygon: readonly Vec3[], point: Vec3, n
  * hemisphere first, so any orientation is safe.
  */
 export function polygonFormFactor(point: Vec3, normal: Vec3, polygon: readonly Vec3[]): number {
-  const visible = clipPolygonToHemisphere(polygon, point, normal);
-  if (visible.length < 3) return 0;
+  return flatFormFactor(point[0], point[1], point[2], normal[0], normal[1], normal[2], flatten(polygon));
+}
+
+/** A polygon's vertices as flat x, y, z triples. */
+function flatten(polygon: readonly Vec3[]): Float64Array {
+  const flat = new Float64Array(polygon.length * 3);
+  polygon.forEach((vertex, index) => { flat.set(vertex, index * 3); });
+  return flat;
+}
+
+/** The clipped polygon, reused: one clip emits at most two vertices per edge. */
+let clipped = new Float64Array(3 * 32);
+
+/**
+ * polygonFormFactor's arithmetic on flat coordinates, allocating nothing:
+ * the bake runs it for every vertex against every window, where the tuple
+ * version's garbage cost more than its arithmetic.
+ */
+function flatFormFactor(px: number, py: number, pz: number, nx: number, ny: number, nz: number, polygon: Float64Array): number {
+  const count = polygon.length / 3;
+  if (clipped.length < count * 6) clipped = new Float64Array(count * 6);
+  // Clip to the receiver's hemisphere (Sutherland–Hodgman against one plane).
+  const epsilon = 1e-5;
+  let visible = 0;
+  for (let i = 0; i < count; i++) {
+    const c = i * 3;
+    const n = ((i + 1) % count) * 3;
+    const cx = polygon[c] ?? 0, cy = polygon[c + 1] ?? 0, cz = polygon[c + 2] ?? 0;
+    const qx = polygon[n] ?? 0, qy = polygon[n + 1] ?? 0, qz = polygon[n + 2] ?? 0;
+    const dc = (cx - px) * nx + (cy - py) * ny + (cz - pz) * nz - epsilon;
+    const dn = (qx - px) * nx + (qy - py) * ny + (qz - pz) * nz - epsilon;
+    if (dc >= 0) {
+      clipped[visible * 3] = cx; clipped[visible * 3 + 1] = cy; clipped[visible * 3 + 2] = cz;
+      visible += 1;
+    }
+    if ((dc >= 0) !== (dn >= 0)) {
+      const t = dc / (dc - dn);
+      clipped[visible * 3] = cx + (qx - cx) * t;
+      clipped[visible * 3 + 1] = cy + (qy - cy) * t;
+      clipped[visible * 3 + 2] = cz + (qz - cz) * t;
+      visible += 1;
+    }
+  }
+  if (visible < 3) return 0;
   let sum = 0;
-  for (let i = 0; i < visible.length; i++) {
-    const a = visible[i];
-    const b = visible[(i + 1) % visible.length];
-    if (a === undefined || b === undefined) continue;
-    const va = sub(a, point);
-    const vb = sub(b, point);
-    const la = length(va);
-    const lb = length(vb);
+  for (let i = 0; i < visible; i++) {
+    const a = i * 3;
+    const b = ((i + 1) % visible) * 3;
+    const ax = (clipped[a] ?? 0) - px, ay = (clipped[a + 1] ?? 0) - py, az = (clipped[a + 2] ?? 0) - pz;
+    const bx = (clipped[b] ?? 0) - px, by = (clipped[b + 1] ?? 0) - py, bz = (clipped[b + 2] ?? 0) - pz;
+    const la = Math.sqrt(ax * ax + ay * ay + az * az);
+    const lb = Math.sqrt(bx * bx + by * by + bz * bz);
     if (la < 1e-6 || lb < 1e-6) continue;
-    const cosTheta = Math.max(-1, Math.min(1, dot(va, vb) / (la * lb)));
+    const cosTheta = Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / (la * lb)));
     const theta = Math.acos(cosTheta);
-    const c = cross(va, vb);
-    const lc = length(c);
+    const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
+    const lc = Math.sqrt(cx * cx + cy * cy + cz * cz);
     if (lc < 1e-9) continue;
-    sum += theta * (dot(normal, c) / lc);
+    sum += theta * ((nx * cx + ny * cy + nz * cz) / lc);
   }
   // The winding is not known in advance; a form factor is never negative.
   return Math.min(1, Math.abs(sum) / (2 * Math.PI));
 }
 
-const APERTURES: readonly (readonly Vec3[])[] = HALL_OPENINGS
+const APERTURES: readonly Float64Array[] = HALL_OPENINGS
   .filter(isWindow)
-  .flatMap((opening) => openingApertures(opening));
+  .flatMap((opening) => openingApertures(opening))
+  .map(flatten);
 
 /** Converts the windows' summed form factor to the stored channel's scale. */
 const DAYLIGHT_GAIN = DAYLIGHT_RADIANCE * 4;
@@ -276,8 +319,10 @@ const DAYLIGHT_GAIN = DAYLIGHT_RADIANCE * 4;
 export function hallDaylightIrradiance(point: Vec3, normal: Vec3): number {
   // Points on the window wall itself see no window face.
   if (point[2] <= -HALL_HALF_WIDTH + 1e-3) return 0;
+  const [px, py, pz] = point;
+  const [nx, ny, nz] = normal;
   let total = 0;
-  for (const aperture of APERTURES) total += polygonFormFactor(point, normal, aperture);
+  for (const aperture of APERTURES) total += flatFormFactor(px, py, pz, nx, ny, nz, aperture);
   return total * DAYLIGHT_GAIN;
 }
 
