@@ -6,7 +6,7 @@ import {
   VENUE_TRUTH_PROVENANCE,
   type RoomCapacity,
   type RoomDimensions,
-} from "../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import { roomPlan } from "./room-plan.js";
 import {
   FRESH_DOSSIER_CLOSE,

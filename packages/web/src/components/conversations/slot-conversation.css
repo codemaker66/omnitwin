@@ -1,0 +1,215 @@
+/* ---------------------------------------------------------------------------
+   The slot's conversation (goal 19 S4) — inside the Day Board's open slot,
+   on the register's paper arrangement: ivory ground, forest ink, copper for
+   the one thing that must not be missed, the audience.
+
+   One tab per thread. A client-facing thread wears the copper badge on its
+   tab, its header and its composer; a staff-private one wears nothing, so
+   the badge's presence is the whole signal (D6). Text is never tinted by
+   state (D3 law 8): tone lives in the rule, the badge and the dot.
+--------------------------------------------------------------------------- */
+
+.vv-conversation {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hk-line, #e4dcd0);
+  font-family: var(--hk-sans, Inter, system-ui, sans-serif);
+  color: var(--hk-ink, #2e382e);
+}
+
+.vv-conversation-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vv-conversation-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--hk-line, #e4dcd0);
+  border-radius: 999px;
+  background: var(--hk-ivory-raised, #fffdf8);
+  color: var(--hk-ink, #2e382e);
+  font: 500 13px/1.2 var(--hk-sans, Inter, system-ui, sans-serif);
+  cursor: pointer;
+}
+
+.vv-conversation-tab[aria-selected="true"] {
+  border-color: var(--hk-forest, #385542);
+  box-shadow: inset 0 0 0 1px var(--hk-forest, #385542);
+}
+
+.vv-conversation-tab:focus-visible,
+.vv-message-note:focus-visible {
+  outline: 2px solid var(--hk-copper, #986246);
+  outline-offset: 2px;
+}
+
+/* The audience, said in copper on ivory: the deeper copper, so 12 px bold
+   clears 4.5:1 on the raised ground. */
+.vv-thread-badge {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--hk-copper, #986246);
+  border-radius: 999px;
+  color: var(--hk-copper-ink, #8a5840);
+  background: var(--hk-ivory-raised, #fffdf8);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vv-thread-badge--composer {
+  justify-self: start;
+}
+
+.vv-conversation-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.vv-conversation-note {
+  margin: 0;
+  color: var(--hk-ink-dim, #575a4e);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.vv-messages {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.vv-message {
+  display: grid;
+  gap: 3px;
+  padding: 8px 12px;
+  border: 1px solid var(--hk-line, #e4dcd0);
+  border-left: 3px solid var(--hk-sage-deep, #6b8963);
+  border-radius: 8px;
+  background: var(--hk-ivory-raised, #fffdf8);
+}
+
+.vv-message[data-mine="true"] {
+  border-left-color: var(--hk-forest, #385542);
+}
+
+.vv-message[data-kind="system"] {
+  border-left-color: var(--hk-copper, #986246);
+  background: var(--hk-ivory, #f4f1e9);
+}
+
+.vv-message[data-kind="request"] {
+  border-left-color: var(--hk-copper, #986246);
+}
+
+.vv-message-who {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  color: var(--hk-ink-dim, #575a4e);
+  font-size: 12px;
+}
+
+.vv-message-author {
+  font-weight: 600;
+  color: var(--hk-ink, #2e382e);
+}
+
+.vv-message-when {
+  font-variant-numeric: tabular-nums;
+}
+
+.vv-message-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vv-message-receipt {
+  margin: 0;
+  color: var(--hk-ink-dim, #575a4e);
+  font-size: 12px;
+}
+
+.vv-message-note {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--hk-line, #e4dcd0);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hk-ink, #2e382e);
+  font: 500 12px/1.2 var(--hk-sans, Inter, system-ui, sans-serif);
+  cursor: pointer;
+}
+
+.vv-conversation-composer {
+  display: grid;
+  gap: 8px;
+}
+
+.vv-conversation-field {
+  display: grid;
+  gap: 4px;
+  color: var(--hk-ink-dim, #575a4e);
+  font-size: 12px;
+}
+
+.vv-conversation-field textarea {
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--hk-line, #e4dcd0);
+  border-radius: 8px;
+  background: var(--hk-ivory-raised, #fffdf8);
+  color: var(--hk-ink, #2e382e);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.vv-conversation[data-audience="client-facing"] .vv-conversation-field textarea {
+  border-color: var(--hk-copper, #986246);
+}
+
+.vv-conversation-field textarea:focus-visible {
+  border-color: var(--hk-forest, #385542);
+  outline: 2px solid var(--hk-copper, #986246);
+  outline-offset: 1px;
+}
+
+.vv-conversation-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Said to assistive tech once per new message; never drawn. */
+.vv-conversation-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

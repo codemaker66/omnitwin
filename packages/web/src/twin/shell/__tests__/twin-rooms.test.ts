@@ -6,7 +6,7 @@ import {
   TRADES_HALL_ROOM_DIMENSIONS,
   type PublishedRoomSlug,
   type RoomDimensions,
-} from "../../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import {
   ROOM_DISPLAY_NAMES,
   VERIFIED_ROOM_NODES,

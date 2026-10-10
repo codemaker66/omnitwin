@@ -69,6 +69,13 @@ describe("validateEnv", () => {
     expect(env.CLERK_PUBLISHABLE_KEY).toBeUndefined();
     expect(env.CLERK_SECRET_KEY).toBeUndefined();
   });
+
+  it("treats the Met Office key as optional and refuses a blank one (T-647)", () => {
+    const base = { DATABASE_URL: "postgresql://user:pass@host/db" };
+    expect(validateEnv(base).MET_OFFICE_BPF_API_KEY).toBeUndefined();
+    expect(validateEnv({ ...base, MET_OFFICE_BPF_API_KEY: " test-key " }).MET_OFFICE_BPF_API_KEY).toBe("test-key");
+    expect(() => validateEnv({ ...base, MET_OFFICE_BPF_API_KEY: "   " })).toThrow("MET_OFFICE_BPF_API_KEY");
+  });
 });
 
 describe("EnvSchema", () => {

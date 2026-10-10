@@ -1,5 +1,5 @@
 import type { TwinNavEdge } from "@omnitwin/types";
-import type { PublishedRoomSlug } from "../../lib/trades-hall-venue-truth.js";
+import type { PublishedRoomSlug } from "@omnitwin/types";
 import { VERIFIED_ROOM_NODES } from "../shell/twin-rooms.js";
 import { MAX_USHER_HOPS, shortestRoute } from "../travel-route.js";
 import type { TwinLook } from "../twin-look.js";

@@ -1,5 +1,5 @@
 import { ROOM_DISPLAY_NAMES } from "../shell/twin-rooms.js";
-import type { PublishedRoomSlug } from "../../lib/trades-hall-venue-truth.js";
+import type { PublishedRoomSlug } from "@omnitwin/types";
 
 // -----------------------------------------------------------------------------
 // tour-copy — every word the guided tour can render, as data.

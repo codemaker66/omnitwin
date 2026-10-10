@@ -1,9 +1,10 @@
-import type {
-  BookingKind,
-  BookingLiveness,
-  CalendarConflict,
-  ConflictReport,
-  ConflictSeverity,
+import {
+  isLiveBooking,
+  type BookingKind,
+  type BookingLiveness,
+  type CalendarConflict,
+  type ConflictReport,
+  type ConflictSeverity,
 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -104,8 +105,11 @@ function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): b
   return aStart < bEnd && bStart < aEnd;
 }
 
+/** The Diary's liveness rule, shared with the public availability read
+ *  (isLiveBooking in @omnitwin/types), so the two can never disagree about
+ *  which holds and bookings still stand. */
 function isLive(row: ConflictBookingInput): boolean {
-  return row.deletedAt === null && row.status === "active";
+  return isLiveBooking(row);
 }
 
 function chronological(

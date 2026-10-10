@@ -9,7 +9,7 @@ import {
   MeshBasicMaterial,
   SphereGeometry,
 } from "three";
-import { TRADES_HALL_ROOM_CAPACITIES } from "../../lib/trades-hall-venue-truth.js";
+import { TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
 import {
   INK_GOLD,
   INK_GOLD_BRIGHT,

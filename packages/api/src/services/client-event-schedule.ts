@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, ne, or } from "drizzle-orm";
 import {
   ClientEventScheduleSchema,
   PlatformRoleSchema,
@@ -6,6 +6,7 @@ import {
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
+  bookings,
   configurations,
   eventConfigurationLinks,
   eventPhases,
@@ -113,6 +114,28 @@ export async function loadClientEventSchedule(
       .where(and(eq(eventPhases.eventId, context.event.id), or(isNull(eventPhases.spaceId), isNotNull(spaces.id))))
       .orderBy(asc(eventPhases.sortOrder), asc(eventPhases.id));
 
+    // Goal 19 S4: the slots the client may ask the house about — the event's
+    // live bookings in this venue's rooms. A departed booking (released,
+    // cancelled, expired, lost), a deleted one, or a sales prospect is not a
+    // slot the house holds, so none of them is offered.
+    const slots = await tx.select({
+      bookingId: bookings.id,
+      kind: bookings.kind,
+      title: bookings.title,
+      space: { id: spaces.id, name: spaces.name },
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+    }).from(bookings)
+      .innerJoin(spaces, and(eq(spaces.id, bookings.spaceId), eq(spaces.venueId, context.venue.id), isNull(spaces.deletedAt)))
+      .where(and(
+        eq(bookings.eventId, context.event.id),
+        eq(bookings.venueId, context.venue.id),
+        eq(bookings.status, "active"),
+        isNull(bookings.deletedAt),
+        ne(bookings.kind, "prospect"),
+      ))
+      .orderBy(asc(bookings.startsAt), asc(bookings.id));
+
     return ClientEventScheduleSchema.parse({
       event: {
         ...context.event,
@@ -123,6 +146,7 @@ export async function loadClientEventSchedule(
       scheduleState: "working",
       phases: phases.map((phase) => ({ ...phase, startsAt: phase.startsAt?.toISOString() ?? null })),
       layouts: [...new Map(links.map((layout) => [layout.id, layout])).values()],
+      slots: slots.map((slot) => ({ ...slot, startsAt: slot.startsAt.toISOString(), endsAt: slot.endsAt.toISOString() })),
     });
   }, { isolationLevel: "repeatable read", accessMode: "read only" });
 }

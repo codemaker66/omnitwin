@@ -1,5 +1,5 @@
 import { type ReactElement } from "react";
-import type { PublishedRoomSlug } from "../../lib/trades-hall-venue-truth.js";
+import type { PublishedRoomSlug } from "@omnitwin/types";
 import { ROOM_DISPLAY_NAMES } from "./twin-rooms.js";
 import "./quick-actions.css";
 

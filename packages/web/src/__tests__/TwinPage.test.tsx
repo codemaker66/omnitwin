@@ -52,9 +52,12 @@ vi.mock("@react-three/fiber", () => ({
 // TwinViewer imports drei's OrbitControls and (via DollhouseStage) useGLTF
 // plus the meshopt decoder module. Canvas children never mount (the Canvas
 // mock is an empty div), so inert stand-ins are all these need to be.
+// useGLTF.preload is the static TwinViewer's dollhouse warm-up calls from a
+// timer (2.5 s after mount on a desktop); without it a slow runner that is
+// still inside a test when the timer fires reports an unhandled TypeError.
 vi.mock("@react-three/drei", () => ({
   OrbitControls: (): null => null,
-  useGLTF: vi.fn(() => ({ scene: {} })),
+  useGLTF: Object.assign(vi.fn(() => ({ scene: {} })), { preload: vi.fn() }),
 }));
 vi.mock("three/examples/jsm/libs/meshopt_decoder.module.js", () => ({
   MeshoptDecoder: { ready: Promise.resolve(), supported: true },

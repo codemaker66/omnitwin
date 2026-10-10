@@ -3,7 +3,7 @@ import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
-} from "../../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import {
   ENQUIRY_EVENT_TYPES,
   allEnquiryFitCopy,

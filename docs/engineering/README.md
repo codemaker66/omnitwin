@@ -12,6 +12,7 @@ to current code and useful checks; it is not another layer of instructions.
 | API | [API README](../../packages/api/README.md), `packages/api/src/routes/`, `services/`, `middleware/` | Venue authorization, runtime schemas, transactions, idempotency and useful error responses |
 | Shared contracts | [types README](../../packages/types/README.md), `packages/types/src/` | Validate at runtime; trace affected consumers before changing a contract |
 | Database | `packages/api/src/db/`, `packages/api/drizzle/` | Constraints, locking, migrations and explicit disposable test targets |
+| Deploy ordering and readiness | [Deploy ordering](deploy-ordering.md), [Current deploy flow](../operations/deploy-flow-current.md), `packages/api/src/db/migration-readiness.ts` | The pre-deploy command migrates before Railway promotes (PR #63); `/health/ready` refuses while the image's migration journal is ahead of the database (T-653), the second layer |
 | Reconstruction | `packages/reconstruction-foundry/`, `tools/reconstruction-foundry/`, `tools/capture-factory/` | Source provenance, calibration, evaluation separation and current spend gates |
 | Runtime assets | `tools/xgrids-lcc2/`, `tools/xgrids-xbag/`, `packages/web/src/components/scene/` | Frames/units, manifests, resource disposal, streaming and measured delivery |
 | Grand Hall model | [Note](grand-hall-model.md), `packages/web/src/components/grand-hall/`, [survey build](../../tools/grand-hall-survey/README.md) | Survey files are rebuilt from the scan, not hand-edited; one frame for relief and photographs; public splat hold |
@@ -105,9 +106,11 @@ on future experiments.
 | --- | --- |
 | Loading, saving or other visible work | [Activity convention](../../.claude/conventions/loading-and-working-motion.md) |
 | Visible composition or interaction | [Product experience](../../.claude/conventions/product-experience.md) |
+| What AI assistants and search engines may read (`/mcp`, schema.org) | [Public venue discovery](public-venue-discovery.md) |
 | Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
 | Martyn's Law or other legal prompts | [No-claims rule and sources](martyns-law-readiness.md) |
 | Splat renderer choice/lifecycle | [Native Three.js splats](native-splats.md) |
+| Venue weather (sky) feed, Met Office sources | [Venue sky](venue-sky.md) |
 | Updating the native splat addon patch | [Maintained dependency patch](../../patches/README.md) |
 | Loader callbacks and rerenders | [Callback ownership](../../.claude/gotchas/spark-splat-layer-callback-identity.md) |
 | Camera bounds, poses or capture stills | [Camera and capture evidence](../../.claude/gotchas/splat-camera-and-capture.md) |

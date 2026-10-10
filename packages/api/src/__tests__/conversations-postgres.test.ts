@@ -183,6 +183,26 @@ describe.skipIf(target === undefined)("conversations on migrated PostgreSQL", ()
     expect(refused(await listThreadsCore(db, f.outsider, f.venueId, { bookingId: f.bookingId })).status).toBe(403);
   });
 
+  // Goal 19 D2 row 6, confirmed for S4: the floor's thread is the floor's.
+  // canManageVenue admits a hallkeeper to the venue's thread routes, so the
+  // gate is not changed here; this holds the row as behaviour, not prose.
+  it("lets a hallkeeper open, read and write the floor's thread, and never the client's booking thread (D2 row 6)", async () => {
+    const f = await fixture();
+    const opened = granted(await openThreadCore(db, f.hallkeeper, f.venueId, { audience: "staff-private", subject: "booking", bookingId: f.bookingId }));
+    expect(opened.created).toBe(true);
+    const sent = granted(await sendMessageCore(db, f.hallkeeper, opened.thread.id, send("Chairs are out; doors at six.")));
+    expect(sent.message.authorRole).toBe("hallkeeper");
+    expect(granted(await listMessagesCore(db, f.hallkeeper, opened.thread.id, { after: 0, limit: 50 })).messages.map((m) => m.body))
+      .toEqual(["Chairs are out; doors at six."]);
+    expect(granted(await listThreadsCore(db, f.hallkeeper, f.venueId, { bookingId: f.bookingId })).map((thread) => thread.id)).toEqual([opened.thread.id]);
+
+    const clientFacing = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "client-facing", subject: "booking", bookingId: f.bookingId })).thread;
+    expect(refused(await listMessagesCore(db, f.hallkeeper, clientFacing.id, { after: 0, limit: 50 })).status).toBe(403);
+    expect(refused(await sendMessageCore(db, f.hallkeeper, clientFacing.id, send("hello?"))).status).toBe(403);
+    // Listing is filtered by the stored audience: the client's thread never appears.
+    expect(granted(await listThreadsCore(db, f.hallkeeper, f.venueId, { bookingId: f.bookingId })).map((thread) => thread.id)).toEqual([opened.thread.id]);
+  });
+
   it("sends a message once under a replayed key, even when two phones race", async () => {
     const f = await fixture();
     const thread = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "staff-private", subject: "booking", bookingId: f.bookingId })).thread;

@@ -4,7 +4,7 @@ import {
   VENUE_TRUTH_PROVENANCE,
   type PublishedRoomSlug,
   type RoomCapacity,
-} from "../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import {
   FRESH_ENQUIRY_LEDE,
   FRESH_ENQUIRY_TITLE,
