@@ -8,6 +8,18 @@
 
 **Tech Stack:** React 18.3 + @react-three/fiber 8.18, three 0.186 (WebGPURenderer, TSL compute, pnpm patch), Zod 3.24, zustand 5.0, Vitest 4.1 + happy-dom 20, TypeScript 5.7, pnpm 9.15.4, Node 22, Playwright 1.59 (headed Chromium on the RTX 4090), Python 3.13 (`C:/Python313/python.exe`, numpy, Pillow, `unittest`) for the photo check in `tools/relight`.
 
+## Revisions (11 October, R1a Task 5 fix round 1)
+
+These follow R1a's normative multiplier as amended on 11 October (R1a's "Revisions (11 October, Task 5 fix round 1)", C1) and the package's real tile total (I1). They land in the same commit as R1a's `reference.py`.
+- **Task 4:**
+  - `relightSplat`'s interior rule (classes 0, 6 lit, 7) reads `max(e, 1e-4) / max(eCap, 1e-4)`.
+  - Its embrasure rule takes `captured = max(C, 1e-4)` in ρ, in the excess and in the denominator. Every 1e-4 guard thus applies to both sides of its ratio, so the captured setting is exactly 1 on every channel.
+  - Before this, an embrasure channel stored as an sRGB byte of 0 read 1/16 (4 stops), and R1a's check 1 failed on 7 of the hall's 12 finest tiles.
+  - A new kernel test pins that neutrality: a dark embrasure channel, black, a splat with no captured light (both ρ branches), and the interior rule's guard in classes 0, 6 and 7.
+- **Task 10:** the GPU multiplier node's rules, in the same form.
+- **Task 5:** the staged test's tile total is 11,498,334. Every served tile's splats count, env.sog's 11,296 among them; the bundle file's `totalSplats`, 11,487,038, leaves env.sog out. The test still asserts what the package writes.
+- **Task 18:** the sample GPU time record's `splats` is the same total.
+
 ## Revisions (7 October, consolidated)
 
 Applied in one pass from R1c's amendments (`docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`, A1, A6–A10 and its Task 0 list), R1d's (`docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md`, A1–A8, A10, A11, "The R1c interface R1d consumes" and "Interfaces R1d expects…"; A9 superseded by R1a Task 4's committed basis, the controller's ruling of 7 October, its read-access interface kept), R1a Task 4's outcome (the sky bodies' bounce as a factored basis: `tools/relight/relight/sunbounce.py`, `windows.py`, `moon.py`, `probes.py`, `floorlight.py`, `__main__.py`; the Task 4 report's browser contract; R1a's "Revisions (7 October, consolidated)", its "The multiplier (normative)" and Task 5's `reference.py` and vectors are the source of truth), the rewritten contract `docs/engineering/relight-package.md` ("The sky bodies' bounce"), the packaging rule and the owner's lamp decision. Where two sources edit the same lines, both are merged and each task's note says how.
@@ -1541,7 +1553,7 @@ The twin repeats the bake's float32 arithmetic operation by operation, in the ba
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  CLASS_CH_EMITTER, CLASS_HIDDEN, CLASS_MASK, CLASS_SKIN, FLAG_SUN, SKIN_GROUP_SHIFT, TOGGLE_SHIFT,
+  CLASS_CH_EMITTER, CLASS_CH_FIXTURE, CLASS_EMBRASURE, CLASS_HIDDEN, CLASS_MASK, CLASS_SKIN, FLAG_SUN, SKIN_GROUP_SHIFT, TOGGLE_SHIFT,
   decodeOctahedral, multiplierCodeDistance, packMultiplierWord, recordFromHex, type Vec3,
 } from "../relight-codec.js";
 import {
@@ -1651,6 +1663,25 @@ describe("the reference multiplier on synthetic splats (T-639 R1b)", () => {
     const { m, alpha } = relightSplat(model, prepareKernelFrame(model, capturedSetting(model)), record(0), CENTRE, GREY);
     expect(m).toEqual([1, 1, 1]);
     expect(alpha).toBe(1);
+  });
+
+  it("is exactly one at the captured light on a channel stored as zero and without captured light (R1a, amended 11 October)", () => {
+    const model = syntheticModel();
+    const frame = prepareKernelFrame(model, capturedSetting(model));
+    // Embrasure splats lit as captured: rho = C' / Ecap below 0.8, C' = 1e-4 on a channel stored as an sRGB byte of 0.
+    for (const colour of [[0, 0.4, 0.3], [0, 0, 0], [0.4, 0.4, 0.4]] as const) {
+      const { m, alpha } = relightSplat(model, frame, record(CLASS_EMBRASURE), CENTRE, colour);
+      for (const value of m) expect(value).toBeCloseTo(1, 12);
+      expect(alpha).toBe(1);
+    }
+    // No captured light at all (no direct light, no bounce): the embrasure's rho capped at 0.8 with rBack, and the
+    // interior rule's guard on both sides (classes 0, 6 lit and 7).
+    const unlit: RelightKernelModel = { ...model, probes: { ...model.probes, cube: () => new Float32Array(162) } };
+    const unlitFrame = prepareKernelFrame(unlit, capturedSetting(unlit));
+    const dark = (flags: number): Uint8Array => Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 128, flags]);
+    for (const flags of [CLASS_EMBRASURE, 0, CLASS_CH_FIXTURE, CLASS_SKIN]) {
+      expect(relightSplat(unlit, unlitFrame, dark(flags), CENTRE, [0, 0.4, 0.3]).m).toEqual([1, 1, 1]);
+    }
   });
 
   it("keeps only the lamp light at night: the cove's share of the captured light", () => {
@@ -2963,13 +2994,15 @@ export function relightSplat(model: RelightKernelModel, frame: KernelFrame, reco
     for (let c = 0; c < 3; c += 1) e[c] = at(e, c) + v * cosine * channel(frame.setting.moonRgb, c);
   }
   const luminance = dot(colour, LUMINANCE);
-  const m = [0, 1, 2].map((c) => at(e, c) / Math.max(at(eCap, c), 1e-4));
+  // Every 1e-4 guard applies to both sides of its ratio, so the captured setting (e = eCap, rBack = 1) gives exactly 1:
+  // a splat with no captured light, an embrasure channel stored as an sRGB byte of 0 (R1a, amended 11 October).
+  const m = [0, 1, 2].map((c) => Math.max(at(e, c), 1e-4) / Math.max(at(eCap, c), 1e-4));
   if (cls === CLASS_EMBRASURE) {
     for (let c = 0; c < 3; c += 1) {
-      const captured = channel(colour, c), light = at(eCap, c);
+      const captured = Math.max(channel(colour, c), 1e-4), light = at(eCap, c);
       const rho = Math.min(captured / Math.max(light, 1e-4), 0.8);
       const excess = Math.max(captured - rho * light, 0);
-      m[c] = (rho * at(e, c) + excess * channel(frame.rBack, c)) / Math.max(captured, 1e-4);
+      m[c] = (rho * at(e, c) + excess * channel(frame.rBack, c)) / captured;
     }
   }
   for (let c = 0; c < 3; c += 1) m[c] = Math.min(Math.max(at(m, c), 1 / 16), 8);
@@ -3466,7 +3499,8 @@ describe.runIf(folder !== undefined)("the staged Grand Hall relight package (T-6
       return new Response(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
     };
     const data = await loadRelightModelData(fetchFile, `${BASE}manifest.json`);
-    expect(data.manifest.tiles.reduce((sum, tile) => sum + tile.count, 0)).toBe(11_487_038);
+    // Every served tile's splats, env.sog's 11,296 among them (the bundle file's totalSplats, 11,487,038, leaves env.sog out).
+    expect(data.manifest.tiles.reduce((sum, tile) => sum + tile.count, 0)).toBe(11_498_334);
     const vectors = RelightVectorsSchema.parse(JSON.parse(readFileSync(new URL("../__fixtures__/relight-vectors.json", import.meta.url), "utf8")));
     // The package's windows are the vectors': frames, horizons and every cell.
     const views = windowAlphaViews(data.windowBytes);
@@ -7398,11 +7432,13 @@ export function createRelightDraw(frame: RelightFrame, geometry: BufferGeometry,
     });
 
     const luminance = dot(colour, vec3(...LUMINANCE)).toVar();
-    const m = e.div(max(eCap, vec3(1e-4))).toVar();
+    // Every 1e-4 guard applies to both sides of its ratio: exactly 1 at the captured setting (R1a, amended 11 October).
+    const m = max(e, vec3(1e-4)).div(max(eCap, vec3(1e-4))).toVar();
     If(cls.equal(1), () => {
-      const rho = min(colour.div(max(eCap, vec3(1e-4))), vec3(0.8));
-      const excess = max(colour.sub(rho.mul(eCap)), vec3(0));
-      m.assign(rho.mul(e).add(excess.mul(u.rBack)).div(max(colour, vec3(1e-4))));
+      const captured = max(colour, vec3(1e-4));
+      const rho = min(captured.div(max(eCap, vec3(1e-4))), vec3(0.8));
+      const excess = max(captured.sub(rho.mul(eCap)), vec3(0));
+      m.assign(rho.mul(e).add(excess.mul(u.rBack)).div(captured));
     });
     m.assign(clamp(m, vec3(1 / 16), vec3(8)));
     If(cls.greaterThanEqual(3).and(cls.lessThanEqual(6)), () => {
@@ -11012,7 +11048,7 @@ class BrowserChecks(unittest.TestCase):
     FLOOR = {"checked": 5000, "lit": 400, "marched": 600, "worstDifference": 3e-7, "excused": 2}
     BASE = {"checked": 900, "lit": 900, "marched": 0, "worstDifference": 4e-4, "excused": 0}
     SKY = {"bodies": 1, "marched": 20000, "sensitive": 150, "excusedShare": 0.004, "worstPowerExcess": -1e-3, "worstCoefficientError": 3e-7}
-    TIME = {"runs": 12, "splats": 11487038, "applyMedianMs": 9.0, "passMedianMs": 1.4, "passMaxMs": 2.0,
+    TIME = {"runs": 12, "splats": 11498334, "applyMedianMs": 9.0, "passMedianMs": 1.4, "passMaxMs": 2.0,
             "changeMedianMs": 3.1, "changeMaxMs": 4.0, "skyTiming": "timestamp-query", "skyMedianMs": 0.6, "skyMaxMs": 0.9,
             "emptyMedianMs": None}
     # R1a's measured wall-face rates, as the driver copies them from the vectors: 1% here, the floor's too.

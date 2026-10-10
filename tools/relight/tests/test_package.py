@@ -252,6 +252,18 @@ class Capture(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "gamma"):
             PK.capture_of(fit_json(gamma=0.99))
 
+    def test_a_daylight_channel_under_the_kernels_guard_is_refused(self):
+        """rBack = skyLevel x skyColour / max(daylight, 1e-6) is 1 at the captured light only while every daylight channel
+        is at least 1e-6 (fix round 1, C1's audit): a fit whose W1 colour has a channel under it is refused."""
+        for low in (0.0, 9.99e-7):
+            fit = fit_json()
+            fit["colours"][0] = [1.0, low, 1.0]
+            with self.assertRaisesRegex(ValueError, "daylight colour .* under 1e-6"):
+                PK.capture_of(fit)
+        fit = fit_json()
+        fit["colours"][0] = [1e-6, 1.0, 1.0]
+        self.assertEqual(PK.capture_of(fit)["daylightColour"], [1e-6, 1.0, 1.0])
+
     def test_each_lamp_groups_colour_is_its_capture_colour_over_daylight(self):
         cap = PK.capture_of(fit_json())
         lamps = PK.lamps_of(cap, [1.623, 1.0, 0.467], refit_json())

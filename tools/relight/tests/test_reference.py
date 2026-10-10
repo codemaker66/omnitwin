@@ -53,6 +53,62 @@ class CapturedSettingIsNeutral(unittest.TestCase):
         self.assertTrue(np.all(alpha == 1.0))
 
 
+class DarkSplatsAreNeutral(unittest.TestCase):
+    """Fix round 1, C1: the captured setting gives M = 1 on every channel, the guards included. The model has no bounce,
+    so Ecap = sum w c D is set by each splat's direct light alone, and its daylight colour is the refit's (rBack =
+    skyColour / daylight = 1 at the captured light)."""
+
+    def setUp(self):
+        m = model()
+        self.m = replace(m, probes=np.zeros_like(m.probes), daylight_colour=np.array([1.0000001, 1.0, 1.0000002]))
+        self.captured = reference.Setting.captured(self.m)
+
+    def splats(self, cls, ecap, colour):
+        """One splat per row of class cls whose captured light is ecap on every channel (W1's direct light), with the
+        stored colours given (linear; 0 is an sRGB byte of 0)."""
+        n = len(ecap)
+        direct = np.zeros((n, 9)); direct[:, 0] = ecap
+        return direct, np.tile([0.0, 0.0, 1.0], (n, 1)), np.full(n, cls, np.uint8), np.full((n, 3), 0.5), np.asarray(colour, np.float64)
+
+    def test_an_embrasure_channel_stored_as_zero_is_neutral_in_both_branches(self):
+        ecap = [1.3, 1.3, 1e-4, 0.0, 0.3]
+        colour = [[0.0, 0.4, 0.3],        # dark red, rho = C' / Ecap = 1e-4 / 1.3 < 0.8
+                  [0.0, 0.0, 0.0],        # black
+                  [0.0, 0.4, 0.3],        # dark red, rho = 1e-4 / 1e-4 capped at 0.8 (excess 0.2e-4 x rBack)
+                  [0.0, 0.2, 0.0],        # no captured light at all: rho 0.8, excess C' (M = rBack)
+                  [0.5, 0.5, 0.5]]        # bright, rho = 0.5 / 0.3 capped at 0.8 (excess 0.26 x rBack)
+        d, n, f, p, c = self.splats(codec.CLASS_EMBRASURE, ecap, colour)
+        Cp, Ep = np.maximum(c, 1e-4), np.maximum(np.asarray(ecap), 1e-4)[:, None]
+        capped = Cp / Ep >= 0.8
+        self.assertEqual(capped.tolist(), [[False] * 3, [False] * 3, [True] * 3, [True] * 3, [True] * 3])
+        M, alpha = reference.multiplier(d, n, f, p, c, self.m, self.captured)
+        np.testing.assert_allclose(M, 1.0, rtol=0, atol=1e-12)
+        self.assertEqual(alpha.tolist(), [1.0] * 5)
+
+    def test_a_splat_without_captured_light_is_neutral_in_the_interior_rule(self):
+        """Ecap below the 1e-4 guard: interior (class 0), a lit fixture (class 6 takes the interior M) and a skin
+        (class 7). The rule takes max(E, 1e-4) / max(Ecap, 1e-4), so E = Ecap gives 1 exactly."""
+        for cls in (codec.CLASS_INTERIOR, codec.CLASS_CH_FIXTURE, codec.CLASS_SKIN):
+            d, n, f, p, c = self.splats(cls, [0.0, 5e-5, 9.9e-5, 1e-4, 0.7], [[0.3, 0.3, 0.3]] * 5)
+            M, _alpha = reference.multiplier(d, n, f, p, c, self.m, self.captured)
+            np.testing.assert_allclose(M, 1.0, rtol=0, atol=1e-12, err_msg=f"class {cls}")
+
+    def test_the_guards_away_from_the_captured_light(self):
+        """Half the sky (E = Ecap / 2, rBack = 1/2): the interior rule reads max(E, 1e-4) / max(Ecap, 1e-4), so it differs
+        from E / Ecap only where E < 1e-4 (no light: 1; Ecap 1.5e-4: 1e-4 / 1.5e-4); the embrasure's C' rule gives 1/2 in
+        both branches, a channel stored as zero included. With no light at all the embrasure takes the clamp's 1/16."""
+        half = self.captured.with_sky(0.5)
+        d, n, f, p, c = self.splats(codec.CLASS_INTERIOR, [0.0, 1.5e-4, 1e-2], [[0.3, 0.3, 0.3]] * 3)
+        M, _ = reference.multiplier(d, n, f, p, c, self.m, half)
+        np.testing.assert_allclose(M[:, 0], [1.0, 1e-4 / 1.5e-4, 0.5], rtol=1e-12)
+        d, n, f, p, c = self.splats(codec.CLASS_EMBRASURE, [1.3, 1e-4, 0.0], [[0.0, 0.4, 0.3]] * 3)
+        M, _ = reference.multiplier(d, n, f, p, c, self.m, half)
+        np.testing.assert_allclose(M, 0.5, rtol=1e-12)
+        dark = replace(half.with_sky(0.0), weights=np.zeros((9, 3)))
+        M, _ = reference.multiplier(d, n, f, p, c, self.m, dark)
+        np.testing.assert_allclose(M, 1 / 16)                         # E = 0 and rBack = 0: the clamp's floor
+
+
 class Rules(unittest.TestCase):
     def test_night_without_sky_keeps_only_lamp_light(self):
         m = model()

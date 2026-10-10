@@ -2,6 +2,8 @@
 
 > **Superseded in part (8 October).** R1a Task 4c (`docs/superpowers/plans/2026-09-29-restored-hall-r1a-light-bake.md`) is normative for A1's Python part and for A4, and applies them itself; the "one R1a follow-up commit" below is that task. Its two corrections: `codec.skin_group_of` widens the shift to int64 before `np.where` (A1's form below returns 255, not −1, under NumPy 2's promotion rules), and `skin-light` unpacks `windows_volumes(cfg)`, which returns `(volumes, horizons, fresnel)` (A4's form below passes the tuple to `windows.sun_reach`). It also writes `skin-light.json` through `_write_evidence` with the `artifact` and `records` fields R1c Task 8 reads, which A4's plain `json.dump` below lacks. Do not apply A1's Python or A4's code below; it is the first form, kept as history. R1b names A9's wall group `skinGroup`, not `group`: R1d A1's lamp group takes `group` in the same pass. R1c's Task 0 runs 20 greps, not the 17 listed at the end: it adds R1a Task 4c's `_artifact` and `record-artifacts` and R1d A5's `skyBody`. The body below is otherwise unchanged.
 
+> **Amended 11 October (R1a Task 5 fix round 1).** A2's class-7 bullet restates class 0's rule, which R1a now writes with its guard on both sides, so the captured setting is exactly 1 where Ecap < 1e-4. A2 below carries that form: `M = clamp(max(E, 1e-4) / max(Ecap, 1e-4), 1/16, 8)`. The rest of A2 is unchanged. R1a's "Revisions (11 October, Task 5 fix round 1)" gives the reason and the embrasure rule's `C′ = max(C, 1e-4)`.
+
 R1c ("surface skins", `docs/superpowers/plans/2026-10-03-restored-hall-r1c-surface-skins.md`) builds on R1a and R1b as these amendments leave them. Apply them in one pass, together with R1d's (`docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md`), before R1a Task 5 is dispatched. Where R1d's amendments touch the same lines (marked **Overlap**), apply both: the result keeps R1d's change and R1c's.
 
 The amendments take three forms:
@@ -177,7 +179,7 @@ Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/reli
 
 ```markdown
 - Hidden (class 2: outside the hall, the environment shell, pane haze): alpha 0.
-- Covered by a skin (class 7; amended for R1c): lit exactly as class 0 (`M = clamp(E / max(Ecap, 1e-4), 1/16, 8)`); alpha 0 while its wall group (bits 5–7) is drawn as skins (bit `group` of the visibility's `skin_groups`), else 1.
+- Covered by a skin (class 7; amended for R1c): lit exactly as class 0 (`M = clamp(max(E, 1e-4) / max(Ecap, 1e-4), 1/16, 8)`, amended 11 October); alpha 0 while its wall group (bits 5–7) is drawn as skins (bit `group` of the visibility's `skin_groups`), else 1.
 - Toggled (any class but 7 with bits 6–7 = t > 0; amended for R1c): alpha 0 while the toggle is hidden (bit `t − 1` of the visibility's `hidden_toggles`); otherwise its class's rule. The visibility defaults to nothing drawn and nothing hidden, so a package without skins or toggles is relit exactly as before.
 ```
 

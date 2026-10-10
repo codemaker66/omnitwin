@@ -8,6 +8,29 @@
 
 **Tech Stack:** Python 3.13 (`C:/Python313/python.exe`) with numpy 2.4, torch 2.9 + CUDA (RTX 4090), scipy 1.17 (`cKDTree`), Pillow 12 and OpenCV 5; `unittest` (no new dependencies); the repo's publisher `packages/api/src/scripts/publish-splat-tiles.ts --package` (pnpm 9.15.4, Node 22).
 
+## Revisions (11 October, Task 5 fix round 1)
+
+From the Task 5 code review (`.superpowers/sdd/2026-09-29-restored-hall-r1a-light-bake/review-c821f57a..5fe7637e.diff`) and the controller's fix round 1, which ruled on C1: amend the rule so the captured setting is exactly neutral. The code, R1b's kernel, its GPU node and its tests change in the same commit; the contract notes it.
+- **"The multiplier (normative)", C1.** At the captured setting, an embrasure channel stored as an sRGB byte of 0 (`C < 1e-4`) gave ρ = 0, excess = 0 and M = 0, which clamps to 1/16 (4 stops). Check 1 failed on 7 of the 12 finest tiles and 6 of the 12 coarser ones: 136,934 of the 11,310,789 shown splats, measured on every served splat on 11 October (the Task 5 report). Every 1e-4 guard now applies to both sides of its ratio:
+  - the embrasure rule takes `C′ = max(C, 1e-4)` in ρ, in the excess and in the denominator;
+  - the interior rule (classes 0, 6 lit, 7) reads `max(E, 1e-4) / max(Ecap, 1e-4)`.
+
+  The rules now also write out the guards `reference.py` always applied: `max(Ecap, 1e-4)` in ρ and `max(c[W1], 1e-6)` in rBack. The build refuses a daylight colour with a channel under 1e-6 (`package.capture_of`), so rBack is exactly 1 at the captured light.
+
+  The audit of every class rule's guards on the work tables, per tile and channel, is in the Task 5 report. At the captured light on the hall, only the embrasure's `C` guard is ever hit: 100,141, 112,832 and 94,701 splats in R, G and B. The interior's and the embrasure's `Ecap` guards are hit by none.
+- **Task 5:**
+  - Step 3: the reference code as amended. It also takes `sky_probes`, the sky bodies' bounce at the probes computed once per setting (M4).
+  - Step 5: `records.transfer` takes a shared k-d tree, and `records.transfer_nearest` gives the blend and the nearest from one query, exactly as the separate k = 8 and k = 1 transfers (M4).
+  - Step 6, the tile total (I1): 11,498,334. env.sog's 11,296 count; the bundle file's `totalSplats`, 11,487,038, leaves env.sog out.
+  - Step 6, `evidence.artifacts` (M1): it also records the per-splat tables `records` reads (`npy/<table>.npy`), the window cookie and `lamp_daylight_ratio.json`, which must be byte for byte the proof's. All are hashed before the build and again before the write.
+  - Step 6, `_committed_tool` (M2): it also refuses while the SOG decoder that `records` and `check` run has uncommitted changes.
+  - Step 6, the coarser tiles' transfer (M4): one k-d tree and one neighbour query.
+  - Step 6, `evidence.build` (M8): it records the host that built the package.
+  - Step 7, check 4 (M8): bytes are compared only on the host that built the package.
+  - Step 7, the wall-face rate (M5): `check` stops before check 4's rebuild when a population marches no ray.
+  - Step 7, check 2 (M6): the original proof's files are compared for information only; a wrong size is recorded.
+  - Step 7, the fold (M7): it takes a probe whose eight 1 m corners each weigh at least 1e-6 (the first pass's fold fix), and its refusal says so.
+
 ## Revisions (7 October, consolidated)
 
 Applied in one pass from R1c's amendments (`docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`, A1–A5), R1d's (`docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md`, A1, A5, A6, A8, A9 and its last section), Task 4's final outcome (commits `a2a25c56`, `deed4d4a`, `4efa4fa4`; the Task 4 report), the house-light refit, the packaging rule and the owner's lamp decision (spec §4.1, commit `475acd2e`). Tasks 1–4 keep their steps; each gains an "As built" note.
@@ -116,11 +139,17 @@ R1b's GPU kernel implements exactly this; Task 5's `relight/reference.py` is its
 - Bounce light `I[k]` (RGB) = the per-source probe volume evaluated at `p` with normal `n`: trilinear over the eight grid corners with invalid corners dropped and the weights renormalised (the proof's `03_bases.trilinear_weights`), then the ambient-cube evaluation `E(n) = Σ axis n+² cube[+axis] + n−² cube[−axis]`, or the mean of the six faces for isotropic receivers (the proof's `lt.cube_eval`).
 - Captured light: `Ecap = Σk w[k] c[k] ⊙ (D[k] + I[k])` with the fitted capture weights `w` and colours `c` from the manifest.
 - Scenario light: `E = Σk s[k] ⊙ (D[k] + I[k])`, where `s[k]` is the setting's RGB weight for source k (R1b derives it from the presets), plus, for each sky body that is up (the Sun, and the Moon; amended 3 October for R1d), `bodyRGB × V_body(p) × cosθ_body` and the bodies' bounce `I_sky(p)`. Every rule below written for the Sun's direct light (the march, the gates, the glass, `cosθ`) applies to the Moon with the Moon's direction. **The sky bodies' bounce** (amended 7 October; R1a Task 4 as built, `sunbounce.py`; the contract's section "The sky bodies' bounce"): for a body toward σ (rounded to float32), each window's exact entering power `P_w(σ)` (`sunbounce.window_power`: the 56,448 patch rays of the room's 3,528 patches marched by the window volume twin, each ray owned by the first window that claims it, times the glass transmission, gated by that window's horizon), the coefficients `c(σ) = sunbounce.coefficients(table, P(σ), az, el)` (the four 4° nodes `windows.sun_corners` picks, each window's coefficients scaled by its weight times `P_w`, in float64), the basis sum on the 1 m grid `S1 = Σ_body bodyRGB ⊙ Σ_k c_k(σ_body) basis_k` (float16 basis widened), and `S1` read at each 0.5 m probe trilinearly (`sunbounce.trilinear_matrix`: the 1 m cell clamped into the grid and the position into the cell, invalid corners dropped and the rest renormalised, none when their weights sum to at most 1e-6). `I_sky(p)` is that 0.5 m sky volume evaluated at p exactly as `I[k]` is (trilinear over valid probes, the ambient cube at n); the browser folds it into the scenario probe volume (R1b Task 10), so the floor and R1c's skins receive it unchanged. β, the sunlit-area table and the area-scaled bounce `Σw b[w] sunRGB ⊙ I[w]` are gone (Task 4 as built; R1d's amendment A9 is superseded by this contract, the controller's ruling of 7 October). `V(p)`, only for sun-reachable splats, is `windows.sun_visibility` (Task 3 as built): the body's ray from p belongs to the first window, in order W1..W5, that claims it (a room point whose ray crosses the wall's inner face inside that window's outline shrunk by 5 cm, or a point in the embrasure within 0.25 m of the window's sides); it is 0 while that window's horizon gate is closed, if its length L exceeds 2.2 m (L the distance along the ray from Q, its wall-face crossing (for a point in the embrasure, the point itself), to the plane 7 cm beyond the glass, `max(0, (Q.y − (y0 − depth − 0.07)) / (−σy))`, so the cap includes those 7 cm: `windows.py:174,177`), or unless it leaves through the glass inside the outline shrunk by 3 cm; otherwise `V = exp(−τ) × F`, with τ marched through the window's occupancy volume in float32 steps of 1.5 cm from the wall face (0.045 m in for a point in the embrasure) to 7 cm beyond the glass, at the nearest cell, stopping once τ ≥ 6 (`docs/engineering/relight-package.md`, "Window volumes and the sun", gives every step and its order). A window's horizon gate is open while the sun's elevation `asin(σz)` in degrees is strictly greater than its horizon interpolated linearly between whole degrees at the sun's compass azimuth `az = (x_bearing − atan2(σy, σx) in degrees) mod 360`, as the proof's `lt.horizon_deg` interpolates its profile: `horizon[i](1 − f) + horizon[min(i + 1, 359)] f`, `i = min(floor(az), 359)`, `f = az − i`. `F` is the glass transmission, the 101-entry table interpolated linearly at `100 min(|σy|, 1)`. V, the gates, F, `P_w` and the body's azimuth and elevation all take σ rounded to float32; a body with `σy ≥ −0.001` lights nothing and bounces nothing. `cosθ = max(0, n·σ)`, or 0.25 for isotropic receivers.
-- Interior (class 0) and chandelier fixtures (class 6, lamps on): `M = clamp(E / max(Ecap, 1e-4), 1/16, 8)` per channel.
-- Embrasure (class 1: curtains, glazing bars, reveals, columns): `ρ = min(C / Ecap, 0.8)`, `excess = max(C − ρ Ecap, 0)`, `rBack = skyLevel × skyRGB / c[W1]`, `M = clamp((ρ E + excess rBack) / max(C, 1e-4), 1/16, 8)`.
+- Interior (class 0) and chandelier fixtures (class 6, lamps on): `M = clamp(max(E, 1e-4) / max(Ecap, 1e-4), 1/16, 8)` per channel.
+  - Amended 11 October (Task 5 fix round 1): the guard now applies to both sides, so a splat with no captured light (Ecap < 1e-4) is exactly 1 at the captured setting.
+  - It differs from `E / max(Ecap, 1e-4)` only where E < 1e-4 and Ecap < 1.6e-3. Wherever Ecap ≥ 1.6e-3, both give the clamp's 1/16 there.
+- Embrasure (class 1: curtains, glazing bars, reveals, columns): `C′ = max(C, 1e-4)`, `ρ = min(C′ / max(Ecap, 1e-4), 0.8)`, `excess = max(C′ − ρ Ecap, 0)`, `rBack = skyLevel × skyRGB / max(c[W1], 1e-6)`, `M = clamp((ρ E + excess rBack) / C′, 1/16, 8)`.
+  - Amended 11 October (Task 5 fix round 1, C1): with `C` in ρ and the excess instead of `C′`, a channel stored as an sRGB byte of 0 gave M = 0 at the captured setting, clamped to 1/16.
+  - Why it is neutral: at the captured setting E = Ecap and rBack = 1 (the build refuses a daylight channel under 1e-6), so M = 1 in both branches.
+  - Where ρ < 0.8: ρ = C′ / Ecap, because Ecap > 1.25 C′ ≥ 1.25e-4 leaves the guard idle. So ρ Ecap = C′, excess = 0 and M = C′ / C′.
+  - Where ρ = 0.8 ≤ C′ / max(Ecap, 1e-4): 0.8 Ecap ≤ C′, so excess = C′ − 0.8 Ecap and M = (0.8 Ecap + C′ − 0.8 Ecap) / C′ = 1.
 - Lamp emitters (class 3 chandelier bulbs, class 4 dome lamps, class 5 cove strip) and fixtures (class 6) at lamp level ℓ ∈ [0, 1] of their group: `Mlit = t × (1 + (β − 1) × smoothstep(0.45, 0.9, L))` for classes 3 and 4 and `Mlit = t` for class 5, where t is the group's lamp tint (RGB, the colour of the dimmed lamp relative to its full-power colour; 1 at full power and in every preset) and β the setting's emitter boost, 1 in every setting (amended 3 October for R1d: crisp bulbs replace the boost), so the captured setting stays exactly neutral; the interior rule for class 6. `Munlit = (A E) / max(C, 1e-4)` with `A = 0.5` for class 4, `0.3` for class 5, `0.35` otherwise, times `clip(C / max(L, 1e-4), 0.5, 2)^0.4` except for class 5. `M = clamp(ℓ Mlit + (1 − ℓ) Munlit, 0, 8)`. (Amended 7 October, the owner's lamp decision, spec §4.1: at full level each group keeps its measured colour, which is the package's per-group colour, `capture.colours` and `lamps.groups[g].colour` from Task 4b's refit, never a constant; how a group's colour changes as it dims, the warm-down Blake chose, is a setting, t, never a package value.)
 - Hidden (class 2: outside the hall, the environment shell, pane haze): alpha 0.
-- Covered by a skin (class 7; amended for R1c): lit exactly as class 0 (`M = clamp(E / max(Ecap, 1e-4), 1/16, 8)`); alpha 0 while its wall group (bits 5–7) is drawn as skins (bit `group` of the visibility's `skin_groups`), else 1.
+- Covered by a skin (class 7; amended for R1c): lit exactly as class 0 (`M = clamp(max(E, 1e-4) / max(Ecap, 1e-4), 1/16, 8)`, amended 11 October); alpha 0 while its wall group (bits 5–7) is drawn as skins (bit `group` of the visibility's `skin_groups`), else 1.
 - Toggled (any class but 7 with bits 6–7 = t > 0; amended for R1c): alpha 0 while the toggle is hidden (bit `t − 1` of the visibility's `hidden_toggles`); otherwise its class's rule. The visibility defaults to nothing drawn and nothing hidden, so a package without skins or toggles is relit exactly as before.
 
 ## File Structure
@@ -3444,6 +3473,62 @@ class CapturedSettingIsNeutral(unittest.TestCase):
         self.assertTrue(np.all(alpha == 1.0))
 
 
+class DarkSplatsAreNeutral(unittest.TestCase):
+    """Fix round 1, C1: the captured setting gives M = 1 on every channel, the guards included. The model has no bounce,
+    so Ecap = sum w c D is set by each splat's direct light alone, and its daylight colour is the refit's (rBack =
+    skyColour / daylight = 1 at the captured light)."""
+
+    def setUp(self):
+        m = model()
+        self.m = replace(m, probes=np.zeros_like(m.probes), daylight_colour=np.array([1.0000001, 1.0, 1.0000002]))
+        self.captured = reference.Setting.captured(self.m)
+
+    def splats(self, cls, ecap, colour):
+        """One splat per row of class cls whose captured light is ecap on every channel (W1's direct light), with the
+        stored colours given (linear; 0 is an sRGB byte of 0)."""
+        n = len(ecap)
+        direct = np.zeros((n, 9)); direct[:, 0] = ecap
+        return direct, np.tile([0.0, 0.0, 1.0], (n, 1)), np.full(n, cls, np.uint8), np.full((n, 3), 0.5), np.asarray(colour, np.float64)
+
+    def test_an_embrasure_channel_stored_as_zero_is_neutral_in_both_branches(self):
+        ecap = [1.3, 1.3, 1e-4, 0.0, 0.3]
+        colour = [[0.0, 0.4, 0.3],        # dark red, rho = C' / Ecap = 1e-4 / 1.3 < 0.8
+                  [0.0, 0.0, 0.0],        # black
+                  [0.0, 0.4, 0.3],        # dark red, rho = 1e-4 / 1e-4 capped at 0.8 (excess 0.2e-4 x rBack)
+                  [0.0, 0.2, 0.0],        # no captured light at all: rho 0.8, excess C' (M = rBack)
+                  [0.5, 0.5, 0.5]]        # bright, rho = 0.5 / 0.3 capped at 0.8 (excess 0.26 x rBack)
+        d, n, f, p, c = self.splats(codec.CLASS_EMBRASURE, ecap, colour)
+        Cp, Ep = np.maximum(c, 1e-4), np.maximum(np.asarray(ecap), 1e-4)[:, None]
+        capped = Cp / Ep >= 0.8
+        self.assertEqual(capped.tolist(), [[False] * 3, [False] * 3, [True] * 3, [True] * 3, [True] * 3])
+        M, alpha = reference.multiplier(d, n, f, p, c, self.m, self.captured)
+        np.testing.assert_allclose(M, 1.0, rtol=0, atol=1e-12)
+        self.assertEqual(alpha.tolist(), [1.0] * 5)
+
+    def test_a_splat_without_captured_light_is_neutral_in_the_interior_rule(self):
+        """Ecap below the 1e-4 guard: interior (class 0), a lit fixture (class 6 takes the interior M) and a skin
+        (class 7). The rule takes max(E, 1e-4) / max(Ecap, 1e-4), so E = Ecap gives 1 exactly."""
+        for cls in (codec.CLASS_INTERIOR, codec.CLASS_CH_FIXTURE, codec.CLASS_SKIN):
+            d, n, f, p, c = self.splats(cls, [0.0, 5e-5, 9.9e-5, 1e-4, 0.7], [[0.3, 0.3, 0.3]] * 5)
+            M, _alpha = reference.multiplier(d, n, f, p, c, self.m, self.captured)
+            np.testing.assert_allclose(M, 1.0, rtol=0, atol=1e-12, err_msg=f"class {cls}")
+
+    def test_the_guards_away_from_the_captured_light(self):
+        """Half the sky (E = Ecap / 2, rBack = 1/2): the interior rule reads max(E, 1e-4) / max(Ecap, 1e-4), so it differs
+        from E / Ecap only where E < 1e-4 (no light: 1; Ecap 1.5e-4: 1e-4 / 1.5e-4); the embrasure's C' rule gives 1/2 in
+        both branches, a channel stored as zero included. With no light at all the embrasure takes the clamp's 1/16."""
+        half = self.captured.with_sky(0.5)
+        d, n, f, p, c = self.splats(codec.CLASS_INTERIOR, [0.0, 1.5e-4, 1e-2], [[0.3, 0.3, 0.3]] * 3)
+        M, _ = reference.multiplier(d, n, f, p, c, self.m, half)
+        np.testing.assert_allclose(M[:, 0], [1.0, 1e-4 / 1.5e-4, 0.5], rtol=1e-12)
+        d, n, f, p, c = self.splats(codec.CLASS_EMBRASURE, [1.3, 1e-4, 0.0], [[0.0, 0.4, 0.3]] * 3)
+        M, _ = reference.multiplier(d, n, f, p, c, self.m, half)
+        np.testing.assert_allclose(M, 0.5, rtol=1e-12)
+        dark = replace(half.with_sky(0.0), weights=np.zeros((9, 3)))
+        M, _ = reference.multiplier(d, n, f, p, c, self.m, dark)
+        np.testing.assert_allclose(M, 1 / 16)                         # E = 0 and rBack = 0: the clamp's floor
+
+
 class Rules(unittest.TestCase):
     def test_night_without_sky_keeps_only_lamp_light(self):
         m = model()
@@ -3749,7 +3834,10 @@ def sky_cubes(model: Model, bodies) -> np.ndarray:
     return to_probes(model, S1)
 
 
-def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: Setting, visibility: Visibility = NO_VISIBILITY):
+def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: Setting, visibility: Visibility = NO_VISIBILITY,
+               sky_probes=None):
+    """(rgb (N, 3), alpha (N,)): the normative multiplier. sky_probes: sky_cubes(model, sky_bodies(setting)), for a caller
+    that relights many splats in chunks under one setting (computed here when None; the same values either way)."""
     direct = np.asarray(direct, np.float64)
     n = np.asarray(normals, np.float64)
     flags = np.asarray(flags, np.uint8)
@@ -3775,16 +3863,21 @@ def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: S
             E = E + (vis * cosv)[:, None] * rgb[None]
         if model.sky is not None:
             # both bodies' bounce: the basis at the probes, then the same trilinear lookup and ambient cube as I[k]
-            sky = (sky_cubes(model, bodies)[idx] * wts[:, :, None, None]).sum(1)          # (N, 3, 6)
+            cubes_sky = sky_cubes(model, bodies) if sky_probes is None else sky_probes
+            sky = (cubes_sky[idx] * wts[:, :, None, None]).sum(1)                         # (N, 3, 6)
             E = E + cube_eval(sky[:, None], n, iso)[:, 0]
     L = C @ LUMW
-    M = E / np.maximum(Ecap, 1e-4)
+    # Both sides of every ratio take the same 1e-4 guard, so the captured setting (E = Ecap, rBack = 1) gives M = 1
+    # exactly on every channel, a splat with no captured light (Ecap < 1e-4) and an embrasure channel stored as an sRGB
+    # byte of 0 (C < 1e-4) included (amended 11 October, Task 5 fix round 1, C1).
+    M = np.maximum(E, 1e-4) / np.maximum(Ecap, 1e-4)
     emb = cls == codec.CLASS_EMBRASURE
     if emb.any():
-        rho = np.minimum(C[emb] / np.maximum(Ecap[emb], 1e-4), 0.8)
-        excess = np.maximum(C[emb] - rho * Ecap[emb], 0.0)
+        Cp = np.maximum(C[emb], 1e-4)
+        rho = np.minimum(Cp / np.maximum(Ecap[emb], 1e-4), 0.8)
+        excess = np.maximum(Cp - rho * Ecap[emb], 0.0)
         r_back = setting.sky_level * setting.sky_colour / np.maximum(model.daylight_colour, 1e-6)
-        M[emb] = (rho * E[emb] + excess * r_back[None]) / np.maximum(C[emb], 1e-4)
+        M[emb] = (rho * E[emb] + excess * r_back[None]) / Cp
     M = np.clip(M, 1 / 16, 8.0)
     fx = np.isin(cls, [codec.CLASS_CH_EMITTER, codec.CLASS_DOME_EMITTER, codec.CLASS_COVE, codec.CLASS_CH_FIXTURE])
     if fx.any():
@@ -3858,6 +3951,28 @@ class Transfer(unittest.TestCase):
         out = records.transfer(src, vals, np.array([[1.0, 0, 0]]), k=2)
         self.assertAlmostEqual(float(out[0, 0]), 2.0, places=6)
 
+    def test_one_tree_and_one_query_give_exactly_the_separate_transfers_ties_included(self):
+        """Fix round 1, M4: transfer on a shared tree is transfer with its own tree, and transfer_nearest's one query gives
+        exactly transfer(k) and transfer(k=1), also where two source splats lie at the same distance (duplicate
+        positions, whose order a k=1 and a k=8 query need not share)."""
+        from scipy.spatial import cKDTree
+        rng = np.random.default_rng(5)
+        src = rng.uniform(0, 4, (40_000, 3)).round(1)                  # 0.1 m steps: thousands of duplicate positions
+        vals = rng.normal(size=(len(src), 9))
+        dst = np.concatenate([src[rng.integers(0, len(src), 20_000)], rng.uniform(0, 4, (20_000, 3)).round(1)])
+        tree = cKDTree(src)
+        blend, near = records.transfer_nearest(vals, dst, 8, tree)
+        own = records.transfer(src, vals, dst, k=8)
+        nearest = records.transfer(src, np.arange(len(src)), dst, k=1)
+        self.assertTrue(np.array_equal(blend, own) and np.array_equal(blend, records.transfer(src, vals, dst, k=8, tree=tree)))
+        self.assertTrue(np.array_equal(near, nearest))
+        d, i = tree.query(dst, k=8)
+        tied = d[:, 0] == d[:, 1]
+        self.assertGreater(int(tied.sum()), 0)
+        self.assertGreater(int((i[:, 0] != nearest).sum()), 0)            # the first column alone would differ on ties
+        with self.assertRaisesRegex(ValueError, "k >= 2"):
+            records.transfer_nearest(vals, dst, 1, tree)
+
 
 class Covers(unittest.TestCase):
     COVERS = {"ids": np.array(["door-w2"]), "groups": np.array([0], np.int8),
@@ -3908,16 +4023,38 @@ def flags_for(cls, iso, reach, chand_id, centre_ids, cove, fixture, pane):
     return f
 
 
-def transfer(src_pos, src_values, dst_pos, k=8):
-    """Inverse-distance blend of the k nearest source splats' values (for the coarser levels)."""
-    tree = cKDTree(np.asarray(src_pos, np.float64))
+def transfer(src_pos, src_values, dst_pos, k=8, tree=None):
+    """Inverse-distance blend of the k nearest source splats' values (for the coarser levels). tree: the cKDTree of
+    src_pos (float64), built once by a caller that transfers many chunks or tiles from the same source; built here when
+    None (fix round 1, M4: the same tree, so the same neighbours)."""
+    tree = cKDTree(np.asarray(src_pos, np.float64)) if tree is None else tree
     d, i = tree.query(np.asarray(dst_pos, np.float64), k=k)
-    v = np.asarray(src_values)
+    return _blend(np.asarray(src_values), d, i, k)
+
+
+def _blend(v, d, i, k):
     if k == 1:
         return v[i]
     w = 1.0 / np.maximum(d, 1e-4)
     w /= w.sum(1, keepdims=True)
     return (v[i] * w[..., None]).sum(1)
+
+
+def transfer_nearest(src_values, dst_pos, k, tree):
+    """(transfer(..., k, tree), the index of each destination's nearest source splat) from one k-neighbour query (k >= 2;
+    fix round 1, M4: a coarser tile is transferred once). The nearest is the query's first neighbour where it is strictly
+    nearer than the second; where they tie it is a k=1 query's answer, because a k=1 and a k>1 query may order tied
+    neighbours differently (measured: 18 of the hall's 5,467,354 coarser splats). So both values are exactly those of
+    transfer(k) and transfer(k=1) on the same tree."""
+    if k < 2:
+        raise ValueError("transfer_nearest needs k >= 2")
+    P = np.asarray(dst_pos, np.float64)
+    d, i = tree.query(P, k=k)
+    near = i[:, 0].copy()
+    tied = np.nonzero(d[:, 0] == d[:, 1])[0]
+    if tied.size:
+        near[tied] = tree.query(P[tied], k=1)[1]
+    return _blend(np.asarray(src_values), d, i, k), near
 
 
 # Covers and toggles (R1c, amendment A3). tools/skins (R1c Task 5) writes, in its geometry folder, covers.npz (each skin's
@@ -4025,38 +4162,43 @@ def verified(work, evidence, name, evidence_name):
 ```
 
 The artifacts and their evidence: `windows.npz` (`windows.json`), `probes-coarse.npz` (`probes-check.json`), `sun-bounce.npz` (`sun-bounce-check.json`), `floor-light.npz` (`floor-light.json`); `fit.json` and `fit_state.npz` are checked against `<evidence>/refit.json`'s `copied` hashes (its `pass` must be true: a refused promote leaves `copied` empty), and `fit.json`'s `model.name` must be `refit` (Task 4b promoted it; the bake never packages the proof fit). The manifest's `evidence.artifacts` records `{ name: sha256 }` for every file read, each key the artifact's path relative to the work folder with `/` separators (`windows.npz`, `probes-coarse.npz`, `sun-bounce.npz`, `floor-light.npz`, `fit.json`, `fit_state.npz`, and in package v2 `skin-light/index.json` and each `skin-light/<id>.records`; R1c Task 8 reads `evidence.artifacts["probes-coarse.npz"]`).
+- Amended 11 October (fix round 1, M1): `evidence.artifacts` also holds the per-splat tables `records` reads (`npy/<table>.npy` for `splats_pos`, `splats_rgb`, `splats_opa`, `splats_tile`, `geom_cls`, `geom_chand_id`, `bases_n`, `bases_iso`, `bases_E_win`, `bases_E_ch`, `bases_E_dome`, `bases_E_cove` and `sun_cap_E`, plus `splats_scl` with `--skins`), the window cookie `occ_cookie.npz`, and `lamp_daylight_ratio.json`.
+- The lamp/daylight ratio is refused unless it is byte for byte the proof's measurement it was copied from.
+- All of them are hashed before the build and again before the write; a change in between is refused, with nothing written.
 
 `tools/relight/relight/package.py` writes every file of `docs/engineering/relight-package.md` into the package folder (`args.out` when given, amended for R1c; otherwise `cfg.paths["out"]`): per served tile the gzip of its records (`gzip.compress(data, compresslevel=9, mtime=0)` so the bytes are deterministic), `probes.bin.gz` (the coarse cubes as `<f2` in `[probe][source][channel][face]` order), `probe-valid.bin.gz`, each window's volume as `windows/<id>.alpha.gz` (the gzip, compressed the same way, of `np.ascontiguousarray(vol.alpha).tobytes()`: `nx·ny·nz` bytes in x-major C order, from `windows.npz` through `windows_volumes(cfg)`), the sky bodies' bounce from `sun-bounce.npz` (amended 7 October; these replace the sunlit-area table): `sky/basis.bin.gz` (`basis` as `<f2`, `[k][probe][channel][face]`, K × 1694 × 3 × 6), `sky/basis-valid.bin.gz` (`valid`, one byte per 1 m probe), `sky/coefficients.bin.gz` (`coeffs` as `<f4`, `[row][column][window][k]`, 18 × 79 × 5 × K), `sky/patch-rays.bin.gz` (`patchRays` as `<f4`, `[ray][x, y, z]`, 56,448 × 3, sub-sample-major), `sky/patch-normals.bin.gz` (`patchNormal`, `<f4`, 3528 × 3) and `sky/patch-areas.bin.gz` (`patchArea`, `<f4`, 3528), each compressed the same way; the three floor light PNGs (RGBA8 log codes per `encoding.floor`), and `manifest.json` with every contract field and a SHA-256 and size per file (`json.dumps(..., indent=1, sort_keys=True, allow_nan=False)`, so a NaN or infinity fails the build instead of writing a file browsers cannot parse). `sun-bounce.npz`'s `needed`, `real` and `nodePower` are bake diagnostics and are not packaged. Every path the manifest names (the `files` keys, `tiles[].file`, `probes.file` and `validFile`, `windows[].volume`, the `sky` files, `floor.files`, `skins.entries[].file`) is built with `/` (`posixpath.join` or `PurePosixPath`), never `os.path`, whose `\` on Windows would make R1b refuse the whole package. `package.write` takes `tool` and `created_at` as arguments: `records` passes the repository's HEAD commit, `git -C <cfg.paths["repo"]> rev-parse HEAD`, and that commit's committer time, `git -C <cfg.paths["repo"]> log -1 --format=%cI` (as R1d's `cinematic` writes them), never the wall clock, as the manifest's `tool` and `createdAt`; so a second write at the same commit is byte-identical (R1c Task 15's double run compares two `records` trees, the manifest included), and check 4 passes the package's own two values (Step 7). `capture.gamma` is written as exactly `1` after asserting that the fitted gamma (`fit.json`'s `gamma`) is within 1e-6 of 1; otherwise the build fails, because the kernel has no γ term (R1b accepts a γ within 1e-6 of 1 and refuses any other).
 
-**Built only from committed code** (amended 8 October, the controller's ruling P1). The manifest's `tool` names the commit that built the package, so that commit must hold exactly the code that ran: `records` refuses, writing nothing, while `tools/relight` has any uncommitted change (staged, unstaged or untracked), and `check` (Step 7) refuses the same way before it reads the package. Add to `tools/relight/relight/__main__.py`, directly above `if __name__ == "__main__":`:
+**Built only from committed code** (amended 8 October, the controller's ruling P1). The manifest's `tool` names the commit that built the package, so that commit must hold exactly the code that ran. `records` refuses, writing nothing, while there is any uncommitted change (staged, unstaged or untracked) in `tools/relight` or in the repo's SOG decoder that `records` and `check` run, `tools/xgrids-lcc2/scripts/sog-floor-census.py` (amended 11 October, fix round 1, M2). `check` (Step 7) refuses the same way before it reads the package. Add to `tools/relight/relight/__main__.py`, directly above `if __name__ == "__main__":` (`CENSUS = ("tools", "xgrids-lcc2", "scripts", "sog-floor-census.py")` is the module constant `_census` loads the decoder by):
 
 ```python
 def _committed_tool(cfg):
     """(HEAD commit, its committer time) of the repository that holds tools/relight, or None (with the reason printed)
-    while tools/relight has any uncommitted change: a package is built and checked only from committed code, so its
-    `tool` names exactly the code that made it (ruling P1, 8 October)."""
+    while tools/relight, or the repo's SOG decoder that records and check run (CENSUS), has any uncommitted change: a
+    package is built and checked only from committed code, so its `tool` names exactly the code that made it (ruling P1,
+    8 October; the decoder added in Task 5's fix round 1)."""
     import subprocess
     git = lambda *a: subprocess.run(["git", "-C", cfg.paths["repo"], *a], check=True, capture_output=True, text=True).stdout.strip()
-    dirty = git("status", "--porcelain", "--", "tools/relight")
+    dirty = git("status", "--porcelain", "--", "tools/relight", "/".join(CENSUS))
     if dirty:
-        print(f"FAIL: tools/relight has uncommitted changes; commit them before building or checking a package:\n{dirty}", flush=True)
+        print(f"FAIL: tools/relight or {'/'.join(CENSUS)} has uncommitted changes; commit them before building or checking a "
+              f"package:\n{dirty}", flush=True)
         return None
     return git("rev-parse", "HEAD"), git("log", "-1", "--format=%cI")
 ```
 
 `records` calls it first and returns 1 on None; otherwise it passes the pair to `package.write` as `tool` and `created_at` (the two `git` calls above are the ones this step names). `__pycache__` is ignored by the repository's `.gitignore`, so running the code leaves the check clean.
 
-(Amended for R1c.) With `--skin-light <dir>` and `--skin-package <dir>`, `package.write` also takes `section, files = skinlight.skins_section(skin_light_dir, skin_package_dir, groups)`, where `groups` is `["door", "window", "end_xmin", "end_xmax", "ceiling"]`. It writes each of `files` (`skins/<id>.light.gz`, compressed with `mtime = 0`) with a SHA-256 and size in `files`, and adds the manifest fields `skins: section` and `visibility: skinlight.VISIBILITY`. Without them, neither field is written. The skin-light folder is read only when `<evidence>/skin-light.json`'s `artifact` matches its `index.json` and each `records` hash matches its file. The manifest's `evidence.build` records `{ skins, skinLight, skinPackage }` (the three arguments, or null), so check 4 can rebuild exactly.
+(Amended for R1c.) With `--skin-light <dir>` and `--skin-package <dir>`, `package.write` also takes `section, files = skinlight.skins_section(skin_light_dir, skin_package_dir, groups)`, where `groups` is `["door", "window", "end_xmin", "end_xmax", "ceiling"]`. It writes each of `files` (`skins/<id>.light.gz`, compressed with `mtime = 0`) with a SHA-256 and size in `files`, and adds the manifest fields `skins: section` and `visibility: skinlight.VISIBILITY`. Without them, neither field is written. The skin-light folder is read only when `<evidence>/skin-light.json`'s `artifact` matches its `index.json` and each `records` hash matches its file. The manifest's `evidence.build` records `{ skins, skinLight, skinPackage, host }` (the three arguments, or null, and the host that built the package, `pc` or `pod:<id>` as `_host()` names it; the host amended 11 October, fix round 1, M8), so check 4 can rebuild exactly, on that host only.
 
 Register a `records` command that:
 
 1. Loads the Task 2 tables (memory-mapped) and computes per finest-level splat, in chunks: `direct` (N, 9) from the proof's `04_fit.direct(store, idx)` (ten bases; keep the columns W1..W5, cove, ch_end, ch_centre, dome in that order and drop `sun_cap`, whose fitted weight is at its bound), with the embrasure room-side and back-face light that `03c`/`03d` produce folded into the window columns exactly as `04_fit.direct` already combines them for class 1; normals `bases_n` (e57 frame); `iso` from `bases_iso`; exterior and pane haze from `05_relight.exterior_masks`; the cove strip from `05_relight.cove_strip`; `fixture` = `geom_chand_id >= 0` with class 0; the centre chandelier's id as `03_bases.py` assigns it to `E_ch` column 1; and `reach` = `windows.sun_reach(vols, P, cfg.room["site"]["latitude"])` for classes 0 and 1 only, False for every other class (the analytic, conservative flag of Task 3 as built, whose band Task 4 widened to the Moon's: true wherever some real sun or moon can light the splat through some window; `vols` from `windows_volumes(cfg)[0]`; in chunks of `windows.CHUNK`; numpy, no GPU lock). On the finest level it marks 83.7% of the splats (`<evidence>/sun-check.json`, `sunReach.flaggedShare` 0.83674 after Task 4).
 2. Splits them per finest tile with `splats_tile` (the order of `cfg.room["finestTiles"]`); `ranges = [codec.source_range(direct[:, k]) for k in range(9)]` over all finest splats.
-3. For each of the other 12 served tiles (every `*.sog` in `cfg.paths["splats"]` not in `finestTiles`): decode the centres with `decode_tile`, convert them to e57 with `common.json_to_e57`, then transfer `direct` (k = `cfg.room["transferNeighbours"]`, 8) and, with k = 1, the normals, class, iso, chandelier id, cove, fixture and pane values; compute `reach` with `windows.sun_reach` at the coarse splats' own e57 positions for their transferred classes 0 and 1 (a transferred flag would not be conservative at the coarse splat's own position); recompute the flags with `flags_for`.
+3. For each of the other 12 served tiles (every `*.sog` in `cfg.paths["splats"]` not in `finestTiles`): decode the centres with `decode_tile`, convert them to e57 with `common.json_to_e57`, then transfer `direct` (k = `cfg.room["transferNeighbours"]`, 8) and, with k = 1, the normals, class, iso, chandelier id, cove, fixture and pane values (amended 11 October, fix round 1, M4: one k-d tree of the finest splats serves every coarser tile, and one neighbour query per chunk of `windows.CHUNK`, `records.transfer_nearest`, gives exactly the separate k = 8 and k = 1 transfers' values, ties included); compute `reach` with `windows.sun_reach` at the coarse splats' own e57 positions for their transferred classes 0 and 1 (a transferred flag would not be conservative at the coarse splat's own position); recompute the flags with `flags_for`.
 4a. (Amended for R1c.) With `--skins <tools/skins geometry folder>`: `covers, toggles, keep = records.load_skin_inputs(folder)`, then on every level, after its flags are computed, `flags = records.apply_toggles(records.apply_covers(flags, P_e57, sigma_max, covers, keep), P_e57, toggles)`, each splat at its own e57 position. `sigma_max` is the splat's largest scale: on the finest level the row maximum of `npy/splats_scl.npy` (float16 metres), on the others the row maximum of `decode_tile`'s `scales` (the codebook already exponentiated, `tools/xgrids-lcc2/scripts/sog-floor-census.py`). Print each level's covered splats per wall group and toggled splats per toggle. Without `--skins` nothing changes.
 4. Writes the package with `package.write` (into `args.out` when given; amended for R1c), with `site.north = common.sun_vec_e57(0, 0)`, `site.east = common.sun_vec_e57(90, 0)` and `site.up = [0, 0, 1]` (so the browser's sun and moon match the bake's); each window, in order W1..W5, as `{ id, frame: windows.volume_arrays(vol)[1].tolist(), volume: "windows/<id>.alpha.gz", horizon: [float(v) for v in horizons[id]] }` from `windows.npz` (the frame float64 in `FRAME_FIELDS` order; assert every window's `res` is the same and that `site.north` equals `(cos x_bearing, sin x_bearing, 0)` within 1e-9); `sun = { fresnel: [101] }`; the `sky` section from `sun-bounce.npz` (`k` = `basis.shape[0]`, read from the data, never a constant; `grid: { origin: gridOrigin, spacing: gridSpacing, shape: gridShape }`, `basis`, `valid`, `table: { azimuth0, elevation0, step, size: [columns, rows], file }`, `patches: { count, subsamples: 16, rays, normals, areas }`, `floorMean` (K × 3), `bodies: ["sun", "moon"]`; assert `azimuth0`, `elevation0` and `step` are whole numbers, `1 <= k <= 192` (`__main__.SUN_KMAX`, the most the K search tries; R1b's schema accepts up to it; the test vectors' K-proportional parts grow with it, so Step 7's size cap is a function of K), `coeffs.shape == (rows, columns, 5, k)`, `patchRays` holds 16 × `count` rays, and the grid's origin equals the probes' origin); the `capture` from Task 4b's `fit.json` (weights and colours selected by name in the source order, `sun_cap` dropped by name, never by position; `daylightColour` its W1 colour); the `lamps` section: for each group `{ source, colour, type }`, `colour` the group's lamp/daylight ratio at full level (`capture.colours[source] / capture.daylightColour`, per channel: the refit's measured-and-fitted colour, never a constant), divided in float64 from the very Python floats written to `capture.colours` and `capture.daylightColour` (never from a float32 copy of either: R1b refuses the package unless each group's colour equals that quotient within 1e-9 × max(1, |quotient|), and a float32 round trip on either side exceeds it), `type` the installer's record (`cove` `"led-tape"`, `dome` `"led-spot"`, `ch_end` and `ch_centre` `"candle-unconfirmed"`; information only: how a lamp's colour changes as it dims is a setting, R1b's `lampTints`, never a package value), plus `measuredRatio` (`lamp_daylight_ratio.json`) and `refit: { perBulbIntensity, lampRatio, wCrown, bulbTableSha256 }` from `<evidence>/refit.json` (`perBulbIntensity` = `exp(gates.accept.logPerBulb)`, `lampRatio` = `gates.accept.lampRatio`, `wCrown` = `bulbs.wCrown`, the crown tubes' weight the refit used (amended 8 October, ruling L2), `bulbTableSha256` = `bulbs.sha256`, the bulb table's SHA-256; the key names are the contract's and R1b's schema's); `evidence.sunCheck` (`sun-check.json`'s `pass`, `threshold` and per-direction IoU and mean |ΔT|), `evidence.skyBounce` (`sun-bounce-check.json`'s `K`, `kRule`, the selection, check and strict draws' `worstBright` and `pooledMedian`, `pass`), `evidence.refit` (`refit.json`'s gates: residual ratio, lamp ratio, photo metrics, the crown tubes' sensitivity) and `evidence.artifacts`. The manifest's `tiles` list holds each tile's name, the SHA-256 of the `.sog` file, its level (from the bundle file: 5 for the finest, `null` for `env.sog`), count, file, SHA-256 and size.
 
-Step 8 runs it once the code is committed: `C:/Python313/python.exe -m relight records --config config/grand-hall.json`. Expected then: `D:/claude/splats/trades-hall/grand-hall/relight/v1/` holds `manifest.json`, 24 `tiles/*.relight.gz`, `probes.bin.gz`, `probe-valid.bin.gz`, 5 window volumes (`windows/W1.alpha.gz` … `W5.alpha.gz`, 196,028 bytes in all: 54,129, 26,933, 38,117, 27,205 and 49,644, Task 3's Phase B), the six `sky/*.bin.gz` files (about 2.1 MB together at K 30) and 3 floor maps; the tile counts sum to 11,487,038; `manifest.json`'s `capture.weights` give `ch_centre / ch_end` the refit's lamp ratio.
+Step 8 runs it once the code is committed: `C:/Python313/python.exe -m relight records --config config/grand-hall.json`. Expected then: `D:/claude/splats/trades-hall/grand-hall/relight/v1/` holds `manifest.json`, 24 `tiles/*.relight.gz`, `probes.bin.gz`, `probe-valid.bin.gz`, 5 window volumes (`windows/W1.alpha.gz` … `W5.alpha.gz`, 196,028 bytes in all: 54,129, 26,933, 38,117, 27,205 and 49,644, Task 3's Phase B), the six `sky/*.bin.gz` files (about 2.1 MB together at K 30) and 3 floor maps; the tile counts sum to 11,498,334 (amended 11 October, fix round 1, I1: env.sog's 11,296 count; the bundle file's `totalSplats`, 11,487,038, leaves env.sog out); `manifest.json`'s `capture.weights` give `ch_centre / ch_end` the refit's lamp ratio.
 
 - [ ] **Step 7: Write the checks and the test vectors**
 
@@ -4068,9 +4210,9 @@ Register a `check` command that first calls `_committed_tool(cfg)` (Step 6; it r
 Its `reference.Model` comes from the package's files: each window through `windows.volume_from_arrays(id, np.frombuffer(gzip.decompress(<windows/<id>.alpha.gz>), np.uint8).reshape(nx, ny, nz), np.asarray(frame, np.float64))` with `nx, ny, nz` from the frame, the horizons and the glass table from the manifest, and `sky` = `reference.SkyBounce(table=sunbounce.Table(coeffs=coeffs, az0=azimuth0, el0=elevation0, step=step), basis=basis, origin=origin, spacing=spacing, shape=shape, valid=valid, patches=sunbounce.Patches(rays=rays, normals=normals, areas=areas), floor_mean=floor_mean)` from the `sky` files and fields (every argument by keyword; `sunbounce.Table`'s fields are `coeffs`, `az0`, `el0` and `step`, `sunbounce.py:43-47`).
 
 1. **Captured identity:** for every tile, `reference.multiplier` at `Setting.captured(model)` gives |log2 M| ≤ 0.05 for at least 99.9% of non-hidden splats.
-2. **Proof regression:** for the finest level, `reference.multiplier` for the proof's `night` and `overcast_noon` settings (built from `05_relight.SCENARIOS` and `scenario_light` on Task 4b's `fit_state.npz`: window weights `W[w] × sky` with `col_sky`, lamp weights `house × WC`) against the proof's own multipliers for the same fit, `<work>/mult/night.f16` and `overcast_noon.f16` (N × 4 float16, product order; Task 4b ran `05_relight.py` on the refit and promoted them): median |Δlog2| ≤ 0.1 and 95th percentile ≤ 0.3 over interior splats (class 0, not in a chandelier). For `sunny_morning` (`<work>/mult/sunny_morning.f16`; the proof's sun bounce is its full radiosity, the reference's the basis): median ≤ 0.25. The same numbers against the original proof's `proofWork/mult/*.f16` are recorded for information (they show what the refit changed); they are not gated.
+2. **Proof regression:** for the finest level, `reference.multiplier` for the proof's `night` and `overcast_noon` settings (built from `05_relight.SCENARIOS` and `scenario_light` on Task 4b's `fit_state.npz`: window weights `W[w] × sky` with `col_sky`, lamp weights `house × WC`) against the proof's own multipliers for the same fit, `<work>/mult/night.f16` and `overcast_noon.f16` (N × 4 float16, product order; Task 4b ran `05_relight.py` on the refit and promoted them): median |Δlog2| ≤ 0.1 and 95th percentile ≤ 0.3 over interior splats (class 0, not in a chandelier). For `sunny_morning` (`<work>/mult/sunny_morning.f16`; the proof's sun bounce is its full radiosity, the reference's the basis): median ≤ 0.25. The same numbers against the original proof's `proofWork/mult/*.f16` are recorded for information (they show what the refit changed); they are not gated. A gated file that is not N × 4 float16 stops the check. An information file that is not is recorded as `originalProof: { error }`, and the check continues (amended 11 October, fix round 1, M6).
 3. **Transfer:** for each coarser tile, the median |Δlog2| between a coarse splat's night multiplier and its nearest finest splat's ≤ 0.1.
-4. **Determinism:** writing the package a second time into a temporary folder on D: gives the same package (amended 8 October, seam review I-4): every file `files` names byte for byte, and `manifest.json` byte for byte once the keys this command adds to `evidence` (`capturedIdentity`, `proofRegression`, `transfer`, `determinism`, `skyBounceCheck`, `wallFaceRate`) are removed from the copy on disk and it is dumped again with `package.write`'s own `json.dumps` arguments (so a second `check` of the same package, which the double-run rule asks for, compares like with like). That holds because the manifest carries no wall-clock value: `tool` and `createdAt` come from a commit (Step 6), and the second write is given the package's own `tool` and `createdAt`, so it tests the same inputs at whatever commit is checked out now. With `--package`, the second write uses the arguments recorded in the package's `evidence.build` (amended for R1c).
+4. **Determinism:** writing the package a second time into a temporary folder on D: gives the same package (amended 8 October, seam review I-4): every file `files` names byte for byte, and `manifest.json` byte for byte once the keys this command adds to `evidence` (`capturedIdentity`, `proofRegression`, `transfer`, `determinism`, `skyBounceCheck`, `wallFaceRate`) are removed from the copy on disk and it is dumped again with `package.write`'s own `json.dumps` arguments (so a second `check` of the same package, which the double-run rule asks for, compares like with like). That holds because the manifest carries no wall-clock value: `tool` and `createdAt` come from a commit (Step 6), and the second write is given the package's own `tool` and `createdAt`, so it tests the same inputs at whatever commit is checked out now. With `--package`, the second write uses the arguments recorded in the package's `evidence.build` (amended for R1c). Bytes are compared only on the host that built the package (`evidence.build.host`, R1a's "Execution host"). On another host, check 4 fails without a rebuild and records `builtOn` and `checkedOn` (amended 11 October, fix round 1, M8).
 5. **The sky bodies' bounce through the package** (amended 7 October; it replaces the sunlit-area table's check): (a) every `sky` array read back from the package equals `sun-bounce.npz`'s (`basis`, `valid`, `coeffs`, `patchRays`, `patchNormal`, `patchArea`, `floorMean`: dtype, shape and bytes); (b) for 48 random real suns (`_random_suns(common, 48, SPLAT_SEED + 31)`) and 48 random real moons (`_random_moons(cfg, 48, SPLAT_SEED + 37)`), the bounce luminance at 20,000 random finest splats (seeded with `SPLAT_SEED`, isotropic receivers) through the package's path (`reference.sky_cubes` at the 0.5 m probes, then `reference.trilinear` and `cube_eval`) against `sunbounce.sun_bounce` read on the 1 m grid at the same splats (`sunbounce.trilinear_matrix`): where both are positive, median |Δlog2| ≤ 0.02 and 99th percentile ≤ 0.1, and where either is zero both are (the 0.5 m resampling adds no light and loses none). Record per body `directions`, `medianAbsDlog2`, `p99AbsDlog2`, `zeroDisagreements` and `pass`. A miss is reported with the numbers, never loosened.
 
 **The wall-face rate** (amended 8 October, seam review I-5; R1b Task 18 caps the GPU's rounding excuses at twice it). It is a measurement, not a sixth check: the share of marched rays whose verdict float32 rounding alone could flip at the wall face. The sample is `check-sun`'s: the 200,000 finest splats `np.sort(np.random.default_rng(SPLAT_SEED).choice(N, SPLAT_SAMPLE, replace=False))` of `<work>/npy/splats_pos.npy` (as `cmd_check_sun` draws them, `__main__.py:311-312`), as float64 e57 positions, at the `sunny_morning` setting's `sun_dir` and the `moon_test` setting's `moon_dir`, through the package's window volumes.
@@ -4168,7 +4310,7 @@ Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m un
 Expected: PASS, 40 tests (Task 4's 38 and these two). Checked on 8 October against R1c Task 15's own re-implementation, on the real window volumes (`work/windows.npz`, the bytes the package carries), check-sun's 200,000 splats and its 88,831 floor points at the sunny morning's Sun and `moon_test`'s Moon: equal counts in all four cases.
 
 - The floor's own rate (amended 8 October, re-review N3): floor rays cross the windows lower than splat rays do, so the same count is made on `check-sun`'s floor grid, the 88,831 points `cmd_check_sun` builds as `sets["floor"]` (`__main__.py:309-313`: x and y every 5 cm from 5 cm inside the hall's box, `z = FLOOR_Z + 0.02`; `sun-check.json`'s `points.floor`), at the same two directions. R1b Task 18 caps the floor texels' excuses with this rate and the splats' words with the splats'.
-- Record `wallFaceRate: { splats: 200000, marched, wallFace, floor: { points: 88831, marched, wallFace } }` (each population's two directions pooled; a rate is `wallFace / marched`, and the sample size shows its noise) in the checks file, the manifest's `evidence` and the vectors' `windowRays`. If either `marched` is 0, stop and report.
+- Record `wallFaceRate: { splats: 200000, marched, wallFace, floor: { points: 88831, marched, wallFace } }` (each population's two directions pooled; a rate is `wallFace / marched`, and the sample size shows its noise) in the checks file, the manifest's `evidence` and the vectors' `windowRays`. If either `marched` is 0, stop and report before check 4's rebuild, writing no checks file, no manifest evidence and no vectors (amended 11 October, fix round 1, M5: `check` measures the rate before check 4).
 
 Then, for the default package (or to the `--vectors` path), write `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` in exactly the shape of `RelightVectorsSchema` (schema `venviewer.relight-vectors.v1`) defined in plan R1b's Task 4, `docs/superpowers/plans/2026-09-29-restored-hall-r1b-relit-browser.md`: read that block and the helper schemas above it before writing. Every key is camelCase as there, so `reference.py`'s `sky_level`, `sky_colour`, `lamp_levels`, `emitter_boost`, `sun_dir`, `sun_rgb`, `moon_dir` and `moon_rgb` become `skyLevel`, `skyColour`, `lampLevels`, `emitterBoost`, `sunDir`, `sunRgb`, `moonDir` and `moonRgb`; the lamp group keys stay `cove`, `ch_end`, `ch_centre`, `dome`. Write it with `json.dumps(..., allow_nan=False)`. Its fields, every one required:
 - `schema`: `"venviewer.relight-vectors.v1"`; `sources`: the nine source names in record order.
@@ -4181,7 +4323,7 @@ Then, for the default package (or to the `--vectors` path), write `packages/web/
 - `skyBounce` (amended 7 October; it replaces `sunArea`): the factored basis's slice the kernel's tests need. `k`, `azimuth0`, `elevation0`, `step`, `size: [columns, rows]` and `grid: { origin, spacing, shape }`, the manifest's `sky`; `floorMean: [[r, g, b] × K]`.
   - `cases`: one per `windowRays` direction, in its order (nine): `{ dir: [x, y, z], powers: [5], azimuth, elevation, corners: [[row, column, weight] × 4], coefficients: [K] }`. `dir` is the direction as float32 values; `powers` is `reference.window_powers(model, dir)` (float64); `azimuth` and `elevation` are `windows.sun_az_el` of the float32 direction; `corners` are `windows.sun_corners(azimuth0, elevation0, step, (rows, columns), azimuth, elevation)` in its order; `coefficients` is `reference.body_coefficients(model, dir)`.
   - `nodes`: the four corner nodes of every case, as `cases[].corners` lists them, whatever their weights and the case's powers, each node once (numpy's `sunbounce.coefficients` reads a node only for windows with `P_w > 0`, so a dark case reads none, but R1b's `skyCoefficients`, its GPU coefficient pass and its debug check read all four corners of every case; at most 36 nodes, about 29 kB of base64 at K 30): `{ index: row × columns + column, values }`, `values` the base64 of the node's float32 little-endian `[window][k]` coefficients (5K values).
-  - `fold`: one 0.5 m probe among the vector splats' trilinear corners whose eight 1 m corners all have positive weight (R1b asserts every corner's weight is positive and reads the basis at all eight; if no such probe exists, stop and report: there is no fallback, and in the hall's interior one exists: each splat's eight 0.5 m corners include one probe whose three indices are odd, which sits at the centre of a 1 m cell, so its eight 1 m corners each weigh 1/8 wherever all eight are valid), `{ probe, corners: [[index, weight] × 8], basis, rgb, cube }`: `probe` its global 0.5 m index; `corners` that probe's row of `sunbounce.trilinear_matrix(origin, spacing, shape, valid, reference.probe_points(model))` (its eight 1 m corners in the matrix's dx, dy, dz order, `index = (ix·ny + iy)·nz + iz` over the 1 m shape, zero weights kept); `basis`, for each corner of positive weight, `{ index, values }`, `values` the base64 of its float16 little-endian `[k][channel][face]` values (18K); `rgb` the `sunny_morning` setting's `sunRgb`; `cube` the 18 values of `reference.to_probes` at that probe of the first case's bounce (`sunbounce.bounce(basis, coefficients)` times `rgb`).
+  - `fold`: one 0.5 m probe among the vector splats' trilinear corners whose eight 1 m corners each weigh at least 1e-6 (`FOLD_MIN_WEIGHT`). Amended 11 October, fix round 1, M7, the first pass's fold fix: a probe that lies on a 1 m node by rounding (the hall's grids start at z 0.02) has corners of 1e-16, and another float order would pick others. R1b asserts every corner's weight is positive and reads the basis at all eight. If no such probe exists, stop and report, the refusal naming the 1e-6 rule: there is no fallback, and in the hall's interior one exists: each splat's eight 0.5 m corners include one probe whose three indices are odd, which sits at the centre of a 1 m cell, so its eight 1 m corners each weigh 1/8 wherever all eight are valid), `{ probe, corners: [[index, weight] × 8], basis, rgb, cube }`: `probe` its global 0.5 m index; `corners` that probe's row of `sunbounce.trilinear_matrix(origin, spacing, shape, valid, reference.probe_points(model))` (its eight 1 m corners in the matrix's dx, dy, dz order, `index = (ix·ny + iy)·nz + iz` over the 1 m shape, zero weights kept); `basis`, for each corner of positive weight, `{ index, values }`, `values` the base64 of its float16 little-endian `[k][channel][face]` values (18K); `rgb` the `sunny_morning` setting's `sunRgb`; `cube` the 18 values of `reference.to_probes` at that probe of the first case's bounce (`sunbounce.bounce(basis, coefficients)` times `rgb`).
   - `probeCubes`: `{ sunny_morning, moon_test }`, each the list of every probe in `probes.entries` with that setting's sky bodies' bounce, `{ index, cube }`: `cube` the base64 of float32 little-endian `[channel][face]` (18 values) of `reference.sky_cubes(model, reference.sky_bodies(setting))` at that probe. (The kernel's vector tests take the folded sky bounce from here: the full basis and the patch rays would add 2 MB. The patch rays are held to `cases[].powers` against the staged package in R1b's Task 5.)
 - `windowRays`: `{ suns: [[x, y, z] × 9], points: [[x, y, z] × 96], visibility: [[v × 9] × 96], steps: [[n × 9] × 96], wallFace: [[p, k] × n], wallFaceRate: { splats, marched, wallFace, floor: { points, marched, wallFace } } }` (`wallFaceRate` as measured above, amended 8 October).
   - The directions: the `sunny_morning` setting's `sunDir` first, then the five suns of `check-sun` (`CHECK_SUNS` through `common.solar_position` and `common.sun_vec_e57`), then two of `_random_suns(common, 2, SPLAT_SEED + 2)`, then the `moon_test` setting's `moonDir` (R1d amendment A8: nine directions).

@@ -21,16 +21,38 @@ def flags_for(cls, iso, reach, chand_id, centre_ids, cove, fixture, pane):
     return f
 
 
-def transfer(src_pos, src_values, dst_pos, k=8):
-    """Inverse-distance blend of the k nearest source splats' values (for the coarser levels)."""
-    tree = cKDTree(np.asarray(src_pos, np.float64))
+def transfer(src_pos, src_values, dst_pos, k=8, tree=None):
+    """Inverse-distance blend of the k nearest source splats' values (for the coarser levels). tree: the cKDTree of
+    src_pos (float64), built once by a caller that transfers many chunks or tiles from the same source; built here when
+    None (fix round 1, M4: the same tree, so the same neighbours)."""
+    tree = cKDTree(np.asarray(src_pos, np.float64)) if tree is None else tree
     d, i = tree.query(np.asarray(dst_pos, np.float64), k=k)
-    v = np.asarray(src_values)
+    return _blend(np.asarray(src_values), d, i, k)
+
+
+def _blend(v, d, i, k):
     if k == 1:
         return v[i]
     w = 1.0 / np.maximum(d, 1e-4)
     w /= w.sum(1, keepdims=True)
     return (v[i] * w[..., None]).sum(1)
+
+
+def transfer_nearest(src_values, dst_pos, k, tree):
+    """(transfer(..., k, tree), the index of each destination's nearest source splat) from one k-neighbour query (k >= 2;
+    fix round 1, M4: a coarser tile is transferred once). The nearest is the query's first neighbour where it is strictly
+    nearer than the second; where they tie it is a k=1 query's answer, because a k=1 and a k>1 query may order tied
+    neighbours differently (measured: 18 of the hall's 5,467,354 coarser splats). So both values are exactly those of
+    transfer(k) and transfer(k=1) on the same tree."""
+    if k < 2:
+        raise ValueError("transfer_nearest needs k >= 2")
+    P = np.asarray(dst_pos, np.float64)
+    d, i = tree.query(P, k=k)
+    near = i[:, 0].copy()
+    tied = np.nonzero(d[:, 0] == d[:, 1])[0]
+    if tied.size:
+        near[tied] = tree.query(P[tied], k=1)[1]
+    return _blend(np.asarray(src_values), d, i, k), near
 
 
 # Covers and toggles (R1c, amendment A3). tools/skins (R1c Task 5) writes, in its geometry folder, covers.npz (each skin's

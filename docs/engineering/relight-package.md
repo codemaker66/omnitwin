@@ -10,7 +10,12 @@ file is built from an exact, hash-checked artifact. Revised 8 October (seam revi
 classes 3 and 6, the display's floor area, `createdAt` from the build commit, `evidence.wallFaceRate`, the evidence
 keys R1a's `check` adds, and the `artifacts` keys. Revised 8 October (pre-flight): the house lights' 140 lamps and the centre
 chandelier's crown tubes (`lamps.refit.wCrown`), the floor's own wall-face rate (`evidence.wallFaceRate.floor`), and a
-package built only from committed code.
+package built only from committed code. Revised 11 October (R1a Task 5 fix round 1):
+- The multiplier is exactly 1 at the captured setting, its guards included. R1a's normative text: every 1e-4 guard on
+  both sides of its ratio, the embrasure's `C′ = max(C, 1e-4)`. Before this, an embrasure channel stored as an sRGB byte
+  of 0 read 1/16.
+- `evidence.artifacts` also names the per-splat tables, the window cookie and the lamp/daylight ratio that the build read.
+- `evidence.build` records the host that built the package.
 
 ## Files
 
@@ -58,7 +63,7 @@ it is published (R1a Task 7).
 - `floor`: `{ skin: "floor-skin/v2", texelToModel: 4×4 row-major, texel: 0.05, size: [w, h], files: [3] }`.
 - `tiles`: `[{ tile, tileSha256, level, count, file, sha256, bytes }]` for every served tile.
 - `presetsFromProof`: the three proof scenarios' settings (night, sunny morning 31 May 09:00 BST, overcast noon), as `05_relight.SCENARIOS` defines them.
-- `evidence`: `{ capturedIdentity, proofRegression, transfer, determinism, sunCheck, skyBounce, skyBounceCheck, wallFaceRate, refit, artifacts, build }`. The build writes `sunCheck`, `skyBounce`, `refit`, `artifacts` and `build`; R1a's `check` adds the other six to the package it checks, the only keys it writes there. `skyBounce` is the bake's gate (K, its rule, the selection, check and strict draws' worst bright directions); `skyBounceCheck` the package's check 5; `wallFaceRate` `{ splats, marched, wallFace, floor: { points, marched, wallFace } }`, how many of the marched sky-body rays of 200,000 seeded splats, and of R1a check-sun's 88,831 floor points, have a first sample that float32 rounding alone could put in the other cell at a window's wall face (measured by R1a's public `windows.wall_face_rate`, which R1c's skins reuse; R1b caps the GPU's rounding excuses at twice `wallFace / marched`: the splats' rate for the multiplier words, the floor's for the floor's texels); `refit` the house-light refit's acceptance; `artifacts` `{ name: sha256 }` of every work artifact the build read, each key the artifact's path relative to the bake's work folder with `/` separators (`probes-coarse.npz`, `skin-light/index.json`, …); `build` the options it was built with.
+- `evidence`: `{ capturedIdentity, proofRegression, transfer, determinism, sunCheck, skyBounce, skyBounceCheck, wallFaceRate, refit, artifacts, build }`. The build writes `sunCheck`, `skyBounce`, `refit`, `artifacts` and `build`; R1a's `check` adds the other six to the package it checks, the only keys it writes there. `skyBounce` is the bake's gate (K, its rule, the selection, check and strict draws' worst bright directions); `skyBounceCheck` the package's check 5; `wallFaceRate` `{ splats, marched, wallFace, floor: { points, marched, wallFace } }`, how many of the marched sky-body rays of 200,000 seeded splats, and of R1a check-sun's 88,831 floor points, have a first sample that float32 rounding alone could put in the other cell at a window's wall face (measured by R1a's public `windows.wall_face_rate`, which R1c's skins reuse; R1b caps the GPU's rounding excuses at twice `wallFace / marched`: the splats' rate for the multiplier words, the floor's for the floor's texels); `refit` the house-light refit's acceptance; `artifacts` `{ name: sha256 }` of every work artifact the build read, each key the artifact's path relative to the bake's work folder with `/` separators (`probes-coarse.npz`, `npy/splats_pos.npy`, `occ_cookie.npz`, `lamp_daylight_ratio.json`, `skin-light/index.json`, …; the per-splat tables, the window cookie and the lamp/daylight ratio since 11 October); `build` the options it was built with and the host that built it (`{ skins, skinLight, skinPackage, host }`, `host` `pc` or `pod:<id>`; R1a's check 4 compares bytes only on that host).
 - `files`: `{ <path>: { sha256, bytes } }` for every file except the manifest.
 - `skins` (package v2, optional; R1c): `{ package, manifestSha256, encoding, groups, entries }`.
   - `package`: the skin package's folder beside the tiles (`"skins/v1"`); `manifestSha256` pins its manifest.
@@ -184,5 +189,8 @@ aliases at oblique suns (azimuth about 155° and beyond); `P_w` and the referenc
 ## The multiplier
 
 Normative text: `docs/superpowers/plans/2026-09-29-restored-hall-r1a-light-bake.md`, section "The multiplier".
-Executable definition: `tools/relight/relight/reference.py`. The browser packs it per splat as a 32-bit word:
+Executable definition: `tools/relight/relight/reference.py`. At the captured setting it is exactly 1 on every channel of
+every shown splat (amended 11 October). Every 1e-4 guard applies to both sides of its ratio: the interior rule's
+`max(E, 1e-4) / max(Ecap, 1e-4)`, and the embrasure's `C′ = max(C, 1e-4)` in ρ, the excess and the denominator.
+`capture.daylightColour` has no channel under 1e-6, so rBack is 1 there. The browser packs it per splat as a 32-bit word:
 bits 0–7, 8–15 and 16–23 are the log codes of R, G and B over `[2^-4, 2^3]` (0 = zero); bits 24–31 are alpha.

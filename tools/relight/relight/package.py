@@ -119,7 +119,8 @@ def verified_fit(work, evidence) -> tuple[dict, dict, dict]:
 # ------------------------------------------------------------------------------------------------------ manifest parts
 def capture_of(fit: dict) -> dict:
     """The manifest's `capture` from the refit's fit.json: weights and colours picked by name in the records' source
-    order (the fit's sun_cap left out by name, never by position), the daylight colour W1's, and gamma written as
+    order (the fit's sun_cap left out by name, never by position), the daylight colour W1's (refused with a channel
+    under 1e-6, the kernel's rBack guard, which would make the captured setting not neutral), and gamma written as
     exactly 1 once the fit's is within 1e-6 of 1 (the kernel has no gamma term; R1b refuses any other)."""
     names = list(fit["bases"])
     missing = [s for s in codec.SOURCES if s not in names]
@@ -130,6 +131,10 @@ def capture_of(fit: dict) -> dict:
     if not abs(gamma - 1.0) <= 1e-6:
         raise ValueError(f"the fitted gamma {gamma} is not within 1e-6 of 1: the relight kernel has no gamma term")
     colours = [[float(c) for c in fit["colours"][i]] for i in pick]
+    daylight = colours[codec.SOURCES.index("W1")]
+    if not all(c >= 1e-6 for c in daylight):
+        raise ValueError(f"the daylight colour {daylight} has a channel under 1e-6: the kernel's rBack = skyColour / "
+                         f"max(daylight, 1e-6) would not be 1 at the captured light")
     return {"weights": [float(fit["weights"][i]) for i in pick], "colours": colours,
             "daylightColour": list(colours[codec.SOURCES.index("W1")]),
             "skyBandWeights": [float(v) for v in fit["sky_weights_capture"]], "gamma": 1}

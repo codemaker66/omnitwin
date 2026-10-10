@@ -179,7 +179,10 @@ def sky_cubes(model: Model, bodies) -> np.ndarray:
     return to_probes(model, S1)
 
 
-def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: Setting, visibility: Visibility = NO_VISIBILITY):
+def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: Setting, visibility: Visibility = NO_VISIBILITY,
+               sky_probes=None):
+    """(rgb (N, 3), alpha (N,)): the normative multiplier. sky_probes: sky_cubes(model, sky_bodies(setting)), for a caller
+    that relights many splats in chunks under one setting (computed here when None; the same values either way)."""
     direct = np.asarray(direct, np.float64)
     n = np.asarray(normals, np.float64)
     flags = np.asarray(flags, np.uint8)
@@ -205,16 +208,21 @@ def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: S
             E = E + (vis * cosv)[:, None] * rgb[None]
         if model.sky is not None:
             # both bodies' bounce: the basis at the probes, then the same trilinear lookup and ambient cube as I[k]
-            sky = (sky_cubes(model, bodies)[idx] * wts[:, :, None, None]).sum(1)          # (N, 3, 6)
+            cubes_sky = sky_cubes(model, bodies) if sky_probes is None else sky_probes
+            sky = (cubes_sky[idx] * wts[:, :, None, None]).sum(1)                         # (N, 3, 6)
             E = E + cube_eval(sky[:, None], n, iso)[:, 0]
     L = C @ LUMW
-    M = E / np.maximum(Ecap, 1e-4)
+    # Both sides of every ratio take the same 1e-4 guard, so the captured setting (E = Ecap, rBack = 1) gives M = 1
+    # exactly on every channel, a splat with no captured light (Ecap < 1e-4) and an embrasure channel stored as an sRGB
+    # byte of 0 (C < 1e-4) included (amended 11 October, Task 5 fix round 1, C1).
+    M = np.maximum(E, 1e-4) / np.maximum(Ecap, 1e-4)
     emb = cls == codec.CLASS_EMBRASURE
     if emb.any():
-        rho = np.minimum(C[emb] / np.maximum(Ecap[emb], 1e-4), 0.8)
-        excess = np.maximum(C[emb] - rho * Ecap[emb], 0.0)
+        Cp = np.maximum(C[emb], 1e-4)
+        rho = np.minimum(Cp / np.maximum(Ecap[emb], 1e-4), 0.8)
+        excess = np.maximum(Cp - rho * Ecap[emb], 0.0)
         r_back = setting.sky_level * setting.sky_colour / np.maximum(model.daylight_colour, 1e-6)
-        M[emb] = (rho * E[emb] + excess * r_back[None]) / np.maximum(C[emb], 1e-4)
+        M[emb] = (rho * E[emb] + excess * r_back[None]) / Cp
     M = np.clip(M, 1 / 16, 8.0)
     fx = np.isin(cls, [codec.CLASS_CH_EMITTER, codec.CLASS_DOME_EMITTER, codec.CLASS_COVE, codec.CLASS_CH_FIXTURE])
     if fx.any():

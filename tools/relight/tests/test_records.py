@@ -33,6 +33,28 @@ class Transfer(unittest.TestCase):
         out = records.transfer(src, vals, np.array([[1.0, 0, 0]]), k=2)
         self.assertAlmostEqual(float(out[0, 0]), 2.0, places=6)
 
+    def test_one_tree_and_one_query_give_exactly_the_separate_transfers_ties_included(self):
+        """Fix round 1, M4: transfer on a shared tree is transfer with its own tree, and transfer_nearest's one query gives
+        exactly transfer(k) and transfer(k=1), also where two source splats lie at the same distance (duplicate
+        positions, whose order a k=1 and a k=8 query need not share)."""
+        from scipy.spatial import cKDTree
+        rng = np.random.default_rng(5)
+        src = rng.uniform(0, 4, (40_000, 3)).round(1)                  # 0.1 m steps: thousands of duplicate positions
+        vals = rng.normal(size=(len(src), 9))
+        dst = np.concatenate([src[rng.integers(0, len(src), 20_000)], rng.uniform(0, 4, (20_000, 3)).round(1)])
+        tree = cKDTree(src)
+        blend, near = records.transfer_nearest(vals, dst, 8, tree)
+        own = records.transfer(src, vals, dst, k=8)
+        nearest = records.transfer(src, np.arange(len(src)), dst, k=1)
+        self.assertTrue(np.array_equal(blend, own) and np.array_equal(blend, records.transfer(src, vals, dst, k=8, tree=tree)))
+        self.assertTrue(np.array_equal(near, nearest))
+        d, i = tree.query(dst, k=8)
+        tied = d[:, 0] == d[:, 1]
+        self.assertGreater(int(tied.sum()), 0)
+        self.assertGreater(int((i[:, 0] != nearest).sum()), 0)            # the first column alone would differ on ties
+        with self.assertRaisesRegex(ValueError, "k >= 2"):
+            records.transfer_nearest(vals, dst, 1, tree)
+
 
 class Covers(unittest.TestCase):
     COVERS = {"ids": np.array(["door-w2"]), "groups": np.array([0], np.int8),
