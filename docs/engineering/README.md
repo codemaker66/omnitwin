@@ -12,6 +12,7 @@ to current code and useful checks; it is not another layer of instructions.
 | API | [API README](../../packages/api/README.md), `packages/api/src/routes/`, `services/`, `middleware/` | Venue authorization, runtime schemas, transactions, idempotency and useful error responses |
 | Shared contracts | [types README](../../packages/types/README.md), `packages/types/src/` | Validate at runtime; trace affected consumers before changing a contract |
 | Database | `packages/api/src/db/`, `packages/api/drizzle/` | Constraints, locking, migrations and explicit disposable test targets |
+| Deploy ordering and readiness | [Current deploy flow](../operations/deploy-flow-current.md), `packages/api/src/db/migration-readiness.ts` | `/health/ready` refuses while the image's migration journal is ahead of the database, so Railway keeps the old container live until the Deploy workflow has migrated (T-653) |
 | Reconstruction | `packages/reconstruction-foundry/`, `tools/reconstruction-foundry/`, `tools/capture-factory/` | Source provenance, calibration, evaluation separation and current spend gates |
 | Runtime assets | `tools/xgrids-lcc2/`, `tools/xgrids-xbag/`, `packages/web/src/components/scene/` | Frames/units, manifests, resource disposal, streaming and measured delivery |
 | Build and tests | [root scripts](../../package.json), [CI](../../.github/workflows/ci.yml), package scripts/configs | Same commands locally and in CI; resource contention; no production fixtures |
