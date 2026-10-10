@@ -134,16 +134,38 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
   UTC (quota). Concurrent requests share one fetch.
 - Attribution (FAQ): "Powered by Met Office data"; licence: the Weather DataHub
   terms and conditions.
-- Logs carry stage, status and Zod issue paths, never the key, headers or bodies.
+- Data bodies are CoverageJSON (the OpenAPI position query: "Provides data
+  for the nearest location as a CovJson response"; it has no output-format
+  parameter, so none is sent).
+  - **Parameters in scope:** a parameter's unit is read from the parameters
+    in scope: the coverage's own, else the collection's (OGC 21-069r2: a
+    collection MAY carry `parameters`, 9.6.5; a coverage MUST carry its own
+    when the collection does not, 9.6.4). The live service puts them on each
+    coverage.
+  - **No unit in scope:** the glossary unit applies.
+- Logs carry stage, status and Zod issue paths, never the key, headers or
+  bodies. A body that fails its schema is described by its structure alone:
+  member names, array lengths and `type`/`domainType`/`dataType` strings,
+  four levels deep, 30 lines at most, as `body: …` lines in the failure's
+  detail.
 
 **Live state (10 October 2026).**
-- The deployed key is accepted: `/collections` answered HTTP 200.
-- The first release's v1 collection ids were not in that listing, so it
-  served normals with `upstream_unavailable`.
-- Choosing collections from the listing (above) replaces those fixed ids.
-- After that change deploys, check the first forecast through the deployed
-  endpoint and in the `venue_sky_collections_*`, `venue_sky_forecast_partial`
-  and `venue_sky_upstream_failed` logs. They name what the listing offers.
+- The key is accepted. #70 (`d9a80276`) chose the collections from the
+  listing at 14:55Z (`venue_sky_collections_selected`).
+  - **Chosen:** percentiles `uk-spot-percentiles` (basis: declared
+    parameters), probabilities `uk-spot-probabilities`.
+  - **Offered:** `global-spot-percentiles` (73 parameters),
+    `global-spot-probabilities` (38), `uk-spot-percentiles` (77) and
+    `uk-spot-probabilities` (78), all without a title.
+- The position body then failed the schema with one issue, `parameters:
+  Required`.
+  - **What the response is:** a CoverageCollection whose coverages all parsed
+    (a GeoJSON body would also have failed `type` and `coverages`). It
+    carries no collection-level `parameters`, as CoverageJSON allows.
+  - **Fix:** reading parameters in scope (above).
+- After that deploys, check the first forecast through the deployed endpoint,
+  and in the `venue_sky_forecast_partial` and `venue_sky_upstream_failed`
+  logs.
 
 No live response body has been read here, and the DataHub sample files may
 not be redistributed. The test bodies
