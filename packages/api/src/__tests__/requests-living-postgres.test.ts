@@ -16,11 +16,13 @@ import {
 import {
   createClientRequestCore,
   createRequestCore,
+  listRequestHandlers,
   listRequestsForClientEvent,
   transitionRequestCore,
   type RequestActor,
   type RequestDeny,
 } from "../services/requests.js";
+import { loadClientEventSchedule } from "../services/client-event-schedule.js";
 
 // Goal 19 S1 — the widened request on real rows: the client asks on their own
 // slot and gets a client-facing thread; the floor's ask gets a staff-private
@@ -310,6 +312,50 @@ describe.skipIf(target === undefined)("the widened request on migrated PostgreSQ
     expect(granted(await listMessagesCore(db, f.hallkeeper, requestThread, { after: 0, limit: 10 })).messages).toHaveLength(1);
     const bookingThread = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "client-facing", subject: "booking", bookingId: f.bookingId })).thread;
     expect(refused(await listMessagesCore(db, f.hallkeeper, bookingThread.id, { after: 0, limit: 10 })).status).toBe(403);
+  });
+
+  // Goal 19 S4: the client's composer needs the slot, and the slot is the
+  // booking; the schedule the client already reads carries its live bookings.
+  it("tells the client the slots of their own event, in order, and never a departed one", async () => {
+    const f = await fixture();
+    const laterId = randomUUID();
+    const cancelledId = randomUUID();
+    const deletedId = randomUUID();
+    await db.insert(schema.bookings).values([
+      {
+        id: laterId, venueId: f.venueId, spaceId: f.roomId, eventId: f.eventId, kind: "hold", rank: 1, title: "Fixture hold",
+        createdBy: f.admin.id, startsAt: new Date("2030-01-11T10:00:00.000Z"), endsAt: new Date("2030-01-11T12:00:00.000Z"),
+      },
+      {
+        id: cancelledId, venueId: f.venueId, spaceId: f.roomId, eventId: f.eventId, kind: "ink", status: "cancelled", title: "Fixture cancelled",
+        createdBy: f.admin.id, startsAt: new Date("2030-01-12T10:00:00.000Z"), endsAt: new Date("2030-01-12T12:00:00.000Z"),
+      },
+      {
+        id: deletedId, venueId: f.venueId, spaceId: f.roomId, eventId: f.eventId, kind: "ink", title: "Fixture deleted", deletedAt: new Date(),
+        createdBy: f.admin.id, startsAt: new Date("2030-01-13T10:00:00.000Z"), endsAt: new Date("2030-01-13T12:00:00.000Z"),
+      },
+    ]);
+    const schedule = await loadClientEventSchedule(db, f.client.id, f.eventId);
+    if (schedule === null) throw new Error("the linked client reads their schedule");
+    expect(schedule.slots.map((slot) => slot.bookingId)).toEqual([f.bookingId, laterId]);
+    expect(schedule.slots[0]).toEqual({
+      bookingId: f.bookingId, kind: "ink", title: "Fixture booking", space: { id: f.roomId, name: "Grand Hall" },
+      startsAt: "2030-01-10T10:00:00.000Z", endsAt: "2030-01-10T12:00:00.000Z",
+    });
+    expect(schedule.slots[1]?.kind).toBe("hold");
+    // A stranger reads nothing, slots included.
+    expect(await loadClientEventSchedule(db, f.stranger.id, f.eventId)).toBeNull();
+  });
+
+  // Goal 19 S4: the handover picker names the floor, by name and role only.
+  it("lists the people who may take a request, to the floor and never to the client", async () => {
+    const f = await fixture();
+    const handlers = granted(await listRequestHandlers(db, f.hallkeeper, f.venueId));
+    expect(handlers.map((person) => person.name)).toEqual(["Elaine", "Fiona", "Graham", "The administrator"]);
+    expect(handlers.every((person) => Object.keys(person).sort().join(",") === "id,name,role")).toBe(true);
+    expect(handlers.find((person) => person.name === "Elaine")?.id).toBe(f.hallkeeper.id);
+    expect(refused(await listRequestHandlers(db, f.client, f.venueId)).status).toBe(403);
+    expect(refused(await listRequestHandlers(db, f.hallkeeper, randomUUID())).status).toBe(403);
   });
 
   it("lists only the client's own asks on their event, and everything for the office", async () => {

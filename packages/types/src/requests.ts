@@ -306,6 +306,15 @@ export const RequestListQuerySchema = z.object({
 }).strict();
 export type RequestListQuery = z.infer<typeof RequestListQuerySchema>;
 
+/** Somebody on the floor a request can be handed to, as the picker reads
+ *  them (goal 19 S4): a name and a role, never the staff record. */
+export const VenueHandlerSchema = z.object({
+  id: UUID,
+  name: z.string().min(1).max(160),
+  role: UserRoleSchema,
+}).strict();
+export type VenueHandler = z.infer<typeof VenueHandlerSchema>;
+
 /** A request is open until it is finished — the slab shows exactly these. */
 export function isOpenRequest(request: { readonly state: RequestState }): boolean {
   return request.state !== "resolved";

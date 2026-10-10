@@ -1,20 +1,28 @@
 import { z } from "zod";
 import {
+  VenueHandlerSchema,
   VenueRequestSchema,
   type CreateVenueRequest,
   type RequestTransition,
+  type VenueHandler,
   type VenueRequest,
 } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// The request client (Ship Friday slice 10).
+// The request client (Ship Friday slice 10; goal 19 S4 adds the handlers).
 //
 // Every response is validated against the shared schema, so a server that
 // drifts is a loud error rather than a slab quietly rendering nothing.
 // ---------------------------------------------------------------------------
 
 const RequestListSchema = z.array(VenueRequestSchema);
+const HandlerListSchema = z.array(VenueHandlerSchema);
+
+/** The people a request can be handed to, for the picker on the slab. */
+export async function listVenueHandlers(venueId: string, signal?: AbortSignal): Promise<readonly VenueHandler[]> {
+  return api.get(`/venues/${encodeURIComponent(venueId)}/handlers`, HandlerListSchema, signal);
+}
 
 export async function listVenueRequests(
   venueId: string,

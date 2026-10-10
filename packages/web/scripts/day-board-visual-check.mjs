@@ -10,9 +10,12 @@
 //      still carry the full meaning;
 //   3. the phone: the sheet wider than the screen and centred on NOW;
 //   4. the wall register (?register=wall);
-//   5. an open slot, with the request region mounted.
-// The calendar and requests APIs are route-mocked with entries relative to
-// Date.now(), so every state is on screen no matter when this runs.
+//   5. an open slot, with the request region mounted;
+//   6. (goal 19 S4) the open slot's conversation: the request card on the
+//      paper register, one tab per thread with the copper badge only on the
+//      thread the client can read, on the office sheet and on the phone.
+// The calendar, requests and conversation APIs are route-mocked with entries
+// relative to Date.now(), so every state is on screen no matter when this runs.
 // Run from repo root with the web dev server up:
 //   node packages/web/scripts/day-board-visual-check.mjs
 // Env: BASE_URL (default http://localhost:5173), OUT_DIR (screenshot dir).
@@ -118,7 +121,7 @@ function request(id, bookingId, room, fields, now) {
     detail: null,
     requestedByUserId: "00000000-0000-4000-8000-0000000000fe",
     requestedByName: "Morag",
-    requestedByRole: "hallkeeper",
+    requestedByRole: fields.client ? "client" : "hallkeeper",
     audienceRoles: ["admin", "manager", "staff", "hallkeeper"],
     ownerUserId: fields.owner ? "00000000-0000-4000-8000-0000000000fd" : null,
     ownerName: fields.owner ?? null,
@@ -130,7 +133,7 @@ function request(id, bookingId, room, fields, now) {
     acknowledgedAt: fields.owner ? createdAt : null,
     acceptedAt: fields.owner ? createdAt : null,
     resolvedAt: null,
-    threadId: null,
+    threadId: fields.threadId ?? null,
     handoverToUserId: null,
     handoverToName: null,
     handedOverAt: null,
@@ -141,14 +144,42 @@ function request(id, bookingId, room, fields, now) {
   };
 }
 
-/** An unowned request on the ceilidh, an urgent one on the banquet, and one
- *  Elaine already has on the Board afternoon. */
+/** An unowned request on the ceilidh (the client's, with its client-facing
+ *  thread), an urgent one on the banquet, and one Elaine already has on the
+ *  Board afternoon. */
+const CLIENT_THREAD = "00000000-0000-4000-8000-0000000000c1";
 function requestsFixture(now) {
   return [
-    request("00000000-0000-4000-8000-0000000000d1", B(2), ROOMS[1], { kind: "chairs", quantity: 10, urgency: "soon", minutesAgo: 3 }, now),
+    request("00000000-0000-4000-8000-0000000000d1", B(2), ROOMS[1], { kind: "chairs", quantity: 10, urgency: "soon", minutesAgo: 3, client: true, threadId: CLIENT_THREAD }, now),
     request("00000000-0000-4000-8000-0000000000d2", B(1), ROOMS[0], { kind: "temperature", urgency: "now", minutesAgo: 1 }, now),
     request("00000000-0000-4000-8000-0000000000d3", B(3), ROOMS[2], { kind: "av", urgency: "soon", minutesAgo: 12, owner: "Elaine" }, now),
   ];
+}
+
+/** The ceilidh's threads: the client's request thread (goal 19 S4). The
+ *  floor's own notes do not exist until the first one is written. */
+function threadsFixture(bookingId, now) {
+  if (bookingId !== B(2)) return [];
+  return [{
+    id: CLIENT_THREAD, venueId: VENUE, audience: "client-facing", subject: "request", bookingId: B(2), eventId: null,
+    requestId: "00000000-0000-4000-8000-0000000000d1", subjectUserId: null, title: "Chairs × 10 · Saloon", createdByUserId: null,
+    messageCount: 1, lastMessageAt: new Date(now - 3 * MIN).toISOString(), lastCursor: 1, createdAt: new Date(now - 3 * MIN).toISOString(),
+  }];
+}
+
+function messagesFixture(threadId, now) {
+  if (threadId !== CLIENT_THREAD) return { thread: null, messages: [], cursor: 0, serverNowMs: now };
+  const [thread] = threadsFixture(B(2), now);
+  return {
+    thread,
+    messages: [{
+      id: "00000000-0000-4000-8000-0000000000e1", threadId: CLIENT_THREAD, cursor: 1, kind: "request",
+      authorUserId: "00000000-0000-4000-8000-0000000000fe", authorName: "Morag", authorRole: "client",
+      body: "Chairs × 10 · Soon\nTen more for the top table, please.", createdAt: new Date(now - 3 * MIN).toISOString(), receipts: [],
+    }],
+    cursor: 1,
+    serverNowMs: now,
+  };
 }
 
 async function preparePage(context, path = "/hallkeeper/today") {
@@ -165,6 +196,25 @@ async function preparePage(context, path = "/hallkeeper/today") {
   });
   await page.route(`${API}/venues/*/requests?*`, (route) => {
     void route.fulfill({ json: { data: requestsFixture(Date.now()) } });
+  });
+  // The slot's conversation (goal 19 S4): threads by booking, a page of
+  // messages by thread, the floor's handlers, and receipts accepted.
+  await page.route(`${API}/venues/*/threads?*`, (route) => {
+    const bookingId = new URL(route.request().url()).searchParams.get("bookingId") ?? "";
+    void route.fulfill({ json: { data: threadsFixture(bookingId, Date.now()) } });
+  });
+  await page.route(`${API}/threads/*/messages?*`, (route) => {
+    const threadId = new URL(route.request().url()).pathname.split("/")[2] ?? "";
+    void route.fulfill({ json: { data: messagesFixture(threadId, Date.now()) } });
+  });
+  await page.route(`${API}/messages/*/receipt`, (route) => {
+    void route.fulfill({ json: { data: {
+      messageId: "00000000-0000-4000-8000-0000000000e1", recipientUserId: KEEPER.id, recipientName: KEEPER.name,
+      deliveredAt: new Date().toISOString(), readAt: new Date().toISOString(), acknowledgedAt: null,
+    } } });
+  });
+  await page.route(`${API}/venues/*/handlers`, (route) => {
+    void route.fulfill({ json: { data: [] } });
   });
   await page.route(`${API}/notifications**`, (route) => {
     void route.fulfill({ json: { data: [] } });
@@ -324,6 +374,35 @@ try {
   check("a tap opens the slot to its detail", (await detail.count()) === 1 && /Chamber banquet/u.test(await detail.innerText()));
   check("the request region is mounted in the open slot", (await detail.locator(".vv-requests").count()) === 1);
   await page.screenshot({ path: join(OUT, "open-slot.png"), fullPage: true });
+
+  // ---- Pass 6: the slot's conversation (goal 19 S4) --------------------------
+  // The ceilidh carries the client's ask: its card stands on the paper
+  // register, the slot shows one tab per thread, and only the client's wears
+  // the badge. Checked on the office sheet and on the phone.
+  async function conversationChecks(target, label) {
+    await target.locator(".dayboard-slab[data-state='guests-due']").click();
+    const open = target.locator(".dayboard-detail");
+    await open.locator(".vv-conversation-tab").first().waitFor({ timeout: 10_000 });
+    const card = open.locator(".vv-request").first();
+    const cardGround = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
+    check(`${label}: the request card stands on the raised ivory (${cardGround})`, cardGround === "rgb(255, 253, 248)");
+    check(`${label}: the card names the client's ask`, /Chairs × 10/u.test(await card.innerText()) && /Morag \(client\)/u.test(await card.innerText()));
+    const tabs = open.locator(".vv-conversation-tab");
+    const labels = await tabs.evaluateAll((elements) => elements.map((element) => element.textContent ?? ""));
+    check(`${label}: one tab per thread, the floor's first`, labels.length === 2 && labels[0] === "Floor notes" && /Chairs × 10/u.test(labels[1] ?? ""));
+    const badges = await open.locator(".vv-conversation-tab .vv-thread-badge").evaluateAll((elements) => elements.map((element) => element.closest(".vv-conversation-tab")?.getAttribute("data-audience")));
+    check(`${label}: the badge is on the client-facing tab and on no other`, badges.length === 1 && badges[0] === "client-facing");
+    check(`${label}: the floor's composer is labelled for the floor`, (await open.getByLabel("Note to the floor").count()) === 1);
+    await tabs.nth(1).click();
+    await open.getByLabel("Reply to the client").waitFor({ timeout: 10_000 });
+    check(`${label}: the client's thread shows the ask and a composer labelled for the client`,
+      /Ten more for the top table/u.test(await open.innerText()) && (await open.locator(".vv-thread-badge--composer").count()) === 1);
+  }
+  await page.locator(".dayboard-detail-close").click();
+  await conversationChecks(page, "office");
+  await page.screenshot({ path: join(OUT, "open-slot-conversation.png"), fullPage: true });
+  await conversationChecks(phone, "phone");
+  await phone.screenshot({ path: join(OUT, "open-slot-phone.png"), fullPage: true });
 } finally {
   await browser.close();
 }

@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import {
   STAFF_AUDIENCE_ROLES,
+  UserRoleSchema,
   describeRequestKind,
   describeRequestOutcome,
   describeRequestUrgency,
@@ -15,6 +16,7 @@ import {
   type RequestState,
   type RequestTransition,
   type ThreadAudience,
+  type VenueHandler,
   type VenueRequest,
 } from "@omnitwin/types";
 import {
@@ -703,6 +705,37 @@ export async function listRequestsForClientEvent(
   return rows
     .filter((row) => (office ? canSeeRequest(actor, row.request) : true))
     .map((row) => serializeRequest(row.request, row.roomName));
+}
+
+/**
+ * The people a request can be handed to (goal 19 S4): everyone at the venue
+ * whose role may handle one, by name and role only, for the picker on the
+ * slab. Each row is admitted by the same test the handover applies to its
+ * target, so the picker never offers a name the core would refuse. Only the
+ * floor asks; a client never reads the staff list.
+ */
+export async function listRequestHandlers(
+  db: Database,
+  actor: RequestActor,
+  venueId: string,
+): Promise<readonly VenueHandler[] | RequestDeny> {
+  if (!canHandleRequests(actor, venueId)) {
+    return deny(403, "FORBIDDEN", "Only the floor sees who can take a request.");
+  }
+  const rows = await db
+    .select({ id: users.id, name: users.name, role: users.role })
+    .from(users)
+    .where(eq(users.venueId, venueId))
+    .orderBy(asc(users.name), asc(users.id))
+    .limit(200);
+  const handlers: VenueHandler[] = [];
+  for (const row of rows) {
+    const role = UserRoleSchema.safeParse(row.role);
+    if (!role.success) continue;
+    if (!canHandleRequests({ role: role.data, venueId, platformRole: "none" }, venueId)) continue;
+    handlers.push({ id: row.id, name: row.name, role: role.data });
+  }
+  return handlers;
 }
 
 export async function readRequest(
