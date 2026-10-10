@@ -4,11 +4,12 @@ from relight import __main__ as M, config
 
 
 @contextlib.contextmanager
-def host_env(pod=None, init_environ=None, job=None):
+def host_env(pod=None, init_environ=None, job=None, rp_environment=None):
     """The host as a test names it, whatever machine runs the suite: RUNPOD_POD_ID and RELIGHT_JOB in this process's
-    environment only when given, and the container's initial environment (M.INIT_ENVIRON) at `init_environ` (None:
-    there is none to read, as on the PC)."""
-    with mock.patch.dict(os.environ), mock.patch.object(M, "INIT_ENVIRON", init_environ):
+    environment only when given, the container's initial environment (M.INIT_ENVIRON) at `init_environ` and the image's
+    shell copy of it (M.RP_ENVIRONMENT) at `rp_environment` (None: there is none to read, as on the PC)."""
+    with mock.patch.dict(os.environ), mock.patch.object(M, "INIT_ENVIRON", init_environ), \
+            mock.patch.object(M, "RP_ENVIRONMENT", rp_environment):
         for name in ("RUNPOD_POD_ID", "RELIGHT_JOB"):
             os.environ.pop(name, None)
         if pod is not None:
@@ -107,6 +108,69 @@ class EvidenceHost(unittest.TestCase):
 
     def test_rewritten_evidence_keeps_the_host_that_measured_it(self):
         self.assertEqual(self.written({"pass": True, "host": "pc"}, pod="testpod01"), {"pass": True, "host": "pc"})
+
+    def rp_environment(self, *lines, name="rp_environment"):
+        """A file like the image's /etc/rp_environment: shell `export NAME=value` lines (the pod watchdog's fallback)."""
+        path = os.path.join(self.dir, name)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write("".join(line + "\n" for line in lines))
+        return path
+
+    def test_a_runner_job_finds_the_pod_in_the_images_shell_environment_after_the_initial_one(self):
+        missing = os.path.join(self.dir, "no-such-environ")
+        quoted = self.rp_environment('export PATH="/usr/bin"', 'export RUNPOD_POD_ID="rp42zz"', 'export HOME="/root"')
+        self.assertEqual(self.written({"pass": True}, init_environ=missing, rp_environment=quoted, job="records-run1"),
+                         {"pass": True, "host": "pod:rp42zz"})
+        bare = self.rp_environment("export RUNPOD_POD_ID=plain7", name="bare")
+        self.assertEqual(self.written({"pass": True}, init_environ=missing, rp_environment=bare, job="records-run1"),
+                         {"pass": True, "host": "pod:plain7"})
+        first = self.initial_environment("RUNPOD_POD_ID=initfirst")          # the initial environment is read first
+        self.assertEqual(self.written({"pass": True}, init_environ=first, rp_environment=quoted, job="records-run1"),
+                         {"pass": True, "host": "pod:initfirst"})
+        without = self.rp_environment('export PATH="/usr/bin"', 'export RUNPOD_POD_IDX="other"', name="without")
+        with self.assertRaisesRegex(RuntimeError, "records-run1"):
+            self.written({"pass": True}, init_environ=missing, rp_environment=without, job="records-run1")
+
+
+class RunnerGuard(unittest.TestCase):
+    """A runner job (RELIGHT_JOB set) whose pod id cannot be found is refused in main(), before its command runs, so it
+    computes nothing and replaces no artifact (Task 4c's re-review, carried into Task 5)."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.calls = []
+        self.enterContext(mock.patch.dict(M.COMMANDS, {"guard-probe": lambda cfg, args: self.calls.append(cfg) or 0}))
+
+    def main(self, **env):
+        out = io.StringIO()
+        with host_env(**env), contextlib.redirect_stdout(out):
+            code = M.main(["guard-probe", "--config", os.path.join(self.dir, "config.json")])
+        return code, out.getvalue()
+
+    def test_a_runner_job_with_no_pod_id_is_refused_before_its_command_runs(self):
+        missing = os.path.join(self.dir, "missing")
+        with mock.patch.object(M.config, "load", side_effect=AssertionError("the config was loaded before the guard")):
+            code, out = self.main(job="records-run1", init_environ=missing, rp_environment=missing)
+        self.assertEqual((code, self.calls), (1, []))
+        self.assertIn("FAIL", out)
+        self.assertIn("records-run1", out)
+
+    def test_a_runner_job_on_a_pod_runs_its_command_and_says_where(self):
+        rp = os.path.join(self.dir, "rp_environment")
+        with open(rp, "w", encoding="utf-8", newline="\n") as f:
+            f.write('export RUNPOD_POD_ID="podguard1"\n')
+        cfg = config.Config(paths={"work": os.path.join(self.dir, "work"), "evidence": os.path.join(self.dir, "evidence")}, room={})
+        with mock.patch.object(M.config, "load", return_value=cfg):
+            code, out = self.main(job="records-run1", init_environ=os.path.join(self.dir, "missing"), rp_environment=rp)
+        self.assertEqual((code, self.calls), (0, [cfg]))
+        self.assertIn("pod:podguard1", out)
+
+    def test_without_a_runner_job_no_pod_id_is_needed(self):
+        cfg = config.Config(paths={"work": os.path.join(self.dir, "work"), "evidence": os.path.join(self.dir, "evidence")}, room={})
+        with mock.patch.object(M.config, "load", return_value=cfg):
+            code, _out = self.main()
+        self.assertEqual((code, self.calls), (0, [cfg]))
 
 
 class RecordArtifacts(unittest.TestCase):

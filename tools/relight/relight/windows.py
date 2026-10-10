@@ -456,3 +456,54 @@ def sun_corners(az0, el0, step, shape, az, el):
     i, j = min(int(x), columns - 2), min(int(y), rows - 2)
     fx, fy = x - i, y - j
     return ((j, i, (1.0 - fx) * (1.0 - fy)), (j, i + 1, fx * (1.0 - fy)), (j + 1, i, (1.0 - fx) * fy), (j + 1, i + 1, fx * fy))
+
+
+def sample_depths(vol: WindowVolume) -> np.ndarray:
+    """The march's optical depth per sample for each alpha byte 0..255, (256,) float32: _sample_depth's table, public
+    for the test vectors' sampleDepths, which R1b's twin must compute bit for bit."""
+    return _sample_depth(vol, np.arange(256, dtype=np.uint8))
+
+
+def _alpha_at(vol: WindowVolume, gx, gy, gz):
+    """The alpha bytes of occupancy-grid cells (gx[i], gy, gz[i]); a cell outside this window's box reads 0."""
+    cell = np.stack([gx, np.full(len(gx), gy, np.int64), gz], 1) - vol.offset
+    inside = np.all((cell >= 0) & (cell < np.array(vol.alpha.shape)), axis=1)
+    out = np.zeros(len(gx), np.uint8)
+    out[inside] = vol.alpha[cell[inside, 0], cell[inside, 1], cell[inside, 2]]
+    return out
+
+
+def wall_face_rate(volumes, horizon_tables, fresnel_table, P, s) -> dict:
+    """The rays from the points P toward the sky body s that float32 rounding alone could send into another cell at a
+    window's wall face (R1a Task 5 Step 7; R1b caps the GPU's rounding excuses at twice wallFace / marched).
+
+    marched: the rays sun_visibility takes at least one sample on (its steps > 0): each belongs to the first window, in
+    order, that claims it, whose horizon gate is open and through which it survives. wallFace: the marched rays from a
+    room point (P.y > y0 of that window) whose first sample, on the wall face y0, has cells of unlike sample depth on
+    either side: occupancy-grid cells (c[0], iy0 - 1, c[2]) and (c[0], iy0, c[2]), with c = floor((Q - grid_lo) / res)
+    the first sample's cell in float32 exactly as the march computes it (Q = P + s tq, tq = (y0 - P.y) / s.y), iy0 =
+    round((y0 - grid_lo.y) / res), and a cell outside the box read as alpha 0. Whichever of the two cells the march
+    read, the y0 boundary passes through that sample, so a GPU that rounds differently may read the other.
+    P (N, 3) model-frame points of any float dtype (taken to float32, as the march takes them); s a direction.
+    Returns {"marched": int, "wallFace": int}; sum two directions' counts to pool them."""
+    D = np.asarray(s, F32)
+    out = {"marched": 0, "wallFace": 0}
+    if float(D[1]) >= -MIN_DOWN:
+        return out
+    gates = {name: above_horizon(horizon_tables[name], D, vol.x_bearing) for name, vol in volumes.items()}
+    for a in range(0, len(P), CHUNK):
+        Pc = np.asarray(P[a:a + CHUNK], F32)
+        free = np.ones(len(Pc), bool)
+        for name, vol in volumes.items():
+            claimed, survives, Q, start, length = _rays(vol, Pc, D)
+            idx = np.nonzero(free & survives)[0] if gates[name] else np.zeros(0, np.int64)
+            free &= ~claimed
+            idx = idx[start[idx] < length[idx]]            # the march takes its first sample: steps > 0
+            out["marched"] += int(idx.size)
+            room = idx[Pc[idx, 1] > vol.y0]
+            if room.size:
+                c = np.floor((Q[room] - vol.grid_lo) / F32(vol.res)).astype(np.int64)
+                iy0 = int(round((vol.y0 - float(vol.grid_lo[1])) / vol.res))
+                below, above = (_sample_depth(vol, _alpha_at(vol, c[:, 0], iy, c[:, 2])) for iy in (iy0 - 1, iy0))
+                out["wallFace"] += int(np.count_nonzero(below != above))
+    return out

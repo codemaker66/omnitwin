@@ -449,5 +449,36 @@ class Tables(unittest.TestCase):
         self.assertGreater(t[100], t[10])
 
 
+class WallFace(unittest.TestCase):
+    def test_the_wall_face_rate_counts_marched_rays_whose_first_sample_straddles_unlike_cells(self):
+        lo = np.array([0.0, -0.99, 0.0])                   # the wall face y0 = 0 is the boundary of grid rows 32 and 33
+        occ = grid()
+        occ[40:60, 32, :] = 0.5                            # x 1.20..1.80: the embrasure's first row, behind the wall face
+        vols = windows.volumes_from_occupancy(occ, lo, RES, {"W": RECT}, 0.0, x_bearing=14.3)
+        P = np.array([[1.5, 3.0, 1.5],                     # a room ray into the occupied row: marched, wall-face
+                      [0.9, 3.0, 1.5],                     # a room ray where both rows are empty: marched only
+                      [1.5, -0.1, 1.5],                    # a point in the embrasure: marched, never a room ray
+                      [5.0, 3.0, 1.5]])                    # outside the outline: never marched
+        open_, closed, fresnel = {"W": np.full(360, -90.0)}, {"W": np.full(360, 90.0)}, np.ones(101)
+        steps = np.zeros(len(P), np.int32)
+        windows.sun_visibility(vols, open_, fresnel, P, HEAD_ON, steps=steps)
+        got = windows.wall_face_rate(vols, open_, fresnel, P, HEAD_ON)
+        self.assertEqual(got, {"marched": 3, "wallFace": 1})
+        self.assertEqual(got["marched"], int(np.count_nonzero(steps)))       # marched is sun_visibility's steps > 0
+        self.assertEqual(windows.wall_face_rate(vols, open_, fresnel, P.astype(np.float32), HEAD_ON), got)
+        self.assertEqual(windows.wall_face_rate(vols, closed, fresnel, P, HEAD_ON), {"marched": 0, "wallFace": 0})   # gate shut
+        self.assertEqual(windows.wall_face_rate(vols, open_, fresnel, P, unit(0.0, 1.0, 0.3)), {"marched": 0, "wallFace": 0})
+        occ[40:60, 33, :] = 0.5                            # the room-side row too: the two cells agree
+        same = windows.volumes_from_occupancy(occ, lo, RES, {"W": RECT}, 0.0, x_bearing=14.3)
+        self.assertEqual(windows.wall_face_rate(same, open_, fresnel, P, HEAD_ON), {"marched": 3, "wallFace": 0})
+
+    def test_the_public_sample_depths_are_the_marchs_own_per_byte_depths(self):
+        depths = windows.sample_depths(volume())
+        self.assertEqual((depths.shape, depths.dtype), ((256,), np.float32))
+        self.assertEqual(float(depths[0]), 0.0)
+        self.assertAlmostEqual(float(depths[128]), -np.log(1.0 - 128 / 255) * 0.5, places=6)    # x step / cell = 0.5
+        self.assertEqual(float(depths[254]), float(depths[255]))                               # alpha clamps at 0.995
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -80,15 +80,36 @@ def _artifact(path: str) -> dict:
 
 # The container's initial environment as RunPod set it (pod/idle-stop.sh reads RUNPOD_POD_ID there too); none off Linux.
 INIT_ENVIRON = "/proc/1/environ" if sys.platform.startswith("linux") else None
+# The image's start.sh copy of it, shell `export NAME=value` lines: the watchdog's fallback (idle-stop.sh, `injected`).
+RP_ENVIRONMENT = "/etc/rp_environment" if sys.platform.startswith("linux") else None
+
+
+def _rp_environment_value(path: str, name: str) -> str | None:
+    """NAME's value in a file of shell `export NAME=value` lines, read as pod/idle-stop.sh reads /etc/rp_environment:
+    the first line that starts with `export NAME=`, less one leading and one trailing double quote. None when the file
+    cannot be read or holds no such line."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    prefix = f"export {name}="
+    for line in lines:
+        if line.startswith(prefix):
+            value = line[len(prefix):]
+            value = value[1:] if value.startswith('"') else value
+            return value[:-1] if value.endswith('"') else value
+    return None
 
 
 def _host() -> str:
     """The host an evidence JSON is written on (R1a's Global Constraints, "Execution host", amended 10 October):
     "pod:<id>" on a RunPod pod, else "pc". The id is RUNPOD_POD_ID from this process's environment, else from the
-    container's initial environment (INIT_ENVIRON: NUL-separated NAME=value entries), because the runner starts each job
-    over a non-interactive SSH session that exports only the thread caps and RELIGHT_*, so a job's own environment
-    usually lacks it. A runner job (RELIGHT_JOB set) whose pod id is in neither raises RuntimeError rather than be
-    recorded as the PC."""
+    container's initial environment (INIT_ENVIRON: NUL-separated NAME=value entries), else from the image's shell copy
+    of it (RP_ENVIRONMENT: `export NAME=value` lines), the order in which pod/idle-stop.sh looks, because the runner
+    starts each job over a non-interactive SSH session that exports only the thread caps and RELIGHT_*, so a job's own
+    environment usually lacks it. A runner job (RELIGHT_JOB set) whose pod id is in none of them raises RuntimeError
+    rather than be recorded as the PC."""
     pod = os.environ.get("RUNPOD_POD_ID")
     if not pod and INIT_ENVIRON is not None:
         try:
@@ -101,11 +122,14 @@ def _host() -> str:
             if name == b"RUNPOD_POD_ID":
                 pod = value.decode("utf-8", "replace")
                 break
+    if not pod and RP_ENVIRONMENT is not None:
+        pod = _rp_environment_value(RP_ENVIRONMENT, "RUNPOD_POD_ID")
     if pod:
         return f"pod:{pod}"
     if os.environ.get("RELIGHT_JOB"):
-        raise RuntimeError(f"runner job {os.environ['RELIGHT_JOB']}: RUNPOD_POD_ID is neither in the environment nor in "
-                           f"{INIT_ENVIRON}, so this evidence's host is unknown; refusing to record it as the PC")
+        looked = ", ".join(["the environment"] + [p for p in (INIT_ENVIRON, RP_ENVIRONMENT) if p is not None])
+        raise RuntimeError(f"runner job {os.environ['RELIGHT_JOB']}: RUNPOD_POD_ID is not in {looked}, so this "
+                           f"evidence's host is unknown; refusing to record it as the PC")
     return "pc"
 
 
@@ -232,10 +256,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--skin-package", default=None)   # R1c: the skin package folder package v2 names
     ap.add_argument("--out", default=None)            # R1c: the package's folder (default the config's out)
     ap.add_argument("--package", default=None)        # R1c: the package check reads (default the config's out)
+    ap.add_argument("--vectors", default=None)        # check: where the test vectors go (default: the fixture, v1 only)
     ap.add_argument("--from", dest="source", default=None)   # refit-house promote: the staging work folder (Task 4b)
     ap.add_argument("--w-crown", dest="w_crown", type=float, default=None)   # refit-house refit: a sensitivity run's w_crown
     ap.add_argument("--tag", default=None)                    # refit-house compare | install: a refit's folder (default refit)
     args = ap.parse_args(argv)
+    if os.environ.get("RELIGHT_JOB"):
+        # A runner job must know its pod before it computes or replaces anything: its evidence will record the host, and
+        # finding out only at the evidence write would waste the job and leave a new artifact beside old evidence.
+        try:
+            host = _host()
+        except RuntimeError as e:
+            print(f"FAIL: {e}", flush=True)
+            return 1
+        print(f"host: {host} (runner job {os.environ['RELIGHT_JOB']})", flush=True)
     cfg_path = os.path.abspath(args.config)
     cfg = config.load(cfg_path)
     os.makedirs(cfg.paths["work"], exist_ok=True)
@@ -324,6 +358,16 @@ def _passes(row):
         (not row["scored"] or (row["iou"] >= GATE["iou"] and row["meanAbsDiff"] <= GATE["meanAbsDiff"]))
 
 
+def _check_sun_points(common, n):
+    """check-sun's two point sets: the floor grid (x and y every 5 cm from 5 cm inside the hall's box, z = FLOOR_Z +
+    0.02: 88,831 points, (m, 3) float64) and the sorted indices of its SPLAT_SAMPLE finest splats, seeded with SPLAT_SEED
+    from the n of the work tables. Task 5's check measures the wall-face rate on the same two sets."""
+    xs = np.arange(common.X0 + 0.05, common.X1 - 0.05, 0.05); ys = np.arange(common.Y0 + 0.05, common.Y1 - 0.05, 0.05)
+    X, Y = np.meshgrid(xs, ys, indexing="ij")
+    floor = np.stack([X.ravel(), Y.ravel(), np.full(X.size, common.FLOOR_Z + 0.02)], 1)
+    return floor, np.sort(np.random.default_rng(SPLAT_SEED).choice(n, SPLAT_SAMPLE, replace=False))
+
+
 def _step_stats(steps):
     import numpy as np
     m = steps[steps > 0]
@@ -378,12 +422,9 @@ def cmd_check_sun(cfg, args) -> int:
     from . import windows as W
     vols, horizons, fresnel = windows_volumes(cfg)
     exact = _cookie_volumes(cfg, quantise=False)
-    xs = np.arange(common.X0 + 0.05, common.X1 - 0.05, 0.05); ys = np.arange(common.Y0 + 0.05, common.Y1 - 0.05, 0.05)
-    X, Y = np.meshgrid(xs, ys, indexing="ij")
     pos = np.load(os.path.join(cfg.paths["work"], "npy", "splats_pos.npy"), mmap_mode="r")
-    pick = np.sort(np.random.default_rng(SPLAT_SEED).choice(len(pos), SPLAT_SAMPLE, replace=False))
-    sets = {"floor": np.stack([X.ravel(), Y.ravel(), np.full(X.size, common.FLOOR_Z + 0.02)], 1),
-            "splats": np.asarray(pos[pick], np.float64)}
+    floor, pick = _check_sun_points(common, len(pos))
+    sets = {"floor": floor, "splats": np.asarray(pos[pick], np.float64)}
     occ = lt.load_occ("cookie")
     report = []
     for (y, mo, d, hh, mi) in CHECK_SUNS:
@@ -1117,6 +1158,978 @@ def cmd_record_artifacts(cfg, args) -> int:
 
 
 COMMANDS["record-artifacts"] = cmd_record_artifacts
+
+
+# ------------------------------------------------------------------------------------- records and check (Task 5)
+CENTRE_CHANDELIER = 2       # 03_bases.py fills E_ch column 1 from chandelier 2 (e[:, 2]): the centre chandelier's id
+SH_C0 = 0.28209479177387814  # the SOG's DC colour scale, as 01_extract.py decodes the stored colour
+MULT_CHUNK = 50_000         # splats per reference.multiplier call (its probe gather holds 8 x 162 doubles per splat)
+IDENTITY_GATE = {"absLog2": 0.05, "share": 0.999}                     # check 1, per tile
+REGRESSION_GATE = {"median": 0.1, "p95": 0.3, "sunnyMedian": 0.25}    # check 2, |dlog2| over interior splats
+TRANSFER_GATE = {"median": 0.1}                                       # check 3, per coarser tile
+SKY_CHECK_GATE = {"median": 0.02, "p99": 0.1}                         # check 5 (b)
+SKY_CHECK_SPLATS, SKY_CHECK_DIRECTIONS = 20_000, 48
+SKY_CHECK_SUN_SEED, SKY_CHECK_MOON_SEED = SPLAT_SEED + 31, SPLAT_SEED + 37
+PROOF_SETTINGS = ("night", "overcast_noon", "sunny_morning")
+MOON_TEST = (139.3, 32.3)   # moon_test's Moon (R1d A8): the moonlit preset's full Moon, compass azimuth and elevation
+RAY_SUN_SEED = SPLAT_SEED + 2                                         # the vectors' two random suns
+GATE_MARGIN = 1e-6          # degrees: no vector direction's elevation lies this close to a window's horizon
+VECTORS_SCHEMA = "venviewer.relight-vectors.v1"
+VECTORS_FIXTURE = ("packages", "web", "src", "lib", "relight", "__fixtures__", "relight-vectors.json")
+VECTORS_CAP = (1_000_000, 1_600, 30)    # bytes: 1,000 kB + 1.6 kB x max(0, K - 30) (re-review N4)
+VECTOR_SPLATS = (("interior", (0,), 16), ("embrasure", (1,), 16), ("bulbs", (3, 4), 8), ("fixtures and cove", (6, 5), 8),
+                 ("sun-reachable floor", (0,), 8), ("hidden", (2,), 8))
+VECTOR_FLOOR_POINTS = (12, 12, 8)       # the window rays' floor points: lit, marched but dark, wall-face cases
+STABLE_MOVE = 0.001         # metres: a sun-flagged vector splat keeps its visibility (within 1e-6) moved this far
+FOLD_MIN_WEIGHT = 1e-6      # the fold's corners weigh at least this: a probe that lies on a 1 m node (the hall's grids
+                            # start at z 0.02, and 4.02 - 0.02 rounds to 3.9999999999999996) has corners of weight 1e-16,
+                            # which another float order would not pick; a probe inside its 1 m cell has eight of 1/8
+
+
+def _floats(a) -> list:
+    return [float(v) for v in np.asarray(a, np.float64).ravel()]
+
+
+def _abs_path(path):
+    return None if path is None else os.path.abspath(path).replace("\\", "/")
+
+
+def _census(cfg):
+    """The repo's SOG decoder (tools/xgrids-lcc2/scripts/sog-floor-census.py, decode_tile), loaded read-only as
+    01_extract.py loads it."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "census", os.path.join(cfg.paths["repo"], "tools", "xgrids-lcc2", "scripts", "sog-floor-census.py"))
+    census = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(census)
+    return census
+
+
+def _bundle_tiles(cfg) -> dict:
+    """This room's served tiles as the repo's bundle file lists them (cfg.paths["bundle"], relative to the repo):
+    {file: {lodLevel, sha256, bytes, ...}}, parsed as sog-floor-census.py parses it."""
+    path = cfg.paths["bundle"] if os.path.isabs(cfg.paths["bundle"]) else os.path.join(cfg.paths["repo"], cfg.paths["bundle"])
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    decl = text.index("GeneratedRoomSplatBundle[] =")
+    rooms = [r for r in json.loads(text[text.index("[", decl + 30):text.rindex("]") + 1]) if r["roomSlug"] == cfg.room["slug"]]
+    if len(rooms) != 1:
+        raise ValueError(f"the bundle file lists {len(rooms)} rooms {cfg.room['slug']}")
+    return {t["file"]: t for t in rooms[0]["tiles"]}
+
+
+def _served_tile(bundle, splats_dir, name):
+    """(SHA-256, level, splat count) of a served tile: refused unless the bundle file serves this exact file."""
+    import zipfile
+    from . import package as PK
+    path = os.path.join(splats_dir, name)
+    sha = PK.sha256_file(path)
+    entry = bundle.get(name)
+    if entry is None or entry.get("sha256") != sha:
+        raise ValueError(f"{path} ({sha}) is not the tile the bundle file serves ({entry and entry.get('sha256')})")
+    with zipfile.ZipFile(path) as z:
+        count = int(json.loads(z.read("meta.json"))["count"])
+    return sha, entry["lodLevel"], count
+
+
+def _sog_splats(census, common, path):
+    """A served tile's splats as the light model takes them: model-frame centres (n, 3) float64 (decode_tile's, through
+    common.json_to_e57), captured linear colours (n, 3) float32 (the stored DC colour rounded as 01_extract.py rounds it,
+    sRGB-decoded by store.LUT) and largest scales (n,) float64 (decode_tile's, the codebook already exponentiated)."""
+    import io, zipfile
+    from PIL import Image
+    import store as store_mod
+    centers, scales, _quats, _opacity, meta = census.decode_tile(path)
+    n = int(meta["count"])
+    with zipfile.ZipFile(path) as z:
+        sh0 = np.asarray(Image.open(io.BytesIO(z.read(meta["sh0"]["files"][0]))).convert("RGBA"), dtype=np.uint8).reshape(-1, 4)[:n]
+    cb = np.array(meta["sh0"]["codebook"], dtype=np.float64)
+    stored = np.clip(np.round((0.5 + SH_C0 * cb[sh0[:, :3]]) * 255.0), 0, 255).astype(np.uint8)
+    return np.asarray(common.json_to_e57(centers), np.float64), store_mod.LUT[stored], np.asarray(scales, np.float64).max(1)
+
+
+def _transferred(src, values, dst, k):
+    """records.transfer of the finest splats' values (at src) to the points dst, dst in chunks of windows.CHUNK."""
+    from . import records as RC
+    from . import windows as W
+    return np.concatenate([RC.transfer(src, values, dst[a:a + W.CHUNK], k=k) for a in range(0, len(dst), W.CHUNK)])
+
+
+def _finest_light(cfg, vols, fit04, relight05) -> dict:
+    """Step 6 item 1, per finest-level splat in the work tables' product order: `direct` (N, 9) float32 from
+    04_fit.direct (its ten bases picked by name in the records' source order, sun_cap left out; for class 1 the rows that
+    03c rewrote with the room-side light, as 04_fit.direct reads them), `normals` (bases_n, e57 frame), and the model
+    values the flags are made of: `cls`, `iso`, `chand` (geom_chand_id), `cove` (05_relight.cove_strip), `fixture` (in a
+    chandelier with class 0), `pane` (05_relight.exterior_masks' pane haze), `reach` (windows.sun_reach for classes 0
+    and 1 only) and `flags` (records.flags_for). In chunks of windows.CHUNK; numpy, no GPU."""
+    import store as store_mod
+    from . import records as RC
+    from . import windows as W
+    columns = [list(fit04.BASES).index(name) for name in SOURCES]
+    st = store_mod.Store()
+    n = st.N
+    chand = store_mod.mm("geom_chand_id")
+    occ = relight05.cookie()
+    lat = float(cfg.room["site"]["latitude"])
+    out = {"direct": np.empty((n, len(SOURCES)), np.float32), "normals": np.empty((n, 3), np.float16),
+           "cls": np.empty(n, np.uint8), "iso": np.empty(n, bool), "chand": np.empty(n, np.int8), "cove": np.empty(n, bool),
+           "fixture": np.empty(n, bool), "pane": np.empty(n, bool), "reach": np.empty(n, bool), "flags": np.empty(n, np.uint8)}
+    for sl in st.chunks(W.CHUNK):
+        p, cls, C = np.asarray(st.pos[sl]), np.asarray(st.cls[sl]), st.colour(sl)
+        _outside, pane = relight05.exterior_masks(p, cls, occ, np.asarray(st.opa[sl]), lambda i, C=C: C[i] @ store_mod.LUMW)
+        cove = relight05.cove_strip(p, cls, C @ store_mod.LUMW)
+        ch, iso = np.asarray(chand[sl]), np.asarray(st.iso[sl])
+        fixture = (ch >= 0) & (cls == 0)
+        reach = np.zeros(len(p), bool)
+        room = (cls == 0) | (cls == 1)
+        reach[room] = W.sun_reach(vols, np.asarray(p[room], np.float64), lat)
+        out["direct"][sl] = fit04.direct(st, sl)[:, columns]
+        out["normals"][sl] = np.asarray(st.n[sl])
+        for key, value in (("cls", cls), ("iso", iso), ("chand", ch), ("cove", cove), ("fixture", fixture), ("pane", pane),
+                           ("reach", reach)):
+            out[key][sl] = value
+        out["flags"][sl] = RC.flags_for(cls, iso, reach, ch, (CENTRE_CHANDELIER,), cove, fixture, pane)
+    return out
+
+
+def _skinned(flags, P, sigma, skins, name, level):
+    """R1c's covers and toggles (amendment A3) on one tile's flags, each splat at its own e57 position, with the counts
+    printed: covered splats per wall group and toggled splats per toggle."""
+    from . import codec, package as PK, records as RC
+    covers, toggles, keep = skins
+    out = RC.apply_toggles(RC.apply_covers(flags, P, sigma, covers, keep), P, toggles)
+    groups, bits = codec.skin_group_of(out), codec.toggle_of(out)
+    covered = {g: int((groups == i).sum()) for i, g in enumerate(PK.SKIN_GROUPS)}
+    print(f"  {name} (level {level}): covered {json.dumps(covered)}, toggled "
+          f"{json.dumps({str(t): int((bits == t).sum()) for t in (1, 2)})}", flush=True)
+    return out
+
+
+def _skin_light_section(cfg, skin_light, skin_package):
+    """Package v2's skins (R1c): skinlight.skins_section of the work's skin-light folder, read only once
+    <evidence>/skin-light.json's artifact matches its index.json and each <id>.records its recorded SHA-256. Returns
+    (section, {path: gzip bytes}, {artifact path relative to the work folder: sha256})."""
+    from . import package as PK, skinlight as SL
+    if not skin_light or not skin_package:
+        raise ValueError("package v2 needs both --skin-light and --skin-package")
+    work = os.path.abspath(cfg.paths["work"])
+    rel = os.path.relpath(os.path.abspath(skin_light), work).replace("\\", "/")
+    if rel == ".." or rel.startswith("../"):
+        raise ValueError(f"--skin-light {skin_light} is not inside the work folder whose skin-light.json describes it")
+    _path, index_sha = PK.verified(work, cfg.paths["evidence"], f"{rel}/index.json", "skin-light.json")
+    with open(os.path.join(cfg.paths["evidence"], "skin-light.json"), encoding="utf-8") as f:
+        recorded = json.load(f).get("records") or {}
+    with open(os.path.join(skin_light, "index.json"), encoding="utf-8") as f:
+        ids = [s["id"] for s in json.load(f)["skins"]]
+    if sorted(ids) != sorted(recorded):
+        raise ValueError("skin-light.json's records and index.json's skins name different skins")
+    artifacts = {f"{rel}/index.json": index_sha}
+    for sid in ids:
+        got = PK.sha256_file(os.path.join(skin_light, f"{sid}.records"))
+        if got != recorded[sid]:
+            raise ValueError(f"{sid}.records is not the file skin-light.json records ({recorded[sid]})")
+        artifacts[f"{rel}/{sid}.records"] = got
+    section, files = SL.skins_section(skin_light, skin_package, list(PK.SKIN_GROUPS))
+    return section, files, artifacts
+
+
+def _package_inputs(cfg, common, relight05):
+    """The package's inputs besides the records (package.Inputs), each work artifact read by its exact name and only
+    after its SHA-256 and size match its passing evidence (package.verified; fit.json and fit_state.npz through
+    refit.json's promote, package.verified_fit), with evidence.artifacts {name: sha256}."""
+    from . import package as PK
+    work, ev = cfg.paths["work"], cfg.paths["evidence"]
+    artifacts = {name: PK.verified(work, ev, name, evidence_name)[1] for name, evidence_name in ARTIFACTS}
+    fit, fit_hashes, refit = PK.verified_fit(work, ev)
+    artifacts.update(fit_hashes)
+    vols, horizons, fresnel = windows_volumes(cfg)
+    with np.load(os.path.join(work, "probes-coarse.npz")) as z:
+        probes = {k: z[k] for k in ("cubes", "valid", "origin", "shape", "spacing")}
+    with np.load(os.path.join(work, "sun-bounce.npz")) as z:
+        sky = {k: z[k] for k in (*PK.SKY_ARRAYS, *PK.SKY_FRAME)}
+    with np.load(os.path.join(work, "floor-light.npz")) as z:
+        floor = {"D": z["D"], "texelToModel": z["texelToModel"], "texel": float(cfg.room["floorTexel"])}
+    with open(os.path.join(work, LAMP_RATIO), encoding="utf-8") as f:
+        measured = json.load(f)["lamp_over_daylight_rgb"]
+    with open(os.path.join(ev, "sun-check.json"), encoding="utf-8") as f:
+        sun_check = json.load(f)
+    with open(os.path.join(ev, "sun-bounce-check.json"), encoding="utf-8") as f:
+        sky_check = json.load(f)
+    if sun_check.get("pass") is not True:
+        print("WARNING: sun-check.json does not record a passing check; the manifest's evidence.sunCheck says so", flush=True)
+    capture = PK.capture_of(fit)
+    site = cfg.room["site"]
+    presets = json.loads(json.dumps({name: relight05.SCENARIOS[name] for name in ("night", "sunny_morning", "overcast_noon")}))
+    return PK.Inputs(
+        room=cfg.room["slug"], tile_to_model=np.asarray(common.T_EJ, np.float64),
+        site={"latitude": float(site["latitude"]), "longitude": float(site["longitude"]), "north": common.sun_vec_e57(0, 0),
+              "east": common.sun_vec_e57(90, 0), "up": [0.0, 0.0, 1.0]},
+        capture=capture, lamps=PK.lamps_of(capture, measured, refit), volumes=vols, horizons=horizons, fresnel=fresnel,
+        probes=probes, sky=sky, floor=floor, presets=presets,
+        evidence={"sunCheck": PK.sun_check_summary(sun_check), "skyBounce": PK.sky_bounce_summary(sky_check),
+                  "refit": PK.refit_summary(refit), "artifacts": artifacts})
+
+
+def _build_package(cfg, out, tool, created_at, build) -> dict:
+    """The records command's work (Step 6) into the folder `out`; returns the manifest. Every work artifact is verified
+    first. The finest level's light (_finest_light) is split into its tiles (splats_tile, in finestTiles' order), with
+    the nine sources' ranges over all of it. Every other served tile (each .sog of the splats folder not in finestTiles)
+    takes, by transfer from the finest splats, the direct light of the transferNeighbours nearest (inverse distance) and
+    the normal, class, iso, chandelier id, cove, fixture and pane values of the nearest; its reach is computed at its own
+    positions for its classes 0 and 1 (a transferred flag would not be conservative there) and its flags again. With
+    build["skins"], R1c's covers and toggles on every level; with build["skinLight"] and build["skinPackage"], package
+    v2's skins section. Then package.write."""
+    import importlib
+    from . import codec, package as PK, records as RC
+    from . import windows as W
+    common, _lt, _radiosity, fit04 = _proof_modules()
+    relight05 = importlib.import_module("05_relight")
+    import torch
+    torch.set_num_threads(THREADS)                    # 05_relight sets 8 threads on import
+    started = time.time()
+    inputs = _package_inputs(cfg, common, relight05)  # every artifact verified before any per-splat work
+    skins = RC.load_skin_inputs(build["skins"]) if build.get("skins") else None
+    v2 = build.get("skinLight") or build.get("skinPackage")
+    skin_light = _skin_light_section(cfg, build.get("skinLight"), build.get("skinPackage")) if v2 else None
+    census, bundle = _census(cfg), _bundle_tiles(cfg)
+    light = _finest_light(cfg, inputs.volumes, fit04, relight05)
+    ranges = [codec.source_range(light["direct"][:, k]) for k in range(len(SOURCES))]
+    npy = os.path.join(cfg.paths["work"], "npy")
+    tile_of = np.load(os.path.join(npy, "splats_tile.npy"))
+    pos = np.asarray(np.load(os.path.join(npy, "splats_pos.npy"), mmap_mode="r"), np.float64)
+    room = (light["cls"] == 0) | (light["cls"] == 1)
+    print(f"records: finest level {len(pos)} splats; the sky-body flag on {float(light['reach'][room].mean()):.5f} of classes 0 "
+          f"and 1, {float(light['reach'].mean()):.5f} of all; ranges {json.dumps(ranges)}; {time.time() - started:.0f} s", flush=True)
+    finest, tiles = list(cfg.room["finestTiles"]), []
+    for t, name in enumerate(finest):
+        sha, level, count = _served_tile(bundle, cfg.paths["splats"], name)
+        rows = np.nonzero(tile_of == t)[0]
+        if len(rows) != count:
+            raise ValueError(f"{name} serves {count} splats but the work tables hold {len(rows)} of it")
+        flags = light["flags"][rows]
+        if skins is not None:
+            scl = np.load(os.path.join(npy, "splats_scl.npy"), mmap_mode="r")
+            flags = _skinned(flags, pos[rows], np.asarray(scl[rows], np.float64).max(1), skins, name, level)
+        tiles.append(PK.Tile(name, sha, level, codec.pack_records(light["direct"][rows], light["normals"][rows], flags, ranges)))
+        print(f"  {name}: level {level}, {count} splats", flush=True)
+    lat, k = float(cfg.room["site"]["latitude"]), int(cfg.room["transferNeighbours"])
+    for name in sorted(n for n in os.listdir(cfg.paths["splats"]) if n.endswith(".sog") and n not in finest):
+        sha, level, count = _served_tile(bundle, cfg.paths["splats"], name)
+        P, _colour, sigma = _sog_splats(census, common, os.path.join(cfg.paths["splats"], name))
+        if len(P) != count:
+            raise ValueError(f"{name} decodes to {len(P)} splats, not its {count}")
+        near = _transferred(pos, np.arange(len(pos)), P, 1)
+        direct = _transferred(pos, light["direct"], P, k)
+        cls = light["cls"][near]
+        reach = np.zeros(len(P), bool)
+        own = (cls == 0) | (cls == 1)
+        reach[own] = W.sun_reach(inputs.volumes, P[own], lat)
+        flags = RC.flags_for(cls, light["iso"][near], reach, light["chand"][near], (CENTRE_CHANDELIER,), light["cove"][near],
+                             light["fixture"][near], light["pane"][near])
+        if skins is not None:
+            flags = _skinned(flags, P, sigma, skins, name, level)
+        tiles.append(PK.Tile(name, sha, level, codec.pack_records(direct, light["normals"][near], flags, ranges)))
+        print(f"  {name}: level {level}, {count} splats by transfer, the sky-body flag on {float(reach.mean()):.4f}; "
+              f"{time.time() - started:.0f} s", flush=True)
+    if sorted(t.name for t in tiles) != sorted(bundle):
+        raise ValueError(f"the splats folder's tiles {sorted(t.name for t in tiles)} are not the bundle's {sorted(bundle)}")
+    return PK.write(out, inputs, tiles, ranges, tool=tool, created_at=created_at, build=build, skins=skin_light)
+
+
+def cmd_records(cfg, args) -> int:
+    """Every served tile's records and the relight package (Task 5 Step 6) in --out, else the config's out, built only
+    from committed code: the manifest's tool is the HEAD commit and createdAt its committer time (_committed_tool), so a
+    second build at the same commit is byte-identical. --skins <tools/skins geometry folder> adds R1c's covers and
+    toggles; --skin-light <work>/skin-light with --skin-package <skin package folder> makes package v2."""
+    committed = _committed_tool(cfg)
+    if committed is None:
+        return 1
+    tool, created_at = committed
+    out = args.out or cfg.paths["out"]
+    build = {"skins": _abs_path(args.skins), "skinLight": _abs_path(args.skin_light), "skinPackage": _abs_path(args.skin_package)}
+    started = time.time()
+    manifest = _build_package(cfg, out, tool, created_at, build)
+    counts = [t["count"] for t in manifest["tiles"]]
+    print(f"records: {len(counts)} tiles, {sum(counts)} splats; {out}: {len(manifest['files'])} files and manifest.json, "
+          f"{sum(f['bytes'] for f in manifest['files'].values())} bytes; tool {tool} ({created_at}); K {manifest['sky']['k']}; "
+          f"ch_centre / ch_end {manifest['capture']['weights'][7] / manifest['capture']['weights'][6]:.6f}; "
+          f"{time.time() - started:.0f} s", flush=True)
+    return 0
+
+
+COMMANDS["records"] = cmd_records
+
+
+def _lut():
+    import store as store_mod
+    return store_mod.LUT
+
+
+def _check_settings(model, common, fit04, relight05) -> dict:
+    """The settings the checks and the vectors use. captured: Setting.captured. The proof's night, overcast_noon and
+    sunny_morning, built as 05_relight.scenario_light builds them on the fit_state.npz it loaded: window w's weight
+    W[w] x sky x col_sky, each lamp's house x Wc[lamp], the sun f_sun x col_sun toward the scenario's solar position,
+    every lamp group at 1 when the scenario's lamps are lit, else 0, emitter boost 1. moon_test (R1d A8, not a preset):
+    no lamp, no sky, no Sun; the Moon at the moonlit preset's place, common.sun_vec_e57(139.3, 32.3), with sunny_morning's
+    sun RGB."""
+    from . import reference
+    bases = list(fit04.BASES)
+    settings = {"captured": reference.Setting.captured(model)}
+    for name in PROOF_SETTINGS:
+        sc = relight05.SCENARIOS[name]
+        col_sky, col_sun, f_sun = relight05.scenario_light(sc)
+        weights = np.zeros((len(SOURCES), 3))
+        for k, source in enumerate(SOURCES):
+            b = bases.index(source)
+            weights[k] = (relight05.W[b] * sc["sky"] * np.asarray(col_sky, np.float64) if k < 5
+                          else sc["house"] * np.asarray(relight05.WC[b], np.float64))
+        sun = None if sc["sun"] is None else np.asarray(common.sun_vec_e57(*common.solar_position(*sc["sun"])), np.float64)
+        level = 1.0 if sc["emit"] == "lit" else 0.0
+        settings[name] = reference.Setting(
+            weights=weights, sky_level=float(sc["sky"]), sky_colour=np.asarray(col_sky, np.float64),
+            lamp_levels={g: level for g in reference.LAMP_GROUPS}, sun_dir=sun,
+            sun_rgb=np.zeros(3) if sun is None else float(f_sun) * np.asarray(col_sun, np.float64), emitter_boost=1.0)
+    settings["moon_test"] = reference.Setting(
+        weights=np.zeros((len(SOURCES), 3)), sky_level=0.0, sky_colour=np.asarray(model.daylight_colour, np.float64),
+        lamp_levels={g: 0.0 for g in reference.LAMP_GROUPS}, sun_dir=None, sun_rgb=np.zeros(3), emitter_boost=1.0,
+        moon_dir=np.asarray(common.sun_vec_e57(*MOON_TEST), np.float64), moon_rgb=settings["sunny_morning"].sun_rgb.copy())
+    return settings
+
+
+def _finest_check_tables(cfg, pkg) -> dict:
+    """The finest level in the work tables' product order with its records read back from the package's finest tiles
+    (splats_tile, in finestTiles' order): records (N, 12) uint8, tile (N,), positions (float32, memory-mapped, as the
+    bake read them), the stored colours and the chandelier ids (memory-mapped)."""
+    npy = os.path.join(cfg.paths["work"], "npy")
+    tile_of = np.load(os.path.join(npy, "splats_tile.npy"))
+    rec = np.zeros((len(tile_of), 12), np.uint8)
+    for t, name in enumerate(cfg.room["finestTiles"]):
+        rows = np.nonzero(tile_of == t)[0]
+        got = pkg.records(name)
+        if len(got) != len(rows):
+            raise ValueError(f"the package's {name} holds {len(got)} records for its {len(rows)} finest splats")
+        rec[rows] = got
+    return {"records": rec, "tile": tile_of, "pos": np.load(os.path.join(npy, "splats_pos.npy"), mmap_mode="r"),
+            "rgb": np.load(os.path.join(npy, "splats_rgb.npy"), mmap_mode="r"),
+            "chand": np.load(os.path.join(npy, "geom_chand_id.npy"), mmap_mode="r")}
+
+
+def _multipliers(model, setting, ranges, records, pos, colour):
+    """reference.multiplier over n splats in chunks of MULT_CHUNK: (rgb (n, 3), alpha (n,)), float64. records (n, 12) as
+    the package holds them, decoded as the browser decodes them; pos (n, 3) model frame; colour (n, 3) captured linear.
+    Arrays or memory maps, read a chunk at a time."""
+    from . import package as PK, reference
+    n = len(records)
+    M, A = np.empty((n, 3)), np.empty(n)
+    for a in range(0, n, MULT_CHUNK):
+        b = min(n, a + MULT_CHUNK)
+        direct, normals, flags = PK.decode(records[a:b], ranges)
+        M[a:b], A[a:b] = reference.multiplier(direct, normals, flags, np.asarray(pos[a:b], np.float64),
+                                              np.asarray(colour[a:b], np.float64), model, setting)
+    return M, A
+
+
+def _abs_dlog2(a, b):
+    """(|log2 a - log2 b| for every channel where both are positive, pooled; the number of values where either is not)."""
+    a, b = np.asarray(a, np.float64), np.asarray(b, np.float64)
+    ok = (a > 0) & (b > 0)
+    return np.abs(np.log2(a[ok]) - np.log2(b[ok])), int((~ok).sum())
+
+
+def _identity(M, alpha) -> dict:
+    """Check 1 on one tile: the share of its non-hidden splats (alpha > 0) whose |log2 M| is within 0.05 on every channel."""
+    shown = alpha > 0
+    with np.errstate(divide="ignore"):
+        err = np.abs(np.log2(M[shown])).max(1) if shown.any() else np.zeros(0)
+    count, within = int(shown.sum()), int((err <= IDENTITY_GATE["absLog2"]).sum())
+    share = within / count if count else 1.0
+    finite = err[np.isfinite(err)]
+    return {"splats": count, "within": within, "share": share, "worstAbsLog2": float(finite.max()) if finite.size else 0.0,
+            "pass": bool(share >= IDENTITY_GATE["share"])}
+
+
+def _versus_proof(M, path, rows, n) -> dict:
+    """|dlog2| of the reference multipliers M at the finest splats `rows` against a 05_relight multiplier file (N x 4
+    float16, product order), the proof's values taken through the spec's clamp [1/16, 8], which the reference applies;
+    the share the clamp moved is recorded."""
+    if os.path.getsize(path) != n * 4 * 2:
+        raise ValueError(f"{path} is not {n} x 4 float16")
+    proof = np.asarray(np.memmap(path, dtype="<f2", mode="r", shape=(n, 4))[rows, :3], np.float64)
+    clamped = np.clip(proof, 1 / 16, 8.0)
+    d, non_positive = _abs_dlog2(M, clamped)
+    return {"medianAbsDlog2": float(np.median(d)), "p95AbsDlog2": float(np.percentile(d, 95)),
+            "clampedShare": float((clamped != proof).mean()), "nonPositive": non_positive}
+
+
+def _check_regression(cfg, model, settings, ranges, fin, colour, night) -> dict:
+    """Check 2: the reference against the proof's own multipliers for the same (refit) fit, <work>/mult/<name>.f16 as
+    Task 4b's promote copied them (their SHA-256 checked against refit.json), over the finest level's interior splats
+    (record class 0, not in a chandelier): night and overcast_noon median |dlog2| <= 0.1 and 95th percentile <= 0.3,
+    sunny_morning (whose sun bounce is the proof's full radiosity, the reference's the basis) median <= 0.25. The same
+    numbers against the original proof's proofWork/mult files are recorded for information, not gated."""
+    from . import codec, package as PK
+    rec = fin["records"]
+    rows = np.nonzero(((rec[:, 11] & codec.CLASS_MASK) == codec.CLASS_INTERIOR) & (np.asarray(fin["chand"]) < 0))[0]
+    PK.verified_copies(cfg.paths["work"], cfg.paths["evidence"], tuple(f"mult/{name}.f16" for name in PROOF_SETTINGS))
+    out = {"gate": REGRESSION_GATE, "interiorSplats": int(len(rows))}
+    for name in PROOF_SETTINGS:
+        M = night[rows] if name == "night" else \
+            _multipliers(model, settings[name], ranges, rec[rows], fin["pos"][rows], colour[rows])[0]
+        row = _versus_proof(M, os.path.join(cfg.paths["work"], "mult", f"{name}.f16"), rows, len(rec))
+        if name == "sunny_morning":
+            row["pass"] = bool(row["medianAbsDlog2"] <= REGRESSION_GATE["sunnyMedian"])
+        else:
+            row["pass"] = bool(row["medianAbsDlog2"] <= REGRESSION_GATE["median"] and row["p95AbsDlog2"] <= REGRESSION_GATE["p95"])
+        original = os.path.join(cfg.paths["proofWork"], "mult", f"{name}.f16")
+        row["originalProof"] = _versus_proof(M, original, rows, len(rec)) if os.path.exists(original) else None
+        out[name] = row
+    out["pass"] = all(out[name]["pass"] for name in PROOF_SETTINGS)
+    return out
+
+
+def _check_tiles(cfg, pkg, model, settings, ranges, fin, colour, night, census, common):
+    """Checks 1 and 3 over the served tiles. 1, captured identity: on every tile, reference.multiplier at the captured
+    setting is within 0.05 stop on every channel for at least 99.9% of the non-hidden splats. 3, transfer: on every
+    coarser tile, the median |dlog2| between a splat's night multiplier and its nearest finest splat's is at most 0.1.
+    The coarser tiles' positions and colours are decoded from their .sog files as the records command decoded them."""
+    identity, transfer = [], []
+    finest = list(cfg.room["finestTiles"])
+    for t, name in enumerate(finest):
+        rows = np.nonzero(fin["tile"] == t)[0]
+        M, A = _multipliers(model, settings["captured"], ranges, fin["records"][rows], fin["pos"][rows], colour[rows])
+        identity.append({"tile": name, **_identity(M, A)})
+    src = np.asarray(fin["pos"], np.float64)
+    for entry in pkg.manifest["tiles"]:
+        if entry["tile"] in finest:
+            continue
+        P, C, _sigma = _sog_splats(census, common, os.path.join(cfg.paths["splats"], entry["tile"]))
+        rec = pkg.records(entry["tile"])
+        if len(rec) != len(P):
+            raise ValueError(f"the package's {entry['tile']} holds {len(rec)} records for its {len(P)} splats")
+        M, A = _multipliers(model, settings["captured"], ranges, rec, P, C)
+        identity.append({"tile": entry["tile"], **_identity(M, A)})
+        coarse = _multipliers(model, settings["night"], ranges, rec, P, C)[0]
+        d, non_positive = _abs_dlog2(coarse, night[_transferred(src, np.arange(len(src)), P, 1)])
+        median = float(np.median(d)) if d.size else None
+        transfer.append({"tile": entry["tile"], "level": entry["level"], "splats": int(len(P)), "medianAbsDlog2": median,
+                         "nonPositive": non_positive, "pass": bool(median is not None and median <= TRANSFER_GATE["median"])})
+    return ({"gate": IDENTITY_GATE, "tiles": identity, "pass": all(r["pass"] for r in identity)},
+            {"gate": TRANSFER_GATE, "tiles": transfer, "pass": bool(transfer) and all(r["pass"] for r in transfer)})
+
+
+def _check_sky(cfg, pkg, model, common) -> dict:
+    """Check 5, the sky bodies' bounce through the package: (a) every sky array read back from the package equals
+    sun-bounce.npz's (dtype, shape and bytes); (b) for 48 random real suns and 48 random real moons, the bounce
+    luminance at 20,000 finest splats seeded with SPLAT_SEED (isotropic receivers) through the package's path
+    (reference.sky_cubes at the 0.5 m probes, then reference.trilinear and cube_eval) against sunbounce.sun_bounce read on
+    the 1 m grid at the same splats (sunbounce.trilinear_matrix): where both are positive, median |dlog2| <= 0.02 and
+    99th percentile <= 0.1, and where either is not positive both are not (the resampling adds no light and loses none)."""
+    from . import package as PK, reference, sunbounce as SB
+    path, _sha = PK.verified(cfg.paths["work"], cfg.paths["evidence"], "sun-bounce.npz", "sun-bounce-check.json")
+    got = PK.sky_arrays(pkg)
+    with np.load(path) as z:
+        differ = [k for k in PK.SKY_ARRAYS
+                  if z[k].dtype != got[k].dtype or z[k].shape != got[k].shape or z[k].tobytes() != got[k].tobytes()]
+    pos = np.load(os.path.join(cfg.paths["work"], "npy", "splats_pos.npy"), mmap_mode="r")
+    P = np.asarray(pos[np.sort(np.random.default_rng(SPLAT_SEED).choice(len(pos), SKY_CHECK_SPLATS, replace=False))], np.float64)
+    idx, wts = reference.trilinear(model, P)
+    sky = model.sky
+    to1 = SB.trilinear_matrix(sky.origin, sky.spacing, sky.shape, sky.valid, P)
+    vols = list(model.volumes.values())
+    horizons = [model.horizons[name] for name in model.volumes]
+    iso, normals = np.ones(len(P), bool), np.zeros((len(P), 3))
+
+    def luminance(cubes):
+        return reference.cube_eval(cubes[:, None], normals, iso)[:, 0] @ reference.LUMW
+
+    out = {"gate": SKY_CHECK_GATE, "splats": len(P), "arrays": {"differ": differ, "pass": not differ}}
+    bodies = {"sun": _random_suns(common, SKY_CHECK_DIRECTIONS, SKY_CHECK_SUN_SEED),
+              "moon": _random_moons(cfg, SKY_CHECK_DIRECTIONS, SKY_CHECK_MOON_SEED)}
+    for body, directions in bodies.items():
+        logs, disagree = [], 0
+        for s in directions:
+            s = np.asarray(s, np.float64)
+            a = luminance((reference.sky_cubes(model, [(s, np.ones(3))])[idx] * wts[:, :, None, None]).sum(1))
+            full = SB.sun_bounce(sky.table, sky.basis, vols, horizons, model.fresnel, sky.patches, vols[0].x_bearing, s)
+            b = luminance((to1 @ full.reshape(full.shape[0], 18)).reshape(-1, 3, 6))
+            disagree += int(((a > 0) != (b > 0)).sum())
+            both = (a > 0) & (b > 0)
+            logs.append(np.abs(np.log2(a[both]) - np.log2(b[both])))
+        d = np.concatenate(logs)
+        median, p99 = (float(np.median(d)), float(np.percentile(d, 99))) if d.size else (None, None)
+        out[body] = {"directions": len(directions), "medianAbsDlog2": median, "p99AbsDlog2": p99, "zeroDisagreements": disagree,
+                     "pass": bool(d.size and median <= SKY_CHECK_GATE["median"] and p99 <= SKY_CHECK_GATE["p99"] and disagree == 0)}
+    out["pass"] = bool(out["arrays"]["pass"] and out["sun"]["pass"] and out["moon"]["pass"])
+    return out
+
+
+def _wall_face(model, common, pos, settings) -> dict:
+    """The wall-face rate (a measurement, not a sixth check): windows.wall_face_rate on check-sun's 200,000 finest splats
+    and its 88,831 floor points, at the sunny morning's Sun and moon_test's Moon through the package's window volumes,
+    each population's two directions pooled."""
+    from . import windows as W
+    floor, pick = _check_sun_points(common, len(pos))
+    directions = (settings["sunny_morning"].sun_dir, settings["moon_test"].moon_dir)
+
+    def pooled(points):
+        counts = [W.wall_face_rate(model.volumes, model.horizons, model.fresnel, points, s) for s in directions]
+        return {"marched": sum(c["marched"] for c in counts), "wallFace": sum(c["wallFace"] for c in counts)}
+
+    return {"splats": len(pick), **pooled(np.asarray(pos[pick], np.float64)), "floor": {"points": len(floor), **pooled(floor)}}
+
+
+def _check_determinism(cfg, pkg) -> dict:
+    """Check 4: the package written a second time, from the inputs its own evidence.build names and with its own tool
+    and createdAt, into a temporary folder on D: (in the work folder), and package.compare'd with it."""
+    import tempfile
+    from . import package as PK
+    tmp = tempfile.mkdtemp(prefix="check-determinism-", dir=cfg.paths["work"])
+    try:
+        out = os.path.join(tmp, "package")
+        m = pkg.manifest
+        _build_package(cfg, out, m["tool"], m["createdAt"], m["evidence"]["build"])
+        return PK.compare(pkg.folder, out)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _gates_clear(volumes, horizons, s) -> bool:
+    """True when the direction's elevation lies more than GATE_MARGIN degrees from every window's horizon at its azimuth
+    (windows.sun_az_el from the float32 direction, windows.horizon_at), so no gate hangs on the last bit of an arcsine."""
+    from . import windows as W
+    s32 = np.asarray(s, np.float32)
+    for name, vol in volumes.items():
+        az, el = W.sun_az_el(s32, vol.x_bearing)
+        if not abs(el - W.horizon_at(horizons[name], az)) > GATE_MARGIN:
+            return False
+    return True
+
+
+def _ray_directions(model, settings, common) -> list:
+    """The vectors' nine directions (R1d A8): the sunny morning's Sun, check-sun's five suns, two random suns
+    (_random_suns(common, n, RAY_SUN_SEED); one too close to a gate is replaced by the next drawn) and moon_test's Moon.
+    A fixed direction too close to a gate stops the check."""
+    first = [np.asarray(settings["sunny_morning"].sun_dir, np.float64)]
+    first += [np.asarray(common.sun_vec_e57(*common.solar_position(*t)), np.float64) for t in CHECK_SUNS]
+    moon = np.asarray(settings["moon_test"].moon_dir, np.float64)
+    for s in first + [moon]:
+        if not _gates_clear(model.volumes, model.horizons, s):
+            raise ValueError(f"the vector direction {s.tolist()} lies within {GATE_MARGIN} degrees of a window's horizon")
+    for drawn in range(2, 102):
+        random = [np.asarray(s, np.float64) for s in _random_suns(common, drawn, RAY_SUN_SEED)
+                  if _gates_clear(model.volumes, model.horizons, s)]
+        if len(random) >= 2:
+            return first + random[:2] + [moon]
+    raise ValueError("no two random suns clear every window's horizon by the gate margin")
+
+
+def _cell_alpha(vol, gx, gy, gz):
+    """The alpha bytes of occupancy-grid cells (gx[i], gy, gz[i]); a cell outside the window's box reads 0 (the rule
+    windows.wall_face_rate reads its two cells by)."""
+    cell = np.stack([gx, np.full(len(gx), gy, np.int64), gz], 1) - vol.offset
+    inside = np.all((cell >= 0) & (cell < np.array(vol.alpha.shape)), axis=1)
+    out = np.zeros(len(gx), np.uint8)
+    out[inside] = vol.alpha[cell[inside, 0], cell[inside, 1], cell[inside, 2]]
+    return out
+
+
+def _straddles(volumes, P, s) -> np.ndarray:
+    """(N,) bool, the vectors' wall-face test for one direction (Step 7): the ray from a room point whose first sample
+    the bake puts on the room side of its owner's wall face y0, between grid cells of unlike alpha. The owner is the first
+    window, in order, whose windows.ray_survives holds; the first sample's cell is computed in float32 exactly as
+    windows._rays computes it (tq = (y0 - P.y) / s.y, Q = P + s tq, c = floor((Q - grid_lo) / res)); the ray is listed
+    when c.y >= iy0 = round((y0 - grid_lo.y) / res) and cells (c.x, iy0 - 1, c.z) and (c.x, iy0, c.z) hold unlike alpha.
+    The caller keeps the marched rays (samples > 0)."""
+    from . import windows as W
+    P32, s32 = np.asarray(P, np.float32), np.asarray(s, np.float32)
+    out = np.zeros(len(P32), bool)
+    owner = np.full(len(P32), -1)
+    names = list(volumes)
+    for w, name in enumerate(names):
+        owner[(owner < 0) & W.ray_survives(volumes[name], P32, s32)] = w
+    for w, name in enumerate(names):
+        vol = volumes[name]
+        idx = np.nonzero((owner == w) & (P32[:, 1] > vol.y0))[0]
+        if not idx.size:
+            continue
+        tq = (vol.y0 - P32[idx, 1]) / s32[1]
+        Q = P32[idx] + s32 * tq[:, None]
+        c = np.floor((Q - vol.grid_lo) / np.float32(vol.res)).astype(np.int64)
+        iy0 = int(round((vol.y0 - float(vol.grid_lo[1])) / vol.res))
+        unlike = _cell_alpha(vol, c[:, 0], iy0 - 1, c[:, 2]) != _cell_alpha(vol, c[:, 0], iy0, c[:, 2])
+        out[idx] = (c[:, 1] >= iy0) & unlike
+    return out
+
+
+def _vector_splats(model, settings, fin, ranges, common) -> np.ndarray:
+    """The vectors' 64 finest splats (Step 7), indices into the finest level: VECTOR_SPLATS' categories in order, each
+    from one permutation of the finest splats seeded with SPLAT_SEED, a splat used once; a category of two classes takes
+    half from each where it can. The sun-reachable floor splats are class-0 sun-flagged splats, not isotropic, below
+    FLOOR_Z + 0.12 with a normal within 18 degrees of +z, lit at the sunny morning's Sun (visibility > 0.3). Every
+    sun-flagged splat must keep its sunny-morning and moon_test visibility within 1e-6 when moved 1 mm along +x, -x,
+    +y, -y, +z or -z; one that does not is passed over for the next in the seeded order."""
+    from . import codec, package as PK
+    from . import windows as W
+    rec, pos = fin["records"], fin["pos"]
+    flags = rec[:, 11]
+    cls, sun = flags & codec.CLASS_MASK, (flags & codec.FLAG_SUN) > 0
+    order = np.random.default_rng(SPLAT_SEED).permutation(len(rec))
+    taken = np.zeros(len(rec), bool)
+    directions = (settings["sunny_morning"].sun_dir, settings["moon_test"].moon_dir)
+    moves = STABLE_MOVE * np.concatenate([np.zeros((1, 3)), np.eye(3), -np.eye(3)])
+
+    def visibility(points, s):
+        return W.sun_visibility(model.volumes, model.horizons, model.fresnel, points, s)
+
+    def acceptable(idx, extra):
+        P = np.asarray(pos[idx], np.float64)
+        ok = np.ones(len(idx), bool)
+        flagged = sun[idx]
+        if flagged.any():
+            moved = (P[flagged][None] + moves[:, None]).reshape(-1, 3)
+            v = np.stack([visibility(moved, s) for s in directions]).reshape(len(directions), len(moves), -1)
+            ok[flagged] = (np.abs(v[:, 1:] - v[:, :1]) <= 1e-6).all(axis=(0, 1))
+        return ok & extra(idx, P) if extra is not None else ok
+
+    def pick(mask, count, extra=None):
+        got, candidates = [], order[mask[order]]
+        for a in range(0, len(candidates), 256):
+            batch = candidates[a:a + 256]
+            batch = batch[~taken[batch]]
+            for i in batch[acceptable(batch, extra)] if batch.size else ():
+                got.append(int(i))
+                taken[i] = True
+                if len(got) == count:
+                    return got
+        return got
+
+    def floor_lit(idx, P):
+        _direct, normals, _flags = PK.decode(rec[idx], ranges)
+        return (normals[:, 2] > 0.95) & (P[:, 2] < common.FLOOR_Z + 0.12) & (visibility(P, directions[0]) > 0.3)
+
+    z = np.asarray(pos[:, 2])
+    chosen = []
+    for name, classes, count in VECTOR_SPLATS:
+        if name == "sun-reachable floor":
+            got = pick((cls == codec.CLASS_INTERIOR) & sun & ((flags & codec.FLAG_ISO) == 0) & (z < common.FLOOR_Z + 0.12),
+                       count, floor_lit)
+        else:
+            got = []
+            for i, c in enumerate(classes):
+                got += pick(cls == c, count // len(classes) + (count % len(classes) if i == 0 else 0))
+            if len(got) < count:
+                got += pick(np.isin(cls, classes), count - len(got))
+        if len(got) < count:
+            raise ValueError(f"only {len(got)} of the {count} {name} vector splats qualify")
+        chosen += got
+    return np.array(chosen, np.int64)
+
+
+def _ray_floor_points(model, directions, floor):
+    """The window rays' floor points (Step 7): check-sun's floor grid in an order seeded with SPLAT_SEED, the first 12
+    lit at the sunny morning (visibility > 0.3), then 12 marched but dark there (samples > 0, visibility < 0.01), then
+    up to 8 that are a wall-face case at some of the nine directions (_straddles of a marched ray). Returns (points,
+    how many wall-face points the grid gave)."""
+    from . import windows as W
+    order = np.random.default_rng(SPLAT_SEED).permutation(len(floor))
+    case = np.zeros(len(floor), bool)
+    for k, s in enumerate(directions):
+        steps = np.zeros(len(floor), np.int32)
+        v = W.sun_visibility(model.volumes, model.horizons, model.fresnel, floor, s, steps=steps)
+        if k == 0:
+            lit, dark = v > 0.3, (steps > 0) & (v < 0.01)
+        case |= (steps > 0) & _straddles(model.volumes, floor, s)
+    taken, picked = np.zeros(len(floor), bool), []
+    for mask, count, name in ((lit, VECTOR_FLOOR_POINTS[0], "lit"), (dark, VECTOR_FLOOR_POINTS[1], "dark"),
+                              (case, VECTOR_FLOOR_POINTS[2], None)):
+        got = [int(i) for i in order[mask[order] & ~taken[order]][:count]]
+        if name is not None and len(got) < count:
+            raise ValueError(f"only {len(got)} {name} floor points for the window rays")
+        taken[got] = True
+        picked += got
+    return floor[np.array(picked, np.int64)], len(picked) - VECTOR_FLOOR_POINTS[0] - VECTOR_FLOOR_POINTS[1]
+
+
+def _fold(model, entries, coefficients, rgb, b64) -> dict:
+    """The vectors' fold: the first probe of `entries` (the vector splats' 0.5 m corners) whose eight 1 m corners all
+    weigh at least FOLD_MIN_WEIGHT (a probe inside its 1 m cell, not one on a node by rounding): its trilinear_matrix row
+    in the matrix's dx, dy, dz order (index (ix ny + iy) nz + iz over the 1 m shape), the basis at those corners (float16
+    [k][channel][face]), the RGB, and reference.to_probes at that probe of the first case's bounce
+    (sunbounce.bounce(basis, coefficients) x rgb). No fallback: none such stops the check."""
+    from . import reference, sunbounce
+    sky = model.sky
+    points = reference.probe_points(model)
+    shape = np.asarray(sky.shape, np.int64)
+    matrix = sunbounce.trilinear_matrix(sky.origin, sky.spacing, sky.shape, sky.valid, points[entries])
+    for e, probe in enumerate(entries):
+        i0 = np.clip(np.floor((points[probe] - np.asarray(sky.origin, np.float64)) / sky.spacing).astype(np.int64), 0, shape - 2)
+        order = [int(((i0[0] + dx) * shape[1] + (i0[1] + dy)) * shape[2] + (i0[2] + dz))
+                 for dx in (0, 1) for dy in (0, 1) for dz in (0, 1)]
+        row = matrix.getrow(e)
+        weights = dict(zip(row.indices.tolist(), row.data.tolist()))
+        corners = [[index, float(weights.get(index, 0.0))] for index in order]
+        if len(set(order)) == 8 and all(w >= FOLD_MIN_WEIGHT for _index, w in corners):
+            S1 = sunbounce.bounce(sky.basis, coefficients) * np.asarray(rgb, np.float64)[None, :, None]
+            return {"probe": int(probe), "corners": corners,
+                    "basis": [{"index": index, "values": b64(np.ascontiguousarray(sky.basis[:, index], "<f2").tobytes())}
+                              for index, _w in corners],
+                    "rgb": _floats(rgb), "cube": _floats(reference.to_probes(model, S1)[probe])}
+    raise ValueError("no probe among the vector splats' corners has eight 1 m corners of positive weight")
+
+
+def _floor_texels(cfg) -> list:
+    """The vectors' eight floor texels of <work>/floor-light.npz (R1b decodes the floor PNGs there): the brightest texel
+    of each source that lights the floor (one near each window, one under each lamp), in source order, each texel once,
+    topped up from a draw seeded with SPLAT_SEED; refused unless every source that lights some floor texel is non-zero at
+    one of them and no two sources have equal values at all eight. (The cove lights no floor texel: its light goes up into
+    the ceiling's cove, so it is zero at all eight, as everywhere on the floor.)"""
+    from . import package as PK
+    path, _sha = PK.verified(cfg.paths["work"], cfg.paths["evidence"], "floor-light.npz", "floor-light.json")
+    with np.load(path) as z:
+        D = z["D"]
+    h, w, n = D.shape
+    picks = []
+    for k in range(n):
+        if D[..., k].max() > 0:
+            rc = tuple(int(v) for v in np.unravel_index(int(np.argmax(D[..., k])), (h, w)))
+            if rc not in picks:
+                picks.append(rc)
+    for i in np.random.default_rng(SPLAT_SEED).permutation(h * w):
+        if len(picks) >= 8:
+            break
+        rc = (int(i) // w, int(i) % w)
+        if rc not in picks and D[rc].max() > 0:
+            picks.append(rc)
+    picks = picks[:8]
+    values = np.array([D[r, c] for r, c in picks], np.float64)
+    lights = D.reshape(-1, n).max(0) > 0
+    dark = [SOURCES[k] for k in range(n) if lights[k] and not (values[:, k] > 0).any()]
+    same = [(SOURCES[a], SOURCES[b]) for a in range(n) for b in range(a + 1, n) if np.array_equal(values[:, a], values[:, b])]
+    if dark or same or len(picks) < 8:
+        raise ValueError(f"the floor texels do not tell the sources apart: dark {dark}, equal {same}, {len(picks)} texels")
+    return [{"col": c, "row": r, "direct": _floats(D[r, c])} for r, c in picks]
+
+
+def _setting_json(s) -> dict:
+    from . import reference
+    return {"weights": [_floats(row) for row in s.weights], "skyLevel": float(s.sky_level), "skyColour": _floats(s.sky_colour),
+            "lampLevels": {g: float(s.lamp_levels[g]) for g in reference.LAMP_GROUPS}, "emitterBoost": float(s.emitter_boost),
+            "sunDir": None if s.sun_dir is None else _floats(s.sun_dir), "sunRgb": _floats(s.sun_rgb),
+            "moonDir": None if s.moon_dir is None else _floats(s.moon_dir), "moonRgb": _floats(s.moon_rgb)}
+
+
+def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate) -> tuple[bytes, dict]:
+    """The test vectors (Step 7) in the shape of R1b's RelightVectorsSchema (venviewer.relight-vectors.v1): the
+    manifest's slice, the four settings, the probe table on the package's global grid, the windows, the sample depths,
+    the sky bodies' bounce slice, the window rays, the 64 splats with their expected multipliers and words, and eight
+    floor texels; refused over 1,000 kB + 1.6 kB x max(0, K - 30). Returns (the JSON bytes, what to print)."""
+    import base64
+    from . import codec, package as PK, reference, sunbounce
+    from . import windows as W
+
+    def b64(data):
+        return base64.b64encode(data).decode("ascii")
+
+    m, ranges, sky = pkg.manifest, pkg.ranges(), model.sky
+    names = ("captured", "night", "sunny_morning", "moon_test")
+    directions = _ray_directions(model, settings, common)
+    rows = _vector_splats(model, settings, fin, ranges, common)
+    rec = fin["records"][rows]
+    direct, normals, flags = PK.decode(rec, ranges)
+    P, C = np.asarray(fin["pos"][rows], np.float64), np.asarray(colour[rows], np.float64)
+    expected = {}
+    for name in names:
+        M, A = reference.multiplier(direct, normals, flags, P, C, model, settings[name])
+        expected[name] = (M, A, codec.pack_multiplier(M, A))
+    splats = [{"record": rec[i].tobytes().hex(), "position": _floats(P[i]), "colour": _floats(C[i]),
+               "expected": {name: {"m": _floats(expected[name][0][i]), "alpha": float(expected[name][1][i]),
+                                   "word": int(expected[name][2][i])} for name in names}} for i in range(len(rows))]
+    entries = sorted({int(i) for i in reference.trilinear(model, P)[0].ravel()})
+    rows_t, columns_t = sky.table.coeffs.shape[:2]
+    cases, nodes = [], set()
+    for s in directions:
+        s32 = np.asarray(s, np.float32)
+        az, el = W.sun_az_el(s32, next(iter(model.volumes.values())).x_bearing)
+        corners = W.sun_corners(sky.table.az0, sky.table.el0, sky.table.step, (rows_t, columns_t), az, el)
+        nodes |= {(int(j), int(i)) for j, i, _w in corners}
+        cases.append({"dir": _floats(s32), "powers": _floats(reference.window_powers(model, s32)), "azimuth": az, "elevation": el,
+                      "corners": [[int(j), int(i), float(w)] for j, i, w in corners],
+                      "coefficients": _floats(reference.body_coefficients(model, s32))})
+    fold = _fold(model, entries, np.asarray(cases[0]["coefficients"], np.float64), settings["sunny_morning"].sun_rgb, b64)
+    probe_cubes = {}
+    for name in ("sunny_morning", "moon_test"):
+        S = reference.sky_cubes(model, reference.sky_bodies(settings[name]))
+        probe_cubes[name] = [{"index": i, "cube": b64(np.ascontiguousarray(S[i], "<f4").tobytes())} for i in entries]
+    depths = [W.sample_depths(vol) for vol in model.volumes.values()]
+    if not all(np.array_equal(depths[0], d) for d in depths):
+        raise ValueError("the windows' sample depths differ: they must share one cell size")
+    floor_grid, _pick = _check_sun_points(common, len(fin["records"]))
+    floor_points, wall_points = _ray_floor_points(model, directions, floor_grid)
+    points = np.concatenate([P, floor_points])
+    visibility, steps, pairs = np.zeros((len(points), len(directions))), np.zeros((len(points), len(directions)), np.int64), []
+    for k, s in enumerate(directions):
+        st = np.zeros(len(points), np.int32)
+        visibility[:, k] = W.sun_visibility(model.volumes, model.horizons, model.fresnel, points, s, steps=st)
+        steps[:, k] = st
+        pairs += [[int(p), k] for p in np.nonzero((st > 0) & _straddles(model.volumes, points, s))[0]]
+    if not pairs:
+        raise ValueError("no vector point and direction is a wall-face case (R1b's window-ray test needs at least one)")
+    vectors = {
+        "schema": VECTORS_SCHEMA, "sources": list(SOURCES), "encoding": {"sources": m["encoding"]["sources"]},
+        "capture": {key: m["capture"][key] for key in ("weights", "colours", "daylightColour")},
+        "site": {key: m["site"][key] for key in ("north", "east", "up")}, "sun": {"fresnel": m["sun"]["fresnel"]},
+        "windows": [{"id": w["id"], "frame": w["frame"], "alphaGz": b64(pkg.data(w["volume"])), "horizon": w["horizon"]}
+                    for w in m["windows"]],
+        "sampleDepths": _floats(depths[0]),
+        "skyBounce": {"k": m["sky"]["k"], "azimuth0": m["sky"]["table"]["azimuth0"], "elevation0": m["sky"]["table"]["elevation0"],
+                      "step": m["sky"]["table"]["step"], "size": m["sky"]["table"]["size"], "grid": m["sky"]["grid"],
+                      "floorMean": m["sky"]["floorMean"], "cases": cases,
+                      "nodes": [{"index": j * columns_t + i, "values": b64(np.ascontiguousarray(sky.table.coeffs[j, i], "<f4").tobytes())}
+                                for j, i in sorted(nodes, key=lambda ji: ji[0] * columns_t + ji[1])],
+                      "fold": fold, "probeCubes": probe_cubes},
+        "windowRays": {"suns": [_floats(s) for s in directions], "points": [_floats(p) for p in points],
+                       "visibility": [[float(v) for v in row] for row in visibility],
+                       "steps": [[int(v) for v in row] for row in steps], "wallFace": sorted(pairs),
+                       "wallFaceRate": wall_face_rate},
+        "probes": {"origin": m["probes"]["origin"], "spacing": m["probes"]["spacing"], "shape": m["probes"]["shape"],
+                   "entries": [{"index": i, "valid": bool(model.probe_valid[i]),
+                                "cube": b64(np.ascontiguousarray(model.probes[i], "<f2").tobytes())} for i in entries]},
+        "presetsFromProof": m["presetsFromProof"],
+        "settings": {name: _setting_json(settings[name]) for name in names},
+        "splats": splats,
+        "floorTexels": _floor_texels(cfg)}
+    data = json.dumps(vectors, allow_nan=False).encode("utf-8")
+    k = int(m["sky"]["k"])
+    cap = VECTORS_CAP[0] + VECTORS_CAP[1] * max(0, k - VECTORS_CAP[2])
+    info = {"bytes": len(data), "cap": cap, "k": k, "wallFacePairs": len(pairs), "wallFaceFloorPoints": wall_points,
+            "foldCorners": sum(1 for _i, w in fold["corners"] if w > 0), "probes": len(entries)}
+    if len(data) > cap:
+        raise ValueError(f"the vectors take {len(data)} bytes, over K {k}'s cap of {cap}: {json.dumps(info)}")
+    return data, info
+
+
+def _checks_path(cfg, package_arg) -> str:
+    """<evidence>/checks.json for the default package (v1); checks-<package folder name>.json with --package."""
+    if package_arg is None:
+        return os.path.join(cfg.paths["evidence"], "checks.json")
+    return os.path.join(cfg.paths["evidence"], f"checks-{os.path.basename(os.path.normpath(package_arg))}.json")
+
+
+def _vectors_path(cfg, args):
+    """Where check writes the test vectors: the --vectors path, else the R1b fixture for the default package, else none
+    (a --package run without --vectors never touches v1's fixture)."""
+    if args.vectors:
+        return args.vectors
+    if args.package is None:
+        return os.path.join(cfg.paths["repo"], *VECTORS_FIXTURE)
+    return None
+
+
+def _write_checks(cfg, package_arg, results, checked_with) -> str:
+    """The checks file through _write_evidence (which records the host): the six results and the commit checked with."""
+    path = _checks_path(cfg, package_arg)
+    _write_evidence(path, {**results, "checkedWith": checked_with})
+    return path
+
+
+def _write_bytes(path, data: bytes) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    part = path + ".part"
+    try:
+        with open(part, "wb") as f:
+            f.write(data)
+        os.replace(part, path)
+    except BaseException:
+        if os.path.exists(part):
+            os.remove(part)
+        raise
+
+
+def cmd_check(cfg, args) -> int:
+    """The package's checks (Task 5 Step 7) on the package read back from disk (--package, default the config's out),
+    run only from committed code (_committed_tool; the commit is recorded as checkedWith): 1 captured identity, 2 proof
+    regression, 3 transfer, 4 determinism and 5 the sky bodies' bounce through the package, and the wall-face rate. The
+    results go to <evidence>/checks.json for the default package and to checks-<package folder>.json with --package
+    (through _write_evidence, which records the host), and into the package manifest's evidence (those six keys and
+    nothing else). Then, when every check passed and both populations marched rays, the test vectors: R1b's fixture for
+    the default package, the --vectors path when given, none for --package without --vectors."""
+    committed = _committed_tool(cfg)
+    if committed is None:
+        return 1
+    import importlib
+    from . import package as PK
+    common, _lt, _radiosity, fit04 = _proof_modules()
+    relight05 = importlib.import_module("05_relight")
+    import torch
+    torch.set_num_threads(THREADS)                    # 05_relight sets 8 threads on import
+    started = time.time()
+    PK.verified_fit(cfg.paths["work"], cfg.paths["evidence"])   # the fit_state.npz 05_relight loaded is the promoted refit's
+    folder = os.path.abspath(args.package or cfg.paths["out"])
+    pkg = PK.read(folder)
+    model, ranges = PK.model_of(pkg), pkg.ranges()
+    settings = _check_settings(model, common, fit04, relight05)
+    fin = _finest_check_tables(cfg, pkg)
+    colour = _lut()[np.asarray(fin["rgb"])]
+
+    def say(name, result):
+        print(f"{name}: {'PASS' if result.get('pass', True) else 'FAIL'} {json.dumps(_finite(result))[:2000]} "
+              f"({time.time() - started:.0f} s)", flush=True)
+
+    print(f"check {folder}: tool {pkg.manifest['tool']}, checked with {committed[0]}", flush=True)
+    results = {"skyBounceCheck": _check_sky(cfg, pkg, model, common)}
+    say("check 5, the sky bodies' bounce", results["skyBounceCheck"])
+    night = _multipliers(model, settings["night"], ranges, fin["records"], fin["pos"], colour)[0]
+    results["proofRegression"] = _check_regression(cfg, model, settings, ranges, fin, colour, night)
+    say("check 2, proof regression", results["proofRegression"])
+    results["capturedIdentity"], results["transfer"] = _check_tiles(cfg, pkg, model, settings, ranges, fin, colour, night,
+                                                                    _census(cfg), common)
+    say("check 1, captured identity", results["capturedIdentity"])
+    say("check 3, transfer", results["transfer"])
+    results["wallFaceRate"] = _wall_face(model, common, fin["pos"], settings)
+    rate = results["wallFaceRate"]
+    for population, r in (("splats", rate), ("floor", rate["floor"])):
+        print(f"wall-face rate, {population}: {r['wallFace']} of {r['marched']} marched"
+              f" ({r['wallFace'] / r['marched']:.4%})" if r["marched"] else f"wall-face rate, {population}: none marched", flush=True)
+    results["determinism"] = _check_determinism(cfg, pkg)
+    say("check 4, determinism", results["determinism"])
+    results = _finite(results)
+    passed = all(results[k]["pass"] for k in ("capturedIdentity", "proofRegression", "transfer", "determinism", "skyBounceCheck"))
+    marched = rate["marched"] > 0 and rate["floor"]["marched"] > 0
+    print(f"checks written to {_write_checks(cfg, args.package, results, committed[0])}", flush=True)
+    PK.write_check_evidence(folder, results)
+    path = _vectors_path(cfg, args)
+    if path is None:
+        print("vectors: not written (--package without --vectors)", flush=True)
+    elif not (passed and marched):
+        print("vectors: not written (a check failed or a population marched no ray)", flush=True)
+    else:
+        try:
+            data, info = _vectors(cfg, pkg, model, settings, common, fin, colour, results["wallFaceRate"])
+        except ValueError as e:
+            print(f"FAIL: vectors: {e}", flush=True)
+            return 1
+        _write_bytes(path, data)
+        print(f"vectors: {path}, {info['bytes']} bytes of K {info['k']}'s cap {info['cap']}; {info['wallFacePairs']} wall-face "
+              f"pairs ({info['wallFaceFloorPoints']} wall-face floor points); the fold probe's corners {info['foldCorners']}; "
+              f"{info['probes']} probes", flush=True)
+    print(f"check: {'PASS' if passed and marched else 'FAIL'}, {time.time() - started:.0f} s", flush=True)
+    return 0 if passed and marched else 1
+
+
+COMMANDS["check"] = cmd_check
+
+
+def _committed_tool(cfg):
+    """(HEAD commit, its committer time) of the repository that holds tools/relight, or None (with the reason printed)
+    while tools/relight has any uncommitted change: a package is built and checked only from committed code, so its
+    `tool` names exactly the code that made it (ruling P1, 8 October)."""
+    import subprocess
+    git = lambda *a: subprocess.run(["git", "-C", cfg.paths["repo"], *a], check=True, capture_output=True, text=True).stdout.strip()
+    dirty = git("status", "--porcelain", "--", "tools/relight")
+    if dirty:
+        print(f"FAIL: tools/relight has uncommitted changes; commit them before building or checking a package:\n{dirty}", flush=True)
+        return None
+    return git("rev-parse", "HEAD"), git("log", "-1", "--format=%cI")
 
 
 if __name__ == "__main__":
