@@ -100,6 +100,13 @@ Production build, desktop profile, this tour: table drag worst frame 17 ms with
 none over 20 ms (698 ms before), marquee 23 ms (33 ms), no long task while
 interacting (five before), 61 pipelines compiled while loading (84).
 
+On a real device, add `?profiler=1` to the page (production included). A narrow
+screen opens it as a strip below the top bar (frames a second, the p95 frame
+time, and whether the CPU or the GPU sets the pace) so the planner stays usable
+while it measures; a tap shows all twelve figures and Copy report. Frames a
+second counts idle time, as the planner renders on demand: read the p95 while
+orbiting or dragging, where under 16.7 ms holds 60 frames a second.
+
 ## Pressing
 
 A press picks what lies under it through `intersectSelectable`
