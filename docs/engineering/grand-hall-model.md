@@ -32,8 +32,10 @@ development builds only) shows the room alone, posed through a window bridge for
   bulb heights measured in the panoramas (`HALL_CHANDELIERS`; method in the 10 October session log).
   The four rose fittings are one template copied into place, so all five draw in three calls
   (gilt, bronze, bulbs) plus one instanced sprite of halos. Shown on a walk and in the room view
-  once the camera comes down, never in plan. Without the reflection map the gilt's own light is
-  raised, so a software rasteriser does not draw it black.
+  once the camera comes down, never in plan. Without the reflection map the metal's own light is
+  raised, so a software rasteriser does not draw it black. In the reflection environment each
+  fitting's lamps are a bright sphere of `glowRadius`, the size the moods were set with, not
+  the measured reach.
 
 ## Light
 
@@ -76,7 +78,8 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   rejection of malformed files.
 - `src/components/grand-hall/__tests__/hall-chandeliers.test.ts` checks each chandelier's lowest
   point and reach against the survey, its bulbs, that every triangle faces along its normals (the
-  metal is single-sided) with none degenerate, and the triangle budget.
+  metal is single-sided) with none degenerate, that every bulb faces outward, and the triangle
+  budget; `mesh-builder.test.ts` covers lathe orientation, pole triangles and translated merges.
 - `stores/__tests__/hall-view-store.test.ts`, `lib/__tests__/room-resolve-model.test.ts`,
   `cockpit/__tests__/HallViewControls.test.tsx`, `cockpit/__tests__/RoomResolveCaption.test.tsx`,
   `editor/__tests__/PlannerScene*.test.tsx` and `CameraRig.showcase.test.tsx` cover the views,

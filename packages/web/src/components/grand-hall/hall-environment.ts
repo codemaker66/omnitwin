@@ -78,7 +78,7 @@ export function createEnvironmentScene(mood: HallMoodSpec): { scene: Scene; disp
   for (const chandelier of HALL_CHANDELIERS) {
     const mesh = new Mesh(bulbGeometry, bulbMaterial);
     mesh.position.set(chandelier.position[0], chandelier.position[1], chandelier.position[2]);
-    mesh.scale.setScalar(chandelier.radius / 0.42);
+    mesh.scale.setScalar(chandelier.glowRadius / 0.42);
     scene.add(mesh);
   }
   return { scene, dispose: () => { for (const item of disposables) item.dispose(); } };

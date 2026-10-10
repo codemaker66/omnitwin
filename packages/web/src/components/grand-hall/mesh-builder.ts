@@ -335,18 +335,22 @@ export class MeshBuilder {
 
   /**
    * A surface of revolution about the Y axis through `centre`. `profile` is a
-   * list of (radius, height) pairs from bottom to top; smooth normals.
+   * list of (radius, height) pairs, faced outward as it climbs: a profile
+   * drawn from the top down is turned round first. Smooth normals.
    */
   lathe(centre: V3, profile: readonly V2[], segments: number, scaleX = 1, scaleZ = 1, phase = 0): void {
+    const first = profile[0];
+    const last = profile[profile.length - 1];
+    const points = first !== undefined && last !== undefined && last[1] < first[1] ? [...profile].reverse() : profile;
     const rings: number[][] = [];
     // A ring on the axis is a pole: the half of each quad that meets it has no area.
     const poles: boolean[] = [];
-    for (let j = 0; j < profile.length; j++) {
-      const point = profile[j];
+    for (let j = 0; j < points.length; j++) {
+      const point = points[j];
       if (point === undefined) continue;
       poles.push(point[0] === 0);
-      const prev = profile[Math.max(0, j - 1)] ?? point;
-      const next = profile[Math.min(profile.length - 1, j + 1)] ?? point;
+      const prev = points[Math.max(0, j - 1)] ?? point;
+      const next = points[Math.min(points.length - 1, j + 1)] ?? point;
       // Profile tangent → outward normal in the (r, y) plane.
       const dr = next[0] - prev[0];
       const dy = next[1] - prev[1];
@@ -360,7 +364,7 @@ export class MeshBuilder {
         const sin = Math.sin(angle);
         const position: V3 = [centre[0] + cos * point[0] * scaleX, centre[1] + point[1], centre[2] + sin * point[0] * scaleZ];
         const normal = normalize([cos * nr / Math.max(scaleX, 1e-6), ny, sin * nr / Math.max(scaleZ, 1e-6)]);
-        ring.push(this.vertex(position, normal, [i / segments, j / Math.max(1, profile.length - 1)]));
+        ring.push(this.vertex(position, normal, [i / segments, j / Math.max(1, points.length - 1)]));
       }
       rings.push(ring);
     }

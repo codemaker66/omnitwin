@@ -238,8 +238,15 @@ export interface HallChandelier {
   readonly suspension: number;
   /** Lowest point of the fitting. */
   readonly bottom: number;
-  /** Radius of the body. */
+  /** The fitting's reach from its axis: metal, leaves and bulbs. */
   readonly radius: number;
+  /**
+   * Radius of the bright body that stands in for the fitting's lamps in the
+   * reflection environment. It sets how much light the lamps add to
+   * reflections, and the moods were set with these values; it is not a
+   * measurement of the fitting.
+   */
+  readonly glowRadius: number;
 }
 
 /** Chandelier roses: on the coffer lattice, half a pitch off its columns. */
@@ -251,9 +258,9 @@ const ROSE_Z = 3 * HALL_COFFERS.rowPitch;
  * panoramas (stations scan_024 and scan_029; see hall-chandeliers.ts).
  */
 export const HALL_CHANDELIERS: readonly HallChandelier[] = [
-  { id: "chandelier-dome", style: "gilt-leaf", position: [0, 4.75, 0], suspension: HALL_DOME.plateHeight, bottom: 3.85, radius: 0.9 },
-  { id: "chandelier-fireplace-window", style: "scroll", position: [-ROSE_X, 4.45, -ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66 },
-  { id: "chandelier-fireplace-door", style: "scroll", position: [-ROSE_X, 4.45, ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66 },
-  { id: "chandelier-end-window", style: "scroll", position: [ROSE_X, 4.45, -ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66 },
-  { id: "chandelier-end-door", style: "scroll", position: [ROSE_X, 4.45, ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66 },
+  { id: "chandelier-dome", style: "gilt-leaf", position: [0, 4.75, 0], suspension: HALL_DOME.plateHeight, bottom: 3.85, radius: 0.9, glowRadius: 0.82 },
+  { id: "chandelier-fireplace-window", style: "scroll", position: [-ROSE_X, 4.45, -ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66, glowRadius: 0.58 },
+  { id: "chandelier-fireplace-door", style: "scroll", position: [-ROSE_X, 4.45, ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66, glowRadius: 0.58 },
+  { id: "chandelier-end-window", style: "scroll", position: [ROSE_X, 4.45, -ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66, glowRadius: 0.58 },
+  { id: "chandelier-end-door", style: "scroll", position: [ROSE_X, 4.45, ROSE_Z], suspension: HALL_HEIGHT, bottom: 3.58, radius: 0.66, glowRadius: 0.58 },
 ];

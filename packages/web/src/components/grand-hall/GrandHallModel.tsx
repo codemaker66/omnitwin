@@ -26,7 +26,7 @@ import {
   type Texture,
 } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } from "three/webgpu";
-import { color, float, instancedBufferAttribute, mix, normalWorld, texture, uv, vec3 } from "three/tsl";
+import { color, float, instancedBufferAttribute, mix, normalWorld, texture, uniform, uv, vec3 } from "three/tsl";
 import { hallGeometry, hallWallGeometry } from "./hall-geometry.js";
 import { loadWallRelief, type WallRelief } from "./hall-relief.js";
 import { hallChandeliers } from "./hall-chandeliers.js";
@@ -121,13 +121,18 @@ interface HallResources {
   readonly section: HallSectionUniforms;
   readonly materials: ReturnType<typeof createHallMaterials>;
   readonly chandelierMaterials: ReadonlyMap<string, Material>;
+  /** How far the chandeliers' metal is lit by its own lamps (1 with the reflection map). */
+  readonly selfLit: { value: number };
   readonly halos: Sprite;
   readonly haloTexture: Texture;
   readonly caps: readonly { readonly wall: HallWall; readonly geometry: BoxGeometry }[];
   readonly capMaterial: MeshBasicNodeMaterial;
 }
 
-function createResources(quality: number, liveLight: boolean, initialMood: HallMoodSpec): HallResources {
+/** The chandeliers' own light on their metal where no reflection map gives it anything to mirror. */
+const SELF_LIT_WITHOUT_REFLECTIONS = 2.5;
+
+function createResources(quality: number, initialMood: HallMoodSpec): HallResources {
   const textures = paintHallTextures(quality);
   const photos = new HallPhotos();
   const mood = new HallMoodUniforms();
@@ -145,15 +150,16 @@ function createResources(quality: number, liveLight: boolean, initialMood: HallM
   // room above, fall dark, as the fittings' undersides do in the scan.
   const facingUp = normalWorld.y.mul(0.3).add(0.7);
   // Without the reflection map (a software rasteriser) the metal has nothing
-  // to mirror, so its own light carries more of its brightness.
-  const selfLit = liveLight ? 1 : 2.5;
+  // to mirror, so its own light carries more of its brightness; the finish
+  // sets this (GrandHallModel).
+  const selfLit = uniform(1);
   const gilt = new MeshStandardNodeMaterial({ roughness: 0.3, metalness: 1 });
   gilt.colorNode = silverGilt;
   gilt.emissiveNode = silverGilt.mul(bulbWhite.mul(mood.glow.mul(0.3)).add(ambient.mul(0.3))).mul(facingUp).mul(selfLit);
   const darkBronze = color("#4f4234").rgb;
   const bronze = new MeshStandardNodeMaterial({ roughness: 0.42, metalness: 1 });
   bronze.colorNode = darkBronze;
-  bronze.emissiveNode = darkBronze.mul(ambient.mul(0.35));
+  bronze.emissiveNode = darkBronze.mul(ambient.mul(0.35)).mul(selfLit);
   const bulb = new MeshBasicNodeMaterial();
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(5).add(0.6));
   const chandelierMaterials = new Map<string, Material>([["gilt", gilt], ["bronze", bronze], ["bulb", bulb]]);
@@ -178,7 +184,7 @@ function createResources(quality: number, liveLight: boolean, initialMood: HallM
   });
   const capMaterial = new MeshBasicNodeMaterial();
   capMaterial.colorNode = color("#2a2019");
-  return { textures, photos, mood, section, materials, chandelierMaterials, halos, haloTexture, caps, capMaterial };
+  return { textures, photos, mood, section, materials, chandelierMaterials, selfLit, halos, haloTexture, caps, capMaterial };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -201,7 +207,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const chandeliers = useMemo(() => hallChandeliers(), []);
   const deviceFinish = useHallFinish();
   const { photoQuality: quality, liveLight } = finishOverride ?? deviceFinish;
-  const resources = useMemo(() => createResources(quality, liveLight, HALL_MOODS[mood]), [quality, liveLight]);
+  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood]), [quality]);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
@@ -213,6 +219,12 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const lookDirection = useMemo(() => new Vector3(), []);
 
   useEffect(() => () => { disposeResources(resources); }, [resources]);
+
+  // Without the reflection map the chandeliers' metal leans on its own light.
+  useEffect(() => {
+    resources.selfLit.value = liveLight ? 1 : SELF_LIT_WITHOUT_REFLECTIONS;
+    invalidate();
+  }, [invalidate, liveLight, resources]);
 
   // The scan's photographs and the walls' relief stream in after the first
   // frame; the planner's caption counts them in.

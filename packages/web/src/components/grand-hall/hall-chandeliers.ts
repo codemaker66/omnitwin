@@ -320,7 +320,7 @@ function scrollRing(b: MeshBuilder, count: number, phase: number, curve: Curve, 
   }
 }
 
-/** Uplighters round the dome fitting's crown: short open cans splayed outward. */
+/** Uplighters round the dome fitting's crown: short cans splayed outward. */
 function uplighters(gilt: MeshBuilder, count: number, phase: number, base: V2, top: V2, radius: number): void {
   for (let i = 0; i < count; i++) {
     const angle = phase + (i / count) * Math.PI * 2;
@@ -403,7 +403,7 @@ function buildDomeChandelier(parts: PartBuilders, bulbs: V3[]): void {
  * The four fittings on the ceiling roses, about their body's centre
  * (4.45 m): a slim vase column from a basket of scrolls up to a crown of six
  * C-scrolls, three tiers of lamps, and six rosettes of three lamps each
- * hanging 0.52 m out at 4.42 m. Their 35 bulbs hang from 3.75 m to 4.65 m,
+ * hanging 0.5 m out at 4.42 m. Their 35 bulbs hang from 3.75 m to 4.65 m,
  * as the scan's do.
  */
 function buildRoseChandelier(parts: PartBuilders, bulbs: V3[]): void {
@@ -423,8 +423,8 @@ function buildRoseChandelier(parts: PartBuilders, bulbs: V3[]): void {
   satellites(parts, bulbs, {
     count: 6,
     phase: satellitePhase,
-    radius: 0.52,
-    arm: [[0.04, 0.46], [0.2, 0.52], [0.42, 0.5], [0.52, 0.4]],
+    radius: 0.5,
+    arm: [[0.04, 0.46], [0.2, 0.52], [0.4, 0.5], [0.5, 0.4]],
     armSize: 0.01,
     body: [
       [0, -0.1], [0.01, -0.095], [0.016, -0.08], [0.024, -0.04], [0.035, 0.02], [0.03, 0.08], [0.02, 0.14],

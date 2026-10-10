@@ -22,7 +22,7 @@ describe("the hall's chandeliers", () => {
         }
       }
       expect(bottom).toBeCloseTo(chandelier.bottom, 2);
-      expect(Math.abs(reach - chandelier.radius)).toBeLessThan(0.04);
+      expect(Math.abs(reach - chandelier.radius)).toBeLessThan(0.01);
     }
   });
 
@@ -67,6 +67,45 @@ describe("the hall's chandeliers", () => {
       }
       expect({ part, against, degenerate }).toEqual({ part, against: 0, degenerate: 0 });
     }
+  });
+
+  it("turns every bulb's faces outward", () => {
+    // Each bulb is a closed, convex lathe round the point its halo marks, so
+    // a face turned inward points back toward it.
+    const geometry = set.geometries.get("bulb");
+    expect(geometry).toBeDefined();
+    if (geometry === undefined) return;
+    const position = geometry.getAttribute("position");
+    const index = geometry.index;
+    expect(index).not.toBeNull();
+    if (index === null) return;
+    let inward = 0;
+    for (let t = 0; t < index.count; t += 3) {
+      const corners = [index.getX(t), index.getX(t + 1), index.getX(t + 2)].map((i) => [position.getX(i), position.getY(i), position.getZ(i)] as const);
+      const [a, b, c] = corners;
+      if (a === undefined || b === undefined || c === undefined) continue;
+      const centroid = [0, 1, 2].map((axis) => ((a[axis] ?? 0) + (b[axis] ?? 0) + (c[axis] ?? 0)) / 3);
+      const u = [0, 1, 2].map((axis) => (b[axis] ?? 0) - (a[axis] ?? 0));
+      const v = [0, 1, 2].map((axis) => (c[axis] ?? 0) - (a[axis] ?? 0));
+      const face = [
+        (u[1] ?? 0) * (v[2] ?? 0) - (u[2] ?? 0) * (v[1] ?? 0),
+        (u[2] ?? 0) * (v[0] ?? 0) - (u[0] ?? 0) * (v[2] ?? 0),
+        (u[0] ?? 0) * (v[1] ?? 0) - (u[1] ?? 0) * (v[0] ?? 0),
+      ];
+      let nearest = set.bulbs[0];
+      let best = Infinity;
+      for (const bulb of set.bulbs) {
+        const distance = Math.hypot(bulb[0] - (centroid[0] ?? 0), bulb[1] - (centroid[1] ?? 0), bulb[2] - (centroid[2] ?? 0));
+        if (distance < best) {
+          best = distance;
+          nearest = bulb;
+        }
+      }
+      if (nearest === undefined) continue;
+      const out = [0, 1, 2].map((axis) => (centroid[axis] ?? 0) - (nearest[axis] ?? 0));
+      if ((face[0] ?? 0) * (out[0] ?? 0) + (face[1] ?? 0) * (out[1] ?? 0) + (face[2] ?? 0) * (out[2] ?? 0) <= 0) inward++;
+    }
+    expect(inward).toBe(0);
   });
 
   it("stays within its triangle budget", () => {
