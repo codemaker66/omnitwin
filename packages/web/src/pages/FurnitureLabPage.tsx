@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useMemo, useState, type ReactElement } from "react";
-import { useThree } from "@react-three/fiber";
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { NeutralToneMapping, Vector3 } from "three";
 import { PMREMGenerator, type RenderTarget } from "three/webgpu";
@@ -34,6 +34,8 @@ type Backdrop = "studio" | "hall";
 
 declare global {
   interface Window {
+    /** Set once a preview has drawn with its studio light and reflections. */
+    __furniturePreview?: { readonly ready: boolean };
     __furnitureLab?: {
       readonly slugs: readonly string[];
       readonly cells: readonly { slug: string; x: number; gap: number; height: number }[];
@@ -198,6 +200,23 @@ function previewPose(item: CatalogueItem): LabPose {
   return { position: [position.x, position.y, position.z], target: [target.x, target.y, target.z], fov };
 }
 
+/** Marks the preview ready a few frames after mounting, once its environment is in. */
+function PreviewReady(): null {
+  const frames = useRef(0);
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    window.__furniturePreview = { ready: false };
+    invalidate();
+    return () => { delete window.__furniturePreview; };
+  }, [invalidate]);
+  useFrame(() => {
+    frames.current += 1;
+    if (frames.current < 4) invalidate();
+    else if (window.__furniturePreview?.ready !== true) window.__furniturePreview = { ready: true };
+  });
+  return null;
+}
+
 function FurniturePreviewStudio({ item }: { readonly item: CatalogueItem }): ReactElement {
   const pose = useMemo(() => previewPose(item), [item]);
   const reach = Math.max(item.width, item.depth, item.height);
@@ -227,6 +246,7 @@ function FurniturePreviewStudio({ item }: { readonly item: CatalogueItem }): Rea
         </mesh>
         <FurnitureProxy item={item} position={[0, 0, 0]} />
         <PoseController pose={pose} />
+        <PreviewReady />
       </Canvas>
     </div>
   );

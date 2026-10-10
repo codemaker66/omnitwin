@@ -4,12 +4,14 @@ import { gridSurface, type Vec3 } from "./crafted-geometry.js";
 // ---------------------------------------------------------------------------
 // Crafted poseur cover
 //
-// A stretch cover on a folding poseur table, after the supplied poseurs: the
-// fabric lies flat on the round top and wraps its edge in a band, sweeps in
-// beneath it to a waist about half way down, then widens over the four
-// folding legs into a pocket on each foot, drawn up between them in a shallow
-// arch. The sweep under the top leaves it nearly flat and reaches the waist
-// upright, so the two halves meet without a crease.
+// A stretch cover on a folding poseur table, after the supplied poseurs
+// (profile measured from them in an orthographic view): the fabric lies flat
+// on the round top and wraps its edge in a band, sweeps in beneath it to a
+// waist about six tenths of the way up, then runs down the four folding legs,
+// close to the column at first and flaring towards the floor, creased along
+// each leg and drawn in between them, to a pocket on each foot, lifting only a
+// few centimetres between them. The sweep under the top leaves
+// it nearly flat and reaches the waist upright, so the halves meet smoothly.
 // ---------------------------------------------------------------------------
 
 export interface PoseurSize {
@@ -34,14 +36,16 @@ export function poseurCover(size: PoseurSize): BufferGeometry {
   // The fabric over the top's edge: a rounded band.
   const roll = 0.012;
   const band = 0.014;
-  const waist = radius * 0.43;
-  const waistY = top * 0.5;
-  // The feet reach almost to the top's edge, as a stable base must.
-  const footReach = radius * 0.95;
-  // Between the feet the hem rises in an arch and draws in to a straight line.
-  const arch = 0.08;
-  const draw = 0.74;
-  const segments = 128;
+  const waist = radius * 0.42;
+  const waistY = top * 0.59;
+  // The feet reach to the top's edge, as a stable base must.
+  const footReach = radius * 0.98;
+  // Between the legs the fabric is drawn in, inside the straight line from
+  // leg to leg (a chord is 0.71 of the reach), and its hem lifts in a
+  // shallow arch.
+  const faceReach = footReach * 0.62;
+  const arch = 0.035;
+  const segments = 160;
 
   interface Ring {
     readonly radiusAt: (lobe: number) => number;
@@ -73,15 +77,21 @@ export function poseurCover(size: PoseurSize): BufferGeometry {
     const y = underside + (waistY - underside) * s;
     rings.push(fixed(waist + (rim - waist) * sweep(1 - s, 1.8), y));
   }
-  // From the waist down to the hem, opening into a pocket over each foot.
+  // From the waist down: taut along each leg, nearly flat between them.
   const lowerRows = 22;
   for (let i = 1; i <= lowerRows; i += 1) {
     const t = i / lowerRows;
-    const widen = 0.55 * Math.pow(t, 1.4) + 0.45 * Math.pow(t, 7);
+    // Close to the column at first, flaring out towards each foot.
+    const leg = Math.pow(t, 1.55);
     rings.push({
-      radiusAt: (lobe) => waist + (footReach * (draw + (1 - draw) * lobe) - waist) * widen,
+      radiusAt: (lobe) => {
+        const ridge = waist + (footReach - waist) * leg;
+        const face = waist + (faceReach - waist) * leg;
+        return face + (ridge - face) * lobe;
+      },
       yAt: (lobe) => {
-        const hemY = 0.004 + arch * Math.pow(1 - lobe, 1.2);
+        // A pocket on the floor at each foot, a shallow arch between.
+        const hemY = 0.004 + arch * Math.pow(1 - lobe, 0.8);
         return waistY + (hemY - waistY) * t;
       },
     });
@@ -101,8 +111,9 @@ export function poseurCover(size: PoseurSize): BufferGeometry {
     const uvRow: [number, number][] = [];
     for (let s = 0; s <= segments; s += 1) {
       const phase = (s / segments) * Math.PI * 2;
-      // Feet on the diagonals; 1 over a foot, 0 midway between two.
-      const lobe = Math.cos(2 * (phase - Math.PI / 4)) ** 2;
+      // Legs on the diagonals: 1 along a leg, 0 midway between two; sharp
+      // enough at a leg that the cover creases along it.
+      const lobe = Math.abs(Math.cos(2 * (phase - Math.PI / 4))) ** 1.6;
       const r = ring.radiusAt(lobe);
       row.push([Math.cos(phase) * r, ring.yAt(lobe), Math.sin(phase) * r]);
       uvRow.push([phase * radius, arc]);
