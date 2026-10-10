@@ -893,6 +893,81 @@ div.dayboard-slab {
   font-size: 12px;
 }
 
+/* --- what the room was seen doing (S5) ------------------------------------- */
+
+/* The slab's marginal line: "Doors open 18:52". */
+.dayboard-slab-seen {
+  font-size: 12px;
+  color: var(--lt-ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@container (max-width: 200px) {
+  .dayboard-slab-seen {
+    display: none;
+  }
+}
+
+.dayboard-seen {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--lt-line);
+  border-radius: 8px;
+  background: var(--lt-raised);
+}
+
+.dayboard-seen-latest {
+  margin: 0;
+  font-size: 14px;
+  color: var(--lt-ink);
+}
+
+.dayboard-seen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* One tap, 44 px tall, in the paper register's words. */
+.dayboard-seen-button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--lt-hairline);
+  border-radius: 999px;
+  background: var(--lt-ground);
+  color: var(--lt-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dayboard-seen-button:hover {
+  border-color: var(--lt-ink);
+}
+
+.dayboard-seen-button:focus-visible {
+  outline: 2px solid var(--lt-focus);
+  outline-offset: 2px;
+}
+
+.dayboard-seen-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dayboard-seen-status,
+.dayboard-seen-pending {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 13px;
+  color: var(--lt-ink-dim);
+}
+
 .dayboard-slot-alert {
   margin: 8px 0 0;
   padding: 6px 8px;

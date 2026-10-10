@@ -71,6 +71,20 @@ vi.mock("../../../api/notifications.js", () => ({
   listNotifications: () => Promise.resolve([]),
   getUnreadNotificationCount: () => Promise.resolve(0),
 }));
+// The board reads what its rooms were seen doing and listens for new facts
+// (goal 19 S5); this suite stubs both edges and feeds facts per case.
+const seen = vi.hoisted(() => ({
+  list: vi.fn<() => Promise<unknown[]>>(() => Promise.resolve([])),
+  record: vi.fn<(venueId: string, input: unknown) => Promise<unknown>>(),
+}));
+vi.mock("../../../api/observations.js", () => ({
+  listVenueObservations: () => seen.list(),
+  recordVenueObservation: (venueId: string, input: unknown) => seen.record(venueId, input),
+}));
+vi.mock("../../../lib/requests-live.js", () => ({
+  subscribeRequestsLive: () => () => undefined,
+  listensForFloorRequests: () => true,
+}));
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
 const EVENT_ID = "00000000-0000-4000-8000-0000000000e1";
@@ -220,6 +234,9 @@ beforeEach(() => {
   getVenueMock.mockReset();
   getVenueMock.mockResolvedValue({ id: "venue-1", name: "Trades Hall" });
   getCalendarMock.mockReset();
+  seen.list.mockReset();
+  seen.list.mockResolvedValue([]);
+  seen.record.mockReset();
   resolveLayoutsMock.mockReset();
   // A summary that never arrives shows no line, which other cases expect.
   getSummaryMock.mockReset();
@@ -399,6 +416,62 @@ describe("DayBoardPage", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("shows what the room was seen doing on the slab, and records the next fact from the slot (goal 19 S5)", async () => {
+    const seenAt = new Date(Date.now() - 20 * 60_000).toISOString();
+    const booking = liveBooking();
+    seen.list.mockResolvedValue([{
+      id: "00000000-0000-4000-8000-00000000f001",
+      venueId: VENUE,
+      bookingId: booking.id,
+      spaceId: GRAND_HALL,
+      kind: "doors-open",
+      observedAt: seenAt,
+      recordedAt: seenAt,
+      actorUserId: null,
+      actorName: "Elaine",
+      actorRole: "hallkeeper",
+      idempotencyKey: "00000000-0000-4000-8000-00000000f002",
+    }]);
+    seen.record.mockImplementation((venueId, input) => {
+      const tap = input as { bookingId: string; kind: string; observedAt: string; idempotencyKey: string };
+      return Promise.resolve({
+        id: "00000000-0000-4000-8000-00000000f003",
+        venueId,
+        bookingId: tap.bookingId,
+        spaceId: GRAND_HALL,
+        kind: tap.kind,
+        observedAt: tap.observedAt,
+        recordedAt: tap.observedAt,
+        actorUserId: null,
+        actorName: "Elaine",
+        actorRole: "hallkeeper",
+        idempotencyKey: tap.idempotencyKey,
+      });
+    });
+    getCalendarMock.mockResolvedValue(calendarFixture([booking]));
+    renderBoard();
+    await openSlot("Chamber dinner");
+
+    // The slab's marginal line and the slot's latest fact, in the same words.
+    expect((await screen.findByText(/^Doors open \d{2}:\d{2}$/u)).className).toBe("dayboard-slab-seen");
+    expect(screen.getByText(/^Doors open \d{2}:\d{2} · Elaine$/u).className).toBe("dayboard-seen-latest");
+    const group = screen.getByRole("group", { name: "Record what the room is doing" });
+    expect(within(group).getAllByRole("button").map((button) => button.textContent)).toEqual(["Live", "Done"]);
+
+    fireEvent.click(within(group).getByRole("button", { name: "Live" }));
+    await waitFor(() => { expect(seen.record).toHaveBeenCalledTimes(1); });
+    const [venueId, input] = seen.record.mock.calls[0] as [string, { bookingId: string; kind: string; idempotencyKey: string }];
+    expect(venueId).toBe(VENUE);
+    expect(input.bookingId).toBe(booking.id);
+    expect(input.kind).toBe("live");
+    expect((await screen.findByText("Live · recorded")).className).toBe("dayboard-seen-status");
+    // The next facts follow the new latest fact.
+    await waitFor(() => {
+      const next = within(screen.getByRole("group", { name: "Record what the room is doing" })).getAllByRole("button");
+      expect(next.map((button) => button.textContent)).toEqual(["Flipping", "Done"]);
+    });
   });
 
   it("puts this hallkeeper's next action in one line at the top, and a tap on it opens the slot", async () => {

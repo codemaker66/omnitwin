@@ -14,7 +14,13 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Bell, Check, Clock, DoorOpen, Link2, Radio, RotateCcw, UserCheck, Users, WifiOff, Wrench,
 } from "lucide-react";
-import { occasionLabel, type HallkeeperSheetSummary } from "@omnitwin/types";
+import {
+  describeObservationKind,
+  nextObservationKinds,
+  occasionLabel,
+  type HallkeeperSheetSummary,
+  type ObservationKind,
+} from "@omnitwin/types";
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { boardRange, formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs, type BoardRange } from "../diary/lib/board-time.js";
@@ -29,7 +35,7 @@ import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/ev
 import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
 import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
-import { NO_SLOT_OBSERVATIONS, useSlotObservations, type SlotObservationsApi } from "./lib/use-slot-observations.js";
+import { useSlotObservations, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import {
   DAY_BOARD_LEGEND,
@@ -426,6 +432,8 @@ function Slab({ slot, view, nowMs, selected, onOpen, wall, vertical, frozen }: {
           {slot.kind !== "ink" && <span className="dayboard-slab-kind"> · {slot.bookingLabel}</span>}
           {linked !== null && <span className="dayboard-linked"><Link2 size={12} aria-hidden="true" />{linked}</span>}
         </span>
+        {/* What the room was last seen doing (S5): a fact beside the schedule. */}
+        {slot.observed !== null && <span className="dayboard-slab-seen">{slot.observed.line}</span>}
         {ring !== null && words !== null && (
           <Ring key={slot.requestSignal?.newestId ?? "steady"} ring={ring} words={words} frozen={frozen} />
         )}
@@ -616,14 +624,40 @@ function NextActionLine({ action, urgent, onOpen }: {
 }
 
 /** The open slot: its sheet, its event, its phases and its requests. */
-function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, onClose }: {
+/** What the hallkeeper is told after a tap: the fact and where it stands. */
+function seenStatus(kind: ObservationKind, outcome: RecordOutcome | "sending" | Error): string {
+  const what = describeObservationKind(kind);
+  if (outcome === "sending") return `${what} · sending…`;
+  if (outcome === "sent") return `${what} · recorded`;
+  if (outcome === "queued") return `${what} · queued, sends when the connection is back`;
+  return `Couldn't record ${what.toLowerCase()}: ${outcome.message}`;
+}
+
+function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, observations, onClose }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
   readonly timeZone: string;
   readonly slotRequests: SlotRequestsComponent | null;
+  /** Null where nothing may be recorded (the wall, a visitor). */
+  readonly observations: SlotObservationsApi | null;
   readonly onClose: () => void;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
+  // One tap at a time; the words say what happened to it (S5, D10).
+  const [busy, setBusy] = useState<ObservationKind | null>(null);
+  const [seenLine, setSeenLine] = useState<string | null>(null);
+  const tap = useCallback((kind: ObservationKind): void => {
+    if (observations === null) return;
+    setBusy(kind);
+    setSeenLine(seenStatus(kind, "sending"));
+    observations.record(slot.bookingId, kind)
+      .then((outcome) => { setSeenLine(seenStatus(kind, outcome)); })
+      .catch((err: unknown) => { setSeenLine(seenStatus(kind, err instanceof Error ? err : new Error("the server refused it"))); })
+      .finally(() => { setBusy(null); });
+  }, [observations, slot.bookingId]);
+  const latest = slot.observed === null
+    ? "Nobody has recorded what the room is doing yet."
+    : `${slot.observed.line}${slot.observed.actorName === null ? "" : ` · ${slot.observed.actorName}`}`;
   return (
     <section className={`dayboard-detail dayboard-tone-${slot.tone}`} aria-label={`${room.name}: ${slot.title}`} data-state={slot.state}>
       <div className="dayboard-detail-head">
@@ -638,6 +672,32 @@ function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, onClose 
         </div>
         <button type="button" className="dayboard-detail-close" onClick={onClose}>Close</button>
       </div>
+      {/* What the room was seen doing (S5): the latest fact, and the next
+          facts a hallkeeper may record from here. Facts never move a time. */}
+      <section className="dayboard-seen" aria-label="What the room is doing">
+        <p className="dayboard-seen-latest">{latest}</p>
+        {observations !== null && (
+          <div className="dayboard-seen-actions" role="group" aria-label="Record what the room is doing">
+            {nextObservationKinds(slot.observed?.kind ?? null).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                className="dayboard-seen-button"
+                disabled={busy !== null}
+                onClick={() => { tap(kind); }}
+              >
+                {describeObservationKind(kind)}
+              </button>
+            ))}
+          </div>
+        )}
+        {observations !== null && observations.pendingCount > 0 && (
+          <p className="dayboard-seen-pending">
+            {observations.pendingCount === 1 ? "One tap waiting to send." : `${String(observations.pendingCount)} taps waiting to send.`}
+          </p>
+        )}
+        <p className="dayboard-seen-status" aria-live="polite">{seenLine ?? ""}</p>
+      </section>
       {slot.phases.length > 0 && <ol className="dayboard-phases" aria-label="Planned event phases">
         {slot.phases.map((phase, index) => <li key={phase.id} data-colour={index % 6}>
           <strong>{phase.name}</strong><span>{formatWallTime(Date.parse(phase.startsAt), timeZone)} – {formatWallTime(Date.parse(phase.endsAt), timeZone)}</span>
@@ -730,12 +790,17 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // The venue's open requests, from the one provider snapshot. A VenueRequest
   // carries every field the derivation reads.
   const requestsApi = useSlotRequests();
+  // What the rooms were seen doing (S5): read by everyone who reads the
+  // board, recorded from the slot by the floor; the wall stays inert.
+  const observationsApi = useSlotObservations(venueId, range, listensForFloorRequests(user), user?.name ?? "");
   const shownDate = msToWallInput(selectedMs, timeZone).slice(0, 10);
   const today = msToWallInput(nowMs, timeZone).slice(0, 10);
 
   const board = useMemo(
-    () => (data === null ? null : deriveDayBoard(data, nowMs, timeZone, requestsApi.requests)),
-    [data, nowMs, timeZone, requestsApi.requests],
+    () => (data === null
+      ? null
+      : deriveDayBoard(data, nowMs, timeZone, requestsApi.requests, observationsApi.observations)),
+    [data, nowMs, timeZone, requestsApi.requests, observationsApi.observations],
   );
   const nextBoundaryMs = board?.nextBoundaryMs ?? null;
   useEffect(() => { setBoundaryMs(nextBoundaryMs); }, [nextBoundaryMs]);
@@ -988,6 +1053,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
             room={selected.room}
             timeZone={timeZone}
             slotRequests={slotRequestsComponent}
+            observations={wall ? null : observationsApi}
             onClose={() => { setSelectedId(null); }}
           />
         </div>
