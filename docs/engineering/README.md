@@ -106,6 +106,7 @@ on future experiments.
 | Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
 | Martyn's Law or other legal prompts | [No-claims rule and sources](martyns-law-readiness.md) |
 | Splat renderer choice/lifecycle | [Native Three.js splats](native-splats.md) |
+| Venue weather (sky) feed, Met Office sources | [Venue sky](venue-sky.md) |
 | Updating the native splat addon patch | [Maintained dependency patch](../../patches/README.md) |
 | Loader callbacks and rerenders | [Callback ownership](../../.claude/gotchas/spark-splat-layer-callback-identity.md) |
 | Camera bounds, poses or capture stills | [Camera and capture evidence](../../.claude/gotchas/splat-camera-and-capture.md) |
