@@ -9,6 +9,7 @@ const BOTTLENECK_LABELS: Record<PerfMetrics["bottleneck"]["kind"], string> = {
   gpu: "GPU", cpu: "CPU", headroom: "Headroom", idle: "Idle", unknown: "—",
 };
 import { ActivityIndicator, ActivityStatus } from "./shared/Activity.js";
+import { useIsNarrowViewport } from "../hooks/use-media-query.js";
 import "./PerfOverlay.css";
 
 function isClipboardWriter(value: unknown): value is Pick<Clipboard, "writeText"> {
@@ -26,6 +27,11 @@ export function PerfOverlay(): React.ReactElement | null {
   const paused = usePerfStore((s) => s.paused);
   const generation = usePerfStore((s) => s.generation);
   const [copyState, setCopyState] = useState<"ready" | "working" | "copied" | "failed">("ready");
+  // A phone opens on three figures so the stage stays usable while measuring;
+  // a choice either way holds until the page is left.
+  const narrow = useIsNarrowViewport();
+  const [expandedChoice, setExpandedChoice] = useState<boolean | null>(null);
+  const expanded = expandedChoice ?? !narrow;
   const optedIn = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("profiler") === "1";
   const available = import.meta.env.DEV || optedIn;
 
@@ -91,6 +97,25 @@ export function PerfOverlay(): React.ReactElement | null {
   const ms = (value: number | null): string => value === null ? "—" : formatFrameTime(value);
   const count = (value: number | null): string => value === null ? "—" : formatTriangles(Math.round(value));
   const { bottleneck } = metrics;
+  const pace = bottleneck.busyPct === null ? BOTTLENECK_LABELS[bottleneck.kind] : `${BOTTLENECK_LABELS[bottleneck.kind]} ${String(Math.round(bottleneck.busyPct))}%`;
+  const close = (): void => { usePerfStore.getState().toggle(); };
+
+  if (!expanded) {
+    const fps = metrics.fps.toFixed(0);
+    const p95 = ms(metrics.frameP95Ms);
+    return (
+      <section className="perf-panel perf-panel--compact" aria-label="Performance profiler" data-testid="perf-overlay">
+        <button type="button" className="perf-compact" onClick={() => { setExpandedChoice(true); }}
+          aria-label={`${fps} frames a second, p95 ${p95}, ${pace}. Show every figure`}>
+          <span><strong>{fps}</strong> fps</span>
+          <span>p95 <strong>{p95}</strong></span>
+          <span>{pace}</span>
+        </button>
+        <button type="button" className="perf-close" onClick={close} aria-label="Close performance profiler">×</button>
+      </section>
+    );
+  }
+
   const drawnShare = metrics.drawnSplats !== null && metrics.splats !== null && metrics.splats > 0
     ? ` · ${String(Math.round(100 * metrics.drawnSplats / metrics.splats))}%` : "";
   // Twelve figures chosen to locate the cost: how fast, how steady, which side
@@ -100,7 +125,7 @@ export function PerfOverlay(): React.ReactElement | null {
     { label: "Frame mean", value: metrics.intervalCount ? ms(metrics.frameTimeMs) : "—", detail: "Mean complete frame interval ending in the rolling window; may start before its boundary. Long stalls are retained." },
     { label: "Frame p95", value: ms(metrics.frameP95Ms), detail: "95% of measured submitted-frame intervals are at or below this value (nearest rank)." },
     { label: "Frame p99", value: ms(metrics.frameP99Ms), detail: "99% of measured submitted-frame intervals are at or below this value (nearest rank). Spikes here with a steady mean point to hitches, not throughput." },
-    { label: "Bottleneck", value: bottleneck.busyPct === null ? BOTTLENECK_LABELS[bottleneck.kind] : `${BOTTLENECK_LABELS[bottleneck.kind]} ${String(Math.round(bottleneck.busyPct))}%`, detail: "Which side sets the frame time: the busier of CPU submission and GPU time as a share of the frame interval. GPU: reduce drawn splats or pixels; CPU: reduce per-frame script or draw calls; Headroom (under 60%): the display or on-demand rendering sets the pace." },
+    { label: "Bottleneck", value: pace, detail: "Which side sets the frame time: the busier of CPU submission and GPU time as a share of the frame interval. GPU: reduce drawn splats or pixels; CPU: reduce per-frame script or draw calls; Headroom (under 60%): the display or on-demand rendering sets the pace." },
     { label: "CPU submission", value: ms(metrics.cpuSubmitMs), detail: "Mean synchronous draw and native scene update time. Other browser work is not included." },
     { label: "GPU draw", value: ms(metrics.gpuRenderMs), detail: `WebGPU render-pass timestamps: splats, meshes and the output pass. Sampled at most once per second (${String(metrics.gpuSampleCount)} samples); unavailable on WebGL or unsupported hardware.` },
     { label: "GPU sort + light", value: ms(metrics.gpuComputeMs), detail: "WebGPU compute timestamps: the splat depth sort and view-dependent lighting, averaged over sampled draws (0 when a draw needed neither)." },
@@ -116,7 +141,10 @@ export function PerfOverlay(): React.ReactElement | null {
     <section className="perf-panel" aria-label="Performance profiler" data-testid="perf-overlay">
       <header className="perf-header">
         <div><span className="perf-eyebrow">Venviewer / diagnostics</span><h2>Performance</h2></div>
-        <button type="button" className="perf-close" onClick={() => { usePerfStore.getState().toggle(); }} aria-label="Close performance profiler">×</button>
+        <div className="perf-header-actions">
+          {narrow && <button type="button" className="perf-close" onClick={() => { setExpandedChoice(false); }} aria-label="Show fewer performance figures">–</button>}
+          <button type="button" className="perf-close" onClick={close} aria-label="Close performance profiler">×</button>
+        </div>
       </header>
       <div className="perf-status" data-rating={metrics.rating}>
         {paused ? "Paused · Play starts a fresh window" : metrics.status === "idle" ? "No frames in 1s · window continues to age"

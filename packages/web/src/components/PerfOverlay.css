@@ -19,7 +19,23 @@
   box-sizing: border-box;
 }
 .perf-launcher { bottom: max(12px, env(safe-area-inset-bottom)); right: 12px; border-radius: 24px; padding: 10px 16px; min-height: 44px; cursor: pointer; }
+/* A phone keeps its stage: three figures below a page's top bar, all twelve on request. */
+.perf-panel.perf-panel--compact {
+  top: calc(max(12px, env(safe-area-inset-top)) + 84px);
+  left: max(12px, env(safe-area-inset-left));
+  right: auto;
+  width: auto;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+}
+.perf-compact { display: flex; align-items: center; gap: 12px; padding: 4px 10px; border: 0; background: transparent; color: inherit; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.perf-compact strong { font-size: 15px; font-weight: 600; }
 .perf-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.perf-header-actions { display: flex; gap: 8px; }
 .perf-header h2 { font-family: var(--house-serif); font-size: 27px; font-weight: 500; margin: 3px 0 0; line-height: 1.15; }
 .perf-eyebrow { color: #52685b; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 .perf-panel button { font: inherit; cursor: pointer; min-height: 44px; border-radius: 8px; }
