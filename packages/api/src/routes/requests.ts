@@ -42,7 +42,12 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
 }
 
 function sendDeny(reply: FastifyReply, result: RequestDeny): FastifyReply {
-  return reply.status(result.status).send({ error: result.error, code: result.code });
+  // A refused "I'll take this" carries who has it, so the screen can say so.
+  return reply.status(result.status).send(
+    result.ownerName === undefined
+      ? { error: result.error, code: result.code }
+      : { error: result.error, code: result.code, ownerName: result.ownerName },
+  );
 }
 
 function isDeny(value: unknown): value is RequestDeny {

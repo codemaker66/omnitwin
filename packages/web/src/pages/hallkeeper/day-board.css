@@ -1,48 +1,90 @@
 /* ---------------------------------------------------------------------------
-   The Day Board — the hallkeeper's day on the register's ivory ground
-   (styles/hallkeeper-register.css), read on a phone, a tablet or a wall.
+   The Day Board (goal 19 S3) — the hallkeeper's day on the register's ivory
+   ground (styles/hallkeeper-register.css), read in the office, on a phone
+   and on the wall.
 
-   Colour discipline: text is never tinted by state. Tone lives in the chip's
-   dot and a slot's edge, and the words carry the meaning on their own, which
-   is also what keeps every state legible for a colour-blind hallkeeper.
+   Colour discipline (D3 law 8): text is never tinted by state. Tone lives in
+   the dot, the slab's edge, the segments and the ring, and the words carry
+   the meaning on their own, which is also what keeps every state legible
+   for a colour-blind hallkeeper. Every colour is a `--lt-*` token from
+   docs/design/living-timetable/attention-system.md; the `--db-*` names are
+   the legend's aliases, audited pairwise in src/__tests__/house-tokens.test.ts.
 
-   Motion discipline (roadmap N4): nothing moves but one 320 ms stamp on a
-   slot's chip when that room's state moves on, and nothing at all under
-   reduced motion. The countdown text in each chip says what the state is.
+   Motion discipline (D3 laws 1, 2, 5, 6): the only animations are the
+   breaths this file declares, on opacity and transform, each phase-locked
+   to the 60-second epoch through the --lt-epoch-phase-ms its element
+   sampled when the breath began. They stop under [data-frozen="true"]
+   (the socket down, offline or stale) and under reduced motion.
 --------------------------------------------------------------------------- */
 
 .dayboard {
-  /* The board's own names for the register's values. */
-  --db-ink: var(--hk-ivory);
-  --db-ink-raised: var(--hk-ivory-raised);
-  --db-paper: var(--hk-ink);
-  --db-paper-dim: var(--hk-ink-faint);
-  --db-line: var(--hk-line);
-  /* One legend entry, one value: pairwise distinctness is asserted in
-     src/__tests__/house-tokens.test.ts. --db-amber takes the register's sage
-     ink: sage at its display value measures about 2:1 on this ivory, under
-     the 3:1 a legend dot needs. */
-  --db-gilt: var(--hk-copper);
-  --db-green: #4f9d69;
-  --db-amber: var(--vv-sage-ink);
-  --db-amber-deep: #c9761d;
-  --db-live: var(--hk-forest);
-  --db-red: var(--hk-alert);
-  --db-slate: var(--house-slate-dot);
+  /* --- the attention system's paper register ----------------------------- */
+  --lt-ground: var(--hk-ivory, #f4f1e9);
+  --lt-raised: var(--hk-ivory-raised, #fffdf8);
+  --lt-sunk: var(--hk-ivory-sunk, #eeeee2);
+  --lt-line: var(--hk-line, #e4dcd0);
+  --lt-ink: var(--hk-ink, #2e382e);
+  --lt-ink-dim: var(--hk-ink-dim, #575a4e);
+  --lt-hairline: var(--hk-forest, #385542);
+  --lt-green: #3f8a57;
+  /* The house's status amber, by its token and only its token: the register
+     bans gold-family literals, and the status amber is the one it keeps. */
+  --lt-amber: var(--house-amber-mark);
+  --lt-amber-deep: #b5581a;
+  --lt-live: var(--vv-oxblood, #8e3a2c);
+  --lt-sage: var(--hk-sage, #a9c3a4);
+  --lt-sage-ink: var(--vv-sage-ink, #4a6650);
+  --lt-faded: var(--house-slate-dot, #8e9992);
+  --lt-red: var(--hk-alert, #c2503e);
+  --lt-ring: var(--hk-copper, #986246);
+  --lt-urgent-label: var(--vv-oxblood, #8e3a2c);
+  --lt-stale-band: var(--house-slate-wash, #e3e3db);
+  --lt-stale-text: var(--house-slate-text, #545e59);
+  --lt-gilt: var(--hk-copper, #986246);
+  --lt-focus: var(--vv-focus, #a9622f);
+
+  /* --- cadence and amplitude ---------------------------------------------- */
+  --lt-breath-organisers: 4s;
+  --lt-breath-guests: 3s;
+  --lt-breath-imminent: 2s;
+  --lt-breath-live: 4s;
+  --lt-breath-attention: 4s;
+  --lt-pulse-urgent: 1.5s;
+  --lt-arrival: 200ms;
+  --lt-live-amplitude: 0.12;
+  --lt-dot-amplitude: 0.35;
+  /* Every breathing element sets its own, sampled when its breath began. */
+  --lt-epoch-phase-ms: 0;
+
+  /* --- the legend's aliases: one entry, one value ------------------------- */
+  --db-quiet: var(--lt-hairline);
+  --db-green: var(--lt-green);
+  --db-amber: var(--lt-amber);
+  --db-amber-deep: var(--lt-amber-deep);
+  --db-live: var(--lt-live);
+  --db-sage: var(--lt-sage-ink);
+  --db-faded: var(--lt-faded);
+  --db-red: var(--lt-red);
+
+  /* --- geometry ----------------------------------------------------------- */
+  --db-lane-head: 196px;
+  --db-track-height: 116px;
   --db-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   min-height: 100%;
   padding: 30px;
-  background: var(--db-ink);
-  color: var(--db-paper);
+  background: var(--lt-ground);
+  color: var(--lt-ink);
 }
+
+/* --- header and status ------------------------------------------------------ */
 
 .dayboard-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .dayboard-title {
@@ -53,38 +95,120 @@
 
 .dayboard-subtitle {
   margin: 8px 0 0;
-  color: var(--db-paper-dim);
+  color: var(--lt-ink-dim);
   font-size: 0.9rem;
 }
 
 .dayboard-status {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-size: 0.82rem;
-  color: var(--db-paper-dim);
+  color: var(--lt-ink-dim);
 }
 
 .dayboard-live-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--db-paper-dim);
+  background: var(--lt-faded);
 }
 
 .dayboard-live-dot.is-connected {
-  background: var(--db-green);
+  background: var(--lt-green);
+}
+
+.dayboard-corrected,
+.dayboard-presence {
+  padding: 2px 8px;
+  border: 1px solid var(--lt-line);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.dayboard-stale {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -30px -30px 18px;
+  padding: 12px 30px;
+  background: var(--lt-stale-band);
+  color: var(--lt-stale-text);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .dayboard-notice {
-  border: 1px solid var(--db-line);
+  border: 1px solid var(--lt-line);
   border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 16px;
-  color: var(--db-paper-dim);
+  color: var(--lt-ink-dim);
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+/* Said to assistive tech once per new action; never drawn. */
+.dayboard-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- this hallkeeper's next action ---------------------------------------- */
+
+.dayboard-next {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--lt-line);
+  border-left: 4px solid var(--lt-hairline);
+  border-radius: 10px;
+  background: var(--lt-raised);
+  color: var(--lt-ink);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.dayboard-next-request {
+  border-left-color: var(--lt-ring);
+}
+
+.dayboard-next[data-urgent="true"] {
+  border-left-color: var(--lt-urgent-label);
+}
+
+.dayboard-next-line {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.dayboard-next-line:focus-visible {
+  outline: 2px solid var(--lt-focus);
+  outline-offset: 2px;
+}
+
+span.dayboard-next-line {
+  cursor: default;
 }
 
 /* --- controls -------------------------------------------------------------- */
@@ -94,13 +218,13 @@
   align-items: end;
   flex-wrap: wrap;
   gap: 12px;
-  margin: 24px 0;
+  margin: 0 0 22px;
 }
 
 .dayboard-controls label {
   display: grid;
   gap: 5px;
-  color: #666452;
+  color: var(--lt-ink-dim);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -144,93 +268,626 @@
   background: #f1f5eb;
 }
 
-/* --- lanes ---------------------------------------------------------------- */
+/* The phone's room tabs: swipe, or tap a name. */
+.dayboard-pager {
+  display: none;
+}
 
-.dayboard-lanes {
+/* --- the sheet: ruler, lanes, rail ------------------------------------------ */
+
+.dayboard-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  grid-template-columns: minmax(0, 1fr) 236px;
   gap: 20px;
   align-items: start;
 }
 
-.dayboard-lane {
-  background: var(--db-ink-raised);
-  border: 1px solid var(--db-line);
+.dayboard-body.is-quiet {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dayboard-sheet {
+  overflow: hidden;
+  border: 1px solid var(--lt-line);
   border-radius: 12px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  background: var(--lt-raised);
   box-shadow: 0 5px 22px #50422906;
 }
 
-.dayboard-lane-title {
-  margin: 0 0 18px;
-  font: 400 25px/1.2 var(--hk-serif);
+.dayboard-ruler {
+  display: grid;
+  grid-template-columns: var(--db-lane-head) minmax(0, 1fr);
+  height: 44px;
+  border-bottom: 1px solid var(--lt-line);
+}
+
+.dayboard-ruler-track {
+  position: relative;
+  display: block;
+}
+
+.dayboard-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 6px;
+  background: var(--lt-line);
+}
+
+.dayboard-tick.is-major {
+  height: 10px;
+  background: var(--lt-faded);
+}
+
+.dayboard-tick-label {
+  position: absolute;
+  bottom: 14px;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--lt-ink-dim);
+  white-space: nowrap;
+}
+
+.dayboard-now {
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  height: 14px;
+  margin-left: -1px;
+  background: var(--lt-ink);
+}
+
+.dayboard-now-plaque {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--lt-ink);
+  color: var(--lt-ground);
+  font-size: 12px;
+  font-weight: 700;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--db-gilt);
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
-.dayboard-lane-empty {
-  margin: 0;
-  color: var(--db-paper-dim);
-  font-size: 0.85rem;
+.dayboard-now-time {
+  font-weight: 500;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 
-/* --- slot cards ----------------------------------------------------------- */
-
-.dayboard-slot {
-  border: 1px solid #e2ddcf;
-  border-left: 4px solid #becaad;
-  border-radius: 10px;
-  padding: 17px;
-  background: #fffdf7;
+.dayboard-lanes {
+  display: grid;
 }
 
-.dayboard-tone-live {
-  border-left-color: #7f9978;
-  background: #f1f5eb;
+.dayboard-lane {
+  display: grid;
+  grid-template-columns: var(--db-lane-head) minmax(0, 1fr);
+  border-bottom: 1px solid var(--lt-line);
 }
 
-.dayboard-tone-red {
-  border-left-color: #b83f33;
-  background: #fff4ee;
+.dayboard-lane:last-child {
+  border-bottom: 0;
 }
 
-/* Finished: a slate edge says so; the words stay at full strength. */
-.dayboard-tone-faded {
-  border-left-color: var(--db-slate);
-  background: #f8f7f2;
-}
-
-.dayboard-slot-head {
+.dayboard-lane-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--lt-raised);
+  border-right: 1px solid var(--lt-line);
 }
 
-.dayboard-slot-time {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.82rem;
-  color: var(--db-paper-dim);
+.dayboard-lane-photo {
+  width: 64px;
+  height: 48px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 6px;
 }
 
-.dayboard-slot-title {
-  margin: 6px 0 2px;
-  font-size: 17px;
-  line-height: 1.5;
+.dayboard-lane-words {
+  min-width: 0;
+}
+
+.dayboard-lane-title {
+  margin: 0;
+  font: 400 19px/1.2 var(--hk-serif);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lt-gilt);
   overflow-wrap: anywhere;
+}
+
+.dayboard-lane-count {
+  margin: 3px 0 0;
+  color: var(--lt-ink-dim);
+  font-size: 12.5px;
+}
+
+.dayboard-lane-body {
+  display: block;
+  min-width: 0;
+}
+
+.dayboard-track {
+  position: relative;
+  min-height: var(--db-track-height);
+}
+
+.dayboard-now-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--lt-ink);
+  opacity: 0.55;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* --- gaps ------------------------------------------------------------------- */
+
+.dayboard-gap {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  border-top: 1px dashed var(--lt-faded);
+  pointer-events: none;
+}
+
+.dayboard-gap-words {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 6px;
+  background: var(--lt-raised);
+  color: var(--lt-ink-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dayboard-gap.is-short {
+  border-top-color: var(--lt-red);
+}
+
+.dayboard-gap.is-short .dayboard-gap-words {
+  color: var(--lt-ink);
+  font-weight: 600;
+}
+
+/* --- slabs ------------------------------------------------------------------ */
+
+.dayboard-slab {
+  --slab-tone: var(--lt-hairline);
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  min-width: 64px;
+  display: block;
+  padding: 0;
+  border: 1px solid var(--lt-line);
+  border-left: 4px solid var(--slab-tone);
+  border-radius: 8px;
+  background: var(--lt-ground);
+  color: var(--lt-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  z-index: 1;
+  /* Narrow slabs keep their dot and icon and lose their words (law 7 is
+     kept by the aria-label and the open slot); the query reads the slab. */
+  container-type: inline-size;
+}
+
+div.dayboard-slab {
+  cursor: default;
+}
+
+.dayboard-slab:hover {
+  border-color: var(--lt-hairline);
+  z-index: 3;
+}
+
+.dayboard-slab:focus-visible {
+  outline: 2px solid var(--lt-focus);
+  outline-offset: 2px;
+  z-index: 3;
+}
+
+.dayboard-slab.is-selected {
+  box-shadow: 0 0 0 2px var(--lt-hairline);
+  z-index: 3;
+}
+
+.dayboard-tone-green { --slab-tone: var(--lt-green); }
+.dayboard-tone-amber { --slab-tone: var(--lt-amber); }
+.dayboard-tone-amber-deep { --slab-tone: var(--lt-amber-deep); }
+.dayboard-tone-live { --slab-tone: var(--lt-live); }
+.dayboard-tone-sage { --slab-tone: var(--lt-sage-ink); }
+.dayboard-tone-faded { --slab-tone: var(--lt-faded); }
+.dayboard-tone-red { --slab-tone: var(--lt-red); }
+.dayboard-tone-quiet { --slab-tone: var(--lt-hairline); }
+
+/* Finished: a slate edge says so; the words stay at full strength. */
+.dayboard-slab.dayboard-tone-faded {
+  background: var(--lt-sunk);
+}
+
+.dayboard-slab-face {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px 12px;
+  min-width: 0;
+}
+
+.dayboard-verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dayboard-dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--slab-tone);
+}
+
+.dayboard-slab-title {
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dayboard-slab-time {
+  font-size: 12.5px;
+  color: var(--lt-ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dayboard-linked {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+}
+
+@container (max-width: 200px) {
+  .dayboard-ring-words,
+  .dayboard-linked,
+  .dayboard-slab-kind {
+    display: none;
+  }
+}
+
+@container (max-width: 120px) {
+  .dayboard-verb-words,
+  .dayboard-slab-time {
+    display: none;
+  }
+}
+
+/* The segments: setup, live and clear-down, as a strip along the bottom. */
+.dayboard-segments {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+  display: flex;
+}
+
+.dayboard-segment-setup {
+  background: repeating-linear-gradient(135deg, var(--slab-tone) 0 3px, transparent 3px 6px);
+  opacity: 0.5;
+}
+
+.dayboard-segment-live {
+  background: var(--slab-tone);
+}
+
+.dayboard-segment-clear {
+  background: repeating-linear-gradient(135deg, var(--lt-sage) 0 3px, transparent 3px 6px);
+}
+
+/* --- the copper ring --------------------------------------------------------- */
+
+.dayboard-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  margin-top: 2px;
+  padding: 2px 8px 2px 6px;
+  border: 2px solid var(--lt-ring);
+  border-radius: 999px;
+  background: var(--lt-raised);
+  color: var(--lt-ink);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  justify-self: start;
+}
+
+.dayboard-ring svg {
+  flex: none;
+  color: var(--lt-ring);
+}
+
+.dayboard-ring-count {
+  color: var(--lt-ring);
+  font-variant-numeric: tabular-nums;
+}
+
+.dayboard-ring-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dayboard-ring[data-level="urgent"] .dayboard-ring-words {
+  color: var(--lt-urgent-label);
+}
+
+/* The halo that breathes: a second copper line outside the ring, so the
+   words inside keep their full ink (law 8) while the attention moves. */
+.dayboard-ring::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 2px solid var(--lt-ring);
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* --- the breaths (D3): opacity and transform only, phase-locked ------------- */
+
+@keyframes lt-dot-breath {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: calc(1 - var(--lt-dot-amplitude)); transform: scale(0.84); }
+}
+
+@keyframes lt-live-breath {
+  0%, 100% { opacity: 0; }
+  50% { opacity: var(--lt-live-amplitude); }
+}
+
+@keyframes lt-halo-breath {
+  0%, 100% { opacity: 0; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.04); }
+}
+
+@keyframes lt-halo-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.08); }
+}
+
+@keyframes lt-arrive {
+  0% { transform: scale(1.25); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.dayboard-slab[data-motion="breath-4s"] .dayboard-dot {
+  animation: lt-dot-breath var(--lt-breath-organisers) ease-in-out infinite;
+  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
+}
+
+.dayboard-slab[data-motion="breath-3s"] .dayboard-dot {
+  animation: lt-dot-breath var(--lt-breath-guests) ease-in-out infinite;
+  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
+}
+
+.dayboard-slab[data-motion="breath-2s"] .dayboard-dot {
+  animation: lt-dot-breath var(--lt-breath-imminent) ease-in-out infinite;
+  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
+}
+
+.dayboard-slab[data-motion="live-breath"] .dayboard-dot {
+  animation: lt-dot-breath var(--lt-breath-live) ease-in-out infinite;
+  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
+}
+
+/* The live slab's own breath: an overlay in the live colour, never past
+   --lt-live-amplitude, the room's heartbeat and the proof the board is live. */
+.dayboard-slab[data-motion="live-breath"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--lt-live);
+  opacity: 0;
+  pointer-events: none;
+  animation: lt-live-breath var(--lt-breath-live) ease-in-out infinite;
+  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
+}
+
+.dayboard-ring[data-level="attention"]::after {
+  animation: lt-halo-breath var(--lt-breath-attention) ease-in-out infinite;
+  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
+}
+
+.dayboard-ring[data-level="urgent"]::after {
+  animation: lt-halo-pulse var(--lt-pulse-urgent) ease-in-out infinite;
+  animation-delay: calc(-1ms * var(--lt-epoch-phase-ms));
+}
+
+/* One arrival stamp on the ring itself; the ring remounts on a new arrival. */
+.dayboard-ring[data-arrived="true"] {
+  animation: lt-arrive var(--lt-arrival) var(--db-ease-out) 1;
+}
+
+/* The socket down, offline or stale: every breath stops; the words still
+   stand (D3 law 6). */
+.dayboard[data-frozen="true"] .dayboard-dot,
+.dayboard[data-frozen="true"] .dayboard-slab::after,
+.dayboard[data-frozen="true"] .dayboard-ring,
+.dayboard[data-frozen="true"] .dayboard-ring::after {
+  animation: none;
+}
+
+/* Reduced motion: not even the arrival stamp; the words were already doing
+   the work. */
+@media (prefers-reduced-motion: reduce) {
+  .dayboard *,
+  .dayboard *::after,
+  .dayboard *::before {
+    animation: none !important;
+  }
+}
+
+/* --- the UNOWNED rail ------------------------------------------------------- */
+
+.dayboard-rail {
+  border: 1px solid var(--lt-line);
+  border-top: 4px solid var(--lt-ring);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--lt-raised);
+}
+
+.dayboard-rail-title {
+  margin: 0 0 10px;
+  font: 400 17px/1.2 var(--hk-serif);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lt-ring);
+}
+
+.dayboard-rail-note,
+.dayboard-rail-empty {
+  margin: 0 0 8px;
+  color: var(--lt-ink-dim);
+  font-size: 13px;
+}
+
+.dayboard-rail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dayboard-rail-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--lt-line);
+  border-left: 4px solid var(--lt-ring);
+  border-radius: 8px;
+  background: var(--lt-ground);
+  color: var(--lt-ink);
+  font: 500 13px/1.4 Inter, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dayboard-rail-item[data-urgency="now"] {
+  border-left-color: var(--lt-urgent-label);
+}
+
+.dayboard-rail-item:disabled {
+  cursor: default;
+}
+
+.dayboard-rail-item:focus-visible {
+  outline: 2px solid var(--lt-focus);
+  outline-offset: 2px;
+}
+
+.dayboard-rail-item svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--lt-ring);
+}
+
+/* --- the open slot ----------------------------------------------------------- */
+
+.dayboard-detail {
+  --slab-tone: var(--lt-hairline);
+  margin-top: 20px;
+  padding: 18px 20px;
+  border: 1px solid var(--lt-line);
+  border-left: 4px solid var(--slab-tone);
+  border-radius: 12px;
+  background: var(--lt-raised);
+}
+
+.dayboard-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dayboard-detail-room {
+  margin: 0;
+  color: var(--lt-ink-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dayboard-detail-title {
+  margin: 4px 0 6px;
+  font: 400 24px/1.2 var(--hk-serif);
+  overflow-wrap: anywhere;
+}
+
+.dayboard-detail-close {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #dcd5c6;
+  border-radius: 8px;
+  background: #fffefa;
+  color: #3d523b;
+  font: 500 13px/1.2 Inter, sans-serif;
+  cursor: pointer;
 }
 
 .dayboard-slot-meta {
   margin: 0;
-  font-size: 0.8rem;
-  color: var(--db-paper-dim);
+  font-size: 13px;
+  color: var(--lt-ink-dim);
 }
 
 .dayboard-slot-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-size: 12px;
@@ -240,8 +897,8 @@
   margin: 8px 0 0;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid var(--db-red);
-  color: var(--db-paper);
+  border: 1px solid var(--lt-red);
+  color: var(--lt-ink);
   font-size: 0.82rem;
 }
 
@@ -257,7 +914,7 @@
 
 .dayboard-phases {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   padding: 0;
   margin: 16px 0;
   gap: 7px;
@@ -297,29 +954,30 @@
   text-underline-offset: 4px;
 }
 
-/* --- chips: the pulse lives HERE, on the dot, never under text ------------ */
+/* --- chips: the legend ------------------------------------------------------- */
 
 .dayboard-chip {
-  --db-chip-tone: var(--db-paper-dim);
+  --db-chip-tone: var(--lt-ink-dim);
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 3px 10px 3px 7px;
-  border: 1px solid var(--db-line);
+  border: 1px solid var(--lt-line);
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
-  color: var(--db-paper);
+  color: var(--lt-ink);
   white-space: nowrap;
 }
 
+.dayboard-chip-quiet { --db-chip-tone: var(--db-quiet); }
 .dayboard-chip-green { --db-chip-tone: var(--db-green); }
 .dayboard-chip-amber { --db-chip-tone: var(--db-amber); }
 .dayboard-chip-amber-deep { --db-chip-tone: var(--db-amber-deep); }
-.dayboard-chip-live { --db-chip-tone: var(--db-gilt); }
+.dayboard-chip-live { --db-chip-tone: var(--db-live); }
+.dayboard-chip-sage { --db-chip-tone: var(--db-sage); }
+.dayboard-chip-faded { --db-chip-tone: var(--db-faded); }
 .dayboard-chip-red { --db-chip-tone: var(--db-red); }
-.dayboard-chip-quiet { --db-chip-tone: var(--db-paper-dim); }
-.dayboard-chip-faded { --db-chip-tone: var(--db-slate); }
 
 .dayboard-chip-dot {
   position: relative;
@@ -330,36 +988,39 @@
   flex: none;
 }
 
-/* One stamp when a room's state moves on, the Enquiries desk's 320 ms. */
-.dayboard-chip.is-stamped {
-  animation: dayboard-stamp var(--house-motion-stamp, 320ms) var(--db-ease-out);
+.dayboard-chip svg {
+  color: var(--db-chip-tone);
 }
 
-@keyframes dayboard-stamp {
-  0% { transform: scale(1.14); box-shadow: 0 0 0 6px #f0b68f55; }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 #f0b68f00; }
+/* The second channel: the ring and the band, in copper and slate. */
+.dayboard-chip-ring {
+  --db-chip-tone: var(--lt-ring);
+  border-color: var(--lt-ring);
 }
 
-/* Reduced motion: not even the stamp; the words were already doing the work. */
-@media (prefers-reduced-motion: reduce) {
-  .dayboard *,
-  .dayboard *::after {
-    animation: none !important;
-  }
+.dayboard-chip-ring-urgent {
+  --db-chip-tone: var(--lt-urgent-label);
 }
 
-/* --- legend ---------------------------------------------------------------- */
+.dayboard-chip-ring-stale {
+  --db-chip-tone: var(--lt-stale-text);
+  border-color: var(--lt-line);
+  background: var(--lt-stale-band);
+  /* The band's own words on the band's own grey, on both registers. */
+  color: var(--lt-stale-text);
+}
 
-/* The rooms with nothing on, on one line. */
+/* --- the rooms with nothing on, the legend, the refresh ---------------------- */
+
 .dayboard-free {
   margin: 20px 0 0;
-  color: var(--db-paper-dim);
+  color: var(--lt-ink-dim);
   font-size: 14px;
 }
 
 .dayboard-free span {
   font-weight: 600;
-  color: var(--db-paper);
+  color: var(--lt-ink);
 }
 
 .dayboard-refresh {
@@ -379,12 +1040,117 @@
   gap: 10px;
   margin-top: 25px;
   padding-top: 14px;
-  border-top: 1px solid var(--db-line);
+  border-top: 1px solid var(--lt-line);
 }
 
-@media (max-width: 600px) {
+.dayboard-wall-foot {
+  margin: 18px 0 0;
+}
+
+/* --- The setup-sheet corridor and Lane 9's request region (Ship Friday) ---
+   The door out of a slot. Its honest states are as prominent as its link:
+   "no sheet yet" with a next action is information, not an error, so it
+   reads in the same ink as everything else and only the rule changes. */
+.dayboard-slot-sheet { margin: 14px 0 4px; display: grid; gap: 6px; }
+.dayboard-open-sheet {
+  display: inline-flex; align-items: flex-start; flex-direction: column; gap: 2px; min-height: 44px; padding: 9px 14px;
+  border: 1px solid var(--lt-line); border-radius: 9px; line-height: 1.35;
+  background: var(--lt-sunk); color: var(--hk-forest, #385542);
+  font-size: 13px; font-weight: 600; text-decoration: none; width: fit-content;
+}
+.dayboard-open-sheet:hover { border-color: var(--hk-sage-deep, #6b8963); }
+/* The layout's name in the dim ink rather than faded forest: 75% opacity
+   put it under 4.5:1 on the door's sunk ivory. */
+.dayboard-slot-sheet-layout { font-weight: 400; color: var(--lt-ink-dim); font-size: 12px; }
+/* How far the room's sheet has got: words first, then a thin bar that turns
+   sage when every row is checked. */
+.dayboard-slot-progress { display: grid; gap: 5px; margin: 0; color: var(--lt-ink-dim); font-size: 12.5px; line-height: 1.4; }
+.dayboard-slot-progress-words { align-items: center; display: inline-flex; gap: 5px; }
+.dayboard-slot-progress-bar { background: var(--lt-line); border-radius: 999px; display: block; height: 4px; max-width: 220px; overflow: hidden; }
+.dayboard-slot-progress-bar > span { background: var(--hk-forest, #385542); border-radius: inherit; display: block; height: 100%; }
+.dayboard-slot-progress.is-complete { color: var(--house-sage-text); font-weight: 600; }
+.dayboard-slot-progress.is-complete .dayboard-slot-progress-bar > span { background: var(--house-sage-dot); }
+.dayboard-slot-sheet-note { color: var(--hk-ink-faint, #726c61); font-size: 12.5px; line-height: 1.5; }
+.dayboard-sheet-choices { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+/* Lane 9 owns what goes in here; the board only reserves the place. An
+   empty region must cost nothing, so there is no padding until it fills. */
+.dayboard-slot-requests:empty { display: none; }
+.dayboard-slot-requests { margin-top: 10px; }
+
+/* --- the wall register (D7; human input 1 pending) --------------------------
+   The same tokens, redefined on the dark arrangement of the register, at
+   wall size. Flip this block to the paper values if Blake answers "all
+   ivory". */
+
+.dayboard-wall {
+  min-height: 100vh;
+  background: var(--hk-forest-ink, #1e2721);
+}
+
+.dayboard[data-register="wall"] {
+  --lt-ground: var(--hk-forest-ink, #1e2721);
+  --lt-raised: var(--hk-forest-raised, #263028);
+  --lt-sunk: #1a221c;
+  --lt-line: var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+  --lt-ink: var(--hk-paper, #f3efe4);
+  /* The register's dim paper, flattened onto the forest ground so a contrast
+     audit reads one colour: about 7.6:1 on the ground, 6.7:1 on a raised
+     slab (src/__tests__/house-tokens.test.ts measures it). */
+  --lt-ink-dim: #b9b6ab;
+  --lt-hairline: var(--hk-forest-soft, #5b7a63);
+  --lt-amber-deep: #c9761d;
+  --lt-live: #d4786a;
+  --lt-sage-ink: var(--hk-sage, #a9c3a4);
+  --lt-faded: #8e9992;
+  /* The alert, lifted for the dark ground: 3.3:1 on a raised slab's edge. */
+  --lt-red: var(--hk-alert-light, #e0917a);
+  --lt-ring: var(--house-accent-copper, #c98a5b);
+  /* The lifted oxblood reads 4.36:1 on a raised ring, under the 4.5:1 a
+     label needs; the URGENT word lifts once more (5.3:1 raised, 5.9:1 ground). */
+  --lt-urgent-label: #e08a7c;
+  --lt-stale-band: #8e9992;
+  --lt-stale-text: var(--hk-forest-ink, #1e2721);
+  --lt-gilt: var(--hk-copper-light, #c98a5e);
+  --lt-focus: var(--house-accent-copper, #c98a5b);
+  --db-lane-head: 240px;
+  --db-track-height: 140px;
+  padding: 36px 40px;
+  font-size: 1.1rem;
+}
+
+.dayboard[data-register="wall"] .dayboard-stale { margin: -36px -40px 18px; padding: 12px 40px; }
+.dayboard[data-register="wall"] .dayboard-title { font-size: 44px; }
+.dayboard[data-register="wall"] .dayboard-next { font-size: 22px; }
+.dayboard[data-register="wall"] .dayboard-lane-title { font-size: 23px; }
+.dayboard[data-register="wall"] .dayboard-lane-photo { width: 80px; height: 60px; }
+.dayboard[data-register="wall"] .dayboard-verb { font-size: 15px; }
+.dayboard[data-register="wall"] .dayboard-slab-title { font-size: 19px; }
+.dayboard[data-register="wall"] .dayboard-slab-time { font-size: 14px; }
+.dayboard[data-register="wall"] .dayboard-ring { font-size: 14px; }
+.dayboard[data-register="wall"] .dayboard-tick-label { font-size: 14px; }
+.dayboard[data-register="wall"] .dayboard-now-plaque { font-size: 14px; background: var(--lt-ink); color: var(--lt-ground); }
+.dayboard[data-register="wall"] .dayboard-now-line { opacity: 0.7; }
+.dayboard[data-register="wall"] .dayboard-sheet { box-shadow: none; }
+.dayboard[data-register="wall"] .dayboard-gap-words { font-size: 14px; }
+.dayboard[data-register="wall"] .dayboard-rail-item { font-size: 15px; }
+.dayboard[data-register="wall"] .dayboard-chip { font-size: 14px; }
+.dayboard[data-register="wall"] .dayboard-refresh,
+.dayboard[data-register="wall"] .dayboard-detail-close {
+  border-color: var(--lt-line);
+  background: var(--lt-raised);
+  color: var(--lt-ink);
+}
+
+/* --- the phone: one lane at a time, the day running down (D7) ---------------- */
+
+@media (max-width: 700px) {
   .dayboard {
     padding: 22px 14px;
+    --db-phone-track: max(480px, 70vh);
+  }
+  .dayboard-stale {
+    margin: -22px -14px 16px;
+    padding: 10px 14px;
   }
   .dayboard-header {
     align-items: flex-start;
@@ -396,52 +1162,156 @@
   .dayboard-controls {
     gap: 8px;
   }
-  .dayboard-controls label {
-    max-width: 100%;
-  }
+  .dayboard-controls label,
   .dayboard-controls select {
     max-width: 100%;
   }
-  .dayboard-lane {
-    padding: 16px;
+  .dayboard-detail {
+    padding: 14px;
   }
-  .dayboard-slot {
-    padding: 13px;
-  }
-  .dayboard-slot-head {
+  .dayboard-detail-head {
     flex-wrap: wrap;
   }
-}
+  .dayboard-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 
-/* --- The setup-sheet corridor and Lane 9's request region (Ship Friday) ---
-   The door out of a slot. Its honest states are as prominent as its link:
-   "no sheet yet" with a next action is information, not an error, so it
-   reads in the same ink as everything else and only the rule changes. */
-.dayboard-slot-sheet { margin: 14px 0 4px; display: grid; gap: 6px; }
-.dayboard-open-sheet {
-  display: inline-flex; align-items: center; min-height: 44px; padding: 9px 14px;
-  border: 1px solid var(--hk-line, #e2ddcf); border-radius: 9px;
-  background: var(--hk-ivory-sunk, #f3f0e5); color: var(--hk-forest, #385542);
-  font-size: 13px; font-weight: 600; text-decoration: none; width: fit-content;
+  /* The next action stays above whatever the thumb does. */
+  .dayboard[data-layout="phone"] .dayboard-next {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    box-shadow: 0 4px 14px #50422914;
+  }
+  .dayboard[data-layout="phone"] .dayboard-pager {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    margin: 0 0 12px;
+    padding-bottom: 4px;
+  }
+  .dayboard[data-layout="phone"] .dayboard-pager button {
+    flex: none;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--lt-line);
+    border-radius: 999px;
+    background: var(--lt-raised);
+    color: var(--lt-ink);
+    font: 500 13px/1.2 Inter, sans-serif;
+  }
+  /* One lane per screen, swiped between rooms. */
+  .dayboard[data-layout="phone"] .dayboard-lanes {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dayboard[data-layout="phone"] .dayboard-lane {
+    display: block;
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    border-bottom: 0;
+  }
+  .dayboard[data-layout="phone"] .dayboard-lane-head {
+    border-right: 0;
+    border-bottom: 1px solid var(--lt-line);
+  }
+  .dayboard[data-layout="phone"] .dayboard-lane-body {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  /* The ruler runs down the left of the lane. */
+  .dayboard[data-layout="phone"] .dayboard-ruler-v {
+    display: block;
+    position: relative;
+    height: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--lt-line);
+  }
+  .dayboard[data-layout="phone"] .dayboard-ruler-v .dayboard-ruler-track {
+    position: absolute;
+    inset: 0;
+  }
+  .dayboard[data-layout="phone"] .dayboard-ruler-v .dayboard-tick {
+    bottom: auto;
+    right: 0;
+    width: 6px;
+    height: 1px;
+  }
+  .dayboard[data-layout="phone"] .dayboard-ruler-v .dayboard-tick.is-major {
+    width: 10px;
+    height: 1px;
+  }
+  /* The hour sits to the left of its tick, inside the ruler column, never
+     under the slabs. */
+  .dayboard[data-layout="phone"] .dayboard-ruler-v .dayboard-tick-label {
+    bottom: auto;
+    left: auto;
+    right: 14px;
+    top: 0;
+    transform: translateY(-50%);
+  }
+  .dayboard[data-layout="phone"] .dayboard-ruler-v .dayboard-now {
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: 2px;
+    margin: -1px 0 0;
+  }
+  .dayboard[data-layout="phone"] .dayboard-ruler-v .dayboard-now-plaque {
+    bottom: auto;
+    left: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 2px 5px;
+    font-size: 11px;
+  }
+  /* The track is the day, top to bottom. */
+  .dayboard[data-layout="phone"] .dayboard-track {
+    min-height: 0;
+    height: var(--db-phone-track);
+  }
+  .dayboard[data-layout="phone"] .dayboard-now-line {
+    left: 0;
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+    margin: -1px 0 0;
+  }
+  .dayboard[data-layout="phone"] .dayboard-slab {
+    left: 6px;
+    right: 6px;
+    bottom: auto;
+    min-width: 0;
+    min-height: 56px;
+  }
+  .dayboard[data-layout="phone"] .dayboard-slab-face {
+    padding: 8px 10px 8px 14px;
+  }
+  .dayboard[data-layout="phone"] .dayboard-segments {
+    top: 0;
+    bottom: 0;
+    right: auto;
+    width: 5px;
+    height: auto;
+    flex-direction: column;
+  }
+  .dayboard[data-layout="phone"] .dayboard-gap {
+    left: 50%;
+    width: 1px;
+    height: auto;
+    border-top: 0;
+    border-left: 1px dashed var(--lt-faded);
+  }
+  .dayboard[data-layout="phone"] .dayboard-gap.is-short {
+    border-left-color: var(--lt-red);
+  }
+  .dayboard[data-layout="phone"] .dayboard-gap-words {
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
 }
-.dayboard-open-sheet:hover { border-color: var(--hk-sage-deep, #6b8963); }
-/* The layout's name sits under the action, not beside it: at lane width the
-   inline form broke "Open setup sheet" across two lines mid-phrase. */
-.dayboard-open-sheet { flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1.35; }
-/* The layout's name in the dim ink rather than faded forest: 75% opacity
-   put it under 4.5:1 on the door's sunk ivory. */
-.dayboard-slot-sheet-layout { font-weight: 400; color: var(--hk-ink-dim, #575a4e); font-size: 12px; }
-/* How far the room's sheet has got: words first, then a thin bar that turns
-   sage when every row is checked. */
-.dayboard-slot-progress { display: grid; gap: 5px; margin: 0; color: var(--hk-ink-dim, #575a4e); font-size: 12.5px; line-height: 1.4; }
-.dayboard-slot-progress-words { align-items: center; display: inline-flex; gap: 5px; }
-.dayboard-slot-progress-bar { background: var(--hk-line, #e4dcd0); border-radius: 999px; display: block; height: 4px; max-width: 220px; overflow: hidden; }
-.dayboard-slot-progress-bar > span { background: var(--hk-forest, #385542); border-radius: inherit; display: block; height: 100%; }
-.dayboard-slot-progress.is-complete { color: var(--house-sage-text); font-weight: 600; }
-.dayboard-slot-progress.is-complete .dayboard-slot-progress-bar > span { background: var(--house-sage-dot); }
-.dayboard-slot-sheet-note { color: var(--hk-ink-faint, #726c61); font-size: 12.5px; line-height: 1.5; }
-.dayboard-sheet-choices { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
-/* Lane 9 owns what goes in here; the board only reserves the place. An
-   empty region must cost nothing, so there is no padding until it fills. */
-.dayboard-slot-requests:empty { display: none; }
-.dayboard-slot-requests { margin-top: 10px; }

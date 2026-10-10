@@ -177,3 +177,73 @@ export function canWriteInventory(
 ): boolean {
   return holdsVenueRole(user, venueId, INVENTORY_WRITE_ROLES);
 }
+
+// ---------------------------------------------------------------------------
+// Goal 19 D2 — the living timetable's capabilities, beside the sets above.
+//
+// Three verbs, not three roles. Proposing a window is weaker than inking one
+// (a hold on the ladder, never ink), so everyone who may ink may propose, and
+// the client's side may propose on an event they hold a live link to — the
+// LINK is checked by the caller against the row (client-event-schedule's
+// rule), never inferred from the role. Raising a request is the floor plus
+// the client's side on their own event; handling one (acknowledge, take,
+// hand over, resolve) is the floor only. None of these is an approval gate:
+// a quantity beyond the release, a time or a price goes to the decision
+// object, and canManageVenue stays a read scope.
+// ---------------------------------------------------------------------------
+
+/** The client's side of the house: the people who plan a room and propose. */
+const CLIENT_SIDE_ROLES: ReadonlySet<string> = new Set(["client", "planner"]);
+
+/** Who may pencil a hold linked to a plan at the venue: everyone who may ink
+ *  (booking-mutations' DIARY_WRITE_ROLES, restated here so this leaf has no
+ *  service import) — the client's side is admitted by the event link. */
+const WINDOW_PROPOSER_VENUE_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "manager", "sales"]);
+
+/** Who may raise a request on the floor; the client's side raises on their
+ *  own event, by the link. */
+const REQUEST_RAISER_VENUE_ROLES: ReadonlySet<string> = VENUE_FLOOR_ROLES;
+
+/** Who may acknowledge, take, hand over and resolve a request. */
+const REQUEST_HANDLER_ROLES: ReadonlySet<string> = new Set(["hallkeeper", "staff", "admin", "manager"]);
+
+export function isClientSideRole(role: string): boolean {
+  return CLIENT_SIDE_ROLES.has(role);
+}
+
+/**
+ * Propose a window: create or move a HOLD linked to a plan (never ink). For
+ * the client's side this answers only the role half; the caller must also
+ * prove the live event link (`holdsEventLink`). Nothing here admits a
+ * hallkeeper or a caterer.
+ */
+export function canProposeWindow(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+  holdsEventLink = false,
+): boolean {
+  if (isPlatformAdmin(user)) return true;
+  if (CLIENT_SIDE_ROLES.has(user.role)) return holdsEventLink;
+  return WINDOW_PROPOSER_VENUE_ROLES.has(user.role) && user.venueId === venueId;
+}
+
+/** Raise a request: the floor at the venue, or the client's side on an event
+ *  they hold a live link to. */
+export function canRaiseRequest(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+  holdsEventLink = false,
+): boolean {
+  if (isPlatformAdmin(user)) return true;
+  if (CLIENT_SIDE_ROLES.has(user.role)) return holdsEventLink;
+  return REQUEST_RAISER_VENUE_ROLES.has(user.role) && user.venueId === venueId;
+}
+
+/** Acknowledge, take, hand over or resolve a request: the floor only. A
+ *  client may reopen their own, which the request core decides by the row. */
+export function canHandleRequests(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, REQUEST_HANDLER_ROLES);
+}

@@ -209,9 +209,9 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
 
   const value = useMemo<SlotRequestsApi>(
     () => enabled
-      ? { status, nowMs, requestsFor, retry: refresh, ask, move, busyId, askingKeys, failure }
+      ? { status, nowMs, requests, requestsFor, retry: refresh, ask, move, busyId, askingKeys, failure }
       : SLOT_REQUESTS_UNAVAILABLE,
-    [enabled, status, nowMs, requestsFor, refresh, ask, move, busyId, askingKeys, failure],
+    [enabled, status, nowMs, requests, requestsFor, refresh, ask, move, busyId, askingKeys, failure],
   );
 
   return (

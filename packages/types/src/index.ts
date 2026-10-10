@@ -2487,6 +2487,7 @@ export * from "./capture-intake.js";
 export * from "./layout-validator.js";
 export * from "./event-architect.js";
 export * from "./event-architect-engine.js";
+export * from "./event-brief-draft.js";
 export * from "./reconstruction-release.js";
 export * from "./reconstruction-review-evidence.js";
 export * from "./omnitwin-foundry.js";
@@ -2519,6 +2520,7 @@ export * from "./client-event-schedule.js";
 
 // Ship Friday slice 10: the one-tap request from the floor and its ladder.
 export * from "./requests.js";
+export * from "./conversations.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";

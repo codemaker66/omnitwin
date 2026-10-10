@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactElement } from "react";
 import {
+  COUNTABLE_REQUEST_KINDS,
   REQUEST_KINDS,
   REQUEST_URGENCIES,
   describeRequestKind,
@@ -46,16 +47,19 @@ const RESOLUTIONS: readonly { readonly outcome: RequestOutcome; readonly label: 
   { outcome: "no_longer_needed", label: "Not needed" },
 ];
 
-const COUNTABLE_KINDS: readonly RequestKind[] = ["refreshments", "av", "other"];
+const COUNTABLE_KINDS: readonly RequestKind[] = COUNTABLE_REQUEST_KINDS;
 
-function toBoardRequest(request: VenueRequest): DayBoardSlotRequest {
+export function toBoardRequest(request: VenueRequest): DayBoardSlotRequest {
   return {
     id: request.id,
     bookingId: request.bookingId,
+    roomId: request.roomId,
     kind: request.kind,
     quantity: request.quantity,
     urgency: request.urgency,
     state: request.state,
+    ownerUserId: request.ownerUserId,
+    ownerName: request.ownerName,
     createdAt: request.createdAt,
   };
 }

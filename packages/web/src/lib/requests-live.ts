@@ -1,12 +1,18 @@
 import { z } from "zod";
-import { isStaffAudienceRole } from "@omnitwin/types";
+import {
+  ConversationCaughtUpSchema,
+  ConversationEventSchema,
+  isStaffAudienceRole,
+  type ConversationEvent,
+} from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
+import { observeServerNow } from "./clock-offset.js";
 import { isE2EAuthBypassEnabled } from "./e2e-auth-bypass.js";
 import { nextBackoffMs } from "../pages/diary/lib/live-protocol.js";
 
 // ---------------------------------------------------------------------------
-// The requests live channel (Ship Friday slice 10).
+// The requests live channel (Ship Friday slice 10; goal 19 S2).
 //
 // ONE socket for the whole signed-in app, reference-counted by its listeners:
 // it opens when the first surface that cares about requests mounts and closes
@@ -16,8 +22,12 @@ import { nextBackoffMs } from "../pages/diary/lib/live-protocol.js";
 // and it says so (presence: false), so its person is not counted as being on
 // the Diary while they are on some other page.
 //
-// Reconnect replays rather than trusting deltas: after a drop, the listener
-// is told "reconnected" and refetches the snapshot, exactly as the Diary does.
+// Goal 19 S2: the socket also carries `conversation.event` frames (a message
+// landed, with its cursor) and feeds the one corrected clock from every
+// frame's `serverNowMs`. It remembers the newest cursor it has seen and asks
+// for a replay from there when it reconnects; the server replays what was
+// missed, then says caughtUp, and only then do surfaces refetch their
+// snapshot. Reconnect replays rather than trusting deltas, as the Diary does.
 // A frame type this client does not know is ignored, so a newer server can
 // speak a superset without breaking an older phone.
 // ---------------------------------------------------------------------------
@@ -47,6 +57,8 @@ const NotificationEventFrame = z.object({
 const HelloFrame = z.object({ type: z.literal("hello"), venueId: z.string() });
 const PingFrame = z.object({ type: z.literal("ping") });
 const ErrorFrame = z.object({ type: z.literal("error") });
+/** Any frame that carries the server's clock feeds it. */
+const ClockFrame = z.object({ serverNowMs: z.number().int().positive() });
 
 export type RequestsLiveEvent =
   | {
@@ -56,6 +68,10 @@ export type RequestsLiveEvent =
       readonly bookingId: string | null;
     }
   | { readonly kind: "notification"; readonly venueId: string }
+  /** A message landed in a thread this person's audience admits. */
+  | { readonly kind: "conversation"; readonly venueId: string; readonly event: ConversationEvent }
+  /** The server has replayed everything after the cursor it was given. */
+  | { readonly kind: "caughtUp"; readonly cursor: number }
   | { readonly kind: "reconnected" }
   | { readonly kind: "connection"; readonly connected: boolean };
 
@@ -68,6 +84,14 @@ let hadConnection = false;
 let reconnectTimer: number | null = null;
 let pingTimer: number | null = null;
 let closing = false;
+/** The newest conversation cursor this app has seen; kept across reconnects
+ *  so the next auth asks for exactly what was missed. */
+let lastCursor = 0;
+
+/** The newest conversation cursor seen on this socket (0 before any). */
+export function conversationCursor(): number {
+  return lastCursor;
+}
 
 function announce(event: RequestsLiveEvent): void {
   for (const listener of [...listeners]) {
@@ -95,6 +119,10 @@ function handleFrame(raw: unknown): void {
     return;
   }
 
+  // D9: the one clock, fed by every frame that carries it.
+  const clock = ClockFrame.safeParse(data);
+  if (clock.success) observeServerNow(clock.data.serverNowMs);
+
   if (HelloFrame.safeParse(data).success) {
     const isReconnect = hadConnection;
     hadConnection = true;
@@ -119,6 +147,20 @@ function handleFrame(raw: unknown): void {
   const notification = NotificationEventFrame.safeParse(data);
   if (notification.success) {
     announce({ kind: "notification", venueId: notification.data.venueId });
+    return;
+  }
+
+  const conversation = ConversationEventSchema.safeParse(data);
+  if (conversation.success) {
+    lastCursor = Math.max(lastCursor, conversation.data.cursor);
+    announce({ kind: "conversation", venueId: conversation.data.venueId, event: conversation.data });
+    return;
+  }
+
+  const caughtUp = ConversationCaughtUpSchema.safeParse(data);
+  if (caughtUp.success) {
+    lastCursor = Math.max(lastCursor, caughtUp.data.cursor);
+    announce({ kind: "caughtUp", cursor: caughtUp.data.cursor });
     return;
   }
 
@@ -159,8 +201,15 @@ function connect(): void {
         return;
       }
       // presence: false — this connection only listens. Its person may be
-      // on any page, so the Diary must not count them as "here".
-      ws.send(JSON.stringify({ type: "auth", token, presence: false }));
+      // on any page, so the Diary must not count them as "here". afterCursor
+      // asks the server to replay the conversation stream from the newest
+      // cursor this app saw before the drop.
+      ws.send(JSON.stringify({
+        type: "auth",
+        token,
+        presence: false,
+        ...(lastCursor > 0 ? { afterCursor: lastCursor } : {}),
+      }));
       stopPing();
       pingTimer = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
@@ -214,8 +263,9 @@ export function listensForFloorRequests(
 }
 
 /**
- * Listen for request and notification activity in the signed-in venue. The
- * first listener opens the socket; the last one to leave closes it.
+ * Listen for request, notification and conversation activity in the
+ * signed-in venue. The first listener opens the socket; the last one to
+ * leave closes it.
  */
 export function subscribeRequestsLive(listener: Listener): () => void {
   listeners.add(listener);
@@ -232,4 +282,14 @@ export function subscribeRequestsLive(listener: Listener): () => void {
 /** Test seam: how many surfaces are currently listening. */
 export function requestsLiveListenerCount(): number {
   return listeners.size;
+}
+
+/** Test seam: feed one frame as if the socket had received it. */
+export function __handleFrameForTests(raw: string): void {
+  handleFrame(raw);
+}
+
+/** Test seam: forget the cursor between cases. */
+export function __resetConversationCursorForTests(): void {
+  lastCursor = 0;
 }
