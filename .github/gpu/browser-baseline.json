@@ -287,7 +287,7 @@
     },
     {
       "date": "2026-09-27",
-      "reason": "The Day Board says when each room must be ready and how far its sheet has got (T-635 N4): on a phone, a booking linked to its event opens the room's one layout from Open setup sheet, the line under the door reads \"Ready by 16:00 \u00b7 12 of 43 checked\" on the venue's clock, the progress bar fills to that share, and every label on the board reads at 12 px and 4.5:1 or better.",
+      "reason": "The Day Board says when each room must be ready and how far its sheet has got (T-635 N4): on a phone, a booking linked to its event opens the room's one layout from Open setup sheet, the line under the door reads \"Ready by 16:00 · 12 of 43 checked\" on the venue's clock, the progress bar fills to that share, and every label on the board reads at 12 px and 4.5:1 or better.",
       "sourceCommit": "77b3849692bae987911d3d98b3fb1b428be8050a",
       "sourceFile": "packages/web/e2e/day-board.spec.ts",
       "sourceFileGitBlobSha256": "fb29a31e4caf393b23d6ce7d82bc101f612b7bda02f4098546af820be5d1ff60",
@@ -506,7 +506,7 @@
     },
     {
       "date": "2026-09-29",
-      "reason": "Add from price list in the proposal composer (T-635 X1). A price picked from the venue's list becomes a quote line priced for the event, so nothing is typed again; the pricing itself (quantities, least counts, tiers, adjustments, what is left out) is held in price-list-format.test.ts and the desk's behaviour in ProposalsDesk.test.tsx. The case opens the Crawford proposal with the venue's rooms and a price list, opens the list from the keyboard, checks the event's room's prices come first with the venue-wide ones and other rooms' behind their own button, adds a flat price and a price a head (160 guests) as lines 3 and 4 with each said, runs the accessibility audit with the list open, closes it with Escape without closing the proposal, saves version 2 with the four lines (\u00a322,800), and on 390 and 320 px phones checks each price sits under its name with no sideways scroll.",
+      "reason": "Add from price list in the proposal composer (T-635 X1). A price picked from the venue's list becomes a quote line priced for the event, so nothing is typed again; the pricing itself (quantities, least counts, tiers, adjustments, what is left out) is held in price-list-format.test.ts and the desk's behaviour in ProposalsDesk.test.tsx. The case opens the Crawford proposal with the venue's rooms and a price list, opens the list from the keyboard, checks the event's room's prices come first with the venue-wide ones and other rooms' behind their own button, adds a flat price and a price a head (160 guests) as lines 3 and 4 with each said, runs the accessibility audit with the list open, closes it with Escape without closing the proposal, saves version 2 with the four lines (£22,800), and on 390 and 320 px phones checks each price sits under its name with no sideways scroll.",
       "sourceCommit": "2d2f956558ea8af79f0982f5d35525fa132bb697",
       "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
       "sourceFileGitBlobSha256": "c8c3cef1ecb5043cf809d0f985e3fdd925b49c43031d4cb4eb1fcc71ed09dda1",
@@ -571,7 +571,7 @@
     },
     {
       "date": "2026-10-03",
-      "reason": "Proposal templates in the proposal composer (T-635 X1; Tier B #16). A proposal's message and quote lines are kept for a room and an occasion and start the next proposal, so nothing is typed again; a template holds no price, so each use is priced from the venue's list as it stands. What a template keeps and puts in (references, quantities, guests, what is left out and why) is held in template-format.test.ts, the desk's behaviour in ProposalsDesk.test.tsx and the routes, tenancy and concurrency in proposal-templates-postgres.test.ts on PostgreSQL. The first case keeps Crawford's quote as a template from the keyboard (name, room and occasion filled from the event), changes the price list, starts the spring gala's first version from it (priced at the new hire, 120 guests, the withdrawn late bar said, focus on the one price to enter), runs the accessibility audit with the templates open, saves version 1 (\u00a310,650) and checks the list fits 390 and 320 px phones with no sideways scroll. The second, over words already written, asks Replace or Add, takes the question back with Escape, adds only the line not already quoted, replaces the words keeping them to copy, runs the accessibility audit with the question open, removes the template for everyone and brings it back with Undo, and checks the question fits 390 and 320 px phones.",
+      "reason": "Proposal templates in the proposal composer (T-635 X1; Tier B #16). A proposal's message and quote lines are kept for a room and an occasion and start the next proposal, so nothing is typed again; a template holds no price, so each use is priced from the venue's list as it stands. What a template keeps and puts in (references, quantities, guests, what is left out and why) is held in template-format.test.ts, the desk's behaviour in ProposalsDesk.test.tsx and the routes, tenancy and concurrency in proposal-templates-postgres.test.ts on PostgreSQL. The first case keeps Crawford's quote as a template from the keyboard (name, room and occasion filled from the event), changes the price list, starts the spring gala's first version from it (priced at the new hire, 120 guests, the withdrawn late bar said, focus on the one price to enter), runs the accessibility audit with the templates open, saves version 1 (£10,650) and checks the list fits 390 and 320 px phones with no sideways scroll. The second, over words already written, asks Replace or Add, takes the question back with Escape, adds only the line not already quoted, replaces the words keeping them to copy, runs the accessibility audit with the question open, removes the template for everyone and brings it back with Undo, and checks the question fits 390 and 320 px phones.",
       "sourceCommit": "8847302d72f22ffbc1014c8f162148a950d71e1f",
       "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
       "sourceFileGitBlobSha256": "2b5633691b0f19c4461ca62c55f7b1ad08de273018222718c4bdc0d1a4d1651f",
@@ -601,7 +601,7 @@
     },
     {
       "date": "2026-10-08",
-      "reason": "Find in the staff header (T-635, roadmap Tier A #8; Blake's C3 default). Ctrl/\u2318K or the header's button opens one Find on every staff page: a date as it is said opens the Diary on that day with Go to date answering room by room, the Diary adds what its board shows, every page the header offers is found by its name or a venue team's word, and for the roles /clients/search admits, people, organisations, deals, proposals and layouts by a near spelling, each opening in its own desk. Its rules are held in find-model.test.ts, its behaviour in FindPalette.test.tsx and the Diary's in DiaryBoardPage.render.test.tsx and DiaryBoardPage.test.tsx. The first case, on a desk from the keyboard alone, finds Ailsa Henderson from the Clients desk with the accessibility audit open, opens her on the Clients desk with what was found beside her, answers \"14 nov\" in place with the Grand Hall's confirmed wedding, then opens the Diary on Saturday 14 November answering the same, and on the Diary finds that booking on the board and focuses it. The second shows Find as a 44 px magnifier on a 390 px phone opening a sheet with no sideways scroll and a 16 px field, opening a page by touch, fitting a 320 px phone, and gives sales dates and pages without ever asking the client search; then holds an admin's full header row, unread bell included, without overflow at the 13 widths it changes at, with Find a field from 1536 px.",
+      "reason": "Find in the staff header (T-635, roadmap Tier A #8; Blake's C3 default). Ctrl/⌘K or the header's button opens one Find on every staff page: a date as it is said opens the Diary on that day with Go to date answering room by room, the Diary adds what its board shows, every page the header offers is found by its name or a venue team's word, and for the roles /clients/search admits, people, organisations, deals, proposals and layouts by a near spelling, each opening in its own desk. Its rules are held in find-model.test.ts, its behaviour in FindPalette.test.tsx and the Diary's in DiaryBoardPage.render.test.tsx and DiaryBoardPage.test.tsx. The first case, on a desk from the keyboard alone, finds Ailsa Henderson from the Clients desk with the accessibility audit open, opens her on the Clients desk with what was found beside her, answers \"14 nov\" in place with the Grand Hall's confirmed wedding, then opens the Diary on Saturday 14 November answering the same, and on the Diary finds that booking on the board and focuses it. The second shows Find as a 44 px magnifier on a 390 px phone opening a sheet with no sideways scroll and a 16 px field, opening a page by touch, fitting a 320 px phone, and gives sales dates and pages without ever asking the client search; then holds an admin's full header row, unread bell included, without overflow at the 13 widths it changes at, with Find a field from 1536 px.",
       "sourceCommit": "7bc4dc39f4c957ad6b2a3c33c501b95939b9567b",
       "sourceFile": "packages/web/e2e/find-anything.spec.ts",
       "sourceFileGitBlobSha256": "8e927fef0a8b7aade8c2cb85407639302834ce8cb49ce6aa2f92713779487155",
@@ -630,6 +630,23 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; the two they restate (1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f and 1b07f1b6eeb3a7bdbe8c-542cfb6aca0a4807d9ce) are retired; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-10",
+      "reason": "The living timetable with three identities (goal 19 S4, T-651): the office, a hallkeeper and a client against the real stack. The client's request rings the hallkeeper's slab within a second, measured by timestamps; two hands press accept and exactly one owns it, the loser told who has it by name and the client seeing the same name; a staff-private note never reaches the client; a deleted plan closes the client's door at once. The four cases self-gate on E2E_LIVING_TIMETABLE=1 and are inventoried as expected skips, as diary-live.spec.ts is.",
+      "sourceCommit": "63e9420c74317dcdf90e1bb066166be79ade0b6e",
+      "sourceFile": "packages/web/e2e/living-timetable-three-identities.spec.ts",
+      "sourceFileGitBlobSha256": "17c042123aa8159a9b4b2865cd04134a883f4c789706799d059f8b43a5d78074",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "9dd083eb15f928388c972a28332abb34d47a5e375bf466f72ac5299adcc7e047",
+      "caseIds": [
+        "741fe9c46e84b9a6d2fb-09deb1db1f9d987681da",
+        "741fe9c46e84b9a6d2fb-1f7083cad4474a7d81e6",
+        "741fe9c46e84b9a6d2fb-7849726fb992ebc77d07",
+        "741fe9c46e84b9a6d2fb-b43644f0c4d2167e371f"
+      ],
+      "expectedStatus": "skipped",
+      "limits": "This is reviewed inventory admission, not execution evidence. These four cases were absent from sourceRunId, sourceReports and the earlier admissions; they self-gate (skipped) unless E2E_LIVING_TIMETABLE=1 provides the live stack, exactly as diary-live.spec.ts does, so the hosted CPU shards record them as skips and every executed case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -956,7 +973,7 @@
       "title": "five hands, the Escape ladder, and a judged amber ring",
       "suitePath": [
         "plan-tool-pill.spec.ts",
-        "Stage S2 \u2014 the tool pill and the clearance ring"
+        "Stage S2 — the tool pill and the clearance ring"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -1263,7 +1280,7 @@
       "title": "clicking Approve hits the approve endpoint",
       "suitePath": [
         "staff-review.spec.ts",
-        "Staff review \u2014 approve action"
+        "Staff review — approve action"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -1307,7 +1324,7 @@
       "title": "opening a pending review shows its detail + available actions",
       "suitePath": [
         "staff-review.spec.ts",
-        "Staff review \u2014 pending list"
+        "Staff review — pending list"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -1318,7 +1335,7 @@
       "title": "dashboard Reviews tab shows the submitted config in the pending list",
       "suitePath": [
         "staff-review.spec.ts",
-        "Staff review \u2014 pending list"
+        "Staff review — pending list"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -2102,7 +2119,7 @@
     {
       "id": "3f352fcb62a55bd2f17a-086d21133ef7210a3fab",
       "file": "plan-room-resolve.spec.ts",
-      "title": "staged: no package \u2192 the room STILL resolves, from the staged capture, under its label",
+      "title": "staged: no package → the room STILL resolves, from the staged capture, under its label",
       "suitePath": [
         "plan-room-resolve.spec.ts",
         "CARD A2: the room resolves over the blueprint"
@@ -2754,7 +2771,7 @@
     {
       "id": "9c8247ff92e9ab70e0af-c87f39ce20bfae1391cb",
       "file": "diary-live.spec.ts",
-      "title": "a live create travels as a command envelope, not REST (T-537; Canon \u00a79)",
+      "title": "a live create travels as a command envelope, not REST (T-537; Canon §9)",
       "suitePath": [
         "diary-live.spec.ts"
       ],
@@ -2796,7 +2813,7 @@
     {
       "id": "a0c5603dce54fc911cb7-8ec303a7634e76c473d6",
       "file": "plan-room-runtime-default.spec.ts",
-      "title": "loaded: runtime package resolves \u2192 real captured chunks stream with the evidence chip",
+      "title": "loaded: runtime package resolves → real captured chunks stream with the evidence chip",
       "suitePath": [
         "plan-room-runtime-default.spec.ts",
         "CARD A1: /plan Reception Room runtime default"
@@ -2895,7 +2912,7 @@
     {
       "id": "b15d6361b2fc38288977-fec4c9adab1b4ac36fa9",
       "file": "performance.spec.ts",
-      "title": "code splitting works \u2014 hallkeeper chunk loads lazily",
+      "title": "code splitting works — hallkeeper chunk loads lazily",
       "suitePath": [
         "performance.spec.ts",
         "Performance"
@@ -3393,7 +3410,7 @@
       "title": "reads at arm's length: 16 px rows and fields, 3:1 checkboxes, nothing under 12 px",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 on a phone"
+        "Hallkeeper Page — on a phone"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3404,7 +3421,7 @@
       "title": "opens on the checklist, shows the plan on request, and lets a stage's content flow",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 on a phone"
+        "Hallkeeper Page — on a phone"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3415,7 +3432,7 @@
       "title": "a phone shows ready by, access needs, allergies and a tap to call above the stages",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 the facts in view"
+        "Hallkeeper Page — the facts in view"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3426,7 +3443,7 @@
       "title": "unauthenticated navigation redirects to /login",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 route protection"
+        "Hallkeeper Page — route protection"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3470,7 +3487,7 @@
       "title": "removes stale approval and printable contents when the approved PDF is unavailable",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 authorized error states"
+        "Hallkeeper Page — authorized error states"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3503,7 +3520,7 @@
       "title": "shows configuration-not-found message when the API returns 404",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 authorized error states"
+        "Hallkeeper Page — authorized error states"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3536,7 +3553,7 @@
       "title": "shows permission-denied message when the API returns 403",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 authorized error states"
+        "Hallkeeper Page — authorized error states"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3558,7 +3575,7 @@
       "title": "shows an unavailable approved sheet and retries with visible activity",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 authorized error states"
+        "Hallkeeper Page — authorized error states"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3569,7 +3586,7 @@
       "title": "renders the approval banner when approval is populated",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 approval stamp banner"
+        "Hallkeeper Page — approval stamp banner"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3580,7 +3597,7 @@
       "title": "a rejected sheet says so in a band above its work",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 approval stamp banner"
+        "Hallkeeper Page — approval stamp banner"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -3613,7 +3630,7 @@
       "title": "does NOT render the approval banner when approval is null",
       "suitePath": [
         "hallkeeper.spec.ts",
-        "Hallkeeper Page \u2014 approval stamp banner"
+        "Hallkeeper Page — approval stamp banner"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -4742,6 +4759,46 @@
       ],
       "project": "chromium",
       "expectedStatus": "passed"
+    },
+    {
+      "id": "741fe9c46e84b9a6d2fb-09deb1db1f9d987681da",
+      "file": "living-timetable-three-identities.spec.ts",
+      "title": "the client's request rings the hallkeeper's slab within a second",
+      "suitePath": [
+        "living-timetable-three-identities.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "741fe9c46e84b9a6d2fb-7849726fb992ebc77d07",
+      "file": "living-timetable-three-identities.spec.ts",
+      "title": "two hands reach for the request and exactly one owns it; the client sees who",
+      "suitePath": [
+        "living-timetable-three-identities.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "741fe9c46e84b9a6d2fb-1f7083cad4474a7d81e6",
+      "file": "living-timetable-three-identities.spec.ts",
+      "title": "a staff-private note never reaches the client",
+      "suitePath": [
+        "living-timetable-three-identities.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "741fe9c46e84b9a6d2fb-b43644f0c4d2167e371f",
+      "file": "living-timetable-three-identities.spec.ts",
+      "title": "revoking the client's plan closes their door at once",
+      "suitePath": [
+        "living-timetable-three-identities.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
     }
   ]
 }

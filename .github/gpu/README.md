@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 385 cases. Four hosted CPU shards execute
-380 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 389 cases. Four hosted CPU shards execute
+384 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -106,7 +106,18 @@ attention system says, with its legend in the slots' words and the keyboard
 stepping the day; one room at a time on a phone with the day running down the
 screen and a slot opened to its sheet; every word kept and every breath lost
 under reduced motion; and the dark wall register without the day controls,
-readable from across the room (`day-board.spec.ts`).
+readable from across the room (`day-board.spec.ts`). The next, on 10 October
+2026, adds four cases as expected skips: the living timetable with three
+identities (goal 19 S4, T-651), the office, a hallkeeper and a client against
+the real stack, asserting the copper ring on the hallkeeper's slab within a
+second of the client's request by timestamps, exactly one owner under a
+double accept with the loser told who has it and the client seeing the same
+name, a staff-private note never reaching the client, and a deleted plan
+closing the client's door at once
+(`living-timetable-three-identities.spec.ts`). Like the Diary's live cases
+they run only with the live stack (`E2E_LIVING_TIMETABLE=1`), so the hosted
+shards record them as skips; this changes the inventory from 385 to 389 and
+the expected skips from 42 to 46.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

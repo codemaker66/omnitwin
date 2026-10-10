@@ -256,6 +256,26 @@ describe.skipIf(target === undefined)("conversations on migrated PostgreSQL", ()
     expect(refused(await sendClientMessageCore(db, f.client, f.eventId, send("Hello?"))).status).toBe(403);
   });
 
+  it("closes the client's door the moment the office deletes the plan the link points at", async () => {
+    // Goal 19 S4: the office revokes by deleting the plan (DELETE
+    // /configurations/:id soft-deletes it); the link row outlives the plan,
+    // so the proof must read the plan's own deletedAt.
+    const f = await fixture();
+    const pub = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "client-facing", subject: "booking", bookingId: f.bookingId })).thread;
+    granted(await sendMessageCore(db, f.client, pub.id, send("Ten more chairs, please.")));
+    expect(await clientHoldsEventLink(db, f.client.id, f.eventId)).toBe(true);
+
+    const [link] = await db.select({ configurationId: schema.eventConfigurationLinks.configurationId })
+      .from(schema.eventConfigurationLinks).where(eq(schema.eventConfigurationLinks.id, f.linkId));
+    if (link === undefined) throw new Error("fixture link missing");
+    await db.update(schema.configurations).set({ deletedAt: new Date() }).where(eq(schema.configurations.id, link.configurationId));
+
+    expect(await clientHoldsEventLink(db, f.client.id, f.eventId)).toBe(false);
+    expect(refused(await clientConversationSnapshot(db, f.client, f.eventId, 0)).status).toBe(403);
+    expect(refused(await sendClientMessageCore(db, f.client, f.eventId, send("Still there?"))).status).toBe(403);
+    expect(refused(await listMessagesCore(db, f.client, pub.id, { after: 0, limit: 50 })).status).toBe(403);
+  });
+
   it("records delivered, read and acknowledged as facts, never ahead of time", async () => {
     const f = await fixture();
     const pub = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "client-facing", subject: "booking", bookingId: f.bookingId })).thread;
