@@ -9,7 +9,7 @@
 // dots.length === the published capacity, never an approximation.
 // -----------------------------------------------------------------------------
 
-import type { RoomCapacity } from "../../lib/trades-hall-venue-truth.js";
+import type { RoomCapacity } from "@omnitwin/types";
 
 export interface PlanDot {
   readonly x: number;

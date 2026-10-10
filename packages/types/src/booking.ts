@@ -64,6 +64,74 @@ export function deriveBookingState(kind: BookingKind, status: BookingLiveness): 
 }
 
 /**
+ * The Diary's liveness rule: a booking counts while its status is `active`
+ * and it is not soft-deleted. The conflict engine, the contested-dates read
+ * and the decisions-due list all read a booking this way. Nothing lapses on
+ * the clock: a hold whose decision date has passed stays live (the Diary
+ * lists it as a decision due) until staff record its exit — released,
+ * expired, lost — as a transition (services/booking-mutations.ts).
+ */
+export function isLiveBooking(booking: {
+  readonly status: BookingLiveness;
+  readonly deletedAt: Date | string | null;
+}): boolean {
+  return booking.deletedAt === null && booking.status === "active";
+}
+
+/**
+ * The kinds that make a room unavailable to anyone else while live — what
+ * "busy" means on the public availability read (T-649).
+ *
+ * `ink` is the Diary's hard floor (Canon §2.2): the only kind the
+ * `bookings_ink_no_overlap` exclusion constraint arbitrates and the only
+ * pairing the conflict engine rates `blocking`. `internal_block` is the
+ * venue's own unavailability (maintenance, blackouts).
+ */
+export const ROOM_BLOCKING_BOOKING_KINDS = ["ink", "internal_block"] as const satisfies readonly BookingKind[];
+
+/**
+ * The kind that puts a provisional option on a room while live — what "held"
+ * means on the public availability read. Blake, 8 October 2026, chose "Say
+ * 'held, enquire'": someone has an option, a second option may be possible,
+ * and it reveals that a hold exists, not who holds it. A hold is the Diary's
+ * option (1st, 2nd, Joint 1st); its rank is never shown. A prospect ("Interest
+ * only") is not an option — it carries no rank (bookings_rank_hold_only) and
+ * never blocks (Canon §2.1) — so it leaves a date free.
+ */
+export const ROOM_OPTION_BOOKING_KINDS = ["hold"] as const satisfies readonly BookingKind[];
+
+/** A room's public answer for one date, in precedence order: a confirmed
+ *  booking or venue block beats a provisional option, which beats nothing. */
+export const PUBLIC_DAY_STATUSES = ["free", "held", "busy"] as const;
+export type PublicDayStatus = (typeof PUBLIC_DAY_STATUSES)[number];
+
+const ROOM_BLOCKING_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_BLOCKING_BOOKING_KINDS);
+const ROOM_OPTION_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_OPTION_BOOKING_KINDS);
+
+/** What one booking does to its room on the public read: "busy", "held", or
+ *  nothing (null) for prospects and every exited or deleted row. */
+export function bookingRoomStatus(booking: {
+  readonly kind: BookingKind;
+  readonly status: BookingLiveness;
+  readonly deletedAt: Date | string | null;
+}): "busy" | "held" | null {
+  if (!isLiveBooking(booking)) return null;
+  if (ROOM_BLOCKING_KIND_SET.has(booking.kind)) return "busy";
+  if (ROOM_OPTION_KIND_SET.has(booking.kind)) return "held";
+  return null;
+}
+
+/** The day's answer from the bookings that touch it: busy beats held beats free. */
+export function publicDayStatus(effects: Iterable<"busy" | "held">): PublicDayStatus {
+  let status: PublicDayStatus = "free";
+  for (const effect of effects) {
+    if (effect === "busy") return "busy";
+    status = "held";
+  }
+  return status;
+}
+
+/**
  * Resolve a target state to the column pair a transition must write.
  * Promotions become an active row of the target kind; exits keep the current
  * kind (provenance) and set the terminal status.

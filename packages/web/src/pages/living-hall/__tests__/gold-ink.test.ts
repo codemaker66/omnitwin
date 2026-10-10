@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TRADES_HALL_ROOM_CAPACITIES } from "../../../lib/trades-hall-venue-truth.js";
+import { TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
 import {
   FIRST_TABLE,
   INK_WINDOW,

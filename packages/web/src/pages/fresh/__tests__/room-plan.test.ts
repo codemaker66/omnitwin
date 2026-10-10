@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
-} from "../../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import { roomPlan } from "../room-plan.js";
 
 // ---------------------------------------------------------------------------

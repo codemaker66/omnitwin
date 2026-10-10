@@ -8,6 +8,7 @@ import { constants as zlibConstants } from "node:zlib";
 import { getImageDecoderRuntime } from "@omnitwin/reconstruction-foundry";
 import { validateEnv, type Env } from "./env.js";
 import { createDbConnection } from "./db/client.js";
+import { loadBundledJournal, readMigrationReadiness } from "./db/migration-readiness.js";
 import { setAuthDb } from "./middleware/auth.js";
 import { createRateLimitIdentity } from "./middleware/rate-limit-identity.js";
 import { venueRoutes } from "./routes/venues.js";
@@ -33,6 +34,7 @@ import { publicConfigRoutes } from "./routes/public-configs.js";
 import { layoutRoutes } from "./routes/layouts.js";
 import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
 import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-runs.js";
+import { publicMcpRoutes } from "./routes/public-mcp.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
 import { authRoutes } from "./routes/auth.js";
@@ -382,8 +384,38 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     }
   };
   server.get("/health/db", dbProbe);
-  // `/health/ready` is the K8s-convention readiness probe alias.
-  server.get("/health/ready", dbProbe);
+
+  // --- Readiness: reachable, then migrated (T-653) ---
+  // Railway activates a new deployment only once `/health/ready` answers 2xx
+  // and keeps the previous container live until then, while the Deploy
+  // workflow applies migrations only after master CI, minutes after Railway
+  // has built the image. Refusing while the journal this image ships is ahead
+  // of drizzle.__drizzle_migrations holds the switch until the migration
+  // lands (docs/operations/deploy-flow-current.md). A server that cannot read
+  // its own journal never boots, so it can never claim readiness by accident.
+  const bundledJournal = await loadBundledJournal();
+  const readinessProbe = async (request: unknown, reply: { status: (n: number) => void }): Promise<
+    | { status: "ok"; migrations: { applied: number; local: number } }
+    | { status: "degraded"; code: "DB_UNREACHABLE"; message: string }
+    | { status: "degraded"; code: "MIGRATIONS_PENDING"; message: string; pendingTags: readonly string[]; migrations: { applied: number; local: number } }
+  > => {
+    const reachable = await dbProbe(request, reply);
+    if (reachable.status !== "ok") return reachable;
+    const readiness = await readMigrationReadiness(db, bundledJournal);
+    const migrations = { applied: readiness.applied, local: readiness.local };
+    if (readiness.pendingTags.length > 0) {
+      reply.status(503);
+      return {
+        status: "degraded" as const,
+        code: "MIGRATIONS_PENDING",
+        message: `${String(readiness.pendingTags.length)} bundled migration(s) not yet applied; waiting for the Deploy workflow.`,
+        pendingTags: readiness.pendingTags,
+        migrations,
+      };
+    }
+    return { status: "ok" as const, migrations };
+  };
+  server.get("/health/ready", readinessProbe);
 
   // Inject DB into auth middleware for Clerk user lookups
   setAuthDb(db);
@@ -416,6 +448,10 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
+  // T-649: the public, read-only MCP endpoint at /mcp (Blake, 8 Oct 2026:
+  // "Yes, read-only" — venue facts, published capacities, free/held/busy
+  // dates only; a date with only a provisional hold says "held, enquire").
+  await server.register(publicMcpRoutes, { db, corsOrigins: allowedOrigins });
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(clientRoutes, { db, prefix: "/clients" });

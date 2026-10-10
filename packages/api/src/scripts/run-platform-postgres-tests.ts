@@ -25,6 +25,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/proposal-next-version-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
+  "src/__tests__/public-mcp-postgres.test.ts",
 ] as const;
 
 export function requirePlatformTestDatabaseUrl(raw: string | undefined): string {

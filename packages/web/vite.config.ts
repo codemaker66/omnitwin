@@ -8,6 +8,7 @@ import {
   resolveWebClerkPublishableKey,
 } from "./src/lib/production-env";
 import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
+import { venueStructuredDataPlugin } from "./src/lib/venue-structured-data-plugin";
 
 // ---------------------------------------------------------------------------
 // Vite config — punch list #16 bundle splitting
@@ -31,7 +32,9 @@ export default defineConfig(({ mode }) => {
   const sentrySourceMapUpload = mode === "production"
     ? getSentrySourceMapUploadConfig(env)
     : null;
-  const plugins: PluginOption[] = [react()];
+  // The venue's schema.org description is written into index.html from the
+  // shared venue truth (T-649), so it can never drift from the page's figures.
+  const plugins: PluginOption[] = [react(), venueStructuredDataPlugin()];
 
   // Captured splat tiles are staged outside the repository (roughly a gigabyte
   // across the eight Trades Hall rooms), so `public/` cannot hold them. In
