@@ -6,6 +6,14 @@
 # production DATABASE_URL, then Railway's native GitHub integration
 # rebuilds + redeploys the container image automatically.
 #
+# Since 10 October 2026 Railway also migrates BEFORE it promotes a new
+# container: railway.json's preDeployCommand runs the same tail gate and
+# the pending migrations inside the built image (src/scripts/
+# migrate-before-deploy.ts), so the API never runs ahead of its schema the
+# way it did for eleven minutes on 9 October (0087). This workflow stays
+# as the audited second pass with the explicit 0044 approval gate; when
+# Railway has already migrated it finds nothing pending.
+#
 # Railway deploy is deliberately NOT triggered from this workflow —
 # coupling deploy orchestration into our repo would mean a Railway-
 # token secret lives here indefinitely. Letting Railway's built-in

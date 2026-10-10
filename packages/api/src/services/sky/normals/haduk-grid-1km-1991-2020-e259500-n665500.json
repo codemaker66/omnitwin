@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "dataset": {
+    "name": "HadUK-Grid",
+    "version": "v1.3.2.ceda",
+    "period": "1991-2020",
+    "resolutionKm": 1,
+    "licence": "Open Government Licence v3.0",
+    "citation": "Met Office; Hollis, D.; Carlisle, E.; Kendon, M.; Packman, S.; Doherty, A. (2026): HadUK-Grid Gridded Climate Observations on a 1km grid over the UK, v1.3.2.ceda (1836-2025). NERC EDS Centre for Environmental Data Analysis, 23 June 2026. doi:10.5285/789b3065d74a4c948ab05d33556c86d0.",
+    "catalogueUrl": "https://catalogue.ceda.ac.uk/uuid/789b3065d74a4c948ab05d33556c86d0/",
+    "doi": "10.5285/789b3065d74a4c948ab05d33556c86d0"
+  },
+  "generatedAt": "2026-10-08T19:33:34.714Z",
+  "generator": {
+    "name": "packages/api/src/scripts/generate-sky-normals.ts",
+    "version": "1.0.0"
+  },
+  "inputs": [
+    {
+      "variable": "raindays1mm",
+      "url": "https://dap.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.3.2.ceda/1km/raindays1mm/mon-30y/v20260512/raindays1mm_hadukgrid_uk_1km_mon-30y_199101-202012.nc",
+      "sha256": "7cc522b1875e07314ceb4ae2df95fc332e7060dd31f71f25f1a5941117bb5c01",
+      "bytes": 33602572,
+      "units": "1.0",
+      "standardName": "number_of_days_with_lwe_thickness_of_precipitation_amount_above_threshold",
+      "longName": "Monthly LTA of Number of days in the month with precipitation amount >= 1mm",
+      "cellMethods": "time: sum within days time: sum over days time: mean over years"
+    },
+    {
+      "variable": "sfcWind",
+      "url": "https://dap.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.3.2.ceda/1km/sfcWind/mon-30y/v20260512/sfcWind_hadukgrid_uk_1km_mon-30y_199101-202012.nc",
+      "sha256": "c64bcb33922c95215354b0507d54fe1ff56bc279f6685b88bbb39307050efacc",
+      "bytes": 41890687,
+      "units": "m s-1",
+      "standardName": "wind_speed",
+      "longName": "Wind speed at 10m",
+      "cellMethods": "time: mean within days time: mean over days time: mean over years"
+    },
+    {
+      "variable": "snowLying",
+      "url": "https://dap.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.3.2.ceda/1km/snowLying/mon-30y/v20260512/snowLying_hadukgrid_uk_1km_mon-30y_199101-202012.nc",
+      "sha256": "920bc0c79fe8eb90e9768a65d937a30a49b29ed8fbfe1db178d9fd377b5f992e",
+      "bytes": 36560305,
+      "units": "1.0",
+      "standardName": "surface_snow_binary_mask",
+      "longName": "Snow lying",
+      "cellMethods": "time: sum (interval: 1 day) time: mean over years"
+    },
+    {
+      "variable": "sun",
+      "url": "https://dap.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.3.2.ceda/1km/sun/mon-30y/v20260512/sun_hadukgrid_uk_1km_mon-30y_199101-202012.nc",
+      "sha256": "d1cda0d700368a29f61dc26a51e3ebb427ee3a866402c0976412b731cd3109a0",
+      "bytes": 40803387,
+      "units": "hour",
+      "standardName": "duration_of_sunshine",
+      "longName": "Sunshine hours",
+      "cellMethods": "time: sum within days time: sum over days time: mean over years"
+    },
+    {
+      "variable": "tas",
+      "url": "https://dap.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.3.2.ceda/1km/tas/mon-30y/v20260512/tas_hadukgrid_uk_1km_mon-30y_199101-202012.nc",
+      "sha256": "a68aa595f8a05e63ce904e7025377758d3c056a280fe87d0b6d29e9b0fba6876",
+      "bytes": 41385254,
+      "units": "degC",
+      "standardName": "air_temperature",
+      "longName": "Mean air temperature",
+      "cellMethods": "time: mean within days time: mean over days time: mean over years"
+    }
+  ],
+  "cell": {
+    "latitude": 55.86214247522513,
+    "longitude": -4.246499068444996,
+    "eastingM": 259500,
+    "northingM": 665500,
+    "gridIndex": {
+      "x": 459,
+      "y": 865
+    },
+    "site": {
+      "latitude": 55.8593,
+      "longitude": -4.2491
+    },
+    "siteDistanceM": 355.3073817037245
+  },
+  "months": [
+    {
+      "month": 1,
+      "rainDaysAtLeast1mm": 17,
+      "snowLyingDays": 2.076203437316099,
+      "sunshineHours": 39.71596525421822,
+      "meanTemperatureC": 5.017298152760601,
+      "meanWindSpeedMs": 4.320489014383235
+    },
+    {
+      "month": 2,
+      "rainDaysAtLeast1mm": 14.166666666666666,
+      "snowLyingDays": 1.6495008919730791,
+      "sunshineHours": 68.62377477080574,
+      "meanTemperatureC": 5.400071156219663,
+      "meanWindSpeedMs": 4.356830966873098
+    },
+    {
+      "month": 3,
+      "rainDaysAtLeast1mm": 13.1,
+      "snowLyingDays": 0.9291892024795722,
+      "sunshineHours": 101.80129419598,
+      "meanTemperatureC": 6.659726908619289,
+      "meanWindSpeedMs": 4.3547659039113435
+    },
+    {
+      "month": 4,
+      "rainDaysAtLeast1mm": 12.333333333333334,
+      "snowLyingDays": 0.10599442054021367,
+      "sunshineHours": 146.89235980497153,
+      "meanTemperatureC": 9.085830320248258,
+      "meanWindSpeedMs": 4.151254927292313
+    },
+    {
+      "month": 5,
+      "rainDaysAtLeast1mm": 12.466666666666667,
+      "snowLyingDays": 0.008645177596898848,
+      "sunshineHours": 192.34717624970776,
+      "meanTemperatureC": 11.847196427313218,
+      "meanWindSpeedMs": 3.895500409490601
+    },
+    {
+      "month": 6,
+      "rainDaysAtLeast1mm": 12.133333333333333,
+      "snowLyingDays": 0.000005751747687502429,
+      "sunshineHours": 160.039848325815,
+      "meanTemperatureC": 14.458898037909988,
+      "meanWindSpeedMs": 3.564202435476326
+    },
+    {
+      "month": 7,
+      "rainDaysAtLeast1mm": 13.533333333333333,
+      "snowLyingDays": 0,
+      "sunshineHours": 159.74550917533733,
+      "meanTemperatureC": 16.04474468177507,
+      "meanWindSpeedMs": 3.4046302468239458
+    },
+    {
+      "month": 8,
+      "rainDaysAtLeast1mm": 14.033333333333333,
+      "snowLyingDays": 0.000015081625721335631,
+      "sunshineHours": 149.26766419031225,
+      "meanTemperatureC": 15.814690312672587,
+      "meanWindSpeedMs": 3.262147034523448
+    },
+    {
+      "month": 9,
+      "rainDaysAtLeast1mm": 13.6,
+      "snowLyingDays": 0,
+      "sunshineHours": 118.46645274709385,
+      "meanTemperatureC": 13.618656085150134,
+      "meanWindSpeedMs": 3.5426274629812804
+    },
+    {
+      "month": 10,
+      "rainDaysAtLeast1mm": 15.7,
+      "snowLyingDays": 0.004972856003842665,
+      "sunshineHours": 87.46933084515926,
+      "meanTemperatureC": 10.488395754590396,
+      "meanWindSpeedMs": 3.6048712584971865
+    },
+    {
+      "month": 11,
+      "rainDaysAtLeast1mm": 16.566666666666666,
+      "snowLyingDays": 0.2853062883033627,
+      "sunshineHours": 55.20727219675712,
+      "meanTemperatureC": 7.467548224056293,
+      "meanWindSpeedMs": 3.7487569645631744
+    },
+    {
+      "month": 12,
+      "rainDaysAtLeast1mm": 16.4,
+      "snowLyingDays": 1.8456865198756023,
+      "sunshineHours": 36.312957829248646,
+      "meanTemperatureC": 5.187477030250013,
+      "meanWindSpeedMs": 3.7720250779508526
+    }
+  ]
+}
