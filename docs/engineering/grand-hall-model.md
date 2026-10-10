@@ -25,17 +25,26 @@ development builds only) shows the room alone, posed through a window bridge for
   varnished dado and attic panelling are glossy; plaster and frieze are matte. The main door stood
   open in the scan: its closed mahogany leaves are modelled in the relief's 0.3 m recess. Until
   the relief arrives each wall is a flat photograph; the parser rejects a malformed file.
-- **Floor, coffered ceiling and dome** (`hall-geometry.ts`, `hall-ceiling.ts`): the measured
-  plane, lattice and dome profile, each with its own photograph; the floor is glossy.
-- **Chandeliers** (`hall-chandeliers.ts`): the five fittings as scanned, pale silver-gilt scrollwork
-  and acanthus on dark bronze stems with white flame bulbs, drawn to the lowest points, reaches and
+- **Coffered ceiling and dome** (`hall-geometry.ts`, `hall-ceiling.ts`): the measured lattice
+  and dome profile, each with its own photograph.
+- **Floor** (`hall-floor.ts`): drawn oak strips 73 mm wide, the width measured from the survey's
+  floor photograph, in staggered lengths with a tiling grain, lit by the same baked channels.
+  Board detail fades with distance so it never shimmers; the photograph is no longer fetched.
+- **Cut walls** (`hall-section.ts`): where the cutaway lowers a wall, its body stands as a solid
+  section with a dark cap and a gilt edge on the room side, over a plinth round the hall.
+- **Chandeliers** (`hall-chandeliers.ts`): the five fittings as scanned, gilt scrollwork and
+  acanthus on dark bronze stems with white flame bulbs, drawn to the lowest points, reaches and
   bulb heights measured in the panoramas (`HALL_CHANDELIERS`; method in the 10 October session log).
   The four rose fittings are one template copied into place, so all five draw in three calls
-  (gilt, bronze, bulbs) plus one instanced sprite of halos. Shown on a walk and in the room view
-  once the camera comes down, never in plan. Without the reflection map the metal's own light is
-  raised, so a software rasteriser does not draw it black. In the reflection environment each
-  fitting's lamps are a bright sphere of `glowRadius`, the size the moods were set with, not
-  the measured reach.
+  (gilt, bronze, bulbs). The bulbs are bright enough for the pipeline's bloom to halo them. The
+  metal takes the room's reflections and a self-light from its bulbs, not the point light that
+  stands in for each whole fitting (a few centimetres away, inverse-square falloff burned it
+  white). Shown on a walk and in the room view once the camera comes down, never in plan; hidden
+  fittings draw tiny for their first frames so their shaders compile on load. Without the
+  reflection map the metal's own light is raised, so a software rasteriser does not draw it
+  black. In the stand-in reflection environment each fitting's lamps are a bright sphere of
+  `glowRadius`. The scan's acanthus is denser and its bulbs rounder than drawn; matching them
+  is open.
 
 ## Light
 
@@ -45,9 +54,13 @@ occlusion, chandelier, daylight, uplight); a mood (`hall-mood.ts`: Daylight, Eve
 Candlelight) relights a texel by the ratio of the mood's light to the scan's light from the same
 channels, so Daylight shows the room exactly as photographed. Glass, marked in the atlas's alpha,
 follows the daylight alone, falling to dusk blue and then dark. `HallLightRig` adds what a bake
-cannot: real lights for the furniture and highlights in varnish and gilt, with a reflection
-environment (`HallEnvironment`). The canvas uses Khronos PBR Neutral tone mapping for the
-photographed room (`lib/capture-display.ts`), which keeps the photographs' mid-tones.
+cannot: real lights for the furniture and highlights in varnish and gilt. The drawn room's
+reflections are its own (`hall-capture.ts`): it is captured whole, uncut and with its fittings
+lit, whenever a surface or a mood settles, with the bulbs at half brightness so they glint
+without filling the reflections' sky beneath the dome fitting. `HallEnvironment` stands in only
+while the room is not drawn. The canvas uses Khronos PBR Neutral tone mapping for the
+photographed room (`lib/capture-display.ts`), which keeps the photographs' mid-tones, after the
+planner's pipeline grades each mood ([planner rendering](planner-rendering.md)).
 
 ## Views and loading
 
@@ -60,14 +73,14 @@ cuts every wall at 3.12 m, above the doors. Gaussian splats stay off the public 
 (`lib/splat-access.ts`), so production shows only the model; where a capture fails to load, Capture
 is disabled and Walk uses the model.
 
-The four photographs and the relief stream in after the first frame. `hall-view-store` counts them
-and `RoomResolveCaption` reports "Loading the Grand Hall's surfaces · N of 5" through the shared
+The three photographs and the relief stream in after the first frame. `hall-view-store` counts them
+and `RoomResolveCaption` reports "Loading the Grand Hall's surfaces · N of 4" through the shared
 `Activity` indicator; if one fails, the room is drawn more simply there (a plain colour for a
 photograph, flat walls for the relief) and the caption says planning is unaffected. The files are
 fetched at a revision (`HALL_SURVEY_REVISION`), raised whenever they are rebuilt in place.
 
 How much of the finish a device carries is `hall-finish.ts`: phones load the half-size photographs
-(0.80 MB instead of 2.79 MB); a software rasteriser, read from the canvas's own WebGL context with
+(0.67 MB instead of 2.06 MB); a software rasteriser, read from the canvas's own WebGL context with
 no probe context, also leaves out the reflection map and the chandeliers' lights for a soft fill.
 
 ## Checks
@@ -84,6 +97,8 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   `cockpit/__tests__/HallViewControls.test.tsx`, `cockpit/__tests__/RoomResolveCaption.test.tsx`,
   `editor/__tests__/PlannerScene*.test.tsx` and `CameraRig.showcase.test.tsx` cover the views,
   loading caption, capture fallback, device tier and camera glides.
-- The rendered room needs browser evidence: `/dev/grand-hall` or the planner itself.
+- The rendered room needs browser evidence: `/dev/grand-hall`, `/dev/planner-lab` (with
+  `scripts/planner-lab.mjs`) or the planner itself (`scripts/planner-tour.mjs`).
 
-Not yet measured: frame time on the declared devices, and Blake's aesthetic acceptance.
+Measured on the RTX 4090 only (see [planner rendering](planner-rendering.md)); frame time on the
+declared phones and tablets, and Blake's aesthetic acceptance, are open.
