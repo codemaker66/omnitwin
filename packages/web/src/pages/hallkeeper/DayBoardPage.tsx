@@ -28,6 +28,8 @@ import { clockIsCorrected, correctedNowMs, subscribeClock } from "../../lib/cloc
 import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
 import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
 import { useSlotRequests } from "../../components/requests/requests-context.js";
+import { listensForFloorRequests } from "../../lib/requests-live.js";
+import { NO_SLOT_OBSERVATIONS, useSlotObservations, type SlotObservationsApi } from "./lib/use-slot-observations.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import {
   DAY_BOARD_LEGEND,

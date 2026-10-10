@@ -36,8 +36,11 @@ export type QueuedEventDayOp =
     readonly queuedAt: string;
   };
 
-/** What the server said when a replayed op reached it. */
-export type EventDayOpOutcome = "applied" | "replayed";
+/** What the server said when a replayed op reached it; or "left", when the
+ *  op is not this drainer's to send and stays queued for the screen that
+ *  owns it (the Day Board drains facts about rooms, the event-day page the
+ *  rest). */
+export type EventDayOpOutcome = "applied" | "replayed" | "refused" | "left";
 
 const DB_NAME = "omnitwin-event-day";
 const STORE_NAME = "ops-queue";
@@ -136,11 +139,14 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
     ): Promise<readonly QueuedEventDayOp[]> {
       const acked: QueuedEventDayOp[] = [];
       for (const op of await list()) {
+        let outcome: EventDayOpOutcome;
         try {
-          await perform(op);
+          outcome = await perform(op);
         } catch {
           break;
         }
+        // "left": not this drainer's op; it stays for the screen that owns it.
+        if (outcome === "left") continue;
         await ack(op.queueKey);
         acked.push(op);
       }

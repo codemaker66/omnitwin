@@ -54,6 +54,19 @@ const NotificationEventFrame = z.object({
   at: z.string(),
 });
 
+/** A fact about a room landed (goal 19 S5): what, where, and when it was
+ *  seen; the board refetches its facts and the slot reads the latest. */
+const ObservationEventFrame = z.object({
+  type: z.literal("observation.event"),
+  venueId: z.string(),
+  bookingId: z.string(),
+  spaceId: z.string().nullable(),
+  kind: z.string(),
+  observationId: z.string(),
+  observedAt: z.string(),
+  at: z.string(),
+});
+
 const HelloFrame = z.object({ type: z.literal("hello"), venueId: z.string() });
 const PingFrame = z.object({ type: z.literal("ping") });
 const ErrorFrame = z.object({ type: z.literal("error") });
@@ -68,6 +81,8 @@ export type RequestsLiveEvent =
       readonly bookingId: string | null;
     }
   | { readonly kind: "notification"; readonly venueId: string }
+  /** A fact about a room landed (S5): the board refetches its facts. */
+  | { readonly kind: "observation"; readonly venueId: string; readonly bookingId: string }
   /** A message landed in a thread this person's audience admits. */
   | { readonly kind: "conversation"; readonly venueId: string; readonly event: ConversationEvent }
   /** The server has replayed everything after the cursor it was given. */
@@ -147,6 +162,12 @@ function handleFrame(raw: unknown): void {
   const notification = NotificationEventFrame.safeParse(data);
   if (notification.success) {
     announce({ kind: "notification", venueId: notification.data.venueId });
+    return;
+  }
+
+  const observation = ObservationEventFrame.safeParse(data);
+  if (observation.success) {
+    announce({ kind: "observation", venueId: observation.data.venueId, bookingId: observation.data.bookingId });
     return;
   }
 
