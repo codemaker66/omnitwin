@@ -5,7 +5,7 @@ import {
   type PublishedRoomSlug,
   type RoomCapacity,
   type RoomDimensions,
-} from "../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 
 // -----------------------------------------------------------------------------
 // twin-rooms — the room-identity oracle for the walkthrough HUD.

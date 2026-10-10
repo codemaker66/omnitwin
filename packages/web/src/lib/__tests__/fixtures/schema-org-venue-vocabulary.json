@@ -1,0 +1,252 @@
+{
+  "source": "https://schema.org/version/30.1/schemaorg-current-https.jsonld",
+  "version": "30.1",
+  "note": "Subset: for each type, its ancestors and every property whose domainIncludes names the type or an ancestor; ranges for the properties the venue description uses. Regenerate from the source when schema.org publishes a new version.",
+  "types": {
+    "EventVenue": {
+      "ancestors": [
+        "EventVenue",
+        "CivicStructure",
+        "Place",
+        "Thing"
+      ],
+      "properties": [
+        "additionalProperty",
+        "additionalType",
+        "address",
+        "aggregateRating",
+        "alternateName",
+        "amenityFeature",
+        "branchCode",
+        "containedIn",
+        "containedInPlace",
+        "containsPlace",
+        "description",
+        "disambiguatingDescription",
+        "event",
+        "events",
+        "faxNumber",
+        "geo",
+        "geoContains",
+        "geoCoveredBy",
+        "geoCovers",
+        "geoCrosses",
+        "geoDisjoint",
+        "geoEquals",
+        "geoIntersects",
+        "geoOverlaps",
+        "geoTouches",
+        "geoWithin",
+        "globalLocationNumber",
+        "hasCertification",
+        "hasDriveThroughService",
+        "hasGS1DigitalLink",
+        "hasMap",
+        "identifier",
+        "image",
+        "isAccessibleForFree",
+        "isicV4",
+        "keywords",
+        "latitude",
+        "logo",
+        "longitude",
+        "mainEntityOfPage",
+        "map",
+        "maps",
+        "maximumAttendeeCapacity",
+        "name",
+        "openingHours",
+        "openingHoursSpecification",
+        "owner",
+        "photo",
+        "photos",
+        "potentialAction",
+        "publicAccess",
+        "review",
+        "reviews",
+        "sameAs",
+        "slogan",
+        "smokingAllowed",
+        "specialOpeningHoursSpecification",
+        "subjectOf",
+        "telephone",
+        "tourBookingPage",
+        "url"
+      ]
+    },
+    "MeetingRoom": {
+      "ancestors": [
+        "MeetingRoom",
+        "Room",
+        "Accommodation",
+        "Place",
+        "Thing"
+      ],
+      "properties": [
+        "accommodationCategory",
+        "accommodationFloorPlan",
+        "additionalProperty",
+        "additionalType",
+        "address",
+        "aggregateRating",
+        "alternateName",
+        "amenityFeature",
+        "bed",
+        "branchCode",
+        "containedIn",
+        "containedInPlace",
+        "containsPlace",
+        "description",
+        "disambiguatingDescription",
+        "event",
+        "events",
+        "faxNumber",
+        "floorLevel",
+        "floorSize",
+        "geo",
+        "geoContains",
+        "geoCoveredBy",
+        "geoCovers",
+        "geoCrosses",
+        "geoDisjoint",
+        "geoEquals",
+        "geoIntersects",
+        "geoOverlaps",
+        "geoTouches",
+        "geoWithin",
+        "globalLocationNumber",
+        "hasCertification",
+        "hasDriveThroughService",
+        "hasGS1DigitalLink",
+        "hasMap",
+        "identifier",
+        "image",
+        "isAccessibleForFree",
+        "isicV4",
+        "keywords",
+        "latitude",
+        "leaseLength",
+        "logo",
+        "longitude",
+        "mainEntityOfPage",
+        "map",
+        "maps",
+        "maximumAttendeeCapacity",
+        "name",
+        "numberOfBathroomsTotal",
+        "numberOfBedrooms",
+        "numberOfFullBathrooms",
+        "numberOfPartialBathrooms",
+        "numberOfRooms",
+        "occupancy",
+        "openingHoursSpecification",
+        "owner",
+        "permittedUsage",
+        "petsAllowed",
+        "photo",
+        "photos",
+        "potentialAction",
+        "publicAccess",
+        "review",
+        "reviews",
+        "sameAs",
+        "slogan",
+        "smokingAllowed",
+        "specialOpeningHoursSpecification",
+        "subjectOf",
+        "telephone",
+        "tourBookingPage",
+        "url",
+        "yearBuilt"
+      ]
+    },
+    "PostalAddress": {
+      "ancestors": [
+        "PostalAddress",
+        "ContactPoint",
+        "StructuredValue",
+        "Intangible",
+        "Thing"
+      ],
+      "properties": [
+        "additionalType",
+        "addressCountry",
+        "addressLocality",
+        "addressRegion",
+        "alternateName",
+        "areaServed",
+        "availableLanguage",
+        "contactOption",
+        "contactType",
+        "description",
+        "disambiguatingDescription",
+        "email",
+        "extendedAddress",
+        "faxNumber",
+        "hoursAvailable",
+        "identifier",
+        "image",
+        "mainEntityOfPage",
+        "name",
+        "owner",
+        "postOfficeBoxNumber",
+        "postalCode",
+        "potentialAction",
+        "productSupported",
+        "sameAs",
+        "serviceArea",
+        "streetAddress",
+        "subjectOf",
+        "telephone",
+        "url"
+      ]
+    }
+  },
+  "ranges": {
+    "name": [
+      "Text"
+    ],
+    "alternateName": [
+      "Text"
+    ],
+    "url": [
+      "URL"
+    ],
+    "sameAs": [
+      "URL"
+    ],
+    "image": [
+      "ImageObject",
+      "URL"
+    ],
+    "telephone": [
+      "Text"
+    ],
+    "address": [
+      "PostalAddress",
+      "Text"
+    ],
+    "containsPlace": [
+      "Place"
+    ],
+    "maximumAttendeeCapacity": [
+      "Integer"
+    ],
+    "streetAddress": [
+      "Text"
+    ],
+    "addressLocality": [
+      "Text"
+    ],
+    "postalCode": [
+      "Text"
+    ],
+    "addressCountry": [
+      "Country",
+      "Text"
+    ],
+    "email": [
+      "Text"
+    ]
+  }
+}

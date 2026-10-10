@@ -1,10 +1,11 @@
 import {
+  TRADES_HALL_PUBLISHED_ROOM_NAMES,
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
   formatPriceGBP,
   type PublishedRoomSlug,
   type RoomCapacity,
-} from "../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 
 // -----------------------------------------------------------------------------
 // enquiry-fit — the thinking half of the Enquiry Composer.
@@ -49,16 +50,10 @@ export const ENQUIRY_EVENT_TYPES: readonly EnquiryEventType[] = [
   },
 ] as const;
 
-/** Display names for every published room — the four photographed rooms use
- *  the same names as their cards; the galleries are named as the venue does. */
-export const ENQUIRY_ROOM_NAMES: Readonly<Record<PublishedRoomSlug, string>> = {
-  "grand-hall": "The Grand Hall",
-  saloon: "The Saloon",
-  "robert-adam-room": "The Robert Adam Room",
-  "reception-room": "The Reception Room",
-  "north-gallery": "The North Gallery",
-  "south-gallery": "The South Gallery",
-} as const;
+/** Display names for every published room: the shared venue truth's names, so
+ *  the page, its schema.org description and the public discovery endpoint
+ *  name each room alike. */
+export const ENQUIRY_ROOM_NAMES: Readonly<Record<PublishedRoomSlug, string>> = TRADES_HALL_PUBLISHED_ROOM_NAMES;
 
 const ROOM_ORDER = Object.keys(ENQUIRY_ROOM_NAMES) as readonly PublishedRoomSlug[];
 

@@ -100,7 +100,8 @@ const PUBLIC_COPY_SOURCES: readonly string[] = [
   "src/pages/TradesHouseCraftQuizPage.tsx",
   "src/pages/RoomShowcasePage.tsx",
   "src/lib/room-card-copy.ts",
-  "src/lib/trades-hall-venue-truth.ts",
+  // The venue truth moved to the shared types package (T-649).
+  "../types/src/trades-hall-venue-truth.ts",
 ];
 
 /** Public pages whose "Enquire" must reach the composer, never a mail client. */
