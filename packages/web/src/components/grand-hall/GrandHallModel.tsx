@@ -16,6 +16,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import {
   AdditiveBlending,
   BoxGeometry,
+  Color,
   DataTexture,
   Vector3,
   DoubleSide,
@@ -38,6 +39,12 @@ import { useHallFinish } from "./hall-finish.js";
 import { createHallMaterials, disposeHallMaterials, HallSectionUniforms } from "./hall-materials.js";
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
+import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
+import { getNativeRenderer } from "../../lib/native-renderer.js";
+import { HallEnvironmentCapture } from "./hall-capture.js";
+
+/** The dark the drawn hall stands in (the planner's background around it). */
+export const HALL_VOID = "#120e0b";
 
 /** How the planner is looking at the room; "auto" decides from the camera. */
 export type HallView = "plan" | "overview" | "walk" | "auto";
@@ -186,6 +193,7 @@ function disposeResources(resources: HallResources): void {
 
 export function GrandHallModel({ mood, view, quality: qualityOverride, overviewChandeliers = true, moodSeconds = 1.6 }: GrandHallModelProps): ReactElement {
   const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
   const geometry = useMemo(() => hallGeometry(), []);
   const [relief, setRelief] = useState<WallRelief | null>(null);
@@ -202,9 +210,29 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
   const capRefs = useRef<(import("three").Mesh | null)[]>([]);
   const resolvedView = useRef<Exclude<HallView, "auto">>(view === "auto" ? "overview" : view);
   const chandelierGroup = useRef<import("three").Group | null>(null);
+  const room = useRef<import("three").Group | null>(null);
   const lookDirection = useMemo(() => new Vector3(), []);
+  // The room's own environment, recaptured whenever a surface or a mood settles.
+  const captureNeeded = useRef(true);
+  const environment = useMemo(() => {
+    const renderer = getNativeRenderer(gl);
+    return renderer === null ? null : new HallEnvironmentCapture(renderer, new Color(HALL_VOID));
+  }, [gl]);
 
   useEffect(() => () => { disposeResources(resources); }, [resources]);
+
+  useEffect(() => {
+    if (environment === null) return undefined;
+    const previous = scene.environment;
+    const previousIntensity = scene.environmentIntensity;
+    captureNeeded.current = true;
+    invalidate();
+    return () => {
+      scene.environment = previous;
+      scene.environmentIntensity = previousIntensity;
+      environment.dispose();
+    };
+  }, [environment, invalidate, scene]);
 
   // The scan's photographs and the walls' relief stream in after the first
   // frame; the planner's caption counts them in.
@@ -215,12 +243,13 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
     resources.photos.load(quality, (_kind, loaded) => {
       if (!live) return;
       useHallViewStore.getState().settleSurface(loaded);
-      if (loaded) invalidate();
+      if (loaded) { captureNeeded.current = true; invalidate(); }
     });
     loadWallRelief().then((loaded) => {
       if (!live) return;
       setRelief(loaded);
       useHallViewStore.getState().settleSurface(true);
+      captureNeeded.current = true;
       invalidate();
     }, () => {
       // Without the relief the walls stay flat photographs.
@@ -232,12 +261,16 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
     };
   }, [invalidate, quality, resources]);
 
-  // The mood's exposure applies from the first frame and is restored on exit.
+  // The mood's exposure and grade apply from the first frame and are restored on exit.
   useEffect(() => {
     const previous = gl.toneMappingExposure;
     gl.toneMappingExposure = resources.mood.exposure;
+    setSceneGrade(resources.mood.whiteBalance, resources.mood.saturation);
     invalidate();
-    return () => { gl.toneMappingExposure = previous; };
+    return () => {
+      gl.toneMappingExposure = previous;
+      resetSceneGrade();
+    };
   }, [gl, invalidate, resources]);
 
   // Start a blend whenever the requested mood changes.
@@ -256,8 +289,27 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
       active.started = true;
       resources.mood.apply(active.from, active.to, moodEase(active.t));
       state.gl.toneMappingExposure = resources.mood.exposure;
-      if (active.t >= 1) blend.current = null;
+      setSceneGrade(resources.mood.whiteBalance, resources.mood.saturation);
+      if (active.t >= 1) { blend.current = null; captureNeeded.current = true; }
       else moving = true;
+    }
+    // Recapture the room's environment once nothing is blending: whole, with
+    // its chandeliers lit and no cutaway, then restore this frame's cuts below.
+    const roomGroup = room.current;
+    if (environment !== null && captureNeeded.current && blend.current === null && roomGroup !== null) {
+      captureNeeded.current = false;
+      for (let index = 0; index < cutState.current.length; index++) resources.section.set(index, HALL_CUTS.none);
+      const chandeliersShown = chandelierGroup.current?.visible ?? false;
+      if (chandelierGroup.current !== null) chandelierGroup.current.visible = true;
+      try {
+        state.scene.environment = environment.capture(roomGroup);
+        state.scene.environmentIntensity = resources.mood.reflections;
+      } catch {
+        // Without its own reflections the room keeps the previous environment.
+      } finally {
+        if (chandelierGroup.current !== null) chandelierGroup.current.visible = chandeliersShown;
+      }
+      moving = true;
     }
     // Ease every cut toward its target for this camera and view.
     const camera: [number, number, number] = [state.camera.position.x, state.camera.position.y, state.camera.position.z];
@@ -298,7 +350,7 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
   });
 
   return (
-    <group name="grand-hall">
+    <group ref={room} name="grand-hall">
       {[...geometry.geometries].map(([key, part]) => {
         const material = resources.materials.get(key);
         if (material === undefined) return null;

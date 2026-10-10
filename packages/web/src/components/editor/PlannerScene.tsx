@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
+import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
@@ -29,6 +30,7 @@ import { PlacementGhost } from "../PlacementGhost.js";
 import { PlannerInteractionFloor } from "./PlannerInteractionFloor.js";
 import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
+import { FurnitureContactShadows } from "./FurnitureContactShadows.js";
 import { SelectionSystem } from "../SelectionSystem.js";
 import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
@@ -512,6 +514,7 @@ export function PlannerScene(): ReactElement {
           {!timelinePreviewActive && !hallDrawn && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
           <CaptureToneMapping captureShown={splatActive} photographedRoom={hallDrawn} />
+          <PlannerRenderPipeline enabled={!splatActive} />
           {furnitureReflections && <FurnitureReflectionExperiment />}
           {!timelinePreviewActive && <SectionPlane />}
           {!timelinePreviewActive && <InvalidateOnToggle />}
@@ -521,7 +524,7 @@ export function PlannerScene(): ReactElement {
           {furnitureLighting !== "baseline" ? (
             <FurnitureLightingExperiment shadows={furnitureLighting === "panorama-shadow"} />
           ) : realHall ? (
-            <HallLightRig mood={hallMood} />
+            <HallLightRig mood={hallMood} standInEnvironment={!hallDrawn} />
           ) : (
             <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
           )}
@@ -586,6 +589,7 @@ export function PlannerScene(): ReactElement {
             <PlannerMotionOverlayLayers />
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
+            {!timelinePreviewActive && <FurnitureContactShadows />}
             <PlacedFurniture />
           </group>
           {realHall && !timelinePreviewActive && <HallViewDirector />}

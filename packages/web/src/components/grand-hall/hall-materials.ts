@@ -23,6 +23,7 @@ import type { HallMaterialKey } from "./hall-builders.js";
 import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
 import type { HallTextures } from "./hall-textures.js";
 import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
+import { createOakFloorMaterial } from "./hall-floor.js";
 
 type Shading = "gloss" | "metal" | "photo" | "photoGloss";
 
@@ -192,7 +193,8 @@ export function createHallMaterials(textures: HallTextures, photos: HallPhotos, 
   const table = styles(textures);
   const materials = new Map<HallMaterialKey, Material>();
   for (const key of Object.keys(table) as HallMaterialKey[]) {
-    const material = createSurface(table[key], mood, photos);
+    // The floor is drawn (hall-floor.ts), lit by the same baked light.
+    const material = key === "floor" ? createOakFloorMaterial(bakedIrradiance(mood)) : createSurface(table[key], mood, photos);
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
       material.maskNode = sectionMask(section);
     }

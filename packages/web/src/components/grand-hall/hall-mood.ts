@@ -10,6 +10,7 @@
 
 import { Color } from "three";
 import { uniform } from "three/tsl";
+import type { ChannelGain } from "../../lib/scene-grade.js";
 
 export type HallMoodName = "daylight" | "evening" | "candlelight";
 
@@ -33,6 +34,12 @@ export interface HallMoodSpec {
   readonly exposure: number;
   /** Environment reflections on varnish, gilt and glass. */
   readonly reflections: number;
+  /**
+   * The camera's white balance as a gain per channel in linear light
+   * (scene-grade.ts), relative to the light the photographs were taken in.
+   */
+  readonly whiteBalance: ChannelGain;
+  readonly saturation: number;
 }
 
 export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
@@ -51,6 +58,8 @@ export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
     glow: 0.55,
     exposure: 1.0,
     reflections: 0.7,
+    whiteBalance: [1, 1, 1],
+    saturation: 1.0,
   },
   evening: {
     label: "Evening",
@@ -67,6 +76,8 @@ export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
     glow: 1.0,
     exposure: 1.06,
     reflections: 0.85,
+    whiteBalance: [0.95, 1, 1.1],
+    saturation: 1.02,
   },
   candlelight: {
     label: "Candlelight",
@@ -83,6 +94,8 @@ export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
     glow: 0.7,
     exposure: 1.12,
     reflections: 0.9,
+    whiteBalance: [0.93, 1, 1.16],
+    saturation: 0.98,
   },
 };
 
@@ -106,6 +119,8 @@ export class HallMoodUniforms {
   readonly glow = uniform(HALL_MOODS.evening.glow);
   exposure = HALL_MOODS.evening.exposure;
   reflections = HALL_MOODS.evening.reflections;
+  whiteBalance: [number, number, number] = [...HALL_MOODS.evening.whiteBalance];
+  saturation = HALL_MOODS.evening.saturation;
 
   /** Sets every uniform to `from` blended toward `to` by `t` ∈ [0, 1]. */
   apply(from: HallMoodSpec, to: HallMoodSpec, t: number): void {
@@ -125,6 +140,12 @@ export class HallMoodUniforms {
     this.glow.value = mix(from.glow, to.glow);
     this.exposure = mix(from.exposure, to.exposure);
     this.reflections = mix(from.reflections, to.reflections);
+    this.whiteBalance = [
+      mix(from.whiteBalance[0], to.whiteBalance[0]),
+      mix(from.whiteBalance[1], to.whiteBalance[1]),
+      mix(from.whiteBalance[2], to.whiteBalance[2]),
+    ];
+    this.saturation = mix(from.saturation, to.saturation);
   }
 
   /** The live values as a spec, so a new blend starts exactly where this one is. */
@@ -144,6 +165,8 @@ export class HallMoodUniforms {
       glow: this.glow.value,
       exposure: this.exposure,
       reflections: this.reflections,
+      whiteBalance: [...this.whiteBalance],
+      saturation: this.saturation,
     };
   }
 }

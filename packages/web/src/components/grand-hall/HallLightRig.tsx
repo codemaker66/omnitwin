@@ -26,6 +26,11 @@ export interface HallLightRigProps {
   readonly moodSeconds?: number;
   /** Overrides the device's own finish (the lab shows the full one). */
   readonly finish?: HallFinish;
+  /**
+   * A stand-in room as the reflection environment. The drawn hall captures its
+   * own (hall-capture.ts), so the stand-in serves only when it is not drawn.
+   */
+  readonly standInEnvironment?: boolean;
 }
 
 /** The lit plaster and ceiling above, the floorboards below (see hall-environment.ts). */
@@ -44,7 +49,7 @@ function setFill(light: HemisphereLight, mood: HallMoodUniforms): void {
   light.intensity = Math.PI * mood.reflections;
 }
 
-export function HallLightRig({ mood, moodSeconds = 1.6, finish }: HallLightRigProps): ReactElement {
+export function HallLightRig({ mood, moodSeconds = 1.6, finish, standInEnvironment = true }: HallLightRigProps): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
   const deviceFinish = useHallFinish();
   const { liveLight } = finish ?? deviceFinish;
@@ -103,7 +108,7 @@ export function HallLightRig({ mood, moodSeconds = 1.6, finish }: HallLightRigPr
       )) : <hemisphereLight ref={fill} />}
       {/* Aimed at the centre of the room, where its unadded target stays. */}
       <directionalLight ref={daylight} position={[1.5, 6, -14]} />
-      {liveLight && <HallEnvironment mood={mood} />}
+      {liveLight && standInEnvironment && <HallEnvironment mood={mood} />}
     </group>
   );
 }

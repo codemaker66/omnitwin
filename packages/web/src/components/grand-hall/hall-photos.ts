@@ -40,15 +40,20 @@ export function hallSurveyUrl(file: string): string {
 
 export type HallPhotoKind = "walls" | "floor" | "ceiling" | "dome";
 
+/**
+ * The photographs the hall loads. The floor is drawn (hall-floor.ts): its
+ * survey image stays published for the survey's record but is not fetched.
+ */
+export const HALL_LOADED_PHOTOS: readonly Exclude<HallPhotoKind, "floor">[] = ["walls", "ceiling", "dome"];
+
 /** Number of photographs the hall loads. */
-export const HALL_PHOTO_COUNT = 4;
+export const HALL_PHOTO_COUNT = HALL_LOADED_PHOTOS.length;
 
 /** Files for a device: full resolution on desktops, half on phones. */
-export function hallPhotoFiles(quality: number): Readonly<Record<HallPhotoKind, string>> {
+export function hallPhotoFiles(quality: number): Readonly<Record<Exclude<HallPhotoKind, "floor">, string>> {
   const full = quality >= 0.75;
   return {
     walls: hallSurveyUrl(`walls-${full ? "4096" : "2048"}.webp`),
-    floor: hallSurveyUrl(`floor-${full ? "2560" : "1280"}.webp`),
     ceiling: hallSurveyUrl(`ceiling-${full ? "3072" : "1536"}.webp`),
     dome: hallSurveyUrl(`dome-${full ? "4096" : "2048"}.webp`),
   };
@@ -65,6 +70,11 @@ const PLACEHOLDER: Readonly<Record<HallPhotoKind, readonly [number, number, numb
 function placeholder(rgb: readonly [number, number, number]): DataTexture {
   const created = new DataTexture(new Uint8Array([rgb[0], rgb[1], rgb[2], 255]), 1, 1, RGBAFormat, UnsignedByteType);
   created.colorSpace = SRGBColorSpace;
+  // A DataTexture defaults to nearest filtering, which WebGPU's node builder
+  // treats as unfilterable and binds without a sampler; the wall material's
+  // biased sample then fails to compile. Linear keeps it a sampled texture.
+  created.magFilter = LinearFilter;
+  created.minFilter = LinearFilter;
   created.needsUpdate = true;
   return created;
 }
@@ -103,7 +113,7 @@ export class HallPhotos {
   load(quality: number, onSettled: (kind: HallPhotoKind, loaded: boolean) => void): void {
     const files = hallPhotoFiles(quality);
     const loader = new TextureLoader();
-    for (const kind of Object.keys(files) as HallPhotoKind[]) {
+    for (const kind of HALL_LOADED_PHOTOS) {
       loader.load(files[kind], (image) => {
         if (this.disposed) { image.dispose(); return; }
         image.colorSpace = SRGBColorSpace;
