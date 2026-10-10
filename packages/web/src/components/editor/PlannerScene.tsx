@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
+import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
+import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
+import { profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
@@ -29,6 +32,9 @@ import { PlacementGhost } from "../PlacementGhost.js";
 import { PlannerInteractionFloor } from "./PlannerInteractionFloor.js";
 import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
+import { FurnitureContactShadows } from "./FurnitureContactShadows.js";
+import { TableCandles } from "./TableCandles.js";
+import { PipelineRetention, PlannerWarmup } from "./PlannerWarmup.js";
 import { SelectionSystem } from "../SelectionSystem.js";
 import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
@@ -64,6 +70,12 @@ import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
 import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
 import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
 import { readNativePlannerPixelRatio, serverPlannerPixelRatio, subscribeNativePlannerPixelRatio } from "../../lib/planner-resolution-policy.js";
+import { GrandHallModel } from "../grand-hall/GrandHallModel.js";
+import { HallViewDirector, HALL_VIEW_POSES, HALL_WALK } from "../grand-hall/HallViewDirector.js";
+import { HALL_HEIGHT } from "../grand-hall/hall-spec.js";
+import { HallLightRig } from "../grand-hall/HallLightRig.js";
+import { useHallViewStore } from "../../stores/hall-view-store.js";
+import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -161,7 +173,9 @@ function PlannerScenePrecompiler({
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
-  const previous = useRef<{ signature: string; gl: typeof gl; scene: typeof scene; camera: typeof camera } | null>(null);
+  const previous = useRef<{
+    signature: string; gl: typeof gl; scene: typeof scene; camera: typeof camera; composed: boolean;
+  } | null>(null);
   const generation = useRef(0);
 
   useEffect(() => { invalidate(); }, [camera, gl, invalidate, scene, signature]);
@@ -174,9 +188,14 @@ function PlannerScenePrecompiler({
   // useFrame, so compiling from a mount effect warms the wrong view/frustum.
   // This zero-priority subscriber leaves R3F's demand render loop in control.
   useFrame(() => {
+    const composed = nativeFrameComposer(gl) !== null;
     const last = previous.current;
-    if (last?.signature === signature && last.gl === gl && last.scene === scene && last.camera === camera) return;
-    previous.current = { signature, gl, scene, camera };
+    if (last?.signature === signature && last.gl === gl && last.scene === scene && last.camera === camera
+      && last.composed === composed) return;
+    previous.current = { signature, gl, scene, camera, composed };
+    // Shaders compile per render target. A composer draws the scene into its
+    // own pass, so a compile for the canvas would build nothing it draws.
+    if (composed) return;
     const request = ++generation.current;
     const completed = (): void => { if (generation.current === request) invalidate(); };
     // Compilation is a warmup. NativeCanvas surfaces actual draw failures;
@@ -226,7 +245,11 @@ export function PlannerScene(): ReactElement {
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
   const viewportWidth = usePlannerViewportWidth();
-  const canvasDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
+  const nativeDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
+  // One render profile per page (phone, tablet or desktop); phones and tablets
+  // draw within a pixel budget instead of their full native density.
+  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), []);
+  const canvasDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
   const canvasGl = useMemo(plannerCanvasGlOptions, []);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
   const renderSceneOverlays = shouldRenderPlannerSceneOverlays(viewportWidth);
@@ -239,10 +262,24 @@ export function PlannerScene(): ReactElement {
     [space],
   );
   const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
+  // The Grand Hall is drawn as the real room: generated architecture with its
+  // own light, moods and cutaway, instead of the generic procedural shell.
+  // Its capture, where one may be shown, appears only when asked for.
+  const realHall = useModelledGrandHall();
+  const hallMood = useHallViewStore((state) => state.mood);
+  // The opening framing is the hall's Room view on landscape screens; on
+  // portrait ones it is no named view.
+  const markHallOpeningPose = useCallback((framed: boolean) => {
+    useHallViewStore.getState().setActivePreset(framed ? "room" : null);
+  }, []);
 
   // Captured interior keeps the procedural shell out of the source image.
   // Explicit Mesh/Hybrid choices and unavailable captures retain the shell.
   const layerMode = useCockpitStore((s) => s.layerMode);
+  // The drawn hall has no combined view: its capture shows on its own or not
+  // at all (HallViewControls), so a combined choice carried in from another
+  // room shows the drawn hall here.
+  const sceneLayerMode = realHall && layerMode === "hybrid" ? "mesh" : layerMode;
   const { splatUrls, environmentUrls, transform, hasAsset, status: splatStatus, roomSlug, source: captureSource } = useRoomRuntimeSplat();
 
   // Walk mode — stand in the captured room at eye level. Available only when
@@ -254,11 +291,17 @@ export function PlannerScene(): ReactElement {
     () => (roomSlug !== null ? roomSplatBundle(roomSlug) : null),
     [roomSlug],
   );
+  // The drawn Grand Hall is walkable on its own, from its own arrival point.
+  const hallWalkData = useMemo(() => realHall ? {
+    spawn: { position: [...HALL_WALK.spawn.position] as [number, number, number], yaw: HALL_WALK.spawn.yaw, pitch: HALL_WALK.spawn.pitch },
+    bounds: { min: [...HALL_WALK.bounds.min] as [number, number, number], max: [...HALL_WALK.bounds.max] as [number, number, number] },
+    roomHeightM: HALL_HEIGHT,
+  } : null, [realHall]);
   const walkData = useMemo(() => {
     // Retain the captured walk bounds. The Grand Hall has an authored arrival
     // within those bounds; other rooms keep the scanner-derived starting point.
     const pose = walkBundle === null ? null : walkPoseForBundle(walkBundle);
-    if (!hasAsset || pose === null) return null;
+    if (!hasAsset || pose === null) return hallWalkData;
     const { bounds: walkBounds } = pose;
     return {
       spawn: plannerInteriorSpawn(roomSlug, pose),
@@ -268,7 +311,7 @@ export function PlannerScene(): ReactElement {
       },
       roomHeightM: walkBundle?.extentM[1],
     };
-  }, [hasAsset, walkBundle, roomSlug]);
+  }, [hasAsset, walkBundle, roomSlug, hallWalkData]);
 
   useEffect(() => {
     const initial = useCockpitStore.getState();
@@ -297,9 +340,9 @@ export function PlannerScene(): ReactElement {
 
   useEffect(() => {
     if (timelinePreviewActive) return;
-    if (!plannerArrivalPolicy.claim(arrivalKey, roomSlug === "grand-hall" && walkData !== null)) return;
+    if (!plannerArrivalPolicy.claim(arrivalKey, roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
     useCockpitStore.setState({ layerMode: "splat", walkMode: true });
-  }, [arrivalKey, roomSlug, timelinePreviewActive, walkData]);
+  }, [arrivalKey, hasAsset, roomSlug, timelinePreviewActive, walkData]);
   // If the room changes to one with no walk data, the mode cannot stand.
   useEffect(() => {
     if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
@@ -376,23 +419,35 @@ export function PlannerScene(): ReactElement {
   // Initial arrival only. A byte-decoded chunk is not yet a visible room.
   // Once entered (or bypassed), later refinements never cover the workspace.
   const showArrival = arrivalKey !== null && roomSlug === "grand-hall" && !timelinePreviewActive
-    && layerMode !== "mesh"
+    && sceneLayerMode !== "mesh"
     && !enteredRooms.has(arrivalKey) && !captureFailed
     && (splatStatus === "loading" || hasAsset);
-  const meshVisible = !timelinePreviewActive && (!hasAsset || captureFailed || layerMode !== "splat");
-  const splatActive = !timelinePreviewActive && hasAsset && !captureFailed && layerMode !== "mesh";
+  const meshVisible = !timelinePreviewActive && (!hasAsset || captureFailed || sceneLayerMode !== "splat");
+  const splatActive = !timelinePreviewActive && hasAsset && !captureFailed && sceneLayerMode !== "mesh";
+  // A capture carries its own camera response; the drawn hall and furniture
+  // take the planner's pipeline. A capture is on screen only once a chunk has
+  // drawn: switching the pipeline off for one still loading (or held, then
+  // failing) drew the first frames plainly and compiled every shader twice.
+  const captureDrawn = splatActive && loadedChunks > 0;
+  // The drawn hall stands in a dark room; everything else on parchment.
+  const hallDrawn = realHall && meshVisible;
+  // A capture that fails behind the drawn hall changes nothing on screen: the
+  // camera and a walk of the drawn hall carry on.
+  const captureInUse = !(realHall && sceneLayerMode === "mesh");
+  // Walking the drawn hall starts in the drawn hall, not at the capture's spot.
+  const interiorWalk = realHall && !splatActive ? hallWalkData : walkData;
   const furnitureLighting = resolveFurnitureLightingExperiment({
     search: typeof window === "undefined" ? "" : window.location.search,
     development: import.meta.env.DEV,
     roomSlug,
-    layerMode,
+    layerMode: sceneLayerMode,
     splatActive,
     timelinePreviewActive,
   });
   const furnitureReflections = resolveFurnitureReflectionExperiment({
     search: typeof window === "undefined" ? "" : window.location.search,
     development: import.meta.env.DEV,
-    roomSlug, captureSource, layerMode, splatActive, timelinePreviewActive,
+    roomSlug, captureSource, layerMode: sceneLayerMode, splatActive, timelinePreviewActive,
   });
   const resolvePhase = roomResolvePhase({ splatStatus, hasAsset: hasAsset && !captureFailed, totalChunks, loadedChunks, failedChunks, captureAvailability: availability });
   // CameraRig owns the failure handoff so it records Interior before yielding it.
@@ -404,7 +459,7 @@ export function PlannerScene(): ReactElement {
   const inkOpacity = inkTargetOpacity({ splatActive, loadedChunks, totalChunks });
   useEffect(() => {
     const source = {
-      configId, spaceId: space?.id ?? null, layerMode,
+      configId, spaceId: space?.id ?? null, layerMode: sceneLayerMode,
       captureSource: hasAsset && splatActive ? captureSource : "none" as const,
       loadedChunks: timelinePreviewActive ? 0 : loadedChunks,
       totalChunks: timelinePreviewActive ? 0 : totalChunks,
@@ -413,11 +468,11 @@ export function PlannerScene(): ReactElement {
     useCockpitStore.getState().setSceneSource(source);
     // A previous canvas must not withdraw a newer canvas's evidence.
     return () => { useCockpitStore.getState().clearSceneSource(source); };
-  }, [captureSource, configId, frozenRoom, hasAsset, inkOpacity, layerMode, loadedChunks, meshVisible, roomGeometry, space?.id, splatActive, timelinePreviewActive, totalChunks]);
+  }, [captureSource, configId, frozenRoom, hasAsset, inkOpacity, sceneLayerMode, loadedChunks, meshVisible, roomGeometry, space?.id, splatActive, timelinePreviewActive, totalChunks]);
   const cameraInteractionClearTimer = useRef<number | null>(null);
   const sceneWarmupSignature = timelinePreviewActive
     ? `frozen:${frozenRoom?.envelopeKey ?? "unavailable"}`
-    : `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}:shell:${String(meshVisible)}`;
+    : `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${sceneLayerMode}:${String(hasAsset)}:shell:${String(meshVisible)}`;
 
   const clearCameraInteractionTimer = useCallback((): void => {
     if (cameraInteractionClearTimer.current === null) return;
@@ -475,21 +530,28 @@ export function PlannerScene(): ReactElement {
           camera={{ fov: 55, near: 0.1, far: 200 }}
           style={{ width: "100%", height: "100%" }}
         >
-          <color attach="background" args={["#eee9de"]} />
-          {!timelinePreviewActive && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
+          <color attach="background" args={[hallDrawn ? "#120e0b" : "#eee9de"]} />
+          {!timelinePreviewActive && !hallDrawn && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
-          <CaptureToneMapping captureShown={splatActive} />
+          <CaptureToneMapping captureShown={captureDrawn} photographedRoom={hallDrawn} />
+          <PlannerRenderPipeline enabled={!captureDrawn} profile={renderProfile} />
+          <PipelineRetention />
           {furnitureReflections && <FurnitureReflectionExperiment />}
           {!timelinePreviewActive && <SectionPlane />}
           {!timelinePreviewActive && <InvalidateOnToggle />}
           {/* Furniture needs scene lighting even when the captured layer hides
-              the procedural shell or camera motion selects its lean version. */}
-          {furnitureLighting === "baseline" ? (
-            <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
-          ) : (
+              the procedural shell or camera motion selects its lean version.
+              The Grand Hall's rig stays mounted whichever way the hall shows. */}
+          {furnitureLighting !== "baseline" ? (
             <FurnitureLightingExperiment shadows={furnitureLighting === "panorama-shadow"} />
+          ) : realHall ? (
+            <HallLightRig mood={hallMood} standInEnvironment={!hallDrawn} />
+          ) : (
+            <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
           )}
-          {meshVisible && (roomGeometry !== null ? (
+          {meshVisible && (realHall ? (
+            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} />
+          ) : roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (
             <>
@@ -498,7 +560,7 @@ export function PlannerScene(): ReactElement {
             </>
           ))}
           {timelinePreviewActive && frozenRoom !== null && <FrozenLayoutRoom room={frozenRoom} />}
-          {!timelinePreviewActive && roomGeometry !== null && (
+          {!timelinePreviewActive && roomGeometry !== null && (!realHall || !meshVisible) && (
             <InkArchitectureLayer
               polygon={roomGeometry.wallPolygon}
               ceilingHeightM={roomGeometry.ceilingHeight}
@@ -531,7 +593,7 @@ export function PlannerScene(): ReactElement {
               <StageFloor
                 roomSlug={captureSource === "staged" ? roomSlug : null}
                 transform={transform}
-                active={splatActive && layerMode === "splat"}
+                active={splatActive && sceneLayerMode === "splat"}
               />
             </group>
           )}
@@ -548,17 +610,22 @@ export function PlannerScene(): ReactElement {
             <PlannerMotionOverlayLayers />
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
+            {!timelinePreviewActive && <FurnitureContactShadows />}
+            {!timelinePreviewActive && hallDrawn && <TableCandles />}
             <PlacedFurniture />
           </group>
+          {realHall && !timelinePreviewActive && <HallViewDirector />}
           <CockpitPlanningCamera suspended={timelinePreviewActive} />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive}
-            captureUnavailableKey={captureFailed ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
-          {walkMode && walkData !== null && !walkCameraDisabled && !captureFailed && (
+            defaultPose={realHall ? HALL_VIEW_POSES.room : null}
+            onOpeningPose={realHall ? markHallOpeningPose : undefined}
+            captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
+          {walkMode && interiorWalk !== null && !walkCameraDisabled && (!captureFailed || !captureInUse) && (
             <InteriorCamera
-              key={roomSlug ?? "walk"}
-              spawn={walkData.spawn}
-              bounds={walkData.bounds}
-              roomHeightM={walkData.roomHeightM}
+              key={`${roomSlug ?? "walk"}:${interiorWalk === hallWalkData ? "model" : "capture"}`}
+              spawn={interiorWalk.spawn}
+              bounds={interiorWalk.bounds}
+              roomHeightM={interiorWalk.roomHeightM}
               inputPolicy="planner"
               ownsCamera={plannerInteriorOwnsCamera}
               touchLookEnabled={plannerTouchLookEnabled}
@@ -571,6 +638,7 @@ export function PlannerScene(): ReactElement {
           )}
           <FrozenLayoutPreviewCamera active={timelinePreviewActive} room={frozenRoom} />
           {import.meta.env.DEV && <PerfMonitor />}
+          {!timelinePreviewActive && <PlannerWarmup />}
           {/* Re-register last when a camera owner mounts or the room shell changes. */}
           <PlannerScenePrecompiler key={`${sceneWarmupSignature}:${String(walkMode)}`} signature={sceneWarmupSignature} />
         </Canvas>

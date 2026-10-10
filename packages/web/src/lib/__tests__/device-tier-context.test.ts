@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyDeviceInContext } from "../device-tier.js";
+import { classifyDeviceInContext, deviceFormFactor } from "../device-tier.js";
 
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1";
 const MAC_OR_IPAD = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
@@ -30,5 +30,14 @@ describe("device classification with form factor (T-639)", () => {
   it("never raises a device above its GPU tier", () => {
     expect(classifyDeviceInContext("Mali-T880", { userAgent: IPHONE, maxTouchPoints: 5 })).toBe("low");
     expect(classifyDeviceInContext("SwiftShader", { userAgent: ANDROID_PHONE, maxTouchPoints: 5 })).toBe("poster");
+  });
+
+  it("reads the form factor from the user agent and touch support alone", () => {
+    expect(deviceFormFactor({ userAgent: IPHONE, maxTouchPoints: 5 })).toBe("phone");
+    expect(deviceFormFactor({ userAgent: ANDROID_PHONE, maxTouchPoints: 5 })).toBe("phone");
+    expect(deviceFormFactor({ userAgent: MAC_OR_IPAD, maxTouchPoints: 5 })).toBe("tablet");
+    expect(deviceFormFactor({ userAgent: ANDROID_TABLET, maxTouchPoints: 5 })).toBe("tablet");
+    expect(deviceFormFactor({ userAgent: MAC_OR_IPAD, maxTouchPoints: 0 })).toBe("desktop");
+    expect(deviceFormFactor({ userAgent: "", maxTouchPoints: 0 })).toBe("desktop");
   });
 });

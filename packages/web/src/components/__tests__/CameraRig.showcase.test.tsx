@@ -503,3 +503,82 @@ describe("CameraRig capture failure recovery", () => {
     assertRoomFramed();
   });
 });
+
+describe("CameraRig view glides", () => {
+  const destination = { id: "hall-view-plan", name: "Plan", kind: "default" as const,
+    position: [0, 21.5, 2.3] as const, target: [0, 0, 0] as const };
+
+  function startGlide(): readonly [number, number, number] {
+    const camera = harness.camera;
+    const controls = harness.controls;
+    if (camera === null || controls === null) throw new Error("Missing harness");
+    const from = [camera.position.x, camera.position.y, camera.position.z] as const;
+    act(() => {
+      useBookmarkStore.getState().startTransition(destination, from, [controls.target.x, controls.target.y, controls.target.z]);
+    });
+    return from;
+  }
+
+  it("does not spend the demand loop's idle gap on a glide started outside a frame", () => {
+    useCockpitStore.setState({ layerMode: "mesh" });
+    render(<CameraRig dimensions={dimensions} />);
+    tick();
+    const from = startGlide();
+    tick(20);
+    expect(useBookmarkStore.getState().transition?.elapsed).toBe(0);
+    for (const axis of [0, 1, 2] as const) expect(harness.camera?.position.getComponent(axis)).toBeCloseTo(from[axis], 6);
+    for (let frame = 0; frame < 20; frame++) tick(1 / 60);
+    expect(useBookmarkStore.getState().transition).not.toBeNull();
+    const midway = harness.camera?.position.clone() ?? new Vector3();
+    expect(midway.distanceTo(new Vector3(...from))).toBeGreaterThan(0.01);
+    for (let frame = 0; frame < 240; frame++) tick(1 / 60);
+    expect(useBookmarkStore.getState().transition).toBeNull();
+    expect(harness.camera?.position.distanceTo(new Vector3(...destination.position))).toBeLessThan(0.05);
+  });
+
+  it("reports which opening framing it applied", () => {
+    useCockpitStore.setState({ layerMode: "mesh" });
+    const pose = { position: [10.2, 12.6, 13.2] as const, target: [0, 0.6, 0] as const };
+    const landscape = vi.fn();
+    const { unmount } = render(<CameraRig dimensions={dimensions} defaultPose={pose} onOpeningPose={landscape} />);
+    expect(landscape).toHaveBeenLastCalledWith(true);
+    for (const axis of [0, 1, 2] as const) expect(harness.camera?.position.getComponent(axis)).toBeCloseTo(pose.position[axis], 6);
+    unmount();
+    harness.size = { width: 600, height: 900 };
+    const portrait = vi.fn();
+    render(<CameraRig dimensions={dimensions} defaultPose={pose} onOpeningPose={portrait} />);
+    expect(portrait).toHaveBeenLastCalledWith(false);
+  });
+
+  it("enters the saved viewpoint once its glide lands", () => {
+    useCockpitStore.setState({ layerMode: "mesh" });
+    const eye = { id: "saved-eye", name: "By the fireplace", kind: "reference" as const,
+      position: [2, 1.6, 3] as const, target: [0, 1.5, 0] as const };
+    useBookmarkStore.setState({ bookmarks: [eye] });
+    render(<CameraRig dimensions={dimensions} />);
+    tick();
+    act(() => { useBookmarkStore.getState().requestNavigation(eye.id); });
+    for (let frame = 0; frame < 300; frame++) tick(1 / 60);
+    expect(useBookmarkStore.getState().transition).toBeNull();
+    expect(useBookmarkStore.getState().activeReferenceId).toBe(eye.id);
+    // The viewpoint owns the camera, as after an instant (reduced-motion) arrival.
+    expect(harness.controls?.enabled).toBe(false);
+    expect(harness.camera?.position.x).toBeCloseTo(eye.position[0], 2);
+    expect(harness.camera?.position.z).toBeCloseTo(eye.position[2], 2);
+  });
+
+  it("lands on the destination when one long frame carries the glide past its end", () => {
+    useCockpitStore.setState({ layerMode: "mesh" });
+    render(<CameraRig dimensions={dimensions} />);
+    tick();
+    startGlide();
+    tick(1 / 60);
+    tick(1 / 60);
+    tick(3);
+    expect(useBookmarkStore.getState().transition).toBeNull();
+    for (const axis of [0, 1, 2] as const) {
+      expect(harness.camera?.position.getComponent(axis)).toBeCloseTo(destination.position[axis], 6);
+      expect(harness.controls?.target.getComponent(axis)).toBeCloseTo(destination.target[axis], 6);
+    }
+  });
+});

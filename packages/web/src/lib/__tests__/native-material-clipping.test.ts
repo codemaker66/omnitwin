@@ -64,6 +64,21 @@ describe("native material clipping", () => {
     expect(next?.unionPlanes[0]?.w).toBe(2.4);
   });
 
+  it("gives materials that share a plane array one context, so they share compiled pipelines", () => {
+    const native = context();
+    const section = [new Plane(new Vector3(0, -1, 0), 7)];
+    const outline = new MeshBasicMaterial({ clippingPlanes: section });
+    const nameplate = new MeshBasicMaterial({ clippingPlanes: section });
+    const intersecting = new MeshBasicMaterial({ clippingPlanes: section, clipIntersection: true });
+    const elsewhere = new MeshBasicMaterial({ clippingPlanes: [new Plane(new Vector3(0, -1, 0), 7)] });
+    const resolve = createNativeMaterialClipping();
+    const shared = resolve(outline, native);
+    expect(resolve(nameplate, native)).toBe(shared);
+    expect(shared?.cacheKey).toBe(resolve(nameplate, native)?.cacheKey);
+    expect(resolve(intersecting, native)).not.toBe(shared);
+    expect(resolve(elsewhere, native)).not.toBe(shared);
+  });
+
   it("retains parent clipping and applies the material's intersection policy", () => {
     const native = context();
     const parent = new ClippingGroup();

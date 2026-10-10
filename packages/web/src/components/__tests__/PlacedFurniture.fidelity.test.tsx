@@ -179,7 +179,7 @@ describe("saved furniture fidelity", () => {
     expect(reasons).toHaveLength(1);
     expect(reasons[0]?.textContent).toContain("0.60 m");
     expect(reasons[0]?.textContent).toContain("0.90 m single-file");
-    expect(container.querySelectorAll('[name="clearance-rings"] lineLoop')).toHaveLength(1);
+    expect(container.querySelectorAll('[name="clearance-rings"] lineSegments')).toHaveLength(1);
   });
 
   it("shows only actual selected footprints and withdraws them during timeline preview", () => {
@@ -190,7 +190,7 @@ describe("saved furniture fidelity", () => {
     usePlacementStore.setState({ placedItems: items });
     useSelectionStore.getState().selectMultiple(first.map(({ id }) => id));
     const { container } = render(<PlacedFurniture />);
-    const loops = () => container.querySelectorAll('[name="selection-footprints"] lineLoop');
+    const loops = () => container.querySelectorAll('[name="selection-footprints"] lineSegments');
     expect(loops()).toHaveLength(1);
     expect(container.querySelectorAll('[name="item-pick-proxy"]')).toHaveLength(18);
     for (const { id } of items) expect(container.querySelector(`[name="furniture-${id}"]`)).not.toBeNull();
@@ -222,8 +222,8 @@ describe("saved furniture fidelity", () => {
     // exercised separately in furniture-selection-outline.test.ts.
     expect(root?.querySelector('[name="item-pick-proxy"] boxGeometry')).not.toBeNull();
     expect(root?.querySelector('[name="item-pick-proxy"]')?.getAttribute("rotation")).toBe("0,0.4,0");
-    expect(root?.querySelector("lineLoop")).toBeNull();
-    expect(container.querySelectorAll('[name="selection-footprints"] lineLoop')).toHaveLength(1);
+    expect(root?.querySelector("lineSegments")).toBeNull();
+    expect(container.querySelectorAll('[name="selection-footprints"] lineSegments')).toHaveLength(1);
   });
 
   it("retains outline geometry during uniform drag but replaces its cached bounds after a shape change", () => {

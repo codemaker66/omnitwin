@@ -35,7 +35,7 @@ import {
   type LayoutTimelinePreviewTransition,
   type LayoutTimelinePreviewTransitionMode,
 } from "../../stores/layout-timeline-preview-store.js";
-import { FurnitureProxy } from "../FurnitureProxy.js";
+import { FurnitureProxy, standaloneFurnitureMeshUrl } from "../FurnitureProxy.js";
 import { InstancedFurnitureLayer } from "./InstancedFurnitureLayer.js";
 
 export type TimelinePreviewOpacityRole = "fixed" | "from-progress" | "to-progress";
@@ -764,7 +764,8 @@ function TimelineFurnitureLayerComponent({
       if (renderKind === "unavailable") continue;
       const catalogueItem = getCatalogueItem(item.catalogueItemId);
       if (catalogueItem === undefined) continue;
-      (catalogueItem.meshUrl === null ? instanced : imported).push(item);
+      // Only models that still load a GLB draw one by one; crafted pieces batch.
+      (standaloneFurnitureMeshUrl(catalogueItem) === null ? instanced : imported).push(item);
     }
     return { instancedItems: instanced, importedItems: imported, fallbackItems: fallback };
   }, [items, simplified]);

@@ -479,6 +479,9 @@ const REGISTER_EXEMPT: readonly RegExp[] = [
   // T-629 split the ornament description out of GrandHallOrnaments.tsx into
   // data; the same gilt, avodire and oak, so the same rule.
   /grand-hall-ornament-parts\.ts/,
+  // The surveyed Grand Hall model: the hall's own gilt, brass and lamplight
+  // under the scan's photographs. The same rule.
+  /components[\\/]grand-hall[\\/]/,
   // T-634's twenty-second profiler: an instrument launched on demand, not
   // chrome, and its warning hue is the instrument's own.
   /PerfOverlay\.css/,

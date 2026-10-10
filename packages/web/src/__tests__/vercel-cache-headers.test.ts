@@ -110,7 +110,8 @@ describe("vercel.json static caching", () => {
       const values = cacheControl(path);
       expect(values.length, path).toBeLessThanOrEqual(1);
       if (values[0] === IMMUTABLE) {
-        expect(path, path).toMatch(/^\/(?:models\/furniture\/[^/]+\/v\d+\/|trades-house-media\/voice\/[0-9a-f]{16}\.mp3$)/u);
+        // Supplied models and their previews (v1), crafted previews (crafted-vN).
+        expect(path, path).toMatch(/^\/(?:models\/furniture\/[^/]+\/(?:crafted-)?v\d+\/|trades-house-media\/voice\/[0-9a-f]{16}\.mp3$)/u);
       }
     }
     const voiceClips = files.filter((path) => path.startsWith("/trades-house-media/voice/") && path.endsWith(".mp3"));

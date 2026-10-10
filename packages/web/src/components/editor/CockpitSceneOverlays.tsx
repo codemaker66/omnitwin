@@ -369,7 +369,7 @@ const BLOCKING_UI = [
   ".reference-left-dock", ".reference-inspector-dock", ".lens-panel", ".cockpit-truth",
   ".planner-tool-pill", ".reference-more-tools", ".reference-extra-tools", ".planner-command-deck",
   "[data-testid='mobile-planner-topbar']", ".mobile-planner-dock", ".planner-status-header",
-  "[data-floating-widget-id]", "[aria-label='Room view']", "[aria-label='View mode']",
+  "[data-floating-widget-id]", "[aria-label='Room view']", "[aria-label='Grand Hall view']", "[aria-label='View mode']",
   ".mobile-planner-utilities > *", "[data-testid='truth-mode-popover']",
   "[aria-label='Room layout timeline']", "[data-testid='cockpit-bottom']", ".client-event-dock", ".room-resolve-caption",
 ].join(", ");

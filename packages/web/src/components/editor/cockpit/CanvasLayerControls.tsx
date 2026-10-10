@@ -11,6 +11,8 @@ import "./CanvasLayerControls.css";
 import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js";
 import { interiorInputBlocked } from "../../rooms/interior-camera-input.js";
 import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
+import { useModelledGrandHall } from "../../grand-hall/hall-space.js";
+import { HallViewControls } from "./HallViewControls.js";
 
 const SPLAT_WORK_IN_PROGRESS = "Gaussian splats · Work in progress";
 
@@ -70,6 +72,7 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
   const povActive = useBookmarkStore((s) => s.activeReferenceId !== null);
   const walkAvailable = useMemo(() => walkAvailableForSlug(spaceSlug), [spaceSlug]);
   const walkDisabled = !splatsAvailable || !walkAvailable || povActive;
+  const modelledHall = useModelledGrandHall();
 
   // Escape leaves the room. Listening only while walking keeps this from
   // shadowing the rig's own Escape duties (tours, POV exit), none of which
@@ -110,6 +113,15 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
     </div>
   );
   const notice = !splatsAvailable && <p className="cockpit-layer-controls__notice">{SPLAT_WORK_IN_PROGRESS}</p>;
+  // The Grand Hall is drawn as the real room, so it is always walkable and has
+  // its own views and light; its capture is an extra, where one may be shown.
+  if (embedded && modelledHall) {
+    return (
+      <div className="reference-layer-controls" data-testid="planner-layer-controls">
+        <HallViewControls captureAvailable={splatsAvailable && walkAvailable} povActive={povActive} />
+      </div>
+    );
+  }
   if (embedded) return <div className="reference-layer-controls" data-testid="planner-layer-controls">{controls}{notice}</div>;
   return (
     <FloatingWidgetFrame

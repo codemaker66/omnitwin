@@ -1,6 +1,7 @@
 import type { WebGPURenderer } from "three/webgpu";
 import type { Camera, Object3D, Scene } from "three";
 import { waitForNativeGpuWork } from "./native-gpu-completion.js";
+import { getGpuRenderer, type GpuRendererContext } from "./device-tier.js";
 
 const sceneRenderers = new WeakMap<Scene, WebGPURenderer>();
 
@@ -88,6 +89,23 @@ export function isNativeRenderer(renderer: object): renderer is WebGPURenderer {
 
 export function getNativeRenderer(renderer: object): WebGPURenderer | null {
   return isNativeRenderer(renderer) ? renderer : null;
+}
+
+function isGpuRendererContext(value: unknown): value is GpuRendererContext {
+  return typeof value === "object" && value !== null
+    && "getExtension" in value && typeof value.getExtension === "function"
+    && "getParameter" in value && typeof value.getParameter === "function";
+}
+
+/**
+ * The GPU's renderer string, read from the native WebGL2 backend's own context
+ * (no probe context is created). Null on the WebGPU backend, or where the
+ * browser withholds it.
+ */
+export function nativeRendererGpuString(renderer: { readonly backend: object }): string | null {
+  const backend: object = renderer.backend;
+  if (!("isWebGLBackend" in backend) || backend.isWebGLBackend !== true || !("gl" in backend)) return null;
+  return isGpuRendererContext(backend.gl) ? getGpuRenderer(backend.gl) : null;
 }
 
 /** Actual negotiated WebGPU limit; null means the native WebGL2 backend. */

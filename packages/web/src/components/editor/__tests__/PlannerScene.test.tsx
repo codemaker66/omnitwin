@@ -71,6 +71,9 @@ const arrivals = vi.hoisted(() => ({
   markLoaded: vi.fn(), markFailed: vi.fn(),
 }));
 vi.mock("../../../hooks/use-chunk-arrivals.js", () => ({ useChunkArrivals: vi.fn(() => arrivals) }));
+// Whether the space's venue is Trades Hall is read from the API; here it is set.
+const venue = vi.hoisted(() => ({ tradesHall: true as boolean | null }));
+vi.mock("../../../hooks/use-trades-hall-venue.js", () => ({ useTradesHallVenue: () => venue.tradesHall }));
 
 const IDENTITY_TRANSFORM = {
   position: [0, 0, 0] as const,
@@ -145,6 +148,7 @@ beforeEach(() => {
   arrivals.failedCount = 0;
   arrivals.loadedOverride = null;
   arrivals.failedOverride = null;
+  venue.tradesHall = true;
   mockSplat();
 });
 
@@ -229,6 +233,8 @@ describe("PlannerScene", () => {
   // floor (−10 to +3.9 cm, tilted 0.22°) would fight it. The stage floor and
   // its slab cut belong to Capture mode only (T-639 final review).
   it("shows the stage floor in Capture mode only, while the capture itself stays on in Combined mode", () => {
+    // Combined belongs to the procedural room; the surveyed hall has no Combined view.
+    venue.tradesHall = false;
     chooseGrandHall(); readyGrandHall();
     render(<PlannerScene />);
 
@@ -281,7 +287,8 @@ describe("PlannerScene", () => {
     arrivals.failedCount = 1;
     rerender(<PlannerScene />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(sceneComponent("RoomMesh")).toBeDefined();
+    // The Grand Hall's fallback is the surveyed hall itself.
+    expect(sceneComponent("GrandHallModel")).toBeDefined();
     expect(sceneComponent("PlannerScenePrecompiler")?.props.signature).not.toBe(capturedSignature);
   });
 
@@ -333,7 +340,7 @@ describe("PlannerScene", () => {
     arrivals.failedOverride = new Set(roomUrls);
     rerender(<PlannerScene />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(sceneComponent("RoomMesh")).toBeDefined();
+    expect(sceneComponent("GrandHallModel")).toBeDefined();
     expect(namedSceneNode("live-room-capture")?.props.visible).toBe(false);
     // The real Canvas child owns the store handoff. This structural Canvas
     // mock deliberately never mounts it: assert the command and removed owner.
@@ -381,14 +388,16 @@ describe("PlannerScene", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("starts at native device resolution on a compact viewport", () => {
+  it("draws a 3x screen at the render profile's 2x cap on a compact viewport", () => {
+    // Profiles cap density (lib/render-quality.ts): a phone's third device
+    // pixel costs over twice the fill of 2x for detail its density hides.
     const oldDpr = window.devicePixelRatio;
     const oldWidth = window.innerWidth;
     Object.defineProperty(window, "devicePixelRatio", { value: 3, configurable: true });
     Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
     try {
       const { getByTestId } = render(<PlannerScene />);
-      expect(getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("3");
+      expect(getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("2");
     } finally {
       Object.defineProperty(window, "devicePixelRatio", { value: oldDpr, configurable: true });
       Object.defineProperty(window, "innerWidth", { value: oldWidth, configurable: true });
@@ -632,6 +641,45 @@ describe("PlannerScene interior arrival", () => {
     rerender(<PlannerScene />);
     expect(useCockpitStore.getState().walkMode).toBe(false);
     expect(useCockpitStore.getState().layerMode).toBe("hybrid");
+  });
+
+  it("draws the hall alone when a combined view is carried in", () => {
+    chooseGrandHall();
+    mockSplat({ roomSlug: "grand-hall", status: "loading" });
+    const { rerender } = render(<PlannerScene />);
+    recordPlannerArrivalChoice();
+    readyGrandHall();
+    rerender(<PlannerScene />);
+    expect(useCockpitStore.getState().layerMode).toBe("hybrid");
+    expect(sceneComponent("GrandHallModel")).toBeDefined();
+    expect(sceneComponent("CockpitSplatLayer")?.props.active).toBe(false);
+    expect(sceneComponent("StageFloor")?.props.active).toBe(false);
+    act(() => { useCockpitStore.getState().setLayerMode("splat"); });
+    expect(sceneComponent("CockpitSplatLayer")?.props.active).toBe(true);
+    expect(sceneComponent("StageFloor")?.props.active).toBe(true);
+  });
+
+  it("keeps walking the drawn hall when the capture behind it fails", () => {
+    chooseGrandHall();
+    mockSplat({ roomSlug: "grand-hall", status: "loading" });
+    const { rerender } = render(<PlannerScene />);
+    recordPlannerArrivalChoice();
+    act(() => { useCockpitStore.setState({ layerMode: "mesh", walkMode: true }); });
+    readyGrandHall();
+    arrivals.failedCount = 1;
+    rerender(<PlannerScene />);
+    expect(useCockpitStore.getState().roomResolve.phase).toBe("unavailable");
+    expect(sceneComponent("CameraRig")?.props.captureUnavailableKey).toBeNull();
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    expect(String(sceneComponent("InteriorCamera")?.key)).toMatch(/model$/);
+  });
+
+  it("never draws Trades Hall's surveyed room for another venue's Grand Hall", () => {
+    venue.tradesHall = false;
+    chooseGrandHall();
+    render(<PlannerScene />);
+    expect(sceneComponent("GrandHallModel")).toBeUndefined();
+    expect(sceneComponent("HallLightRig")).toBeUndefined();
   });
 
   it("honours a requested planning focus before capture capability arrives", () => {
