@@ -202,11 +202,13 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const room = useRef<import("three").Group | null>(null);
   const lookDirection = useMemo(() => new Vector3(), []);
   // The room's own environment, recaptured whenever a surface or a mood settles.
+  // A finish without live light (a software rasteriser) has no reflection map:
+  // six cube faces and their blur passes would run on the CPU at every settle.
   const captureNeeded = useRef(true);
   const environment = useMemo(() => {
     const renderer = getNativeRenderer(gl);
-    return renderer === null ? null : new HallEnvironmentCapture(renderer, new Color(HALL_VOID));
-  }, [gl]);
+    return renderer === null || !liveLight ? null : new HallEnvironmentCapture(renderer, new Color(HALL_VOID));
+  }, [gl, liveLight]);
 
   useEffect(() => () => { disposeResources(resources); }, [resources]);
 

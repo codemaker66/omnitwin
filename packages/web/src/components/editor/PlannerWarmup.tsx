@@ -30,6 +30,7 @@ export const PLANNER_WARMUP_FRAMES = 4;
 const OUTLINE: Float32Array = closedLoopSegments(new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1]));
 const DASH_POSITIONS = new Float32Array([0, 0, 0, 1, 0, 0]);
 const DASH_DISTANCES = new Float32Array([0, 1]);
+/** A colour is a uniform, not part of a compiled pipeline: the copies share one. */
 const RING_GREEN = "#5f8a6a";
 
 /** A texel sampled the way a name plate's canvas texture is. */
@@ -114,7 +115,7 @@ export function PlannerWarmup(): ReactElement {
       </mesh>
       <mesh {...copy}>
         <circleGeometry args={[1, 8]} />
-        <meshBasicMaterial color="#f0ca66" transparent opacity={0.92}
+        <meshBasicMaterial color={RING_GREEN} transparent opacity={0.92}
           depthTest={false} depthWrite={false} clippingPlanes={sectionClipPlanes} />
       </mesh>
       {/* As MarqueeSelect draws its fill and border. */}

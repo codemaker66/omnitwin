@@ -14,7 +14,8 @@
 // after the last change, so a still image converges to a supersampled one and
 // then the loop goes idle again. Profiles per device class live in
 // lib/render-quality.ts. The pipeline stands aside while a captured room is
-// shown: captures carry their own camera response.
+// shown (captures carry their own camera response), and a software
+// rasteriser draws the scene plainly.
 // ---------------------------------------------------------------------------
 
 import { useLayoutEffect, useRef } from "react";
@@ -43,7 +44,8 @@ import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 import { fxaa } from "three/examples/jsm/tsl/display/FXAANode.js";
-import { getNativeRenderer } from "../../lib/native-renderer.js";
+import { getNativeRenderer, nativeRendererGpuString } from "../../lib/native-renderer.js";
+import { isSoftwareRenderer } from "../grand-hall/hall-finish.js";
 import { registerNativeFrameComposer } from "../../lib/native-frame-composer.js";
 import type { RenderProfile } from "../../lib/render-quality.js";
 import { sceneGrade } from "../../lib/scene-grade.js";
@@ -156,6 +158,8 @@ export function PlannerRenderPipeline({ enabled, profile }: PlannerRenderPipelin
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
   const convergence = useRef({ remaining: 0, selfRequested: false });
+  // Whether this renderer is a software rasteriser, read at its first frame.
+  const software = useRef<boolean | null>(null);
 
   // A layout effect registers the composer before the next frame can draw:
   // one plain frame would compile every visible material for the canvas too.
@@ -170,7 +174,15 @@ export function PlannerRenderPipeline({ enabled, profile }: PlannerRenderPipelin
       // Without post-processing the planner still draws its scene plainly.
       return undefined;
     }
-    const release = registerNativeFrameComposer(native, () => { built.pipeline.render(); });
+    const release = registerNativeFrameComposer(native, () => {
+      // A software rasteriser (a virtual machine, a headless browser) would run
+      // every pass on the CPU, seconds a frame, so it draws the scene plainly,
+      // as the hall's finish lightens there too (hall-finish.ts). Its backend
+      // names the rasteriser once initialised, which the first frame awaits.
+      software.current ??= isSoftwareRenderer(nativeRendererGpuString(native));
+      if (software.current) native.render(scene, camera);
+      else built.pipeline.render();
+    });
     invalidate();
     return () => {
       release();
@@ -181,7 +193,7 @@ export function PlannerRenderPipeline({ enabled, profile }: PlannerRenderPipelin
 
   // Temporal anti-aliasing converges over a few frames after the last change.
   useFrame(() => {
-    if (!enabled || profile.convergenceFrames === 0) return;
+    if (!enabled || profile.convergenceFrames === 0 || software.current === true) return;
     const state = convergence.current;
     if (state.selfRequested) {
       state.selfRequested = false;
