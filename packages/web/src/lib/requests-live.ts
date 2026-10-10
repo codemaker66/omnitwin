@@ -8,7 +8,7 @@ import {
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
 import { observeServerNow } from "./clock-offset.js";
-import { isE2EAuthBypassEnabled } from "./e2e-auth-bypass.js";
+import { isE2EAuthBypassEnabled, isE2ELiveSocketEnabled } from "./e2e-auth-bypass.js";
 import { nextBackoffMs } from "../pages/diary/lib/live-protocol.js";
 
 // ---------------------------------------------------------------------------
@@ -186,8 +186,9 @@ function connect(): void {
   // console error the BROWSER writes, which no `catch` can swallow and which
   // the accessibility audit rightly refuses to ignore. The listeners still
   // register and the snapshot is still fetched; only the live nudge is absent,
-  // and the live path is proved against a real server instead.
-  if (isE2EAuthBypassEnabled()) return;
+  // and the live path is proved against a real server instead — which a
+  // harness that runs one says with the second flag (goal 19 S4).
+  if (isE2EAuthBypassEnabled() && !isE2ELiveSocketEnabled()) return;
   if (socket !== null) return;
 
   const ws = new WebSocket(`${API_URL.replace(/^http/u, "ws")}/ws/diary`);

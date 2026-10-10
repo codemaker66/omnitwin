@@ -16,7 +16,7 @@ import {
   TRADES_HALL_WEDDING_PRICING,
   formatPriceGBP,
   type PublishedRoomSlug,
-} from "../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import { FreshEnquiry } from "./fresh/FreshEnquiry.js";
 import { FRESH_TOUR_ENABLED } from "./fresh/fresh-copy.js";
 import {

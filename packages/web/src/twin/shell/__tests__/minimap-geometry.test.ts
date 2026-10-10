@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TwinScanNode } from "@omnitwin/types";
-import { TRADES_HALL_ROOM_DIMENSIONS } from "../../../lib/trades-hall-venue-truth.js";
+import { TRADES_HALL_ROOM_DIMENSIONS } from "@omnitwin/types";
 import {
   PLAN_MIN_EXTENT_M,
   chooseScaleBarM,
@@ -104,7 +104,7 @@ describe("fitPlanViewBox", () => {
    * footprint that is genuinely oblong, which is a property of the real room and
    * not of a number someone chose. Every expectation below is derived from the
    * same two figures, so the suite tracks the truth file rather than shadowing
-   * it. See TRADES_HALL_ROOM_DIMENSIONS in lib/trades-hall-venue-truth.ts.
+   * it. See TRADES_HALL_ROOM_DIMENSIONS in @omnitwin/types (trades-hall-venue-truth.ts).
    */
   const grandHall = TRADES_HALL_ROOM_DIMENSIONS["grand-hall"];
   if (grandHall === undefined) {

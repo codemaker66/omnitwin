@@ -2527,3 +2527,8 @@ export * from "./proposal-template.js";
 
 // T-647: the venue sky (weather) feed read by the relit hall (T-639).
 export * from "./venue-sky.js";
+
+// T-649: the venue's published truth (capacities, pricing, public profile),
+// read by the web pages, their schema.org description and the API's public
+// discovery endpoint. Moved here from packages/web/src/lib.
+export * from "./trades-hall-venue-truth.js";

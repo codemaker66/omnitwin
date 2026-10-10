@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useState, type CSSProperties, type FocusEve
 import { AlertTriangle, ArrowRight, CalendarDays, Plus } from "lucide-react";
 import type { CalendarBookingEntry, CalendarEntry, CalendarRoom, ConflictSeverity } from "@omnitwin/types";
 import { diaryRoomPhoto, DIARY_ROOM_PHOTO_SIZES } from "../../../lib/diary-room-photos.js";
-import { TRADES_HALL_ROOM_CAPACITIES, type PublishedRoomSlug } from "../../../lib/trades-hall-venue-truth.js";
+import { TRADES_HALL_ROOM_CAPACITIES, type PublishedRoomSlug } from "@omnitwin/types";
 import { dayColumns, msToWallInput, type BoardRange } from "../lib/board-time.js";
 import { buildOverviewIndex, type OverviewItem } from "../lib/board-overview.js";
 import { decisionAge } from "../lib/decision-age.js";

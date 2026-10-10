@@ -4,7 +4,7 @@ import type { Venue } from "../../../api/spaces.js";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
   type PublishedRoomSlug,
-} from "../../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import { TRADES_HALL_ROOM_SHOWCASE_PROFILES } from "../../../lib/trades-hall-room-showcase.js";
 import { composePlannerHandoff, type TwinVenueIdentity } from "../compose-link.js";
 

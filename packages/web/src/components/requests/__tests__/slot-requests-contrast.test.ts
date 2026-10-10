@@ -122,3 +122,42 @@ describe("the words that say something could not be sent", () => {
     expect(contrast(ink, background), `.vv-request-error on ${ground}`).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+// Goal 19 S4: the cards moved onto the paper arrangement inside the ivory
+// slot. Every word on a card and in the composer is held to AA on the card's
+// own ground, and the card's ground is the register's raised ivory, so it
+// reads as part of the slot rather than a dark object inside it.
+describe("the request card on the paper arrangement", () => {
+  const tokens = registerTokens();
+  const slab = css("src/components/requests/slot-requests.css");
+  const card = colourOf(backgroundRule(slab, ".vv-request"), tokens);
+
+  it("stands on the register's raised ivory", () => {
+    expect(card).toEqual(hex("#fffdf8"));
+    expect(colourOf(backgroundRule(slab, ".vv-request-composer"), tokens)).toEqual(hex("#fffdf8"));
+  });
+
+  it.each([
+    ".vv-request-what", ".vv-request-who", ".vv-request-detail", ".vv-request-handover-note", ".vv-request-choices legend",
+    ".vv-request-field", ".vv-request-action--take",
+  ])("keeps the %s words at AA on the card", (selector) => {
+    const ink = colourOf(colourRule(slab, selector), tokens);
+    expect(contrast(ink, card), `${selector} on the card`).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// The copper audience badge (D6) on the slot's conversation: its words are
+// the deeper copper on the raised ivory, so 12 px bold clears AA, and its
+// edge clears 3:1 as a boundary.
+describe("the “Client can read this” badge", () => {
+  const tokens = registerTokens();
+  const sheet = css("src/components/conversations/slot-conversation.css");
+
+  it("keeps its words at AA and its edge at 3:1 on its own ground", () => {
+    const ink = colourOf(colourRule(sheet, ".vv-thread-badge"), tokens);
+    const ground = colourOf(backgroundRule(sheet, ".vv-thread-badge"), tokens);
+    expect(contrast(ink, ground)).toBeGreaterThanOrEqual(4.5);
+    const edge = colourOf(/border\s*:\s*1px solid ([^;]+);/u.exec(/\.vv-thread-badge\s*\{([^}]*)\}/u.exec(sheet)?.[1] ?? "")?.[1]?.trim() ?? "", tokens);
+    expect(contrast(edge, ground)).toBeGreaterThanOrEqual(3);
+  });
+});

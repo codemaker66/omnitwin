@@ -195,4 +195,26 @@ describe("requests API — the door", () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  // Goal 19 S4: the handover picker asks who on the floor may take a request.
+  it("refuses an unsigned read of the venue's handlers", async () => {
+    const res = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/handlers` });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("shows the handlers only to the floor, never to a client or another venue", async () => {
+    const client = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/handlers`, headers: auth("client", null) });
+    expect(client.statusCode).toBe(403);
+    const elsewhere = await server.inject({
+      method: "GET", url: `/venues/${VENUE_ID}/handlers`, headers: auth("hallkeeper", "00000000-0000-4000-8000-0000000099ff"),
+    });
+    expect(elsewhere.statusCode).toBe(403);
+    const sales = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/handlers`, headers: auth("sales") });
+    expect(sales.statusCode).toBe(403);
+  });
+
+  it("refuses a handlers list for a venue id that is not a uuid", async () => {
+    const res = await server.inject({ method: "GET", url: "/venues/not-a-uuid/handlers", headers: auth() });
+    expect(res.statusCode).toBe(400);
+  });
 });

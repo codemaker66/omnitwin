@@ -28,6 +28,7 @@ import { clockIsCorrected, correctedNowMs, subscribeClock } from "../../lib/cloc
 import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
 import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
 import { useSlotRequests } from "../../components/requests/requests-context.js";
+import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import {
   DAY_BOARD_LEGEND,
   DAY_BOARD_RING_LEGEND,
@@ -899,6 +900,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           <label>Room<select value={roomId} onChange={(event) => { setRoomId(event.target.value); }}><option value="">All rooms</option>{lanes.map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
           <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/rooms">Room plans</Link>
           <button type="button" onClick={() => { setSearchParams({ register: "wall" }); }}>Wall display</button>
+          {/* Opt-in, per device (D3 "Sound"): the one control that makes a sound. */}
+          {venueId !== null && <ChimeToggle />}
         </div>
       )}
       {venueId === null && <p className="dayboard-notice">No venue is linked to this account. Ask your venue administrator to connect your workspace.</p>}
