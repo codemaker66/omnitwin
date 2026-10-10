@@ -32,6 +32,8 @@
 > - **M6** (the scotopic ramp): shaped by the study's d3 table of Cao's rod gains (a tenth of the way at 0.62 cd/m², all of it by 0.1), its zero held at 5 cd/m² so the approved night keeps none, within 0.025 of Cao's share everywhere (decision 4; Task 5's code, tests, prose and Verified line; the spec row; open decision 9; Blake's list). `NIGHT_TINT` and `SCOTOPIC_MAX` 0.6 stay design values.
 > - **M7**: Task 24's list holds every open decision that is Blake's (1–5, 8–15 and 20–22, the bulb table's unresolved entries and the merge); open decision 23 says where the others go.
 > - **The relight-debug edits' check, kept**: strict `tsc` and the repo's ESLint on R1b's `relight-debug.ts` with Tasks 21 and 22 applied from this file (the Self-review's verification list).
+>
+> **Revision (11 October, R1a Task 5 fix round 2).** R1b's `ProbeField` gains its lookup `box`, and `trilinearCorners` reads the probes as the proof did: the position clamped into that box first. Task 11's `ambientAt` test builds its field with `box: OPEN_BOX`. Nothing else here builds a `ProbeField`: `ambientAt` and `bounceNode` read R1b's fields, which carry the manifest's box.
 
 **Goal:** On development and preview builds, a desktop WebGPU visitor sees the relit Grand Hall live at the real hour by default, lit by the true Sun and the true Moon, sweeping through the hours as a smooth critically damped time-lapse when the clock moves (a crafted clock that shows both bodies' arcs and lets you drag either, or the hour), with lamps that fade and dim warm (Blake's artistic choice: the lamps are LED), eye adaptation with night vision, crisp frosted lamps (candles, and the centre chandelier's crown tubes) at their triangulated positions in place of the chandeliers' captured glow with a restrained energy-conserving bloom, soft interior shadows from both bodies, the street opposite, the sky and the Moon's disc in the windows with the city's light at night, GGX sheen and soft reflections, faint dusty shafts and a clutter toggle, at 60 fps (p99 frame ≤ 16.7 ms) on the RTX 4090 while scrubbing, dragging and walking; anything missing falls back as the spec says, and venviewer.com keeps the founder hold.
 
@@ -6025,7 +6027,7 @@ import {
 import type { BulbEnvelope, CinematicData } from "../cinematic-package.js";
 import { loadRelightModelData, type RelightModelData } from "../relight-assets.js";
 import { RelightFrame } from "../relight-frame.js";
-import type { ProbeField } from "../relight-kernel.js";
+import { OPEN_BOX, type ProbeField } from "../relight-kernel.js";
 import { FIXTURE_CENTRES, FIXTURE_ENVELOPES, cinematicData } from "./cinematic-fixture.js";
 import { buildTestPackage } from "./relight-test-package.js";
 
@@ -6081,7 +6083,7 @@ describe("crisp frosted lamps (T-639 R1d)", () => {
   });
 
   it("reads the light around the glass as the probes' isotropic mean (the CPU twin)", () => {
-    const field: ProbeField = { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], valid: () => true, cube: () => new Float32Array(162) };
+    const field: ProbeField = { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], box: OPEN_BOX, valid: () => true, cube: () => new Float32Array(162) };
     const cube = Float64Array.from({ length: 18 }, (_unused, index) => (index < 6 ? 0.3 : index < 12 ? 0.6 : 0.9));
     expect(ambientAt({ scenarioCube: () => cube }, field, [0.5, 0.5, 0.5])).toEqual([0.3, 0.6, 0.9]);
   });

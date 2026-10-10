@@ -226,7 +226,8 @@ class Inputs:
     volumes: dict                  # WINDOW_IDS -> windows.WindowVolume (windows.npz)
     horizons: dict                 # WINDOW_IDS -> (360,) horizon elevations (windows.npz)
     fresnel: np.ndarray            # (101,) float32 (windows.npz)
-    probes: dict                   # probes-coarse.npz: cubes (M, 9, 3, 6) float16, valid (M,), origin, shape, spacing
+    probes: dict                   # probes-coarse.npz: cubes (M, 9, 3, 6) float16, valid (M,), origin, shape, spacing;
+                                   # box {lo, hi}: the proof's lookup box (fix round 2)
     sky: dict                      # sun-bounce.npz: SKY_ARRAYS and SKY_FRAME
     floor: dict                    # floor-light.npz: D (h, w, 9) float32, texelToModel (4, 4); texel (m)
     presets: dict                  # 05_relight.SCENARIOS' night, sunny_morning and overcast_noon
@@ -242,6 +243,15 @@ def _whole(value, what) -> int:
     if v != round(v):
         raise ValueError(f"{what} {v} is not a whole number")
     return int(round(v))
+
+
+def _probe_box(box) -> dict:
+    """The manifest's probes.box {lo, hi}: three finite numbers each, lo below hi on every axis (the proof's lookup box,
+    store.Probes.lookup; fix round 2). The browser clamps every position into it before it reads the probes."""
+    lo, hi = np.asarray(box["lo"], np.float64), np.asarray(box["hi"], np.float64)
+    if lo.shape != (3,) or hi.shape != (3,) or not (np.isfinite(lo).all() and np.isfinite(hi).all() and (lo < hi).all()):
+        raise ValueError(f"probes.box {box} is not three finite lows each below its high")
+    return {"lo": _floats(lo), "hi": _floats(hi)}
 
 
 def _windows_section(inputs: Inputs) -> list:
@@ -333,6 +343,7 @@ def write(out, inputs: Inputs, tiles, ranges, *, tool: str, created_at: str, bui
         raise ValueError(f"the probe cubes are {cubes.dtype} {cubes.shape}, not float16 per probe, source, channel and face")
     files[PROBES_FILE] = gz(np.ascontiguousarray(cubes, "<f2").tobytes())
     files[PROBE_VALID_FILE] = gz(np.asarray(probes["valid"], bool).astype(np.uint8).tobytes())
+    box = _probe_box(probes["box"])
     windows = _windows_section(inputs)
     for wid in WINDOW_IDS:
         files[window_file(wid)] = gz(np.ascontiguousarray(inputs.volumes[wid].alpha, np.uint8).tobytes())
@@ -356,7 +367,7 @@ def write(out, inputs: Inputs, tiles, ranges, *, tool: str, created_at: str, bui
         "capture": inputs.capture, "lamps": inputs.lamps,
         "sun": {"fresnel": _floats(inputs.fresnel)},
         "sky": sky, "windows": windows,
-        "probes": {"origin": _floats(probes["origin"]), "spacing": float(probes["spacing"]), "shape": probe_shape,
+        "probes": {"origin": _floats(probes["origin"]), "spacing": float(probes["spacing"]), "shape": probe_shape, "box": box,
                    "file": PROBES_FILE, "validFile": PROBE_VALID_FILE},
         "floor": {"skin": FLOOR_SKIN, "texelToModel": _floats(np.asarray(inputs.floor["texelToModel"], np.float64).reshape(4, 4)),
                   "texel": float(inputs.floor["texel"]), "size": [int(D.shape[1]), int(D.shape[0])], "files": list(FLOOR_FILES)},
@@ -507,7 +518,8 @@ def model_of(pkg: Package) -> reference.Model:
                            daylight_colour=np.asarray(cap["daylightColour"], np.float64), probes=cubes, probe_valid=valid,
                            probe_origin=np.asarray(pr["origin"], np.float64), probe_spacing=float(pr["spacing"]),
                            probe_shape=shape, volumes=volumes, fresnel=np.asarray(m["sun"]["fresnel"], np.float32),
-                           horizons=horizons, sky=bounce)
+                           horizons=horizons, sky=bounce, probe_box_lo=np.asarray(pr["box"]["lo"], np.float64),
+                           probe_box_hi=np.asarray(pr["box"]["hi"], np.float64))
 
 
 # ------------------------------------------------------------------------------------------ what check writes and compares

@@ -4,6 +4,8 @@
 
 > **Amended 11 October (R1a Task 5 fix round 1).** A2's class-7 bullet restates class 0's rule, which R1a now writes with its guard on both sides, so the captured setting is exactly 1 where Ecap < 1e-4. A2 below carries that form: `M = clamp(max(E, 1e-4) / max(Ecap, 1e-4), 1/16, 8)`. The rest of A2 is unchanged. R1a's "Revisions (11 October, Task 5 fix round 1)" gives the reason and the embrasure rule's `C′ = max(C, 1e-4)`.
 
+> **Amended 11 October (R1a Task 5 fix round 2).** A8's `bounceNode` below reads the probes as R1a's reference now does and as the proof did: the position clamped into the probes' lookup box (the manifest's `probes.box`, R1b's uniforms `probeBoxLo` and `probeBoxHi`), the cell into [0, shape − 2], the fraction into [0, 1], renormalised only where the weights sum over 1e-6. R1b's merged `bounceNode` carries the same change. Without it, skins on the hall's low walls (the window wall, the x0 end, the floor) and splats beyond them read only the grid's invalid low face, and had no bounce. R1a's "Revisions (11 October, Task 5 fix round 2)" gives the reason.
+
 R1c ("surface skins", `docs/superpowers/plans/2026-10-03-restored-hall-r1c-surface-skins.md`) builds on R1a and R1b as these amendments leave them. Apply them in one pass, together with R1d's (`docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md`), before R1a Task 5 is dispatched. Where R1d's amendments touch the same lines (marked **Overlap**), apply both: the result keeps R1d's change and R1c's.
 
 The amendments take three forms:
@@ -843,14 +845,15 @@ export type ProbeReads = ReturnType<typeof probeReads>;
 export function bounceNode(u: RelightUniforms, reads: ProbeReads, p: Node<"vec3">, normal: Node<"vec3">, iso: Node<"bool">): { capture: Node<"vec3">; scenario: Node<"vec3"> } {
   const faces = [max(normal.x, 0).pow2(), max(normal.x.negate(), 0).pow2(), max(normal.y, 0).pow2(), max(normal.y.negate(), 0).pow2(), max(normal.z, 0).pow2(), max(normal.z.negate(), 0).pow2()]
     .map((weight) => select(iso, float(1 / 6), weight));
-  const q = clamp(p.sub(u.probeOrigin).div(u.probeSpacing), vec3(0), u.probeShape.sub(1 + 1e-6)).toVar();
-  const cell = floor(q).toVar();
-  const f = q.sub(cell).toVar();
+  // the proof's probe read (R1a, amended 11 October): the position clamped into the lookup box, the cell into the grid
+  const g = clamp(p, u.probeBoxLo, u.probeBoxHi).sub(u.probeOrigin).div(u.probeSpacing).toVar();
+  const cell = clamp(floor(g), vec3(0), u.probeShape.sub(2)).toVar();
+  const f = clamp(g.sub(cell), vec3(0), vec3(1)).toVar();
   const bounceCapture = vec3(0).toVar(), bounceScenario = vec3(0).toVar(), weightSum = float(0).toVar();
   for (const dx of [0, 1]) {
     for (const dy of [0, 1]) {
       for (const dz of [0, 1]) {
-        const cx = min(cell.x.add(dx), u.probeShape.x.sub(1)), cy = min(cell.y.add(dy), u.probeShape.y.sub(1)), cz = min(cell.z.add(dz), u.probeShape.z.sub(1));
+        const cx = cell.x.add(dx), cy = cell.y.add(dy), cz = cell.z.add(dz);
         const index = uint(cx.mul(u.probeShape.y).add(cy).mul(u.probeShape.z).add(cz)).toVar();
         const captureBase = index.mul(PROBE_CAPTURE_STRIDE).toVar(), scenarioBase = index.mul(PROBE_FOLDED).toVar();
         const weight = (dx === 1 ? f.x : float(1).sub(f.x)).mul(dy === 1 ? f.y : float(1).sub(f.y)).mul(dz === 1 ? f.z : float(1).sub(f.z))
@@ -864,7 +867,7 @@ export function bounceNode(u: RelightUniforms, reads: ProbeReads, p: Node<"vec3"
       }
     }
   }
-  const normaliser = select(weightSum.greaterThan(0), float(1).div(max(weightSum, 1e-12)), float(0));
+  const normaliser = select(weightSum.greaterThan(1e-6), float(1).div(max(weightSum, 1e-6)), float(0));
   return { capture: bounceCapture.mul(normaliser), scenario: bounceScenario.mul(normaliser) };
 }
 ```

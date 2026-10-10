@@ -48,6 +48,11 @@ class Model:
     fresnel: np.ndarray          # (101,)
     horizons: dict = field(default_factory=dict)   # name -> (360,) horizon elevation in degrees by compass azimuth
     sky: SkyBounce | None = None                  # the sky bodies' bounce; None in synthetic models without it
+    # The probes' lookup box (the package's probes.box): every position is clamped into it before the probes are read,
+    # as the proof's store.Probes.lookup clamps into the hall's box (x and y 2 cm inside the walls, z from 2 cm above
+    # the floor to 9.8 m). Unbounded in synthetic models without it.
+    probe_box_lo: np.ndarray = field(default_factory=lambda: np.full(3, -np.inf))
+    probe_box_hi: np.ndarray = field(default_factory=lambda: np.full(3, np.inf))
 
 
 @dataclass(frozen=True)
@@ -91,24 +96,32 @@ class Visibility:
 NO_VISIBILITY = Visibility()
 
 
+def lookup_points(model: Model, pos) -> np.ndarray:
+    """(N, 3) float64: where the probes are read for splats at pos, each clamped into the lookup box (store.Probes.lookup,
+    store.py:60-62; amended 11 October, Task 5 fix round 2)."""
+    return np.clip(np.asarray(pos, np.float64), model.probe_box_lo, model.probe_box_hi)
+
+
 def trilinear(model: Model, pos):
-    """Corner indices (N, 8) and weights (N, 8) over valid probes, renormalised (03_bases.trilinear_weights)."""
+    """Corner indices (N, 8) and weights (N, 8) over valid probes, as the proof reads its probes (amended 11 October,
+    Task 5 fix round 2: store.Probes.lookup and 03_bases.trilinear_weights, 03_bases.py:78-95): at the position clamped
+    into the lookup box (lookup_points), the cell clamped to [0, shape - 2] and the fraction to [0, 1], invalid corners
+    dropped and the rest renormalised, none when their weights sum to at most 1e-6."""
     shape = np.array(model.probe_shape)
-    q = (np.asarray(pos, np.float64) - model.probe_origin) / model.probe_spacing
-    q = np.clip(q, 0.0, shape - 1 - 1e-6)
-    i0 = np.floor(q).astype(np.int64)
-    f = q - i0
+    f = (lookup_points(model, pos) - model.probe_origin) / model.probe_spacing
+    i0 = np.clip(np.floor(f).astype(np.int64), 0, shape - 2)
+    t = np.clip(f - i0, 0.0, 1.0)
     idx, wts = [], []
     for dx in (0, 1):
         for dy in (0, 1):
             for dz in (0, 1):
-                c = np.minimum(i0 + [dx, dy, dz], shape - 1)
+                c = i0 + [dx, dy, dz]
                 lin = (c[:, 0] * shape[1] + c[:, 1]) * shape[2] + c[:, 2]
-                w = (f[:, 0] if dx else 1 - f[:, 0]) * (f[:, 1] if dy else 1 - f[:, 1]) * (f[:, 2] if dz else 1 - f[:, 2])
+                w = (t[:, 0] if dx else 1 - t[:, 0]) * (t[:, 1] if dy else 1 - t[:, 1]) * (t[:, 2] if dz else 1 - t[:, 2])
                 idx.append(lin); wts.append(w * model.probe_valid[lin])
     idx, wts = np.stack(idx, 1), np.stack(wts, 1)
     s = wts.sum(1, keepdims=True)
-    return idx, np.where(s > 0, wts / np.maximum(s, 1e-12), 0.0)
+    return idx, np.where(s > 1e-6, wts / np.maximum(s, 1e-6), 0.0)
 
 
 def cube_eval(cubes, n, iso):

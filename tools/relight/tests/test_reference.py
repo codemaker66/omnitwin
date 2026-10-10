@@ -53,6 +53,84 @@ class CapturedSettingIsNeutral(unittest.TestCase):
         self.assertTrue(np.all(alpha == 1.0))
 
 
+def proof_lookup(pos, origin, shape, valid, spacing, lo, hi):
+    """The proof's probe read, verbatim but for the grid spacing and the box (arguments here): store.Probes.lookup clamps
+    the position into the hall's box (store.py:60-62: X0 + 0.02 .. X1 - 0.02, Y0 + 0.02 .. Y1 - 0.02, FLOOR_Z + 0.02
+    .. 9.8), then 03_bases.trilinear_weights (03_bases.py:78-95, PROBE there): the cell clamped to [0, shape - 2], the
+    fraction to [0, 1], the eight corners weighted by validity in float32, renormalised where they sum over 1e-6."""
+    q = np.asarray(pos, np.float64).copy()
+    q[:, 0] = np.clip(q[:, 0], lo[0], hi[0]); q[:, 1] = np.clip(q[:, 1], lo[1], hi[1])
+    q[:, 2] = np.clip(q[:, 2], lo[2], hi[2])
+    f = (q - np.array(origin)) / spacing
+    i0 = np.floor(f).astype(np.int64)
+    i0 = np.clip(i0, 0, np.array(shape) - 2)
+    t = np.clip(f - i0, 0, 1)
+    idx = np.zeros((len(q), 8), np.int64); w = np.zeros((len(q), 8), np.float32)
+    k = 0
+    for dx in (0, 1):
+        for dy in (0, 1):
+            for dz in (0, 1):
+                ii = ((i0[:, 0] + dx) * shape[1] + (i0[:, 1] + dy)) * shape[2] + (i0[:, 2] + dz)
+                ww = (t[:, 0] if dx else 1 - t[:, 0]) * (t[:, 1] if dy else 1 - t[:, 1]) * (t[:, 2] if dz else 1 - t[:, 2])
+                ww = ww * valid[ii]
+                idx[:, k] = ii; w[:, k] = ww; k += 1
+    s = w.sum(1, keepdims=True)
+    w = np.where(s > 1e-6, w / np.maximum(s, 1e-6), 0)
+    return idx, w
+
+
+HALL = {"x0": -0.4, "x1": 1.73, "y0": -1.1, "y1": 0.3, "floorZ": 0.02, "ceilingZ": 1.51}
+BOX_LO = np.array([HALL["x0"] + 0.02, HALL["y0"] + 0.02, HALL["floorZ"] + 0.02])
+BOX_HI = np.array([HALL["x1"] - 0.02, HALL["y1"] - 0.02, 9.8])
+
+
+def hall_model(box=True):
+    """A probe grid as the bake builds it (probes.coarse_grid and valid_mask: 0.5 m from the hall box's low corner, its
+    probes on the box's low faces invalid), every probe's cove cube 0.1, with the proof's lookup box or none."""
+    from relight import probes as PR
+    P, shape, origin = PR.coarse_grid(HALL, 0.5)
+    cubes = np.zeros((len(P), 9, 3, 6), np.float32)
+    cubes[:, 5] = 0.1
+    extra = {"probe_box_lo": BOX_LO, "probe_box_hi": BOX_HI} if box else {}
+    return replace(model(), probes=cubes, probe_valid=PR.valid_mask(P, HALL), probe_origin=origin, probe_spacing=0.5,
+                   probe_shape=tuple(int(v) for v in shape), **extra)
+
+
+class ProbeLookup(unittest.TestCase):
+    """Fix round 2: the probes are read as the proof reads them, at the position clamped into the hall's box first."""
+
+    def test_the_lookup_is_the_proofs(self):
+        m = hall_model()
+        rng = np.random.default_rng(4)
+        P = np.stack([rng.uniform(HALL["x0"] - 0.6, HALL["x1"] + 0.6, 4000), rng.uniform(HALL["y0"] - 0.6, HALL["y1"] + 0.6, 4000),
+                      rng.uniform(HALL["floorZ"] - 0.4, HALL["ceilingZ"] + 0.8, 4000)], 1)
+        P[:200, 1] = HALL["y0"]                                   # on the window wall's face
+        idx, w = reference.trilinear(m, P)
+        want_idx, want_w = proof_lookup(P, m.probe_origin, m.probe_shape, m.probe_valid.astype(np.float32), 0.5, BOX_LO, BOX_HI)
+        self.assertTrue(np.array_equal(idx, want_idx))
+        np.testing.assert_allclose(w, want_w, rtol=0, atol=5e-7)  # the proof's weights are float32
+        np.testing.assert_allclose(w.sum(1), 1.0, rtol=0, atol=1e-12)   # every position reads valid probes
+
+    def test_a_splat_beyond_the_window_wall_reads_the_probes_inside_the_hall(self):
+        """An embrasure splat (y below the box's y0) read without the box falls on the grid's low face, whose probes are
+        all invalid, and gets no bounce in any setting; read as the proof reads it, 2 cm inside the hall, it does. A
+        splat in the box past the grid's last plane reads that plane either way."""
+        P = np.array([[0.6, HALL["y0"] - 0.3, 0.7], [0.6, HALL["y1"] - 0.05, 0.7]])
+        _idx, open_w = reference.trilinear(hall_model(box=False), P)
+        self.assertEqual(float(open_w[0].sum()), 0.0)                  # the defect: no valid corner
+        self.assertAlmostEqual(float(open_w[1].sum()), 1.0, places=12)
+        _idx, w = reference.trilinear(hall_model(), P)
+        np.testing.assert_allclose(w.sum(1), 1.0, rtol=0, atol=1e-12)
+        d, n, f, c = np.zeros((2, 9)), np.tile([0.0, 1.0, 0.0], (2, 1)), np.zeros(2, np.uint8), np.full((2, 3), 0.3)
+        m = hall_model()
+        captured = reference.Setting.captured(m)
+        half_cove = replace(captured, weights=captured.weights * np.where(np.arange(9) == 5, 0.5, 1.0)[:, None])
+        M, _ = reference.multiplier(d, n, f, P, c, m, half_cove)
+        np.testing.assert_allclose(M, 0.5, rtol=1e-12)            # lit only by the cove's bounce, it follows the cove
+        M_open, _ = reference.multiplier(d, n, f, P, c, hall_model(box=False), half_cove)
+        self.assertEqual(M_open[0].tolist(), [1.0, 1.0, 1.0])      # without the box: stuck at its captured look
+
+
 class DarkSplatsAreNeutral(unittest.TestCase):
     """Fix round 1, C1: the captured setting gives M = 1 on every channel, the guards included. The model has no bounce,
     so Ecap = sum w c D is set by each splat's direct light alone, and its daylight colour is the refit's (rBack =

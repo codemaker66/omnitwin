@@ -53,7 +53,8 @@ def inputs(k=2, north=None):
               "up": [0.0, 0.0, 1.0]},
         capture=capture, lamps=PK.lamps_of(capture, [1.623, 1.0, 0.467], refit_json()), volumes=vols,
         horizons={n: np.full(360, 5.5, np.float32) for n in vols}, fresnel=np.linspace(0.5, 0.9, 101).astype(np.float32),
-        probes={"cubes": cubes, "valid": valid, "origin": np.zeros(3), "shape": np.array([3, 2, 2], np.int64), "spacing": np.float64(0.5)},
+        probes={"cubes": cubes, "valid": valid, "origin": np.zeros(3), "shape": np.array([3, 2, 2], np.int64), "spacing": np.float64(0.5),
+                "box": {"lo": [0.02, 0.02, 0.02], "hi": [0.98, 0.48, 9.8]}},
         sky=sky, floor={"D": D, "texelToModel": np.eye(4), "texel": 0.05},
         presets={"night": {"sky": 0.0, "sun": None, "house": 1.0, "emit": "lit"},
                  "sunny_morning": {"sky": 0.7, "sky_T": 9000.0, "sun": [2026, 5, 31, 8, 0], "sun_ratio": 16.0, "sun_T": 4900.0,
@@ -118,6 +119,9 @@ def contract_issues(m):
         issues.append("sky k")
     if m["capture"]["gamma"] != 1 or m["encoding"]["multiplier"] != {"lo": -4, "hi": 3}:
         issues.append("gamma or multiplier")
+    box = m["probes"].get("box") or {}
+    if not (len(box.get("lo", [])) == 3 and len(box.get("hi", [])) == 3 and all(a < b for a, b in zip(box["lo"], box["hi"]))):
+        issues.append("probes.box")
     return issues
 
 
@@ -143,6 +147,8 @@ class Writing(unittest.TestCase):
         self.assertEqual(model.probes.tobytes(), src.probes["cubes"].tobytes())
         self.assertEqual(model.probe_valid.tolist(), src.probes["valid"].tolist())
         self.assertEqual((model.probe_shape, model.probe_spacing), ((3, 2, 2), 0.5))
+        self.assertEqual(m["probes"]["box"], {"lo": [0.02, 0.02, 0.02], "hi": [0.98, 0.48, 9.8]})        # fix round 2
+        self.assertEqual((model.probe_box_lo.tolist(), model.probe_box_hi.tolist()), ([0.02, 0.02, 0.02], [0.98, 0.48, 9.8]))
         for name, vol in src.volumes.items():
             back = model.volumes[name]
             self.assertEqual(back.alpha.tobytes(), vol.alpha.tobytes())
@@ -223,6 +229,11 @@ class Writing(unittest.TestCase):
         bad.sky["floorMean"] = np.zeros((193, 3), np.float32)
         with self.assertRaisesRegex(ValueError, "outside 1..192"):
             PK.write(os.path.join(self.dir, "y"), bad, tiles(), [(-22.0, 3.0)] * 9, tool="t", created_at="c", build={})
+        for lo, hi in (([0.02, 0.5, 0.02], [0.98, 0.48, 9.8]), ([0.02, 0.02], [0.98, 0.48, 9.8])):
+            bad = inputs()
+            bad.probes["box"] = {"lo": lo, "hi": hi}
+            with self.assertRaisesRegex(ValueError, "probes.box"):
+                PK.write(os.path.join(self.dir, "b"), bad, tiles(), [(-22.0, 3.0)] * 9, tool="t", created_at="c", build={})
         bad = inputs()
         bad.capture["weights"][0] = float("nan")
         with self.assertRaises(ValueError):                                   # allow_nan=False: a NaN fails the build

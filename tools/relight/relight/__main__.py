@@ -1191,6 +1191,9 @@ BUILD_TABLES = ("splats_pos", "splats_rgb", "splats_opa", "splats_tile", "geom_c
                 "bases_E_win", "bases_E_ch", "bases_E_dome", "bases_E_cove", "sun_cap_E")
 SKIN_TABLES = ("splats_scl",)
 CENSUS = ("tools", "xgrids-lcc2", "scripts", "sog-floor-census.py")   # the repo's SOG decoder, which records and check run
+# The proof's probe lookup box (store.Probes.lookup, store.py:60-62; also 03_bases.py:150-151 and 194, 03b_window_fresnel.py:
+# 48 and 68): every position is clamped to 2 cm inside the hall's walls, and from 2 cm above its floor up to 9.8 m.
+PROBE_LOOKUP_INSET, PROBE_LOOKUP_TOP = 0.02, 9.8
 
 
 def _floats(a) -> list:
@@ -1389,6 +1392,13 @@ def _input_hashes(cfg, skins) -> dict:
     return out
 
 
+def _lookup_box(common) -> dict:
+    """The manifest's probes.box: the proof's probe lookup box from its own hall frame (common.X0 .. FLOOR_Z, which
+    common.py reads from the config's hallE57), as store.Probes.lookup clamps (PROBE_LOOKUP_INSET, PROBE_LOOKUP_TOP)."""
+    i = PROBE_LOOKUP_INSET
+    return {"lo": [common.X0 + i, common.Y0 + i, common.FLOOR_Z + i], "hi": [common.X1 - i, common.Y1 - i, PROBE_LOOKUP_TOP]}
+
+
 def _package_inputs(cfg, proof, tables):
     """The package's inputs besides the records (package.Inputs), each work artifact read by its exact name and only
     after its SHA-256 and size match its passing evidence (package.verified; fit.json and fit_state.npz through
@@ -1404,6 +1414,7 @@ def _package_inputs(cfg, proof, tables):
     vols, horizons, fresnel = windows_volumes(cfg)
     with np.load(os.path.join(work, "probes-coarse.npz")) as z:
         probes = {k: z[k] for k in ("cubes", "valid", "origin", "shape", "spacing")}
+    probes["box"] = _lookup_box(common)
     with np.load(os.path.join(work, "sun-bounce.npz")) as z:
         sky = {k: z[k] for k in (*PK.SKY_ARRAYS, *PK.SKY_FRAME)}
     with np.load(os.path.join(work, "floor-light.npz")) as z:
@@ -1698,8 +1709,10 @@ def _check_sky(cfg, pkg, model, proof) -> dict:
     sun-bounce.npz's (dtype, shape and bytes); (b) for 48 random real suns and 48 random real moons, the bounce
     luminance at 20,000 finest splats seeded with SPLAT_SEED (isotropic receivers) through the package's path
     (reference.sky_cubes at the 0.5 m probes, then reference.trilinear and cube_eval) against sunbounce.sun_bounce read on
-    the 1 m grid at the same splats (sunbounce.trilinear_matrix): where both are positive, median |dlog2| <= 0.02 and
-    99th percentile <= 0.1, and where either is not positive both are not (the resampling adds no light and loses none)."""
+    the 1 m grid at the same points (sunbounce.trilinear_matrix), both at the splats' positions clamped into the probes'
+    lookup box as every probe read is (reference.lookup_points; fix round 2): where both are positive, median |dlog2| <=
+    0.02 and 99th percentile <= 0.1, and where either is not positive both are not (the resampling adds no light and
+    loses none)."""
     from . import package as PK, reference, sunbounce as SB
     path, _sha = PK.verified(cfg.paths["work"], cfg.paths["evidence"], "sun-bounce.npz", "sun-bounce-check.json")
     got = PK.sky_arrays(pkg)
@@ -1710,7 +1723,7 @@ def _check_sky(cfg, pkg, model, proof) -> dict:
     P = np.asarray(pos[np.sort(np.random.default_rng(SPLAT_SEED).choice(len(pos), SKY_CHECK_SPLATS, replace=False))], np.float64)
     idx, wts = reference.trilinear(model, P)
     sky = model.sky
-    to1 = SB.trilinear_matrix(sky.origin, sky.spacing, sky.shape, sky.valid, P)
+    to1 = SB.trilinear_matrix(sky.origin, sky.spacing, sky.shape, sky.valid, reference.lookup_points(model, P))
     vols = list(model.volumes.values())
     horizons = [model.horizons[name] for name in model.volumes]
     iso, normals = np.ones(len(P), bool), np.zeros((len(P), 3))
@@ -2063,6 +2076,7 @@ def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate) -> 
                        "steps": [[int(v) for v in row] for row in steps], "wallFace": sorted(pairs),
                        "wallFaceRate": wall_face_rate},
         "probes": {"origin": m["probes"]["origin"], "spacing": m["probes"]["spacing"], "shape": m["probes"]["shape"],
+                   "box": m["probes"]["box"],
                    "entries": [{"index": i, "valid": bool(model.probe_valid[i]),
                                 "cube": b64(np.ascontiguousarray(model.probes[i], "<f2").tobytes())} for i in entries]},
         "presetsFromProof": m["presetsFromProof"],

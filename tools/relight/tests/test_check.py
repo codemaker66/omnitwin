@@ -3,7 +3,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest import mock
 import numpy as np
-from relight import __main__ as M, codec, config, package as PK, records as RC, reference, sunbounce, windows
+from relight import __main__ as M, codec, config, package as PK, probes as PR, records as RC, reference, sunbounce, windows
 from tests.test_artifacts import host_env
 from tests.test_package import fit_json, read_bytes, read_json, refit_json
 from tests.test_reference import model as small_model, sky_basis
@@ -299,7 +299,7 @@ class FakeCommon:
     """The proof's common.py as records and check use it, for the synthetic hall: the served tiles' json frame (T_JE, a
     quarter turn about z and a shift, so a missed json_to_e57 shows), the hall's box and floor, the sun vector, and a
     deterministic stand-in for the solar position whose every sun faces the window wall (compass 85..125, 9..38 up)."""
-    X0, X1, Y0, Y1, FLOOR_Z = 0.0, 3.0, 0.0, 2.0, 0.0
+    X0, X1, Y0, Y1, FLOOR_Z = 0.0, 3.23, 0.0, 2.07, 0.0     # not whole multiples of the grids' spacing, like the hall's
     T_EJ = np.linalg.inv(T_JE)
 
     @staticmethod
@@ -470,6 +470,12 @@ def _falloff(P, centre, scale):
     return scale / (1.0 + 4.0 * np.sum((P - np.asarray(centre)) ** 2, 1))
 
 
+SYNTHETIC_BOX = {"x0": FakeCommon.X0, "x1": FakeCommon.X1, "y0": FakeCommon.Y0, "y1": FakeCommon.Y1, "floorZ": FakeCommon.FLOOR_Z,
+                 "ceilingZ": 3.04}
+LOOKUP_BOX = {"lo": [FakeCommon.X0 + 0.02, FakeCommon.Y0 + 0.02, FakeCommon.FLOOR_Z + 0.02],
+              "hi": [FakeCommon.X1 - 0.02, FakeCommon.Y1 - 0.02, 9.8]}       # store.Probes.lookup's clamp
+
+
 def build_hall(root):
     """A synthetic hall laid out as the bake's folders under root: work (the per-splat tables of the finest level in a
     shuffled product order, the window cookie, the four artifacts, fit.json and fit_state.npz as Task 4b promotes them,
@@ -502,21 +508,26 @@ def build_hall(root):
         arrays[f"{name}_alpha"], arrays[f"{name}_frame"] = windows.volume_arrays(vol)
         arrays[f"{name}_horizon"] = np.full(360, 5.0, np.float32)
     _put_artifact(work, evidence, "windows.npz", "windows.json", arrays, windows=list(OUTLINES))
-    cubes = rng.uniform(0.001, 0.05, (280, 9, 3, 6)).astype(np.float16)
+    # Both grids as the bake builds them (probes.coarse_grid and valid_mask, as cmd_probes and cmd_sun_bounce do): 0.5 m
+    # and 1 m from the box's low corner, valid inside the box less 2 cm, so their planes on the box's low faces are
+    # invalid and a splat beyond the window wall (y < 0) finds no valid probe unless it is read inside the box.
+    P05, shape05, origin05 = PR.coarse_grid(SYNTHETIC_BOX, 0.5)                 # 7 x 5 x 7
+    cubes = rng.uniform(0.001, 0.05, (len(P05), 9, 3, 6)).astype(np.float16)
     for ix in (5, 6):
         for iy in (3, 4):
             for iz in (1, 2):
-                cubes[(ix * 5 + iy) * 7 + iz] = 0.0
+                cubes[(ix * shape05[1] + iy) * shape05[2] + iz] = 0.0
     _put_artifact(work, evidence, "probes-coarse.npz", "probes-check.json",
-                  {"cubes": cubes, "valid": np.ones(280, bool), "origin": np.zeros(3), "shape": np.array([8, 5, 7], np.int64),
-                   "spacing": np.float64(0.5)})
+                  {"cubes": cubes, "valid": PR.valid_mask(P05, SYNTHETIC_BOX), "origin": origin05,
+                   "shape": np.asarray(shape05, np.int64), "spacing": np.float64(0.5)})
+    P1, shape1, origin1 = PR.coarse_grid(SYNTHETIC_BOX, 1.0)                    # 4 x 3 x 4
     centres = np.stack([rng.uniform(0.5, 2.9, 20), rng.uniform(1.0, 1.9, 20), rng.uniform(0.5, 2.0, 20)], 1)
     patches = sunbounce.Patches.from_arrays(centres, np.tile([0.0, -1.0, 0.0], (20, 1)), np.full(20, 0.25))
-    sky = {"basis": rng.uniform(2e-4, 4e-3, (SKY_K, 48, 3, 6)).astype(np.float16), "valid": np.ones(48, bool),
+    sky = {"basis": rng.uniform(2e-4, 4e-3, (SKY_K, len(P1), 3, 6)).astype(np.float16), "valid": PR.valid_mask(P1, SYNTHETIC_BOX),
            "coeffs": rng.uniform(0.1, 1.0, (12, 30, 5, SKY_K)).astype(np.float32), "patchRays": patches.rays,
            "patchNormal": patches.normals, "patchArea": patches.areas, "floorMean": rng.uniform(0, 0.1, (SKY_K, 3)).astype(np.float32),
-           "azimuth0": np.float64(60.0), "elevation0": np.float64(-2.0), "step": np.float64(4.0), "gridOrigin": np.zeros(3),
-           "gridShape": np.array([4, 3, 4], np.int64), "gridSpacing": np.float64(1.0)}
+           "azimuth0": np.float64(60.0), "elevation0": np.float64(-2.0), "step": np.float64(4.0), "gridOrigin": origin1,
+           "gridShape": np.asarray(shape1, np.int64), "gridSpacing": np.float64(1.0)}
     draw = {"worstBright": 0.04, "pooledMedian": 0.01}
     _put_artifact(work, evidence, "sun-bounce.npz", "sun-bounce-check.json", sky, K=SKY_K, kRule="the smallest K that passes",
                   result=draw, independentCheck={"result": draw}, strictCheck={"result": draw})
@@ -548,7 +559,7 @@ def build_hall(root):
     room = uniform(1500, (0.2, 0.6, 0.1), (3.1, 1.95, 2.8))
     room = room[np.linalg.norm(room - POCKET, axis=1) > 0.4]
     population("room", room, 1, rng.choice([0, 0, 0, 0, 0, 0, 3, 4], len(room)))
-    cove = np.stack([np.where(rng.random(30) < 0.5, rng.uniform(0.05, 0.3, 30), rng.uniform(2.7, 2.95, 30)),
+    cove = np.stack([np.where(rng.random(30) < 0.5, rng.uniform(0.05, 0.3, 30), rng.uniform(2.9, 3.15, 30)),
                      rng.uniform(0.3, 1.9, 30), rng.uniform(2.45, 2.55, 30)], 1)
     population("cove", cove, 1, 0, colour=rng.integers(200, 251, (30, 3)))
     population("floor", uniform(300, (0.2, 0.6, 0.05), (2.9, 1.9, 0.05)), 1, 0, normal=[0.0, 0.0, 1.0])
@@ -831,6 +842,23 @@ class SyntheticHall(unittest.TestCase):
         Mv, _A = M._multipliers(self.model, self.settings["captured"], self.ranges, self.pkg.records("0_1.sog")[over], P[over], C[over])
         np.testing.assert_allclose(Mv, 1.0, rtol=0, atol=1e-12)
 
+    def test_every_splat_reads_valid_probes_at_its_position_in_the_hall_box(self):
+        """Fix round 2: the package carries the proof's lookup box (the hall's box less 2 cm, up to 9.8 m) and every
+        splat, the finest and the coarser, the embrasure and the env ones beyond the window wall included, reads valid
+        probes there; read on the grid alone (no box) those beyond the wall read none."""
+        self.assertEqual(self.pkg.manifest["probes"]["box"], LOOKUP_BOX)
+        census = M._census(self.cfg)
+        points = [np.asarray(self.fin["pos"], np.float64)] + [
+            M._sog_splats(census, self.proof, os.path.join(self.cfg.paths["splats"], name))[0] for name in COARSE]
+        for P in points:
+            _idx, w = reference.trilinear(self.model, P)
+            np.testing.assert_allclose(w.sum(1), 1.0, rtol=0, atol=1e-12)
+        P = points[0]
+        beyond = P[:, 1] < 0
+        self.assertGreater(int(beyond.sum()), 400)
+        open_box = replace(self.model, probe_box_lo=np.full(3, -np.inf), probe_box_hi=np.full(3, np.inf))
+        self.assertEqual(float(reference.trilinear(open_box, P[beyond])[1].sum()), 0.0)
+
     def test_the_regression_check_compares_through_the_clamp_and_only_records_the_original_proofs_file(self):
         """Check 2 against the proof's multiplier files: the proof's 60s and 0.004s are compared through the spec's clamp
         (the share it moved is recorded); the original proof's sunny file, one row short, is recorded as an error (M6)."""
@@ -932,7 +960,8 @@ class SyntheticHall(unittest.TestCase):
 
     def test_the_wall_face_rate_pools_both_directions_for_each_population(self):
         rate = self.checks["wallFaceRate"]
-        grid_points = len(np.arange(0.05, 2.95, 0.05)) * len(np.arange(0.05, 1.95, 0.05))   # check-sun's 5 cm floor grid
+        grid_points = (len(np.arange(FakeCommon.X0 + 0.05, FakeCommon.X1 - 0.05, 0.05))        # check-sun's 5 cm floor grid
+                       * len(np.arange(FakeCommon.Y0 + 0.05, FakeCommon.Y1 - 0.05, 0.05)))
         self.assertEqual((rate["splats"], rate["floor"]["points"]), (500, grid_points))
         self.assertGreater(rate["marched"], 0)
         self.assertGreater(rate["floor"]["wallFace"], 0)                 # the glazing bar's row makes unlike cells
@@ -942,6 +971,7 @@ class SyntheticHall(unittest.TestCase):
         import base64
         v = read_json(self.vectors)
         self.assertEqual(vector_issues(v, self.model), [])
+        self.assertEqual(v["probes"]["box"], self.pkg.manifest["probes"]["box"])
         self.assertEqual(v["windowRays"]["wallFaceRate"], self.checks["wallFaceRate"])
         flags = [bytes.fromhex(sp["record"])[11] for sp in v["splats"]]
         classes = {f & codec.CLASS_MASK for f in flags}
@@ -1000,6 +1030,7 @@ def vector_issues(v, model):
     check(rate["marched"] > 0 and rate["wallFace"] <= rate["marched"] and rate["floor"]["marched"] > 0, "wall-face rate")
     pr = v["probes"]
     check(len(pr["shape"]) == 3 and pr["spacing"] > 0 and all(isinstance(e["valid"], bool) for e in pr["entries"]), "probes")
+    check(vec3(pr["box"]["lo"]) and vec3(pr["box"]["hi"]) and all(a < b for a, b in zip(pr["box"]["lo"], pr["box"]["hi"])), "probe box")
     check(set(v["presetsFromProof"]) == {"night", "sunny_morning", "overcast_noon"}, "presets")
     for name, st in v["settings"].items():
         check(len(st["weights"]) == 9 and set(st["lampLevels"]) == {"cove", "ch_end", "ch_centre", "dome"} and st["emitterBoost"] == 1

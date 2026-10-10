@@ -17,6 +17,11 @@ package built only from committed code. Revised 11 October (R1a Task 5 fix round
 - `evidence.artifacts` also names the per-splat tables, the window cookie and the lamp/daylight ratio that the build read.
 - `evidence.build` records the host that built the package.
 
+Revised 11 October (R1a Task 5 fix round 2): the probes are read as the proof reads them. The manifest's `probes` gains
+`box`, and every probe read clamps its position into it first (field `probes` below). Before this, a quarter of the
+hall's splats (those beyond a low wall: the embrasures, the exterior, below the floor) read only the invalid probes on
+the grid's low face, and had no bounce in any setting.
+
 ## Files
 
 | Path | Content |
@@ -59,7 +64,11 @@ it is published (R1a Task 7).
 - `sun`: `{ fresnel: [101 values for |cos| 0.00..1.00] }` (the glass transmission, for both sky bodies).
 - `sky`: the sky bodies' bounce (R1a Task 4 as built; section "The sky bodies' bounce" below): `{ k, bodies: ["sun", "moon"], grid: { origin: [x,y,z], spacing, shape: [nx, ny, nz] }, basis, valid, table: { azimuth0, elevation0, step, size: [columns, rows], file }, patches: { count, subsamples: 16, rays, normals, areas }, floorMean: [[r,g,b] × k] }`. `k` is read from the data (30 on 7 October), never assumed; `basis`, `valid`, `table.file`, `patches.rays`, `normals` and `areas` name the `sky/` files; the grid is the 1 m grid `(22, 11, 7)` whose origin is the probes' origin (its probes are the even probes of the 0.5 m grid); the table's nodes are whole degrees (`azimuth0` 24, `elevation0` −2, `step` 4, 79 × 18 on 7 October).
 - `windows`: per window, in order W1..W5, `{ id, frame: [21 numbers], volume: "windows/<id>.alpha.gz", horizon: [360 elevations in degrees, by compass azimuth 0..359] }`. The frame is R1a `windows.FRAME_FIELDS` (below). Every window's `x_bearing` matches `site.north` (`north = (cos x_bearing, sin x_bearing, 0)`).
-- `probes`: `{ origin: [x,y,z], spacing: number, shape: [nx, ny, nz], file, validFile }` (axis-aligned in the model frame).
+- `probes`: `{ origin: [x,y,z], spacing: number, shape: [nx, ny, nz], box: { lo: [x,y,z], hi: [x,y,z] }, file, validFile }` (axis-aligned in the model frame).
+  - **`box`** is the proof's probe lookup box: `lo = [X0 + 0.02, Y0 + 0.02, floorZ + 0.02]` and `hi = [X1 − 0.02, Y1 − 0.02, 9.8]` from the hall's box (`store.Probes.lookup`, `store.py:60-62`; added 11 October). `lo` is below `hi` on every axis.
+  - **Every probe read** (a splat's, the floor's, a skin's) clamps its model-frame position into `box`, axis by axis. It then reads the probes trilinearly exactly as "The bounce at the probes" below reads the basis grid, with `probes` in place of `grid`: `f = (q − origin)/spacing`, `i0 = clip(floor(f), 0, shape − 2)`, `t = clip(f − i0, 0, 1)`, the eight corners weighted by `t` or `1 − t` per axis times their validity, renormalised by their sum where it exceeds 1e-6, else none.
+  - These are the proof's `03_bases.trilinear_weights` (`03_bases.py:78-95`) and R1a's `reference.trilinear`.
+  - **Float32.** The browser clamps its float32 position into the float32 box. A clamp only moves a point to a face of the box.
 - `floor`: `{ skin: "floor-skin/v2", texelToModel: 4×4 row-major, texel: 0.05, size: [w, h], files: [3] }`.
 - `tiles`: `[{ tile, tileSha256, level, count, file, sha256, bytes }]` for every served tile.
 - `presetsFromProof`: the three proof scenarios' settings (night, sunny morning 31 May 09:00 BST, overcast noon), as `05_relight.SCENARIOS` defines them.
