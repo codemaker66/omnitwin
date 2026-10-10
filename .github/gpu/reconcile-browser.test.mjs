@@ -60,12 +60,12 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full385 union requires380 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
+test('full389 union requires384 CPU and all5 GPU with original46 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 385, cpu: 380, gpu: 5, ordinaryPasses: 339,
-    expectedFailures: 4, originalSkips: 42, failed: 0, flaky: 0, retries: 0,
+  assert.deepEqual(result.totals, { inventory: 389, cpu: 384, gpu: 5, ordinaryPasses: 339,
+    expectedFailures: 4, originalSkips: 46, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
 
@@ -74,7 +74,7 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 380);
+  assert.equal(result.totals.cpu, 384);
   assert.equal(result.totals.gpu, 0);
   assert.equal(result.totals.ordinaryPasses, 334);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 39);
+  assert.equal(baseline.inventoryAdmissions.length, 40);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -926,6 +926,29 @@ test("the living-timetable admission restates the Day Board's two cases one for 
   }
   for (const id of livingTimetableRetirements) assert.equal(baseline.cases.find((entry) => entry.id === id), undefined);
   assert.equal(baseline.cases.filter((row) => row.file === 'day-board.spec.ts').length, 4);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+const threeIdentityCases = [
+  '741fe9c46e84b9a6d2fb-09deb1db1f9d987681da',
+  '741fe9c46e84b9a6d2fb-1f7083cad4474a7d81e6',
+  '741fe9c46e84b9a6d2fb-7849726fb992ebc77d07',
+  '741fe9c46e84b9a6d2fb-b43644f0c4d2167e371f',
+];
+test("the three-identities admission adds four self-gated live cases as expected skips", () => {
+  const admission = baseline.inventoryAdmissions[39];
+  assert.equal(admission.date, '2026-10-10');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/living-timetable-three-identities.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'skipped');
+  assert.deepEqual(admission.caseIds, threeIdentityCases);
+  for (const id of threeIdentityCases) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'living-timetable-three-identities.spec.ts');
+    assert.equal(row?.expectedStatus, 'skipped');
+  }
+  assert.equal(baseline.cases.filter((row) => row.file === 'living-timetable-three-identities.spec.ts').length, 4);
+  assert.equal(baseline.cases.filter((row) => row.expectedStatus === 'skipped').length, BROWSER_POLICY.skipped);
   assert.equal(baseline.cases.length, BROWSER_POLICY.total);
 });
 for (const id of livingTimetableAdditions) {

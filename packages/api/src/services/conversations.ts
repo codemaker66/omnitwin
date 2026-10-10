@@ -127,7 +127,9 @@ export function serializeMessage(row: MessageRow, receipts: readonly MessageRece
 
 /**
  * Whether this person holds a live link to the event: a configuration they
- * own, linked to it, not a public preview, on an event that still exists.
+ * own and that still exists, linked to it, not a public preview, on an event
+ * that still exists. The office revokes by deleting the plan, and the link
+ * row outlives it, so the plan's own deletedAt is read here (goal 19 S4).
  * The same rows client-event-schedule reads; read every time, cached never.
  */
 export async function clientHoldsEventLink(conn: Conn, userId: string, eventId: string): Promise<boolean> {
@@ -140,6 +142,7 @@ export async function clientHoldsEventLink(conn: Conn, userId: string, eventId: 
       eq(eventConfigurationLinks.eventId, eventId),
       eq(configurations.userId, userId),
       eq(configurations.isPublicPreview, false),
+      isNull(configurations.deletedAt),
       inArray(eventConfigurationLinks.linkType, [...CLIENT_LINK_TYPES]),
       isNull(events.deletedAt),
     ))
