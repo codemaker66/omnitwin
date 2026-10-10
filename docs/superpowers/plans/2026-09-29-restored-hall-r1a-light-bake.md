@@ -94,7 +94,16 @@ The controller's decision of 30 September, confirmed on 3 October: the runtime m
     - Every run whose output is compared byte for byte with another's runs on the same host: the pod. That covers `records`, `check` and the package for v1 here, and R1c Task 15's v2 `records` and `check`. A comparison of bytes already pulled back, such as R1c's `v2-check`, may run anywhere.
   - **What stays on the PC.** Steps that need the GPU or the browser harness stay on the PC under `gpu.lock`: the photo checks' renders, and R1b's and R1d's checks.
   - **Paths.** The steps name local `D:/` paths. On the pod the same tree lives under `/workspace/relight/D/`, and `pod/podrelight.py` maps it for the config's `D:/` check only.
-  - **Cost.** The pod is stopped whenever it is idle.
+  - **Cost.** The pod is stopped whenever it is idle. (Amended 10 October.) On 8 October a pod ran idle for 24 hours, $96.55, after the local agent that should have stopped it died. Since then:
+    - a pod-side watchdog (`pod/idle-stop.sh`, see the runner's README) stops the pod by itself after 20 idle minutes, after a job runs 6 hours, or after 12 hours up;
+    - the runner refuses to launch a job unless that watchdog is alive on the pod;
+    - the first live start runs a 2-minute self-stop trial before any real job.
+  - **Fallback when the pod is unavailable** (amended 10 October; the RunPod balance is empty until 13 October). The CPU-heavy steps may run on the PC under the rules Tasks 1–4 ran by:
+    - every data product run twice in separate processes, with a third run and a majority on a mismatch;
+    - one heavy job at a time;
+    - at least 10 GB of commit headroom before each heavy step, checked and recorded;
+    - thread caps as the plan sets them.
+    The proof fit was computed and reproduced exactly on the PC, so its reproduction gates apply unchanged. Each evidence JSON records its host. Byte-compared runs still share one host: v1's and v2's `records` and `check` run on whichever host built v1.
 - Frames: `json` is the served tiles' frame (metres, z up). `e57` is the light model's frame: +x at bearing 14.3°, window wall at y = −10.329, outward normal −y. `T_JE` (json ← e57) comes from `canonical_frame.json`. The package describes the model in the e57 frame and gives `tileToModel` = `T_EJ` = inverse of `T_JE`.
 - Unit tests: from `tools/relight`, `C:/Python313/python.exe -m unittest discover -s tests -v`. Unit tests never need the GPU or the D: inputs.
 - Proof facts this plan must reproduce (from `D:/claude/real-hall/renovation/relight/work/`): 6,030,980 finest-level splats (the environment tile plus the 11 finest tiles, product order); `fit.json` weights and colours; the measured lamp/daylight ratio (1.623, 1, 0.467) (`lamp_daylight_ratio.json`; amended 7 October: its colour temperature is not established); capture contrast γ = 1. Task 4b then refits the house lights and replaces the proof's weights and lamp colours; the proof fit is kept in `work/fit-proof/`.
