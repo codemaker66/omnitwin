@@ -471,6 +471,37 @@ span.dayboard-next-line {
   font-weight: 600;
 }
 
+/* The previous slab's clear-down reaches this setup: no open lane to draw
+   the rule in, so the rule goes and the dimension moves onto the lane
+   boundary above the slabs, ending at the slab it protects, the way a
+   drawing places a dimension that will not fit between its lines. */
+.dayboard-gap.is-covered {
+  top: 0;
+  bottom: 0;
+  height: auto;
+  border-color: transparent;
+  /* Above every slab, the selected and hovered ones included (3). */
+  z-index: 4;
+}
+
+.dayboard-gap.is-covered .dayboard-gap-words {
+  top: 0 !important;
+  left: 100% !important;
+  transform: translate(-100%, -50%);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--lt-line);
+}
+
+/* Two covered dimensions in a row (a slot wedged between two short gaps)
+   would overlap on the boundary: every other one steps up a row. */
+.dayboard-gap.is-covered.is-staggered .dayboard-gap-words {
+  transform: translate(-100%, calc(-50% - 18px));
+}
+
+.dayboard[data-layout="phone"] .dayboard-gap.is-covered.is-staggered .dayboard-gap-words {
+  transform: translate(-50%, calc(-100% - 18px));
+}
+
 /* --- slabs ------------------------------------------------------------------ */
 
 .dayboard-slab {
@@ -611,13 +642,17 @@ div.dayboard-slab {
     display: none;
   }
   .dayboard-verb {
+    flex-wrap: wrap;
     align-items: flex-start;
+    row-gap: 2px;
     white-space: normal;
     font-size: 11px;
     line-height: 1.15;
   }
+  /* On its own line under the dot and icon, where two words fit. */
   .dayboard-verb-short {
-    display: inline;
+    display: block;
+    flex-basis: 100%;
     min-width: 0;
   }
 }
@@ -1340,5 +1375,17 @@ div.dayboard-slab {
   .dayboard[data-layout="phone"] .dayboard-gap-words {
     top: 50%;
     transform: translate(-50%, -50%);
+  }
+  /* Down a phone's lane a covered dimension ends just above the slab it
+     protects, centred on the rule it no longer draws. */
+  .dayboard[data-layout="phone"] .dayboard-gap.is-covered {
+    left: 50%;
+    right: auto;
+    width: 1px;
+  }
+  .dayboard[data-layout="phone"] .dayboard-gap.is-covered .dayboard-gap-words {
+    top: 100% !important;
+    left: 50% !important;
+    transform: translate(-50%, -100%);
   }
 }

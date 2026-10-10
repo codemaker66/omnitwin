@@ -137,13 +137,31 @@ export function slabGeometry(slot: DayBoardSlot, window: BoardWindow): SlabGeome
   };
 }
 
-/** The dimensioned gap drawn before a slot, or null for the first in a lane.
- *  Drawn from the previous slab's drawn end (its clear-down), so the words
- *  sit in the open lane rather than under the hatched strip; the dimension
- *  itself still counts from the previous booking's end (minutesOf). */
+/** The dimensioned gap drawn before a slot, or null for the first in a lane. */
 export function gapGeometry(previous: DayBoardSlot | undefined, slot: DayBoardSlot, window: BoardWindow): Span | null {
   if (previous === undefined) return null;
-  return span(previous.segments.clearDownEndsAtMs, slot.segments.setupStartsAtMs, window);
+  return span(previous.endsAtMs, slot.segments.setupStartsAtMs, window);
+}
+
+/** Where the gap's words sit along the gap, 0 to 1: the middle of the open
+ *  lane after the previous slab's clear-down, so a long clear-down never
+ *  hides them. When the clear-down reaches the next setup (the short gaps
+ *  that matter most) there is no open lane: the words take the middle and
+ *  are drawn over the slab instead (`covered`). */
+export function gapWordsOffset(
+  previous: DayBoardSlot,
+  slot: DayBoardSlot,
+  window: BoardWindow,
+): { readonly at: number; readonly covered: boolean } {
+  const gap = span(previous.endsAtMs, slot.segments.setupStartsAtMs, window);
+  const open = span(
+    Math.max(previous.endsAtMs, previous.segments.clearDownEndsAtMs),
+    slot.segments.setupStartsAtMs,
+    window,
+  );
+  if (gap.width <= 0 || open.width <= 0) return { at: 0.5, covered: true };
+  const openMiddle = open.left + open.width / 2;
+  return { at: clamp01((openMiddle - gap.left) / gap.width), covered: false };
 }
 
 /** How many minutes a span of the window is, for the gap's dimension. */
