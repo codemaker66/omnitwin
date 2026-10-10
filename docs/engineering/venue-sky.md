@@ -92,11 +92,29 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
 - Auth: header `apikey`, from `MET_OFFICE_BPF_API_KEY`. A key belongs to one
   product subscription (FAQ: "The API key is unique to the subscription you have
   created it for"), so a Global Spot, map-images or atmospheric key is refused.
+- Collections: `GET /collections` once a day.
+  [`bpf-collections.ts`](../../packages/api/src/services/sky/bpf-collections.ts)
+  chooses the percentile and probability collections from the listing.
+  - **How:** by the EDR `parameter_names` each declares when the listing
+    carries them, otherwise by the words of its id and then its title
+    (`percentile(s)`, `probability`/`probabilities`, `uk`/`global`).
+  - **Order:** the UK set first, the global set as the fallback, and
+    probabilities from the same region as the percentiles.
+  - **Why not fixed ids:** the first release looked for the v1 ids
+    (`improver-percentiles-spot-uk`, from the Met Office's v1 download
+    utilities), and the live v2 listing does not offer them (production,
+    10 October). No official document names the v2 ids. A third-party client
+    lists `uk-spot-percentiles`, `uk-spot-probabilities`,
+    `global-spot-percentiles` and `global-spot-probabilities`.
+  - **Logging:** each listing is logged as `venue_sky_collections_selected`,
+    or as `venue_sky_collections_unmatched` with every offered id, title and
+    parameter count.
+  - **No usable set:** the listing is held for 6 h and the sky falls back to
+    normals with `upstream_unavailable`.
 - Calls per refresh: `GET /collections/{c}/instances` and
-  `GET /collections/{c}/instances/{newest}/position?coords=POINT(lon lat)` for
-  `improver-percentiles-spot-uk` (with `percentiles=50`) and
-  `improver-probabilities-spot-uk`. Collection ids are confirmed from
-  `/collections` once a day.
+  `GET /collections/{c}/instances/{newest}/position?coords=POINT(lon lat)`,
+  once for the percentile collection (with `percentiles=50`) and once for the
+  probability collection.
 - Values: the 50th percentile, as the Met Office guide "How to create a
   deterministic forecast" recommends. `cloudAreaFraction` (total),
   `lowTypeCloudAreaFraction` (low; mid and high are not offered, so `null`),
@@ -118,12 +136,20 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
   terms and conditions.
 - Logs carry stage, status and Zod issue paths, never the key, headers or bodies.
 
-**Not yet verified live.** No key was available, and the DataHub sample files
-may not be redistributed, so the test bodies
-([fixtures](../../packages/api/src/__tests__/fixtures/met-office-bpf-v2.ts)) are
-built from the documented structure with synthetic numbers. The first live
-response must be checked: run the verifier below and read the
-`venue_sky_forecast_partial` / `venue_sky_upstream_failed` logs.
+**Live state (10 October 2026).**
+- The deployed key is accepted: `/collections` answered HTTP 200.
+- The first release's v1 collection ids were not in that listing, so it
+  served normals with `upstream_unavailable`.
+- Choosing collections from the listing (above) replaces those fixed ids.
+- After that change deploys, check the first forecast through the deployed
+  endpoint and in the `venue_sky_collections_*`, `venue_sky_forecast_partial`
+  and `venue_sky_upstream_failed` logs. They name what the listing offers.
+
+No live response body has been read here, and the DataHub sample files may
+not be redistributed. The test bodies
+([fixtures](../../packages/api/src/__tests__/fixtures/met-office-bpf-v2.ts))
+are therefore still built from the documented structure, with synthetic
+numbers.
 
 ## Source 2: monthly normals (HadUK-Grid 1991–2020)
 
