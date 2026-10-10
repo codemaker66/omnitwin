@@ -60,11 +60,11 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full389 union requires384 CPU and all5 GPU with original46 skips and4 executed expected failures', () => {
+test('full391 union requires386 CPU and all5 GPU with original46 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 389, cpu: 384, gpu: 5, ordinaryPasses: 339,
+  assert.deepEqual(result.totals, { inventory: 391, cpu: 386, gpu: 5, ordinaryPasses: 341,
     expectedFailures: 4, originalSkips: 46, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 384);
+  assert.equal(result.totals.cpu, 386);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 334);
+  assert.equal(result.totals.ordinaryPasses, 336);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 40);
+  assert.equal(baseline.inventoryAdmissions.length, 41);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -951,6 +951,36 @@ test("the three-identities admission adds four self-gated live cases as expected
   assert.equal(baseline.cases.filter((row) => row.expectedStatus === 'skipped').length, BROWSER_POLICY.skipped);
   assert.equal(baseline.cases.length, BROWSER_POLICY.total);
 });
+const slotConversationCases = [
+  '548c386e48552feb0131-08e905dd329bbda36a3b',
+  '548c386e48552feb0131-6f1f41cc25f3874e45c3',
+];
+test('the slot conversation admission adds two ordinary route-mocked cases', () => {
+  const admission = baseline.inventoryAdmissions[40];
+  assert.equal(admission.date, '2026-10-10');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/living-timetable-slot.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.deepEqual(admission.caseIds, slotConversationCases);
+  for (const id of slotConversationCases) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'living-timetable-slot.spec.ts');
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+  assert.equal(baseline.cases.filter((row) => row.file === 'living-timetable-slot.spec.ts').length, 2);
+  assert.equal(baseline.cases.filter((row) => row.expectedStatus === 'passed').length,
+    BROWSER_POLICY.total - BROWSER_POLICY.skipped - BROWSER_POLICY.expectedFailures);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+for (const id of slotConversationCases) {
+  rejected(`new slot conversation case ${id} cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+}
 for (const id of livingTimetableAdditions) {
   rejected(`new Day Board case ${id} cannot become a skip`, (input) => {
     const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
