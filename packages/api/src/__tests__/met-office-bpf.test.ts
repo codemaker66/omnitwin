@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CoverageCollectionSchema } from "../services/sky/bpf-schemas.js";
+import { CoverageCollectionSchema, describeStructure, unitSymbol } from "../services/sky/bpf-schemas.js";
 import {
   axisNumber,
   locateStep,
@@ -144,9 +144,104 @@ describe("Zod rejection of malformed upstream data", () => {
     expect((await failure(client(instances.fetch).instances("uk-spot-percentiles"))).kind).toBe("unavailable");
   });
 
-  it("accepts the documented collection body", () => {
+  it("accepts the documented collection body, with parameters on each coverage or on the collection", () => {
     expect(CoverageCollectionSchema.safeParse(percentilesBody(times)).success).toBe(true);
     expect(CoverageCollectionSchema.safeParse(probabilitiesBody(times)).success).toBe(true);
+    expect(CoverageCollectionSchema.safeParse(percentilesBody(times, {}, "collection")).success).toBe(true);
+    expect(CoverageCollectionSchema.safeParse(probabilitiesBody(times, 0.2, 0.05, "collection")).success).toBe(true);
+  });
+});
+
+describe("CoverageJSON parameters in scope (OGC 21-069r2, 9.6.4 and 9.6.5)", () => {
+  const times = forecastTimes(ISSUED, 2, 0);
+  const temperature = { airTemperature1p5m: { unit: "K", values: [284.15, 285.15] } };
+
+  function body(collectionUnit: string | null, coverageUnit: string | null): unknown {
+    const unit = (symbol: string | null): unknown => (symbol === null ? {} : { airTemperature1p5m: { type: "Parameter", unit: { symbol } } });
+    return {
+      type: "CoverageCollection",
+      ...(collectionUnit === null ? {} : { parameters: unit(collectionUnit) }),
+      coverages: [{
+        type: "Coverage",
+        domain: { type: "Domain", axes: { t: { values: ["2026-10-08T09:00:00Z"] } } },
+        ...(coverageUnit === null ? {} : { parameters: unit(coverageUnit) }),
+        ranges: { airTemperature1p5m: { type: "NdArray", axisNames: ["t"], shape: [1], values: [284.15] } },
+      }],
+    };
+  }
+
+  it("reads a unit from the coverage's own parameters, as the live service sends them", () => {
+    expect(unitSymbol(CoverageCollectionSchema.parse(coverageCollectionBody(times, temperature)), "airTemperature1p5m")).toBe("K");
+    expect(unitSymbol(CoverageCollectionSchema.parse(body(null, "K")), "airTemperature1p5m")).toBe("K");
+  });
+
+  it("reads a unit from the collection's parameters when the coverage has none", () => {
+    expect(unitSymbol(CoverageCollectionSchema.parse(coverageCollectionBody(times, temperature, "collection")), "airTemperature1p5m")).toBe("K");
+    expect(unitSymbol(CoverageCollectionSchema.parse(body("K", null)), "airTemperature1p5m")).toBe("K");
+  });
+
+  it("takes the coverage's parameters as the scope when both levels have them", () => {
+    expect(unitSymbol(CoverageCollectionSchema.parse(body("degF", "K")), "airTemperature1p5m")).toBe("K");
+  });
+
+  it("states no unit when none is in scope, so the documented unit applies", () => {
+    expect(unitSymbol(CoverageCollectionSchema.parse(body(null, null)), "airTemperature1p5m")).toBeNull();
+    expect(unitSymbol(CoverageCollectionSchema.parse(body(null, "K")), "cloudAreaFraction")).toBeNull();
+  });
+});
+
+describe("a body that fails its schema is described, not dumped", () => {
+  it("logs the structure of an unparseable position body, without its values or links", async () => {
+    const geoJson = {
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        id: "00000046",
+        geometry: { type: "Point", coordinates: [-4.25, 55.86, 12] },
+        properties: { airTemperature1p5m: 284.15, note: "value-that-must-not-be-logged" },
+      }],
+      links: [{ href: "https://example.invalid/collections?apikey=never-in-a-log", rel: "self" }],
+    };
+    const { fetch } = routedFetch(() => ({ status: 200, body: geoJson }));
+    const error = await failure(client(fetch).position("uk-spot-percentiles", "blended", POINT, ["airTemperature1p5m"], "50"));
+    expect(error.kind).toBe("unavailable");
+    expect(error.detail).toEqual(expect.arrayContaining([
+      "body: (root) keys: features, links, type",
+      "body: type = FeatureCollection",
+      "body: features: array(1)",
+      "body: features[0] keys: geometry, id, properties, type",
+      "body: features[0].type = Feature",
+      "body: features[0].properties keys: airTemperature1p5m, note",
+    ]));
+    const logged = JSON.stringify(error.detail);
+    for (const secret of ["value-that-must-not-be-logged", "never-in-a-log", "example.invalid", "284.15", "55.86", "00000046"]) {
+      expect(logged).not.toContain(secret);
+    }
+  });
+
+  it("describes a CoverageCollection's coverages, parameters and ranges by name", () => {
+    expect(describeStructure(coverageCollectionBody(forecastTimes(ISSUED, 2, 0), { airTemperature1p5m: { unit: "K", values: [284.15, 285.15] } })))
+      .toEqual(expect.arrayContaining([
+        "(root) keys: coverages, domainType, referencing, type",
+        "type = CoverageCollection",
+        "domainType = PointSeries",
+        "coverages: array(1)",
+        "coverages[0] keys: domain, parameters, ranges, type",
+        "coverages[0].parameters keys: airTemperature1p5m",
+        "coverages[0].ranges keys: airTemperature1p5m",
+      ]));
+  });
+
+  it("stays bounded for a large or deep body", () => {
+    const wide = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`k${String(i)}`, { [`n${String(i)}`]: [i] }]));
+    let deep: unknown = { leaf: "x" };
+    for (let i = 0; i < 50; i += 1) deep = { next: deep };
+    for (const lines of [describeStructure(wide), describeStructure(deep), describeStructure({ type: "\u0007".repeat(500) })]) {
+      expect(lines.length).toBeLessThanOrEqual(30);
+      expect(lines.every((line) => line.length <= 200 && !/[^ -~]/u.test(line))).toBe(true);
+    }
+    expect(describeStructure(wide)[0]).toMatch(/and 40 more$/u);
+    expect(describeStructure("text")).toEqual(["(root): string"]);
   });
 });
 
@@ -319,6 +414,14 @@ describe("fetchForecastSnapshot", () => {
     expect(snapshot.site).toEqual({ latitude: 55.8611, longitude: -4.2502 });
     expect(snapshot.collection).toBe("uk-spot-percentiles");
     expect(snapshot.probabilityCollection).toBe("uk-spot-probabilities");
+  });
+
+  it("reads a body whose parameters sit on the collection as well as one with them on each coverage", async () => {
+    const { fetch } = router({ percentiles: percentilesBody(times, {}, "collection") });
+    const snapshot = await fetchForecastSnapshot(client(fetch), collections, POINT, NOW);
+    expect(snapshot.series.temperature?.values[0]).toBeCloseTo(11, 9);
+    expect(snapshot.series.wind?.values[0]).toBe(4.5);
+    expect(snapshot.problems.filter((problem) => problem.includes("unit"))).toEqual([]);
   });
 
   it("reads the percentiles alone when no probability collection is offered", async () => {

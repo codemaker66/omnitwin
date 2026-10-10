@@ -5,6 +5,7 @@ import {
   CoverageCollectionSchema,
   EdrCollectionsSchema,
   EdrInstancesSchema,
+  describeStructure,
   issuePaths,
   unitSymbol,
   type CoverageCollection,
@@ -132,7 +133,11 @@ export class MetOfficeBpfClient {
       throw new UpstreamError("unavailable", stage, response.status, ["response is not JSON"]);
     }
     const parsed = schema.safeParse(json);
-    if (!parsed.success) throw new UpstreamError("unavailable", stage, response.status, issuePaths(parsed.error));
+    if (!parsed.success) {
+      // What failed and the body's shape (names, counts, type strings; no values).
+      const shape = describeStructure(json).map((line) => `body: ${line}`);
+      throw new UpstreamError("unavailable", stage, response.status, [...issuePaths(parsed.error), ...shape]);
+    }
     return parsed.data;
   }
 
