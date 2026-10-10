@@ -1,5 +1,45 @@
 # Venviewer execution board
 
+## The living timetable — T-651 (goal 19), 8 October 2026
+
+[Goal 19](19-the-living-timetable.md) is active. Owner: the Fable 5.1 session Blake
+gave the goal block to on 8 October. Worktree `D:/claude/goal19-living-timetable/repo`,
+branch `claude/living-timetable`, cut from origin/master `01a779b8` (the goal file named
+`5eec476e`; three commits newer, none touching the timetable). The goal carried the id
+T-646, which origin/master had already allocated to the Startups application, so it is
+recorded as **T-651**; T-647 is taken on `origin/claude/t647-sky` and T-648 to T-650 are
+reserved by local worktrees.
+
+S0 re-verification corrected one premise: Ship Friday slice 10 (migration 0077,
+`services/requests.ts`, `routes/requests.ts`, the Day Board slab, `request.changed`
+frames and the "now" escalation sweep) shipped a staff-only requests model before this
+goal was written. Goal 19 therefore extends `requests` rather than `event_day_issues`;
+the goal file records the revision.
+
+Absorbed here so nothing has two owners: goal 04 (all slices); goal 05 S1, S2, S3 and S5;
+the Day Board plan's S3 to S5; plan 18's F-04, F-05, F-06 and F-08. Goal 05 S4, S6 and S7
+stay in goal 05.
+
+| Slice | Local | Committed | Merged | Deployed | Accepted |
+|---|---|---|---|---|---|
+| S0 Ground (ownership, people matrix, attention system, migration numbers) | 8 Oct | 8 Oct `a573129a` | 9 Oct 0586ab03 (PR #56) | 9 Oct: web on Vercel 02:35 UTC, API on Railway 02:37 (health/version reports 0586ab03), migration 0087 applied by Deploy run 37876171234 at 02:48 | — (the three-identity production check waits on human input 3 and Blake's eyes) |
+| S1 Contracts (types, migration 0087 (written as 0086), capabilities, services, routes, 115 tests) | 8 Oct | 8 Oct `3607b395` | 9 Oct 0586ab03 (PR #56) | 9 Oct, as S0 | — (as S0) |
+| S2 Transport (commands and events on the socket, cursor replay, the one clock, client poll) | 8 Oct | 8 Oct | 9 Oct 0586ab03 (PR #56) | 9 Oct, as S0 | — (as S0) |
+| S3 The board, rebuilt | 8–9 Oct: page, stylesheet and tests rebuilt; typecheck, lint and 182 unit tests green; e2e 4 of 4 and visual harness 28 of 28 against a warm dev server, screenshots read on office, wall and phone | 8–9 Oct 7a2b8de4, e5637090 (master merged, 0087), 69c2fbc3, 02074ee2 (gate admission) | 9 Oct 0586ab03 (PR #56) | 9 Oct, as S0; venviewer.com serves the rebuilt Day Board chunk | — (as S0) |
+| S4 Requests and conversations on the slot | — | — | — | — | — |
+| S5 Observations | — | — | — | — | — |
+| S6 The When, made fun and complete | — | — | — | — | — |
+| S7 Beyond the glass | — | — | — | — | — |
+| S8 Kiosk and phone hardening | — | — | — | — | — |
+| S9 Delivery and the run | — | — | — | — | — |
+
+Human inputs still open: the wall register (dark as decided, or all ivory); corrections
+to [the people matrix](../docs/operations/people-matrix.md); one real hallkeeper account
+on production for the three-identity check. Migration numbering confirmed against
+origin's journal: the next tag was `0086` (journal idx 84); renumbered to `0087` (idx 85) on 9 October 2026 after PR #58 merged `0086_venue_location`.
+
+Blake, 10 October 2026, by multiple choice: the wall stays dark (human input 1 answered); staff and admin only may ink a time, and escalation runs now 2 min, soon 5 min, routine 15 min with email quiet hours 22:00 to 07:00 (human input 2 on the two decisions asked); a hallkeeper identity on production follows by invitation (human input 3 in progress).
+
 ## Browser release confidence — T-613, 15 September 2026
 
 [Goal17](17-browser-release-confidence.md) is active in **Build next-gen venue

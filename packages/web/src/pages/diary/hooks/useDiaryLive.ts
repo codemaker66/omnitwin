@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DiaryCommand, DiaryCommandAck } from "@omnitwin/types";
 import { API_URL } from "../../../config/env.js";
 import { getAuthToken } from "../../../api/client.js";
+import { observeServerNow } from "../../../lib/clock-offset.js";
 import {
   COMMAND_ACK_TIMEOUT_MS,
   nextBackoffMs,
@@ -134,6 +135,9 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
         if (disposed || socket !== ws) return;
         const message = parseLiveMessage(frame.data);
         if (message === null) return;
+        // D9: every hello and every frame carries the server's clock.
+        const clock = (message as { readonly serverNowMs?: number }).serverNowMs;
+        if (clock !== undefined) observeServerNow(clock);
         if (message.type === "hello") {
           const isReconnect = hadConnection;
           hadConnection = true;

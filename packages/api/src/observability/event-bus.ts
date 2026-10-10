@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { HallkeeperSheetV2, RequestState, SheetApproval } from "@omnitwin/types";
+import type { HallkeeperSheetV2, RequestState, SheetApproval, ThreadAudience, ThreadSubject } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Typed in-process event bus
@@ -92,6 +92,23 @@ export interface EventMap {
   };
   /** Something landed in somebody's inbox. Emitted after the notification
    *  rows commit, so the unread count a client refetches is already true. */
+  /** A conversation moved (goal 19 S1): a message landed in a thread. Emitted
+   *  AFTER the commit; the hub (S2) fans it out only to connections the
+   *  thread's stored audience admits, re-checked per connection. */
+  readonly "conversation.changed": {
+    readonly venueId: string;
+    readonly kind: "message.sent";
+    readonly threadId: string;
+    readonly audience: ThreadAudience;
+    readonly subject: ThreadSubject;
+    readonly bookingId: string | null;
+    readonly eventId: string | null;
+    readonly requestId: string | null;
+    readonly messageId: string;
+    readonly cursor: number;
+    readonly actorUserId: string | null;
+    readonly at: string;
+  };
   readonly "notification.created": {
     readonly venueId: string;
     readonly audienceRoles: readonly string[];
@@ -146,6 +163,9 @@ function setListFor<K extends EventName>(event: K, list: Subscriber<K>[]): void 
       return;
     case "notification.created":
       registry["notification.created"] = list as Subscriber<"notification.created">[];
+      return;
+    case "conversation.changed":
+      registry["conversation.changed"] = list as Subscriber<"conversation.changed">[];
       return;
   }
 }
