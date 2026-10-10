@@ -588,7 +588,15 @@ export function SelectionSystem(): null {
           // marquee drag.
           return;
         } else {
-          // Empty space — start marquee
+          // Empty space — start marquee. Hold the pointer as a furniture drag
+          // does: a release over the chrome above the canvas (a disabled
+          // button receives no events at all) must still end the box.
+          try {
+            canvasEl.setPointerCapture(event.pointerId);
+          } catch {
+            closePointerGesture();
+            return;
+          }
           isMarquee.current = true;
           const floorPos = screenToFloor(
             dragStartScreen.current.x,
