@@ -165,6 +165,23 @@ describe("the requests live channel", () => {
     }
   });
 
+  it("announces a fact about a room as an observation event (goal 19 S5)", () => {
+    const heard: RequestsLiveEvent[] = [];
+    const unsubscribe = subscribeRequestsLive((event) => { heard.push(event); });
+    __handleFrameForTests(JSON.stringify({
+      type: "observation.event",
+      venueId: "venue-1",
+      bookingId: "booking-1",
+      spaceId: null,
+      kind: "doors-open",
+      observationId: "fact-1",
+      observedAt: "2026-10-10T18:52:00.000Z",
+      at: "2026-10-10T18:52:01.000Z",
+    }));
+    expect(heard).toContainEqual({ kind: "observation", venueId: "venue-1", bookingId: "booking-1" });
+    unsubscribe();
+  });
+
   it("opens exactly one socket for any number of surfaces, outside the harness", () => {
     const first = subscribeRequestsLive(vi.fn());
     const second = subscribeRequestsLive(vi.fn());
