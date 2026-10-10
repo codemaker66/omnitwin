@@ -6,6 +6,7 @@ import {
   boardWindow,
   fraction,
   gapGeometry,
+  gapWordsOffset,
   minutesOf,
   nowPlaque,
   rulerTicks,
@@ -119,6 +120,22 @@ describe("slabs and gaps", () => {
     expect(gap?.width).toBeCloseTo(0.25, 6);
     expect(minutesOf(first.endsAtMs, second.segments.setupStartsAtMs)).toBe(60);
     expect(second.gapBefore).toEqual({ minutes: 60, neededMinutes: 60, short: false });
+  });
+
+  it("puts the gap's words in the open lane after the clear-down, or over the slab when there is none", () => {
+    const window = { fromMs: NOW, toMs: NOW + 4 * HOUR };
+    // An hour of clear-down inside a two-hour gap: the words take the middle
+    // of the open hour, three quarters of the way along the gap.
+    const long = deriveDayBoard(response([booking("a", 0, 60), booking("b", 180, 240)]), NOW, TZ);
+    const [first, second] = long.lanes[0]?.slots ?? [];
+    if (first === undefined || second === undefined) throw new Error("two slots expected");
+    expect(gapWordsOffset(first, second, window)).toEqual({ at: 0.75, covered: false });
+    // The hour of turnaround fills the whole gap: no open lane, so the words
+    // stand in the middle, drawn over the slab.
+    const tight = deriveDayBoard(response([booking("a", 0, 60), booking("b", 120, 180)]), NOW, TZ);
+    const [tightFirst, tightSecond] = tight.lanes[0]?.slots ?? [];
+    if (tightFirst === undefined || tightSecond === undefined) throw new Error("two slots expected");
+    expect(gapWordsOffset(tightFirst, tightSecond, window)).toEqual({ at: 0.5, covered: true });
   });
 });
 
