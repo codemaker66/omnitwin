@@ -292,7 +292,7 @@ export function profilerClipboardReport(): string {
     metrics: state.metrics,
     governor: { given: useRenderGovernorStore.getState().given, measured: useRenderGovernorStore.getState().measured },
     definitions: {
-      governor: "Quality the planner gave up on this device to hold its frame rate (lib/render-governor.ts), in the order given: ambientOcclusion, resolution (0.25 of pixel ratio each), bloom, multisampling; empty when nothing was given up. measured.cpuShare is the main thread's frame work over the last window's frame time: about 0.5 or more when the CPU holds frames up (passes are given up), low when the GPU does (pixels are)",
+      governor: "Quality the planner gave up on this device to hold its frame rate (lib/render-governor.ts), in the order given: ambientOcclusion, resolution (0.25 of pixel ratio each), bloom; effects apply once the view is still; empty when nothing was given up. measured.cpuShare is the main thread's frame work over the last window's frame time: about 0.5 or more when the CPU holds frames up (passes are given up), low when the GPU does (pixels are)",
       fps: "Successful main render submissions per wall-clock second, including idle time; not compositor presentation FPS",
       frameTimeMs: "Mean complete interval ending in the window between actual main render submissions; may start before window boundary; long stalls retained",
       frameP95Ms: "Nearest-rank 95th percentile of main render intervals",

@@ -70,17 +70,30 @@ The planner draws on demand, which changes what a frame is:
   holding frames up.
 
 A device held up by its GPU gives up ambient occlusion, then resolution in quarter
-steps to 1.5x, bloom, resolution to 1x, then multisampling; one held up by its CPU
-gives up bloom and ambient occlusion, each a chain of passes to encode, and keeps
-its pixels, which cost the CPU nothing (`nextQualityRung`, `lib/render-quality.ts`).
-A resolution step only resizes the canvas; dropping an effect rebuilds the
-pipeline once. Each step is judged on the two windows after one left to settle,
-and two steps in a row gaining under 8% end the stepping. `?governor=off` measures
-without giving anything up (development builds); the profiler's Copy report
-carries what was given up and measured.
+steps to 1.5x, bloom, then resolution to 1x; one held up by its CPU gives up bloom
+and ambient occlusion, each a chain of passes to encode, and keeps its pixels,
+which cost the CPU nothing (`nextQualityRung`, `lib/render-quality.ts`). Each step
+is judged on the two windows after one left to settle, and two steps in a row
+gaining under 8% end the stepping. `?governor=off` measures without giving
+anything up (development builds); the profiler's Copy report carries what was
+given up and measured.
+
+**When a step lands.** A resolution step only resizes the canvas (12-33 ms on
+this PC) and applies at once. An effect rebuilds the pipeline, whose passes
+compile again: 0.2-0.6 s for bloom on the RTX 4090, longer on a phone. So an
+effect waits until no hand is on the view (no pointer down on the canvas, no
+camera gesture, no wheel turned in the last 0.3 s), then applies once the view
+has been still for 0.4 s or 1.2 s after the hand left, while the camera settles
+by itself; after 20 s it applies regardless (`rebuildDue`). Frames are not judged
+while it waits. The scene pass keeps writing normals once ambient occlusion goes
+(`sceneNormals`): the scene's every material compiles per set of pass targets,
+and changing them took 2.9 s, keeping them 0.5 s. Multisampling is never given
+up: another sample count recompiles every material, and edges without it shimmer.
 
 `packages/web/scripts/planner-governor.mjs` orbits the phone profile with one
-finger against a development server (12 tables of 10, this PC):
+finger against a development server (12 tables of 10, this PC), in 6 s strokes
+with 1.5 s rests by default; its last column names an effect waiting for the
+hand to leave:
 
 | Emulated phone | Before | Governor | After |
 | --- | --- | --- | --- |
@@ -89,9 +102,14 @@ finger against a development server (12 tables of 10, this PC):
 | GPU held by another page's compute | about 29 a second, frame work 0.08 | resolution to 1.5x, then stops | about 29: the other page sets the pace, so neither step gained |
 
 Bloom's mip chain was nearly half a slowed phone's render: the frame work fell
-from about 27 to 15 ms a draw without it. The GPU case shows the stop working;
-on a phone filling its own pixels a resolution step gains and the governor
-continues while frames are slow.
+from about 27 to 15 ms a draw without it. In strokes, the slowed phone chose
+bloom mid-stroke, kept drawing it until the rest, and then held 54-70 frames a
+second. The GPU case shows the stop working; on a phone filling its own pixels
+a resolution step gains and the governor continues while frames are slow. A
+desktop at 2560x1440 and 2x under the same compute drew 23.5 frames a second at
+2x and about 73 at 1x; there it chose ambient occlusion mid-stroke and applied
+it in the next rest, then a resolution step at once (neither gained: under
+contention the frame time moves in the other page's steps, not smoothly).
 
 ## Compiling once
 

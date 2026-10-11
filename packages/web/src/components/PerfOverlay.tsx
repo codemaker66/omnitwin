@@ -15,7 +15,7 @@ import type { QualityRung } from "../lib/render-quality.js";
 import "./PerfOverlay.css";
 
 const RUNG_NAMES: Record<QualityRung, string> = {
-  ambientOcclusion: "ambient occlusion", resolution: "resolution", bloom: "bloom", multisampling: "multisampling",
+  ambientOcclusion: "ambient occlusion", resolution: "resolution", bloom: "bloom",
 };
 
 /** "resolution (2 steps), bloom": what the frame-rate governor gave up, in order. */

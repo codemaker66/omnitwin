@@ -1,9 +1,11 @@
 // The planner's frame-rate governor on an emulated phone: opens the real
 // planner (/plan) on the Grand Hall with a furnished layout and no backend
 // (fixture API answers, as planner-tour.mjs), orbits with one finger for
-// --seconds, and every two seconds prints the canvas's pixel ratio, what the
-// governor has given up and measured, and the draws, frame updates and
-// updates the GPU's backlog held back, per second.
+// --seconds in strokes (--burst seconds, then --rest seconds lifted; --rest 0
+// for one unbroken stroke), and every two seconds prints the canvas's pixel
+// ratio, what the governor has given up, measured and holds for a still view,
+// and the draws, frame updates and updates the GPU's backlog held back, per
+// second.
 //
 // Needs a development server (the governor publishes itself to probes only in
 // development builds). --cpu-throttle slows the main thread, as on a phone
@@ -12,7 +14,7 @@
 // planner near 30 frames a second on an RTX 4090), as on one held up by its
 // GPU; --off measures without giving anything up.
 //   node scripts/planner-governor.mjs --base http://127.0.0.1:5213 \
-//     [--cpu-throttle 6] [--gpu-load 200000] [--seconds 45] [--off]
+//     [--cpu-throttle 6] [--gpu-load 200000] [--seconds 45] [--burst 6 --rest 1.5] [--off]
 import { chromium } from "@playwright/test";
 
 function option(name, fallback) {
@@ -25,6 +27,9 @@ const THROTTLE = Number(option("cpu-throttle", "1"));
 const GPU_LOAD = Number(option("gpu-load", "0"));
 const SECONDS = Number(option("seconds", "45"));
 const OFF = process.argv.includes("--off");
+/** Seconds of each orbit stroke, and of the rest after it (0: one unbroken stroke). */
+const BURST = Number(option("burst", "6"));
+const REST = Number(option("rest", "1.5"));
 const API = "http://localhost:3001";
 const CONFIG_ID = "tour-config-0001";
 const VENUE = { id: "tour-venue-trades", name: "Trades Hall", slug: "trades-hall-glasgow", address: "85 Glassford Street", logoUrl: null, brandColour: null };
@@ -146,24 +151,41 @@ try {
       fps: probe?.governor.lastWindowFps ?? null, cpuShare: probe?.governor.lastWindowCpuShare ?? null,
       displayHz: probe?.governor.displayRate ?? null,
       updates: probe?.counts.updates ?? 0, draws: probe?.counts.draws ?? 0, heldBack: probe?.counts.heldBack ?? 0,
+      given: probe?.given().join(", ") ?? "",
+      waiting: probe?.waiting.rung ?? "",
       now: performance.now(),
     };
   });
   const fixed = (value, digits) => (value === null ? "-" : value.toFixed(digits));
-  console.log(`CPU throttle ${String(THROTTLE)}x, GPU load ${String(GPU_LOAD)}, governor ${OFF ? "measuring only" : "on"}`);
-  console.log("  s  ratio  steps  fps(window)  cpu share  draws/s  updates/s  held/s");
+  console.log(`CPU throttle ${String(THROTTLE)}x, GPU load ${String(GPU_LOAD)}, governor ${OFF ? "measuring only" : "on"}, strokes ${REST > 0 ? `${String(BURST)} s with ${String(REST)} s rests` : "unbroken"}`);
+  console.log("  s  ratio  steps  fps(window)  cpu share  draws/s  updates/s  held/s  given up                     waiting for a still view");
   // A finger reports at its own rate (here 125 Hz) however slowly the page
   // draws, so moves are sent on a clock, not after each is handled; the
   // browser coalesces them into frames. A few in flight at most.
   const touch = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }] });
-  await touch("touchStart", centre.x + 60, centre.y);
+  const settle = async () => { while (inFlight > 0) await new Promise((resolve) => { setTimeout(resolve, 20); }); };
   const started = Date.now();
   let angle = 0;
   let inFlight = 0;
   let previous = await sample();
   let nextSampleAt = 2;
+  // People orbit in strokes: the finger lifts between them, and the view
+  // rests, which is when an effect the governor gave up is applied.
+  await touch("touchStart", centre.x + 60, centre.y);
+  let fingerDown = true;
+  let phaseStarted = Date.now();
   while (Date.now() - started < SECONDS * 1000) {
-    if (inFlight < 4) {
+    const inPhase = (Date.now() - phaseStarted) / 1000;
+    if (!fingerDown && inPhase >= REST) {
+      await touch("touchStart", centre.x + Math.cos(angle) * 60, centre.y + Math.sin(angle) * 25);
+      fingerDown = true;
+      phaseStarted = Date.now();
+    } else if (fingerDown && REST > 0 && inPhase >= BURST) {
+      await settle();
+      await touch("touchEnd", 0, 0);
+      fingerDown = false;
+      phaseStarted = Date.now();
+    } else if (fingerDown && inFlight < 4) {
       angle += 0.02;
       inFlight += 1;
       void touch("touchMove", centre.x + Math.cos(angle) * 60, centre.y + Math.sin(angle) * 25).finally(() => { inFlight -= 1; });
@@ -175,11 +197,11 @@ try {
     const current = await sample();
     const wall = (current.now - previous.now) / 1000;
     const rate = (key) => ((current[key] - previous[key]) / wall).toFixed(0);
-    console.log(`${String(Math.round(elapsed)).padStart(3)}  ${fixed(current.ratio, 2).padStart(5)}  ${String(current.steps).padStart(5)}${current.finished ? "*" : " "}  ${fixed(current.fps, 1).padStart(11)}  ${fixed(current.cpuShare, 2).padStart(9)}  ${rate("draws").padStart(7)}  ${rate("updates").padStart(9)}  ${rate("heldBack").padStart(6)}`);
+    console.log(`${String(Math.round(elapsed)).padStart(3)}  ${fixed(current.ratio, 2).padStart(5)}  ${String(current.steps).padStart(5)}${current.finished ? "*" : " "}  ${fixed(current.fps, 1).padStart(11)}  ${fixed(current.cpuShare, 2).padStart(9)}  ${rate("draws").padStart(7)}  ${rate("updates").padStart(9)}  ${rate("heldBack").padStart(6)}  ${current.given.padEnd(28)} ${current.waiting}`);
     previous = current;
   }
-  while (inFlight > 0) await new Promise((resolve) => { setTimeout(resolve, 20); });
-  await touch("touchEnd", 0, 0);
+  await settle();
+  if (fingerDown) await touch("touchEnd", 0, 0);
   if (stopGpuLoad !== null) await stopGpuLoad();
   console.log(`(* stepping has ended)  display ${fixed(previous.displayHz, 0)} Hz  page errors: ${errors.length === 0 ? "none" : errors.join(" | ")}`);
 } finally {
