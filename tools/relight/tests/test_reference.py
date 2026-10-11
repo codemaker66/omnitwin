@@ -167,6 +167,23 @@ class ProofCorners(unittest.TestCase):
         self.assertTrue(np.array_equal(reference.proof_corner(m, P), want_found))
         self.assertTrue(0 < int((~found[:3000]).sum()) < 3000)    # both outcomes occur where the threshold decides
 
+    def test_a_position_is_sensitive_where_the_proofs_decision_changes_within_a_tenth_of_a_millimetre(self):
+        """reference.proof_corner_sensitive (re-review N5; R1b's proofCornerSensitive). The proof keeping its probes at
+        x <= 0.5 m only, its lookup finds a corner up to x = 0.7 m less about 2e-7 m, where the next plane's weight falls
+        under 1e-6. Positions 5e-5 m either side of that change are sensitive, along x alone; ones 1 cm before it or
+        10 cm past it are not, and at 1 mm (the vector splats' distance, N7) one 0.5 mm before it is too. Without the
+        proof's grid nothing is."""
+        m = proof_grid(hall_model(), lambda P: P[:, 0] < 0.6)
+        P = np.array([[0.7 - 5e-5, -0.5, 0.7], [0.7 + 5e-5, -0.5, 0.7], [0.69, -0.5, 0.7], [0.8, -0.5, 0.7],
+                      [0.7 - 5e-4, -0.5, 0.7]])
+        self.assertEqual(reference.proof_corner(m, P).tolist(), [True, False, True, False, True])
+        self.assertEqual(reference.PROOF_SENSITIVE_METRES, 1e-4)
+        self.assertEqual(reference.proof_corner_sensitive(m, P).tolist(), [True, True, False, False, False])
+        self.assertEqual(reference.proof_corner_sensitive(m, P, 1e-3).tolist(), [True, True, False, False, True])
+        across = P[:1] + 1e-4 * np.array([[0.0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]])
+        self.assertEqual(reference.proof_corner(m, across).tolist(), [True] * 4)    # along y and z it does not change
+        self.assertFalse(reference.proof_corner_sensitive(replace(m, proof_keep=None), P).any())
+
     def test_a_splat_the_proof_leaves_without_a_corner_has_no_bounce_and_its_neighbour_keeps_it(self):
         """The proof keeps no probe in front of the window wall's middle (x 0.3 .. 1.1, y below -0.5). An embrasure
         splat beyond the wall there finds no proof corner, so no bounce: lit by nothing, it is the neutral 1 in any

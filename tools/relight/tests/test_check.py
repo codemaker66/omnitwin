@@ -985,7 +985,9 @@ class SyntheticHall(unittest.TestCase):
     def test_the_vectors_are_written_only_when_every_check_passed(self):
         folder = self.copy_package("gate")
         vectors = os.path.join(self.dir, "gate-vectors.json")
-        failing = ({"gate": M.IDENTITY_GATE, "tiles": [], "pass": False}, {"gate": M.TRANSFER_GATE, "tiles": [], "pass": True})
+        failing = ({"gate": M.IDENTITY_GATE, "tiles": [], "pass": False}, {"gate": M.TRANSFER_GATE, "tiles": [], "pass": True},
+                   {"metres": 1e-4, "splats": 3, "sensitive": 0, "finest": {"splats": 2, "sensitive": 0},
+                    "coarser": {"splats": 1, "sensitive": 0}})
         with mock.patch.object(M, "_check_tiles", return_value=failing), \
                 mock.patch.object(M, "_check_determinism", return_value={"pass": True}):
             rc, out = run_check(self.cfg, self.proof, package=folder, vectors=vectors)
@@ -1045,6 +1047,7 @@ class SyntheticHall(unittest.TestCase):
         self.assertEqual(vector_issues(v, self.model), [])
         self.assertEqual(v["probes"]["box"], self.pkg.manifest["probes"]["box"])
         self.assertEqual(v["windowRays"]["wallFaceRate"], self.checks["wallFaceRate"])
+        self.assertEqual(v["probes"]["proofSensitive"], self.checks["proofSensitive"])     # re-review N5
         flags = [bytes.fromhex(sp["record"])[11] for sp in v["splats"]]
         classes = {f & codec.CLASS_MASK for f in flags}
         self.assertTrue({0, 1, 2} <= classes and classes & {3, 4} and classes & {5, 6})
@@ -1076,6 +1079,56 @@ class SyntheticHall(unittest.TestCase):
         self.assertEqual([listed[i] for i in sorted(listed)], [bool(self.model.proof_keep.keep[i]) for i in sorted(listed)])
         self.assertEqual((found[64:68].tolist(), found[68:72].tolist()), ([False] * 4, [True] * 4))
         self.assertLess(float(np.linalg.norm(P[68:72] - P[64:68], axis=1).max()), 0.6)
+
+    def test_check_counts_the_served_splats_whose_proof_decision_changes_within_a_tenth_of_a_millimetre(self):
+        """Re-review N5: check records, beside the wall-face rate, how many served splats, finest and coarser, have a
+        proof's corner decision that changes within PROOF_SENSITIVE_METRES (reference.proof_corner_sensitive), in the
+        checks file, the manifest's evidence and the vectors. The count is the function's over every splat. Points
+        5e-5 m either side of where the decision changes, between a splat the proof leaves without a corner and the
+        nearest that finds one, are counted; those two splats are not."""
+        census = M._census(self.cfg)
+        levels = {"finest": np.asarray(self.fin["pos"], np.float64),
+                  "coarser": np.concatenate([M._sog_splats(census, self.proof, os.path.join(self.cfg.paths["splats"], name))[0]
+                                             for name in COARSE])}
+        want = {k: {"splats": len(P), "sensitive": int(reference.proof_corner_sensitive(self.model, P).sum())} for k, P in levels.items()}
+        got = self.checks["proofSensitive"]
+        self.assertEqual(got, {"metres": 1e-4, "splats": sum(w["splats"] for w in want.values()),
+                               "sensitive": sum(w["sensitive"] for w in want.values()), **want})
+        self.assertEqual(read_json(os.path.join(self.cfg.paths["out"], "manifest.json"))["evidence"]["proofSensitive"], got)
+        P = levels["finest"]
+        found = reference.proof_corner(self.model, P)
+        a = P[np.nonzero(~found)[0][0]]
+        b = P[np.nonzero(found)[0][np.argmin(((P[found] - a) ** 2).sum(1))]]
+        lo, hi = 0.0, 1.0                                                    # a + t (b - a): no corner at 0, one at 1
+        for _ in range(60):
+            mid = (lo + hi) / 2
+            lo, hi = (lo, mid) if reference.proof_corner(self.model, (a + mid * (b - a))[None])[0] else (mid, hi)
+        step = 5e-5 / float(np.linalg.norm(b - a))
+        near = np.stack([a + (hi - step) * (b - a), a + (hi + step) * (b - a)])
+        self.assertEqual(reference.proof_corner(self.model, near).tolist(), [False, True])
+        self.assertEqual(M._proof_sensitive_count(self.model, near), {"splats": 2, "sensitive": 2})
+        self.assertEqual(M._proof_sensitive_count(self.model, np.stack([a, b])), {"splats": 2, "sensitive": 0})
+
+    def test_the_vector_splats_keep_the_proofs_decision_and_one_that_does_not_is_passed_over(self):
+        """Re-review N7: no vector splat's proof's corner decision changes within PROOF_SENSITIVE_METRES or 1 mm along
+        an axis, so the GPU need excuse none of them. Were the first one chosen sensitive, it would be passed over for
+        the next in the seeded order, and the 72 still found."""
+        rows = M._vector_splats(self.model, self.settings, self.fin, self.ranges, self.proof.common)
+        P = np.asarray(self.fin["pos"][rows], np.float64)
+        self.assertEqual(P.tolist(), [sp["position"] for sp in read_json(self.vectors)["splats"]])
+        for metres in (reference.PROOF_SENSITIVE_METRES, M.STABLE_MOVE):
+            self.assertFalse(reference.proof_corner_sensitive(self.model, P, metres).any(), metres)
+        real, first = reference.proof_corner_sensitive, P[0]
+
+        def marked(model, pos, metres=reference.PROOF_SENSITIVE_METRES):
+            Q = np.asarray(pos, np.float64)
+            return real(model, Q, metres) | (Q == first).all(1)
+
+        with mock.patch.object(reference, "proof_corner_sensitive", marked):
+            again = M._vector_splats(self.model, self.settings, self.fin, self.ranges, self.proof.common)
+        self.assertEqual(len(again), 72)
+        self.assertNotIn(int(rows[0]), again.tolist())
+        self.assertEqual(again[:15].tolist(), rows[1:16].tolist())         # the rest of the interior splats, in order
 
 
 def vector_issues(v, model):
@@ -1117,6 +1170,12 @@ def vector_issues(v, model):
     check(vec3(pk.get("origin")) and pk.get("spacing", 0) > 0 and len(pk.get("shape", [])) == 3 and pk.get("entries")
           and all(isinstance(e["index"], int) and 0 <= e["index"] < int(np.prod(pk["shape"])) and isinstance(e["keep"], bool)
                   for e in pk["entries"]), "proof keep")
+    ps = pr.get("proofSensitive") or {}
+    levels = [ps.get("finest") or {}, ps.get("coarser") or {}]
+    check(isinstance(ps.get("metres"), float) and ps["metres"] > 0 and ps.get("splats", 0) > 0 and levels[0].get("splats", 0) > 0
+          and ps.get("splats") == sum(lv.get("splats", -1) for lv in levels)
+          and ps.get("sensitive") == sum(lv.get("sensitive", -1) for lv in levels)
+          and all(isinstance(lv.get("sensitive"), int) and 0 <= lv["sensitive"] <= lv["splats"] for lv in levels), "proof-sensitive count")
     check(set(v["presetsFromProof"]) == {"night", "sunny_morning", "overcast_noon"}, "presets")
     for name, st in v["settings"].items():
         check(len(st["weights"]) == 9 and set(st["lampLevels"]) == {"cove", "ch_end", "ch_centre", "dome"} and st["emitterBoost"] == 1

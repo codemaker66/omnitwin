@@ -18,7 +18,8 @@ from . import windows as W
 
 SCHEMA = "venviewer.relight.v1"
 DUMP = {"indent": 1, "sort_keys": True, "allow_nan": False}   # the manifest's json.dumps arguments (a NaN fails the build)
-CHECK_KEYS = ("capturedIdentity", "proofRegression", "transfer", "determinism", "skyBounceCheck", "wallFaceRate")
+CHECK_KEYS = ("capturedIdentity", "proofRegression", "transfer", "determinism", "skyBounceCheck", "wallFaceRate",
+              "proofSensitive")
 WINDOW_IDS = ("W1", "W2", "W3", "W4", "W5")
 K_MAX = 192                     # __main__.SUN_KMAX, the most basis volumes the K search tries (R1b's schema accepts up to it)
 SUBSAMPLES = 16                 # sunbounce.OFFSETS: the 4 x 4 rays of each patch
@@ -564,7 +565,7 @@ def model_of(pkg: Package) -> reference.Model:
 
 # ------------------------------------------------------------------------------------------ what check writes and compares
 def write_check_evidence(folder, results: dict) -> bytes:
-    """Replace the six keys `check` adds to the package's evidence (CHECK_KEYS) with `results`' and nothing else, the
+    """Replace the seven keys `check` adds to the package's evidence (CHECK_KEYS) with `results`' and nothing else, the
     manifest dumped with the build's own arguments through a partial file renamed over it. Returns the new bytes."""
     path = os.path.join(folder, "manifest.json")
     with open(path, encoding="utf-8") as f:

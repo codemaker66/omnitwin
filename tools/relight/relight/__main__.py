@@ -1224,6 +1224,7 @@ VECTOR_SPLATS = (("interior", (0,), 16), ("embrasure", (1,), 16), ("bulbs", (3, 
                  ("no proof corner", (1, 0), 4), ("proof corner beside them", (1, 0), 4))
 VECTOR_FLOOR_POINTS = (12, 12, 8)       # the window rays' floor points: lit, marched but dark, wall-face cases
 STABLE_MOVE = 0.001         # metres: a sun-flagged vector splat keeps its visibility (within 1e-6) moved this far
+PROOF_SENSITIVE_CHUNK = 500_000   # positions per reference.proof_corner_sensitive call in check's count (N5)
 FOLD_MIN_WEIGHT = 1e-6      # the fold's corners weigh at least this: a probe that lies on a 1 m node (the hall's grids
                             # start at z 0.02, and 4.02 - 0.02 rounds to 3.9999999999999996) has corners of weight 1e-16,
                             # which another float order would not pick; a probe inside its 1 m cell has eight of 1/8
@@ -1735,13 +1736,19 @@ def _check_regression(cfg, model, settings, ranges, fin, colour, night) -> dict:
 
 
 def _check_tiles(cfg, pkg, model, settings, ranges, fin, colour, night, census, proof):
-    """Checks 1 and 3 over the served tiles. 1, captured identity: on every tile, reference.multiplier at the captured
-    setting is within 0.05 stop on every channel for at least 99.9% of the non-hidden splats. 3, transfer: on every
-    coarser tile, the median |dlog2| between a splat's night multiplier and its nearest finest splat's is at most 0.1.
-    The coarser tiles' positions and colours are decoded from their .sog files as the records command decoded them, and
-    their nearest finest splats found in one k-d tree."""
+    """Checks 1 and 3 over the served tiles, and the proof-sensitive count. 1, captured identity: on every tile,
+    reference.multiplier at the captured setting is within 0.05 stop on every channel for at least 99.9% of the
+    non-hidden splats. 3, transfer: on every coarser tile, the median |dlog2| between a splat's night multiplier and its
+    nearest finest splat's is at most 0.1. The coarser tiles' positions and colours are decoded from their .sog files
+    as the records command decoded them, and their nearest finest splats found in one k-d tree. The proof-sensitive
+    count (a measurement beside the wall-face rate, not a check; re-review N5): the served splats, finest and coarser,
+    whose proof's corner decision changes within PROOF_SENSITIVE_METRES along an axis
+    (reference.proof_corner_sensitive), whose share R1b's browser check doubles to cap its proof-excused words.
+    Returns (check 1, check 3, the count)."""
+    from . import reference
     identity, transfer = [], []
     finest = list(cfg.room["finestTiles"])
+    counts = {"finest": _proof_sensitive_count(model, fin["pos"]), "coarser": {"splats": 0, "sensitive": 0}}
     for t, name in enumerate(finest):
         rows = np.nonzero(fin["tile"] == t)[0]
         M, A = _multipliers(model, settings["captured"], ranges, fin["records"][rows], fin["pos"][rows], colour[rows])
@@ -1756,6 +1763,8 @@ def _check_tiles(cfg, pkg, model, settings, ranges, fin, colour, night, census, 
             raise ValueError(f"the package's {entry['tile']} holds {len(rec)} records for its {len(P)} splats")
         M, A = _multipliers(model, settings["captured"], ranges, rec, P, C)
         identity.append({"tile": entry["tile"], **_identity(M, A)})
+        tile = _proof_sensitive_count(model, P)
+        counts["coarser"] = {k: counts["coarser"][k] + tile[k] for k in ("splats", "sensitive")}
         coarse = _multipliers(model, settings["night"], ranges, rec, P, C)[0]
         if tree is None:
             tree = _finest_tree(src)
@@ -1763,8 +1772,20 @@ def _check_tiles(cfg, pkg, model, settings, ranges, fin, colour, night, census, 
         median = float(np.median(d)) if d.size else None
         transfer.append({"tile": entry["tile"], "level": entry["level"], "splats": int(len(P)), "medianAbsDlog2": median,
                          "nonPositive": non_positive, "pass": bool(median is not None and median <= TRANSFER_GATE["median"])})
+    sensitive = {"metres": reference.PROOF_SENSITIVE_METRES,
+                 **{k: counts["finest"][k] + counts["coarser"][k] for k in ("splats", "sensitive")}, **counts}
     return ({"gate": IDENTITY_GATE, "tiles": identity, "pass": all(r["pass"] for r in identity)},
-            {"gate": TRANSFER_GATE, "tiles": transfer, "pass": bool(transfer) and all(r["pass"] for r in transfer)})
+            {"gate": TRANSFER_GATE, "tiles": transfer, "pass": bool(transfer) and all(r["pass"] for r in transfer)},
+            sensitive)
+
+
+def _proof_sensitive_count(model, pos) -> dict:
+    """{splats, sensitive}: how many of the positions pos (N, 3) reference.proof_corner_sensitive marks, in chunks of
+    PROOF_SENSITIVE_CHUNK positions."""
+    from . import reference
+    sensitive = sum(int(reference.proof_corner_sensitive(model, np.asarray(pos[a:a + PROOF_SENSITIVE_CHUNK], np.float64)).sum())
+                    for a in range(0, len(pos), PROOF_SENSITIVE_CHUNK))
+    return {"splats": int(len(pos)), "sensitive": sensitive}
 
 
 def _check_sky(cfg, pkg, model, proof) -> dict:
@@ -1915,8 +1936,10 @@ def _vector_splats(model, settings, fin, ranges, common) -> np.ndarray:
     FLOOR_Z + 0.12 with a normal within 18 degrees of +z, lit at the sunny morning's Sun (visibility > 0.3). The last
     eight (fix round 3): four splats the proof's own lookup leaves without a corner (reference.proof_corner), then, for
     each in turn, the nearest splat of those classes that finds one. Every sun-flagged splat must keep its sunny-morning
-    and moon_test visibility within 1e-6 when moved 1 mm along +x, -x, +y, -y, +z or -z; one that does not is passed over
-    for the next in the seeded order (or by distance)."""
+    and moon_test visibility within 1e-6 when moved 1 mm along +x, -x, +y, -y, +z or -z, and every splat its proof's
+    corner decision (reference.proof_corner) when moved PROOF_SENSITIVE_METRES or 1 mm along any axis (re-review N7),
+    so the GPU need excuse none of them; one that does not is passed over for the next in the seeded order (or by
+    distance)."""
     from . import codec, package as PK, reference
     from . import windows as W
     rec, pos = fin["records"], fin["pos"]
@@ -1932,12 +1955,12 @@ def _vector_splats(model, settings, fin, ranges, common) -> np.ndarray:
 
     def acceptable(idx, extra):
         P = np.asarray(pos[idx], np.float64)
-        ok = np.ones(len(idx), bool)
+        ok = ~reference.proof_corner_sensitive(model, P) & ~reference.proof_corner_sensitive(model, P, STABLE_MOVE)
         flagged = sun[idx]
         if flagged.any():
             moved = (P[flagged][None] + moves[:, None]).reshape(-1, 3)
             v = np.stack([visibility(moved, s) for s in directions]).reshape(len(directions), len(moves), -1)
-            ok[flagged] = (np.abs(v[:, 1:] - v[:, :1]) <= 1e-6).all(axis=(0, 1))
+            ok[flagged] &= (np.abs(v[:, 1:] - v[:, :1]) <= 1e-6).all(axis=(0, 1))
         return ok & extra(idx, P) if extra is not None else ok
 
     def pick(mask, count, extra=None):
@@ -2092,10 +2115,10 @@ def _setting_json(s) -> dict:
             "moonDir": None if s.moon_dir is None else _floats(s.moon_dir), "moonRgb": _floats(s.moon_rgb)}
 
 
-def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate) -> tuple[bytes, dict]:
+def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate, proof_sensitive) -> tuple[bytes, dict]:
     """The test vectors (Step 7) in the shape of R1b's RelightVectorsSchema (venviewer.relight-vectors.v1): the
     manifest's slice, the four settings, the probe table on the package's global grid with the proof's keep at every
-    corner its own lookup touches at the splats (fix round 3), the windows, the sample depths, the sky bodies' bounce
+    corner its own lookup touches at the splats (fix round 3) and check's proof-sensitive count (N5), the windows, the sample depths, the sky bodies' bounce
     slice, the window rays, the 72 splats with their expected multipliers and words, and eight floor texels; refused
     over 1,000 kB + 1.6 kB x max(0, K - 30). Returns (the JSON bytes, what to print)."""
     import base64
@@ -2171,6 +2194,7 @@ def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate) -> 
                    "box": m["probes"]["box"],
                    "proofKeep": {**{k: m["probes"]["proofKeep"][k] for k in ("origin", "spacing", "shape")},
                                  "entries": [{"index": i, "keep": bool(model.proof_keep.keep[i])} for i in proof_entries]},
+                   "proofSensitive": proof_sensitive,
                    "entries": [{"index": i, "valid": bool(model.probe_valid[i]),
                                 "cube": b64(np.ascontiguousarray(model.probes[i], "<f2").tobytes())} for i in entries]},
         "presetsFromProof": m["presetsFromProof"],
@@ -2205,7 +2229,7 @@ def _vectors_path(cfg, args):
 
 
 def _write_checks(cfg, package_arg, results, checked_with) -> str:
-    """The checks file through _write_evidence (which records the host): the six results and the commit checked with."""
+    """The checks file through _write_evidence (which records the host): the seven results and the commit checked with."""
     path = _checks_path(cfg, package_arg)
     _write_evidence(path, {**results, "checkedWith": checked_with})
     return path
@@ -2227,11 +2251,12 @@ def _write_bytes(path, data: bytes) -> None:
 def cmd_check(cfg, args, proof=None) -> int:
     """The package's checks (Task 5 Step 7) on the package read back from disk (--package, default the config's out),
     run only from committed code (_committed_tool; the commit is recorded as checkedWith): 1 captured identity, 2 proof
-    regression, 3 transfer, 4 determinism and 5 the sky bodies' bounce through the package, and the wall-face rate. A
+    regression, 3 transfer, 4 determinism and 5 the sky bodies' bounce through the package, and the wall-face rate and
+    the proof-sensitive count (measurements, not checks; the latter re-review N5). A
     population that marches no ray stops the check before check 4's rebuild, with the numbers printed and nothing
     written. Otherwise the results go to <evidence>/checks.json for the default package and to
     checks-<package folder>.json with --package (through _write_evidence, which records the host), and into the package
-    manifest's evidence (those six keys and nothing else). Then, when every check passed, the test vectors: R1b's
+    manifest's evidence (those seven keys and nothing else). Then, when every check passed, the test vectors: R1b's
     fixture for the default package, the --vectors path when given, none for --package without --vectors."""
     committed = _committed_tool(cfg)
     if committed is None:
@@ -2257,10 +2282,14 @@ def cmd_check(cfg, args, proof=None) -> int:
     night = _multipliers(model, settings["night"], ranges, fin["records"], fin["pos"], colour)[0]
     results["proofRegression"] = _check_regression(cfg, model, settings, ranges, fin, colour, night)
     say("check 2, proof regression", results["proofRegression"])
-    results["capturedIdentity"], results["transfer"] = _check_tiles(cfg, pkg, model, settings, ranges, fin, colour, night,
-                                                                    _census(cfg), proof)
+    results["capturedIdentity"], results["transfer"], results["proofSensitive"] = _check_tiles(
+        cfg, pkg, model, settings, ranges, fin, colour, night, _census(cfg), proof)
     say("check 1, captured identity", results["capturedIdentity"])
     say("check 3, transfer", results["transfer"])
+    sensitive = results["proofSensitive"]
+    print(f"proof-sensitive splats: {sensitive['sensitive']} of {sensitive['splats']} within {sensitive['metres']} m "
+          f"(finest {sensitive['finest']['sensitive']} of {sensitive['finest']['splats']}, coarser "
+          f"{sensitive['coarser']['sensitive']} of {sensitive['coarser']['splats']})", flush=True)
     results["wallFaceRate"] = _wall_face(model, proof, fin["pos"], settings)
     rate = results["wallFaceRate"]
     for population, r in (("splats", rate), ("floor", rate["floor"])):
@@ -2283,7 +2312,8 @@ def cmd_check(cfg, args, proof=None) -> int:
         print("vectors: not written (a check failed)", flush=True)
     else:
         try:
-            data, info = _vectors(cfg, pkg, model, settings, proof.common, fin, colour, results["wallFaceRate"])
+            data, info = _vectors(cfg, pkg, model, settings, proof.common, fin, colour, results["wallFaceRate"],
+                                  results["proofSensitive"])
         except ValueError as e:
             print(f"FAIL: vectors: {e}", flush=True)
             return 1

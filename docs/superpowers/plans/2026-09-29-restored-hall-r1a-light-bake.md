@@ -8,6 +8,28 @@
 
 **Tech Stack:** Python 3.13 (`C:/Python313/python.exe`) with numpy 2.4, torch 2.9 + CUDA (RTX 4090), scipy 1.17 (`cKDTree`), Pillow 12 and OpenCV 5; `unittest` (no new dependencies); the repo's publisher `packages/api/src/scripts/publish-splat-tiles.ts --package` (pnpm 9.15.4, Node 22).
 
+## Revisions (11 October, the re-review of Task 5's fix rounds: N1, N4, N5, N7)
+
+The scoped re-review of fix rounds 1 to 3 (`plan-amendments-0710/review/task5-rereview.md`, "New Breakage") found no
+Critical or Important item; its Minor items N1 to N7 land together, in one commit with the code.
+- **N5, the proof-sensitive count is measured.** Fix round 3 copied R1b's cap on proof-excused words, 128 of 11,498,334
+  splats, from a scratch script, and nothing in `check` measured it. Now `reference.proof_corner_sensitive` (R1b's
+  `proofCornerSensitive`: the proof's corner decision changes within `PROOF_SENSITIVE_METRES`, 0.1 mm, along an axis)
+  counts it on every served splat, the finest and the coarser, beside the wall-face rate. `check` records
+  `proofSensitive` in the checks file and the manifest's evidence (`CHECK_KEYS`: seven keys), and the vectors carry it
+  (`probes.proofSensitive`), from which R1b's browser check takes its cap.
+- **N7, the vector splats keep the proof's decision.** A vector splat whose proof's corner decision changes within
+  0.1 mm or 1 mm along an axis is passed over, as a sun-flagged splat that does not keep its visibility is, so the GPU
+  need excuse none of the 72. The new test caught a first draft in which the sun rule overwrote this one for sun-flagged
+  splats.
+- **N1, the counts.** Task 5 Step 4: 21 tests (12 before the fix rounds, 20 after them, and N5's); Step 5: 7; Step 8's
+  suite: 240 (162 at 5fe7637e's plan, 228 after the fix rounds, 237 with Task 4d's code commit `99b8016f`).
+- **N4, the interface list.** Task 5's Produces names what the fix rounds and N5 added.
+- Task 5's Files list now names `tests/test_check.py` (fix round 1, I2, and every round since).
+- The tests: `test_reference`'s proof-sensitivity test (its distance, the axis that matters, 1 mm, no proof grid);
+  `test_check`'s count against the function over every served splat, with points put 5e-5 m either side of where the
+  decision changes; and a vector splat made sensitive is passed over.
+
 ## Revisions (11 October, Task 5 fix round 3)
 
 From the controller's fix round 3 (decided): where the proof has no bounce, neither has the multiplier. The code, R1b's schema, loader, kernel, CPU twin, GPU bounce node, tests and vectors, R1c's and R1d's bounce reads and the contract change in the same commit.
@@ -3438,13 +3460,13 @@ Expected: `OK`, 142 tests (Task 4b's 136 and these 6); both comparisons `differ:
 (Revised 7 October, consolidated: the sky bodies' bounce is Task 4's factored basis, not the sunlit-area table; the Moon is a second sky body; the house lights are Task 4b's refit with a colour per lamp group; R1c's covers, toggles and package v2; R1d's lamp tints and `moon_test` vectors; only exact, hash-checked artifacts are packaged. The plan's "Revisions (7 October, consolidated)" lists each change.)
 
 **Files:**
-- Create: `tools/relight/relight/records.py`, `tools/relight/relight/reference.py`, `tools/relight/relight/package.py`, `tools/relight/tests/test_reference.py`, `tools/relight/tests/test_records.py`
+- Create: `tools/relight/relight/records.py`, `tools/relight/relight/reference.py`, `tools/relight/relight/package.py`, `tools/relight/tests/test_reference.py`, `tools/relight/tests/test_records.py`, `tools/relight/tests/test_check.py` (`records` and `check` end to end on a synthetic hall: fix round 1, I2; fix rounds 2 and 3; the re-review's N5 and N7)
 - Create: `packages/web/src/lib/relight/__fixtures__/relight-vectors.json`
 - Modify: `tools/relight/relight/__main__.py` (register `records`, `check`), `tools/relight/relight/windows.py` (the public `wall_face_rate` and `sample_depths`, and the helper `_alpha_at`, Step 7), `tools/relight/tests/test_windows.py` (two tests, Step 7)
 
 **Interfaces:**
 - Consumes: the Task 2 tables; Task 3 as built (`__main__.windows_volumes(cfg)`, `windows.sun_visibility`, `sun_reach`, `sun_az_el`, `sun_corners`, `horizon_at`, `fresnel_at`, `volume_arrays`, `volume_from_arrays`, `ray_survives`, `MIN_DOWN`, `CHUNK`; `__main__.CHECK_SUNS`, `SPLAT_SEED`, `_random_suns`); Task 4 as built (`<work>/probes-coarse.npz`, `<work>/sun-bounce.npz` and `sunbounce.Table`, `Patches`, `window_power`, `coefficients`, `bounce`, `trilinear_matrix`, `sun_bounce`; `<work>/floor-light.npz`; `moon.py`; `__main__._random_moons`); Task 4b (`<work>/fit.json` and `fit_state.npz`, the refit, model name `refit`; `<work>/mult/{night,sunny_morning,overcast_noon}.f16`; `<evidence>/refit.json`); Task 4c (`codec.CLASS_SKIN` and the toggle bits, `skinlight`, `__main__._artifact`, `_write_evidence`, the `artifact` record of every evidence JSON); `<evidence>/sun-check.json`; the repo's SOG decoder `tools/xgrids-lcc2/scripts/sog-floor-census.py` (`decode_tile(path) -> (centers, scales, quats, opacity, meta)`); R1c's skins geometry (`covers.npz`, `toggles.json`, R1c Task 5) and skin package, only with `--skins`, `--skin-light`, `--skin-package`.
-- Produces: `windows.wall_face_rate(volumes, horizon_tables, fresnel_table, P, s) -> {"marched": int, "wallFace": int}` (public, `from relight import windows`; the measurement R1b's rounding excuses are capped by, which R1c Task 15 imports for its skins) and `windows.sample_depths(vol) -> (256,) float32` (the march's per-byte sample depths, public for the vectors' `sampleDepths`); `windows._sample_depth` stays private to `windows.py`; `records.flags_for(...) -> (N,) uint8`; `records.transfer(src_pos, src_values, dst_pos, k) -> values`; `records.cover_test`, `in_boxes`, `apply_covers`, `apply_toggles`, `load_skin_inputs` (R1c A3); `reference.SkyBounce`, `reference.Model` (with `volumes`, `horizons`, `fresnel`, `sky`), `reference.Setting` (with `captured`, `with_sky`, `with_lamps`, `with_emitter_boost`; `lamp_tints`, `moon_dir`, `moon_rgb`), `reference.Visibility`, `NO_VISIBILITY`, `reference.sky_bodies(setting)`, `window_powers(model, s) -> (5,)`, `body_coefficients(model, s) -> (K,)`, `probe_points(model)`, `to_probes(model, values)`, `sky_cubes(model, bodies) -> (M, 3, 6)`, `fresnel_at(model, s)`, `multiplier(direct, normals, flags, pos, colour_lin, model, setting, visibility=NO_VISIBILITY) -> (rgb (N,3), alpha (N,))`; `package.verified(work, evidence, name, evidence_name)` and `package.write(...)`; the package in `<out>` (relight v1; with R1c's options relight v2 in `--out`); `<evidence>/checks.json` (`checks-<folder>.json` for a package named by `--package`), with the wall-face rates `wallFaceRate` (the splats' and the floor's) and the commit it was checked with, `checkedWith`; the R1b fixture (only from the default package, or with `--vectors`).
+- Produces: `windows.wall_face_rate(volumes, horizon_tables, fresnel_table, P, s) -> {"marched": int, "wallFace": int}` (public, `from relight import windows`; the measurement R1b's rounding excuses are capped by, which R1c Task 15 imports for its skins) and `windows.sample_depths(vol) -> (256,) float32` (the march's per-byte sample depths, public for the vectors' `sampleDepths`); `windows._sample_depth` stays private to `windows.py`; `records.flags_for(...) -> (N,) uint8`; `records.transfer(src_pos, src_values, dst_pos, k=8, tree=None) -> values` (`tree`: the source's cKDTree, built once by a caller that transfers many tiles; fix round 1, M4) and `records.transfer_nearest(src_values, dst_pos, k, tree) -> (values, nearest)` (one k-neighbour query for a coarser tile's values and each splat's nearest source); `records.cover_test`, `in_boxes`, `apply_covers`, `apply_toggles`, `load_skin_inputs` (R1c A3); `reference.SkyBounce`, `reference.ProofKeep` (fix round 3), `reference.Model` (with `volumes`, `horizons`, `fresnel`, `sky`, the lookup box `probe_box_lo` and `probe_box_hi` (fix round 2) and `proof_keep` (fix round 3)), `reference.Setting` (with `captured`, `with_sky`, `with_lamps`, `with_emitter_boost`; `lamp_tints`, `moon_dir`, `moon_rgb`), `reference.Visibility`, `NO_VISIBILITY`, `reference.sky_bodies(setting)`, `window_powers(model, s) -> (5,)`, `body_coefficients(model, s) -> (K,)`, `probe_points(model)`, `to_probes(model, values)`, `lookup_points(model, pos)` (the position clamped into the lookup box; fix round 2), `proof_lookup(model, pos)` and `proof_corner(model, pos)` (the proof's own lookup and whether it finds a probe; fix round 3), `PROOF_SENSITIVE_METRES = 1e-4` and `proof_corner_sensitive(model, pos, metres=PROOF_SENSITIVE_METRES) -> (N,) bool` (the decision changes within `metres` along an axis; the re-review's N5), `sky_cubes(model, bodies) -> (M, 3, 6)`, `fresnel_at(model, s)`, `multiplier(direct, normals, flags, pos, colour_lin, model, setting, visibility=NO_VISIBILITY, sky_probes=None) -> (rgb (N,3), alpha (N,))` (`sky_probes`: `sky_cubes(model, sky_bodies(setting))`, computed once by a caller that relights many chunks); `package.verified(work, evidence, name, evidence_name)` and `package.write(...)`; `package.PROOF_KEEP_FILE`, `package.keep_bits(keep) -> bytes` and `package.keep_from_bits(data, count) -> (count,) bool` (the proof's keep, one bit per probe, least significant first; fix round 3); the package in `<out>` (relight v1; with R1c's options relight v2 in `--out`); `<evidence>/checks.json` (`checks-<folder>.json` for a package named by `--package`), with the wall-face rates `wallFaceRate` (the splats' and the floor's), the proof-sensitive count `proofSensitive` (N5; `package.CHECK_KEYS`, seven keys) and the commit it was checked with, `checkedWith`; the R1b fixture (only from the default package, or with `--vectors`).
 
 **The sky bodies.** The Sun and the Moon are both directional sky bodies (the owner's direction of 3 October; R1d amendments A4, A5). Each body's direct light is the window volume march of `windows.sun_visibility`, gated per window by its horizon, with the glass; its bounce is Task 4's factored basis: per window w the exact power `P_w` of the 56,448 patch rays (`sunbounce.window_power`), the coefficients `c(σ) = sunbounce.coefficients(table, P(σ), az, el)` at the body's float32 direction, the K basis volumes summed on the 1 m grid with the body's RGB, `S1 = Σ_body RGB ⊙ Σ_k c_k basis_k`, and `S1` read at each 0.5 m probe trilinearly (`sunbounce.trilinear_matrix`: the 1 m cell clamped into the grid, the position into the cell, invalid corners dropped and the rest renormalised). That 0.5 m sky volume joins the nine sources' bounce exactly as `I[k]` does: the browser folds it into the scenario probe volume (R1b Task 10), so every splat, the floor and R1c's skins receive it with no code of their own. On the 1 m nodes the resampling is exact; between them it is the same trilinear function the 1 m grid defines, except near invalid corners (check 5 measures the difference). β, the area-scaled bounce `Σw b[w] sunRGB ⊙ I[w]` and the sunlit-area table are gone (Task 4 as built).
 
@@ -3541,8 +3563,10 @@ BOX_HI = np.array([HALL["x1"] - 0.02, HALL["y1"] - 0.02, 9.8])
 
 
 def hall_model(box=True):
-    """A probe grid as the bake builds it (probes.coarse_grid and valid_mask: 0.5 m from the hall box's low corner, its
-    probes on the box's low faces invalid), every probe's cove cube 0.1, with the proof's lookup box or none."""
+    """A probe grid as Task 4 first built it (probes.coarse_grid and valid_mask: 0.5 m from the hall box's low corner,
+    its probes on the box's low faces invalid; Task 4d has since made them valid), every probe's cove cube 0.1, with the
+    proof's lookup box or none. The lookup's rule is tested on it because its invalid low faces are what the box clamp
+    matters for."""
     from relight import probes as PR
     P, shape, origin = PR.coarse_grid(HALL, 0.5)
     cubes = np.zeros((len(P), 9, 3, 6), np.float32)
@@ -3619,6 +3643,23 @@ class ProofCorners(unittest.TestCase):
         self.assertTrue(np.array_equal(found, want_found))
         self.assertTrue(np.array_equal(reference.proof_corner(m, P), want_found))
         self.assertTrue(0 < int((~found[:3000]).sum()) < 3000)    # both outcomes occur where the threshold decides
+
+    def test_a_position_is_sensitive_where_the_proofs_decision_changes_within_a_tenth_of_a_millimetre(self):
+        """reference.proof_corner_sensitive (re-review N5; R1b's proofCornerSensitive). The proof keeping its probes at
+        x <= 0.5 m only, its lookup finds a corner up to x = 0.7 m less about 2e-7 m, where the next plane's weight falls
+        under 1e-6. Positions 5e-5 m either side of that change are sensitive, along x alone; ones 1 cm before it or
+        10 cm past it are not, and at 1 mm (the vector splats' distance, N7) one 0.5 mm before it is too. Without the
+        proof's grid nothing is."""
+        m = proof_grid(hall_model(), lambda P: P[:, 0] < 0.6)
+        P = np.array([[0.7 - 5e-5, -0.5, 0.7], [0.7 + 5e-5, -0.5, 0.7], [0.69, -0.5, 0.7], [0.8, -0.5, 0.7],
+                      [0.7 - 5e-4, -0.5, 0.7]])
+        self.assertEqual(reference.proof_corner(m, P).tolist(), [True, False, True, False, True])
+        self.assertEqual(reference.PROOF_SENSITIVE_METRES, 1e-4)
+        self.assertEqual(reference.proof_corner_sensitive(m, P).tolist(), [True, True, False, False, False])
+        self.assertEqual(reference.proof_corner_sensitive(m, P, 1e-3).tolist(), [True, True, False, False, True])
+        across = P[:1] + 1e-4 * np.array([[0.0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]])
+        self.assertEqual(reference.proof_corner(m, across).tolist(), [True] * 4)    # along y and z it does not change
+        self.assertFalse(reference.proof_corner_sensitive(replace(m, proof_keep=None), P).any())
 
     def test_a_splat_the_proof_leaves_without_a_corner_has_no_bounce_and_its_neighbour_keeps_it(self):
         """The proof keeps no probe in front of the window wall's middle (x 0.3 .. 1.1, y below -0.5). An embrasure
@@ -3820,7 +3861,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-(`test_a_lamp_tint_colours_lit_bulbs_and_the_cove` is R1d's amendment A1, `test_the_moon_lights_like_the_sun_through_the_same_window` its A5, the two visibility tests R1c's A2; the two sky-bounce tests are this revision's. The sky-bounce test's tolerance is 1e-9 because the synthetic cove bounce is a float32 0.1.)
+(`test_a_lamp_tint_colours_lit_bulbs_and_the_cove` is R1d's amendment A1, `test_the_moon_lights_like_the_sun_through_the_same_window` its A5, the two visibility tests R1c's A2; the two sky-bounce tests are this revision's; `test_a_position_is_sensitive_where_the_proofs_decision_changes_within_a_tenth_of_a_millimetre` is the re-review's N5 (11 October). The sky-bounce test's tolerance is 1e-9 because the synthetic cove bounce is a float32 0.1.)
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -4008,6 +4049,24 @@ def proof_corner(model: Model, pos) -> np.ndarray:
     return proof_lookup(model, pos)[1]
 
 
+PROOF_SENSITIVE_METRES = 1e-4   # R1b's PROOF_SENSITIVE_METRES: the GPU's float32 position and arithmetic err by ~1e-5 m
+
+
+def proof_corner_sensitive(model: Model, pos, metres: float = PROOF_SENSITIVE_METRES) -> np.ndarray:
+    """(N,) bool: whether proof_corner's decision changes within `metres` of each position, the position moved by
+    +metres and -metres along x, y and z in turn (R1b's proofCornerSensitive; re-review N5). The GPU's float32 may
+    decide those otherwise: check counts them, and the vectors' splats avoid them (N7)."""
+    P = np.asarray(pos, np.float64)
+    found = proof_corner(model, P)
+    out = np.zeros(len(P), bool)
+    for axis in range(3):
+        for sign in (1.0, -1.0):
+            moved = P.copy()
+            moved[:, axis] += sign * metres
+            out |= proof_corner(model, moved) != found
+    return out
+
+
 def cube_eval(cubes, n, iso):
     """cubes (N, K, 3, 6), n (N, 3), iso (N,) -> (N, K, 3), as lt.cube_eval."""
     nx, ny, nz = n[:, 0], n[:, 1], n[:, 2]
@@ -4149,12 +4208,12 @@ def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: S
     return M, alpha
 ```
 
-(`multiplier`'s alpha lines are R1c's amendment A2, the lamp tint R1d's A1, the loop over the sky bodies R1d's A5; the sky bounce is Task 4's contract. Verified on 7 October against the committed `sunbounce.py` and `windows.py` and Task 4c's `codec.py`: these 12 tests, R1c A1's 2 and Step 5's 6 pass.)
+(`multiplier`'s alpha lines are R1c's amendment A2, the lamp tint R1d's A1, the loop over the sky bodies R1d's A5; the sky bounce is Task 4's contract. Verified on 7 October against the committed `sunbounce.py` and `windows.py` and Task 4c's `codec.py`: these 12 tests, R1c A1's 2 and Step 5's 6 pass; the block holds 21 since 11 October.)
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_reference -v`
-Expected: PASS, 12 tests.
+Expected: PASS, 21 tests (12 before 11 October: fix rounds 1 to 3 added eight, the re-review's N5 one).
 
 - [ ] **Step 5: Write the records and transfer, with tests**
 
@@ -4381,7 +4440,7 @@ def load_skin_inputs(geometry_dir):
 ```
 
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_records -v`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests (6 before fix round 1's shared tree, M4).
 
 - [ ] **Step 6: Write the records and the package** (amended 8 October, the controller's ruling P1: Steps 6 and 7 write the code; Step 8 commits it and only then builds, checks and writes the fixture)
 
@@ -4557,6 +4616,7 @@ Expected: PASS, 40 tests (Task 4's 38 and these two). Checked on 8 October again
 
 - The floor's own rate (amended 8 October, re-review N3): floor rays cross the windows lower than splat rays do, so the same count is made on `check-sun`'s floor grid, the 88,831 points `cmd_check_sun` builds as `sets["floor"]` (`__main__.py:309-313`: x and y every 5 cm from 5 cm inside the hall's box, `z = FLOOR_Z + 0.02`; `sun-check.json`'s `points.floor`), at the same two directions. R1b Task 18 caps the floor texels' excuses with this rate and the splats' words with the splats'.
 - Record `wallFaceRate: { splats: 200000, marched, wallFace, floor: { points: 88831, marched, wallFace } }` (each population's two directions pooled; a rate is `wallFace / marched`, and the sample size shows its noise) in the checks file, the manifest's `evidence` and the vectors' `windowRays`. If either `marched` is 0, stop and report before check 4's rebuild, writing no checks file, no manifest evidence and no vectors (amended 11 October, fix round 1, M5: `check` measures the rate before check 4).
+- The proof-sensitive count (amended 11 October, the re-review's N5), measured as checks 1 and 3 read the tiles: on every served splat, the finest from the work tables and each coarser tile's decoded from its `.sog` file, `reference.proof_corner_sensitive` (the proof's corner decision changes within `PROOF_SENSITIVE_METRES`, 0.1 mm, when the position moves along an axis; R1b's `proofCornerSensitive`), in chunks of 500,000 positions. Record `proofSensitive: { metres: 1e-4, splats, sensitive, finest: { splats, sensitive }, coarser: { splats, sensitive } }` in the checks file, the manifest's `evidence` and the vectors' `probes`. R1b Task 18 caps the words it excuses for that decision at twice `sensitive / splats` of those it checks (fix round 3's evidence measured 128 of 11,498,334: 95 of the finest 6,030,980 and 33 of the coarser 5,467,354).
 
 Then, for the default package (or to the `--vectors` path), write `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` in exactly the shape of `RelightVectorsSchema` (schema `venviewer.relight-vectors.v1`) defined in plan R1b's Task 4, `docs/superpowers/plans/2026-09-29-restored-hall-r1b-relit-browser.md`: read that block and the helper schemas above it before writing. Every key is camelCase as there, so `reference.py`'s `sky_level`, `sky_colour`, `lamp_levels`, `emitter_boost`, `sun_dir`, `sun_rgb`, `moon_dir` and `moon_rgb` become `skyLevel`, `skyColour`, `lampLevels`, `emitterBoost`, `sunDir`, `sunRgb`, `moonDir` and `moonRgb`; the lamp group keys stay `cove`, `ch_end`, `ch_centre`, `dome`. Write it with `json.dumps(..., allow_nan=False)`. Its fields, every one required:
 - `schema`: `"venviewer.relight-vectors.v1"`; `sources`: the nine source names in record order.
@@ -4577,15 +4637,15 @@ Then, for the default package (or to the `--vectors` path), write `packages/web/
   - `visibility[p][k]` and `steps[p][k]` are `windows.sun_visibility(model.volumes, model.horizons, model.fresnel, points, suns[k], steps=...)`, as float32 values and integers.
   - `wallFace` lists every point–direction pair `[p, k]` with `steps > 0` whose ray starts in the room and whose first sample the bake puts on the room side of `y0`, where the cells on either side of `y0` hold unlike alpha. `y0` is exactly a cell boundary of the occupancy grid, so every marched room ray's first sample sits on it, and float32 rounding puts about 1% of them on the room side. For the owning window `vol` (the first window, in order, whose `windows.ray_survives` is true for that point and direction), compute in float32 exactly as `windows._rays` does: `P32 = np.float32(P)`, `s32 = np.float32(s)`, `tq = (np.float32(vol.y0) - P32[1]) / s32[1]`, `Q = P32 + s32 * tq`, the first cell `c = np.floor((Q - vol.grid_lo) / np.float32(vol.res)).astype(np.int64)` (grid indices), and `iy0 = int(round((vol.y0 - float(vol.grid_lo[1])) / vol.res))`. The pair is listed when `c[1] >= iy0` and the alphas at grid cells `(c[0], iy0 - 1, c[2])` and `(c[0], iy0, c[2])` differ (a cell outside the box reads 0).
 - The gates must not hang on the last bit of an arcsine (numpy's and the browser's may differ there): for each of the nine directions and every window, assert that the direction's elevation lies more than 1e-6° from that window's horizon at its azimuth (`windows.sun_az_el` from the float32 direction, `windows.horizon_at`). Replace a random sun that fails with the next one `_random_suns` draws; the `moon_test` direction is fixed (R1d's A7 checked it above every window's horizon at its azimuth: 32.3° against 14–22°).
-- `probes`: `{ origin, spacing, shape, box, proofKeep, entries }` on the package's global grid. `origin`, `spacing`, `shape` and `box` are the manifest's `probes`, never a local block around the splats (a splat is read at its position clamped into `box`, then into the global grid, and R1b checks hidden splats too; `box` amended 11 October, fix round 2). Each entry is `{ index, valid, cube }`: `index` is the global linear index `(ix·ny + iy)·nz + iz` over `shape`; `valid` is that probe's validity; `cube` is its 162 float16 values (`[source][channel][face]`, little-endian) in base64. `entries` holds every corner that each vector splat's trilinear lookup touches after clamping: all eight per splat, valid or not, as `reference.trilinear` computes them, each probe once. `proofKeep` is `{ origin, spacing, shape, entries }`: the manifest's `probes.proofKeep` grid, and every corner of it that each vector splat's proof lookup touches (`reference.proof_lookup`: all eight per splat, kept or not), each once as `{ index, keep }` (amended 11 October, fix round 3).
+- `probes`: `{ origin, spacing, shape, box, proofKeep, proofSensitive, entries }` on the package's global grid. `origin`, `spacing`, `shape` and `box` are the manifest's `probes`, never a local block around the splats (a splat is read at its position clamped into `box`, then into the global grid, and R1b checks hidden splats too; `box` amended 11 October, fix round 2). Each entry is `{ index, valid, cube }`: `index` is the global linear index `(ix·ny + iy)·nz + iz` over `shape`; `valid` is that probe's validity; `cube` is its 162 float16 values (`[source][channel][face]`, little-endian) in base64. `entries` holds every corner that each vector splat's trilinear lookup touches after clamping: all eight per splat, valid or not, as `reference.trilinear` computes them, each probe once. `proofKeep` is `{ origin, spacing, shape, entries }`: the manifest's `probes.proofKeep` grid, and every corner of it that each vector splat's proof lookup touches (`reference.proof_lookup`: all eight per splat, kept or not), each once as `{ index, keep }` (amended 11 October, fix round 3). `proofSensitive` is the count above (the re-review's N5).
 - `presetsFromProof`: `{ night, sunny_morning, overcast_noon }`, as in the manifest.
 - `settings`: `captured`, `night`, `sunny_morning` and `moon_test`, each `{ weights: [[r, g, b] × 9], skyLevel, skyColour: [r, g, b], lampLevels: { cove, ch_end, ch_centre, dome }, emitterBoost, sunDir: [x, y, z] or null, sunRgb: [r, g, b], moonDir: [x, y, z] or null, moonRgb: [r, g, b] }`. `emitterBoost` is 1 for every setting (R1d amendment A1); R1b compares it exactly. `moonDir` is null and `moonRgb` zero in the first three. `moon_test` is not a preset: every lamp at 0 (every lamp weight 0), sky 0, no Sun, `moonDir = common.sun_vec_e57(139.3, 32.3)` (the moonlit preset's full Moon) and `moonRgb` equal to `sunny_morning`'s `sunRgb` (a strong light, so the Moon's march, gates, glass and bounce are exercised above the clamp; R1d amendment A8). No setting carries `lampTints` (the kernel reads ones).
-- `splats`: 72 finest-level splats chosen across classes (16 interior, 16 embrasure, 8 bulbs, 8 fixtures and cove, 8 sun-reachable floor, 8 hidden; then, amended 11 October, fix round 3, 4 the proof's own lookup leaves without a corner, half embrasure and half interior where it can, and beside each in turn the nearest finest splat of those classes that finds one, 4), each `{ record, position, colour, expected }`: its 12-byte record as 24 hex digits, its position (e57), its captured linear colour, and `expected` with `captured`, `night`, `sunny_morning` and `moon_test`, each `{ m: [r, g, b], alpha, word }` (`word` the packed uint32), computed by `reference.multiplier` with the full model (the sky bounce included) and no visibility. The eight sun-reachable floor splats are lit at the sunny-morning sun (`windows.sun_visibility` > 0.3). Every splat with the sun flag must keep its sunny-morning and `moon_test` visibility (within 1e-6) when its position moves 1 mm along +x, −x, +y, −y, +z or −z; replace one that does not with the next candidate in the seeded order. R1b finds these splats in the live draw by record and position and holds the GPU's words to them within one code, and the served positions and the GPU's float32 differ from the bake's by far less than 1 mm.
+- `splats`: 72 finest-level splats chosen across classes (16 interior, 16 embrasure, 8 bulbs, 8 fixtures and cove, 8 sun-reachable floor, 8 hidden; then, amended 11 October, fix round 3, 4 the proof's own lookup leaves without a corner, half embrasure and half interior where it can, and beside each in turn the nearest finest splat of those classes that finds one, 4), each `{ record, position, colour, expected }`: its 12-byte record as 24 hex digits, its position (e57), its captured linear colour, and `expected` with `captured`, `night`, `sunny_morning` and `moon_test`, each `{ m: [r, g, b], alpha, word }` (`word` the packed uint32), computed by `reference.multiplier` with the full model (the sky bounce included) and no visibility. The eight sun-reachable floor splats are lit at the sunny-morning sun (`windows.sun_visibility` > 0.3). Every splat with the sun flag must keep its sunny-morning and `moon_test` visibility (within 1e-6) when its position moves 1 mm along +x, −x, +y, −y, +z or −z; replace one that does not with the next candidate in the seeded order. Every vector splat must also keep its proof's corner decision (`reference.proof_corner`) when moved `PROOF_SENSITIVE_METRES` or 1 mm along any axis (`reference.proof_corner_sensitive` at both distances); one that does not is passed over likewise, so the GPU need excuse none of the 72 (the re-review's N7). R1b finds these splats in the live draw by record and position and holds the GPU's words to them within one code, and the served positions and the GPU's float32 differ from the bake's by far less than 1 mm.
 - `floorTexels`: eight texels of `<work>/floor-light.npz`, each `{ col, row, direct }` with `direct = D[row, col, :]` (the nine values in source order; `row` is the PNG row). Spread them over the floor (near the windows and under the lamps), so that every source is non-zero at some of them and no two sources have equal values at all eight. R1b decodes the floor PNGs at these texels (its Task 5), so a source written to the wrong channel fails there.
 
-Keep it under 1,000 kB + 1.6 kB × max(0, K − 30) (raised from 800 kB on 7 October: the sky slice adds about 150 kB, mostly `probeCubes`; the volumes' gzip takes 261,376 bytes in base64; amended 8 October, re-review N4: the parts that grow with K, `nodes` (36 × 5K float32 in base64), `fold.basis` (8 × 18K float16 in base64), `cases[].coefficients` (9 × K numbers) and `floorMean` (K × 3), take about 1.6 kB per K, about 48 kB at K 30 and 304 kB at K 192, so a refit that lands at a larger K does not stop on size alone; anything else over the cap is a stop). Record `capturedIdentity`, `proofRegression`, `transfer`, `determinism`, `skyBounceCheck` and `wallFaceRate` in the checks file and, once every check has run, in the checked package's manifest `evidence` too: the manifest is rewritten with `package.write`'s own `json.dumps` arguments, each run replacing these six keys and nothing else, and they hold no time or other wall-clock value (check 4 removes exactly these six before it compares).
+Keep it under 1,000 kB + 1.6 kB × max(0, K − 30) (raised from 800 kB on 7 October: the sky slice adds about 150 kB, mostly `probeCubes`; the volumes' gzip takes 261,376 bytes in base64; amended 8 October, re-review N4: the parts that grow with K, `nodes` (36 × 5K float32 in base64), `fold.basis` (8 × 18K float16 in base64), `cases[].coefficients` (9 × K numbers) and `floorMean` (K × 3), take about 1.6 kB per K, about 48 kB at K 30 and 304 kB at K 192, so a refit that lands at a larger K does not stop on size alone; anything else over the cap is a stop). Record `capturedIdentity`, `proofRegression`, `transfer`, `determinism`, `skyBounceCheck`, `wallFaceRate` and `proofSensitive` (`package.CHECK_KEYS`; the last since the re-review's N5) in the checks file and, once every check has run, in the checked package's manifest `evidence` too: the manifest is rewritten with `package.write`'s own `json.dumps` arguments, each run replacing these seven keys and nothing else, and they hold no time or other wall-clock value (check 4 removes exactly these seven before it compares).
 
-Step 8 runs it twice once the code is committed: `C:/Python313/python.exe -m relight check --config config/grand-hall.json`. Expected then: `checks.json` with all five `pass: true` and `wallFaceRate` (print each population's `marched`, `wallFace` and their ratio; on 8 October's window volumes, both directions pooled: splats 92,085 marched and 2,964 wall-face, 3.22%; floor 35,155 and 3,630, 10.33%), and the fixture written (print its size against its K's cap, the number of `wallFace` pairs and the `fold` probe's corner count). If a check fails, stop and report the numbers.
+Step 8 runs it twice once the code is committed: `C:/Python313/python.exe -m relight check --config config/grand-hall.json`. Expected then: `checks.json` with all five `pass: true`, `proofSensitive` (printed with each level's count; fix round 3's evidence measured 128 of 11,498,334) and `wallFaceRate` (print each population's `marched`, `wallFace` and their ratio; on 8 October's window volumes, both directions pooled: splats 92,085 marched and 2,964 wall-face, 3.22%; floor 35,155 and 3,630, 10.33%), and the fixture written (print its size against its K's cap, the number of `wallFace` pairs and the `fold` probe's corner count). If a check fails, stop and report the numbers.
 
 - [ ] **Step 8: Commit the code, then build, check twice and commit the fixture** (amended 8 October, the controller's ruling P1: the package is built only from committed code, and its `tool` is that commit)
 
@@ -4620,7 +4680,7 @@ git commit -m "test(relight): the relight test vectors from package v1 (T-639 R1
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-Expected: the suite `OK` with 162 tests; the code commit; `tools/relight clean at <that commit>`; `records` as Step 6 expects (if it prints `FAIL: tools/relight has uncommitted changes`, something was left out of the commit: commit it and build again, never build around it); both `check` runs as Step 7 expects, `checks-run1.json vs checks-run2.json : parsed values equal`, `manifest identical` and `vectors identical` (the second run rewrites the six evidence keys with the same values and the fixture byte for byte); the manifest's `tool` is the code commit's hash and `createdAt` its committer time; then the fixture commit, which touches no file under `tools/relight`. On a difference between the two runs, a third run decides by majority (the PC's rule); a third run that agrees with neither stops the task.
+Expected: the suite `OK` with 240 tests (11 October: 162 before Task 5's fix rounds, 228 after them, 237 with Task 4d's code and 240 with the re-review's N5 and N7); the code commit; `tools/relight clean at <that commit>`; `records` as Step 6 expects (if it prints `FAIL: tools/relight has uncommitted changes`, something was left out of the commit: commit it and build again, never build around it); both `check` runs as Step 7 expects, `checks-run1.json vs checks-run2.json : parsed values equal`, `manifest identical` and `vectors identical` (the second run rewrites the six evidence keys with the same values and the fixture byte for byte); the manifest's `tool` is the code commit's hash and `createdAt` its committer time; then the fixture commit, which touches no file under `tools/relight`. On a difference between the two runs, a third run decides by majority (the PC's rule); a third run that agrees with neither stops the task.
 
 ### Task 6: The restored floor (floor skin v2)
 
@@ -4728,5 +4788,5 @@ git push origin claude/real-hall
 - The sky-body revision (7 October): both bodies' bounce is Task 4's factored basis everywhere (`reference.py`, the package's `sky` files, the contract's "The sky bodies' bounce", the vectors' `skyBounce`); P_w's float32 order is the Task 4 report's contract, which R1b's twin and GPU passes repeat.
 - Packaging (7 October): every artifact the package reads is named exactly and checked against the SHA-256 its evidence records (Tasks 4c, 5); the folder published holds exactly the manifest's files (Task 7). Provenance (8 October): the package is built and checked only from committed code, its `tool` that commit (Task 5 Steps 6–8).
 - The house lights (8 October): one lamp set for R1a and R1d, the table's 140 `high` and `medium` entries; the centre chandelier's crown tubes a second kind at a measured weight, with its sensitivity reported and a stop if the night photographs clearly prefer an end (Task 4b).
-- Test counts (8 October): Task 4 as built 121; Task 4b 15 (136); Task 4c 6 (142); Task 5's `test_reference` 12, `test_records` 6 and `test_windows`' 2 (`wall_face_rate`, `sample_depths`; 162 after Task 5).
+- Test counts (8 October): Task 4 as built 121; Task 4b 15 (136); Task 4c 6 (142); Task 5's `test_reference` 12, `test_records` 6 and `test_windows`' 2 (`wall_face_rate`, `sample_depths`; 162 after Task 5). 11 October: Task 5's fix rounds 1 to 3 brought `test_reference` to 20, `test_records` to 7 and the suite to 228 (`test_check` among them), Task 4d's code commit to 237, and the re-review's N5 and N7 to 240 (`test_reference` 21, `test_check` 33).
 - The section "The multiplier" is normative for both plans and matches `reference.py` line for line.

@@ -174,6 +174,24 @@ def proof_corner(model: Model, pos) -> np.ndarray:
     return proof_lookup(model, pos)[1]
 
 
+PROOF_SENSITIVE_METRES = 1e-4   # R1b's PROOF_SENSITIVE_METRES: the GPU's float32 position and arithmetic err by ~1e-5 m
+
+
+def proof_corner_sensitive(model: Model, pos, metres: float = PROOF_SENSITIVE_METRES) -> np.ndarray:
+    """(N,) bool: whether proof_corner's decision changes within `metres` of each position, the position moved by
+    +metres and -metres along x, y and z in turn (R1b's proofCornerSensitive; re-review N5). The GPU's float32 may
+    decide those otherwise: check counts them, and the vectors' splats avoid them (N7)."""
+    P = np.asarray(pos, np.float64)
+    found = proof_corner(model, P)
+    out = np.zeros(len(P), bool)
+    for axis in range(3):
+        for sign in (1.0, -1.0):
+            moved = P.copy()
+            moved[:, axis] += sign * metres
+            out |= proof_corner(model, moved) != found
+    return out
+
+
 def cube_eval(cubes, n, iso):
     """cubes (N, K, 3, 6), n (N, 3), iso (N,) -> (N, K, 3), as lt.cube_eval."""
     nx, ny, nz = n[:, 0], n[:, 1], n[:, 2]
