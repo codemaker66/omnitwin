@@ -10,7 +10,20 @@ const BOTTLENECK_LABELS: Record<PerfMetrics["bottleneck"]["kind"], string> = {
 };
 import { ActivityIndicator, ActivityStatus } from "./shared/Activity.js";
 import { useIsNarrowViewport } from "../hooks/use-media-query.js";
+import { useRenderGovernorStore } from "../stores/render-governor-store.js";
+import type { QualityRung } from "../lib/render-quality.js";
 import "./PerfOverlay.css";
+
+const RUNG_NAMES: Record<QualityRung, string> = {
+  ambientOcclusion: "ambient occlusion", resolution: "resolution", bloom: "bloom", multisampling: "multisampling",
+};
+
+/** "resolution (2 steps), bloom": what the frame-rate governor gave up, in order. */
+function describeGiven(given: readonly QualityRung[]): string {
+  const counts = new Map<QualityRung, number>();
+  for (const rung of given) counts.set(rung, (counts.get(rung) ?? 0) + 1);
+  return [...counts].map(([rung, count]) => (count > 1 ? `${RUNG_NAMES[rung]} (${String(count)} steps)` : RUNG_NAMES[rung])).join(", ");
+}
 
 function isClipboardWriter(value: unknown): value is Pick<Clipboard, "writeText"> {
   return typeof value === "object" && value !== null && "writeText" in value
@@ -30,6 +43,7 @@ export function PerfOverlay(): React.ReactElement | null {
   // A phone opens on three figures so the stage stays usable while measuring;
   // a choice either way holds until the page is left.
   const narrow = useIsNarrowViewport();
+  const given = useRenderGovernorStore((s) => s.given);
   const [expandedChoice, setExpandedChoice] = useState<boolean | null>(null);
   const expanded = expandedChoice ?? !narrow;
   const optedIn = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("profiler") === "1";
@@ -162,6 +176,7 @@ export function PerfOverlay(): React.ReactElement | null {
         </button>
       </div>
       <p className="perf-note">{metrics.sampleCount.toLocaleString()} frames · averages unless marked p95/p99 · GPU sampled separately · — unavailable</p>
+      {given.length > 0 && <p className="perf-note" data-testid="perf-governor">Holding its frame rate by giving up {describeGiven(given)}</p>}
       {(metrics.sortTimeMs !== null || metrics.sortAgeMs !== null) && <p className="perf-note">
         Worker sort (WebGL): {ms(metrics.sortTimeMs)} per sort · order age {ms(metrics.sortAgeMs)}{metrics.sortBacklog === null ? "" : ` · ${metrics.sortBacklog.toFixed(1)} pending`}
       </p>}

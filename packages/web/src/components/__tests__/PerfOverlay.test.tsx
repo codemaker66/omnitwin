@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { INITIAL_PERF_METRICS, usePerfStore, type PerfMetrics } from "../../stores/perf-store.js";
+import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import { PerfOverlay } from "../PerfOverlay.js";
 import { TOGGLE_KEY } from "../../lib/perf.js";
 
@@ -24,10 +25,19 @@ beforeEach(() => {
   vi.stubEnv("DEV", true);
   window.history.replaceState(null, "", "/tour");
   usePerfStore.setState({ metrics: INITIAL_PERF_METRICS, visible: false, paused: false, generation: 0 });
+  useRenderGovernorStore.setState({ given: [] });
 });
 afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("PerfOverlay", () => {
+  it("names the quality the planner gave up to hold its frame rate, and says nothing while none was", () => {
+    setMetrics();
+    const view = render(<PerfOverlay />);
+    expect(view.queryByTestId("perf-governor")).toBeNull();
+    act(() => { useRenderGovernorStore.setState({ given: ["resolution", "resolution", "bloom"] }); });
+    expect(view.getByTestId("perf-governor").textContent).toBe("Holding its frame rate by giving up resolution (2 steps), bloom");
+  });
+
   it("keeps a phone's stage clear with three figures until every figure is asked for", () => {
     media.narrow = true;
     setMetrics({ fps: 58, frameP95Ms: 18.2, bottleneck: { kind: "gpu", busyPct: 71.6 } });

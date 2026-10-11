@@ -134,6 +134,76 @@ export function profilePixelRatio(profile: RenderProfile, nativeRatio: number, c
   return Math.max(Math.min(1, nativeRatio), ratio);
 }
 
+/** A step of quality a device gives up to hold its frame rate. */
+export type QualityRung = "ambientOcclusion" | "resolution" | "bloom" | "multisampling";
+
+/** How far one resolution rung lowers the pixel ratio. */
+const RESOLUTION_STEP = 0.25;
+
+/**
+ * The next quality a profile gives up when the device cannot hold its frame
+ * rate (lib/render-governor.ts), or null when nothing given up would help.
+ * Frames held up by the GPU give up the costliest and least visible first:
+ * ambient occlusion, the resolution in quarter steps to 1.5, bloom, the
+ * resolution to 1, then multisampling. Frames held up by the CPU give up
+ * passes, each a chain of draws to encode (bloom's mip chain costs a slowed
+ * phone nearly half its render), and keep their pixels, which cost the CPU
+ * nothing.
+ */
+export function nextQualityRung(profile: RenderProfile, baseRatio: number, given: readonly QualityRung[], held: "cpu" | "gpu"): QualityRung | null {
+  const open = (rung: QualityRung): boolean => !given.includes(rung);
+  if (held === "cpu") {
+    if (profile.bloom !== null && open("bloom")) return "bloom";
+    if (profile.ambientOcclusion !== null && open("ambientOcclusion")) return "ambientOcclusion";
+    return null;
+  }
+  const ratio = baseRatio - given.filter((rung) => rung === "resolution").length * RESOLUTION_STEP;
+  if (profile.ambientOcclusion !== null && open("ambientOcclusion")) return "ambientOcclusion";
+  if (ratio - RESOLUTION_STEP >= 1.5 - 1e-6) return "resolution";
+  if (profile.bloom !== null && open("bloom")) return "bloom";
+  if (ratio - RESOLUTION_STEP >= 1 - 1e-6) return "resolution";
+  if (profile.sceneSamples > 0 && open("multisampling")) return "multisampling";
+  return null;
+}
+
+export interface GovernedRender {
+  readonly profile: RenderProfile;
+  readonly pixelRatio: number;
+}
+
+/** One derived profile per profile and set of effects given up, so a pipeline is rebuilt only when an effect goes. */
+const governedProfiles = new WeakMap<RenderProfile, Map<string, RenderProfile>>();
+
+/**
+ * A profile and pixel ratio once the rungs `given` are given up. The profile
+ * is the same object until an effect goes, so a resolution step only resizes
+ * the canvas; the ratio never falls below 1 (or the base, if lower).
+ */
+export function governedRender(profile: RenderProfile, baseRatio: number, given: readonly QualityRung[]): GovernedRender {
+  const pixelRatio = Math.max(Math.min(1, baseRatio), baseRatio - given.filter((rung) => rung === "resolution").length * RESOLUTION_STEP);
+  const dropsOcclusion = given.includes("ambientOcclusion");
+  const dropsBloom = given.includes("bloom");
+  const dropsSamples = given.includes("multisampling");
+  if (!dropsOcclusion && !dropsBloom && !dropsSamples) return { profile, pixelRatio };
+  const key = `${String(dropsOcclusion)}|${String(dropsBloom)}|${String(dropsSamples)}`;
+  let derived = governedProfiles.get(profile);
+  if (derived === undefined) {
+    derived = new Map();
+    governedProfiles.set(profile, derived);
+  }
+  let governed = derived.get(key);
+  if (governed === undefined) {
+    governed = {
+      ...profile,
+      ambientOcclusion: dropsOcclusion ? null : profile.ambientOcclusion,
+      bloom: dropsBloom ? null : profile.bloom,
+      sceneSamples: dropsSamples ? 0 : profile.sceneSamples,
+    };
+    derived.set(key, governed);
+  }
+  return { profile: governed, pixelRatio };
+}
+
 /** Reads the current browser's render device context. */
 export function readRenderDeviceContext(development: boolean): RenderDeviceContext {
   if (typeof window === "undefined") return { coarsePointer: false, shortSide: 1080, override: null };

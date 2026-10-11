@@ -4,7 +4,9 @@ import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
-import { profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
+import { governedRender, profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
+import { RenderGovernor } from "../scene/RenderGovernor.js";
+import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
@@ -249,7 +251,15 @@ export function PlannerScene(): ReactElement {
   // One render profile per page (phone, tablet or desktop); phones and tablets
   // draw within a pixel budget instead of their full native density.
   const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), []);
-  const canvasDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
+  const profileDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
+  // A device that cannot hold its frame rate gives up quality, a rung at a
+  // time, cheapest to lose first (lib/render-governor.ts); `?governor=off`
+  // measures without it in development.
+  const governorGiven = useRenderGovernorStore((s) => s.given);
+  const governed = useMemo(() => governedRender(renderProfile, profileDpr, governorGiven), [renderProfile, profileDpr, governorGiven]);
+  const governorEnabled = renderProfile.name !== "off"
+    && !(import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("governor") === "off");
+  const canvasDpr = governed.pixelRatio;
   const canvasGl = useMemo(plannerCanvasGlOptions, []);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
   const renderSceneOverlays = shouldRenderPlannerSceneOverlays(viewportWidth);
@@ -534,7 +544,8 @@ export function PlannerScene(): ReactElement {
           {!timelinePreviewActive && !hallDrawn && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
           <CaptureToneMapping captureShown={captureDrawn} photographedRoom={hallDrawn} />
-          <PlannerRenderPipeline enabled={!captureDrawn} profile={renderProfile} />
+          <PlannerRenderPipeline enabled={!captureDrawn} profile={governed.profile} />
+          <RenderGovernor profile={renderProfile} baseRatio={profileDpr} enabled={governorEnabled} />
           <PipelineRetention />
           {furnitureReflections && <FurnitureReflectionExperiment />}
           {!timelinePreviewActive && <SectionPlane />}
