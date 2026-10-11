@@ -190,4 +190,4 @@ the mouse path at its second move and drew a selection box behind every orbit,
 selecting the furniture it swept and re-rendering the furniture, the dock and
 the panels each frame: 30% of a 6x-slowed main thread went to React while
 orbiting. An orbit now changes no store, and the same slowed orbit draws 17-39
-frames a second where it drew 9-24.
+frames a second where it updated 9-24 times a second.
