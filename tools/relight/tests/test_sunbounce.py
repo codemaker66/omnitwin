@@ -302,5 +302,72 @@ class Basis(unittest.TestCase):
         np.testing.assert_allclose(X[:2], [[0.8125, 1.8125, 0.02], [0.8125, 1.9375, 0.02]], rtol=0, atol=1e-12)
 
 
+class BandRule(unittest.TestCase):
+    """Task 4d (amended 11 October): the scored probes' bands, the gate in each, K stable in every band, and the floor's
+    texels read where the lookup reads them."""
+
+    def test_probes_fall_in_the_bands_of_the_covered_box(self):
+        lo, hi = np.array([0.5, 0.5, 0.5]), np.array([3.0, 2.0, 2.5])
+        P = np.array([[1.0, 1.0, 1.0],     # inside the covered box
+                      [0.0, 1.0, 1.0],     # short of it in x, within its heights: a wall plane
+                      [1.0, 0.0, 2.5],     # short of it in y, at its top
+                      [2.0, 1.0, 3.0],     # above it, inside the dome opening's cylinder
+                      [0.0, 2.0, 3.0],     # above it, outside the cylinder (and short of the box in x)
+                      [1.0, 1.0, 0.0]])    # below it
+        bands = SB.probe_bands(P, lo, hi, dome_centre=(2.0, 1.0), dome_radius=0.5)
+        self.assertEqual([SB.BANDS[b] for b in bands], ["interior", "walls", "walls", "dome", "aboveOther", "below"])
+
+    def test_each_band_is_gated_on_its_own_lit_probes_and_brightness(self):
+        band_of = np.array([0, 0, 2, 4])                      # interior, interior, dome, below
+        lits = [np.array([True, True, True, True]), np.array([True, True, False, True])]
+        lums = [np.array([1.0, 1.0, 1.0, 1.0]), np.array([2.0, 2.0, 0.0, 2.0])]
+        logs = [np.array([[0.1, 0.3, 0.5, 0.05], [0.1, 0.1, 0.2, 0.05]], np.float32),     # K 1, K 2 over direction 0's lit
+                np.array([[0.2, 0.2, 0.4], [0.1, 0.1, 0.1]], np.float32)]                 # direction 1 (no lit dome probe)
+        gates = SB.band_gates(logs, lits, lums, band_of, 2)
+        self.assertEqual(sorted(gates), ["all", "below", "dome", "interior"])               # bands without probes are left out
+        interior = gates["interior"][0]                       # K 1: medians 0.2 and 0.2, pooled [0.1, 0.3, 0.2, 0.2]
+        self.assertAlmostEqual(interior["worstBright"], 0.2, places=6)
+        self.assertAlmostEqual(interior["pooledMedian"], 0.2, places=6)
+        dome = gates["dome"]                                  # direction 1 lights no dome probe: faint there, it does not decide
+        self.assertEqual((dome[0]["pass"], dome[0]["brightSuns"]), (False, 1))
+        self.assertAlmostEqual(dome[1]["worstBright"], 0.2, places=6)
+        self.assertTrue(dome[1]["pass"])
+        below = gates["below"]
+        self.assertAlmostEqual(below[0]["worstBright"], 0.4, places=6)
+        self.assertFalse(below[0]["pass"])
+        self.assertAlmostEqual(below[1]["worstBright"], 0.1, places=6)
+        self.assertAlmostEqual(gates["all"][0]["medianOfSuns"], 0.2, places=6)       # direction 0's median of four, 1's of three
+
+    def test_k_is_the_smallest_stable_in_every_band(self):
+        curve = Gate.curve
+        by_band = {"all": curve([0.30, 0.19, 0.18, 0.17]), "interior": curve([0.30, 0.25, 0.19, 0.18]),
+                   "below": curve([0.19, 0.18, 0.17, 0.16])}
+        K, rule, starts = SB.choose_k_by_band(by_band)
+        self.assertEqual((K, rule), (3, "margin"))            # the interior's own stable K decides
+        self.assertEqual(starts, {"all": (2, "margin"), "interior": (3, "margin"), "below": (1, "margin")})
+
+    def test_a_band_without_a_stable_k_fails_the_rule(self):
+        curve = Gate.curve
+        K, rule, starts = SB.choose_k_by_band({"all": curve([0.30, 0.19, 0.18]), "dome": curve([0.30, 0.19, 0.21])})
+        self.assertEqual((K, rule), (None, "none"))
+        self.assertEqual(starts["dome"], (2, "smallestPassing"))
+
+    def test_floor_texels_are_read_where_the_lookup_reads_them(self):
+        # a 1 m grid whose low x face is invalid (Task 4's first grids): a texel 9 mm beyond that face finds no valid
+        # corner unless it is clamped into the lookup box first, as every probe read is (floorMean's 37 texels)
+        ix, iy, iz = np.meshgrid(np.arange(3), np.arange(2), np.arange(2), indexing="ij")
+        P = np.stack([ix.ravel(), iy.ravel(), iz.ravel()], 1).astype(np.float64)
+        valid = P[:, 0] > 0.5
+        texels = np.array([[-0.009, 0.5, 0.02], [1.5, 0.5, 0.02]])
+        lo, hi = np.array([0.02, 0.02, 0.04]), np.array([1.98, 0.98, 9.8])
+        unclamped = np.asarray(SB.trilinear_matrix(np.zeros(3), 1.0, (3, 2, 2), valid, texels).mean(0)).ravel()
+        self.assertAlmostEqual(float(unclamped.sum()), 0.5, places=12)            # the first texel reads nothing
+        rows = SB.floor_weights(np.zeros(3), 1.0, (3, 2, 2), valid, texels, lo, hi)
+        self.assertEqual(rows.shape, (12,))
+        self.assertAlmostEqual(float(rows.sum()), 1.0, places=12)
+        want = np.asarray(SB.trilinear_matrix(np.zeros(3), 1.0, (3, 2, 2), valid, np.clip(texels, lo, hi)).mean(0)).ravel()
+        np.testing.assert_array_equal(rows, want)
+
+
 if __name__ == "__main__":
     unittest.main()

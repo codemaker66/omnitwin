@@ -86,8 +86,10 @@ BOX_HI = np.array([HALL["x1"] - 0.02, HALL["y1"] - 0.02, 9.8])
 
 
 def hall_model(box=True):
-    """A probe grid as the bake builds it (probes.coarse_grid and valid_mask: 0.5 m from the hall box's low corner, its
-    probes on the box's low faces invalid), every probe's cove cube 0.1, with the proof's lookup box or none."""
+    """A probe grid as Task 4 first built it (probes.coarse_grid and valid_mask: 0.5 m from the hall box's low corner,
+    its probes on the box's low faces invalid; Task 4d has since made them valid), every probe's cove cube 0.1, with the
+    proof's lookup box or none. The lookup's rule is tested on it because its invalid low faces are what the box clamp
+    matters for."""
     from relight import probes as PR
     P, shape, origin = PR.coarse_grid(HALL, 0.5)
     cubes = np.zeros((len(P), 9, 3, 6), np.float32)

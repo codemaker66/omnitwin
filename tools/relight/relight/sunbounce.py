@@ -11,7 +11,7 @@ follow, so it is factored: B_w(s) = P_w(s) R_w(s). P_w, the power the room's pat
 (window_power: the same 16 rays per patch, marched by the browser twin, with the glass transmission and the horizon
 gate), is exact at every evaluation and never interpolated. R_w = B_w / P_w, the window's bounce per unit power, varies
 smoothly. The eigen-decomposition of the unit fields at the nodes that have real power in the window (real_nodes) gives
-K basis probe volumes on the 1 m probe grid (probes.coarse_grid at SPACING), and each node keeps K coefficients per
+K basis probe volumes on the 1 m probe grid (probes.box_grid at SPACING, Task 4d), and each node keeps K coefficients per
 window, every other needed node copying the nearest real node of its window (fill_from_nearest, bake_table). For a
 light the browser mixes the four surrounding nodes' coefficients bilinearly (windows.sun_corners), each window's scaled
 by its exact power (coefficients), and folds the K volumes (bounce). The display's direct term is sum_w P_w x light
@@ -21,7 +21,9 @@ bake).
 The gate (GATE, the controller's ruling of 3 October), over held-out real suns, on the face-mean bounce luminance at the
 valid 0.5 m probes where the exact bounce is non-zero: the pooled median |dlog2| is at most 0.25, and so is the median
 of every sun whose mean bounce is at least 5% of the median sun's. Fainter suns are reported but do not decide: their
-bounce is too faint to see, and a log error exaggerates small values.
+bounce is too faint to see, and a log error exaggerates small values. Since Task 4d (amended 11 October) the gate and
+its stable margin (choose_k) must hold in every band of the scored probes (BANDS, band_gates, choose_k_by_band) as well
+as over all of them.
 """
 from __future__ import annotations
 
@@ -241,6 +243,68 @@ def choose_k(results) -> tuple[int, str]:
     return n, "none"
 
 
+# Task 4d (amended 11 October): the rule holds in every band of the scored probes, the bands of Task 5's fix round 3
+# study: inside the box the first grid covered ("interior"), the wall planes the extension adds beside it ("walls"),
+# above it inside the dome opening's cylinder ("dome") and outside it ("aboveOther"), and below it ("below": the floor).
+BANDS = ("interior", "walls", "dome", "aboveOther", "below")
+
+
+def probe_bands(P, covered_lo, covered_hi, dome_centre, dome_radius) -> np.ndarray:
+    """(n,) int64: each point's band, an index into BANDS. Above covered_hi's z: "dome" within dome_radius of
+    dome_centre (x, y), else "aboveOther"; below covered_lo's z: "below"; at those heights or between: "interior" inside
+    the covered box in x and y, else "walls"."""
+    P = np.asarray(P, np.float64)
+    lo, hi = np.asarray(covered_lo, np.float64), np.asarray(covered_hi, np.float64)
+    out = np.full(len(P), BANDS.index("interior"), np.int64)
+    inside_xy = (P[:, 0] >= lo[0]) & (P[:, 0] <= hi[0]) & (P[:, 1] >= lo[1]) & (P[:, 1] <= hi[1])
+    out[~inside_xy] = BANDS.index("walls")
+    above, below = P[:, 2] > hi[2], P[:, 2] < lo[2]
+    in_dome = np.hypot(P[:, 0] - float(dome_centre[0]), P[:, 1] - float(dome_centre[1])) < float(dome_radius)
+    out[above & in_dome] = BANDS.index("dome")
+    out[above & ~in_dome] = BANDS.index("aboveOther")
+    out[below] = BANDS.index("below")
+    return out
+
+
+def band_gates(logs, lits, lums, band_of, kmax) -> dict:
+    """{band: [gate result at K = 1..kmax]} within each band of BANDS that has a scored probe, and "all" over every scored
+    probe (Task 4d; "all" is the selection's gate as Task 4 scored it). logs[h] (kmax, lit) is direction h's |dlog2| at
+    each K over its lit probes, lits[h] (n,) bool which of the n scored probes those are, lums[h] (n,) its exact bounce
+    luminance at every scored probe, band_of (n,) each scored probe's band. In a band, a direction's median and its
+    pooled values are over its lit probes there (a direction that lights none of them has median 0), and its brightness
+    is its mean luminance over the band's probes, so a direction too faint in a band does not decide there."""
+    band_of = np.asarray(band_of)
+    out = {}
+    for name in ("all",) + tuple(b for i, b in enumerate(BANDS) if (band_of == i).any()):
+        if name == "all":
+            masks = [np.ones(int(np.count_nonzero(lit)), bool) for lit in lits]
+            bright = np.array([float(np.mean(lum)) for lum in lums])
+        else:
+            i = BANDS.index(name)
+            masks = [band_of[np.asarray(lit, bool)] == i for lit in lits]
+            bright = np.array([float(np.mean(np.asarray(lum)[band_of == i])) for lum in lums])
+        if not float(np.median(bright)) > 0.0:
+            raise ValueError(f"band {name}: the median direction lights none of its probes")
+        results = []
+        for k in range(kmax):
+            values = [np.asarray(d[k])[m] for d, m in zip(logs, masks)]
+            per = np.array([float(np.median(v)) if v.size else 0.0 for v in values])
+            results.append(gate(per, bright, np.concatenate(values)))
+        out[name] = results
+    return out
+
+
+def choose_k_by_band(results_by_band) -> tuple:
+    """(K, rule, {band: choose_k(its results)}): the stable margin rule in every band (Task 4d, amended 11 October). K is
+    the smallest K from which every band's gate passes with its worst bright direction within MARGIN, at that K and at
+    every larger K up to the last one tried: the largest of the bands' own stable K. When a band has no stable K there
+    is no K: (None, "none")."""
+    starts = {name: choose_k(results) for name, results in results_by_band.items()}
+    if not starts or any(rule != "margin" for _k, rule in starts.values()):
+        return None, "none", starts
+    return max(k for k, _rule in starts.values()), "margin", starts
+
+
 def reused(s, used) -> bool:
     """True when the unit vector s is one of the directions in `used` (unit vectors the same to REUSE_TOL in every
     component, which is float noise, not a nearby direction): the independent check must not score a direction the
@@ -295,6 +359,14 @@ def trilinear_matrix(origin, spacing, shape, valid, points):
     total = wts.sum(1, keepdims=True)
     wts = np.where(total > 1e-6, wts / np.maximum(total, 1e-6), 0.0)
     return sp.csr_matrix((wts.ravel(), (np.repeat(np.arange(len(f)), 8), idx.ravel())), shape=(len(f), int(shape.prod())))
+
+
+def floor_weights(origin, spacing, shape, valid, points, box_lo, box_hi) -> np.ndarray:
+    """(probes,) float64: the mean trilinear row (trilinear_matrix) over the floor's texel points, each clamped into the
+    probes' lookup box first, as every probe read is (store.Probes.lookup; Task 4d: Task 4 read the texels unclamped,
+    and the 37 of 89,888 that lie up to 9 mm beyond the x0 face read no probe)."""
+    clamped = np.clip(np.asarray(points, np.float64), np.asarray(box_lo, np.float64), np.asarray(box_hi, np.float64))
+    return np.asarray(trilinear_matrix(origin, spacing, shape, valid, clamped).mean(0)).ravel()
 
 
 def patch_rays(P, N) -> np.ndarray:

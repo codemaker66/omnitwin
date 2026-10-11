@@ -494,18 +494,19 @@ def _proof_modules():
 
 def cmd_probes(cfg, args) -> int:
     """<work>/probes-coarse.npz: each source's bounce (white, unit; the windows with the capture's sky weights) as
-    ambient cubes on the hall box's 0.5 m grid, solved by the proof's radiosity (spec 4.2). <evidence>/probes-check.json:
-    the capture's bounce rebuilt from the float16 cubes the package carries against the proof's own solve (linearity),
-    median relative luminance difference at the valid probes within LINEARITY_GATE; the cubes go into work/ only once
-    that check passes (a failing run keeps them as <evidence>/probes-coarse-FAILED.npz). CPU only."""
+    ambient cubes on the 0.5 m grid over the probes' lookup box (probes.box_grid up to PROBE_LOOKUP_TOP and box_valid;
+    Task 4d, amended 11 October), solved by the proof's radiosity (spec 4.2). <evidence>/probes-check.json: the capture's
+    bounce rebuilt from the float16 cubes the package carries against the proof's own solve (linearity), median relative
+    luminance difference at the valid probes within LINEARITY_GATE; the cubes go into work/ only once that check passes
+    (a failing run keeps them as <evidence>/probes-coarse-FAILED.npz). CPU only."""
     import json, time
     from . import probes as PR
     _common, _lt, radiosity, fit04 = _proof_modules()
     from store import LUMW
     started, work = time.time(), cfg.paths["work"]
     hall, spacing = cfg.room["hallE57"], float(cfg.room["probeSpacing"])
-    P, shape, origin = PR.coarse_grid(hall, spacing)
-    valid = PR.valid_mask(P, hall)
+    P, shape, origin = PR.box_grid(hall, spacing, top=PROBE_LOOKUP_TOP)
+    valid = PR.box_valid(P, hall)
     print(f"probes: {len(P)} on {tuple(int(v) for v in shape)} at {spacing} m from {origin.tolist()}, "
           f"{int(valid.sum())} valid; torch threads {THREADS}", flush=True)
     with np.load(os.path.join(work, "patches.npz")) as z:
@@ -575,16 +576,18 @@ def _lit_directions(candidates, lt, SB, occ, rays, normals, used=()):
 def _score_through(SB, PR, lumw, table, basis, volumes, hz, fresnel, room, xb, to05, valid05, suns, exact05):
     """Each sun's bounce through sunbounce.sun_bounce from the stored table and volumes (its exact window powers from the
     patch rays, the unit fields mixed) against its exact bounce (exact05[h], per window, gated here by the proof's gates)
-    at the valid 0.5 m probes: per-sun median |dlog2|, every scored probe's |dlog2| (one array per sun), and each sun's
-    mean exact bounce (the gate's brightness)."""
-    medians, logs, bright = [], [], []
+    at the valid 0.5 m probes: per-sun median |dlog2|, every scored probe's |dlog2| (one array per sun), each sun's mean
+    exact bounce (the gate's brightness), and per sun its exact luminance at every scored probe and which of them it
+    lights (Task 4d: the bands' gates, sunbounce.band_gates)."""
+    medians, logs, bright, lums, lits = [], [], [], [], []
     for h, (s, g, _e) in enumerate(suns):
         exact = np.einsum("w,wpcf->pcf", g.astype(np.float64), exact05[h].astype(np.float64))
         lum_exact = PR.cube_luminance(exact[valid05], lumw)
         full = SB.sun_bounce(table, basis, volumes, hz, fresnel, room, xb, s)
         d = SB.log2_errors(PR.cube_luminance((to05 @ full.reshape(full.shape[0], 18)).reshape(-1, 3, 6), lumw), lum_exact)
         medians.append(float(np.median(d))); logs.append(d); bright.append(float(lum_exact.mean()))
-    return np.array(medians), logs, np.array(bright)
+        lums.append(lum_exact); lits.append(lum_exact > 0)
+    return np.array(medians), logs, np.array(bright), lums, lits
 
 
 def _scan(SB, PR, W, lumw, lum_basis, table, powers, dirs, exact05, valid05, xb, floor05, ks):
@@ -592,9 +595,10 @@ def _scan(SB, PR, W, lumw, lum_basis, table, powers, dirs, exact05, valid05, xb,
     fields, scored against its exact bounce (exact05[h] per window, gated by the proof's gates) at the valid 0.5 m probes
     where that is lit, with the first K basis volumes for every K in ks (1-based, cumulative). Returns the |dlog2| arrays
     (len(ks), lit) float32, the exact mean bounce (the gate's brightness), the azimuth and elevation, the coefficient
-    vectors (every K) and the exact mean floor luminance of each direction."""
+    vectors (every K), the exact mean floor luminance of each direction, and per direction its exact luminance at every
+    scored probe and which of them it lights (Task 4d: the bands' gates, sunbounce.band_gates)."""
     ki = np.asarray(list(ks)) - 1
-    logs, bright, az_el, cs, floor_exact = [], [], [], [], []
+    logs, bright, az_el, cs, floor_exact, lums, lits = [], [], [], [], [], [], []
     for h, (s, g, _e) in enumerate(dirs):
         exact = np.einsum("w,wpcf->pcf", g.astype(np.float64), exact05[h].astype(np.float64))
         lum = PR.cube_luminance(exact[valid05], lumw)
@@ -606,7 +610,8 @@ def _scan(SB, PR, W, lumw, lum_basis, table, powers, dirs, exact05, valid05, xb,
         d[rec > 0] = np.abs(np.log2(rec[rec > 0]) - np.broadcast_to(np.log2(lum[lit]), rec.shape)[rec > 0])
         logs.append(d.astype(np.float32)); bright.append(float(lum.mean())); az_el.append((az, el)); cs.append(c)
         floor_exact.append(float(np.einsum("p,pc->c", floor05, exact[..., 4]) @ lumw))
-    return logs, np.array(bright), az_el, cs, floor_exact
+        lums.append(lum); lits.append(lit)
+    return logs, np.array(bright), az_el, cs, floor_exact, lums, lits
 
 
 def _gate_by_body(SB, bodies, medians, bright, logs):
@@ -645,16 +650,20 @@ def cmd_sun_bounce(cfg, args) -> int:
     largest value) and the coefficient table at the wall-facing nodes of the 4-degree sun grid over the sky band compress
     and interpolate (sunbounce.bake_table: a node without real power in a window takes the nearest real node's
     coefficients). The grid covers the sun's and the moon's band and the bounce is per unit irradiance, so one table
-    serves both. K is chosen on SUN_HELD_OUT held-out real suns plus as many real moons, rebuilt from the stored values
-    and scored against their exact bounce at the valid 0.5 m probes (sunbounce.choose_k): the smallest K from which
-    sunbounce.GATE passes with the worst bright direction at most sunbounce.MARGIN at that K and every larger K, else the
-    smallest K that passes. The same gate then scores that K, unchanged and at no other K, on two further draws of suns
-    and moons: the check draw (SUN_CHECK_SEED, MOON_CHECK_SEED; every selection direction and grid node excluded) and the
-    strict draw (SUN_STRICT_SEED, MOON_STRICT_SEED; those and every direction of the check draw excluded). Both must pass.
-    <evidence>/sun-bounce-check.json holds the gates, per body too, the faint directions, and the power and floor
-    checks (non-finite numbers written as null). The artifact goes into work/ only when every check passed; a failing run
-    keeps its arrays as <evidence>/sun-bounce-FAILED.npz. CPU only."""
-    import json, time
+    serves both. Both probe grids cover the probes' lookup box (probes.box_grid up to PROBE_LOOKUP_TOP and box_valid; Task
+    4d, amended 11 October). K is chosen on SUN_HELD_OUT held-out real suns plus as many real moons, rebuilt from the
+    stored values and scored against their exact bounce at the valid 0.5 m probes, by the stable margin rule in every
+    band of those probes as well as over all of them (sunbounce.band_gates, choose_k_by_band; Task 4d): the smallest K
+    from which sunbounce.GATE passes with the worst bright direction at most sunbounce.MARGIN, at that K and every larger
+    K, in every band. With no such K the bake fails. The same gate then scores that K, unchanged and at no other K, over
+    all the probes and in every band, on two further draws of suns and moons: the check draw (SUN_CHECK_SEED,
+    MOON_CHECK_SEED; every selection direction and grid node excluded) and the strict draw (SUN_STRICT_SEED,
+    MOON_STRICT_SEED; those and every direction of the check draw excluded). Both must pass. The floor's texels are read
+    clamped into the lookup box, as every probe read is (sunbounce.floor_weights; Task 4d). <evidence>/sun-bounce-check.json
+    holds the gates, per body and per band too, the faint directions, and the power and floor checks (non-finite numbers
+    written as null). The artifact goes into work/ only when every check passed; a failing run keeps its arrays as
+    <evidence>/sun-bounce-FAILED.npz. CPU only."""
+    import inspect, json, time
     import torch
     from . import probes as PR, sunbounce as SB, windows as W
     common, lt, radiosity, _fit04 = _proof_modules()
@@ -679,12 +688,25 @@ def cmd_sun_bounce(cfg, args) -> int:
     occ = lt.load_occ()
     rays = torch.as_tensor(SB.patch_rays(patches["P"], patches["N"]), dtype=torch.float32)
     F = radiosity.form_factors(patches["P"], patches["N"], patches["A"], patches["opening"])
-    P1, shape1, origin1 = PR.coarse_grid(hall, SB.SPACING)
-    valid1 = PR.valid_mask(P1, hall)
-    P05, shape05, origin05 = PR.coarse_grid(hall, float(cfg.room["probeSpacing"]))
-    valid05 = PR.valid_mask(P05, hall)
+    spacing05 = float(cfg.room["probeSpacing"])
+    P1, shape1, origin1 = PR.box_grid(hall, SB.SPACING, top=PROBE_LOOKUP_TOP)
+    valid1 = PR.box_valid(P1, hall)
+    P05, shape05, origin05 = PR.box_grid(hall, spacing05, top=PROBE_LOOKUP_TOP)
+    valid05 = PR.box_valid(P05, hall)
+    # the scored probes' bands (Task 4d): the box Task 4's first 0.5 m grid covered (coarse_grid less its 2 cm inset), the
+    # dome opening's cylinder (02_geometry.DOME_C in geom.npz, lt.dome_visible's radius)
+    Pc, _shape_c, _origin_c = PR.coarse_grid(hall, spacing05)
+    covered = Pc[PR.valid_mask(Pc, hall)]
+    covered_lo, covered_hi = covered.min(0), covered.max(0)
+    with np.load(os.path.join(work, "geom.npz")) as z:
+        dome_c = np.asarray(z["dome_c"], np.float64)
+    dome_r = float(inspect.signature(lt.dome_visible).parameters["radius"].default)
+    band_of = SB.probe_bands(P05[valid05], covered_lo, covered_hi, dome_c, dome_r)
+    box = _lookup_box(common)
     print(f"sun grid {needed.shape} from az {az0} el {el0} every {SB.STEP} deg: {len(nodes)} nodes, {len(facing)} facing "
-          f"the wall; volumes {tuple(int(v) for v in shape1)} at {SB.SPACING} m, {int(valid1.sum())} valid; torch threads {THREADS}", flush=True)
+          f"the wall; volumes {tuple(int(v) for v in shape1)} at {SB.SPACING} m, {int(valid1.sum())} valid; scored probes "
+          f"{tuple(int(v) for v in shape05)} at {spacing05} m, {int(valid05.sum())} valid, by band "
+          f"{ {b: int((band_of == i).sum()) for i, b in enumerate(SB.BANDS)} }; torch threads {THREADS}", flush=True)
 
     sel_suns, _drawn, _skipped = _lit_directions(_random_suns(common, 400, SUN_HELD_SEED), lt, SB, occ, rays, patches["N"])
     sel_moons, _drawn, _skipped = _lit_directions(_random_moons(cfg, 400, MOON_HELD_SEED), lt, SB, occ, rays, patches["N"])
@@ -717,19 +739,21 @@ def cmd_sun_bounce(cfg, args) -> int:
     lum_basis = np.stack([PR.cube_luminance((to05 @ b64[k]).reshape(-1, 3, 6), LUMW) for k in range(kmax)])
     floor_points = (texel_to_model[:3, 0] * np.arange(fw)[None, :, None] + texel_to_model[:3, 1] * np.arange(fh)[:, None, None]
                     + texel_to_model[:3, 3]).reshape(-1, 3)
-    floor1 = np.asarray(SB.trilinear_matrix(origin1, SB.SPACING, shape1, valid1, floor_points).mean(0)).ravel()
-    floor05 = np.asarray(SB.trilinear_matrix(origin05, float(cfg.room["probeSpacing"]), shape05, valid05, floor_points).mean(0)).ravel()
+    # the floor's texels read clamped into the lookup box, as every probe read is (Task 4d)
+    floor1 = SB.floor_weights(origin1, SB.SPACING, shape1, valid1, floor_points, box["lo"], box["hi"])
+    floor05 = SB.floor_weights(origin05, spacing05, shape05, valid05, floor_points, box["lo"], box["hi"])
     floor_mean = np.einsum("p,kpc->kc", floor1, b64.reshape(kmax, len(P1), 3, 6)[..., 4])     # (kmax, 3)
     lumw = np.asarray(LUMW, np.float64)
     held_power = [SB.window_power(volumes, hz, fresnel, room, s) for s, _g, _e in held]        # exact, gated, at the float32 sun
-    logs, brightness, held_az_el, cs, floor_exact = _scan(SB, PR, W, lumw, lum_basis, table, held_power, held, exact05, valid05,
-                                                          xb, floor05, range(1, kmax + 1))
-    results = []
-    for k in range(kmax):
-        per_k = np.array([float(np.median(d[k])) for d in logs])
-        results.append(SB.gate(per_k, brightness, np.concatenate([d[k] for d in logs])))
+    logs, brightness, held_az_el, cs, floor_exact, lums, lits = _scan(SB, PR, W, lumw, lum_basis, table, held_power, held,
+                                                                      exact05, valid05, xb, floor05, range(1, kmax + 1))
+    by_band = SB.band_gates(logs, lits, lums, band_of, kmax)          # "all": the gate over every scored probe
+    results = by_band["all"]
     passing = [k + 1 for k, r in enumerate(results) if r["pass"]]
-    K, k_rule = SB.choose_k(results)                                  # fixed on the selection set; the check is scored after
+    K, k_rule, starts = SB.choose_k_by_band(by_band)                  # fixed on the selection set; the checks are scored after
+    k_found = K is not None
+    if not k_found:
+        K = kmax                                                      # no K is stable in every band: the bake fails (kept at kmax)
     rel = brightness / np.median(brightness)
     per_sun = [float(np.median(d[K - 1])) for d in logs]
     floor_err = [abs(float(np.cumsum(c[:, None] * floor_mean, 0)[K - 1] @ lumw) - fe) / fe for c, fe in zip(cs, floor_exact) if fe > 0]
@@ -739,7 +763,8 @@ def cmd_sun_bounce(cfg, args) -> int:
     # the chosen K again, each sun through sunbounce.sun_bounce (the evaluation the reference and the browser repeat)
     table_k = SB.Table(coeffs=baked.coeffs[..., :K], az0=az0, el0=el0, step=SB.STEP)
     basis_k = b64[:K].reshape(K, len(P1), 3, 6)
-    medians_h, _logs_h, _bright_h = _score_through(SB, PR, LUMW, table_k, basis_k, volumes, hz, fresnel, room, xb, to05, valid05, held, exact05)
+    medians_h, _logs_h, _bright_h, _lums_h, _lits_h = _score_through(SB, PR, LUMW, table_k, basis_k, volumes, hz, fresnel, room, xb,
+                                                                     to05, valid05, held, exact05)
     through = float(np.abs(medians_h - np.array(per_sun)).max())      # the search keeps its log errors in float32
     # K, fixed on the selection set above, is scored once on each of two draws of suns and moons (never chosen again, and
     # never scored at any other K): the check draw, and then the strict draw, whose directions exclude every selection
@@ -750,16 +775,20 @@ def cmd_sun_bounce(cfg, args) -> int:
                                                      excluded + [s for s, _g, _e in suns_])
         dirs, kinds = suns_ + moons_, ["sun"] * len(suns_) + ["moon"] * len(moons_)
         exact = _bounce_fields(radiosity, F, rho, patches, [e for _s, _g, e in dirs], P05)
-        medians, logs_d, bright_d = _score_through(SB, PR, LUMW, table_k, basis_k, volumes, hz, fresnel, room, xb, to05, valid05, dirs, exact)
+        medians, logs_d, bright_d, lums_d, lits_d = _score_through(SB, PR, LUMW, table_k, basis_k, volumes, hz, fresnel, room, xb,
+                                                                   to05, valid05, dirs, exact)
         verdict = SB.gate(medians, bright_d, np.concatenate(logs_d))
+        by_band_d = {b: r[0] for b, r in SB.band_gates([d[None] for d in logs_d], lits_d, lums_d, band_of, 1).items()}
         powers = [SB.window_power(volumes, hz, fresnel, room, s) for s, _g, _e in dirs]
-        logs_k, _b, _ae, cs_d, floor_exact_d = _scan(SB, PR, W, lumw, lum_basis, table, powers, dirs, exact, valid05, xb, floor05, [K])
+        logs_k, _b, _ae, cs_d, floor_exact_d, _lums_k, _lits_k = _scan(SB, PR, W, lumw, lum_basis, table, powers, dirs, exact,
+                                                                       valid05, xb, floor05, [K])
         del exact
         f_err = [abs(float(np.cumsum(c[:, None] * floor_mean, 0)[K - 1] @ lumw) - fe) / fe for c, fe in zip(cs_d, floor_exact_d) if fe > 0]
         through_d = float(np.abs(medians - np.array([float(np.median(d[0])) for d in logs_k])).max())
         record = {"sunSeed": sun_seed, "moonSeed": moon_seed, "suns": len(suns_), "moons": len(moons_),
-                  "drawn": drawn_s + drawn_m, "skippedReused": skipped_s + skipped_m, "pass": verdict["pass"], "result": verdict,
-                  "resultByBody": _gate_by_body(SB, kinds, medians, bright_d, logs_d),
+                  "drawn": drawn_s + drawn_m, "skippedReused": skipped_s + skipped_m,
+                  "pass": bool(verdict["pass"] and all(r["pass"] for r in by_band_d.values())), "result": verdict,
+                  "resultByBand": by_band_d, "resultByBody": _gate_by_body(SB, kinds, medians, bright_d, logs_d),
                   "faint": _faint(SB, kinds, [W.sun_az_el(np.asarray(s, np.float32), xb) for s, _g, _e in dirs],
                                   bright_d / np.median(bright_d), medians),
                   "floorMean": {"medianRelErr": float(np.median(f_err)), "maxRelErr": float(max(f_err))},
@@ -769,12 +798,17 @@ def cmd_sun_bounce(cfg, args) -> int:
     used = [s for s, _g, _e in held] + [node_suns[n] for n in facing]
     check, independent = score_draw(SUN_CHECK_SEED, MOON_CHECK_SEED, used)
     _strict_dirs, strict_check = score_draw(SUN_STRICT_SEED, MOON_STRICT_SEED, used + [s for s, _g, _e in check])
-    ok = (bool(passing) and split == 0.0 and through < 1e-6 and independent["throughMaxDiff"] < 1e-6 and independent["pass"]
-          and strict_check["throughMaxDiff"] < 1e-6 and strict_check["pass"])
-    out = {"gate": SB.GATE, "pass": ok, "K": K, "kRule": {"rule": k_rule, "margin": SB.MARGIN,
-                                                          "smallestPassingK": passing[0] if passing else None},
+    ok = (bool(passing) and k_found and split == 0.0 and through < 1e-6 and independent["throughMaxDiff"] < 1e-6
+          and independent["pass"] and strict_check["throughMaxDiff"] < 1e-6 and strict_check["pass"])
+    out = {"gate": SB.GATE, "pass": ok, "K": K,
+           "kRule": {"rule": k_rule, "margin": SB.MARGIN, "smallestPassingK": passing[0] if passing else None,
+                     "byBand": {b: {"K": k, "rule": r} for b, (k, r) in starts.items()}},
            "kmax": kmax, "rank": rank, "energyAtK": float(lam[:K].sum() / lam.sum()),
-           "result": results[K - 1], "splitMaxAbsDiff": split, "throughSunBounceMaxDiff": through,
+           "result": results[K - 1], "resultByBand": {b: r[K - 1] for b, r in by_band.items()},
+           "bands": {"names": list(SB.BANDS), "scored": {b: int((band_of == i).sum()) for i, b in enumerate(SB.BANDS)},
+                     "coveredLo": [float(v) for v in covered_lo], "coveredHi": [float(v) for v in covered_hi],
+                     "domeCentre": [float(v) for v in dome_c], "domeRadius": dome_r},
+           "splitMaxAbsDiff": split, "throughSunBounceMaxDiff": through,
            "resultByBody": _gate_by_body(SB, bodies, per_sun, brightness, [d[K - 1] for d in logs]),
            "independentCheck": independent, "strictCheck": strict_check,
            "model": {"factored": True, "realFraction": SB.REAL_FRACTION,
@@ -787,6 +821,8 @@ def cmd_sun_bounce(cfg, args) -> int:
                        "faint": _faint(SB, bodies, held_az_el, rel, per_sun)},
            "byK": [{"K": k + 1, "pass": r["pass"], "pooledMedian": r["pooledMedian"], "brightOver": r["brightOver"],
                     "worstBright": r["worstBright"]} for k, r in enumerate(results)],
+           "byKByBand": {b: [{"K": k + 1, "pass": r["pass"], "pooledMedian": r["pooledMedian"], "worstBright": r["worstBright"]}
+                             for k, r in enumerate(rs)] for b, rs in by_band.items() if b != "all"},
            "power": {"medianRelErr": float(np.median(power_err)), "maxRelErr": float(max(power_err))},
            "floorMean": {"medianRelErr": float(np.median(floor_err)), "maxRelErr": float(max(floor_err))}}
     kept = _save_npz_if(os.path.join(work, "sun-bounce.npz"), ok, cfg.paths["evidence"], basis=basis[:K],
@@ -800,8 +836,11 @@ def cmd_sun_bounce(cfg, args) -> int:
 
     def line(name, c):
         return (f"{name} ({c['suns']} suns and {c['moons']} moons of {c['drawn']} drawn, {c['skippedReused']} reused skipped) "
-                f"{json.dumps(_finite(c['result']))}, floor {json.dumps(c['floorMean'])}")
-    print(f"K {K} ({k_rule}; smallest passing {passing[0] if passing else None}) of rank {rank}, "
+                f"{json.dumps(_finite(c['result']))}, by band "
+                f"{json.dumps({b: [r['pass'], round(r['worstBright'], 4)] for b, r in c['resultByBand'].items()})}, "
+                f"floor {json.dumps(c['floorMean'])}")
+    print(f"K {K} ({k_rule}; smallest passing {passing[0] if passing else None}; each band's own stable K "
+          f"{json.dumps({b: k for b, (k, _r) in starts.items()})}) of rank {rank}, "
           f"{json.dumps(_finite(results[K - 1]))}; power {json.dumps(out['power'])}; floor {json.dumps(out['floorMean'])}; "
           f"{line('check', independent)}; {line('strict check', strict_check)}; "
           f"{'PASS: sun-bounce.npz written' if ok else 'FAIL: the failing arrays kept at ' + kept}, {time.time() - started:.0f} s", flush=True)

@@ -477,6 +477,18 @@ LOOKUP_BOX = {"lo": [FakeCommon.X0 + 0.02, FakeCommon.Y0 + 0.02, FakeCommon.FLOO
               "hi": [FakeCommon.X1 - 0.02, FakeCommon.Y1 - 0.02, 9.8]}       # store.Probes.lookup's clamp
 
 
+def planes_kept(rng, bounds, old_shape, new_shape, tail, seed):
+    """(new probes, *tail) uniform values on a grid of new_shape whose first z planes are a grid of old_shape (Task 4d's
+    box_grid over Task 4's coarse_grid): those planes take their values from rng exactly as the old grid drew them, so
+    every later draw of the synthetic hall keeps its value, and the planes Task 4d adds take theirs from their own
+    generator (seed)."""
+    low, high = bounds
+    old = rng.uniform(low, high, tuple(int(v) for v in old_shape) + tuple(tail))
+    new = np.random.default_rng(seed).uniform(low, high, tuple(int(v) for v in new_shape) + tuple(tail))
+    new[:, :, :int(old_shape[2])] = old
+    return new.reshape((-1,) + tuple(tail))
+
+
 def build_hall(root):
     """A synthetic hall laid out as the bake's folders under root: work (the per-splat tables of the finest level in a
     shuffled product order, the window cookie, the four artifacts, fit.json and fit_state.npz as Task 4b promotes them,
@@ -509,22 +521,24 @@ def build_hall(root):
         arrays[f"{name}_alpha"], arrays[f"{name}_frame"] = windows.volume_arrays(vol)
         arrays[f"{name}_horizon"] = np.full(360, 5.0, np.float32)
     _put_artifact(work, evidence, "windows.npz", "windows.json", arrays, windows=list(OUTLINES))
-    # Both grids as the bake builds them (probes.coarse_grid and valid_mask, as cmd_probes and cmd_sun_bounce do): 0.5 m
-    # and 1 m from the box's low corner, valid inside the box less 2 cm, so their planes on the box's low faces are
-    # invalid and a splat beyond the window wall (y < 0) finds no valid probe unless it is read inside the box.
-    P05, shape05, origin05 = PR.coarse_grid(SYNTHETIC_BOX, 0.5)                 # 7 x 5 x 7
-    cubes = rng.uniform(0.001, 0.05, (len(P05), 9, 3, 6)).astype(np.float16)
+    # Both grids as the bake builds them (probes.box_grid and box_valid, as cmd_probes and cmd_sun_bounce do; Task 4d):
+    # 0.5 m and 1 m from the box's low corner up to the first plane at or above the lookup's top, 9.8 m, every probe
+    # inside the box's walls and on or above its floor valid, its low faces' planes included.
+    P05, shape05, origin05 = PR.box_grid(SYNTHETIC_BOX, 0.5, top=M.PROBE_LOOKUP_TOP)      # 7 x 5 x 21
+    cubes = planes_kept(rng, (0.001, 0.05), PR.coarse_grid(SYNTHETIC_BOX, 0.5)[1], shape05, (9, 3, 6), 101).astype(np.float16)
     for ix in (5, 6):
         for iy in (3, 4):
             for iz in (1, 2):
                 cubes[(ix * shape05[1] + iy) * shape05[2] + iz] = 0.0
     _put_artifact(work, evidence, "probes-coarse.npz", "probes-check.json",
-                  {"cubes": cubes, "valid": PR.valid_mask(P05, SYNTHETIC_BOX), "origin": origin05,
+                  {"cubes": cubes, "valid": PR.box_valid(P05, SYNTHETIC_BOX), "origin": origin05,
                    "shape": np.asarray(shape05, np.int64), "spacing": np.float64(0.5)})
-    P1, shape1, origin1 = PR.coarse_grid(SYNTHETIC_BOX, 1.0)                    # 4 x 3 x 4
+    P1, shape1, origin1 = PR.box_grid(SYNTHETIC_BOX, 1.0, top=M.PROBE_LOOKUP_TOP)         # 4 x 3 x 11
     centres = np.stack([rng.uniform(0.5, 2.9, 20), rng.uniform(1.0, 1.9, 20), rng.uniform(0.5, 2.0, 20)], 1)
     patches = sunbounce.Patches.from_arrays(centres, np.tile([0.0, -1.0, 0.0], (20, 1)), np.full(20, 0.25))
-    sky = {"basis": rng.uniform(2e-4, 4e-3, (SKY_K, len(P1), 3, 6)).astype(np.float16), "valid": PR.valid_mask(P1, SYNTHETIC_BOX),
+    basis = np.stack([planes_kept(rng, (2e-4, 4e-3), PR.coarse_grid(SYNTHETIC_BOX, 1.0)[1], shape1, (3, 6), 103 + k)
+                      for k in range(SKY_K)])
+    sky = {"basis": basis.astype(np.float16), "valid": PR.box_valid(P1, SYNTHETIC_BOX),
            "coeffs": rng.uniform(0.1, 1.0, (12, 30, 5, SKY_K)).astype(np.float32), "patchRays": patches.rays,
            "patchNormal": patches.normals, "patchArea": patches.areas, "floorMean": rng.uniform(0, 0.1, (SKY_K, 3)).astype(np.float32),
            "azimuth0": np.float64(60.0), "elevation0": np.float64(-2.0), "step": np.float64(4.0), "gridOrigin": origin1,
@@ -872,7 +886,9 @@ class SyntheticHall(unittest.TestCase):
     def test_every_splat_reads_valid_probes_at_its_position_in_the_hall_box(self):
         """Fix round 2: the package carries the proof's lookup box (the hall's box less 2 cm, up to 9.8 m) and every
         splat, the finest and the coarser, the embrasure and the env ones beyond the window wall included, reads valid
-        probes there; read on the grid alone (no box) those beyond the wall read none."""
+        probes there. On Task 4's first grid, read without the box, those beyond the wall read none; on Task 4d's grid
+        the wall's own plane is valid, so they read it either way, and the box still decides where: 2 cm inside the
+        wall, not on it."""
         self.assertEqual(self.pkg.manifest["probes"]["box"], LOOKUP_BOX)
         census = M._census(self.cfg)
         points = [np.asarray(self.fin["pos"], np.float64)] + [
@@ -884,7 +900,11 @@ class SyntheticHall(unittest.TestCase):
         beyond = P[:, 1] < 0
         self.assertGreater(int(beyond.sum()), 400)
         open_box = replace(self.model, probe_box_lo=np.full(3, -np.inf), probe_box_hi=np.full(3, np.inf))
-        self.assertEqual(float(reference.trilinear(open_box, P[beyond])[1].sum()), 0.0)
+        _idx, w_open = reference.trilinear(open_box, P[beyond])
+        np.testing.assert_allclose(w_open.sum(1), 1.0, rtol=0, atol=1e-12)          # Task 4d: the wall's plane is valid
+        _idx, w_box = reference.trilinear(self.model, P[beyond])
+        # the box reads 2 cm inside the wall: 0.04 of each splat's weight moves from the wall's plane to the next one in
+        self.assertGreaterEqual(float(np.abs(w_box - w_open).sum(1).min()), 0.08 - 1e-9)
 
     def test_the_package_carries_the_proofs_keep_and_drops_the_bounce_where_it_finds_no_corner(self):
         """Fix round 3: probes.proofKeep is the proof's own grid and keep from probes.npz. The shown finest splats in
