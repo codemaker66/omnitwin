@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FrameGovernor, displayRateFrom, windowPace, type StepKind } from "../render-governor.js";
+import { FrameGovernor, REBUILD_WAIT_MS, SETTLE_MS, STILL_MS, displayRateFrom, rebuildDue, windowPace, type StepKind } from "../render-governor.js";
 
 /** A ladder with `rungs` to give up, recording every step asked of it. */
 function ladder(rungs = Number.POSITIVE_INFINITY): { readonly asked: StepKind[]; readonly giveUp: (held: StepKind) => boolean } {
@@ -150,6 +150,30 @@ describe("windowPace", () => {
     const frames = Array.from({ length: 10 }, (_, i) => ({ interval: 0.04, cpu: i % 2 === 0 ? 0.03 : null }));
     expect(windowPace(frames).cpuShare).toBeCloseTo(0.75, 6);
     expect(windowPace([{ interval: 0.04, cpu: null }]).cpuShare).toBeNull();
+  });
+});
+
+describe("rebuildDue", () => {
+  it("never interrupts a hand on the view, however still the frames", () => {
+    expect(rebuildDue(5_000, 0, 0, null)).toBe(false);
+  });
+
+  it("applies once the view is still with the hand off", () => {
+    const now = 5_000;
+    expect(rebuildDue(now, 0, now - STILL_MS + 1, now - 100)).toBe(false);
+    expect(rebuildDue(now, 0, now - STILL_MS, now - 100)).toBe(true);
+  });
+
+  it("applies while a released camera settles by itself, once the hand has been off a while", () => {
+    const now = 5_000;
+    // Damping and convergence still draw a frame every few milliseconds.
+    expect(rebuildDue(now, 0, now - 10, now - SETTLE_MS + 1)).toBe(false);
+    expect(rebuildDue(now, 0, now - 10, now - SETTLE_MS)).toBe(true);
+  });
+
+  it("applies after a long wait whatever the hand does", () => {
+    expect(rebuildDue(REBUILD_WAIT_MS - 1, 0, REBUILD_WAIT_MS - 2, null)).toBe(false);
+    expect(rebuildDue(REBUILD_WAIT_MS, 0, REBUILD_WAIT_MS - 1, null)).toBe(true);
   });
 });
 

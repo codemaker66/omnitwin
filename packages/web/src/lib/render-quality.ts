@@ -134,21 +134,33 @@ export function profilePixelRatio(profile: RenderProfile, nativeRatio: number, c
   return Math.max(Math.min(1, nativeRatio), ratio);
 }
 
-/** A step of quality a device gives up to hold its frame rate. */
-export type QualityRung = "ambientOcclusion" | "resolution" | "bloom" | "multisampling";
+/**
+ * A step of quality a device gives up to hold its frame rate. Multisampling is
+ * never one: a scene pass with another sample count compiles every material
+ * again (half a second on the RTX 4090), and edges without it shimmer.
+ */
+export type QualityRung = "ambientOcclusion" | "resolution" | "bloom";
 
 /** How far one resolution rung lowers the pixel ratio. */
 const RESOLUTION_STEP = 0.25;
 
 /**
+ * Whether giving up a rung rebuilds the pipeline, compiling its passes again
+ * (bloom 0.2-0.6 s, ambient occlusion longer, on the RTX 4090), so it waits
+ * for a still view. A resolution step only resizes the canvas.
+ */
+export function rebuildsPipeline(rung: QualityRung): boolean {
+  return rung !== "resolution";
+}
+
+/**
  * The next quality a profile gives up when the device cannot hold its frame
  * rate (lib/render-governor.ts), or null when nothing given up would help.
  * Frames held up by the GPU give up the costliest and least visible first:
- * ambient occlusion, the resolution in quarter steps to 1.5, bloom, the
- * resolution to 1, then multisampling. Frames held up by the CPU give up
- * passes, each a chain of draws to encode (bloom's mip chain costs a slowed
- * phone nearly half its render), and keep their pixels, which cost the CPU
- * nothing.
+ * ambient occlusion, the resolution in quarter steps to 1.5, bloom, then the
+ * resolution to 1. Frames held up by the CPU give up passes, each a chain of
+ * draws to encode (bloom's mip chain costs a slowed phone nearly half its
+ * render), and keep their pixels, which cost the CPU nothing.
  */
 export function nextQualityRung(profile: RenderProfile, baseRatio: number, given: readonly QualityRung[], held: "cpu" | "gpu"): QualityRung | null {
   const open = (rung: QualityRung): boolean => !given.includes(rung);
@@ -162,7 +174,6 @@ export function nextQualityRung(profile: RenderProfile, baseRatio: number, given
   if (ratio - RESOLUTION_STEP >= 1.5 - 1e-6) return "resolution";
   if (profile.bloom !== null && open("bloom")) return "bloom";
   if (ratio - RESOLUTION_STEP >= 1 - 1e-6) return "resolution";
-  if (profile.sceneSamples > 0 && open("multisampling")) return "multisampling";
   return null;
 }
 
@@ -176,16 +187,15 @@ const governedProfiles = new WeakMap<RenderProfile, Map<string, RenderProfile>>(
 
 /**
  * A profile and pixel ratio once the rungs `given` are given up. The profile
- * is the same object until an effect goes, so a resolution step only resizes
- * the canvas; the ratio never falls below 1 (or the base, if lower).
+ * is the same object until an effect it has goes, so a resolution step only
+ * resizes the canvas; the ratio never falls below 1 (or the base, if lower).
  */
 export function governedRender(profile: RenderProfile, baseRatio: number, given: readonly QualityRung[]): GovernedRender {
   const pixelRatio = Math.max(Math.min(1, baseRatio), baseRatio - given.filter((rung) => rung === "resolution").length * RESOLUTION_STEP);
-  const dropsOcclusion = given.includes("ambientOcclusion");
-  const dropsBloom = given.includes("bloom");
-  const dropsSamples = given.includes("multisampling");
-  if (!dropsOcclusion && !dropsBloom && !dropsSamples) return { profile, pixelRatio };
-  const key = `${String(dropsOcclusion)}|${String(dropsBloom)}|${String(dropsSamples)}`;
+  const dropsOcclusion = profile.ambientOcclusion !== null && given.includes("ambientOcclusion");
+  const dropsBloom = profile.bloom !== null && given.includes("bloom");
+  if (!dropsOcclusion && !dropsBloom) return { profile, pixelRatio };
+  const key = `${String(dropsOcclusion)}|${String(dropsBloom)}`;
   let derived = governedProfiles.get(profile);
   if (derived === undefined) {
     derived = new Map();
@@ -197,7 +207,6 @@ export function governedRender(profile: RenderProfile, baseRatio: number, given:
       ...profile,
       ambientOcclusion: dropsOcclusion ? null : profile.ambientOcclusion,
       bloom: dropsBloom ? null : profile.bloom,
-      sceneSamples: dropsSamples ? 0 : profile.sceneSamples,
     };
     derived.set(key, governed);
   }

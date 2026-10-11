@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { addAfterEffect, addEffect, useFrame, useThree } from "@react-three/fiber";
-import { FrameGovernor, displayRateFrom, type StepKind } from "../../lib/render-governor.js";
-import { nextQualityRung, type RenderProfile } from "../../lib/render-quality.js";
+import { FrameGovernor, displayRateFrom, rebuildDue, type StepKind } from "../../lib/render-governor.js";
+import { nextQualityRung, rebuildsPipeline, type QualityRung, type RenderProfile } from "../../lib/render-quality.js";
 import { onMainDraw } from "../../lib/main-draw-clock.js";
 import { getNativeRenderer, nativeRendererGpuString } from "../../lib/native-renderer.js";
 import { isSoftwareRenderer } from "../grand-hall/hall-finish.js";
@@ -13,7 +13,16 @@ export interface RenderGovernorProbe {
   readonly governor: Pick<FrameGovernor, "stepsDown" | "displayRate" | "lastWindowFps" | "lastWindowCpuShare" | "windowsJudged" | "finished">;
   /** Frame updates, draws, and updates the GPU's backlog held back from drawing. */
   readonly counts: { updates: number; draws: number; heldBack: number };
+  /** A rung given up that rebuilds the pipeline, waiting for a still view. */
+  readonly waiting: { rung: QualityRung | null };
+  /** The rungs given up so far, in order. */
+  readonly given: () => readonly QualityRung[];
 }
+
+/** How often a waiting rebuild looks for a still view, ms. */
+const STILL_CHECK_MS = 200;
+/** A wheel turn holds the view this long, ms: zooming arrives as separate ticks. */
+const WHEEL_HOLD_MS = 300;
 
 declare global {
   interface Window {
@@ -51,8 +60,10 @@ export interface RenderGovernorProps {
  * frame back. A frame drawn for a single change, a chunk arriving, waited on
  * that change rather than the device. Each frame's CPU cost is the main
  * thread's frame work since the draw before: every frame update, drawn or
- * held back. Off on software rasterisers, where every frame is slow by nature
- * and the scene is already drawn plainly.
+ * held back. A resolution step applies at once; an effect given up rebuilds
+ * the pipeline, whose compile would stall a gesture, so it waits for a still
+ * view, and frames are not judged meanwhile. Off on software rasterisers,
+ * where every frame is slow by nature and the scene is already drawn plainly.
  */
 export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorProps): null {
   const gl = useThree((state) => state.gl);
@@ -60,13 +71,17 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
   // One governor for the visit: the quality it gives up stays given up.
   const [governor] = useState(() => new FrameGovernor());
   const counts = useRef({ updates: 0, draws: 0, heldBack: 0 });
+  const waiting = useRef<{ rung: QualityRung | null }>({ rung: null });
   const software = useRef<boolean | null>(null);
   const latest = useRef({ profile, baseRatio, enabled });
   latest.current = { profile, baseRatio, enabled };
 
   useEffect(() => {
     if (!import.meta.env.DEV) return undefined;
-    const probe: RenderGovernorProbe = { governor, counts: counts.current };
+    const probe: RenderGovernorProbe = {
+      governor, counts: counts.current, waiting: waiting.current,
+      given: () => useRenderGovernorStore.getState().given,
+    };
     window.__renderGovernor = probe;
     return () => {
       if (window.__renderGovernor === probe) delete window.__renderGovernor;
@@ -83,14 +98,36 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
 
   useEffect(() => {
     const tally = counts.current;
+    const wait = waiting.current;
     let passStartedAt = 0;
     let lastDrawAt: number | null = null;
+    /** When the planner last updated a frame, ms. */
+    let lastFrameAt = 0;
     /** Main-thread frame work since the last draw, ms. */
     let workSinceDraw = 0;
     /** The loop stopped since the last draw: the next waited on something. */
     let stoppedSinceDraw = true;
     /** An update since the last draw was held back by the GPU's backlog. */
     let heldBackSinceDraw = false;
+    let waitingSince = 0;
+    let stillCheck = 0;
+    // A hand on the view: a pointer down on the canvas (a finger, the mouse,
+    // a pen: orbit, pinch, a furniture drag, a box), the camera's own gesture,
+    // or a wheel turned a moment ago.
+    const canvas = gl.domElement;
+    const pointersDown = new Set<number>();
+    let lastWheelAt = -Infinity;
+    let handOffSince: number | null = null;
+    const pressed = (event: PointerEvent): void => { pointersDown.add(event.pointerId); };
+    const released = (event: PointerEvent): void => { pointersDown.delete(event.pointerId); };
+    // A release the page never hears (over a disabled control) ends with the buttons.
+    const moved = (event: PointerEvent): void => { if (event.buttons === 0) pointersDown.delete(event.pointerId); };
+    const wheeled = (): void => { lastWheelAt = performance.now(); };
+    canvas.addEventListener("pointerdown", pressed);
+    window.addEventListener("pointerup", released, true);
+    window.addEventListener("pointercancel", released, true);
+    window.addEventListener("pointermove", moved, true);
+    canvas.addEventListener("wheel", wheeled, { passive: true });
     const isSoftware = (): boolean => {
       if (software.current === null) {
         const native = getNativeRenderer(gl);
@@ -98,13 +135,36 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
       }
       return software.current;
     };
+    // An effect given up waits for the hand to leave the view: its pipeline's
+    // compile then stalls nothing being moved.
+    const applyWhenStill = (): void => {
+      const rung = wait.rung;
+      if (rung === null) return;
+      const now = performance.now();
+      const handOn = pointersDown.size > 0 || now - lastWheelAt < WHEEL_HOLD_MS
+        || useCockpitStore.getState().cameraInteractionActive;
+      if (handOn) handOffSince = null;
+      else handOffSince ??= now;
+      if (!rebuildDue(now, waitingSince, lastFrameAt, handOffSince)) return;
+      window.clearInterval(stillCheck);
+      wait.rung = null;
+      const { given, setGiven } = useRenderGovernorStore.getState();
+      setGiven([...given, rung]);
+    };
     const giveUp = (held: StepKind): boolean => {
       const { profile: current, baseRatio: ratio, enabled: governs } = latest.current;
-      if (!governs) return false;
+      if (!governs || wait.rung !== null) return false;
       const { given, setGiven } = useRenderGovernorStore.getState();
       const rung = nextQualityRung(current, ratio, given, held);
       if (rung === null) return false;
-      setGiven([...given, rung]);
+      if (rebuildsPipeline(rung)) {
+        wait.rung = rung;
+        waitingSince = performance.now();
+        handOffSince = null;
+        stillCheck = window.setInterval(applyWhenStill, STILL_CHECK_MS);
+      } else {
+        setGiven([...given, rung]);
+      }
       return true;
     };
     const observe = (interval: number, workMs: number): void => {
@@ -125,8 +185,10 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
       updated.current = false;
       drawnAt.current = null;
       if (passUpdated) {
+        const now = performance.now();
         tally.updates += 1;
-        workSinceDraw += performance.now() - passStartedAt;
+        workSinceDraw += now - passStartedAt;
+        lastFrameAt = now;
         if (drewAt === null) {
           tally.heldBack += 1;
           heldBackSinceDraw = true;
@@ -141,13 +203,21 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
         workSinceDraw = 0;
         stoppedSinceDraw = false;
         heldBackSinceDraw = false;
-        if (interval !== null && paced && !document.hidden && !isSoftware()) observe(interval, work);
+        // A step still waiting to apply would be judged on frames it has not touched.
+        if (interval !== null && paced && wait.rung === null && !document.hidden && !isSoftware()) observe(interval, work);
       }
       if (get().internal.frames === 0) stoppedSinceDraw = true;
     });
     return () => {
       unsubscribeStart();
       unsubscribeEnd();
+      window.clearInterval(stillCheck);
+      wait.rung = null;
+      canvas.removeEventListener("pointerdown", pressed);
+      window.removeEventListener("pointerup", released, true);
+      window.removeEventListener("pointercancel", released, true);
+      window.removeEventListener("pointermove", moved, true);
+      canvas.removeEventListener("wheel", wheeled);
     };
   }, [get, gl, governor]);
 

@@ -60,11 +60,21 @@ interface Disposable { dispose(): void }
 /** A development view of one intermediate (`?pipeline=ao`), or the final image. */
 export type PipelineDebugView = "ao" | null;
 
-/** Builds the node pipeline for one renderer, scene, camera and profile. */
-export function buildPlannerPipeline(renderer: WebGPURenderer, scene: Scene, camera: Camera, profile: RenderProfile, debugView: PipelineDebugView = null): BuiltPipeline {
+/**
+ * Builds the node pipeline for one renderer, scene, camera and profile.
+ * `sceneNormals` keeps the scene pass writing normals once ambient occlusion
+ * is given up (lib/render-governor.ts): the scene's every material compiles
+ * per set of pass targets, so the same targets keep their compiled pipelines
+ * and only the passes after the scene compile again.
+ */
+export function buildPlannerPipeline(
+  renderer: WebGPURenderer, scene: Scene, camera: Camera, profile: RenderProfile,
+  debugView: PipelineDebugView = null, sceneNormals = profile.ambientOcclusion !== null,
+): BuiltPipeline {
   const owned: Disposable[] = [];
   const temporal = profile.antiAlias === "temporal";
   const occlusion = profile.ambientOcclusion;
+  const normals = sceneNormals || occlusion !== null;
 
   // Occlusion and temporal anti-aliasing read the depth buffer, which cannot
   // be multisampled (the profile then asks for no samples): the temporal
@@ -74,10 +84,10 @@ export function buildPlannerPipeline(renderer: WebGPURenderer, scene: Scene, cam
   owned.push(scenePass);
   const targets: Parameters<typeof mrt>[0] = { output };
   // The normal target's alpha carries each surface's occlusion weight.
-  if (occlusion !== null) targets["normal"] = vec4(packNormalToRGB(normalView), float(1));
+  if (normals) targets["normal"] = vec4(packNormalToRGB(normalView), float(1));
   if (temporal) targets["velocity"] = velocity;
   if (Object.keys(targets).length > 1) scenePass.setMRT(mrt(targets));
-  if (occlusion !== null) scenePass.getTexture("normal").type = UnsignedByteType;
+  if (normals) scenePass.getTexture("normal").type = UnsignedByteType;
 
   const color = scenePass.getTextureNode("output");
   const depth = scenePass.getTextureNode("depth");
@@ -147,12 +157,14 @@ export function buildPlannerPipeline(renderer: WebGPURenderer, scene: Scene, cam
 export interface PlannerRenderPipelineProps {
   /** False while a captured room is shown, or for scenes that draw plainly. */
   readonly enabled: boolean;
-  /** The device's profile (lib/render-quality.ts), chosen once by the scene. */
+  /** The device's profile (lib/render-quality.ts), less what the frame-rate governor gave up. */
   readonly profile: RenderProfile;
+  /** Whether the scene pass writes normals: true for a device whose own profile has ambient occlusion. */
+  readonly sceneNormals?: boolean;
 }
 
 /** Installs the planner's pipeline as the canvas's frame composer. */
-export function PlannerRenderPipeline({ enabled, profile }: PlannerRenderPipelineProps): null {
+export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile.ambientOcclusion !== null }: PlannerRenderPipelineProps): null {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
@@ -169,7 +181,7 @@ export function PlannerRenderPipeline({ enabled, profile }: PlannerRenderPipelin
     let built: BuiltPipeline;
     const debugView: PipelineDebugView = import.meta.env.DEV && new URLSearchParams(window.location.search).get("pipeline") === "ao" ? "ao" : null;
     try {
-      built = buildPlannerPipeline(native, scene, camera, profile, debugView);
+      built = buildPlannerPipeline(native, scene, camera, profile, debugView, sceneNormals);
     } catch {
       // Without post-processing the planner still draws its scene plainly.
       return undefined;
@@ -189,7 +201,7 @@ export function PlannerRenderPipeline({ enabled, profile }: PlannerRenderPipelin
       built.dispose();
       invalidate();
     };
-  }, [camera, enabled, gl, invalidate, profile, scene]);
+  }, [camera, enabled, gl, invalidate, profile, scene, sceneNormals]);
 
   // Temporal anti-aliasing converges over a few frames after the last change.
   useFrame(() => {

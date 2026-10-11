@@ -193,6 +193,27 @@ export class FrameGovernor {
   }
 }
 
+/** A view this long without a frame, and with no hand on it, can take a pipeline rebuild unseen. */
+export const STILL_MS = 400;
+/** A hand off the view this long leaves only its own settling (damping, convergence) to interrupt. */
+export const SETTLE_MS = 1200;
+/** A rebuild waits no longer than this for a hand to leave the view. */
+export const REBUILD_WAIT_MS = 20_000;
+
+/**
+ * Whether a rung that rebuilds the pipeline (its compile stalls the page for
+ * a fraction of a second, longer on a phone), waiting since `waitingSince`,
+ * is due at `now`. Never while a hand is on the view (`handOffSince` null);
+ * once it is off, when no frame has been drawn since `lastFrameAt` for
+ * STILL_MS, or SETTLE_MS after the hand left, as a settling camera draws on
+ * by itself; and after REBUILD_WAIT_MS whatever the hand does. Times in ms.
+ */
+export function rebuildDue(now: number, waitingSince: number, lastFrameAt: number, handOffSince: number | null): boolean {
+  if (now - waitingSince >= REBUILD_WAIT_MS) return true;
+  if (handOffSince === null) return false;
+  return now - lastFrameAt >= STILL_MS || now - handOffSince >= SETTLE_MS;
+}
+
 /**
  * The display's refresh rate from requestAnimationFrame timestamps (ms) taken
  * while nothing else draws: the median interval, so a busy frame or two do not

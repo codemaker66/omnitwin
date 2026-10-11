@@ -544,7 +544,7 @@ export function PlannerScene(): ReactElement {
           {!timelinePreviewActive && !hallDrawn && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
           <CaptureToneMapping captureShown={captureDrawn} photographedRoom={hallDrawn} />
-          <PlannerRenderPipeline enabled={!captureDrawn} profile={governed.profile} />
+          <PlannerRenderPipeline enabled={!captureDrawn} profile={governed.profile} sceneNormals={renderProfile.ambientOcclusion !== null} />
           <RenderGovernor profile={renderProfile} baseRatio={profileDpr} enabled={governorEnabled} />
           <PipelineRetention />
           {furnitureReflections && <FurnitureReflectionExperiment />}

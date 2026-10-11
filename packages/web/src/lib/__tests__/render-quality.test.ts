@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { governedRender, nextQualityRung, profilePixelRatio, RENDER_PROFILES, selectRenderProfile, type QualityRung, type RenderProfile } from "../render-quality.js";
+import { governedRender, nextQualityRung, profilePixelRatio, rebuildsPipeline, RENDER_PROFILES, selectRenderProfile, type QualityRung, type RenderProfile } from "../render-quality.js";
 
 /** Every rung a profile gives up, in order, when each step is held up by `held`. */
 function ladder(profile: RenderProfile, baseRatio: number, held: "cpu" | "gpu"): QualityRung[] {
@@ -11,8 +11,8 @@ function ladder(profile: RenderProfile, baseRatio: number, held: "cpu" | "gpu"):
 }
 
 describe("nextQualityRung", () => {
-  it("gives up a GPU-bound phone's resolution to 1.5, then bloom, then resolution to 1, then multisampling", () => {
-    expect(ladder(RENDER_PROFILES.phone, 2, "gpu")).toEqual(["resolution", "resolution", "bloom", "resolution", "resolution", "multisampling"]);
+  it("gives up a GPU-bound phone's resolution to 1.5, then bloom, then resolution to 1, and keeps multisampling", () => {
+    expect(ladder(RENDER_PROFILES.phone, 2, "gpu")).toEqual(["resolution", "resolution", "bloom", "resolution", "resolution"]);
   });
 
   it("gives up ambient occlusion first where a profile has it", () => {
@@ -28,7 +28,13 @@ describe("nextQualityRung", () => {
   });
 
   it("has nothing to give up from a plain scene at 1x", () => {
-    expect(nextQualityRung(RENDER_PROFILES.off, 1, ["multisampling"], "gpu")).toBeNull();
+    expect(nextQualityRung(RENDER_PROFILES.off, 1, [], "gpu")).toBeNull();
+  });
+
+  it("knows which rungs rebuild the pipeline and must wait for a still view", () => {
+    expect(rebuildsPipeline("resolution")).toBe(false);
+    expect(rebuildsPipeline("bloom")).toBe(true);
+    expect(rebuildsPipeline("ambientOcclusion")).toBe(true);
   });
 });
 
@@ -49,8 +55,11 @@ describe("governedRender", () => {
     // A resolution step after it keeps the same derived profile.
     expect(governedRender(phone, 2, ["bloom", "resolution", "resolution", "resolution"]).profile).toBe(noBloom.profile);
     expect(governedRender(phone, 2, ["resolution", "resolution", "bloom", "resolution", "resolution"]).pixelRatio).toBe(1);
-    expect(governedRender(phone, 2, ["multisampling"]).profile.sceneSamples).toBe(0);
     expect(governedRender(RENDER_PROFILES.desktop, 2, ["ambientOcclusion"]).profile.ambientOcclusion).toBeNull();
+  });
+
+  it("keeps the profile when a rung names an effect it never had, so nothing is rebuilt", () => {
+    expect(governedRender(RENDER_PROFILES.phone, 2, ["ambientOcclusion"]).profile).toBe(RENDER_PROFILES.phone);
   });
 
   it("never draws below 1x, nor below a base already under it", () => {
