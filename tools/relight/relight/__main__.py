@@ -1179,7 +1179,10 @@ VECTORS_SCHEMA = "venviewer.relight-vectors.v1"
 VECTORS_FIXTURE = ("packages", "web", "src", "lib", "relight", "__fixtures__", "relight-vectors.json")
 VECTORS_CAP = (1_000_000, 1_600, 30)    # bytes: 1,000 kB + 1.6 kB x max(0, K - 30) (re-review N4)
 VECTOR_SPLATS = (("interior", (0,), 16), ("embrasure", (1,), 16), ("bulbs", (3, 4), 8), ("fixtures and cove", (6, 5), 8),
-                 ("sun-reachable floor", (0,), 8), ("hidden", (2,), 8))
+                 ("sun-reachable floor", (0,), 8), ("hidden", (2,), 8),
+                 # fix round 3: splats the proof's own lookup leaves without a corner (no bounce), then beside each in turn
+                 # the nearest splat that finds one (its bounce kept)
+                 ("no proof corner", (1, 0), 4), ("proof corner beside them", (1, 0), 4))
 VECTOR_FLOOR_POINTS = (12, 12, 8)       # the window rays' floor points: lit, marched but dark, wall-face cases
 STABLE_MOVE = 0.001         # metres: a sun-flagged vector splat keeps its visibility (within 1e-6) moved this far
 FOLD_MIN_WEIGHT = 1e-6      # the fold's corners weigh at least this: a probe that lies on a 1 m node (the hall's grids
@@ -1194,6 +1197,7 @@ CENSUS = ("tools", "xgrids-lcc2", "scripts", "sog-floor-census.py")   # the repo
 # The proof's probe lookup box (store.Probes.lookup, store.py:60-62; also 03_bases.py:150-151 and 194, 03b_window_fresnel.py:
 # 48 and 68): every position is clamped to 2 cm inside the hall's walls, and from 2 cm above its floor up to 9.8 m.
 PROBE_LOOKUP_INSET, PROBE_LOOKUP_TOP = 0.02, 9.8
+PROOF_PROBES = "probes.npz"   # the proof's own probe grid and keep (03_bases.probe_grid), byte for byte the proof's
 
 
 def _floats(a) -> list:
@@ -1380,16 +1384,35 @@ def _skin_light_section(cfg, skin_light, skin_package):
 def _input_hashes(cfg, skins) -> dict:
     """{path relative to the work folder, '/'-separated: SHA-256} of the work files records reads beyond the artifacts
     that evidence records (fix round 1, M1): the per-splat tables (BUILD_TABLES, and SKIN_TABLES with --skins), the
-    window cookie and the lamp/daylight ratio, which is refused unless it is byte for byte the proof's measurement it was
-    copied from (stage_lamp_colour)."""
+    window cookie, the lamp/daylight ratio, which is refused unless it is byte for byte the proof's measurement it was
+    copied from (stage_lamp_colour), and the proof's probe grid (PROOF_PROBES, whose keep the package carries; fix round
+    3), refused unless it is byte for byte the proof's."""
     from . import package as PK
     work = cfg.paths["work"]
-    names = [f"npy/{t}.npy" for t in BUILD_TABLES + (SKIN_TABLES if skins else ())] + ["occ_cookie.npz", LAMP_RATIO]
+    names = [f"npy/{t}.npy" for t in BUILD_TABLES + (SKIN_TABLES if skins else ())] + ["occ_cookie.npz", LAMP_RATIO, PROOF_PROBES]
     out = {name: PK.sha256_file(os.path.join(work, *name.split("/"))) for name in names}
     source = PK.sha256_file(os.path.join(cfg.paths["proofWork"], LAMP_RATIO))
     if out[LAMP_RATIO] != source:
         raise ValueError(f"{work}/{LAMP_RATIO} ({out[LAMP_RATIO]}) is not the proof's measurement it was copied from ({source})")
+    source = PK.sha256_file(os.path.join(cfg.paths["proofWork"], PROOF_PROBES))
+    if out[PROOF_PROBES] != source:
+        raise ValueError(f"{work}/{PROOF_PROBES} ({out[PROOF_PROBES]}) is not the proof's probe grid ({source})")
     return out
+
+
+def _proof_keep(work, proof) -> dict:
+    """The proof's own probe grid and its keep as the package carries them (probes.proofKeep; fix round 3), from
+    <work>/probes.npz (03_bases.probe_grid's P, shape, origin and keep, byte for byte the proof's: _input_hashes) and
+    03_bases.PROBE, the spacing the proof reads it with. Refused unless P lies on that grid."""
+    with np.load(os.path.join(work, PROOF_PROBES)) as z:
+        P, keep = np.asarray(z["P"], np.float64), np.asarray(z["keep"], bool)
+        shape, origin = [int(v) for v in z["shape"]], np.asarray(z["origin"], np.float64)
+    spacing = float(proof.store.b3.PROBE)
+    n = int(np.prod(shape))
+    grid = origin + spacing * np.stack(np.unravel_index(np.arange(n), shape), 1)
+    if keep.shape != (n,) or P.shape != (n, 3) or not np.allclose(P, grid, rtol=0, atol=1e-4):
+        raise ValueError(f"{PROOF_PROBES}'s points are not its {shape} grid of {spacing} m from {origin.tolist()}")
+    return {"origin": origin, "spacing": spacing, "shape": shape, "keep": keep}
 
 
 def _lookup_box(common) -> dict:
@@ -1415,6 +1438,7 @@ def _package_inputs(cfg, proof, tables):
     with np.load(os.path.join(work, "probes-coarse.npz")) as z:
         probes = {k: z[k] for k in ("cubes", "valid", "origin", "shape", "spacing")}
     probes["box"] = _lookup_box(common)
+    probes["proofKeep"] = _proof_keep(work, proof)
     with np.load(os.path.join(work, "sun-bounce.npz")) as z:
         sky = {k: z[k] for k in (*PK.SKY_ARRAYS, *PK.SKY_FRAME)}
     with np.load(os.path.join(work, "floor-light.npz")) as z:
@@ -1712,7 +1736,8 @@ def _check_sky(cfg, pkg, model, proof) -> dict:
     the 1 m grid at the same points (sunbounce.trilinear_matrix), both at the splats' positions clamped into the probes'
     lookup box as every probe read is (reference.lookup_points; fix round 2): where both are positive, median |dlog2| <=
     0.02 and 99th percentile <= 0.1, and where either is not positive both are not (the resampling adds no light and
-    loses none)."""
+    loses none). The proof's corner rule (reference.proof_corner; fix round 3) decides whether a splat takes the bounce,
+    not what the two grids hold, so neither path applies it: this check measures the resampling alone."""
     from . import package as PK, reference, sunbounce as SB
     path, _sha = PK.verified(cfg.paths["work"], cfg.paths["evidence"], "sun-bounce.npz", "sun-bounce-check.json")
     got = PK.sky_arrays(pkg)
@@ -1845,13 +1870,15 @@ def _straddles(volumes, P, s) -> np.ndarray:
 
 
 def _vector_splats(model, settings, fin, ranges, common) -> np.ndarray:
-    """The vectors' 64 finest splats (Step 7), indices into the finest level: VECTOR_SPLATS' categories in order, each
+    """The vectors' 72 finest splats (Step 7), indices into the finest level: VECTOR_SPLATS' categories in order, each
     from one permutation of the finest splats seeded with SPLAT_SEED, a splat used once; a category of two classes takes
     half from each where it can. The sun-reachable floor splats are class-0 sun-flagged splats, not isotropic, below
-    FLOOR_Z + 0.12 with a normal within 18 degrees of +z, lit at the sunny morning's Sun (visibility > 0.3). Every
-    sun-flagged splat must keep its sunny-morning and moon_test visibility within 1e-6 when moved 1 mm along +x, -x,
-    +y, -y, +z or -z; one that does not is passed over for the next in the seeded order."""
-    from . import codec, package as PK
+    FLOOR_Z + 0.12 with a normal within 18 degrees of +z, lit at the sunny morning's Sun (visibility > 0.3). The last
+    eight (fix round 3): four splats the proof's own lookup leaves without a corner (reference.proof_corner), then, for
+    each in turn, the nearest splat of those classes that finds one. Every sun-flagged splat must keep its sunny-morning
+    and moon_test visibility within 1e-6 when moved 1 mm along +x, -x, +y, -y, +z or -z; one that does not is passed over
+    for the next in the seeded order (or by distance)."""
+    from . import codec, package as PK, reference
     from . import windows as W
     rec, pos = fin["records"], fin["pos"]
     flags = rec[:, 11]
@@ -1890,12 +1917,36 @@ def _vector_splats(model, settings, fin, ranges, common) -> np.ndarray:
         _direct, normals, _flags = PK.decode(rec[idx], ranges)
         return (normals[:, 2] > 0.95) & (P[:, 2] < common.FLOOR_Z + 0.12) & (visibility(P, directions[0]) > 0.3)
 
+    def beside(points, mask):
+        """For each of points in turn, the nearest untaken, acceptable splat in mask."""
+        got = []
+        for i in points:
+            cand = np.nonzero(mask & ~taken)[0]
+            near = cand[np.argsort(((np.asarray(pos[cand], np.float64) - np.asarray(pos[i], np.float64)) ** 2).sum(1), kind="stable")]
+            for a in range(0, len(near), 64):
+                ok = near[a:a + 64][acceptable(near[a:a + 64], None)]
+                if ok.size:
+                    got.append(int(ok[0]))
+                    taken[ok[0]] = True
+                    break
+        return got
+
     z = np.asarray(pos[:, 2])
-    chosen = []
+    corner = np.concatenate([reference.proof_corner(model, np.asarray(pos[a:a + 500_000], np.float64)) for a in range(0, len(rec), 500_000)])
+    chosen, cornerless = [], []
     for name, classes, count in VECTOR_SPLATS:
         if name == "sun-reachable floor":
             got = pick((cls == codec.CLASS_INTERIOR) & sun & ((flags & codec.FLAG_ISO) == 0) & (z < common.FLOOR_Z + 0.12),
                        count, floor_lit)
+        elif name == "no proof corner":
+            got = []
+            for i, c in enumerate(classes):
+                got += pick((cls == c) & ~corner, count // len(classes) + (count % len(classes) if i == 0 else 0))
+            if len(got) < count:
+                got += pick(np.isin(cls, classes) & ~corner, count - len(got))
+            cornerless = got
+        elif name == "proof corner beside them":
+            got = beside(cornerless, np.isin(cls, classes) & corner)
         else:
             got = []
             for i, c in enumerate(classes):
@@ -2004,9 +2055,10 @@ def _setting_json(s) -> dict:
 
 def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate) -> tuple[bytes, dict]:
     """The test vectors (Step 7) in the shape of R1b's RelightVectorsSchema (venviewer.relight-vectors.v1): the
-    manifest's slice, the four settings, the probe table on the package's global grid, the windows, the sample depths,
-    the sky bodies' bounce slice, the window rays, the 64 splats with their expected multipliers and words, and eight
-    floor texels; refused over 1,000 kB + 1.6 kB x max(0, K - 30). Returns (the JSON bytes, what to print)."""
+    manifest's slice, the four settings, the probe table on the package's global grid with the proof's keep at every
+    corner its own lookup touches at the splats (fix round 3), the windows, the sample depths, the sky bodies' bounce
+    slice, the window rays, the 72 splats with their expected multipliers and words, and eight floor texels; refused
+    over 1,000 kB + 1.6 kB x max(0, K - 30). Returns (the JSON bytes, what to print)."""
     import base64
     from . import codec, package as PK, reference, sunbounce
     from . import windows as W
@@ -2029,6 +2081,7 @@ def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate) -> 
                "expected": {name: {"m": _floats(expected[name][0][i]), "alpha": float(expected[name][1][i]),
                                    "word": int(expected[name][2][i])} for name in names}} for i in range(len(rows))]
     entries = sorted({int(i) for i in reference.trilinear(model, P)[0].ravel()})
+    proof_entries = sorted({int(i) for i in reference.proof_lookup(model, P)[0].ravel()})
     rows_t, columns_t = sky.table.coeffs.shape[:2]
     cases, nodes = [], set()
     for s in directions:
@@ -2077,6 +2130,8 @@ def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate) -> 
                        "wallFaceRate": wall_face_rate},
         "probes": {"origin": m["probes"]["origin"], "spacing": m["probes"]["spacing"], "shape": m["probes"]["shape"],
                    "box": m["probes"]["box"],
+                   "proofKeep": {**{k: m["probes"]["proofKeep"][k] for k in ("origin", "spacing", "shape")},
+                                 "entries": [{"index": i, "keep": bool(model.proof_keep.keep[i])} for i in proof_entries]},
                    "entries": [{"index": i, "valid": bool(model.probe_valid[i]),
                                 "cube": b64(np.ascontiguousarray(model.probes[i], "<f2").tobytes())} for i in entries]},
         "presetsFromProof": m["presetsFromProof"],
@@ -2087,7 +2142,7 @@ def _vectors(cfg, pkg, model, settings, common, fin, colour, wall_face_rate) -> 
     k = int(m["sky"]["k"])
     cap = VECTORS_CAP[0] + VECTORS_CAP[1] * max(0, k - VECTORS_CAP[2])
     info = {"bytes": len(data), "cap": cap, "k": k, "wallFacePairs": len(pairs), "wallFaceFloorPoints": wall_points,
-            "foldCorners": sum(1 for _i, w in fold["corners"] if w > 0), "probes": len(entries)}
+            "foldCorners": sum(1 for _i, w in fold["corners"] if w > 0), "probes": len(entries), "proofCorners": len(proof_entries)}
     if len(data) > cap:
         raise ValueError(f"the vectors take {len(data)} bytes, over K {k}'s cap of {cap}: {json.dumps(info)}")
     return data, info

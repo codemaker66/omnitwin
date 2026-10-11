@@ -35,6 +35,18 @@ class SkyBounce:
 
 
 @dataclass(frozen=True, eq=False)
+class ProofKeep:
+    """The proof's own probe grid and which of its probes it kept (the package's probes.proofKeep; amended 11 October,
+    Task 5 fix round 3): 03_bases.probe_grid's 0.2 m grid, probe (ix ny + iy) nz + iz, and its keep (inside the hall and
+    near its splats). Where the proof's lookup finds none of these probes around a position, the proof has no bounce
+    there, and neither has the multiplier (proof_lookup)."""
+    origin: np.ndarray           # (3,) the grid's corner (model frame)
+    spacing: float               # 0.2 m (03_bases.PROBE)
+    shape: tuple                 # (107, 55, 51) in the hall
+    keep: np.ndarray             # (nx ny nz,) bool
+
+
+@dataclass(frozen=True, eq=False)
 class Model:
     capture_w: np.ndarray        # (9,)
     capture_c: np.ndarray        # (9, 3)
@@ -53,6 +65,9 @@ class Model:
     # the floor to 9.8 m). Unbounded in synthetic models without it.
     probe_box_lo: np.ndarray = field(default_factory=lambda: np.full(3, -np.inf))
     probe_box_hi: np.ndarray = field(default_factory=lambda: np.full(3, np.inf))
+    # The proof's own probe grid and keep (fix round 3): the bounce only where the proof's lookup finds a probe. None in
+    # synthetic models without it, where every position finds one.
+    proof_keep: ProofKeep | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +137,41 @@ def trilinear(model: Model, pos):
     idx, wts = np.stack(idx, 1), np.stack(wts, 1)
     s = wts.sum(1, keepdims=True)
     return idx, np.where(s > 1e-6, wts / np.maximum(s, 1e-6), 0.0)
+
+
+def proof_lookup(model: Model, pos):
+    """(corners (N, 8) into the proof's grid, found (N,) bool): the proof's own probe read at pos, as far as whether it
+    finds a probe (amended 11 October, Task 5 fix round 3). store.Probes.lookup clamps the position into the lookup box
+    (lookup_points), then 03_bases.trilinear_weights (03_bases.py:78-95) reads the proof's grid with keep as the
+    validity, exactly: the cell clamped to [0, shape - 2] and the fraction to [0, 1] in float64, each corner's weight
+    the float64 product of its three factors times its keep, stored as float32, the eight summed in float32 as numpy
+    sums them, ((w0 + w1) + (w2 + w3)) + ((w4 + w5) + (w6 + w7)) in the corners' (dx, dy, dz) order, and found where
+    the sum exceeds 1e-6. Every position finds one without the proof's grid (corners None)."""
+    P = np.asarray(pos, np.float64)
+    pk = model.proof_keep
+    if pk is None:
+        return None, np.ones(len(P), bool)
+    shape = np.array(pk.shape)
+    f = (lookup_points(model, P) - np.asarray(pk.origin, np.float64)) / pk.spacing
+    i0 = np.clip(np.floor(f).astype(np.int64), 0, shape - 2)
+    t = np.clip(f - i0, 0, 1)
+    valid = np.asarray(pk.keep, bool).astype(np.float32)
+    idx, w = np.zeros((len(P), 8), np.int64), np.zeros((len(P), 8), np.float32)
+    k = 0
+    for dx in (0, 1):
+        for dy in (0, 1):
+            for dz in (0, 1):
+                ii = ((i0[:, 0] + dx) * shape[1] + (i0[:, 1] + dy)) * shape[2] + (i0[:, 2] + dz)
+                ww = (t[:, 0] if dx else 1 - t[:, 0]) * (t[:, 1] if dy else 1 - t[:, 1]) * (t[:, 2] if dz else 1 - t[:, 2])
+                idx[:, k], w[:, k] = ii, ww * valid[ii]
+                k += 1
+    return idx, w.sum(1) > 1e-6
+
+
+def proof_corner(model: Model, pos) -> np.ndarray:
+    """(N,) bool: whether the proof's own lookup finds a probe at pos (proof_lookup). Where it does not, the proof has
+    no bounce, and neither has the multiplier."""
+    return proof_lookup(model, pos)[1]
 
 
 def cube_eval(cubes, n, iso):
@@ -204,6 +254,9 @@ def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: S
     cls = flags & codec.CLASS_MASK
     iso = (flags & codec.FLAG_ISO) > 0
     idx, wts = trilinear(model, P)
+    # where the proof's own lookup finds no probe, it has no bounce: I = 0 for every source and both sky bodies, in E and
+    # Ecap alike (amended 11 October, Task 5 fix round 3)
+    wts = np.where(proof_corner(model, P)[:, None], wts, 0.0)
     cubes = (model.probes[idx].astype(np.float64) * wts[:, :, None, None, None]).sum(1)   # (N, 9, 3, 6)
     I = cube_eval(cubes, n, iso)                                                          # (N, 9, 3)
     light = direct[:, :, None] + I

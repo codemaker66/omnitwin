@@ -4,6 +4,8 @@
 
 > **Amended 11 October (R1a Task 5 fix round 1).** A2's class-7 bullet restates class 0's rule, which R1a now writes with its guard on both sides, so the captured setting is exactly 1 where Ecap < 1e-4. A2 below carries that form: `M = clamp(max(E, 1e-4) / max(Ecap, 1e-4), 1/16, 8)`. The rest of A2 is unchanged. R1a's "Revisions (11 October, Task 5 fix round 1)" gives the reason and the embrasure rule's `C′ = max(C, 1e-4)`.
 
+> **Amended 11 October (R1a Task 5 fix round 3).** A8's `bounceAt` and `bounceNode` below give no bounce where the proof's own lookup finds no probe (R1a's normative bounce bullet, "No proof corner, no bounce"; the manifest's `probes.proofKeep`): `bounceAt` asks R1b's `proofCorner` first, and `bounceNode` multiplies its renormaliser by R1b's `proofCornerNode`, with `probeReads` binding the proof's keep. R1b's merged code is the same (its "Revisions (11 October, R1a Task 5 fix round 3)"). So R1c's skin texels take the bounce exactly where the proof would.
+
 > **Amended 11 October (R1a Task 5 fix round 2).** A8's `bounceNode` below reads the probes as R1a's reference now does and as the proof did: the position clamped into the probes' lookup box (the manifest's `probes.box`, R1b's uniforms `probeBoxLo` and `probeBoxHi`), the cell into [0, shape − 2], the fraction into [0, 1], renormalised only where the weights sum over 1e-6. R1b's merged `bounceNode` carries the same change. Without it, skins on the hall's low walls (the window wall, the x0 end, the floor) and splats beyond them read only the grid's invalid low face, and had no bounce. R1a's "Revisions (11 October, Task 5 fix round 2)" gives the reason.
 
 R1c ("surface skins", `docs/superpowers/plans/2026-10-03-restored-hall-r1c-surface-skins.md`) builds on R1a and R1b as these amendments leave them. Apply them in one pass, together with R1d's (`docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md`), before R1a Task 5 is dispatched. Where R1d's amendments touch the same lines (marked **Overlap**), apply both: the result keeps R1d's change and R1c's.
@@ -773,9 +775,11 @@ Both the skins' light pass and the multiplier pass need the same bounce, and the
 ```ts
 /**
  * The bounce light at a point (R1a's I terms, folded): the capture's and the setting's cubes, trilinear over valid
- * probes, evaluated at the normal. relightSplat's own bounce, shared with the skins' light (R1c, amendment A8).
+ * probes, evaluated at the normal. relightSplat's own bounce, shared with the skins' light (R1c, amendment A8). None
+ * where the proof's own lookup finds no probe (proofCorner; R1a, amended 11 October, fix round 3).
  */
 export function bounceAt(model: RelightKernelModel, frame: KernelFrame, position: Vec3, normal: Vec3, iso: boolean): { readonly capture: Rgb; readonly scenario: Rgb } {
+  if (!proofCorner(model.probes, position)) return { capture: [0, 0, 0], scenario: [0, 0, 0] };
   const { indices, weights } = trilinearCorners(model.probes, position);
   const captureCube = new Float64Array(PROBE_FOLDED), scenarioCube = new Float64Array(PROBE_FOLDED);
   indices.forEach((index, corner) => {
@@ -833,13 +837,15 @@ export function probeReads(frame: RelightFrame) {
   return {
     capture: storage(frame.probeCapture, "float", frame.probeCount * PROBE_CAPTURE_STRIDE).toReadOnly(),
     scenario: storage(frame.probeScenario, "float", frame.probeCount * PROBE_FOLDED).toReadOnly(),
+    proofKeep: storage(frame.proofKeep, "uint", frame.proofKeep.count).toReadOnly(),   // R1a, amended 11 October, fix round 3
   };
 }
 export type ProbeReads = ReturnType<typeof probeReads>;
 
 /**
  * bounceAt in TSL (R1c, amendment A8): trilinear over valid probes, each corner's two folded cubes evaluated at the
- * normal (the mean of the six faces for an isotropic receiver), the weights renormalised. The multiplier pass's own
+ * normal (the mean of the six faces for an isotropic receiver), the weights renormalised; none where the proof's own
+ * lookup finds no probe (R1b's proofCornerNode; R1a, amended 11 October, fix round 3). The multiplier pass's own
  * code, shared with the skins' light pass.
  */
 export function bounceNode(u: RelightUniforms, reads: ProbeReads, p: Node<"vec3">, normal: Node<"vec3">, iso: Node<"bool">): { capture: Node<"vec3">; scenario: Node<"vec3"> } {
@@ -867,7 +873,7 @@ export function bounceNode(u: RelightUniforms, reads: ProbeReads, p: Node<"vec3"
       }
     }
   }
-  const normaliser = select(weightSum.greaterThan(1e-6), float(1).div(max(weightSum, 1e-6)), float(0));
+  const normaliser = select(weightSum.greaterThan(1e-6).and(proofCornerNode(u, reads.proofKeep, p)), float(1).div(max(weightSum, 1e-6)), float(0));
   return { capture: bounceCapture.mul(normaliser), scenario: bounceScenario.mul(normaliser) };
 }
 ```

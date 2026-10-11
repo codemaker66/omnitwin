@@ -54,7 +54,9 @@ def inputs(k=2, north=None):
         capture=capture, lamps=PK.lamps_of(capture, [1.623, 1.0, 0.467], refit_json()), volumes=vols,
         horizons={n: np.full(360, 5.5, np.float32) for n in vols}, fresnel=np.linspace(0.5, 0.9, 101).astype(np.float32),
         probes={"cubes": cubes, "valid": valid, "origin": np.zeros(3), "shape": np.array([3, 2, 2], np.int64), "spacing": np.float64(0.5),
-                "box": {"lo": [0.02, 0.02, 0.02], "hi": [0.98, 0.48, 9.8]}},
+                "box": {"lo": [0.02, 0.02, 0.02], "hi": [0.98, 0.48, 9.8]},
+                "proofKeep": {"origin": np.array([-0.1, -0.1, -0.1]), "spacing": 0.2, "shape": [7, 4, 3],
+                              "keep": np.arange(84) % 3 != 0}},
         sky=sky, floor={"D": D, "texelToModel": np.eye(4), "texel": 0.05},
         presets={"night": {"sky": 0.0, "sun": None, "house": 1.0, "emit": "lit"},
                  "sunny_morning": {"sky": 0.7, "sky_T": 9000.0, "sun": [2026, 5, 31, 8, 0], "sun_ratio": 16.0, "sun_T": 4900.0,
@@ -91,7 +93,8 @@ def write(folder, k=2, **kw):
 def contract_issues(m):
     """The checks of R1b's RelightManifestSchema that Python can repeat (docs/engineering/relight-package.md)."""
     issues = []
-    named = [m["probes"]["file"], m["probes"]["validFile"], *m["floor"]["files"], *(w["volume"] for w in m["windows"]),
+    named = [m["probes"]["file"], m["probes"]["validFile"], (m["probes"].get("proofKeep") or {}).get("file"), *m["floor"]["files"],
+             *(w["volume"] for w in m["windows"]),
              m["sky"]["basis"], m["sky"]["valid"], m["sky"]["table"]["file"], m["sky"]["patches"]["rays"],
              m["sky"]["patches"]["normals"], m["sky"]["patches"]["areas"]]
     listed = set(named) | {t["file"] for t in m["tiles"]}
@@ -122,6 +125,10 @@ def contract_issues(m):
     box = m["probes"].get("box") or {}
     if not (len(box.get("lo", [])) == 3 and len(box.get("hi", [])) == 3 and all(a < b for a, b in zip(box["lo"], box["hi"]))):
         issues.append("probes.box")
+    keep = m["probes"].get("proofKeep") or {}                                 # fix round 3
+    if not (len(keep.get("origin", [])) == 3 and isinstance(keep.get("spacing"), float) and keep["spacing"] > 0
+            and len(keep.get("shape", [])) == 3 and all(isinstance(n, int) and n >= 2 for n in keep["shape"])):
+        issues.append("probes.proofKeep")
     return issues
 
 
@@ -149,6 +156,12 @@ class Writing(unittest.TestCase):
         self.assertEqual((model.probe_shape, model.probe_spacing), ((3, 2, 2), 0.5))
         self.assertEqual(m["probes"]["box"], {"lo": [0.02, 0.02, 0.02], "hi": [0.98, 0.48, 9.8]})        # fix round 2
         self.assertEqual((model.probe_box_lo.tolist(), model.probe_box_hi.tolist()), ([0.02, 0.02, 0.02], [0.98, 0.48, 9.8]))
+        keep = src.probes["proofKeep"]["keep"]                                                      # fix round 3
+        self.assertEqual(m["probes"]["proofKeep"], {"origin": [-0.1, -0.1, -0.1], "spacing": 0.2, "shape": [7, 4, 3],
+                                                    "file": "proof-keep.bin.gz"})
+        self.assertEqual(pkg.gunzip("proof-keep.bin.gz"), np.packbits(keep, bitorder="little").tobytes())
+        pk = model.proof_keep
+        self.assertEqual((pk.origin.tolist(), pk.spacing, pk.shape, pk.keep.tolist()), ([-0.1, -0.1, -0.1], 0.2, (7, 4, 3), keep.tolist()))
         for name, vol in src.volumes.items():
             back = model.volumes[name]
             self.assertEqual(back.alpha.tobytes(), vol.alpha.tobytes())
@@ -178,7 +191,7 @@ class Writing(unittest.TestCase):
     def test_a_second_write_is_the_same_package_and_compare_finds_any_difference(self):
         a, b = os.path.join(self.dir, "a"), os.path.join(self.dir, "b")
         write(a), write(b)
-        self.assertEqual(PK.compare(a, b), {"files": 18, "differ": [], "manifestIdentical": True, "pass": True})
+        self.assertEqual(PK.compare(a, b), {"files": 19, "differ": [], "manifestIdentical": True, "pass": True})
         results = {key: {"pass": True, "n": i} for i, key in enumerate(PK.CHECK_KEYS)}
         PK.write_check_evidence(a, results)                              # check's own keys are left out of the comparison
         self.assertTrue(PK.compare(a, b)["pass"])
@@ -202,7 +215,8 @@ class Writing(unittest.TestCase):
             self.assertEqual({key: v for key, v in after.items() if key != "evidence"}, {key: v for key, v in before.items() if key != "evidence"})
             self.assertEqual(after["evidence"], {**before["evidence"], **{key: {"run": run} for key in PK.CHECK_KEYS}})
             self.assertEqual(read_bytes(os.path.join(folder, "manifest.json")), data)
-        self.assertEqual(sorted(os.listdir(folder)), ["floor", "manifest.json", "probe-valid.bin.gz", "probes.bin.gz", "sky", "tiles", "windows"])
+        self.assertEqual(sorted(os.listdir(folder)), ["floor", "manifest.json", "probe-valid.bin.gz", "probes.bin.gz", "proof-keep.bin.gz",
+                                                      "sky", "tiles", "windows"])
 
     def test_a_write_replaces_a_package_whole_and_refuses_any_other_folder(self):
         folder = os.path.join(self.dir, "v1")
@@ -234,12 +248,30 @@ class Writing(unittest.TestCase):
             bad.probes["box"] = {"lo": lo, "hi": hi}
             with self.assertRaisesRegex(ValueError, "probes.box"):
                 PK.write(os.path.join(self.dir, "b"), bad, tiles(), [(-22.0, 3.0)] * 9, tool="t", created_at="c", build={})
+        for change in ({"keep": np.ones(83, bool)}, {"spacing": 0.0}, {"shape": [7, 4, 1], "keep": np.ones(28, bool)},
+                       {"origin": [0.0, float("inf"), 0.0]}, {"keep": np.ones(84, np.uint8)}):             # fix round 3
+            bad = inputs()
+            bad.probes["proofKeep"] = {**bad.probes["proofKeep"], **change}
+            with self.assertRaisesRegex(ValueError, "probes.proofKeep"):
+                PK.write(os.path.join(self.dir, "k"), bad, tiles(), [(-22.0, 3.0)] * 9, tool="t", created_at="c", build={})
         bad = inputs()
         bad.capture["weights"][0] = float("nan")
         with self.assertRaises(ValueError):                                   # allow_nan=False: a NaN fails the build
             PK.write(os.path.join(self.dir, "z"), bad, tiles(), [(-22.0, 3.0)] * 9, tool="t", created_at="c", build={})
         self.assertFalse(os.path.exists(os.path.join(self.dir, "z")))
         self.assertEqual(PK.K_MAX, M.SUN_KMAX)
+
+    def test_the_proofs_keep_is_one_bit_per_probe_least_significant_first(self):
+        """Fix round 3: probe i is bit i % 8 of byte i // 8 (so bit i % 32 of the little-endian 32-bit word i // 32, as
+        the GPU reads it), the last byte's unused bits zero; a read refuses any other length or a set unused bit."""
+        keep = np.zeros(13, bool)
+        keep[[0, 9, 12]] = True
+        data = PK.keep_bits(keep)
+        self.assertEqual(data, bytes([0b0000_0001, 0b0001_0010]))
+        self.assertEqual(PK.keep_from_bits(data, 13).tolist(), keep.tolist())
+        for wrong in (data + b"\0", data[:1], bytes([1, 0b0010_0010])):
+            with self.assertRaisesRegex(ValueError, "proof's keep"):
+                PK.keep_from_bits(wrong, 13)
 
     def test_the_package_paths_are_posix_and_its_gzip_deterministic(self):
         self.assertEqual(PK.tile_file("0_5_0_1.sog"), "tiles/0_5_0_1.relight.gz")

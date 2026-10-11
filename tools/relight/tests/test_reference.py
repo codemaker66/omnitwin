@@ -57,7 +57,8 @@ def proof_lookup(pos, origin, shape, valid, spacing, lo, hi):
     """The proof's probe read, verbatim but for the grid spacing and the box (arguments here): store.Probes.lookup clamps
     the position into the hall's box (store.py:60-62: X0 + 0.02 .. X1 - 0.02, Y0 + 0.02 .. Y1 - 0.02, FLOOR_Z + 0.02
     .. 9.8), then 03_bases.trilinear_weights (03_bases.py:78-95, PROBE there): the cell clamped to [0, shape - 2], the
-    fraction to [0, 1], the eight corners weighted by validity in float32, renormalised where they sum over 1e-6."""
+    fraction to [0, 1], the eight corners weighted by validity in float32, renormalised where they sum over 1e-6.
+    Returns trilinear_weights' three values: the corners, their weights and whether it found a corner."""
     q = np.asarray(pos, np.float64).copy()
     q[:, 0] = np.clip(q[:, 0], lo[0], hi[0]); q[:, 1] = np.clip(q[:, 1], lo[1], hi[1])
     q[:, 2] = np.clip(q[:, 2], lo[2], hi[2])
@@ -76,10 +77,10 @@ def proof_lookup(pos, origin, shape, valid, spacing, lo, hi):
                 idx[:, k] = ii; w[:, k] = ww; k += 1
     s = w.sum(1, keepdims=True)
     w = np.where(s > 1e-6, w / np.maximum(s, 1e-6), 0)
-    return idx, w
+    return idx, w, (s[:, 0] > 1e-6)
 
 
-HALL = {"x0": -0.4, "x1": 1.73, "y0": -1.1, "y1": 0.3, "floorZ": 0.02, "ceilingZ": 1.51}
+HALL ={"x0": -0.4, "x1": 1.73, "y0": -1.1, "y1": 0.3, "floorZ": 0.02, "ceilingZ": 1.51}
 BOX_LO = np.array([HALL["x0"] + 0.02, HALL["y0"] + 0.02, HALL["floorZ"] + 0.02])
 BOX_HI = np.array([HALL["x1"] - 0.02, HALL["y1"] - 0.02, 9.8])
 
@@ -106,7 +107,7 @@ class ProbeLookup(unittest.TestCase):
                       rng.uniform(HALL["floorZ"] - 0.4, HALL["ceilingZ"] + 0.8, 4000)], 1)
         P[:200, 1] = HALL["y0"]                                   # on the window wall's face
         idx, w = reference.trilinear(m, P)
-        want_idx, want_w = proof_lookup(P, m.probe_origin, m.probe_shape, m.probe_valid.astype(np.float32), 0.5, BOX_LO, BOX_HI)
+        want_idx, want_w, _found = proof_lookup(P, m.probe_origin, m.probe_shape, m.probe_valid.astype(np.float32), 0.5, BOX_LO, BOX_HI)
         self.assertTrue(np.array_equal(idx, want_idx))
         np.testing.assert_allclose(w, want_w, rtol=0, atol=5e-7)  # the proof's weights are float32
         np.testing.assert_allclose(w.sum(1), 1.0, rtol=0, atol=1e-12)   # every position reads valid probes
@@ -129,6 +130,71 @@ class ProbeLookup(unittest.TestCase):
         np.testing.assert_allclose(M, 0.5, rtol=1e-12)            # lit only by the cove's bounce, it follows the cove
         M_open, _ = reference.multiplier(d, n, f, P, c, hall_model(box=False), half_cove)
         self.assertEqual(M_open[0].tolist(), [1.0, 1.0, 1.0])      # without the box: stuck at its captured look
+
+
+def proof_grid(m, keep_of, top=1.9):
+    """m with the proof's own probe grid as 03_bases.probe_grid lays it (0.2 m from 0.1 m beside and below the hall's box,
+    z from -0.1) and its keep, keep_of(the grid's points)."""
+    origin = np.array([HALL["x0"] - 0.1, HALL["y0"] - 0.1, -0.1])
+    ends = np.array([HALL["x1"] + 0.1, HALL["y1"] + 0.1, top])
+    shape = tuple(int(v) for v in np.floor((ends - origin) / 0.2 + 1e-9).astype(np.int64) + 1)
+    ix, iy, iz = np.meshgrid(*(np.arange(n) for n in shape), indexing="ij")
+    P = origin + 0.2 * np.stack([ix.ravel(), iy.ravel(), iz.ravel()], 1)
+    return replace(m, proof_keep=reference.ProofKeep(origin=origin, spacing=0.2, shape=shape, keep=np.asarray(keep_of(P), bool)))
+
+
+class ProofCorners(unittest.TestCase):
+    """Fix round 3: where the proof's own lookup (its 0.2 m grid and keep) finds no valid corner, the proof has no bounce,
+    and neither has the multiplier: I = 0 for every source and both sky bodies, in E and Ecap alike."""
+
+    def test_the_corner_rule_is_the_proofs(self):
+        """reference.proof_lookup against the proof's own read (trilinear_weights' third value) at random points and at
+        points on and a hair off the proof grid's planes, where the float32 weights and the 1e-6 threshold decide: the
+        same corners and the same decision everywhere."""
+        rng = np.random.default_rng(12)
+        m = proof_grid(hall_model(), lambda P: rng.random(len(P)) < 0.5)
+        pk = m.proof_keep
+        P = np.stack([rng.uniform(HALL["x0"] - 0.6, HALL["x1"] + 0.6, 6000), rng.uniform(HALL["y0"] - 0.6, HALL["y1"] + 0.6, 6000),
+                      rng.uniform(HALL["floorZ"] - 0.4, 2.3, 6000)], 1)
+        nodes = pk.origin + 0.2 * rng.integers(1, np.array(pk.shape) - 1, (3000, 3))
+        P[:3000] = nodes + rng.choice([0.0, 1e-9, -1e-9, 1e-7, -1e-7, 2e-7, -2e-7], (3000, 3))
+        idx, found = reference.proof_lookup(m, P)
+        want_idx, _w, want_found = proof_lookup(P, pk.origin, pk.shape, pk.keep.astype(np.float32), 0.2, BOX_LO, BOX_HI)
+        self.assertTrue(np.array_equal(idx, want_idx))
+        self.assertTrue(np.array_equal(found, want_found))
+        self.assertTrue(np.array_equal(reference.proof_corner(m, P), want_found))
+        self.assertTrue(0 < int((~found[:3000]).sum()) < 3000)    # both outcomes occur where the threshold decides
+
+    def test_a_splat_the_proof_leaves_without_a_corner_has_no_bounce_and_its_neighbour_keeps_it(self):
+        """The proof keeps no probe in front of the window wall's middle (x 0.3 .. 1.1, y below -0.5). An embrasure
+        splat beyond the wall there finds no proof corner, so no bounce: lit by nothing, it is the neutral 1 in any
+        setting. One 0.7 m along the wall finds one and keeps the cove's bounce; without the proof's mask both keep it."""
+        m = proof_grid(hall_model(), lambda P: ~((P[:, 0] > 0.3) & (P[:, 0] < 1.1) & (P[:, 1] < -0.5)))
+        P = np.array([[0.7, HALL["y0"] - 0.3, 0.7], [1.4, HALL["y0"] - 0.3, 0.7]])
+        self.assertEqual(reference.proof_corner(m, P).tolist(), [False, True])
+        d, n, f, c = np.zeros((2, 9)), np.tile([0.0, 1.0, 0.0], (2, 1)), np.zeros(2, np.uint8), np.full((2, 3), 0.3)
+        captured = reference.Setting.captured(m)
+        half_cove = replace(captured, weights=captured.weights * np.where(np.arange(9) == 5, 0.5, 1.0)[:, None])
+        M, _ = reference.multiplier(d, n, f, P, c, m, half_cove)
+        self.assertEqual(M[0].tolist(), [1.0, 1.0, 1.0])
+        np.testing.assert_allclose(M[1], 0.5, rtol=1e-12)        # lit only by the cove's bounce, it follows the cove
+        M_all, _ = reference.multiplier(d, n, f, P, c, replace(m, proof_keep=None), half_cove)
+        np.testing.assert_allclose(M_all, 0.5, rtol=1e-12)
+
+    def test_without_a_proof_corner_both_sky_bodies_bounce_goes_too(self):
+        """The splat of the sky bodies' bounce test, its position given no proof corner, keeps only its direct light at
+        the Sun and at the Moon (so 1, as at the captured light); every corner kept changes nothing."""
+        d, n, f, p, c = splats(1)                          # no sun flag: only the bounce reaches this splat
+        lit = replace(model(), volumes={"W1": window_volume()}, horizons={"W1": np.zeros(360, np.float32)}, sky=sky_basis())
+        grid = {"origin": np.zeros(3), "spacing": 1.0, "shape": (2, 2, 2)}
+        dark = replace(lit, proof_keep=reference.ProofKeep(**grid, keep=np.zeros(8, bool)))
+        kept = replace(lit, proof_keep=reference.ProofKeep(**grid, keep=np.ones(8, bool)))
+        for body in ("sun", "moon"):
+            setting = replace(reference.Setting.captured(lit), **{f"{body}_dir": OUT_OF_THE_WALL, f"{body}_rgb": np.array([1.0, 2.0, 0.5])})
+            bounced, _ = reference.multiplier(d, n, f, p, c, lit, setting)
+            self.assertGreater(float(bounced[0, 1]), 1.0, body)
+            np.testing.assert_array_equal(reference.multiplier(d, n, f, p, c, kept, setting)[0], bounced)
+            np.testing.assert_allclose(reference.multiplier(d, n, f, p, c, dark, setting)[0], 1.0, rtol=0, atol=1e-15)
 
 
 class DarkSplatsAreNeutral(unittest.TestCase):

@@ -8,6 +8,20 @@
 
 **Tech Stack:** React 18.3 + @react-three/fiber 8.18, three 0.186 (WebGPURenderer, TSL compute, pnpm patch), Zod 3.24, zustand 5.0, Vitest 4.1 + happy-dom 20, TypeScript 5.7, pnpm 9.15.4, Node 22, Playwright 1.59 (headed Chromium on the RTX 4090), Python 3.13 (`C:/Python313/python.exe`, numpy, Pillow, `unittest`) for the photo check in `tools/relight`.
 
+## Revisions (11 October, R1a Task 5 fix round 3)
+
+Where the proof's own lookup finds no probe, there is no bounce (R1a's "Revisions (11 October, Task 5 fix round 3)" and its normative bounce bullet; the contract's `probes.proofKeep` and `proof-keep.bin.gz`). This lands in the same commit as R1a's `reference.py`. Before it, about 100,000 splats at the hall's window glass took bounce from the bake's nearest valid probes, where the proof has none, and moved several stops off the proof in sunlight.
+- **Task 2:** the manifest's `probes` gains `proofKeep: { origin, spacing, shape, file }`, the proof's own 0.2 m grid; its file is one of the package's exact files. The test package carries a 3 × 3 × 3 grid, every probe kept.
+- **Task 4:**
+  - `ProbeField` gains `proofKeep` (`ProofKeep`, or null for synthetic fields, where every position finds a probe).
+  - `proofCorner` is the proof's own lookup to the bit: the float64 cell and fraction, each corner's weight rounded to float32 (`Math.fround`), the eight summed pairwise in float32 as numpy sums them, found over 1e-6. `bounceAt` gives no bounce where it finds none. `proofCornerSensitive` says whether the decision changes within 0.1 mm (`PROOF_SENSITIVE_METRES`).
+  - The vectors' `probes` carry `proofKeep` (every proof corner the splats' proof reads touch, with its keep) and 72 splats, the last eight four the proof leaves without a probe and, beside each, the nearest that finds one. Two kernel tests pin the rule (a probe dropped at the centre; float32 rounding deciding at 1e-6).
+- **Task 5:** the loader reads `proof-keep.bin.gz` (exact length, no stray bit); `denseProbeField` and `floorBounceField` apply it.
+- **Task 7:** `texelSkyBounce` applies it.
+- **Task 10:** the uniforms `proofOrigin`, `proofSpacing` and `proofShape`; the frame's `proofKeep` buffer (the bits as u32 words: 9,380 in the hall, 37,517 bytes; 9,532 bytes gzipped over the wire); `probeReads` binds it, and `proofCornerNode` evaluates the rule in float32 for `bounceNode` (the splats and R1c's skins) and the floor base pass. On the hall's served splats and floor texels a float32 evaluation agrees with the reference everywhere (R1a's Task 5 report, fix round 3).
+- **Task 11:** the multiplier pass binds eight storage buffers.
+- **Tasks 17 and 18:** a word that differs where the proof's decision changes within 0.1 mm of the splat is excused apart (`proofExcused`), at most twice R1a's measured share of such splats (128 of 11,498,334), at least one.
+
 ## Revisions (11 October, R1a Task 5 fix round 2)
 
 The probes are read as the proof reads them (R1a's "Revisions (11 October, Task 5 fix round 2)" and its normative bounce bullet; the contract's `probes.box`). This lands in the same commit as R1a's `reference.py`. Before it, a splat beyond a low wall of the hall (the window embrasures, the exterior, below the floor) read only the grid's low face, whose probes are invalid, and had no bounce in any setting: a quarter of the hall's splats.
@@ -89,7 +103,7 @@ The controller's decision of 30 September, confirmed on 3 October (the spec's "A
 - Task 5: the worker inflates the volumes and packs them into one `array<u32>` buffer (`packWindowVolumes`: the 256 sample depths, a 32-word row per window holding `WindowModel`'s float32 constants and integers, then the cells), decodes `sunArea` and refuses areas that are not finite and non-negative; the staged test holds the package's windows and area nodes to the vectors'. 8 tests (7 before).
 - Task 7: the floor's 2 cm sun grid (`floorSunSize`, `floorSunPoint`, `floorSunVisibility`, `floorSunBilinear`); `roomLight` takes the direct sun from the baked areas, so a light change marches nothing on the main thread. 7 tests (5 before). Task 8: the gate's source is `prepareWindowSun`.
 - Task 10: one storage buffer of window volumes; `sunVisibilityNode`, the TSL twin, shared by a new floor sun pass (a float32 grid) and the multiplier pass; both frame passes in one `renderer.compute([fold, floorSun])`; the plane uniforms and the stencil atlas are gone. 6 tests (5 before).
-- Task 11: the sun term is `sunVisibilityNode` (the outline entry test first); the shared plane-ray block (`planeTransmittance`, `StencilSampler`, `nearestStencilCell`) is removed; the pass binds 7 storage buffers. 5 tests.
+- Task 11: the sun term is `sunVisibilityNode` (the outline entry test first); the shared plane-ray block (`planeTransmittance`, `StencilSampler`, `nearestStencilCell`) is removed; the pass binds 7 storage buffers (8 since 11 October, fix round 3: the proof's keep). 5 tests.
 - Task 12: `runRelight` runs the frame's passes first, so the floor has its sun with no draw. Task 14: the floor material reads the sun grid bilinearly in its fragment stage; the bilinear stencil sampler is removed. Task 15: sky panels from each window's frame (`skyPanelWindows`; 2 tests); the provider runs the frame's passes when it sets the frame; the staging plugin's tests name the new files.
 - Task 17: `floorSun` (the grid against `floorSunVisibility`), `gpuTime` (the multiplier pass's GPU time at a sun change, and a whole light change's) and the excuse rule (`wordTally`; 3 tests). Task 18: the GPU section judges the floor's sun, bounds the excused rounding cases at 2% of the marched rays, and holds the multiplier pass's GPU time at a sun change to one frame, a hard limit by the owner's decision of 3 October (dragging the hour slider must stay smooth): the median of 12 sun changes at most 16.7 ms on the RTX 4090, or the check fails. A miss is fixed by the remedies in order, (1) skip non-reach and non-entering splats early, before any march work, so the threads that march hold only rays that enter a window; (2) run the floor sun pass only when the sun moves by more than 0.1°; (3) throttle slider-driven light changes to one per frame, and the limit is never loosened; `test_browsercheck` keeps 7 tests. Task 19: the notes, the session log and the PR body carry the new checks and the time.
 - GPU resources: a storage buffer, not `r8unorm` 3D textures (Task 10 gives the reasons, with three 0.186's sources); the floor's sun grid is a float32 storage buffer read with the shader's own bilinear, not a filtered texture (Task 14).
@@ -118,7 +132,7 @@ The controller's decision of 30 September, confirmed on 3 October (the spec's "A
 
 Items 1 and 2 are R1b's reading of R1a's outputs; items 3–6 are produced by R1a as amended on 29 September. Every one is still checked: 1 by Task 4's tests (its floor texels, window volumes, sky table nodes, basis grid and floor means against the staged package by Task 5 Step 6), 2–5 by Task 0 Step 2, 4 and 5 again in the browser by Task 18 (the fixture splats found at their model positions), and 6 by Task 19 Step 5. A mismatch is reported, not designed around.
 
-1. **Test vectors.** `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` has exactly the shape of `RelightVectorsSchema` in Task 4 (schema `venviewer.relight-vectors.v1`): the manifest slice, the four settings `captured`, `night`, `sunny_morning` and `moon_test` in full (weights, sky level and colour, lamp levels, `emitterBoost` (1 in every setting), sun direction and RGB, moon direction and RGB; `moon_test` is not a preset: the Moon at the moonlit preset's place with `sunny_morning`'s sun RGB, nothing else lit; R1d A8), a sparse probe table (float16, base64), the five windows (amended 3 October: each window's 21-number frame, its volume as base64 gzip, the package's bytes, and its 360 horizon elevations), the 256 sample depths, the sky bodies' bounce slice (`skyBounce`: K, the table's frame and size, the basis grid, `floorMean`, per window-ray direction the powers, azimuth, elevation, corners and coefficients, the table nodes the cases read, one probe's fold with its basis corners, and the folded cubes at every probe of the table for `sunny_morning` and `moon_test`), the window rays (96 points by 9 directions: 8 suns and `moon_test`'s Moon with `windows.sun_visibility`'s visibility and samples, and the `wallFace` pairs whose first sample the bake put on the room side of the wall face between unlike cells; amended 8 October: and `wallFaceRate`, R1a's measured share of marched rays whose first sample on the wall face has cells of unlike depth on either side, over 200,000 seeded splats and, as `wallFaceRate.floor`, over check-sun's 88,831 floor points; the splats' rate caps Task 18's excused words and the floor's rate its excused floor texels), per splat its record (24 hex digits), model-frame position, captured linear colour and expected `m`, `alpha` and packed `word` per setting (the four), and eight floor texels (`floorTexels`: column, row and the nine direct values of R1a's `floor-light.npz`). The probe table is on the package's global grid: `probes.origin`, `spacing` and `shape` are the manifest's `probes`, each entry's `index` is the global linear index `(ix·ny + iy)·nz + iz`, and `entries` holds every corner that each splat's trilinear lookup touches after clamping, with its validity. The splats may include horizon-blocked cases.
+1. **Test vectors.** `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` has exactly the shape of `RelightVectorsSchema` in Task 4 (schema `venviewer.relight-vectors.v1`): the manifest slice, the four settings `captured`, `night`, `sunny_morning` and `moon_test` in full (weights, sky level and colour, lamp levels, `emitterBoost` (1 in every setting), sun direction and RGB, moon direction and RGB; `moon_test` is not a preset: the Moon at the moonlit preset's place with `sunny_morning`'s sun RGB, nothing else lit; R1d A8), a sparse probe table (float16, base64; with the proof's keep at every proof corner the splats' reads touch, amended 11 October, fix round 3), the five windows (amended 3 October: each window's 21-number frame, its volume as base64 gzip, the package's bytes, and its 360 horizon elevations), the 256 sample depths, the sky bodies' bounce slice (`skyBounce`: K, the table's frame and size, the basis grid, `floorMean`, per window-ray direction the powers, azimuth, elevation, corners and coefficients, the table nodes the cases read, one probe's fold with its basis corners, and the folded cubes at every probe of the table for `sunny_morning` and `moon_test`), the window rays (104 points by 9 directions, 96 before 11 October: 8 suns and `moon_test`'s Moon with `windows.sun_visibility`'s visibility and samples, and the `wallFace` pairs whose first sample the bake put on the room side of the wall face between unlike cells; amended 8 October: and `wallFaceRate`, R1a's measured share of marched rays whose first sample on the wall face has cells of unlike depth on either side, over 200,000 seeded splats and, as `wallFaceRate.floor`, over check-sun's 88,831 floor points; the splats' rate caps Task 18's excused words and the floor's rate its excused floor texels), per splat its record (24 hex digits), model-frame position, captured linear colour and expected `m`, `alpha` and packed `word` per setting (the four), and eight floor texels (`floorTexels`: column, row and the nine direct values of R1a's `floor-light.npz`). The probe table is on the package's global grid: `probes.origin`, `spacing` and `shape` are the manifest's `probes`, each entry's `index` is the global linear index `(ix·ny + iy)·nz + iz`, and `entries` holds every corner that each splat's trilinear lookup touches after clamping, with its validity; `proofKeep` the proof's own grid with every corner each splat's proof lookup touches, with its keep (amended 11 October, fix round 3). The splats may include horizon-blocked cases.
 2. **Tiles** are matched by `tiles[].tileSha256`, which equals the bundle's `sha256` of the served `.sog` (`packages/web/src/data/generated/trades-hall-splat-bundles.ts`); `count` equals the decoded splat count.
 3. **Floor skin v2** (produced by R1a) is `floor-skin/v2/floor-skin.json`, schema string `venviewer.floor-skin.v1`, `provenance.kind` `"restored-albedo"`, texture already scaled to the fitted albedo (`colour.albedoScale` records the factor; R1b does not apply it again).
 4. **`floor.texelToModel`** (produced by R1a) maps the texel-centre coordinates `(col, row, 0, 1)` of the 5 cm floor light maps to the model frame; row 0 is the first PNG row.
@@ -208,7 +222,7 @@ const cs=[at(0,0),at(w-1,0),at(0,h-1),at(w-1,h-1)],ok=cs.every(([x,y,z])=>x>-1.9
 console.log('floor light corners',ok?'inside the hall box':'OUTSIDE',JSON.stringify(cs.map(p=>p.map(v=>+v.toFixed(3)))));
 console.log('probes',JSON.stringify(m.probes.shape),m.probes.spacing);
 const s=m.sky;console.log('sky',s.k,JSON.stringify(s.grid.shape),JSON.stringify(s.table.size),s.patches.count,s.patches.subsamples,JSON.stringify(s.bodies));
-const named=[m.probes.file,m.probes.validFile,...m.floor.files,...m.windows.map(x=>x.volume),s.basis,s.valid,s.table.file,s.patches.rays,s.patches.normals,s.patches.areas,...m.tiles.map(x=>x.file),...(m.skins?m.skins.entries.map(x=>x.file):[])];
+const named=[m.probes.file,m.probes.validFile,m.probes.proofKeep.file,...m.floor.files,...m.windows.map(x=>x.volume),s.basis,s.valid,s.table.file,s.patches.rays,s.patches.normals,s.patches.areas,...m.tiles.map(x=>x.file),...(m.skins?m.skins.entries.map(x=>x.file):[])];
 const listed=Object.keys(m.files);console.log('files',named.filter(p=>!(p in m.files)).length,'named without an entry,',listed.filter(p=>!named.includes(p)).length,'entries no field names');
 const lamp=Object.entries(m.lamps.groups).map(([g,v])=>[g,Math.max(...v.colour.map((c,i)=>Math.abs(c-m.capture.colours[v.source][i]/m.capture.daylightColour[i])/Math.max(Math.abs(c),1e-12)))]);
 console.log('lamp colours',lamp.every(([,e])=>e<1e-9)?'equal capture over daylight':'DIFFER',JSON.stringify(lamp));"
@@ -705,7 +719,8 @@ function testManifest(entries: FileEntries, recordsEntry: { sha256: string; byte
       floorMean: TEST_SKY.floorMean.map((row) => [...row]),
     },
     windows,
-    probes: { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], box: { lo: [0.02, 0.02, 0.02], hi: [0.98, 0.98, 9.8] }, file: "probes.bin.gz", validFile: "probe-valid.bin.gz" },
+    probes: { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], box: { lo: [0.02, 0.02, 0.02], hi: [0.98, 0.98, 9.8] },
+      proofKeep: { origin: [-0.25, -0.25, -0.25], spacing: 0.5, shape: [3, 3, 3], file: "proof-keep.bin.gz" }, file: "probes.bin.gz", validFile: "probe-valid.bin.gz" },
     floor: {
       skin: "floor-skin/v2", texelToModel: [0.5, 0, 0, 0.25, 0, 0.5, 0, 0.25, 0, 0, 0, 0.02, 0, 0, 0, 1],
       texel: 0.5, size: [2, 2], files: ["floor/light-0.png", "floor/light-1.png", "floor/light-2.png"],
@@ -747,6 +762,8 @@ export function buildTestPackage(): TestPackage {
   }
   put("probes.bin.gz", new Uint8Array(gzipSync(new Uint8Array(halves.buffer))));
   put("probe-valid.bin.gz", new Uint8Array(gzipSync(new Uint8Array(8).fill(1))));
+  // The proof's keep (R1a, amended 11 October, fix round 3): its 27 probes all kept, one bit each, least significant first.
+  put("proof-keep.bin.gz", new Uint8Array(gzipSync(Uint8Array.from([0xff, 0xff, 0xff, 0x07]))));
   for (let w = 0; w < 5; w += 1) put(`windows/W${String(w + 1)}.alpha.gz`, new Uint8Array(gzipSync(testWindowVolume(w))));
   // The sky bodies' bounce (amended 7 October), little-endian as the platforms Node and the browsers run on are:
   // the basis float16 [k][probe][channel][face], its validity (every basis probe valid), the coefficients float32
@@ -838,6 +855,7 @@ describe("relight package manifest (T-639 R1b)", () => {
     ["a sky table past the zenith", { ...manifest, sky: { ...manifest.sky, table: { ...manifest.sky.table, elevation0: 88 } } }],
     ["a sky without one floor mean per basis volume", { ...manifest, sky: { ...manifest.sky, floorMean: [[0.25, 0.25, 0.25]] } }],
     ["a sky grid off the probes' origin", { ...manifest, sky: { ...manifest.sky, grid: { ...manifest.sky.grid, origin: [0.5, 0, 0] } } }],
+    ["a proof grid one probe thick", { ...manifest, probes: { ...manifest.probes, proofKeep: { ...manifest.probes.proofKeep, shape: [1, 3, 3] } } }],
     ["a lamp group on another source", { ...manifest, lamps: { ...manifest.lamps, groups: { ...manifest.lamps.groups, dome: { ...manifest.lamps.groups.dome, source: 7 } } } }],
     ["a lamp group's colour other than its capture colour over daylight", { ...manifest, lamps: { ...manifest.lamps, groups: { ...manifest.lamps.groups, cove: { ...manifest.lamps.groups.cove, colour: [1.7, 1, 0.47] } } } }],
     ["a file that no field of the manifest names (the package holds exact files)", { ...manifest, files: { ...manifest.files, "sky/basis-old.bin.gz": { sha256: "f".repeat(64), bytes: 1 } } }],
@@ -1103,6 +1121,16 @@ export const RelightManifestSchema = z.object({
     /** The proof's lookup box (R1a, amended 11 October): every probe read clamps its position into it first. */
     box: z.object({ lo: vec3, hi: vec3 }).refine((box) => box.lo.every((low, axis) => low < (box.hi[axis] ?? -Infinity)),
       "The probes' lookup box has its low below its high on every axis."),
+    /**
+     * The proof's own probe grid (R1a, amended 11 October, fix round 3); its file holds the proof's keep, one bit per
+     * probe. Where the proof's lookup finds none of its kept probes, a read takes no bounce.
+     */
+    proofKeep: z.object({
+      origin: vec3,
+      spacing: finite.positive(),
+      shape: z.tuple([z.number().int().min(2).max(512), z.number().int().min(2).max(512), z.number().int().min(2).max(512)]),
+      file: packagePath,
+    }),
     file: packagePath,
     validFile: packagePath,
   }),
@@ -1204,7 +1232,7 @@ export const RelightManifestSchema = z.object({
   }
   // The package holds exactly the files its fields name, each with a checksum (the owner's packaging rule, 7 October).
   const named = [
-    manifest.probes.file, manifest.probes.validFile, ...manifest.floor.files,
+    manifest.probes.file, manifest.probes.validFile, manifest.probes.proofKeep.file, ...manifest.floor.files,
     ...manifest.windows.map((window) => window.volume),
     manifest.sky.basis, manifest.sky.valid, table.file, manifest.sky.patches.rays, manifest.sky.patches.normals, manifest.sky.patches.areas,
   ];
@@ -1549,8 +1577,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 1 (codec, `CLASS_SKIN`, `SKIN_GROUP_SHIFT`, `TOGGLE_SHIFT`), Task 2 (`ProofScenarioSchema`), Task 3 (`inflate`, `base64Bytes`).
-- Produces (`relight-kernel.ts`): `type Rgb = Vec3`; `LUMINANCE`; `LAMP_GROUPS`, `type LampGroup`, `type LampLevels`; `PROBE_VALUES = 162`; `PROBE_FOLDED = 18`; the window constants `WINDOW_FRAME_FIELDS` (21), `WINDOW_STEP`, `WINDOW_CAP`, `WINDOW_BEYOND_GLASS`, `WINDOW_TAU_STOP`, `WINDOW_ENTRY_GROW`, `WINDOW_EXIT_GROW`, `WINDOW_EMBRASURE_REACH`, `WINDOW_EMBRASURE_SKIP`, `WINDOW_MIN_DOWN`, `WINDOW_ALPHA_MAX`, `WINDOW_MAX_SAMPLES = 147`; `interface WindowFrame`, `windowFrame(values: readonly number[]): WindowFrame`; `interface WindowOutline`, `windowOutline(frame: WindowFrame, grow: number): WindowOutline`, `insideWindowOutline(outline, x, z): boolean`; `interface WindowModel` (the frame, `alpha: Uint8Array`, `horizon`, and its float32 constants `y0`, `glassY`, `endY`, `reachX0`, `reachX1`, `entry`, `exit`, `gridLo`, `res`, `sampleDepths`), `windowSampleDepths(res: number): Float32Array`, `windowModel(id: string, frameValues: readonly number[], alpha: Uint8Array, horizon: readonly number[]): WindowModel`; `sunAzimuthElevation(sun: Vec3, xBearing: number): { azimuth; elevation }`; `horizonAt(horizon: readonly number[], azimuth: number): number`; `horizonGate(window: WindowModel, sun: Vec3): number`; `fresnelAt(fresnel: ArrayLike<number>, sun: Vec3): number`; `interface WindowSun { sun; gates; fresnel }`, `prepareWindowSun(windows: readonly WindowModel[], fresnel: ArrayLike<number>, sun: Vec3 | null): WindowSun | null` (any sky body's direction: the Sun's or the Moon's); `interface WindowRounding { metres; cells }`, `WINDOW_ROUNDING`; `interface WindowRay`, `marchWindow(window: WindowModel, point: Vec3, sun: Vec3, rounding?: WindowRounding | null, march?: boolean): WindowRay`; `interface WindowRayLight { owner; light; steps; sensitive }`, `windowRayLight(windows: readonly WindowModel[], sun: WindowSun, point: Vec3, rounding?: WindowRounding | null): WindowRayLight`; `interface SunRay { visibility; steps; sensitive }`, `sunVisibility(windows: readonly WindowModel[], sun: WindowSun, point: Vec3, rounding?: WindowRounding | null): SunRay`; the sky bodies' bounce: `SKY_BODIES = ["sun", "moon"]`, `type SkyBody`, `SKY_SUBSAMPLES = 16`, `interface SkyPatches { count; rays; normals; areas }`, `interface SkyTable { azimuth0; elevation0; step; columns; rows; node(row, column) }`, `interface SkyGrid`, `interface SkyModel { k; table; patches; grid; valid(index); basis(k, index); floorMean }`, `interface WindowPower { powers; marched; sensitive; excuse }`, `windowPower(windows: readonly WindowModel[], sun: WindowSun, patches: SkyPatches, rounding?: WindowRounding | null): WindowPower`, `type SkyCorner = readonly [row, column, weight]`, `skyCorners(table, azimuth: number, elevation: number): readonly SkyCorner[]`, `skyCoefficients(table: SkyTable, k: number, powers: readonly number[], azimuth: number, elevation: number): Float64Array`, `interface SkyLight { powers; coefficients }`, `skyLightOf(model: Pick<RelightKernelModel, "windows" | "sky">, sun: WindowSun): SkyLight` (the CPU twin of the GPU's sky passes), `skyBasisCube(sky, coefficients: ArrayLike<number>, index: number, out: Float64Array): void`, `skyFoldCorners(sky, point: Vec3): { indices; weights }`, `probePoint(field, index: number): Vec3`, `type KernelSky` (`model`, `light`, `cubes`), `MODEL_SKY`; `interface ProbeBox { lo; hi }`, `OPEN_BOX` (no clamp, for synthetic fields), `interface ProbeField` (with its lookup `box`; amended 11 October), `RelightKernelModel` (with `windows: readonly WindowModel[]`, `fresnel`, `sky: SkyModel | null`), `RelightSetting` (with `emitterBoost: number`, `lampTints?`, `sunDir`, `sunRgb`, `moonDir`, `moonRgb`), `KernelFrame` (with `windowSun`, `windowOpen` (the horizon gates), `sunOn`, `fresnelAtSun`, `moonSun`, `moonOpen`, `moonOn`, `fresnelAtMoon`, `rBack`, `skyCorners(body)`, `skyLight(body)`, `skyCube(index)`, `capCube(index)`, `scenarioCube(index)`), `SplatMultiplier`; `smoothstep(low, high, x): number` and `floorMod(value, modulus): number` (the one copy of each: `daylight.ts` and `sun.ts` import them; `floorMod` is Python's and numpy's `%` exactly); `weightedColours(weights: readonly number[], colours: readonly Rgb[]): Rgb[]` (w[k] × c[k], the one helper for that mapping: the vectors, the package, the frame and the light setting use it); `capturedSetting(model: Pick<RelightKernelModel, "captureWeights" | "daylightColour">): RelightSetting` (emitter boost 1, no sky body); `foldProbeCube(cube: ArrayLike<number>, weights: readonly Rgb[], out: Float64Array): void`; `trilinearCorners(field: ProbeField, position: Vec3): { readonly indices: number[]; readonly weights: number[] }` (the proof's probe read: the position clamped into `field.box`, then the trilinear weights over valid corners; amended 11 October); `cubeEval(cube: ArrayLike<number>, normal: Vec3, iso: boolean): Rgb`; `prepareKernelFrame(model: RelightKernelModel, setting: RelightSetting, sky?: KernelSky): KernelFrame` (computes both bodies' gates and glass itself; their sky light only when first read); R1c's `interface RelightVisibility { skinGroups; hiddenToggles }`, `NO_VISIBILITY` (amendment A6) and `bounceAt(model, frame, position, normal, iso): { capture: Rgb; scenario: Rgb }` (A8); `relightSplat(model, frame, record, position, colour, visibility = NO_VISIBILITY): SplatMultiplier`.
-- Produces (`relight-vectors.ts`): `RELIGHT_VECTOR_SETTINGS = ["captured", "night", "sunny_morning", "moon_test"]`, `type RelightVectorSetting`, `isRelightVectorSetting(name: string): name is RelightVectorSetting`, `RelightVectorsSchema`, `type RelightVectors`, `settingFromVectors(value: RelightVectors["settings"][RelightVectorSetting]): RelightSetting`, `kernelModelFromVectors(vectors: RelightVectors): Promise<RelightKernelModel>` (its sky model holds the vectors' table nodes and the fold probe's basis corners, no patches), `skyFromVectors(vectors: RelightVectors, name: RelightVectorSetting): KernelSky` (the vectors' folded `probeCubes`), `float32sFromBase64(text: string, count: number): Float32Array`, `float16sFromBase64(text: string, count: number): Float32Array`.
+- Produces (`relight-kernel.ts`): `type Rgb = Vec3`; `LUMINANCE`; `LAMP_GROUPS`, `type LampGroup`, `type LampLevels`; `PROBE_VALUES = 162`; `PROBE_FOLDED = 18`; the window constants `WINDOW_FRAME_FIELDS` (21), `WINDOW_STEP`, `WINDOW_CAP`, `WINDOW_BEYOND_GLASS`, `WINDOW_TAU_STOP`, `WINDOW_ENTRY_GROW`, `WINDOW_EXIT_GROW`, `WINDOW_EMBRASURE_REACH`, `WINDOW_EMBRASURE_SKIP`, `WINDOW_MIN_DOWN`, `WINDOW_ALPHA_MAX`, `WINDOW_MAX_SAMPLES = 147`; `interface WindowFrame`, `windowFrame(values: readonly number[]): WindowFrame`; `interface WindowOutline`, `windowOutline(frame: WindowFrame, grow: number): WindowOutline`, `insideWindowOutline(outline, x, z): boolean`; `interface WindowModel` (the frame, `alpha: Uint8Array`, `horizon`, and its float32 constants `y0`, `glassY`, `endY`, `reachX0`, `reachX1`, `entry`, `exit`, `gridLo`, `res`, `sampleDepths`), `windowSampleDepths(res: number): Float32Array`, `windowModel(id: string, frameValues: readonly number[], alpha: Uint8Array, horizon: readonly number[]): WindowModel`; `sunAzimuthElevation(sun: Vec3, xBearing: number): { azimuth; elevation }`; `horizonAt(horizon: readonly number[], azimuth: number): number`; `horizonGate(window: WindowModel, sun: Vec3): number`; `fresnelAt(fresnel: ArrayLike<number>, sun: Vec3): number`; `interface WindowSun { sun; gates; fresnel }`, `prepareWindowSun(windows: readonly WindowModel[], fresnel: ArrayLike<number>, sun: Vec3 | null): WindowSun | null` (any sky body's direction: the Sun's or the Moon's); `interface WindowRounding { metres; cells }`, `WINDOW_ROUNDING`; `interface WindowRay`, `marchWindow(window: WindowModel, point: Vec3, sun: Vec3, rounding?: WindowRounding | null, march?: boolean): WindowRay`; `interface WindowRayLight { owner; light; steps; sensitive }`, `windowRayLight(windows: readonly WindowModel[], sun: WindowSun, point: Vec3, rounding?: WindowRounding | null): WindowRayLight`; `interface SunRay { visibility; steps; sensitive }`, `sunVisibility(windows: readonly WindowModel[], sun: WindowSun, point: Vec3, rounding?: WindowRounding | null): SunRay`; the sky bodies' bounce: `SKY_BODIES = ["sun", "moon"]`, `type SkyBody`, `SKY_SUBSAMPLES = 16`, `interface SkyPatches { count; rays; normals; areas }`, `interface SkyTable { azimuth0; elevation0; step; columns; rows; node(row, column) }`, `interface SkyGrid`, `interface SkyModel { k; table; patches; grid; valid(index); basis(k, index); floorMean }`, `interface WindowPower { powers; marched; sensitive; excuse }`, `windowPower(windows: readonly WindowModel[], sun: WindowSun, patches: SkyPatches, rounding?: WindowRounding | null): WindowPower`, `type SkyCorner = readonly [row, column, weight]`, `skyCorners(table, azimuth: number, elevation: number): readonly SkyCorner[]`, `skyCoefficients(table: SkyTable, k: number, powers: readonly number[], azimuth: number, elevation: number): Float64Array`, `interface SkyLight { powers; coefficients }`, `skyLightOf(model: Pick<RelightKernelModel, "windows" | "sky">, sun: WindowSun): SkyLight` (the CPU twin of the GPU's sky passes), `skyBasisCube(sky, coefficients: ArrayLike<number>, index: number, out: Float64Array): void`, `skyFoldCorners(sky, point: Vec3): { indices; weights }`, `probePoint(field, index: number): Vec3`, `type KernelSky` (`model`, `light`, `cubes`), `MODEL_SKY`; `interface ProbeBox { lo; hi }`, `OPEN_BOX` (no clamp, for synthetic fields), `interface ProbeField` (with its lookup `box`, amended 11 October, and the proof's `proofKeep`, fix round 3), `interface ProofKeep { origin; spacing; shape; kept(index) }`, `proofCorner(field: ProbeField, position: Vec3): boolean` (whether the proof's own lookup finds a probe, to the bit), `PROOF_SENSITIVE_METRES = 1e-4`, `proofCornerSensitive(field: ProbeField, position: Vec3): boolean`, `RelightKernelModel` (with `windows: readonly WindowModel[]`, `fresnel`, `sky: SkyModel | null`), `RelightSetting` (with `emitterBoost: number`, `lampTints?`, `sunDir`, `sunRgb`, `moonDir`, `moonRgb`), `KernelFrame` (with `windowSun`, `windowOpen` (the horizon gates), `sunOn`, `fresnelAtSun`, `moonSun`, `moonOpen`, `moonOn`, `fresnelAtMoon`, `rBack`, `skyCorners(body)`, `skyLight(body)`, `skyCube(index)`, `capCube(index)`, `scenarioCube(index)`), `SplatMultiplier`; `smoothstep(low, high, x): number` and `floorMod(value, modulus): number` (the one copy of each: `daylight.ts` and `sun.ts` import them; `floorMod` is Python's and numpy's `%` exactly); `weightedColours(weights: readonly number[], colours: readonly Rgb[]): Rgb[]` (w[k] × c[k], the one helper for that mapping: the vectors, the package, the frame and the light setting use it); `capturedSetting(model: Pick<RelightKernelModel, "captureWeights" | "daylightColour">): RelightSetting` (emitter boost 1, no sky body); `foldProbeCube(cube: ArrayLike<number>, weights: readonly Rgb[], out: Float64Array): void`; `trilinearCorners(field: ProbeField, position: Vec3): { readonly indices: number[]; readonly weights: number[] }` (the proof's probe read: the position clamped into `field.box`, then the trilinear weights over valid corners; amended 11 October); `cubeEval(cube: ArrayLike<number>, normal: Vec3, iso: boolean): Rgb`; `prepareKernelFrame(model: RelightKernelModel, setting: RelightSetting, sky?: KernelSky): KernelFrame` (computes both bodies' gates and glass itself; their sky light only when first read); R1c's `interface RelightVisibility { skinGroups; hiddenToggles }`, `NO_VISIBILITY` (amendment A6) and `bounceAt(model, frame, position, normal, iso): { capture: Rgb; scenario: Rgb }` (A8; none where the proof's own lookup finds no probe, amended 11 October, fix round 3); `relightSplat(model, frame, record, position, colour, visibility = NO_VISIBILITY): SplatMultiplier`.
+- Produces (`relight-vectors.ts`): `RELIGHT_VECTOR_SETTINGS = ["captured", "night", "sunny_morning", "moon_test"]`, `type RelightVectorSetting`, `isRelightVectorSetting(name: string): name is RelightVectorSetting`, `RelightVectorsSchema`, `type RelightVectors`, `settingFromVectors(value: RelightVectors["settings"][RelightVectorSetting]): RelightSetting`, `kernelModelFromVectors(vectors: RelightVectors): Promise<RelightKernelModel>` (its sky model holds the vectors' table nodes and the fold probe's basis corners, no patches; its probes the proof's keep at the vectors' proof corners), `skyFromVectors(vectors: RelightVectors, name: RelightVectorSetting): KernelSky` (the vectors' folded `probeCubes`), `float32sFromBase64(text: string, count: number): Float32Array`, `float16sFromBase64(text: string, count: number): Float32Array`.
 
 The folded formulation: bounce light is linear in the sources, so `Σk w[k]·I[k]` equals the ambient-cube evaluation of `Σk w[k]·probes[k]` trilinearly interpolated. The kernel folds each probe's nine source cubes by the capture weighting and by the scenario weighting, adds to the scenario's the sky bodies' bounce folded at that probe (`skyCube`), and evaluates two 18-value cubes per splat; the GPU pass (Task 11) reads the same two folded volumes. The test vectors, written by `reference.py`'s per-source formulation, prove the two agree.
 
@@ -1571,9 +1599,9 @@ import {
 } from "../relight-codec.js";
 import {
   OPEN_BOX, WINDOW_ROUNDING, capturedSetting, floorMod, fresnelAt, horizonAt, horizonGate, marchWindow, prepareKernelFrame,
-  prepareWindowSun, probePoint, relightSplat, skyBasisCube, skyCoefficients, skyCorners, skyFoldCorners,
+  prepareWindowSun, probePoint, proofCorner, proofCornerSensitive, relightSplat, skyBasisCube, skyCoefficients, skyCorners, skyFoldCorners,
   sunAzimuthElevation, sunVisibility, trilinearCorners, windowModel, windowPower,
-  type ProbeField, type RelightKernelModel, type RelightSetting, type SkyModel, type SkyPatches, type WindowModel,
+  type ProbeField, type ProofKeep, type RelightKernelModel, type RelightSetting, type SkyModel, type SkyPatches, type WindowModel,
 } from "../relight-kernel.js";
 import { RELIGHT_VECTOR_SETTINGS, RelightVectorsSchema, kernelModelFromVectors, settingFromVectors, skyFromVectors } from "../relight-vectors.js";
 
@@ -1586,7 +1614,7 @@ const CAPTURED = 1 + 0.5 * (0.5 + COVE);
 function syntheticModel(windows: readonly WindowModel[] = [], sky: SkyModel | null = null): RelightKernelModel {
   const cube = new Float32Array(162);
   for (let value = 0; value < 18; value += 1) cube[5 * 18 + value] = 0.1; // the cove bounces 0.1 everywhere
-  const probes: ProbeField = { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], box: OPEN_BOX, valid: () => true, cube: () => cube };
+  const probes: ProbeField = { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], box: OPEN_BOX, proofKeep: null, valid: () => true, cube: () => cube };
   return {
     ranges: Array.from({ length: 9 }, () => RANGE),
     captureWeights: [1, 1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5].map((weight) => [weight, weight, weight] as const),
@@ -1701,7 +1729,7 @@ describe("the reference multiplier on synthetic splats (T-639 R1b)", () => {
     // 3 × 3 × 3 probes of 1 m whose low faces are invalid (the bake's valid_mask); the box 2 cm inside the hall
     const valid = (index: number): boolean => Math.floor(index / 9) > 0 && Math.floor(index / 3) % 3 > 0 && index % 3 > 0;
     const field: ProbeField = { origin: [0, 0, 0], spacing: 1, shape: [3, 3, 3], box: { lo: [0.02, 0.02, 0.02], hi: [1.98, 1.98, 9.8] },
-      valid, cube: () => new Float32Array(162) };
+      proofKeep: null, valid, cube: () => new Float32Array(162) };
     const beyond: Vec3 = [1.5, -0.3, 1.5];                       // beyond the window wall, below the box's y
     expect(trilinearCorners({ ...field, box: OPEN_BOX }, beyond).weights.every((weight) => weight === 0)).toBe(true);
     const { indices, weights } = trilinearCorners(field, beyond);  // read at y 0.02: only the y = 1 corners count
@@ -1714,6 +1742,32 @@ describe("the reference multiplier on synthetic splats (T-639 R1b)", () => {
     const top = trilinearCorners(field, above);
     expect(top.weights.filter((weight) => weight > 0)).toHaveLength(4);
     top.indices.forEach((index, corner) => { if ((top.weights[corner] ?? 0) > 0) expect(index % 3).toBe(2); });
+  });
+
+  it("drops the bounce where the proof's own lookup finds no probe, and keeps it beside (R1a, amended 11 October, fix round 3)", () => {
+    // the proof's 0.5 m grid over the unit box, every probe kept but the one at the centre
+    const keep: ProofKeep = { origin: [0, 0, 0], spacing: 0.5, shape: [3, 3, 3], kept: (index) => index !== 13 };
+    const base = syntheticModel();
+    const model: RelightKernelModel = { ...base, probes: { ...base.probes, proofKeep: keep } };
+    const frame = prepareKernelFrame(model, withoutSky(capturedSetting(model)));
+    const beside: Vec3 = [0.75, 0.5, 0.5];
+    expect([proofCorner(model.probes, CENTRE), proofCorner(model.probes, beside)]).toEqual([false, true]);
+    // at the centre no bounce, in the capture or the night: the cove's direct light alone
+    for (const value of relightSplat(model, frame, record(0), CENTRE, GREY).m) expect(value).toBeCloseTo((0.5 * 0.5) / (1 + 0.5 * 0.5), 12);
+    // beside it the bounce stays
+    for (const value of relightSplat(model, frame, record(0), beside, GREY).m) expect(value).toBeCloseTo((0.5 * (0.5 + COVE)) / CAPTURED, 12);
+  });
+
+  it("finds the proof's probe as numpy does: each weight rounded to float32, the eight summed pairwise, over 1e-6", () => {
+    // one kept probe, the far corner of a 1 m cell: its weight is the product of the three fractions
+    const keep: ProofKeep = { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], kept: (index) => index === 7 };
+    const field: ProbeField = { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], box: OPEN_BOX, proofKeep: keep, valid: () => true, cube: () => new Float32Array(162) };
+    // 0.01³ is 1.0000000000000002e-6 in float64 but 9.99999997e-7 in float32: the proof finds no probe
+    expect(proofCorner(field, [0.01, 0.01, 0.01])).toBe(false);
+    expect(proofCorner(field, [0.01, 0.01, 0.0101])).toBe(true);                      // 1.01e-6
+    expect(proofCorner({ ...field, proofKeep: null }, [0.01, 0.01, 0.01])).toBe(true); // no proof grid: every position finds one
+    expect(proofCornerSensitive(field, [0.01, 0.01, 0.01])).toBe(true);              // the decision changes within 0.1 mm
+    expect(proofCornerSensitive(field, [0.5, 0.5, 0.5])).toBe(false);
   });
 
   it("keeps only the lamp light at night: the cove's share of the captured light", () => {
@@ -2014,6 +2068,13 @@ describe("the reference multiplier against R1a's test vectors (T-639 R1b)", () =
     expect([3, 4].some((cls) => classes.has(cls))).toBe(true);
     expect([5, 6].some((cls) => classes.has(cls))).toBe(true);
     expect(flags.some((value) => (value & FLAG_SUN) !== 0)).toBe(true);
+  });
+
+  it("covers the proof's corner rule: four splats it leaves without a probe, then beside each one that finds one (R1a, amended 11 October, fix round 3)", async () => {
+    const model = await kernelModelFromVectors(vectors);
+    const found = vectors.splats.map((splat) => proofCorner(model.probes, splat.position));
+    expect(found.slice(64, 68)).toEqual([false, false, false, false]);
+    expect(found.slice(68, 72)).toEqual([true, true, true, true]);
   });
 
   it.each(RELIGHT_VECTOR_SETTINGS)("reproduces every splat's multiplier, alpha and word for the %s setting", async (name) => {
@@ -2732,12 +2793,24 @@ export interface ProbeBox {
 }
 /** No clamp: synthetic fields in tests. */
 export const OPEN_BOX: ProbeBox = { lo: [-Infinity, -Infinity, -Infinity], hi: [Infinity, Infinity, Infinity] };
+/**
+ * The proof's own probe grid and which of its probes it kept (the manifest's `probes.proofKeep`; R1a, amended 11 October,
+ * fix round 3): where the proof's lookup finds none of these probes, the proof has no bounce, and neither has the kernel.
+ */
+export interface ProofKeep {
+  readonly origin: Vec3;
+  readonly spacing: number;
+  readonly shape: readonly [number, number, number];
+  kept(index: number): boolean;
+}
 export interface ProbeField {
   readonly origin: Vec3;
   readonly spacing: number;
   readonly shape: readonly [number, number, number];
   /** Every read clamps its position into this box first (the proof's store.Probes.lookup). */
   readonly box: ProbeBox;
+  /** The proof's own probe grid and keep; null (synthetic fields) where every position finds a probe. */
+  readonly proofKeep: ProofKeep | null;
   valid(index: number): boolean;
   /** PROBE_VALUES floats of one probe. */
   cube(index: number): ArrayLike<number>;
@@ -2855,6 +2928,54 @@ export function trilinearCorners(field: ProbeField, position: Vec3): { readonly 
   }
   const sum = raw.reduce((total, value) => total + value, 0);
   return { indices, weights: raw.map((value) => (sum > 1e-6 ? value / Math.max(sum, 1e-6) : 0)) };
+}
+
+/**
+ * Whether the proof's own lookup finds a probe at a position (R1a's reference.proof_lookup; amended 11 October, fix
+ * round 3): the position clamped into the field's lookup box, then 03_bases.trilinear_weights on the proof's grid with
+ * its keep, to the bit: the cell and fraction in float64, each corner's weight the float64 product rounded to float32,
+ * the eight summed in float32 as numpy sums them, ((w0 + w1) + (w2 + w3)) + ((w4 + w5) + (w6 + w7)) in (dx, dy, dz)
+ * order, found where the sum exceeds 1e-6. (Each float32 sum is the float64 sum rounded: exact, as float64 holds over
+ * twice float32's precision.)
+ */
+export function proofCorner(field: ProbeField, position: Vec3): boolean {
+  const keep = field.proofKeep;
+  if (keep === null) return true;
+  const [nx, ny, nz] = keep.shape;
+  const cellAndFraction = (axis: 0 | 1 | 2, size: number): readonly [number, number] => {
+    const clamped = Math.min(Math.max(position[axis], field.box.lo[axis]), field.box.hi[axis]);
+    const f = (clamped - keep.origin[axis]) / keep.spacing;
+    const cell = Math.min(Math.max(Math.floor(f), 0), size - 2);
+    return [cell, Math.min(Math.max(f - cell, 0), 1)];
+  };
+  const [ix, tx] = cellAndFraction(0, nx), [iy, ty] = cellAndFraction(1, ny), [iz, tz] = cellAndFraction(2, nz);
+  const w: number[] = [];
+  for (const dx of [0, 1]) {
+    for (const dy of [0, 1]) {
+      for (const dz of [0, 1]) {
+        const kept = keep.kept(((ix + dx) * ny + (iy + dy)) * nz + (iz + dz));
+        w.push(kept ? Math.fround((dx === 1 ? tx : 1 - tx) * (dy === 1 ? ty : 1 - ty) * (dz === 1 ? tz : 1 - tz)) : 0);
+      }
+    }
+  }
+  const f32 = Math.fround, at8 = (k: number): number => w[k] ?? 0;
+  return f32(f32(f32(at8(0) + at8(1)) + f32(at8(2) + at8(3))) + f32(f32(at8(4) + at8(5)) + f32(at8(6) + at8(7)))) > 1e-6;
+}
+
+/** How far from where the bake read a splat the GPU may read it (its float32 position and arithmetic: about 1e-5 m). */
+export const PROOF_SENSITIVE_METRES = 1e-4;
+
+/** Whether the proof's corner decision changes within PROOF_SENSITIVE_METRES of a position along an axis (Task 17). */
+export function proofCornerSensitive(field: ProbeField, position: Vec3): boolean {
+  const found = proofCorner(field, position);
+  for (const axis of [0, 1, 2] as const) {
+    for (const sign of [1, -1]) {
+      const moved: [number, number, number] = [position[0], position[1], position[2]];
+      moved[axis] += sign * PROOF_SENSITIVE_METRES;
+      if (proofCorner(field, moved) !== found) return true;
+    }
+  }
+  return false;
 }
 
 /** An 18-value cube at a normal: Σ n+² cube[+axis] + n−² cube[−axis], or the mean of the six faces for isotropic receivers. */
@@ -2988,9 +3109,11 @@ export const NO_VISIBILITY: RelightVisibility = { skinGroups: 0, hiddenToggles: 
  * The bounce light at a point (R1a's I terms, folded, the sky bodies' with them): the capture's and the setting's
  * cubes, read as the proof reads its probes (trilinearCorners: the position clamped into the lookup box), evaluated at
  * the normal. relightSplat's own bounce, shared with the skins' light
- * (R1c, amendment A8).
+ * (R1c, amendment A8). None where the proof's own lookup finds no probe (proofCorner; R1a, amended 11 October,
+ * fix round 3).
  */
 export function bounceAt(model: RelightKernelModel, frame: KernelFrame, position: Vec3, normal: Vec3, iso: boolean): { readonly capture: Rgb; readonly scenario: Rgb } {
+  if (!proofCorner(model.probes, position)) return { capture: [0, 0, 0], scenario: [0, 0, 0] };
   const { indices, weights } = trilinearCorners(model.probes, position);
   const captureCube = new Float64Array(PROBE_FOLDED), scenarioCube = new Float64Array(PROBE_FOLDED);
   indices.forEach((index, corner) => {
@@ -3086,7 +3209,7 @@ import { z } from "zod";
 import { decodeHalfFloat } from "./relight-codec.js";
 import {
   PROBE_FOLDED, WINDOW_MAX_SAMPLES, weightedColours, windowFrame, windowModel,
-  type KernelSky, type ProbeField, type RelightKernelModel, type RelightSetting, type SkyModel, type SkyTable, type WindowModel,
+  type KernelSky, type ProbeField, type ProofKeep, type RelightKernelModel, type RelightSetting, type SkyModel, type SkyTable, type WindowModel,
 } from "./relight-kernel.js";
 import { ProofScenarioSchema } from "./relight-manifest.js";
 import { base64Bytes, inflate } from "./relight-png.js";
@@ -3208,7 +3331,17 @@ export const RelightVectorsSchema = z.object({
     /** The manifest's lookup box (R1a, amended 11 October). */
     box: z.object({ lo: vec3, hi: vec3 }),
     /**
-     * Every corner each of the 64 splats' trilinear lookups touches (the position clamped into `box`, the cell into
+     * The proof's own probe grid (the manifest's `probes.proofKeep`; R1a, amended 11 October, fix round 3) and every
+     * corner of it that each splat's proof lookup touches (the position clamped into `box`), kept or not.
+     */
+    proofKeep: z.object({
+      origin: vec3,
+      spacing: finite.positive(),
+      shape: z.tuple([z.number().int().positive(), z.number().int().positive(), z.number().int().positive()]),
+      entries: z.array(z.object({ index, keep: z.boolean() })).min(1),
+    }),
+    /**
+     * Every corner each of the 72 splats' trilinear lookups touches (the position clamped into `box`, the cell into
      * the grid), valid or not.
      * `index` is the global linear index (ix·ny + iy)·nz + iz over `shape`; `cube` is 162 float16 values,
      * little-endian, base64.
@@ -3224,7 +3357,7 @@ export const RelightVectorsSchema = z.object({
     /** The captured linear colour C. */
     colour: vec3,
     expected: z.object({ captured: expectation, night: expectation, sunny_morning: expectation, moon_test: expectation }),
-  })).length(64),
+  })).length(72),
   /** Eight texels of R1a's floor-light.npz: column and row in the floor light maps, the nine direct values in source order. */
   floorTexels: z.array(z.object({
     col: index,
@@ -3257,6 +3390,19 @@ export function float16sFromBase64(text: string, count: number): Float32Array {
   return Float32Array.from({ length: count }, (_, at) => decodeHalfFloat(view.getUint16(at * 2, true)));
 }
 
+/** The proof's grid from the vectors' sparse keep entries (R1a, amended 11 October, fix round 3): a probe they lack is refused. */
+function proofKeepFromVectors(slice: RelightVectors["probes"]["proofKeep"]): ProofKeep {
+  const kept = new Map(slice.entries.map((entry) => [entry.index, entry.keep]));
+  return {
+    origin: slice.origin, spacing: slice.spacing, shape: slice.shape,
+    kept: (index) => {
+      const value = kept.get(index);
+      if (value === undefined) throw new Error(`The test vectors lack the proof's probe ${String(index)}.`);
+      return value;
+    },
+  };
+}
+
 /** The kernel's model from the vectors' manifest slice; the sparse probe, table and basis entries refuse what they lack. */
 export async function kernelModelFromVectors(vectors: RelightVectors): Promise<RelightKernelModel> {
   const entries = new Map(vectors.probes.entries.map((entry) => [entry.index, entry]));
@@ -3271,6 +3417,7 @@ export async function kernelModelFromVectors(vectors: RelightVectors): Promise<R
     spacing: vectors.probes.spacing,
     shape: vectors.probes.shape,
     box: vectors.probes.box,
+    proofKeep: proofKeepFromVectors(vectors.probes.proofKeep),
     valid: (probe) => entryAt(probe).valid,
     cube: (probe) => {
       const cached = cubes.get(probe);
@@ -3371,7 +3518,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Tasks 1–4.
-- Produces (`relight-assets.ts`): `PROBE_CAPTURE_STRIDE = 19`; `type FetchLike = (url: string, init: { readonly signal?: AbortSignal }) => Promise<Response>`; `WINDOW_TABLE_WORD = 256`, `WINDOW_ROW_WORDS = 32`, `WINDOW_ALPHA_BYTE = 1664`, `WINDOW_ROW` (word offsets in a window's row), `OUTLINE_FIELDS`; `interface RelightModelData { manifest: RelightManifest; baseUrl: string; probeCount: number; probes: Uint16Array (binary16 bits, 162 per probe); probeValid: Uint8Array; probeCapture: Float32Array; windowBytes: Uint8Array (the packed window buffer); sky: RelightSkyData; floorDirect: Float32Array; floorBounce: Float32Array }` (readonly fields); `interface RelightSkyData { basis: Uint16Array (binary16 bits, [k][basis probe][channel][face]); valid: Uint8Array; coefficients: Float32Array ([row][column][window][k]); rays: Float32Array; normals: Float32Array; areas: Float32Array; foldIndices: Uint32Array; foldWeights: Float32Array }` (readonly fields; `foldIndices`/`foldWeights` are each 0.5 m probe's eight corners on the 1 m grid, `SKY_FOLD_CORNERS = 8` per probe); `skyFoldTable(manifest: RelightManifest, valid: Uint8Array): { indices: Uint32Array; weights: Float32Array }`; `skyModelFromData(manifest: RelightManifest, sky: RelightSkyData): SkyModel` (the kernel's sky model over the decoded arrays, with its patches); `RelightWorkerRequestSchema`, `type RelightWorkerRequest`, `type RelightWorkerResult`, `type RelightWorkerResponse`; `sha256Hex(bytes): Promise<string>`; `fetchVerified(fetchFn, url, expected: { sha256: string; bytes: number }, signal?): Promise<Uint8Array>`; `texelCentre(texelToModel: readonly number[], column: number, row: number): Vec3`; `denseProbeField(manifest: RelightManifest, probes: Uint16Array, valid: Uint8Array): ProbeField` (decodes a probe's 162 values when read, a bounded cache); `packWindowVolumes(windows: readonly WindowModel[]): Uint8Array`; `windowAlphaViews(bytes: Uint8Array): Uint8Array[]`; `decodeFloorDirect(maps, ranges, texels): Float32Array`; `floorBounceField(field, texelToModel, width, height): Float32Array`; `loadRelightModelData(fetchFn, manifestUrl, signal?): Promise<RelightModelData>`; `loadRelightRecords(fetchFn, source: RelightTileSource, signal?): Promise<Uint8Array>`; `transferablesOf(data: RelightModelData): ArrayBuffer[]`.
+- Produces (`relight-assets.ts`): `PROBE_CAPTURE_STRIDE = 19`; `type FetchLike = (url: string, init: { readonly signal?: AbortSignal }) => Promise<Response>`; `WINDOW_TABLE_WORD = 256`, `WINDOW_ROW_WORDS = 32`, `WINDOW_ALPHA_BYTE = 1664`, `WINDOW_ROW` (word offsets in a window's row), `OUTLINE_FIELDS`; `interface RelightModelData { manifest: RelightManifest; baseUrl: string; probeCount: number; probes: Uint16Array (binary16 bits, 162 per probe); probeValid: Uint8Array; probeCapture: Float32Array; proofKeep: Uint8Array (the proof's keep, one bit per probe of its grid; fix round 3); windowBytes: Uint8Array (the packed window buffer); sky: RelightSkyData; floorDirect: Float32Array; floorBounce: Float32Array }` (readonly fields); `interface RelightSkyData { basis: Uint16Array (binary16 bits, [k][basis probe][channel][face]); valid: Uint8Array; coefficients: Float32Array ([row][column][window][k]); rays: Float32Array; normals: Float32Array; areas: Float32Array; foldIndices: Uint32Array; foldWeights: Float32Array }` (readonly fields; `foldIndices`/`foldWeights` are each 0.5 m probe's eight corners on the 1 m grid, `SKY_FOLD_CORNERS = 8` per probe); `skyFoldTable(manifest: RelightManifest, valid: Uint8Array): { indices: Uint32Array; weights: Float32Array }`; `skyModelFromData(manifest: RelightManifest, sky: RelightSkyData): SkyModel` (the kernel's sky model over the decoded arrays, with its patches); `RelightWorkerRequestSchema`, `type RelightWorkerRequest`, `type RelightWorkerResult`, `type RelightWorkerResponse`; `sha256Hex(bytes): Promise<string>`; `fetchVerified(fetchFn, url, expected: { sha256: string; bytes: number }, signal?): Promise<Uint8Array>`; `texelCentre(texelToModel: readonly number[], column: number, row: number): Vec3`; `denseProbeField(manifest: RelightManifest, probes: Uint16Array, valid: Uint8Array, proofKeep: Uint8Array): ProbeField` (decodes a probe's 162 values when read, a bounded cache; the proof's keep read bit by bit, fix round 3); `packWindowVolumes(windows: readonly WindowModel[]): Uint8Array`; `windowAlphaViews(bytes: Uint8Array): Uint8Array[]`; `decodeFloorDirect(maps, ranges, texels): Float32Array`; `floorBounceField(field, texelToModel, width, height): Float32Array` (none at a texel where the proof finds no probe, fix round 3); `loadRelightModelData(fetchFn, manifestUrl, signal?): Promise<RelightModelData>`; `loadRelightRecords(fetchFn, source: RelightTileSource, signal?): Promise<Uint8Array>`; `transferablesOf(data: RelightModelData): ArrayBuffer[]`.
 - Produces (`relight-worker-client.ts`): `runRelightWorker(request: RelightWorkerRequest, signal?: AbortSignal): Promise<RelightWorkerResult>`.
 - Produces (`relight-package.ts`, the spec's unit): `loadRelightPackage(manifestUrl: string): Promise<RelightModelData | null>` (cached per URL; any failure warns once and resolves null), `loadRelightRecords(source: RelightTileSource, signal: AbortSignal): Promise<Uint8Array>`, `resetRelightPackages(): void` (tests).
 
@@ -3681,7 +3828,7 @@ Expected: FAIL — cannot find module `../relight-package.js`.
 import { z } from "zod";
 import { RECORD_BYTES, SOURCE_COUNT, WINDOW_COUNT, decodeHalfFloat, decodeLog, type Vec3 } from "./relight-codec.js";
 import {
-  PROBE_FOLDED, PROBE_VALUES, SKY_SUBSAMPLES, foldProbeCube, probePoint, skyFoldCorners, trilinearCorners, weightedColours, windowModel,
+  PROBE_FOLDED, PROBE_VALUES, SKY_SUBSAMPLES, foldProbeCube, probePoint, proofCorner, skyFoldCorners, trilinearCorners, weightedColours, windowModel,
   type ProbeField, type SkyModel, type WindowModel, type WindowOutline,
 } from "./relight-kernel.js";
 import { RelightManifestSchema, type RelightManifest, type RelightTileSource } from "./relight-manifest.js";
@@ -3720,6 +3867,8 @@ export interface RelightModelData {
   readonly probes: Uint16Array;
   readonly probeValid: Uint8Array;
   readonly probeCapture: Float32Array;
+  /** The proof's keep, one bit per probe of its grid, least significant first (R1a, amended 11 October, fix round 3). */
+  readonly proofKeep: Uint8Array;
   /** The five window volumes packed for the GPU (packWindowVolumes); a multiple of four bytes long. */
   readonly windowBytes: Uint8Array;
   /** The sky bodies' bounce (the six sky/ files, decoded and checked) and each probe's fold onto the basis grid. */
@@ -3787,14 +3936,18 @@ export function texelCentre(texelToModel: readonly number[], column: number, row
   return [m(0) * column + m(1) * row + m(3), m(4) * column + m(5) * row + m(7), m(8) * column + m(9) * row + m(11)];
 }
 
-/** The probe grid over binary16 bits; a probe's 162 values are decoded when read (bounded cache). */
-export function denseProbeField(manifest: RelightManifest, probes: Uint16Array, valid: Uint8Array): ProbeField {
+/** The probe grid over binary16 bits; a probe's 162 values are decoded when read (bounded cache); the proof's keep bit by bit. */
+export function denseProbeField(manifest: RelightManifest, probes: Uint16Array, valid: Uint8Array, proofKeep: Uint8Array): ProbeField {
   const decoded = new Map<number, Float32Array>();
   return {
     origin: manifest.probes.origin,
     spacing: manifest.probes.spacing,
     shape: manifest.probes.shape,
     box: manifest.probes.box,
+    proofKeep: {
+      origin: manifest.probes.proofKeep.origin, spacing: manifest.probes.proofKeep.spacing, shape: manifest.probes.proofKeep.shape,
+      kept: (index) => (((proofKeep[index >> 3] ?? 0) >> (index & 7)) & 1) === 1,
+    },
     valid: (index) => valid[index] === 1,
     cube: (index) => {
       const cached = decoded.get(index);
@@ -3872,7 +4025,9 @@ export function floorBounceField(field: ProbeField, texelToModel: readonly numbe
   const out = new Float32Array(width * height * SOURCE_COUNT * 3);
   for (let row = 0; row < height; row += 1) {
     for (let column = 0; column < width; column += 1) {
-      const { indices, weights } = trilinearCorners(field, texelCentre(texelToModel, column, row));
+      const centre = texelCentre(texelToModel, column, row);
+      if (!proofCorner(field, centre)) continue;                // the proof finds no probe: no bounce (fix round 3)
+      const { indices, weights } = trilinearCorners(field, centre);
       const base = (row * width + column) * SOURCE_COUNT * 3;
       indices.forEach((index, corner) => {
         const weight = weights[corner] ?? 0;
@@ -3989,7 +4144,14 @@ export async function loadRelightModelData(fetchFn: FetchLike, manifestUrl: stri
   const probes = new Uint16Array(halves.buffer, halves.byteOffset, halves.byteLength / 2);
   const probeValid = await inflate(await read(manifest.probes.validFile), "gzip", probeCount);
   if (probeValid.length !== probeCount) throw new Error("The probe validity does not match its grid.");
-  const field = denseProbeField(manifest, probes, probeValid);
+  // The proof's keep (R1a, amended 11 October, fix round 3): ⌈n/8⌉ bytes, no bit set past its last probe.
+  const [px, py, pz] = manifest.probes.proofKeep.shape;
+  const proofCount = px * py * pz, keepBytes = Math.ceil(proofCount / 8);
+  const proofKeep = await inflate(await read(manifest.probes.proofKeep.file), "gzip", keepBytes);
+  if (proofKeep.length !== keepBytes || ((proofKeep[keepBytes - 1] ?? 0) >> (proofCount - (keepBytes - 1) * 8)) !== 0) {
+    throw new Error("The proof's keep does not match its grid.");
+  }
+  const field = denseProbeField(manifest, probes, probeValid, proofKeep);
   const captureWeights = weightedColours(manifest.capture.weights, manifest.capture.colours);
   const probeCapture = new Float32Array(probeCount * PROBE_CAPTURE_STRIDE);
   const folded = new Float64Array(PROBE_FOLDED);
@@ -4016,7 +4178,7 @@ export async function loadRelightModelData(fetchFn: FetchLike, manifestUrl: stri
     maps.push(image);
   }
   return {
-    manifest, baseUrl, probeCount, probes, probeValid, probeCapture, windowBytes, sky,
+    manifest, baseUrl, probeCount, probes, probeValid, probeCapture, proofKeep, windowBytes, sky,
     floorDirect: decodeFloorDirect(maps, manifest.encoding.floor, width * height),
     floorBounce: floorBounceField(field, manifest.floor.texelToModel, width, height),
   };
@@ -4033,7 +4195,7 @@ export async function loadRelightRecords(fetchFn: FetchLike, source: RelightTile
 
 export function transferablesOf(data: RelightModelData): ArrayBuffer[] {
   const buffers = new Set<ArrayBufferLike>([
-    data.probes.buffer, data.probeValid.buffer, data.probeCapture.buffer, data.windowBytes.buffer,
+    data.probes.buffer, data.probeValid.buffer, data.probeCapture.buffer, data.proofKeep.buffer, data.windowBytes.buffer,
     data.sky.basis.buffer, data.sky.valid.buffer, data.sky.coefficients.buffer, data.sky.rays.buffer, data.sky.normals.buffer,
     data.sky.areas.buffer, data.sky.foldIndices.buffer, data.sky.foldWeights.buffer,
     data.floorDirect.buffer, data.floorBounce.buffer,
@@ -4773,7 +4935,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 1 (`SOURCE_COUNT`, `Vec3`), Task 4 (`sunVisibility`, `SunRay`, `WindowRounding`, `trilinearCorners`, `SKY_BODIES`, `KernelFrame` with its `windowSun`, `moonSun`, `skyLight` and `skyCube`, `ProbeField`, `RelightKernelModel`, `Rgb`), Task 5 (`texelCentre`).
 - Produces (`display.ts`): `interface DisplayParams { readonly exposure: number; readonly whiteBalance: Rgb }`; `NEUTRAL_DISPLAY`; `HIGHLIGHT_KNEE = 0.8`; `SPLAT_KNEE_MAX = 0.999`; `HIGHLIGHT_DESATURATION = 0.15`; `SKY_NIGHT: Rgb = [0.01, 0.013, 0.024]`; `SKY_TOP = 0.85`; `SKY_BOTTOM = 0.55`; `splatKnee(captured: Rgb): number`; `displayColour(rgb: Rgb, params: DisplayParams, knee?: number): Rgb` (knee 0.8 by default); `interface DisplayUniforms { exposure: UniformNode<"float", number>; whiteBalance: UniformNode<"vec3", Vector3> }`; `splatKneeNode(captured: Node<"vec3">): Node<"float">`; `displayNode(rgb: Node<"vec3">, display: DisplayUniforms, knee: Node<"float">): Node<"vec3">`; `skyPanelColour(level: number, colour: Rgb, height: number, params: DisplayParams): Rgb`; `interface SkyUniforms { level: UniformNode<"float", number>; colour: UniformNode<"vec3", Vector3> }`; `skyPanelNode(height: Node<"float">, sky: SkyUniforms, display: DisplayUniforms): Node<"vec3">`.
-- Produces (`floor-light.ts`): `interface FloorLightData { readonly width: number; readonly height: number; readonly texel: number; readonly direct: Float32Array; readonly bounce: Float32Array; readonly texelToModel: readonly number[]; readonly probes: ProbeField; readonly floorMean: readonly Rgb[] }`; `texelSourceLight(data: FloorLightData, texel: number, frame: KernelFrame): Rgb` (the nine sources); `texelSkyBounce(data, texel, frame): Rgb` (both sky bodies' bounce at the texel's centre); `texelBaseLight(data: FloorLightData, texel: number, frame: KernelFrame): Rgb` (their sum: the CPU twin of Task 10's base-light pass, R1d A2); `FLOOR_NORMAL: Vec3 = [0, 0, 1]`; `FLOOR_SUN_TEXEL = 0.02`; `floorSunSize(data): readonly [number, number]` (columns, rows); `floorSunScale(data): readonly [number, number]`; `floorSunPoint(data, column: number, row: number): Vec3`; `floorSunVisibility(model: RelightKernelModel, frame: KernelFrame, data, column: number, row: number, rounding?: WindowRounding | null, body?: "sun" | "moon"): SunRay` (R1d A5); `floorSunBilinear(values: ArrayLike<number>, size: readonly [number, number], x: number, y: number): number`; `floorArea(data): number`; `floorSunIrradiance(model: RelightKernelModel, frame: KernelFrame, point: Vec3, body?: "sun" | "moon"): Rgb`; `roomLight(data: FloorLightData, frame: KernelFrame, stride?: number): Rgb`; `modelToLightUvMatrix(texelToModel: readonly number[], width: number, height: number): Matrix4`.
+- Produces (`floor-light.ts`): `interface FloorLightData { readonly width: number; readonly height: number; readonly texel: number; readonly direct: Float32Array; readonly bounce: Float32Array; readonly texelToModel: readonly number[]; readonly probes: ProbeField; readonly floorMean: readonly Rgb[] }`; `texelSourceLight(data: FloorLightData, texel: number, frame: KernelFrame): Rgb` (the nine sources); `texelSkyBounce(data, texel, frame): Rgb` (both sky bodies' bounce at the texel's centre; none where the proof's own lookup finds no probe, fix round 3); `texelBaseLight(data: FloorLightData, texel: number, frame: KernelFrame): Rgb` (their sum: the CPU twin of Task 10's base-light pass, R1d A2); `FLOOR_NORMAL: Vec3 = [0, 0, 1]`; `FLOOR_SUN_TEXEL = 0.02`; `floorSunSize(data): readonly [number, number]` (columns, rows); `floorSunScale(data): readonly [number, number]`; `floorSunPoint(data, column: number, row: number): Vec3`; `floorSunVisibility(model: RelightKernelModel, frame: KernelFrame, data, column: number, row: number, rounding?: WindowRounding | null, body?: "sun" | "moon"): SunRay` (R1d A5); `floorSunBilinear(values: ArrayLike<number>, size: readonly [number, number], x: number, y: number): number`; `floorArea(data): number`; `floorSunIrradiance(model: RelightKernelModel, frame: KernelFrame, point: Vec3, body?: "sun" | "moon"): Rgb`; `roomLight(data: FloorLightData, frame: KernelFrame, stride?: number): Rgb`; `modelToLightUvMatrix(texelToModel: readonly number[], width: number, height: number): Matrix4`.
 
 The display (decision 3, knee per call) multiplies by exposure and white balance, then leaves every colour whose brightest channel is at most the knee k unchanged and rolls higher ones off with the Khronos PBR Neutral highlight curve generalised to k, `newPeak = 1 − (1 − k)² / (peak + 1 − 2k)` (continuous at k), desaturation 0.15. The floor and the sky panels use k = 0.8. A splat uses `splatKnee` of its captured linear colour: its brightest channel, at least 0.8, at most 0.999 (the curve is undefined at 1). At the captured light (multiplier 1, exposure 1, white balance 1) every splat's display is therefore exactly the identity, highlights included, and only light that relighting pushes past the capture's own white is compressed (spec §4.3). "As captured" keeps the display on; it needs no special case. The floor's base light is the nine sources' direct light and bounce per 5 cm texel weighted by the setting, plus both sky bodies' bounce read at the texel's centre from the probes it is folded on (`texelBaseLight`; Task 10 computes it on the GPU at each light change, R1d A2, and this is its CPU twin). The direct sun (amended 3 October) comes from the frame's floor sun pass (Task 10): on each light change it marches the window volumes from the centre of every 2 cm texel of a grid over the light maps' floor (`floorSunSize`, `floorSunPoint`; 6.25 sun texels per 5 cm light texel, so about 840,000 in the hall, 3.4 MB as float32), and the floor material (Task 14) reads that visibility bilinearly per pixel (`floorSunBilinear` is the formula's twin), times `max(σ·up, 0)` and the sun's colour; the Moon has its own grid, marched the same way (R1d A5). `floorSunVisibility` is the CPU twin of one texel of either pass (Task 17 compares them) and `floorSunIrradiance` the term at an exact point. The mean light the display adapts to (`roomLight`) is the contract's "The display" (amended 7 October): the nine sources' light over the floor, plus, for each sky body that is up, its direct power `Σ_w P_w × rgb / floor area` (the power the windows let in, a wall's share counted as floor) and its mean floor bounce `Σ_k c_k floorMean[k] ⊙ rgb`. It reads P_w and c_k from the frame's sky light (Task 10 gives it the GPU's, read back), so nothing is marched on the main thread at a light change.
 
@@ -4841,7 +5003,7 @@ import {
 } from "../relight-kernel.js";
 
 const TEXEL_TO_MODEL = [0.5, 0, 0, 0.25, 0, 0.5, 0, 0.25, 0, 0, 0, 0.02, 0, 0, 0, 1];
-const probes: ProbeField = { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], box: OPEN_BOX, valid: () => true, cube: () => new Float32Array(162) };
+const probes: ProbeField = { origin: [0, 0, 0], spacing: 1, shape: [2, 2, 2], box: OPEN_BOX, proofKeep: null, valid: () => true, cube: () => new Float32Array(162) };
 /** Two 50 cm texels: W1 direct 1 and bounce 0.2, the cove bounce 0.1; one sky basis volume whose floor mean is 0.2. */
 const DATA: FloorLightData = {
   width: 2, height: 1, texel: 0.5, texelToModel: TEXEL_TO_MODEL, probes, floorMean: [[0.2, 0.2, 0.2]],
@@ -5075,7 +5237,7 @@ import { Matrix4 } from "three";
 import { SOURCE_COUNT, type Vec3 } from "./relight-codec.js";
 import { texelCentre } from "./relight-assets.js";
 import {
-  SKY_BODIES, sunVisibility, trilinearCorners,
+  SKY_BODIES, proofCorner, sunVisibility, trilinearCorners,
   type KernelFrame, type ProbeField, type RelightKernelModel, type Rgb, type SunRay, type WindowRounding,
 } from "./relight-kernel.js";
 
@@ -5122,7 +5284,9 @@ export function texelSourceLight(data: FloorLightData, texel: number, frame: Ker
  */
 export function texelSkyBounce(data: FloorLightData, texel: number, frame: KernelFrame): Rgb {
   const column = texel % data.width, row = Math.floor(texel / data.width);
-  const { indices, weights } = trilinearCorners(data.probes, texelCentre(data.texelToModel, column, row));
+  const centre = texelCentre(data.texelToModel, column, row);
+  if (!proofCorner(data.probes, centre)) return [0, 0, 0];   // the proof finds no probe: no bounce (fix round 3)
+  const { indices, weights } = trilinearCorners(data.probes, centre);
   const out = [0, 0, 0];
   indices.forEach((index, corner) => {
     const weight = weights[corner] ?? 0;
@@ -6001,14 +6165,14 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Tasks 4 (`prepareKernelFrame`, `KernelSky`, `skyLightOf`, `prepareWindowSun`, `SKY_SUBSAMPLES`, `SkyBody`, `SkyLight`, the window constants, `weightedColours`, `windowModel`, `NO_VISIBILITY`, `RelightVisibility`), 5 (`skyModelFromData`, `SKY_FOLD_CORNERS`, `PROBE_CAPTURE_STRIDE`, `windowAlphaViews`, `denseProbeField`, `WINDOW_ROW`, `OUTLINE_FIELDS`), 7 (`roomLight`, `floorSunSize`, `floorSunScale`, `modelToLightUvMatrix`, `FLOOR_SUN_TEXEL`, `FloorLightData`), 8 (`lightInputsFromManifest`, `settingForChoice`, `defaultChoice`, `LIGHT_PRESETS`, `ChoiceLight`, `LightInputs`, `MOONLIT_DISPLAY_KEY`, `adaptDisplay`); Task 2 (`warnRelightFallback`).
-- Produces (`relight-frame.ts`): `matrixFromRowMajor(values: readonly number[]): Matrix4`; `interface RelightApplication { readonly setting: RelightSetting; readonly display: DisplayParams; readonly sun: SolarPosition | null; readonly adaptDisplay?: (meanLight: (light: ChoiceLight) => Rgb) => DisplayParams }`; `kernelModelFromData(data: RelightModelData): RelightKernelModel` (its windows built over views into the packed volumes, its sky model over the decoded `sky/` arrays); `SKY_PARTIALS = 64`; `type RelightUniforms` (fields `values.sourceWeights: Vector3[]`, `values.windowOpen: number[]`, `values.moonOpen: number[]`, `values.lampTints: Vector3[]`, `values.skyCorners: Vector2[]` (the Sun's four table corners, then the Moon's: node index row·columns + column and weight), `sourceWeights`, `captureWeights` (uniform arrays of vec3), `ranges` (vec2 × 9), `windowOpen` and `moonOpen` (float × 5: each body's horizon gates), `skyCorners` (vec2 × 8), `lampTints` (vec3 × 4, R1d A1), `sunDir` and `moonDir` (the kernel's float32 σ), `sunRgb`, `moonRgb`, `rBack` (vec3), `sunOn`, `moonOn`, `fresnelAtSun`, `fresnelAtMoon` (the kernel's float32 glass), `emitterBoost` (float), `skinGroups`, `hiddenToggles` (uint, R1c A9), `lampLevels` (vec4: cove, ch_end, ch_centre, dome), `display: DisplayUniforms` (exposure, white balance), `sky: SkyUniforms`, `probeOrigin` (vec3), `probeSpacing` (float), `probeShape` (vec3), `probeBoxLo` and `probeBoxHi` (vec3: the probes' lookup box, R1a amended 11 October), `tileToModel` (mat4), `modelToLightUv` (mat4), `texelToModel` (mat4), `floorSunRatio` (float), `floorSunSize` and `floorSunScale` (vec2)); `interface SkyBodyUniforms`, `skyBody(u, body: "sun" | "moon"): SkyBodyUniforms` (R1d A5); `windowVolumeRead(volumes: StorageBufferAttribute)` and `type WindowVolumeRead`; `skyRayNode(volumes: WindowVolumeRead, body: SkyBodyUniforms, p: Node<"vec3">): { owner: Node<"uint">; light: Node<"float"> }` (Task 4's `windowRayLight` in TSL); `sunVisibilityNode(u, volumes, p, body = skyBody(u, "sun")): Node<"float">` (Task 4's `sunVisibility` in TSL, shared by the floor's sun and moon passes and the multiplier pass, Task 11); R1c's `probeReads(frame): ProbeReads` and `bounceNode(u, reads, p, normal, iso): { capture; scenario }` (A8); `class RelightFrame` with `constructor(data: RelightModelData)`, readonly `data`, `model`, `inputs: LightInputs`, `floor: FloorLightData`, `probeCount`, `probeRaw: StorageBufferAttribute` (the binary16 probe volume as `u32` pairs), `probeCapture: StorageBufferAttribute` (stride 19), `probeScenario: StorageBufferAttribute` (stride 18, written on the GPU), `windowVolumes: StorageBufferAttribute` (Task 5's packed volumes as `u32`), `skyPower: StorageBufferAttribute` (10 floats: the Sun's `P_W1..P_W5`, then the Moon's), `bounceCoefficients: StorageBufferAttribute` (2K floats: the Sun's `c_k`, then the Moon's), `floorMeanBasis: Float32Array` (`sky.floorMean`, K × 3) (the three are R1d A9's read access), `skyBouncePasses: readonly ComputeNode[]` (the sky bodies' nine passes), `floorBase: StorageBufferAttribute` (RGBA float32 per 5 cm texel, written on the GPU, R1d A2), `floorSun` and `floorMoon: StorageBufferAttribute` (float32 per 2 cm texel, row-major, written on the GPU), `floorSunSize: readonly [number, number]`, `uniforms: RelightUniforms`, `tileToModel: Matrix4`; mutable `current: RelightApplication | null`, `kernelFrame: KernelFrame | null`, `lastApplyMs: number | null`, `visibility: RelightVisibility`; methods `apply(application: RelightApplication): void`, `prepare(renderer: WebGPURenderer): void` (runs every frame pass, in one compute call, once after each `apply`; then, for a display that adapts to the floor's light, reads the sky light back), `meanLight(light: ChoiceLight): Rgb`, `acceptSkyReadback(kernel: KernelFrame, powers: Float32Array, coefficients: Float32Array): Readonly<Record<SkyBody, SkyLight | null>>`, `readSkyLight(renderer: WebGPURenderer): Promise<Readonly<Record<SkyBody, SkyLight | null>>>`, `onApply(listener: () => void): () => void`, `onDisplay(listener: () => void): () => void`, `addPasses(passes: readonly ComputeNode[]): () => void` (R1c A8), `setVisibility(visibility: RelightVisibility): void` (R1c A9), `dispose(): void`.
+- Produces (`relight-frame.ts`): `matrixFromRowMajor(values: readonly number[]): Matrix4`; `interface RelightApplication { readonly setting: RelightSetting; readonly display: DisplayParams; readonly sun: SolarPosition | null; readonly adaptDisplay?: (meanLight: (light: ChoiceLight) => Rgb) => DisplayParams }`; `kernelModelFromData(data: RelightModelData): RelightKernelModel` (its windows built over views into the packed volumes, its sky model over the decoded `sky/` arrays); `SKY_PARTIALS = 64`; `type RelightUniforms` (fields `values.sourceWeights: Vector3[]`, `values.windowOpen: number[]`, `values.moonOpen: number[]`, `values.lampTints: Vector3[]`, `values.skyCorners: Vector2[]` (the Sun's four table corners, then the Moon's: node index row·columns + column and weight), `sourceWeights`, `captureWeights` (uniform arrays of vec3), `ranges` (vec2 × 9), `windowOpen` and `moonOpen` (float × 5: each body's horizon gates), `skyCorners` (vec2 × 8), `lampTints` (vec3 × 4, R1d A1), `sunDir` and `moonDir` (the kernel's float32 σ), `sunRgb`, `moonRgb`, `rBack` (vec3), `sunOn`, `moonOn`, `fresnelAtSun`, `fresnelAtMoon` (the kernel's float32 glass), `emitterBoost` (float), `skinGroups`, `hiddenToggles` (uint, R1c A9), `lampLevels` (vec4: cove, ch_end, ch_centre, dome), `display: DisplayUniforms` (exposure, white balance), `sky: SkyUniforms`, `probeOrigin` (vec3), `probeSpacing` (float), `probeShape` (vec3), `probeBoxLo` and `probeBoxHi` (vec3: the probes' lookup box, R1a amended 11 October), `proofOrigin` (vec3), `proofSpacing` (float) and `proofShape` (vec3: the proof's own grid, fix round 3), `tileToModel` (mat4), `modelToLightUv` (mat4), `texelToModel` (mat4), `floorSunRatio` (float), `floorSunSize` and `floorSunScale` (vec2)); `interface SkyBodyUniforms`, `skyBody(u, body: "sun" | "moon"): SkyBodyUniforms` (R1d A5); `windowVolumeRead(volumes: StorageBufferAttribute)` and `type WindowVolumeRead`; `skyRayNode(volumes: WindowVolumeRead, body: SkyBodyUniforms, p: Node<"vec3">): { owner: Node<"uint">; light: Node<"float"> }` (Task 4's `windowRayLight` in TSL); `sunVisibilityNode(u, volumes, p, body = skyBody(u, "sun")): Node<"float">` (Task 4's `sunVisibility` in TSL, shared by the floor's sun and moon passes and the multiplier pass, Task 11); R1c's `probeReads(frame): ProbeReads` (with the proof's keep, fix round 3) and `bounceNode(u, reads, p, normal, iso): { capture; scenario }` (A8; none where the proof finds no probe); `keepWords(bits: Uint8Array): Uint32Array`; `proofCornerNode(u, keep, p): Node<"bool">` (Task 4's `proofCorner` in float32, fix round 3); `class RelightFrame` with `constructor(data: RelightModelData)`, readonly `data`, `model`, `inputs: LightInputs`, `floor: FloorLightData`, `probeCount`, `probeRaw: StorageBufferAttribute` (the binary16 probe volume as `u32` pairs), `probeCapture: StorageBufferAttribute` (stride 19), `probeScenario: StorageBufferAttribute` (stride 18, written on the GPU), `proofKeep: StorageBufferAttribute` (the proof's keep as u32 words, fix round 3), `windowVolumes: StorageBufferAttribute` (Task 5's packed volumes as `u32`), `skyPower: StorageBufferAttribute` (10 floats: the Sun's `P_W1..P_W5`, then the Moon's), `bounceCoefficients: StorageBufferAttribute` (2K floats: the Sun's `c_k`, then the Moon's), `floorMeanBasis: Float32Array` (`sky.floorMean`, K × 3) (the three are R1d A9's read access), `skyBouncePasses: readonly ComputeNode[]` (the sky bodies' nine passes), `floorBase: StorageBufferAttribute` (RGBA float32 per 5 cm texel, written on the GPU, R1d A2), `floorSun` and `floorMoon: StorageBufferAttribute` (float32 per 2 cm texel, row-major, written on the GPU), `floorSunSize: readonly [number, number]`, `uniforms: RelightUniforms`, `tileToModel: Matrix4`; mutable `current: RelightApplication | null`, `kernelFrame: KernelFrame | null`, `lastApplyMs: number | null`, `visibility: RelightVisibility`; methods `apply(application: RelightApplication): void`, `prepare(renderer: WebGPURenderer): void` (runs every frame pass, in one compute call, once after each `apply`; then, for a display that adapts to the floor's light, reads the sky light back), `meanLight(light: ChoiceLight): Rgb`, `acceptSkyReadback(kernel: KernelFrame, powers: Float32Array, coefficients: Float32Array): Readonly<Record<SkyBody, SkyLight | null>>`, `readSkyLight(renderer: WebGPURenderer): Promise<Readonly<Record<SkyBody, SkyLight | null>>>`, `onApply(listener: () => void): () => void`, `onDisplay(listener: () => void): () => void`, `addPasses(passes: readonly ComputeNode[]): () => void` (R1c A8), `setVisibility(visibility: RelightVisibility): void` (R1c A9), `dispose(): void`.
 - Produces (`relight-apply.ts`): `applicationForChoice(inputs: LightInputs, choice: LightChoice, meanLight: (light: ChoiceLight) => Rgb): RelightApplication` (R1d A4, A7; it sets `adaptDisplay` whenever the display depends on the floor's light).
 
 `apply` prepares the kernel frame (both bodies' horizon gates, glass transmissions and table corners, from their float32 directions), sets the uniforms from it and marks the frame's GPU work; it never touches a splat and never marches a patch ray (R1d A9: the CPU's 56,448-ray march takes 4–9 ms per body on the build PC, measured 8 October, too slow at R1d's light change per frame). `prepare` runs that work in one `renderer.compute([...skyBouncePasses, fold, floorBase, floorSun, floorMoon, ...extraPasses])` call (an array of compute nodes: three 0.186 `src/renderers/common/Renderer.js:2877`, typed in `@types/three` `src/renderers/common/Renderer.d.ts:975`; dispatches in one call are ordered and see each other's storage writes):
 
 - **The sky bodies' bounce** (R1a Task 4's contract, both bodies, every light change, on the GPU), for the Sun and then the Moon, four passes each over shared scratch buffers: (1) `RelightSkyRays`, one invocation per patch ray (56,448), skips a ray whose patch faces away from the body (it adds nothing, as `windowPower` skips it) and otherwise marches it as `skyRayNode` (the same march as a splat's, the body's own gates and glass), writing the ray's owning window (5 for none) and its light; (2) `RelightSkyPatches`, one per patch (3,528), sums each window's rays in float32 in sub-sample order, `lit = Σ_k light[k·count + p]` over the rays it owns, and writes `area × (lit / 16 × max(N · σ, 0))` per window; (3) `RelightSkyPartials`, 5 × 64 invocations, each summing a contiguous run of 56 patches of one window in order; (4) `RelightSkyCoefficients`, one invocation per basis volume (K), sums the 64 partials of each window in order into `P_w` (the first writes `skyPower`), then forms `c_k = Σ corners Σ_{w: P_w > 0} (weight × P_w) × table[node][w][k]` from the four corners `apply` computed (`windows.sun_corners`: cheap, on the CPU, from the body's float32 direction) into `bounceCoefficients`. Then (5) `RelightSkyBasis`, one invocation per basis value (`K` sums over 1,694 × 18 values), writes `S1 = sunRgb ⊗ Σ_k c_sun,k basis_k + moonRgb ⊗ Σ_k c_moon,k basis_k` (R1d A9 point 1) from the binary16 basis. A body that is off writes zeros all the way through.
 - **The scenario probe volume** (`RelightProbeFold`), one invocation per probe value over nine sources, plus the sky bodies' bounce at the probe: the eight 1 m corners and float32 weights Task 5's worker computed (`skyFoldTable`, the CPU twin's own weights), `Σ corner weight × S1[corner]`. So every splat (Task 11), the floor (below) and R1c's skins (`bounceNode`) receive both bodies' bounce with no code of their own.
-- **The floor's base light** (`RelightFloorBase`, R1d A2): per 5 cm texel, `Σk s[k] D[k]` plus the folded scenario volume's +z face, read at the texel's centre as `trilinearCorners` reads (clamped into the probes' lookup box; amended 11 October) (`texelBaseLight` is its CPU twin, Task 7).
+- **The floor's base light** (`RelightFloorBase`, R1d A2): per 5 cm texel, `Σk s[k] D[k]` plus the folded scenario volume's +z face, read at the texel's centre as `trilinearCorners` reads (clamped into the probes' lookup box; amended 11 October; none where the proof's own lookup finds no probe, fix round 3) (`texelBaseLight` is its CPU twin, Task 7).
 - **The floor's sun and moon** (`RelightFloorSun`, `RelightFloorMoon`; amended 3 October, R1d A5), one invocation per 2 cm texel of Task 7's grid each, marching the window volumes from its texel's centre toward the body into `floorSun` or `floorMoon`, float32 storage buffers the floor material reads (Task 14).
 
 The sky light's numbers in float32 differ from the CPU twin's float64 sums by about 1e-6 relative, and a patch ray within rounding of a march decision may land elsewhere on the GPU (WGSL fuses and divides within 2.5 ULP), moving that window's power by up to `area × cos × F / 16` (about 1% of a window's power in the hall); Task 17's `skyLight` check bounds the difference by exactly the rays the twin marks (`windowPower`'s `excuse`), and Task 18 holds the sky passes' GPU time to R1d A9's 1 ms.
@@ -6343,7 +6507,7 @@ export function kernelModelFromData(data: RelightModelData): RelightKernelModel 
     ranges: manifest.encoding.sources,
     captureWeights: weightedColours(manifest.capture.weights, manifest.capture.colours),
     daylightColour: manifest.capture.daylightColour,
-    probes: denseProbeField(manifest, data.probes, data.probeValid),
+    probes: denseProbeField(manifest, data.probes, data.probeValid, data.proofKeep),
     windows: manifest.windows.map((window, w) => windowModel(window.id, window.frame, views[w] ?? new Uint8Array(0), window.horizon)),
     fresnel: manifest.sun.fresnel,
     sky: skyModelFromData(manifest, data.sky),
@@ -6401,6 +6565,10 @@ function createRelightUniforms(data: RelightModelData) {
     /** The probes' lookup box (R1a, amended 11 October): every probe read clamps its position into it first. */
     probeBoxLo: uniform(new Vector3(...manifest.probes.box.lo)),
     probeBoxHi: uniform(new Vector3(...manifest.probes.box.hi)),
+    /** The proof's own probe grid (R1a, amended 11 October, fix round 3): every probe read first asks it for a probe. */
+    proofOrigin: uniform(new Vector3(...manifest.probes.proofKeep.origin)),
+    proofSpacing: uniform(manifest.probes.proofKeep.spacing),
+    proofShape: uniform(new Vector3(...manifest.probes.proofKeep.shape)),
     tileToModel: uniform(matrixFromRowMajor(manifest.model.tileToModel)),
     modelToLightUv: uniform(modelToLightUvMatrix(manifest.floor.texelToModel, width, height)),
     /** The floor's 2 cm sun grid (Task 7): the pass maps its texels to the model, the floor material maps light UV to it. */
@@ -6722,9 +6890,10 @@ function createFloorSunPass(volumes: StorageBufferAttribute, out: StorageBufferA
  */
 function createFloorBasePass(
   direct: StorageBufferAttribute, capture: StorageBufferAttribute, scenario: StorageBufferAttribute, probeCount: number,
-  out: StorageBufferAttribute, width: number, height: number, u: RelightUniforms,
+  keep: StorageBufferAttribute, out: StorageBufferAttribute, width: number, height: number, u: RelightUniforms,
 ): ComputeNode {
   const texels = width * height;
+  const keepRead = storage(keep, "uint", keep.count).toReadOnly();
   const directRead = storage(direct, "float", texels * SOURCE_COUNT).toReadOnly();
   const captureRead = storage(capture, "float", probeCount * PROBE_CAPTURE_STRIDE).toReadOnly();
   const scenarioRead = storage(scenario, "float", probeCount * PROBE_FOLDED).toReadOnly();
@@ -6752,26 +6921,62 @@ function createFloorBasePass(
         }
       }
     }
-    const sum = bounce.mul(select(weightSum.greaterThan(1e-6), float(1).div(max(weightSum, 1e-6)), float(0))).toVar();
+    // no bounce where the proof's own lookup finds no probe (R1a, amended 11 October, fix round 3)
+    const sum = bounce.mul(select(weightSum.greaterThan(1e-6).and(proofCornerNode(u, keepRead, p)), float(1).div(max(weightSum, 1e-6)), float(0))).toVar();
     for (let k = 0; k < SOURCE_COUNT; k += 1) sum.addAssign(u.sourceWeights.element(k).mul(directRead.element(i.mul(SOURCE_COUNT).add(k))));
     write.element(i).assign(vec4(sum, 1));
   })().compute(texels, [WORKGROUP]).setName("RelightFloorBase");
 }
 
-/** The two folded probe volumes as one pass reads them (R1c, amendment A8): the capture's with its validity, the scenario's. */
+/** The two folded probe volumes as one pass reads them (R1c, amendment A8): the capture's with its validity, the scenario's;
+ * and the proof's keep (R1a, amended 11 October, fix round 3). */
 export function probeReads(frame: RelightFrame) {
   return {
     capture: storage(frame.probeCapture, "float", frame.probeCount * PROBE_CAPTURE_STRIDE).toReadOnly(),
     scenario: storage(frame.probeScenario, "float", frame.probeCount * PROBE_FOLDED).toReadOnly(),
+    proofKeep: storage(frame.proofKeep, "uint", frame.proofKeep.count).toReadOnly(),
   };
 }
 export type ProbeReads = ReturnType<typeof probeReads>;
 
+/** The proof's keep bits as little-endian u32 words, padded with zero bytes (bit i is bit i mod 32 of word ⌊i/32⌋). */
+export function keepWords(bits: Uint8Array): Uint32Array {
+  const padded = new Uint8Array(Math.ceil(bits.length / 4) * 4);
+  padded.set(bits);
+  return new Uint32Array(padded.buffer);
+}
+
+/**
+ * proofCorner in TSL (R1a, amended 11 October, fix round 3): whether the proof's own lookup finds a probe at p, in
+ * float32, the eight weights summed pairwise as the twin sums them. It can differ from the twin only within about
+ * 0.1 mm of a face where the decision changes (Task 17 excuses those splats: proofCornerSensitive); on the hall's
+ * served splats and floor texels a float32 evaluation agrees everywhere (R1a's Task 5 report).
+ */
+export function proofCornerNode(u: RelightUniforms, keep: ProbeReads["proofKeep"], p: Node<"vec3">): Node<"bool"> {
+  const g = clamp(p, u.probeBoxLo, u.probeBoxHi).sub(u.proofOrigin).div(u.proofSpacing).toVar();
+  const cell = clamp(floor(g), vec3(0), u.proofShape.sub(2)).toVar();
+  const f = clamp(g.sub(cell), vec3(0), vec3(1)).toVar();
+  const weights: Node<"float">[] = [];
+  for (const dx of [0, 1]) {
+    for (const dy of [0, 1]) {
+      for (const dz of [0, 1]) {
+        const index = uint(cell.x.add(dx).mul(u.proofShape.y).add(cell.y.add(dy)).mul(u.proofShape.z).add(cell.z.add(dz))).toVar();
+        const kept = keep.element(index.shiftRight(5)).shiftRight(index.bitAnd(31)).bitAnd(1).equal(1);
+        const weight = (dx === 1 ? f.x : float(1).sub(f.x)).mul(dy === 1 ? f.y : float(1).sub(f.y)).mul(dz === 1 ? f.z : float(1).sub(f.z));
+        weights.push(select(kept, weight, float(0)));
+      }
+    }
+  }
+  const at = (k: number): Node<"float"> => weights[k] ?? float(0);
+  return at(0).add(at(1)).add(at(2).add(at(3))).add(at(4).add(at(5)).add(at(6).add(at(7)))).greaterThan(1e-6);
+}
+
 /**
  * bounceAt in TSL (R1c, amendment A8): read as trilinearCorners reads (the position clamped into the lookup box; R1a,
  * amended 11 October), each corner's two folded cubes evaluated at the
- * normal (the mean of the six faces for an isotropic receiver), the weights renormalised. The multiplier pass's own
- * code, shared with the skins' light pass; the scenario cubes hold both sky bodies' bounce.
+ * normal (the mean of the six faces for an isotropic receiver), the weights renormalised; none where the proof's own
+ * lookup finds no probe (proofCornerNode; R1a, amended 11 October, fix round 3). The multiplier pass's own code, shared
+ * with the skins' light pass; the scenario cubes hold both sky bodies' bounce.
  */
 export function bounceNode(u: RelightUniforms, reads: ProbeReads, p: Node<"vec3">, normal: Node<"vec3">, iso: Node<"bool">): { capture: Node<"vec3">; scenario: Node<"vec3"> } {
   const faces = [max(normal.x, 0).pow2(), max(normal.x.negate(), 0).pow2(), max(normal.y, 0).pow2(), max(normal.y.negate(), 0).pow2(), max(normal.z, 0).pow2(), max(normal.z.negate(), 0).pow2()]
@@ -6798,7 +7003,7 @@ export function bounceNode(u: RelightUniforms, reads: ProbeReads, p: Node<"vec3"
       }
     }
   }
-  const normaliser = select(weightSum.greaterThan(1e-6), float(1).div(max(weightSum, 1e-6)), float(0));
+  const normaliser = select(weightSum.greaterThan(1e-6).and(proofCornerNode(u, reads.proofKeep, p)), float(1).div(max(weightSum, 1e-6)), float(0));
   return { capture: bounceCapture.mul(normaliser), scenario: bounceScenario.mul(normaliser) };
 }
 
@@ -6825,6 +7030,8 @@ export class RelightFrame {
   readonly probeRaw: StorageBufferAttribute;
   readonly probeCapture: StorageBufferAttribute;
   readonly probeScenario: StorageBufferAttribute;
+  /** The proof's keep as u32 words (keepWords; R1a, amended 11 October, fix round 3; 9,380 words in the hall). */
+  readonly proofKeep: StorageBufferAttribute;
   /** Task 5's packed window volumes as u32 words (5.47 MB in the hall). */
   readonly windowVolumes: StorageBufferAttribute;
   /** The Sun's P_W1..P_W5, then the Moon's, written on the GPU at each light change (R1d A9's read access). */
@@ -6881,6 +7088,7 @@ export class RelightFrame {
     this.probeRaw = new StorageBufferAttribute(new Uint32Array(data.probes.buffer, data.probes.byteOffset, data.probes.length / 2), 1);
     this.probeCapture = new StorageBufferAttribute(data.probeCapture, 1);
     this.probeScenario = new StorageBufferAttribute(new Float32Array(data.probeCount * PROBE_FOLDED), 1);
+    this.proofKeep = new StorageBufferAttribute(keepWords(data.proofKeep), 1);
     this.windowVolumes = new StorageBufferAttribute(new Uint32Array(data.windowBytes.buffer, data.windowBytes.byteOffset, data.windowBytes.byteLength / 4), 1);
     this.floorSunSize = floorSunSize(this.floor);
     this.floorSun = new StorageBufferAttribute(new Float32Array(this.floorSunSize[0] * this.floorSunSize[1]), 1);
@@ -6912,7 +7120,7 @@ export class RelightFrame {
       createSkyBasisPass(basisRaw, this.bounceCoefficients, skyBasisSum, k, basisProbes, this.uniforms),
     ];
     this.foldPass = createFoldPass(this.probeRaw, this.probeScenario, skyBasisSum, foldIndices, foldWeights, data.probeCount, this.uniforms);
-    this.floorBasePass = createFloorBasePass(floorDirect, this.probeCapture, this.probeScenario, data.probeCount, this.floorBase, width, height, this.uniforms);
+    this.floorBasePass = createFloorBasePass(floorDirect, this.probeCapture, this.probeScenario, data.probeCount, this.proofKeep, this.floorBase, width, height, this.uniforms);
     this.floorSunPass = createFloorSunPass(this.windowVolumes, this.floorSun, this.floorSunSize, this.uniforms);
     this.floorMoonPass = createFloorSunPass(this.windowVolumes, this.floorMoon, this.floorSunSize, this.uniforms, "moon");
     this.owned = [
@@ -7207,7 +7415,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (`relight-spans.ts`): `RELIGHT_SPANS = ["relight:merge-records", "relight:words", "relight:frame", "relight:apply", "relight:pass"]`, `type RelightSpan`, `measureRelight<T>(name: RelightSpan, work: () => T): T` (runs `work` and records its duration as a `performance.measure` span, also when it throws). Task 18's loading check reads these spans; Tasks 11, 12 and 15 wrap every piece of main-thread relight work in one.
 - Produces (`relight-draw.ts`): `PASSTHROUGH_FLAGS = 0xff`; `PASSTHROUGH_WORD = packMultiplierWord([1, 1, 1], 1)`; `mergeRelightRecords(sources: readonly { readonly count: number; readonly records: Uint8Array | null }[]): Uint32Array` (three words per splat, little-endian record bytes; a source without records, or with a record count other than its splat count, is passed through); `sharedPlacement(matrices: readonly Matrix4[]): Matrix4 | null`; `interface RelightHooks { alpha(index: Node<"uint">): Node<"float">; workingColour(index: Node<"uint">, center: Node<"vec3">, rgb: Node<"vec3">): Node<"vec3"> }`; `interface RelightDraw { readonly count: number; readonly recordsAttribute: StorageBufferAttribute; readonly wordsAttribute: StorageBufferAttribute; readonly positions: Float32Array; readonly colours: Uint32Array; readonly sceneToModel: Matrix4; readonly hooks: RelightHooks; setSourceRecords(offset: number, count: number, records: Uint8Array | null): void; run(renderer: WebGPURenderer): void; dispose(): void }`; `createRelightDraw(frame: RelightFrame, geometry: BufferGeometry, records: Uint32Array, sceneToModel: Matrix4): RelightDraw`.
 
-The pass is `relightSplat` (Task 4) in TSL, one invocation per splat of the snapshot, writing one `u32` word (contract packing). Positions are the merged scene-frame centres (`native-splat-merge.ts` applies each source's matrix), taken to the model frame by `sceneToModel = tileToModel × placement⁻¹`; colours are the merged sRGB bytes, linearised as the proof's `C`. The two probe volumes are folded, so bounce light costs two 18-value lookups per corner, evaluated at the splat's normal and accumulated per corner (`cubeEval` is linear, so this equals evaluating the interpolated cube); that code is Task 10's `bounceNode` (R1c A8), shared with R1c's skins, and the scenario volume it reads already holds both sky bodies' bounce (Task 10's fold), so the pass has no bounce code of its own for the Sun or the Moon. The sun term (amended 3 October) is `sunVisibilityNode` (Task 10): for a splat the bake flags as reachable (`FLAG_SUN`) while the sun is in, the ray toward the sun is marched through the window volumes as Task 4's `sunVisibility` does, the outline entry test first, so a ray that enters no window costs five outline tests and no march. It repeats the twin's float32 operations in the twin's order, the entry point (`tq = (y0 − Py) / σy`, `Q = P + σ·tq`) and the first cell (`floor((Q − gridLo) / res) − offset`) above all; WGSL may still fuse and divides within 2.5 ULP, so a splat whose ray passes within rounding of a decision may differ from the CPU, and Task 17 marks and excuses exactly those. Each window's horizon gate is the `windowOpen` uniform the frame copied from the kernel (`prepareWindowSun`), and the glass transmission is its `fresnelAtSun`, so the GPU applies exactly the CPU's gates and glass. The Moon (R1d A5) takes the same march with its own gates and glass (`skyBody(u, "moon")`: `moonOpen`, `fresnelAtMoon`), its direction and its colour, for the same reachable splats. Lit bulbs use the `emitterBoost` uniform (1 in every preset, R1d A1), and the lit bulbs and the cove take their group's `lampTints` entry (ones unless R1d dims a lamp; the group is the class's: dome for class 4, cove for 5, the chandelier centre or ends by the centre bit). A splat's alpha is 0 for class 2 (the glass), for a covered splat (class 7) while its wall group draws as skins, and for a toggled splat while its toggle is hidden (R1c A9: the `skinGroups` and `hiddenToggles` uniforms). The pass binds seven storage buffers (records, positions, colours, the two probe volumes, the window volumes, words), within WebGPU's default 8 per stage; the render hooks read only the words, and the working-colour hook calls `displayNode` with `splatKneeNode` of the splat's captured colour (the hook's `rgb`, before the multiplier). The pass runs on a setting change, a snapshot build and late records: per frame only when the light changes (R1d A11: R1d reruns it every frame while the light moves, and never while it is still). The main-thread work a draw adds is timed as `performance.measure` spans (`relight-spans.ts`): the words' allocation and fill (`relight:words`) and each run's encode (`relight:pass`; the first run also builds the pass's pipeline).
+The pass is `relightSplat` (Task 4) in TSL, one invocation per splat of the snapshot, writing one `u32` word (contract packing). Positions are the merged scene-frame centres (`native-splat-merge.ts` applies each source's matrix), taken to the model frame by `sceneToModel = tileToModel × placement⁻¹`; colours are the merged sRGB bytes, linearised as the proof's `C`. The two probe volumes are folded, so bounce light costs two 18-value lookups per corner, evaluated at the splat's normal and accumulated per corner (`cubeEval` is linear, so this equals evaluating the interpolated cube); that code is Task 10's `bounceNode` (R1c A8), shared with R1c's skins, and the scenario volume it reads already holds both sky bodies' bounce (Task 10's fold), so the pass has no bounce code of its own for the Sun or the Moon. The sun term (amended 3 October) is `sunVisibilityNode` (Task 10): for a splat the bake flags as reachable (`FLAG_SUN`) while the sun is in, the ray toward the sun is marched through the window volumes as Task 4's `sunVisibility` does, the outline entry test first, so a ray that enters no window costs five outline tests and no march. It repeats the twin's float32 operations in the twin's order, the entry point (`tq = (y0 − Py) / σy`, `Q = P + σ·tq`) and the first cell (`floor((Q − gridLo) / res) − offset`) above all; WGSL may still fuse and divides within 2.5 ULP, so a splat whose ray passes within rounding of a decision may differ from the CPU, and Task 17 marks and excuses exactly those. Each window's horizon gate is the `windowOpen` uniform the frame copied from the kernel (`prepareWindowSun`), and the glass transmission is its `fresnelAtSun`, so the GPU applies exactly the CPU's gates and glass. The Moon (R1d A5) takes the same march with its own gates and glass (`skyBody(u, "moon")`: `moonOpen`, `fresnelAtMoon`), its direction and its colour, for the same reachable splats. Lit bulbs use the `emitterBoost` uniform (1 in every preset, R1d A1), and the lit bulbs and the cove take their group's `lampTints` entry (ones unless R1d dims a lamp; the group is the class's: dome for class 4, cove for 5, the chandelier centre or ends by the centre bit). A splat's alpha is 0 for class 2 (the glass), for a covered splat (class 7) while its wall group draws as skins, and for a toggled splat while its toggle is hidden (R1c A9: the `skinGroups` and `hiddenToggles` uniforms). The pass binds eight storage buffers (records, positions, colours, the two probe volumes, the proof's keep (amended 11 October, fix round 3), the window volumes, words): WebGPU's default 8 per stage, and Task 12 asks the device for the adapter's own limit (16 on the build PC); the render hooks read only the words, and the working-colour hook calls `displayNode` with `splatKneeNode` of the splat's captured colour (the hook's `rgb`, before the multiplier). The pass runs on a setting change, a snapshot build and late records: per frame only when the light changes (R1d A11: R1d reruns it every frame while the light moves, and never while it is still). The main-thread work a draw adds is timed as `performance.measure` spans (`relight-spans.ts`): the words' allocation and fill (`relight:words`) and each run's encode (`relight:pass`; the first run also builds the pass's pipeline).
 
 - [ ] **Step 1: Write the failing tests** — create `packages/web/src/lib/relight/__tests__/relight-spans.test.ts`:
 
@@ -10043,7 +10251,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Tasks 1 (`FLAG_SUN`), 4 (`relightSplat`, `sunVisibility`, `WINDOW_ROUNDING`, `prepareKernelFrame`, `windowPower`, `skyCorners`, `skyCoefficients`, `sunAzimuthElevation`, `SKY_BODIES`, `SkyTable`, `WindowPower`; `settingFromVectors`), 7 (`displayNode`, `displayColour`, `NEUTRAL_DISPLAY`, `DisplayParams`, `DisplayUniforms`, `floorSunVisibility`, `texelBaseLight`), 8 (`PRESET_DISPLAY`, `PRESET_DEFAULTS`), 10 (`RelightFrame` with its `floorBase`, `floorSun`, `floorMoon`, `floorSunSize`, `skyBouncePasses`, `visibility` and `readSkyLight`; `applicationForChoice`), 11, 12; `waitForNativeGpuWork` (`packages/web/src/lib/native-gpu-completion.ts:156`, the queue's `onSubmittedWorkDone`).
-- Produces (`relight-debug.ts`): `FLOOR_SUN_TOLERANCE = 1e-5`; `SKY_POWER_RELATIVE = 2e-5`, `SKY_POWER_ABSOLUTE = 1e-7`; `skyPowerExcess(gpu: readonly number[], twin: WindowPower): number` (the largest `|P_gpu − P_twin| − (excuse + 2e-5·P_twin + 1e-7)` over the windows: at most 0 passes; a NaN gives Infinity); `skyCoefficientError(table: SkyTable, k: number, powers: readonly number[], azimuth: number, elevation: number, gpu: ArrayLike<number>): number` (the largest `|c_gpu − c_twin|` over `Σ|terms|`, the twin's coefficients formed from the GPU's own powers); `interface SkyLightCheck { readonly bodies: number; readonly marched: number; readonly sensitive: number; readonly excusedShare: number; readonly worstPowerExcess: number; readonly worstCoefficientError: number }`; `interface WordCheck { readonly checked: number; readonly worstCodeDistance: number; readonly alphaMismatches: number; readonly missing: number; readonly excused: number; readonly sunMarched: number }`; `interface FloorSunCheck { readonly checked: number; readonly lit: number; readonly marched: number; readonly worstDifference: number; readonly excused: number }`; `interface GpuTimeCheck { readonly runs: number; readonly splats: number; readonly applyMedianMs: number; readonly passMedianMs: number; readonly passMaxMs: number; readonly changeMedianMs: number; readonly changeMaxMs: number; readonly skyTiming: "timestamp-query" | "round-trip-minus-empty"; readonly skyMedianMs: number; readonly skyMaxMs: number; readonly emptyMedianMs: number | null }`; `interface TimedComputeRenderer { readonly backend: unknown; compute(nodes: ComputeNode[]): unknown; resolveTimestampsAsync(type: "compute"): Promise<unknown> }`, `computeTimestamps(renderer: TimedComputeRenderer): boolean` and `timedCompute(renderer: TimedComputeRenderer, passes: readonly ComputeNode[]): Promise<number | null>` (one compute call's GPU time from timestamp queries, amended 8 October); `interface DisplayProbe { readonly rgb: Rgb; readonly params: DisplayParams; readonly knee: number }`; `DISPLAY_PROBES: readonly DisplayProbe[]` (16: eight in the display's identity region, eight rolled off above the knee, at the floor's and sky's knee 0.8 and at splat knees); `interface DisplayCheck { readonly checked: number; readonly worstRelative: number }`; `interface RelightDebug { state(): { status: RelightStatus; relit: boolean; supported: boolean; applyMs: number | null; choice: LightChoice }; select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>; sample(stride: number): Promise<WordCheck>; fixture(vectors: unknown, setting: string): Promise<WordCheck>; floorSun(stride: number): Promise<FloorSunCheck>; floorMoon(stride: number): Promise<FloorSunCheck>; floorBase(stride: number): Promise<FloorSunCheck>; skyLight(): Promise<SkyLightCheck>; display(): Promise<DisplayCheck>; gpuTime(runs: number): Promise<GpuTimeCheck> }` on `window.__relight` (DEV only); `findSplatsByRecord(records: Uint32Array, positions: Float32Array, sceneToModel: Matrix4, wanted: readonly { readonly record: Uint8Array; readonly position: readonly [number, number, number] }[], tolerance?: number): number[]`; `wordTally(): { add(actual: number, expected: number, sunMarched: boolean, sensitive: () => boolean): void; result(missing: number): WordCheck }`; `installRelightDebug(frame: RelightFrame, host: NativeSplatScene, renderer: WebGPURenderer): () => void`.
+- Produces (`relight-debug.ts`): `FLOOR_SUN_TOLERANCE = 1e-5`; `SKY_POWER_RELATIVE = 2e-5`, `SKY_POWER_ABSOLUTE = 1e-7`; `skyPowerExcess(gpu: readonly number[], twin: WindowPower): number` (the largest `|P_gpu − P_twin| − (excuse + 2e-5·P_twin + 1e-7)` over the windows: at most 0 passes; a NaN gives Infinity); `skyCoefficientError(table: SkyTable, k: number, powers: readonly number[], azimuth: number, elevation: number, gpu: ArrayLike<number>): number` (the largest `|c_gpu − c_twin|` over `Σ|terms|`, the twin's coefficients formed from the GPU's own powers); `interface SkyLightCheck { readonly bodies: number; readonly marched: number; readonly sensitive: number; readonly excusedShare: number; readonly worstPowerExcess: number; readonly worstCoefficientError: number }`; `interface WordCheck { readonly checked: number; readonly worstCodeDistance: number; readonly alphaMismatches: number; readonly missing: number; readonly excused: number; readonly proofExcused: number; readonly sunMarched: number }`; `interface FloorSunCheck { readonly checked: number; readonly lit: number; readonly marched: number; readonly worstDifference: number; readonly excused: number }`; `interface GpuTimeCheck { readonly runs: number; readonly splats: number; readonly applyMedianMs: number; readonly passMedianMs: number; readonly passMaxMs: number; readonly changeMedianMs: number; readonly changeMaxMs: number; readonly skyTiming: "timestamp-query" | "round-trip-minus-empty"; readonly skyMedianMs: number; readonly skyMaxMs: number; readonly emptyMedianMs: number | null }`; `interface TimedComputeRenderer { readonly backend: unknown; compute(nodes: ComputeNode[]): unknown; resolveTimestampsAsync(type: "compute"): Promise<unknown> }`, `computeTimestamps(renderer: TimedComputeRenderer): boolean` and `timedCompute(renderer: TimedComputeRenderer, passes: readonly ComputeNode[]): Promise<number | null>` (one compute call's GPU time from timestamp queries, amended 8 October); `interface DisplayProbe { readonly rgb: Rgb; readonly params: DisplayParams; readonly knee: number }`; `DISPLAY_PROBES: readonly DisplayProbe[]` (16: eight in the display's identity region, eight rolled off above the knee, at the floor's and sky's knee 0.8 and at splat knees); `interface DisplayCheck { readonly checked: number; readonly worstRelative: number }`; `interface RelightDebug { state(): { status: RelightStatus; relit: boolean; supported: boolean; applyMs: number | null; choice: LightChoice }; select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>; sample(stride: number): Promise<WordCheck>; fixture(vectors: unknown, setting: string): Promise<WordCheck>; floorSun(stride: number): Promise<FloorSunCheck>; floorMoon(stride: number): Promise<FloorSunCheck>; floorBase(stride: number): Promise<FloorSunCheck>; skyLight(): Promise<SkyLightCheck>; display(): Promise<DisplayCheck>; gpuTime(runs: number): Promise<GpuTimeCheck> }` on `window.__relight` (DEV only); `findSplatsByRecord(records: Uint32Array, positions: Float32Array, sceneToModel: Matrix4, wanted: readonly { readonly record: Uint8Array; readonly position: readonly [number, number, number] }[], tolerance?: number): number[]`; `wordTally(): { add(actual: number, expected: number, sunMarched: boolean, sensitive: () => boolean, proofSensitive?: () => boolean): void; result(missing: number): WordCheck }`; `installRelightDebug(frame: RelightFrame, host: NativeSplatScene, renderer: WebGPURenderer): () => void`.
 - Produces (capture): `interface NativeCaptureOptions { readonly width?: number; readonly height?: number; readonly mimeType?: "image/jpeg" | "image/png" }`; `captureNativeCurrentView(scene, camera, options?)`.
 - Produces (`RoomSplatScene`): `interface RoomViewCaptureRequest { readonly position: readonly [number, number, number]; readonly target: readonly [number, number, number]; readonly fov: number; readonly width: number; readonly height: number }`; `window.__roomViewCapture(request)` (DEV, `captureReadback` only) — a PNG of that view at that size, the live camera restored.
 
@@ -10095,7 +10303,8 @@ describe("the relight instruments (T-639 R1b)", () => {
     tally.add(one, one, true, () => { throw new Error("A matching word is never asked about rounding."); });
     tally.add(brighter, one, true, () => true);   // a sun ray within rounding: excused
     tally.add(brighter, one, false, () => true);  // no sun marched: judged
-    expect(tally.result(2)).toEqual({ checked: 3, worstCodeDistance: multiplierCodeDistance(brighter, one), alphaMismatches: 0, missing: 2, excused: 1, sunMarched: 2 });
+    tally.add(brighter, one, false, () => false, () => true);   // the proof's decision within 0.1 mm: excused apart (fix round 3)
+    expect(tally.result(2)).toEqual({ checked: 4, worstCodeDistance: multiplierCodeDistance(brighter, one), alphaMismatches: 0, missing: 2, excused: 1, proofExcused: 1, sunMarched: 2 });
   });
 
   it("bounds the GPU's window powers by the twin's excuse and float32 rounding, and a NaN never passes", () => {
@@ -10234,8 +10443,8 @@ import { FLAG_SUN, RECORD_BYTES, multiplierCodeDistance, packMultiplierWord, rec
 import { PASSTHROUGH_FLAGS, type RelightDraw } from "./relight-draw.js";
 import type { RelightFrame } from "./relight-frame.js";
 import {
-  SKY_BODIES, WINDOW_ROUNDING, prepareKernelFrame, relightSplat, skyCoefficients, skyCorners, sunAzimuthElevation, sunVisibility, windowPower,
-  type KernelFrame, type RelightKernelModel, type Rgb, type SkyTable, type WindowPower,
+  SKY_BODIES, WINDOW_ROUNDING, prepareKernelFrame, proofCornerSensitive, relightSplat, skyCoefficients, skyCorners, sunAzimuthElevation,
+  sunVisibility, windowPower, type KernelFrame, type RelightKernelModel, type Rgb, type SkyTable, type WindowPower,
 } from "./relight-kernel.js";
 import { RelightVectorsSchema, isRelightVectorSetting, settingFromVectors } from "./relight-vectors.js";
 
@@ -10256,6 +10465,9 @@ export interface WordCheck {
   readonly missing: number;
   /** Splats more than one code apart whose sun ray passes within rounding of a window decision (WINDOW_ROUNDING). */
   readonly excused: number;
+  /** Splats more than one code apart, not excused above, whose proof's corner decision changes within
+   * PROOF_SENSITIVE_METRES (R1a, amended 11 October, fix round 3): the GPU's float32 may decide otherwise. */
+  readonly proofExcused: number;
   /** Checked splats whose sun was marched (FLAG_SUN with the sun in): a sunny check must have some. */
   readonly sunMarched: number;
 }
@@ -10407,22 +10619,25 @@ export function findSplatsByRecord(
  * The one exception is a splat whose sun was marched and whose ray passes within rounding of a decision of the
  * window march (Task 4's WINDOW_ROUNDING, asked only of a splat that differs): WGSL may fuse and divides within
  * 2.5 ULP, so the GPU may put that ray's sample in the next cell. Such a splat is counted as excused, not judged.
+ * So is one whose proof's corner decision changes within PROOF_SENSITIVE_METRES (R1a, amended 11 October, fix round 3),
+ * counted apart as proofExcused.
  */
 export function wordTally(): {
-  add(actual: number, expected: number, sunMarched: boolean, sensitive: () => boolean): void;
+  add(actual: number, expected: number, sunMarched: boolean, sensitive: () => boolean, proofSensitive?: () => boolean): void;
   result(missing: number): WordCheck;
 } {
-  let checked = 0, worst = 0, alphaMismatches = 0, excused = 0, marched = 0;
+  let checked = 0, worst = 0, alphaMismatches = 0, excused = 0, proofExcused = 0, marched = 0;
   return {
-    add: (actual, expected, sunMarched, sensitive) => {
+    add: (actual, expected, sunMarched, sensitive, proofSensitive) => {
       checked += 1;
       if (sunMarched) marched += 1;
       if (actual >>> 24 !== expected >>> 24) alphaMismatches += 1;
       const distance = multiplierCodeDistance(actual, expected);
       if (distance > 1 && sunMarched && sensitive()) excused += 1;
+      else if (distance > 1 && proofSensitive !== undefined && proofSensitive()) proofExcused += 1;
       else worst = Math.max(worst, distance);
     },
-    result: (missing) => ({ checked, worstCodeDistance: worst, alphaMismatches, missing, excused, sunMarched: marched }),
+    result: (missing) => ({ checked, worstCodeDistance: worst, alphaMismatches, missing, excused, proofExcused, sunMarched: marched }),
   };
 }
 
@@ -10682,7 +10897,8 @@ export function installRelightDebug(frame: RelightFrame, host: NativeSplatScene,
         const colour: Rgb = [srgbToLinear(packed & 0xff), srgbToLinear((packed >>> 8) & 0xff), srgbToLinear((packed >>> 16) & 0xff)];
         const { m, alpha } = relightSplat(frame.model, kernel, record, position, colour, frame.visibility);
         const marched = (kernel.windowSun !== null || kernel.moonSun !== null) && ((record[11] ?? 0) & FLAG_SUN) !== 0;
-        tally.add(words[splat] ?? 0, packMultiplierWord(m, alpha), marched, () => sunRaySensitive(frame.model, kernel, position));
+        tally.add(words[splat] ?? 0, packMultiplierWord(m, alpha), marched, () => sunRaySensitive(frame.model, kernel, position),
+          () => proofCornerSensitive(frame.model.probes, position));
       }
       return tally.result(0);
     },
@@ -10709,7 +10925,8 @@ export function installRelightDebug(frame: RelightFrame, host: NativeSplatScene,
         if (at < 0) { missing += 1; return; }
         const flags = recordFromHex(splat.record)[11] ?? 0;
         const marched = (kernel.windowSun !== null || kernel.moonSun !== null) && (flags & FLAG_SUN) !== 0;
-        tally.add(words[at] ?? 0, splat.expected[setting].word, marched, () => sunRaySensitive(frame.model, kernel, splat.position));
+        tally.add(words[at] ?? 0, splat.expected[setting].word, marched, () => sunRaySensitive(frame.model, kernel, splat.position),
+          () => proofCornerSensitive(frame.model.probes, splat.position));
       });
       return tally.result(missing);
     },
@@ -11047,7 +11264,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 What each check proves (spec §6):
 - **No change when off:** `R1b_off` (`?relight=off`) against two I1a renders (`I1a_a`, `I1a_b`) from the base commit with Task 17's capture instrumentation applied ("I1a + capture instrumentation": the base has no `__roomViewCapture`, and that commit changes no rendering): the change may not exceed I1a's own run-to-run difference (zero if I1a is deterministic, which then means pixel for pixel).
 - **Captured light:** `R1b_captured` (`?light=captured&floorskin=v1`, so the floor is the same photographed floor) against `R1b_off`: the 99th percentile of the luminance difference is at most 1/20 of a stop everywhere but the view out of the windows (the glass splats are hidden by design and the sky panels show; the red channel of the proof's `A_mask`). The fixtures are included: with emitter boost 1 the captured light is exactly neutral for bulbs too, and the display's knee is each splat's own brightest channel.
-- **Compute against CPU:** the words read back from the GPU for every 97th splat against `relightSplat` + `packMultiplierWord` for the setting applied, and for R1a's 64 fixture splats (found in the live draw by record and model position, which also tests contracts 4 and 5) against their expected words, at the captured light, the night, the sunny morning and `moon_test` (R1d A8: not a preset, the vectors' own setting with the Moon at the moonlit preset's place and the Sun's strength), and every 97th splat at the moonlit night too (R1d A5): at most one log code, alpha bytes equal, none missing. (Amended 3 October.) A splat whose sun ray passes within rounding of a decision of the window march may differ more and is counted as excused (Task 17's rule: the GPU may fuse and divides within 2.5 ULP, the CPU twin repeats the bake's float32 order exactly); at most twice R1a's measured wall-face rate of the splats whose sun was marched (at least one allowed) may be excused (amended 8 October: `windowRays.wallFaceRate` in the vectors, `wallFace` of `marched` rays over 200,000 seeded splats at the sunny morning's Sun and `moon_test`'s Moon whose first sample, on a window's wall face, has cells of unlike depth on either side; the driver copies it into the run), and every sunny, moonlit and `moon_test` check must have marched some Sun or Moon. The floor's sun and moon likewise: every 4th texel each way of the 2 cm grids read back against `floorSunVisibility` within 1e-5, excused texels at most twice the floor's own measured rate (pre-flight fixes, 8 October: `windowRays.wallFaceRate.floor`, the same measure over check-sun's 88,831 floor points at the same two directions; floor rays cross the windows lower than splat rays, and their rate is about three times the splats') of the texels whose ray was marched (at least one allowed), and some texels lit in the sunny and moonlit checks. The floor's base light (R1d A2): every 4th 5 cm texel each way against `texelBaseLight` within 2e-3 relative (the GPU folds the float16 cubes in float32 where the twin sums the decoded bounce in double: the same quantities in another order; 2e-3 is 0.003 stop), the twin asked with the GPU's own sky light. The sky bodies' light (R1a Task 4's contract, computed on the GPU at every light change): for each body that is on at the sunny morning (09:00, 07:00, 18:00), the moonlit night and `moon_test`, every window's `P_w` within the twin's `excuse` (the patch rays within rounding of a march decision, at most `area × cos × F / 16` each) plus 2e-5 relative and 1e-7 m², and every `c_k` within 1e-5 of the sum of its terms' magnitudes, formed from the GPU's own `P_w`; the excused share of the power is reported, the bound itself judged. The display function too: `displayNode` read back for the sixteen `DISPLAY_PROBES` (identity region and roll-off) is within 1e-5 relative of `displayColour`. (The floor material's bilinear read is covered by its TypeScript twin's tests and the rendered checks.)
+- **Compute against CPU:** the words read back from the GPU for every 97th splat against `relightSplat` + `packMultiplierWord` for the setting applied, and for R1a's 72 fixture splats (found in the live draw by record and model position, which also tests contracts 4 and 5) against their expected words, at the captured light, the night, the sunny morning and `moon_test` (R1d A8: not a preset, the vectors' own setting with the Moon at the moonlit preset's place and the Sun's strength), and every 97th splat at the moonlit night too (R1d A5): at most one log code, alpha bytes equal, none missing. (Amended 3 October.) A splat whose sun ray passes within rounding of a decision of the window march may differ more and is counted as excused (Task 17's rule: the GPU may fuse and divides within 2.5 ULP, the CPU twin repeats the bake's float32 order exactly); at most twice R1a's measured wall-face rate of the splats whose sun was marched (at least one allowed) may be excused (amended 8 October: `windowRays.wallFaceRate` in the vectors, `wallFace` of `marched` rays over 200,000 seeded splats at the sunny morning's Sun and `moon_test`'s Moon whose first sample, on a window's wall face, has cells of unlike depth on either side; the driver copies it into the run), and every sunny, moonlit and `moon_test` check must have marched some Sun or Moon. The floor's sun and moon likewise: every 4th texel each way of the 2 cm grids read back against `floorSunVisibility` within 1e-5, excused texels at most twice the floor's own measured rate (pre-flight fixes, 8 October: `windowRays.wallFaceRate.floor`, the same measure over check-sun's 88,831 floor points at the same two directions; floor rays cross the windows lower than splat rays, and their rate is about three times the splats') of the texels whose ray was marched (at least one allowed), and some texels lit in the sunny and moonlit checks. The floor's base light (R1d A2): every 4th 5 cm texel each way against `texelBaseLight` within 2e-3 relative (the GPU folds the float16 cubes in float32 where the twin sums the decoded bounce in double: the same quantities in another order; 2e-3 is 0.003 stop), the twin asked with the GPU's own sky light. The sky bodies' light (R1a Task 4's contract, computed on the GPU at every light change): for each body that is on at the sunny morning (09:00, 07:00, 18:00), the moonlit night and `moon_test`, every window's `P_w` within the twin's `excuse` (the patch rays within rounding of a march decision, at most `area × cos × F / 16` each) plus 2e-5 relative and 1e-7 m², and every `c_k` within 1e-5 of the sum of its terms' magnitudes, formed from the GPU's own `P_w`; the excused share of the power is reported, the bound itself judged. The display function too: `displayNode` read back for the sixteen `DISPLAY_PROBES` (identity region and roll-off) is within 1e-5 relative of `displayColour`. (The floor material's bilinear read is covered by its TypeScript twin's tests and the rendered checks.)
 - **Photographs:** `R1b_night` against Matterport's night photographs with `07_compare`'s cells and correlation: r ≥ 0.85 at station 43 and ≥ 0.80 at station 45, and at both at least the r of the hall as served. The thresholds stand with the emitter boost 1 (R1d A1): the night's bulb splats are drawn as captured, and the correlation over coarse cells barely moves with them. If the night check misses, report the numbers: R1d's crisp bulbs and night calibration (R1d Tasks 11 and 21) finish the night, and the boost is not restored.
 - **Fallbacks:** `?nativeWebGL=1` (the WebGL2 fallback) and `?splat=tier:medium` (below desktop) request nothing of the relight package and install no instruments. A package request is one whose URL path starts with `/splats/` and contains `/relight/v` (the dev server or the R2 host); Vite's own `/src/lib/relight/*` modules, which every run loads, are not.
 - **Loading:** the spec's "loading adds no main-thread task over 50 ms", for the work relighting adds: every `relight:*` performance span (the records merge, the words' allocation and fill, the `RelightFrame` construction, its first `apply` and each pass encode; Tasks 11, 12 and 15) is at most 50 ms, every kind was measured, and relighting brings no console warning or error the served run did not have. The spans, long tasks and console messages are read at load completion: right after `__roomWalk.complete` (and, relit, `window.__relight.state().relit === true`), before any capture or instrument runs. Both runs' long tasks and load times (`loadMs`) at that moment are reported as information. If the merge span misses 50 ms, the remedy is to merge per tile off the build task (Task 12's note), never to relax the threshold.
@@ -11103,7 +11320,7 @@ class BrowserChecks(unittest.TestCase):
         self.assertFalse(bc.photo_verdict(0.79, 0.62, 0.80))
         self.assertFalse(bc.photo_verdict(0.86, 0.88, 0.85))
 
-    WORD = {"checked": 64, "worstCodeDistance": 1, "alphaMismatches": 0, "missing": 0, "excused": 0, "sunMarched": 12}
+    WORD = {"checked": 72, "worstCodeDistance": 1, "alphaMismatches": 0, "missing": 0, "excused": 0, "proofExcused": 0, "sunMarched": 12}
     FLOOR = {"checked": 5000, "lit": 400, "marched": 600, "worstDifference": 3e-7, "excused": 2}
     BASE = {"checked": 900, "lit": 900, "marched": 0, "worstDifference": 4e-4, "excused": 0}
     SKY = {"bodies": 1, "marched": 20000, "sensitive": 150, "excusedShare": 0.004, "worstPowerExcess": -1e-3, "worstCoefficientError": 3e-7}
@@ -11137,6 +11354,9 @@ class BrowserChecks(unittest.TestCase):
         self.assertTrue(bc.gpu_report(self.gpu_run(sample_sunny=dict(word, checked=60000, excused=180, sunMarched=9000)))["pass"])
         self.assertFalse(bc.gpu_report(self.gpu_run(sample_sunny=dict(word, checked=60000, excused=181, sunMarched=9000)))["pass"])
         self.assertFalse(bc.gpu_report(self.gpu_run(floorSun_sunny=dict(floor, excused=13)))["pass"])
+        # the proof's corner decision: at most twice R1a's share, 128 of 11,498,334, at least one (fix round 3)
+        self.assertTrue(bc.gpu_report(self.gpu_run(sample_sunny=dict(word, checked=60000, proofExcused=1, sunMarched=9000)))["pass"])
+        self.assertFalse(bc.gpu_report(self.gpu_run(sample_sunny=dict(word, checked=60000, proofExcused=2, sunMarched=9000)))["pass"])
         unbounded = self.gpu_run()
         del unbounded["wallFaceRate"]
         self.assertFalse(bc.gpu_report(unbounded)["pass"])            # without R1a's rate nothing bounds the excuses
@@ -11258,6 +11478,9 @@ LIT_NAMES = ("sunny", "moonlit")
 # which the driver copies into the run) of the rays marched here may be excused, and at least one (amended 8 October;
 # it replaces a flat 2%): the words against the splats' rate, the floor's texels against the floor's (`floor`).
 EXCUSED_RATE_FACTOR = 2
+# R1a's count of served splats whose proof's corner decision changes within 0.1 mm of them, of all its served splats
+# (R1a's Task 5 report, fix round 3): the GPU's float32 may decide those otherwise.
+PROOF_SENSITIVE = (128, 11_498_334)
 # The multiplier pass's GPU time at a sun change, median of 12, on the RTX 4090: one frame at 60 Hz (a hard limit,
 # the owner's decision of 3 October; never loosened).
 FRAME_MS = 16.7
@@ -11411,12 +11634,19 @@ def _excused_ok(excused: int, marched_here: int, rate: tuple[int, int] | None) -
     return excused <= 1 or excused * marched <= EXCUSED_RATE_FACTOR * wall_face * marched_here
 
 
+def _proof_excused_ok(excused, checked: int) -> bool:
+    """Words excused for the proof's corner decision (fix round 3): at most EXCUSED_RATE_FACTOR × R1a's share of such
+    splats of those checked, at least one (exact, in integers)."""
+    sensitive, served = PROOF_SENSITIVE
+    return isinstance(excused, int) and (excused <= 1 or excused * served <= EXCUSED_RATE_FACTOR * sensitive * checked)
+
+
 def _word_ok(name: str, v: dict, rate: tuple[int, int] | None) -> bool:
     """Within one code, alpha equal, none missing; excused rounding cases within twice R1a's wall-face rate; a sunny,
     moonlit or moon_test check marched some Sun or Moon."""
     if not (v["checked"] > 0 and v["worstCodeDistance"] <= 1 and v["alphaMismatches"] == 0 and v["missing"] == 0):
         return False
-    if not _excused_ok(v["excused"], v["sunMarched"], rate):
+    if not _excused_ok(v["excused"], v["sunMarched"], rate) or not _proof_excused_ok(v.get("proofExcused"), v["checked"]):
         return False
     return not any(part in name for part in MARCHED_NAMES) or v["sunMarched"] > 0
 
@@ -12021,4 +12251,4 @@ Expected: the push succeeds and the log lists R1b's commits (with R1a's, unless 
 
 **Placeholder scan:** no "TBD", "TODO" or "similar to Task N"; every code step carries its code. The only `<…>` fields are in Task 19's session-log entry and task-board line, which must be filled from Task 18's measured evidence before use.
 
-**Type and name consistency** (checked across tasks): `RelightModelData.probes` is `Uint16Array` everywhere (Tasks 5, 10); `denseProbeField(manifest, probes, valid)`; `prepareKernelFrame(model, setting, sky?)` takes no gates, since `prepareWindowSun` inside it is the only source of `windowOpen`, `fresnelAtSun` and `windowSun` and of the Moon's `moonOpen`, `fresnelAtMoon` and `moonSun` (Tasks 4, 7, 10, 17), and `RelightKernelModel` carries `windows: WindowModel[]` (each with its horizon) and `sky: SkyModel | null` in both builders (`kernelModelFromVectors`, whose patches are null, the vectors' slice; `kernelModelFromData` through `skyModelFromData`); `SkyLight { powers, coefficients }` is what `skyLightOf` (Task 4), `KernelSky.light`, `RelightFrame.acceptSkyReadback` and `readSkyLight` (Task 10), and Task 17's `gpuKernel` and `skyLight` exchange; `skyPower` (10 floats) and `bounceCoefficients` (2K) are written by `RelightSkyCoefficientsSun` and `…Moon` and read by `RelightSkyBasis`, the read-back (Task 10) and R1d; `SKY_FOLD_CORNERS` = 8 per probe from `skyFoldTable` (Task 5) is what the fold reads (Task 10) and `skyFoldCorners` repeats (Task 4); `skyCorners(table, azimuth, elevation)` gives the corners the kernel's `KernelFrame.skyCorners(body)` hands the GPU (Tasks 4, 10); `floorSunVisibility(…, body)` and `floorSunNode(frame, lightUv, grid)` take `"sun" | "moon"` (Tasks 7, 14, 17); `RelightVisibility` and `NO_VISIBILITY` (Task 4) are read by `relightSplat`, `RelightFrame.visibility` and Task 17's sample; `skyBody(u, body)` by Tasks 10 and 11; `applicationForChoice(inputs, choice, meanLight)` returns the `adaptDisplay` that `RelightFrame` calls when a read-back lands, and `onDisplay` is what the provider listens to (Tasks 10, 15); the window constants are packed by `packWindowVolumes` in `WINDOW_ROW`'s layout (Task 5), read back by `windowAlphaViews` (Tasks 5, 10) and by `sunVisibilityNode` (Task 10), which the floor sun pass (Task 10) and the multiplier pass (Task 11) share; `floorSunSize`, `floorSunPoint`, `floorSunVisibility` and `floorSunBilinear` (Task 7) are what the floor sun pass (Task 10), the floor material (Task 14) and the floor check (Task 17) follow; `RelightSetting.emitterBoost` (1 everywhere), `moonDir`, `moonRgb` and the optional `lampTints` are set by `capturedSetting`, `settingForChoice`/`settingForSky` (`PRESET_EMITTER_BOOST`), `settingFromVectors` and read by the kernel and the frame's uniforms (`emitterBoost`, `moonDir`, `moonRgb`, `lampTints`; Tasks 4, 8, 10, 11); `DisplayParams` and `DisplayUniforms` have no roll-off switch, and every `displayNode` call passes a knee (`splatKneeNode(rgb)` in Task 11, `float(HIGHLIGHT_KNEE)` in Task 14 and inside `skyPanelNode` for Task 15); `ChoiceLight` and `RelightApplication` carry no `windowOpen`; `RelightFrame.prepare` (the sky bodies' nine passes, the fold, the floor's base light, sun and moon, then R1c's passes, in one compute call) is called by `RelightDraw.run`, `NativeSplatScene.runRelight` and the floor check (Tasks 10, 11, 12, 17) and counted in Tasks 10–12's compute expectations; `RELIT_VERTEX_STORAGE_BUFFERS` (Task 12) is what Task 19 Step 1 sets to 9, and `nativeRelightSupported` (Task 12, built on `nativeRendererStorageLimit` and `nativeRendererStorageBuffersPerStage`) is the host's default and the one predicate behind `relightBackendSupported(gl: unknown)` (Task 13), which Tasks 13 and 15 use; `NativeSourceHandle.setRelight` (Task 12) is what `NativeSplatLayer` calls with a tile's records and again with its `lateRecords` (Task 13); `RELIGHT_GRACE_MS` (Task 13) is the one 10 s grace, used by `loadTileWithRelight` and by the provider (Task 15), whose `onSettled` outcome is what RoomSplatScene feeds the tiles' `relightTilePromises`; `weightedColours` (Task 4) is the one w[k] × c[k] mapping (Tasks 4, 5, 8, 10), and `smoothstep` and `floorMod` exist once, in the kernel (Tasks 4, 6, 8); `measureRelight` and the five `RELIGHT_SPANS` (Task 11) are used in Tasks 11, 12 and 15 and listed again in `browsercheck.RELIGHT_SPANS` (Task 18); `DISPLAY_PROBES` and `display()` (Task 17) are what the driver's `gpu.display` and `gpu_report` read, and `floorSun()`, `floorMoon()`, `floorBase()`, `skyLight()` and `gpuTime()` (Task 17) what its `gpu.floorSun_*`, `gpu.floorMoon_*`, `gpu.floorBase_*`, `gpu.skyLight_*` and `gpu.gpuTime_sunny` read (Task 18); `RelightVectorsSchema.floorTexels` (Task 4) is what Task 5's staged test decodes; `RelightState { frame, pending }` by Tasks 14, 15; `LightPresetId` values `captured | night | moonlit | sunny | overcast` in Tasks 8, 16, 17, 18; `findSplatsByRecord` (Task 17) is what `fixture` uses; `window.__relight`, `window.__roomViewCapture` and `window.__roomWalk` are what the Task 18 driver calls; `browsercheck.run(cfg, args)` is the registered command.
+**Type and name consistency** (checked across tasks): `RelightModelData.probes` is `Uint16Array` everywhere (Tasks 5, 10); `denseProbeField(manifest, probes, valid, proofKeep)` (the proof's keep since 11 October, fix round 3); `prepareKernelFrame(model, setting, sky?)` takes no gates, since `prepareWindowSun` inside it is the only source of `windowOpen`, `fresnelAtSun` and `windowSun` and of the Moon's `moonOpen`, `fresnelAtMoon` and `moonSun` (Tasks 4, 7, 10, 17), and `RelightKernelModel` carries `windows: WindowModel[]` (each with its horizon) and `sky: SkyModel | null` in both builders (`kernelModelFromVectors`, whose patches are null, the vectors' slice; `kernelModelFromData` through `skyModelFromData`); `SkyLight { powers, coefficients }` is what `skyLightOf` (Task 4), `KernelSky.light`, `RelightFrame.acceptSkyReadback` and `readSkyLight` (Task 10), and Task 17's `gpuKernel` and `skyLight` exchange; `skyPower` (10 floats) and `bounceCoefficients` (2K) are written by `RelightSkyCoefficientsSun` and `…Moon` and read by `RelightSkyBasis`, the read-back (Task 10) and R1d; `SKY_FOLD_CORNERS` = 8 per probe from `skyFoldTable` (Task 5) is what the fold reads (Task 10) and `skyFoldCorners` repeats (Task 4); `skyCorners(table, azimuth, elevation)` gives the corners the kernel's `KernelFrame.skyCorners(body)` hands the GPU (Tasks 4, 10); `floorSunVisibility(…, body)` and `floorSunNode(frame, lightUv, grid)` take `"sun" | "moon"` (Tasks 7, 14, 17); `RelightVisibility` and `NO_VISIBILITY` (Task 4) are read by `relightSplat`, `RelightFrame.visibility` and Task 17's sample; `skyBody(u, body)` by Tasks 10 and 11; `applicationForChoice(inputs, choice, meanLight)` returns the `adaptDisplay` that `RelightFrame` calls when a read-back lands, and `onDisplay` is what the provider listens to (Tasks 10, 15); the window constants are packed by `packWindowVolumes` in `WINDOW_ROW`'s layout (Task 5), read back by `windowAlphaViews` (Tasks 5, 10) and by `sunVisibilityNode` (Task 10), which the floor sun pass (Task 10) and the multiplier pass (Task 11) share; `floorSunSize`, `floorSunPoint`, `floorSunVisibility` and `floorSunBilinear` (Task 7) are what the floor sun pass (Task 10), the floor material (Task 14) and the floor check (Task 17) follow; `RelightSetting.emitterBoost` (1 everywhere), `moonDir`, `moonRgb` and the optional `lampTints` are set by `capturedSetting`, `settingForChoice`/`settingForSky` (`PRESET_EMITTER_BOOST`), `settingFromVectors` and read by the kernel and the frame's uniforms (`emitterBoost`, `moonDir`, `moonRgb`, `lampTints`; Tasks 4, 8, 10, 11); `DisplayParams` and `DisplayUniforms` have no roll-off switch, and every `displayNode` call passes a knee (`splatKneeNode(rgb)` in Task 11, `float(HIGHLIGHT_KNEE)` in Task 14 and inside `skyPanelNode` for Task 15); `ChoiceLight` and `RelightApplication` carry no `windowOpen`; `RelightFrame.prepare` (the sky bodies' nine passes, the fold, the floor's base light, sun and moon, then R1c's passes, in one compute call) is called by `RelightDraw.run`, `NativeSplatScene.runRelight` and the floor check (Tasks 10, 11, 12, 17) and counted in Tasks 10–12's compute expectations; `RELIT_VERTEX_STORAGE_BUFFERS` (Task 12) is what Task 19 Step 1 sets to 9, and `nativeRelightSupported` (Task 12, built on `nativeRendererStorageLimit` and `nativeRendererStorageBuffersPerStage`) is the host's default and the one predicate behind `relightBackendSupported(gl: unknown)` (Task 13), which Tasks 13 and 15 use; `NativeSourceHandle.setRelight` (Task 12) is what `NativeSplatLayer` calls with a tile's records and again with its `lateRecords` (Task 13); `RELIGHT_GRACE_MS` (Task 13) is the one 10 s grace, used by `loadTileWithRelight` and by the provider (Task 15), whose `onSettled` outcome is what RoomSplatScene feeds the tiles' `relightTilePromises`; `weightedColours` (Task 4) is the one w[k] × c[k] mapping (Tasks 4, 5, 8, 10), and `smoothstep` and `floorMod` exist once, in the kernel (Tasks 4, 6, 8); `measureRelight` and the five `RELIGHT_SPANS` (Task 11) are used in Tasks 11, 12 and 15 and listed again in `browsercheck.RELIGHT_SPANS` (Task 18); `DISPLAY_PROBES` and `display()` (Task 17) are what the driver's `gpu.display` and `gpu_report` read, and `floorSun()`, `floorMoon()`, `floorBase()`, `skyLight()` and `gpuTime()` (Task 17) what its `gpu.floorSun_*`, `gpu.floorMoon_*`, `gpu.floorBase_*`, `gpu.skyLight_*` and `gpu.gpuTime_sunny` read (Task 18); `RelightVectorsSchema.floorTexels` (Task 4) is what Task 5's staged test decodes; `RelightState { frame, pending }` by Tasks 14, 15; `LightPresetId` values `captured | night | moonlit | sunny | overcast` in Tasks 8, 16, 17, 18; `findSplatsByRecord` (Task 17) is what `fixture` uses; `window.__relight`, `window.__roomViewCapture` and `window.__roomWalk` are what the Task 18 driver calls; `browsercheck.run(cfg, args)` is the registered command.

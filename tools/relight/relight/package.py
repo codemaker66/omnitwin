@@ -26,6 +26,7 @@ LAMPS = (("cove", 5, "led-tape"), ("ch_end", 6, "candle-unconfirmed"), ("ch_cent
          ("dome", 8, "led-spot"))  # group, record source, the installer's type (information only)
 SKIN_GROUPS = ("door", "window", "end_xmin", "end_xmax", "ceiling")
 PROBES_FILE, PROBE_VALID_FILE = "probes.bin.gz", "probe-valid.bin.gz"
+PROOF_KEEP_FILE = "proof-keep.bin.gz"     # the proof's own probe grid's keep, one bit per probe (fix round 3)
 SKY_FILES = {"basis": "sky/basis.bin.gz", "valid": "sky/basis-valid.bin.gz", "table": "sky/coefficients.bin.gz",
              "rays": "sky/patch-rays.bin.gz", "normals": "sky/patch-normals.bin.gz", "areas": "sky/patch-areas.bin.gz"}
 FLOOR_FILES = ("floor/light-0.png", "floor/light-1.png", "floor/light-2.png")
@@ -227,7 +228,8 @@ class Inputs:
     horizons: dict                 # WINDOW_IDS -> (360,) horizon elevations (windows.npz)
     fresnel: np.ndarray            # (101,) float32 (windows.npz)
     probes: dict                   # probes-coarse.npz: cubes (M, 9, 3, 6) float16, valid (M,), origin, shape, spacing;
-                                   # box {lo, hi}: the proof's lookup box (fix round 2)
+                                   # box {lo, hi}: the proof's lookup box (fix round 2); proofKeep {origin, spacing,
+                                   # shape, keep}: the proof's own probe grid and its keep, from probes.npz (fix round 3)
     sky: dict                      # sun-bounce.npz: SKY_ARRAYS and SKY_FRAME
     floor: dict                    # floor-light.npz: D (h, w, 9) float32, texelToModel (4, 4); texel (m)
     presets: dict                  # 05_relight.SCENARIOS' night, sunny_morning and overcast_noon
@@ -252,6 +254,38 @@ def _probe_box(box) -> dict:
     if lo.shape != (3,) or hi.shape != (3,) or not (np.isfinite(lo).all() and np.isfinite(hi).all() and (lo < hi).all()):
         raise ValueError(f"probes.box {box} is not three finite lows each below its high")
     return {"lo": _floats(lo), "hi": _floats(hi)}
+
+
+def keep_bits(keep) -> bytes:
+    """The proof's keep as the package carries it (fix round 3): probe i is bit i % 8 of byte i // 8, least significant
+    first (so bit i % 32 of the little-endian 32-bit word i // 32, as the GPU reads it), the last byte's unused bits 0."""
+    return np.packbits(np.asarray(keep, bool), bitorder="little").tobytes()
+
+
+def keep_from_bits(data: bytes, count: int) -> np.ndarray:
+    """(count,) bool from keep_bits' bytes, refused unless there are exactly ceil(count / 8) of them and no unused bit is
+    set."""
+    raw = np.frombuffer(data, np.uint8)
+    if len(raw) != -(-count // 8):
+        raise ValueError(f"the proof's keep holds {len(raw)} bytes, not {-(-count // 8)} for {count} probes")
+    bits = np.unpackbits(raw, bitorder="little")
+    if bits[count:].any():
+        raise ValueError("the proof's keep sets a bit past its last probe")
+    return bits[:count].astype(bool)
+
+
+def _proof_keep(pk) -> tuple[dict, bytes]:
+    """The manifest's probes.proofKeep {origin, spacing, shape, file} and its file's bytes (keep_bits, before the gzip):
+    the proof's own probe grid (03_bases.probe_grid: three finite numbers, a positive spacing, three whole sizes of at
+    least 2) and its keep, one bool per probe (fix round 3)."""
+    origin, spacing, keep = np.asarray(pk["origin"], np.float64), float(pk["spacing"]), np.asarray(pk["keep"])
+    shape = [_whole(v, "probes.proofKeep's shape") for v in np.asarray(pk["shape"]).ravel()]
+    if (origin.shape != (3,) or not np.isfinite(origin).all() or not (math.isfinite(spacing) and spacing > 0) or len(shape) != 3
+            or min(shape) < 2 or keep.dtype != np.bool_ or keep.shape != (int(np.prod(shape)),)):
+        raise ValueError(f"probes.proofKeep (origin {origin.tolist()}, spacing {spacing}, shape {shape}, keep {keep.dtype} "
+                         f"{keep.shape}) is not a grid of three finite origins, a positive spacing and three sizes of at "
+                         "least 2 with one bool per probe")
+    return {"origin": _floats(origin), "spacing": spacing, "shape": shape, "file": PROOF_KEEP_FILE}, keep_bits(keep)
 
 
 def _windows_section(inputs: Inputs) -> list:
@@ -344,6 +378,8 @@ def write(out, inputs: Inputs, tiles, ranges, *, tool: str, created_at: str, bui
     files[PROBES_FILE] = gz(np.ascontiguousarray(cubes, "<f2").tobytes())
     files[PROBE_VALID_FILE] = gz(np.asarray(probes["valid"], bool).astype(np.uint8).tobytes())
     box = _probe_box(probes["box"])
+    proof_keep, keep_data = _proof_keep(probes["proofKeep"])
+    files[PROOF_KEEP_FILE] = gz(keep_data)
     windows = _windows_section(inputs)
     for wid in WINDOW_IDS:
         files[window_file(wid)] = gz(np.ascontiguousarray(inputs.volumes[wid].alpha, np.uint8).tobytes())
@@ -368,7 +404,7 @@ def write(out, inputs: Inputs, tiles, ranges, *, tool: str, created_at: str, bui
         "sun": {"fresnel": _floats(inputs.fresnel)},
         "sky": sky, "windows": windows,
         "probes": {"origin": _floats(probes["origin"]), "spacing": float(probes["spacing"]), "shape": probe_shape, "box": box,
-                   "file": PROBES_FILE, "validFile": PROBE_VALID_FILE},
+                   "proofKeep": proof_keep, "file": PROBES_FILE, "validFile": PROBE_VALID_FILE},
         "floor": {"skin": FLOOR_SKIN, "texelToModel": _floats(np.asarray(inputs.floor["texelToModel"], np.float64).reshape(4, 4)),
                   "texel": float(inputs.floor["texel"]), "size": [int(D.shape[1]), int(D.shape[0])], "files": list(FLOOR_FILES)},
         "tiles": entries, "presetsFromProof": inputs.presets, "evidence": evidence}
@@ -488,8 +524,8 @@ def sky_arrays(pkg: Package) -> dict:
 
 
 def model_of(pkg: Package) -> reference.Model:
-    """The reference model from the package's own files (check, Step 7): the probes, each window through
-    windows.volume_from_arrays from its gzip and frame, the horizons and the glass from the manifest, and the sky
+    """The reference model from the package's own files (check, Step 7): the probes and the proof's keep, each window
+    through windows.volume_from_arrays from its gzip and frame, the horizons and the glass from the manifest, and the sky
     bodies' bounce from the sky files and fields."""
     m = pkg.manifest
     pr = m["probes"]
@@ -497,6 +533,10 @@ def model_of(pkg: Package) -> reference.Model:
     count = int(np.prod(shape))
     cubes = np.frombuffer(pkg.gunzip(pr["file"]), "<f2").reshape(count, len(codec.SOURCES), 3, 6)
     valid = np.frombuffer(pkg.gunzip(pr["validFile"]), np.uint8).astype(bool).reshape(count)
+    pk = pr["proofKeep"]
+    proof_shape = tuple(int(v) for v in pk["shape"])
+    proof_keep = reference.ProofKeep(origin=np.asarray(pk["origin"], np.float64), spacing=float(pk["spacing"]), shape=proof_shape,
+                                     keep=keep_from_bits(pkg.gunzip(pk["file"]), int(np.prod(proof_shape))))
     volumes, horizons = {}, {}
     for w in m["windows"]:
         frame = np.asarray(w["frame"], np.float64)
@@ -519,7 +559,7 @@ def model_of(pkg: Package) -> reference.Model:
                            probe_origin=np.asarray(pr["origin"], np.float64), probe_spacing=float(pr["spacing"]),
                            probe_shape=shape, volumes=volumes, fresnel=np.asarray(m["sun"]["fresnel"], np.float32),
                            horizons=horizons, sky=bounce, probe_box_lo=np.asarray(pr["box"]["lo"], np.float64),
-                           probe_box_hi=np.asarray(pr["box"]["hi"], np.float64))
+                           probe_box_hi=np.asarray(pr["box"]["hi"], np.float64), proof_keep=proof_keep)
 
 
 # ------------------------------------------------------------------------------------------ what check writes and compares

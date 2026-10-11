@@ -20,6 +20,13 @@ Task 6A therefore decodes every needed frame from the raw stream with its QP map
 
 **Measured materials:** the frontier track "found-light reflectometry" (`D:/claude/real-hall/frontier/materials/proposal.md`) may later supply measured base colour, roughness, metal, clear coat and specular colour per skin. R1c's material maps (Task 13) are its own measured-heuristic version behind one interface, the material layer of the skin package (`material.model`, Task 14), with an import path for that track's output (Task 13's `import_material_layer`), so the frontier result replaces R1c's maps without a format change.
 
+## Revision (11 October, R1a Task 5 fix round 3)
+
+Where the proof's own lookup finds no probe, there is no bounce (R1a's "Revisions (11 October, Task 5 fix round 3)"; the package manifest's `probes.proofKeep` and its file `proof-keep.bin.gz`).
+- Task 8's `lightstates.ProbeField` carries `proof_keep` (R1a's `reference.ProofKeep`), and `light_cubes` drops every source's bounce where `reference.proof_corner` finds none.
+- `load_probes(path, box, proof_keep)` takes it from `proof_keep_of(cfg, manifest)`, which reads relight package v1's `probes.proofKeep` and its file through R1a's `package.read` (checksum checked) and `keep_from_bits`.
+- A Bounce test pins it. In the browser, the skins' light reads R1b's `bounceNode`, which applies the same rule (R1c's amendment A8 as amended).
+
 ## Revision (11 October, R1a Task 5 fix round 2)
 
 R1a's reference now reads the probes as the proof did: every position is clamped into the probes' lookup box first (the package manifest's `probes.box`; R1a's "Revisions (11 October, Task 5 fix round 2)").
@@ -5617,7 +5624,7 @@ Expected: on most frieze bays a registered XGRIDS frame beats the best face at e
 
 **Interfaces:**
 - Consumes: Task 5 (`<work>/geometry/light-grids.json`, `covers.npz`), Task 6 (`views.load_sources`, `load_geometry`, `geometry_ids`, `render`, `view_state`, `SkinGeometry`), Task 7 (`<work>/views/<id>.npz`); R1a as amended: `python -m relight skin-light` (A4) and its `<relight work>/skin-light/<id>.records` and `index.json`; `relight.codec.unpack_records(buf, ranges) -> (direct (N, 9), normals (N, 3), flags (N,))` (R1a Task 1); `relight.reference.trilinear(model, pos) -> (idx (N, 8), wts (N, 8))` (reads only `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid`) and `relight.reference.cube_eval(cubes (N, K, 3, 6), n (N, 3), iso (N,)) -> (N, K, 3)` (R1a Task 5); `<relight work>/probes-coarse.npz` (`cubes` float16 (M, 9, 3, 6), `valid`, `origin`, `shape`, `spacing`), checked against R1a's `<relight evidence>/probes-check.json` (`pass`, `artifact.sha256`; R1a Task 4c) and the package's `evidence.artifacts["probes-coarse.npz"]`; the skin-light folder checked against `<relight evidence>/skin-light.json` (`artifact` the index, `records` `{ id: sha256 }`; R1a Task 4c); relight package v1's `manifest.json` (`capture.weights` (9,), `capture.colours` (9, 3): R1a Task 4b's refit, a colour per lamp group, never a constant); the splat tables `<relight work>/npy/splats_pos.npy` (float32 e57), `splats_rgb.npy` (uint8 sRGB), `splats_opa.npy` (float16).
-- Produces (`lightstates.py`): `relight_modules(cfg) -> (codec, reference)` (R1a's numpy modules, imported from `paths.relightTool`); `sha256_of(path) -> str`; `check_relight_artifacts(relight_work, relight_evidence, manifest) -> None` (`ValueError` unless the probes and every skin-light file are the bytes R1a's evidence records, the probes the ones the package was built from, and the skins `index.json` lists exactly the ones `skin-light.json` records; amended 7 October, the packaging rule; the last check 8 October); `@dataclass(frozen=True) class ProbeField: cubes (M, 9, 3, 6) float64; valid; origin; spacing; shape; box_lo; box_hi` with `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid`, `probe_box_lo`, `probe_box_hi` (the names `reference.trilinear` reads; the box amended 11 October); `load_probes(path, box) -> ProbeField` (`box` the package manifest's `probes.box`); `light_cubes(reference, probes, P) -> (N, 9, 3, 6)` (each source's bounce ambient cube at P, the trilinear read of the probes; round 5); `source_light(reference, probes, P, n) -> (N, 9, 3)` (each source's white unit light at P with normal n: its direct light comes separately; this is its bounce, `cube_eval` of `light_cubes`); `light_of(direct (N, 9), bounce (N, 9, 3)) -> (N, 9, 3)` (`D[k] + I[k]` per channel); `mix(L (…, 9, 3), W (9, 3)) -> (…, 3)`; `bilinear(grid (lh, lw, C), x, y) -> (n, C)` (light-grid coordinates, centres at whole numbers, clamped: the browser twin's formula, Task 17); `texel_light_coords(geom, light_texel, cc, rr) -> (x, y)` (texel coordinates → light-grid coordinates); `anchor(splats, geom, covers_row, Ecap, light_texel) -> (lh, lw, 3)` (the covered splats' opacity-weighted mean linear colour over Ecap; NaN where fewer than 5 splats); `fit_states(rows: dict, W0 (9, 3), iters=8) -> (W (9, 3), gains dict, report)`; files `<work>/light/<id>.npz` (`L` (lh, lw, 9, 3) float32, `Ecap` (lh, lw, 3) float32, `anchor` (lh, lw, 3) float32, `size` [lw, lh], `texel`; round 5, for the specular reference of Tasks 9 and 12: `D` (lh, lw, 9) float32, the records' direct light, `cubes` (lh, lw, 9, 3, 6) float16, the bounce's cubes, `P` (lh, lw, 3) and `normal` (lh, lw, 3), each light texel's point and normal) and `<work>/light/states.json` (`{ "capture": { "W": [[r, g, b] × 9] }, "day": { "W": … }, "evening": { "W": … }, "fit": { "day": { "rows", "medianAbsLog2", "lampShare" (the lamps' share of the fitted light), "chromaSigma" (the robust spread of each row's log-chroma residual, ln G/R and ln B/R of model over observation: the state's window colour uncertainty in the gilt test, round 5) }, "evening": { … } } }`); the commands `light-model` and `light-states`.
+- Produces (`lightstates.py`): `relight_modules(cfg) -> (codec, reference)` (R1a's numpy modules, imported from `paths.relightTool`); `sha256_of(path) -> str`; `check_relight_artifacts(relight_work, relight_evidence, manifest) -> None` (`ValueError` unless the probes and every skin-light file are the bytes R1a's evidence records, the probes the ones the package was built from, and the skins `index.json` lists exactly the ones `skin-light.json` records; amended 7 October, the packaging rule; the last check 8 October); `@dataclass(frozen=True) class ProbeField: cubes (M, 9, 3, 6) float64; valid; origin; spacing; shape; box_lo; box_hi; proof_keep` with `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid`, `probe_box_lo`, `probe_box_hi` (the names `reference.trilinear` reads; the box amended 11 October) and `proof_keep` (R1a's `reference.ProofKeep` or None, which `reference.proof_corner` reads; fix round 3); `proof_keep_of(cfg, manifest) -> reference.ProofKeep` (relight package v1's `probes.proofKeep`, its file read through R1a's `package.read`, checksum checked, and `keep_from_bits`; fix round 3); `load_probes(path, box, proof_keep) -> ProbeField` (`box` the package manifest's `probes.box`); `light_cubes(reference, probes, P) -> (N, 9, 3, 6)` (each source's bounce ambient cube at P, the trilinear read of the probes, none where the proof's own lookup finds no probe; round 5, fix round 3); `source_light(reference, probes, P, n) -> (N, 9, 3)` (each source's white unit light at P with normal n: its direct light comes separately; this is its bounce, `cube_eval` of `light_cubes`); `light_of(direct (N, 9), bounce (N, 9, 3)) -> (N, 9, 3)` (`D[k] + I[k]` per channel); `mix(L (…, 9, 3), W (9, 3)) -> (…, 3)`; `bilinear(grid (lh, lw, C), x, y) -> (n, C)` (light-grid coordinates, centres at whole numbers, clamped: the browser twin's formula, Task 17); `texel_light_coords(geom, light_texel, cc, rr) -> (x, y)` (texel coordinates → light-grid coordinates); `anchor(splats, geom, covers_row, Ecap, light_texel) -> (lh, lw, 3)` (the covered splats' opacity-weighted mean linear colour over Ecap; NaN where fewer than 5 splats); `fit_states(rows: dict, W0 (9, 3), iters=8) -> (W (9, 3), gains dict, report)`; files `<work>/light/<id>.npz` (`L` (lh, lw, 9, 3) float32, `Ecap` (lh, lw, 3) float32, `anchor` (lh, lw, 3) float32, `size` [lw, lh], `texel`; round 5, for the specular reference of Tasks 9 and 12: `D` (lh, lw, 9) float32, the records' direct light, `cubes` (lh, lw, 9, 3, 6) float16, the bounce's cubes, `P` (lh, lw, 3) and `normal` (lh, lw, 3), each light texel's point and normal) and `<work>/light/states.json` (`{ "capture": { "W": [[r, g, b] × 9] }, "day": { "W": … }, "evening": { "W": … }, "fit": { "day": { "rows", "medianAbsLog2", "lampShare" (the lamps' share of the fitted light), "chromaSigma" (the robust spread of each row's log-chroma residual, ln G/R and ln B/R of model over observation: the state's window colour uncertainty in the gilt test, round 5) }, "evening": { … } } }`); the commands `light-model` and `light-states`.
 
 The browser lights a skin texel with R1b's bounce and the nine sources' direct light from the records R1a bakes for the skin (contract 3), so the captured light the skin is de-lit by must be that same light: `Ecap = Σk w[k] c[k] ⊙ (D[k] + I[k])` per light texel from the decoded log codes and the float16 probe cubes the package carries, read bilinearly at each texel exactly as the browser reads its light buffer. The capture's own light (the XGRIDS frames, the splats) is that `Ecap`. The E57 sweeps were taken in two other light states (the floor research's daylight sweeps 0–17 and 19–25, evening 26–47), so each state's light is the same nine sources with their own RGB weights, `E_s = Σk W_s[k] ⊙ (D[k] + I[k])`, fitted on the plaster skins against the splats: `observation_i(t) ≈ g_i ⊙ A(t) ⊙ E_s(t)` with A the covered splats' colour over `Ecap` (what the relight model calls the albedo) and `g_i` the view's exposure and white balance. Weights by non-negative least squares per channel, gains by medians, alternating 8 times; each state's median gain is 1 (its weights carry the scale). The gate: each state's median |log2(model / observation)| over the plaster light texels at most 0.15, and the lamps' share of the state's fitted light on those texels (`lampShare`: `Σ mix(L[lamps], W[lamps]) / Σ mix(L, W)`) above one half in the evening and below one half by day. The share is of the light, not of the weights: a unit of window weight and a unit of lamp weight give very different light (the capture fit has window weights of 29–51 and lamp weights of 0–2.2, a weight share of 0.02), and the evening sweeps were taken at dusk, so a small window weight could outweigh the lamps' sum (pre-flight fix, 8 October). A miss stops the build: the relight model cannot explain that state, and the controller decides.
 
@@ -5637,11 +5644,11 @@ sys.path.insert(0, os.path.join(HERE, "..", "relight"))
 from relight import reference  # noqa: E402  (R1a's numpy reference, the browser's normative twin)
 
 
-def probes():
+def probes(proof_keep=None):
     rng = np.random.default_rng(5)
     cubes = rng.uniform(0, 0.1, (2 * 2 * 2, 9, 3, 6))
     return LS.ProbeField(cubes=cubes, valid=np.ones(8, bool), origin=np.zeros(3), spacing=1.0, shape=(2, 2, 2),
-                         box_lo=np.full(3, -np.inf), box_hi=np.full(3, np.inf))   # no clamp
+                         box_lo=np.full(3, -np.inf), box_hi=np.full(3, np.inf), proof_keep=proof_keep)   # no clamp
 
 
 class Bounce(unittest.TestCase):
@@ -5652,6 +5659,16 @@ class Bounce(unittest.TestCase):
         idx, wts = reference.trilinear(pf, P)
         cubes = (pf.cubes[idx] * wts[:, :, None, None, None]).sum(1)
         np.testing.assert_allclose(got, reference.cube_eval(cubes, n, np.zeros(2, bool)), rtol=1e-12)
+
+    def test_no_bounce_where_the_proofs_own_lookup_finds_no_probe(self):
+        """R1a, amended 11 October, fix round 3: the proof's grid here keeps no probe, so no source's bounce reaches P;
+        every probe kept changes nothing."""
+        grid = {"origin": np.zeros(3), "spacing": 1.0, "shape": (2, 2, 2)}
+        P = np.array([[0.3, 0.6, 0.2], [0.9, 0.1, 0.8]])
+        none = LS.light_cubes(reference, probes(reference.ProofKeep(**grid, keep=np.zeros(8, bool))), P)
+        self.assertEqual(float(np.abs(none).max()), 0.0)
+        every = LS.light_cubes(reference, probes(reference.ProofKeep(**grid, keep=np.ones(8, bool))), P)
+        np.testing.assert_array_equal(every, LS.light_cubes(reference, probes(), P))
 
     def test_light_mixes_direct_and_bounce_by_the_weights(self):
         D = np.array([[1.0, 0, 0, 0, 0, 0.5, 0, 0, 0]])
@@ -5830,6 +5847,8 @@ class ProbeField:
     shape: tuple
     box_lo: np.ndarray       # the package's probes.box: every probe read clamps its position into it first (R1a,
     box_hi: np.ndarray       # amended 11 October: the proof's store.Probes.lookup)
+    proof_keep: object = None   # R1a's reference.ProofKeep: no bounce where the proof's own lookup finds no probe (fix
+                                # round 3); None, every position finds one
 
     @property
     def probe_shape(self):
@@ -5856,17 +5875,35 @@ class ProbeField:
         return self.box_hi
 
 
-def load_probes(path: str, box: dict) -> ProbeField:
-    """probes-coarse.npz with the lookup box of the package built from it (its manifest's probes.box)."""
+def proof_keep_of(cfg, manifest):
+    """The proof's own probe grid and keep as relight package v1 carries them (manifest probes.proofKeep and its file,
+    read through R1a's package.read, which checks its SHA-256 and size, and keep_from_bits; R1a, amended 11 October, fix
+    round 3), as R1a's reference.ProofKeep."""
+    _codec, reference = relight_modules(cfg)
+    from relight import package as RP
+    pkg = RP.read(os.path.join(cfg.paths["splats"], "relight", "v1"))
+    pk = manifest["probes"]["proofKeep"]
+    shape = tuple(int(v) for v in pk["shape"])
+    return reference.ProofKeep(origin=np.asarray(pk["origin"], np.float64), spacing=float(pk["spacing"]), shape=shape,
+                               keep=RP.keep_from_bits(pkg.gunzip(pk["file"]), int(np.prod(shape))))
+
+
+def load_probes(path: str, box: dict, proof_keep=None) -> ProbeField:
+    """probes-coarse.npz with the lookup box of the package built from it (its manifest's probes.box) and the proof's
+    keep (proof_keep_of; fix round 3)."""
     with np.load(path) as z:
         return ProbeField(cubes=z["cubes"].astype(np.float64), valid=z["valid"].astype(bool), origin=z["origin"].astype(np.float64),
                           spacing=float(z["spacing"]), shape=tuple(int(v) for v in z["shape"]),
-                          box_lo=np.asarray(box["lo"], np.float64), box_hi=np.asarray(box["hi"], np.float64))
+                          box_lo=np.asarray(box["lo"], np.float64), box_hi=np.asarray(box["hi"], np.float64),
+                          proof_keep=proof_keep)
 
 
 def light_cubes(reference, probes: ProbeField, P):
-    """(N, 9, 3, 6): each source's bounce ambient cube (white unit source) at P, R1a's trilinear read of the probes."""
-    idx, wts = reference.trilinear(probes, np.asarray(P, np.float64))
+    """(N, 9, 3, 6): each source's bounce ambient cube (white unit source) at P, R1a's trilinear read of the probes; none
+    where the proof's own lookup finds no probe (reference.proof_corner; R1a, amended 11 October, fix round 3)."""
+    P = np.asarray(P, np.float64)
+    idx, wts = reference.trilinear(probes, P)
+    wts = np.where(reference.proof_corner(probes, P)[:, None], wts, 0.0)
     return (probes.cubes[idx] * wts[:, :, None, None, None]).sum(1)
 
 
@@ -5978,7 +6015,8 @@ def cmd_light_model(cfg, rest) -> int:
         index = json.load(f)
     ranges = [tuple(r) for r in index["ranges"]]
     Wcap = np.array(cap["weights"], np.float64)[:, None] * np.array(cap["colours"], np.float64)
-    probes = load_probes(os.path.join(rl, "probes-coarse.npz"), manifest["probes"]["box"])   # the package's lookup box
+    probes = load_probes(os.path.join(rl, "probes-coarse.npz"), manifest["probes"]["box"],   # the package's lookup box
+                         proof_keep_of(cfg, manifest))                                         # and the proof's keep
     splats = {"pos": np.load(os.path.join(rl, "npy", "splats_pos.npy"), mmap_mode="r"),
               "rgb": np.load(os.path.join(rl, "npy", "splats_rgb.npy"), mmap_mode="r"),
               "opa": np.load(os.path.join(rl, "npy", "splats_opa.npy"), mmap_mode="r")}

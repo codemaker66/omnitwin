@@ -359,7 +359,8 @@ def fake_store(work):
             return LUT[np.asarray(self.rgb[idx])]
 
     LUT = srgb_to_linear(np.arange(256) / 255.0).astype(np.float32)
-    return SimpleNamespace(Store=Store, mm=mm, LUT=LUT, LUMW=np.array([0.2126, 0.7152, 0.0722], np.float32))
+    return SimpleNamespace(Store=Store, mm=mm, LUT=LUT, LUMW=np.array([0.2126, 0.7152, 0.0722], np.float32),
+                           b3=SimpleNamespace(PROBE=0.2))           # 03_bases as store.py imports it: its probe spacing
 
 
 class FakeRelight05:
@@ -543,6 +544,21 @@ def build_hall(root):
     _put_json(os.path.join(evidence, "refit.json"), refit_json(copied))
     for folder in (work, proof_work):
         _put_json(os.path.join(folder, M.LAMP_RATIO), {"lamp_over_daylight_rgb": [1.623, 1.0, 0.467]})
+    # The proof's own probe grid as 03_bases.probe_grid lays it (0.2 m from 0.1 m beside and below the hall's box) and its
+    # keep: inside the hall, but for a notch in front of the middle window (x 1.15 .. 1.85, y below 0.3), as the proof
+    # keeps no probe far from every splat. A splat beyond the window wall there finds no proof corner, so no bounce (fix
+    # round 3). <work>/probes.npz must be byte for byte the proof's.
+    xs, ys = np.arange(FakeCommon.X0 - 0.1, FakeCommon.X1 + 0.1 + 1e-6, 0.2), np.arange(FakeCommon.Y0 - 0.1, FakeCommon.Y1 + 0.1 + 1e-6, 0.2)
+    zs = np.arange(-0.1, 3.3 + 1e-6, 0.2)
+    grid = np.stack(np.meshgrid(xs, ys, zs, indexing="ij"), -1)
+    Pp = grid.reshape(-1, 3)
+    inside = ((Pp[:, 0] > FakeCommon.X0 - 0.01) & (Pp[:, 0] < FakeCommon.X1 + 0.01) & (Pp[:, 1] > FakeCommon.Y0 + 0.01)
+              & (Pp[:, 1] < FakeCommon.Y1 + 0.01) & (Pp[:, 2] > FakeCommon.FLOOR_Z - 0.01))
+    notch = (Pp[:, 0] > 1.15) & (Pp[:, 0] < 1.85) & (Pp[:, 1] < 0.3)
+    with open(os.path.join(work, "probes.npz"), "wb") as f:
+        np.savez(f, P=Pp.astype(np.float32), shape=np.asarray(grid.shape[:3], np.int64), origin=np.array([xs[0], ys[0], zs[0]]),
+                 keep=inside & ~notch)
+    shutil.copyfile(os.path.join(work, "probes.npz"), os.path.join(proof_work, "probes.npz"))
 
     def uniform(n, lo, hi):
         return np.stack([rng.uniform(lo[i], hi[i], n) for i in range(3)], 1)
@@ -764,7 +780,7 @@ class SyntheticHall(unittest.TestCase):
         """M1: evidence.artifacts names every work file records reads: the four artifacts, the promoted fit, the per-splat
         tables, the window cookie and the lamp/daylight ratio, each with its SHA-256."""
         m, work = self.pkg.manifest, self.cfg.paths["work"]
-        names = [name for name, _evidence in M.ARTIFACTS] + ["fit.json", "fit_state.npz", "occ_cookie.npz", M.LAMP_RATIO] + \
+        names = [name for name, _evidence in M.ARTIFACTS] + ["fit.json", "fit_state.npz", "occ_cookie.npz", M.LAMP_RATIO, "probes.npz"] + \
             [f"npy/{t}.npy" for t in M.BUILD_TABLES]
         self.assertEqual(sorted(m["evidence"]["artifacts"]), sorted(names))
         for name in names:
@@ -790,6 +806,17 @@ class SyntheticHall(unittest.TestCase):
                 M._build_package(self.cfg, out, *TOOL, BUILD, self.proof)
         finally:
             with open(ratio, "wb") as f:
+                f.write(kept)
+        self.assertFalse(os.path.exists(out))
+        probes = os.path.join(work, "probes.npz")                        # fix round 3: the proof's keep, byte for byte
+        kept = read_bytes(probes)
+        try:
+            with open(probes, "ab") as f:
+                f.write(b"\0")
+            with self.assertRaisesRegex(ValueError, "probes.npz .* is not the proof's"):
+                M._build_package(self.cfg, out, *TOOL, BUILD, self.proof)
+        finally:
+            with open(probes, "wb") as f:
                 f.write(kept)
         self.assertFalse(os.path.exists(out))
         kept, real = read_bytes(opa), M._finest_light
@@ -858,6 +885,31 @@ class SyntheticHall(unittest.TestCase):
         self.assertGreater(int(beyond.sum()), 400)
         open_box = replace(self.model, probe_box_lo=np.full(3, -np.inf), probe_box_hi=np.full(3, np.inf))
         self.assertEqual(float(reference.trilinear(open_box, P[beyond])[1].sum()), 0.0)
+
+    def test_the_package_carries_the_proofs_keep_and_drops_the_bounce_where_it_finds_no_corner(self):
+        """Fix round 3: probes.proofKeep is the proof's own grid and keep from probes.npz. The shown finest splats in
+        front of the middle window find no proof corner, and in every setting their multiplier is the one with no bounce
+        at all (no probe and no sky body bounce); beyond the wall beside the notch, splats that find one keep theirs."""
+        with np.load(os.path.join(self.cfg.paths["work"], "probes.npz")) as z:
+            keep, shape, origin = z["keep"], z["shape"], z["origin"]
+        self.assertEqual(self.pkg.manifest["probes"]["proofKeep"],
+                         {"origin": [float(v) for v in origin], "spacing": 0.2, "shape": [int(v) for v in shape], "file": "proof-keep.bin.gz"})
+        self.assertEqual(self.model.proof_keep.keep.tolist(), keep.tolist())
+        P, rec = np.asarray(self.fin["pos"], np.float64), self.fin["records"]
+        found = reference.proof_corner(self.model, P)
+        shown = (rec[:, 11] & codec.CLASS_MASK) != codec.CLASS_HIDDEN
+        none, some = np.nonzero(~found & shown)[0], np.nonzero(found & shown & (P[:, 1] < 0))[0]
+        self.assertGreater(len(none), 10)
+        self.assertGreater(len(some), 10)
+        bare = replace(self.model, probes=np.zeros_like(self.model.probes), sky=replace(self.model.sky, basis=np.zeros_like(self.model.sky.basis)))
+        moved = False
+        for name in ("night", "sunny_morning", "overcast_noon", "moon_test"):
+            s = self.settings[name]
+            got, want = (M._multipliers(m, s, self.ranges, rec[none], P[none], self.colour[none]) for m in (self.model, bare))
+            self.assertTrue(np.array_equal(got[0], want[0]) and np.array_equal(got[1], want[1]), name)
+            got, want = (M._multipliers(m, s, self.ranges, rec[some], P[some], self.colour[some])[0] for m in (self.model, bare))
+            moved = moved or not np.array_equal(got, want)
+        self.assertTrue(moved)
 
     def test_the_regression_check_compares_through_the_clamp_and_only_records_the_original_proofs_file(self):
         """Check 2 against the proof's multiplier files: the proof's 60s and 0.004s are compared through the spec's clamp
@@ -994,6 +1046,16 @@ class SyntheticHall(unittest.TestCase):
         for e in v["skyBounce"]["probeCubes"]["moon_test"]:
             self.assertEqual(base64.b64decode(e["cube"]), np.ascontiguousarray(S[e["index"]], "<f4").tobytes())
         self.assertEqual(v["windowRays"]["suns"][0], [float(x) for x in self.settings["sunny_morning"].sun_dir])
+        # fix round 3: the proof's grid, every corner the vector splats' proof reads touch, and both cases, the last eight
+        # splats being four the proof leaves without a corner and, in turn, the nearest splat beside each that finds one
+        pk, grid = v["probes"]["proofKeep"], self.pkg.manifest["probes"]["proofKeep"]
+        self.assertEqual({k: pk[k] for k in ("origin", "spacing", "shape")}, {k: grid[k] for k in ("origin", "spacing", "shape")})
+        corners, found = reference.proof_lookup(self.model, P)
+        listed = {e["index"]: e["keep"] for e in pk["entries"]}
+        self.assertEqual(sorted(listed), sorted({int(i) for i in corners.ravel()}))
+        self.assertEqual([listed[i] for i in sorted(listed)], [bool(self.model.proof_keep.keep[i]) for i in sorted(listed)])
+        self.assertEqual((found[64:68].tolist(), found[68:72].tolist()), ([False] * 4, [True] * 4))
+        self.assertLess(float(np.linalg.norm(P[68:72] - P[64:68], axis=1).max()), 0.6)
 
 
 def vector_issues(v, model):
@@ -1031,12 +1093,16 @@ def vector_issues(v, model):
     pr = v["probes"]
     check(len(pr["shape"]) == 3 and pr["spacing"] > 0 and all(isinstance(e["valid"], bool) for e in pr["entries"]), "probes")
     check(vec3(pr["box"]["lo"]) and vec3(pr["box"]["hi"]) and all(a < b for a, b in zip(pr["box"]["lo"], pr["box"]["hi"])), "probe box")
+    pk = pr.get("proofKeep") or {}
+    check(vec3(pk.get("origin")) and pk.get("spacing", 0) > 0 and len(pk.get("shape", [])) == 3 and pk.get("entries")
+          and all(isinstance(e["index"], int) and 0 <= e["index"] < int(np.prod(pk["shape"])) and isinstance(e["keep"], bool)
+                  for e in pk["entries"]), "proof keep")
     check(set(v["presetsFromProof"]) == {"night", "sunny_morning", "overcast_noon"}, "presets")
     for name, st in v["settings"].items():
         check(len(st["weights"]) == 9 and set(st["lampLevels"]) == {"cove", "ch_end", "ch_centre", "dome"} and st["emitterBoost"] == 1
               and (st["sunDir"] is None or vec3(st["sunDir"])) and (st["moonDir"] is None or vec3(st["moonDir"])), f"setting {name}")
     check(set(v["settings"]) == {"captured", "night", "sunny_morning", "moon_test"}, "settings")
-    check(len(v["splats"]) == 64 and all(len(sp["record"]) == 24 and vec3(sp["position"]) and vec3(sp["colour"])
+    check(len(v["splats"]) == 72 and all(len(sp["record"]) == 24 and vec3(sp["position"]) and vec3(sp["colour"])
                                          and set(sp["expected"]) == set(v["settings"]) for sp in v["splats"]), "splats")
     check(len(v["floorTexels"]) == 8 and all(len(t["direct"]) == 9 and min(t["direct"]) >= 0 for t in v["floorTexels"]), "floor texels")
     return issues
