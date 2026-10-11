@@ -9,9 +9,10 @@ describe("SelectionSystem source guards", () => {
     const pointerUpMatch = /function onPointerUp\(event: PointerEvent\): void \{[\s\S]*?if \(isMarquee\.current\)/u.exec(source);
 
     expect(pointerDownMatch?.[0] ?? "").toContain('event.pointerType === "touch" && event.isPrimary');
-    expect(pointerDownMatch?.[0] ?? "").toContain("touchTapCandidate.current = true");
-    expect(pointerMoveMatch?.[0] ?? "").toContain('event.pointerType === "touch" && touchTapCandidate.current');
-    expect(pointerMoveMatch?.[0] ?? "").toContain("touchTapCandidate.current = false");
+    expect(pointerDownMatch?.[0] ?? "").toContain('touchGesture.current = "tap"');
+    // Past the tap threshold the drag stays the camera's: it must not fall through to the marquee.
+    expect(pointerMoveMatch?.[0] ?? "").toContain('event.pointerType === "touch" && touchGesture.current !== null');
+    expect(pointerMoveMatch?.[0] ?? "").toContain('touchGesture.current = "camera"');
     expect(pointerUpMatch?.[0] ?? "").toContain("interactionTargetAt(event.clientX, event.clientY)");
     expect(pointerUpMatch?.[0] ?? "").toContain("useSelectionStore.getState().select(found.itemId)");
   });

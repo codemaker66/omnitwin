@@ -42,6 +42,57 @@ is never multisampled (the tests pin this). On the RTX 4090, through the lab:
 desktop profile at 3200x1800, with 88-180 guests. No phone or tablet has been
 measured yet.
 
+## Holding the frame rate
+
+A profile is a starting point; `RenderGovernor` (`components/scene/`) gives up
+quality, a rung at a time, on a device that cannot hold its frame rate. It follows
+the governor in Ryan Sael's "Set the Mood" (sael.net/interior), adapted with his
+permission: frames are judged in windows of about 1.6 s, the first three warm up,
+two slow windows in a row give up one rung, and nothing is given back during a
+visit, so the view never pumps between two looks (`lib/render-governor.ts`).
+
+The planner draws on demand, which changes what a frame is:
+
+- **Draws, not updates.** `NativeCanvas`'s pacer holds a draw back while the GPU's
+  backlog is full, so frame updates can outnumber the frames a viewer sees. The
+  governor times the main view's draws (`lib/main-draw-clock.ts`).
+- **Only frames the device paced.** A draw counts when the camera is being moved,
+  when the loop ran straight on (springs, damping, transitions) or when the GPU
+  held a frame back. A frame drawn for a single change, a chunk arriving, waited
+  on that change. Intervals over 250 ms are gaps, and a window is judged on its
+  fastest 80% of frames, so a pause in a drag cannot decide it.
+- **Slow against the display.** Under 90% of the display's own rate (at most 60),
+  read from idle animation frames: a phone held at 30 Hz in Low Power Mode keeps
+  its quality.
+- **What held the frames up.** The main thread's frame work between draws (every
+  update, drawn or held back) over the frame time. Half or more means the CPU:
+  0.66-0.84 on the phone profile with its CPU slowed 6x, 0.07-0.1 with the GPU
+  holding frames up.
+
+A device held up by its GPU gives up ambient occlusion, then resolution in quarter
+steps to 1.5x, bloom, resolution to 1x, then multisampling; one held up by its CPU
+gives up bloom and ambient occlusion, each a chain of passes to encode, and keeps
+its pixels, which cost the CPU nothing (`nextQualityRung`, `lib/render-quality.ts`).
+A resolution step only resizes the canvas; dropping an effect rebuilds the
+pipeline once. Each step is judged on the two windows after one left to settle,
+and two steps in a row gaining under 8% end the stepping. `?governor=off` measures
+without giving anything up (development builds); the profiler's Copy report
+carries what was given up and measured.
+
+`packages/web/scripts/planner-governor.mjs` orbits the phone profile with one
+finger against a development server (12 tables of 10, this PC):
+
+| Emulated phone | Before | Governor | After |
+| --- | --- | --- | --- |
+| Full speed | about 240 frames a second (the headless display) | nothing given up | same |
+| CPU slowed 6x | 18-41 a second, frame work 0.77-0.84 | bloom, then stops | 33-62 a second at 2x with multisampling |
+| GPU held by another page's compute | about 29 a second, frame work 0.08 | resolution to 1.5x, then stops | about 29: the other page sets the pace, so neither step gained |
+
+Bloom's mip chain was nearly half a slowed phone's render: the frame work fell
+from about 27 to 15 ms a draw without it. The GPU case shows the stop working;
+on a phone filling its own pixels a resolution step gains and the governor
+continues while frames are slow.
+
 ## Compiling once
 
 A shader compiled mid-gesture is the planner's worst stall: grabbing a table took
@@ -95,6 +146,9 @@ outside the repository.
   build. Run it against a `vite preview` of a build for production numbers
   (`--drag-at` with the point a development run prints). `--cpu-throttle 4`
   slows the main thread as on a mid-range phone; the GPU is not slowed.
+- `packages/web/scripts/planner-governor.mjs`: the frame-rate governor on the phone
+  profile during a one-finger orbit (above), with `--cpu-throttle` and
+  `--gpu-load` to emulate a phone held up by either side.
 
 Production build, desktop profile, this tour: table drag worst frame 17 ms with
 none over 20 ms (698 ms before), marquee 23 ms (33 ms), no long task while
@@ -127,3 +181,13 @@ instanced furniture meshes (504 instances, 1.06 million triangles, the chairs
 7.6k each). A phone's GPU time has not been measured; if it proves the limit,
 the crafted builders' segment counts (`crafted-geometry.ts`) are the lever for a
 lighter phone tier.
+
+A finger on the canvas, with the selection tools idle, belongs to the camera: a
+tap selects what it lands on, and past the drag threshold the drag is the
+camera's until the next first finger, and a second finger makes it a pinch
+(`SelectionSystem`'s touch gesture). Until 11 October the drag fell through to
+the mouse path at its second move and drew a selection box behind every orbit,
+selecting the furniture it swept and re-rendering the furniture, the dock and
+the panels each frame: 30% of a 6x-slowed main thread went to React while
+orbiting. An orbit now changes no store, and the same slowed orbit draws 17-39
+frames a second where it drew 9-24.
