@@ -311,6 +311,15 @@ function devFixtureRoutes(): readonly RouteObject[] {
   const TimeMachineFixturePage = lazy(() =>
     import("./pages/TimeMachineFixturePage.js").then((m) => ({ default: m.TimeMachineFixturePage })),
   );
+  const GrandHallLabPage = lazy(() =>
+    cockpitImport(() => import("./pages/GrandHallLabPage.js").then((m) => ({ default: m.GrandHallLabPage }))),
+  );
+  const FurnitureLabPage = lazy(() =>
+    cockpitImport(() => import("./pages/FurnitureLabPage.js").then((m) => ({ default: m.FurnitureLabPage }))),
+  );
+  const PlannerLabPage = lazy(() =>
+    cockpitImport(() => import("./pages/PlannerLabPage.js").then((m) => ({ default: m.PlannerLabPage }))),
+  );
 
   return [
     {
@@ -331,6 +340,24 @@ function devFixtureRoutes(): readonly RouteObject[] {
       // guest draft, so this is where it gets reviewed.
       path: "/dev/time-machine",
       element: withSuspense(<TimeMachineFixturePage />),
+    },
+    {
+      // The Grand Hall's real-time room in every mood and view, posed by a
+      // window bridge for headless visual review.
+      path: "/dev/grand-hall",
+      element: withSuspense(<GrandHallLabPage />),
+    },
+    {
+      // The crafted furniture beside the supplied models it replaces, in the
+      // hall's light, posed by a window bridge for headless visual review.
+      path: "/dev/furniture",
+      element: withSuspense(<FurnitureLabPage />),
+    },
+    {
+      // The planner's own scene in the Grand Hall with a furnished layout and
+      // no backend, for looking at the room and measuring its frames.
+      path: "/dev/planner-lab",
+      element: withSuspense(<PlannerLabPage />),
     },
   ];
 }

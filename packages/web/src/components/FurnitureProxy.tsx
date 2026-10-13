@@ -14,6 +14,8 @@ import { MicStandMesh } from "./meshes/MicStandMesh.js";
 import { LecternMesh } from "./meshes/LecternMesh.js";
 import { PoseurTableMesh } from "./meshes/PoseurTableMesh.js";
 import { GeneratedFurnitureProxy } from "./meshes/generated/GeneratedFurnitureProxy.js";
+import { CraftedFurniture } from "./meshes/crafted/CraftedFurniture.js";
+import { isCraftedFurnitureSlug } from "../lib/crafted-furniture.js";
 import { isGeneratedFurnitureSlug } from "./meshes/generated/generatedFurnitureRegistry.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { isTableDressingApplicatorSlug } from "../lib/table-dressing.js";
@@ -80,6 +82,18 @@ export function FurnitureProxy({
   onGeneratedPartSelect,
 }: FurnitureProxyProps): React.ReactElement {
   const resolvedScale = normalizedFurniturePresentationScale(scale);
+  if (resolveFurnitureMeshKind(item) === "crafted") {
+    return (
+      <group
+        name={name}
+        position={[position[0], position[1], position[2]]}
+        rotation={[0, rotationY, 0]}
+        scale={resolvedScale}
+      >
+        <CraftedFurniture item={item} opacity={opacity} colorOverride={colorOverride} />
+      </group>
+    );
+  }
   const meshUrl = standaloneFurnitureMeshUrl(item);
   const procedural = renderMesh(
     item,
@@ -126,6 +140,7 @@ export function FurnitureProxy({
 /** Which mesh component a catalogue item resolves to. */
 export type FurnitureMeshKind =
   | "applicator"
+  | "crafted"
   | "generated"
   | "poseur-table"
   | "round-table"
@@ -151,6 +166,8 @@ export function resolveFurnitureMeshKind(
   item: Pick<CatalogueItem, "slug" | "category" | "tableShape">,
 ): FurnitureMeshKind {
   if (isTableDressingApplicatorSlug(item.slug)) return "applicator";
+  // Crafted models replace the supplied GLBs and any older generated proxy.
+  if (isCraftedFurnitureSlug(item.slug)) return "crafted";
   if (isGeneratedFurnitureSlug(item.slug)) return "generated";
 
   switch (item.category) {
@@ -187,6 +204,16 @@ export function resolveFurnitureMeshKind(
 }
 
 /**
+ * True when what the planner draws for an item is its generated proxy: the
+ * slug has one, and neither a crafted model nor a supplied GLB replaces it.
+ */
+export function drawsGeneratedProxy(
+  item: Pick<CatalogueItem, "slug" | "category" | "tableShape" | "meshUrl">,
+): boolean {
+  return resolveFurnitureMeshKind(item) === "generated" && item.meshUrl === null;
+}
+
+/**
  * Resolve an imported furniture asset without allowing contextual catalogue
  * tools to escape their non-rendering role. Applicators stay geometry-free
  * even if future or malformed catalogue metadata supplies a mesh URL.
@@ -194,7 +221,9 @@ export function resolveFurnitureMeshKind(
 export function standaloneFurnitureMeshUrl(
   item: Pick<CatalogueItem, "slug" | "category" | "tableShape" | "meshUrl">,
 ): string | null {
-  return resolveFurnitureMeshKind(item) === "applicator" ? null : item.meshUrl;
+  const kind = resolveFurnitureMeshKind(item);
+  // Crafted models draw in code; applicators draw nothing.
+  return kind === "applicator" || kind === "crafted" ? null : item.meshUrl;
 }
 
 function renderMesh(
@@ -206,7 +235,8 @@ function renderMesh(
   onGeneratedPartSelect: ((partId: string) => void) | undefined,
   generatedExplodeDistance: number,
 ): React.ReactElement | null {
-  if (isGeneratedFurnitureSlug(item.slug)) {
+  const kind = resolveFurnitureMeshKind(item);
+  if (kind === "generated" && isGeneratedFurnitureSlug(item.slug)) {
     return (
       <GeneratedFurnitureProxy
         slug={item.slug}
@@ -222,12 +252,14 @@ function renderMesh(
     );
   }
 
-  switch (resolveFurnitureMeshKind(item)) {
+  switch (kind) {
     case "applicator":
       // Contextual catalogue tools have no standalone physical geometry. An
       // empty FurnitureProxy group deliberately keeps the component contract
       // stable while preventing corrupt/legacy rows from becoming platforms.
       return null;
+    case "crafted":
+      return <CraftedFurniture item={item} opacity={opacity} colorOverride={colorOverride} />;
     case "generated":
       // Handled above — the generated branch needs the inspection props.
       return <PlatformMesh item={item} opacity={opacity} colorOverride={colorOverride} />;

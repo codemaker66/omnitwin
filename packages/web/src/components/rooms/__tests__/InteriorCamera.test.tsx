@@ -390,6 +390,35 @@ describe("editable planner interior", () => {
     } finally { fiber.canvas.removeEventListener("pointerup", selectionUp); }
   });
 
+  it("walks forward as two fingers spread and back as they close, holding the look and never selecting", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" reducedMotion />);
+    const selectionUp = vi.fn();
+    fiber.canvas.addEventListener("pointerup", selectionUp);
+    try {
+      frame();
+      touch("pointerdown", 700, 450);
+      touch("pointerdown", 900, 450, 43, false);
+      // From 200 px apart to 600 px of a 1600 px screen: 1.5 m along the heading.
+      for (let x = 950; x <= 1100; x += 50) touch("pointermove", x, 450, 43, false);
+      touch("pointermove", 500, 450);
+      frame(200);
+      expect(window.__roomCamera?.position[2]).toBeCloseTo(-1.5, 6);
+      expect(window.__roomCamera?.yaw).toBe(0);
+      // Closing them by 200 px walks 0.75 m back.
+      touch("pointermove", 900, 450, 43, false);
+      frame(200);
+      expect(window.__roomCamera?.position[2]).toBeCloseTo(-0.75, 6);
+      // The finger still down looks on from where it is: right, not back
+      // from where it first touched.
+      touch("pointerup", 900, 450, 43, false);
+      touch("pointermove", 600, 450);
+      frame(200);
+      expect(window.__roomCamera?.yaw).toBeGreaterThan(0);
+      touch("pointerup", 600, 450);
+      expect(selectionUp).not.toHaveBeenCalled();
+    } finally { fiber.canvas.removeEventListener("pointerup", selectionUp); }
+  });
+
   it("cancels queued and held movement when D opens drawing or a furniture edit takes ownership", () => {
     render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner"
       keyboardNavigationEnabled={plannerKeyboardNavigationEnabled} />);

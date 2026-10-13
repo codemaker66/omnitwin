@@ -9,6 +9,8 @@ import { ActivityStatus } from "../shared/Activity.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import { registerNativeSceneRenderer, withNativeRenderScope } from "../../lib/native-renderer.js";
 import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-frame-pacer.js";
+import { noteMainDraw } from "../../lib/main-draw-clock.js";
+import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
 import { nativeSceneDrawnSplats, nativeScenePerfStats } from "../../lib/native-splat-scene.js";
 import {
@@ -296,10 +298,18 @@ export function NativeCanvas({
       return;
     }
     owner.pacer.request(() => {
-      native.render(state.scene, state.camera);
+      const startedAt = performance.now();
+      // A registered pipeline draws the whole frame (its own scene passes and
+      // the final output) through the same render wrapper.
+      const composer = nativeFrameComposer(native);
+      if (composer !== null) composer();
+      else native.render(state.scene, state.camera);
       // The render wrapper reports main-frame errors through fail() and returns.
       // Never fence that failed draw or a renderer replaced during a callback.
-      return mounted.current && renderer.current === native && failedRenderer.current !== native;
+      const drawn = mounted.current && renderer.current === native && failedRenderer.current !== native;
+      // The frames a viewer sees, for the frame-rate governor (main-draw-clock.ts).
+      if (drawn) noteMainDraw(startedAt);
+      return drawn;
     });
   }, []);
 

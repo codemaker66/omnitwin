@@ -111,6 +111,14 @@ export interface CameraRigProps {
   readonly suspended?: boolean;
   /** Non-null only for terminal room-content failure, scoped to plan/source. */
   readonly captureUnavailableKey?: string | null;
+  /**
+   * A room's own opening framing on landscape screens (the Grand Hall's
+   * three-quarter view). Must be a stable object. Portrait keeps the generic
+   * interior angle.
+   */
+  readonly defaultPose?: { readonly position: readonly [number, number, number]; readonly target: readonly [number, number, number] } | null;
+  /** Told each time the opening framing is applied: true when it was `defaultPose`. */
+  readonly onOpeningPose?: (usedDefaultPose: boolean) => void;
 }
 
 interface PlannerCameraPose {
@@ -142,7 +150,7 @@ interface HumanPovDragState {
  * Pan speed scales with zoom distance (closer = slower, further = faster).
  * Camera target is clamped to room bounds with a small margin.
  */
-export function CameraRig({ dimensions, smoothControls = true, suspended = false, captureUnavailableKey = null }: CameraRigProps): React.ReactElement {
+export function CameraRig({ dimensions, smoothControls = true, suspended = false, captureUnavailableKey = null, defaultPose = null, onOpeningPose }: CameraRigProps): React.ReactElement {
   const { camera, gl, invalidate, size } = useThree();
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
@@ -153,6 +161,8 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   const recoveryActive = captureUnavailableKey !== null && recoveryLimit?.key === captureUnavailableKey;
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const tourNeedsFirstFrame = useRef(true);
+  /** The glide whose clock has started (keyed by its stable start pose). */
+  const transitionClockOwner = useRef<readonly number[] | null>(null);
   const humanPovActiveRef = useRef(false);
   const humanPovRestorePoseRef = useRef<PlannerCameraPose | null>(null);
   const humanPovDragRef = useRef<HumanPovDragState | null>(null);
@@ -185,18 +195,23 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   // angle; landscape uses the elevated planning composition. Terminal capture
   // failure has a separate one-shot overview and must not reset on resize.
   const aspect = size.width / Math.max(size.height, 1);
+  const openingPose = aspect >= 1.2 ? defaultPose : null;
+  const onOpeningPoseRef = useRef(onOpeningPose);
+  onOpeningPoseRef.current = onOpeningPose;
   const target = useMemo(
-    () => computeCameraTarget(stableDimensions, aspect),
-    [stableDimensions, aspect],
+    () => openingPose?.target ?? computeCameraTarget(stableDimensions, aspect),
+    [openingPose, stableDimensions, aspect],
   );
   useEffect(() => {
     if (suspendedRef.current || previouslySuspended.current || captureUnavailableKey !== null) return;
     if (humanPovActiveRef.current || walkActiveRef.current || useBookmarkStore.getState().tour !== null) return;
-    const [x, y, z] = computeDefaultCameraPosition(stableDimensions, aspect);
+    const [x, y, z] = openingPose?.position ?? computeDefaultCameraPosition(stableDimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
+    // A glide under way still owns where the camera ends up.
+    if (useBookmarkStore.getState().transition === null) onOpeningPoseRef.current?.(openingPose !== null);
     invalidate();
-  }, [camera, stableDimensions, target, aspect, invalidate, captureUnavailableKey]);
+  }, [camera, stableDimensions, target, aspect, invalidate, captureUnavailableKey, openingPose]);
   useEffect(() => { previouslySuspended.current = suspended; }, [suspended]);
 
   // Keyboard input — single keydown handler tracks state AND wakes demand-mode frame loop.
@@ -730,16 +745,30 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     controls.target.set(interpTarget[0], interpTarget[1], interpTarget[2]);
     controls.update();
 
+    // A finished glide hands the camera on: into the saved viewpoint it flew
+    // to, or back to the orbit.
+    const arrive = (): void => {
+      if (store.activeReferenceId !== null) enterHumanPovMode();
+      else controls.enabled = true;
+    };
     if (done) {
-      const shouldEnterHumanPov = store.activeReferenceId !== null;
       store.clearTransition();
-      if (shouldEnterHumanPov) {
-        enterHumanPovMode();
-      } else {
-        controls.enabled = true;
-      }
+      arrive();
     } else {
-      store.updateTransition(frameDelta);
+      const active = store.transition;
+      // A glide started outside a frame (a view button, say) first draws after
+      // the demand loop's idle gap; that gap is not time spent gliding.
+      const firstFrame = transitionClockOwner.current !== active.fromPosition;
+      transitionClockOwner.current = active.fromPosition;
+      if (!store.updateTransition(firstFrame ? 0 : frameDelta)) {
+        // The step that completes the glide ends it in the store, so this
+        // frame lands it: a long frame (a slow device, a shader compiling)
+        // must not leave the camera wherever the last drawn frame put it.
+        camera.position.set(active.toPosition[0], active.toPosition[1], active.toPosition[2]);
+        controls.target.set(active.toTarget[0], active.toTarget[1], active.toTarget[2]);
+        controls.update();
+        arrive();
+      }
       invalidate();
     }
   });

@@ -26,6 +26,8 @@ import { useGuidelineStore } from "../../stores/guideline-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { COCKPIT_MODES } from "../../lib/cockpit-modes.js";
 import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
+import { HallViewSheetControls } from "./cockpit/CanvasLayerControls.js";
+import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { FurnitureCataloguePreview } from "../shared/FurnitureCataloguePreview.js";
 import type { FurnitureCategory } from "@omnitwin/types";
 import {
@@ -549,21 +551,27 @@ function MarkupToolPanel({
 function CameraViewsPanel({
   bookmarks,
   mobileChrome,
+  hallControls,
   open,
   onSelect,
+  onHallView,
 }: {
   readonly bookmarks: readonly CameraBookmark[];
   readonly mobileChrome: boolean;
+  /** The Grand Hall's views and light, first in a phone's sheet. */
+  readonly hallControls: boolean;
   readonly open: boolean;
   readonly onSelect: (presetIndex: number) => void;
+  /** A Grand Hall view was chosen: close, as a saved view does. */
+  readonly onHallView: () => void;
 }): React.ReactElement {
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   return (
     <ToolWidgetPortal>
       <FloatingWidgetFrame
         id="planner-camera-views"
-        title="Camera views"
-        compactLabel={String(bookmarks.length)}
+        title={hallControls ? "View and light" : "Camera views"}
+        compactLabel={hallControls ? "View" : String(bookmarks.length)}
         strategy="fixed"
         testId="camera-views-panel"
         defaultPlacement={toolPanelPlacement(mobileChrome, 280)}
@@ -585,6 +593,7 @@ function CameraViewsPanel({
               : "omni-dropdown-pop-out 0.2s cubic-bezier(0.55, 0, 1, 0.45) forwards",
           }}
         >
+          {hallControls ? <HallViewSheetControls onViewChosen={onHallView} /> : null}
           {bookmarks.map((bm, i) => (
             <button
               key={bm.id}
@@ -1865,8 +1874,15 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
     setCameraOpen(false);
     setMobileMoreOpen(false);
   }, []);
+  const handleHallView = useCallback(() => {
+    setCameraOpen(false);
+    setMobileMoreOpen(false);
+  }, []);
 
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
+  // A phone's stage docks no hall controls; its View sheet carries them.
+  const modelledHall = useModelledGrandHall();
+  const hallViewSheet = mobileChrome && modelledHall;
 
   // Delayed unmount for exit animations
   const panelMounted = useDelayedUnmount(panelOpen, 300);
@@ -2374,12 +2390,14 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
       )}
 
       {/* === Camera dropdown === */}
-      {cameraMounted && bookmarks.length > 0 && (
+      {cameraMounted && (bookmarks.length > 0 || hallViewSheet) && (
         <CameraViewsPanel
           bookmarks={bookmarks}
           mobileChrome={mobileChrome}
+          hallControls={hallViewSheet}
           open={cameraOpen}
           onSelect={handleCameraPreset}
+          onHallView={handleHallView}
         />
       )}
       {showAuth ? (

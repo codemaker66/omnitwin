@@ -157,6 +157,19 @@ export function wheelStepMetres(deltaY: number, deltaMode: number, stepM: number
   return -notches * stepM;
 }
 
+/**
+ * A pinch's change of spread, in metres along the heading: spreading the
+ * fingers walks forward and closing them walks back, as the wheel does.
+ * The spread is read as a fraction of the screen's width, so one gesture
+ * carries the same distance on every phone; and one event never moves more
+ * than `maxStepM`, so a late, coarse touch event cannot teleport anyone.
+ */
+export function pinchStepMetres(spreadDeltaPx: number, screenWidthPx: number, spanM: number, maxStepM: number): number {
+  if (!Number.isFinite(spreadDeltaPx) || spreadDeltaPx === 0 || !(screenWidthPx > 0)) return 0;
+  const step = (spreadDeltaPx / screenWidthPx) * spanM;
+  return Math.max(-maxStepM, Math.min(maxStepM, step));
+}
+
 /** Whether a point is already inside the room, inset included. */
 export function isContained(position: Vec3, bounds: Bounds): boolean {
   const contained = containPosition(position, bounds);

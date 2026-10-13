@@ -46,7 +46,7 @@ normals always carry `degraded.reason`, one of:
 | `forecast_key_rejected` | The Met Office answered 401/403, e.g. a key for another DataHub product |
 | `forecast_quota_exhausted` | 429 from the Met Office, or this server's daily cap |
 | `upstream_unavailable` | Network, timeout, 5xx, 204, or a body that failed validation |
-| `beyond_forecast_horizon` | `at` after the forecast's last step (or more than 192 h ahead) |
+| `beyond_forecast_horizon` | `at` after the last step that all the forecast's core series reach |
 | `before_forecast_window` | `at` before the forecast's first step (or more than 6 h ago) |
 
 - `fog` is a probability: P(visibility at 1.5 m < 1000 m), the WMO definition.
@@ -57,11 +57,16 @@ normals always carry `degraded.reason`, one of:
   <https://datahub.metoffice.gov.uk/definition-of-codes>): showers and thunder
   are rain unless sleet, hail or snow is named; mist and fog are `none`; code 4
   ("Not used") and unknown codes are `null`. The code itself is in `weather`.
-- `sunshineFraction` = bright-sunshine hours ÷ astronomical day length
-  (geometric sunrise to sunset; declination 23.45° × sin(360° × (284 + n)/365),
-  day length = 2·acos(−tan φ·tan δ)/15 h). Forecast: the 24 h sunshine period
-  containing `at`. Normals: the month's sunshine hours ÷ the month's summed day
-  length at the cell latitude. An impossible ratio (> 1.01) is `null`.
+- `sunshineFraction` (normals) = the month's bright-sunshine hours ÷ the
+  month's summed astronomical day length at the cell latitude (geometric
+  sunrise to sunset; declination 23.45° × sin(360° × (284 + n)/365), day
+  length = 2·acos(−tan φ·tan δ)/15 h). An impossible ratio (> 1.01) is `null`.
+  - **Forecast: `null`.** BPF v2's only sunshine parameter is
+    `durationOfSunshineSumPt24h`, a sum over the 24 h ending at each step.
+  - It mostly describes the day before, not the sky at `at`. Live on 10
+    October it gave 0.929 under 88% cloud.
+  - It is not requested. The selection log names the sunshine parameters the
+    collection declares, so an hourly one would show.
 - `presetHint` is a weather-only hint from total cloud: `sunny` ≤ 2 oktas,
   `overcast` ≥ 6 oktas, else `null`. It is not a lighting decision.
 - `provenance` states when this server requested the forecast, its age, and
@@ -119,14 +124,39 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
   deterministic forecast" recommends. `cloudAreaFraction` (total),
   `lowTypeCloudAreaFraction` (low; mid and high are not offered, so `null`),
   `visibilityInAir1p5m`, `lwePrecipitationRate` (m/s → mm/h), `airTemperature1p5m`
-  (K → °C), `windSpeed10m`, `weatherCodePt01h`/`Pt03h`, `durationOfSunshineSumPt24h`;
-  probabilities `probabilityOfLwePrecipitationRateAboveThreshold` at 0.1 mm/h and
-  `probabilityOfVisibilityInAirBelowThreshold1p5m` at 1000 m. A declared unit
-  outside the accepted spellings drops that parameter (logged) rather than
-  rescaling it.
-- Horizon (glossary, UK): hourly to T+120 h, then three-hourly to T+186/192 h.
-  Each step stands for the span to the midpoints with its neighbours
-  (`validFrom`/`validTo`).
+  (K → °C), `windSpeed10m` and `weatherCodePt01h`/`Pt03h`. Probabilities:
+  `probabilityOfLwePrecipitationRateAboveThreshold` at 0.1 mm/h and
+  `probabilityOfVisibilityInAirBelowThreshold1p5m` at 1000 m.
+  - **Thresholds:** matched by value within 2% on the axis's own labels.
+    There is no nearest value: a missing threshold, or one in other units,
+    gives `null`.
+  - **Time steps:** each series is read on its own time axis, in any axis
+    order.
+  - **Units:** a declared unit outside the accepted spellings drops that
+    parameter (logged) rather than rescaling it.
+- Horizon: read from the data, never fixed. The glossary says T+186/192 h,
+  but the live v2 series ran further on 10 October and differ by parameter:
+  - cloud, temperature, wind and precipitation rate: 203 steps to
+    25 October 00:00Z, about 14.4 days;
+  - precipitation probability: 198 steps to the same date;
+  - visibility and fog: to 18 October 12:00Z;
+  - the hourly weather code: to 15 October 16:00Z.
+
+  A forecast is served while all the core series (total cloud, temperature,
+  wind, precipitation rate) reach `at`: up to the earliest of their last
+  steps, inclusive. Later instants get normals with `beyond_forecast_horizon`.
+- Each other field is read from its own series. It is `null` once `at` passes
+  that series' last step: no value is carried past the data.
+  - **Precipitation type** comes from the hourly weather code, else the
+    3-hourly one, else `null`.
+- **Step spans:** each step stands for the span to the midpoints with its
+  neighbours (`validFrom`/`validTo`). The first step also stands for half a
+  spacing before it, so "now" is served. The last step stands only up to
+  itself, and an answer's span never runs past the core reach.
+- Because the reach comes from the data, a cold cache reads the forecast
+  once (4 calls) before it can answer even a far date. Later far dates are
+  answered from the cache. Without a key, every date is
+  `forecast_not_configured`.
 - Quota: free plan "up to 55 calls per day, one site". The API refetches every
   fourth hourly issue (4 h): 4 calls per refresh, 24 a day, plus one collection
   list. A process cap of 40 calls per UTC day protects the plan against restart
@@ -134,22 +164,77 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
   UTC (quota). Concurrent requests share one fetch.
 - Attribution (FAQ): "Powered by Met Office data"; licence: the Weather DataHub
   terms and conditions.
-- Logs carry stage, status and Zod issue paths, never the key, headers or bodies.
+- Data bodies are CoverageJSON (the OpenAPI position query: "Provides data
+  for the nearest location as a CovJson response"; it has no output-format
+  parameter, so none is sent).
+  - **Parameters in scope:** a parameter's unit is read from the parameters
+    in scope: the coverage's own, else the collection's (OGC 21-069r2: a
+    collection MAY carry `parameters`, 9.6.5; a coverage MUST carry its own
+    when the collection does not, 9.6.4). The live service puts them on each
+    coverage.
+  - **No unit in scope:** the glossary unit applies.
+- Logs carry stage, status and Zod issue paths, never the key, headers or
+  bodies. A body that fails its schema is described by its structure alone:
+  member names, array lengths and `type`/`domainType`/`dataType` strings,
+  four levels deep, 30 lines at most, as `body: …` lines in the failure's
+  detail.
+- The first successful forecast in a process is logged once as
+  `venue_sky_forecast_metadata`, for each field:
+  - the key, the collection and the unit applied (declared or the glossary's);
+  - each extra axis's labels and the index chosen (e.g. the fog threshold);
+  - the time axis's length, first and last step and spacings;
+  - period lengths.
+
+  It never includes a forecast value.
 
 **Live state (10 October 2026).**
-- The deployed key is accepted: `/collections` answered HTTP 200.
-- The first release's v1 collection ids were not in that listing, so it
-  served normals with `upstream_unavailable`.
-- Choosing collections from the listing (above) replaces those fixed ids.
-- After that change deploys, check the first forecast through the deployed
-  endpoint and in the `venue_sky_collections_*`, `venue_sky_forecast_partial`
-  and `venue_sky_upstream_failed` logs. They name what the listing offers.
+- The key is accepted. #70 (`d9a80276`) chose the collections from the
+  listing at 14:55Z (`venue_sky_collections_selected`).
+  - **Chosen:** percentiles `uk-spot-percentiles` (basis: declared
+    parameters), probabilities `uk-spot-probabilities`.
+  - **Offered:** `global-spot-percentiles` (73 parameters),
+    `global-spot-probabilities` (38), `uk-spot-percentiles` (77) and
+    `uk-spot-probabilities` (78), all without a title.
+- The position body then failed the schema with one issue, `parameters:
+  Required`.
+  - **What the response is:** a CoverageCollection whose coverages all parsed
+    (a GeoJSON body would also have failed `type` and `coverages`). It
+    carries no collection-level `parameters`, as CoverageJSON allows.
+  - **Fix:** reading parameters in scope (above).
+- #73 (`2deac5bb`) made the forecast live. At 15:50Z it read cloud 0.883 (low
+  0.680), rain at a 0.094 mm/h median rate with P(≥ 0.1 mm/h) = 0, 11.25 °C,
+  wind 5.69 m/s, visibility 26 725 m and fog 0.333, from a site 563 m away.
+  Two values were questioned:
+  - **Sunshine 0.929:** came from the trailing 24 h sum; now `null` (above).
+  - **Fog 0.333 against a 26.7 km median visibility:** genuine. After #75
+    (`75d6aecd`), `venue_sky_forecast_metadata` showed:
+    - fog chose index 14, `<1000.0` (m);
+    - precipitation probability chose index 2, `>2.7777778E-8` m/s
+      (0.1 mm/h).
 
-No live response body has been read here, and the DataHub sample files may
-not be redistributed. The test bodies
+    Later the forecast read fog 0.0101 at 26.3 km visibility, and the
+    sunshine fraction was `null`.
+- The metadata log also showed each series' own reach (see Horizon above),
+  which replaced the fixed 192 h limit in #76 (`1003daef`). Verified live
+  with the API reporting `1003daef`:
+  - 2026-10-22T12:00Z (+12 days): kind `forecast`, 12.35 °C, cloud 0.898.
+    Visibility, fog and precipitation type were `null`, past their own series.
+  - 2026-10-26T12:00Z (+16 days): normals, `beyond_forecast_horizon`.
+  - 2026-10-10T12:00Z (6 h past): normals, `before_forecast_window`.
+- **`issuedAt` is `null` by design.**
+  - The live percentile instance's members, from `venue_sky_forecast_metadata`:
+    `crs`, `data_queries` (`locations`, `position`), `extent` (`custom`,
+    `spatial`, `temporal` with `interval`, `trs` and `values`), `id`,
+    `links`, `output_formats` and `parameter_names`.
+  - None states an issue time, and the id is not a date-time. EDR documents
+    none either.
+- T-647 is done (10 October 2026).
+
+No live response body has been stored here, and the DataHub sample files
+may not be redistributed. So the test bodies
 ([fixtures](../../packages/api/src/__tests__/fixtures/met-office-bpf-v2.ts))
-are therefore still built from the documented structure, with synthetic
-numbers.
+are built from the documented structure with synthetic numbers. The live
+evidence above comes from the deployed endpoint and its metadata logs.
 
 ## Source 2: monthly normals (HadUK-Grid 1991–2020)
 
@@ -257,6 +342,6 @@ site, and validates the sky answer against the contract.
 
 ## Out of scope
 
-ECMWF open data for days 8–14 (beyond the Met Office horizon those dates get
-normals with `beyond_forecast_horizon`); observations; a write path for other
-venues' locations (set them by migration until one is needed).
+ECMWF open data (the Met Office series already reach about 14 days; beyond
+them dates get normals with `beyond_forecast_horizon`); observations; a write
+path for other venues' locations (set them by migration until one is needed).

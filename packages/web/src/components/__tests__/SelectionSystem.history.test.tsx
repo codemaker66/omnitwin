@@ -309,3 +309,72 @@ describe("SelectionSystem pointer history through EditorBridge", () => {
     expect(useEditorStore.getState().objects).toEqual(initial);
   });
 });
+
+describe("SelectionSystem marquee", () => {
+  it("holds the pointer while a box is drawn, so its release ends the box wherever it lands", () => {
+    render(<SelectionSystem />);
+    pointer("pointerDown", 40, 360);
+    pointer("pointerMove", 90, 380);
+    expect(useSelectionStore.getState().marqueeActive).toBe(true);
+    // Captured, the release comes back to the canvas even over a disabled
+    // button, which a browser gives no pointer events at all.
+    expect(canvas.hasPointerCapture(1)).toBe(true);
+    pointer("pointerUp", 90, 380);
+    expect(useSelectionStore.getState().marqueeActive).toBe(false);
+  });
+
+  it("ends a box whose pointer the browser takes back", () => {
+    render(<SelectionSystem />);
+    pointer("pointerDown", 40, 360);
+    pointer("pointerMove", 90, 380);
+    expect(useSelectionStore.getState().marqueeActive).toBe(true);
+    act(() => { fireEvent.lostPointerCapture(canvas, { pointerId: 1 }); });
+    expect(useSelectionStore.getState().marqueeActive).toBe(false);
+  });
+});
+
+function finger(type: "pointerDown" | "pointerMove" | "pointerUp", x: number, y: number, id = 1): void {
+  act(() => { fireEvent[type](canvas, { pointerId: id, pointerType: "touch", isPrimary: id === 1,
+    button: 0, buttons: type === "pointerUp" ? 0 : 1, clientX: x, clientY: y }); });
+}
+
+describe("SelectionSystem touch", () => {
+  it("leaves a one-finger drag to the camera: no box, and the selection stands", () => {
+    render(<SelectionSystem />);
+    const selected = useSelectionStore.getState().selectedIds;
+    finger("pointerDown", 40, 360);
+    finger("pointerMove", 90, 380);
+    finger("pointerMove", 160, 300);
+    finger("pointerMove", 300, 120);
+    expect(useSelectionStore.getState().marqueeActive).toBe(false);
+    finger("pointerUp", 300, 120);
+    expect(useSelectionStore.getState().selectedIds).toBe(selected);
+  });
+
+  it("leaves a pinch to the camera, whichever finger lifts first", () => {
+    render(<SelectionSystem />);
+    const selected = useSelectionStore.getState().selectedIds;
+    finger("pointerDown", 200, 200);
+    finger("pointerDown", 260, 260, 2);
+    finger("pointerMove", 290, 290, 2);
+    finger("pointerMove", 330, 330, 2);
+    finger("pointerMove", 190, 190);
+    finger("pointerUp", 330, 330, 2);
+    finger("pointerMove", 120, 120);
+    finger("pointerMove", 60, 60);
+    expect(useSelectionStore.getState().marqueeActive).toBe(false);
+    finger("pointerUp", 60, 60);
+    expect(useSelectionStore.getState().selectedIds).toBe(selected);
+  });
+
+  it("still selects what a tap lands on, and clears the selection on empty floor", () => {
+    render(<SelectionSystem />);
+    act(() => { useSelectionStore.getState().clearSelection(); });
+    finger("pointerDown", 200, 200);
+    finger("pointerUp", 201, 200);
+    expect(useSelectionStore.getState().selectedIds.size).toBeGreaterThan(0);
+    finger("pointerDown", 40, 360);
+    finger("pointerUp", 40, 360);
+    expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+  });
+});

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { INITIAL_PERF_METRICS, usePerfStore, type PerfMetrics } from "../../stores/perf-store.js";
+import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import { PerfOverlay } from "../PerfOverlay.js";
 import { TOGGLE_KEY } from "../../lib/perf.js";
 
@@ -9,18 +10,52 @@ vi.mock("../../lib/perf-runtime.js", () => ({
   profilerClipboardReport: vi.fn(() => JSON.stringify({ schema: "venviewer.profiler.v1" })),
 }));
 
+const media = vi.hoisted(() => ({ narrow: false }));
+vi.mock("../../hooks/use-media-query.js", () => ({
+  useIsNarrowViewport: () => media.narrow,
+  useIsCoarsePointer: () => media.narrow,
+}));
+
 function setMetrics(overrides: Partial<PerfMetrics> = {}): void {
   usePerfStore.setState({ visible: true, metrics: { ...INITIAL_PERF_METRICS, intervalCount: 3, ...overrides } });
 }
 
 beforeEach(() => {
+  media.narrow = false;
   vi.stubEnv("DEV", true);
   window.history.replaceState(null, "", "/tour");
   usePerfStore.setState({ metrics: INITIAL_PERF_METRICS, visible: false, paused: false, generation: 0 });
+  useRenderGovernorStore.setState({ given: [] });
 });
 afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("PerfOverlay", () => {
+  it("names the quality the planner gave up to hold its frame rate, and says nothing while none was", () => {
+    setMetrics();
+    const view = render(<PerfOverlay />);
+    expect(view.queryByTestId("perf-governor")).toBeNull();
+    act(() => { useRenderGovernorStore.setState({ given: ["resolution", "resolution", "bloom"] }); });
+    expect(view.getByTestId("perf-governor").textContent).toBe("Holding its frame rate by giving up resolution (2 steps), bloom");
+  });
+
+  it("keeps a phone's stage clear with three figures until every figure is asked for", () => {
+    media.narrow = true;
+    setMetrics({ fps: 58, frameP95Ms: 18.2, bottleneck: { kind: "gpu", busyPct: 71.6 } });
+    const view = render(<PerfOverlay />);
+    expect(view.container.querySelectorAll("dt").length).toBe(0);
+    expect(view.getByText("58")).toBeDefined();
+    expect(view.getByText("18.2ms")).toBeDefined();
+    expect(view.getByText("GPU 72%")).toBeDefined();
+    fireEvent.click(view.getByRole("button", { name: /Show every figure$/ }));
+    expect(view.container.querySelectorAll("dt").length).toBe(12);
+    fireEvent.click(view.getByRole("button", { name: "Show fewer performance figures" }));
+    expect(view.container.querySelectorAll("dt").length).toBe(0);
+    // Measuring never stopped: only the view changed.
+    expect(usePerfStore.getState().visible).toBe(true);
+    fireEvent.click(view.getByRole("button", { name: "Close performance profiler" }));
+    expect(usePerfStore.getState().visible).toBe(false);
+  });
+
   it("leaves normal development routes unobstructed until Backquote opens the panel", () => {
     const view = render(<PerfOverlay />);
     expect(view.queryByTestId("perf-overlay")).toBeNull();

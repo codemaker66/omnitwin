@@ -9,6 +9,7 @@ import {
 } from "../../lib/clearance-ring.js";
 import { circulationBandColor } from "../../lib/circulation-scene.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
+import { closedLoopSegments } from "../../lib/loop-segments.js";
 
 // ---------------------------------------------------------------------------
 // ClearanceRings — the judged clear zone drawn under selected dining tables.
@@ -26,7 +27,10 @@ import { RENDER_SCALE } from "../../constants/scale.js";
 // geometry rebuild.
 // ---------------------------------------------------------------------------
 
-/** Unit-circle outline points (XZ plane, y = 0), shared by every ring. */
+/**
+ * Unit-circle outline (XZ plane, y = 0) as segment pairs, shared by every
+ * ring: the native renderer does not draw LineLoop.
+ */
 const UNIT_CIRCLE_SEGMENTS = 96;
 const UNIT_CIRCLE_POSITIONS: Float32Array = (() => {
   const positions = new Float32Array(UNIT_CIRCLE_SEGMENTS * 3);
@@ -36,7 +40,7 @@ const UNIT_CIRCLE_POSITIONS: Float32Array = (() => {
     positions[i * 3 + 1] = 0;
     positions[i * 3 + 2] = Math.sin(angle);
   }
-  return positions;
+  return closedLoopSegments(positions);
 })();
 
 /** Just above the floor; below the circulation overlay's annotation plane. */
@@ -57,7 +61,7 @@ function RingOutline({ ring }: { readonly ring: ClearanceRingModel }): ReactElem
       position={[ring.centreX * RENDER_SCALE, RING_Y, ring.centreZ * RENDER_SCALE]}
       scale={[scale, 1, scale]}
     >
-      <lineLoop>
+      <lineSegments>
         <bufferGeometry>
           <bufferAttribute
             attach="attributes-position"
@@ -65,7 +69,7 @@ function RingOutline({ ring }: { readonly ring: ClearanceRingModel }): ReactElem
           />
         </bufferGeometry>
         <lineBasicMaterial color={color} transparent opacity={0.9} depthTest={false} />
-      </lineLoop>
+      </lineSegments>
       {/* A whisper of fill so the zone reads as area, not just an outline. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[1, UNIT_CIRCLE_SEGMENTS]} />

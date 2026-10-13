@@ -888,10 +888,13 @@ export function PlacedFurniture(): React.ReactElement {
     }
     return ids;
   }, [bookmarks]);
+  // Nameplates are for the item in hand: at their size, a plate over every
+  // labelled table covers the very layout it describes. The layers list
+  // names every table.
   const canRenderNameplate = useCallback((placedId: string): boolean => (
     !cameraInteractionActive
-    && (!limitFurnitureOverlays || selectedIds.has(placedId) || cameraReferenceItemIds.has(placedId))
-  ), [cameraInteractionActive, cameraReferenceItemIds, selectedIds, limitFurnitureOverlays]);
+    && (selectedIds.has(placedId) || cameraReferenceItemIds.has(placedId))
+  ), [cameraInteractionActive, cameraReferenceItemIds, selectedIds]);
 
   const activeReferenceItemId = useMemo(() => {
     if (activeReferenceId === null) return null;

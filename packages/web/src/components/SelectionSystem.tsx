@@ -29,6 +29,7 @@ import {
 import { beginFurnitureSettle, clearFurnitureSettle } from "../lib/furniture-motion.js";
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
+import { intersectSelectable } from "../lib/raycast-gate.js";
 import {
   snapRotation,
   ROTATION_SNAP_RAD,
@@ -173,7 +174,12 @@ export function SelectionSystem(): null {
   const rightClickMoved = useRef(false);
   const suppressNextContextMenu = useRef(false);
   const marqueeRafId = useRef<number>(0);
-  const touchTapCandidate = useRef(false);
+  /**
+   * A finger on the canvas with the selection tools idle belongs to the camera:
+   * a tap until it moves past the drag threshold, then the camera's (orbit, or
+   * pinch once a second finger lands) until the next first finger goes down.
+   */
+  const touchGesture = useRef<"tap" | "camera" | null>(null);
   const historyGesture = useRef<symbol | null>(null);
   const gestureIdMap = useRef<ReadonlyMap<string, string> | null>(null);
   const dragPointerId = useRef<number | null>(null);
@@ -310,7 +316,9 @@ export function SelectionSystem(): null {
       const ndcY = -((clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
       raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
-      const allIntersects = raycaster.intersectObjects(scene.children, true);
+      // Only furniture and keyed walls can answer, so a subtree that holds
+      // neither (the drawn hall) is not tested at all.
+      const allIntersects = intersectSelectable(raycaster, scene.children);
       const found: { itemId: string | null; wallKey: WallKey | null } = { itemId: null, wallKey: null };
       for (const inter of allIntersects) {
         if (found.itemId === null) {
@@ -352,14 +360,21 @@ export function SelectionSystem(): null {
       dragItemId.current = null;
       lastMovingIds.current = new Set();
       gestureInitial.current = new Map();
-      touchTapCandidate.current = false;
+      // An interrupted touch is no longer a tap, and its finger stays the camera's.
+      if (touchGesture.current !== null) touchGesture.current = "camera";
       useToolStore.getState().setLiveValue(null);
       useSelectionStore.getState().setActiveGuides([]);
     }
     cancelPointerGesture.current = closePointerGesture;
 
     function onPointerDown(event: PointerEvent): void {
-      touchTapCandidate.current = false;
+      // A second finger never starts a gesture of its own; with the first
+      // finger the camera's, the pair is its pinch.
+      if (event.pointerType === "touch" && !event.isPrimary) {
+        if (touchGesture.current !== null) touchGesture.current = "camera";
+        return;
+      }
+      touchGesture.current = null;
       if (event.button === 2) {
         rightClickStart.current = { x: event.clientX, y: event.clientY };
         rightClickMoved.current = false;
@@ -386,7 +401,7 @@ export function SelectionSystem(): null {
       // selection/marquee pipeline until pointer-up proves this was a tap.
       // This keeps orbiting snappy and preserves tap-to-select.
       if (event.pointerType === "touch" && event.isPrimary && selectionToolsAreIdle()) {
-        touchTapCandidate.current = true;
+        touchGesture.current = "tap";
         return;
       }
 
@@ -515,16 +530,17 @@ export function SelectionSystem(): null {
       }
       if (token !== null && event.pointerId !== dragPointerId.current) return;
       if (useMarkupStore.getState().active) return;
-      if (event.pointerType === "touch" && touchTapCandidate.current) {
+      if (event.pointerType === "touch" && touchGesture.current !== null) {
         if (
-          screenDistance(
+          touchGesture.current === "tap"
+          && screenDistance(
             dragStartScreen.current.x,
             dragStartScreen.current.y,
             event.clientX,
             event.clientY,
           ) > DRAG_THRESHOLD_PX
         ) {
-          touchTapCandidate.current = false;
+          touchGesture.current = "camera";
         }
         return;
       }
@@ -585,7 +601,15 @@ export function SelectionSystem(): null {
           // marquee drag.
           return;
         } else {
-          // Empty space — start marquee
+          // Empty space — start marquee. Hold the pointer as a furniture drag
+          // does: a release over the chrome above the canvas (a disabled
+          // button receives no events at all) must still end the box.
+          try {
+            canvasEl.setPointerCapture(event.pointerId);
+          } catch {
+            closePointerGesture();
+            return;
+          }
           isMarquee.current = true;
           const floorPos = screenToFloor(
             dragStartScreen.current.x,
@@ -761,8 +785,10 @@ export function SelectionSystem(): null {
       // Don't interfere with measurement or guideline tools
       if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
 
-      if (event.pointerType === "touch" && touchTapCandidate.current) {
-        touchTapCandidate.current = false;
+      if (event.pointerType === "touch" && touchGesture.current !== null) {
+        // The camera's gesture leaves the selection as it was.
+        if (touchGesture.current !== "tap") return;
+        touchGesture.current = null;
         const found = interactionTargetAt(event.clientX, event.clientY);
         if (found.itemId !== null) {
           useSelectionStore.getState().select(found.itemId);
@@ -774,7 +800,7 @@ export function SelectionSystem(): null {
         invalidateRef.current();
         return;
       }
-      touchTapCandidate.current = false;
+      touchGesture.current = null;
       if (event.button !== 0) return;
 
       if (isMarquee.current) {
@@ -940,7 +966,7 @@ export function SelectionSystem(): null {
       closePointerGesture();
       cancelPointerGesture.current = () => undefined;
       cancelAnimationFrame(marqueeRafId.current);
-      touchTapCandidate.current = false;
+      touchGesture.current = null;
       canvasEl.removeEventListener("pointerdown", onPointerDown);
       canvasEl.removeEventListener("mousedown", onMouseDown);
       canvasEl.removeEventListener("pointermove", onPointerMove);

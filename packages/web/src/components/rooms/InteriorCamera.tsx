@@ -4,6 +4,7 @@ import { interiorInputBlocked, interiorLookButton, interiorMovementKey, type Int
 import { DRAG_THRESHOLD_PX } from "../../lib/selection.js";
 import {
   wheelStepMetres,
+  pinchStepMetres,
   clampPitch,
   containPosition,
   lookSensitivity,
@@ -46,6 +47,10 @@ const LOOK_TAU = 0.075;
 const MOVE_TAU = 0.16;
 /** Metres per wheel notch. A trackpad flick is one notch spread over many events. */
 const WHEEL_STEP_M = 0.55;
+/** Metres walked by spreading two fingers across the whole screen. */
+const PINCH_SPAN_M = 6;
+/** The most one touch event of a pinch may move, against a coarse late event. */
+const PINCH_MAX_STEP_M = 1;
 /** Metres per second on the keyboard. */
 const WALK_SPEED = 2.4;
 
@@ -201,6 +206,22 @@ export function InteriorCamera({
     let touchStart: { x: number; y: number; pointerId: number } | null = null;
     let touchLookMoved = false;
     const suppressedTouches = new Set<number>();
+    // The looking finger's latest point, and a second finger pinching against
+    // it: spreading the two walks forward and closing them walks back.
+    let primaryAt: { x: number; y: number } | null = null;
+    let pinch: { pointerId: number; x: number; y: number; spread: number } | null = null;
+    const stepByPinch = (): void => {
+      if (pinch === null || primaryAt === null) return;
+      const spread = Math.hypot(pinch.x - primaryAt.x, pinch.y - primaryAt.y);
+      const step = pinchStepMetres(spread - pinch.spread, canvas.clientWidth, PINCH_SPAN_M, PINCH_MAX_STEP_M);
+      pinch.spread = spread;
+      if (step === 0) return;
+      target.current.position = containPosition(
+        moveOnFloorPlane(target.current.position, target.current.yaw, step, 0),
+        bounds,
+      );
+      wake();
+    };
 
     const onPointerDown = (event: PointerEvent): void => {
       if (!interiorLookButton(inputPolicy, event.button, event.pointerType) || blocked(event.target)) return;
@@ -209,12 +230,19 @@ export function InteriorCamera({
           if (touchStart !== null) {
             suppressedTouches.add(event.pointerId);
             event.stopImmediatePropagation();
+            // A second finger on the looking one makes a pinch: the look holds
+            // while the two fingers walk the view, and neither lift selects.
+            if (pinch === null && primaryAt !== null && dragging.current) {
+              pinch = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, spread: Math.hypot(event.clientX - primaryAt.x, event.clientY - primaryAt.y) };
+              touchLookMoved = true;
+            }
           }
           return;
         }
         suppressedTouches.delete(event.pointerId);
         if (touchLookEnabled?.() === false) return;
         touchStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+        primaryAt = { x: event.clientX, y: event.clientY };
         touchLookMoved = false;
       }
       if (inputPolicy === "planner") {
@@ -228,11 +256,25 @@ export function InteriorCamera({
     };
 
     const onPointerMove = (event: PointerEvent): void => {
-      if (suppressedTouches.has(event.pointerId)) { event.stopImmediatePropagation(); return; }
+      if (suppressedTouches.has(event.pointerId)) {
+        event.stopImmediatePropagation();
+        if (pinch?.pointerId === event.pointerId) {
+          pinch.x = event.clientX;
+          pinch.y = event.clientY;
+          stepByPinch();
+        }
+        return;
+      }
       if (!dragging.current) return;
       if (blocked(document.activeElement)) { dragging.current = false; return; }
       if (inputPolicy === "planner" && event.pointerType === "touch") {
         if (touchStart?.pointerId !== event.pointerId || touchLookEnabled?.() === false) return;
+        primaryAt = { x: event.clientX, y: event.clientY };
+        if (pinch !== null) {
+          event.stopImmediatePropagation();
+          stepByPinch();
+          return;
+        }
         if (!touchLookMoved && Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y) <= DRAG_THRESHOLD_PX) return;
         touchLookMoved = true;
         // A touch drag belongs to navigation. Keep SelectionSystem's tap
@@ -260,6 +302,11 @@ export function InteriorCamera({
 
     const onPointerUp = (event: PointerEvent): void => {
       if (suppressedTouches.delete(event.pointerId)) {
+        if (pinch?.pointerId === event.pointerId) {
+          pinch = null;
+          // The finger still down looks on from where it is, without a jump.
+          if (primaryAt !== null) lastPointer.current = { ...primaryAt };
+        }
         event.stopImmediatePropagation();
         return;
       }
@@ -267,6 +314,8 @@ export function InteriorCamera({
         if (touchLookMoved) event.stopImmediatePropagation();
         touchStart = null;
         touchLookMoved = false;
+        primaryAt = null;
+        pinch = null;
       }
       dragging.current = false;
       lastPointer.current = null;
@@ -306,7 +355,7 @@ export function InteriorCamera({
       keys.current.delete(event.key.toLowerCase());
       wake();
     };
-    const onBlur = (): void => { keys.current.clear(); dragging.current = false; wake(); };
+    const onBlur = (): void => { keys.current.clear(); dragging.current = false; pinch = null; wake(); };
     const onContextMenu = (event: MouseEvent): void => {
       if (inputPolicy === "planner" && !blocked(document.activeElement)) event.preventDefault();
     };

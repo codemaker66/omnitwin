@@ -1,0 +1,144 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>measure</title>
+<script type="importmap">{ "imports": { "three": "./three/build/three.module.js", "three/addons/": "./three/examples/jsm/" } }</script>
+</head><body style="margin:0;background:#000">
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0, 0, 0);
+
+const loader = new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);
+const gltf = await loader.loadAsync("./data/dollhouse.glb");
+const root = gltf.scene;
+root.updateMatrixWorld(true);
+scene.add(root);
+const colorMaterials = new Map();
+root.traverse((o) => {
+  if (!o.isMesh) return;
+  // Unlit: the photo textures already carry the room's light.
+  const basic = new THREE.MeshBasicMaterial({ map: o.material.map, side: THREE.DoubleSide });
+  colorMaterials.set(o, basic);
+  o.material = basic;
+});
+
+// World position / normal materials for measurement passes.
+const positionMaterial = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide,
+  vertexShader: `varying vec3 vWorld; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `varying vec3 vWorld; void main(){ gl_FragColor = vec4(vWorld, 1.0); }`,
+});
+const normalMaterial = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide,
+  vertexShader: `varying vec3 vWorld; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `varying vec3 vWorld; void main(){ vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld))); gl_FragColor = vec4(n, 1.0); }`,
+});
+
+function makeCamera(view) {
+  const [w, h] = view.size;
+  const camera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, view.near ?? 0.01, view.far ?? 100);
+  camera.up.set(...(view.up ?? [0, 0, 1]));
+  camera.position.set(...view.eye);
+  camera.lookAt(...view.target);
+  camera.updateMatrixWorld(true);
+  camera.updateProjectionMatrix();
+  return camera;
+}
+
+function setMode(mode) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = mode === "color" ? colorMaterials.get(o) : mode === "position" ? positionMaterial : normalMaterial;
+  });
+}
+
+window.renderColor = (view) => {
+  const [pw, ph] = view.pixels;
+  renderer.setSize(pw, ph, false);
+  setMode("color");
+  renderer.setRenderTarget(null);
+  renderer.render(scene, makeCamera(view));
+  return renderer.domElement.toDataURL("image/png");
+};
+
+window.renderFloat = (view, mode) => {
+  const [pw, ph] = view.pixels;
+  const target = new THREE.WebGLRenderTarget(pw, ph, { type: THREE.FloatType, format: THREE.RGBAFormat });
+  setMode(mode);
+  const background = scene.background;
+  scene.background = null;
+  renderer.setClearColor(0x000000, 0);
+  renderer.setRenderTarget(target);
+  renderer.clear();
+  renderer.render(scene, makeCamera(view));
+  const out = new Float32Array(pw * ph * 4);
+  renderer.readRenderTargetPixels(target, 0, 0, pw, ph, out);
+  renderer.setRenderTarget(null);
+  target.dispose();
+  scene.background = background;
+  setMode("color");
+  // base64 encode
+  const bytes = new Uint8Array(out.buffer);
+  let s = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  return btoa(s);
+};
+
+// Linear distance from a station, for occlusion tests when projecting panoramas.
+const distanceMaterial = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide,
+  uniforms: { uStation: { value: new THREE.Vector3() } },
+  vertexShader: `varying vec3 vWorld; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `uniform vec3 uStation; varying vec3 vWorld; void main(){ gl_FragColor = vec4(length(vWorld - uStation), 0.0, 0.0, 1.0); }`,
+});
+const FACES = [
+  { dir: [1, 0, 0], up: [0, 0, 1] }, { dir: [-1, 0, 0], up: [0, 0, 1] },
+  { dir: [0, 1, 0], up: [0, 0, 1] }, { dir: [0, -1, 0], up: [0, 0, 1] },
+  { dir: [0, 0, 1], up: [0, 1, 0] }, { dir: [0, 0, -1], up: [0, 1, 0] },
+];
+window.renderCubeDistance = (station, size) => {
+  const target = new THREE.WebGLRenderTarget(size, size, { type: THREE.FloatType, format: THREE.RGBAFormat });
+  root.traverse((o) => { if (o.isMesh) o.material = distanceMaterial; });
+  distanceMaterial.uniforms.uStation.value.set(...station);
+  const background = scene.background;
+  scene.background = null;
+  renderer.setClearColor(0x000000, 0);
+  const out = new Float32Array(6 * size * size);
+  const pixel = new Float32Array(size * size * 4);
+  FACES.forEach((face, f) => {
+    const camera = new THREE.PerspectiveCamera(90, 1, 0.02, 80);
+    camera.position.set(...station);
+    camera.up.set(...face.up);
+    camera.lookAt(station[0] + face.dir[0], station[1] + face.dir[1], station[2] + face.dir[2]);
+    camera.updateMatrixWorld(true);
+    renderer.setRenderTarget(target);
+    renderer.clear();
+    renderer.render(scene, camera);
+    renderer.readRenderTargetPixels(target, 0, 0, size, size, pixel);
+    for (let i = 0; i < size * size; i++) out[f * size * size + i] = pixel[i * 4 + 3] > 0.5 ? pixel[i * 4] : 1000;
+  });
+  renderer.setRenderTarget(null);
+  target.dispose();
+  scene.background = background;
+  setMode("color");
+  // float16 would be enough; keep float32 and let the caller compress.
+  const bytes = new Uint8Array(out.buffer);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+
+window.meshBounds = () => {
+  const box = new THREE.Box3().setFromObject(root);
+  return { min: box.min.toArray(), max: box.max.toArray() };
+};
+window.ready = true;
+</script></body></html>

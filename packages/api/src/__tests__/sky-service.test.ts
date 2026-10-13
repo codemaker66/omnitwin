@@ -33,6 +33,8 @@ import {
 
 const KEY = "test-key-not-a-real-key";
 const HOUR = 3_600_000;
+/** The percentile axis of a median-only percentile body. */
+const MEDIAN = { name: "percentile", values: [50], at: 0 } as const;
 const ISSUED = Date.parse("2026-10-08T09:00:00Z");
 const VENUE: VenueForSky = { id: "8f6c2b1e-4d3a-4b5c-9e7f-0a1b2c3d4e5f", latitude: 55.8593, longitude: -4.2491, timezone: "Europe/London" };
 
@@ -85,10 +87,13 @@ function harness(options: {
   status?: (url: URL) => number;
   collections?: unknown;
   percentiles?: unknown;
+  probabilities?: unknown;
+  /** The run's steps (defaults to hourly to T+119 h, then three-hourly to T+185 h). */
+  times?: readonly number[];
   dailyCallCap?: number;
   now?: number;
 } = {}): Harness {
-  const times = forecastTimes(ISSUED, 120, 22);
+  const times = options.times ?? forecastTimes(ISSUED, 120, 22);
   const clock = { now: options.now ?? ISSUED + 30 * 60_000 };
   const { fetch, calls } = routedFetch((url) => {
     const status = options.status?.(url) ?? 200;
@@ -96,7 +101,7 @@ function harness(options: {
     if (url.pathname.endsWith("/collections")) return { status, body: options.collections ?? collectionsBody() };
     if (url.pathname.endsWith("/instances")) return { status, body: instancesBody(["2026-10-08T08:00:00Z", "2026-10-08T09:00:00Z"]) };
     if (url.pathname.includes("percentiles")) return { status, body: options.percentiles ?? percentilesBody(times) };
-    return { status, body: probabilitiesBody(times) };
+    return { status, body: options.probabilities ?? probabilitiesBody(times) };
   });
   const logger = new RecordingLogger();
   const service = createVenueSkyService({
@@ -127,19 +132,85 @@ describe("horizon selection", () => {
     expect(Date.parse(answer.body.validTo) - Date.parse(answer.body.validFrom)).toBe(3 * HOUR);
   });
 
-  it("serves normals beyond the horizon without calling the Met Office", async () => {
+  it("reads the forecast once to learn how far it reaches, then answers later dates without asking again", async () => {
     const { service, calls } = harness();
-    const answer = await service.skyFor(VENUE, ISSUED + 30 * 24 * HOUR);
-    expect(answer.body.kind).toBe("normals");
-    expect(answer.body.degraded).toEqual({ reason: "beyond_forecast_horizon" });
-    expect(calls).toHaveLength(0);
+    const far = await service.skyFor(VENUE, ISSUED + 30 * 24 * HOUR);
+    expect(far.body.kind).toBe("normals");
+    expect(far.body.degraded).toEqual({ reason: "beyond_forecast_horizon" });
+    expect(calls).toHaveLength(5);
+    expect((await service.skyFor(VENUE, ISSUED + 40 * 24 * HOUR)).body.degraded).toEqual({ reason: "beyond_forecast_horizon" });
+    expect(calls).toHaveLength(5);
   });
 
-  it("serves normals past the forecast's last step", async () => {
+  it("serves the last core step itself, and normals a moment after it", async () => {
     const { service } = harness();
-    // The fixture run ends at T+185 h; T+190 h is inside the 192 h pre-check.
-    const answer = await service.skyFor(VENUE, ISSUED + 190 * HOUR);
-    expect(answer.body.degraded).toEqual({ reason: "beyond_forecast_horizon" });
+    const last = ISSUED + 185 * HOUR;
+    const atLast = await service.skyFor(VENUE, last);
+    expect(atLast.body.kind).toBe("forecast");
+    expect(atLast.body.validTo).toBe(new Date(last).toISOString());
+    expect((await service.skyFor(VENUE, last + 1)).body.degraded).toEqual({ reason: "beyond_forecast_horizon" });
+  });
+
+  it("serves a forecast as far as the core series reach, past the old 192 h limit", async () => {
+    const { service } = harness({ times: forecastTimes(ISSUED, 120, 75) }); // to T+344 h, about 14.3 days
+    expect((await service.skyFor(VENUE, ISSUED + 300 * HOUR)).body.kind).toBe("forecast");
+    expect((await service.skyFor(VENUE, ISSUED + 344 * HOUR)).body.kind).toBe("forecast");
+    expect((await service.skyFor(VENUE, ISSUED + 344 * HOUR + 1)).body.degraded).toEqual({ reason: "beyond_forecast_horizon" });
+  });
+
+  it("ends the forecast where the shortest core series ends", async () => {
+    const times = forecastTimes(ISSUED, 120, 22);
+    const toT99 = times.slice(0, 100);
+    const { service } = harness({
+      percentiles: percentilesBody(times, { windSpeed10m: { unit: "m/s", values: toT99.map(() => 4.5), times: toT99, extraAxis: MEDIAN } }),
+    });
+    expect((await service.skyFor(VENUE, ISSUED + 99 * HOUR)).body.windMs).toBe(4.5);
+    expect((await service.skyFor(VENUE, ISSUED + 99 * HOUR + 1)).body.degraded).toEqual({ reason: "beyond_forecast_horizon" });
+  });
+
+  it("returns each other field as null past its own last step, never extrapolating", async () => {
+    const times = forecastTimes(ISSUED, 120, 22);
+    const toT47 = times.slice(0, 48);
+    const toT71 = times.slice(0, 72);
+    const { service } = harness({
+      percentiles: percentilesBody(times, {
+        visibilityInAir1p5m: { unit: "m", values: toT47.map(() => 15_000), times: toT47, extraAxis: MEDIAN },
+        weatherCodePt01h: { unit: "1", values: toT71.map(() => 12), times: toT71, bounds: toT71.map((t) => [t - HOUR, t] as const) },
+      }),
+      probabilities: probabilitiesBody(toT47),
+    });
+    const lastVisibility = await service.skyFor(VENUE, ISSUED + 47 * HOUR);
+    expect(lastVisibility.body.visibilityM).toBe(15_000);
+    expect(lastVisibility.body.fog).toBe(0.05);
+    const pastVisibility = await service.skyFor(VENUE, ISSUED + 47 * HOUR + 1);
+    expect(pastVisibility.body.kind).toBe("forecast");
+    expect(pastVisibility.body.visibilityM).toBeNull();
+    expect(pastVisibility.body.fog).toBeNull();
+    expect(pastVisibility.body.precipitation).toMatchObject({ type: "rain", probability: null, probabilityDefinition: null });
+    const pastCodes = await service.skyFor(VENUE, ISSUED + 80 * HOUR);
+    expect(pastCodes.body.kind).toBe("forecast");
+    expect(pastCodes.body.weather).toBeNull();
+    expect(pastCodes.body.precipitation.type).toBeNull();
+    expect(pastCodes.body.cloud.total).toBe(0.5);
+    expect(pastCodes.body.windMs).toBe(4.5);
+    expect(pastCodes.body.temperatureC).toBeCloseTo(11, 9);
+  });
+
+  it("takes the precipitation type from the 3-hourly code where the hourly code has ended", async () => {
+    const times = forecastTimes(ISSUED, 120, 22);
+    const toT47 = times.slice(0, 48);
+    const threeHourly = Array.from({ length: 40 }, (_, k) => ISSUED + (k + 1) * 3 * HOUR);
+    const { service } = harness({
+      percentiles: percentilesBody(times, {
+        weatherCodePt01h: { unit: "1", values: toT47.map(() => 7), times: toT47, bounds: toT47.map((t) => [t - HOUR, t] as const) },
+        weatherCodePt03h: { unit: "1", values: threeHourly.map(() => 24), times: threeHourly, bounds: threeHourly.map((t) => [t - 3 * HOUR, t] as const) },
+      }),
+    });
+    expect((await service.skyFor(VENUE, ISSUED + 10 * HOUR)).body.weather?.code).toBe(7);
+    const later = await service.skyFor(VENUE, ISSUED + 60 * HOUR);
+    expect(later.body.weather?.code).toBe(24);
+    expect(later.body.precipitation.type).toBe("snow");
+    expect((await service.skyFor(VENUE, ISSUED + 130 * HOUR)).body.weather).toBeNull();
   });
 
   it("serves normals for the past", async () => {
@@ -204,12 +275,32 @@ describe("forecast body", () => {
     expect(body.cloud.total).toBe(0.5);
   });
 
-  it("gives the sunshine fraction of the day containing the instant", async () => {
-    const { service } = harness();
-    // The fixture's first full day (8 Oct) has 3 h of sunshine.
+  it("states no sunshine fraction for a forecast: the BPF has sunshine only as a 24 h sum", async () => {
+    const { service, calls } = harness();
     const { body } = await service.skyFor(VENUE, ISSUED + HOUR);
-    expect(body.sunshineFraction).toBeGreaterThan(0.25);
-    expect(body.sunshineFraction).toBeLessThan(0.3);
+    expect(body.kind).toBe("forecast");
+    expect(body.sunshineFraction).toBeNull();
+    expect(calls.some((call) => call.url.includes("durationOfSunshineSumPt24h"))).toBe(false);
+  });
+
+  it("logs what the first forecast was read from once per process, with no forecast values", async () => {
+    const { service, logger, clock, calls } = harness();
+    await service.skyFor(VENUE, ISSUED + HOUR);
+    clock.now += FORECAST_REFRESH_MS + 1;
+    await service.skyFor(VENUE, clock.now + HOUR);
+    expect(calls.filter((call) => call.url.includes("/position"))).toHaveLength(4);
+    const entries = logger.entries.filter((entry) => entry.details["event"] === "venue_sky_forecast_metadata");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.level).toBe("info");
+    expect(entries[0]?.details).toMatchObject({ collection: "uk-spot-percentiles", probabilityCollection: "uk-spot-probabilities" });
+    // The instance's own members, by name only, to show whether it states an issue time.
+    expect(entries[0]?.details["instance"]).toEqual(expect.arrayContaining(["(root) keys: extent, id, links"]));
+    expect(entries[0]?.details["series"]).toEqual(expect.arrayContaining([expect.objectContaining({
+      field: "fogProbability",
+      axes: [{ name: "probabilityOfVisibilityInAirBelowThreshold1p5mValues", values: ["<200.0", "<1000.0", "<5000.0"], chosen: 1 }],
+    })]));
+    const logged = JSON.stringify(entries[0]);
+    for (const value of ["284.15", "15000", "4.5", KEY]) expect(logged).not.toContain(value);
   });
 
   it("sets the preset hint from total cloud only", () => {
@@ -266,6 +357,19 @@ describe("collections", () => {
     expect(selected?.["percentiles"]).toEqual({ id: "uk-spot-percentiles", region: "uk", basis: "name" });
     expect(selected?.["probabilities"]).toEqual({ id: "uk-spot-probabilities", region: "uk", basis: "name" });
     expect(selected?.["offered"]).toEqual(V2_COLLECTION_IDS.map((id) => ({ id, title: id, parameters: null })));
+  });
+
+  it("names the sunshine parameters the chosen percentile collection declares", async () => {
+    const { service, logger } = harness({
+      collections: collectionsBody(V2_COLLECTION_IDS, {
+        "uk-spot-percentiles": ["airTemperature1p5m", "cloudAreaFraction", "durationOfSunshineSumPt24h"],
+      }),
+    });
+    await service.skyFor(VENUE, ISSUED + HOUR);
+    expect(logged(logger, "venue_sky_collections_selected")?.["sunshineParameters"]).toEqual(["durationOfSunshineSumPt24h"]);
+    const undeclared = harness();
+    await undeclared.service.skyFor(VENUE, ISSUED + HOUR);
+    expect(logged(undeclared.logger, "venue_sky_collections_selected")?.["sunshineParameters"]).toBeNull();
   });
 
   it("still reads a listing with the v1 names", async () => {

@@ -5,6 +5,7 @@ import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createPlacedItem, type PlacedItem } from "../../lib/placement.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { useSelectionStore } from "../../stores/selection-store.js";
 import { PlacedFurniture, nameplateTextures } from "../PlacedFurniture.js";
 import { mountInStubRoot, type StubRoot } from "./stub-r3f-root.js";
 
@@ -60,13 +61,27 @@ afterEach(() => {
   vi.restoreAllMocks();
   act(() => { useCockpitStore.setState({ cameraInteractionActive: false }); });
   usePlacementStore.setState({ placedItems: [] });
+  useSelectionStore.getState().clearSelection();
 });
 
+/** Plates are for the items in hand: place the tables and select them. */
+function placeSelected(items: readonly PlacedItem[]): void {
+  usePlacementStore.setState({ placedItems: items });
+  useSelectionStore.getState().selectMultiple(items.map(({ id }) => id));
+}
+
 describe("furniture nameplate textures", () => {
+  it("shows a plate only over the items in hand", () => {
+    const tables = [labelledTable("Table 1", -5), labelledTable("Table 2", 5)];
+    usePlacementStore.setState({ placedItems: tables });
+    mounted = mountInStubRoot(<PlacedFurniture />);
+    expect(plateTextures(mounted.scene)).toEqual([]);
+    act(() => { useSelectionStore.getState().select(tables[1]?.id ?? ""); });
+    expect(plateTextures(mounted.scene)).toHaveLength(1);
+  });
+
   it("shares identical plates and keeps their textures through a camera gesture", () => {
-    usePlacementStore.setState({
-      placedItems: [labelledTable("Table 1", -5), labelledTable("Table 1", 0), labelledTable("Table 2", 5)],
-    });
+    placeSelected([labelledTable("Table 1", -5), labelledTable("Table 1", 0), labelledTable("Table 2", 5)]);
     mounted = mountInStubRoot(<PlacedFurniture />);
     const initial = plateTextures(mounted.scene);
     expect(initial).toHaveLength(3);
@@ -89,7 +104,7 @@ describe("furniture nameplate textures", () => {
 
   it("disposes a replaced label at once and every texture once after the last plate leaves", () => {
     const tables = [labelledTable("Table 1", -5), labelledTable("Table 2", 5)];
-    usePlacementStore.setState({ placedItems: tables });
+    placeSelected(tables);
     mounted = mountInStubRoot(<PlacedFurniture />);
     const [kept, replaced] = plateTextures(mounted.scene);
     if (kept === undefined || replaced === undefined) throw new Error("Missing plates");

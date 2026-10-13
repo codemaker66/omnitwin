@@ -18,7 +18,10 @@
 //   (https://datahub.metoffice.gov.uk/docs/f/category/site-specific/type/probabilistic-forecast-feature/api-user-guide):
 //   a CoverageCollection of PointSeries coverages, one per parameter, with
 //   t / x / y / z / locationId axes, an extra threshold or percentile axis,
-//   `bounds` for period parameters, and NdArray ranges.
+//   `bounds` for period parameters, and NdArray ranges. Parameters sit on
+//   each coverage by default, as the live service sends them (no
+//   collection-level parameters, production 10 October; CoverageJSON
+//   9.6.4), or on the collection (9.6.5) where a test asks.
 // - Parameter keys: the DataHub "BPF v2 parameter name changes" table and
 //   glossary; units: the glossary ("1", "m", "m/s", "K", "s").
 // ---------------------------------------------------------------------------
@@ -87,7 +90,18 @@ interface ParameterFixture {
   readonly extraAxis?: { readonly name: string; readonly values: readonly (string | number)[]; readonly at: number };
 }
 
-function coverage(key: string, fixture: ParameterFixture, times: readonly number[]): unknown {
+/** Where a body defines its parameters. CoverageJSON (OGC 21-069r2) lets a
+ *  coverage collection hold them (9.6.5) or, when it does not, requires each
+ *  coverage to hold its own (9.6.4). The live v2 service sends no
+ *  collection-level parameters (production, 10 October), so "coverage" is
+ *  the default. */
+export type ParametersAt = "collection" | "coverage";
+
+function parameterObject(key: string, fixture: ParameterFixture): unknown {
+  return { type: "Parameter", observedProperty: { label: { en: key } }, ...(fixture.unit === undefined ? {} : { unit: { symbol: fixture.unit } }) };
+}
+
+function coverage(key: string, fixture: ParameterFixture, times: readonly number[], parametersAt: ParametersAt): unknown {
   const ts = fixture.times ?? times;
   const axes: Record<string, unknown> = {
     t: {
@@ -115,20 +129,24 @@ function coverage(key: string, fixture: ParameterFixture, times: readonly number
   return {
     type: "Coverage",
     domain: { type: "Domain", axes },
+    ...(parametersAt === "coverage" ? { parameters: { [key]: parameterObject(key, fixture) } } : {}),
     ranges: { [key]: { type: "NdArray", dataType: "float", axisNames, shape, values } },
   };
 }
 
-export function coverageCollectionBody(times: readonly number[], parameters: Readonly<Record<string, ParameterFixture>>): unknown {
+export function coverageCollectionBody(
+  times: readonly number[],
+  parameters: Readonly<Record<string, ParameterFixture>>,
+  parametersAt: ParametersAt = "coverage",
+): unknown {
   return {
     type: "CoverageCollection",
     domainType: "PointSeries",
-    parameters: Object.fromEntries(Object.entries(parameters).map(([key, fixture]) => [
-      key,
-      { type: "Parameter", observedProperty: { label: { en: key } }, ...(fixture.unit === undefined ? {} : { unit: { symbol: fixture.unit } }) },
-    ])),
+    ...(parametersAt === "collection"
+      ? { parameters: Object.fromEntries(Object.entries(parameters).map(([key, fixture]) => [key, parameterObject(key, fixture)])) }
+      : {}),
     referencing: [],
-    coverages: Object.entries(parameters).map(([key, fixture]) => coverage(key, fixture, times)),
+    coverages: Object.entries(parameters).map(([key, fixture]) => coverage(key, fixture, times, parametersAt)),
   };
 }
 
@@ -147,7 +165,11 @@ const PERCENTILES = { name: "percentile", values: [50], at: 0 } as const;
 
 /** A percentile body: each parameter's values the same at every step
  *  unless given per step. */
-export function percentilesBody(times: readonly number[], overrides: Partial<Record<string, ParameterFixture>> = {}): unknown {
+export function percentilesBody(
+  times: readonly number[],
+  overrides: Partial<Record<string, ParameterFixture>> = {},
+  parametersAt: ParametersAt = "coverage",
+): unknown {
   const n = times.length;
   const constant = (value: number): number[] => Array.from({ length: n }, () => value);
   const day = 24 * HOUR;
@@ -177,12 +199,12 @@ export function percentilesBody(times: readonly number[], overrides: Partial<Rec
   for (const [key, value] of Object.entries({ ...base, ...overrides })) {
     if (value !== undefined) merged[key] = value;
   }
-  return coverageCollectionBody(times, merged);
+  return coverageCollectionBody(times, merged, parametersAt);
 }
 
 /** A probability body: precipitation at the 0.1 mm/h threshold and fog
  *  below 1000 m, each among other thresholds. */
-export function probabilitiesBody(times: readonly number[], precipitation = 0.2, fog = 0.05): unknown {
+export function probabilitiesBody(times: readonly number[], precipitation = 0.2, fog = 0.05, parametersAt: ParametersAt = "coverage"): unknown {
   const n = times.length;
   return coverageCollectionBody(times, {
     probabilityOfLwePrecipitationRateAboveThreshold: {
@@ -203,7 +225,7 @@ export function probabilitiesBody(times: readonly number[], precipitation = 0.2,
         at: 1,
       },
     },
-  });
+  }, parametersAt);
 }
 
 export interface RecordedCall {

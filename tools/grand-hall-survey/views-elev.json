@@ -1,0 +1,8 @@
+[
+ {"name":"elev-window","eye":[8.8,-5.0,4.5],"target":[8.8,-6.0,4.5],"up":[0,0,1],"size":[22.5,9.6],"pixels":[2250,960],"near":3.0,"far":8.0,"modes":["color","position"]},
+ {"name":"elev-door","eye":[8.8,-5.0,4.5],"target":[8.8,-4.0,4.5],"up":[0,0,1],"size":[22.5,9.6],"pixels":[2250,960],"near":3.6,"far":8.0,"modes":["color","position"]},
+ {"name":"elev-fire","eye":[8.8,-4.9,4.5],"target":[7.8,-4.9,4.5],"up":[0,0,1],"size":[12.4,9.6],"pixels":[1240,960],"near":8.4,"far":14.0,"modes":["color","position"]},
+ {"name":"elev-end","eye":[8.8,-4.9,4.5],"target":[9.8,-4.9,4.5],"up":[0,0,1],"size":[12.4,9.6],"pixels":[1240,960],"near":8.4,"far":14.0,"modes":["color","position"]},
+ {"name":"rcp","eye":[8.8,-4.9,1.0],"target":[8.8,-4.9,2.0],"up":[0,1,0],"size":[22.5,12.4],"pixels":[2250,1240],"near":3.5,"far":10.0,"modes":["color","position"]},
+ {"name":"floor","eye":[8.8,-4.9,1.2],"target":[8.8,-4.9,0.0],"up":[0,1,0],"size":[22.5,12.4],"pixels":[2250,1240],"near":0.0,"far":3.0,"modes":["color","position"]}
+]

@@ -1,5 +1,6 @@
 import { CANONICAL_ASSETS, type CanonicalAsset, type TableShape } from "@omnitwin/types";
 import type { FurnitureCategory } from "@omnitwin/types";
+import { craftedFurniturePreviewUrl } from "./crafted-furniture.js";
 
 // ---------------------------------------------------------------------------
 // Catalogue — furniture definitions for the venue planning tool
@@ -42,7 +43,7 @@ export interface CatalogueItem {
   readonly subtitle: string;
   /** URL to a .glb model file. Null = use procedural mesh. */
   readonly meshUrl: string | null;
-  /** Rendered model preview, when supplied. */
+  /** Rendered preview of the model the planner draws, when there is one. */
   readonly thumbnailUrl?: string | null;
 }
 
@@ -61,7 +62,8 @@ function canonicalToCatalogue(a: CanonicalAsset): CatalogueItem {
     maxCount: a.maxCount,
     subtitle: a.subtitle,
     meshUrl: a.meshUrl ?? null,
-    thumbnailUrl: a.thumbnailUrl ?? null,
+    // Crafted pieces show their own render, not the supplied model's.
+    thumbnailUrl: craftedFurniturePreviewUrl(a.slug) ?? a.thumbnailUrl ?? null,
   };
 }
 

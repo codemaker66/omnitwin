@@ -1,5 +1,6 @@
 import { useState, type ReactElement } from "react";
 import { getCanonicalAssetById } from "@omnitwin/types";
+import { craftedFurniturePreviewUrl } from "../../../lib/crafted-furniture.js";
 import chair from "../../../assets/inventory-style/chiavari-chair.webp";
 import chair128 from "../../../assets/inventory-style/ladder/chiavari-chair-128.webp";
 import chair256 from "../../../assets/inventory-style/ladder/chiavari-chair-256.webp";
@@ -38,6 +39,13 @@ function illustration(name: string): Illustration | null {
   return null;
 }
 
+/** The rendered preview of the model the planner draws for a catalogue asset. */
+function modelPreviewUrl(assetId: string): string | undefined {
+  const asset = getCanonicalAssetById(assetId);
+  if (asset === undefined) return undefined;
+  return craftedFurniturePreviewUrl(asset.slug) ?? asset.thumbnailUrl;
+}
+
 /**
  * The widest the picture is drawn, in CSS px: InventoryStyle.css sets a box
  * at most 96 px tall in the list and 360 px for the featured item, and
@@ -53,14 +61,14 @@ export function inventoryPictureSizes(aspect: number, hero: boolean): string {
  * every candidate first.
  */
 export function inventoryPictureSource(name: string, assetId?: string): string | null {
-  const modelPreview = assetId === undefined ? undefined : getCanonicalAssetById(assetId)?.thumbnailUrl;
+  const modelPreview = assetId === undefined ? undefined : modelPreviewUrl(assetId);
   return modelPreview ?? illustration(name)?.src ?? null;
 }
 
 export function InventoryPicture({ name, assetId, hero = false }: {
   readonly name: string; readonly assetId?: string; readonly hero?: boolean;
 }): ReactElement {
-  const modelPreview = assetId === undefined ? undefined : getCanonicalAssetById(assetId)?.thumbnailUrl;
+  const modelPreview = assetId === undefined ? undefined : modelPreviewUrl(assetId);
   const art = modelPreview === undefined ? illustration(name) : null;
   const src = modelPreview ?? art?.src ?? null;
   const caption = modelPreview === undefined ? "Illustrative view" : "3D model preview";

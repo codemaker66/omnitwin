@@ -181,12 +181,24 @@ function capTier(tier: DeviceTier, cap: DeviceTier): DeviceTier {
  */
 export function classifyDeviceInContext(rendererString: string, context: DeviceContext): DeviceTier {
   const tier = classifyDevice(rendererString);
-  const agent = context.userAgent;
-  const phone = /iPhone|iPod/.test(agent) || (/Android/.test(agent) && /Mobile/.test(agent));
-  const tablet = /iPad/.test(agent) || (/Macintosh/.test(agent) && context.maxTouchPoints > 1) || (/Android/.test(agent) && !/Mobile/.test(agent));
-  if (phone) return capTier(tier, "low");
-  if (tablet) return capTier(tier, "medium");
+  const formFactor = deviceFormFactor(context);
+  if (formFactor === "phone") return capTier(tier, "low");
+  if (formFactor === "tablet") return capTier(tier, "medium");
   return tier;
+}
+
+export type DeviceFormFactor = "phone" | "tablet" | "desktop";
+
+/**
+ * What kind of device the browser says this is, read from the user agent and
+ * touch support alone (no GPU probe), with the limits `classifyDeviceInContext`
+ * describes.
+ */
+export function deviceFormFactor(context: DeviceContext): DeviceFormFactor {
+  const agent = context.userAgent;
+  if (/iPhone|iPod/.test(agent) || (/Android/.test(agent) && /Mobile/.test(agent))) return "phone";
+  if (/iPad/.test(agent) || (/Macintosh/.test(agent) && context.maxTouchPoints > 1) || (/Android/.test(agent) && !/Mobile/.test(agent))) return "tablet";
+  return "desktop";
 }
 
 export function currentDeviceContext(): DeviceContext {

@@ -147,14 +147,15 @@ describe("GET /venues/:venueId/sky — the committed normals", () => {
     await server.close();
   });
 
-  it("answers a date beyond the horizon with the month's HadUK-Grid normals for the Trades Hall cell", async () => {
+  it("answers a far date with the month's HadUK-Grid normals for the Trades Hall cell", async () => {
     const at = "2027-01-15T18:00:00Z";
     const response = await server.inject({ method: "GET", url: `/venues/${LOCATED}/sky?at=${encodeURIComponent(at)}` });
     expect(response.statusCode).toBe(200);
     expect(response.headers["cache-control"]).toBe("public, max-age=3600");
     const sky = VenueSkySchema.parse(response.json<{ data: unknown }>().data);
     expect(sky.kind).toBe("normals");
-    expect(sky.degraded).toEqual({ reason: "beyond_forecast_horizon" });
+    // The horizon comes from the forecast's data, so without a key no forecast is read.
+    expect(sky.degraded).toEqual({ reason: "forecast_not_configured" });
     const january = SKY_NORMALS[0]?.months[0];
     expect(sky.climatology).toMatchObject({
       period: "1991-2020",
