@@ -226,11 +226,11 @@ describe("allowedTransitionTargets", () => {
     expect(allowedTransitionTargets("released", "staff")).toEqual([]);
   });
 
-  it("offers the matrix to every role the API lets move the diary (T-619)", () => {
-    for (const role of ["admin", "manager", "staff", "sales"]) {
+  it("offers the matrix to every role the API lets move the diary, the office alone since goal 19 D2 (T-619)", () => {
+    for (const role of ["admin", "staff"]) {
       expect(allowedTransitionTargets("hold", role).length, role).toBeGreaterThan(0);
     }
-    for (const role of ["hallkeeper", "planner", "client", "caterer", ""]) {
+    for (const role of ["manager", "sales", "hallkeeper", "planner", "client", "caterer", ""]) {
       expect(allowedTransitionTargets("hold", role), role).toEqual([]);
     }
   });

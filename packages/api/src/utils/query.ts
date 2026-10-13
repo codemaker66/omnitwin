@@ -195,10 +195,11 @@ export function canWriteInventory(
 /** The client's side of the house: the people who plan a room and propose. */
 const CLIENT_SIDE_ROLES: ReadonlySet<string> = new Set(["client", "planner"]);
 
-/** Who may pencil a hold linked to a plan at the venue: everyone who may ink
- *  (booking-mutations' DIARY_WRITE_ROLES, restated here so this leaf has no
- *  service import) — the client's side is admitted by the event link. */
-const WINDOW_PROPOSER_VENUE_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "manager", "sales"]);
+/** Who may pencil a hold linked to a plan at the venue: the office, everyone
+ *  who may ink (booking-mutations' DIARY_WRITE_ROLES, restated here so this
+ *  leaf has no service import; staff and admin since 10 October 2026) — the
+ *  client's side is admitted by the event link. */
+const WINDOW_PROPOSER_VENUE_ROLES: ReadonlySet<string> = new Set(["staff", "admin"]);
 
 /** Who may raise a request on the floor; the client's side raises on their
  *  own event, by the link. */

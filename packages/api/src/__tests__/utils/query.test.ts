@@ -5,6 +5,7 @@ import {
   canAdministerVenue,
   canManageCommercial,
   canManageVenue,
+  canProposeWindow,
   canReadInventory,
   canReadVenuePlanningData,
   canWriteEvents,
@@ -346,5 +347,38 @@ describe("capability helpers as a set", () => {
     expect(canReadInventory(caterer, VENUE_A)).toBe(false);
     expect(canWriteInventory(caterer, VENUE_A)).toBe(false);
     expect(canManageVenue(caterer, VENUE_A)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Goal 19 D2: who may propose a window, a HOLD linked to a plan (never ink).
+// The office proposes at its own venue; the client's side only by a live
+// event link the caller has proved; nobody else, whatever their venue.
+// ---------------------------------------------------------------------------
+
+describe("canProposeWindow (goal 19 D2)", () => {
+  it("admits staff and admin at their own venue, and refuses them elsewhere", () => {
+    for (const role of ["staff", "admin"] as const) {
+      expect(canProposeWindow(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(true);
+      expect(canProposeWindow(makeUser({ role, venueId: VENUE_B }), VENUE_A), `${role} elsewhere`).toBe(false);
+    }
+  });
+
+  it("admits a client or planner only with the live event link, never on a venue alone", () => {
+    for (const role of ["client", "planner"] as const) {
+      expect(canProposeWindow(makeUser({ role, venueId: null }), VENUE_A, true), `${role} with link`).toBe(true);
+      expect(canProposeWindow(makeUser({ role, venueId: null }), VENUE_A, false), `${role} without link`).toBe(false);
+      expect(canProposeWindow(makeUser({ role, venueId: VENUE_A }), VENUE_A, false), `${role} at venue, no link`).toBe(false);
+    }
+  });
+
+  it("refuses manager, sales, hallkeeper and caterer even at their own venue and with a link (10 October 2026)", () => {
+    for (const role of ["manager", "sales", "hallkeeper", "caterer", "future_role"]) {
+      expect(canProposeWindow(makeUser({ role, venueId: VENUE_A }), VENUE_A, true), role).toBe(false);
+    }
+  });
+
+  it("admits a platform admin for any venue", () => {
+    expect(canProposeWindow(makeUser({ role: "client", platformRole: "admin", venueId: null }), VENUE_A)).toBe(true);
   });
 });

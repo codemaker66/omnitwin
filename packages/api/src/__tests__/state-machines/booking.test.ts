@@ -53,15 +53,15 @@ describe("booking role policy ↔ structural matrix drift guard", () => {
 describe("canTransitionBooking", () => {
   it("every role that may ink the diary may perform every structural transition", () => {
     for (const [from, to] of ALL_VALID_PAIRS) {
-      for (const role of ["staff", "manager", "sales", "admin"] as const) {
+      for (const role of ["staff", "admin"] as const) {
         expect(canTransitionBooking(from, to, role), `${role} ${from}→${to}`).toBe(true);
       }
     }
   });
 
-  it("hallkeeper, client, planner and caterer may perform none", () => {
+  it("manager, sales, hallkeeper, client, planner and caterer may perform none (goal 19 D2, 10 October 2026)", () => {
     for (const [from, to] of ALL_VALID_PAIRS) {
-      for (const role of ["hallkeeper", "client", "planner", "caterer"] as const) {
+      for (const role of ["manager", "sales", "hallkeeper", "client", "planner", "caterer"] as const) {
         expect(canTransitionBooking(from, to, role), `${role} ${from}→${to}`).toBe(false);
       }
     }

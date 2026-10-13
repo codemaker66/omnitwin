@@ -112,10 +112,13 @@ export const PG_EXCLUSION_VIOLATION = "23P01";
 export const PG_CHECK_VIOLATION = "23514";
 export const PG_UNIQUE_VIOLATION = "23505";
 
-// Who may ink the diary. Sales books the room they sold; a manager is senior
-// venue authority. Hallkeepers read the day but do not move it, and caterers
-// are event-scoped (goal 18 §6 decisions 6a and 6b).
-export const DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "manager", "sales"]);
+// Who may ink the diary: the office, staff and admin (goal 19 D2; Blake's
+// decision of 10 October 2026, landed with S6). Sales and manager read the
+// Diary and work the pipeline but no longer write a time (goal 18 §6 decision
+// 6a is superseded); hallkeepers read the day but do not move it, and
+// caterers are event-scoped (6b). The client's side proposes a hold through
+// canProposeWindow, never through this set.
+export const DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin"]);
 
 export function canWriteBookings(actor: MutationActor, venueId: string): boolean {
   return DIARY_WRITE_ROLES.has(actor.role) && actor.venueId === venueId;

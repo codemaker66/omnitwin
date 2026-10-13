@@ -74,7 +74,7 @@ export const EVENT_WRITE_ROLES = ["admin", "manager", "staff"] as const;
  * hallkeeper reads the Diary but never writes it; a Diary control offered
  * outside this set ends in a 403.
  */
-export const DIARY_WRITE_ROLES = ["admin", "manager", "staff", "sales"] as const;
+export const DIARY_WRITE_ROLES = ["admin", "staff"] as const;
 
 /** Who keeps a venue's inventory (its stock, reservations and internal
  *  requests): the server's `INVENTORY_ADJUSTER_ROLES`, held equal by test. */

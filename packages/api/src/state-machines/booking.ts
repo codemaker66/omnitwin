@@ -11,12 +11,13 @@ import {
 // Pure functions, no side effects. The STRUCTURAL matrix (which lifecycle
 // moves exist at all) lives in @omnitwin/types booking.ts as the single
 // source of truth; this module layers WHO may perform each move, mirroring
-// state-machines/proposal.ts. The diary is driven by the venue team and the
-// people who sell it: staff, manager and sales, with admin overriding.
-// Hallkeeper is a read-facing ops role here. Client, planner and caterer
-// never touch bookings directly — they act through enquiry/proposal/portal
-// surfaces. Admin override follows the enquiry house rule: any transition,
-// any state.
+// state-machines/proposal.ts. The diary is driven by the office: staff, with
+// admin overriding (goal 19 D2, Blake's decision of 10 October 2026; manager
+// and sales lost the write with S6). Hallkeeper is a read-facing ops role
+// here. Client, planner and caterer never touch bookings directly — they act
+// through enquiry/proposal/portal surfaces, and the client's side proposes a
+// hold through canProposeWindow. Admin override follows the enquiry house
+// rule: any transition, any state.
 //
 // This list must stay in step with DIARY_WRITE_ROLES in
 // services/booking-mutations.ts: the REST gate says "may attempt", this table
@@ -35,7 +36,7 @@ export const BOOKING_MACHINE_STATES = BOOKING_STATES;
 type TransitionRole = UserRole;
 
 /** Who may move the diary. Named once so a transition cannot drift from it. */
-const DIARY_TRANSITION_ROLES: readonly TransitionRole[] = ["staff", "manager", "sales", "admin"];
+const DIARY_TRANSITION_ROLES: readonly TransitionRole[] = ["staff", "admin"];
 
 const BOOKING_TRANSITION_ROLES: Record<string, readonly TransitionRole[]> = {
   "prospect→hold": DIARY_TRANSITION_ROLES,
