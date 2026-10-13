@@ -9,6 +9,8 @@ import { boardRange, msToWallInput, wallInputToMs } from "../../diary/lib/board-
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { CALENDAR_REUSE_MS } from "../../diary/hooks/useCalendar.js";
 import { SLOT_REQUESTS_UNAVAILABLE, SlotRequestsContext } from "../../../components/requests/requests-context.js";
+import { ApiError } from "../../../api/client.js";
+import { ackEventDayOp, listPendingEventDayOps } from "../../../lib/event-day-offline-queue.js";
 
 // ---------------------------------------------------------------------------
 // Render contract for the Day Board page (goal 19 S3): lanes from the live
@@ -254,10 +256,13 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.clearAllMocks();
   useAuthStore.getState().logout();
+  // The offline queue is a module singleton: a tap one case could not send
+  // must not stand on the next case's board.
+  await Promise.all((await listPendingEventDayOps()).map((op) => ackEventDayOp(op.queueKey)));
 });
 
 describe("DayBoardPage", () => {
@@ -472,6 +477,77 @@ describe("DayBoardPage", () => {
       const next = within(screen.getByRole("group", { name: "Record what the room is doing" })).getAllByRole("button");
       expect(next.map((button) => button.textContent)).toEqual(["Flipping", "Done"]);
     });
+  });
+
+  it("tells the hallkeeper while the room's facts are still being read, and when they could not be (goal 19 S5)", async () => {
+    const read: { fail: ((err: unknown) => void) | null } = { fail: null };
+    seen.list.mockImplementation(() => new Promise((_resolve, reject) => { read.fail = reject; }));
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await openSlot("Chamber dinner");
+    expect((await screen.findByText("Reading what the room was seen doing…")).closest(".dayboard-seen-latest")).not.toBeNull();
+    // The read and the tap are independent: the first facts stay on offer.
+    expect(within(screen.getByRole("group", { name: "Record what the room is doing" })).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Room set", "Doors open", "Live"]);
+    act(() => { read.fail?.(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR")); });
+    expect((await screen.findByText("What the room was seen doing could not be read.")).className).toBe("dayboard-seen-latest");
+    expect(screen.queryByText("Nothing recorded for this room yet.")).toBeNull();
+  });
+
+  it("says so when the server refuses a tap, and offers the same facts again (goal 19 S5)", async () => {
+    seen.record.mockRejectedValue(new ApiError(400, "An observation cannot be ahead of the clock.", "OBSERVED_IN_FUTURE"));
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await openSlot("Chamber dinner");
+    expect((await screen.findByText("Nothing recorded for this room yet.")).className).toBe("dayboard-seen-latest");
+    const group = screen.getByRole("group", { name: "Record what the room is doing" });
+    fireEvent.click(within(group).getByRole("button", { name: "Live" }));
+    expect((await screen.findByText("Couldn’t record live: An observation cannot be ahead of the clock.")).className).toBe("dayboard-seen-status");
+    expect(within(screen.getByRole("group", { name: "Record what the room is doing" })).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Room set", "Doors open", "Live"]);
+    expect(screen.queryByText(/waiting to send/u)).toBeNull();
+  });
+
+  it("keeps a tap the connection could not carry as this room's own, counted for this room (goal 19 S5)", async () => {
+    seen.record.mockRejectedValue(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"));
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await openSlot("Chamber dinner");
+    const group = await screen.findByRole("group", { name: "Record what the room is doing" });
+    fireEvent.click(within(group).getByRole("button", { name: "Doors open" }));
+    expect((await screen.findByText("Doors open · queued, sends when the connection is back")).className).toBe("dayboard-seen-status");
+    expect((await screen.findByText(/^Doors open \d{2}:\d{2} · .+ · waiting to send$/u)).className).toBe("dayboard-seen-latest");
+    expect(screen.getByText("One tap for this room waiting to send.").className).toBe("dayboard-seen-pending");
+    // The slab carries the fact too, and the next facts follow it.
+    expect(screen.getByText(/^Doors open \d{2}:\d{2}$/u).className).toBe("dayboard-slab-seen");
+    expect(within(screen.getByRole("group", { name: "Record what the room is doing" })).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Live", "Done"]);
+  });
+
+  it("prints a finished room's fact once: the verb says it and the margin stays quiet (goal 19 S5)", async () => {
+    const booking = liveBooking();
+    const doneAt = new Date(Date.now() - 5 * 60_000).toISOString();
+    seen.list.mockResolvedValue([{
+      id: "00000000-0000-4000-8000-00000000f011",
+      venueId: VENUE,
+      bookingId: booking.id,
+      spaceId: GRAND_HALL,
+      kind: "done",
+      observedAt: doneAt,
+      recordedAt: doneAt,
+      actorUserId: null,
+      actorName: "Elaine",
+      actorRole: "hallkeeper",
+      idempotencyKey: "00000000-0000-4000-8000-00000000f012",
+    }]);
+    getCalendarMock.mockResolvedValue(calendarFixture([booking]));
+    renderBoard();
+    await openSlot("Chamber dinner");
+    expect((await screen.findByText(/^Done \d{2}:\d{2} · Elaine$/u)).className).toBe("dayboard-seen-latest");
+    expect(screen.getAllByText(/^Done \d{2}:\d{2}$/u).map((element) => element.className)).toEqual(["dayboard-verb-words"]);
+    // Nothing left to record but the clear-down.
+    expect(within(screen.getByRole("group", { name: "Record what the room is doing" })).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Cleaned"]);
   });
 
   it("puts this hallkeeper's next action in one line at the top, and a tap on it opens the slot", async () => {

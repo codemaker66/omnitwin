@@ -1,23 +1,30 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RecordObservation } from "@omnitwin/types";
-import type { QueuedEventDayOp, EventDayOpOutcome } from "../../../../lib/event-day-offline-queue.js";
+import type { ObservationKind, RecordObservation, SlotObservation } from "@omnitwin/types";
+import type { EventDayOpOutcome, QueuedEventDayOp } from "../../../../lib/event-day-offline-queue.js";
 import type { RequestsLiveEvent } from "../../../../lib/requests-live.js";
 import { ApiError } from "../../../../api/client.js";
 
 // ---------------------------------------------------------------------------
 // The board's facts hook (goal 19 S5; D10, D12) — tests written FIRST.
 //
-// The day's facts are read on mount and again when a fact lands in the
-// venue; a tap goes to the server at once with its own key and the
-// corrected clock's time; when the connection fails the fact stands on the
-// screen with that time and waits in the queue, which drains on reconnect
-// with the same key; a fact the server refuses is reported, not queued.
+// The day's facts are read once on mount and again when a fact lands in the
+// venue, never because the page handed over an equal range in a new object;
+// a tap goes to the server at once with its own key and the corrected
+// clock's time and stands on the screen until the server lists it; when the
+// connection fails the fact stands with that time and waits in the queue,
+// through any refetch, and the queue drains on reconnect or online with the
+// same key; a tap the server refuses for good leaves the queue, one the
+// server could not be asked to keep stays; a refused live tap is reported,
+// not queued; the state of the day's read is told honestly.
 // ---------------------------------------------------------------------------
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
+const OTHER_VENUE = "00000000-0000-4000-8000-000000000002";
 const BOOKING = "00000000-0000-4000-8000-0000000000b1";
+const OTHER_BOOKING = "00000000-0000-4000-8000-0000000000b2";
 const RANGE = { fromMs: Date.parse("2026-10-10T04:00:00.000Z"), toMs: Date.parse("2026-10-11T04:00:00.000Z") };
+const NEXT_DAY = { fromMs: RANGE.toMs, toMs: RANGE.toMs + 24 * 3_600_000 };
 
 const seams = vi.hoisted(() => {
   const queued: QueuedEventDayOp[] = [];
@@ -25,6 +32,8 @@ const seams = vi.hoisted(() => {
   return {
     queued,
     live,
+    // The corrected clock stands still at an instant the device clock never shows.
+    correctedNow: Date.parse("2026-10-10T18:52:30.000Z"),
     listVenueObservations: vi.fn(),
     recordVenueObservation: vi.fn(),
   };
@@ -33,6 +42,10 @@ const seams = vi.hoisted(() => {
 vi.mock("../../../../api/observations.js", () => ({
   listVenueObservations: (...args: unknown[]) => seams.listVenueObservations(...args) as unknown,
   recordVenueObservation: (...args: unknown[]) => seams.recordVenueObservation(...args) as unknown,
+}));
+
+vi.mock("../../../../lib/clock-offset.js", () => ({
+  correctedNowMs: () => seams.correctedNow,
 }));
 
 vi.mock("../../../../lib/requests-live.js", () => ({
@@ -54,6 +67,8 @@ vi.mock("../../../../lib/event-day-offline-queue.js", () => ({
     return Promise.resolve();
   },
   listPendingEventDayOps: () => Promise.resolve([...seams.queued]),
+  // Mirrors the real drain, pinned in event-day-offline-queue.test.ts: "left"
+  // stays, every other outcome is acked, a throw ends the pass.
   drainEventDayOps: async (perform: (op: QueuedEventDayOp) => Promise<EventDayOpOutcome>) => {
     const acked: QueuedEventDayOp[] = [];
     for (const op of [...seams.queued]) {
@@ -73,11 +88,11 @@ vi.mock("../../../../lib/event-day-offline-queue.js", () => ({
 
 import { useSlotObservations } from "../use-slot-observations.js";
 
-function fact(kind: "set" | "doors-open" | "live", observedAt: string, idempotencyKey: string = crypto.randomUUID()) {
+function fact(kind: ObservationKind, observedAt: string, idempotencyKey: string = crypto.randomUUID(), bookingId: string = BOOKING): SlotObservation {
   return {
     id: crypto.randomUUID(),
     venueId: VENUE,
-    bookingId: BOOKING,
+    bookingId,
     spaceId: null,
     kind,
     observedAt,
@@ -87,6 +102,30 @@ function fact(kind: "set" | "doors-open" | "live", observedAt: string, idempoten
     actorRole: "hallkeeper",
     idempotencyKey,
   };
+}
+
+function queuedOp(venueId: string, bookingId: string, kind: ObservationKind, observedAt: string, idempotencyKey: string): QueuedEventDayOp {
+  return {
+    kind: "observation_record",
+    queueKey: `observation:${idempotencyKey}`,
+    venueId,
+    input: { bookingId, kind, observedAt, idempotencyKey },
+    queuedAt: observedAt,
+  };
+}
+
+/** The server as it answers a tap: the same fact back, with its own id. */
+function serverKeepsTaps(): void {
+  seams.recordVenueObservation.mockImplementation((_venueId: unknown, input: RecordObservation) =>
+    Promise.resolve(fact(input.kind, input.observedAt, input.idempotencyKey, input.bookingId)));
+}
+
+function networkError(): ApiError {
+  return new ApiError(0, "Network error — check your connection", "NETWORK_ERROR");
+}
+
+function settle(ms = 200): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -100,50 +139,82 @@ describe("useSlotObservations", () => {
     seams.listVenueObservations.mockResolvedValue([]);
   });
 
+  // Vitest runs without globals, so the library does not unmount for us; a
+  // hook left mounted would answer the next test's window events.
   afterEach(() => {
-    vi.useRealTimers();
+    cleanup();
   });
 
-  it("reads the day's facts on mount, and again when a fact lands in the venue", async () => {
+  it("reads the day's facts once on mount, and again when a fact lands in this venue", async () => {
     seams.listVenueObservations.mockResolvedValue([fact("set", "2026-10-10T17:40:00.000Z")]);
     const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    expect(result.current.status).toBe("loading");
     await waitFor(() => { expect(result.current.status).toBe("ready"); });
     expect(result.current.observations.map((row) => row.kind)).toEqual(["set"]);
+    expect(seams.listVenueObservations).toHaveBeenCalledTimes(1);
     expect(seams.listVenueObservations).toHaveBeenCalledWith(VENUE, RANGE);
-    const before = seams.listVenueObservations.mock.calls.length;
 
     seams.listVenueObservations.mockResolvedValue([fact("set", "2026-10-10T17:40:00.000Z"), fact("doors-open", "2026-10-10T18:52:00.000Z")]);
     act(() => { seams.live.listener?.({ kind: "observation", venueId: VENUE, bookingId: BOOKING }); });
     await waitFor(() => { expect(result.current.observations).toHaveLength(2); });
-    expect(seams.listVenueObservations.mock.calls.length).toBeGreaterThan(before);
+    expect(seams.listVenueObservations).toHaveBeenCalledTimes(2);
     // Another venue's fact is not this board's business.
-    const after = seams.listVenueObservations.mock.calls.length;
-    act(() => { seams.live.listener?.({ kind: "observation", venueId: "elsewhere", bookingId: BOOKING }); });
-    await new Promise((resolve) => { setTimeout(resolve, 200); });
-    expect(seams.listVenueObservations.mock.calls.length).toBe(after);
+    act(() => { seams.live.listener?.({ kind: "observation", venueId: OTHER_VENUE, bookingId: BOOKING }); });
+    await settle();
+    expect(seams.listVenueObservations).toHaveBeenCalledTimes(2);
   });
 
-  it("sends a tap at once with its own key and the clock's time, and keeps the server's fact", async () => {
-    seams.recordVenueObservation.mockImplementation((_venueId: unknown, input: { kind: "doors-open"; idempotencyKey: string; observedAt: string }) =>
-      Promise.resolve(fact(input.kind, input.observedAt, input.idempotencyKey)));
+  it("does not read again for an equal range in a new object; it does when the day changes", async () => {
+    const { result, rerender } = renderHook(
+      ({ range }: { range: { fromMs: number; toMs: number } }) => useSlotObservations(VENUE, range, true, "Elaine"),
+      { initialProps: { range: { ...RANGE } } },
+    );
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    expect(seams.listVenueObservations).toHaveBeenCalledTimes(1);
+    // The page rebuilds its range object on every clock tick.
+    rerender({ range: { ...RANGE } });
+    rerender({ range: { ...RANGE } });
+    await settle(60);
+    expect(seams.listVenueObservations).toHaveBeenCalledTimes(1);
+    rerender({ range: NEXT_DAY });
+    await waitFor(() => { expect(seams.listVenueObservations).toHaveBeenCalledTimes(2); });
+    expect(seams.listVenueObservations).toHaveBeenLastCalledWith(VENUE, NEXT_DAY);
+  });
+
+  it("sends a tap at once with its own key and the corrected clock's time; the fact stands until the server lists it, then once", async () => {
+    serverKeepsTaps();
     const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
     await waitFor(() => { expect(result.current.status).toBe("ready"); });
 
     let outcome: string | null = null;
     await act(async () => { outcome = await result.current.record(BOOKING, "doors-open"); });
     expect(outcome).toBe("sent");
-    const [venueId, input] = seams.recordVenueObservation.mock.calls[0] as [string, { bookingId: string; kind: string; observedAt: string; idempotencyKey: string }];
+    const [venueId, input] = seams.recordVenueObservation.mock.calls[0] as [string, RecordObservation];
     expect(venueId).toBe(VENUE);
-    expect(input.bookingId).toBe(BOOKING);
-    expect(input.kind).toBe("doors-open");
     expect(input.idempotencyKey).toMatch(UUID);
-    expect(Math.abs(Date.parse(input.observedAt) - Date.now())).toBeLessThan(5_000);
+    expect(input).toEqual({
+      bookingId: BOOKING,
+      kind: "doors-open",
+      observedAt: new Date(seams.correctedNow).toISOString(),
+      idempotencyKey: input.idempotencyKey,
+    });
     expect(result.current.observations.map((row) => row.kind)).toEqual(["doors-open"]);
     expect(result.current.pendingCount).toBe(0);
+
+    // A read that does not list the fact yet leaves it standing.
+    act(() => { seams.live.listener?.({ kind: "observation", venueId: VENUE, bookingId: BOOKING }); });
+    await settle();
+    expect(result.current.observations.map((row) => row.kind)).toEqual(["doors-open"]);
+    // Once the server lists it, there is one of it: the server's.
+    const listed = fact("doors-open", input.observedAt, input.idempotencyKey);
+    seams.listVenueObservations.mockResolvedValue([listed]);
+    await act(async () => { await result.current.refresh(); });
+    expect(result.current.observations).toHaveLength(1);
+    expect(result.current.observations[0]?.id).toBe(listed.id);
   });
 
-  it("queues a tap when the connection fails, keeps the fact on screen, and drains it on reconnect with the same key", async () => {
-    seams.recordVenueObservation.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  it("queues a tap when the connection fails, keeps the fact standing through a refetch, and replays it on reconnect with the same key and time", async () => {
+    seams.recordVenueObservation.mockRejectedValueOnce(networkError());
     const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
     await waitFor(() => { expect(result.current.status).toBe("ready"); });
 
@@ -151,39 +222,142 @@ describe("useSlotObservations", () => {
     await act(async () => { outcome = await result.current.record(BOOKING, "live"); });
     expect(outcome).toBe("queued");
     expect(result.current.pendingCount).toBe(1);
+    expect(result.current.pendingByBooking.get(BOOKING)).toBe(1);
     expect(result.current.observations).toHaveLength(1);
     const standing = result.current.observations[0];
     expect(standing?.kind).toBe("live");
     expect(standing?.actorName).toBe("Elaine");
+    expect(standing?.observedAt).toBe(new Date(seams.correctedNow).toISOString());
     const key = standing?.idempotencyKey ?? "";
     expect(key).toMatch(UUID);
+    expect(standing?.id).toBe(`queued:${key}`);
 
-    // The connection returns: the queue replays the same tap, same key.
-    seams.recordVenueObservation.mockImplementation((_venueId: unknown, input: { kind: "live"; observedAt: string; idempotencyKey: string }) =>
-      Promise.resolve(fact(input.kind, input.observedAt, input.idempotencyKey)));
-    seams.listVenueObservations.mockResolvedValue([fact("live", standing?.observedAt ?? "", key)]);
+    // Reads may work while writes do not: a refetch does not drop the queued fact.
+    seams.listVenueObservations.mockResolvedValue([fact("set", "2026-10-10T17:40:00.000Z")]);
+    await act(async () => { await result.current.refresh(); });
+    expect(result.current.observations.map((row) => row.kind)).toEqual(["set", "live"]);
+    expect(result.current.pendingCount).toBe(1);
+
+    // The connection returns: the queue replays the same tap, same key, same time.
+    serverKeepsTaps();
+    seams.listVenueObservations.mockResolvedValue([fact("set", "2026-10-10T17:40:00.000Z"), fact("live", standing?.observedAt ?? "", key)]);
     act(() => { seams.live.listener?.({ kind: "reconnected" }); });
     await waitFor(() => { expect(result.current.pendingCount).toBe(0); });
-    const replayed = seams.recordVenueObservation.mock.calls.at(-1) as [string, { idempotencyKey: string; observedAt: string }];
+    const replayed = seams.recordVenueObservation.mock.calls.at(-1) as [string, RecordObservation];
     expect(replayed[1].idempotencyKey).toBe(key);
     expect(replayed[1].observedAt).toBe(standing?.observedAt);
+    await waitFor(() => {
+      const live = result.current.observations.filter((row) => row.kind === "live");
+      expect(live).toHaveLength(1);
+      expect(live[0]?.id).not.toMatch(/^queued:/u);
+    });
     expect(seams.queued).toHaveLength(0);
   });
 
-  it("reports a tap the server refuses and queues nothing", async () => {
+  it("queues a tap on a server blip too, and drains when the browser comes back online", async () => {
+    seams.recordVenueObservation.mockRejectedValueOnce(new ApiError(503, "Service unavailable", "SERVICE_UNAVAILABLE"));
+    const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    await act(async () => { await result.current.record(BOOKING, "set"); });
+    expect(result.current.pendingCount).toBe(1);
+    serverKeepsTaps();
+    act(() => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => { expect(result.current.pendingCount).toBe(0); });
+    expect(seams.recordVenueObservation).toHaveBeenCalledTimes(2);
+    expect(seams.queued).toHaveLength(0);
+  });
+
+  it("stands a tap left in the queue by an earlier visit as soon as the board opens", async () => {
+    seams.queued.push(queuedOp(VENUE, BOOKING, "doors-open", "2026-10-10T18:50:00.000Z", "00000000-0000-4000-8000-00000000aaaa"));
+    seams.recordVenueObservation.mockRejectedValue(networkError());
+    const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    await waitFor(() => { expect(result.current.pendingCount).toBe(1); });
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    expect(result.current.observations.map((row) => row.id)).toEqual(["queued:00000000-0000-4000-8000-00000000aaaa"]);
+    expect(seams.queued).toHaveLength(1);
+  });
+
+  it("drops a replayed tap the server refuses for good, keeps one it could not be asked to keep, and leaves another venue's taps alone", async () => {
+    const refusedKey = "00000000-0000-4000-8000-00000000bbbb";
+    const keptKey = "00000000-0000-4000-8000-00000000cccc";
+    const laterKey = "00000000-0000-4000-8000-00000000dddd";
+    seams.queued.push(
+      queuedOp(VENUE, BOOKING, "set", "2026-10-10T17:00:00.000Z", refusedKey),
+      queuedOp(OTHER_VENUE, BOOKING, "set", "2026-10-10T17:01:00.000Z", "00000000-0000-4000-8000-00000000eeee"),
+      queuedOp(VENUE, OTHER_BOOKING, "live", "2026-10-10T17:05:00.000Z", keptKey),
+      queuedOp(VENUE, OTHER_BOOKING, "done", "2026-10-10T17:09:00.000Z", laterKey),
+    );
+    seams.recordVenueObservation.mockImplementation((_venueId: unknown, input: RecordObservation) => (
+      input.idempotencyKey === refusedKey
+        ? Promise.reject(new ApiError(404, "Booking not found", "NOT_FOUND"))
+        : Promise.reject(new ApiError(401, "Session expired — please sign in again", "UNAUTHORIZED"))
+    ));
+    const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    await waitFor(() => { expect(result.current.pendingCount).toBe(2); });
+    // The refused tap is gone from the queue and the screen; the other venue's
+    // tap was left; the tap that needs a session waited, and the one behind
+    // it was not tried: the order of the day's facts is kept.
+    expect(seams.queued.map((op) => op.queueKey)).toEqual([
+      "observation:00000000-0000-4000-8000-00000000eeee",
+      `observation:${keptKey}`,
+      `observation:${laterKey}`,
+    ]);
+    expect(result.current.observations.map((row) => row.idempotencyKey)).toEqual([keptKey, laterKey]);
+    expect(result.current.pendingByBooking.get(OTHER_BOOKING)).toBe(2);
+    expect(result.current.pendingByBooking.get(BOOKING)).toBeUndefined();
+    expect(seams.recordVenueObservation).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a tap the server refuses, or a session to renew, and queues nothing", async () => {
     seams.recordVenueObservation.mockRejectedValueOnce(new ApiError(400, "An observation cannot be ahead of the clock.", "OBSERVED_IN_FUTURE"));
     const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
     await waitFor(() => { expect(result.current.status).toBe("ready"); });
     await expect(result.current.record(BOOKING, "done")).rejects.toThrow("ahead of the clock");
+    seams.recordVenueObservation.mockRejectedValueOnce(new ApiError(401, "Session expired — please sign in again", "UNAUTHORIZED"));
+    await expect(result.current.record(BOOKING, "done")).rejects.toThrow("sign in again");
     expect(seams.queued).toHaveLength(0);
     expect(result.current.pendingCount).toBe(0);
+    expect(result.current.observations).toHaveLength(0);
+  });
+
+  it("counts a tap as sent when the server kept it but its reply could not be read, and reads the list again", async () => {
+    seams.recordVenueObservation.mockRejectedValueOnce(
+      new ApiError(0, "Server returned an unexpected response shape for POST /venues/v/observations", "RESPONSE_VALIDATION_ERROR"),
+    );
+    const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    expect(seams.listVenueObservations).toHaveBeenCalledTimes(1);
+    seams.listVenueObservations.mockResolvedValue([fact("flipping", "2026-10-10T20:00:00.000Z")]);
+    let outcome: string | null = null;
+    await act(async () => { outcome = await result.current.record(BOOKING, "flipping"); });
+    expect(outcome).toBe("sent");
+    expect(seams.queued).toHaveLength(0);
+    await waitFor(() => { expect(seams.listVenueObservations).toHaveBeenCalledTimes(2); });
+    await waitFor(() => { expect(result.current.observations.map((row) => row.kind)).toEqual(["flipping"]); });
+  });
+
+  it("says when the day's facts could not be read, and a tap does not pretend they were", async () => {
+    seams.listVenueObservations.mockRejectedValue(networkError());
+    serverKeepsTaps();
+    const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    await waitFor(() => { expect(result.current.status).toBe("failed"); });
+    await act(async () => { await result.current.record(BOOKING, "set"); });
+    expect(result.current.status).toBe("failed");
+    expect(result.current.observations.map((row) => row.kind)).toEqual(["set"]);
+    // Once a read lands the board is ready; the sent fact stands until listed.
+    seams.listVenueObservations.mockResolvedValue([]);
+    await act(async () => { await result.current.refresh(); });
+    expect(result.current.status).toBe("ready");
+    expect(result.current.observations.map((row) => row.kind)).toEqual(["set"]);
   });
 
   it("is inert for a screen that cannot read the board", async () => {
     const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, false, ""));
-    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    await settle(50);
     expect(seams.listVenueObservations).not.toHaveBeenCalled();
     expect(result.current.status).toBe("idle");
+    expect(result.current.pendingCount).toBe(0);
     await expect(result.current.record(BOOKING, "set")).rejects.toThrow("cannot record");
   });
 });

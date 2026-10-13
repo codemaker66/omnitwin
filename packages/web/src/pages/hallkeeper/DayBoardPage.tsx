@@ -24,7 +24,7 @@ import {
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { boardRange, formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs, type BoardRange } from "../diary/lib/board-time.js";
-import { ActivityStatus } from "../../components/shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { CALENDAR_REUSE_MS, useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
@@ -35,7 +35,7 @@ import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/ev
 import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
 import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
-import { useSlotObservations, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
+import { isQueuedObservation, useSlotObservations, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import {
   DAY_BOARD_LEGEND,
@@ -454,11 +454,13 @@ function Slab({ slot, view, nowMs, selected, onOpen, wall, vertical, frozen }: {
           {slot.kind !== "ink" && <span className="dayboard-slab-kind"> · {slot.bookingLabel}</span>}
           {linked !== null && <span className="dayboard-linked"><Link2 size={12} aria-hidden="true" />{linked}</span>}
         </span>
-        {/* What the room was last seen doing (S5): a fact beside the schedule. */}
-        {slot.observed !== null && <span className="dayboard-slab-seen">{slot.observed.line}</span>}
         {ring !== null && words !== null && (
           <Ring key={slot.requestSignal?.newestId ?? "steady"} ring={ring} words={words} frozen={frozen} />
         )}
+        {/* What the room was last seen doing (S5): a fact beside the schedule,
+            after the ring so a short lane clips the fact and never the
+            attention channel; a finished slab's verb already says it. */}
+        {slot.observed !== null && slot.state !== "done" && <span className="dayboard-slab-seen">{slot.observed.line}</span>}
       </span>
     </>
   );
@@ -655,16 +657,16 @@ function NextActionLine({ action, urgent, onOpen }: {
   );
 }
 
-/** The open slot: its sheet, its event, its phases and its requests. */
 /** What the hallkeeper is told after a tap: the fact and where it stands. */
 function seenStatus(kind: ObservationKind, outcome: RecordOutcome | "sending" | Error): string {
   const what = describeObservationKind(kind);
   if (outcome === "sending") return `${what} · sending…`;
   if (outcome === "sent") return `${what} · recorded`;
   if (outcome === "queued") return `${what} · queued, sends when the connection is back`;
-  return `Couldn't record ${what.toLowerCase()}: ${outcome.message}`;
+  return `Couldn’t record ${what.toLowerCase()}: ${outcome.message}`;
 }
 
+/** The open slot: its sheet, its event, its phases and its requests. */
 function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, observations, onClose }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
@@ -678,18 +680,41 @@ function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, observat
   // One tap at a time; the words say what happened to it (S5, D10).
   const [busy, setBusy] = useState<ObservationKind | null>(null);
   const [seenLine, setSeenLine] = useState<string | null>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const seenRef = useRef<HTMLElement>(null);
+  const settledRef = useRef(false);
   const tap = useCallback((kind: ObservationKind): void => {
-    if (observations === null) return;
+    if (observations === null || busy !== null) return;
     setBusy(kind);
     setSeenLine(seenStatus(kind, "sending"));
     observations.record(slot.bookingId, kind)
       .then((outcome) => { setSeenLine(seenStatus(kind, outcome)); })
       .catch((err: unknown) => { setSeenLine(seenStatus(kind, err instanceof Error ? err : new Error("the server refused it"))); })
-      .finally(() => { setBusy(null); });
-  }, [observations, slot.bookingId]);
-  const latest = slot.observed === null
-    ? "Nobody has recorded what the room is doing yet."
-    : `${slot.observed.line}${slot.observed.actorName === null ? "" : ` · ${slot.observed.actorName}`}`;
+      .finally(() => { settledRef.current = true; setBusy(null); });
+  }, [observations, slot.bookingId, busy]);
+  // The tapped button leaves with its fact; the keyboard's place is kept on
+  // the next fact to record, or on the section when there is none left.
+  useEffect(() => {
+    if (busy !== null || !settledRef.current) return;
+    settledRef.current = false;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && seenRef.current?.contains(active) === true) return;
+    const next = actionsRef.current?.querySelector("button");
+    if (next instanceof HTMLButtonElement) next.focus();
+    else seenRef.current?.focus();
+  }, [busy]);
+  const nextKinds = nextObservationKinds(slot.observed?.kind ?? null);
+  const waitingHere = observations?.pendingByBooking.get(slot.bookingId) ?? 0;
+  // The latest fact stands as this device's own until the server lists it.
+  const latestWaiting = slot.observed !== null && observations !== null
+    && observations.observations.some((fact) => fact.bookingId === slot.bookingId && isQueuedObservation(fact) && Date.parse(fact.observedAt) === slot.observed?.atMs);
+  const latest: ReactElement | string = slot.observed !== null
+    ? `${slot.observed.line}${slot.observed.actorName === null ? "" : ` · ${slot.observed.actorName}`}${latestWaiting ? " · waiting to send" : ""}`
+    : observations?.status === "loading"
+      ? <ActivityStatus>Reading what the room was seen doing…</ActivityStatus>
+      : observations?.status === "failed"
+        ? "What the room was seen doing could not be read."
+        : "Nothing recorded for this room yet.";
   return (
     <section className={`dayboard-detail dayboard-tone-${slot.tone}`} aria-label={`${room.name}: ${slot.title}`} data-state={slot.state}>
       <div className="dayboard-detail-head">
@@ -706,26 +731,28 @@ function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, observat
       </div>
       {/* What the room was seen doing (S5): the latest fact, and the next
           facts a hallkeeper may record from here. Facts never move a time. */}
-      <section className="dayboard-seen" aria-label="What the room is doing">
+      <section ref={seenRef} className="dayboard-seen" aria-label="What the room is doing" tabIndex={-1}>
         <p className="dayboard-seen-latest">{latest}</p>
-        {observations !== null && (
-          <div className="dayboard-seen-actions" role="group" aria-label="Record what the room is doing">
-            {nextObservationKinds(slot.observed?.kind ?? null).map((kind) => (
+        {observations !== null && nextKinds.length > 0 && (
+          <div ref={actionsRef} className="dayboard-seen-actions" role="group" aria-label="Record what the room is doing">
+            {nextKinds.map((kind) => (
               <button
                 key={kind}
                 type="button"
                 className="dayboard-seen-button"
-                disabled={busy !== null}
+                aria-busy={busy === kind}
+                disabled={busy !== null && busy !== kind}
                 onClick={() => { tap(kind); }}
               >
+                {busy === kind && <ActivityIndicator size={14} />}
                 {describeObservationKind(kind)}
               </button>
             ))}
           </div>
         )}
-        {observations !== null && observations.pendingCount > 0 && (
+        {waitingHere > 0 && (
           <p className="dayboard-seen-pending">
-            {observations.pendingCount === 1 ? "One tap waiting to send." : `${String(observations.pendingCount)} taps waiting to send.`}
+            {waitingHere === 1 ? "One tap for this room waiting to send." : `${String(waitingHere)} taps for this room waiting to send.`}
           </p>
         )}
         <p className="dayboard-seen-status" aria-live="polite">{seenLine ?? ""}</p>
@@ -1081,6 +1108,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       {selected !== null && (
         <div ref={detailRef}>
           <SlotDetail
+            key={selected.slot.bookingId}
             slot={selected.slot}
             room={selected.room}
             timeZone={timeZone}

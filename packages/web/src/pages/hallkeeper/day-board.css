@@ -1264,6 +1264,7 @@ div.dayboard-slab {
 .dayboard[data-register="wall"] .dayboard-verb { font-size: 15px; }
 .dayboard[data-register="wall"] .dayboard-slab-title { font-size: 19px; }
 .dayboard[data-register="wall"] .dayboard-slab-time { font-size: 14px; }
+.dayboard[data-register="wall"] .dayboard-slab-seen { font-size: 14px; }
 .dayboard[data-register="wall"] .dayboard-ring { font-size: 14px; }
 .dayboard[data-register="wall"] .dayboard-tick-label { font-size: 14px; }
 .dayboard[data-register="wall"] .dayboard-now-plaque { font-size: 14px; background: var(--lt-ink); color: var(--lt-ground); }
