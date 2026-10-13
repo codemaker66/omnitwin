@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
 import { captureLaunchOptions } from "./support/capture-launch";
 
 // ---------------------------------------------------------------------------
@@ -447,13 +447,26 @@ placedObjectsTest.describe("Editor with placed objects", () => {
     await mockConfigLoad(page, MOCK_CONFIG_WITH_OBJECTS);
   });
 
+  // The Grand Hall welcome opens when the room itself has loaded, a moment
+  // after the planner shell and its tools render (T-654). An Escape pressed in
+  // that gap reached no dialog, and the welcome then stayed until the room's
+  // capture failed, past the 5 s check on CI's software renderer. Hold the
+  // capture tiles, which this fixture does not serve, so that the welcome can
+  // close only by the Escape under test; then fail them, as before.
+  const grandHallTile = (url: URL): boolean => url.pathname.startsWith("/splats/trades-hall/grand-hall/");
+
   async function openPlacedLayout(page: Page): Promise<void> {
+    const heldTiles: Route[] = [];
+    await page.route(grandHallTile, (route) => { heldTiles.push(route); });
     await page.goto(`/plan/${CONFIG_ID}`);
     await waitForPlannerReady(page);
-    // The welcome explicitly supports native Escape to enter while the room
-    // loads. It also works if the welcome dismissed itself before this action.
+    // The welcome explicitly supports native Escape to enter while the room loads.
+    const welcome = page.getByRole("dialog", { name: "Opening the Grand Hall", exact: true });
+    await expect(welcome).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Opening the Grand Hall", exact: true })).not.toBeVisible();
+    await expect(welcome).not.toBeVisible();
+    await page.unroute(grandHallTile);
+    await Promise.all(heldTiles.map(async (route) => { await route.abort(); }));
   }
 
   placedObjectsTest("SaveSendPanel becomes visible when the loaded config has placed objects", async ({ page }) => {
