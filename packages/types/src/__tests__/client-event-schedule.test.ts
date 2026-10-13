@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClientEventScheduleQuerySchema, ClientEventScheduleSchema } from "../client-event-schedule.js";
+import { ClientEventScheduleQuerySchema, ClientEventScheduleSchema, ProposeWindowSchema } from "../client-event-schedule.js";
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
 const EVENT = "00000000-0000-4000-8000-000000000002";
@@ -78,5 +78,26 @@ describe("client event schedule contract", () => {
     for (const query of [{ configurationId: "not-a-uuid" }, { configurationId: [CONFIGURATION] }, { audience: "admin" }]) {
       expect(ClientEventScheduleQuerySchema.safeParse(query).success).toBe(false);
     }
+  });
+});
+
+describe("ProposeWindowSchema (goal 19 S6)", () => {
+  const window = {
+    spaceId: "00000000-0000-4000-8000-0000000000a1",
+    startsAt: "2030-05-10T18:00:00.000Z",
+    endsAt: "2030-05-10T23:00:00.000Z",
+    idempotencyKey: "00000000-0000-4000-8000-0000000000b1",
+  };
+
+  it("accepts a room, a window and the key, nothing more", () => {
+    expect(ProposeWindowSchema.safeParse(window).success).toBe(true);
+    for (const extra of [{ rank: 1 }, { kind: "ink" }, { ownerUserId: window.spaceId }, { decisionAt: window.startsAt }, { price: 100 }]) {
+      expect(ProposeWindowSchema.safeParse({ ...window, ...extra }).success, Object.keys(extra)[0]).toBe(false);
+    }
+  });
+
+  it("refuses a window that ends before, or at, its start", () => {
+    expect(ProposeWindowSchema.safeParse({ ...window, endsAt: window.startsAt }).success).toBe(false);
+    expect(ProposeWindowSchema.safeParse({ ...window, endsAt: "2030-05-10T17:00:00.000Z" }).success).toBe(false);
   });
 });

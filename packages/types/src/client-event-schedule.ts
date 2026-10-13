@@ -15,7 +15,7 @@ const ScheduleSpaceSchema = z.object({
  *  about a slot, so this is where the request composer finds its bookingId.
  *  No notes, no ladder position, no owner, no decision date: the client reads
  *  their when, never the Diary's internals. */
-const ScheduleSlotSchema = z.object({
+export const ScheduleSlotSchema = z.object({
   bookingId: z.string().uuid(),
   kind: BookingKindSchema,
   title: z.string().trim().min(1).max(200),
@@ -82,3 +82,22 @@ export const ClientEventScheduleQuerySchema = z.object({
   configurationId: ConfigurationIdSchema.optional(),
 }).strict();
 export type ClientEventScheduleQuery = z.infer<typeof ClientEventScheduleQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Proposing a window (goal 19 S6, D2). The client's side says WHEN on the
+// ribbon; the house holds it as a HOLD the office decides on. One proposal
+// per person per event: the same door creates the hold or moves it. Strict:
+// nothing here names a rank, an owner, a decision date, a kind or a price.
+// ---------------------------------------------------------------------------
+
+export const ProposeWindowSchema = z.object({
+  spaceId: SpaceIdSchema,
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime(),
+  /** Minted once per gesture; a resend after a dropped answer replays. */
+  idempotencyKey: z.string().uuid(),
+}).strict().refine((window) => Date.parse(window.endsAt) > Date.parse(window.startsAt), {
+  message: "endsAt must be after startsAt — a window occupies a real interval.",
+  path: ["endsAt"],
+});
+export type ProposeWindow = z.infer<typeof ProposeWindowSchema>;

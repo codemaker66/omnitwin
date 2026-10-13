@@ -4,6 +4,7 @@ import {
   canAccessResource,
   canAdministerVenue,
   canManageCommercial,
+  canEverProposeWindow,
   canManageVenue,
   canProposeWindow,
   canReadInventory,
@@ -380,5 +381,11 @@ describe("canProposeWindow (goal 19 D2)", () => {
 
   it("admits a platform admin for any venue", () => {
     expect(canProposeWindow(makeUser({ role: "client", platformRole: "admin", venueId: null }), VENUE_A)).toBe(true);
+  });
+
+  it("names, before any venue or link is known, who could ever propose: the client's side, the office and a platform admin", () => {
+    for (const role of ["client", "planner", "staff", "admin"]) expect(canEverProposeWindow(makeUser({ role })), role).toBe(true);
+    for (const role of ["manager", "sales", "hallkeeper", "caterer", "future_role"]) expect(canEverProposeWindow(makeUser({ role })), role).toBe(false);
+    expect(canEverProposeWindow(makeUser({ role: "hallkeeper", platformRole: "admin" }))).toBe(true);
   });
 });

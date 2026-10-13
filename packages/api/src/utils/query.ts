@@ -228,6 +228,13 @@ export function canProposeWindow(
   return WINDOW_PROPOSER_VENUE_ROLES.has(user.role) && user.venueId === venueId;
 }
 
+/** Whether this role could ever propose a window, before any venue or link
+ *  is known: the door's pre-check, so a hallkeeper or a caterer is turned
+ *  away before the database is touched. The venue half is canProposeWindow. */
+export function canEverProposeWindow(user: Pick<JwtUser, "role" | "platformRole">): boolean {
+  return isPlatformAdmin(user) || CLIENT_SIDE_ROLES.has(user.role) || WINDOW_PROPOSER_VENUE_ROLES.has(user.role);
+}
+
 /** Raise a request: the floor at the venue, or the client's side on an event
  *  they hold a live link to. */
 export function canRaiseRequest(
