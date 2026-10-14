@@ -1,5 +1,11 @@
 import { defineConfig } from "vitest/config";
 
+// Unit tests run in UTC, as CI's Linux runners do. A test that formats a time
+// for "the device's" zone otherwise reads differently on a machine set to UK
+// time (the ops pages name the venue's clock only for a device elsewhere).
+// Forked workers inherit the environment, so they start in UTC.
+process.env.TZ = "UTC";
+
 // Heap bump on worker Node processes: happy-dom + R3F test fixtures are heavy
 // and V8's ~1.7 GB default crashes the suite on Windows with
 // "FATAL ERROR: MemoryExhaustion: Crash intentionally because memory is
