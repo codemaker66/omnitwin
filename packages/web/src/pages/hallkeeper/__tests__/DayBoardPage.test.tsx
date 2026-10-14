@@ -459,8 +459,10 @@ describe("DayBoardPage", () => {
     renderBoard();
     await openSlot("Chamber dinner");
 
-    // The slab's marginal line and the slot's latest fact, in the same words.
+    // The slab's marginal line and the slot's latest fact, in the same words;
+    // the slab's name carries the fact for a reader who cannot see the margin.
     expect((await screen.findByText(/^Doors open \d{2}:\d{2}$/u)).className).toBe("dayboard-slab-seen");
+    expect(screen.getByRole("button", { name: /^Chamber dinner, .*, Doors open \d{2}:\d{2}$/u })).toBeTruthy();
     expect(screen.getByText(/^Doors open \d{2}:\d{2} · Elaine$/u).className).toBe("dayboard-seen-latest");
     const group = screen.getByRole("group", { name: "Record what the room is doing" });
     expect(within(group).getAllByRole("button").map((button) => button.textContent)).toEqual(["Live", "Done"]);
@@ -522,6 +524,31 @@ describe("DayBoardPage", () => {
     expect(screen.getByText(/^Doors open \d{2}:\d{2}$/u).className).toBe("dayboard-slab-seen");
     expect(within(screen.getByRole("group", { name: "Record what the room is doing" })).getAllByRole("button").map((button) => button.textContent))
       .toEqual(["Live", "Done"]);
+  });
+
+  it("keeps the margin fact on a slab the clock has ended, where the verb does not say it (goal 19 S5)", async () => {
+    const booking = {
+      ...liveBooking(),
+      startsAt: new Date(Date.now() - 4 * 3_600_000).toISOString(),
+      endsAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    };
+    const seenAt = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    seen.list.mockResolvedValue([{
+      id: "00000000-0000-4000-8000-00000000f021",
+      venueId: VENUE,
+      bookingId: booking.id,
+      spaceId: GRAND_HALL,
+      kind: "set",
+      observedAt: seenAt,
+      recordedAt: seenAt,
+      actorUserId: null,
+      actorName: "Elaine",
+      actorRole: "hallkeeper",
+      idempotencyKey: "00000000-0000-4000-8000-00000000f022",
+    }]);
+    getCalendarMock.mockResolvedValue(calendarFixture([booking]));
+    renderBoard();
+    expect((await screen.findByText(/^Room set \d{2}:\d{2}$/u)).className).toBe("dayboard-slab-seen");
   });
 
   it("prints a finished room's fact once: the verb says it and the margin stays quiet (goal 19 S5)", async () => {

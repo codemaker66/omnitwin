@@ -997,6 +997,10 @@ div.dayboard-slab {
 
 /* One tap, 44 px tall, in the paper register's words. */
 .dayboard-seen-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 44px;
   padding: 8px 14px;
   border: 1px solid var(--lt-hairline);

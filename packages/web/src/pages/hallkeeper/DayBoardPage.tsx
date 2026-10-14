@@ -17,6 +17,7 @@ import {
 import {
   describeObservationKind,
   nextObservationKinds,
+  observationMeansOver,
   occasionLabel,
   type HallkeeperSheetSummary,
   type ObservationKind,
@@ -420,7 +421,11 @@ function Slab({ slot, view, nowMs, selected, onOpen, wall, vertical, frozen }: {
   const ring = slot.attention;
   const words = ringWords(slot, nowMs);
   const linked = slot.linkedRooms.length > 0 ? `also ${slot.linkedRooms.join(", ")}` : null;
-  const label = `${slot.title}, ${slot.timeRange}, ${slot.countdown}${words === null ? "" : `, ${words}`}`;
+  // What the room was last seen doing (S5): a fact beside the schedule, in
+  // the margin and in the slab's name; not once the fact is a done or a
+  // cleaned, which the verb already says.
+  const seen = slot.observed !== null && !observationMeansOver(slot.observed.kind) ? slot.observed.line : null;
+  const label = `${slot.title}, ${slot.timeRange}, ${slot.countdown}${words === null ? "" : `, ${words}`}${seen === null ? "" : `, ${seen}`}`;
   const segment = (span: Span): CSSProperties => (
     vertical ? { height: percent(span.width / slabWidth) } : { width: percent(span.width / slabWidth) }
   );
@@ -457,10 +462,9 @@ function Slab({ slot, view, nowMs, selected, onOpen, wall, vertical, frozen }: {
         {ring !== null && words !== null && (
           <Ring key={slot.requestSignal?.newestId ?? "steady"} ring={ring} words={words} frozen={frozen} />
         )}
-        {/* What the room was last seen doing (S5): a fact beside the schedule,
-            after the ring so a short lane clips the fact and never the
-            attention channel; a finished slab's verb already says it. */}
-        {slot.observed !== null && slot.state !== "done" && <span className="dayboard-slab-seen">{slot.observed.line}</span>}
+        {/* After the ring, so a short lane clips the fact and never the
+            attention channel. */}
+        {seen !== null && <span className="dayboard-slab-seen">{seen}</span>}
       </span>
     </>
   );
@@ -692,13 +696,14 @@ function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, observat
       .catch((err: unknown) => { setSeenLine(seenStatus(kind, err instanceof Error ? err : new Error("the server refused it"))); })
       .finally(() => { settledRef.current = true; setBusy(null); });
   }, [observations, slot.bookingId, busy]);
-  // The tapped button leaves with its fact; the keyboard's place is kept on
-  // the next fact to record, or on the section when there is none left.
+  // The tapped button leaves with its fact; if that dropped the keyboard's
+  // place to the document, it is kept on the next fact to record, or on the
+  // section when there is none left. A place moved elsewhere meanwhile stays.
   useEffect(() => {
     if (busy !== null || !settledRef.current) return;
     settledRef.current = false;
     const active = document.activeElement;
-    if (active !== null && active !== document.body && seenRef.current?.contains(active) === true) return;
+    if (active !== null && active !== document.body) return;
     const next = actionsRef.current?.querySelector("button");
     if (next instanceof HTMLButtonElement) next.focus();
     else seenRef.current?.focus();

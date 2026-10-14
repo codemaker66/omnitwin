@@ -30,6 +30,8 @@ import { subscribeRequestsLive } from "../../../lib/requests-live.js";
 // ---------------------------------------------------------------------------
 
 const REFETCH_DEBOUNCE_MS = 120;
+/** How often the queue is tried again while a tap waits and no reconnect comes. */
+export const QUEUE_RETRY_MS = 30_000;
 const QUEUED_ID_PREFIX = "queued:";
 const NO_COUNTS: ReadonlyMap<string, number> = new Map();
 
@@ -60,7 +62,10 @@ type Failure = "connection" | "unauthorized" | "recorded" | "refused";
 
 /** What a failed send means for the tap. */
 function classifyFailure(err: unknown): Failure {
-  if (!(err instanceof ApiError)) return "refused";
+  // The client wraps a failed fetch and every non-2xx in an ApiError; what
+  // reaches here unwrapped is a 2xx whose body could not be parsed, so the
+  // server has the fact.
+  if (!(err instanceof ApiError)) return "recorded";
   if (err.code === "NETWORK_ERROR") return "connection";
   // The server answered 2xx and has the fact; only its reply was unreadable.
   if (err.code === "RESPONSE_VALIDATION_ERROR") return "recorded";
@@ -170,6 +175,25 @@ export function useSlotObservations(
       .catch(() => undefined);
   }, [active, venueId, actorName]);
 
+  // A drain may outlive the day it started in (a step to another day, or
+  // midnight on an always-on board): its follow-up reads through these, so
+  // it asks for the day on screen now, never the day it was started for.
+  const refreshRef = useRef(refresh);
+  const readPendingRef = useRef(readPending);
+  useEffect(() => {
+    refreshRef.current = refresh;
+    readPendingRef.current = readPending;
+  }, [refresh, readPending]);
+
+  // A new day or venue starts from nothing: the old day's rows and its
+  // "ready" do not stand in for the new day's read, and a late answer to the
+  // old day's question is discarded.
+  useEffect(() => {
+    sequenceRef.current += 1;
+    setServerRows([]);
+    setStatus("idle");
+  }, [venueId, fromMs, toMs]);
+
   // Replay this venue's taps in the order they were made; everything else in
   // the queue is left for the screen that owns it. A tap the server refused
   // for good leaves the queue; one it could not be asked to keep stops the
@@ -180,7 +204,12 @@ export function useSlotObservations(
     const run = drainEventDayOps((op) => {
       if (op.kind !== "observation_record" || op.venueId !== venueId) return Promise.resolve("left" as const);
       return recordVenueObservation(venueId, op.input)
-        .then(() => "applied" as const)
+        .then((fact) => {
+          // The server's row stands from this moment; the queue's copy goes
+          // with the ack, and the next read lists the fact in its place.
+          setSentRows((current) => [...current, fact]);
+          return "applied" as const;
+        })
         .catch((err: unknown) => {
           const failure = classifyFailure(err);
           if (failure === "connection" || failure === "unauthorized") throw err;
@@ -189,15 +218,17 @@ export function useSlotObservations(
     })
       .then((acked) => acked.some((op) => op.kind === "observation_record" && op.venueId === venueId))
       .catch(() => false)
-      .then((landed) => readPending().then(() => (landed ? refresh() : undefined)))
+      .then((landed) => readPendingRef.current().then(() => (landed ? refreshRef.current() : undefined)))
       .finally(() => { drainRef.current = null; });
     drainRef.current = run;
     return run;
-  }, [active, venueId, readPending, refresh]);
+  }, [active, venueId]);
 
   useEffect(() => {
     if (!active) return;
     void refresh();
+    // The queue's taps stand from the moment the board opens, before any replay lands.
+    void readPending();
     void drain();
     const unsubscribe = subscribeRequestsLive((event) => {
       if (event.kind === "observation" && event.venueId === venueId) {
@@ -219,7 +250,7 @@ export function useSlotObservations(
         debounceRef.current = null;
       }
     };
-  }, [active, venueId, refresh, drain]);
+  }, [active, venueId, refresh, readPending, drain]);
 
   const record = useCallback((bookingId: string, kind: ObservationKind): Promise<RecordOutcome> => {
     if (!active) {
@@ -261,6 +292,15 @@ export function useSlotObservations(
     for (const n of pendingByBooking.values()) count += n;
     return count;
   }, [pendingByBooking]);
+
+  // A tap queued on a server blip has no reconnect to wait for: while
+  // anything waits, the queue is tried again every so often. A drain that
+  // finds no connection fails at once and costs nothing.
+  useEffect(() => {
+    if (!active || pendingCount === 0) return;
+    const timer = window.setInterval(() => { void drain(); }, QUEUE_RETRY_MS);
+    return () => { window.clearInterval(timer); };
+  }, [active, pendingCount, drain]);
 
   return useMemo(
     () => ({ observations, status, pendingCount, pendingByBooking, record, refresh }),

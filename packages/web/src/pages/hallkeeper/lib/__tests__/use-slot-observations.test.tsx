@@ -86,7 +86,7 @@ vi.mock("../../../../lib/event-day-offline-queue.js", () => ({
   },
 }));
 
-import { useSlotObservations } from "../use-slot-observations.js";
+import { QUEUE_RETRY_MS, useSlotObservations } from "../use-slot-observations.js";
 
 function fact(kind: ObservationKind, observedAt: string, idempotencyKey: string = crypto.randomUUID(), bookingId: string = BOOKING): SlotObservation {
   return {
@@ -143,6 +143,7 @@ describe("useSlotObservations", () => {
   // hook left mounted would answer the next test's window events.
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it("reads the day's facts once on mount, and again when a fact lands in this venue", async () => {
@@ -179,6 +180,42 @@ describe("useSlotObservations", () => {
     rerender({ range: NEXT_DAY });
     await waitFor(() => { expect(seams.listVenueObservations).toHaveBeenCalledTimes(2); });
     expect(seams.listVenueObservations).toHaveBeenLastCalledWith(VENUE, NEXT_DAY);
+  });
+
+  it("reads the day on screen now, not the day it started in, when the day changes while a replay is in flight", async () => {
+    const dayA = fact("set", "2026-10-10T17:40:00.000Z");
+    const dayB = fact("set", "2026-10-11T17:40:00.000Z");
+    seams.listVenueObservations.mockImplementation((_venueId: unknown, range: { fromMs: number }) =>
+      Promise.resolve(range.fromMs === RANGE.fromMs ? [dayA] : [dayB]));
+    const queuedKey = "00000000-0000-4000-8000-00000000abab";
+    seams.queued.push(queuedOp(VENUE, BOOKING, "doors-open", "2026-10-10T18:50:00.000Z", queuedKey));
+    // The replay reaches the server and waits there.
+    const replay: { land: (() => void) | null } = { land: null };
+    seams.recordVenueObservation.mockImplementation((_venueId: unknown, input: RecordObservation) =>
+      new Promise<SlotObservation>((resolve) => {
+        replay.land = () => { resolve(fact(input.kind, input.observedAt, input.idempotencyKey)); };
+      }));
+    const { result, rerender } = renderHook(
+      ({ range }: { range: { fromMs: number; toMs: number } }) => useSlotObservations(VENUE, range, true, "Elaine"),
+      { initialProps: { range: RANGE } },
+    );
+    await waitFor(() => { expect(seams.recordVenueObservation).toHaveBeenCalledTimes(1); });
+    // The queued tap stands from the start, beside the day's facts.
+    await waitFor(() => { expect(result.current.observations.map((row) => row.id)).toEqual([dayA.id, `queued:${queuedKey}`]); });
+
+    // The day changes while the replay is still in flight: the old day's rows
+    // go, the new day's come, the queued tap stands throughout.
+    rerender({ range: NEXT_DAY });
+    await waitFor(() => { expect(result.current.observations.map((row) => row.id)).toEqual([dayB.id, `queued:${queuedKey}`]); });
+    act(() => { replay.land?.(); });
+    await waitFor(() => { expect(result.current.pendingCount).toBe(0); });
+    // The replay's follow-up read asks for the day on screen now, and its
+    // answer is what stands, with the replayed fact beside it until listed.
+    await waitFor(() => { expect(result.current.observations.map((row) => row.idempotencyKey)).toEqual([dayB.idempotencyKey, queuedKey]); });
+    expect(result.current.observations[1]?.id).not.toMatch(/^queued:/u);
+    const asked = seams.listVenueObservations.mock.calls.map((call) => (call[1] as { fromMs: number }).fromMs);
+    expect(asked.at(-1)).toBe(NEXT_DAY.fromMs);
+    expect(result.current.status).toBe("ready");
   });
 
   it("sends a tap at once with its own key and the corrected clock's time; the fact stands until the server lists it, then once", async () => {
@@ -265,6 +302,51 @@ describe("useSlotObservations", () => {
     await waitFor(() => { expect(result.current.pendingCount).toBe(0); });
     expect(seams.recordVenueObservation).toHaveBeenCalledTimes(2);
     expect(seams.queued).toHaveLength(0);
+  });
+
+  it("tries the queue again on a timer while a tap waits with the socket up, as after a server blip", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    seams.recordVenueObservation.mockRejectedValueOnce(new ApiError(502, "Bad gateway", "BAD_GATEWAY"));
+    const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    await act(async () => { await result.current.record(BOOKING, "live"); });
+    expect(result.current.pendingCount).toBe(1);
+    // No reconnect and no online event come; the timer does.
+    serverKeepsTaps();
+    await act(async () => { await vi.advanceTimersByTimeAsync(QUEUE_RETRY_MS); });
+    await waitFor(() => { expect(result.current.pendingCount).toBe(0); });
+    expect(seams.recordVenueObservation).toHaveBeenCalledTimes(2);
+    expect(seams.queued).toHaveLength(0);
+  });
+
+  it("counts a tap as sent when the server's 2xx reply could not be parsed at all", async () => {
+    seams.recordVenueObservation.mockRejectedValueOnce(new SyntaxError("Unexpected token < in JSON"));
+    const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    seams.listVenueObservations.mockResolvedValue([fact("set", "2026-10-10T17:40:00.000Z")]);
+    let outcome: string | null = null;
+    await act(async () => { outcome = await result.current.record(BOOKING, "set"); });
+    expect(outcome).toBe("sent");
+    expect(seams.queued).toHaveLength(0);
+    await waitFor(() => { expect(result.current.observations.map((row) => row.kind)).toEqual(["set"]); });
+  });
+
+  it("keeps a replayed fact standing when the read that should list it fails", async () => {
+    seams.queued.push(queuedOp(VENUE, BOOKING, "done", "2026-10-10T23:40:00.000Z", "00000000-0000-4000-8000-00000000cdcd"));
+    seams.recordVenueObservation.mockRejectedValueOnce(networkError());
+    const { result } = renderHook(() => useSlotObservations(VENUE, RANGE, true, "Elaine"));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    await waitFor(() => { expect(result.current.pendingCount).toBe(1); });
+    // The connection returns for the replay, but the read after it fails.
+    serverKeepsTaps();
+    seams.listVenueObservations.mockRejectedValue(networkError());
+    act(() => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => { expect(result.current.pendingCount).toBe(0); });
+    const standing = result.current.observations;
+    expect(standing.map((row) => row.kind)).toEqual(["done"]);
+    expect(standing[0]?.id).not.toMatch(/^queued:/u);
+    expect(standing[0]?.idempotencyKey).toBe("00000000-0000-4000-8000-00000000cdcd");
+    expect(result.current.status).toBe("ready");
   });
 
   it("stands a tap left in the queue by an earlier visit as soon as the board opens", async () => {
