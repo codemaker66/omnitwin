@@ -4,6 +4,10 @@ Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportion
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
+## Latest operational constraint — 13 October 2026 (T-655): the splat training environment is moving
+
+Blake, verbatim: "Upgrrade the splat and pytorch to the latest and inform our repo we are doing so, multiple sessions may need that info. Try PPISP." The upgrade is under way, not finished. Target for new splat training: PyTorch 2.14.1+cu130 and torchvision 0.29.1 (official cu130 wheels, so CUDA 13.0 RunPod hosts only), gsplat built from GitHub `main` @ `512d366b` (gsplat has no release after 1.5.3; the trial builds it with `BUILD_3DGUT=0`, so 3DGUT needs a separate build) and NVIDIA PPISP v1.3.0 behind an opt-in trainer flag ([D-016a](docs/architecture/adr/D-016a.md), proposed). Environment validation is pending: the full gsplat build succeeded on a RunPod H100 on 13 October, and the smoke test has not yet passed. Until it does, the RunPod image pins stay unchanged (`infra/runpod/Dockerfile`, `omnitwin/trainer:1.5.3-cu124`: gsplat 1.5.3, PyTorch 2.4.1, CUDA 12.4), and old recipes stay reproducible on those pins (the panorama floor lane keeps its paired 60k arms there); compare results across the two environments only as such. D-016's rule stands: splat training runs on RunPod, never on the local PC. Status and the PPISP held-out trial: T-655 in [the task list](docs/state/tasks.md) and [the 13 October session log](docs/sessions/2026-10-13.md).
+
 ## Latest founder direction — 28 September 2026 (T-639)
 
 Blake asked for the visual layer to be rethought from first principles: the Grand Hall splat is "very poor quality ... especially the floor", it "loads very slowly and feels janky", and the planner must become "the most next-gen, useful, cinematic, beautiful and performant venue planning tool", photoreal "so it looks like the real hall, with the real furniture", and a joy for everyone connected to an event. He gave full permission to use or ignore any of our data and to reverse engineer XGRIDS and Matterport.
