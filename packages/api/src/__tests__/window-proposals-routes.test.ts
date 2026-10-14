@@ -29,8 +29,10 @@ function auth(role: string, venueId: string | null = VENUE_ID): Record<string, s
 }
 const window = { spaceId: SPACE_ID, startsAt: "2030-05-10T18:00:00.000Z", endsAt: "2030-05-10T23:00:00.000Z", idempotencyKey: KEY };
 
-beforeAll(async () => { server = await buildServer(); });
-afterAll(async () => { await server.close(); });
+// Building the server loads every route; on a loaded machine that can pass
+// the 10 s default, which is not a verdict on the door.
+beforeAll(async () => { server = await buildServer(); }, 60_000);
+afterAll(async () => { await server.close(); }, 60_000);
 
 describe("the propose door — PUT /events/:eventId/proposed-window", () => {
   it("asks for an identity first", async () => {

@@ -5,9 +5,11 @@ import {
   canAdministerVenue,
   canManageCommercial,
   canEverProposeWindow,
+  canEverReadRoomDay,
   canManageVenue,
   canProposeWindow,
   canReadInventory,
+  canReadRoomDay,
   canReadVenuePlanningData,
   canWriteEvents,
   canWriteInventory,
@@ -387,5 +389,26 @@ describe("canProposeWindow (goal 19 D2)", () => {
     for (const role of ["client", "planner", "staff", "admin"]) expect(canEverProposeWindow(makeUser({ role })), role).toBe(true);
     for (const role of ["manager", "sales", "hallkeeper", "caterer", "future_role"]) expect(canEverProposeWindow(makeUser({ role })), role).toBe(false);
     expect(canEverProposeWindow(makeUser({ role: "hallkeeper", platformRole: "admin" }))).toBe(true);
+  });
+
+  it("lets the client's side read a room's day only by the link, the floor only at its own venue, and a platform admin anywhere (goal 19 S6)", () => {
+    for (const role of ["client", "planner"]) {
+      expect(canReadRoomDay(makeUser({ role, venueId: null }), VENUE_A, true), `${role} with link`).toBe(true);
+      expect(canReadRoomDay(makeUser({ role, venueId: null }), VENUE_A, false), `${role} without link`).toBe(false);
+    }
+    for (const role of ["admin", "manager", "staff", "hallkeeper"]) {
+      expect(canReadRoomDay(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(true);
+      expect(canReadRoomDay(makeUser({ role, venueId: VENUE_B }), VENUE_A), `${role} elsewhere`).toBe(false);
+    }
+    for (const role of ["sales", "caterer", "future_role"]) {
+      expect(canReadRoomDay(makeUser({ role, venueId: VENUE_A }), VENUE_A, true), role).toBe(false);
+    }
+    expect(canReadRoomDay(makeUser({ role: "caterer", venueId: null, platformRole: "admin" }), VENUE_A)).toBe(true);
+  });
+
+  it("names, before any venue or link is known, who could ever read a room's day", () => {
+    for (const role of ["client", "planner", "admin", "manager", "staff", "hallkeeper"]) expect(canEverReadRoomDay(makeUser({ role })), role).toBe(true);
+    for (const role of ["sales", "caterer", "future_role"]) expect(canEverReadRoomDay(makeUser({ role })), role).toBe(false);
+    expect(canEverReadRoomDay(makeUser({ role: "sales", platformRole: "admin" }))).toBe(true);
   });
 });

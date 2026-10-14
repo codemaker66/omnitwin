@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ClientEventScheduleQuerySchema, ClientEventScheduleSchema, ProposeWindowSchema } from "../client-event-schedule.js";
+import {
+  ClientEventScheduleQuerySchema,
+  ClientEventScheduleSchema,
+  ProposeWindowSchema,
+  RoomDayQuerySchema,
+  RoomDaySchema,
+} from "../client-event-schedule.js";
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
 const EVENT = "00000000-0000-4000-8000-000000000002";
@@ -99,5 +105,41 @@ describe("ProposeWindowSchema (goal 19 S6)", () => {
   it("refuses a window that ends before, or at, its start", () => {
     expect(ProposeWindowSchema.safeParse({ ...window, endsAt: window.startsAt }).success).toBe(false);
     expect(ProposeWindowSchema.safeParse({ ...window, endsAt: "2030-05-10T17:00:00.000Z" }).success).toBe(false);
+  });
+});
+
+describe("RoomDaySchema (goal 19 S6)", () => {
+  const span = { startsAt: "2030-05-10T18:00:00.000Z", endsAt: "2030-05-10T23:00:00.000Z" };
+  const roomDay = {
+    eventId: EVENT,
+    space: { id: ROOM, name: "Hall" },
+    day: "2030-05-10",
+    timezone: "Europe/London",
+    range: { startsAt: "2030-05-10T03:00:00.000Z", endsAt: "2030-05-11T03:00:00.000Z" },
+    turnaroundMinutes: 90,
+    spans: [
+      { kind: "yours", bookingId: BOOKING, title: "Dinner", ...span },
+      { kind: "held", startsAt: "2030-05-10T14:00:00.000Z", endsAt: "2030-05-10T16:00:00.000Z" },
+      { kind: "busy", startsAt: "2030-05-10T08:00:00.000Z", endsAt: "2030-05-10T13:00:00.000Z" },
+    ],
+  };
+
+  it("accepts the client's own slot by name and anonymous spans for the rest", () => {
+    expect(RoomDaySchema.safeParse(roomDay).success).toBe(true);
+    expect(RoomDayQuerySchema.safeParse({ spaceId: ROOM, day: "2030-05-10" }).success).toBe(true);
+  });
+
+  it("refuses a name, a booking id or anything else on an anonymous span: the privacy pin", () => {
+    for (const leak of [{ title: "The MacLeod wedding" }, { bookingId: BOOKING }, { eventId: EVENT }, { ownerName: "Isla" }]) {
+      for (const kind of ["held", "busy"]) {
+        expect(RoomDaySchema.safeParse({ ...roomDay, spans: [{ kind, ...span, ...leak }] }).success, `${kind} ${Object.keys(leak)[0] ?? ""}`).toBe(false);
+      }
+    }
+  });
+
+  it("refuses a day that is not YYYY-MM-DD, an unknown query key and an out-of-range turnaround", () => {
+    expect(RoomDayQuerySchema.safeParse({ spaceId: ROOM, day: "10-05-2030" }).success).toBe(false);
+    expect(RoomDayQuerySchema.safeParse({ spaceId: ROOM, day: "2030-05-10", extra: 1 }).success).toBe(false);
+    expect(RoomDaySchema.safeParse({ ...roomDay, turnaroundMinutes: 1441 }).success).toBe(false);
   });
 });

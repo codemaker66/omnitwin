@@ -4,6 +4,7 @@ import {
   CreateEventSchema,
   CreateLayoutVariantSchema,
   DEFAULT_EVENT_PHASE_TEMPLATE,
+  EVENT_PHASE_TEMPLATE_KEYS,
   EVENT_STATUSES,
   EventPhaseGraphSchema,
   PhaseLayoutSnapshotSchema,
@@ -35,6 +36,37 @@ describe("event phase graph contracts", () => {
       "closed",
       "cancelled",
     ]);
+  });
+
+  it("pins the template keys, including the When ribbon's setup handle (goal 19 S6)", () => {
+    // The ribbon's handles reuse keys where a phase already exists: doors
+    // writes "arrival", clear-down writes "breakdown"; live is no phase of its
+    // own. Only "setup" is new. The DB column is a free varchar, so no
+    // migration rides along; the seed template below stays at eight phases.
+    expect(EVENT_PHASE_TEMPLATE_KEYS).toEqual([
+      "arrival",
+      "ceremony",
+      "room-flip",
+      "dinner",
+      "speeches",
+      "bar-queue",
+      "dancing",
+      "breakdown",
+      "setup",
+    ]);
+    expect(EVENT_PHASE_TEMPLATE_KEYS).toHaveLength(9);
+    const setup = CreateEventPhaseSchema.safeParse({
+      templateKey: "setup",
+      spaceId: SPACE_ID,
+      name: "Setup",
+      startsAt: NOW,
+      durationMinutes: 60,
+    });
+    expect(setup.success).toBe(true);
+    for (const templateKey of ["live", "clear-down"]) {
+      expect(CreateEventPhaseSchema.safeParse({ templateKey, name: "Handle" }).success).toBe(false);
+    }
+    expect(DEFAULT_EVENT_PHASE_TEMPLATE).toHaveLength(8);
   });
 
   it("creates the requested default phase template", () => {

@@ -204,6 +204,17 @@ export const api = {
   ): Promise<T> =>
     request<T>({ method: "POST", path, body, skipAuth, ...options }, schema),
 
+  /** PUT: the whole of one thing the caller owns, idempotent by nature; a
+   *  keyed PUT (goal 19 S6, the proposed window) also carries the house
+   *  Idempotency-Key so the ledger can answer a retry. */
+  put: <T>(
+    path: string,
+    body: unknown,
+    schema?: ResponseSchema<T>,
+    options?: { idempotencyKey?: string; signal?: AbortSignal },
+  ): Promise<T> =>
+    request<T>({ method: "PUT", path, body, ...options }, schema),
+
   patch: <T>(
     path: string,
     body: unknown,

@@ -235,6 +235,25 @@ export function canEverProposeWindow(user: Pick<JwtUser, "role" | "platformRole"
   return isPlatformAdmin(user) || CLIENT_SIDE_ROLES.has(user.role) || WINDOW_PROPOSER_VENUE_ROLES.has(user.role);
 }
 
+/** Read a room's day before proposing a time (goal 19 S6, D6): the client's
+ *  side on an event they hold a live link to, the venue's floor at its own
+ *  venue, or a platform admin. What the client's side gets back is
+ *  anonymised by the projection itself (services/room-day.ts). */
+export function canReadRoomDay(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+  holdsEventLink = false,
+): boolean {
+  if (canManageVenue(user, venueId)) return true;
+  return CLIENT_SIDE_ROLES.has(user.role) && holdsEventLink;
+}
+
+/** The roles that could ever read a room's day, before any venue or link is
+ *  known: the door's cheap refusal. */
+export function canEverReadRoomDay(user: Pick<JwtUser, "role" | "platformRole">): boolean {
+  return isPlatformAdmin(user) || CLIENT_SIDE_ROLES.has(user.role) || VENUE_FLOOR_ROLES.has(user.role);
+}
+
 /** Raise a request: the floor at the venue, or the client's side on an event
  *  they hold a live link to. */
 export function canRaiseRequest(

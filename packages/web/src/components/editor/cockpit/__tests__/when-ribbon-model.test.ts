@@ -2,11 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { CalendarResponse } from "@omnitwin/types";
 import {
   MIN_INGOT_DURATION_MS,
+  RIBBON_HANDLE_DEFAULTS,
   beginRibbonDrag,
   buildRibbonDay,
+  deriveRibbonHandles,
   dropRibbonDrag,
   moveRibbonDrag,
+  moveRibbonHandle,
   resolveTurnaroundGuideline,
+  ribbonPhaseWrites,
+  ribbonSlotWrite,
+  type RibbonHandle,
+  type RibbonHandles,
+  type RibbonPhaseInput,
+  type RibbonPhaseWrite,
 } from "../when-ribbon-model.js";
 
 // ---------------------------------------------------------------------------
@@ -405,5 +414,416 @@ describe("dropRibbonDrag", () => {
     if (drop.effect !== "commit") return;
     expect(drop.warning).toContain("guideline");
     expect(drop.warning).toContain("120");
+  });
+});
+
+// --- the phase handles (goal 19 S6) -----------------------------------------
+//
+// Four handles — setup, doors, live, clear-down — plus the end. The outer two
+// are the booking's own edges (the Diary slot); the inner boundaries are the
+// phases the ribbon owns by key: "setup", "arrival" (doors to live) and
+// "breakdown" (shown as Clear-down). Every instant below is an explicit UTC
+// ISO string, so the machine's zone cannot leak in.
+
+const DAY = "2026-11-07";
+
+/** An absolute UTC instant on the hire day from an "HH:MM" clock. */
+function at(clock: string): number {
+  return Date.parse(`${DAY}T${clock}:00.000Z`);
+}
+
+function iso(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+/** A full-day hire, 09:00 to 23:00 UTC. */
+const HIRE = { startMs: at("09:00"), endMs: at("23:00") };
+const MIDNIGHT = Date.parse("2026-11-08T00:00:00.000Z");
+const ALL_HANDLES: readonly RibbonHandle[] = ["setup-start", "doors", "live", "clear-down", "end"];
+
+function phaseInput(
+  id: string,
+  templateKey: string | null,
+  name: string,
+  startMs: number,
+  endMs: number,
+): RibbonPhaseInput {
+  return { id, templateKey, name, startsAt: iso(startMs), endsAt: iso(endMs) };
+}
+
+const SETUP_PHASE = phaseInput("p-setup", "setup", "Setup", at("09:00"), at("10:30"));
+const ARRIVAL_PHASE = phaseInput("p-arrival", "arrival", "Arrival", at("10:30"), at("11:15"));
+const BREAKDOWN_PHASE = phaseInput("p-breakdown", "breakdown", "Clear-down", at("21:30"), at("23:00"));
+const STORED = [SETUP_PHASE, ARRIVAL_PHASE, BREAKDOWN_PHASE];
+
+function expectHandleInvariant(handles: RibbonHandles): void {
+  for (const value of Object.values(handles)) expect(Number.isFinite(value)).toBe(true);
+  expect(handles.setupStartMs).toBeLessThanOrEqual(handles.doorsMs);
+  expect(handles.doorsMs).toBeLessThanOrEqual(handles.liveMs);
+  expect(handles.liveMs + MIN_INGOT_DURATION_MS).toBeLessThanOrEqual(handles.clearDownMs);
+  expect(handles.clearDownMs).toBeLessThanOrEqual(handles.endMs);
+}
+
+/** What the office's store would hold after the shell sent these writes. */
+function applyWrites(
+  phases: readonly RibbonPhaseInput[],
+  writes: readonly RibbonPhaseWrite[],
+): readonly RibbonPhaseInput[] {
+  let next = [...phases];
+  for (const write of writes) {
+    const startMs = Date.parse(write.startsAt);
+    const endMs = startMs + write.durationMinutes * MIN;
+    if (write.op === "delete") {
+      next = next.filter((phase) => phase.id !== write.phaseId);
+    } else if (write.op === "create") {
+      next.push(phaseInput(`new-${write.templateKey}`, write.templateKey, write.name, startMs, endMs));
+    } else {
+      next = next.map((phase) =>
+        phase.id === write.phaseId ? { ...phase, startsAt: write.startsAt, endsAt: iso(endMs) } : phase,
+      );
+    }
+  }
+  return next;
+}
+
+describe("phase handles (goal 19 S6)", () => {
+  describe("deriveRibbonHandles", () => {
+    it("no phases → the defaults: setup 60, arrival 30, clear-down 60, hugging the slot", () => {
+      const handles = deriveRibbonHandles(HIRE, []);
+      expect(handles).toEqual({
+        setupStartMs: at("09:00"),
+        doorsMs: at("10:00"),
+        liveMs: at("10:30"),
+        clearDownMs: at("22:00"),
+        endMs: at("23:00"),
+      });
+      expect(deriveRibbonHandles(HIRE, [], RIBBON_HANDLE_DEFAULTS)).toEqual(handles);
+      expectHandleInvariant(handles);
+    });
+
+    it("honours custom defaults", () => {
+      const handles = deriveRibbonHandles(HIRE, [], {
+        setupMinutes: 120,
+        arrivalMinutes: 45,
+        clearDownMinutes: 90,
+      });
+      expect(iso(handles.doorsMs)).toBe(`${DAY}T11:00:00.000Z`);
+      expect(iso(handles.liveMs)).toBe(`${DAY}T11:45:00.000Z`);
+      expect(iso(handles.clearDownMs)).toBe(`${DAY}T21:30:00.000Z`);
+    });
+
+    it("stored arrival and breakdown phases place doors, live and clear-down", () => {
+      expect(deriveRibbonHandles(HIRE, STORED)).toEqual({
+        setupStartMs: at("09:00"),
+        doorsMs: at("10:30"),
+        liveMs: at("11:15"),
+        clearDownMs: at("21:30"),
+        endMs: at("23:00"),
+      });
+    });
+
+    it("without an arrival phase, doors fall where the setup phase ends; arrival takes the default", () => {
+      const handles = deriveRibbonHandles(HIRE, [SETUP_PHASE]);
+      expect(iso(handles.doorsMs)).toBe(`${DAY}T10:30:00.000Z`);
+      expect(iso(handles.liveMs)).toBe(`${DAY}T11:00:00.000Z`);
+      expect(iso(handles.clearDownMs)).toBe(`${DAY}T22:00:00.000Z`);
+    });
+
+    it("an arrival phase outranks a disagreeing setup end for doors", () => {
+      const lateSetup = phaseInput("p-setup", "setup", "Setup", at("09:00"), at("12:00"));
+      const handles = deriveRibbonHandles(HIRE, [lateSetup, ARRIVAL_PHASE]);
+      expect(iso(handles.doorsMs)).toBe(`${DAY}T10:30:00.000Z`);
+      expect(iso(handles.liveMs)).toBe(`${DAY}T11:15:00.000Z`);
+    });
+
+    it("phases outside the slot are ignored (the Diary moved the booking; its phases stayed)", () => {
+      const outside = [
+        phaseInput("p-arrival", "arrival", "Arrival", at("07:30"), at("08:00")),
+        phaseInput("p-breakdown", "breakdown", "Clear-down", at("22:30"), at("23:30")),
+        phaseInput("p-setup", "setup", "Setup", at("08:30"), at("09:30")),
+      ];
+      expect(deriveRibbonHandles(HIRE, outside)).toEqual(deriveRibbonHandles(HIRE, []));
+    });
+
+    it("a phase whose times cannot be read is ignored; NaN never reaches a handle", () => {
+      const broken: RibbonPhaseInput = {
+        id: "p-x",
+        templateKey: "arrival",
+        name: "Arrival",
+        startsAt: "not a date",
+        endsAt: "",
+      };
+      const handles = deriveRibbonHandles(HIRE, [broken]);
+      expectHandleInvariant(handles);
+      expect(handles).toEqual(deriveRibbonHandles(HIRE, []));
+    });
+
+    it("a short slot shrinks setup first, then clear-down, then arrival, keeping the live minimum", () => {
+      // 2 h: 60 + 30 + 15 + 60 = 165 > 120, so setup gives up 45.
+      const twoHours = deriveRibbonHandles({ startMs: at("09:00"), endMs: at("11:00") }, []);
+      expect(twoHours).toEqual({
+        setupStartMs: at("09:00"),
+        doorsMs: at("09:15"),
+        liveMs: at("09:45"),
+        clearDownMs: at("10:00"),
+        endMs: at("11:00"),
+      });
+      // 75 min: setup is gone and clear-down gives up 30.
+      const short = deriveRibbonHandles({ startMs: at("09:00"), endMs: at("10:15") }, []);
+      expect(short).toEqual({
+        setupStartMs: at("09:00"),
+        doorsMs: at("09:00"),
+        liveMs: at("09:30"),
+        clearDownMs: at("09:45"),
+        endMs: at("10:15"),
+      });
+      // 30 min: setup and clear-down are gone and arrival halves.
+      const half = deriveRibbonHandles({ startMs: at("09:00"), endMs: at("09:30") }, []);
+      expect(half).toEqual({
+        setupStartMs: at("09:00"),
+        doorsMs: at("09:00"),
+        liveMs: at("09:15"),
+        clearDownMs: at("09:30"),
+        endMs: at("09:30"),
+      });
+      for (const handles of [twoHours, short, half]) expectHandleInvariant(handles);
+    });
+
+    it("a slot of exactly the smallest ingot collapses every phase; live takes the whole slot", () => {
+      const start = at("09:00");
+      const end = start + MIN_INGOT_DURATION_MS;
+      const handles = deriveRibbonHandles({ startMs: start, endMs: end }, []);
+      expect(handles).toEqual({
+        setupStartMs: start,
+        doorsMs: start,
+        liveMs: start,
+        clearDownMs: end,
+        endMs: end,
+      });
+      expectHandleInvariant(handles);
+    });
+
+    it("stored phases that no longer fit are squeezed in the same order", () => {
+      // Setup 90 + arrival 45 + live 15 + a clear-down now starting at 11:00
+      // (720) = 870 > 840, so setup gives up 30 and the rest keep their lengths.
+      const squeezed = deriveRibbonHandles(HIRE, [
+        SETUP_PHASE,
+        ARRIVAL_PHASE,
+        phaseInput("p-breakdown", "breakdown", "Clear-down", at("11:00"), at("23:00")),
+      ]);
+      expect(squeezed).toEqual({
+        setupStartMs: at("09:00"),
+        doorsMs: at("10:00"),
+        liveMs: at("10:45"),
+        clearDownMs: at("11:00"),
+        endMs: at("23:00"),
+      });
+      expectHandleInvariant(squeezed);
+    });
+  });
+
+  describe("moveRibbonHandle", () => {
+    // setup 09:00 | doors 10:30 | live 11:15 | clear-down 21:30 | end 23:00
+    const base = deriveRibbonHandles(HIRE, STORED);
+
+    it("snaps to the quarter hour, or to the minute when fine", () => {
+      expect(iso(moveRibbonHandle(base, "doors", at("10:07")).doorsMs)).toBe(`${DAY}T10:00:00.000Z`);
+      expect(iso(moveRibbonHandle(base, "doors", at("10:08"), { fine: false }).doorsMs)).toBe(
+        `${DAY}T10:15:00.000Z`,
+      );
+      expect(iso(moveRibbonHandle(base, "doors", at("10:07") + 20_000, { fine: true }).doorsMs)).toBe(
+        `${DAY}T10:07:00.000Z`,
+      );
+    });
+
+    it("moves only the handle asked for and always returns a new object", () => {
+      const moved = moveRibbonHandle(base, "live", at("12:00"));
+      expect(moved).toEqual({ ...base, liveMs: at("12:00") });
+      expect(moved).not.toBe(base);
+      const same = moveRibbonHandle(base, "live", base.liveMs);
+      expect(same).toEqual(base);
+      expect(same).not.toBe(base);
+    });
+
+    it("inner handles clamp between their neighbours and never push them", () => {
+      expect(moveRibbonHandle(base, "doors", at("13:00")).doorsMs).toBe(base.liveMs);
+      expect(moveRibbonHandle(base, "doors", at("06:00")).doorsMs).toBe(base.setupStartMs);
+      expect(moveRibbonHandle(base, "live", at("22:45")).liveMs).toBe(base.clearDownMs - MIN_INGOT_DURATION_MS);
+      expect(moveRibbonHandle(base, "live", at("09:30")).liveMs).toBe(base.doorsMs);
+      expect(moveRibbonHandle(base, "clear-down", at("10:00")).clearDownMs).toBe(base.liveMs + MIN_INGOT_DURATION_MS);
+      expect(moveRibbonHandle(base, "clear-down", at("23:45")).clearDownMs).toBe(base.endMs);
+      for (const handle of ["doors", "live", "clear-down"] as const) {
+        const moved = moveRibbonHandle(base, handle, MIDNIGHT);
+        expect(moved.setupStartMs).toBe(base.setupStartMs);
+        expect(moved.endMs).toBe(base.endMs);
+      }
+    });
+
+    it("the outer handles are the booking's edges: the start stops at doors, the end at clear-down", () => {
+      expect(moveRibbonHandle(base, "setup-start", at("12:00")).setupStartMs).toBe(base.doorsMs);
+      expect(moveRibbonHandle(base, "end", at("12:00")).endMs).toBe(base.clearDownMs);
+      expect(iso(moveRibbonHandle(base, "setup-start", at("07:00")).setupStartMs)).toBe(`${DAY}T07:00:00.000Z`);
+      expect(moveRibbonHandle(base, "end", MIDNIGHT).endMs).toBe(MIDNIGHT);
+    });
+
+    it("the invariant survives a table of moves, including absurd and non-finite values", () => {
+      const FAR = 1_000_000_000_000; // about 31.7 years in ms
+      const values = [
+        base.setupStartMs - FAR,
+        base.endMs + FAR,
+        0,
+        -1,
+        at("00:00"),
+        at("12:00"),
+        MIDNIGHT,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+      ];
+      for (const handle of ALL_HANDLES) {
+        for (const value of values) {
+          for (const fine of [false, true]) {
+            const moved = moveRibbonHandle(base, handle, value, { fine });
+            expectHandleInvariant(moved);
+            if (!Number.isFinite(value)) expect(moved).toEqual(base);
+          }
+        }
+      }
+    });
+
+    it("degenerate handles (a slot shorter than the smallest ingot) move nothing rather than lie", () => {
+      const start = at("09:00");
+      const degenerate: RibbonHandles = {
+        setupStartMs: start,
+        doorsMs: start,
+        liveMs: start,
+        clearDownMs: start + 5 * MIN,
+        endMs: start + 5 * MIN,
+      };
+      expect(moveRibbonHandle(degenerate, "live", at("12:00"))).toEqual(degenerate);
+      expect(moveRibbonHandle(degenerate, "clear-down", at("06:00"))).toEqual(degenerate);
+    });
+
+    it("200 seeded pseudo-random moves never break the invariant", () => {
+      let state = 20261107;
+      const next = (): number => {
+        state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+        return state / 4294967296;
+      };
+      const reach = 48 * 60 * MIN;
+      let current = deriveRibbonHandles(HIRE, []);
+      for (let step = 0; step < 200; step += 1) {
+        const handle = ALL_HANDLES[Math.floor(next() * ALL_HANDLES.length)] ?? "doors";
+        const proposed = step % 23 === 22 ? Number.NaN : HIRE.startMs + (next() * 2 - 1) * reach;
+        const moved = moveRibbonHandle(current, handle, proposed, { fine: next() < 0.5 });
+        expectHandleInvariant(moved);
+        expect(moved).not.toBe(current);
+        current = moved;
+      }
+      expect(current.endMs - current.setupStartMs).toBeGreaterThanOrEqual(MIN_INGOT_DURATION_MS);
+    });
+  });
+
+  describe("ribbonPhaseWrites", () => {
+    it("no writes when the handles match the stored phases", () => {
+      expect(ribbonPhaseWrites(deriveRibbonHandles(HIRE, STORED), STORED)).toEqual([]);
+    });
+
+    it("creates the three owned phases when none exist, in the stable order", () => {
+      expect(ribbonPhaseWrites(deriveRibbonHandles(HIRE, []), [])).toEqual([
+        { op: "create", phaseId: null, templateKey: "setup", name: "Setup", startsAt: iso(at("09:00")), durationMinutes: 60 },
+        { op: "create", phaseId: null, templateKey: "arrival", name: "Arrival", startsAt: iso(at("10:00")), durationMinutes: 30 },
+        { op: "create", phaseId: null, templateKey: "breakdown", name: "Clear-down", startsAt: iso(at("22:00")), durationMinutes: 60 },
+      ]);
+    });
+
+    it("updates only the phases a move changed", () => {
+      const moved = moveRibbonHandle(deriveRibbonHandles(HIRE, STORED), "doors", at("10:00"));
+      expect(ribbonPhaseWrites(moved, STORED)).toEqual([
+        { op: "update", phaseId: "p-setup", templateKey: "setup", name: "Setup", startsAt: iso(at("09:00")), durationMinutes: 60 },
+        { op: "update", phaseId: "p-arrival", templateKey: "arrival", name: "Arrival", startsAt: iso(at("10:00")), durationMinutes: 75 },
+      ]);
+    });
+
+    it("a collapsed span deletes the stored phase, and writes nothing when none exists", () => {
+      const noSetup = moveRibbonHandle(deriveRibbonHandles(HIRE, STORED), "doors", at("09:00"));
+      const writes = ribbonPhaseWrites(noSetup, STORED);
+      expect(writes.map((write) => [write.op, write.templateKey])).toEqual([
+        ["delete", "setup"],
+        ["update", "arrival"],
+      ]);
+      expect(writes[0]).toMatchObject({ phaseId: "p-setup", durationMinutes: 0 });
+      // The same handles against a store that never had a setup phase: nothing to delete.
+      expect(ribbonPhaseWrites(noSetup, [ARRIVAL_PHASE, BREAKDOWN_PHASE]).map((write) => write.op)).toEqual([
+        "update",
+      ]);
+    });
+
+    it("matches key-less phases by name, Clear-down included, but never claims the office's keyed phases", () => {
+      const officeNamedSetup = phaseInput("o-ceremony", "ceremony", "Setup", at("12:00"), at("12:30"));
+      const named = [
+        phaseInput("n-setup", null, " setup ", at("09:00"), at("10:30")),
+        phaseInput("n-arrival", null, "ARRIVAL", at("10:30"), at("11:15")),
+        phaseInput("n-clear", null, "Clear-down", at("21:30"), at("23:00")),
+        officeNamedSetup,
+      ];
+      const handles = deriveRibbonHandles(HIRE, named);
+      expect(iso(handles.doorsMs)).toBe(`${DAY}T10:30:00.000Z`);
+      expect(ribbonPhaseWrites(handles, named)).toEqual([]);
+      const moved = moveRibbonHandle(handles, "clear-down", at("21:00"));
+      expect(ribbonPhaseWrites(moved, named)).toEqual([
+        { op: "update", phaseId: "n-clear", templateKey: "breakdown", name: "Clear-down", startsAt: iso(at("21:00")), durationMinutes: 120 },
+      ]);
+      const onlyOffice = ribbonPhaseWrites(deriveRibbonHandles(HIRE, [officeNamedSetup]), [officeNamedSetup]);
+      expect(onlyOffice.map((write) => write.op)).toEqual(["create", "create", "create"]);
+    });
+
+    it("writes keep the stable order setup, arrival, breakdown whatever moved first", () => {
+      const base = deriveRibbonHandles(HIRE, STORED);
+      const moved = moveRibbonHandle(moveRibbonHandle(base, "end", MIDNIGHT), "doors", at("10:45"));
+      expect(ribbonPhaseWrites(moved, STORED).map((write) => write.templateKey)).toEqual([
+        "setup",
+        "arrival",
+        "breakdown",
+      ]);
+    });
+
+    it("applying the writes and deriving again is a fixed point", () => {
+      const base = deriveRibbonHandles(HIRE, STORED);
+      const moved = moveRibbonHandle(moveRibbonHandle(base, "live", at("12:00")), "end", MIDNIGHT);
+      const slot = ribbonSlotWrite(base, moved) ?? HIRE;
+      const applied = applyWrites(STORED, ribbonPhaseWrites(moved, STORED));
+      expect(deriveRibbonHandles(slot, applied)).toEqual(moved);
+      expect(ribbonPhaseWrites(moved, applied)).toEqual([]);
+    });
+
+    it("phase names a client may read carry none of the office's words", () => {
+      const names = ribbonPhaseWrites(deriveRibbonHandles(HIRE, []), []).map((write) => write.name);
+      expect(names).toEqual(["Setup", "Arrival", "Clear-down"]);
+      for (const name of names) {
+        expect(name).not.toMatch(/\b(pencil\w*|ink(ed|s)?|hold|prospects?|ladder)\b/iu);
+      }
+    });
+  });
+
+  describe("ribbonSlotWrite", () => {
+    const base = deriveRibbonHandles(HIRE, STORED);
+
+    it("null when neither outer handle moved: inner handles are phase writes, not a booking write", () => {
+      expect(ribbonSlotWrite(base, base)).toBeNull();
+      expect(ribbonSlotWrite(base, moveRibbonHandle(base, "doors", at("10:00")))).toBeNull();
+      expect(ribbonSlotWrite(base, moveRibbonHandle(base, "clear-down", at("21:00")))).toBeNull();
+    });
+
+    it("the booking window when an outer handle moved", () => {
+      expect(ribbonSlotWrite(base, moveRibbonHandle(base, "end", MIDNIGHT))).toEqual({
+        startMs: at("09:00"),
+        endMs: MIDNIGHT,
+      });
+      expect(ribbonSlotWrite(base, moveRibbonHandle(base, "setup-start", at("08:00")))).toEqual({
+        startMs: at("08:00"),
+        endMs: at("23:00"),
+      });
+    });
   });
 });

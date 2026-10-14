@@ -361,3 +361,294 @@ export function dropRibbonDrag(drag: RibbonDrag, day: RibbonDay): RibbonDrop {
     warning,
   };
 }
+
+// --- the phase handles (goal 19 S6) -----------------------------------------
+//
+// The booking (the Diary slot) is the hire window: it begins with setup and
+// ends when clear-down finishes. Nothing but the ribbon writes a time (goal
+// 19 D1): the two outer handles move the booking itself; the inner boundaries
+// are written as event PHASES the ribbon owns by template key.
+//
+//   setup       [setupStartMs, doorsMs)   key "setup"
+//   doors       [doorsMs, liveMs)         key "arrival": the guests' arrival,
+//                                         from doors opening to going live
+//   live        no phase of its own: where arrival ends and the office's
+//               detailed phases begin
+//   clear-down  [clearDownMs, endMs)      key "breakdown", shown as Clear-down
+//
+// Source-agnostic: the shell adapts GET /events/:id/phase-graph or the client
+// schedule into RibbonPhaseInput. Nothing here reads the clock or the DOM.
+
+/** The template keys the ribbon owns. */
+export type RibbonHandleKey = "setup" | "arrival" | "breakdown";
+
+export interface RibbonPhaseInput {
+  readonly id: string;
+  readonly templateKey: string | null;
+  readonly name: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
+/** Invariant: setupStartMs <= doorsMs <= liveMs <= clearDownMs <= endMs, and
+ *  liveMs + MIN_INGOT_DURATION_MS <= clearDownMs: the live stretch is never
+ *  shorter than the smallest ingot. */
+export interface RibbonHandles {
+  readonly setupStartMs: number;
+  readonly doorsMs: number;
+  readonly liveMs: number;
+  readonly clearDownMs: number;
+  readonly endMs: number;
+}
+
+export type RibbonHandle = "setup-start" | "doors" | "live" | "clear-down" | "end";
+
+export interface RibbonHandleDefaults {
+  readonly setupMinutes: number;
+  readonly arrivalMinutes: number;
+  readonly clearDownMinutes: number;
+}
+
+export const RIBBON_HANDLE_DEFAULTS: RibbonHandleDefaults = {
+  setupMinutes: 60,
+  arrivalMinutes: 30,
+  clearDownMinutes: 60,
+};
+
+export interface RibbonPhaseWrite {
+  readonly op: "create" | "update" | "delete";
+  readonly phaseId: string | null;
+  readonly templateKey: RibbonHandleKey;
+  readonly name: "Setup" | "Arrival" | "Clear-down";
+  readonly startsAt: string;
+  readonly durationMinutes: number;
+}
+
+interface MsSpan {
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
+/** The order the handles sit in, and the order writes come out in. */
+const RIBBON_HANDLE_KEYS: readonly RibbonHandleKey[] = ["setup", "arrival", "breakdown"];
+
+const RIBBON_HANDLE_PHASE_LABELS: Readonly<Record<RibbonHandleKey, RibbonPhaseWrite["name"]>> = {
+  setup: "Setup",
+  arrival: "Arrival",
+  breakdown: "Clear-down",
+};
+
+/** Names a key-less stored phase may carry and still be the ribbon's own
+ *  (compared trimmed, case-insensitively). A phase update cannot set the
+ *  template key, so a phase found this way stays found this way. */
+const RIBBON_HANDLE_PHASE_NAMES: Readonly<Record<RibbonHandleKey, readonly string[]>> = {
+  setup: ["setup"],
+  arrival: ["arrival"],
+  breakdown: ["breakdown", "clear-down"],
+};
+
+/** The stored phase the ribbon treats as its own for a key: matched by
+ *  template key first, else, among key-less phases only, by name. A phase
+ *  carrying another key is the office's and is never claimed. */
+function findOwnedPhase(
+  phases: readonly RibbonPhaseInput[],
+  key: RibbonHandleKey,
+): RibbonPhaseInput | null {
+  const byKey = phases.find((phase) => phase.templateKey === key);
+  if (byKey !== undefined) return byKey;
+  const names = RIBBON_HANDLE_PHASE_NAMES[key];
+  const byName = phases.find(
+    (phase) => phase.templateKey === null && names.includes(phase.name.trim().toLowerCase()),
+  );
+  return byName ?? null;
+}
+
+/** A phase's span in ms, or null when its times cannot be read. */
+function storedSpan(phase: RibbonPhaseInput | null): MsSpan | null {
+  if (phase === null) return null;
+  const startMs = Date.parse(phase.startsAt);
+  const endMs = Date.parse(phase.endsAt);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return null;
+  return { startMs, endMs };
+}
+
+function clampNumber(value: number, lo: number, hi: number): number {
+  return Math.min(Math.max(value, lo), hi);
+}
+
+/** Fit the wanted boundaries into the slot. When the slot is too short for
+ *  them all, shrink setup first, then clear-down, then arrival; the live
+ *  stretch keeps the smallest ingot (or the whole slot when even that is
+ *  shorter, which the Diary never produces). */
+function fitHandles(
+  startMs: number,
+  endMs: number,
+  wantedDoorsMs: number,
+  wantedLiveMs: number,
+  wantedClearDownMs: number,
+): RibbonHandles {
+  const available = Math.max(0, endMs - startMs);
+  const liveMinimum = Math.min(MIN_INGOT_DURATION_MS, available);
+  let setupLength = clampNumber(wantedDoorsMs - startMs, 0, available);
+  let arrivalLength = clampNumber(wantedLiveMs - wantedDoorsMs, 0, available);
+  let clearDownLength = clampNumber(endMs - wantedClearDownMs, 0, available);
+  let excess = setupLength + arrivalLength + liveMinimum + clearDownLength - available;
+  if (excess > 0) {
+    const cut = Math.min(excess, setupLength);
+    setupLength -= cut;
+    excess -= cut;
+  }
+  if (excess > 0) {
+    const cut = Math.min(excess, clearDownLength);
+    clearDownLength -= cut;
+    excess -= cut;
+  }
+  if (excess > 0) {
+    arrivalLength -= Math.min(excess, arrivalLength);
+  }
+  const doorsMs = startMs + setupLength;
+  return {
+    setupStartMs: startMs,
+    doorsMs,
+    liveMs: doorsMs + arrivalLength,
+    clearDownMs: endMs - clearDownLength,
+    endMs,
+  };
+}
+
+/** The handles for a booking from its stored phases, falling back to the
+ *  defaults. Phases outside the slot are ignored: the Diary may have moved
+ *  the booking while its phases stayed (see the honesty note above). */
+export function deriveRibbonHandles(
+  slot: { readonly startMs: number; readonly endMs: number },
+  phases: readonly RibbonPhaseInput[],
+  defaults: RibbonHandleDefaults = RIBBON_HANDLE_DEFAULTS,
+): RibbonHandles {
+  const { startMs, endMs } = slot;
+  const insideSlot = (key: RibbonHandleKey): MsSpan | null => {
+    const span = storedSpan(findOwnedPhase(phases, key));
+    if (span === null || span.startMs < startMs || span.endMs > endMs) return null;
+    return span;
+  };
+  const setup = insideSlot("setup");
+  const arrival = insideSlot("arrival");
+  const breakdown = insideSlot("breakdown");
+
+  const doorsMs = arrival?.startMs ?? setup?.endMs ?? startMs + defaults.setupMinutes * MINUTE_MS;
+  const liveMs = arrival?.endMs ?? doorsMs + defaults.arrivalMinutes * MINUTE_MS;
+  const clearDownMs = breakdown?.startMs ?? endMs - defaults.clearDownMinutes * MINUTE_MS;
+  return fitHandles(startMs, endMs, doorsMs, liveMs, clearDownMs);
+}
+
+/** Where a handle may sit without pushing its neighbours. */
+function handleBounds(handles: RibbonHandles, handle: RibbonHandle): { readonly lo: number; readonly hi: number } {
+  switch (handle) {
+    case "setup-start":
+      return { lo: Number.NEGATIVE_INFINITY, hi: handles.doorsMs };
+    case "doors":
+      return { lo: handles.setupStartMs, hi: handles.liveMs };
+    case "live":
+      return { lo: handles.doorsMs, hi: handles.clearDownMs - MIN_INGOT_DURATION_MS };
+    case "clear-down":
+      return { lo: handles.liveMs + MIN_INGOT_DURATION_MS, hi: handles.endMs };
+    case "end":
+      return { lo: handles.clearDownMs, hi: Number.POSITIVE_INFINITY };
+  }
+}
+
+function withHandle(handles: RibbonHandles, handle: RibbonHandle, ms: number): RibbonHandles {
+  switch (handle) {
+    case "setup-start":
+      return { ...handles, setupStartMs: ms };
+    case "doors":
+      return { ...handles, doorsMs: ms };
+    case "live":
+      return { ...handles, liveMs: ms };
+    case "clear-down":
+      return { ...handles, clearDownMs: ms };
+    case "end":
+      return { ...handles, endMs: ms };
+  }
+}
+
+/** Snap a handle to the grid (quarter hours, or minutes when fine) and clamp
+ *  it so the invariant holds without pushing any other handle: inner handles
+ *  stop at their neighbours, the start at doors, the end at clear-down. Pure;
+ *  always a new object; a non-finite proposal is no move. */
+export function moveRibbonHandle(
+  handles: RibbonHandles,
+  handle: RibbonHandle,
+  proposedMs: number,
+  options: { readonly fine?: boolean } = {},
+): RibbonHandles {
+  if (!Number.isFinite(proposedMs)) return { ...handles };
+  const { lo, hi } = handleBounds(handles, handle);
+  // Nothing satisfies the invariant (a slot shorter than the smallest ingot):
+  // leave the handles as they are rather than invent a position.
+  if (lo > hi) return { ...handles };
+  const step = options.fine === true ? RIBBON_FINE_SNAP_MINUTES : RIBBON_SNAP_MINUTES;
+  return withHandle(handles, handle, clampNumber(snapMs(proposedMs, step), lo, hi));
+}
+
+function handleSpan(handles: RibbonHandles, key: RibbonHandleKey): MsSpan {
+  switch (key) {
+    case "setup":
+      return { startMs: handles.setupStartMs, endMs: handles.doorsMs };
+    case "arrival":
+      return { startMs: handles.doorsMs, endMs: handles.liveMs };
+    case "breakdown":
+      return { startMs: handles.clearDownMs, endMs: handles.endMs };
+  }
+}
+
+function spanMinutes(startMs: number, endMs: number): number {
+  return Math.max(0, Math.round((endMs - startMs) / MINUTE_MS));
+}
+
+/** One write per owned key whose stored span differs from the handles, in
+ *  the stable order setup, arrival, breakdown. A zero-length span deletes
+ *  the stored phase (nothing when none exists); an unchanged phase earns no
+ *  write, so applying these writes and deriving again is a fixed point. */
+export function ribbonPhaseWrites(
+  handles: RibbonHandles,
+  phases: readonly RibbonPhaseInput[],
+): readonly RibbonPhaseWrite[] {
+  const writes: RibbonPhaseWrite[] = [];
+  for (const templateKey of RIBBON_HANDLE_KEYS) {
+    const { startMs, endMs } = handleSpan(handles, templateKey);
+    const durationMinutes = spanMinutes(startMs, endMs);
+    const existing = findOwnedPhase(phases, templateKey);
+    const write = {
+      phaseId: existing?.id ?? null,
+      templateKey,
+      name: RIBBON_HANDLE_PHASE_LABELS[templateKey],
+      startsAt: new Date(startMs).toISOString(),
+      durationMinutes,
+    };
+    if (durationMinutes === 0) {
+      if (existing !== null) writes.push({ op: "delete", ...write });
+      continue;
+    }
+    if (existing === null) {
+      writes.push({ op: "create", ...write });
+      continue;
+    }
+    const stored = storedSpan(existing);
+    const unchanged =
+      stored !== null &&
+      stored.startMs === startMs &&
+      spanMinutes(stored.startMs, stored.endMs) === durationMinutes;
+    if (!unchanged) writes.push({ op: "update", ...write });
+  }
+  return writes;
+}
+
+/** The booking write (the Diary slot): non-null only when an outer handle
+ *  moved. The shell sends it through the existing move/propose doors. */
+export function ribbonSlotWrite(
+  before: RibbonHandles,
+  after: RibbonHandles,
+): { readonly startMs: number; readonly endMs: number } | null {
+  if (before.setupStartMs === after.setupStartMs && before.endMs === after.endMs) return null;
+  return { startMs: after.setupStartMs, endMs: after.endMs };
+}

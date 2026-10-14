@@ -36,6 +36,14 @@ export const EVENT_PHASE_TEMPLATE_KEYS = [
   "bar-queue",
   "dancing",
   "breakdown",
+  // The When ribbon's phase handles (goal 19 S6, D1) map onto template keys
+  // without duplicating phases: setup -> "setup" (this key, the only new one),
+  // doors -> "arrival" (the guests' arrival, from doors opening to the event
+  // going live), live -> no phase of its own (it is where arrival ends and
+  // the office's detailed phases begin), clear-down -> "breakdown" (shown as
+  // "Clear-down", written as that existing key). Not part of the seed
+  // template below.
+  "setup",
 ] as const;
 
 export const EventPhaseTemplateKeySchema = z.enum(EVENT_PHASE_TEMPLATE_KEYS);
