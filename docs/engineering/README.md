@@ -41,6 +41,7 @@ dependencies you own. Do not install through junctions into another task's modul
 | Workspace tests | `pnpm test` |
 | Shared-contract impact | `pnpm typecheck`, `pnpm lint`, `pnpm build` as affected |
 | Browser flow | `pnpm --filter @omnitwin/web e2e -- path/to/actual.spec.ts` |
+| Capture bytes for the planner resolve specs (once per machine; the specs never download) | `pnpm --filter @omnitwin/web e2e:stage-captures` |
 | Diff hygiene | `git diff --check -- <changed paths>` |
 
 Package scripts are authoritative if these examples drift. Keep test commands
