@@ -75,6 +75,28 @@ describe("event-day offline queue", () => {
     expect(sent).toEqual([KEY_A, KEY_B]);
   });
 
+  it("leaves another screen's ops in place and drops a fact the server refused for good", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T18:00:00.000Z"));
+    const q = queue();
+    await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "a" });
+    vi.setSystemTime(new Date("2026-10-10T18:52:10.000Z"));
+    await q.enqueueObservationRecord(VENUE, DOORS_OPEN);
+    vi.setSystemTime(new Date("2026-10-10T19:05:10.000Z"));
+    await q.enqueueObservationRecord(VENUE, LIVE);
+
+    // The board drains facts only: the task is left, the first fact is
+    // refused by the server (its booking is gone) and dropped, the second
+    // reaches the server.
+    const acked = await q.drain((op) => {
+      if (op.kind !== "observation_record") return Promise.resolve("left" as const);
+      return Promise.resolve(op.input.idempotencyKey === KEY_A ? ("refused" as const) : ("applied" as const));
+    });
+    expect(acked.map((op) => op.queueKey)).toEqual([`observation:${KEY_A}`, `observation:${KEY_B}`]);
+    const left = await q.list();
+    expect(left.map((op) => op.kind)).toEqual(["task_status"]);
+  });
+
   it("keeps last task status intent per task", async () => {
     const q = queue();
     await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "a" });
