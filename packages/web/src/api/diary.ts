@@ -30,6 +30,15 @@ export async function getCalendar(
   return api.get(`/calendar?${params.toString()}`, CalendarResponseSchema, signal);
 }
 
+const EnquiryBookingsSchema = z.array(BookingSchema);
+
+/** An enquiry's own live bookings, wherever they are: the Enquiries desk
+ *  reads where the enquiry stands in the Diary. */
+export async function listEnquiryBookings(enquiryId: string, signal?: AbortSignal): Promise<readonly Booking[]> {
+  const params = new URLSearchParams({ enquiryId });
+  return api.get(`/bookings?${params.toString()}`, EnquiryBookingsSchema, signal);
+}
+
 export interface MoveBookingPatch {
   readonly spaceId?: string;
   readonly startsAt?: string;

@@ -187,6 +187,8 @@ describe("the date row", () => {
       .toBe("Saturday 14 November 2026: Saloon is free.");
     expect(dayAnswerSaid({ iso: "2026-11-14", rooms: [FOURTEENTH.rooms[0] as (typeof FOURTEENTH.rooms)[number]] }))
       .toBe("Saturday 14 November 2026: Grand Hall is taken.");
+    // A venue with no rooms in the Diary has none free.
+    expect(dayAnswerSaid({ iso: "2026-11-14", rooms: [] })).toBe("Saturday 14 November 2026: no room free.");
   });
 });
 

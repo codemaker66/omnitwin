@@ -5,11 +5,22 @@ import {
   newEnquiryNotification,
   enquiryApproved,
   enquiryRejected,
+  formatCalendarDay,
 } from "../services/email-templates.js";
 
 // ---------------------------------------------------------------------------
 // Email template tests
 // ---------------------------------------------------------------------------
+
+/** The words a reader sees: styles, tags and react-email's comment markers
+ *  stripped (the hold-reminders precedent). */
+function visibleText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/gu, " ")
+    .replace(/\s+/gu, " ");
+}
 
 describe("newEnquiryNotification", () => {
   const baseData = {
@@ -92,25 +103,39 @@ describe("enquiryApproved", () => {
     configUrl: "http://localhost:5173/plan/config-123",
   } as const;
 
-  it("includes space name in subject", async () => {
+  it("names the room, with its article, in the subject", async () => {
     const { subject } = await enquiryApproved(baseData);
-    expect(subject).toContain("Grand Hall");
-    expect(subject).toContain("approved");
+    expect(subject).toBe("Your enquiry for the Grand Hall has been approved");
   });
 
-  it("includes venue name in body", async () => {
+  it("says the approval in one sentence: the room, the venue and the day as a person says it", async () => {
     const { html } = await enquiryApproved(baseData);
-    expect(html).toContain("Trades Hall Glasgow");
+    expect(html).toContain(
+      "Your enquiry for the Grand Hall at Trades Hall Glasgow on Monday 15 June 2026 has been approved.",
+    );
+    // Never the stored ISO date.
+    expect(html).not.toContain("2026-06-15");
   });
 
-  it("includes event date in body", async () => {
-    const { html } = await enquiryApproved(baseData);
-    expect(html).toContain("2026-06-15");
+  it("words 14 May 2027 as the Friday it is, with no comma", async () => {
+    const { html } = await enquiryApproved({ ...baseData, eventDate: "2027-05-14" });
+    expect(html).toContain(
+      "Your enquiry for the Grand Hall at Trades Hall Glasgow on Friday 14 May 2027 has been approved.",
+    );
+    expect(visibleText(html)).not.toContain("Friday,");
+  });
+
+  it("does not double an article the room's name already has", async () => {
+    const { subject, html } = await enquiryApproved({ ...baseData, roomName: "The Saloon" });
+    expect(subject).toBe("Your enquiry for The Saloon has been approved");
+    expect(html).toContain("Your enquiry for The Saloon at Trades Hall Glasgow on Monday 15 June 2026 has been approved.");
+    expect(html).not.toContain("the The Saloon");
   });
 
   it("includes config link", async () => {
     const { html } = await enquiryApproved(baseData);
     expect(html).toContain("plan/config-123");
+    expect(html).toContain("View Your Layout");
   });
 
   it("handles null configUrl", async () => {
@@ -121,7 +146,50 @@ describe("enquiryApproved", () => {
   it("names the venue, not a room, for a guest who chose none", async () => {
     const { subject, html } = await enquiryApproved({ ...baseData, roomName: null, configUrl: null });
     expect(subject).toBe("Your enquiry at Trades Hall Glasgow has been approved");
+    expect(html).toContain("Your enquiry at Trades Hall Glasgow on Monday 15 June 2026 has been approved.");
     expect(html).not.toContain("Grand Hall");
+  });
+
+  it("leaves the day out when there is none, or none that is a real date, and still renders", async () => {
+    for (const eventDate of [null, "", "not-a-date", "15/06/2026", "2027-02-29", "2027-13-01"]) {
+      const { html } = await enquiryApproved({ ...baseData, eventDate });
+      expect(html, String(eventDate)).toContain("Your enquiry for the Grand Hall at Trades Hall Glasgow has been approved.");
+      if (eventDate !== null && eventDate !== "") expect(html, eventDate).not.toContain(eventDate);
+    }
+    const { html } = await enquiryApproved({ ...baseData, roomName: null, eventDate: null });
+    expect(html).toContain("Your enquiry at Trades Hall Glasgow has been approved.");
+  });
+
+  it("is plain: a sentence-case heading, no praise and no exclamation marks", async () => {
+    for (const data of [baseData, { ...baseData, roomName: null, eventDate: null, configUrl: null }]) {
+      const { subject, html } = await enquiryApproved(data);
+      const text = `${subject} ${visibleText(html)}`;
+      expect(html).toMatch(/<h\d[^>]*>Enquiry approved<\/h\d>/u);
+      expect(text).not.toContain("Enquiry Approved");
+      expect(text).not.toContain("!");
+      for (const praise of [/great/iu, /congrat/iu, /delighted/iu, /pleased/iu, /amazing/iu, /awesome/iu]) {
+        expect(text).not.toMatch(praise);
+      }
+    }
+  });
+});
+
+describe("formatCalendarDay", () => {
+  it("says a stored calendar date as a person does, with no comma and no zone", () => {
+    expect(formatCalendarDay("2027-05-14")).toBe("Friday 14 May 2027");
+    expect(formatCalendarDay("2026-06-15")).toBe("Monday 15 June 2026");
+    // The first of the year never slips to the day before.
+    expect(formatCalendarDay("2026-01-01")).toBe("Thursday 1 January 2026");
+    expect(formatCalendarDay("2024-02-29")).toBe("Thursday 29 February 2024");
+  });
+
+  it("gives nothing, and never throws, for anything that is not a real calendar date", () => {
+    for (const value of [
+      null, "", "not-a-date", "2027-5-14", " 2027-05-14", "2027-05-14T00:00:00.000Z", "14/05/2027",
+      "2027-02-29", "2027-04-31", "2027-13-01", "2027-00-10", "2027-05-00", "0099-05-14",
+    ]) {
+      expect(formatCalendarDay(value), String(value)).toBeNull();
+    }
   });
 });
 
@@ -137,6 +205,9 @@ describe("email preview URLs", () => {
 
     expect(combined).toContain("/plan/");
     expect(combined).not.toContain("/editor/");
+    // The approval sample passes the stored calendar date, as the route does,
+    // so the preview shows the email's own wording of it.
+    expect(sources[0]).toMatch(/eventDate: "\d{4}-\d{2}-\d{2}"/u);
   });
 });
 
@@ -148,9 +219,9 @@ describe("enquiryRejected", () => {
     note: "Space is booked for that date",
   } as const;
 
-  it("includes space name in subject", async () => {
+  it("names the room, with its article, in the subject", async () => {
     const { subject } = await enquiryRejected(baseData);
-    expect(subject).toContain("Grand Hall");
+    expect(subject).toBe("Update on your enquiry for the Grand Hall");
   });
 
   it("includes note when provided", async () => {

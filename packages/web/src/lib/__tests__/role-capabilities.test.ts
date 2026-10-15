@@ -16,6 +16,7 @@ import {
   VENUE_MEMBER_ROLES,
   WORKSPACE_ROLES,
   awaitsVenue,
+  diaryVenueOf,
   hasRole,
 } from "../role-capabilities.js";
 import { NAV_ITEMS, canShowNavItem } from "../../components/dashboard/DashboardLayout.js";
@@ -276,5 +277,29 @@ describe("an account waiting for its venue", () => {
     expect(awaitsVenue({ ...unplaced, venueId: "venue-1" })).toBe(false);
     expect(awaitsVenue({ ...unplaced, role: "admin", platformRole: "admin" })).toBe(false);
     expect(awaitsVenue(null)).toBe(false);
+  });
+});
+
+// Whose Diary the staff desks read (Find's day answer, the Enquiries desk's
+// Diary fact): never one the API's canReadDiary would refuse.
+describe("the Diary a person reads from the desks", () => {
+  const PLATFORM_ROLES = ["none", "operator", "admin"] as const;
+
+  it("is their own venue for every Diary reader and a platform admin, and no one else's", () => {
+    for (const role of USER_ROLES) {
+      for (const platformRole of PLATFORM_ROLES) {
+        const reads = platformRole === "admin" || hasRole(DIARY_ROLES, role);
+        expect(diaryVenueOf({ role, venueId: "venue-1", platformRole }), `${role} ${platformRole}`).toBe(reads ? "venue-1" : null);
+      }
+    }
+  });
+
+  it("is no venue for an account without one, or for nobody", () => {
+    for (const role of USER_ROLES) {
+      for (const platformRole of PLATFORM_ROLES) {
+        expect(diaryVenueOf({ role, venueId: null, platformRole }), `${role} ${platformRole}`).toBeNull();
+      }
+    }
+    expect(diaryVenueOf(null)).toBeNull();
   });
 });
