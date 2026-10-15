@@ -375,7 +375,9 @@ export function EventDayOpsPage(): ReactElement {
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
-      .then((ops) => { setPendingCount(ops.length); })
+      // A fact about a room (goal 19 S5) is the Day Board's to send; it is
+      // not this page's pending change.
+      .then((ops) => { setPendingCount(ops.filter((op) => op.kind !== "observation_record").length); })
       .catch(() => { setPendingCount(0); });
   }, []);
 
