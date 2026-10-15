@@ -107,7 +107,7 @@ facts change the slab:
 | Seen | Trigger | Icon · verb | Colour | Resolves |
 |---|---|---|---|---|
 | Done or cleaned | the latest fact is done or cleaned | `Check` · "Done 22:48" / "Cleaned 23:10" | `--lt-faded` edge, nothing left to tick | — |
-| Overrun | the latest fact is doors open, live or flipping; five minutes past the booking's end; no done signal | `AlertTriangle` · "Overrun · 12 min past 23:00", detail "Live 19:05 · not marked done" | `--lt-red` edge, label `--lt-urgent-label` | a done or cleaned tap |
+| Overrun | the latest fact is doors open, live or flipping; five minutes past the booking's end; no done signal | `AlertTriangle` · "Overrun · 12 min past 23:00", detail "Live 19:05 · not marked done" | `--lt-red` edge; the words in ink (law 8) | a done or cleaned tap |
 | Changeover at risk | the room before this slot was seen and its latest fact is not cleaned, that booking has ended, and the turnaround it needs no longer fits before this setup | `AlertTriangle` · "Changeover at risk · Guests · 15 min", detail "Chamber dinner not yet cleared · 15 min until setup, 30 min needed" | `--lt-red` edge | a cleaned tap on the room before, or this slot's doors |
 
 A room nobody has recorded raises nothing: without a done signal there is no overrun, and
