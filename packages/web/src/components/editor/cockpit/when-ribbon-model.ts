@@ -1,7 +1,9 @@
 import type {
+  BookingKind,
   CalendarBookingEntry,
   CalendarPhaseEntry,
   CalendarResponse,
+  RoomDaySpan,
 } from "@omnitwin/types";
 import { boardRange, snapMs, type BoardRange } from "../../../pages/diary/lib/board-time.js";
 import { RIBBON_COPY } from "./when-ribbon-copy.js";
@@ -309,24 +311,49 @@ export function moveRibbonDrag(
     overshootMs = wanted - start;
   }
 
-  const bufferHit =
-    day.buffers.find((buffer) =>
-      overlapsHalfOpen(proposedStartMs, proposedEndMs, buffer.startMs, buffer.endMs),
-    ) ?? null;
-
-  const coveredInk = day.ghosts.find(
-    (ghost) =>
-      ghost.exclusion === "warning" &&
-      overlapsHalfOpen(proposedStartMs, proposedEndMs, ghost.occStartMs, ghost.occEndMs),
-  );
-
   return {
     ...drag,
     proposedStartMs,
     proposedEndMs,
     overshootMs,
-    bufferHit,
-    coveredInkTitle: coveredInk?.title ?? null,
+    ...annotateProposal(day, proposedStartMs, proposedEndMs),
+  };
+}
+/** What a proposed span sits on: the first guideline buffer it overlaps and,
+ *  for a provisional self, the confirmed booking it would land under. */
+function annotateProposal(
+  day: RibbonDay,
+  startMs: number,
+  endMs: number,
+): Pick<RibbonDrag, "bufferHit" | "coveredInkTitle"> {
+  const bufferHit =
+    day.buffers.find((buffer) => overlapsHalfOpen(startMs, endMs, buffer.startMs, buffer.endMs)) ?? null;
+  const coveredInk = day.ghosts.find(
+    (ghost) => ghost.exclusion === "warning" && overlapsHalfOpen(startMs, endMs, ghost.occStartMs, ghost.occEndMs),
+  );
+  return { bufferHit, coveredInkTitle: coveredInk?.title ?? null };
+}
+
+export type TypedRibbonDrag =
+  | { readonly ok: true; readonly drag: RibbonDrag }
+  | { readonly ok: false; readonly blockedBy: string };
+
+/** A typed window as a drag (goal 19 S6): exact, never snapped, and refused
+ *  outright when it lands on a hard span. Typing is explicit, so a silent
+ *  clamp would lie; the pointer's rubber band is for hands, not words. */
+export function typedRibbonDrag(day: RibbonDay, self: RibbonSlot, startMs: number, endMs: number): TypedRibbonDrag {
+  const block = day.ghosts.find(
+    (ghost) => ghost.exclusion === "hard" && overlapsHalfOpen(startMs, endMs, ghost.occStartMs, ghost.occEndMs),
+  );
+  if (block !== undefined) return { ok: false, blockedBy: block.title };
+  return {
+    ok: true,
+    drag: {
+      ...beginRibbonDrag("move", self),
+      proposedStartMs: startMs,
+      proposedEndMs: endMs,
+      ...annotateProposal(day, startMs, endMs),
+    },
   };
 }
 
@@ -369,7 +396,8 @@ export function dropRibbonDrag(drag: RibbonDrag, day: RibbonDay): RibbonDrop {
 // 19 D1): the two outer handles move the booking itself; the inner boundaries
 // are written as event PHASES the ribbon owns by template key.
 //
-//   setup       [setupStartMs, doorsMs)   key "setup"
+//   setup       [setupStartMs, doorsMs)   no key: a phase named "Setup" (the
+//                                         table pins template_key by CHECK)
 //   doors       [doorsMs, liveMs)         key "arrival": the guests' arrival,
 //                                         from doors opening to going live
 //   live        no phase of its own: where arrival ends and the office's
@@ -651,4 +679,84 @@ export function ribbonSlotWrite(
 ): { readonly startMs: number; readonly endMs: number } | null {
   if (before.setupStartMs === after.setupStartMs && before.endMs === after.endMs) return null;
   return { startMs: after.setupStartMs, endMs: after.endMs };
+}
+
+// --- the client's day (goal 19 S6) ------------------------------------------
+//
+// The client's side never sees the venue calendar. Their ribbon is built from
+// the room-day projection (GET /events/:id/room-day): their own slot by name,
+// every other booking in the room as an anonymous span, "busy" (confirmed, or
+// the house has the room) or "held" (another event's provisional time), and
+// the venue's turnaround for this room and event type. A busy span is a wall
+// for a proposal: the office could never confirm a time on top of it, so the
+// ribbon does not let the client propose one. A held span is not a wall: the
+// office decides between provisional times.
+
+export interface ClientOwnSlot {
+  readonly bookingId: string;
+  readonly kind: BookingKind;
+  readonly title: string;
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
+export interface ClientRibbonDayInput {
+  readonly spans: readonly RoomDaySpan[];
+  readonly space: { readonly id: string; readonly name: string };
+  readonly timeZone: string;
+  readonly turnaroundMinutes: number;
+  /** The client's own booking in this room, when the house holds one. */
+  readonly own: ClientOwnSlot | null;
+  /** Where the bar rests before any proposal: the event's planned window. */
+  readonly draft: { readonly startMs: number; readonly endMs: number; readonly title: string } | null;
+}
+
+/** The id the ribbon gives a window that is not yet proposed. */
+export const CLIENT_DRAFT_SLOT_ID = "draft";
+
+function slotOf(id: string, title: string, kind: BookingKind, startMs: number, endMs: number): RibbonSlot {
+  return { id, title, kind, eventType: null, startMs, endMs, occStartMs: startMs, occEndMs: endMs };
+}
+
+/** The room-day spans + the client's own slot (or the draft) → the ribbon's
+ *  world, or null when there is nothing to place yet. */
+export function buildClientRibbonDay(input: ClientRibbonDayInput): RibbonDay | null {
+  const own = input.own;
+  const self = own !== null
+    ? slotOf(own.bookingId, own.title, own.kind, own.startMs, own.endMs)
+    : input.draft !== null
+      ? slotOf(CLIENT_DRAFT_SLOT_ID, input.draft.title, "hold", input.draft.startMs, input.draft.endMs)
+      : null;
+  if (self === null) return null;
+  const range = boardRange(self.startMs, "day", input.timeZone);
+  const ghosts: RibbonGhost[] = [];
+  input.spans.forEach((span, index) => {
+    const startMs = Date.parse(span.startsAt);
+    const endMs = Date.parse(span.endsAt);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return;
+    if (!overlapsHalfOpen(startMs, endMs, range.fromMs, range.toMs)) return;
+    if (span.kind === "yours") {
+      if (own !== null && span.bookingId === own.bookingId) return;
+      ghosts.push({ ...slotOf(span.bookingId, span.title, "hold", startMs, endMs), exclusion: "none" });
+      return;
+    }
+    ghosts.push(
+      span.kind === "busy"
+        ? { ...slotOf(`busy:${String(index)}`, RIBBON_COPY.busySpan, "ink", startMs, endMs), exclusion: "hard" }
+        : { ...slotOf(`held:${String(index)}`, RIBBON_COPY.heldSpan, "hold", startMs, endMs), exclusion: "none" },
+    );
+  });
+  ghosts.sort((a, b) => a.occStartMs - b.occStartMs || (a.id < b.id ? -1 : 1));
+  const minutes = input.turnaroundMinutes;
+  const buffers: RibbonBuffer[] = [];
+  if (minutes > 0) {
+    for (const ghost of ghosts) {
+      if (ghost.exclusion !== "hard") continue;
+      buffers.push(
+        { ghostId: ghost.id, side: "before", startMs: ghost.occStartMs - minutes * MINUTE_MS, endMs: ghost.occStartMs, minutes, ruleName: RIBBON_COPY.venueRuleName },
+        { ghostId: ghost.id, side: "after", startMs: ghost.occEndMs, endMs: ghost.occEndMs + minutes * MINUTE_MS, minutes, ruleName: RIBBON_COPY.venueRuleName },
+      );
+    }
+  }
+  return { range, spaceId: input.space.id, self, ghosts, buffers, guidelinesAvailable: minutes > 0 };
 }

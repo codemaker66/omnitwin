@@ -38,11 +38,10 @@ describe("event phase graph contracts", () => {
     ]);
   });
 
-  it("pins the template keys, including the When ribbon's setup handle (goal 19 S6)", () => {
-    // The ribbon's handles reuse keys where a phase already exists: doors
-    // writes "arrival", clear-down writes "breakdown"; live is no phase of its
-    // own. Only "setup" is new. The DB column is a free varchar, so no
-    // migration rides along; the seed template below stays at eight phases.
+  it("pins the eight template keys; the When ribbon's setup handle has none (goal 19 S6)", () => {
+    // event_phases carries a CHECK constraint on template_key, so a new key is
+    // a migration. The ribbon writes setup as a key-less phase named "Setup"
+    // and keys doors and clear-down to arrival and breakdown.
     expect(EVENT_PHASE_TEMPLATE_KEYS).toEqual([
       "arrival",
       "ceremony",
@@ -52,20 +51,9 @@ describe("event phase graph contracts", () => {
       "bar-queue",
       "dancing",
       "breakdown",
-      "setup",
     ]);
-    expect(EVENT_PHASE_TEMPLATE_KEYS).toHaveLength(9);
-    const setup = CreateEventPhaseSchema.safeParse({
-      templateKey: "setup",
-      spaceId: SPACE_ID,
-      name: "Setup",
-      startsAt: NOW,
-      durationMinutes: 60,
-    });
-    expect(setup.success).toBe(true);
-    for (const templateKey of ["live", "clear-down"]) {
-      expect(CreateEventPhaseSchema.safeParse({ templateKey, name: "Handle" }).success).toBe(false);
-    }
+    expect(CreateEventPhaseSchema.safeParse({ templateKey: "setup", spaceId: SPACE_ID, name: "Setup", startsAt: NOW, durationMinutes: 60 }).success).toBe(false);
+    expect(CreateEventPhaseSchema.safeParse({ templateKey: null, spaceId: SPACE_ID, name: "Setup", startsAt: NOW, durationMinutes: 60 }).success).toBe(true);
     expect(DEFAULT_EVENT_PHASE_TEMPLATE).toHaveLength(8);
   });
 

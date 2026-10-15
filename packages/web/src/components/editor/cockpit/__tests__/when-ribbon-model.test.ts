@@ -4,7 +4,9 @@ import {
   MIN_INGOT_DURATION_MS,
   RIBBON_HANDLE_DEFAULTS,
   beginRibbonDrag,
+  buildClientRibbonDay,
   buildRibbonDay,
+  CLIENT_DRAFT_SLOT_ID,
   deriveRibbonHandles,
   dropRibbonDrag,
   moveRibbonDrag,
@@ -12,6 +14,7 @@ import {
   resolveTurnaroundGuideline,
   ribbonPhaseWrites,
   ribbonSlotWrite,
+  typedRibbonDrag,
   type RibbonHandle,
   type RibbonHandles,
   type RibbonPhaseInput,
@@ -824,6 +827,86 @@ describe("phase handles (goal 19 S6)", () => {
         startMs: at("08:00"),
         endMs: at("23:00"),
       });
+    });
+  });
+});
+
+describe("the client's day (goal 19 S6)", () => {
+  const ROOM_S6 = { id: "00000000-0000-4000-8000-0000000000d1", name: "Grand Hall" };
+  const OWN_ID = "00000000-0000-4000-8000-0000000000d2";
+  const OTHER_OWN_ID = "00000000-0000-4000-8000-0000000000d3";
+  const T = (hhmm: string, day = "2030-05-10"): number => Date.parse(`${day}T${hhmm}:00.000Z`);
+  const iso = (ms: number): string => new Date(ms).toISOString();
+  const spans = [
+    { kind: "busy" as const, startsAt: iso(T("08:00")), endsAt: iso(T("13:00")) },
+    { kind: "held" as const, startsAt: iso(T("14:00")), endsAt: iso(T("16:00")) },
+    { kind: "yours" as const, bookingId: OWN_ID, title: "Our dinner", startsAt: iso(T("17:00")), endsAt: iso(T("22:00")) },
+    { kind: "yours" as const, bookingId: OTHER_OWN_ID, title: "Our rehearsal", startsAt: iso(T("06:00")), endsAt: iso(T("07:00")) },
+    { kind: "busy" as const, startsAt: iso(T("12:00", "2030-05-12")), endsAt: iso(T("14:00", "2030-05-12")) },
+    { kind: "busy" as const, startsAt: "not a date", endsAt: iso(T("10:00")) },
+  ];
+  const own = { bookingId: OWN_ID, kind: "hold" as const, title: "Our dinner", startMs: T("17:00"), endMs: T("22:00") };
+  const base = { spans, space: ROOM_S6, timeZone: "Europe/London", turnaroundMinutes: 90, own, draft: null };
+
+  it("places the client's own slot, shows the rest of the room anonymously, and drops what is not on the day", () => {
+    const day = buildClientRibbonDay(base);
+    expect(day).not.toBeNull();
+    if (day === null) return;
+    expect(day.spaceId).toBe(ROOM_S6.id);
+    expect(day.self).toMatchObject({ id: OWN_ID, title: "Our dinner", kind: "hold", startMs: T("17:00"), endMs: T("22:00") });
+    // The venue day on the venue's clock: BST midnight is 23:00Z the evening before.
+    expect(day.range).toEqual({ view: "day", fromMs: T("23:00", "2030-05-09"), toMs: T("23:00", "2030-05-10") });
+    expect(day.ghosts.map((ghost) => [ghost.title, ghost.kind, ghost.exclusion, ghost.startMs])).toEqual([
+      ["Our rehearsal", "hold", "none", T("06:00")],
+      ["Booked", "ink", "hard", T("08:00")],
+      ["Held", "hold", "none", T("14:00")],
+    ]);
+    expect(JSON.stringify(day)).not.toContain("not a date");
+  });
+
+  it("draws the venue's turnaround on both sides of every booked span, and none when the venue has no guideline", () => {
+    const day = buildClientRibbonDay(base);
+    expect(day?.guidelinesAvailable).toBe(true);
+    expect(day?.buffers.map((buffer) => [buffer.side, buffer.startMs, buffer.endMs, buffer.minutes, buffer.ruleName])).toEqual([
+      ["before", T("06:30"), T("08:00"), 90, "venue's"],
+      ["after", T("13:00"), T("14:30"), 90, "venue's"],
+    ]);
+    const bare = buildClientRibbonDay({ ...base, turnaroundMinutes: 0 });
+    expect(bare?.guidelinesAvailable).toBe(false);
+    expect(bare?.buffers).toEqual([]);
+  });
+
+  it("rests on the draft when nothing is booked yet, and on nothing when there is no draft either", () => {
+    const draft = buildClientRibbonDay({ ...base, own: null, draft: { startMs: T("18:00"), endMs: T("23:00"), title: "Our dinner" } });
+    expect(draft?.self).toMatchObject({ id: CLIENT_DRAFT_SLOT_ID, kind: "hold", startMs: T("18:00"), endMs: T("23:00") });
+    expect(draft?.ghosts.some((ghost) => ghost.id === OWN_ID)).toBe(true);
+    expect(buildClientRibbonDay({ ...base, own: null, draft: null })).toBeNull();
+  });
+
+  describe("typedRibbonDrag", () => {
+    const day = buildClientRibbonDay(base);
+    if (day === null) throw new Error("fixture day");
+
+    it("is exact, never snapped, and lands as a commit without a confirm for a provisional slot", () => {
+      const typed = typedRibbonDrag(day, day.self, T("18:07"), T("21:03"));
+      expect(typed.ok).toBe(true);
+      if (!typed.ok) return;
+      expect(typed.drag).toMatchObject({ mode: "move", originStartMs: T("17:00"), proposedStartMs: T("18:07"), proposedEndMs: T("21:03"), overshootMs: 0, bufferHit: null, coveredInkTitle: null });
+      expect(dropRibbonDrag(typed.drag, day)).toEqual({ effect: "commit", startsAt: iso(T("18:07")), endsAt: iso(T("21:03")), needsInkConfirm: false, warning: null });
+    });
+
+    it("refuses a window on a booked span by name instead of clamping it", () => {
+      expect(typedRibbonDrag(day, day.self, T("12:00"), T("15:00"))).toEqual({ ok: false, blockedBy: "Booked" });
+      expect(typedRibbonDrag(day, day.self, T("13:00"), T("16:00")).ok).toBe(true);
+    });
+
+    it("carries the guideline it sits inside, so the drop warns the same way a drag would", () => {
+      const typed = typedRibbonDrag(day, day.self, T("13:30"), T("17:00"));
+      expect(typed.ok).toBe(true);
+      if (!typed.ok) return;
+      expect(typed.drag.bufferHit?.side).toBe("after");
+      const drop = dropRibbonDrag(typed.drag, day);
+      expect(drop.effect === "commit" ? drop.warning : null).toContain("turnaround guideline");
     });
   });
 });
