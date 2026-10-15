@@ -197,7 +197,7 @@ export function useEnquiryDay(enquiry: Enquiry | undefined, diaryVenueId: string
     return () => { document.removeEventListener("visibilitychange", onVisible); };
   }, [readNow]);
 
-  const keptDay = plan?.day == null ? undefined : days.get(dayKey(plan.venueId, plan.day.iso));
+  const keptDay = plan === null || plan.day === null ? undefined : days.get(dayKey(plan.venueId, plan.day.iso));
   const keptOwn = plan === null ? undefined : owns.get(plan.enquiryId);
   const answer = useMemo((): EnquiryDayAnswer | null => {
     if (plan === null || keptOwn === undefined) return null;
