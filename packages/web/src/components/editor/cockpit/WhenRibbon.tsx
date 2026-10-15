@@ -899,7 +899,11 @@ function RibbonBody({
       estimatePrice(venueId, window.input)
         .then((estimate) => {
           if (cancelled) return;
-          setPrice({ kind: "ready", text: RIBBON_COPY.priceLine(formatPrice(estimate.total, estimate.currency)) });
+          // No line at all means the venue's sheet has no slot holding this
+          // window (0089): say so rather than show a nought.
+          setPrice(estimate.lineItems.length === 0
+            ? { kind: "note", text: RIBBON_COPY.priceNoSlot }
+            : { kind: "ready", text: RIBBON_COPY.priceLine(formatPrice(estimate.total, estimate.currency)) });
         })
         .catch(() => {
           // The ribbon is not the place to debug the price book: no line, no fuss.
