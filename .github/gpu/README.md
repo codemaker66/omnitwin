@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 391 cases. Four hosted CPU shards execute
-386 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 393 cases. Four hosted CPU shards execute
+388 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -127,7 +127,11 @@ colleague; and the client asking for ten more chairs on the live slot in one
 gesture, reading who has it in the house's own words on the poll, and being
 closed out in one sentence when the link is revoked
 (`living-timetable-slot.spec.ts`); this changes the inventory from 389 to 391
-and the CPU partition from 384 to 386.
+and the CPU partition from 384 to 386. The next, on 16 October 2026, adds two
+ordinary route-mocked cases for the enquiry's Diary answer (T-635): the
+Enquiries desk answering with nothing to press and Approve holding its place,
+on a desk and on a phone (`enquiries-diary-answer.spec.ts`); this changes the
+inventory from 391 to 393 and the CPU partition from 386 to 388.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

@@ -56,7 +56,7 @@ For a booking enquiry at the reader's own venue, opened by someone who reads tha
    Approving reads the day again at once, and the sentence then changes at most once.
 4. **The approval email names the date as a person would.** It printed the ISO date ("on 2027-05-14")
    and opened "Great news!", against the brief. It now reads "Your enquiry for the Grand Hall at Trades
-   Hall Glasgow on Saturday 14 May 2027 has been approved." under "Enquiry approved", and the panel's
+   Hall Glasgow on Friday 14 May 2027 has been approved." under "Enquiry approved", and the panel's
    consequence names the same room and date.
 5. **Two fixes in the Diary's own wording, so Find and Go to date gain them too.** An option whose
    decision moment has passed reads "decision was due Mon 5 Oct" (the Diary's existing words), never
@@ -64,7 +64,7 @@ For a booking enquiry at the reader's own venue, opened by someone who reads tha
    use for …" and is not counted free.
 
 A closed enquiry (declined, withdrawn, done) reads no day; if it still holds a room the line says so:
-"Still held for this enquiry: 1st option, Grand Hall, Sat 14 May 2027".
+"Still held for this enquiry: 1st option, Grand Hall, Fri 14 May 2027".
 
 ## Who sees it
 
@@ -73,7 +73,7 @@ with a venue) for enquiries at **their own venue** — narrower than the API's `
 and on the venue's own clock. An enquiry at another venue shows no Diary fact, because the Diary opens
 only on your own venue. "Open this day in the Diary" follows the same rule. "Hold a date in the Diary"
 needs a Diary writer and the Diary's own `holdRefusal` to be null, as the drawer does. A planner sees none
-of it. `canReadDiaryAt(user, venueId)` in `lib/role-capabilities.ts` holds the rule, pinned by a test over
+of it. `diaryVenueOf(user)` in `lib/role-capabilities.ts` holds the rule (Find uses it too), pinned by a test over
 every role, platform role and venue.
 
 ## Behaviour that matters
@@ -146,8 +146,9 @@ interactions to the answer (zero).
 
 ## Build plan
 
-1. API: `GET /bookings?enquiryId=` (live bookings of one enquiry, gated by `canReadDiary` on its venue,
-   404 when not visible), proven on PostgreSQL; the approval email's date and words.
+1. API: `GET /bookings?enquiryId=` (live bookings of one enquiry, gated by `canReadDiary` on its venue:
+   404 `ENQUIRY_NOT_FOUND` for an unknown enquiry, 403 for one the caller may not read, as the house's
+   other reads answer), proven on PostgreSQL; the approval email's date and words.
 2. `day-answer.ts`: lines keep kind, booking id and time parts; overdue decisions; phases; the free-room
    count moves there from Find.
 3. `enquiry-standing.ts`: the panel's words, pure, every state pinned.
@@ -155,3 +156,24 @@ interactions to the answer (zero).
 5. The panel's fact, its In the Diary section and Approve's sentence; the gate from `DashboardPage`.
 6. A browser case on a desk and a phone (positions held, zero interactions to the answer), admitted to
    the reviewed inventory; then CI, merge, deploy, and the live panel checked signed in.
+
+## As built (16 October 2026)
+
+Steps 1–6 are built on `claude/t635-enquiry-day`. Where the build settled what this record left open:
+
+- **Room asked for** is read from `roomChosen`, never `spaceId`: a roomless enquiry is filed under the
+  venue's first room.
+- **Published figures** are Trades Hall's constants, so they are shown only when the venue's slug is
+  Trades Hall's (`isTradesHallVenueSlug`); formats follow the public composer's `ENQUIRY_EVENT_TYPES`:
+  "seats 140 for dinner", "seats 80 theatre style", "holds 200 standing".
+- **Phases** follow the conflict engine: a timed phase uses a room unless its event has a booking there;
+  a phase of no length uses nothing; the night before's phase ending by 06:00 leaves the room free from
+  then.
+- **A hold behind a confirmed booking** (the Diary leaves it out of the day's lines) still leads:
+  "2nd option for this enquiry, behind Confirmed, …".
+- **Either read failing** (the day or the enquiry's own bookings) is a failure; only 401 and 403 hide
+  the Diary. An undated enquiry's failure reads "The Diary could not be read."
+- **Approve's consequence** names the room and date as the email does: "…to say the enquiry for the
+  Grand Hall on Friday 14 May 2027 is approved." The email's room-case subjects gain the article
+  ("for the Grand Hall"), approved and declined alike.
+- **The declined email** still prints the ISO date and "We'd love to help"; left for a later slice.
