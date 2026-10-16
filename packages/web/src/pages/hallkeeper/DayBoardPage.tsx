@@ -19,6 +19,7 @@ import {
   nextObservationKinds,
   observationMeansOver,
   occasionLabel,
+  type BookingKind,
   type HallkeeperSheetSummary,
   type ObservationKind,
 } from "@omnitwin/types";
@@ -190,7 +191,7 @@ interface SlotSheetResult {
  * bootstrap uses, so a board that rolls over midnight (or a room filter
  * change) can never paint a stale room's layouts onto a slot.
  */
-function useSlotSheet(eventId: string | null, roomSlug: string, roomName: string): SlotSheetResult {
+function useSlotSheet(eventId: string | null, roomSlug: string, roomName: string, bookingKind: BookingKind): SlotSheetResult {
   const [layouts, setLayouts] = useState<readonly LinkedLayoutChoice[] | null>(null);
   const [unavailable, setUnavailable] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -222,7 +223,7 @@ function useSlotSheet(eventId: string | null, roomSlug: string, roomName: string
   if (layouts === null) return { status: "loading", state: null, error: null };
   return {
     status: "ready",
-    state: describeSlotSheet({ eventId, roomName, layouts, unavailableCount: unavailable }),
+    state: describeSlotSheet({ eventId, bookingKind, roomName, layouts, unavailableCount: unavailable }),
     error: null,
   };
 }
@@ -285,13 +286,14 @@ function SheetProgress({ configId, eventId, timeZone }: {
   );
 }
 
-function SlotSheetLink({ eventId, roomSlug, roomName, timeZone }: {
+function SlotSheetLink({ eventId, bookingKind, roomSlug, roomName, timeZone }: {
   readonly eventId: string | null;
+  readonly bookingKind: BookingKind;
   readonly roomSlug: string;
   readonly roomName: string;
   readonly timeZone: string;
 }): ReactElement {
-  const result = useSlotSheet(eventId, roomSlug, roomName);
+  const result = useSlotSheet(eventId, roomSlug, roomName, bookingKind);
 
   if (result.status === "loading") {
     return (
@@ -767,7 +769,7 @@ function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, observat
           <strong>{phase.name}</strong><span>{formatWallTime(Date.parse(phase.startsAt), timeZone)} – {formatWallTime(Date.parse(phase.endsAt), timeZone)}</span>
         </li>)}
       </ol>}
-      <SlotSheetLink eventId={slot.eventId} roomSlug={room.slug} roomName={room.name} timeZone={timeZone} />
+      <SlotSheetLink eventId={slot.eventId} bookingKind={slot.kind} roomSlug={room.slug} roomName={room.name} timeZone={timeZone} />
       {slot.eventId !== null && <Link className="dayboard-open-event" to={`/ops/events/${slot.eventId}`}>Open event &amp; working documents →</Link>}
       {/* Lane 9's mount point. Reserved region, props only; the board never
           reads or writes request state. */}
