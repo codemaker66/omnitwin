@@ -134,20 +134,29 @@ interface TextFieldProps {
   readonly label: string;
   readonly value: string;
   readonly onChange: (value: string) => void;
+  /** Whether the clock or number is only partly typed (the browser's
+   *  `badInput`): its value reads as empty while it is. Told on every change
+   *  and on blur, since an empty value that stays empty raises no change. */
+  readonly onPartial?: (partial: boolean) => void;
   readonly placeholder?: string;
   readonly type?: "text" | "number" | "time";
   readonly step?: string;
   readonly min?: string;
+  readonly describedBy?: string;
+  readonly invalid?: boolean;
 }
 
 function TextField({
   label,
   value,
   onChange,
+  onPartial,
   placeholder,
   type = "text",
   step,
   min,
+  describedBy,
+  invalid = false,
 }: TextFieldProps): ReactElement {
   return (
     <label className="admin-panel-field">
@@ -158,8 +167,14 @@ function TextField({
         placeholder={placeholder}
         step={step}
         min={min}
+        aria-describedby={describedBy}
+        aria-invalid={invalid ? true : undefined}
         onChange={(event) => {
           onChange(event.target.value);
+          onPartial?.(event.target.validity.badInput);
+        }}
+        onBlur={(event) => {
+          onPartial?.(event.target.validity.badInput);
         }}
       />
     </label>
@@ -259,6 +274,9 @@ export function AdminPanel(): ReactElement {
   // The time of day the rule is for, "HH:MM" each or both empty for any time.
   const [ruleFrom, setRuleFrom] = useState("");
   const [ruleUntil, setRuleUntil] = useState("");
+  // A clock only partly typed reads as empty; the save waits for it.
+  const [ruleFromPartial, setRuleFromPartial] = useState(false);
+  const [ruleUntilPartial, setRuleUntilPartial] = useState(false);
   // What the form said when it opened, so a stray click only closes an
   // untouched form.
   const [ruleFormOpened, setRuleFormOpened] = useState<RuleFormFields>(EMPTY_RULE_FIELDS);
@@ -274,10 +292,17 @@ export function AdminPanel(): ReactElement {
     editSpaceHeight.trim() === "" ||
     editSpaceOutline.length < MIN_POLYGON_POINTS;
   const ruleWindow = readWindowDraft({ from: ruleFrom, until: ruleUntil });
-  const ruleWindowNote = ruleWindow.kind === "half" || ruleWindow.kind === "invalid" ? ruleWindow.message : null;
-  const saveRuleDisabled = savingRule || ruleName.trim() === "" || ruleAmount.trim() === "" || ruleWindowNote !== null;
+  const ruleWindowNote = ruleFromPartial || ruleUntilPartial
+    ? WINDOW_COPY.clockNeeded
+    : ruleWindow.kind === "half" || ruleWindow.kind === "invalid" ? ruleWindow.message : null;
   const ruleFormFields: RuleFormFields = { name: ruleName, type: ruleType, amount: ruleAmount, spaceId: ruleSpaceId, from: ruleFrom, until: ruleUntil };
   const ruleFormDirty = (Object.keys(ruleFormFields) as (keyof RuleFormFields)[]).some((key) => ruleFormFields[key] !== ruleFormOpened[key]);
+  const saveRuleDisabled = savingRule || ruleName.trim() === "" || ruleAmount.trim() === "" || ruleWindowNote !== null
+    || (ruleForm?.mode === "edit" && !ruleFormDirty);
+  // A rule's room may have left the venue since; it is named so the office
+  // can keep it or move the rule, instead of reading as venue-wide.
+  const ruleRoomMissing = ruleForm?.mode === "edit" && ruleFormOpened.spaceId !== ""
+    && selectedVenue?.spaces.every((space) => space.id !== ruleFormOpened.spaceId) === true;
   const venueMutationPending = creatingSpace || updatingSpace || deletingSpace
     || deletingVenue || savingRule || deletingRuleId !== null || restoringRule;
 
@@ -471,6 +496,8 @@ export function AdminPanel(): ReactElement {
     setRuleSpaceId(fields.spaceId);
     setRuleFrom(fields.from);
     setRuleUntil(fields.until);
+    setRuleFromPartial(false);
+    setRuleUntilPartial(false);
     setRuleFormOpened(fields);
     setRuleForm(form);
   };
@@ -483,6 +510,8 @@ export function AdminPanel(): ReactElement {
     setRuleSpaceId("");
     setRuleFrom("");
     setRuleUntil("");
+    setRuleFromPartial(false);
+    setRuleUntilPartial(false);
     setRuleFormOpened(EMPTY_RULE_FIELDS);
   };
 
@@ -507,7 +536,18 @@ export function AdminPanel(): ReactElement {
     setSavingRule(true);
     try {
       if (ruleForm.mode === "edit") {
-        await pricingApi.updatePricingRule(selectedVenue.id, ruleForm.rule.id, body);
+        // Only what changed goes: a field left as it was is not re-sent,
+        // so a rule whose room has since left the venue can still be renamed.
+        const opened = ruleFormOpened;
+        const windowChanged = ruleFrom !== opened.from || ruleUntil !== opened.until;
+        const change: pricingApi.UpdatePricingRuleInput = {
+          ...(ruleName !== opened.name ? { name: body.name } : {}),
+          ...(ruleType !== opened.type ? { type: body.type } : {}),
+          ...(ruleAmount !== opened.amount ? { amount: body.amount } : {}),
+          ...(ruleSpaceId !== opened.spaceId ? { spaceId: body.spaceId } : {}),
+          ...(windowChanged ? { appliesFrom: body.appliesFrom, appliesUntil: body.appliesUntil } : {}),
+        };
+        await pricingApi.updatePricingRule(selectedVenue.id, ruleForm.rule.id, change);
         addToast("Pricing rule saved", "success");
       } else {
         await pricingApi.createPricingRule(selectedVenue.id, body);
@@ -860,6 +900,7 @@ export function AdminPanel(): ReactElement {
             <TextField label="Rule Name" value={ruleName} onChange={setRuleName} placeholder="Grand Hall Half Day" />
             <SelectField label="Space (optional)" value={ruleSpaceId} onChange={setRuleSpaceId}>
               <option value="">Venue-wide</option>
+              {ruleRoomMissing ? <option value={ruleFormOpened.spaceId}>Room no longer listed (as entered)</option> : null}
               {selectedVenue.spaces.map((space) => (
                 <option key={space.id} value={space.id}>{space.name}</option>
               ))}
@@ -884,12 +925,34 @@ export function AdminPanel(): ReactElement {
             <fieldset className="admin-panel-fieldset">
               <legend>Time of day</legend>
               <div className="admin-panel-field-row">
-                <TextField label="Applies from" value={ruleFrom} onChange={setRuleFrom} type="time" />
-                <TextField label="Applies until" value={ruleUntil} onChange={setRuleUntil} type="time" />
+                <TextField
+                  label="Applies from"
+                  value={ruleFrom}
+                  type="time"
+                  describedBy="pricing-rule-window-note"
+                  invalid={ruleWindowNote !== null}
+                  onChange={setRuleFrom}
+                  onPartial={setRuleFromPartial}
+                />
+                <TextField
+                  label="Applies until"
+                  value={ruleUntil}
+                  type="time"
+                  describedBy="pricing-rule-window-note"
+                  invalid={ruleWindowNote !== null}
+                  onChange={setRuleUntil}
+                  onPartial={setRuleUntilPartial}
+                />
               </div>
-              {ruleWindowNote !== null
-                ? <p className="admin-panel-field-note admin-panel-field-note--hold" role="status">{ruleWindowNote}</p>
-                : <p className="admin-panel-field-note">{WINDOW_COPY.hint}</p>}
+              {/* One live region, always mounted, so a change of words is
+                  read out; the inputs point at it. */}
+              <p
+                id="pricing-rule-window-note"
+                role="status"
+                className={`admin-panel-field-note${ruleWindowNote !== null ? " admin-panel-field-note--hold" : ""}`}
+              >
+                {ruleWindowNote ?? WINDOW_COPY.hint}
+              </p>
             </fieldset>
           </FormModal>
         ) : null}

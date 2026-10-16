@@ -21,7 +21,11 @@ export const WINDOW_COPY = {
 } as const;
 
 const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/u;
-const CLOCK_TIME_WITH_SECONDS = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/u;
+const CLOCK_TIME_WITH_SECONDS = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?$/u;
+
+/** The API's own sentence for one side alone (routes/pricing-rules.ts). */
+const API_PAIR_MESSAGE = "appliesFrom and appliesUntil go together: both, or neither";
+const WINDOW_FIELDS = new Set(["appliesFrom", "appliesUntil"]);
 
 /** "09:00:00" as Postgres sends a time, or "09:00" as the form does: the
  *  clock face of either. Anything else is left as it came. */
@@ -81,16 +85,25 @@ function readable(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
+/** A refusal in the office's words: the API's pair sentence, or any issue
+ *  on a window field, says what the form says; anything else as it came. */
+function houseWords(message: string | undefined, path: unknown): string | undefined {
+  if (message === API_PAIR_MESSAGE) return WINDOW_COPY.pairNeeded;
+  const onWindow = Array.isArray(path) && path.some((step) => typeof step === "string" && WINDOW_FIELDS.has(step));
+  return onWindow ? WINDOW_COPY.clockNeeded : message;
+}
+
 /** The words to show when a save fails. A 400 from the create route says
  *  only "Validation failed" and keeps the reason in its details, so the
- *  first reason is shown plainly; any other message stands as it came. */
+ *  first reason is shown plainly, in the office's words where the form has
+ *  them; any other message stands as it came. */
 export function ruleSaveError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? readable(error.message) : undefined;
   if (message === undefined) return fallback;
   if (field(error, "code") !== "VALIDATION_ERROR") return message;
   const details = field(error, "details");
   const reason = Array.isArray(details)
-    ? details.map((issue) => readable(field(issue, "message"))).find((text) => text !== undefined)
+    ? details.map((issue) => houseWords(readable(field(issue, "message")), field(issue, "path"))).find((text) => text !== undefined)
     : undefined;
-  return reason ?? message;
+  return reason ?? houseWords(message, undefined) ?? fallback;
 }

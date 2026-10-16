@@ -9,6 +9,10 @@ describe("pricing rule window", () => {
       expect(clockFace("00:30:00")).toBe("00:30");
     });
 
+    it("drops fractional seconds too", () => {
+      expect(clockFace("09:00:00.5")).toBe("09:00");
+    });
+
     it("leaves anything else as it came", () => {
       expect(clockFace("noon")).toBe("noon");
       expect(clockFace("")).toBe("");
@@ -67,20 +71,34 @@ describe("pricing rule window", () => {
   });
 
   describe("ruleSaveError", () => {
-    it("reads the plain message out of a 400 whose body only says Validation failed", () => {
+    it("says the pair rule in the office's words when a 400 keeps it in its details", () => {
       const error = Object.assign(new Error("Validation failed"), {
         status: 400,
         code: "VALIDATION_ERROR",
         details: [{ path: ["appliesUntil"], message: "appliesFrom and appliesUntil go together: both, or neither" }],
       });
-      expect(ruleSaveError(error, "Failed to save pricing rule")).toBe("appliesFrom and appliesUntil go together: both, or neither");
+      expect(ruleSaveError(error, "Failed to save pricing rule")).toBe(WINDOW_COPY.pairNeeded);
     });
 
-    it("keeps an API message that already says what went wrong", () => {
+    it("says the pair rule in the office's words when the patch route puts it in the message", () => {
       const error = Object.assign(new Error("appliesFrom and appliesUntil go together: both, or neither"), {
         status: 400, code: "VALIDATION_ERROR",
       });
-      expect(ruleSaveError(error, "fallback")).toBe("appliesFrom and appliesUntil go together: both, or neither");
+      expect(ruleSaveError(error, "fallback")).toBe(WINDOW_COPY.pairNeeded);
+    });
+
+    it("says what a clock time is when a window field is refused for its shape", () => {
+      const error = Object.assign(new Error("Validation failed"), {
+        status: 400, code: "VALIDATION_ERROR", details: [{ path: ["appliesFrom"], message: "Invalid" }],
+      });
+      expect(ruleSaveError(error, "fallback")).toBe(WINDOW_COPY.clockNeeded);
+    });
+
+    it("shows another field's reason as it came", () => {
+      const error = Object.assign(new Error("Validation failed"), {
+        status: 400, code: "VALIDATION_ERROR", details: [{ path: ["name"], message: "String must contain at most 200 character(s)" }],
+      });
+      expect(ruleSaveError(error, "fallback")).toBe("String must contain at most 200 character(s)");
     });
 
     it("falls back when the error says nothing readable", () => {
