@@ -1,39 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test as base, type Route } from "@playwright/test";
 import { GENERATED_ROOM_SPLAT_BUNDLES } from "../../src/data/generated/trades-hall-splat-bundles.js";
+import { captureCacheDirectory, capturePathPrefix, readStagedTile, stagedFixtureTiles } from "./capture-fixture-cache.js";
 
 const bundle = GENERATED_ROOM_SPLAT_BUNDLES.find((room) => room.roomSlug === "reception-room");
 if (bundle === undefined) throw new Error("Reception Room capture descriptor is missing");
-const tiles = bundle.tiles.filter((tile) => tile.isEnvironment || tile.lodLevel === bundle.finestLevel);
-const assetPrefix = "/splats/trades-hall/reception-room/";
-const publishedOrigin = "https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev";
-const cacheDirectory = join(tmpdir(), "venviewer-e2e-captures-v1");
-
-/** Real published capture bytes, pinned to the checked-in descriptor. */
-async function captureBytes(tile: (typeof tiles)[number]): Promise<Buffer> {
-  await mkdir(cacheDirectory, { recursive: true });
-  const path = join(cacheDirectory, tile.sha256);
-  const matches = (bytes: Buffer): boolean => bytes.length === tile.bytes
-    && createHash("sha256").update(bytes).digest("hex") === tile.sha256;
-  try {
-    const cached = await readFile(path);
-    if (matches(cached)) return cached;
-  } catch (error) {
-    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
-  }
-  const response = await fetch(`${publishedOrigin}${assetPrefix}${tile.file}`, {
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) throw new Error(`Capture fixture ${tile.file}: HTTP ${String(response.status)}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (!matches(bytes)) throw new Error(`Capture fixture ${tile.file} differs from its source descriptor`);
-  await writeFile(path, bytes);
-  return bytes;
-}
+const tiles = stagedFixtureTiles(bundle);
+const assetPrefix = capturePathPrefix(bundle.roomSlug);
 
 interface StagedReception {
   readonly files: readonly string[];
@@ -41,13 +14,16 @@ interface StagedReception {
 }
 
 export const test = base.extend<{ stagedReception: StagedReception }>({
-  stagedReception: [async ({ page, baseURL }, use) => {
+  stagedReception: async ({ page, baseURL }, use) => {
     if (baseURL === undefined) throw new Error("The capture fixture requires an explicit loopback HTTP baseURL");
     const appUrl = new URL(baseURL);
     if (appUrl.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(appUrl.hostname)) {
       throw new Error("The capture fixture requires a loopback HTTP app target");
     }
-    const bytes = new Map(await Promise.all(tiles.map(async (tile) => [tile.file, await captureBytes(tile)] as const)));
+    // Real published capture bytes, pinned to the checked-in descriptor and
+    // staged before the run (capture-fixture-cache.ts). Nothing is fetched here.
+    const directory = captureCacheDirectory();
+    const bytes = new Map(await Promise.all(tiles.map(async (tile) => [tile.file, await readStagedTile(directory, tile)] as const)));
     const requestedFiles = new Set<string>();
     // Serve over actual HTTP so CDP network throttling still applies. A route
     // fulfilled with an in-memory body would bypass the streaming workload.
@@ -96,7 +72,5 @@ export const test = base.extend<{ stagedReception: StagedReception }>({
         }
       }
     }
-  // Cold downloads happen before the test body can set its own timeout.
-  // This setup/teardown budget leaves all browser assertion budgets intact.
-  }, { timeout: 90_000 }],
+  },
 });

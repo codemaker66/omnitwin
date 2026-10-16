@@ -362,6 +362,10 @@ jobs:
     # Playwright's shorter global timeout leaves room to flush failure details
     # and upload screenshots/traces before Actions terminates the runner.
     timeout-minutes: 30
+    env:
+      # Descriptor-pinned capture bytes the planner specs serve; they are
+      # staged before the tests run and never fetched inside them (T-654).
+      E2E_CAPTURE_CACHE_DIR: /tmp/venviewer-e2e-captures-v1
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -379,6 +383,30 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Restore staged capture fixtures
+        # Downloading these from the rate-limited public bucket inside the
+        # planner fixture timed out or lost its socket mid-body and failed four
+        # specs at once (13 October 2026). The key covers the descriptor, which
+        # pins every tile's size and sha256, and the code that chooses and
+        # stages the tiles; the fixture checks size and sha256 on every read.
+        id: capture-fixtures
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.E2E_CAPTURE_CACHE_DIR }}
+          key: e2e-capture-fixtures-v1-${{ hashFiles('packages/web/src/data/generated/trades-hall-splat-bundles.ts', 'packages/web/e2e/support/capture-fixture-cache.ts', 'packages/web/scripts/stage-e2e-captures.mjs') }}
+
+      - name: Stage capture fixtures (cache miss only)
+        if: steps.capture-fixtures.outputs.cache-hit != 'true'
+        run: pnpm --filter @omnitwin/web e2e:stage-captures
+
+      - name: Save staged capture fixtures
+        # Saved at once, not in a post step that only runs when every test passed.
+        if: steps.capture-fixtures.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.E2E_CAPTURE_CACHE_DIR }}
+          key: ${{ steps.capture-fixtures.outputs.cache-primary-key }}
 
       - name: Build @omnitwin/types (required by the Vite dev server Playwright boots)
         run: pnpm --filter @omnitwin/types build
