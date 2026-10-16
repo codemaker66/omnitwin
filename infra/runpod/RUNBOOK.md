@@ -2,7 +2,7 @@
 
 **Audience:** Blake (and any future trainer operator).
 **Scope:** every action between "I want to train a Venviewer splat" and "the signed AssetVersion bundle is in R2 ready for backend ingestion."
-**Backed by:** D-006a (gsplat MCMC + bilateral grid), D-014 (Venue Artifact Factory), D-016 (RunPod-canonical training environment).
+**Backed by:** D-006a (gsplat MCMC + bilateral grid), D-014 (Venue Artifact Factory), D-016 (RunPod-canonical training environment), D-016a (training environment pins: PyTorch 2.14.1 + gsplat main, from 13 October 2026).
 
 This runbook is the canonical source for training-pipeline ops. If you find yourself copying a step from chat history, copy it here instead.
 
@@ -14,7 +14,7 @@ This runbook is the canonical source for training-pipeline ops. If you find your
 
 1. Create a RunPod account at https://runpod.io.
 2. Add a payment method. Routine training cost band: **$5–15 per run** at $1.19/hr Community Cloud A100 80GB.
-3. From the RunPod console, create a Pod Template using the `infra/runpod/runpod-template.json` definition. Set the image to `omnitwin/trainer:1.5.3-cu124` once the image is built and pushed.
+3. From the RunPod console, create a Pod Template using the `infra/runpod/runpod-template.json` definition. Set the image to `omnitwin/trainer:gsplat-512d366b-pt2.14.1-cu132` once the image is built and pushed (not yet, as of 16 October 2026; until then use [the plain RunPod image path](#new-environment-on-a-plain-runpod-image-validated-16-october-2026)). Old recipes keep `omnitwin/trainer:1.5.3-cu124`. Pods need a 580-series driver or newer (RunPod `allowedCudaVersions: ["13.0"]` selects them; CUDA 13.2 builds run there under minor-version compatibility).
 
 ### R2 buckets
 
@@ -46,11 +46,37 @@ Build and push the trainer image once (and on every Dockerfile change):
 
 ```bash
 cd infra/runpod
-docker build -t omnitwin/trainer:1.5.3-cu124 .
-docker push omnitwin/trainer:1.5.3-cu124
+docker build -t omnitwin/trainer:gsplat-512d366b-pt2.14.1-cu132 .
+docker push omnitwin/trainer:gsplat-512d366b-pt2.14.1-cu132
 ```
 
-The Dockerfile force-imports `gsplat` at build time and runs `healthcheck.py --no-cuda`, so a broken image fails at build, not at first pod boot.
+The Dockerfile refuses to build unless `nvcc` is 13.2.86 (CUDA 13.2 Update 2; earlier compilers back to 12.8 can miscompile kernels with nested divergence, D-016a), force-imports `gsplat` and `ppisp` at build time and runs `healthcheck.py --no-cuda`, so a broken image fails at build, not at first pod boot. gsplat is compiled from source for sm_80 and sm_90 with `BUILD_3DGUT=0` (the trainer does not use 3DGUT; leaving it out saves most of the build). Keep `MAX_JOBS` low on small build machines (its largest kernels used about 7 GB of RAM per compiler process).
+
+As of 16 October 2026 this image has **not** been built or pushed: the changes that defined it (T-655, D-016a) had no registry credentials, and no CUDA images are built on the shared PC. The previous tag, `omnitwin/trainer:1.5.3-cu124` (gsplat 1.5.3, PyTorch 2.4.1, CUDA 12.4), comes from this Dockerfile as it was before D-016a and stays the environment for reproducing old results.
+
+### New environment on a plain RunPod image (validated 16 October 2026)
+
+This is how T-655 ran the D-016a environment on a RunPod H100 pod (`eexytqnlp25mg2`). It is the working path until the trainer image above is published. The reference script is `D:/claude/ppisp-20261013/pod_boot_t655.sh` (outside the repo); it does every step below and records versions in `t655_env.txt`.
+
+1. Create the pod with image `runpod/pytorch:1.4.0-cu1300-torch2130-ubuntu2404` and `allowedCudaVersions: ["13.0"]` (REST `POST /v1/pods`). Validated host: NVIDIA H100 80GB HBM3, driver 580.126.09, Python 3.12.3.
+2. Install the CUDA 13.2 Update 2 toolkit beside the image's CUDA 13.0 (the image's nvcc 13.0.88 is in the affected range and is not used for the extensions). The image already lists NVIDIA's apt repo in `/etc/apt/sources.list.d/cuda.list`: **do not install `cuda-keyring` on top of it**, or apt refuses with `Conflicting values set for option Signed-By`. If `cuda-keyring` is already installed alongside that list, purge it first (`dpkg -P cuda-keyring`); install the keyring only when no NVIDIA source is listed.
+   ```bash
+   apt-get update && apt-get install -y --no-install-recommends cuda-toolkit-13-2=13.2.2-1
+   export CUDA_HOME=/usr/local/cuda-13.2 PATH=/usr/local/cuda-13.2/bin:$PATH
+   nvcc --version | grep -q V13.2.86 || echo "STOP: wrong nvcc"
+   ```
+   SSH sessions do not inherit the image's environment, so export these in every session. Ubuntu 24.04's pip also needs `PIP_BREAK_SYSTEM_PACKAGES=1`.
+3. `pip install torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cu132`, then prove it on the driver with a CUDA operation (for example a matmul and `torch.cuda.synchronize()`). If the driver refuses the cu132 wheels, the fallback is the `cu130` index, with the extensions still built by nvcc 13.2.86; on 580.126.09 it was not needed.
+4. gsplat at the pinned commit, built against that PyTorch by nvcc 13.2.86 (about 2 minutes on the H100 pod):
+   ```bash
+   git clone https://github.com/nerfstudio-project/gsplat.git && cd gsplat
+   git checkout 512d366b67073d77ca099ede742683c165dfc23b
+   git submodule update --init --recursive gsplat/cuda/csrc/third_party/glm
+   TORCH_CUDA_ARCH_LIST=9.0 BUILD_EXPERIMENTAL=0 BUILD_3DGUT=0 pip install --no-build-isolation -v . 2>&1 | tee gsplat_build.log
+   grep -m1 "cuda-13.2/bin/nvcc" gsplat_build.log   # must match: the build used the fixed compiler
+   ```
+5. `pip install --no-build-isolation -v git+https://github.com/nv-tlabs/ppisp.git@a247368047651db2e03e6f97a36e4f5bebbe5c5f` (v1.3.0), with the same `grep` on its build log.
+6. Check before training: `python -c "import torch, gsplat, ppisp; from gsplat import csrc"` from a directory that holds no source checkout.
 
 ---
 
@@ -69,7 +95,7 @@ The "smoke/colmap_v2" prefix carries the same shape as a real venue input: `imag
 
 ### 2. Launch the pod
 
-In the RunPod console, deploy a new pod from the `venviewer-trainer-a100-cu124` template. GPU: A100 80GB (Community Cloud). On boot the bootstrap script pulls the trainer code from git and drops to bash.
+In the RunPod console, deploy a new pod from the `venviewer-trainer-cu132` template. GPU: A100 80GB (Community Cloud) or H100, on a host with a 580-series driver or newer. On boot the bootstrap script pulls the trainer code from git and drops to bash.
 
 ### 3. Verify the build
 
@@ -79,7 +105,7 @@ SSH into the pod (or open the web terminal) and run:
 /opt/verify_build.sh
 ```
 
-Confirm the output JSON shows `gsplat` 1.5.3, `cuda` 12.4, A100 80GB visible in `nvidia_smi`. If any field is missing, **stop here** — the image is wrong; rebuild before continuing.
+Confirm the output JSON shows `gsplat` 1.6.0 (main `512d366b`), `torch` 2.14.1+cu132, `cuda` 13.2, and the GPU in `nvidia_smi`. If any field is missing, **stop here** — the image is wrong; rebuild before continuing.
 
 ### 4. Run the smoke training
 
@@ -179,7 +205,7 @@ The bundle is **unsigned** at this point. Backend ingestion (T-053, deferred unt
 | # | Symptom | Likely cause | Recovery |
 |---|---|---|---|
 | 1 | `ImportError: pycolmap.SceneManager` | Upstream PyPI pycolmap installed instead of rmbrualla fork. | Rebuild the Docker image; the Dockerfile pins the rmbrualla fork at commit cc7ea4b73. |
-| 2 | `ImportError: gsplat ... CUDA extension` | Wheel didn't compile cleanly against the pod's CUDA / driver. | Force-rebuild without cache: `docker build --no-cache -t omnitwin/trainer:... .`. Verify `TORCH_CUDA_ARCH_LIST="8.0"` matches A100 SM. |
+| 2 | `ImportError: gsplat ... CUDA extension` | The source build didn't compile cleanly against the pod's CUDA / driver, or the host driver is older than the 580 series CUDA 13 needs. | Check `nvidia-smi` shows driver 580 or newer and `nvcc --version` shows V13.2.86. Force-rebuild without cache: `docker build --no-cache -t omnitwin/trainer:... .`. Verify `TORCH_CUDA_ARCH_LIST="8.0;9.0"` covers the GPU (A100 sm_80, H100 sm_90). |
 | 3 | `struct.error reading cameras.bin` | COLMAP binary file truncated or wrong endian — usually rclone partial transfer. | Re-pull dataset: `rclone copy --transfers 16 r2:.../colmap_v2 /workspace/data --no-traverse`. Check file sizes against R2 source. |
 | 4 | PSNR plateau ~12–14 dB after 5000 iters | **Equirectangular images in input.** gsplat does NOT train on raw equirect. | The `colmap_v2` dataset must contain undistorted pinhole or fisheye images. Re-process the input: undistort panoramas to perspective views before COLMAP. See "Equirectangular trap" below. |
 | 5 | Pod preempted (Spot only) | RunPod reclaimed the GPU. | The SIGTERM handler flushes partial state to `r2:.../{run_id}.partial/` (5-second grace). Relaunch with the same `--venue-id`; `run_training.sh` resumes from `.partial/ckpts`. Accept losing up to ~7000 iters of progress per preemption. |
@@ -204,6 +230,7 @@ Per the RunPod pricing as of 2026-04-26:
 | Secure Cloud (canonical bake-off) | A100 80GB | $1.39–1.89 |
 | Ablation alternative | L40S 48GB | $0.79 |
 | Ablation alternative | RTX 6000 Ada 48GB | $0.74 |
+| Secure Cloud, panorama splat lane (observed October 2026) | H100 SXM 80GB | $3.49–3.99 (the T-655 pod billed $3.99 on 13 October 2026) |
 
 **Budget targets:**
 
@@ -252,13 +279,13 @@ Why this matters: an A100 80GB at $1.19/hr is $28/day if you forget. Set the sec
 
 This is the surface-area checklist for the things that aren't yet validated end-to-end. Tick each one off as the first Trades Hall Config B run lands.
 
-- [ ] gsplat wheel index `https://docs.gsplat.studio/whl/pt24cu124` still resolves on a fresh `pip install`.
+- [ ] The trainer image builds gsplat `main` @ `512d366b` and PPISP v1.3.0 from source (D-016a); the pins were validated on a pod, not yet inside the image.
 - [ ] pycolmap rmbrualla fork at commit `cc7ea4b73` still installs (commit hasn't been deleted/rewritten upstream).
 - [ ] R2 zero-egress assumption holds — the run_training.sh data pull reports no egress charges.
 - [ ] Bootstrap script's git clone succeeds against the pinned `OMNITWIN_GIT_REPO` + `OMNITWIN_GIT_REF` from the pod template.
 - [ ] `rclone lsd r2:` succeeds before any data copy is attempted.
 - [ ] E57 depth prior generation on Trades Hall completes within the expected ~10–15 min budget.
-- [ ] Trainer's `--depth_loss --external_depth_dir` argument names match what the vendored upstream simple_trainer.py expects (verify against gsplat 1.5.3 examples/simple_trainer.py).
+- [ ] Trainer's `--depth_loss --external_depth_dir` argument names match what the vendored upstream simple_trainer.py expects (verify against gsplat `main` @ `512d366b` examples/simple_trainer.py; the vendored copy was written against 1.5.3).
 - [ ] gsplat trainer's PLY output path matches the `ls -t "$BUNDLE_DIR/ply/"*.ply | head -1` pattern in `run_training.sh`.
 - [ ] Background checkpoint mirror's writes don't race with the trainer's checkpoint writes (look for partial-file warnings in rclone log).
 - [ ] Tarball's `tar --sort=name` produces deterministic byte-for-byte output across two reruns of the same training (compare SHA-256).
@@ -274,6 +301,7 @@ When all twelve are ticked, `T-001` status moves to `done`.
 - `docs/architecture/adr/D-006a.md` — gsplat MCMC + bilateral grid + 3DGUT decision
 - `docs/architecture/adr/D-014.md` — Venue Artifact Factory (bundle format + trust boundary)
 - `docs/architecture/adr/D-016.md` — RunPod-canonical training environment
+- `docs/architecture/adr/D-016a.md` — training environment pins: PyTorch 2.14.1, gsplat main, PPISP (13 October 2026)
 - `docs/specs/runpod-training-contract.md` — bundle format spec, JSON schemas
 - `infra/runpod/runpod-template.json` — pod template definition
 - `configs/training/config_b.yaml` — production recipe

@@ -1,13 +1,13 @@
 {
-  "name": "venviewer-trainer-a100-cu124",
-  "imageName": "omnitwin/trainer:1.5.3-cu124",
+  "name": "venviewer-trainer-cu132",
+  "imageName": "omnitwin/trainer:gsplat-512d366b-pt2.14.1-cu132",
   "containerDiskInGb": 80,
   "volumeInGb": 0,
   "volumeMountPath": null,
   "ports": "22/tcp,8080/http",
   "isServerless": false,
   "isPublic": false,
-  "readme": "Venviewer trainer — gsplat 1.5.3 on PyTorch 2.4.1 + CUDA 12.4 for A100 80GB.\n\nOn boot:\n  1. /opt/bootstrap.sh runs (decoded from CMD): pulls the trainer code from OMNITWIN_GIT_REPO @ OMNITWIN_GIT_REF, snapshots the git SHA/branch/remote into /workspace/code/.git_*, writes rclone.conf for R2, then exec's bash.\n  2. Operator opens an SSH or web terminal into the pod.\n  3. Operator runs /opt/verify_build.sh and confirms the JSON output (gsplat 1.5.3, CUDA 12.4, A100 80GB visible).\n  4. Operator runs /opt/run_training.sh with the desired flags per infra/runpod/RUNBOOK.md.\n\nNo persistent volume — R2 is the storage layer. Container disk 80GB covers one venue's colmap_v2 + depth priors + bundle output.\n\nDo not enable spot/interruptible until run_training.sh checkpoint-resume has been validated end-to-end.",
+  "readme": "Venviewer trainer — gsplat main @ 512d366b (1.6.0, unreleased) with NVIDIA PPISP v1.3.0 on PyTorch 2.14.1 + CUDA 13.2 Update 2 (every extension built by nvcc 13.2.86), for A100 80GB and H100 (D-016a, validated 16 Oct 2026). Needs a 580-series host driver or newer (CUDA minor-version compatibility). The image is not yet built or pushed; until it is, follow 'New environment on a plain RunPod image' in infra/runpod/RUNBOOK.md. Old recipes: omnitwin/trainer:1.5.3-cu124.\n\nOn boot:\n  1. /opt/bootstrap.sh runs (decoded from CMD): pulls the trainer code from OMNITWIN_GIT_REPO @ OMNITWIN_GIT_REF, snapshots the git SHA/branch/remote into /workspace/code/.git_*, writes rclone.conf for R2, then exec's bash.\n  2. Operator opens an SSH or web terminal into the pod.\n  3. Operator runs /opt/verify_build.sh and confirms the JSON output (gsplat 1.6.0, torch 2.14.1+cu132, CUDA 13.2, the GPU visible).\n  4. Operator runs /opt/run_training.sh with the desired flags per infra/runpod/RUNBOOK.md.\n\nNo persistent volume — R2 is the storage layer. Container disk 80GB covers one venue's colmap_v2 + depth priors + bundle output.\n\nDo not enable spot/interruptible until run_training.sh checkpoint-resume has been validated end-to-end.",
   "dockerArgs": "",
   "startScript": "bash -lc '/opt/bootstrap.sh'",
   "env": [

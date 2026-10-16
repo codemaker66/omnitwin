@@ -128,7 +128,7 @@ Produced by `venviewer_training.eval_holdout`. Held-out view metrics plus WebGL 
   "config":    { ... },
   "data":      "/workspace/data",
   "device":    "cuda",
-  "torch_version": "2.4.1",
+  "torch_version": "2.14.1+cu132",
   "summary": {
     "psnr":  24.87,
     "ssim":  0.853,
@@ -148,15 +148,17 @@ Produced by `venviewer_training.eval_holdout`. Held-out view metrics plus WebGL 
 
 ```json
 {
-  "gpu":           "NVIDIA A100-SXM4-80GB",
+  "gpu":           "NVIDIA H100 80GB HBM3",
   "device_count":  1,
-  "torch":         "2.4.1+cu124",
-  "cuda":          "12.4",
-  "trainer_image": "1.5.3-cu124",
+  "torch":         "2.14.1+cu132",
+  "cuda":          "13.2",
+  "trainer_image": "gsplat-512d366b-pt2.14.1-cu132",
   "pod_id":        "abc123def456",
   "pod_region":    "runpod-us-east-1"
 }
 ```
+
+Versions follow D-016a (validated 16 October 2026): PyTorch 2.14.1 + CUDA 13.2 (the cu132 wheels; extensions built by nvcc 13.2.86), gsplat built from `main` @ `512d366b`, PPISP v1.3.0. `trainer_image` comes from the image's `OMNITWIN_TRAINER_VERSION`. Bundles produced under D-016's original pins carry `"torch": "2.4.1+cu124"`, `"cuda": "12.4"`, `"trainer_image": "1.5.3-cu124"`; both are valid, and the field set is unchanged.
 
 ### 2.7 `git_state.json`
 

@@ -42,7 +42,7 @@ flowchart TD
     end
 
     subgraph COMPUTE [compute]
-        RunPod(["RunPod · A100 80GB · trainer image"]):::current
+        RunPod(["RunPod · A100 / H100 · PyTorch 2.14.1 + gsplat main"]):::current
         Workers(["Cloudflare Workers · Geass event hub"]):::planned
     end
 
@@ -147,10 +147,15 @@ run is cheaper than persistent volumes. Backup verification is *not*
 yet exercised — T-062 is the precondition before any customer data
 lands.
 
-**Compute.** RunPod A100 80GB is the canonical splat-training environment
-per D-016; local Windows training was deprecated 2026-04-25. Trainer
-image `omnitwin/trainer:1.5.3-cu124` runs on Community Cloud (routine)
-or Secure Cloud (canonical bake-off). Cloudflare Workers will host the
+**Compute.** RunPod is the canonical splat-training environment per
+D-016; local Windows training was deprecated 2026-04-25. Since D-016a
+(13 October 2026, T-655) the training stack is PyTorch 2.14.1 + CUDA
+13.0 with gsplat built from `main` @ `512d366b` and NVIDIA PPISP v1.3.0,
+validated on a Secure Cloud H100 SXM pod (CUDA 13.0 hosts only). Its
+trainer image `omnitwin/trainer:gsplat-512d366b-pt2.14.1-cu130` is
+defined but not yet built; pods install the pins on RunPod's own image
+(runbook). Old recipes keep `omnitwin/trainer:1.5.3-cu124` (gsplat
+1.5.3, PyTorch 2.4.1). Cloudflare Workers will host the
 Geass event hub (T-054) under the `sentinel.*` schema namespace,
 read-only on system events.
 
