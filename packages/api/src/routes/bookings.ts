@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   ConvertEnquirySchema,
   CreateBookingSchema,
@@ -32,6 +32,7 @@ import {
   executeDiaryCommand,
   realDiaryCommandDeps,
 } from "../services/diary-commands.js";
+import { canReadDiary } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
 // Booking write surface (T-487/T-488/T-491; Canon §1–§3).
@@ -46,6 +47,13 @@ import {
 // ---------------------------------------------------------------------------
 
 const IdParam = z.object({ id: z.string().uuid() });
+
+/** GET /bookings reads exactly one enquiry's bookings: a missing, malformed,
+ *  repeated or unknown parameter is a 400, never a wider read. */
+const EnquiryBookingsQuery = z.object({ enquiryId: z.string().uuid() }).strict();
+
+/** Far above the bookings any one enquiry holds; the list is never paged. */
+const ENQUIRY_BOOKINGS_LIMIT = 100;
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({
@@ -179,6 +187,48 @@ export async function bookingRoutes(
     if (!result.ok) return sendDeny(reply, result);
     publishDiaryChanged(request, result.booking.venueId, result.changeKind, result.booking.id);
     return reply.status(result.status).send({ data: serializeBooking(result.booking) });
+  });
+
+  // An enquiry's own live bookings (T-635): the Enquiries desk reads where an
+  // enquiry stands in the Diary. Live is the Diary's meaning (isLiveBooking:
+  // active and not deleted), and only in rooms the Diary still shows, so
+  // nothing comes back that GET /calendar would not draw. Gated as the Diary
+  // is, by canReadDiary at the enquiry's venue: an unknown enquiry is 404, one
+  // the caller may not read is 403, as GET /:id answers for a booking.
+  server.get("", { preHandler: [authenticate] }, async (request, reply) => {
+    const query = EnquiryBookingsQuery.safeParse(request.query);
+    if (!query.success) return validationError(reply, query.error.issues);
+
+    const [enquiry] = await db
+      .select({ id: enquiries.id, venueId: enquiries.venueId })
+      .from(enquiries)
+      .where(eq(enquiries.id, query.data.enquiryId))
+      .limit(1);
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "ENQUIRY_NOT_FOUND" });
+    }
+    if (!canReadDiary(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
+    }
+
+    const rows = await db
+      .select({ booking: bookings })
+      .from(bookings)
+      // The calendar's rooms: this venue's spaces that are not soft-deleted.
+      .innerJoin(spaces, and(
+        eq(spaces.id, bookings.spaceId),
+        eq(spaces.venueId, enquiry.venueId),
+        isNull(spaces.deletedAt),
+      ))
+      .where(and(
+        eq(bookings.enquiryId, enquiry.id),
+        eq(bookings.venueId, enquiry.venueId),
+        eq(bookings.status, "active"),
+        isNull(bookings.deletedAt),
+      ))
+      .orderBy(asc(bookings.startsAt), asc(bookings.id))
+      .limit(ENQUIRY_BOOKINGS_LIMIT);
+    return { data: rows.map((row) => serializeBooking(row.booking)) };
   });
 
   server.get("/:id", { preHandler: [authenticate] }, async (request, reply) => {

@@ -95,6 +95,9 @@ async function openDesk(page: Page): Promise<Presses> {
         nextActionsDue: { holds: [], total: 0 },
         contested: { dates: [], total: 0 },
       } } });
+    } else if (url.pathname === "/bookings" && request.method() === "GET") {
+      // The enquiry's own live bookings: every hold made here is this enquiry's.
+      void route.fulfill({ json: { data: url.searchParams.get("enquiryId") === ENQUIRY_ID ? presses.holds : [] } });
     } else if (url.pathname === "/bookings/from-enquiry" && request.method() === "POST") {
       const body = request.postDataJSON() as Record<string, unknown>;
       presses.holdRequests.push(body);

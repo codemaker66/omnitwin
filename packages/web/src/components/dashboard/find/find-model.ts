@@ -1,4 +1,5 @@
 import type { SearchResults } from "../../../api/clients.js";
+import { freeRoomsSaid } from "../../../pages/diary/lib/day-answer.js";
 import { parseGoToDate } from "../../../pages/diary/lib/go-to-date.js";
 import { clientRefToSearchValue, groupResults, rowLabel, type ResultRow } from "../clients/clients-desk-format.js";
 import { eventDateLong, eventDateParts } from "../enquiries/enquiry-desk-format.js";
@@ -61,15 +62,7 @@ export interface FindDayAnswer {
 /** What the polite region says once a day is answered: "Saturday 14 November
  *  2026: 5 of 8 rooms free." */
 export function dayAnswerSaid(answer: FindDayAnswer): string {
-  const title = eventDateLong(answer.iso) ?? answer.iso;
-  const rooms = answer.rooms.length;
-  const free = answer.rooms.filter((room) => room.free).length;
-  const only = answer.rooms.length === 1 ? answer.rooms[0] : undefined;
-  const said = only !== undefined ? `${only.name} is ${only.free ? "free" : "taken"}`
-    : free === rooms ? `all ${String(rooms)} rooms free`
-      : free === 0 ? "no room free"
-        : `${String(free)} of ${String(rooms)} rooms free`;
-  return `${title}: ${said}.`;
+  return `${eventDateLong(answer.iso) ?? answer.iso}: ${freeRoomsSaid(answer.rooms, false)}.`;
 }
 
 export interface FindGroup {

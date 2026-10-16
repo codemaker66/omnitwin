@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarEntry, CalendarRoom } from "@omnitwin/types";
-import { dayAnswer } from "../day-answer.js";
+import { dayAnswer, freeRoomsSaid } from "../day-answer.js";
 
 // ---------------------------------------------------------------------------
 // A day, room by room, in the Diary's own words: what Go to date on the board
@@ -19,12 +19,16 @@ const ROOMS: readonly CalendarRoom[] = [
 ];
 
 function booking(id: string, spaceId: string, kind: string, title: string, startsAt: string, endsAt: string,
-  extra: { readonly rank?: number | null; readonly jointFlag?: boolean; readonly decisionAt?: string | null } = {}): CalendarEntry {
+  extra: { readonly rank?: number | null; readonly jointFlag?: boolean; readonly decisionAt?: string | null; readonly eventId?: string } = {}): CalendarEntry {
   return {
     entryType: "booking", id, spaceId, kind, status: "active", state: kind, title, eventType: "dinner",
     startsAt, endsAt, rank: extra.rank ?? null, jointFlag: extra.jointFlag ?? false, decisionAt: extra.decisionAt ?? null,
-    ownerUserId: null, nextAction: null, nextActionDueAt: null, eventId: null, seriesId: null,
+    ownerUserId: null, nextAction: null, nextActionDueAt: null, eventId: extra.eventId ?? null, seriesId: null,
   } as CalendarEntry;
+}
+
+function phase(id: string, spaceId: string, eventId: string, name: string, startsAt: string, endsAt: string): CalendarEntry {
+  return { entryType: "phase", id, spaceId, eventId, eventName: "Fraser wedding", name, startsAt, endsAt, sortOrder: 0 };
 }
 
 /** Saturday 14 November 2026, midnight to midnight in Glasgow (GMT). */
@@ -74,5 +78,80 @@ describe("dayAnswer", () => {
   it("calls a room free from when the night before's event ends in the small hours", () => {
     expect(said("r5")).toEqual(["Free from 01:00"]);
     expect(free("r5")).toBe(true);
+  });
+
+  it("keeps each line's kind, the booking it words, and a brief form without the title", () => {
+    const lines = (id: string) => answer.find((room) => room.id === id)?.lines ?? [];
+    expect(lines("r1")).toEqual([
+      { key: "b1", kind: "confirmed", bookingId: "b1", text: "Confirmed, Fraser wedding, 13:00–23:00", brief: "Confirmed 13:00–23:00" },
+    ]);
+    expect(lines("r2")[0]).toMatchObject({
+      kind: "hold", bookingId: "b2", brief: expect.stringMatching(/^2nd option 18:00–23:00, decides Tue 10 Nov( 2026)?$/u) as unknown,
+    });
+    expect([lines("r3")[0]?.brief, lines("r7")[0]?.brief]).toEqual(["Joint 1st 18:00–22:00", "Provisional 12:00–14:00"]);
+    expect(lines("r6")[0]).toMatchObject({ kind: "block", bookingId: "b6", brief: "House block 08:00–10:00" });
+    const interest = "Free, interest only from Henderson enquiry";
+    expect(lines("r4")).toEqual([{ key: "free", kind: "free", bookingId: null, text: interest, brief: interest }]);
+  });
+});
+
+describe("dayAnswer, over time and with other events", () => {
+  const room = (answer: ReturnType<typeof dayAnswer>, id: string) => answer.find((each) => each.id === id);
+
+  it("says a decision that has passed as the Diary's decisions list does, from the moment it passes", () => {
+    const after = room(dayAnswer(ENTRIES, ROOMS, DAY, Date.parse("2026-11-11T09:00:00.000Z")), "r2");
+    expect(after?.lines.map((line) => [line.text, line.brief])).toEqual([[
+      "2nd option Burns supper, 18:00–23:00, decision was due Tue 10 Nov",
+      "2nd option 18:00–23:00, decision was due Tue 10 Nov",
+    ]]);
+    const atTheMoment = room(dayAnswer(ENTRIES, ROOMS, DAY, Date.parse("2026-11-10T12:00:00.000Z")), "r2");
+    expect(atTheMoment?.lines[0]?.text).toBe("2nd option Burns supper, 18:00–23:00, decides Tue 10 Nov");
+  });
+
+  it("says another event's phase in a room that event has not booked, and never calls that room free", () => {
+    const entries = [
+      booking("b1", "r1", "ink", "Fraser wedding", "2026-11-14T13:00:00.000Z", "2026-11-14T23:00:00.000Z", { eventId: "e1" }),
+      // The wedding's ceremony in the hall it has booked is that booking's own time.
+      phase("p1", "r1", "e1", "Ceremony", "2026-11-14T13:00:00.000Z", "2026-11-14T14:00:00.000Z"),
+      phase("p2", "r2", "e1", "Drinks reception", "2026-11-14T17:00:00.000Z", "2026-11-14T18:30:00.000Z"),
+      booking("b2", "r2", "ink", "Law Society lunch", "2026-11-14T12:00:00.000Z", "2026-11-14T15:00:00.000Z"),
+    ];
+    const answer = dayAnswer(entries, ROOMS, DAY, NOW);
+    expect(room(answer, "r1")?.lines.map((line) => line.text)).toEqual(["Confirmed, Fraser wedding, 13:00–23:00"]);
+    expect(room(answer, "r2")?.lines).toEqual([
+      { key: "b2", kind: "confirmed", bookingId: "b2", text: "Confirmed, Law Society lunch, 12:00–15:00", brief: "Confirmed 12:00–15:00" },
+      { key: "p2", kind: "in_use", bookingId: null, text: "In use for Fraser wedding (Drinks reception), 17:00–18:30", brief: "In use 17:00–18:30" },
+    ]);
+    const onlyThePhase = room(dayAnswer(entries.filter((entry) => entry.id !== "b2"), ROOMS, DAY, NOW), "r2");
+    expect(onlyThePhase?.free).toBe(false);
+    expect(onlyThePhase?.lines.map((line) => line.kind)).toEqual(["in_use"]);
+  });
+
+  it("lets the night before's phase leave a room free from when it ends, and a phase of no length use nothing", () => {
+    const entries = [
+      phase("p1", "r3", "e1", "Ceilidh", "2026-11-13T20:00:00.000Z", "2026-11-14T00:30:00.000Z"),
+      phase("p2", "r4", "e1", "Photographs", "2026-11-14T15:00:00.000Z", "2026-11-14T15:00:00.000Z"),
+    ];
+    const answer = dayAnswer(entries, ROOMS, DAY, NOW);
+    expect(room(answer, "r3")).toMatchObject({ free: true, lines: [{ kind: "free", text: "Free from 00:30" }] });
+    expect(room(answer, "r4")).toMatchObject({ free: true, lines: [{ kind: "free", text: "Free" }] });
+  });
+});
+
+describe("freeRoomsSaid", () => {
+  const SIX = ["Grand Hall", "Saloon", "Robert Adam Room", "Reception Room", "North Gallery", "South Gallery"];
+  const rooms = (free: (name: string) => boolean) => SIX.map((name) => ({ name, free: free(name) }));
+
+  it("counts the free rooms inside Find's sentence and as an answer of its own", () => {
+    const allButTheHall = rooms((name) => name !== "Grand Hall");
+    expect([freeRoomsSaid(allButTheHall, false), freeRoomsSaid(allButTheHall, true)]).toEqual(["5 of 6 rooms free", "5 of 6 rooms free"]);
+    expect([freeRoomsSaid(rooms(() => true), false), freeRoomsSaid(rooms(() => true), true)]).toEqual(["all 6 rooms free", "All 6 rooms free"]);
+    expect([freeRoomsSaid(rooms(() => false), false), freeRoomsSaid(rooms(() => false), true)]).toEqual(["no room free", "No room free"]);
+  });
+
+  it("names a venue's only room, and finds no room free where there are none", () => {
+    expect(freeRoomsSaid([{ name: "Saloon", free: true }], true)).toBe("Saloon is free");
+    expect(freeRoomsSaid([{ name: "Grand Hall", free: false }], false)).toBe("Grand Hall is taken");
+    expect(freeRoomsSaid([], true)).toBe("No room free");
   });
 });

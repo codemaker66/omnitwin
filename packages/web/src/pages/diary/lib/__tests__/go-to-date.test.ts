@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
+import type { CalendarBookingEntry, CalendarPhaseEntry, CalendarRoom } from "@omnitwin/types";
 import { parseGoToDate, roomsOnDay, saidWeekday, type RoomAnswer } from "../go-to-date.js";
 
 const TODAY = "2026-09-27";
@@ -97,7 +97,7 @@ describe("roomsOnDay", () => {
     // Same start: the ladder's order.
     expect(titles(answers[1])).toEqual(["Fraser wedding", "Guild dinner"]);
     expect(titles(answers[2])).toEqual(["Floor polish"]);
-    expect(answers[3]).toEqual({ roomId: GALLERY, room: "North Gallery", bookings: [], interest: [], freeFromMs: null });
+    expect(answers[3]).toEqual({ roomId: GALLERY, room: "North Gallery", bookings: [], phases: [], interest: [], freeFromMs: null });
   });
 
   it("keeps each hold's own place on its ladder, so two 1st options are not a joint 1st", () => {
@@ -157,5 +157,52 @@ describe("roomsOnDay", () => {
         startsAt: "2027-06-04T19:00:00.000Z", endsAt: "2027-06-05T05:30:00.000Z" }),
     ];
     expect(titles(roomsOnDay(entries, ROOMS, DAY)[0])).toEqual(["All-night ball"]);
+  });
+
+  const FRASER = "00000000-0000-4000-9000-000000000001";
+  function phase(overrides: Partial<CalendarPhaseEntry>): CalendarPhaseEntry {
+    next += 1;
+    return {
+      entryType: "phase", id: `00000000-0000-4000-a000-${String(next).padStart(12, "0")}`, spaceId: SALOON, eventId: FRASER,
+      eventName: "Fraser wedding", name: "Drinks reception", startsAt: "2027-06-05T16:00:00.000Z",
+      endsAt: "2027-06-05T17:30:00.000Z", sortOrder: 0, ...overrides,
+    };
+  }
+  const phaseNames = (answer: RoomAnswer | undefined): readonly string[] => answer?.phases.map((each) => each.name) ?? [];
+
+  it("counts another event's timed phase as using a room it has not booked, as the conflict engine does", () => {
+    const entries = [
+      entry({ spaceId: HALL, kind: "ink", state: "ink", rank: null, title: "Fraser wedding", eventId: FRASER }),
+      // The wedding's ceremony in the hall it has booked is that booking's own time.
+      phase({ spaceId: HALL, name: "Ceremony", startsAt: "2027-06-05T13:00:00.000Z", endsAt: "2027-06-05T14:00:00.000Z" }),
+      phase({ spaceId: SALOON, name: "Drinks reception" }),
+      phase({ spaceId: SALOON, name: "Photographs", startsAt: "2027-06-05T15:00:00.000Z", endsAt: "2027-06-05T15:30:00.000Z" }),
+      // A phase of no length uses nothing.
+      phase({ spaceId: ADAM, name: "Speeches", startsAt: "2027-06-05T16:00:00.000Z", endsAt: "2027-06-05T16:00:00.000Z" }),
+    ];
+    const answers = roomsOnDay(entries, ROOMS, DAY);
+    expect([titles(answers[0]), phaseNames(answers[0])]).toEqual([["Fraser wedding"], []]);
+    expect(answers[1]).toMatchObject({ bookings: [], interest: [], freeFromMs: null });
+    expect(phaseNames(answers[1])).toEqual(["Photographs", "Drinks reception"]);
+    expect(answers[2]).toMatchObject({ bookings: [], phases: [], freeFromMs: null });
+  });
+
+  it("lets an event's hold in the room speak for its phase there, even behind a confirmed booking", () => {
+    const entries = [
+      entry({ spaceId: SALOON, kind: "ink", state: "ink", rank: null, title: "Law Society dinner",
+        startsAt: "2027-06-05T15:00:00.000Z", endsAt: "2027-06-05T22:00:00.000Z" }),
+      entry({ spaceId: SALOON, rank: 2, title: "Fraser wedding", eventId: FRASER }),
+      phase({ spaceId: SALOON }),
+    ];
+    const answer = roomsOnDay(entries, ROOMS, DAY)[1];
+    expect([titles(answer), phaseNames(answer)]).toEqual([["Law Society dinner"], []]);
+  });
+
+  it("leaves a room free from when the night before's phase ends in the small hours", () => {
+    const entries = [
+      phase({ spaceId: GALLERY, name: "Ceilidh", startsAt: "2027-06-04T20:00:00.000Z", endsAt: "2027-06-05T00:30:00.000Z" }),
+    ];
+    expect(roomsOnDay(entries, ROOMS, DAY)[3])
+      .toMatchObject({ bookings: [], phases: [], freeFromMs: Date.parse("2027-06-05T00:30:00.000Z") });
   });
 });

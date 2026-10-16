@@ -9,11 +9,12 @@ import { useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js"
 import { StageChip } from "./EnquiryStages.js";
 import { EnquiryNameText, enquiryName } from "./EnquiryLedger.js";
 import type { RoomPhoto } from "./enquiry-room-photo.js";
+import type { EnquiryStanding } from "./enquiry-standing.js";
 import type { VenueRoom } from "./use-venue-rooms.js";
-import { canHoldDateFor, diaryHoldHref } from "../../../pages/diary/lib/enquiry-link.js";
+import { theRoom } from "../proposals/template-format.js";
 import {
-  eventDateParts, eventLead, eventWeekday, relativeAge, requestKind, requestWords, sourceWords, stageLabel, stageTone, venueMoment,
-  type RequestKind,
+  eventDateLong, eventDateParts, eventLead, eventWeekday, relativeAge, requestKind, requestWords, sourceWords, stageLabel, stageTone,
+  venueMoment, type RequestKind,
 } from "./enquiry-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,29 @@ export interface PanelTransition {
   /** The change being saved, or null. */
   readonly saving: TransitionTarget | null;
   readonly failure: string | null;
+}
+
+/** Where the enquiry stands in the Diary, for a reader of the enquiry's own
+ *  venue's Diary (docs/design/enquiry-day-answer-2026-10-13). */
+export interface PanelDiary {
+  /** waiting: before the first read, so the slot is held blank; reading: a
+   *  read is out and nothing is kept; failed: nothing could be read. */
+  readonly status: "waiting" | "reading" | "ready" | "failed";
+  readonly standing: EnquiryStanding | null;
+  /** The latest read failed: Try again is offered, and a kept answer stays. */
+  readonly failed: boolean;
+  /** What a failed read says: "The Diary could not be read for that day." */
+  readonly failure: string;
+  readonly reading: boolean;
+  /** "14:02" once the answer on screen is more than two minutes old. */
+  readonly readAt: string | null;
+  /** What Approve says: null while the Diary is read for it. */
+  readonly approve: string | null;
+  /** "Hold a date in the Diary", for a Diary writer the drawer would let hold it. */
+  readonly holdHref: string | null;
+  /** "Open this day in the Diary", when there is a day asked for. */
+  readonly dayHref: string | null;
+  readonly onRetry: () => void;
 }
 
 export interface PanelNavigation {
@@ -67,8 +91,9 @@ interface EnquiryPanelProps {
   readonly creatingOpportunity: boolean;
   /** Why Create opportunity failed, said beside it; null when it has not. */
   readonly opportunityFailure: string | null;
-  /** Only those who write the Diary are offered a hold there. */
-  readonly canHoldDate: boolean;
+  /** Where the enquiry stands in the Diary; null when the reader reads no
+   *  Diary for it (another venue's enquiry, or a role without the Diary). */
+  readonly diary: PanelDiary | null;
   readonly navigation: PanelNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
@@ -137,15 +162,16 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
         <p className="vv-sr-only" role="status">{props.announcement}</p>
 
         {request === null
-          ? <EnquiryFacts enquiry={enquiry} roomName={room === undefined ? undefined : room?.name ?? null} nowMs={nowMs} />
+          ? <EnquiryFacts enquiry={enquiry} roomName={room === undefined ? undefined : room?.name ?? null} nowMs={nowMs} diary={props.diary} />
           : <p className="enq-request">{requestWords(request).ask}</p>}
 
         <section className="enq-section">
           <h3>Next step</h3>
           <StagePath state={enquiry.state} request={request !== null} />
           {transition.confirming !== null ? (
-            <ConfirmStep enquiry={enquiry} to={transition.confirming} saving={transition.saving !== null}
-              failure={transition.failure} onConfirm={props.onConfirm} onCancel={props.onCancel} />
+            <ConfirmStep enquiry={enquiry} to={transition.confirming} roomName={room?.name ?? null}
+              diarySays={transition.confirming === "approved" && props.diary !== null ? props.diary.approve : undefined}
+              saving={transition.saving !== null} failure={transition.failure} onConfirm={props.onConfirm} onCancel={props.onCancel} />
           ) : request === null ? (
             <NextStep enquiry={enquiry} transition={transition} canCreateOpportunity={props.canCreateOpportunity}
               creatingOpportunity={props.creatingOpportunity} opportunityFailure={props.opportunityFailure}
@@ -154,6 +180,8 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
             <RequestNextStep enquiry={enquiry} kind={request} transition={transition} onRequest={props.onRequest} />
           )}
         </section>
+
+        {request === null && props.diary !== null && <EnquiryDiary diary={props.diary} />}
 
         <section className="enq-section">
           <h3>Contact</h3>
@@ -181,7 +209,7 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
           <>
             <EnquiryTools enquiry={enquiry} canCreateOpportunity={props.canCreateOpportunity}
               creatingOpportunity={props.creatingOpportunity} opportunityFailure={props.opportunityFailure}
-              canHoldDate={props.canHoldDate} onCreateOpportunity={props.onCreateOpportunity} />
+              onCreateOpportunity={props.onCreateOpportunity} />
             <EnquiryDrafts enquiry={enquiry} />
           </>
         )}
@@ -214,10 +242,11 @@ export function RoomPhotoBand({ photo }: { readonly photo: RoomPhoto }): ReactEl
 // Facts
 // ---------------------------------------------------------------------------
 
-function EnquiryFacts({ enquiry, roomName, nowMs }: {
+function EnquiryFacts({ enquiry, roomName, nowMs, diary }: {
   readonly enquiry: Enquiry;
   readonly roomName: string | null | undefined;
   readonly nowMs: number;
+  readonly diary: PanelDiary | null;
 }): ReactElement {
   const date = eventDateParts(enquiry.preferredDate);
   const weekday = eventWeekday(enquiry.preferredDate);
@@ -245,7 +274,87 @@ function EnquiryFacts({ enquiry, roomName, nowMs }: {
             : roomName === null ? <dd className="enq-facts__muted">Not known</dd>
               : <dd className="enq-facts__room">{roomName}</dd>}
       </div>
+      {diary !== null && (
+        // Its label above its answer, held at two lines from the first paint,
+        // so nothing below moves when the Diary answers; the whole answer is
+        // in the list below and in what is read out.
+        <div className="enq-facts__diary">
+          <dt>In the Diary</dt>
+          <dd>
+            {diary.standing !== null ? diary.standing.fact
+              : diary.status === "reading" ? <span className="enq-facts__reading"><ActivityIndicator size={16} />Reading the Diary…</span>
+                : diary.status === "failed" ? diary.failure
+                  : null}
+          </dd>
+        </div>
+      )}
     </dl>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// In the Diary: its actions first, so nothing below them moves when the Diary
+// answers; then the enquiry's own bookings elsewhere, then the day asked for,
+// room by room.
+// ---------------------------------------------------------------------------
+
+function EnquiryDiary({ diary }: { readonly diary: PanelDiary }): ReactElement {
+  const headingId = useId();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // Try again keeps its place, and focus, while it reads; when the read
+  // lands and it goes, focus it held moves to the section, not the page.
+  const retryHadFocus = useRef(false);
+  useEffect(() => {
+    if (diary.failed || !retryHadFocus.current) return;
+    retryHadFocus.current = false;
+    headingRef.current?.focus();
+  }, [diary.failed]);
+  const { standing } = diary;
+  const hasActions = diary.failed || diary.holdHref !== null || diary.dayHref !== null;
+  return (
+    <section className="enq-section enq-diary" aria-labelledby={headingId}>
+      <h3 id={headingId} ref={headingRef} tabIndex={-1}>In the Diary</h3>
+      {hasActions && (
+        <div className="enq-actions">
+          {diary.failed && (
+            <button type="button" className="enq-quiet" aria-disabled={diary.reading}
+              onFocus={() => { retryHadFocus.current = true; }} onBlur={() => { retryHadFocus.current = false; }}
+              onClick={() => { if (!diary.reading) diary.onRetry(); }}>
+              {diary.reading && <ActivityIndicator size={16} />}
+              Try again
+            </button>
+          )}
+          {diary.holdHref !== null && <Link className="enq-quiet" to={diary.holdHref}>Hold a date in the Diary</Link>}
+          {diary.dayHref !== null && <Link className="enq-quiet" to={diary.dayHref}>Open this day in the Diary</Link>}
+        </div>
+      )}
+      {diary.failed && <p className="enq-diary__note">{diary.failure}</p>}
+      {diary.readAt !== null && <p className="enq-diary__note">As read at {diary.readAt}.</p>}
+      {standing !== null && standing.elsewhere.length > 0 && (
+        <ul className="enq-diary__own">
+          {standing.elsewhere.map((line) => <li key={line.key}>{line.text}</li>)}
+        </ul>
+      )}
+      {standing !== null && standing.rooms.length > 0 && (
+        <dl className="enq-diary__rooms">
+          {standing.rooms.map((room) => (
+            <div key={room.id} className="enq-diary__room">
+              <dt>
+                <span>{room.name}</span>
+                {room.asked && <span className="enq-diary__tag">asked for</span>}
+                {room.figure !== null && <span className="enq-diary__figure">{room.figure}</span>}
+              </dt>
+              {room.lines.map((line) => (
+                <dd key={line.key} data-kind={line.kind}>
+                  {line.text}
+                  {line.own && <span className="enq-diary__tag">For this enquiry</span>}
+                </dd>
+              ))}
+            </div>
+          ))}
+        </dl>
+      )}
+    </section>
   );
 }
 
@@ -416,7 +525,8 @@ function RequestNextStep({ enquiry, kind, transition, onRequest }: {
 
 interface ConfirmWords {
   readonly question: (name: string) => string;
-  readonly consequence: (enquiry: Enquiry) => string;
+  /** `roomName`: the room the guest chose, as the approval email names it. */
+  readonly consequence: (enquiry: Enquiry, roomName: string | null) => string;
   readonly noteLabel: string;
   readonly confirm: string;
   readonly saving: string;
@@ -432,7 +542,12 @@ const CONFIRM_WORDS: Readonly<Record<ConfirmTarget, ConfirmWords>> = {
   },
   approved: {
     question: (name) => `Approve ${name}’s enquiry?`,
-    consequence: (enquiry) => `Approving emails ${enquiry.guestEmail ?? enquiry.email} to say the enquiry is approved${enquiry.configurationId === null ? "" : ", with a link to their layout"}.`,
+    // The room and the date as the email names them.
+    consequence: (enquiry, roomName) => {
+      const date = eventDateLong(enquiry.preferredDate);
+      const what = `the enquiry${roomName === null ? "" : ` for ${theRoom(roomName)}`}${date === null ? "" : ` on ${date}`}`;
+      return `Approving emails ${enquiry.guestEmail ?? enquiry.email} to say ${what} is approved${enquiry.configurationId === null ? "" : ", with a link to their layout"}.`;
+    },
     noteLabel: "Note for the timeline (optional, not in the email)",
     confirm: "Approve and email",
     saving: "Approving…",
@@ -453,15 +568,21 @@ const CONFIRM_WORDS: Readonly<Record<ConfirmTarget, ConfirmWords>> = {
   },
 };
 
-function ConfirmStep({ enquiry, to, saving, failure, onConfirm, onCancel }: {
+function ConfirmStep({ enquiry, to, roomName, diarySays, saving, failure, onConfirm, onCancel }: {
   readonly enquiry: Enquiry;
   readonly to: ConfirmTarget;
+  readonly roomName: string | null;
+  /** What the Diary says before the client is emailed: null while it is read,
+   *  undefined when this confirmation says nothing of the Diary. */
+  readonly diarySays: string | null | undefined;
   readonly saving: boolean;
   readonly failure: string | null;
   readonly onConfirm: (note: string) => void;
   readonly onCancel: () => void;
 }): ReactElement {
   const questionId = useId();
+  const consequenceId = useId();
+  const diaryId = useId();
   const [note, setNote] = useState("");
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const questionRef = useRef<HTMLParagraphElement>(null);
@@ -477,7 +598,14 @@ function ConfirmStep({ enquiry, to, saving, failure, onConfirm, onCancel }: {
   return (
     <div className="enq-confirm" role="group" aria-labelledby={questionId} data-tone={stageTone(to)}>
       <p className="enq-confirm__question" id={questionId} ref={questionRef} tabIndex={-1}>{words.question(enquiryName(enquiry))}</p>
-      <p className="enq-confirm__consequence">{words.consequence(enquiry)}</p>
+      <p className="enq-confirm__consequence" id={consequenceId}>{words.consequence(enquiry, roomName)}</p>
+      {diarySays !== undefined && (
+        // A slot held for the sentence, which changes at most once: from what
+        // was kept, or "Reading", to what the Diary says now.
+        <p className="enq-confirm__diary" id={diaryId}>
+          {diarySays ?? <span className="enq-facts__reading"><ActivityIndicator size={16} />Reading the Diary…</span>}
+        </p>
+      )}
       <label>
         <span>{words.noteLabel}</span>
         <textarea ref={noteRef} value={note} maxLength={1000} rows={3} disabled={saving}
@@ -490,7 +618,8 @@ function ConfirmStep({ enquiry, to, saving, failure, onConfirm, onCancel }: {
           }} />
       </label>
       <div className="enq-actions">
-        <button type="button" className="enq-cta" onClick={() => { onConfirm(note); }} disabled={saving} aria-busy={saving}>
+        <button type="button" className="enq-cta" onClick={() => { onConfirm(note); }} disabled={saving} aria-busy={saving}
+          aria-describedby={diarySays === undefined ? consequenceId : `${consequenceId} ${diaryId}`}>
           {saving && <ActivityIndicator size={18} />}
           {saving ? words.saving : words.confirm}
         </button>
@@ -505,20 +634,18 @@ function ConfirmStep({ enquiry, to, saving, failure, onConfirm, onCancel }: {
 // Tools, drafts, timeline
 // ---------------------------------------------------------------------------
 
-function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, opportunityFailure, canHoldDate, onCreateOpportunity }: {
+function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, opportunityFailure, onCreateOpportunity }: {
   readonly enquiry: Enquiry;
   readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
   readonly opportunityFailure: string | null;
-  readonly canHoldDate: boolean;
   readonly onCreateOpportunity: () => void;
 }): ReactElement | null {
   // An approved enquiry offers the opportunity as its next step instead, and
-  // only the commercial team is offered it at all.
+  // only the commercial team is offered it at all. Holding a date lives with
+  // the Diary's answer, In the Diary.
   const offersOpportunity = canCreateOpportunity && enquiry.state !== "approved";
-  // The Diary opens on the date asked for, with the hold's drawer open.
-  const offersHold = canHoldDate && canHoldDateFor(enquiry);
-  if (!offersOpportunity && !offersHold && enquiry.configurationId === null) return null;
+  if (!offersOpportunity && enquiry.configurationId === null) return null;
   return (
     <section className="enq-section">
       <h3>Tools</h3>
@@ -536,7 +663,6 @@ function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, oppo
             Create opportunity
           </button>
         )}
-        {offersHold && <Link className="enq-quiet" to={diaryHoldHref(enquiry)}>Hold a date in the Diary</Link>}
       </div>
       {offersOpportunity && opportunityFailure !== null && <p className="enq-confirm__error" role="alert">{opportunityFailure}</p>}
     </section>
