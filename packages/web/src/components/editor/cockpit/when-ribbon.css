@@ -291,3 +291,101 @@
   overflow: hidden;
   clip-path: inset(50%);
 }
+
+/* --- goal 19 S6: typed entry, the client's day, grips, price, tick -------- */
+.when-ribbon__entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+}
+.when-ribbon__input {
+  width: 15rem;
+  max-width: 38vw;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(244, 239, 230, 0.22);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--house-text-1, #f4efe6);
+}
+.when-ribbon__input::placeholder { color: rgba(244, 239, 230, 0.45); }
+.when-ribbon__input:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+.when-ribbon__state {
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--house-accent-copper, #c98a5b);
+}
+/* The draft: where the event is planned to sit, not yet proposed — the same
+   gilt, dashed and lighter, so it reads as a suggestion rather than a slot. */
+.when-ribbon__ingot.is-draft {
+  background: linear-gradient(180deg, rgba(220, 164, 117, 0.6), rgba(126, 70, 32, 0.6));
+  border-style: dashed;
+}
+/* The office's phase grips: doors, live and clear-down, inside the ingot. */
+.when-ribbon__grip {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 7px;
+  margin-left: -3px;
+  border-radius: 2px;
+  background: rgba(36, 28, 16, 0.85);
+  box-shadow: 0 0 0 1px rgba(255, 235, 190, 0.6);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.when-ribbon__grip::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 235, 190, 0.9);
+}
+.when-ribbon__grip:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+.when-ribbon__legend,
+.when-ribbon__price {
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: rgba(244, 239, 230, 0.8);
+}
+.when-ribbon__price { color: var(--house-accent-copper, #c98a5b); }
+.when-ribbon__price--note { color: rgba(244, 239, 230, 0.6); }
+.when-ribbon__confirm-note {
+  font-size: 0.6875rem;
+  color: rgba(244, 239, 230, 0.75);
+}
+.when-ribbon__notice--hint { color: rgba(244, 239, 230, 0.8); }
+.when-ribbon__toggle {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.6875rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 239, 230, 0.22);
+  background: transparent;
+  color: rgba(244, 239, 230, 0.7);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.when-ribbon__toggle[aria-pressed="true"] {
+  border-color: var(--house-accent-copper, #c98a5b);
+  color: var(--house-accent-copper, #c98a5b);
+}
+.when-ribbon__toggle:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}

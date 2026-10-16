@@ -175,3 +175,32 @@ describe("POST /venues/:venueId/pricing/:id/restore", () => {
     expect(badBody.statusCode).toBe(400);
   });
 });
+
+describe("pricing rule windows (0089)", () => {
+  const post = (payload: Record<string, unknown>) => server.inject({
+    method: "POST", url: `/venues/${VENUE_ID}/pricing`,
+    headers: { authorization: `Bearer ${adminToken()}` }, payload: { ...validRule, ...payload },
+  });
+
+  it("refuses a window with one side only", async () => {
+    const res = await post({ appliesFrom: "09:00" });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain("both, or neither");
+    const other = await post({ appliesUntil: "13:00" });
+    expect(other.statusCode).toBe(400);
+  });
+
+  it("refuses a time that is not HH:MM on a 24-hour clock", async () => {
+    for (const bad of ["9:00", "24:00", "13:60", "1pm", "09:00:00"]) {
+      const res = await post({ appliesFrom: bad, appliesUntil: "13:00" });
+      expect(res.statusCode, bad).toBe(400);
+    }
+  });
+
+  it("accepts both sides, and both null, as far as validation goes", async () => {
+    // The mock database answers nothing, so a valid body gets past validation
+    // and fails later: anything but 400 is a pass here.
+    expect((await post({ appliesFrom: "19:00", appliesUntil: "00:30" })).statusCode).not.toBe(400);
+    expect((await post({ appliesFrom: null, appliesUntil: null })).statusCode).not.toBe(400);
+  });
+});

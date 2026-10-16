@@ -112,10 +112,13 @@ export const PG_EXCLUSION_VIOLATION = "23P01";
 export const PG_CHECK_VIOLATION = "23514";
 export const PG_UNIQUE_VIOLATION = "23505";
 
-// Who may ink the diary. Sales books the room they sold; a manager is senior
-// venue authority. Hallkeepers read the day but do not move it, and caterers
-// are event-scoped (goal 18 §6 decisions 6a and 6b).
-export const DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "manager", "sales"]);
+// Who may ink the diary: the office, staff and admin (goal 19 D2; Blake's
+// decision of 10 October 2026, landed with S6). Sales and manager read the
+// Diary and work the pipeline but no longer write a time (goal 18 §6 decision
+// 6a is superseded); hallkeepers read the day but do not move it, and
+// caterers are event-scoped (6b). The client's side proposes a hold through
+// canProposeWindow, never through this set.
+export const DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin"]);
 
 export function canWriteBookings(actor: MutationActor, venueId: string): boolean {
   return DIARY_WRITE_ROLES.has(actor.role) && actor.venueId === venueId;
@@ -124,11 +127,17 @@ export function canWriteBookings(actor: MutationActor, venueId: string): boolean
 /** A hold's owner is told about it (hold reminders email them), so the owner
  *  must be someone who works the Diary at the booking's venue. A crafted
  *  request must not name another venue's user, a hallkeeper or a client. */
+/** Who may be named as a hold's owner: the office and the pipeline roles at
+ *  the booking's venue. Owning a hold is being the person the house asks
+ *  about it, not writing the Diary: sales and manager kept it when goal 19
+ *  D2 took the write from them. The hallkeeper was never in it. */
+export const HOLD_OWNER_ROLES: ReadonlySet<string> = new Set([...DIARY_WRITE_ROLES, "manager", "sales"]);
+
 export async function ownerWorksAtVenue(conn: BookingDbConn, ownerUserId: string, venueId: string): Promise<boolean> {
   const [owner] = await conn
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.id, ownerUserId), eq(users.venueId, venueId), inArray(users.role, [...DIARY_WRITE_ROLES])))
+    .where(and(eq(users.id, ownerUserId), eq(users.venueId, venueId), inArray(users.role, [...HOLD_OWNER_ROLES])))
     .limit(1);
   return owner !== undefined;
 }

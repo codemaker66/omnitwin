@@ -35,6 +35,10 @@ const PricingRuleResponseSchema = z.object({
   tiers: PricingTiersSchema,
   dayOfWeekModifiers: PricingModifiersSchema,
   seasonalModifiers: PricingModifiersSchema,
+  // The time of day the rule is for (0089), "HH:MM:SS" from Postgres or
+  // "HH:MM" as sent; both or neither. Older servers send neither.
+  appliesFrom: z.string().nullable().optional().catch(undefined),
+  appliesUntil: z.string().nullable().optional().catch(undefined),
   isActive: z.boolean(),
   validFrom: z.string().nullable(),
   validTo: z.string().nullable(),

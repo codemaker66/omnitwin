@@ -455,6 +455,8 @@ export async function enquiryRoutes(
       validTo: r.validTo,
       isActive: r.isActive,
       spaceId: r.spaceId,
+      appliesFrom: r.appliesFrom,
+      appliesUntil: r.appliesUntil,
     }));
 
     const result = calculatePrice({

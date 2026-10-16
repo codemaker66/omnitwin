@@ -23,14 +23,20 @@ const GHOST = "00000000-0000-4000-8000-0000000000c1";
 const MIN = 60_000;
 const NOON = Date.parse("2026-09-16T12:00:00.000Z");
 
-const { getCalendarMock, moveBookingMock } = vi.hoisted(() => ({
+const { getCalendarMock, moveBookingMock, transitionBookingMock, estimatePriceMock } = vi.hoisted(() => ({
   getCalendarMock: vi.fn(),
   moveBookingMock: vi.fn(),
+  transitionBookingMock: vi.fn(),
+  estimatePriceMock: vi.fn(),
 }));
 
 vi.mock("../../../../api/diary.js", () => ({
   getCalendar: getCalendarMock,
   moveBooking: moveBookingMock,
+  transitionBooking: transitionBookingMock,
+}));
+vi.mock("../../../../api/pricing.js", () => ({
+  estimatePrice: estimatePriceMock,
 }));
 
 vi.mock("../../../../hooks/use-linked-event.js", () => ({
@@ -44,6 +50,7 @@ vi.mock("../../../../hooks/use-linked-event.js", () => ({
         name: "Chamber dinner",
         startsAt: new Date(NOON).toISOString(),
         endsAt: new Date(NOON + 120 * MIN).toISOString(),
+        guestCount: 80,
       },
       phases: [],
     },
@@ -371,5 +378,101 @@ describe("WhenRibbon", () => {
     });
     // The optimistic override rolled back: the label shows the original span.
     expect(screen.getByTestId("when-ribbon-ingot").getAttribute("aria-label")).toContain("13:00");
+  });
+  it("goal 19 S6: a typed time moves a provisional booking without ceremony, and an impossible one is explained", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT, kind: "hold", state: "hold" }),
+    ]));
+    moveBookingMock.mockResolvedValue({});
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    const entry = screen.getByTestId("when-ribbon-entry");
+    fireEvent.change(entry, { target: { value: "25:00" } });
+    fireEvent.submit(entry.closest("form") as HTMLFormElement);
+    expect((await screen.findByRole("status")).textContent).toContain("24 hours");
+    fireEvent.change(entry, { target: { value: "14:00-16:30" } });
+    fireEvent.submit(entry.closest("form") as HTMLFormElement);
+    // NOON is 2026-09-16T12:00Z, 13:00 in Glasgow; 14:00 wall time is 13:00Z.
+    await waitFor(() => {
+      expect(moveBookingMock).toHaveBeenCalledWith(SELF, {
+        startsAt: new Date(NOON + 60 * MIN).toISOString(),
+        endsAt: new Date(NOON + 210 * MIN).toISOString(),
+      });
+    });
+    expect(screen.queryByTestId("when-ribbon-confirm")).toBeNull();
+  });
+
+  it("goal 19 S6: the office confirms a provisional time from the ribbon, after the question", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT, kind: "hold", state: "hold" }),
+    ]));
+    transitionBookingMock.mockResolvedValue({ booking: {}, promotedToFirst: [] });
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    fireEvent.click(screen.getByTestId("when-ribbon-confirm-hold"));
+    const question = screen.getByTestId("when-ribbon-confirm-time");
+    expect(question.textContent).toContain("Confirm 13:00 – 15:00 for Booking b1?");
+    expect(transitionBookingMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Confirm it"));
+    await waitFor(() => { expect(transitionBookingMock).toHaveBeenCalledWith(SELF, "ink"); });
+    expect((await screen.findByRole("status")).textContent).toContain("Confirmed 13:00 – 15:00.");
+  });
+
+  it("goal 19 S6: the office sees the phase grips and their legend; a hallkeeper sees neither; a confirmed booking offers no confirm", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT })]));
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    // A two-hour slot cannot hold the default 60/30/60 phases: setup shrinks first (model doctrine).
+    expect(screen.getByTestId("when-ribbon-grip-doors").getAttribute("aria-valuetext")).toBe("Doors 13:15");
+    expect(screen.getByTestId("when-ribbon-grip-live").getAttribute("aria-valuetext")).toBe("Live 13:45");
+    expect(screen.getByTestId("when-ribbon-grip-clear-down").getAttribute("aria-valuetext")).toBe("Clear-down 14:00");
+    expect(screen.getByTestId("when-ribbon-legend").textContent).toBe("Setup 13:00 · Doors 13:15 · Live 13:45 · Clear-down 14:00 · Ends 15:00");
+    expect(screen.queryByTestId("when-ribbon-confirm-hold")).toBeNull();
+    cleanup();
+    useAuthStore.getState().logout();
+    seedUser("hallkeeper");
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    expect(screen.queryByTestId("when-ribbon-grip-doors")).toBeNull();
+    expect(screen.queryByTestId("when-ribbon-legend")).toBeNull();
+    expect(screen.queryByTestId("when-ribbon-entry")).toBeNull();
+  });
+
+  it("goal 19 S6: the snap tick is off until asked for, and the choice is kept on the device", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT })]));
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    const toggle = screen.getByTestId("when-ribbon-tick");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(localStorage.getItem("venviewer.when-ribbon.tick")).toBe("on");
+    fireEvent.click(toggle);
+    expect(localStorage.getItem("venviewer.when-ribbon.tick")).toBe("off");
+  });
+  it("goal 19 S6: the price line is the venue's rate for the window: a Grand Hall evening reads £1,500 (Blake, 16 October 2026)", async () => {
+    // 2026-09-16 18:00Z–22:00Z is 19:00–23:00 in Glasgow: the evening slot.
+    const evening = Date.parse("2026-09-16T18:00:00.000Z");
+    getCalendarMock.mockResolvedValue(calendarFixture([booking(SELF, evening, evening + 240 * MIN, { eventId: EVENT })]));
+    estimatePriceMock.mockResolvedValue({
+      lineItems: [{ ruleName: "Grand Hall — Evening Event (19:00–00:30)", description: "Flat rate", amount: 1500 }],
+      subtotal: 1500, modifiers: [], total: 1500, currency: "GBP",
+    });
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    const price = await screen.findByTestId("when-ribbon-price", {}, { timeout: 3000 });
+    expect(price.textContent).toBe("£1,500 · the venue's current rate for this window");
+    expect(price.textContent).not.toContain("indicative");
+    expect(estimatePriceMock).toHaveBeenCalledWith(VENUE, { spaceId: ROOM, eventDate: "2026-09-16", startTime: "19:00", endTime: "23:00", guestCount: 80 });
+  });
+
+  it("goal 19 S6: a window no slot holds shows the no-slot note instead of a nought", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([booking(SELF, NOON, NOON + 600 * MIN, { eventId: EVENT })]));
+    estimatePriceMock.mockResolvedValue({ lineItems: [], subtotal: 0, modifiers: [], total: 0, currency: "GBP" });
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    const price = await screen.findByTestId("when-ribbon-price", {}, { timeout: 3000 });
+    expect(price.textContent).toContain("no slot for this window");
+    expect(price.textContent).not.toContain("£0");
   });
 });

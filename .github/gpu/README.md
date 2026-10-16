@@ -172,6 +172,11 @@ On 8 October 2026 Blake approved re-pinning the profile's WSL kernel from
 NVIDIA driver and the renderer were unchanged, and the five cases passed on the
 new kernel (CI run 37691663611, attempt 2) before the re-pin.
 
+On 16 October 2026 Blake approved the same re-pin from 6.18.40.1 to 6.18.54.1
+after WSL updated itself again; the rest of the runtime was unchanged, and the
+five cases passed on the new kernel (CI run 38873316500, attempt 1, PR #88's
+merge ref 1f53ab8f) before publication refused the runtime.
+
 ## One explicitly admitted local run
 
 This is an operator-invoked, temporary process. No self-hosted GitHub runner,

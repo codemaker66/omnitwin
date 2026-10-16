@@ -24,11 +24,25 @@ beforeEach(() => { seedUser("staff"); });
 afterEach(() => { cleanup(); useCockpitStore.getState().reset(); useAuthStore.getState().logout(); });
 
 describe("PlannerCockpit", () => {
-  it.each(["client", "planner", "unknown"])("does not render an empty booking disclosure for %s", (role) => {
-    seedUser(role);
+  it("does not render an empty booking disclosure for an unknown role", () => {
+    seedUser("unknown");
     const { container } = render(<PlannerCockpit hasLinkedEvent />);
     expect(screen.queryByText("Booking time")).toBeNull();
     expect(screen.queryByTestId("when-ribbon-mock")).toBeNull();
+    expect(container.querySelector(".reference-when-ribbon")).toBeNull();
+  });
+
+  it.each(["client", "planner"])("gives the client's side its own time disclosure, never the office's, for %s (goal 19 S6)", (role) => {
+    seedUser(role);
+    render(<PlannerCockpit hasLinkedEvent />);
+    expect(screen.getByText("Your time")).toBeTruthy();
+    expect(screen.queryByText("Booking time")).toBeNull();
+    expect(screen.getByTestId("when-ribbon-mock")).toBeTruthy();
+  });
+
+  it.each(["client", "planner"])("mounts nothing for %s without a linked event", (role) => {
+    seedUser(role);
+    const { container } = render(<PlannerCockpit />);
     expect(container.querySelector(".reference-when-ribbon")).toBeNull();
   });
 
@@ -64,7 +78,9 @@ describe("PlannerCockpit", () => {
     render(<PlannerCockpit mobile={mobile} hasLinkedEvent />);
     expect(screen.getByTestId("room-resolve-caption").textContent).toContain("Room capture could not load");
     expect(screen.queryByText("Booking time")).toBeNull();
-    expect(screen.queryByTestId("when-ribbon-mock")).toBeNull();
+    // The client's side keeps its own ribbon on a desktop; phones get none.
+    if (mobile) expect(screen.queryByTestId("when-ribbon-mock")).toBeNull();
+    else expect(screen.getByText("Your time")).toBeTruthy();
   });
 
   it.each([true, false])("keeps settled capture failure visible without working motion on mobile=%s", (mobile) => {
