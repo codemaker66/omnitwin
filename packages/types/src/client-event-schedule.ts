@@ -15,7 +15,7 @@ const ScheduleSpaceSchema = z.object({
  *  about a slot, so this is where the request composer finds its bookingId.
  *  No notes, no ladder position, no owner, no decision date: the client reads
  *  their when, never the Diary's internals. */
-const ScheduleSlotSchema = z.object({
+export const ScheduleSlotSchema = z.object({
   bookingId: z.string().uuid(),
   kind: BookingKindSchema,
   title: z.string().trim().min(1).max(200),
@@ -82,3 +82,68 @@ export const ClientEventScheduleQuerySchema = z.object({
   configurationId: ConfigurationIdSchema.optional(),
 }).strict();
 export type ClientEventScheduleQuery = z.infer<typeof ClientEventScheduleQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Proposing a window (goal 19 S6, D2). The client's side says WHEN on the
+// ribbon; the house holds it as a HOLD the office decides on. One proposal
+// per person per event: the same door creates the hold or moves it. Strict:
+// nothing here names a rank, an owner, a decision date, a kind or a price.
+// ---------------------------------------------------------------------------
+
+export const ProposeWindowSchema = z.object({
+  spaceId: SpaceIdSchema,
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime(),
+  /** Minted once per gesture; a resend after a dropped answer replays. */
+  idempotencyKey: z.string().uuid(),
+}).strict().refine((window) => Date.parse(window.endsAt) > Date.parse(window.startsAt), {
+  message: "endsAt must be after startsAt — a window occupies a real interval.",
+  path: ["endsAt"],
+});
+export type ProposeWindow = z.infer<typeof ProposeWindowSchema>;
+
+// ---------------------------------------------------------------------------
+// The room's day as the client's side may see it (goal 19 S6; D6).
+//
+// Before proposing a time, a client needs to know where the room is already
+// spoken for; they never learn who by. Their own event's slots come back by
+// name; every other booking in the room is an anonymous span, "held" (the
+// office is still deciding) or "busy" (confirmed, or the house has the room).
+// The strict span schemas are the privacy pin: a title on an anonymous span
+// is a schema failure, not a leak.
+// ---------------------------------------------------------------------------
+
+const RoomDayDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "A day is YYYY-MM-DD");
+
+export const RoomDayQuerySchema = z.object({
+  spaceId: SpaceIdSchema,
+  day: RoomDayDateSchema,
+}).strict();
+export type RoomDayQuery = z.infer<typeof RoomDayQuerySchema>;
+
+const RoomDayInstants = { startsAt: z.string().datetime(), endsAt: z.string().datetime() };
+
+export const RoomDaySpanSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("yours"),
+    bookingId: z.string().uuid(),
+    title: z.string().trim().min(1).max(200),
+    ...RoomDayInstants,
+  }).strict(),
+  z.object({ kind: z.literal("held"), ...RoomDayInstants }).strict(),
+  z.object({ kind: z.literal("busy"), ...RoomDayInstants }).strict(),
+]);
+export type RoomDaySpan = z.infer<typeof RoomDaySpanSchema>;
+
+export const RoomDaySchema = z.object({
+  eventId: EventIdSchema,
+  space: ScheduleSpaceSchema,
+  day: RoomDayDateSchema,
+  timezone: TimezoneSchema,
+  /** The instants the venue's day covers: 04:00 to 04:00 the next morning on the venue's clock. */
+  range: z.object(RoomDayInstants).strict(),
+  /** The venue's turnaround for this room and the event's type, in minutes; drawn as the buffers. */
+  turnaroundMinutes: z.number().int().min(0).max(1440),
+  spans: z.array(RoomDaySpanSchema),
+}).strict();
+export type RoomDay = z.infer<typeof RoomDaySchema>;

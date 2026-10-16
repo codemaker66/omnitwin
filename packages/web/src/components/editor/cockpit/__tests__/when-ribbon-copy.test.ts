@@ -22,6 +22,11 @@ function allCopyStrings(): string[] {
     RIBBON_COPY.moved("14:00 – 18:00"),
     RIBBON_COPY.announceMove("14:00 – 18:00"),
     RIBBON_COPY.announceBlocked("Chamber dinner"),
+    RIBBON_COPY.proposeConfirm("14:00 – 18:00"),
+    RIBBON_COPY.proposed("14:00 – 18:00"),
+    RIBBON_COPY.confirmQuestion("14:00 – 18:00", "Chamber dinner"),
+    RIBBON_COPY.confirmed("14:00 – 18:00"),
+    RIBBON_COPY.priceLine("£1,250"),
   );
   return out;
 }

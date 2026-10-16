@@ -82,7 +82,7 @@ function actorOf(request: FastifyRequest): ConversationActor {
 /** The body key and the house Idempotency-Key header must agree; the header
  *  fills a missing body key. Disagreeing is a 400, never a silent choice.
  *  Returns null once a 400 has been sent. */
-function withHeaderKey(request: FastifyRequest, reply: FastifyReply): { readonly body: unknown } | null {
+export function withHeaderKey(request: FastifyRequest, reply: FastifyReply): { readonly body: unknown } | null {
   const rawBody: unknown = request.body ?? {};
   const header = request.headers["idempotency-key"];
   if (header === undefined) return { body: rawBody };

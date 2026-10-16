@@ -367,10 +367,10 @@ describe("BookingDrawer — edit completeness (T-619)", () => {
     expect(screen.queryByText("You will own this hold.")).toBeNull();
   });
 
-  it.each(["manager", "sales"])("lets a %s edit, as the API does", (role) => {
+  it.each(["manager", "sales"])("keeps a %s read-only, as the API does since goal 19 D2 (10 October 2026)", (role) => {
     renderEdit(booking(), vi.fn<(message: string) => void>(), role);
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
-    expect(screen.queryByText(/Read-only booking details/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.getByText(/Read-only booking details/)).toBeTruthy();
   });
 
   it("keeps the hallkeeper read-only", () => {

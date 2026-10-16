@@ -41,7 +41,18 @@ const CreateRuleBody = z.object({
   validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   isActive: z.boolean().default(true),
+  // The time of day the rule is for (0089): "HH:MM", both or neither. An
+  // until not after its from runs past midnight ("19:00" to "00:30").
+  appliesFrom: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
+  appliesUntil: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
 });
+const WINDOW_PAIR_MESSAGE = "appliesFrom and appliesUntil go together: both, or neither";
+function windowIsPaired(body: { appliesFrom?: string | null; appliesUntil?: string | null }): boolean {
+  return ((body.appliesFrom ?? null) === null) === ((body.appliesUntil ?? null) === null);
+}
+const CreateRuleBodyChecked = CreateRuleBody.refine(windowIsPaired, { message: WINDOW_PAIR_MESSAGE, path: ["appliesUntil"] });
+// A patch may send one side when the other is already stored; the handler
+// judges the pair as it will be stored.
 
 const UpdateRuleBody = CreateRuleBody.partial();
 
@@ -126,7 +137,7 @@ export async function pricingRuleRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const parsed = CreateRuleBody.safeParse(request.body);
+    const parsed = CreateRuleBodyChecked.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
@@ -156,6 +167,8 @@ export async function pricingRuleRoutes(
       validFrom: parsed.data.validFrom ?? null,
       validTo: parsed.data.validTo ?? null,
       isActive: parsed.data.isActive,
+      appliesFrom: parsed.data.appliesFrom ?? null,
+      appliesUntil: parsed.data.appliesUntil ?? null,
     }).returning();
 
     return reply.status(201).send({ data: rule });
@@ -209,6 +222,17 @@ export async function pricingRuleRoutes(
     if (parsed.data.validFrom !== undefined) updateData["validFrom"] = parsed.data.validFrom;
     if (parsed.data.validTo !== undefined) updateData["validTo"] = parsed.data.validTo;
     if (parsed.data.isActive !== undefined) updateData["isActive"] = parsed.data.isActive;
+    if (parsed.data.appliesFrom !== undefined || parsed.data.appliesUntil !== undefined) {
+      const next = {
+        appliesFrom: parsed.data.appliesFrom === undefined ? existing.appliesFrom : parsed.data.appliesFrom,
+        appliesUntil: parsed.data.appliesUntil === undefined ? existing.appliesUntil : parsed.data.appliesUntil,
+      };
+      if (!windowIsPaired(next)) {
+        return reply.status(400).send({ error: WINDOW_PAIR_MESSAGE, code: "VALIDATION_ERROR" });
+      }
+      updateData["appliesFrom"] = next.appliesFrom;
+      updateData["appliesUntil"] = next.appliesUntil;
+    }
 
     const [updated] = await db.update(pricingRules)
       .set(updateData)
@@ -335,6 +359,8 @@ export async function pricingRuleRoutes(
       validTo: r.validTo,
       isActive: r.isActive,
       spaceId: r.spaceId,
+      appliesFrom: r.appliesFrom,
+      appliesUntil: r.appliesUntil,
     }));
 
     const result = calculatePrice({

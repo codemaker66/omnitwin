@@ -168,9 +168,10 @@ describe("route gates and their landing surfaces agree", () => {
   });
 
   it("offers Diary writes to exactly the roles booking-mutations.ts DIARY_WRITE_ROLES admits", () => {
-    // A manager or sales member was shown a read-only Diary the API would
-    // have let them write; a hallkeeper must never be offered a write.
-    expect([...DIARY_WRITE_ROLES]).toEqual(["admin", "manager", "staff", "sales"]);
+    // Since goal 19 D2 (10 October 2026) only the office inks a time: a
+    // manager or sales member reads the Diary the API would refuse them to
+    // write; a hallkeeper must never be offered a write.
+    expect([...DIARY_WRITE_ROLES]).toEqual(["admin", "staff"]);
     for (const role of DIARY_WRITE_ROLES) expect(hasRole(DIARY_ROLES, role), `${role} writes what it can read`).toBe(true);
     expect(hasRole(DIARY_WRITE_ROLES, "hallkeeper")).toBe(false);
   });

@@ -4,6 +4,7 @@ import {
   CreateEventSchema,
   CreateLayoutVariantSchema,
   DEFAULT_EVENT_PHASE_TEMPLATE,
+  EVENT_PHASE_TEMPLATE_KEYS,
   EVENT_STATUSES,
   EventPhaseGraphSchema,
   PhaseLayoutSnapshotSchema,
@@ -35,6 +36,25 @@ describe("event phase graph contracts", () => {
       "closed",
       "cancelled",
     ]);
+  });
+
+  it("pins the eight template keys; the When ribbon's setup handle has none (goal 19 S6)", () => {
+    // event_phases carries a CHECK constraint on template_key, so a new key is
+    // a migration. The ribbon writes setup as a key-less phase named "Setup"
+    // and keys doors and clear-down to arrival and breakdown.
+    expect(EVENT_PHASE_TEMPLATE_KEYS).toEqual([
+      "arrival",
+      "ceremony",
+      "room-flip",
+      "dinner",
+      "speeches",
+      "bar-queue",
+      "dancing",
+      "breakdown",
+    ]);
+    expect(CreateEventPhaseSchema.safeParse({ templateKey: "setup", spaceId: SPACE_ID, name: "Setup", startsAt: NOW, durationMinutes: 60 }).success).toBe(false);
+    expect(CreateEventPhaseSchema.safeParse({ templateKey: null, spaceId: SPACE_ID, name: "Setup", startsAt: NOW, durationMinutes: 60 }).success).toBe(true);
+    expect(DEFAULT_EVENT_PHASE_TEMPLATE).toHaveLength(8);
   });
 
   it("creates the requested default phase template", () => {

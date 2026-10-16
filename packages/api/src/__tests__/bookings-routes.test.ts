@@ -343,10 +343,14 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
 
   it("scopes diary writes to the roles that ink the diary while reads keep the shared venue policy", async () => {
     const coreSource = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
-    // Sales books the room it sold and a manager is senior venue authority
-    // (goal 18 §6 decision 6a); the hallkeeper is deliberately absent, so the
+    // Goal 19 D2 and Blake's decision of 10 October 2026: only the office,
+    // staff and admin, inks a time. Sales and manager (goal 18 §6 decision
+    // 6a) lost the write with S6; the hallkeeper was never in it, so the
     // write set stays strictly narrower than the read policy below.
-    expect(coreSource).toContain('new Set(["staff", "admin", "manager", "sales"])');
+    expect(coreSource).toContain('new Set(["staff", "admin"])');
+    expect(coreSource).not.toContain('DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "manager", "sales"])');
+    // Owning a hold is not writing the Diary: the owner set keeps sales and manager.
+    expect(coreSource).toContain('HOLD_OWNER_ROLES: ReadonlySet<string> = new Set([...DIARY_WRITE_ROLES, "manager", "sales"])');
     expect(coreSource).not.toContain('"hallkeeper", "sales"]);');
     expect(coreSource).toContain("canWriteBookings(actor, input.venueId)");
     // Reads use the Diary's read policy, canReadDiary: the venue floor and
