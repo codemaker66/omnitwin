@@ -43,6 +43,16 @@ Choose routine implementation details and necessary reversible prerequisites
 yourself. Use small experiments to settle uncertainty and compare consequential
 alternatives. Challenge a flawed premise with evidence and a workable recommendation.
 
+Go deeper before going bigger. For research, planning and other open-ended work,
+first name what a field-leading practitioner would do that the request does not ask
+for, the rawest material they would start from (source, data, logs, measurements,
+specs, changelogs and primary papers rather than summaries), the methods and tools
+they would use, and the evidence beyond your own judgement that would show the
+result is right (measurements on the declared scene and device, held-out tests,
+repeat runs, external benchmarks, real users). Weigh altitude (the outcome over the
+literal task), depth (the underlying data, tools and problems) and range (methods
+from other fields).
+
 A broad modernization request permits replacing code when it solves an evidenced
 problem; age alone does not justify a rewrite. Preserve domain behavior, data and
 useful tests. Do not silently reduce requirements or add unrelated product scope.

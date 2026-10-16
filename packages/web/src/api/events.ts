@@ -2,10 +2,14 @@ import {
   CreateEventConfigurationLinkSchema,
   EventConfigurationLinkSchema,
   EventPhaseGraphSchema,
+  EventPhaseSchema,
   type CreateEvent,
   type CreateEventConfigurationLink,
+  type CreateEventPhase,
   type EventConfigurationLink,
+  type EventPhase,
   type EventPhaseGraph,
+  type UpdateEventPhase,
 } from "@omnitwin/types";
 import { api } from "./client.js";
 
@@ -48,4 +52,17 @@ export async function linkEventConfiguration(
     false,
     EventConfigurationLinkSchema,
   );
+}
+
+/**
+ * The When ribbon's phase handles (goal 19 S6) write the inner boundaries of
+ * a booking as event phases: create one the office has not placed yet, or
+ * move one that exists. Both answers are validated as a phase row.
+ */
+export async function createEventPhase(eventId: string, input: CreateEventPhase): Promise<EventPhase> {
+  return api.post(`/events/${encodeURIComponent(eventId)}/phases`, input, false, EventPhaseSchema);
+}
+
+export async function updateEventPhase(phaseId: string, patch: UpdateEventPhase): Promise<EventPhase> {
+  return api.patch(`/event-phases/${encodeURIComponent(phaseId)}`, patch, EventPhaseSchema);
 }

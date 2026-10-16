@@ -205,12 +205,12 @@ describe.skipIf(target === undefined)("booking mutation concurrency on migrated 
     expect((await stored(row.id)).notes).toBeNull();
   });
 
-  it("lets sales, who pencils the holds, edit and confirm a hold at its own venue", async () => {
+  it.each(["sales", "manager"])("refuses %s an edit or a confirmation since the office alone inks a time (goal 19 D2, 10 October 2026)", async (role) => {
     const f = await fixture("hold"), row = first(f);
-    const sales: MutationActor = { ...f.actor, role: "sales" };
-    expect(await updateBookingCore(db, sales, row.id, { notes: "The client called back" })).toMatchObject({ ok: true });
-    expect(await transitionBookingCore(db, sales, row.id, { toState: "ink" })).toMatchObject({ ok: true });
-    expect(await stored(row.id)).toMatchObject({ kind: "ink", notes: "The client called back" });
+    const actor: MutationActor = { ...f.actor, role };
+    expect(await updateBookingCore(db, actor, row.id, { notes: "The client called back" })).toMatchObject({ ok: false, status: 403 });
+    expect(await transitionBookingCore(db, actor, row.id, { toState: "ink" })).toMatchObject({ ok: false, status: 403 });
+    expect(await stored(row.id)).toMatchObject({ kind: "hold", notes: null });
   });
 
   it("keeps the hallkeeper a reader and sales inside its own venue", async () => {

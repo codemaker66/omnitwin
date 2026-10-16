@@ -753,13 +753,12 @@ describe("DiaryBoardPage — create in context (T-619)", () => {
     expect(screen.queryByRole("button", { name: "New booking" })).toBeNull();
   });
 
-  it.each(["manager", "sales"])("offers the %s the controls the API lets them use", async (role) => {
+  it.each(["manager", "sales"])("offers the %s no create control, a reader since goal 19 D2 (10 October 2026)", async (role) => {
     setUser(role);
     renderPage();
     await screen.findByText("Grand Hall");
-    expect(screen.getByRole("button", { name: "New booking" })).toBeDefined();
-    expect(screen.getAllByRole("button", { name: /^New booking — / }).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Read-only/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "New booking" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^New booking — / })).toBeNull();
   });
 });
 

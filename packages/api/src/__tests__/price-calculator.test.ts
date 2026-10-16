@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  applicableRules,
   calculatePrice,
   computeHours,
   getDayOfWeek,
   getMonth,
+  ruleWindow,
+  windowHolds,
   type PricingRuleInput,
 } from "../services/price-calculator.js";
 
@@ -23,6 +26,8 @@ function makeRule(overrides: Partial<PricingRuleInput> & Pick<PricingRuleInput, 
     validTo: null,
     isActive: true,
     spaceId: null,
+    appliesFrom: null,
+    appliesUntil: null,
     ...overrides,
   };
 }
@@ -256,9 +261,12 @@ describe("seed data — Trades Hall pricing", () => {
     expect(seedCode).toContain("Exclusive Use of Full Venue");
     expect(seedCode).toContain("2500");
     // Key prices from the PDF
-    expect(seedCode).toContain("amount: 550");   // Grand Hall half day
-    expect(seedCode).toContain("amount: 900");   // Grand Hall full day
-    expect(seedCode).toContain("amount: 1500");  // Grand Hall evening
+    expect(seedCode).toContain("halfDay: 550");   // Grand Hall half day, both windows
+    expect(seedCode).toContain("fullDay: 900");   // Grand Hall full day
+    expect(seedCode).toContain("evening: 1500");  // Grand Hall evening
+    // Every slot carries its window (0089); the half day is two rules.
+    expect(seedCode).toContain("appliesFrom: \"19:00\", appliesUntil: \"00:30\"");
+    expect(seedCode).toContain("Half Day (14:00–18:00)");
     // Notes
     expect(seedCode).toContain("Includes Saloon");
     expect(seedCode).toContain("Only if venue already open");
@@ -270,6 +278,88 @@ describe("seed data — Trades Hall pricing", () => {
     const seedCode = fs.readFileSync("src/db/seed.ts", "utf-8");
     expect(seedCode).toContain("pricingRules");
     expect(seedCode).toContain("db.insert(pricingRules)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Windows (goal 19 S6, migration 0089): a rule that states its time of day
+// applies only to a span inside it; one room's nested slots are alternatives.
+// ---------------------------------------------------------------------------
+
+describe("calculatePrice — windows", () => {
+  const grandHall = [
+    makeRule({ name: "Grand Hall — Half Day (09:00–13:00)", type: "flat_rate", amount: 550, spaceId: SPACE_ID, appliesFrom: "09:00", appliesUntil: "13:00" }),
+    makeRule({ name: "Grand Hall — Half Day (14:00–18:00)", type: "flat_rate", amount: 550, spaceId: SPACE_ID, appliesFrom: "14:00", appliesUntil: "18:00" }),
+    makeRule({ name: "Grand Hall — Full Day (09:00–17:30)", type: "flat_rate", amount: 900, spaceId: SPACE_ID, appliesFrom: "09:00", appliesUntil: "17:30" }),
+    makeRule({ name: "Grand Hall — Evening Event (19:00–00:30)", type: "flat_rate", amount: 1500, spaceId: SPACE_ID, appliesFrom: "19:00", appliesUntil: "00:30" }),
+  ];
+  const estimate = (startTime: string, endTime: string, rules: readonly PricingRuleInput[] = grandHall) =>
+    calculatePrice({ rules, spaceId: SPACE_ID, eventDate: "2026-10-24", startTime, endTime, guestCount: 80 });
+
+  it("prices an evening as the evening slot alone, not every slot stacked", () => {
+    const result = estimate("19:00", "23:00");
+    expect(result.lineItems.map((item) => item.ruleName)).toEqual(["Grand Hall — Evening Event (19:00–00:30)"]);
+    expect(result.total).toBe(1500);
+  });
+
+  it("a morning inside both the half day and the full day pays the half day: the narrowest slot of the room", () => {
+    const result = estimate("10:00", "12:00");
+    expect(result.lineItems.map((item) => item.ruleName)).toEqual(["Grand Hall — Half Day (09:00–13:00)"]);
+    expect(result.total).toBe(550);
+  });
+
+  it("a span across both half days pays the full day", () => {
+    expect(estimate("10:00", "16:00").lineItems.map((item) => item.ruleName)).toEqual(["Grand Hall — Full Day (09:00–17:30)"]);
+    expect(estimate("09:00", "17:30").total).toBe(900);
+  });
+
+  it("a span no slot holds earns no slot line", () => {
+    expect(estimate("10:00", "22:00").lineItems).toEqual([]);
+    expect(estimate("18:00", "20:00").total).toBe(0);
+  });
+
+  it("a window that runs past midnight holds a span either side of it", () => {
+    expect(estimate("23:00", "23:59").total).toBe(1500);
+    expect(estimate("00:00", "00:30").total).toBe(1500);
+    expect(estimate("00:00", "00:31").total).toBe(0);
+    expect(estimate("18:59", "22:00").total).toBe(0);
+  });
+
+  it("a rule with no window applies at any time, as every rule did before", () => {
+    const venueWide = makeRule({ name: "Exclusive Use of Full Venue", type: "flat_rate", amount: 2500 });
+    const result = estimate("19:00", "23:00", [...grandHall, venueWide]);
+    expect(result.lineItems.map((item) => item.ruleName)).toEqual(["Grand Hall — Evening Event (19:00–00:30)", "Exclusive Use of Full Venue"]);
+    expect(result.total).toBe(4000);
+  });
+
+  it("another room's slot and a venue-wide windowed rule are not alternatives of this room's slot", () => {
+    const security = makeRule({ name: "Evening security (19:00–00:30)", type: "per_hour", amount: 30, appliesFrom: "19:00", appliesUntil: "00:30" });
+    const otherRoom = makeRule({ name: "Saloon — Evening Event (19:00–00:30)", type: "flat_rate", amount: 500, spaceId: "s2", appliesFrom: "19:00", appliesUntil: "00:30" });
+    const result = estimate("19:00", "23:00", [...grandHall, security, otherRoom]);
+    expect(result.lineItems.map((item) => item.ruleName)).toEqual(["Grand Hall — Evening Event (19:00–00:30)", "Evening security (19:00–00:30)"]);
+    expect(result.total).toBe(1500 + 120);
+  });
+
+  it("two rules of one room with the same narrowest window both apply: they are not alternatives", () => {
+    const cleaning = makeRule({ name: "Grand Hall — Evening clean (19:00–00:30)", type: "flat_rate", amount: 80, spaceId: SPACE_ID, appliesFrom: "19:00", appliesUntil: "00:30" });
+    expect(estimate("19:00", "23:00", [...grandHall, cleaning]).total).toBe(1580);
+  });
+
+  it("the seeded Grand Hall evening prices at £1,500: the evening slot, with the exclusive-use rule switched off (Blake, 16 October 2026)", () => {
+    const exclusiveOff = makeRule({ name: "Exclusive Use of Full Venue", type: "flat_rate", amount: 2500, isActive: false });
+    const result = estimate("19:00", "23:00", [...grandHall, exclusiveOff]);
+    expect(result.lineItems).toEqual([{ ruleName: "Grand Hall — Evening Event (19:00–00:30)", description: "Flat rate", amount: 1500 }]);
+    expect(result.total).toBe(1500);
+  });
+
+  it("the window helpers read a past-midnight window as its second day", () => {
+    const evening = ruleWindow({ appliesFrom: "19:00", appliesUntil: "00:30" });
+    expect(evening).toEqual({ fromMinute: 19 * 60, untilMinute: 24 * 60 + 30 });
+    expect(ruleWindow({ appliesFrom: null, appliesUntil: null })).toBeNull();
+    if (evening === null) throw new Error("window");
+    expect(windowHolds(evening, "19:00", "00:30")).toBe(false);
+    expect(windowHolds(evening, "19:00", "19:00")).toBe(false);
+    expect(applicableRules(grandHall, "19:00", "23:00").map((rule) => rule.amount)).toEqual([1500]);
   });
 });
 

@@ -15,6 +15,7 @@ import {
   bigserial,
   boolean,
   date,
+  time,
   index,
   uniqueIndex,
   unique,
@@ -901,6 +902,12 @@ export const pricingRules = pgTable("pricing_rules", {
   validFrom: date("valid_from"),
   validTo: date("valid_to"),
   isActive: boolean("is_active").notNull().default(true),
+  // The time of day the rule is for, as the venue's price sheet states it
+  // ("Half Day (09:00–13:00)", "Evening Event (19:00–00:30)"); an until
+  // not after its from runs past midnight. Both or neither (0089). A rule
+  // with no window applies at any time, as every rule did before 0089.
+  appliesFrom: time("applies_from"),
+  appliesUntil: time("applies_until"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -909,6 +916,7 @@ export const pricingRules = pgTable("pricing_rules", {
   // history and stay out of the index (0073).
   index("pricing_rules_venue_space_live_idx").on(table.venueId, table.spaceId)
     .where(sql`${table.deletedAt} IS NULL`),
+  check("pricing_rules_window_pair_check", sql`(${table.appliesFrom} IS NULL) = (${table.appliesUntil} IS NULL)`),
 ]);
 
 // ---------------------------------------------------------------------------

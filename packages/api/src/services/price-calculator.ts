@@ -29,6 +29,10 @@ export interface PricingRuleInput {
   readonly validTo: string | null;
   readonly isActive: boolean;
   readonly spaceId: string | null;
+  /** The time of day the rule is for, "HH:MM", both or neither (0089). An
+   *  until not after its from runs past midnight. Null applies at any time. */
+  readonly appliesFrom: string | null;
+  readonly appliesUntil: string | null;
 }
 
 /** Input for price calculation. */
@@ -100,6 +104,72 @@ function isRuleForSpace(rule: PricingRuleInput, spaceId: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Windows (goal 19 S6). A rule that states its time of day applies only when
+// the requested span lies inside it. Where several windowed rules for the
+// SAME room (the same spaceId) hold the span, they are the price sheet's
+// alternatives for one booking ("Half Day" inside "Full Day"), so only the
+// narrowest applies; rules of other rooms, venue-wide rules and rules with
+// no window are not alternatives of it and are judged on their own. A span
+// no window holds earns no slot line: the sheet has no slot for it.
+// ---------------------------------------------------------------------------
+
+const MINUTES_PER_DAY = 24 * 60;
+
+function minutesOfDay(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number) as [number, number];
+  return h * 60 + m;
+}
+
+interface RuleWindow {
+  readonly fromMinute: number;
+  /** Past 1440 when the window runs past midnight. */
+  readonly untilMinute: number;
+}
+
+/** The rule's window in minutes of its day, or null when it states none. */
+export function ruleWindow(rule: Pick<PricingRuleInput, "appliesFrom" | "appliesUntil">): RuleWindow | null {
+  if (rule.appliesFrom === null || rule.appliesUntil === null) return null;
+  const fromMinute = minutesOfDay(rule.appliesFrom);
+  const until = minutesOfDay(rule.appliesUntil);
+  return { fromMinute, untilMinute: until > fromMinute ? until : until + MINUTES_PER_DAY };
+}
+
+/** Whether [startTime, endTime) of one day lies inside the window. A span in
+ *  the small hours ("00:00"–"00:30") sits inside a past-midnight window
+ *  ("19:00"–"00:30") as that window's second day. */
+export function windowHolds(window: RuleWindow, startTime: string, endTime: string): boolean {
+  const start = minutesOfDay(startTime);
+  const end = minutesOfDay(endTime);
+  if (end <= start) return false;
+  if (start >= window.fromMinute && end <= window.untilMinute) return true;
+  const crossesMidnight = window.untilMinute > MINUTES_PER_DAY;
+  return crossesMidnight && start + MINUTES_PER_DAY >= window.fromMinute && end + MINUTES_PER_DAY <= window.untilMinute;
+}
+
+/** The rules that apply to the span: every rule without a window, and for
+ *  each room the narrowest window that holds the span. */
+export function applicableRules(
+  rules: readonly PricingRuleInput[],
+  startTime: string,
+  endTime: string,
+): readonly PricingRuleInput[] {
+  const narrowest = new Map<string | null, number>();
+  for (const rule of rules) {
+    const window = ruleWindow(rule);
+    if (window === null || !windowHolds(window, startTime, endTime)) continue;
+    const span = window.untilMinute - window.fromMinute;
+    const best = narrowest.get(rule.spaceId);
+    if (best === undefined || span < best) narrowest.set(rule.spaceId, span);
+  }
+  return rules.filter((rule) => {
+    const window = ruleWindow(rule);
+    if (window === null) return true;
+    if (!windowHolds(window, startTime, endTime)) return false;
+    return window.untilMinute - window.fromMinute === narrowest.get(rule.spaceId);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Main calculator
 // ---------------------------------------------------------------------------
 
@@ -121,9 +191,8 @@ export function calculatePrice(input: PriceCalculationInput): PriceResult {
   const modifierMap = new Map<string, number>();
   const currency = rules[0]?.currency ?? "GBP";
 
-  for (const rule of rules) {
-    if (!isRuleValidForDate(rule, eventDate)) continue;
-    if (!isRuleForSpace(rule, spaceId)) continue;
+  const inScope = rules.filter((rule) => isRuleValidForDate(rule, eventDate) && isRuleForSpace(rule, spaceId));
+  for (const rule of applicableRules(inScope, startTime, endTime)) {
 
     let amountMinor: Minor = 0;
     let description = "";
