@@ -2,7 +2,7 @@
 
 **Audience:** Blake (and any future trainer operator).
 **Scope:** every action between "I want to train a Venviewer splat" and "the signed AssetVersion bundle is in R2 ready for backend ingestion."
-**Backed by:** D-006a (gsplat MCMC + bilateral grid), D-014 (Venue Artifact Factory), D-016 (RunPod-canonical training environment).
+**Backed by:** D-006a (gsplat MCMC + bilateral grid), D-014 (Venue Artifact Factory), D-016 (RunPod-canonical training environment), D-016a (training environment from 16 October 2026: PyTorch 2.14.1+cu132 and gsplat main).
 
 This runbook is the canonical source for training-pipeline ops. If you find yourself copying a step from chat history, copy it here instead.
 
@@ -14,7 +14,9 @@ This runbook is the canonical source for training-pipeline ops. If you find your
 
 1. Create a RunPod account at https://runpod.io.
 2. Add a payment method. Routine training cost band: **$5–15 per run** at $1.19/hr Community Cloud A100 80GB.
-3. From the RunPod console, create a Pod Template using the `infra/runpod/runpod-template.json` definition. Set the image to `omnitwin/trainer:1.5.3-cu124` once the image is built and pushed.
+3. From the RunPod console, create a Pod Template using the `infra/runpod/runpod-template.json` definition. Set the image to `omnitwin/trainer:1.5.3-cu124` once the image is built and pushed. That image keeps D-016's original pins (gsplat 1.5.3, PyTorch 2.4.1, CUDA 12.4) for old recipes.
+
+   New training under D-016a has no trainer image yet. Its pods use [the plain RunPod image path](#new-environment-on-a-plain-runpod-image-validated-16-october-2026). The image pins for it wait in draft [#94](https://github.com/codemaker66/omnitwin/pull/94) until that image is built and smoke-tested.
 
 ### R2 buckets
 
@@ -51,6 +53,44 @@ docker push omnitwin/trainer:1.5.3-cu124
 ```
 
 The Dockerfile force-imports `gsplat` at build time and runs `healthcheck.py --no-cuda`, so a broken image fails at build, not at first pod boot.
+
+### New environment on a plain RunPod image (validated 16 October 2026)
+
+This is how T-655 ran the D-016a environment on a RunPod H100 pod (`eexytqnlp25mg2`). It is the path for new-environment pods: no trainer image exists for this environment yet, and its pins wait in draft [#94](https://github.com/codemaker66/omnitwin/pull/94) until one is built and smoke-tested.
+
+The reference script is `D:/claude/ppisp-20261013/pod_boot_t655.sh` (outside the repo). It does every step below and records versions in `t655_env.txt`.
+
+1. Create the pod with image `runpod/pytorch:1.4.0-cu1300-torch2130-ubuntu2404` and `allowedCudaVersions: ["13.0"]` (REST `POST /v1/pods`). Validated host: NVIDIA H100 80GB HBM3, driver 580.126.09, Python 3.12.3.
+2. Install the CUDA 13.2 Update 2 toolkit beside the image's CUDA 13.0. The image's nvcc 13.0.88 is in the affected range, so it is not used for the extensions.
+
+   The image already lists NVIDIA's apt repo in `/etc/apt/sources.list.d/cuda.list`. **Do not install `cuda-keyring` on top of it**, or apt refuses with `Conflicting values set for option Signed-By`. If `cuda-keyring` is already installed alongside that list, purge it first (`dpkg -P cuda-keyring`). Install the keyring only when no NVIDIA source is listed.
+   ```bash
+   apt-get update && apt-get install -y --no-install-recommends cuda-toolkit-13-2=13.2.2-1
+   export CUDA_HOME=/usr/local/cuda-13.2 PATH=/usr/local/cuda-13.2/bin:$PATH
+   nvcc --version | grep -q V13.2.86 || echo "STOP: wrong nvcc"
+   ```
+   SSH sessions do not inherit the image's environment, so export these in every session. Ubuntu 24.04's pip also needs `PIP_BREAK_SYSTEM_PACKAGES=1`.
+3. Install torch and prove it on the driver with a CUDA operation (for example a matmul and `torch.cuda.synchronize()`):
+   ```bash
+   pip install torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cu132
+   ```
+   If the driver refuses the cu132 wheels, the fallback is the `cu130` index, with the extensions still built by nvcc 13.2.86. On 580.126.09 it was not needed.
+4. Build gsplat at the pinned commit, against that PyTorch, with nvcc 13.2.86 (about 2 minutes on the H100 pod):
+   ```bash
+   git clone https://github.com/nerfstudio-project/gsplat.git && cd gsplat
+   git checkout 512d366b67073d77ca099ede742683c165dfc23b
+   git submodule update --init --recursive gsplat/cuda/csrc/third_party/glm
+   TORCH_CUDA_ARCH_LIST=9.0 BUILD_EXPERIMENTAL=0 BUILD_3DGUT=0 pip install --no-build-isolation -v . 2>&1 | tee gsplat_build.log
+   grep -m1 "cuda-13.2/bin/nvcc" gsplat_build.log   # must match: the build used the fixed compiler
+   ```
+5. Install PPISP v1.3.0 and run the same `grep` on its build log:
+   ```bash
+   pip install --no-build-isolation -v git+https://github.com/nv-tlabs/ppisp.git@a247368047651db2e03e6f97a36e4f5bebbe5c5f
+   ```
+6. Check before training, from a directory that holds no source checkout:
+   ```bash
+   python -c "import torch, gsplat, ppisp; from gsplat import csrc"
+   ```
 
 ---
 
@@ -204,6 +244,7 @@ Per the RunPod pricing as of 2026-04-26:
 | Secure Cloud (canonical bake-off) | A100 80GB | $1.39–1.89 |
 | Ablation alternative | L40S 48GB | $0.79 |
 | Ablation alternative | RTX 6000 Ada 48GB | $0.74 |
+| Secure Cloud, panorama splat lane (observed October 2026) | H100 SXM 80GB | $3.49–3.99 (the T-655 pod billed $3.99 on 13 October 2026) |
 
 **Budget targets:**
 
@@ -246,6 +287,8 @@ Spot/interruptible pods are **deferred** until on-demand checkpoint resume is pr
 
 Why this matters: an A100 80GB at $1.19/hr is $28/day if you forget. Set the secret and let the pod kill itself.
 
+Collect before any stop can fire. Both result downloads that were cut off on 16 October 2026 (T-655's control-arm day PLY among them) came from a stop firing mid-collect. Collect results, or push them off the pod (to R2), before any post-run stop or self-termination can fire, and keep beating the reaper heartbeat while files are still arriving.
+
 ---
 
 ## Things to verify on first real run
@@ -274,6 +317,7 @@ When all twelve are ticked, `T-001` status moves to `done`.
 - `docs/architecture/adr/D-006a.md` — gsplat MCMC + bilateral grid + 3DGUT decision
 - `docs/architecture/adr/D-014.md` — Venue Artifact Factory (bundle format + trust boundary)
 - `docs/architecture/adr/D-016.md` — RunPod-canonical training environment
+- `docs/architecture/adr/D-016a.md` — training environment from 16 October 2026: PyTorch 2.14.1+cu132, gsplat main, PPISP on trial
 - `docs/specs/runpod-training-contract.md` — bundle format spec, JSON schemas
 - `infra/runpod/runpod-template.json` — pod template definition
 - `configs/training/config_b.yaml` — production recipe

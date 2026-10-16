@@ -36,12 +36,12 @@ This is the source of truth for architectural decisions. Each ADR is immutable o
 | [D-014](D-014.md) | Venue Artifact Factory | Accepted |
 | [D-015](D-015.md) | Capture certification tiers | Proposed |
 
-## Operational decisions (D-016 accepted 2026-04-26; D-016a proposed 2026-10-13)
+## Operational decisions (D-016 accepted 2026-04-26; D-016a accepted for the environment 2026-10-16)
 
 | ID | Title | Status |
 |---|---|---|
 | [D-016](D-016.md) | RunPod-canonical training environment | Accepted |
-| [D-016a](D-016a.md) | Training environment: PyTorch 2.14.1 and gsplat main, with PPISP on trial | Proposed (environment validation pending, T-655) |
+| [D-016a](D-016a.md) | Training environment: PyTorch 2.14.1 and gsplat main, with PPISP on trial | Accepted for the environment (validated 2026-10-16, T-655); PPISP trial inconclusive at one seed, stays opt-in |
 
 ## Workflow infrastructure decisions (proposed 2026-04-25)
 

@@ -4,9 +4,26 @@ Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportion
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
-## Latest operational constraint — 13 October 2026 (T-655): the splat training environment is moving
+## Latest operational constraint — 13 October 2026 (T-655; validated 16 October): the splat training environment has moved
 
-Blake, verbatim: "Upgrrade the splat and pytorch to the latest and inform our repo we are doing so, multiple sessions may need that info. Try PPISP." The upgrade is under way, not finished. Target for new splat training: PyTorch 2.14.1+cu132 and torchvision 0.29.1+cu132 (official cu132 wheels; 580-series RunPod drivers run them under CUDA minor-version compatibility), with gsplat built from GitHub `main` @ `512d366b` (gsplat has no release after 1.5.3; the trial builds it with `BUILD_3DGUT=0`, so 3DGUT needs a separate build) and NVIDIA PPISP v1.3.0 behind an opt-in trainer flag, every CUDA extension compiled with nvcc 13.2.86 (CUDA 13.2 Update 2) or newer ([D-016a](docs/architecture/adr/D-016a.md), proposed). Why: NVIDIA's CUDA 13.2 Update 2 fixes a compiler bug present since CUDA 12.8 that can leave stale or corrupted register values in kernels with nested divergence, and PyTorch 2.14.1 moved only its cu132 builds onto it; do not train with extensions built by nvcc 12.8 to 13.2 Update 1. Environment validation is pending: a first pod on 13 October built gsplat with the affected nvcc 13.0.88 (discarded), and the smoke test has not yet passed. Until it does, the RunPod image pins stay unchanged (`infra/runpod/Dockerfile`, `omnitwin/trainer:1.5.3-cu124`: gsplat 1.5.3, PyTorch 2.4.1, CUDA 12.4), and old recipes stay reproducible on those pins (the panorama floor lane keeps its paired 60k arms there); compare results across the two environments only as such. D-016's rule stands: splat training runs on RunPod, never on the local PC. Status and the PPISP held-out trial: T-655 in [the task list](docs/state/tasks.md) and [the 13 October session log](docs/sessions/2026-10-13.md).
+Blake, verbatim: "Upgrrade the splat and pytorch to the latest and inform our repo we are doing so, multiple sessions may need that info. Try PPISP."
+
+**The environment for new splat training** ([D-016a](docs/architecture/adr/D-016a.md), accepted for the environment 16 October):
+- PyTorch 2.14.1+cu132 and torchvision 0.29.1+cu132, the official cu132 wheels. 580-series RunPod drivers run them under CUDA minor-version compatibility; validated on 580.126.09, so the cu130 fallback was not needed.
+- gsplat built from GitHub `main` @ `512d366b`. gsplat has no release after 1.5.3. It is built with `BUILD_3DGUT=0`, so 3DGUT needs a separate build.
+- NVIDIA PPISP v1.3.0, behind an opt-in trainer flag.
+- Every CUDA extension compiled by nvcc 13.2.86 (CUDA 13.2 Update 2). NVIDIA's 13.2 Update 2 fixes a compiler bug present since CUDA 12.8 that can leave stale or corrupted register values in kernels with nested divergence, and PyTorch 2.14.1 moved only its cu132 builds onto it. Do not train with extensions built by nvcc 12.8 to 13.2 Update 1.
+
+**Validation and trial (16 October):**
+- The environment was validated on a RunPod H100: gsplat and PPISP were built by nvcc 13.2.86, PPISP's 235 tests passed, and the env check passed.
+- The new environment is equivalent to the old one: −0.013 ± 0.079 dB on the held-out headline.
+- PPISP's trial is inconclusive at one seed, so `--ppisp` stays opt-in. Its raw render is 0.23 dB below the control's, so a PPISP-trained splat cannot ship unless the viewer applies its correction.
+
+**Images and old recipes:**
+- No trainer image exists for this environment yet. Its pins wait in draft [#94](https://github.com/codemaker66/omnitwin/pull/94) until the image is built and smoke-tested. Until then, new-environment pods follow the runbook's plain-image path (`infra/runpod/RUNBOOK.md`).
+- `infra/runpod/Dockerfile` and the pod template still describe `omnitwin/trainer:1.5.3-cu124` (gsplat 1.5.3, PyTorch 2.4.1, CUDA 12.4). Old recipes stay reproducible on that image; the panorama floor lane keeps its paired 60k arms there. Compare results across the two environments only as such.
+
+D-016's rule stands: splat training runs on RunPod, never on the local PC. Status: T-655 in [the task list](docs/state/tasks.md) and the session logs of [13 October](docs/sessions/2026-10-13.md) and [16 October](docs/sessions/2026-10-16.md).
 
 ## Latest founder direction — 28 September 2026 (T-639)
 
