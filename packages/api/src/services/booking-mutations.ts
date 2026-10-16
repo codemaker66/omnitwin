@@ -127,11 +127,17 @@ export function canWriteBookings(actor: MutationActor, venueId: string): boolean
 /** A hold's owner is told about it (hold reminders email them), so the owner
  *  must be someone who works the Diary at the booking's venue. A crafted
  *  request must not name another venue's user, a hallkeeper or a client. */
+/** Who may be named as a hold's owner: the office and the pipeline roles at
+ *  the booking's venue. Owning a hold is being the person the house asks
+ *  about it, not writing the Diary: sales and manager kept it when goal 19
+ *  D2 took the write from them. The hallkeeper was never in it. */
+export const HOLD_OWNER_ROLES: ReadonlySet<string> = new Set([...DIARY_WRITE_ROLES, "manager", "sales"]);
+
 export async function ownerWorksAtVenue(conn: BookingDbConn, ownerUserId: string, venueId: string): Promise<boolean> {
   const [owner] = await conn
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.id, ownerUserId), eq(users.venueId, venueId), inArray(users.role, [...DIARY_WRITE_ROLES])))
+    .where(and(eq(users.id, ownerUserId), eq(users.venueId, venueId), inArray(users.role, [...HOLD_OWNER_ROLES])))
     .limit(1);
   return owner !== undefined;
 }
