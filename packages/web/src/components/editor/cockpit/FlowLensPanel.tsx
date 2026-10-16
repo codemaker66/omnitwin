@@ -2,7 +2,9 @@ import { type ChangeEvent, type ReactElement } from "react";
 import { Waypoints } from "lucide-react";
 import { ActivityStatus } from "../../shared/Activity.js";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
+import { NotRecorded } from "./NotRecorded.js";
 import { useCockpitReplay } from "../../../hooks/use-cockpit-replay.js";
+import { usePlannerTruth } from "../../../hooks/use-planner-truth.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { buildFlowPanelModel, type FlowConflictSeverity } from "../../../lib/cockpit-flow-panel-model.js";
 import { DEFAULT_ASSUMED_GUEST_COUNT, MAX_GUEST_FLOW_AGENTS } from "../../../lib/guest-flow-layout-input.js";
@@ -29,6 +31,7 @@ const MAX_ARRIVAL_MINUTES = 600;
 
 export function FlowLensPanel(): ReactElement {
   const { artifact, status } = useCockpitReplay(true);
+  const truth = usePlannerTruth();
   const plannedGuestCount = useCockpitStore((state) => state.plannedGuestCount);
   const setPlannedGuestCount = useCockpitStore((state) => state.setPlannedGuestCount);
   const arrivalMinutes = useCockpitStore((state) => state.flowArrivalMinutes);
@@ -94,6 +97,14 @@ export function FlowLensPanel(): ReactElement {
       {model !== null && (
         <>
           <LensPanelSection label="Flow summary">
+            {model.doors === "not-recorded" && (
+              <NotRecorded
+                label="Door positions"
+                detail="The simulation places one entrance and one exit mid-wall, so it gives no bottleneck score."
+                ask={truth.ask("door-positions")}
+                testId="flow-doors-unrecorded"
+              />
+            )}
             {model.summary.map((row) => (
               <LensPanelMetric key={row.key} label={row.label} value={row.value} />
             ))}
@@ -112,7 +123,7 @@ export function FlowLensPanel(): ReactElement {
                 <span className="lens-panel__row-title">{conflict.message}</span>
               </div>
             ))}
-            {model.conflicts.length === 0 && (
+            {model.conflicts.length === 0 && model.doors === "recorded" && (
               <p className="lens-panel__hint">No simulated route conflicts.</p>
             )}
           </LensPanelSection>

@@ -8,10 +8,12 @@ import {
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
   VENUE_TRUTH_PROVENANCE,
+  VENUE_TRUTH_STATEMENTS,
   formatPriceGBP,
   formatPublishedAddress,
   isPublishedRoomSlug,
   publishedRoomCapacity,
+  venueTruthStatementLabel,
 } from "../trades-hall-venue-truth.js";
 
 // ---------------------------------------------------------------------------
@@ -157,5 +159,28 @@ describe("claim safety", () => {
   it("provenance names its date and source", () => {
     expect(VENUE_TRUTH_PROVENANCE.capacities).toContain("2026-07-09");
     expect(VENUE_TRUTH_PROVENANCE.pricing).toContain("2026-07-09");
+  });
+
+  it("keeps the provenance sentences word for word while writing them from the statements", () => {
+    expect(VENUE_TRUTH_PROVENANCE.capacities).toBe(
+      "Capacity figures confirmed by the Trades Hall team, 2026-07-09 — a planning guide; final numbers depend on your layout.",
+    );
+    expect(VENUE_TRUTH_PROVENANCE.pricing).toBe(
+      "Room-hire rates provided by the Trades Hall team, 2026-07-09. Catering and services are quoted separately by the events team.",
+    );
+    expect(VENUE_TRUTH_PROVENANCE.capacities).toContain(VENUE_TRUTH_STATEMENTS.capacities.statedOn);
+    expect(VENUE_TRUTH_PROVENANCE.pricing).toContain(VENUE_TRUTH_STATEMENTS.pricing.statedOn);
+  });
+
+  it("labels a figure with who stated it and when, in plain words", () => {
+    expect(venueTruthStatementLabel(VENUE_TRUTH_STATEMENTS.capacities)).toBe("Published guide · Trades Hall · 9 Jul 2026");
+    expect(venueTruthStatementLabel(VENUE_TRUTH_STATEMENTS.pricing)).toBe("Published rates · Trades Hall · 9 Jul 2026");
+  });
+
+  it("shows a malformed date as written instead of guessing a day", () => {
+    expect(venueTruthStatementLabel({ kind: "Published guide", statedBy: "A venue", statedOn: "July 2026" }))
+      .toBe("Published guide · A venue · July 2026");
+    expect(venueTruthStatementLabel({ kind: "Published guide", statedBy: "A venue", statedOn: "2026-13-45" }))
+      .toBe("Published guide · A venue · 2026-13-45");
   });
 });

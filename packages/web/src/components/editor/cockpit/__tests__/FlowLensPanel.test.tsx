@@ -62,3 +62,28 @@ describe("FlowLensPanel", () => {
     expect(screen.getByRole("status").textContent).toContain("Simulating");
   });
 });
+
+describe("FlowLensPanel — doors nobody recorded (redteam fix-first 2)", () => {
+  it("gives no bottleneck score for doors placed mid-wall, and asks for the doors", () => {
+    render(<FlowLensPanel />);
+    expect(screen.queryByText("Bottleneck score")).toBeNull();
+    expect(screen.getByTestId("flow-doors-unrecorded-status").textContent).toBe("Not recorded");
+    // No venue is open in this suite, so there is no address to write to:
+    // the panel names who to ask instead of a dead link.
+    expect(screen.getByTestId("flow-doors-unrecorded-next").textContent).toBe("Ask the venue's events team when you send your enquiry.");
+    expect(screen.queryByText("No simulated route conflicts.")).toBeNull();
+    expect(screen.getByTestId("flow-lens-panel").textContent).not.toMatch(/\b(pass|fits|valid|compliant)\b/i);
+  });
+
+  it("states the bottleneck score once every door position was given", () => {
+    const door = { id: "door-west", label: "West door", xM: -10, zM: 0, widthM: 1.8 };
+    const surveyed = runGuestFlowReplayV0(buildGuestFlowReplayInputFromLayout({
+      roomWidthM: 21, roomLengthM: 10.5, placedItems: [], plannedGuestCount: 50,
+      entrances: [door], exits: [{ ...door, id: "door-east", label: "East door", xM: 10 }],
+    }));
+    replay.useCockpitReplay.mockReturnValue({ artifact: surveyed, bounds: surveyed.navmesh.roomBounds, status: "ready" });
+    render(<FlowLensPanel />);
+    expect(screen.getByText("Bottleneck score")).toBeTruthy();
+    expect(screen.queryByTestId("flow-doors-unrecorded")).toBeNull();
+  });
+});

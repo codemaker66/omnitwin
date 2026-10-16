@@ -34,6 +34,11 @@ function place(item: CatalogueItem, n: number): PlacedItem[] {
 }
 
 const ROOM = { roomWidthM: 21, roomLengthM: 10 } as const;
+const GRAND_HALL = {
+  kind: "published",
+  capacity: { theatre: 250, classroom: 80, dinner: 180, reception: 250 },
+  source: "Published guide · Trades Hall · 9 Jul 2026",
+} as const;
 
 describe("buildShareProposalDraft", () => {
   it("derives covers, tables and features from the live layout", () => {
@@ -54,11 +59,39 @@ describe("buildShareProposalDraft", () => {
     expect(draft.roomSummary).toBe("21.0 m × 10.0 m floor · 210 m²");
   });
 
-  it("produces a SAFE capacity note that passes the proposal claim guard", () => {
+  it("states the venue's published figure for the layout, with who stated it, never a computed count", () => {
+    const items = [...place(roundTable(), 10), ...place(chair(), 80)];
+    const draft = buildShareProposalDraft({
+      ...ROOM, placedItems: items, plannedGuestCount: 80, titleOverride: null, roomName: "Grand Hall", published: GRAND_HALL,
+    });
+    expect(draft.capacityNote).toBe(
+      "The venue publishes 180 for dinner in the Grand Hall (Published guide · Trades Hall · 9 Jul 2026). "
+      + "Final numbers depend on the layout and are confirmed by the venue team.",
+    );
+    expect(draft.capacityNote).not.toMatch(/\b(140|147|comfortable|within)\b/i);
+    expect(findUnsupportedProposalClaim(draft.capacityNote)).toBeNull();
+  });
+
+  it("says plainly when the plan is above the published figure, and who decides", () => {
+    const items = [...place(roundTable(), 25), ...place(chair(), 200)];
+    const draft = buildShareProposalDraft({
+      ...ROOM, placedItems: items, plannedGuestCount: 200, titleOverride: null, roomName: "Grand Hall", published: GRAND_HALL,
+    });
+    expect(draft.capacityNote).toContain("200 guests is more than the published 180 for dinner; the venue team will say what is possible.");
+  });
+
+  it("reads standing poseur tables against the published reception figure", () => {
+    const poseur = find((c) => c.slug.startsWith("poseur-table"), "poseur table");
+    const draft = buildShareProposalDraft({
+      ...ROOM, placedItems: place(poseur, 20), plannedGuestCount: 200, titleOverride: null, roomName: "Grand Hall", published: GRAND_HALL,
+    });
+    expect(draft.capacityNote).toContain("The venue publishes 250 for reception in the Grand Hall");
+  });
+
+  it("names who confirms the capacity when nothing is published, with no count", () => {
     const items = [...place(roundTable(), 10), ...place(chair(), 80)];
     const draft = buildShareProposalDraft({ ...ROOM, placedItems: items, plannedGuestCount: 80, titleOverride: null });
-    expect(draft.capacityNote.toLowerCase()).toContain("human review required");
-    expect(findUnsupportedProposalClaim(draft.capacityNote)).toBeNull();
+    expect(draft.capacityNote).toBe("The venue team confirms the capacity of this room for this layout.");
   });
 
   it("falls back to a layout-derived title and uses the override when given", () => {

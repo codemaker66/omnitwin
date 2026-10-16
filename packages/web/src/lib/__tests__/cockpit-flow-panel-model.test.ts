@@ -5,6 +5,7 @@ import {
   buildFlowPanelModel,
   formatSeconds,
   densityHotspotLabel,
+  doorRecordFromAssumptions,
 } from "../cockpit-flow-panel-model.js";
 
 // A real artifact from the real engine — the model maps it, it never invents.
@@ -58,5 +59,39 @@ describe("buildFlowPanelModel", () => {
     for (const conflict of model.conflicts) {
       expect(["info", "attention", "review"]).toContain(conflict.severity);
     }
+  });
+});
+
+// Redteam fix-first 2: a bottleneck score out of 100 for doors "assumed
+// mid-wall" is a verdict on an input nobody recorded.
+describe("buildFlowPanelModel — doors nobody recorded", () => {
+  const surveyedDoor = { id: "door-west", label: "West door", xM: -10, zM: 0, widthM: 1.8 };
+
+  it("withholds the bottleneck score when the doors were assumed mid-wall", () => {
+    const model = buildFlowPanelModel(ARTIFACT);
+    expect(model.doors).toBe("not-recorded");
+    expect(model.summary.some((row) => row.key === "bottleneck")).toBe(false);
+  });
+
+  it("withholds it when only some doors were given", () => {
+    const partial = runGuestFlowReplayV0(buildGuestFlowReplayInputFromLayout({
+      roomWidthM: 21, roomLengthM: 10.5, placedItems: [], plannedGuestCount: 40, entrances: [surveyedDoor],
+    }));
+    expect(buildFlowPanelModel(partial).doors).toBe("not-recorded");
+  });
+
+  it("states it when every door position was given", () => {
+    const surveyed = runGuestFlowReplayV0(buildGuestFlowReplayInputFromLayout({
+      roomWidthM: 21, roomLengthM: 10.5, placedItems: [], plannedGuestCount: 40,
+      entrances: [surveyedDoor], exits: [{ ...surveyedDoor, id: "door-east", label: "East door", xM: 10 }],
+    }));
+    const model = buildFlowPanelModel(surveyed);
+    expect(model.doors).toBe("recorded");
+    expect(model.summary.find((row) => row.key === "bottleneck")?.value).toMatch(/^\d+ \/ 100$/);
+  });
+
+  it("treats a missing door assumption as not recorded", () => {
+    expect(doorRecordFromAssumptions([])).toBe("not-recorded");
+    expect(doorRecordFromAssumptions([{ key: "door_positions", value: "assumed mid-wall", source: "caller-provided" }])).toBe("not-recorded");
   });
 });

@@ -33,15 +33,34 @@ function metricValue(label: string): string {
   return labelEl.nextElementSibling?.textContent ?? "";
 }
 
+/** A rig a person built: 12 pars, 4 washes, 2 profiles. */
+function addRig(): void {
+  const rig = useLightingRigStore.getState();
+  rig.setCount("par", 12);
+  rig.setCount("wash", 4);
+  rig.setCount("profile", 2);
+}
+
 beforeEach(() => { useLightingRigStore.getState().reset(); });
 afterEach(() => { cleanup(); useLightingRigStore.getState().reset(); });
 
 describe("LightingLensPanel", () => {
-  it("renders the starter rig with its DMX patch and power", () => {
+  it("opens on an empty rig: no fixture is assumed", () => {
+    render(<LightingLensPanel />);
+    expect(screen.getByText("Lighting & DMX")).toBeTruthy();
+    expect(screen.getByTestId<HTMLInputElement>("rig-par").value).toBe("");
+    expect(metricValue("Fixtures")).toBe("0");
+    expect(screen.getByTestId("dmx-empty")).toBeTruthy();
+    expect(screen.queryByTestId("rig-reset")).toBeNull();
+    expect(screen.queryByTestId("rig-clear")).toBeNull();
+    expect(screen.getByTestId("lighting-lens-panel").textContent).not.toMatch(/example rig|starter/i);
+  });
+
+  it("renders a rig someone built with its DMX patch and power", () => {
+    addRig();
     render(<LightingLensPanel />);
     expect(screen.getByTestId("lighting-lens-panel")).toBeTruthy();
-    expect(screen.getByText("Lighting & DMX")).toBeTruthy();
-    // Starter rig: 12 PAR (7ch) + 4 wash (13ch) + 2 profile (5ch) = 18 fixtures, 146 channels.
+    // 12 PAR (7ch) + 4 wash (13ch) + 2 profile (5ch) = 18 fixtures, 146 channels.
     expect(screen.getByTestId<HTMLInputElement>("rig-par").value).toBe("12");
     expect(metricValue("Fixtures")).toBe("18");
     expect(metricValue("DMX channels")).toBe("146");
@@ -57,6 +76,7 @@ describe("LightingLensPanel", () => {
     const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
 
+    addRig();
     render(<LightingLensPanel />);
     const button = screen.getByTestId<HTMLButtonElement>("patch-export");
     expect(button.disabled).toBe(false);
@@ -80,16 +100,18 @@ describe("LightingLensPanel", () => {
   });
 
   it("shows an empty patch hint when the rig is cleared", () => {
+    addRig();
     render(<LightingLensPanel />);
+    expect(screen.getByTestId("rig-clear").textContent).toBe("Clear the rig");
     fireEvent.click(screen.getByTestId("rig-clear"));
     expect(screen.getByTestId("dmx-empty")).toBeTruthy();
     expect(metricValue("Fixtures")).toBe("0");
+    expect(screen.queryByTestId("rig-clear")).toBeNull();
   });
 
   it("imports a pasted GDTF fixture and patches its real channel footprint", () => {
     render(<LightingLensPanel />);
-    fireEvent.click(screen.getByTestId("rig-clear")); // start from an empty rig
-    expect(metricValue("Fixtures")).toBe("0");
+    expect(metricValue("Fixtures")).toBe("0"); // the rig opens empty
 
     const channels = Array.from({ length: 11 }, (_, i) => `<DMXChannel Offset="${String(i + 1)}"/>`).join("");
     const xml = `<?xml version="1.0"?><GDTF DataVersion="1.2"><FixtureType Name="MegaPointe" Manufacturer="Robe"><DMXModes><DMXMode Name="Standard"><DMXChannels>${channels}</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>`;
@@ -108,7 +130,6 @@ describe("LightingLensPanel", () => {
 
   it("removes an imported fixture from the rig", () => {
     render(<LightingLensPanel />);
-    fireEvent.click(screen.getByTestId("rig-clear"));
     const xml = `<?xml version="1.0"?><GDTF><FixtureType Name="Strobe X" Manufacturer="Acme"><DMXModes><DMXMode Name="Basic"><DMXChannels><DMXChannel Offset="1"/><DMXChannel Offset="2"/></DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>`;
     fireEvent.change(screen.getByTestId("gdtf-xml"), { target: { value: xml } });
     fireEvent.click(screen.getByTestId("gdtf-add"));
@@ -130,7 +151,6 @@ describe("LightingLensPanel", () => {
     const file = await makeGdtfFile("filefix.gdtf", xml);
 
     render(<LightingLensPanel />);
-    fireEvent.click(screen.getByTestId("rig-clear"));
     fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
 
     // The archive is unzipped asynchronously and its description.xml feeds the preview.
@@ -181,7 +201,6 @@ describe("LightingLensPanel", () => {
     const file = await makeMvrFile("rig.mvr", scene, { "Acme@Spot.gdtf": await makeGdtfBytes(gdtfXml) });
 
     render(<LightingLensPanel />);
-    fireEvent.click(screen.getByTestId("rig-clear"));
     fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
 
     const summary = await screen.findByTestId("mvr-summary");

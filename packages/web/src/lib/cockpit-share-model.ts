@@ -1,10 +1,15 @@
-import type { LayoutStyle, ProposalVersionPayload } from "@omnitwin/types";
+import type { ProposalVersionPayload } from "@omnitwin/types";
 import { PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION } from "@omnitwin/types";
 import { getCatalogueItem } from "./catalogue.js";
 import type { PlacedItem } from "./placement.js";
 import { seatingCountsFromPlacedItems } from "./seating-counts.js";
 import { costQuantitiesFromLayout, coversSourceLabel, type CoversSource } from "./cockpit-cost-model.js";
-import { buildProposalCapacityGuidance, buildProposalCapacityNote } from "./proposal-capacity-note.js";
+import {
+  plannerLayoutStyle,
+  publishedCapacityNote,
+  publishedFormatForStyle,
+  type PublishedCapacityAnswer,
+} from "./planner-truth.js";
 import { BAR_CATALOGUE_SLUG } from "./guest-flow-layout-input.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 
@@ -15,9 +20,10 @@ import { isSceneFurniturePlacement } from "./table-dressing.js";
 //
 // Everything here is derived from the placed layout (covers/tables/features)
 // and the room's real-metre dimensions — no invented venue facts. The capacity
-// note reuses the planner's planning-grade engine, so it ALWAYS ends with the
-// human-review disclosure and passes the types-level proposal claim guard by
-// construction. Money is never asserted here: a cost scenario is the Costs
+// note states the venue's PUBLISHED figure for the layout with who stated it
+// and when (planner-truth.ts), never floor area ÷ generic spacing: a client
+// once read 339 standing for a Grand Hall the venue publishes at 250 (redteam
+// fix-first 1). Money is never asserted here: a cost scenario is the Costs
 // lens's editable estimate, not a client quote, so the share draft carries no
 // quote (`quote: null`). The panel's footer keeps the SAFE wording visible.
 // ---------------------------------------------------------------------------
@@ -55,8 +61,11 @@ export interface ShareDraftInput {
   readonly plannedGuestCount: number | null;
   /** Planner-entered event title; falls back to a layout-derived default when blank. */
   readonly titleOverride: string | null;
-  /** Optional room name for the capacity note; defaults to "This room". */
+  /** Optional room name for the capacity note; defaults to "this room". */
   readonly roomName?: string | null;
+  /** The venue's published figures for the room. Without them the note names
+   *  who confirms the capacity; it never states a computed count. */
+  readonly published?: PublishedCapacityAnswer;
 }
 
 function plural(n: number, singular: string): string {
@@ -89,14 +98,6 @@ function featureLabelsFromLayout(placedItems: readonly PlacedItem[]): string[] {
   if (bar > 0) labels.push("Bar");
   if (lectern > 0) labels.push("Lectern");
   return labels;
-}
-
-/** Infer the seating style that best frames the capacity comfort estimate. */
-function inferLayoutStyle(roundTables: number, banquetTables: number, chairs: number): LayoutStyle {
-  if (banquetTables > roundTables && banquetTables > 0) return "dinner-banquet";
-  if (roundTables > 0) return "dinner-rounds";
-  if (chairs > 0) return "theatre";
-  return "cocktail";
 }
 
 function buildTableClause(roundTables: number, banquetTables: number): string {
@@ -136,21 +137,6 @@ function buildRoomSummary(roomWidthM: number, roomLengthM: number): string {
   return `${roomWidthM.toFixed(1)} m × ${roomLengthM.toFixed(1)} m floor · ${String(area)} m²`;
 }
 
-function buildCapacityNote(
-  roomWidthM: number,
-  roomLengthM: number,
-  covers: number,
-  style: LayoutStyle,
-  roomName: string,
-): string {
-  const floorAreaM2 = roomWidthM * roomLengthM;
-  if (!Number.isFinite(floorAreaM2) || floorAreaM2 <= 0) {
-    return "Capacity guidance appears once the room is set. Planning estimate only — human review required; final capacity confirmed by the venue team.";
-  }
-  const intel = buildProposalCapacityGuidance(floorAreaM2, covers, style);
-  return buildProposalCapacityNote(roomName, intel);
-}
-
 /**
  * Build the client-safe proposal draft from the live layout. Pure: no React,
  * no API, no money assertions. Reuses the same seating/cover derivations as the
@@ -162,9 +148,14 @@ export function buildShareProposalDraft(input: ShareDraftInput): ShareProposalDr
   const features = featureLabelsFromLayout(input.placedItems);
   const roomName = input.roomName !== undefined && input.roomName !== null && input.roomName.trim().length > 0
     ? input.roomName.trim()
-    : "This room";
+    : null;
+  const capacityNote = publishedCapacityNote({
+    published: input.published ?? { kind: "not-published" },
+    format: publishedFormatForStyle(plannerLayoutStyle(input.placedItems)),
+    roomName,
+    guests: quantities.covers > 0 ? quantities.covers : null,
+  });
 
-  const style = inferLayoutStyle(seating.roundTables, seating.banquetTables, seating.chairs);
   const trimmedTitle = input.titleOverride?.trim() ?? "";
   const title = trimmedTitle.length > 0
     ? trimmedTitle
@@ -182,7 +173,7 @@ export function buildShareProposalDraft(input: ShareDraftInput): ShareProposalDr
       seating.chairs,
       features,
     ),
-    capacityNote: buildCapacityNote(input.roomWidthM, input.roomLengthM, quantities.covers, style, roomName),
+    capacityNote,
     summary: {
       covers: quantities.covers,
       coversSource: quantities.coversSource,
