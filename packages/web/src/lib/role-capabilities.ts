@@ -130,6 +130,17 @@ export function awaitsVenue(user: { readonly role: string; readonly venueId: str
   return user !== null && user.venueId === null && user.platformRole !== "admin" && hasRole(VENUE_MEMBER_ROLES, user.role);
 }
 
+/**
+ * The venue whose Diary this person reads from the staff desks: their own, for
+ * the Diary's readers and a platform admin; null for anyone else. Find's day
+ * answer and the Enquiries desk's Diary fact both follow it, so neither asks
+ * for a Diary the API (`canReadDiary`) would refuse.
+ */
+export function diaryVenueOf(user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null): string | null {
+  if (user === null || awaitsVenue(user)) return null;
+  return user.platformRole === "admin" || hasRole(DIARY_ROLES, user.role) ? user.venueId : null;
+}
+
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test
 // (__tests__/rota-capabilities.test.ts), because the rota answers three ways

@@ -14,7 +14,13 @@ import {
   Text,
 } from "@react-email/components";
 import { render } from "@react-email/render";
-import { WORKSPACE_COLOURS, WORKSPACE_FONTS, type EnquirySource } from "@omnitwin/types";
+import {
+  WORKSPACE_COLOURS,
+  WORKSPACE_FONTS,
+  rotaDayMonthYear,
+  rotaWeekdayName,
+  type EnquirySource,
+} from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Email templates — react-email JSX
@@ -462,19 +468,59 @@ export async function enquiryAcknowledgement(
 
 // ---------------------------------------------------------------------------
 // enquiryApproved — sent to planner/guest
+//
+// Plain and factual: no praise and no exclamation marks. The date is said as
+// a person says it ("Friday 14 May 2027"), never as the stored ISO date.
 // ---------------------------------------------------------------------------
+
+/** A stored calendar date (YYYY-MM-DD, no time zone) in the house long form:
+ *  "Friday 14 May 2027", with no comma (formatEnGbDate keeps Intl's comma for
+ *  the acknowledgement). Read as a calendar date, so no zone can move it to
+ *  the day before. Null for anything that is not a real calendar date: the
+ *  approval email is rendered after the decision has committed, so a bad date
+ *  is left out rather than failing the request or printing nonsense. */
+export function formatCalendarDay(isoDate: string | null): string | null {
+  if (isoDate === null) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(isoDate);
+  if (match === null) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  // Date.UTC rolls an impossible day over (31 April becomes 1 May) and
+  // reads years below 100 as 19xx; either way the parts no longer match.
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
+  }
+  return `${rotaWeekdayName(isoDate)} ${rotaDayMonthYear(isoDate)}`;
+}
+
+/** "the Grand Hall": a room's name with its article, unless it has one. */
+function theRoom(roomName: string): string {
+  return /^the\s/iu.test(roomName) ? roomName : `the ${roomName}`;
+}
 
 /** "for the Saloon" when the guest chose the room, else "at Trades Hall". */
 function enquiryPlace(data: { readonly roomName: string | null; readonly venueName: string }): string {
-  return data.roomName === null ? `at ${data.venueName}` : `for ${data.roomName}`;
+  return data.roomName === null ? `at ${data.venueName}` : `for ${theRoom(data.roomName)}`;
 }
 
 export interface EnquiryApprovedData {
   readonly venueName: string;
   /** The room the guest chose; null when they named none. */
   readonly roomName: string | null;
+  /** Stored calendar date, YYYY-MM-DD. */
   readonly eventDate: string | null;
   readonly configUrl: string | null;
+}
+
+/** "Your enquiry for the Grand Hall at Trades Hall Glasgow on Friday 14 May
+ *  2027 has been approved." The room only when the guest chose one, the date
+ *  only when there is a real one. */
+function approvalSentence(data: EnquiryApprovedData): string {
+  const place = data.roomName === null
+    ? `at ${data.venueName}`
+    : `for ${theRoom(data.roomName)} at ${data.venueName}`;
+  const day = formatCalendarDay(data.eventDate);
+  return `Your enquiry ${place}${day === null ? "" : ` on ${day}`} has been approved.`;
 }
 
 export function EnquiryApprovedEmail(props: EnquiryApprovedData): ReactElement {
@@ -483,18 +529,10 @@ export function EnquiryApprovedEmail(props: EnquiryApprovedData): ReactElement {
       label="Approved"
       preview={`Your enquiry ${enquiryPlace(props)} has been approved`}
     >
-      <Heading style={h2Style("#059669")}>Enquiry Approved</Heading>
-      <Text style={paragraphStyle}>
-        Great news! Your enquiry{" "}
-        {props.roomName === null ? "at " : <>for <strong>{props.roomName}</strong> at </>}
-        <strong>{props.venueName}</strong>
-        {props.eventDate !== null ? (
-          <>
-            {" "}on <strong>{props.eventDate}</strong>
-          </>
-        ) : null}{" "}
-        has been approved.
-      </Text>
+      <Heading style={h2Style("#059669")}>Enquiry approved</Heading>
+      {/* The sentence as a single string, so the HTML carries it as one text
+          node rather than fragments separated by React's comment markers. */}
+      <Text style={paragraphStyle}>{approvalSentence(props)}</Text>
       <Text style={paragraphStyle}>
         The events team will be in touch shortly to confirm final details and arrangements.
       </Text>

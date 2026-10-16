@@ -1425,24 +1425,30 @@ describe("DiaryBoardPage — Go to date (roadmap N3)", () => {
   });
 
   it("names a hold by its own place on the ladder, with its time and decision date", async () => {
-    const withoutTheDinner = fixture();
-    getCalendarMock.mockResolvedValue({
-      ...withoutTheDinner,
-      entries: withoutTheDinner.entries.filter((entry) => entry.id !== INK_ID),
-      conflicts: { ...withoutTheDinner.conflicts, conflicts: [] },
-    });
-    renderPage();
-    await screen.findByRole("button", { name: /^MacLeod wedding — / });
-    fireEvent.keyDown(window, { key: "g" });
-    const field = await screen.findByRole("textbox", { name: "Go to date" });
-    fireEvent.change(field, { target: { value: "Fri 18 Sept 2026" } });
-    fireEvent.submit(field.closest("form") as HTMLFormElement);
-    await waitFor(() => { expect(goToAnswer()?.rooms[0]?.[0]).toBe("Grand Hall"); });
-    // It ends at midnight, so the board's own label names both days.
-    expect(goToAnswer()?.rooms[0]?.[1]).toEqual([
-      expect.stringMatching(/^1st option MacLeod wedding, 18 Sept? 19:00 – 19 Sept? 00:00, decides Tue 1 Dec( 2026)?$/u),
-    ]);
-    expect(screen.queryByRole("alert")).toBeNull();
+    // Before the hold's decision on 1 December, so it still decides.
+    const restore = pinDate("2026-09-16T10:00:00.000Z");
+    try {
+      const withoutTheDinner = fixture();
+      getCalendarMock.mockResolvedValue({
+        ...withoutTheDinner,
+        entries: withoutTheDinner.entries.filter((entry) => entry.id !== INK_ID),
+        conflicts: { ...withoutTheDinner.conflicts, conflicts: [] },
+      });
+      renderPage();
+      await screen.findByRole("button", { name: /^MacLeod wedding — / });
+      fireEvent.keyDown(window, { key: "g" });
+      const field = await screen.findByRole("textbox", { name: "Go to date" });
+      fireEvent.change(field, { target: { value: "Fri 18 Sept 2026" } });
+      fireEvent.submit(field.closest("form") as HTMLFormElement);
+      await waitFor(() => { expect(goToAnswer()?.rooms[0]?.[0]).toBe("Grand Hall"); });
+      // It ends at midnight, so the board's own label names both days.
+      expect(goToAnswer()?.rooms[0]?.[1]).toEqual([
+        expect.stringMatching(/^1st option MacLeod wedding, 18 Sept? 19:00 – 19 Sept? 00:00, decides Tue 1 Dec( 2026)?$/u),
+      ]);
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      restore();
+    }
   });
 
   it("says when the words are not a date, and leaves the board where it is", async () => {

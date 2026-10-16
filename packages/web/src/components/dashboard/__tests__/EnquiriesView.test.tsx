@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+import type { Booking, CalendarBookingEntry, CalendarResponse } from "@omnitwin/types";
 import type { Enquiry, EnquiryListQuery, EnquiryPage, EnquiryStageCounts } from "../../../api/enquiries.js";
 import type { Space, VenueDetail } from "../../../api/spaces.js";
 import { ApiError } from "../../../api/client.js";
@@ -19,12 +20,19 @@ const { mocks } = vi.hoisted(() => ({
     aiDraftsAvailable: vi.fn<() => boolean | undefined>(),
     countEnquiryStages: vi.fn(),
     createOpportunityFromEnquiry: vi.fn(),
+    getCalendar: vi.fn(),
     getEnquiry: vi.fn(),
     getEnquiryHistory: vi.fn(),
     getVenue: vi.fn(),
+    listEnquiryBookings: vi.fn(),
     listEnquiryPage: vi.fn(),
     transitionEnquiry: vi.fn(),
   },
+}));
+
+vi.mock("../../../api/diary.js", () => ({
+  getCalendar: mocks.getCalendar,
+  listEnquiryBookings: mocks.listEnquiryBookings,
 }));
 
 vi.mock("../../../api/enquiries.js", () => ({
@@ -109,6 +117,38 @@ function venue(slug: string): VenueDetail {
   return {
     id: "venue-1", name: "Trades Hall Glasgow", slug, address: "85 Glassford Street", logoUrl: null, brandColour: null,
     spaces: [GRAND_HALL],
+  };
+}
+
+/** GET /calendar for Friday 14 May 2027 at venue-1: its Grand Hall, and the
+ *  entries a test needs. */
+function dayRead(entries: CalendarResponse["entries"] = []): CalendarResponse {
+  return {
+    venueId: "venue-1",
+    range: { from: "2027-05-13T23:00:00.000Z", to: "2027-05-14T23:00:00.000Z" },
+    rooms: [{ id: "space-1", name: "Grand Hall", slug: "grand-hall", sortOrder: 0 }],
+    entries,
+    conflicts: { conflicts: [], checks: { inkDoubleBook: { status: "checked" }, holdOverlap: { status: "checked" }, turnaround: { status: "checked", uncoveredPairCount: 0, detail: "Checked" } } },
+  };
+}
+
+/** A booking in the Grand Hall that day, 12:00 to 23:00 in Glasgow. */
+function dayEntry(id: string, overrides: Partial<CalendarBookingEntry> = {}): CalendarBookingEntry {
+  return {
+    entryType: "booking", id, spaceId: "space-1", kind: "ink", status: "active", state: "ink", title: "Law Society dinner",
+    eventType: "dinner", startsAt: "2027-05-14T11:00:00.000Z", endsAt: "2027-05-14T22:00:00.000Z", rank: null, jointFlag: false,
+    decisionAt: null, ownerUserId: null, nextAction: null, nextActionDueAt: null, eventId: null, seriesId: null, ...overrides,
+  };
+}
+
+/** The same booking as GET /bookings?enquiryId= serves it. */
+function ownBooking(entry: CalendarBookingEntry, enquiryId: string): Booking {
+  return {
+    id: entry.id, venueId: "venue-1", spaceId: entry.spaceId, eventId: null, kind: entry.kind, status: entry.status,
+    state: entry.state, title: entry.title, eventType: entry.eventType, startsAt: entry.startsAt, endsAt: entry.endsAt,
+    rank: entry.rank, jointFlag: entry.jointFlag, decisionAt: entry.decisionAt, ownerUserId: null, nextAction: null,
+    nextActionDueAt: null, seriesId: null, notes: null, createdBy: null, enquiryId,
+    createdAt: "2026-09-20T09:00:00.000Z", updatedAt: "2026-09-20T09:00:00.000Z",
   };
 }
 
@@ -626,12 +666,15 @@ describe("EnquiriesView decisions", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Client 5,/u }));
     expect(screen.getByText("5 Nov 2026")).toBeDefined();
     expect(screen.getByText("Thursday, in 6 weeks")).toBeDefined();
+    expect(await screen.findByText("Grand Hall")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Approve…" }));
 
+    // The room and the date as the approval email names them.
     const confirm = screen.getByRole("group", { name: "Approve Client 5’s enquiry?" });
-    expect(within(confirm).getByText(
-      "Approving emails priya@lumen.example to say the enquiry is approved, with a link to their layout.",
-    )).toBeDefined();
+    expect(within(confirm).getByText("Approving emails priya@lumen.example to say the enquiry for the Grand Hall "
+      + "on Thursday 5 November 2026 is approved, with a link to their layout.")).toBeDefined();
+    // No Diary is read for a reader the desk was given none for.
+    expect(mocks.getCalendar).not.toHaveBeenCalled();
     expect(mocks.transitionEnquiry).not.toHaveBeenCalled();
     fireEvent.change(within(confirm).getByRole("textbox", { name: "Note for the timeline (optional, not in the email)" }),
       { target: { value: "  Deposit invoice sent.  " } });
@@ -882,18 +925,24 @@ describe("EnquiriesView decisions", () => {
   });
 
   // Roadmap N6: a date is held in the Diary itself, which opens on the week
-  // asked for with the hold's drawer open.
+  // asked for with the hold's drawer open. The link lives with the Diary's
+  // answer, In the Diary, and follows the drawer's own rule.
   it("offers a hold in the Diary on the date asked for while the enquiry is still going", async () => {
+    mocks.getCalendar.mockResolvedValue(dayRead());
+    mocks.listEnquiryBookings.mockResolvedValue([]);
     mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(3, "approved"), preferredDate: "2027-05-14", eventType: "wedding" }], {}));
-    const first = render(<MemoryRouter><EnquiriesView canHoldDate /></MemoryRouter>);
+    const first = render(<MemoryRouter><EnquiriesView canHoldDate diaryVenueId="venue-1" /></MemoryRouter>);
     fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
-    const hold = await screen.findByRole("link", { name: "Hold a date in the Diary" });
+    const inTheDiary = await screen.findByRole("region", { name: "In the Diary" });
+    const hold = within(inTheDiary).getByRole("link", { name: "Hold a date in the Diary" });
     expect(hold.getAttribute("href")).toBe("/diary?date=2027-05-14&enquiry=enquiry-3");
+    expect(within(inTheDiary).getByRole("link", { name: "Open this day in the Diary" }).getAttribute("href"))
+      .toBe("/diary?date=2027-05-14&goto=2027-05-14");
     first.unmount();
 
     for (const state of ["rejected", "withdrawn"]) {
       mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(4, state), preferredDate: "2027-05-14" }], {}));
-      const closed = render(<MemoryRouter><EnquiriesView canHoldDate /></MemoryRouter>);
+      const closed = render(<MemoryRouter><EnquiriesView canHoldDate diaryVenueId="venue-1" /></MemoryRouter>);
       fireEvent.click(await screen.findByRole("button", { name: /^Client 4,/u }));
       await screen.findByRole("region", { name: /Client 4/u });
       expect(screen.queryByRole("link", { name: "Hold a date in the Diary" }), state).toBeNull();
@@ -901,13 +950,130 @@ describe("EnquiriesView decisions", () => {
     }
   });
 
-  it("offers no hold to someone who does not write the Diary", async () => {
+  it("offers no hold to someone who does not write the Diary, or for another venue's enquiry", async () => {
+    mocks.getCalendar.mockResolvedValue(dayRead());
+    mocks.listEnquiryBookings.mockResolvedValue([]);
     mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(3), preferredDate: "2027-05-14" }], {}));
-    render(<MemoryRouter><EnquiriesView canCreateOpportunity /></MemoryRouter>);
+    const reader = render(<MemoryRouter><EnquiriesView canCreateOpportunity diaryVenueId="venue-1" /></MemoryRouter>);
     fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
-    await screen.findByRole("region", { name: /Client 3/u });
+    await screen.findByRole("region", { name: "In the Diary" });
     expect(screen.getByTestId("create-opportunity-from-enquiry")).toBeDefined();
     expect(screen.queryByRole("link", { name: "Hold a date in the Diary" })).toBeNull();
+    reader.unmount();
+
+    render(<MemoryRouter><EnquiriesView canHoldDate diaryVenueId="venue-2" /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+    await screen.findByRole("region", { name: /Client 3/u });
+    expect(screen.queryByRole("link", { name: "Hold a date in the Diary" })).toBeNull();
+  });
+});
+
+// Where the enquiry stands in the Diary (T-635, roadmap Tier A #4): read for
+// a reader of the enquiry's own venue's Diary, said once, and said again by
+// Approve before the client is emailed.
+describe("EnquiriesView in the Diary", () => {
+  function wedding(overrides: Partial<Enquiry> = {}): Enquiry {
+    return {
+      ...enquiry(7, "under_review"), name: "Elaine Fraser", guestEmail: "elaine@fraser.example", preferredDate: "2027-05-14",
+      eventType: "wedding", estimatedGuests: 140, roomChosen: true, ...overrides,
+    };
+  }
+  const fact = (): string | null | undefined => document.querySelector(".enq-facts__diary dd")?.textContent;
+
+  async function openWedding(props: { readonly diaryVenueId: string } = { diaryVenueId: "venue-1" }): Promise<void> {
+    mocks.listEnquiryPage.mockResolvedValue(page([wedding()], {}));
+    render(<MemoryRouter><EnquiriesView diaryVenueId={props.diaryVenueId} /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: /^Elaine Fraser,/u }));
+  }
+
+  it("says where the enquiry stands once the day is read, room by room, and says it once", async () => {
+    mocks.getCalendar.mockResolvedValue(dayRead());
+    mocks.listEnquiryBookings.mockResolvedValue([]);
+    await openWedding();
+    await waitFor(() => { expect(fact()).toBe("Free"); });
+    expect(mocks.getCalendar).toHaveBeenCalledWith("venue-1", "2027-05-13T23:00:00.000Z", "2027-05-14T23:00:00.000Z", expect.any(AbortSignal));
+    expect(mocks.listEnquiryBookings).toHaveBeenCalledWith("enquiry-7", expect.any(AbortSignal));
+    expect(await screen.findByText("In the Diary: Free.")).toBeDefined();
+    const inTheDiary = screen.getByRole("region", { name: "In the Diary" });
+    expect(within(inTheDiary).getByText("asked for")).toBeDefined();
+    expect(within(inTheDiary).getByText("seats 180 for dinner")).toBeDefined();
+  });
+
+  it("leads with the enquiry's own hold, and Approve says the Diary holds the room for it", async () => {
+    const hold = dayEntry("00000000-0000-4000-9000-000000000002", {
+      kind: "hold", state: "hold", rank: 1, title: "Fraser wedding", decisionAt: "2026-12-01T12:00:00.000Z",
+    });
+    mocks.getCalendar.mockResolvedValue(dayRead([hold]));
+    mocks.listEnquiryBookings.mockResolvedValue([ownBooking(hold, "enquiry-7")]);
+    await openWedding();
+    await waitFor(() => { expect(fact()).toBe("1st option for this enquiry, decides Tue 1 Dec"); });
+    expect(within(screen.getByRole("region", { name: "In the Diary" })).getByText("For this enquiry")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve…" }));
+    const confirm = screen.getByRole("group", { name: "Approve Elaine Fraser’s enquiry?" });
+    const said = "The Diary holds the Grand Hall for this enquiry: 1st option, decides Tue 1 Dec.";
+    expect(await within(confirm).findByText(said)).toBeDefined();
+    // Both sentences are read with the button that sends the email.
+    const send = within(confirm).getByRole("button", { name: "Approve and email" });
+    const described = (send.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent);
+    expect(described).toEqual([
+      "Approving emails elaine@fraser.example to say the enquiry for the Grand Hall on Friday 14 May 2027 is approved.",
+      said,
+    ]);
+  });
+
+  it("reads the day again when Approve is pressed, and changes Approve's sentence at most once", async () => {
+    mocks.getCalendar
+      .mockResolvedValueOnce(dayRead())
+      .mockResolvedValueOnce(dayRead([dayEntry("00000000-0000-4000-9000-000000000003")]))
+      .mockResolvedValue(dayRead());
+    mocks.listEnquiryBookings.mockResolvedValue([]);
+    await openWedding();
+    await waitFor(() => { expect(fact()).toBe("Free"); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve…" }));
+    const confirm = screen.getByRole("group", { name: "Approve Elaine Fraser’s enquiry?" });
+    // What was kept, at once; then what the Diary says now.
+    expect(within(confirm).getByText("The Grand Hall is free that day. Nothing holds it for this enquiry yet.")).toBeDefined();
+    const taken = "That day the Diary has the Grand Hall: Confirmed, Law Society dinner, 12:00–23:00. The email does not mention it.";
+    expect(await within(confirm).findByText(taken)).toBeDefined();
+    expect(mocks.getCalendar).toHaveBeenCalledTimes(2);
+
+    // A later read changes the fact, never the sentence the confirmation settled on.
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await waitFor(() => { expect(fact()).toBe("Free"); });
+    expect(mocks.getCalendar).toHaveBeenCalledTimes(3);
+    expect(within(confirm).getByText(taken)).toBeDefined();
+  });
+
+  it("says when the Diary could not be read, and Try again reads it again", async () => {
+    mocks.getCalendar.mockRejectedValueOnce(new ApiError(500, "Down", "INTERNAL")).mockResolvedValue(dayRead());
+    mocks.listEnquiryBookings.mockResolvedValue([]);
+    await openWedding();
+    await waitFor(() => { expect(fact()).toBe("The Diary could not be read for that day."); });
+    const inTheDiary = screen.getByRole("region", { name: "In the Diary" });
+    expect(within(inTheDiary).getByText("The Diary could not be read for that day.")).toBeDefined();
+    // Said calmly: the panel's alerts are for decisions that failed.
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(within(inTheDiary).getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(fact()).toBe("Free"); });
+    expect(within(inTheDiary).queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("reads no Diary for another venue's enquiry, and says nothing of it after a refusal", async () => {
+    mocks.getCalendar.mockRejectedValue(new ApiError(403, "Forbidden", "FORBIDDEN"));
+    mocks.listEnquiryBookings.mockResolvedValue([]);
+    await openWedding({ diaryVenueId: "venue-2" });
+    await screen.findByRole("region", { name: /Elaine Fraser/u });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 400); }); });
+    expect(mocks.getCalendar).not.toHaveBeenCalled();
+    expect(document.querySelector(".enq-facts__diary")).toBeNull();
+    cleanup();
+
+    await openWedding();
+    await waitFor(() => { expect(mocks.getCalendar).toHaveBeenCalledTimes(1); });
+    await waitFor(() => { expect(document.querySelector(".enq-facts__diary")).toBeNull(); });
+    expect(screen.queryByRole("region", { name: "In the Diary" })).toBeNull();
   });
 });
 
