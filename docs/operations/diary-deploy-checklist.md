@@ -187,7 +187,7 @@ curl.exe -s -o NUL -w "home %{http_code}`n"   https://venviewer.com             
 curl.exe -s -o NUL -w "diary %{http_code}`n"  https://venviewer.com/diary                # 200
 ```
 
-Pick a route that exists **only** in the new code and watch it flip from `404` to `401`. That flip is the proof the new image is serving. Note `GET /bookings` returns `404` legitimately (there is no root list route — `/calendar` is the list surface); probe `POST /bookings` for the `401` auth wall instead.
+Pick a route that exists **only** in the new code and watch it flip from `404` to `401`. That flip is the proof the new image is serving. `GET /bookings` exists since T-635 and requires `?enquiryId=` (one enquiry's live bookings; `/calendar` is still the Diary's list surface): unauthenticated it answers `401`, and signed in without `?enquiryId=` it answers `400` `VALIDATION_ERROR`. An image from before T-635 answers it `404`, so an unauthenticated `GET /bookings` flipping `404` → `401` shows the T-635 API is serving.
 
 ## 7. Smoke
 

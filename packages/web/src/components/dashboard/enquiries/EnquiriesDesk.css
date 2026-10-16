@@ -506,6 +506,32 @@
 .enq-facts dd.enq-facts__room { font-size: clamp(19px, 1.45vw, 23px); font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; text-wrap: balance; }
 .enq-facts dd:empty { min-height: 1.1em; }
 
+/* Where the enquiry stands in the Diary (T-635): a fourth fact across the
+   whole row, its label above its answer, held at two lines from the first
+   paint and clamped there, so the next step never moves when the Diary
+   answers. The whole answer is in the list below and in what is read out. */
+.enq-facts > .enq-facts__diary {
+  grid-column: 1 / -1;
+  flex-direction: column;
+  margin-top: 18px;
+  padding: 0;
+  border-left: 0;
+}
+.enq-facts .enq-facts__diary dt { margin: 0 0 4px; }
+.enq-facts .enq-facts__diary dd {
+  display: -webkit-box;
+  min-height: calc(2em * 1.45);
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-wrap: pretty;
+}
+.enq-facts__reading { display: inline-flex; align-items: center; gap: 8px; color: var(--enq-forest-ink-2); }
+
 .enq-section { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--enq-forest-rule); }
 .enq-section h3 { margin: 0 0 12px; color: var(--enq-forest-ink-3); font-size: 12px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
 .enq-contact { display: grid; gap: 6px; margin: 0; }
@@ -575,6 +601,49 @@
 .enq-quiet:disabled, .enq-quiet[aria-disabled="true"] { cursor: default; opacity: 0.7; }
 .enq-next__hint { margin: 10px 0 0; color: var(--enq-forest-ink-2); font-size: 13.5px; text-wrap: pretty; }
 
+/* In the Diary: its actions first, then the enquiry's own bookings elsewhere,
+   then the day asked for, room by room. Each line carries the Diary legend's
+   own mark, drawn with borders in the register's lit inks so it survives
+   forced colours; the words carry every meaning. */
+.enq-diary .enq-actions { margin-bottom: 14px; }
+.enq-diary h3:focus { outline: none; }
+.enq-diary__note { margin: 0 0 10px; color: var(--enq-forest-ink-2); font-size: 13.5px; }
+.enq-diary__own { display: grid; gap: 6px; margin: 0 0 16px; padding: 0; list-style: none; color: var(--enq-forest-ink); font-size: 15px; line-height: 1.45; }
+.enq-diary__rooms { display: grid; gap: 14px; margin: 0; }
+.enq-diary__room dt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--enq-forest-ink); font-size: 15px; font-weight: 500; }
+.enq-diary__figure { color: var(--enq-forest-ink-3); font-size: 13px; font-weight: 400; }
+.enq-diary__tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 999px;
+  color: var(--enq-forest-ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.enq-diary__room dd { position: relative; margin: 4px 0 0; padding-left: 20px; color: var(--enq-forest-ink-2); font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.enq-diary__room dd .enq-diary__tag { margin-left: 8px; }
+.enq-diary__room dd::before {
+  content: "";
+  position: absolute;
+  top: 0.38em;
+  left: 0;
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--enq-forest-ink-3);
+  border-radius: 3px;
+}
+.enq-diary__room dd[data-kind="confirmed"]::before { border: 5.5px solid var(--enq-forest-ink); }
+.enq-diary__room dd[data-kind="hold"]::before { border-color: var(--house-copper-lit); }
+.enq-diary__room dd[data-kind="block"]::before { border: 4px double var(--house-slate-lit); }
+.enq-diary__room dd[data-kind="in_use"]::before { border-style: dotted; border-color: var(--enq-forest-ink-2); }
+.enq-diary__room dd[data-kind="free"]::before { border-color: var(--house-sage-lit); border-radius: 50%; }
+@media (forced-colors: active) {
+  .enq-diary__room dd::before { border-color: CanvasText; }
+}
+
 .enq-confirm {
   margin-top: 4px;
   padding: 16px;
@@ -588,6 +657,9 @@
 .enq-confirm__question { margin: 0 0 8px; font: 400 21px/1.3 var(--enq-serif); }
 .enq-confirm__question:focus { outline: none; }
 .enq-confirm__consequence { margin: 0 0 14px; color: var(--enq-forest-ink-2); font-size: 14.5px; line-height: 1.5; text-wrap: pretty; }
+/* What the Diary says before the client is emailed: a slot held for three
+   lines (four on a phone), so Approve and email does not move when it lands. */
+.enq-confirm__diary { min-height: calc(3em * 1.5); margin: -4px 0 14px; color: var(--enq-forest-ink); font-size: 14.5px; line-height: 1.5; text-wrap: pretty; }
 .enq-confirm label { display: grid; gap: 6px; color: var(--enq-forest-ink-2); font-size: 13px; }
 .enq-confirm textarea {
   box-sizing: border-box;
@@ -710,6 +782,7 @@
   .enq-panel::before { display: none; }
   .enq-facts { grid-template-columns: 1fr 1fr; gap: 16px 0; }
   .enq-facts > div:nth-child(3) { grid-column: 1 / -1; padding-left: 0; border-left: 0; }
+  .enq-confirm__diary { min-height: calc(4em * 1.5); }
 }
 
 /* An access request or Venviewer enquiry asks for no date: its tile carries a

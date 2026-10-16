@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
-  DIARY_WRITE_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
+  DIARY_WRITE_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
   ROTA_TAB_ROLES, WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
 import { DashboardLayout, NAV_ITEMS, type DashboardView } from "../components/dashboard/DashboardLayout.js";
@@ -184,6 +184,7 @@ export function DashboardPage(): React.ReactElement {
   const userRole = useAuthStore((state) => state.user?.role ?? null);
   const userPlatformRole = useAuthStore((state) => state.user?.platformRole ?? "none");
   const notConnected = useAuthStore((state) => awaitsVenue(state.user));
+  const diaryVenueId = useAuthStore((state) => diaryVenueOf(state.user));
   const requestedView = useMemo(
     () => dashboardViewFromSearchValue(searchParams.get("view")),
     [searchParams],
@@ -377,6 +378,8 @@ export function DashboardPage(): React.ReactElement {
             onOpenOpportunity={handleOpenOpportunity}
             // The Diary's own write rule, so the link and the drawer agree.
             canHoldDate={hasRole(DIARY_WRITE_ROLES, userRole)}
+            // Find's rule for whose Diary is read, so neither is refused.
+            diaryVenueId={diaryVenueId}
           />
         );
       case "pipeline":

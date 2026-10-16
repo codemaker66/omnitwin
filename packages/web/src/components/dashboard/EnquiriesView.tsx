@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import * as enquiriesApi from "../../api/enquiries.js";
 import type {
   Enquiry, EnquiryListOrder, EnquiryListQuery, EnquiryStageCounts, StatusHistoryEntry,
@@ -15,9 +15,14 @@ import {
 } from "./enquiry-list-paging.js";
 import { EnquiryStages } from "./enquiries/EnquiryStages.js";
 import { EnquiryLedger, enquiryName, type LedgerStamp } from "./enquiries/EnquiryLedger.js";
-import { EnquiryPanel, type ConfirmTarget, type TransitionTarget } from "./enquiries/EnquiryPanel.js";
+import { EnquiryPanel, type ConfirmTarget, type PanelDiary, type TransitionTarget } from "./enquiries/EnquiryPanel.js";
 import { EnquiryOverview } from "./enquiries/EnquiryOverview.js";
+import { approveUnread, enquiryStanding } from "./enquiries/enquiry-standing.js";
+import { useEnquiryDay } from "./enquiries/use-enquiry-day.js";
 import { useVenueRooms } from "./enquiries/use-venue-rooms.js";
+import { formatWallTime } from "../../pages/diary/lib/board-time.js";
+import { dayAnswer } from "../../pages/diary/lib/day-answer.js";
+import { canHoldDateFor, diaryHoldHref, holdRefusal } from "../../pages/diary/lib/enquiry-link.js";
 import { deskGreeting, deskSummary, requestKind, stageLabel, type DeskFilter } from "./enquiries/enquiry-desk-format.js";
 import { pendingFocusReady, type PendingFocus } from "./enquiries/desk-focus.js";
 import "./enquiries/EnquiriesDesk.css";
@@ -38,6 +43,8 @@ import "./enquiries/EnquiriesDesk.css";
 
 const LIST_ORDER: EnquiryListOrder = "created_desc";
 const WIDE_DESK = "(min-width: 1180px)";
+/** A Diary answer older than this says when it was read. */
+const DIARY_STALE_MS = 2 * 60_000;
 
 /** The list for one load of one stage filter. */
 interface EnquiryListState extends ListedEnquiries {
@@ -146,6 +153,11 @@ interface EnquiriesViewProps {
    *  an enquiry. A permission flag, so it defaults to false for the reason
    *  canCreateOpportunity does. */
   readonly canHoldDate?: boolean;
+  /** The venue whose Diary this actor reads (Find's rule, diaryVenueOf):
+   *  only that venue's enquiries say where they stand in the Diary. Null,
+   *  the default, reads none, for the reason canCreateOpportunity defaults
+   *  to false. */
+  readonly diaryVenueId?: string | null;
 }
 
 export function EnquiriesView({
@@ -154,6 +166,7 @@ export function EnquiriesView({
   canCreateOpportunity = false,
   onOpenOpportunity,
   canHoldDate = false,
+  diaryVenueId = null,
 }: EnquiriesViewProps = {}): ReactElement {
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
@@ -369,11 +382,88 @@ export function EnquiriesView({
     (row ?? sheetHeadingRef.current)?.focus();
   });
 
-  const roomOf = useVenueRooms([
+  const { roomOf, venueOf } = useVenueRooms([
     ...list.rows.map((row) => row.venueId),
     ...(selected === undefined ? [] : [selected.venueId]),
     ...(counts.value?.longestWaiting === undefined || counts.value.longestWaiting === null ? [] : [counts.value.longestWaiting.venueId]),
   ]);
+
+  // Where the open enquiry stands in the Diary (T-635): read only at the
+  // venue whose Diary this person reads, and worded for the panel.
+  const day = useEnquiryDay(selected, diaryVenueId);
+  const venue = selected === undefined ? undefined : venueOf(selected.venueId);
+  const standing = useMemo(() => {
+    if (selected === undefined || day.answer === null) return null;
+    const { answer } = day;
+    const rooms = new Map(venue?.rooms ?? []);
+    for (const room of answer.day?.rooms ?? []) rooms.set(room.id, { name: room.name, slug: room.slug });
+    return enquiryStanding({
+      enquiry: selected,
+      day: answer.day === null ? null : {
+        rooms: dayAnswer(answer.day.entries, answer.day.rooms, { startMs: answer.day.startMs, endMs: answer.day.endMs }, nowMs),
+        startMs: answer.day.startMs,
+        endMs: answer.day.endMs,
+      },
+      own: answer.own,
+      rooms,
+      published: venue?.published ?? false,
+      nowMs,
+    });
+  }, [selected, day.answer, venue, nowMs]);
+
+  // The panel's polite region says the answer once when a read lands after
+  // the enquiry is opened, and again only when a later read changes it.
+  const [diarySaid, setDiarySaid] = useState<string | null>(null);
+  const saidRef = useRef<{ readonly id: string; readonly said: string; readonly landedAtMs: number } | null>(null);
+  const openedAtRef = useRef(Date.now());
+  const landedAtMs = day.answer?.readAtMs ?? null;
+  const standingSaid = standing?.said ?? null;
+  useEffect(() => {
+    if (selectedId === null || standingSaid === null || landedAtMs === null || landedAtMs < openedAtRef.current) return;
+    const previous = saidRef.current;
+    if (previous !== null && previous.id === selectedId) {
+      if (previous.landedAtMs === landedAtMs) return;
+      saidRef.current = { id: selectedId, said: standingSaid, landedAtMs };
+      if (previous.said === standingSaid) return;
+    } else {
+      saidRef.current = { id: selectedId, said: standingSaid, landedAtMs };
+    }
+    setDiarySaid(standingSaid);
+  }, [selectedId, standingSaid, landedAtMs]);
+
+  // What Approve says changes at most once: what was kept (or "Reading")
+  // until the read Approve asks for lands, then that, and no more.
+  const [approveRead, setApproveRead] = useState<{ readonly enquiryId: string; readonly after: number; readonly said: string | null } | null>(null);
+  useEffect(() => {
+    if (confirming !== "approved") setApproveRead(null);
+  }, [confirming]);
+  useEffect(() => {
+    if (approveRead === null || approveRead.said !== null || day.settled <= approveRead.after) return;
+    if (selected === undefined || selected.id !== approveRead.enquiryId) return;
+    const said = day.failed || standing === null ? approveUnread(selected, roomOf(selected)?.name ?? null) : standing.approve;
+    setApproveRead({ ...approveRead, said });
+  }, [approveRead, day.settled, day.failed, selected, standing, roomOf]);
+
+  const panelDiary = ((): PanelDiary | null => {
+    if (selected === undefined || day.status === "off") return null;
+    const frozen = approveRead !== null && approveRead.enquiryId === selected.id ? approveRead.said : null;
+    const unread = day.status === "failed" ? approveUnread(selected, roomOf(selected)?.name ?? null) : null;
+    const asked = day.plan?.day ?? null;
+    return {
+      status: day.status,
+      standing,
+      failed: day.failed,
+      failure: asked === null ? "The Diary could not be read." : "The Diary could not be read for that day.",
+      reading: day.reading,
+      readAt: day.answer !== null && nowMs - day.answer.readAtMs > DIARY_STALE_MS ? formatWallTime(day.answer.readAtMs) : null,
+      approve: frozen ?? standing?.approve ?? unread,
+      // The drawer's own rule, so the link never opens onto a refusal.
+      holdHref: canHoldDate && diaryVenueId !== null && canHoldDateFor(selected) && holdRefusal(selected, diaryVenueId) === null
+        ? diaryHoldHref(selected) : null,
+      dayHref: asked === null ? null : `/diary?${new URLSearchParams({ date: asked.iso, goto: asked.iso }).toString()}`,
+      onRetry: day.readNow,
+    };
+  })();
 
   const open = (enquiry: Enquiry): void => {
     setOpenedIndex(list.rows.findIndex((row) => row.id === enquiry.id));
@@ -382,6 +472,9 @@ export function EnquiriesView({
     setConfirming(null);
     setFailure(null);
     setAnnouncement(null);
+    openedAtRef.current = Date.now();
+    saidRef.current = null;
+    setDiarySaid(null);
     pendingFocusRef.current = { kind: "panel", id: enquiry.id };
   };
 
@@ -392,6 +485,8 @@ export function EnquiriesView({
     setConfirming(null);
     setFailure(null);
     setAnnouncement(null);
+    saidRef.current = null;
+    setDiarySaid(null);
     if (onDetailClose !== undefined) {
       onDetailClose();
       return;
@@ -481,6 +576,11 @@ export function EnquiriesView({
       return;
     }
     confirmFromRef.current = selected.state;
+    if (to === "approved") {
+      // Approve says what the Diary says now, before the client is emailed.
+      setApproveRead({ enquiryId: selected.id, after: day.settled, said: null });
+      day.readNow();
+    }
     setConfirming(to);
   };
 
@@ -643,11 +743,11 @@ export function EnquiriesView({
           historyStatus={history.id === selected.id ? history.status : "loading"}
           transition={{ confirming, saving, failure }}
           stampKey={stamp !== null && stamp.id === selected.id ? stamp.key : null}
-          announcement={announcement}
+          announcement={announcement ?? diarySaid}
           canCreateOpportunity={canCreateOpportunity}
           creatingOpportunity={creatingOpportunity}
           opportunityFailure={opportunityFailure !== null && opportunityFailure.enquiryId === selected.id ? opportunityFailure.message : null}
-          canHoldDate={canHoldDate}
+          diary={panelDiary}
           navigation={{
             layout: wide ? "wide" : "single",
             backLabel,
