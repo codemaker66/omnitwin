@@ -36,6 +36,13 @@ that says "Reading event briefs needs the Anthropic provider" when the gateway
 is configured. The routes fail exactly as for drafts: any provider failure is
 502 `AI_DRAFT_GENERATION_FAILED`, and AI off is 503 `AI_ASSISTANT_DISABLED`.
 
+Every call, brief or draft, is metered (T-656). It is attributed to a venue
+and held to that venue's monthly AI allowance; a used allowance is 429
+`AI_BUDGET_REACHED`, and nothing is sent. Each call is one row in the AI usage
+ledger, with its tokens and cost. The brief's system prompt carries a
+five-minute cache breakpoint (`cacheSystem`); the drafts' rules are too short
+to cache. See [AI usage and billing](ai-usage-and-billing.md).
+
 **Model.** `RECOMMENDED_ANTHROPIC_MODEL` is `claude-opus-5-5`, the current
 Opus. The eval script uses it unless `AI_ASSISTANT_MODEL` says otherwise.
 Production reads `AI_ASSISTANT_MODEL`; set it to `claude-opus-5-5`. The SDK

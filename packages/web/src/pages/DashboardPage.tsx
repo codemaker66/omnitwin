@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
+  ANALYTICS_ROLES, awaitsVenue, canDraftWithAI, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_WRITE_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
   ROTA_TAB_ROLES, WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
@@ -185,6 +185,8 @@ export function DashboardPage(): React.ReactElement {
   const userPlatformRole = useAuthStore((state) => state.user?.platformRole ?? "none");
   const notConnected = useAuthStore((state) => awaitsVenue(state.user));
   const diaryVenueId = useAuthStore((state) => diaryVenueOf(state.user));
+  // The general AI drafts answer only the venue's own team (T-656).
+  const canDraft = useAuthStore((state) => canDraftWithAI(state.user));
   const requestedView = useMemo(
     () => dashboardViewFromSearchValue(searchParams.get("view")),
     [searchParams],
@@ -380,6 +382,8 @@ export function DashboardPage(): React.ReactElement {
             canHoldDate={hasRole(DIARY_WRITE_ROLES, userRole)}
             // Find's rule for whose Diary is read, so neither is refused.
             diaryVenueId={diaryVenueId}
+            // POST /ai/drafts's own rule, so no one is offered a refusal.
+            canDraftWithAI={canDraft}
           />
         );
       case "pipeline":
