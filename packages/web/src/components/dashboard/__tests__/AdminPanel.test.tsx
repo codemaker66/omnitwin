@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   deleteVenue: vi.fn(),
   listPricingRules: vi.fn(),
   createPricingRule: vi.fn(),
+  updatePricingRule: vi.fn(),
   deletePricingRule: vi.fn(),
   restorePricingRule: vi.fn(),
   addToast: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("../../../api/spaces.js", () => ({
 vi.mock("../../../api/pricing.js", () => ({
   listPricingRules: mocks.listPricingRules,
   createPricingRule: mocks.createPricingRule,
+  updatePricingRule: mocks.updatePricingRule,
   deletePricingRule: mocks.deletePricingRule,
   restorePricingRule: mocks.restorePricingRule,
 }));
@@ -118,6 +120,7 @@ beforeEach(() => {
   mocks.deleteVenue.mockReset();
   mocks.listPricingRules.mockReset();
   mocks.createPricingRule.mockReset();
+  mocks.updatePricingRule.mockReset();
   mocks.deletePricingRule.mockReset();
   mocks.restorePricingRule.mockReset();
   mocks.addToast.mockReset();
@@ -131,6 +134,7 @@ beforeEach(() => {
   mocks.deleteVenue.mockResolvedValue(undefined);
   mocks.listPricingRules.mockResolvedValue([pricingRuleFixture()]);
   mocks.createPricingRule.mockResolvedValue(pricingRuleFixture({ id: "00000000-0000-4000-8000-000000006006", name: "Reception Room Evening" }));
+  mocks.updatePricingRule.mockResolvedValue(pricingRuleFixture());
   mocks.deletePricingRule.mockResolvedValue(undefined);
 });
 
@@ -326,6 +330,8 @@ describe("AdminPanel", () => {
         type: "flat_rate",
         amount: 500,
         spaceId: null,
+        appliesFrom: null,
+        appliesUntil: null,
       });
     });
 
@@ -423,5 +429,188 @@ describe("AdminPanel says what a delete does, and gives a way back", () => {
     fireEvent.change(screen.getByLabelText("Rule Name"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("dialog", { name: "New Pricing Rule" }));
     expect(screen.queryByRole("dialog", { name: "New Pricing Rule" })).toBeNull();
+  });
+
+  it("keeps a form open on a stray click when only a time of day is entered", async () => {
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "New Rule" }));
+    fireEvent.change(screen.getByLabelText("Applies from"), { target: { value: "09:00" } });
+    fireEvent.click(screen.getByRole("dialog", { name: "New Pricing Rule" }));
+    expect(screen.getByRole("dialog", { name: "New Pricing Rule" })).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Goal 19 S6 follow-up: the time of day a rule is for, so the price sheet's
+// slots (Half Day 09:00–13:00, Evening 19:00–00:30, …) can be entered without
+// stacking on one evening. Both times or neither, as the API insists.
+// ---------------------------------------------------------------------------
+describe("AdminPanel pricing rule windows", () => {
+  function windowRow(name: string): HTMLElement {
+    const cell = screen.getByText(name);
+    const row = cell.closest("tr");
+    if (row === null) throw new Error(`${name} is not in the rule list`);
+    return row;
+  }
+
+  it("shows each rule's window in the list, or any time", async () => {
+    mocks.listPricingRules.mockResolvedValue([
+      pricingRuleFixture({ id: "rule-half", name: "Grand Hall Half Day", appliesFrom: "09:00:00", appliesUntil: "13:00:00" }),
+      pricingRuleFixture({ id: "rule-evening", name: "Grand Hall Evening", appliesFrom: "19:00:00", appliesUntil: "00:30:00" }),
+      pricingRuleFixture({ id: "rule-any", name: "Grand Hall Cleaning", appliesFrom: null, appliesUntil: null }),
+      pricingRuleFixture({ id: "rule-older", name: "Saloon Hire" }),
+    ]);
+    await renderOpenedVenue();
+
+    expect(screen.getByRole("columnheader", { name: "Hours" })).toBeTruthy();
+    expect(within(windowRow("Grand Hall Half Day")).getByText("09:00–13:00")).toBeTruthy();
+    expect(within(windowRow("Grand Hall Evening")).getByText("19:00–00:30 (past midnight)")).toBeTruthy();
+    expect(within(windowRow("Grand Hall Cleaning")).getByText("any time")).toBeTruthy();
+    expect(within(windowRow("Saloon Hire")).getByText("any time")).toBeTruthy();
+  });
+
+  it("sends a window as HH:MM on create, past midnight included", async () => {
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "New Rule" }));
+    fireEvent.change(screen.getByLabelText("Rule Name"), { target: { value: "Grand Hall Evening" } });
+    fireEvent.change(screen.getByLabelText("Amount (GBP)"), { target: { value: "1500" } });
+    fireEvent.change(screen.getByLabelText("Applies from"), { target: { value: "19:00" } });
+    fireEvent.change(screen.getByLabelText("Applies until"), { target: { value: "00:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Rule" }));
+
+    await waitFor(() => {
+      expect(mocks.createPricingRule).toHaveBeenCalledWith(VENUE_ID, {
+        name: "Grand Hall Evening",
+        type: "flat_rate",
+        amount: 1500,
+        spaceId: null,
+        appliesFrom: "19:00",
+        appliesUntil: "00:30",
+      });
+    });
+  });
+
+  it("holds the save and says so while only one time is entered", async () => {
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "New Rule" }));
+    fireEvent.change(screen.getByLabelText("Rule Name"), { target: { value: "Grand Hall Half Day" } });
+    fireEvent.change(screen.getByLabelText("Amount (GBP)"), { target: { value: "550" } });
+    fireEvent.change(screen.getByLabelText("Applies from"), { target: { value: "09:00" } });
+
+    expect(screen.getByRole("button", { name: "Create Rule" })).toHaveProperty("disabled", true);
+    expect(screen.getByText("Enter both times, or neither.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Applies until"), { target: { value: "13:00" } });
+    expect(screen.queryByText("Enter both times, or neither.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Create Rule" })).toHaveProperty("disabled", false);
+
+    fireEvent.change(screen.getByLabelText("Applies from"), { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Create Rule" })).toHaveProperty("disabled", true);
+    expect(screen.getByText("Enter both times, or neither.")).toBeTruthy();
+    expect(mocks.createPricingRule).not.toHaveBeenCalled();
+  });
+
+  it("shows the API's own reason plainly when it refuses the window", async () => {
+    mocks.createPricingRule.mockRejectedValue(Object.assign(new Error("Validation failed"), {
+      status: 400,
+      code: "VALIDATION_ERROR",
+      details: [{ path: ["appliesUntil"], message: "appliesFrom and appliesUntil go together: both, or neither" }],
+    }));
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "New Rule" }));
+    fireEvent.change(screen.getByLabelText("Rule Name"), { target: { value: "Grand Hall Half Day" } });
+    fireEvent.change(screen.getByLabelText("Amount (GBP)"), { target: { value: "550" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Rule" }));
+
+    await waitFor(() => {
+      expect(mocks.addToast).toHaveBeenCalledWith("appliesFrom and appliesUntil go together: both, or neither", "error");
+    });
+    expect(screen.getByRole("dialog", { name: "New Pricing Rule" })).toBeTruthy();
+  });
+
+  it("opens a rule for editing with its window on the clock face, and saves the change", async () => {
+    mocks.listPricingRules.mockResolvedValue([
+      pricingRuleFixture({ appliesFrom: "09:00:00", appliesUntil: "13:00:00" }),
+    ]);
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Edit pricing rule Grand Hall Half Day" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Pricing Rule" });
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Rule Name").value).toBe("Grand Hall Half Day");
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Amount (GBP)").value).toBe("950.00");
+    expect(within(dialog).getByLabelText<HTMLSelectElement>("Space (optional)").value).toBe(SPACE_ID);
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Applies from").value).toBe("09:00");
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Applies until").value).toBe("13:00");
+
+    fireEvent.change(within(dialog).getByLabelText("Applies from"), { target: { value: "14:00" } });
+    fireEvent.change(within(dialog).getByLabelText("Applies until"), { target: { value: "18:00" } });
+    fireEvent.change(within(dialog).getByLabelText("Rule Name"), { target: { value: "Grand Hall Afternoon" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => {
+      expect(mocks.updatePricingRule).toHaveBeenCalledWith(VENUE_ID, RULE_ID, {
+        name: "Grand Hall Afternoon",
+        type: "flat_rate",
+        amount: 950,
+        spaceId: SPACE_ID,
+        appliesFrom: "14:00",
+        appliesUntil: "18:00",
+      });
+    });
+    expect(screen.queryByRole("dialog", { name: "Edit Pricing Rule" })).toBeNull();
+    expect(mocks.listPricingRules).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears a window on edit by sending both null", async () => {
+    mocks.listPricingRules.mockResolvedValue([
+      pricingRuleFixture({ appliesFrom: "19:00:00", appliesUntil: "00:30:00" }),
+    ]);
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Edit pricing rule Grand Hall Half Day" }));
+    fireEvent.change(screen.getByLabelText("Applies from"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Applies until"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => {
+      expect(mocks.updatePricingRule).toHaveBeenCalledWith(VENUE_ID, RULE_ID, expect.objectContaining({
+        appliesFrom: null,
+        appliesUntil: null,
+      }));
+    });
+  });
+
+  it("keeps a tiered rule's type when editing it, without offering Tiered elsewhere", async () => {
+    mocks.listPricingRules.mockResolvedValue([pricingRuleFixture({ type: "tiered", tiers: [{ upTo: 100, amount: 20 }] })]);
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Edit pricing rule Grand Hall Half Day" }));
+    const type = screen.getByLabelText<HTMLSelectElement>("Type");
+    expect(type.value).toBe("tiered");
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => {
+      expect(mocks.updatePricingRule).toHaveBeenCalledWith(VENUE_ID, RULE_ID, expect.objectContaining({ type: "tiered" }));
+    });
+  });
+
+  it("says what went wrong when a change is refused, and keeps the form open", async () => {
+    mocks.updatePricingRule.mockRejectedValue(Object.assign(new Error("appliesFrom and appliesUntil go together: both, or neither"), {
+      status: 400, code: "VALIDATION_ERROR",
+    }));
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Edit pricing rule Grand Hall Half Day" }));
+    fireEvent.change(screen.getByLabelText("Rule Name"), { target: { value: "Grand Hall Morning" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => {
+      expect(mocks.addToast).toHaveBeenCalledWith("appliesFrom and appliesUntil go together: both, or neither", "error");
+    });
+    expect(screen.getByRole("dialog", { name: "Edit Pricing Rule" })).toBeTruthy();
+  });
+
+  it("explains the window in the form without a word of compliance", async () => {
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "New Rule" }));
+    const dialog = screen.getByRole("dialog", { name: "New Pricing Rule" });
+    expect(within(dialog).getByText(/Leave both empty and the rate applies at any time/u)).toBeTruthy();
+    expect(dialog.textContent ?? "").not.toMatch(/compli|regulat|certif|approved/iu);
   });
 });
