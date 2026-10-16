@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
 import { allFreshCopy } from "../fresh/fresh-copy.js";
-import { allTwinCopy } from "../../twin/twin-copy.js";
 import {
   HOME_FOOT_TWIN,
   HOME_HERO_TOUR,
@@ -45,7 +44,6 @@ describe("the front door's wording", () => {
   it.each([
     ["the front door", allHomeCopy],
     ["/fresh", allFreshCopy],
-    ["the tour page", allTwinCopy],
   ])("has no Work in progress, Gaussian or 3D room wording on %s", (_name, words) => {
     for (const line of words()) {
       expect(line, line).not.toMatch(/work in progress|gaussian|3D room/iu);

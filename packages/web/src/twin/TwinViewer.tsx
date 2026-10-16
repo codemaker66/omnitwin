@@ -83,7 +83,7 @@ import {
   TWIN_MODE_WALK_LABEL,
   TWIN_SURFACE_LABEL,
   TWIN_VIEWER_ROLE,
-  TWIN_TOUR_LABEL,
+  TWIN_WORK_IN_PROGRESS,
   twinNodeLabel,
   twinViewerLabel,
   twinViewpointAnnouncement,
@@ -1798,7 +1798,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         )}
       </Canvas>
       </div>
-      <p className="vv-twin-work-in-progress">{TWIN_TOUR_LABEL}</p>
+      <p className="vv-twin-work-in-progress">{TWIN_WORK_IN_PROGRESS}</p>
       <div className="vv-twin-viewer-content">
       {/* Polite arrival announcement — where the walk just moved to (finding
           [10]). Keyed span so identical text still re-announces on revisit. */}
