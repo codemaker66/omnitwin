@@ -75,7 +75,11 @@ turns the head in Walk and two fingers walk: spreading them steps forward along 
 closing them steps back (`pinchStepMetres`: 6 m for a spread across the whole screen, at most 1 m
 an event). The cutaway
 (`wallCutHeight`) lowers the walls between the camera and the room to the dado rail and, in plan,
-cuts every wall at 3.12 m, above the doors. Gaussian splats stay off the public site
+cuts every wall at 3.12 m, above the doors. A wall the camera stands behind also stays 0.6 m below
+the camera's eye (below the dado rail too for a camera lower than it). A phone opens at eye height
+inside the hall, about 6.8 m from the orbit's target, so one finger's orbit crosses the long walls
+1-2 m out. There the cut eased from the full height was still above the eye, and the cut wall's
+dark body filled the screen (fixed 14 October). Gaussian splats stay off the public site
 (`lib/splat-access.ts`), so production shows only the model; where a capture fails to load, Capture
 is disabled and Walk uses the model.
 

@@ -78,10 +78,16 @@ export const HALL_CUTS = {
   hidden: -1,
 } as const;
 
+/** How far below the camera's eye a wall it stands behind is cut. */
+const EYE_CLEARANCE = 0.6;
+
 /**
  * The cut height for one wall seen from `camera` in `view`. In the overview,
  * walls the camera stands behind drop to the dado rail and the far walls keep
- * their full height, so the room reads tall while the floor stays open.
+ * their full height, so the room reads tall while the floor stays open. A wall
+ * the camera stands behind also stays below its eye: a phone orbiting at eye
+ * height crosses the long walls a metre or two out, where the eased cut alone
+ * still stood above the camera and its dark body filled the view.
  */
 export function wallCutHeight(view: Exclude<HallView, "auto">, wall: HallWall, camera: readonly [number, number, number]): number {
   if (view === "walk") return HALL_CUTS.none;
@@ -90,7 +96,9 @@ export function wallCutHeight(view: Exclude<HallView, "auto">, wall: HallWall, c
   const behind = -((camera[0] - wall.origin[0]) * wall.normal[0] + (camera[2] - wall.origin[2]) * wall.normal[2]);
   const t = Math.max(0, Math.min(1, (behind + 1.5) / 4));
   const eased = t * t * (3 - 2 * t);
-  return HALL_HEIGHT + 0.2 + (HALL_CUTS.near - HALL_HEIGHT - 0.2) * eased;
+  const cut = HALL_HEIGHT + 0.2 + (HALL_CUTS.near - HALL_HEIGHT - 0.2) * eased;
+  if (behind <= 0) return cut;
+  return Math.max(0.05, Math.min(cut, camera[1] - EYE_CLEARANCE));
 }
 
 interface HallResources {

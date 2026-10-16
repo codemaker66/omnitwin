@@ -64,6 +64,19 @@ describe("the hall's framing and cutaway", () => {
     expect(wallCutHeight("plan", hallWall("window"), camera)).toBe(HALL_CUTS.plan);
     expect(wallCutHeight("walk", hallWall("door"), camera)).toBe(HALL_CUTS.none);
   });
+
+  it("keeps a wall a low camera stands behind below its eye, so the wall never fills the view", () => {
+    // A phone orbiting at eye height crosses the long walls. Just outside the
+    // door wall the eased cut alone stood 2.9 m high, above the camera's eye.
+    const justOutside = [0, 2.67, HALL_HALF_WIDTH + 1.4] as const;
+    expect(wallCutHeight("overview", hallWall("door"), justOutside)).toBeLessThanOrEqual(2.67 - 0.5);
+    // The wall across the room stays whole: the camera looks past it into the room.
+    expect(wallCutHeight("overview", hallWall("window"), justOutside)).toBeGreaterThan(HALL_HEIGHT);
+    // A camera lower than the dado rail sees over a wall cut below the rail.
+    expect(wallCutHeight("overview", hallWall("door"), [0, 1.6, HALL_HALF_WIDTH + 9])).toBeLessThan(1.6);
+    // From high above, the cut eases as before.
+    expect(wallCutHeight("overview", hallWall("door"), [0, 19, HALL_HALF_WIDTH + 1])).toBeGreaterThan(3);
+  });
 });
 
 describe("blends and easings", () => {
