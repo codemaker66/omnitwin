@@ -16,6 +16,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/client-search-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
+  "src/__tests__/enquiry-bookings-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
   "src/__tests__/db-client-local.test.ts",
   "src/__tests__/sheet-snapshot-retention-postgres.test.ts",

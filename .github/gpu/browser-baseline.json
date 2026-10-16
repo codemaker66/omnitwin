@@ -662,6 +662,21 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; they intercept the API before transport, so the live path (the ring within a second over the socket) is proved by living-timetable-three-identities.spec.ts against the real stack, not here; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-16",
+      "reason": "The enquiry's Diary answer (T-635), route-mocked: the Enquiries desk answers an enquiry with nothing to press, and Approve holds its place, on a desk and on a phone.",
+      "sourceCommit": "6aaa98c2c8ec0b6b2481891474ec7c0a52e0a27b",
+      "sourceFile": "packages/web/e2e/enquiries-diary-answer.spec.ts",
+      "sourceFileGitBlobSha256": "b30e02126f9a997177b4cbcf5307bd4eb5ecd001f4c2cd743e10393f2b53c791",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/enquiries-diary-answer.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "ce1f27e087a715e3440f5168272b2ff25dc5bf3a75e9873ad5c6f9990744dff1",
+      "caseIds": [
+        "d1e9d7646eae4b9882f5-0275ca92183c89888f36",
+        "d1e9d7646eae4b9882f5-fccefc5787b1c9613b41"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; they intercept the API before transport, so the live Diary path is not proved here; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -4833,6 +4848,28 @@
       "suitePath": [
         "living-timetable-slot.spec.ts",
         "Requests and conversations on the slot"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d1e9d7646eae4b9882f5-fccefc5787b1c9613b41",
+      "file": "enquiries-diary-answer.spec.ts",
+      "title": "answers with nothing to press, and Approve holds its place on a desk",
+      "suitePath": [
+        "enquiries-diary-answer.spec.ts",
+        "Enquiries desk, where an enquiry stands in the Diary"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d1e9d7646eae4b9882f5-0275ca92183c89888f36",
+      "file": "enquiries-diary-answer.spec.ts",
+      "title": "answers with nothing to press, and Approve holds its place on a phone",
+      "suitePath": [
+        "enquiries-diary-answer.spec.ts",
+        "Enquiries desk, where an enquiry stands in the Diary"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

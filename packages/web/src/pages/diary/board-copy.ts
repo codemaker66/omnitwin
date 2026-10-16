@@ -338,16 +338,34 @@ export const BOARD_COPY = {
     notADate: "The Diary cannot read that as a date. Try 5 Jun 27 or 05/06/2027.",
     /** Each booking in a room that day, as the board labels it. */
     confirmed: (title: string, time: string): string => `Confirmed, ${title}, ${time}`,
-    hold: (rank: number | null, jointFlag: boolean, title: string, time: string, decides: string | null): string => {
+    /** `decision`: worded by `decision` below. */
+    hold: (rank: number | null, jointFlag: boolean, title: string, time: string, decision: string | null): string => {
       const place = rank === null ? "Provisional," : rank === 1 && jointFlag ? "Joint 1st" : `${ordinal(rank)} option`;
-      return `${place} ${title}, ${time}${decides === null ? "" : `, decides ${decides}`}`;
+      return `${place} ${title}, ${time}${decision === null ? "" : `, ${decision}`}`;
     },
+    /** A hold's decision inside its line: "decides Tue 1 Dec", or once that
+     *  moment has passed, the Diary's own "decision was due Mon 5 Oct". */
+    decision: (day: string, passed: boolean): string => passed ? `decision was due ${day}` : `decides ${day}`,
     block: (title: string, time: string): string => `House block, ${title}, ${time}`,
+    /** Another event's timed phase in a room it has no booking in (the board's
+     *  occupancy footprint): its drinks in the Saloon while it holds the Grand Hall. */
+    inUse: (eventName: string, phase: string, time: string): string => `In use for ${eventName} (${phase}), ${time}`,
+    /** A line among several, its title left to the full list: "Confirmed
+     *  08:00–11:00", "1st option 18:00–23:00, decides Tue 1 Dec". A hold's place
+     *  is decisions.option. */
+    brief: (place: string, time: string, decision: string | null): string =>
+      `${place} ${time}${decision === null ? "" : `, ${decision}`}`,
+    places: { confirmed: "Confirmed", block: "House block", inUse: "In use" },
     /** `from`: the night before's event ends in the small hours ("01:00"). */
     free: (interest: readonly string[], from: string | null): string => {
       const free = from === null ? "Free" : `Free from ${from}`;
       return interest.length === 0 ? free : `${free}, interest only from ${listNames(interest)}`;
     },
+    /** How many of a day's rooms nothing holds, inside a sentence. */
+    roomsFree: (free: number, total: number): string => total > 0 && free === total ? `all ${String(total)} rooms free`
+      : free === 0 ? "no room free" : `${String(free)} of ${String(total)} rooms free`,
+    /** A venue of one room names it. */
+    oneRoom: (name: string, free: boolean): string => `${name} is ${free ? "free" : "taken"}`,
     /** A weekday said with the date that is not the date's own (0 is Sunday). */
     otherWeekday: (actual: number, said: number): string =>
       `That date is a ${WEEKDAY_NAMES[actual] ?? ""}, not a ${WEEKDAY_NAMES[said] ?? ""}.`,

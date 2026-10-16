@@ -126,6 +126,11 @@ async function mockApi(page: Page, legacy: boolean): Promise<MockedApi> {
       void route.fulfill({ json: { data: rows.slice(offset, offset + limit), meta } });
       return;
     }
+    if (url.pathname === "/bookings" && request.method() === "GET") {
+      // No enquiry here holds anything in the Diary.
+      void route.fulfill({ json: { data: [] } });
+      return;
+    }
     if (url.pathname === `/venues/${VENUE_ID}` || url.pathname === "/venues") {
       const venue = { id: VENUE_ID, name: "Trades Hall Glasgow", slug: "trades-hall", address: "85 Glassford Street",
         logoUrl: null, brandColour: null, spaces: [{ id: SPACE_ID, venueId: VENUE_ID, name: "Grand Hall", slug: "grand-hall",
@@ -234,7 +239,8 @@ test.describe("Staff enquiries list paging", () => {
 
     await page.getByRole("button", { name: "Approve…" }).click();
     const confirm = page.getByRole("group", { name: "Approve Enquiry 56’s enquiry?" });
-    await expect(confirm).toContainText("Approving emails enquiry56@paging.test to say the enquiry is approved.");
+    // The room as the approval email names it; these enquiries asked no date.
+    await expect(confirm).toContainText("Approving emails enquiry56@paging.test to say the enquiry for the Grand Hall is approved.");
     await confirm.getByRole("textbox").fill("Deposit invoice sent.");
     await confirm.getByRole("button", { name: "Approve and email" }).click();
     await expect(page.locator(".enq-panel .enq-chip")).toHaveText("Approved");

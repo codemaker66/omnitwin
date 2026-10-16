@@ -6,7 +6,8 @@ import {
 const sampleData: EnquiryApprovedData = {
   venueName: "Trades Hall Glasgow",
   roomName: "Grand Hall",
-  eventDate: "Saturday, 15 June 2026",
+  // The stored calendar date, as the route passes it; the email words it.
+  eventDate: "2026-06-15",
   configUrl: "http://localhost:5173/plan/abc-123",
 };
 

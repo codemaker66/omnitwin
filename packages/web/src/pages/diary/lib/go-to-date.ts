@@ -1,4 +1,4 @@
-import type { CalendarBookingEntry, CalendarEntry, CalendarRoom } from "@omnitwin/types";
+import type { CalendarBookingEntry, CalendarEntry, CalendarPhaseEntry, CalendarRoom } from "@omnitwin/types";
 import { msToWallInput } from "./board-time.js";
 
 // ---------------------------------------------------------------------------
@@ -98,6 +98,10 @@ export interface RoomAnswer {
    *  holds no confirmed booking overlaps (each with its own place on its
    *  ladder), and house blocks. None when the room is free. */
   readonly bookings: readonly CalendarBookingEntry[];
+  /** Another event's timed phases in the room that day, when that event has
+   *  no booking there (the board's occupancy footprint), by start time. A
+   *  room with any is not free. */
+  readonly phases: readonly CalendarPhaseEntry[];
   /** On a free day, the interest only there is, by title. */
   readonly interest: readonly string[];
   /** On a free day, when the night before's event ends in the small hours. */
@@ -119,6 +123,8 @@ function overlaps(a: CalendarBookingEntry, b: CalendarBookingEntry): boolean {
  * ends by 06:00 is that night running late: it does not take the day, and a
  * room with nothing else is free from when it ends. A hold that a confirmed
  * booking overlaps is left out, since the confirmed booking has that time.
+ * An event's timed phase uses a room as the conflict engine counts it; in a
+ * room the event has booked, the booking already says so.
  */
 export function roomsOnDay(
   entries: readonly CalendarEntry[],
@@ -126,15 +132,19 @@ export function roomsOnDay(
   day: { readonly startMs: number; readonly endMs: number },
 ): readonly RoomAnswer[] {
   const date = msToWallInput(day.startMs).slice(0, 10);
-  const lateNight = (entry: CalendarBookingEntry): boolean => {
+  const lateNight = (entry: CalendarEntry): boolean => {
     if (Date.parse(entry.startsAt) >= day.startMs) return false;
     const end = msToWallInput(Date.parse(entry.endsAt));
     return end.slice(0, 10) === date && end.slice(11, 16) <= SMALL_HOURS_END;
   };
   return rooms.map((room): RoomAnswer => {
+    const onDay = (entry: CalendarEntry): boolean => entry.spaceId === room.id
+      && Date.parse(entry.startsAt) < day.endMs && Date.parse(entry.endsAt) > day.startMs;
     const inRoom = entries.filter((entry): entry is CalendarBookingEntry =>
-      entry.entryType === "booking" && entry.spaceId === room.id && entry.status === "active"
-      && Date.parse(entry.startsAt) < day.endMs && Date.parse(entry.endsAt) > day.startMs);
+      entry.entryType === "booking" && entry.status === "active" && onDay(entry));
+    // A phase of no length uses nothing.
+    const phasesInRoom = entries.filter((entry): entry is CalendarPhaseEntry =>
+      entry.entryType === "phase" && Date.parse(entry.endsAt) > Date.parse(entry.startsAt) && onDay(entry));
     const that = inRoom.filter((entry) => !lateNight(entry));
     const confirmed = that.filter((entry) => entry.kind === "ink");
     const bookings = that
@@ -142,13 +152,21 @@ export function roomsOnDay(
         || (entry.kind === "hold" && !confirmed.some((ink) => overlaps(ink, entry))))
       .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)
         || (a.rank ?? UNRANKED) - (b.rank ?? UNRANKED) || a.id.localeCompare(b.id));
-    if (bookings.length > 0) return { roomId: room.id, room: room.name, bookings, interest: [], freeFromMs: null };
+    const booked = new Set(that.flatMap((entry) => entry.kind === "prospect" || entry.eventId === null ? [] : [entry.eventId]));
+    const phases = phasesInRoom
+      .filter((phase) => !lateNight(phase) && !booked.has(phase.eventId))
+      .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || a.id.localeCompare(b.id));
+    if (bookings.length > 0 || phases.length > 0) {
+      return { roomId: room.id, room: room.name, bookings, phases, interest: [], freeFromMs: null };
+    }
     // Interest only never holds the room, so it never makes it free later.
-    const ends = inRoom.filter((entry) => entry.kind !== "prospect" && lateNight(entry)).map((entry) => Date.parse(entry.endsAt));
+    const ends = [...inRoom.filter((entry) => entry.kind !== "prospect"), ...phasesInRoom]
+      .filter(lateNight).map((entry) => Date.parse(entry.endsAt));
     return {
       roomId: room.id,
       room: room.name,
       bookings,
+      phases,
       interest: that.filter((entry) => entry.kind === "prospect").map((entry) => entry.title),
       freeFromMs: ends.length === 0 ? null : Math.max(...ends),
     };

@@ -18,7 +18,7 @@ import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
   ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
-  DIARY_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
+  DIARY_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
   REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
 import "./DashboardLayout.css";
@@ -588,7 +588,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
         </div>
       </header>
       {findOpen && <FindPalette places={findPlaces} canSearchClients={canSearchClients}
-        diaryVenueId={canOpenDiary && !awaitsVenue(user) ? user?.venueId ?? null : null}
+        diaryVenueId={diaryVenueOf(user)}
         source={findSource ?? null} onOpen={openFound} onClose={closeFind} />}
       <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "desk" ? " dashboard-layout-main--desk" : ""}${surface === "rota" ? " dashboard-layout-main--rota" : ""}`}>
         <main ref={mainRef} className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
