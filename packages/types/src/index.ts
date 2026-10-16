@@ -2530,6 +2530,10 @@ export * from "./requests.js";
 export * from "./conversations.js";
 export * from "./observations.js";
 
+// T-656: every model call attributed to a venue and a feature, priced, and
+// held to the venue's monthly allowance (migration 0089).
+export * from "./ai-usage.js";
+
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";
 
