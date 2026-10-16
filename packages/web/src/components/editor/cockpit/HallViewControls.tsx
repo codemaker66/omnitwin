@@ -1,10 +1,12 @@
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Box, Flame, Footprints, LayoutGrid, Sparkles, Sun, Sunset, type LucideIcon } from "lucide-react";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useBookmarkStore } from "../../../stores/bookmark-store.js";
 import { useHallViewStore, type HallViewPreset } from "../../../stores/hall-view-store.js";
 import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js";
 import type { HallMoodName } from "../../grand-hall/hall-mood.js";
+import { hallSkyRequested } from "../../../lib/hall-sky-access.js";
+import { HallSunButton, HallSunDial } from "./HallSunDial.js";
 
 // ---------------------------------------------------------------------------
 // HallViewControls — how to look at the Grand Hall, and in what light
@@ -54,6 +56,8 @@ export function HallViewControls({ captureAvailable, povActive, moodLabels = fal
   }, [cameraInteractionActive, transitioning, walkMode]);
 
   const pressedView: HallViewPreset | null = walkMode ? "walk" : activePreset === "walk" ? null : activePreset;
+  // Under the real sky the light is an hour of the day, not a mood.
+  const skyLight = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
 
   return (
     <div className="cockpit-layer-controls hall-view-controls" role="group" aria-label="Grand Hall view">
@@ -90,6 +94,9 @@ export function HallViewControls({ captureAvailable, povActive, moodLabels = fal
         })}
       </div>
       <span className="cockpit-layer-controls__divider" aria-hidden="true" />
+      {skyLight ? (
+        moodLabels ? <HallSunDial inline /> : <HallSunPopover />
+      ) : (
       <div className="hall-view-controls__group" role="group" aria-label="Light">
         {MOODS.map(({ id, label, Icon }) => {
           const pressed = mood === id;
@@ -110,6 +117,7 @@ export function HallViewControls({ captureAvailable, povActive, moodLabels = fal
           );
         })}
       </div>
+      )}
       {captureAvailable && (
         <>
           <span className="cockpit-layer-controls__divider" aria-hidden="true" />
@@ -129,6 +137,45 @@ export function HallViewControls({ captureAvailable, povActive, moodLabels = fal
             Capture
           </button>
         </>
+      )}
+    </div>
+  );
+}
+
+/** How long the time of day's panel stays drawn while it fades out, ms. */
+const CLOSE_MS = 200;
+
+/** The light's button and, above it, the time of day. Closes on Escape or a press elsewhere. */
+function HallSunPopover(): ReactElement {
+  const [open, setOpen] = useState(false);
+  const [drawn, setDrawn] = useState(false);
+  const anchor = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (open) { setDrawn(true); return undefined; }
+    const timer = window.setTimeout(() => { setDrawn(false); }, CLOSE_MS);
+    return () => { window.clearTimeout(timer); };
+  }, [open]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.target instanceof Node && anchor.current?.contains(event.target) === true) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+  return (
+    <div className="hall-sun-anchor" ref={anchor}>
+      <HallSunButton open={open} onToggle={() => { setOpen((value) => !value); }} />
+      {drawn && (
+        <div className="hall-sun-popover" data-open={open && drawn ? "true" : "false"} role="dialog" aria-label="Time of day">
+          <HallSunDial />
+        </div>
       )}
     </div>
   );

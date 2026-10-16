@@ -1,0 +1,256 @@
+/* The hour the Grand Hall is shown at (HallSunDial.tsx): the day as a band
+   of its own sky, the sun's real path across it, held in the hand. */
+
+.hall-sun-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.hall-sun-button__time {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* Rises out of its button: scaled from the button's edge, never from nothing. */
+.hall-sun-popover {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(6px) scale(0.97);
+  transform-origin: 50% 100%;
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hall-sun-popover[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+/* The panel mounts open: its first frame starts from the closed state. */
+@starting-style {
+  .hall-sun-popover[data-open="true"] {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hall-sun-popover,
+  .hall-sun-popover[data-open="true"] {
+    transform: translateX(-50%);
+    transition: opacity 120ms ease;
+  }
+}
+
+.hall-sun-dial {
+  width: min(372px, calc(100vw - 24px));
+  padding: 14px 14px 12px;
+  border: 1px solid rgba(201, 138, 91, 0.28);
+  border-radius: 16px;
+  background: rgba(12, 11, 10, 0.86);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(18px) saturate(1.1);
+  color: rgba(246, 238, 220, 0.92);
+  font: 12px/1.35 "Inter", system-ui, sans-serif;
+}
+.hall-sun-dial.is-inline {
+  width: auto;
+  padding: 6px 2px 4px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.hall-sun-dial__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.hall-sun-dial__reading {
+  min-width: 0;
+}
+.hall-sun-dial__clock {
+  display: block;
+  color: #f6eedc;
+  font-family: "Fraunces", Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.hall-sun-dial__where {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: rgba(246, 238, 220, 0.6);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hall-sun-dial__when {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+.hall-sun-dial__date,
+.hall-sun-dial__now {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(245, 240, 232, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(246, 238, 220, 0.86);
+  cursor: pointer;
+  font: 600 11px/1 "Inter", system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  transition: background 150ms ease, color 150ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hall-sun-dial__date input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.hall-sun-dial__date:focus-within,
+.hall-sun-dial__now:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+.hall-sun-dial__now.is-active {
+  border-color: rgba(255, 239, 177, 0.6);
+  background: linear-gradient(145deg, #dca475 0%, #c98a5b 44%, #7e4620 100%);
+  color: #14110b;
+}
+.hall-sun-dial__date:active,
+.hall-sun-dial__now:active,
+.hall-sun-dial__preset:active {
+  transform: scale(0.97);
+}
+
+/* The day: a finger on the band drags the sun, so the page must not scroll. */
+.hall-sun-dial__band {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.hall-sun-dial__band:active {
+  cursor: grabbing;
+}
+.hall-sun-dial__band:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 3px;
+}
+.hall-sun-dial__horizon {
+  stroke: rgba(255, 255, 255, 0.34);
+  stroke-width: 1;
+}
+.hall-sun-dial__path {
+  fill: none;
+  stroke: rgba(255, 250, 235, 0.55);
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+}
+.hall-sun-dial__tick {
+  stroke: rgba(255, 255, 255, 0.62);
+  stroke-width: 1;
+}
+.hall-sun-dial__now-line {
+  stroke: rgba(255, 255, 255, 0.24);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.hall-sun-dial__floor-bar {
+  fill: #d6a650;
+}
+.hall-sun-dial__sun {
+  filter: drop-shadow(0 0 5px rgba(255, 224, 160, 0.75));
+}
+.hall-sun-dial__moon-dark {
+  fill: #283049;
+  stroke: rgba(223, 230, 255, 0.35);
+  stroke-width: 0.6;
+}
+.hall-sun-dial__moon-lit {
+  fill: #eef0f6;
+}
+
+.hall-sun-dial__marks {
+  position: relative;
+  height: 15px;
+  margin-top: 6px;
+  color: rgba(246, 238, 220, 0.55);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.hall-sun-dial__marks span {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+}
+
+.hall-sun-dial__floor {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 10px;
+  color: rgba(246, 238, 220, 0.78);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.hall-sun-dial__floor-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: #d6a650;
+}
+
+.hall-sun-dial__presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.hall-sun-dial__preset {
+  min-height: 32px;
+  padding: 0 4px;
+  border: 1px solid rgba(245, 240, 232, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(246, 238, 220, 0.82);
+  cursor: pointer;
+  font: 600 11px/1 "Inter", system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  transition: background 150ms ease, color 150ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hall-sun-dial__preset:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hall-sun-dial__date:hover,
+  .hall-sun-dial__now:not(.is-active):hover,
+  .hall-sun-dial__preset:hover {
+    background: rgba(201, 138, 91, 0.12);
+    color: #f3ddb0;
+  }
+}
+.is-inline .hall-sun-dial__preset {
+  min-height: 40px;
+}

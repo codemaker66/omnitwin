@@ -1,12 +1,25 @@
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import type { Object3D } from "three";
+import { Matrix4, type Object3D } from "three";
 import {
   clearAllFurnitureSettles,
-  furnitureSettleOffset,
+  composeFurnitureMotion,
+  dropInFurniture,
+  furnitureMotionPose,
   publishFurnitureSettleFrame,
   stepFurnitureSettles,
 } from "../../lib/furniture-motion.js";
+import { subscribeFurniturePlaced, usePlacementStore } from "../../stores/placement-store.js";
+import { prefersReducedMotion } from "../../lib/reduced-motion.js";
+
+const motion = new Matrix4();
+
+/** Returns a group to store truth: no offset, lean or squash. */
+function rest(group: Object3D): void {
+  group.position.set(0, 0, 0);
+  group.quaternion.identity();
+  group.scale.set(1, 1, 1);
+}
 
 // ---------------------------------------------------------------------------
 // FurnitureMotion — applies the settle registry's transient offsets to the
@@ -40,7 +53,7 @@ export function FurnitureMotion(): null {
     return () => {
       for (const id of applied) {
         const group = cache.get(id);
-        if (group !== undefined) group.position.set(0, 0, 0);
+        if (group !== undefined) rest(group);
       }
       applied.clear();
       cache.clear();
@@ -48,6 +61,14 @@ export function FurnitureMotion(): null {
       publishFurnitureSettleFrame([]);
     };
   }, []);
+
+  // Newly placed pieces come down onto the floor, each from a slightly
+  // different height so a set never lands in lockstep.
+  useEffect(() => subscribeFurniturePlaced((ids) => {
+    if (prefersReducedMotion()) return;
+    ids.forEach((id, index) => { dropInFurniture(id, 0.11 + ((index * 7919) % 13) * 0.005); });
+    invalidate();
+  }), [invalidate]);
 
   useFrame((_state, delta) => {
     const live = stepFurnitureSettles(delta);
@@ -70,16 +91,19 @@ export function FurnitureMotion(): null {
     for (const id of applied) {
       if (liveSet.has(id)) continue;
       const group = findGroup(id);
-      if (group !== undefined) group.position.set(0, 0, 0);
+      if (group !== undefined) rest(group);
       applied.delete(id);
     }
 
+    // Each moving piece leans and squashes about its own base.
+    const items = live.length === 0 ? null : new Map(usePlacementStore.getState().placedItems.map((item) => [item.id, item]));
     for (const id of live) {
-      const offset = furnitureSettleOffset(id);
-      if (offset === null) continue;
+      const pose = furnitureMotionPose(id);
+      if (pose === null) continue;
       const group = findGroup(id);
-      if (group === undefined) continue;
-      group.position.set(offset.x, 0, offset.z);
+      const item = items?.get(id);
+      if (group === undefined || item === undefined) continue;
+      composeFurnitureMotion(pose, item.x, item.y, item.z, motion).decompose(group.position, group.quaternion, group.scale);
       applied.add(id);
     }
     publishFurnitureSettleFrame(live);

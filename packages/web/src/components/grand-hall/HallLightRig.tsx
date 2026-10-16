@@ -19,6 +19,7 @@ import { HallEnvironment } from "./HallEnvironment.js";
 import { HALL_CHANDELIERS } from "./hall-spec.js";
 import { CHANDELIER_POWER, chandelierScale } from "./hall-lighting-model.js";
 import { useHallFinish, type HallFinish } from "./hall-finish.js";
+import { hallSkyState } from "./hall-sky-runtime.js";
 
 export interface HallLightRigProps {
   readonly mood: HallMoodName;
@@ -61,6 +62,8 @@ export function HallLightRig({ mood, moodSeconds = 1.6, finish, standInEnvironme
     return created;
   }, []);
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
+  /** The published sky last applied. */
+  const skyVersion = useRef(-1);
   const lights = useRef<(PointLight | null)[]>([]);
   const daylight = useRef<DirectionalLight | null>(null);
   const fill = useRef<HemisphereLight | null>(null);
@@ -73,7 +76,14 @@ export function HallLightRig({ mood, moodSeconds = 1.6, finish, standInEnvironme
   }, [invalidate, mood, uniforms]);
 
   useFrame((_, delta) => {
-    const active = blend.current;
+    // The real sky, where it drives the hall, replaces the moods.
+    const sky = hallSkyState.sky;
+    if (sky !== null && skyVersion.current !== hallSkyState.version) {
+      skyVersion.current = hallSkyState.version;
+      blend.current = null;
+      uniforms.apply(sky.mood, sky.mood, 1);
+    }
+    const active = sky === null ? blend.current : null;
     if (active !== null) {
       active.t = Math.min(1, active.t + hallFrameStep(delta, !active.started) / Math.max(0.05, moodSeconds));
       active.started = true;

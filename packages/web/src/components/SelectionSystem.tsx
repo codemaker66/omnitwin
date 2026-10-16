@@ -26,7 +26,7 @@ import {
   rotationFromDrag,
   scaleFromDrag,
 } from "../lib/planner-tools.js";
-import { beginFurnitureSettle, clearFurnitureSettle } from "../lib/furniture-motion.js";
+import { beginFurnitureSettle, carryFurniture, clearFurnitureSettle, releaseFurniture } from "../lib/furniture-motion.js";
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
@@ -157,6 +157,8 @@ export function SelectionSystem(): null {
   const isDragging = useRef(false);
   const isMarquee = useRef(false);
   const dragStartScreen = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  /** The carried pieces' smoothed speed, metres a second, and when it was last measured. */
+  const carry = useRef<{ at: number; vx: number; vz: number }>({ at: 0, vx: 0, vz: 0 });
   const dragItemId = useRef<string | null>(null);
   const dragGrabOffset = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
   // Which hand the drag belongs to, decided at pointer-down from the tool
@@ -736,6 +738,18 @@ export function SelectionSystem(): null {
               usePlacementStore.getState().moveItemsByDelta(allMovingIds, frame.dx, frame.dz);
               useSelectionStore.getState().setActiveGuides(frame.guides);
               lastMovingIds.current = allMovingIds;
+              // Carried pieces lean a little back from the way they travel.
+              if (!prefersReducedMotion()) {
+                const nowMs = performance.now();
+                const elapsed = Math.min(0.1, Math.max(0.004, (nowMs - carry.current.at) / 1000));
+                const blend = carry.current.at === 0 ? 1 : 0.35;
+                carry.current = {
+                  at: nowMs,
+                  vx: carry.current.vx + (frame.dx / elapsed - carry.current.vx) * blend,
+                  vz: carry.current.vz + (frame.dz / elapsed - carry.current.vz) * blend,
+                };
+                carryFurniture(allMovingIds, carry.current.vx, carry.current.vz);
+              }
               invalidateRef.current();
             }
           }
@@ -856,6 +870,9 @@ export function SelectionSystem(): null {
               invalidateRef.current();
             }
           }
+          // Let go: the pieces swing upright and set their weight down.
+          if (!prefersReducedMotion() && lastMovingIds.current.size > 0) releaseFurniture(lastMovingIds.current);
+          carry.current = { at: 0, vx: 0, vz: 0 };
           lastMovingIds.current = new Set();
         } else {
           useToolStore.getState().setLiveValue(null);
