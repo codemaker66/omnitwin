@@ -45,6 +45,7 @@ interface RuleRow {
   readonly name: string;
   readonly amount: string;
   readonly space_id: string | null;
+  readonly is_active: boolean;
   readonly applies_from: string | null;
   readonly applies_until: string | null;
 }
@@ -60,7 +61,7 @@ describe.skipIf(testUrl === undefined)("migration 0089: pricing rule windows", (
     dataStatements = sql.split("--> statement-breakpoint")
       .map((statement) => statement.replace(/^\s*--.*$/gmu, "").trim())
       .filter((statement) => statement.length > 0 && !statement.startsWith("ALTER TABLE"));
-    expect(dataStatements).toHaveLength(3);
+    expect(dataStatements).toHaveLength(4);
   }, 300_000);
 
   afterAll(async () => {
@@ -80,7 +81,7 @@ describe.skipIf(testUrl === undefined)("migration 0089: pricing rule windows", (
 
   async function rules(): Promise<readonly RuleRow[]> {
     const result = await pool.query<RuleRow>(
-      "SELECT id, name, amount, space_id, applies_from::text, applies_until::text FROM pricing_rules WHERE venue_id = $1 ORDER BY name",
+      "SELECT id, name, amount, space_id, is_active, applies_from::text, applies_until::text FROM pricing_rules WHERE venue_id = $1 ORDER BY name",
       [VENUE],
     );
     return result.rows;
@@ -132,6 +133,9 @@ describe.skipIf(testUrl === undefined)("migration 0089: pricing rule windows", (
     await replayDataStep();
     const rows = await rules();
     expect(rows.find((row) => row.id === EXCLUSIVE)).toMatchObject({ name: "Exclusive Use of Full Venue", applies_from: null, applies_until: null });
+    // ...and only that one rule is switched off, its row kept (Blake, 16 October 2026).
+    expect(rows.find((row) => row.id === EXCLUSIVE)?.is_active).toBe(false);
+    expect(rows.filter((row) => row.id !== EXCLUSIVE).every((row) => row.is_active)).toBe(true);
     expect(rows.find((row) => row.id === TWO_APART)).toMatchObject({ name: "Two rooms (09:00–13:00) and (14:00–18:00)", applies_from: null, applies_until: null });
     expect(rows.find((row) => row.id === ALREADY)).toMatchObject({ applies_from: "08:00:00", applies_until: "09:00:00" });
   });

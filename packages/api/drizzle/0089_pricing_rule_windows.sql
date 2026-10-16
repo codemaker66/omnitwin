@@ -67,3 +67,16 @@ UPDATE "pricing_rules" r SET
 WHERE r."applies_from" IS NULL
   AND r."name" ~ '\(\d{2}:\d{2}[–-]\d{2}:\d{2}\)'
   AND (SELECT count(*) FROM regexp_matches(r."name", '\d{2}:\d{2}[–-]\d{2}:\d{2}', 'g')) = 1;
+--> statement-breakpoint
+
+-- "Exclusive Use of Full Venue" states no window and is venue-wide, which the
+-- engine reads as every room, so it was added to every room's estimate
+-- (Blake, 16 October 2026: "Turn that price off for now"). The row stays,
+-- switched off, so whole-venue pricing can come back as a proper rule. Scoped
+-- to that one rule: by its name, venue-wide, windowless, live and not deleted.
+UPDATE "pricing_rules" SET "is_active" = false, "updated_at" = now()
+WHERE "name" = 'Exclusive Use of Full Venue'
+  AND "space_id" IS NULL
+  AND "applies_from" IS NULL
+  AND "is_active" = true
+  AND "deleted_at" IS NULL;

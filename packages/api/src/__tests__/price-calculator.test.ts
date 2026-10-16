@@ -345,6 +345,13 @@ describe("calculatePrice — windows", () => {
     expect(estimate("19:00", "23:00", [...grandHall, cleaning]).total).toBe(1580);
   });
 
+  it("the seeded Grand Hall evening prices at £1,500: the evening slot, with the exclusive-use rule switched off (Blake, 16 October 2026)", () => {
+    const exclusiveOff = makeRule({ name: "Exclusive Use of Full Venue", type: "flat_rate", amount: 2500, isActive: false });
+    const result = estimate("19:00", "23:00", [...grandHall, exclusiveOff]);
+    expect(result.lineItems).toEqual([{ ruleName: "Grand Hall — Evening Event (19:00–00:30)", description: "Flat rate", amount: 1500 }]);
+    expect(result.total).toBe(1500);
+  });
+
   it("the window helpers read a past-midnight window as its second day", () => {
     const evening = ruleWindow({ appliesFrom: "19:00", appliesUntil: "00:30" });
     expect(evening).toEqual({ fromMinute: 19 * 60, untilMinute: 24 * 60 + 30 });

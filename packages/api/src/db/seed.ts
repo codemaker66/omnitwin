@@ -327,7 +327,10 @@ async function seed(): Promise<void> {
     type: "flat_rate",
     amount: "2500",
     currency: "GBP",
-    isActive: true,
+    // Off for now (Blake, 16 October 2026): venue-wide reads as every room to
+    // the engine, so it stacked £2,500 onto each room's estimate. Kept so a
+    // proper whole-venue rule can take its place.
+    isActive: false,
     appliesFrom: null,
     appliesUntil: null,
   });

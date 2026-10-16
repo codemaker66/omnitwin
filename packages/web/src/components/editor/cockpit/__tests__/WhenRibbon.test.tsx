@@ -50,6 +50,7 @@ vi.mock("../../../../hooks/use-linked-event.js", () => ({
         name: "Chamber dinner",
         startsAt: new Date(NOON).toISOString(),
         endsAt: new Date(NOON + 120 * MIN).toISOString(),
+        guestCount: 80,
       },
       phases: [],
     },
@@ -448,5 +449,30 @@ describe("WhenRibbon", () => {
     expect(localStorage.getItem("venviewer.when-ribbon.tick")).toBe("on");
     fireEvent.click(toggle);
     expect(localStorage.getItem("venviewer.when-ribbon.tick")).toBe("off");
+  });
+  it("goal 19 S6: the price line is the venue's rate for the window: a Grand Hall evening reads £1,500 (Blake, 16 October 2026)", async () => {
+    // 2026-09-16 18:00Z–22:00Z is 19:00–23:00 in Glasgow: the evening slot.
+    const evening = Date.parse("2026-09-16T18:00:00.000Z");
+    getCalendarMock.mockResolvedValue(calendarFixture([booking(SELF, evening, evening + 240 * MIN, { eventId: EVENT })]));
+    estimatePriceMock.mockResolvedValue({
+      lineItems: [{ ruleName: "Grand Hall — Evening Event (19:00–00:30)", description: "Flat rate", amount: 1500 }],
+      subtotal: 1500, modifiers: [], total: 1500, currency: "GBP",
+    });
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    const price = await screen.findByTestId("when-ribbon-price", {}, { timeout: 3000 });
+    expect(price.textContent).toBe("£1,500 · the venue's current rate for this window");
+    expect(price.textContent).not.toContain("indicative");
+    expect(estimatePriceMock).toHaveBeenCalledWith(VENUE, { spaceId: ROOM, eventDate: "2026-09-16", startTime: "19:00", endTime: "23:00", guestCount: 80 });
+  });
+
+  it("goal 19 S6: a window no slot holds shows the no-slot note instead of a nought", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([booking(SELF, NOON, NOON + 600 * MIN, { eventId: EVENT })]));
+    estimatePriceMock.mockResolvedValue({ lineItems: [], subtotal: 0, modifiers: [], total: 0, currency: "GBP" });
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    const price = await screen.findByTestId("when-ribbon-price", {}, { timeout: 3000 });
+    expect(price.textContent).toContain("no slot for this window");
+    expect(price.textContent).not.toContain("£0");
   });
 });
