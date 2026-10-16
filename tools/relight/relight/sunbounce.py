@@ -22,8 +22,9 @@ The gate (GATE, the controller's ruling of 3 October), over held-out real suns, 
 valid 0.5 m probes where the exact bounce is non-zero: the pooled median |dlog2| is at most 0.25, and so is the median
 of every sun whose mean bounce is at least 5% of the median sun's. Fainter suns are reported but do not decide: their
 bounce is too faint to see, and a log error exaggerates small values. Since Task 4d (amended 11 October) the gate and
-its stable margin (choose_k) must hold in every band of the scored probes (BANDS, band_gates, choose_k_by_band) as well
-as over all of them.
+its stable margin (choose_k) must hold in every band of the scored probes (BANDS, band_gates) as well as over all of
+them, but for the bands beside a surface, which are reported (SURFACE_BANDS; variant B, the ruling of 13 October), at
+the K the measured band tables chose (ruled_k, gated_pass).
 """
 from __future__ import annotations
 
@@ -294,15 +295,32 @@ def band_gates(logs, lits, lums, band_of, kmax) -> dict:
     return out
 
 
-def choose_k_by_band(results_by_band) -> tuple:
-    """(K, rule, {band: choose_k(its results)}): the stable margin rule in every band (Task 4d, amended 11 October). K is
-    the smallest K from which every band's gate passes with its worst bright direction within MARGIN, at that K and at
-    every larger K up to the last one tried: the largest of the bands' own stable K. When a band has no stable K there
-    is no K: (None, "none")."""
+# The bands beside a surface (variant B's planes 0.065 m from the walls and 0.08 m above the floor). The sky bodies'
+# bounce there is spatially sharp (sunlit floor patches), so no low-rank basis holds MARGIN in them (no stable K up to
+# 192 below, 59 not stable at the walls; task-4d-report.md, the A/B), while the error against the proof falls in every
+# band: their gate results are reported, never gated (the ruling of 13 October).
+SURFACE_BANDS = ("walls", "below")
+
+
+def ruled_k(results_by_band, k) -> tuple:
+    """(K, rule, {band: choose_k(its results)}): the ruled K of Task 4d variant B (the ruling of 13 October). k was chosen
+    from the candidates by the measured band tables against the proof (the bake cannot compute them); it holds ("ruled")
+    when it is one of the K tried and every band outside SURFACE_BANDS, "all" included, has a stable margin K
+    (choose_k's "margin") at most k, so its gate passes with the worst bright direction within MARGIN at k and every
+    larger K tried. Otherwise there is no K: (None, "none")."""
     starts = {name: choose_k(results) for name, results in results_by_band.items()}
-    if not starts or any(rule != "margin" for _k, rule in starts.values()):
+    gated = {name: start for name, start in starts.items() if name not in SURFACE_BANDS}
+    tried = min((len(results) for results in results_by_band.values()), default=0)
+    if (not gated or not 1 <= k <= tried
+            or any(rule != "margin" or stable > k for stable, rule in gated.values())):
         return None, "none", starts
-    return max(k for k, _rule in starts.values()), "margin", starts
+    return k, "ruled", starts
+
+
+def gated_pass(result_by_band) -> bool:
+    """A draw's verdict at the chosen K from its gate result per band ({band: gate result}): every band outside
+    SURFACE_BANDS passes (the surface bands' results are reported beside it)."""
+    return all(r["pass"] for name, r in result_by_band.items() if name not in SURFACE_BANDS)
 
 
 def reused(s, used) -> bool:

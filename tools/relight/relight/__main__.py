@@ -479,6 +479,14 @@ MOON_HELD_SEED, MOON_CHECK_SEED = SPLAT_SEED + 17, SPLAT_SEED + 19   # the same 
 SUN_STRICT_SEED, MOON_STRICT_SEED = SPLAT_SEED + 23, SPLAT_SEED + 29   # a third draw (suns, moons) that excludes the check draw too
 SUN_BATCH = 24              # sun directions per radiosity solve
 SUN_KMAX = 192              # the most basis volumes the sun-bounce search tries
+# The sky basis's K (Task 4d variant B, the ruling of 13 October): the smallest candidate (>= 22, the largest stable
+# margin K among the bands off the surfaces) at which those bands hold it and check 2's band table against the proof is
+# no worse than Task 4's grids at K 40 in any band and setting beyond noise. Measured on the pod 16 October
+# (verify/task4d3/kbands-run{1,2}.json, kbands-ext.json; task-4d-report.md, "Slot 2"): the ruling's candidates 22-59
+# are all worse in the floor-side band's sunny median; Blake extended them (16 October) and chose 80, the smallest that
+# qualifies (sunny floor side 0.102 -> 0.054, all rows 0.128 -> 0.040).
+SKY_BASIS_CANDIDATES = (22, 30, 40, 59, 80, 120, 160, 192)
+SKY_BASIS_K = 80
 
 
 def _proof_modules():
@@ -494,8 +502,9 @@ def _proof_modules():
 
 def cmd_probes(cfg, args) -> int:
     """<work>/probes-coarse.npz: each source's bounce (white, unit; the windows with the capture's sky weights) as
-    ambient cubes on the 0.5 m grid over the probes' lookup box (probes.box_grid up to PROBE_LOOKUP_TOP and box_valid;
-    Task 4d, amended 11 October), solved by the proof's radiosity (spec 4.2). <evidence>/probes-check.json: the capture's
+    ambient cubes on the 0.5 m grid over the probes' lookup box (probes.box_grid up to PROBE_LOOKUP_TOP, its planes off
+    the surfaces, and box_valid; Task 4d, amended 11 October, variant B 13 October), solved by the proof's radiosity
+    (spec 4.2). <evidence>/probes-check.json: the capture's
     bounce rebuilt from the float16 cubes the package carries against the proof's own solve (linearity), median relative
     luminance difference at the valid probes within LINEARITY_GATE; the cubes go into work/ only once that check passes
     (a failing run keeps them as <evidence>/probes-coarse-FAILED.npz). CPU only."""
@@ -505,7 +514,7 @@ def cmd_probes(cfg, args) -> int:
     from store import LUMW
     started, work = time.time(), cfg.paths["work"]
     hall, spacing = cfg.room["hallE57"], float(cfg.room["probeSpacing"])
-    P, shape, origin = PR.box_grid(hall, spacing, top=PROBE_LOOKUP_TOP)
+    P, shape, origin = PR.box_grid(hall, spacing, top=PROBE_LOOKUP_TOP, base=spacing)
     valid = PR.box_valid(P, hall)
     print(f"probes: {len(P)} on {tuple(int(v) for v in shape)} at {spacing} m from {origin.tolist()}, "
           f"{int(valid.sum())} valid; torch threads {THREADS}", flush=True)
@@ -650,15 +659,17 @@ def cmd_sun_bounce(cfg, args) -> int:
     largest value) and the coefficient table at the wall-facing nodes of the 4-degree sun grid over the sky band compress
     and interpolate (sunbounce.bake_table: a node without real power in a window takes the nearest real node's
     coefficients). The grid covers the sun's and the moon's band and the bounce is per unit irradiance, so one table
-    serves both. Both probe grids cover the probes' lookup box (probes.box_grid up to PROBE_LOOKUP_TOP and box_valid; Task
-    4d, amended 11 October). K is chosen on SUN_HELD_OUT held-out real suns plus as many real moons, rebuilt from the
-    stored values and scored against their exact bounce at the valid 0.5 m probes, by the stable margin rule in every
-    band of those probes as well as over all of them (sunbounce.band_gates, choose_k_by_band; Task 4d): the smallest K
-    from which sunbounce.GATE passes with the worst bright direction at most sunbounce.MARGIN, at that K and every larger
-    K, in every band. With no such K the bake fails. The same gate then scores that K, unchanged and at no other K, over
-    all the probes and in every band, on two further draws of suns and moons: the check draw (SUN_CHECK_SEED,
-    MOON_CHECK_SEED; every selection direction and grid node excluded) and the strict draw (SUN_STRICT_SEED,
-    MOON_STRICT_SEED; those and every direction of the check draw excluded). Both must pass. The floor's texels are read
+    serves both. Both probe grids cover the probes' lookup box (probes.box_grid up to PROBE_LOOKUP_TOP, their planes off
+    the surfaces, and box_valid; Task 4d, amended 11 October, variant B 13 October). K is SKY_BASIS_K, chosen from the
+    ruling's candidates by the measured band tables against the proof (task-4d-report.md). It must hold on SUN_HELD_OUT
+    held-out real suns plus as many real moons, rebuilt from the stored values and scored against their exact bounce at
+    the valid 0.5 m probes, by the stable margin rule over all of them and in every band of those probes but the bands
+    beside a surface, which are reported (sunbounce.band_gates, ruled_k, SURFACE_BANDS): sunbounce.GATE passes with the
+    worst bright direction at most sunbounce.MARGIN at K and every larger K tried. Otherwise the bake fails. The same
+    gate then scores that K, unchanged and at no other K, over all the probes and in those bands, on two further draws of
+    suns and moons: the check draw (SUN_CHECK_SEED, MOON_CHECK_SEED; every selection direction and grid node excluded)
+    and the strict draw (SUN_STRICT_SEED, MOON_STRICT_SEED; those and every direction of the check draw excluded). Both
+    must pass (sunbounce.gated_pass). The floor's texels are read
     clamped into the lookup box, as every probe read is (sunbounce.floor_weights; Task 4d). <evidence>/sun-bounce-check.json
     holds the gates, per body and per band too, the faint directions, and the power and floor checks (non-finite numbers
     written as null). The artifact goes into work/ only when every check passed; a failing run keeps its arrays as
@@ -689,9 +700,9 @@ def cmd_sun_bounce(cfg, args) -> int:
     rays = torch.as_tensor(SB.patch_rays(patches["P"], patches["N"]), dtype=torch.float32)
     F = radiosity.form_factors(patches["P"], patches["N"], patches["A"], patches["opening"])
     spacing05 = float(cfg.room["probeSpacing"])
-    P1, shape1, origin1 = PR.box_grid(hall, SB.SPACING, top=PROBE_LOOKUP_TOP)
+    P1, shape1, origin1 = PR.box_grid(hall, SB.SPACING, top=PROBE_LOOKUP_TOP, base=spacing05)
     valid1 = PR.box_valid(P1, hall)
-    P05, shape05, origin05 = PR.box_grid(hall, spacing05, top=PROBE_LOOKUP_TOP)
+    P05, shape05, origin05 = PR.box_grid(hall, spacing05, top=PROBE_LOOKUP_TOP, base=spacing05)
     valid05 = PR.box_valid(P05, hall)
     # the scored probes' bands (Task 4d): the box Task 4's first 0.5 m grid covered (coarse_grid less its 2 cm inset), the
     # dome opening's cylinder (02_geometry.DOME_C in geom.npz, lt.dome_visible's radius)
@@ -750,10 +761,10 @@ def cmd_sun_bounce(cfg, args) -> int:
     by_band = SB.band_gates(logs, lits, lums, band_of, kmax)          # "all": the gate over every scored probe
     results = by_band["all"]
     passing = [k + 1 for k, r in enumerate(results) if r["pass"]]
-    K, k_rule, starts = SB.choose_k_by_band(by_band)                  # fixed on the selection set; the checks are scored after
+    K, k_rule, starts = SB.ruled_k(by_band, SKY_BASIS_K)              # held on the selection set; the checks are scored after
     k_found = K is not None
     if not k_found:
-        K = kmax                                                      # no K is stable in every band: the bake fails (kept at kmax)
+        K = kmax                                                      # the ruled K does not hold: the bake fails (kept at kmax)
     rel = brightness / np.median(brightness)
     per_sun = [float(np.median(d[K - 1])) for d in logs]
     floor_err = [abs(float(np.cumsum(c[:, None] * floor_mean, 0)[K - 1] @ lumw) - fe) / fe for c, fe in zip(cs, floor_exact) if fe > 0]
@@ -787,7 +798,7 @@ def cmd_sun_bounce(cfg, args) -> int:
         through_d = float(np.abs(medians - np.array([float(np.median(d[0])) for d in logs_k])).max())
         record = {"sunSeed": sun_seed, "moonSeed": moon_seed, "suns": len(suns_), "moons": len(moons_),
                   "drawn": drawn_s + drawn_m, "skippedReused": skipped_s + skipped_m,
-                  "pass": bool(verdict["pass"] and all(r["pass"] for r in by_band_d.values())), "result": verdict,
+                  "pass": bool(verdict["pass"] and SB.gated_pass(by_band_d)), "result": verdict,
                   "resultByBand": by_band_d, "resultByBody": _gate_by_body(SB, kinds, medians, bright_d, logs_d),
                   "faint": _faint(SB, kinds, [W.sun_az_el(np.asarray(s, np.float32), xb) for s, _g, _e in dirs],
                                   bright_d / np.median(bright_d), medians),
@@ -801,7 +812,8 @@ def cmd_sun_bounce(cfg, args) -> int:
     ok = (bool(passing) and k_found and split == 0.0 and through < 1e-6 and independent["throughMaxDiff"] < 1e-6
           and independent["pass"] and strict_check["throughMaxDiff"] < 1e-6 and strict_check["pass"])
     out = {"gate": SB.GATE, "pass": ok, "K": K,
-           "kRule": {"rule": k_rule, "margin": SB.MARGIN, "smallestPassingK": passing[0] if passing else None,
+           "kRule": {"rule": k_rule, "margin": SB.MARGIN, "ruledK": SKY_BASIS_K, "candidates": list(SKY_BASIS_CANDIDATES),
+                     "surfaceBands": list(SB.SURFACE_BANDS), "smallestPassingK": passing[0] if passing else None,
                      "byBand": {b: {"K": k, "rule": r} for b, (k, r) in starts.items()}},
            "kmax": kmax, "rank": rank, "energyAtK": float(lam[:K].sum() / lam.sum()),
            "result": results[K - 1], "resultByBand": {b: r[K - 1] for b, r in by_band.items()},

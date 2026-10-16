@@ -5,9 +5,10 @@ unit source; the browser multiplies by the source's colour and weight. The sun's
 carried here: sunbounce.py bakes it exactly per sun direction.
 
 The bake's grids (Task 4d, amended 11 October) are box_grid and box_valid: they cover the probes' lookup box, the
-proof's own (z up to 9.8 m), so the dome and the space above the flat ceiling read probes where they are, and the walls'
-and the floor's planes are valid. coarse_grid and valid_mask are Task 4's first grids (z to the flat ceiling, the low
-faces invalid), kept for the tests of the lookup's rule.
+proof's own (z up to 9.8 m), so the dome and the space above the flat ceiling read probes where they are, every probe
+valid, with their planes off the walls and the floor (variant B, the ruling of 13 October: box_origin). coarse_grid and
+valid_mask are Task 4's first grids (z to the flat ceiling, the low faces invalid), kept for the tests of the lookup's
+rule and for the bands of the sky basis's K rule.
 """
 from __future__ import annotations
 
@@ -31,12 +32,30 @@ def valid_mask(P, hall, inset=0.02):
             & (P[:, 2] >= hall["floorZ"] + inset) & (P[:, 2] <= hall["ceilingZ"] - inset))
 
 
-def box_grid(hall, spacing, top):
-    """(P (M, 3), shape, origin): the probe grid over the probes' lookup box (Task 4d). Planes every `spacing` from the
-    hall box's low corner (x0, y0, floorZ), as coarse_grid lays them: in x and y up to the box's far walls, in z up to
-    the first plane at or above `top` (the lookup's top: store.Probes.lookup clamps z to 9.8 m), so every position the
-    lookup reads lies between two of its planes. Probe (ix ny + iy) nz + iz."""
-    lo = np.array([hall["x0"], hall["y0"], hall["floorZ"]], np.float64)
+PROOF_PLANE_Z = 0.1      # metres: the proof's lowest kept probe plane (03_bases.probe_grid: z from -0.1 every 0.2 m)
+
+
+def box_origin(hall, base):
+    """(3,) the grids' origin off the surfaces (Task 4d variant B, the ruling of 13 October): in x and y the hall box's
+    extent over whole `base` steps leaves a remainder, split evenly between the two walls (0.065 m in the Grand Hall at
+    0.5 m), and z is the proof's lowest kept plane (0.08 m above the Grand Hall's floor). A probe on a surface, or a few
+    centimetres from one, reads the sky bodies' bounce where it is spatially sharp (task-4d-report.md, the A/B)."""
+    if not float(hall["floorZ"]) < PROOF_PLANE_Z:
+        raise ValueError(f"the floor at {hall['floorZ']} m is not below the proof's lowest probe plane {PROOF_PLANE_Z} m")
+    lo = np.array([hall["x0"], hall["y0"]], np.float64)
+    extent = np.array([hall["x1"], hall["y1"]], np.float64) - lo
+    margin = (extent - base * np.floor(extent / base + 1e-9)) / 2
+    return np.array([*(lo + margin), PROOF_PLANE_Z], np.float64)
+
+
+def box_grid(hall, spacing, top, base):
+    """(P (M, 3), shape, origin): the probe grid over the probes' lookup box (Task 4d). Planes every `spacing` from
+    box_origin(hall, base), off the surfaces: in x and y up to the box's far walls, in z up to the first plane at or
+    above `top` (the lookup's top: store.Probes.lookup clamps z to 9.8 m). A position the lookup reads between a wall or
+    the floor and the outermost plane reads that plane (reference.trilinear clamps the fraction to [0, 1]). Both grids
+    take the 0.5 m grid's spacing as `base`, so the 1 m grid's planes are the 0.5 m grid's even planes. Probe
+    (ix ny + iy) nz + iz."""
+    lo = box_origin(hall, base)
     far = np.array([hall["x1"], hall["y1"]], np.float64)
     nxy = np.floor((far - lo[:2]) / spacing + 1e-9).astype(np.int64) + 1
     nz = int(np.ceil((float(top) - lo[2]) / spacing - 1e-9)) + 1

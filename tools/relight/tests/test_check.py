@@ -286,7 +286,7 @@ TOOL = ("5" * 40, "2026-10-11T00:00:00+01:00")
 BUILD = {"skins": None, "skinLight": None, "skinPackage": None, "host": "pc"}
 FINEST = ("env.sog", "1_0_0.sog", "1_0_1.sog")
 COARSE = ("0_0.sog", "0_1.sog")
-POCKET = np.array([2.75, 1.75, 0.75])   # the centre of the 0.5 m probe cell whose eight probes hold no light
+POCKET = np.array([2.75, 1.75, 0.75])   # inside the 0.5 m probe cell whose eight probes hold no light (build_hall)
 SKY_K = 2
 SH0_CODEBOOK = [(i / 255.0 - 0.5) / M.SH_C0 for i in range(256)]   # code i decodes to the stored byte i
 
@@ -522,9 +522,10 @@ def build_hall(root):
         arrays[f"{name}_horizon"] = np.full(360, 5.0, np.float32)
     _put_artifact(work, evidence, "windows.npz", "windows.json", arrays, windows=list(OUTLINES))
     # Both grids as the bake builds them (probes.box_grid and box_valid, as cmd_probes and cmd_sun_bounce do; Task 4d):
-    # 0.5 m and 1 m from the box's low corner up to the first plane at or above the lookup's top, 9.8 m, every probe
-    # inside the box's walls and on or above its floor valid, its low faces' planes included.
-    P05, shape05, origin05 = PR.box_grid(SYNTHETIC_BOX, 0.5, top=M.PROBE_LOOKUP_TOP)      # 7 x 5 x 21
+    # 0.5 m and 1 m from box_origin, off the surfaces (x 0.115 m and y 0.035 m from each wall, z from the proof's 0.1 m
+    # plane; variant B), up to the first plane at or above the lookup's top, 9.8 m, every probe valid. POCKET's splats
+    # lie inside the zeroed cell (x 2.615-3.115, y 1.535-2.035, z 0.6-1.1).
+    P05, shape05, origin05 = PR.box_grid(SYNTHETIC_BOX, 0.5, top=M.PROBE_LOOKUP_TOP, base=0.5)      # 7 x 5 x 21
     cubes = planes_kept(rng, (0.001, 0.05), PR.coarse_grid(SYNTHETIC_BOX, 0.5)[1], shape05, (9, 3, 6), 101).astype(np.float16)
     for ix in (5, 6):
         for iy in (3, 4):
@@ -533,7 +534,7 @@ def build_hall(root):
     _put_artifact(work, evidence, "probes-coarse.npz", "probes-check.json",
                   {"cubes": cubes, "valid": PR.box_valid(P05, SYNTHETIC_BOX), "origin": origin05,
                    "shape": np.asarray(shape05, np.int64), "spacing": np.float64(0.5)})
-    P1, shape1, origin1 = PR.box_grid(SYNTHETIC_BOX, 1.0, top=M.PROBE_LOOKUP_TOP)         # 4 x 3 x 11
+    P1, shape1, origin1 = PR.box_grid(SYNTHETIC_BOX, 1.0, top=M.PROBE_LOOKUP_TOP, base=0.5)         # 4 x 3 x 11
     centres = np.stack([rng.uniform(0.5, 2.9, 20), rng.uniform(1.0, 1.9, 20), rng.uniform(0.5, 2.0, 20)], 1)
     patches = sunbounce.Patches.from_arrays(centres, np.tile([0.0, -1.0, 0.0], (20, 1)), np.full(20, 0.25))
     basis = np.stack([planes_kept(rng, (2e-4, 4e-3), PR.coarse_grid(SYNTHETIC_BOX, 1.0)[1], shape1, (3, 6), 103 + k)
@@ -887,8 +888,9 @@ class SyntheticHall(unittest.TestCase):
         """Fix round 2: the package carries the proof's lookup box (the hall's box less 2 cm, up to 9.8 m) and every
         splat, the finest and the coarser, the embrasure and the env ones beyond the window wall included, reads valid
         probes there. On Task 4's first grid, read without the box, those beyond the wall read none; on Task 4d's grid
-        the wall's own plane is valid, so they read it either way, and the box still decides where: 2 cm inside the
-        wall, not on it."""
+        (variant B, the ruling of 13 October) the first y plane lies 0.035 m inside the wall, past the box's 2 cm, so
+        those beyond the wall read that plane alone, with the box or without it (reference.trilinear clamps the
+        fraction)."""
         self.assertEqual(self.pkg.manifest["probes"]["box"], LOOKUP_BOX)
         census = M._census(self.cfg)
         points = [np.asarray(self.fin["pos"], np.float64)] + [
@@ -901,10 +903,12 @@ class SyntheticHall(unittest.TestCase):
         self.assertGreater(int(beyond.sum()), 400)
         open_box = replace(self.model, probe_box_lo=np.full(3, -np.inf), probe_box_hi=np.full(3, np.inf))
         _idx, w_open = reference.trilinear(open_box, P[beyond])
-        np.testing.assert_allclose(w_open.sum(1), 1.0, rtol=0, atol=1e-12)          # Task 4d: the wall's plane is valid
-        _idx, w_box = reference.trilinear(self.model, P[beyond])
-        # the box reads 2 cm inside the wall: 0.04 of each splat's weight moves from the wall's plane to the next one in
-        self.assertGreaterEqual(float(np.abs(w_box - w_open).sum(1).min()), 0.08 - 1e-9)
+        np.testing.assert_allclose(w_open.sum(1), 1.0, rtol=0, atol=1e-12)          # Task 4d: every probe is valid
+        idx_box, w_box = reference.trilinear(self.model, P[beyond])
+        np.testing.assert_allclose(w_box, w_open, rtol=0, atol=1e-12)
+        ny, nz = int(self.model.probe_shape[1]), int(self.model.probe_shape[2])
+        iy = (idx_box // nz) % ny
+        self.assertTrue(bool((iy[w_box > 0] == 0).all()))                            # the wall-side plane alone
 
     def test_the_package_carries_the_proofs_keep_and_drops_the_bounce_where_it_finds_no_corner(self):
         """Fix round 3: probes.proofKeep is the proof's own grid and keep from probes.npz. The shown finest splats in

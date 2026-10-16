@@ -338,19 +338,39 @@ class BandRule(unittest.TestCase):
         self.assertAlmostEqual(below[1]["worstBright"], 0.1, places=6)
         self.assertAlmostEqual(gates["all"][0]["medianOfSuns"], 0.2, places=6)       # direction 0's median of four, 1's of three
 
-    def test_k_is_the_smallest_stable_in_every_band(self):
+    # the ruling of 13 October (Task 4d variant B): K is ruled from the measured band tables; every band off the
+    # surfaces must hold its stable margin at K, and the surface bands (walls, below) are reported, never gated
+    def test_the_ruled_k_holds_when_every_band_off_the_surfaces_is_stable_at_or_below_it(self):
         curve = Gate.curve
         by_band = {"all": curve([0.30, 0.19, 0.18, 0.17]), "interior": curve([0.30, 0.25, 0.19, 0.18]),
-                   "below": curve([0.19, 0.18, 0.17, 0.16])}
-        K, rule, starts = SB.choose_k_by_band(by_band)
-        self.assertEqual((K, rule), (3, "margin"))            # the interior's own stable K decides
-        self.assertEqual(starts, {"all": (2, "margin"), "interior": (3, "margin"), "below": (1, "margin")})
+                   "walls": curve([0.30, 0.25, 0.22, 0.21]), "below": curve([0.90, 0.80, 0.70, 0.60])}
+        K, rule, starts = SB.ruled_k(by_band, 3)
+        self.assertEqual((K, rule), (3, "ruled"))
+        self.assertEqual(starts["interior"], (3, "margin"))
+        self.assertEqual(starts["walls"], (2, "smallestPassing"))   # reported: the walls never hold the margin ..
+        self.assertEqual(starts["below"], (4, "none"))              # .. and the floor side never passes: neither decides
+        self.assertEqual(SB.ruled_k(by_band, 4)[:2], (4, "ruled"))
 
-    def test_a_band_without_a_stable_k_fails_the_rule(self):
+    def test_a_band_off_the_surfaces_stable_only_above_the_ruled_k_fails(self):
         curve = Gate.curve
-        K, rule, starts = SB.choose_k_by_band({"all": curve([0.30, 0.19, 0.18]), "dome": curve([0.30, 0.19, 0.21])})
+        by_band = {"all": curve([0.30, 0.19, 0.18, 0.17]), "interior": curve([0.30, 0.25, 0.19, 0.18])}
+        self.assertEqual(SB.ruled_k(by_band, 2)[:2], (None, "none"))
+
+    def test_a_band_off_the_surfaces_without_a_stable_k_fails(self):
+        curve = Gate.curve
+        K, rule, starts = SB.ruled_k({"all": curve([0.30, 0.19, 0.18]), "dome": curve([0.30, 0.19, 0.21])}, 3)
         self.assertEqual((K, rule), (None, "none"))
         self.assertEqual(starts["dome"], (2, "smallestPassing"))
+
+    def test_a_ruled_k_beyond_the_ks_tried_fails(self):
+        curve = Gate.curve
+        self.assertEqual(SB.ruled_k({"all": curve([0.30, 0.19, 0.18])}, 4)[:2], (None, "none"))
+
+    def test_a_draw_passes_on_the_bands_off_the_surfaces(self):
+        good, bad = {"pass": True}, {"pass": False}
+        self.assertTrue(SB.gated_pass({"all": good, "interior": good, "walls": bad, "below": bad}))
+        self.assertFalse(SB.gated_pass({"all": good, "dome": bad, "below": good}))
+        self.assertEqual(SB.SURFACE_BANDS, ("walls", "below"))
 
     def test_floor_texels_are_read_where_the_lookup_reads_them(self):
         # a 1 m grid whose low x face is invalid (Task 4's first grids): a texel 9 mm beyond that face finds no valid
