@@ -19,8 +19,6 @@ from typing import Any
 REQUIRED = (
     "torch",
     "gsplat",
-    "ppisp",
-    "lpips",
     "spz",
     "pye57",
     "pycolmap",

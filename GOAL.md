@@ -20,8 +20,8 @@ Blake, verbatim: "Upgrrade the splat and pytorch to the latest and inform our re
 - PPISP's trial is inconclusive at one seed, so `--ppisp` stays opt-in. Its raw render is 0.23 dB below the control's, so a PPISP-trained splat cannot ship unless the viewer applies its correction.
 
 **Images and old recipes:**
-- The RunPod image pins describe `omnitwin/trainer:gsplat-512d366b-pt2.14.1-cu132`, which is not yet built or pushed. Until it is, pods follow the runbook's plain-image path (`infra/runpod/RUNBOOK.md`).
-- Old recipes stay reproducible on `omnitwin/trainer:1.5.3-cu124` (gsplat 1.5.3, PyTorch 2.4.1, CUDA 12.4); the panorama floor lane keeps its paired 60k arms there. Compare results across the two environments only as such.
+- No trainer image exists for this environment yet. Its pins wait in draft [#94](https://github.com/codemaker66/omnitwin/pull/94) until the image is built and smoke-tested. Until then, new-environment pods follow the runbook's plain-image path (`infra/runpod/RUNBOOK.md`).
+- `infra/runpod/Dockerfile` and the pod template still describe `omnitwin/trainer:1.5.3-cu124` (gsplat 1.5.3, PyTorch 2.4.1, CUDA 12.4). Old recipes stay reproducible on that image; the panorama floor lane keeps its paired 60k arms there. Compare results across the two environments only as such.
 
 D-016's rule stands: splat training runs on RunPod, never on the local PC. Status: T-655 in [the task list](docs/state/tasks.md) and the session logs of [13 October](docs/sessions/2026-10-13.md) and [16 October](docs/sessions/2026-10-16.md).
 
