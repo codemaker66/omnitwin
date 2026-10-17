@@ -1,84 +1,79 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import { ActivityIndicator } from "../components/shared/Activity.js";
+import { useCallback, useEffect, useId, useState, type ReactElement } from "react";
 import { useParams } from "react-router-dom";
+import { Phone, Printer } from "lucide-react";
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import {
   acknowledgeSupplierShare,
   getSupplierShare,
   type CreateSupplierAcknowledgementInput,
-  type SupplierAcknowledgementStatus,
   type SupplierSafePackView,
 } from "../api/supplier-coordination.js";
+import {
+  clockTime,
+  dayAndTime,
+  longDay,
+  roomList,
+  shortDay,
+  updatedWords,
+} from "../components/supplier-passes/supplier-pass-words.js";
 import "./SupplierPortalPage.css";
 
+// ---------------------------------------------------------------------------
+// The supplier's own page (A Door for Everyone Outside, stage 1).
+//
+// Opened from a link a member of the venue team sent, with no account. It
+// says, in the order someone needs it, the day and room, when to arrive,
+// where to go, their part, and who to ask; then one main button, "I've read
+// it". Nothing on it uses the venue's system words, and the name given with
+// a reply is shown to the venue as given by whoever holds the link, never as
+// a checked identity.
+// ---------------------------------------------------------------------------
+
 type LoadState =
-  | { kind: "loading" }
-  | { kind: "error" }
-  | { kind: "ready"; pack: SupplierSafePackView };
+  | { readonly kind: "loading" }
+  | { readonly kind: "error" }
+  | { readonly kind: "ready"; readonly pack: SupplierSafePackView };
 
-const STATUS_LABELS: Readonly<Record<SupplierSafePackView["status"], string>> = {
-  draft: "Draft",
-  issued: "Issued",
-  acknowledged: "Acknowledged",
-  changes_requested: "Clarification requested",
-  revoked: "Withdrawn",
-  expired: "Expired",
-};
+type ReplyStatus = CreateSupplierAcknowledgementInput["status"];
 
-const ITEM_KIND_LABELS: Readonly<Record<SupplierSafePackView["items"][number]["kind"], string>> = {
-  requirement: "Requirement",
-  load_in_window: "Load-in",
-  handoff_instruction: "Handoff",
-  contact_note: "Contact",
-};
+type Contact = { readonly name: string; readonly phone: string | null } | null;
 
-const ACK_STATUS_LABELS: Readonly<Record<SupplierAcknowledgementStatus, string>> = {
-  acknowledged: "Acknowledged",
-  needs_clarification: "Needs clarification",
-};
+const DEFAULT_ZONE = "Europe/London";
 
-function formatDateTime(iso: string | null): string | null {
-  if (iso === null) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function telHref(phone: string): string {
+  return `tel:${phone.replace(/[^\d+]/gu, "")}`;
 }
 
-function statusAllowsAcknowledgement(status: SupplierSafePackView["status"]): boolean {
-  return status === "issued" || status === "changes_requested";
+function askWords(contact: Contact): string {
+  return contact === null ? "the venue team" : contact.name;
 }
 
-function sourceVersionLabel(pack: SupplierSafePackView): string {
-  const compiled = formatDateTime(pack.source.compiledAt);
-  return compiled === null
-    ? `Handoff v${String(pack.source.handoffVersion)}`
-    : `Handoff v${String(pack.source.handoffVersion)} - ${compiled}`;
+/** Who to turn to when a reply did not reach the venue. */
+function fallbackWords(contact: Contact): string {
+  if (contact === null) return ".";
+  return contact.phone === null ? `, or ask for ${contact.name}.` : `, or ring ${contact.name} on ${contact.phone}.`;
 }
 
-function newestAcknowledgementLabel(acknowledgements: readonly SupplierSafePackView["acknowledgements"][number][]): string | null {
-  const latest = acknowledgements[acknowledgements.length - 1];
-  if (latest === undefined) return null;
-  const when = formatDateTime(latest.createdAt);
-  const actor = latest.acknowledgedByName ?? "Supplier contact";
-  return when === null ? actor : `${actor} - ${when}`;
+function ChangeList({ label, items }: { readonly label: string; readonly items: readonly string[] }): ReactElement | null {
+  if (items.length === 0) return null;
+  return (
+    <div className="supplier-pass__change">
+      <h3>{label}</h3>
+      <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>
+    </div>
+  );
 }
 
 export function SupplierPortalPage(): ReactElement {
   const { token } = useParams<{ token?: string }>();
+  const questionId = useId();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  const [ackStatus, setAckStatus] = useState<SupplierAcknowledgementStatus>("acknowledged");
-  const [ackName, setAckName] = useState("");
-  const [ackEmail, setAckEmail] = useState("");
-  const [ackNote, setAckNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  // What was last sent, so the page can say who heard it.
-  const [sentStatus, setSentStatus] = useState<CreateSupplierAcknowledgementInput["status"] | null>(null);
+  const [name, setName] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [sending, setSending] = useState<ReplyStatus | null>(null);
+  const [sendError, setSendError] = useState(false);
+  const [sent, setSent] = useState<ReplyStatus | null>(null);
 
   useEffect(() => {
     if (token === undefined || token.length === 0) {
@@ -88,7 +83,10 @@ export function SupplierPortalPage(): ReactElement {
     let cancelled = false;
     getSupplierShare(token)
       .then((pack) => {
-        if (!cancelled) setState({ kind: "ready", pack });
+        if (cancelled) return;
+        setState({ kind: "ready", pack });
+        // The name the venue addressed the brief to, ready to confirm or change.
+        setName((current) => current.length > 0 ? current : pack.passDetails?.addressedTo ?? pack.contactName ?? "");
       })
       .catch(() => {
         if (!cancelled) setState({ kind: "error" });
@@ -98,307 +96,290 @@ export function SupplierPortalPage(): ReactElement {
     };
   }, [token]);
 
-  const submitDisabled = useMemo(() => {
-    const hasIdentity = ackName.trim().length > 0 || ackEmail.trim().length > 0;
-    const hasClarificationNote = ackStatus === "acknowledged" || ackNote.trim().length > 0;
-    return submitting || !hasIdentity || !hasClarificationNote;
-  }, [ackEmail, ackName, ackNote, ackStatus, submitting]);
-
-  const submitAcknowledgement = useCallback(() => {
-    if (token === undefined || token.length === 0 || state.kind !== "ready" || submitDisabled) return;
-    setSubmitting(true);
-    setSubmitError(null);
-    setSentStatus(null);
-
+  const send = useCallback((status: ReplyStatus) => {
+    if (token === undefined || token.length === 0 || state.kind !== "ready" || sending !== null) return;
+    const given = name.trim();
+    const note = question.trim();
+    if (given.length === 0) return;
+    if (status === "needs_clarification" && note.length === 0) return;
+    setSending(status);
+    setSendError(false);
+    setSent(null);
     const input: CreateSupplierAcknowledgementInput = {
-      status: ackStatus,
-      acknowledgedByName: ackName.trim().length > 0 ? ackName.trim() : null,
-      acknowledgedByEmail: ackEmail.trim().length > 0 ? ackEmail.trim() : null,
-      note: ackNote.trim().length > 0 ? ackNote.trim() : null,
+      status,
+      acknowledgedByName: given,
+      acknowledgedByEmail: null,
+      note: status === "needs_clarification" ? note : null,
     };
-
     acknowledgeSupplierShare(token, input)
       .then(() => {
         // Sent: the venue's staff and hallkeepers are notified with these
         // words (routes/supplier-coordination.ts), whatever the re-read does.
-        setSentStatus(input.status);
-        setAckNote("");
-        return getSupplierShare(token);
-      })
-      .then((pack) => {
-        setState({ kind: "ready", pack });
+        setSent(status);
+        if (status === "needs_clarification") {
+          setQuestion("");
+          setAsking(false);
+        }
+        return getSupplierShare(token).then((pack) => { setState({ kind: "ready", pack }); }, () => undefined);
       })
       .catch(() => {
-        setSubmitError("We could not send this supplier response. Please check the details and try again.");
+        setSendError(true);
       })
       .finally(() => {
-        setSubmitting(false);
+        setSending(null);
       });
-  }, [ackEmail, ackName, ackNote, ackStatus, state, submitDisabled, token]);
+  }, [name, question, sending, state.kind, token]);
 
   if (state.kind === "loading") {
     return (
-      <main className="supplier-portal" aria-label="Supplier handoff">
-        <section className="supplier-portal__state" role="status" aria-live="polite">
-          <ActivityIndicator size={64} />
-          <h1>Loading supplier handoff</h1>
-        </section>
+      <main className="supplier-pass supplier-pass--centred" aria-label="Your brief">
+        <ActivityStatus variant="panel">Opening your brief…</ActivityStatus>
       </main>
     );
   }
 
   if (state.kind === "error") {
     return (
-      <main className="supplier-portal" aria-label="Supplier handoff">
-        <section className="supplier-portal__state">
-          <h1>This supplier link is not available</h1>
-          <p>This link may have expired. Ask the venue team for the current pack.</p>
+      <main className="supplier-pass supplier-pass--centred" aria-label="Your brief">
+        <section className="supplier-pass__sheet supplier-pass__closed">
+          <h1>This link no longer opens</h1>
+          <p>
+            It may have reached its end date, or the venue may have sent you a newer link. Ask the person at the venue who sent it for the current one.
+          </p>
         </section>
       </main>
     );
   }
 
   const { pack } = state;
-  const issuedAt = formatDateTime(pack.issuedAt);
-  const expiresAt = formatDateTime(pack.expiresAt);
-  const latestAcknowledgement = newestAcknowledgementLabel(pack.acknowledgements);
-  const canAcknowledge = statusAllowsAcknowledgement(pack.status);
+  const details = pack.passDetails;
+  const timeZone = details?.venueTimeZone ?? DEFAULT_ZONE;
+  const contact: Contact = details?.venueContact ?? null;
+  const venue = pack.venueName ?? "The venue";
+  // The day only: the Diary's hours include the room's setup, so they are
+  // not the supplier's time. Their own arrival windows are.
+  const day = longDay(details?.eventStartsAt, timeZone);
+  const rooms = roomList(details?.rooms ?? []);
+  const address = details?.venueAddress ?? null;
+  const addressedTo = details?.addressedTo ?? pack.contactName;
+  const updated = updatedWords(details?.updatedAt ?? pack.issuedAt, timeZone);
+  const changes = details?.changesForYou ?? null;
+  const planChanged = details?.planChangedAt ?? null;
+  const arrivals = pack.items.filter((item) => item.arrivalWindow !== null);
+  const until = shortDay(pack.expiresAt, timeZone);
+  const replies = [...pack.acknowledgements].reverse();
+  const lastRead = replies.find((ack) => ack.status === "acknowledged") ?? null;
+  const nameMissing = name.trim().length === 0;
 
   return (
-    <main className="supplier-portal" aria-label="Supplier handoff">
-      <div className="supplier-portal__shell">
-        <section className="supplier-portal__hero">
-          <div className="supplier-portal__headline">
-            <p className="supplier-portal__label">{pack.venueName ?? "Venue supplier handoff"}</p>
-            <h1 className="supplier-portal__title">{pack.title}</h1>
-            <p className="supplier-portal__subline">{pack.supplierNotice}</p>
-            <div className="supplier-portal__source-grid" aria-label="Source references">
-              <div className="supplier-portal__source-cell">
-                <span>Source</span>
-                <strong>{pack.source.sourceLabel}</strong>
-              </div>
-              <div className="supplier-portal__source-cell">
-                <span>Compiled</span>
-                <strong>{sourceVersionLabel(pack)}</strong>
-              </div>
-              <div className="supplier-portal__source-cell">
-                <span>Snapshot</span>
-                <strong>{pack.source.snapshotHashPrefix}</strong>
-              </div>
-            </div>
-          </div>
+    <main className="supplier-pass" aria-label="Your brief">
+      <article className="supplier-pass__sheet">
+        <header className="supplier-pass__head">
+          <p className="supplier-pass__venue">{venue}</p>
+          <h1 className="supplier-pass__title">{pack.title}</h1>
+          {addressedTo !== null && addressedTo !== pack.title && <p className="supplier-pass__for">For {addressedTo}</p>}
+          {(day !== null || rooms !== null) && (
+            <p className="supplier-pass__when">{[day, rooms].filter((part): part is string => part !== null).join(" · ")}</p>
+          )}
+          {updated !== null && (
+            <p className="supplier-pass__updated">
+              {updated}
+              {changes !== null && <> · <a href="#what-changed">what changed for you</a></>}
+            </p>
+          )}
+        </header>
 
-          <aside className="supplier-portal__panel supplier-portal__contact" aria-label="Supplier contact and status">
-            <p className="supplier-portal__label">Supplier pack</p>
-            <div className="supplier-portal__contact-list">
-              <div className="supplier-portal__contact-row">
-                <span>Status</span>
-                <strong><span className="supplier-portal__status">{STATUS_LABELS[pack.status]}</span></strong>
-              </div>
-              <div className="supplier-portal__contact-row">
-                <span>Supplier</span>
-                <strong>{pack.supplierName ?? "Supplier contact"}</strong>
-              </div>
-              {/* The pack's contact is who it is addressed to: it defaults to
-                  the supplier's own contact, so it was wrong to call it the
-                  venue's. The venue hears through the response below. */}
-              <div className="supplier-portal__contact-row">
-                <span>From</span>
-                <strong>{pack.venueName ?? "The venue team"}</strong>
-              </div>
-              <div className="supplier-portal__contact-row">
-                <span>Addressed to</span>
-                <strong>{pack.contactName ?? pack.supplierName ?? "Your team"}</strong>
-              </div>
-              {pack.contactEmail !== null ? (
-                <div className="supplier-portal__contact-row">
-                  <span>Email</span>
-                  <strong>{pack.contactEmail}</strong>
-                </div>
-              ) : null}
-              <div className="supplier-portal__contact-row">
-                <span>Issued</span>
-                <strong>{issuedAt ?? "Not recorded"}</strong>
-              </div>
-              <div className="supplier-portal__contact-row">
-                <span>Expires</span>
-                <strong>{expiresAt ?? "No expiry set"}</strong>
-              </div>
-            </div>
-          </aside>
-        </section>
+        {planChanged !== null && (
+          <p className="supplier-pass__stale" role="note">
+            The venue's plan changed on {shortDay(planChanged, timeZone)} at {clockTime(planChanged, timeZone)}, after this brief was made. Check with {askWords(contact)} before you arrive.
+          </p>
+        )}
 
-        <section className="supplier-portal__main">
-          <div className="supplier-portal__stack">
-            <section className="supplier-portal__panel" aria-label="Changes since previous handoff">
-              <p className="supplier-portal__label">Changes since previous handoff</p>
-              <h2 className="supplier-portal__section-title">Current planning delta</h2>
-              <p className="supplier-portal__copy">{pack.changesSincePreviousHandoff.summary}</p>
-              <div className="supplier-portal__change-strip">
-                <div className="supplier-portal__change-stat">
-                  <strong>{pack.changesSincePreviousHandoff.addedCount}</strong>
-                  <span>Added line items</span>
-                </div>
-                <div className="supplier-portal__change-stat">
-                  <strong>{pack.changesSincePreviousHandoff.changedCount}</strong>
-                  <span>Changed line items</span>
-                </div>
-                <div className="supplier-portal__change-stat">
-                  <strong>{pack.changesSincePreviousHandoff.removedCount}</strong>
-                  <span>Removed line items</span>
-                </div>
-              </div>
-            </section>
-
-            <section className="supplier-portal__panel" aria-label="Supplier requirements">
-              <p className="supplier-portal__label">Supplier scope</p>
-              <h2 className="supplier-portal__section-title">Requirements and arrival windows</h2>
-              <div className="supplier-portal__item-list">
-                {pack.items.map((item) => (
-                  <article className="supplier-portal__item" key={`${String(item.sortOrder)}-${item.title}`}>
-                    <div className="supplier-portal__item-header">
-                      <h3>{item.title}</h3>
-                      <span className="supplier-portal__item-kind">{ITEM_KIND_LABELS[item.kind]}</span>
-                    </div>
-                    <p className="supplier-portal__copy">{item.detail}</p>
-                    <div className="supplier-portal__meta">
-                      <span>{item.arrivalWindow ?? "Arrival window to confirm with venue"}</span>
-                      <span>{item.sourceRef ?? "Source reference retained by venue"}</span>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className="supplier-portal__panel supplier-portal__notice" aria-label="Planning note">
-              <p className="supplier-portal__copy">
-                This supplier view is a planning handoff for coordination. Timing, access, delivery sequence, and setup details remain subject to venue-team confirmation.
-              </p>
-            </section>
-          </div>
-
-          <aside className="supplier-portal__stack">
-            <section className="supplier-portal__panel" aria-label="Acknowledgement state">
-              <p className="supplier-portal__label">Acknowledgement</p>
-              <h2 className="supplier-portal__section-title">
-                {latestAcknowledgement === null ? "Awaiting supplier response" : "Latest response"}
-              </h2>
-              {latestAcknowledgement === null ? (
-                <p className="supplier-portal__copy">No acknowledgement yet.</p>
-              ) : (
-                <p className="supplier-portal__copy">{latestAcknowledgement}</p>
-              )}
-
-              {pack.acknowledgements.length > 0 ? (
-                <div className="supplier-portal__ack-list">
-                  {pack.acknowledgements.map((ack) => (
-                    <div className="supplier-portal__ack" key={`${ack.createdAt}-${ack.acknowledgedByName ?? "supplier"}`}>
-                      <strong>{ACK_STATUS_LABELS[ack.status]}</strong>
-                      <span>{ack.acknowledgedByName ?? "Supplier contact"} - {formatDateTime(ack.createdAt) ?? "time not recorded"}</span>
-                      {ack.note !== null ? <p className="supplier-portal__copy">{ack.note}</p> : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </section>
-
-            {/* Outside the form: an acknowledgement closes the pack, and the
-                form with it, but the supplier still hears who was told. */}
-            {sentStatus !== null ? (
-              <p className="supplier-portal__panel supplier-portal__copy" role="status">
-                {sentStatus === "needs_clarification"
-                  ? `Sent. ${pack.venueName ?? "The venue"}'s team has been notified with your question.`
-                  : `Thank you. ${pack.venueName ?? "The venue"}'s team has been told you have the handoff.`}
-              </p>
-            ) : null}
-
-            {canAcknowledge ? (
-              <section className="supplier-portal__panel" aria-label="Respond to supplier handoff">
-                <p className="supplier-portal__label">Respond</p>
-                <h2 className="supplier-portal__section-title">Confirm receipt</h2>
-                <div className="supplier-portal__form">
-                  <fieldset className="supplier-portal__choice-group">
-                    <legend className="supplier-portal__legend">Response</legend>
-                    <label className="supplier-portal__choice">
-                      <input
-                        type="radio"
-                        name="supplier-ack-status"
-                        value="acknowledged"
-                        checked={ackStatus === "acknowledged"}
-                        onChange={() => { setAckStatus("acknowledged"); }}
-                      />
-                      Acknowledge handoff
-                    </label>
-                    <label className="supplier-portal__choice">
-                      <input
-                        type="radio"
-                        name="supplier-ack-status"
-                        value="needs_clarification"
-                        checked={ackStatus === "needs_clarification"}
-                        onChange={() => { setAckStatus("needs_clarification"); }}
-                      />
-                      Need clarification
-                    </label>
-                  </fieldset>
-
-                  <div className="supplier-portal__field">
-                    <label htmlFor="supplier-ack-name">Name</label>
-                    <input
-                      id="supplier-ack-name"
-                      value={ackName}
-                      onChange={(event) => { setAckName(event.target.value); }}
-                      maxLength={160}
-                      autoComplete="name"
-                    />
-                  </div>
-
-                  <div className="supplier-portal__field">
-                    <label htmlFor="supplier-ack-email">Email</label>
-                    <input
-                      id="supplier-ack-email"
-                      value={ackEmail}
-                      onChange={(event) => { setAckEmail(event.target.value); }}
-                      maxLength={255}
-                      autoComplete="email"
-                      inputMode="email"
-                    />
-                  </div>
-
-                  <div className="supplier-portal__field">
-                    <label htmlFor="supplier-ack-note">
-                      {ackStatus === "needs_clarification" ? "Clarification needed" : "Note for the venue team"}
-                    </label>
-                    <textarea
-                      id="supplier-ack-note"
-                      value={ackNote}
-                      onChange={(event) => { setAckNote(event.target.value); }}
-                      maxLength={4000}
-                    />
-                  </div>
-
-                  <button
-                    className="supplier-portal__button"
-                    type="button"
-                    onClick={submitAcknowledgement}
-                    disabled={submitDisabled}
-                    aria-busy={submitting}
-                  >
-                    {submitting && <ActivityIndicator size={20} />}
-                    {ackStatus === "acknowledged" ? "Acknowledge handoff" : "Send clarification request"}
-                  </button>
-
-                  {submitError !== null ? <div className="supplier-portal__alert" role="alert">{submitError}</div> : null}
-                </div>
-              </section>
+        {changes !== null && (
+          <section className="supplier-pass__section" id="what-changed" aria-labelledby="what-changed-heading">
+            <h2 id="what-changed-heading">What changed for you</h2>
+            <p>Since your last brief, made {dayAndTime(changes.since, timeZone) ?? "earlier"}.</p>
+            {changes.added.length + changes.changed.length + changes.removed.length === 0 ? (
+              <p>Nothing in your part changed.</p>
             ) : (
-              <section className="supplier-portal__panel" aria-label="Response closed">
-                <p className="supplier-portal__label">Response closed</p>
-                <p className="supplier-portal__copy">No response requested.</p>
-              </section>
+              <div className="supplier-pass__changes">
+                <ChangeList label="New" items={changes.added} />
+                <ChangeList label="Changed" items={changes.changed} />
+                <ChangeList label="No longer yours" items={changes.removed} />
+              </div>
             )}
-          </aside>
+          </section>
+        )}
+
+        <section className="supplier-pass__section" aria-labelledby="before-heading">
+          <h2 id="before-heading">Before you come</h2>
+          {day !== null && (
+            <p>The event is on {day}{rooms === null ? "" : `, in the ${rooms}`}.</p>
+          )}
+          {arrivals.length === 0 ? (
+            <p>No arrival time is on your brief yet. Agree one with {askWords(contact)}.</p>
+          ) : (
+            <ul className="supplier-pass__arrivals">
+              {arrivals.map((item) => (
+                <li key={`${String(item.sortOrder)}-${item.title}`}>
+                  <strong>Arrive {item.arrivalWindow}</strong>
+                  <span>{item.title}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
-      </div>
+
+        <section className="supplier-pass__section" aria-labelledby="door-heading">
+          <h2 id="door-heading">At the door</h2>
+          <p className="supplier-pass__address">{address === null ? `${venue}.` : `${venue}, ${address}`}</p>
+          <p>{contact === null ? "Tell the door who you are and what you are here for." : `Ask for ${contact.name}.`}</p>
+        </section>
+
+        <section className="supplier-pass__section" aria-labelledby="part-heading">
+          <h2 id="part-heading">Your part</h2>
+          <ul className="supplier-pass__items">
+            {pack.items.map((item) => (
+              <li key={`${String(item.sortOrder)}-${item.title}`}>
+                <h3>{item.title}</h3>
+                <p>{item.detail}</p>
+                {item.arrivalWindow !== null && <p className="supplier-pass__item-time">Arrive {item.arrivalWindow}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="supplier-pass__contact" data-register="forest" aria-labelledby="ask-heading">
+          <h2 id="ask-heading">If something comes up</h2>
+          {contact === null ? (
+            <p>Send the venue team a question below; it reaches the people running the day.</p>
+          ) : contact.phone === null ? (
+            <p>Ask for {contact.name} at the venue, or send a question below.</p>
+          ) : (
+            <>
+              <p>Ring {contact.name}, or send a question below.</p>
+              <a className="supplier-pass__call" href={telHref(contact.phone)}>
+                <Phone aria-hidden="true" size={20} />
+                Call {contact.name}, {contact.phone}
+              </a>
+            </>
+          )}
+        </section>
+
+        <section className="supplier-pass__section supplier-pass__reply" aria-labelledby="reply-heading">
+          <h2 id="reply-heading">Tell the venue</h2>
+          {lastRead === null ? (
+            <p>When you have read your part, say so here. The venue sees it straight away.</p>
+          ) : (
+            <p>
+              You marked this as read on {dayAndTime(lastRead.createdAt, timeZone) ?? "an earlier day"}
+              {lastRead.acknowledgedByName === null ? "" : `, as ${lastRead.acknowledgedByName}`}.
+            </p>
+          )}
+
+          <div className="supplier-pass__field">
+            <label htmlFor="supplier-pass-name">Your name</label>
+            <input
+              id="supplier-pass-name"
+              value={name}
+              onChange={(event) => { setName(event.target.value); }}
+              maxLength={160}
+              autoComplete="name"
+              aria-describedby="supplier-pass-name-hint"
+            />
+            <small id="supplier-pass-name-hint">The venue sees this name with your reply, as given by whoever holds this link.</small>
+          </div>
+
+          <div className="supplier-pass__actions">
+            {lastRead === null && (
+              <button
+                type="button"
+                className="supplier-pass__button supplier-pass__button--primary"
+                disabled={sending !== null || nameMissing}
+                aria-busy={sending === "acknowledged"}
+                onClick={() => { send("acknowledged"); }}
+              >
+                {sending === "acknowledged" && <ActivityIndicator size={20} />}
+                {sending === "acknowledged" ? "Sending…" : "I've read it"}
+              </button>
+            )}
+            <button
+              type="button"
+              className="supplier-pass__button"
+              aria-expanded={asking}
+              aria-controls={questionId}
+              disabled={sending !== null}
+              onClick={() => { setAsking((open) => !open); }}
+            >
+              {asking ? "Close the question" : "Ask a question"}
+            </button>
+          </div>
+
+          {asking && (
+            <div className="supplier-pass__question" id={questionId}>
+              <div className="supplier-pass__field">
+                <label htmlFor="supplier-pass-question">Your question</label>
+                <textarea
+                  id="supplier-pass-question"
+                  value={question}
+                  onChange={(event) => { setQuestion(event.target.value); }}
+                  maxLength={4000}
+                  rows={4}
+                />
+              </div>
+              <button
+                type="button"
+                className="supplier-pass__button supplier-pass__button--primary"
+                disabled={sending !== null || nameMissing || question.trim().length === 0}
+                aria-busy={sending === "needs_clarification"}
+                onClick={() => { send("needs_clarification"); }}
+              >
+                {sending === "needs_clarification" && <ActivityIndicator size={20} />}
+                {sending === "needs_clarification" ? "Sending…" : "Send my question"}
+              </button>
+            </div>
+          )}
+
+          {nameMissing && <p className="supplier-pass__hint">Write your name first, so the venue knows who replied.</p>}
+
+          <p className="supplier-pass__sent" role="status">
+            {sent === null ? "" : sent === "acknowledged"
+              ? `Sent. ${venue}'s team can see you have read this.`
+              : `Sent. ${venue}'s team has your question.${contact === null || contact.phone === null ? "" : ` If it is urgent, ring ${contact.name} on ${contact.phone}.`}`}
+          </p>
+          {sendError && (
+            <p className="supplier-pass__error" role="alert">
+              Your reply did not reach the venue. Check your signal and try again{fallbackWords(contact)}
+            </p>
+          )}
+
+          {replies.length > 0 && (
+            <div className="supplier-pass__replies">
+              <h3>Your replies</h3>
+              <ul>
+                {replies.map((ack) => (
+                  <li key={`${ack.createdAt}-${ack.status}`}>
+                    <strong>{ack.status === "acknowledged" ? "Read" : "Question"}</strong>
+                    <span>
+                      {dayAndTime(ack.createdAt, timeZone) ?? ""}
+                      {ack.acknowledgedByName === null ? "" : ` · ${ack.acknowledgedByName}`}
+                    </span>
+                    {ack.note !== null && <p>{ack.note}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+
+        <footer className="supplier-pass__foot">
+          <p>This page shows only your part of the event{until === null ? "." : `, and works until ${until}.`}</p>
+          <button type="button" className="supplier-pass__button supplier-pass__print" onClick={() => { window.print(); }}>
+            <Printer aria-hidden="true" size={18} />
+            Print or save this brief
+          </button>
+        </footer>
+      </article>
     </main>
   );
 }
