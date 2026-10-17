@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SupplierPortalPage } from "../pages/SupplierPortalPage.js";
+import { ApiError } from "../api/client.js";
 import { SupplierSafePackViewSchema, type SupplierAcknowledgement, type SupplierSafePackView } from "../api/supplier-coordination.js";
 
 const {
@@ -307,11 +308,32 @@ describe("SupplierPortalPage", () => {
   });
 
   it("says a link that no longer opens, and where to get the current one", async () => {
-    mockGetSupplierShare.mockRejectedValue(new Error("404"));
+    mockGetSupplierShare.mockRejectedValue(new ApiError(404, "Supplier pack not found", "NOT_FOUND"));
     renderSupplierPortal();
 
     expect(await screen.findByRole("heading", { name: "This link no longer opens" })).toBeTruthy();
     expect(screen.getByText(/Ask the person at the venue who sent it for the current one/u)).toBeTruthy();
+  });
+
+  it("never calls a link dead when the page could not reach the venue, and tries again", async () => {
+    mockGetSupplierShare.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    mockGetSupplierShare.mockResolvedValueOnce(fixturePack());
+    renderSupplierPortal();
+
+    expect(await screen.findByRole("heading", { name: "Your brief did not load" })).toBeTruthy();
+    expect(screen.queryByText("This link no longer opens")).toBeNull();
+    expect(screen.getByText(/Check your signal and try again/u)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Bloom & Co" })).toBeTruthy();
+    expect(mockGetSupplierShare).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a server failure as unreachable, not as a dead link", async () => {
+    mockGetSupplierShare.mockRejectedValue(new ApiError(503, "Service unavailable", "UNAVAILABLE"));
+    renderSupplierPortal();
+
+    expect(await screen.findByRole("heading", { name: "Your brief did not load" })).toBeTruthy();
   });
 });
 

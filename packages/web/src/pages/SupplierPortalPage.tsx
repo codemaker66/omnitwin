@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState, type ReactElement } from "reac
 import { useParams } from "react-router-dom";
 import { Phone, Printer } from "lucide-react";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
+import { ApiError } from "../api/client.js";
 import {
   acknowledgeSupplierShare,
   getSupplierShare,
@@ -31,7 +32,10 @@ import "./SupplierPortalPage.css";
 
 type LoadState =
   | { readonly kind: "loading" }
-  | { readonly kind: "error" }
+  /** "closed": the API said the link does not open (withdrawn, replaced,
+   *  ended or never valid). "unreachable": the page could not ask, so it
+   *  must not claim the link is dead. */
+  | { readonly kind: "error"; readonly reason: "closed" | "unreachable" }
   | { readonly kind: "ready"; readonly pack: SupplierSafePackView };
 
 type ReplyStatus = CreateSupplierAcknowledgementInput["status"];
@@ -74,13 +78,15 @@ export function SupplierPortalPage(): ReactElement {
   const [sending, setSending] = useState<ReplyStatus | null>(null);
   const [sendError, setSendError] = useState(false);
   const [sent, setSent] = useState<ReplyStatus | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (token === undefined || token.length === 0) {
-      setState({ kind: "error" });
+      setState({ kind: "error", reason: "closed" });
       return;
     }
     let cancelled = false;
+    setState({ kind: "loading" });
     getSupplierShare(token)
       .then((pack) => {
         if (cancelled) return;
@@ -88,13 +94,15 @@ export function SupplierPortalPage(): ReactElement {
         // The name the venue addressed the brief to, ready to confirm or change.
         setName((current) => current.length > 0 ? current : pack.passDetails?.addressedTo ?? pack.contactName ?? "");
       })
-      .catch(() => {
-        if (!cancelled) setState({ kind: "error" });
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const closed = err instanceof ApiError && (err.status === 404 || err.status === 400 || err.status === 410);
+        setState({ kind: "error", reason: closed ? "closed" : "unreachable" });
       });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, attempt]);
 
   const send = useCallback((status: ReplyStatus) => {
     if (token === undefined || token.length === 0 || state.kind !== "ready" || sending !== null) return;
@@ -134,6 +142,26 @@ export function SupplierPortalPage(): ReactElement {
     return (
       <main className="supplier-pass supplier-pass--centred" aria-label="Your brief">
         <ActivityStatus variant="panel">Opening your brief…</ActivityStatus>
+      </main>
+    );
+  }
+
+  if (state.kind === "error" && state.reason === "unreachable") {
+    return (
+      <main className="supplier-pass supplier-pass--centred" aria-label="Your brief">
+        <section className="supplier-pass__sheet supplier-pass__closed">
+          <h1>Your brief did not load</h1>
+          <p>
+            The page could not reach the venue just now. Check your signal and try again.
+          </p>
+          <button
+            type="button"
+            className="supplier-pass__button supplier-pass__button--primary supplier-pass__retry"
+            onClick={() => { setAttempt((count) => count + 1); }}
+          >
+            Try again
+          </button>
+        </section>
       </main>
     );
   }

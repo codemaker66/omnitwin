@@ -43,6 +43,7 @@
   margin: 0 0 12px;
 }
 .supplier-pass__closed p { margin: 0; }
+.supplier-pass__closed .supplier-pass__retry { margin-top: 20px; }
 
 /* -- The head: who, when and where, in the house serif ------------------- */
 
