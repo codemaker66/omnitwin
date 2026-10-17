@@ -617,6 +617,13 @@
       "when": 1791558000000,
       "tag": "0089_pricing_rule_windows",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1791644400000,
+      "tag": "0090_booking_event_bind",
+      "breakpoints": true
     }
   ]
 }

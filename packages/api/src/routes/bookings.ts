@@ -32,6 +32,7 @@ import {
   executeDiaryCommand,
   realDiaryCommandDeps,
 } from "../services/diary-commands.js";
+import { bindBookingToEvent, syncEventStatus } from "../services/event-binding.js";
 import { canReadDiary } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
@@ -297,9 +298,11 @@ export async function bookingRoutes(
   // hold, always hygienic — the schema requires the quartet. The enquiry's
   // own lifecycle is deliberately untouched: the commitment axis and the
   // enquiry axis stay independent (Canon §1); provenance lives on
-  // bookings.enquiry_id. REST-only for now: the tray conversion is not a
-  // board-latency surface, so it is deliberately NOT a ws command kind
-  // (architecture doc §13).
+  // bookings.enquiry_id. Since the bind (migration 0090) the hold is born
+  // with its event: the enquiry's event when it already has one, otherwise a
+  // new one (services/event-binding.ts). REST-only for now: the tray
+  // conversion is not a board-latency surface, so it is deliberately NOT a
+  // ws command kind (architecture doc §13).
   server.post("/from-enquiry", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = ConvertEnquirySchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
@@ -344,36 +347,62 @@ export async function bookingRoutes(
     const occasion = occasionLabel(enquiry.eventType);
     const fallbackTitle = `${enquiry.name}${occasion === null ? "" : ` — ${occasion}`}`;
     const title = input.title ?? fallbackTitle.slice(0, 200);
+    const eventType = input.eventType ?? enquiry.eventType;
+    const startsAt = new Date(input.startsAt);
+    const endsAt = new Date(input.endsAt);
 
     try {
-      const [created]: (BookingRow | undefined)[] = await db
-        .insert(bookings)
-        .values({
+      // The bind: the hold joins the event this enquiry's other holds already
+      // have (a second room for the same wedding), or makes the enquiry's
+      // first event, in the hold's own transaction. The enquiry row is locked
+      // while it does, so two holds pencilled at once still share one event.
+      const created = await db.transaction(async (tx): Promise<BookingRow | null> => {
+        const bound = await bindBookingToEvent(tx, {
           venueId: enquiry.venueId,
-          spaceId,
-          eventId: null,
-          kind: "hold",
-          status: "active",
           title,
-          eventType: input.eventType ?? enquiry.eventType,
-          startsAt: new Date(input.startsAt),
-          endsAt: new Date(input.endsAt),
-          rank: input.rank ?? null,
-          jointFlag: input.jointFlag ?? false,
-          decisionAt: new Date(input.decisionAt),
-          ownerUserId: input.ownerUserId,
-          nextAction: input.nextAction,
-          nextActionDueAt: new Date(input.nextActionDueAt),
-          seriesId: null,
-          notes: input.notes ?? null,
+          eventType,
+          startsAt,
+          endsAt,
           createdBy: request.user.id,
-          enquiryId: enquiry.id,
-        })
-        .returning();
-      if (created === undefined) {
-        return await reply
-          .status(500)
-          .send({ error: "Failed to convert the enquiry", code: "BOOKING_CREATE_FAILED" });
+          clientName: enquiry.name,
+        }, { join: "enquiry", enquiryId: enquiry.id });
+        // The enquiry was read at this venue above; a mismatch here means it
+        // changed meanwhile, and nothing is written.
+        if (!bound.ok) return null;
+        const [row]: (BookingRow | undefined)[] = await tx
+          .insert(bookings)
+          .values({
+            venueId: enquiry.venueId,
+            spaceId,
+            eventId: bound.eventId,
+            kind: "hold",
+            status: "active",
+            title,
+            eventType,
+            startsAt,
+            endsAt,
+            rank: input.rank ?? null,
+            jointFlag: input.jointFlag ?? false,
+            decisionAt: new Date(input.decisionAt),
+            ownerUserId: input.ownerUserId,
+            nextAction: input.nextAction,
+            nextActionDueAt: new Date(input.nextActionDueAt),
+            seriesId: null,
+            notes: input.notes ?? null,
+            createdBy: request.user.id,
+            enquiryId: enquiry.id,
+          })
+          .returning();
+        // Thrown so the rollback takes a newly made event with it.
+        if (row === undefined) throw new Error("The enquiry's hold insert returned no row");
+        await syncEventStatus(tx, bound.eventId);
+        return row;
+      });
+      if (created === null) {
+        return await reply.status(409).send({
+          error: "This enquiry changed while the hold was being made. Open it again and hold the date.",
+          code: "ENQUIRY_CHANGED",
+        });
       }
       publishDiaryChanged(request, created.venueId, "enquiry.converted", created.id);
       return await reply.status(201).send({ data: serializeBooking(created) });
