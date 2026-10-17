@@ -2517,6 +2517,7 @@ export * from "./venue-inventory-availability.js";
 export * from "./venue-inventory-adjustment.js";
 export * from "./inventory-reservations.js";
 export * from "./client-event-schedule.js";
+export * from "./client-home.js";
 
 // Ship Friday slice 10: the one-tap request from the floor and its ladder.
 export * from "./requests.js";
