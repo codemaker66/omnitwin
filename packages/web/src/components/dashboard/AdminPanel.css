@@ -479,6 +479,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Chromium's clock icon inside a time input is a tab stop of its own, and
+   while it holds focus the input no longer matches :focus, so nothing shows
+   the keyboard where it is. The clock is typed, so the icon goes. */
+.admin-panel-field input[type="time"]::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
 .admin-panel-field-note {
   margin: 0;
   color: rgba(244, 239, 228, 0.72);
