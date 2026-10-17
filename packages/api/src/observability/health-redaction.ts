@@ -21,7 +21,6 @@ import { redactHealthFreeText, redactHealthFreeTextInString } from "@omnitwin/ty
 // The counts per diet are not about anyone and are left alone.
 // ---------------------------------------------------------------------------
 
-/** pino hooks for every logger the API builds. */
 /** Fastify's logger options object (pino's options; fastify does not export
  *  the pino type by name). */
 type ApiLoggerConfig = Exclude<FastifyServerOptions["logger"], boolean | undefined>;

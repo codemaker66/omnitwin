@@ -3,6 +3,7 @@ import { DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import {
   configurationSheetSnapshots,
   configurations,
+  enquiries,
   eventConfigurationLinks,
   events,
 } from "../db/schema.js";
@@ -24,7 +25,9 @@ import type { Database } from "../db/client.js";
 //   - a layout with no dated event: the note is removed
 //     DIETARY_NOTE_DAYS_WITHOUT_EVENT days after the layout last changed, the
 //     same 24 months the privacy policy gives an enquiry that did not become
-//     a booking.
+//     a booking;
+//   - either way, never while an enquiry filed with the layout has a
+//     preferred date still ahead or within the after-event period.
 // Only the free-text note goes. The counts per diet are not about anyone in
 // particular and stay with the layout and its sheets.
 //
@@ -88,6 +91,17 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
     where ${eventConfigurationLinks.configurationId} = ${configurations.id}
       and ${events.deletedAt} is null
   )`;
+  // An enquiry filed with this layout whose preferred date is still ahead, or
+  // within the after-event period, means the layout is being planned for a
+  // day that has not yet happened (a layout reused for next year's dinner,
+  // or a wedding enquired about two years out). Its note is for that day and
+  // stays, whatever older events the layout is linked to.
+  const afterEventDay = afterEvent.toISOString().slice(0, 10);
+  const upcomingEnquiry = sql`exists (
+    select 1 from ${enquiries}
+    where ${enquiries.configurationId} = ${configurations.id}
+      and ${enquiries.preferredDate} >= ${afterEventDay}::date
+  )`;
   const rows = await db
     .select({ id: configurations.id })
     .from(configurations)
@@ -96,6 +110,7 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
         (${latestEventEnd} is not null and ${latestEventEnd} < ${afterEvent})
         or (${latestEventEnd} is null and ${configurations.updatedAt} < ${withoutEvent})
       )`,
+      sql`not ${upcomingEnquiry}`,
       sql`(
         ${hasNote(configurations.metadata)}
         or exists (

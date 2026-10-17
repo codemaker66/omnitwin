@@ -138,6 +138,32 @@ describe.skipIf(target === undefined)("dietary note retention on migrated Postgr
     expect(sheet.pdfUrl).toBeNull();
   });
 
+  it("keeps the note while an enquiry filed with the layout has a preferred date ahead", async () => {
+    // A layout reused for next year's dinner (its last event long past), and
+    // one enquired about more than two years out and not touched since.
+    const reused = await layout({ events: [daysBefore(400)] });
+    const farAhead = await layout({ updatedAt: daysBefore(DIETARY_NOTE_DAYS_WITHOUT_EVENT + 10) });
+    const lapsed = await layout({ updatedAt: daysBefore(DIETARY_NOTE_DAYS_WITHOUT_EVENT + 10) });
+    const enquiry = (configurationId: string, preferredDate: string) => ({
+      venueId, spaceId, configurationId, name: "TEST ONLY", email: "test-only@example.test", preferredDate,
+    });
+    await db.insert(schema.enquiries).values([
+      enquiry(reused.configId, "2031-09-12"),
+      enquiry(farAhead.configId, "2031-03-20"),
+      // A preferred date long gone keeps nothing.
+      enquiry(lapsed.configId, "2029-01-01"),
+    ]);
+    const rehearsal = await removeLapsedDietaryNotes(db, { now: NOW, dryRun: true });
+    await removeLapsedDietaryNotes(db, { now: NOW });
+    for (const f of [reused, farAhead]) {
+      const { config, sheet } = await stored(f);
+      expect(config.metadata).toEqual(metadataWith(NOTE));
+      expect(sheet.payload).toEqual(metadataWith(NOTE));
+    }
+    expect((await stored(lapsed)).config.metadata).toEqual(metadataWith(""));
+    expect(rehearsal.layouts).toBeGreaterThanOrEqual(1);
+  });
+
   it("changes nothing on a dry run, and nothing more on a second pass", async () => {
     const f = await layout({ events: [daysBefore(90)] });
     const rehearsal = await removeLapsedDietaryNotes(db, { now: NOW, dryRun: true });

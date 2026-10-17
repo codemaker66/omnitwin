@@ -429,7 +429,7 @@ const PRIVACY: LegalDocument = {
             {
               term: "The allergy note on an event's layout",
               detail:
-                `Removed from the layout, and from the event sheets and their stored copies, ${String(NOTE_DAYS_AFTER_EVENT)} days after the event. A layout with no event date loses the note ${String(NOTE_MONTHS_WITHOUT_EVENT)} months after it last changed. The counts per meal, which do not identify anyone, stay with the event record.`,
+                `Removed from the layout, and from the event sheets and their stored copies, ${String(NOTE_DAYS_AFTER_EVENT)} days after the event. A layout with no event date loses the note ${String(NOTE_MONTHS_WITHOUT_EVENT)} months after it last changed. The counts per meal, which do not identify anyone, stay with the layout and its event sheets.`,
             },
             {
               term: "Logs and error diagnostics",

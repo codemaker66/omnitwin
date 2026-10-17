@@ -70,6 +70,24 @@ describe("redactHealthFreeTextInString", () => {
     expect(JSON.parse(scrubbed)).toEqual({ otherAllergies: REDACTED_HEALTH_TEXT });
   });
 
+  it("keeps a finished JSON log line valid when its message ends in key=value text", () => {
+    const lines = [
+      JSON.stringify({ level: 30, msg: "otherAllergies=sesame" }),
+      JSON.stringify({ level: 30, msg: "saved otherAllergies: sesame and nuts", time: 1 }),
+      JSON.stringify({ level: 50, err: { message: "bad row\notherAllergies=sesame\nat x", stack: "s" } }),
+    ];
+    for (const line of lines) {
+      const scrubbed = redactHealthFreeTextInString(line);
+      expect(scrubbed).not.toContain("sesame");
+      expect(() => JSON.parse(scrubbed) as unknown).not.toThrow();
+    }
+  });
+
+  it("scrubs a single-quoted value as Node's inspect prints it, commas and all", () => {
+    const text = "{ vegan: 2, otherAllergies: 'peanut, sesame' }";
+    expect(redactHealthFreeTextInString(text)).toBe(`{ vegan: 2, otherAllergies: ${REDACTED_HEALTH_TEXT} }`);
+  });
+
   it("returns text without the key unchanged", () => {
     const text = "Vegetarian 12, gluten free 3";
     expect(redactHealthFreeTextInString(text)).toBe(text);

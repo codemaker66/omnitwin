@@ -191,8 +191,16 @@ const ESCAPED_JSON_VALUE = new RegExp(
   "gu",
 );
 // otherAllergies=sesame or otherAllergies: sesame, up to the end of the line
-// or the next field separator, for messages that are not JSON at all.
-const LOOSE_VALUE = new RegExp(`(\\b(?:${KEY_ALTERNATION})\\b\\s*[:=]\\s*)(?!["\\\\])([^,;\\n}]*)`, "gu");
+// or the next field separator, for messages that are not JSON at all; and
+// otherAllergies: 'sesame, nuts' as Node's inspect prints an object. The
+// value never runs over a double quote or a backslash, so text that sits
+// inside a JSON string (a finished log line) keeps its closing quote and
+// stays valid JSON. No word boundary before the key: inside a log line a
+// newline is the two characters \n, and "\notherAllergies" has none.
+const LOOSE_VALUE = new RegExp(
+  `((?:${KEY_ALTERNATION})\\b\\s*[:=]\\s*)(?!["\\\\])('[^'"\\\\\\n]*'|[^,;\\n}"\\\\]*)`,
+  "gu",
+);
 
 /** The same text with every health free-text value replaced. */
 export function redactHealthFreeTextInString(text: string): string {
