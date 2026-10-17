@@ -70,13 +70,7 @@ import {
   FRESH_HERITAGE_SIZES,
   FRESH_ROOM_SIZES,
   FRESH_DOSSIER_OPEN,
-  FRESH_WALK_CHIP,
   FRESH_WALK_LEDE,
-  FRESH_WALK_POSTER,
-  FRESH_WALK_POSTER_ALT,
-  FRESH_WALK_POSTER_SIZES,
-  FRESH_WALK_POSTER_SRCSET,
-  FRESH_WALK_NOTE,
   FRESH_WALK_TITLE,
   ladderSrcSet,
   type FreshRoom,
@@ -482,33 +476,17 @@ export function FreshPage(): ReactElement {
           </p>
         </section>
 
-        {/* The 3D room is unavailable while work continues. Keep its static
-            preview, with no viewer import, canvas or capture download. */}
+        {/* What exists while the 3D room is held back: the panorama tour and
+            the photographs. No viewer import, canvas or capture download, and
+            no mention of the 3D room. The whole section is hidden while the
+            twin bundle is unpublished; see FRESH_TOUR_ENABLED. */}
+        {FRESH_TOUR_ENABLED && (
         <section className="fr-walk" id="walk" aria-labelledby="fr-walk-title">
           <div className="fr-arch is-flipped" aria-hidden />
           <h2 id="fr-walk-title">{FRESH_WALK_TITLE}</h2>
           <p className="fr-section-lede">{FRESH_WALK_LEDE}</p>
-          <div className="fr-walk-stage" data-walk-state="unavailable">
-            <img
-              className="fr-walk-poster"
-              src={FRESH_WALK_POSTER}
-              srcSet={FRESH_WALK_POSTER_SRCSET}
-              sizes={FRESH_WALK_POSTER_SIZES}
-              alt={FRESH_WALK_POSTER_ALT}
-              loading="lazy"
-              decoding="async"
-              width={1120}
-              height={700}
-            />
-            <div className="fr-walk-veil">
-              <p className="fr-walk-chip">{FRESH_WALK_CHIP}</p>
-              <p className="fr-walk-size">{FRESH_WALK_NOTE}</p>
-            </div>
-          </div>
           {/* The doorway to the whole building — grounded on the
-              walkthrough's own dollhouse view of the hall. Hidden while the
-              twin bundle is unpublished; see FRESH_TOUR_ENABLED. */}
-          {FRESH_TOUR_ENABLED && (
+              walkthrough's own dollhouse view of the hall. */}
           <aside className="fr-tour-door" ref={reveal}>
             <img
               className="fr-tour-ground"
@@ -531,8 +509,8 @@ export function FreshPage(): ReactElement {
               </a>
             </div>
           </aside>
-          )}
         </section>
+        )}
 
         {/* ——— rates: the venue's own numbers, plainly ——— */}
         <section className="fr-rates" aria-labelledby="fr-rates-title">
