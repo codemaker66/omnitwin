@@ -6,7 +6,7 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
 import { useLayoutLiveStore } from "../../stores/layout-live-store.js";
-import { composeWithOverlay, type RemoteOverlay } from "../../lib/layout-live/live-document.js";
+import { composeWithOverlay, isRemotePlacementKey, type RemoteOverlay } from "../../lib/layout-live/live-document.js";
 
 // ---------------------------------------------------------------------------
 // EditorBridge — syncs editor-store ↔ placement-store bidirectionally
@@ -170,7 +170,15 @@ export function decomposeSceneItems(
     const existing = localById.get(item.id);
     const entry = overlay.get(item.id);
     if (existing === undefined) {
-      if (entry === undefined) result.push(placedItemToEditor(item, undefined));
+      if (entry === undefined) {
+        result.push(placedItemToEditor(item, undefined));
+      } else if (!isRemotePlacementKey(item.id) && entry.state !== null
+        && !itemMatchesObject(item, { ...entry.state, id: item.id })) {
+        // A peer's committed object this editor has not refetched yet, now
+        // moved by this person: the row exists, so it is theirs to save.
+        result.push(placedItemToEditor(item, entry.state));
+      }
+      // A peer's unsaved placement has no row yet; it cannot be edited here.
       continue;
     }
     seen.add(item.id);

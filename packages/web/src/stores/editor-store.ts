@@ -17,6 +17,7 @@ import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
 import {
   diffObjects,
   emptyHistory,
+  forgetHistoryIds,
   performRedo,
   performUndo,
   recordChange,
@@ -38,7 +39,7 @@ import { flushActionLog } from "./action-log-sync.js";
 import { postActionBatch } from "../api/action-log.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 import { createOneShotHandoff } from "../lib/one-shot-handoff.js";
-import { locallyModifiedIds, rebaseOntoServer } from "../lib/layout-live/live-document.js";
+import { changedBetween, locallyModifiedIds, rebaseOntoServer } from "../lib/layout-live/live-document.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -262,7 +263,7 @@ interface EditorActions {
    * gesture owns the document ("busy" — retry after), and for a revision no
    * newer than the one held ("stale").
    */
-  readonly adoptServerConfiguration: (config: configApi.Configuration) => AdoptOutcome;
+  readonly adoptServerConfiguration: (config: configApi.Configuration, options?: AdoptOptions) => AdoptOutcome;
   /**
    * Live co-editing: a later remote write took these objects. Local state for
    * each goes back to the server base and stays tied to it until this person
@@ -296,6 +297,13 @@ interface EditorActions {
 
 type EditorStore = EditorState & EditorActions;
 
+export interface AdoptOptions {
+  /** The 409 retry holds isSaving through its own refetch; only it may adopt then. */
+  readonly whileSaving?: boolean;
+  /** Ask for the autosave when rebased edits remain (default true). */
+  readonly requestSave?: boolean;
+}
+
 export type AdoptOutcome =
   | { readonly status: "adopted" | "rebased"; readonly lostToRemoteDelete: readonly EditorObject[] }
   | { readonly status: "stale" | "busy" | "ignored" };
@@ -312,13 +320,21 @@ let liveHooks: EditorLiveHooks | null = null;
 /** "rebase": a 409 refetches, rebases and retries once (live co-editing).
  *  "report": today's behaviour — surface the conflict and wait. */
 let conflictPolicy: "report" | "rebase" = "report";
-let retryingAfterRebase = false;
+/** Depth of the 409 rebase-and-retry in progress: one retry per save. */
+let rebaseRetryDepth = 0;
 /** Objects a later remote write owns; kept equal to base until re-edited. */
 const yieldedIds = new Set<string>();
 
+/** Hooks are present only while in the live room. */
 export function setEditorLiveHooks(hooks: EditorLiveHooks | null): void {
   liveHooks = hooks;
-  conflictPolicy = hooks === null ? "report" : "rebase";
+}
+
+/** "rebase" while the live client is mounted — connected or reconnecting — so
+ *  a 409 during a dropped connection rebases instead of offering a reload
+ *  that would discard this person's work. */
+export function setEditorConflictPolicy(policy: "report" | "rebase"): void {
+  conflictPolicy = policy;
 }
 
 /** Whether a pointer gesture owns the open document right now (live
@@ -1024,23 +1040,27 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     } catch (err) {
       if (session !== configurationSession || get().configId !== configId) return false;
       const conflict = configApi.parseRevisionConflict(err);
-      if (conflict !== null && conflictPolicy === "rebase" && useAuthPath && !retryingAfterRebase) {
+      if (conflict !== null && conflictPolicy === "rebase" && useAuthPath && rebaseRetryDepth === 0) {
         // Live co-editing: someone else committed first. Take their document,
         // keep this person's edits on the objects they touched, and save
-        // again — once. A second conflict is reported like today's.
-        set({ isSaving: false });
-        retryingAfterRebase = true;
+        // again — once. isSaving stays true through the refetch, so the live
+        // client's own refetch waits ("busy") instead of racing this one.
+        rebaseRetryDepth += 1;
         try {
           const fresh = await configApi.getConfig(configId);
           if (session !== configurationSession || get().configId !== configId) return false;
-          const outcome = get().adoptServerConfiguration(fresh);
-          if (outcome.status === "adopted" || outcome.status === "rebased") {
-            return await get().saveToServer(isAuthenticated);
+          const outcome = get().adoptServerConfiguration(fresh, { whileSaving: true, requestSave: false });
+          const held = get().configRevision;
+          const current = outcome.status === "adopted" || outcome.status === "rebased"
+            || (outcome.status === "stale" && held !== null && held >= fresh.revision);
+          if (current) {
+            set({ isSaving: false });
+            return get().isDirty ? await get().saveToServer(isAuthenticated) : true;
           }
         } catch {
           // Fall through to the reported conflict below.
         } finally {
-          retryingAfterRebase = false;
+          rebaseRetryDepth -= 1;
         }
         if (session !== configurationSession || get().configId !== configId) return false;
       }
@@ -1074,12 +1094,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   clearSaveError: () => { set({ saveError: null, saveConflict: null }); },
 
-  adoptServerConfiguration: (config) => {
+  adoptServerConfiguration: (config, options = {}) => {
     const s = get();
     if (config.id !== s.configId || config.isPublicPreview) return { status: "ignored" };
     if (s.configRevision !== null && config.revision <= s.configRevision) return { status: "stale" };
-    if (s.isSaving || gestureOwnsCurrentDocument()) return { status: "busy" };
+    if ((s.isSaving && options.whileSaving !== true) || gestureOwnsCurrentDocument()) return { status: "busy" };
     const server = (config.objects ?? []).map(placedObjectToEditor);
+    // Undo never replays this person's older values over another person's
+    // later change: forget the steps' parts for every object someone else
+    // changed. Seal the open gesture first so the action log keeps it.
+    actionEmitter.flush(s.history);
+    const history = forgetHistoryIds(s.history, changedBetween(s.baseObjects, server));
     const modified = locallyModifiedIds(s.baseObjects, s.objects);
     const hasLocalEdits = [...modified].some((id) => !yieldedIds.has(id))
       || s.baseObjects.some((object) => !s.objects.some((local) => local.id === object.id));
@@ -1088,6 +1113,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({
         objects: server,
         baseObjects: server,
+        history,
         configRevision: config.revision,
         isDirty: false,
         saveError: null,
@@ -1101,13 +1127,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       objects: rebased.objects,
       baseObjects: server,
+      history,
       configRevision: config.revision,
       isDirty: true,
       saveError: null,
       saveConflict: null,
     });
     // The rebased edits still need to reach the server.
-    if (!retryingAfterRebase) autosaveRequester?.();
+    if (options.requestSave !== false) autosaveRequester?.();
     return { status: "rebased", lostToRemoteDelete: rebased.lostToRemoteDelete };
   },
 
@@ -1135,7 +1162,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         changed = true;
       }
     }
-    if (changed) set({ objects });
+    actionEmitter.flush(s.history);
+    const history = forgetHistoryIds(s.history, yielding);
+    if (changed || history !== s.history) set({ objects, history });
   },
 
   reset: () => {

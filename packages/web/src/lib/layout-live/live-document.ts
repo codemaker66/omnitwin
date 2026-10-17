@@ -233,13 +233,19 @@ export function rekeyRemotePlacements(
   return next;
 }
 
-/** Retire every entry the server's document already reflects. */
+/** Retire every entry the server's document already reflects. A peer's
+ *  unsaved placement is retired once an identical object exists on the server
+ *  (its save landed before its id map reached us, or the map never came). */
 export function reconcileOverlay(overlay: RemoteOverlay, server: readonly EditorObject[]): RemoteOverlay {
   if (overlay.size === 0) return overlay;
   const serverById = new Map(server.map((object) => [object.id, object]));
   const next = new Map(overlay);
   for (const [key, entry] of overlay) {
-    if (isRemotePlacementKey(key)) continue;
+    if (isRemotePlacementKey(key)) {
+      const placed = entry.state;
+      if (placed !== null && server.some((object) => sameObjectState(object, placed))) next.delete(key);
+      continue;
+    }
     const confirmed = serverById.get(key);
     const reflected = entry.state === null
       ? confirmed === undefined
@@ -337,13 +343,24 @@ export function rebaseOntoServer({ server, base, local, yielded }: RebaseInput):
   return { objects, lostToRemoteDelete: lost };
 }
 
-/** Ids whose local state differs from the base this client last confirmed. */
+/** Ids this client changed since the base it last confirmed: changed, newly
+ *  placed, and deleted (in base, gone from local). */
 export function locallyModifiedIds(base: readonly EditorObject[], local: readonly EditorObject[]): ReadonlySet<string> {
-  const baseById = new Map(base.map((object) => [object.id, object]));
-  const modified = new Set<string>();
-  for (const object of local) {
-    const before = baseById.get(object.id);
-    if (before === undefined || !sameObjectState(before, object)) modified.add(object.id);
+  return changedBetween(base, local);
+}
+
+/** Ids that differ between two documents: changed, added or removed. */
+export function changedBetween(before: readonly EditorObject[], after: readonly EditorObject[]): Set<string> {
+  const beforeById = new Map(before.map((object) => [object.id, object]));
+  const changed = new Set<string>();
+  const afterIds = new Set<string>();
+  for (const object of after) {
+    afterIds.add(object.id);
+    const prior = beforeById.get(object.id);
+    if (prior === undefined || !sameObjectState(prior, object)) changed.add(object.id);
   }
-  return modified;
+  for (const object of before) {
+    if (!afterIds.has(object.id)) changed.add(object.id);
+  }
+  return changed;
 }

@@ -149,6 +149,12 @@ describe("remote overlay — last write wins in server order", () => {
     expect(reconcileOverlay(rekeyed, [object(T3, 9)]).size).toBe(0);
   });
 
+  it("retires a peer's unsaved placement once an identical object is on the server (finding 6)", () => {
+    const placed = applyRemoteOps(EMPTY_OVERLAY, frame(1, [put(object("local-3", 9))]), never, 0).overlay;
+    expect(reconcileOverlay(placed, [object(T1, 1)]).size).toBe(1);
+    expect(reconcileOverlay(placed, [object(T1, 1), object(T4, 9)]).size).toBe(0);
+  });
+
   it("keeps an entry the server has not caught up with, and expires it after the TTL", () => {
     const overlay = applyRemoteOps(EMPTY_OVERLAY, frame(1, [put(object(T1, 8))]), never, 1_000).overlay;
     expect(reconcileOverlay(overlay, [object(T1, 1)]).size).toBe(1);
@@ -205,8 +211,8 @@ describe("rebaseOntoServer — object-level, never field-level", () => {
     expect(objects.map((o) => o.id)).toContain(T1);
   });
 
-  it("locallyModifiedIds names changed and new objects, not untouched ones", () => {
+  it("locallyModifiedIds names changed, new and deleted objects, not untouched ones", () => {
     const local = [object(T1, 10), object(T2, 2), object("local-1", 4)];
-    expect([...locallyModifiedIds(base, local)].sort()).toEqual([T1, "local-1"].sort());
+    expect([...locallyModifiedIds(base, local)].sort()).toEqual([T1, T3, "local-1"].sort());
   });
 });

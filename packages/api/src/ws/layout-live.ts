@@ -230,6 +230,7 @@ export class LayoutLiveHub {
     if (room === undefined) return;
     room.seq += 1;
     this.#sendTo(room.connections, {
+      skipIfBehind: true,
       type: "live.ops",
       seq: room.seq,
       connectionId: connection.connectionId,
@@ -261,7 +262,11 @@ export class LayoutLiveHub {
   }
 
   /** False when the frame could not be serialised (it is then sent to no one). */
-  #sendTo(connections: Iterable<LayoutLiveConnection>, payload: Record<string, unknown>): boolean {
+  #sendTo(connections: Iterable<LayoutLiveConnection>, frame: Record<string, unknown>): boolean {
+    // Only live ops may be skipped for a lagging member: they are absolute
+    // state, superseded by the next frame or a refetch. Presence, commit
+    // announcements and revocation always go.
+    const { skipIfBehind, ...payload } = frame;
     let text: string;
     try {
       // Every frame carries the server's clock (the Diary's D9 rule).
@@ -273,7 +278,7 @@ export class LayoutLiveHub {
     for (const connection of connections) {
       // A member who cannot keep up misses frames rather than growing memory:
       // ops are absolute state and a reconnect resyncs from the server.
-      if ((connection.socket.bufferedAmount ?? 0) > LAYOUT_LIVE_MAX_BUFFERED_BYTES) continue;
+      if (skipIfBehind === true && (connection.socket.bufferedAmount ?? 0) > LAYOUT_LIVE_MAX_BUFFERED_BYTES) continue;
       try {
         connection.socket.send(text);
       } catch {

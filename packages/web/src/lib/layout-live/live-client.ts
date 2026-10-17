@@ -8,7 +8,7 @@ import {
 import type { Configuration } from "../../api/configurations.js";
 import { nextBackoffMs } from "../../pages/diary/lib/live-protocol.js";
 import {
-  isEditorGestureActive,
+  setEditorConflictPolicy,
   setEditorLiveHooks,
   useEditorStore,
   type EditorObject,
@@ -57,6 +57,8 @@ const BUSY_RETRY_MS = 250;
 const PENDING_ECHO_MS = 2_000;
 const SOCKET_OPEN = 1;
 const SAVED_IDS_PER_FRAME = 500;
+/** Well under the hub's 128 KB cap, whatever the notes and labels hold. */
+const MAX_FRAME_CHARS = 48 * 1024;
 
 export interface LiveSocket {
   readonly readyState: number;
@@ -109,6 +111,32 @@ function nounFor(object: EditorObject | undefined): string {
   return item.tableShape !== null ? "table" : item.name.toLowerCase();
 }
 
+interface OpsFrame {
+  readonly ops: readonly LiveOp[];
+  readonly text: string;
+}
+
+/** Split ops into frames under the op count and byte budget. */
+export function chunkOps(ops: readonly LiveOp[]): OpsFrame[] {
+  const frames: OpsFrame[] = [];
+  let current: LiveOp[] = [];
+  let chars = 0;
+  const close = (): void => {
+    if (current.length === 0) return;
+    frames.push({ ops: current, text: JSON.stringify({ type: "live.ops", ops: current }) });
+    current = [];
+    chars = 0;
+  };
+  for (const op of ops) {
+    const size = JSON.stringify(op).length + 1;
+    if (current.length > 0 && (chars + size > MAX_FRAME_CHARS || current.length >= LIVE_MAX_OPS_PER_FRAME)) close();
+    current.push(op);
+    chars += size;
+  }
+  close();
+  return frames;
+}
+
 export class LayoutLiveClient {
   readonly #options: LayoutLiveClientOptions;
   readonly #now: () => number;
@@ -121,7 +149,9 @@ export class LayoutLiveClient {
   #pingTimer: ReturnType<typeof setInterval> | null = null;
   #sweepTimer: ReturnType<typeof setInterval> | null = null;
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
-  #lastSentAtMs = Number.NEGATIVE_INFINITY;
+  /** No frame before this: a flush that needed k frames waits k intervals,
+   *  keeping a big multi-select under the hub's frame rate. */
+  #nextSendAtMs = Number.NEGATIVE_INFINITY;
   #busyTimer: ReturnType<typeof setTimeout> | null = null;
   #unsubscribeSpace: (() => void) | null = null;
   /** Ops waiting for the next coalesced frame, latest per object. */
@@ -137,6 +167,7 @@ export class LayoutLiveClient {
   }
 
   start(): void {
+    setEditorConflictPolicy("rebase");
     useLayoutLiveStore.setState({ status: "connecting", connectionId: null, participants: [], overlay: EMPTY_OVERLAY, notice: null });
     this.#sweepTimer = setInterval(() => { this.#sweepOverlay(); }, OVERLAY_SWEEP_MS);
     let lastSpace = useEditorStore.getState().space;
@@ -157,6 +188,7 @@ export class LayoutLiveClient {
     if (this.#sweepTimer !== null) clearInterval(this.#sweepTimer);
     this.#unsubscribeSpace?.();
     setEditorLiveHooks(null);
+    setEditorConflictPolicy("report");
     const socket = this.#socket;
     this.#socket = null;
     socket?.close();
@@ -321,7 +353,7 @@ export class LayoutLiveClient {
     if (this.#flushTimer !== null) return;
     // Leading edge: a placement, a delete or a drag's first frame goes now;
     // only the frames that follow within the interval wait to be coalesced.
-    const waitMs = LIVE_SEND_INTERVAL_MS - (this.#now() - this.#lastSentAtMs);
+    const waitMs = this.#nextSendAtMs - this.#now();
     if (waitMs <= 0) {
       this.#flush();
       return;
@@ -340,11 +372,11 @@ export class LayoutLiveClient {
     const ops = [...this.#queued.values()];
     this.#queued.clear();
     if (ops.length === 0) return;
-    this.#lastSentAtMs = this.#now();
-    for (let start = 0; start < ops.length; start += LIVE_MAX_OPS_PER_FRAME) {
-      const chunk = ops.slice(start, start + LIVE_MAX_OPS_PER_FRAME);
-      const ids = chunk.map((op) => op.kind === "put" ? op.object.id : op.id);
-      socket.send(JSON.stringify({ type: "live.ops", ops: chunk }));
+    const frames = chunkOps(ops);
+    this.#nextSendAtMs = this.#now() + frames.length * LIVE_SEND_INTERVAL_MS;
+    for (const frame of frames) {
+      const ids = frame.ops.map((op) => op.kind === "put" ? op.object.id : op.id);
+      socket.send(frame.text);
       const sentAtMs = this.#now();
       for (const id of ids) {
         this.#unechoed.set(id, { count: (this.#unechoed.get(id)?.count ?? 0) + 1, lastSentAtMs: sentAtMs });
@@ -396,12 +428,14 @@ export class LayoutLiveClient {
     const editor = useEditorStore.getState();
     if (editor.configId !== this.#options.configId) return;
     const selected = useSelectionStore.getState().selectedIds;
-    const dragging = isEditorGestureActive();
     const nowMs = this.#now();
+    // Only an op of this person's that the server has not sequenced yet is
+    // later than this frame. (A held-still drag is not: its last op was
+    // echoed, so a peer's write now is the later one and must land.)
     const isPending = (id: string): boolean => {
       const sent = this.#unechoed.get(id);
       const inFlight = sent !== undefined && nowMs - sent.lastSentAtMs < PENDING_ECHO_MS;
-      return inFlight || this.#queued.has(id) || (dragging && selected.has(id));
+      return inFlight || this.#queued.has(id);
     };
     const { overlay, claimedIds } = applyRemoteOps(useLayoutLiveStore.getState().overlay, frame, isPending, this.#now());
     this.#setOverlay(overlay);
@@ -414,7 +448,9 @@ export class LayoutLiveClient {
     const landedOn = claimedIds.find((id) => modified.has(id) || selected.has(id));
     if (landedOn === undefined) return;
     const op = frame.ops.find((candidate) => (candidate.kind === "put" ? candidate.object.id : candidate.id) === landedOn);
-    const local = editor.objects.find((object) => object.id === landedOn);
+    // A deleted object is named from the server copy it came back as.
+    const local = editor.objects.find((object) => object.id === landedOn)
+      ?? editor.baseObjects.find((object) => object.id === landedOn);
     const verb = op?.kind === "remove" ? "removed" : "moved";
     useLayoutLiveStore.getState().showNotice(`${firstName(frame.name)} ${verb} this ${nounFor(local)}`);
   }

@@ -4,7 +4,7 @@ import type { Configuration, PlacedObject } from "../../../api/configurations.js
 import { placedObjectToEditor, setEditorLiveHooks, useEditorStore, type EditorObject } from "../../../stores/editor-store.js";
 import { useLayoutLiveStore } from "../../../stores/layout-live-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
-import { LIVE_SEND_INTERVAL_MS, LayoutLiveClient, type LiveSocket } from "../live-client.js";
+import { LIVE_SEND_INTERVAL_MS, LayoutLiveClient, chunkOps, type LiveSocket } from "../live-client.js";
 import { editorToLiveState } from "../live-document.js";
 import { decomposeSceneItems, editorToPlacedItem } from "../../../components/editor/EditorBridge.js";
 
@@ -315,6 +315,59 @@ describe("incoming", () => {
   });
 });
 
+describe("review findings", () => {
+  it("brings back an object this person deleted when a later remote write lands on it (finding 2)", async () => {
+    const h = harness();
+    const socket = await joined(h);
+    useEditorStore.getState().removeObject(T2);
+    socket.receive({ type: "live.ops", seq: 1, connectionId: "c-me", userId: "u-me", name: "Blake Example", ops: [{ kind: "remove", id: T2 }] });
+    socket.receive({ type: "live.ops", seq: 2, connectionId: "c-alex", userId: "u-alex", name: "Alex Murray", ops: [put(editor(T2, 8))] });
+    // The delete was the earlier write: the object is back in the document
+    // (at the server copy) and the scene shows Alex's position.
+    expect(useEditorStore.getState().objects.some((o) => o.id === T2)).toBe(true);
+    expect(useLayoutLiveStore.getState().overlay.get(T2)?.state?.positionX).toBe(8);
+    expect(useLayoutLiveStore.getState().notice?.text).toBe("Alex moved this table");
+    h.client.stop();
+  });
+
+  it("lets a later remote write land while this person holds a drag still (echoed)", async () => {
+    const h = harness();
+    const socket = await joined(h);
+    useSelectionStore.getState().selectMultiple([T1]);
+    const token = useEditorStore.getState().beginHistoryGesture();
+    useEditorStore.getState().updateObject(T1, { positionX: 5 });
+    socket.receive({ type: "live.ops", seq: 1, connectionId: "c-me", userId: "u-me", name: "Blake Example", ops: [put(editor(T1, 5))] });
+    socket.receive({ type: "live.ops", seq: 2, connectionId: "c-alex", userId: "u-alex", name: "Alex Murray", ops: [put(editor(T1, 8))] });
+    expect(useLayoutLiveStore.getState().overlay.get(T1)?.state?.positionX).toBe(8);
+    if (token !== null) useEditorStore.getState().endHistoryGesture(token);
+    h.client.stop();
+  });
+
+  it("splits a large selection into frames well under the hub's size cap and paces them (finding 3)", async () => {
+    const note = "n".repeat(500);
+    const ops = Array.from({ length: 300 }, (_, i) => put({ ...editor(`00000000-0000-4000-8000-${String(i).padStart(12, "0")}`, i), notes: note, label: `Table ${String(i)}` }));
+    const frames = chunkOps(ops);
+    expect(frames.length).toBeGreaterThan(1);
+    expect(frames.every((frame) => frame.text.length <= 64 * 1024)).toBe(true);
+    expect(frames.flatMap((frame) => frame.ops)).toHaveLength(300);
+
+    const h = harness();
+    const socket = await joined(h);
+    const many = Array.from({ length: 300 }, (_, i) => ({ ...editor(`00000000-0000-4000-8000-${String(1000 + i).padStart(12, "0")}`, i), notes: note }));
+    useEditorStore.setState({ objects: many, baseObjects: many });
+    useEditorStore.getState().moveObjectsByDelta(new Set(many.map((o) => o.id)), 0.5, 0);
+    const sent = socket.ofType("live.ops").length;
+    expect(sent).toBeGreaterThan(1);
+    // The next change waits one interval per frame just sent.
+    useEditorStore.getState().moveObjectsByDelta(new Set(many.map((o) => o.id)), 0.5, 0);
+    await vi.advanceTimersByTimeAsync(LIVE_SEND_INTERVAL_MS * sent - 5);
+    expect(socket.ofType("live.ops")).toHaveLength(sent);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(socket.ofType("live.ops").length).toBeGreaterThan(sent);
+    h.client.stop();
+  });
+});
+
 describe("access and heartbeat", () => {
   it("leaves the room for good when the server revokes access", async () => {
     const h = harness();
@@ -366,6 +419,16 @@ describe("losing the room", () => {
 });
 
 describe("decomposeSceneItems — the overlay never enters the saved document", () => {
+  it("takes a peer's committed but not yet refetched object into the document when this person moves it (finding 4)", () => {
+    const local = [editor(T1, 1)];
+    const overlay = new Map([[T3, {
+      key: T3, seq: 1, connectionId: "c-alex", userId: "u-alex", name: "Alex", state: editor(T3, 4), touchedAtMs: 0,
+    }]]);
+    const scene = [editorToPlacedItem(editor(T1, 1)), editorToPlacedItem(editor(T3, 6))];
+    const result = decomposeSceneItems(scene, local, overlay);
+    expect(result.map((o) => `${o.id.slice(-1)}@${String(o.positionX)}`)).toEqual(["1@1", "3@6"]);
+  });
+
   it("keeps the local object where the scene shows a peer's state", () => {
     const local = [editor(T1, 1), editor(T2, 2)];
     useLayoutLiveStore.setState({ overlay: new Map() });

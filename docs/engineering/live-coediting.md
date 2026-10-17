@@ -114,4 +114,6 @@ Code: `packages/web/src/lib/layout-live/` (pure core and the socket client),
   store, which is what its scene draws. Use `expect.poll` over `page.evaluate` for
   async in-page checks: measured on Playwright 1.59, `waitForFunction` with an async
   predicate that always resolves `false` timed out once and then returned in 3–4 ms,
-  so it cannot be trusted to wait.
+  so it cannot be trusted to wait. Restart Vite after editing a store: HMR then
+  serves the app's copy under a `?t=` URL, and the spec's bare import gets a second,
+  empty instance (the planner "never loads").

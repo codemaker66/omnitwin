@@ -4,6 +4,7 @@ import type { PlacedObject } from "../../api/configurations.js";
 import {
   editorYieldedIds,
   placedObjectToEditor,
+  setEditorConflictPolicy,
   setEditorLiveHooks,
   useEditorStore,
   type EditorLiveHooks,
@@ -127,6 +128,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setEditorLiveHooks(null);
+  setEditorConflictPolicy("report");
 });
 
 describe("adoptServerConfiguration", () => {
@@ -213,6 +215,7 @@ describe("a revision conflict while live", () => {
 
   it("refetches, rebases and saves again, keeping both people's work", async () => {
     setEditorLiveHooks(hooks());
+    setEditorConflictPolicy("rebase");
     open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
     const conflictError = new Error("409");
     vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
@@ -232,6 +235,7 @@ describe("a revision conflict while live", () => {
 
   it("reports a second conflict instead of looping", async () => {
     setEditorLiveHooks(hooks());
+    setEditorConflictPolicy("rebase");
     open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
     const conflictError = new Error("409");
     vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
@@ -251,6 +255,54 @@ describe("a revision conflict while live", () => {
     expect(await useEditorStore.getState().saveToServer(true)).toBe(false);
     expect(vi.mocked(configApi.getConfig)).not.toHaveBeenCalled();
     expect(useEditorStore.getState().saveConflict).toEqual(conflict);
+  });
+});
+
+describe("review findings", () => {
+  it("holds the document through a 409 retry so the live refetch cannot race it (finding 1)", async () => {
+    setEditorConflictPolicy("rebase");
+    open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
+    const conflictError = new Error("409");
+    vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError
+      ? { expectedRevision: 2, currentRevision: 3, message: "changed" } : null);
+    let releaseFetch: (value: configApi.Configuration) => void = () => undefined;
+    vi.mocked(configApi.getConfig).mockReturnValueOnce(new Promise((resolve) => { releaseFetch = resolve; }));
+    vi.mocked(configApi.authBatchSave)
+      .mockRejectedValueOnce(conflictError)
+      .mockResolvedValueOnce({ objects: [wire(T1, 10), wire(T2, 20), wire(T3, 3)], revision: 4 });
+    const saving = useEditorStore.getState().saveToServer(true);
+    await vi.waitFor(() => { expect(vi.mocked(configApi.getConfig)).toHaveBeenCalled(); });
+    // The live client's refetch of the same commit lands mid-retry: it must wait.
+    const raced = useEditorStore.getState().adoptServerConfiguration(serverConfig(3, [wire(T1, 1), wire(T2, 20), wire(T3, 3)]));
+    expect(raced.status).toBe("busy");
+    releaseFetch(serverConfig(3, [wire(T1, 1), wire(T2, 20), wire(T3, 3)]));
+    expect(await saving).toBe(true);
+    const state = useEditorStore.getState();
+    expect(state.saveConflict).toBeNull();
+    expect(state.isDirty).toBe(false);
+    expect(vi.mocked(configApi.authBatchSave).mock.calls[1]?.[1].map((object) => object.positionX)).toEqual([10, 20, 3]);
+  });
+
+  it("never lets undo replay this person's older value over another person's later commit (finding 5)", () => {
+    open(BASE, false);
+    useEditorStore.getState().updateObject(T1, { positionX: 11 });
+    useEditorStore.getState().bumpHistoryEpoch();
+    useEditorStore.getState().updateObject(T2, { positionX: 12 });
+    // Saved, then someone else moved T1 and committed; this client adopts.
+    useEditorStore.setState({ baseObjects: useEditorStore.getState().objects, isDirty: false });
+    useEditorStore.getState().adoptServerConfiguration(serverConfig(3, [wire(T1, 30), wire(T2, 12), wire(T3, 3)]));
+    useEditorStore.getState().undo();
+    useEditorStore.getState().undo();
+    const positions = useEditorStore.getState().objects.map((object) => object.positionX);
+    // T1 keeps the other person's 30; this person's own T2 move is still undoable.
+    expect(positions).toEqual([30, 2, 3]);
+  });
+
+  it("forgets undo for an object yielded to a later remote write", () => {
+    open(BASE, false);
+    useEditorStore.getState().updateObject(T1, { positionX: 11 });
+    useEditorStore.getState().yieldObjectsToRemote([T1]);
+    expect(useEditorStore.getState().history.past).toHaveLength(0);
   });
 });
 
