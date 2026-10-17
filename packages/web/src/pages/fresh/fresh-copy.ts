@@ -30,7 +30,7 @@ export const FRESH_LEDE =
 
 export const FRESH_CTA_DATES = "Ask about a date";
 export const FRESH_CTA_ROOMS = "See the rooms";
-export const FRESH_CTA_TOUR = "Tour preview · Work in progress";
+export const FRESH_CTA_TOUR = "Panorama tour";
 
 /** The whole-building walkthrough — the Twin, at its memorable alias.
  *  149 viewpoints is a capture fact (the scan's own sweep count). */
@@ -38,13 +38,13 @@ export const FRESH_TOUR_HREF = "/tour";
 
 /** The panorama tour was verified rendering on production on 2026-09-19.
  *  Production uses its configured asset source; the missing local default
- *  bundle does not establish live availability. Keep the preview labelled
- *  Work in progress wherever it is offered. */
+ *  bundle does not establish live availability. Blake chose on 16 October
+ *  2026 to name what is there: the tour is called the panorama tour, plainly,
+ *  and the 3D room is not mentioned while the founder hold stands. */
 export const FRESH_TOUR_ENABLED: boolean = true;
-export const FRESH_TOUR_TITLE = "Panorama tour · Work in progress";
-export const FRESH_TOUR_LINE =
-  "Explore the building through captured panoramas. This early version is still being developed.";
-export const FRESH_TOUR_CTA = "Open the tour preview";
+export const FRESH_TOUR_TITLE = "Panorama tour";
+export const FRESH_TOUR_LINE = "Captured panoramas of the whole building.";
+export const FRESH_TOUR_CTA = "Open the panorama tour";
 /** The door's ground: the walkthrough's own dollhouse view — product
  *  output, not photography, so the no-repeat photo law is untouched. */
 export const FRESH_TOUR_GROUND = "/images/venue/tour-door-1800.webp";
@@ -54,8 +54,7 @@ export const FRESH_TOUR_GROUND_SIZES = "(max-width: 980px) calc(100vw - 32px), 9
 export const FRESH_TOUR_GROUND_ALT =
   "Trades Hall opened as a captured model — rooms and the spiral stair seen from above in the walkthrough's dollhouse view, viewpoints dotted across the floors";
 export const FRESH_TWIN_BASE = "/venues/trades-hall/twin";
-export const FRESH_DOSSIER_TWIN_CTA = "See this room in the tour preview · Work in progress";
-export const FRESH_DOSSIER_WALK_CTA = "3D room · Work in progress";
+export const FRESH_DOSSIER_TWIN_CTA = "See this room in the panorama tour";
 
 /** Section kickers — the page's running heads: small letterspaced marks
  *  above each heading. Written sentence case; CSS sets them uppercase. */
@@ -87,9 +86,6 @@ export interface FreshRoom {
   /** Walkthrough deep link (?node/look query) — hero framing for this room,
    *  validated against this photography before shipping. */
   readonly twinLook?: string;
-  /** True when this room also lives on the page itself (the splat embed) —
-   *  its dossier offers the in-page doorway alongside the walkthrough. */
-  readonly inPageWalk?: boolean;
 }
 
 /** Responsive delivery: pre-encoded webp rungs live in
@@ -151,7 +147,6 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     name: "The Reception Room",
     line: "Ceremonies and receptions.",
     twinLook: "node=scan_126&look=scan_126%2C-20%2C4%2C75",
-    inPageWalk: true,
     image: tradesHallVenueImages.receptionRoom,
     alt: "The Reception Room dressed for a ceremony, candles along the aisle",
     width: 1536,
@@ -242,20 +237,12 @@ export const FRESH_ENQUIRY_PRIVACY_NOTE =
 export const FRESH_ENQUIRY_PRIVACY_LINK = "How we handle your data";
 export const FRESH_ENQUIRY_PRIVACY_HREF = "/privacy";
 
-/** The captured 3D room is unavailable. Its existing render is a static
- *  preview only; no Gaussian assets load from this page. */
-export const FRESH_WALK_TITLE = "The 3D room";
+/** The section that used to announce the unavailable 3D room. While the
+ *  founder hold stands it offers what exists instead — the panorama tour and
+ *  the room photographs above — and no 3D room is mentioned or pictured. */
+export const FRESH_WALK_TITLE = "Look around";
 export const FRESH_WALK_LEDE =
-  "Work in progress. The captured 3D room is currently unavailable.";
-export const FRESH_WALK_CHIP = "Work in progress";
-export const FRESH_WALK_NOTE =
-  "3D room access is paused while we improve it.";
-export const FRESH_WALK_POSTER = "/images/venue/walk-poster-1120.webp";
-export const FRESH_WALK_POSTER_SRCSET =
-  "/images/venue/walk-poster-560.webp 560w, /images/venue/walk-poster-1120.webp 1120w";
-export const FRESH_WALK_POSTER_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
-export const FRESH_WALK_POSTER_ALT =
-  "The Reception Room as a captured scene, rendered by Venviewer — not a photograph";
+  "Explore the building in captured panoramas, or see the venue's photographs of each room above.";
 
 /** The room dossiers — each card opens into the room's own page-within-
  *  the-page: published dimensions, and every capacity drawn to count. */
@@ -319,7 +306,6 @@ export function allFreshCopy(): readonly string[] {
     FRESH_TOUR_CTA,
     FRESH_TOUR_GROUND_ALT,
     FRESH_DOSSIER_TWIN_CTA,
-    FRESH_DOSSIER_WALK_CTA,
     FRESH_KICKER_ROOMS,
     FRESH_KICKER_WALK,
     FRESH_KICKER_RATES,
@@ -366,9 +352,6 @@ export function allFreshCopy(): readonly string[] {
     FRESH_DOSSIER_DRAWN_NOTE,
     FRESH_WALK_TITLE,
     FRESH_WALK_LEDE,
-    FRESH_WALK_CHIP,
-    FRESH_WALK_NOTE,
-    FRESH_WALK_POSTER_ALT,
     FRESH_HERITAGE_TITLE,
     FRESH_HERITAGE_BODY,
     FRESH_CONTACT_TITLE,
