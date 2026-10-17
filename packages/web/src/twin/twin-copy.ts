@@ -9,7 +9,7 @@
 // Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 6).
 // -----------------------------------------------------------------------------
 
-export const TWIN_TITLE = "The Twin — Trades Hall Glasgow";
+export const TWIN_TITLE = "Panorama tour — Trades Hall of Glasgow";
 
 /** Static product status, visible during loading, failure and exploration. */
 export const TWIN_TOUR_LABEL = "Panorama tour";
@@ -19,7 +19,7 @@ export const TWIN_LOADING_LINE = "Opening the twin…";
 
 /** Error state — fetch or schema validation failed. */
 export const TWIN_ERROR_LINE =
-  "The twin could not load.";
+  "The panorama tour couldn't load.";
 export const TWIN_RETRY_LABEL = "Try again";
 
 /** Production posture while the bundle host is not yet published (Task 12). */

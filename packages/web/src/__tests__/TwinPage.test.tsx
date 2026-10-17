@@ -149,7 +149,8 @@ describe("TwinPage — error state", () => {
     fetchMock.mockRejectedValue(new Error("network down"));
     mount();
 
-    expect(await screen.findByText(TWIN_ERROR_LINE)).toBeTruthy();
+    expect(await screen.findByText("The panorama tour couldn't load.")).toBeTruthy();
+    expect(TWIN_ERROR_LINE).toBe("The panorama tour couldn't load.");
     expect(screen.getByText(TWIN_TOUR_LABEL)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -202,7 +203,8 @@ describe("TwinPage — document chrome and landmarks", () => {
     fetchMock.mockResolvedValue(jsonResponse(validManifest));
     const view = mount();
 
-    expect(document.title).toBe(TWIN_TITLE);
+    expect(document.title).toBe("Panorama tour — Trades Hall of Glasgow");
+    expect(TWIN_TITLE).toBe("Panorama tour — Trades Hall of Glasgow");
     await screen.findByTestId("twin-stage");
     view.unmount();
     expect(document.title).toBe("Previous title");
