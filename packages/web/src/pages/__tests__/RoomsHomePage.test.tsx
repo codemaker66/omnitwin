@@ -24,6 +24,21 @@ function mount(): void {
 }
 
 describe("RoomsHomePage", () => {
+  // The accessibility statement (LegalPage) says "a skip link takes you
+  // straight to the main content of a page"; the front door had none.
+  it("offers the promised skip link first in the tab order, reaching the main content", () => {
+    mount();
+    const focusable = document.querySelectorAll("a[href], button, input, select, textarea, [tabindex]:not([tabindex='-1'])");
+    const skip = focusable[0];
+    expect(skip?.textContent).toBe("Skip to main content");
+    expect(skip?.getAttribute("href")).toBe("#main-content");
+    expect(skip?.classList.contains("vv-skip-link")).toBe(true);
+    const main = screen.getByRole("main");
+    expect(main.id).toBe("main-content");
+    // Focusable by script only, so the skip link moves focus, not just scroll.
+    expect(main.getAttribute("tabindex")).toBe("-1");
+  });
+
   // T-616: Dashboard, Diary and Hallkeeper each bounced an anonymous visitor
   // into a login wall. They are gone from the public nav; planning, the
   // composer and Log in (which takes staff to their workspace) remain.

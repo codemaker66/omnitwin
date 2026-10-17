@@ -14,7 +14,10 @@
   --fr-paper: #ede7db;
   --fr-paper-2: #e4dccb;
   --fr-ink: #262016;
-  --fr-ink-2: #5a5244;
+  /* Client body text holds 7:1 (goals/01). #5a5244 measured 6.26:1 on the
+     composer's paper, so the secondary ink is one step deeper: 7.9:1 on
+     --fr-paper and 7.2:1 on --fr-paper-2, the darkest ground it sits on. */
+  --fr-ink-2: #4a4336;
   --fr-green: #1f4a38;
   --fr-green-soft: rgba(31, 74, 56, 0.14);
   --fr-ochre: #c98a5b;
@@ -839,6 +842,9 @@
   border: 1px solid var(--fr-rule);
   border-radius: 999px;
   padding: 9px 18px;
+  /* The padding alone made 42 px; the occasion pills are a thumb's first
+     touch on the composer, so they take the full 44 px target. */
+  min-height: 44px;
   cursor: pointer;
   transition:
     color 180ms var(--fr-ease),
@@ -1377,8 +1383,9 @@
   font-style: normal;
   text-transform: none;
   letter-spacing: 0;
+  /* Set apart by its lower case, not by fading: an opacity here took the
+     word under the 7:1 the rest of the label holds. */
   color: var(--fr-ink-2);
-  opacity: 0.7;
 }
 .fr-enq-field input[type="email"],
 .fr-enq-field input[type="text"],
@@ -1446,9 +1453,33 @@
   text-underline-offset: 3px;
   /* The 13px sentence left this link a 17px-tall target. Vertical padding on
      an inline link widens what a finger or pointer can hit without moving the
-     sentence: the line box keeps its height. 6px makes it 29px, over the
-     production route pass's 28px floor. */
-  padding-block: 6px;
+     sentence: the line box keeps its height. 14px makes it 45px, the full
+     44px target (goals/01) rather than the route pass's 28px floor. */
+  padding-block: 14px;
+}
+
+/* On a phone every field takes the column's full width. At 375 px the fixed
+   110/200/220 px widths left the fields a ragged 60% of the sheet, which read
+   as unfinished and made the address the hardest thing on the page to type. */
+@media (max-width: 640px) {
+  .fr-enq-fields {
+    flex-direction: column;
+    width: 100%;
+  }
+  .fr-enq-field {
+    display: block;
+    width: 100%;
+  }
+  .fr-enq-field input,
+  .fr-enq-field input[type="number"],
+  .fr-enq-field input[type="date"],
+  .fr-enq-field input[type="email"],
+  .fr-enq-field input[type="text"],
+  .fr-enq-field input[type="tel"] {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+  }
 }
 
 /* ——— footer legal links ——— */

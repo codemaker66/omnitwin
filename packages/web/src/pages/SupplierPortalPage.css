@@ -3,8 +3,14 @@
   --supplier-panel: #1f2229;
   --supplier-panel-soft: #191c22;
   --supplier-cream: #f3eee4;
-  --supplier-muted: #b7b0a4;
+  /* Suppliers read this pack on a phone at a loading door, and its text
+     holds 7:1 (goals/01). The muted ink was #b7b0a4 (6.1 to 6.8:1 on the
+     panels); it is the same warm grey lifted. Copper stays the accent for
+     borders, the button and the radio; copper as TEXT takes the register's
+     lit copper, because #c98a5b is 5.1:1 on the panels. */
+  --supplier-muted: #c8c1b5;
   --supplier-gold: #c98a5b;
+  --supplier-gold-text: var(--house-copper-lit);
   --supplier-teal: #68d8d2;
   --supplier-amber: #d69b52;
   --supplier-border: rgba(201, 138, 91, 0.24);
@@ -46,7 +52,7 @@
 
 .supplier-portal__label {
   margin: 0 0 12px;
-  color: var(--supplier-gold);
+  color: var(--supplier-gold-text);
   font-size: 12px;
   line-height: 1.2;
   font-weight: 700;
@@ -143,7 +149,7 @@
   padding: 0 10px;
   border: 1px solid var(--supplier-border-strong);
   border-radius: 999px;
-  color: var(--supplier-gold);
+  color: var(--supplier-gold-text);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
