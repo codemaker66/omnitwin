@@ -43,6 +43,9 @@
   width: 100%;
   max-width: 640px;
   margin-inline: auto;
+  /* vh first: a browser without dvh (iOS Safari before 15.4) drops the whole
+     second declaration, and the sheet must still stop short of the screen. */
+  max-height: 70vh;
   max-height: min(70dvh, calc(100dvh - env(safe-area-inset-top) - 72px));
   display: flex;
   flex-direction: column;
