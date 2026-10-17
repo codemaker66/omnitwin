@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import type { HallkeeperFloorPlan } from "@omnitwin/types";
+import { assetDisplayName, VISITOR_PLAN_PROVENANCE, type HallkeeperFloorPlan } from "@omnitwin/types";
 import { assetDefinitions, configurations, placedObjects, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { buildHallkeeperFloorPlan, type FloorPlanAsset } from "./hallkeeper-floor-plan.js";
@@ -14,7 +14,9 @@ import { renderHallkeeperFloorPlan } from "./hallkeeper-floor-plan-pdf.js";
 //
 // What it carries, and what it deliberately does not:
 //   * the room, the venue, the vector plan with a measured scale bar, and a
-//     count of what is placed, by catalogue name;
+//     count of what is placed, by the name the planner shows (a maker's
+//     model reference such as "Burgess Turini 18/3" reads as the planner's
+//     plain name; assetDisplayName in @omnitwin/types);
 //   * the line "Drawn by a visitor; not reviewed by the venue." and when the
 //     plan last changed, so nobody mistakes it for the venue's own drawing;
 //   * NO prices, NO capacity verdicts and NO configuration id, short code or
@@ -26,8 +28,9 @@ import { renderHallkeeperFloorPlan } from "./hallkeeper-floor-plan-pdf.js";
 // team confirms prices, availability and what the room can hold.
 // ---------------------------------------------------------------------------
 
-/** The provenance line every visitor plan carries, in the venue's words. */
-export const VISITOR_PLAN_PROVENANCE = "Drawn by a visitor; not reviewed by the venue.";
+/** The provenance line every visitor plan carries, in the venue's words. The
+ *  view-only page shows the same line, so it lives with that contract. */
+export { VISITOR_PLAN_PROVENANCE };
 
 /** The planner's default name for a guest plan; it says nothing to a reader. */
 const DEFAULT_PLAN_NAME = "Untitled Layout";
@@ -112,7 +115,9 @@ export async function loadVisitorPlan(db: Database, configId: string): Promise<V
     })
       .from(assetDefinitions)
       .where(inArray(assetDefinitions.id, assetIds));
-    for (const row of rows) assets.set(row.id, row);
+    // A reader sees what the organiser saw in the planner, not the stock
+    // identity the venue's inventory and hallkeeper sheet keep.
+    for (const row of rows) assets.set(row.id, { ...row, name: assetDisplayName(row.id, row.name) });
   }
 
   const trimmedName = config.name.trim();

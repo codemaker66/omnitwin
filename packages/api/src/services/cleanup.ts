@@ -1,5 +1,5 @@
-import { eq, and, isNull, lt, sql, notExists, inArray } from "drizzle-orm";
-import { configurations, placedObjects, enquiries, files, referencePhotos } from "../db/schema.js";
+import { eq, and, gt, isNull, lt, sql, notExists, inArray } from "drizzle-orm";
+import { configurations, configurationViewTokens, enquiries, files, referencePhotos } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -11,17 +11,22 @@ import type { Database } from "../db/client.js";
  * - Older than 72 hours
  * - Not claimed (userId is null, isPublicPreview is true)
  * - Not linked to any enquiry
+ * - Not shown by a working view-only link (fix-first item 11): someone the
+ *   organiser sent the plan to must not find it gone. A stopped or expired
+ *   link keeps nothing, and every link expires (services/plan-view-links.ts).
+ *
+ * One DELETE carries the whole rule, so a plan that gains a link while the
+ * sweep runs is judged by the rule as it stands when its row is deleted, not
+ * by an earlier read. Placed objects and view links go with their plan
+ * (ON DELETE CASCADE).
  *
  * To run on a cron: wire into a scheduled job (e.g. node-cron, platform cron,
  * or a GitHub Actions schedule) calling POST /admin/cleanup with an admin token.
  */
-export async function cleanupPreviewConfigurations(db: Database): Promise<number> {
-  const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000);
+export async function cleanupPreviewConfigurations(db: Database, now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - 72 * 60 * 60 * 1000);
 
-  // Single query: find stale preview configs NOT linked to any enquiry
-  // Replaces N+1 per-config enquiry existence check
-  const stale = await db.select({ id: configurations.id })
-    .from(configurations)
+  const deleted = await db.delete(configurations)
     .where(and(
       eq(configurations.isPublicPreview, true),
       isNull(configurations.userId),
@@ -31,17 +36,19 @@ export async function cleanupPreviewConfigurations(db: Database): Promise<number
           .from(enquiries)
           .where(eq(enquiries.configurationId, configurations.id)),
       ),
-    ));
+      notExists(
+        db.select({ one: sql`1` })
+          .from(configurationViewTokens)
+          .where(and(
+            eq(configurationViewTokens.configurationId, configurations.id),
+            isNull(configurationViewTokens.revokedAt),
+            gt(configurationViewTokens.expiresAt, now),
+          )),
+      ),
+    ))
+    .returning({ id: configurations.id });
 
-  if (stale.length === 0) return 0;
-
-  const staleIds = stale.map((c) => c.id);
-
-  // Batch delete: placed objects first (cascade exists but be explicit), then configs
-  await db.delete(placedObjects).where(inArray(placedObjects.configurationId, staleIds));
-  await db.delete(configurations).where(inArray(configurations.id, staleIds));
-
-  return stale.length;
+  return deleted.length;
 }
 
 /**

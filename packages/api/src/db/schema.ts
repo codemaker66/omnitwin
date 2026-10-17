@@ -1053,6 +1053,31 @@ export const layoutAliases = pgTable("layout_aliases", {
 ]);
 
 // ---------------------------------------------------------------------------
+// configuration_view_tokens — view-only links to a visitor's plan (migration
+// configuration_view_tokens, fix-first item 11 of the 16 Oct 2026 brief).
+//
+// The token is shown to the organiser once and stored only as its SHA-256;
+// the configuration id (an anonymous plan's edit capability) never leaves in
+// a link. Every link expires, and a working link keeps its plan out of the
+// 72-hour sweep (services/cleanup.ts). services/plan-view-links.ts owns it.
+// ---------------------------------------------------------------------------
+
+export const configurationViewTokens = pgTable("configuration_view_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  tokenPrefix: varchar("token_prefix", { length: 16 }).notNull(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => [
+  unique("configuration_view_tokens_token_hash_unique").on(table.tokenHash),
+  check("configuration_view_tokens_token_hash_shape", sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
+  check("configuration_view_tokens_expires_after_created", sql`${table.expiresAt} > ${table.createdAt}`),
+  index("configuration_view_tokens_configuration_idx").on(table.configurationId),
+]);
+
+// ---------------------------------------------------------------------------
 // 15. subscriptions — one row per Stripe subscription.
 //
 // Created during Stripe Checkout (venue_id NULL until the onboarding

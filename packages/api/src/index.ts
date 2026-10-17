@@ -31,6 +31,7 @@ import { rotaRoutes } from "./routes/rota.js";
 import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
 import { referencePhotoRoutes } from "./routes/reference-photos.js";
 import { publicConfigRoutes } from "./routes/public-configs.js";
+import { publicPlanViewRoutes } from "./routes/public-plan-views.js";
 import { layoutRoutes } from "./routes/layouts.js";
 import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
 import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-runs.js";
@@ -447,6 +448,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
   await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
   await server.register(publicConfigRoutes, { db, prefix: "/public" });
+  // A visitor's view-only links (fix-first item 11): the organiser makes and
+  // stops them with the plan's id; a recipient only reads through the token.
+  await server.register(publicPlanViewRoutes, { db, prefix: "/public" });
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
