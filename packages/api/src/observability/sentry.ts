@@ -1,5 +1,6 @@
 import type { FastifyRequest } from "fastify";
 import type { Env } from "../env.js";
+import { scrubApiSentryEvent } from "./health-redaction.js";
 
 // ---------------------------------------------------------------------------
 // Sentry — error tracking + tracing for Fastify
@@ -34,17 +35,11 @@ export async function initSentry(env: Env): Promise<void> {
     // Redact anything that could carry PII before the event leaves
     // the process. Sentry's default `sendDefaultPii` is false but we
     // go further and actively scrub request bodies + headers, since
-    // our routes include planner notes and email addresses.
+    // our routes include planner notes and email addresses, and then
+    // any guest allergy note left in a message or breadcrumb
+    // (observability/health-redaction.ts).
     beforeSend(event) {
-      if (event.request !== undefined) {
-        event.request.data = undefined;
-        event.request.query_string = undefined;
-        if (event.request.headers !== undefined) {
-          delete event.request.headers["authorization"];
-          delete event.request.headers["cookie"];
-        }
-      }
-      return event;
+      return scrubApiSentryEvent(event);
     },
   });
 }

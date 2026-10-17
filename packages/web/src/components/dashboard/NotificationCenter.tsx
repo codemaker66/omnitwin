@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, ChevronDown, RefreshCw } from "lucide-react";
-import type { Notification } from "@omnitwin/types";
+import { promotedHoldFromActionPath, type Notification } from "@omnitwin/types";
 import { listNotifications, markNotificationRead } from "../../api/notifications.js";
 import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
+import { PromotionDraft } from "./PromotionDraft.js";
 import "./NotificationCenter.css";
 
 // The notifications block inside the dashboard's More popover. It reads the
@@ -61,6 +62,15 @@ export function NotificationCenter({
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set());
   const [failedIds, setFailedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Notifications whose drafted email is open in place (a promoted hold's).
+  const [openDrafts, setOpenDrafts] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleDraft = (id: string): void => {
+    setOpenDrafts((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   const listens = useAuthStore((store) => listensForFloorRequests(store.user));
   // Only the newest request may write the list: an older answer landing late
   // would put back what a newer one had already replaced.
@@ -212,6 +222,9 @@ export function NotificationCenter({
             <ul className="vv-notifications-list">
               {notifications.map((notification) => {
                 const busy = busyIds.has(notification.id);
+                const promotedHold = promotedHoldFromActionPath(notification.actionPath);
+                const draftOpen = promotedHold !== null && openDrafts.has(notification.id);
+                const draftPanelId = `${panelId}-draft-${notification.id}`;
                 return (
                   <li key={notification.id} className="vv-notification" data-severity={notification.severity}>
                     <p className="vv-notification-tone">
@@ -221,6 +234,18 @@ export function NotificationCenter({
                     <h3 className="vv-notification-title">{notification.title}</h3>
                     <p className="vv-notification-body">{notification.body}</p>
                     <div className="vv-notification-actions">
+                      {promotedHold !== null && (
+                        <button
+                          type="button"
+                          className="vv-notifications-button"
+                          aria-expanded={draftOpen}
+                          aria-controls={draftOpen ? draftPanelId : undefined}
+                          aria-label={`${draftOpen ? "Close the draft" : "Read the draft"}: ${notification.title}`}
+                          onClick={() => { toggleDraft(notification.id); }}
+                        >
+                          {draftOpen ? "Close the draft" : "Read the draft"}
+                        </button>
+                      )}
                       {notification.actionPath !== null && (
                         <button
                           type="button"
@@ -243,6 +268,11 @@ export function NotificationCenter({
                         Mark read
                       </button>
                     </div>
+                    {draftOpen && (
+                      <div id={draftPanelId}>
+                        <PromotionDraft bookingId={promotedHold} />
+                      </div>
+                    )}
                     {failedIds.has(notification.id) && (
                       <p className="vv-notification-failed" role="alert">Could not mark this read. Try again.</p>
                     )}

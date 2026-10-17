@@ -182,3 +182,25 @@ export function schedulePrerender(
     logger.error({ err }, "pdf-prerender: uncaught promise rejection");
   });
 }
+
+/**
+ * Remove a pre-rendered sheet PDF from R2 (the dietary-note retention pass,
+ * services/dietary-retention.ts). True once the object is gone; deleting a
+ * key that is already absent succeeds. False when R2 is not configured here,
+ * so the caller keeps the sheet for a pass that can remove it. Errors are
+ * the caller's to count.
+ */
+export async function removeSheetPdfObject(env: Env, key: string): Promise<boolean> {
+  if (env.R2_BUCKET_NAME === undefined || env.R2_ACCOUNT_ID === undefined) return false;
+  const { S3Client, DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = new S3Client({
+    region: "auto",
+    endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: env.R2_ACCESS_KEY_ID ?? "",
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? "",
+    },
+  });
+  await client.send(new DeleteObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: key }));
+  return true;
+}

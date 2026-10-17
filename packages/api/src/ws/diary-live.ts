@@ -18,6 +18,7 @@ import {
 } from "../services/diary-commands.js";
 import { executeConversationCommand, type ConversationChanged } from "../services/conversation-commands.js";
 import type { MutationActor } from "../services/booking-mutations.js";
+import { announcePromotionNotices } from "../services/hold-promotion.js";
 import { runRequestEscalationPass } from "../services/requests.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
@@ -770,6 +771,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
               actorUserId: commandActor.id,
               at: new Date().toISOString(),
             });
+            announcePromotionNotices(server.log, execution.changed.notices);
           }
         } catch {
           send({

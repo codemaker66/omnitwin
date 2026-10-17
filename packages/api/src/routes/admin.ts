@@ -11,6 +11,9 @@ import {
 } from "../services/sheet-snapshot.js";
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
+import { removeLapsedDietaryNotes, type SheetPdfToRemove } from "../services/dietary-retention.js";
+import { pdfObjectKey, removeSheetPdfObject } from "../services/pdf-prerender.js";
+import type { Env } from "../env.js";
 
 // ---------------------------------------------------------------------------
 // The hold-reminder workflow's identity (T-619).
@@ -54,23 +57,44 @@ function hasCronToken(request: FastifyRequest): boolean {
 
 export async function adminRoutes(
   server: FastifyInstance,
-  opts: { db: Database },
+  opts: { db: Database; env?: Env },
 ): Promise<void> {
-  const { db } = opts;
+  const { db, env } = opts;
 
-  // POST /admin/cleanup — trigger manual cleanup of stale preview configs
+  // A sheet's pre-rendered PDF goes from storage before its copy of a
+  // dietary note is removed (services/dietary-retention.ts). Without the
+  // storage settings here the sheet waits for a pass that has them.
+  const removeSheetPdf = async (sheet: SheetPdfToRemove): Promise<boolean> =>
+    env === undefined
+      ? false
+      : removeSheetPdfObject(env, pdfObjectKey(sheet.configurationId, sheet.version, sheet.sourceHash));
+
+  // POST /admin/cleanup — trigger manual cleanup of stale preview configs,
+  // orphaned uploads, and guests' allergy notes past their retention.
   server.post("/cleanup", {
     preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => {
     const deletedConfigs = await cleanupPreviewConfigurations(db);
     const deletedFiles = await cleanupOrphanedFiles(db);
+    const dietaryNotes = await removeLapsedDietaryNotes(db, { removeSheetPdf });
     return {
       data: {
         deletedConfigs,
         deletedFiles,
-        message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s)`,
+        dietaryNotes,
+        message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
+          + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
+          + (dietaryNotes.sheetsPending > 0 ? `; ${String(dietaryNotes.sheetsPending)} sheet(s) wait for their stored PDF to be removed` : ""),
       },
     };
+  });
+
+  // POST /admin/retention/dietary-notes — what the retention pass would
+  // remove now, changing nothing. The rehearsal before a real pass.
+  server.post("/retention/dietary-notes", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async () => {
+    return { data: await removeLapsedDietaryNotes(db, { dryRun: true }) };
   });
 
   // -------------------------------------------------------------------------

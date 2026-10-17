@@ -84,6 +84,7 @@ import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
+import { apiLoggerOptions } from "./observability/health-redaction.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
 import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
@@ -138,11 +139,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // edge overwrites the header, so the forgery buys nothing.
   // ---------------------------------------------------------------------------
   const server = Fastify({
-    logger: isDev
-      ? { level: "info", transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } } }
-      : isTest
-        ? false
-        : { level: "info" },
+    // Every logging mode scrubs guests' allergy notes from the finished line
+    // (observability/health-redaction.ts).
+    logger: apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production"),
     bodyLimit: 2_000_000,
     connectionTimeout: 30_000,
     requestTimeout: 60_000,
@@ -457,7 +456,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(clientRoutes, { db, prefix: "/clients" });
-  await server.register(adminRoutes, { db, prefix: "/admin" });
+  await server.register(adminRoutes, { db, env, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(adminReconstructionFoundryRoutes, {

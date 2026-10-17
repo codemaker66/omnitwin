@@ -18,6 +18,7 @@ import type {
 } from "@omnitwin/types";
 import {
   ConfigurationMetadataSchema,
+  DIETARY_NOTE_RETENTION,
   DOOR_EVENT_TYPES,
   PHASE_METADATA,
   PROCEDURE_NOTE_MAX,
@@ -955,6 +956,7 @@ const DIETARY_FIELDS: readonly { readonly key: keyof DietarySummary; readonly la
 ];
 
 function DietaryEditor({ value, onChange, onClear }: DietaryEditorProps): React.ReactElement {
+  const allergyHintId = useId();
   const clampInt = (raw: string): number => {
     const n = Number.parseInt(raw, 10);
     if (Number.isNaN(n) || n < 0) return 0;
@@ -982,9 +984,15 @@ function DietaryEditor({ value, onChange, onClear }: DietaryEditorProps): React.
           onChange={(e) => { onChange({ otherAllergies: e.target.value.slice(0, 1000) }); }}
           rows={2}
           placeholder="One guest: shellfish, severe. Two guests: sesame intolerance."
+          aria-describedby={allergyHintId}
           style={textareaStyle}
         />
       </Field>
+      {/* What happens to the note, said where it is written (fix-first 18). */}
+      <p id={allergyHintId} style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: TEXT_SEC }}>
+        Allergens and numbers, not guests&apos; names. The note is printed on the event sheet and removed{" "}
+        {DIETARY_NOTE_RETENTION.daysAfterEvent} days after the event.
+      </p>
 
       <button type="button" onClick={onClear} style={secondaryBtnStyle}>
         Remove dietary block
