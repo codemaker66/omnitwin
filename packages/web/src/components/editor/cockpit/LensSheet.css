@@ -1,0 +1,164 @@
+/* The planner's lens sheet on phones and tablets (LensSheet.tsx).
+ *
+ * It floats directly on the 3D viewport, so it takes the viewport register
+ * (house-tokens.css: --house-bg-*, --house-text-*, copper hairline) that the
+ * desktop lens dock already uses, and the house scrim behind it. The scene
+ * stays visible above the sheet: it is capped below the full height and the
+ * scrim only dims.
+ *
+ * Position is driven by the spring in LensSheet.tsx (an inline transform), so
+ * nothing here transitions the sheet itself. */
+
+.lens-sheet-layer {
+  position: fixed;
+  inset: 0;
+  /* Above the phone top bar (72) and the mobile dock (64); below the planner's
+     full dialogs (Event details 100, the guest enquiry 200). */
+  z-index: 90;
+  pointer-events: none;
+}
+
+.lens-sheet__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--house-scrim);
+  opacity: 0;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* While it leaves, a tap passes to nothing rather than reopening anything. */
+.lens-sheet-layer[data-state="closing"] .lens-sheet__scrim,
+.lens-sheet-layer[data-state="closing"] .lens-sheet {
+  pointer-events: none;
+}
+
+.lens-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  /* A tablet keeps a readable column instead of a 1,024 px wide slab. */
+  width: 100%;
+  max-width: 640px;
+  margin-inline: auto;
+  max-height: min(70dvh, calc(100dvh - env(safe-area-inset-top) - 72px));
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+  border: 1px solid rgba(201, 138, 91, 0.24);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(201, 138, 91, 0.1), transparent 42%),
+    var(--house-bg-1);
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.38);
+  color: var(--house-text-1);
+  font-family: var(--house-sans);
+  pointer-events: auto;
+  overscroll-behavior: contain;
+  will-change: transform;
+}
+
+/* The dialog itself takes focus only as a fallback; its first stop is Close. */
+.lens-sheet:focus {
+  outline: none;
+}
+
+.lens-sheet:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: -2px;
+}
+
+/* The handle row is the main drag zone. touch-action stops the browser
+   claiming the gesture as a scroll or pull-to-refresh. */
+.lens-sheet__grab {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 52px;
+  padding: 4px 10px 0;
+  touch-action: none;
+  cursor: grab;
+}
+
+.lens-sheet__handle {
+  grid-column: 2;
+  width: 40px;
+  height: 5px;
+  border-radius: var(--house-radius-pill);
+  background: var(--house-text-3);
+}
+
+.lens-sheet__close {
+  grid-column: 3;
+  justify-self: end;
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--house-hairline-hover);
+  border-radius: var(--house-radius-pill);
+  background: transparent;
+  color: var(--house-text-1);
+  font: 600 14px/1 var(--house-sans);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--house-motion-hover) var(--house-ease-out),
+    border-color var(--house-motion-hover) var(--house-ease-out),
+    transform var(--house-motion-press) var(--house-ease-out);
+}
+
+@media (hover: hover) {
+  .lens-sheet__close:hover {
+    background: rgba(244, 239, 230, 0.08);
+    border-color: rgba(201, 138, 91, 0.42);
+  }
+}
+
+.lens-sheet__close:active {
+  transform: scale(0.97);
+}
+
+.lens-sheet__close:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+/* The registered lens panel, re-seated from the desktop dock column into the
+   sheet: it keeps its content and type, drops the dock's edge and entrance
+   (the sheet itself arrives), and scrolls inside the sheet's height. */
+.lens-sheet .lens-panel {
+  grid-area: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 2px 18px 18px;
+  border-left: 0;
+  background: transparent;
+  animation: none;
+  overscroll-behavior: contain;
+}
+
+/* The panel's own header is the second drag zone, a larger target than the
+   handle row alone. */
+.lens-sheet .lens-panel__head {
+  touch-action: none;
+}
+
+.lens-sheet .lens-panel__title {
+  font-family: var(--house-serif);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lens-sheet__close {
+    transition: none;
+  }
+
+  .lens-sheet__close:active {
+    transform: none;
+  }
+}
