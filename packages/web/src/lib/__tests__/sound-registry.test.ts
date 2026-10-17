@@ -111,14 +111,47 @@ function sourceFiles(dir: string): string[] {
   return found;
 }
 
+// Anything that can make a sound: Web Audio, or an audio element made in
+// script or in JSX.
+const SOUND_SOURCE = /\b(AudioContext|webkitAudioContext|createOscillator|createBufferSource|HTMLAudioElement)\b|new\s+Audio\s*\(|<audio\b/;
+
+// Files outside the registry that may still make sound, each with its reason.
+// The convener's recorded narration is spoken content in the Craft quiz, not
+// a synthesised cue, and has its own player and mute.
+const NAMED_EXCEPTIONS: ReadonlySet<string> = new Set([
+  "features/trades-house/convener/convener-voice.ts",
+]);
+
+function soundMakers(srcRoot: string): string[] {
+  return sourceFiles(srcRoot)
+    .map((file) => relative(srcRoot, file).split(sep).join("/"))
+    .filter((file) => file !== "lib/sound-registry.ts")
+    .filter((file) => SOUND_SOURCE.test(readFileSync(join(srcRoot, file), "utf8")));
+}
+
 describe("no sound outside the registry", () => {
-  it("keeps Web Audio inside lib/sound-registry.ts", () => {
-    const srcRoot = join(__dirname, "..", "..");
-    const registry = join("lib", "sound-registry.ts");
-    const offenders = sourceFiles(srcRoot)
-      .filter((file) => relative(srcRoot, file) !== registry)
-      .filter((file) => /\b(AudioContext|createOscillator|createBufferSource|webkitAudioContext)\b/.test(readFileSync(file, "utf8")))
-      .map((file) => relative(srcRoot, file).split(sep).join("/"));
+  const srcRoot = join(__dirname, "..", "..");
+
+  it("the scan recognises every way the app could make a sound", () => {
+    for (const line of [
+      "const ctx = new AudioContext();",
+      "const ctx = new window.webkitAudioContext();",
+      "ctx.createOscillator()",
+      "ctx.createBufferSource()",
+      "let el: HTMLAudioElement;",
+      "void new Audio('/ding.mp3').play();",
+      "return <audio src={src} autoPlay />;",
+    ]) expect(SOUND_SOURCE.test(line), line).toBe(true);
+    expect(SOUND_SOURCE.test("const s: AudioContextState = 'running';")).toBe(false);
+  });
+
+  it("keeps every sound inside lib/sound-registry.ts, apart from the named exceptions", () => {
+    const offenders = soundMakers(srcRoot).filter((file) => !NAMED_EXCEPTIONS.has(file));
     expect(offenders).toEqual([]);
+  });
+
+  it("names no exception that no longer makes a sound", () => {
+    const makers = new Set(soundMakers(srcRoot));
+    expect([...NAMED_EXCEPTIONS].filter((file) => !makers.has(file))).toEqual([]);
   });
 });

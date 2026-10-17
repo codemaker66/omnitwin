@@ -4,12 +4,14 @@ import { isUnownedRequest, type VenueRequest } from "@omnitwin/types";
 // ---------------------------------------------------------------------------
 // The sound registry: every sound Venviewer can make, in one place.
 //
-// Facts for the gate: callers are WhenRibbon.tsx (createSnapTick and the tick
-// preference), ChimeToggle.tsx and RequestsProvider.tsx (the arrival chime),
-// pages/LandingPage.tsx and ContemplationAct.tsx (room tone) and the Toolbar
-// sound players. No other file may use Web Audio (sound-registry.test.ts
-// scans the source for that). The four files this replaces are
-// lib/toolbar-sounds.ts, components/requests/arrival-chime.ts,
+// Callers: WhenRibbon.tsx (createSnapTick and the tick preference),
+// ChimeToggle.tsx and RequestsProvider.tsx (the arrival chime), and
+// pages/LandingPage.tsx with ContemplationAct.tsx (room tone). The toolbar
+// tick and click players have no caller in the app today; they are kept as
+// they were in lib/toolbar-sounds.ts. No other source file may make sound
+// (sound-registry.test.ts scans the source for Web Audio and audio elements,
+// with the convener's recorded narration as its one named exception). This
+// replaces lib/toolbar-sounds.ts, components/requests/arrival-chime.ts,
 // components/editor/cockpit/when-ribbon-tick.ts and pages/landing/useRoomTone.ts.
 //
 // Sound is opt-in everywhere (goal 01 section 5). Each entry below names one
