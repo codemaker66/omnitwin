@@ -9,7 +9,7 @@ import { usePlacementStore } from "../../../stores/placement-store.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
 import { FurnitureMotion } from "../../editor/FurnitureMotion.js";
 import { HallContext } from "../HallContext.js";
-import { HallSunLight } from "../HallSunLight.js";
+import { HallSunLight, MOTION_REDRAW_MS } from "../HallSunLight.js";
 import { createSunCaster, requestHallSunRedraw, withoutSunMapDraw } from "../hall-sun.js";
 
 let mounted: StubRoot | null = null;
@@ -23,10 +23,21 @@ afterEach(() => {
 });
 
 /** The hall's sun as HallSunLight puts it in the scene. */
-function hallSunShadow(scene: Object3D): LightShadow {
+function hallSunLight(scene: Object3D): DirectionalLight {
   const light = scene.getObjectByName("grand-hall-sun");
   if (!(light instanceof DirectionalLight)) throw new Error("HallSunLight did not add the hall's sun");
-  return light.shadow;
+  return light;
+}
+
+function hallSunShadow(scene: Object3D): LightShadow {
+  return hallSunLight(scene).shadow;
+}
+
+/** The clock the redraw rate is measured by, held in the test's hand. */
+function holdClock(start: number): { readonly set: (ms: number) => void } {
+  let now = start;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  return { set: (ms) => { now = ms; } };
 }
 
 /** One packed triangle of the city model ('VVCX', version 1, int16 cm vertices, uint32 indices). */
@@ -108,18 +119,26 @@ describe("a capture of the room on its own stage", () => {
 });
 
 describe("the hall's sun and furniture in motion", () => {
-  it("redraws the map on each frame a piece moves and on the frame it comes to rest, then stops", () => {
+  it("follows a moving piece at most every 33 ms, always draws the pose it rests in, then stops", () => {
+    const clock = holdClock(1_000);
     mounted = mountInStubRoot(<HallSunLight />);
+    hallSunLight(mounted.scene).intensity = 5;
     const shadow = hallSunShadow(mounted.scene);
     shadow.needsUpdate = false;
 
     act(() => { publishFurnitureSettleFrame(["chair"]); });
     expect(shadow.needsUpdate).toBe(true);
     shadow.needsUpdate = false;
+    // The next pose, 16 ms on, waits for a frame a little later.
+    clock.set(1_016);
     act(() => { publishFurnitureSettleFrame(["chair"]); });
+    expect(shadow.needsUpdate).toBe(false);
+    clock.set(1_000 + MOTION_REDRAW_MS + 1);
+    act(() => { advance(1, true); });
     expect(shadow.needsUpdate).toBe(true);
     shadow.needsUpdate = false;
-    // The frame that returns the piece to rest.
+    // The frame that returns the piece to rest is drawn at once, however soon.
+    clock.set(1_000 + MOTION_REDRAW_MS + 5);
     act(() => { publishFurnitureSettleFrame([]); });
     expect(shadow.needsUpdate).toBe(true);
     shadow.needsUpdate = false;
@@ -131,6 +150,22 @@ describe("the hall's sun and furniture in motion", () => {
     mounted = null;
     act(() => { publishFurnitureSettleFrame(["chair"]); });
     expect(shadow.needsUpdate).toBe(false);
+  });
+
+  it("draws nothing while its light is dark, and the last pose once it shines again", () => {
+    const clock = holdClock(5_000);
+    mounted = mountInStubRoot(<HallSunLight />);
+    const light = hallSunLight(mounted.scene);
+    light.intensity = 0;
+    light.shadow.needsUpdate = false;
+    act(() => { publishFurnitureSettleFrame(["chair"]); });
+    act(() => { publishFurnitureSettleFrame([]); });
+    act(() => { advance(1, true); });
+    expect(light.shadow.needsUpdate).toBe(false);
+    light.intensity = 0.5;
+    clock.set(5_000 + MOTION_REDRAW_MS + 1);
+    act(() => { advance(2, true); });
+    expect(light.shadow.needsUpdate).toBe(true);
   });
 
   it("draws a dropped-in piece's shadow at every pose it is drawn at, down to the floor", () => {
@@ -145,11 +180,13 @@ describe("the hall's sun and furniture in motion", () => {
         <group name={`furniture-${item.id}`} />
       </>,
     );
+    hallSunLight(mounted.scene).intensity = 5;
     const shadow = hallSunShadow(mounted.scene);
     const group = mounted.scene.getObjectByName(`furniture-${item.id}`);
     if (group === undefined) throw new Error("Missing the item's group");
     let seconds = 100;
-    const frame = (): void => { act(() => { advance(seconds, true); }); seconds += 1 / 60; };
+    const clock = holdClock(seconds * 1000);
+    const frame = (): void => { clock.set(seconds * 1000); act(() => { advance(seconds, true); }); seconds += 1 / 60; };
     frame();
     shadow.needsUpdate = false;
 
@@ -163,11 +200,12 @@ describe("the hall's sun and furniture in motion", () => {
       shadow.needsUpdate = false;
     }
     expect(activeFurnitureSettleCount()).toBe(0);
-    // In the air while drawn, and every one of those frames redrew the map,
-    // the last of them the piece at rest on the floor.
+    // In the air while drawn; at sixty frames a second the map followed every
+    // other frame at least, and the last frame drew the piece at rest.
     expect(Math.max(...heights)).toBeGreaterThan(0.05);
     expect(redrawn.length).toBeGreaterThan(3);
-    expect(redrawn.every(Boolean)).toBe(true);
+    expect(redrawn.every((drawn, index) => drawn || redrawn[index + 1] === true || index === redrawn.length - 1)).toBe(true);
+    expect(redrawn[redrawn.length - 1]).toBe(true);
     expect(group.position.y).toBe(0);
 
     frame();
