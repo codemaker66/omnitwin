@@ -1157,6 +1157,10 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   await page.route(`${API}/venues/${VENUE_ID}/turnaround-rules`, (route) => {
     void route.fulfill({ json: { data: { rules: [], rooms: [], eventTypes: [] } } });
   });
+  // ...and which rooms' dates assistants and the website may show.
+  await page.route(`${API}/venues/${VENUE_ID}/forward-book`, (route) => {
+    void route.fulfill({ json: { data: { rooms: [] } } });
+  });
   await page.route(`${API}/venues/${VENUE_ID}/pricing/${pricingRuleFixture().id}`, (route) => {
     deletedPricingRules.push(pricingRuleFixture().id);
     void route.fulfill({ status: 204 });

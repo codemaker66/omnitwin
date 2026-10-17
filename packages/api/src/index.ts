@@ -25,6 +25,7 @@ import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
+import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
 import { rotaRoutes } from "./routes/rota.js";
@@ -442,6 +443,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
   await server.register(turnaroundRuleRoutes, { db, prefix: "/venues/:venueId/turnaround-rules" });
+  // Which rooms' dates the public may read (Blake, 17 October 2026).
+  await server.register(forwardBookRoutes, { db, prefix: "/venues/:venueId/forward-book" });
   await server.register(proposalTemplateRoutes, { db, prefix: "/venues/:venueId/proposal-templates" });
   await server.register(rotaRoutes, { db, prefix: "/venues/:venueId/rota" });
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
