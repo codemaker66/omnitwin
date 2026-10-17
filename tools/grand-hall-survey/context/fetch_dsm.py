@@ -7,7 +7,9 @@ National Grid (EPSG:27700): float32 metres above ODN, 0.5 m cells, pixel-is-area
 nodata -9999. The hall (HES listing LB32713, NGR NS 59329 65183) is 671 m from
 the east edge and 183 m from the south edge of tile NS56NE, so a 3 km square
 centred on it needs four tiles. Each is checked against its byte count and the
-SHA-256 of the copy the published model was built from.
+SHA-256 of the copy the published model was built from: a download as it
+streams, before it is installed, and a copy already on disk before use (a
+damaged one is moved aside to <file>.corrupt and fetched again).
 
 The grid is the 3 km square centred on E 259329 N 665183, cut from the tiles at
 their own 0.5 m cells (the window's edges fall on tile cell edges, so nothing is
@@ -63,20 +65,42 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def download(name, path):
+    """Streams the tile into <path>.part, checking it on the way, and installs it only if it is whole."""
+    size, digest = TILES[name]
+    url = f"{BUCKET}/{tile_file(name)}"
+    print("downloading", url, flush=True)
+    part = path.with_suffix(".part")
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    hasher = hashlib.sha256()
+    received = 0
+    # A connection that closes early ends read() quietly rather than raising,
+    # so the byte count and hash are the only proof the copy is whole.
+    with urllib.request.urlopen(request, timeout=300) as response, open(part, "wb") as out:
+        while block := response.read(1 << 22):
+            out.write(block)
+            hasher.update(block)
+            received += len(block)
+    if received != size or hasher.hexdigest() != digest:
+        part.unlink(missing_ok=True)
+        raise SystemExit(
+            f"{url}: download incomplete or changed upstream (got {received} of {size} bytes, "
+            f"SHA-256 {hasher.hexdigest()}); nothing was installed"
+        )
+    os.replace(part, path)
+
+
 def fetch(name, tiles_dir):
     path = tiles_dir / tile_file(name)
-    if not path.exists():
-        url = f"{BUCKET}/{tile_file(name)}"
-        print("downloading", url, flush=True)
-        part = path.with_suffix(".part")
-        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(request, timeout=300) as response, open(part, "wb") as out:
-            while block := response.read(1 << 22):
-                out.write(block)
-        os.replace(part, path)
     size, digest = TILES[name]
-    if path.stat().st_size != size or sha256(path) != digest:
-        raise SystemExit(f"{path}: not the tile the published model was built from (size or SHA-256 differs)")
+    if path.exists() and (path.stat().st_size != size or sha256(path) != digest):
+        # The copy on disk is damaged (an interrupted older download, say), not
+        # the upstream tile: keep it aside for a look and fetch a fresh one.
+        corrupt = path.with_name(path.name + ".corrupt")
+        os.replace(path, corrupt)
+        print(f"{path.name}: corrupt local copy (size or SHA-256 differs); moved aside to {corrupt.name}", flush=True)
+    if not path.exists():
+        download(name, path)
     print("ok", path.name, flush=True)
     return path
 

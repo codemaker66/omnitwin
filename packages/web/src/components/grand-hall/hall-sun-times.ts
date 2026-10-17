@@ -36,7 +36,18 @@ const WINDOW_IDS = Object.keys(REVEAL_LIMIT) as HallWindowId[];
 /** The venue-local midnight that begins the day containing `at`. */
 export function hallDayStart(at: number): number {
   const day = msToWallInput(at, VENUE_TIME_ZONE).slice(0, 10);
-  return wallInputToMs(`${day}T00:00`, VENUE_TIME_ZONE) ?? at - (at % (1440 * MINUTE_MS));
+  const dayMs = 1440 * MINUTE_MS;
+  // A year the wall format cannot hold falls back to UTC midnight. `%` keeps
+  // the sign of `at`, so before 1970 it is taken back into [0, dayMs): the
+  // midnight must not come after the moment it begins.
+  return wallInputToMs(`${day}T00:00`, VENUE_TIME_ZONE) ?? at - (((at % dayMs) + dayMs) % dayMs);
+}
+
+/** The venue day containing `at`: its midnight and the next one. */
+export function hallDaySpan(at: number): TimeSpan {
+  const start = hallDayStart(at);
+  // A local day is 23–25 hours: the next midnight is found, not assumed.
+  return { start, end: hallDayStart(start + 26 * 60 * MINUTE_MS) };
 }
 
 /** The skyline above a window's centre at a true azimuth, degrees; null outside the wall's half of the sky. */
@@ -102,9 +113,7 @@ function refine(from: number, to: number, was: boolean): number {
 
 /** The day around `at` at Trades Hall. */
 export function hallDay(at: number): HallDay {
-  const dayStart = hallDayStart(at);
-  // A local day is 23–25 hours: the next midnight is found, not assumed.
-  const dayEnd = hallDayStart(dayStart + 26 * 60 * MINUTE_MS);
+  const { start: dayStart, end: dayEnd } = hallDaySpan(at);
   const path: PathSample[] = [];
   for (let time = dayStart; time <= dayEnd; time += PATH_STEP * MINUTE_MS) {
     const sun = sunPosition(time, HALL_OBSERVER);

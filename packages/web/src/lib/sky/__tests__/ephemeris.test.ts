@@ -89,6 +89,72 @@ describe("the sun's day in Glasgow, against the published almanac", () => {
   });
 });
 
+describe("Glasgow's short summer nights, when twilight ends after midnight", () => {
+  // At 55.86°N the sun stops sinking 18° below the horizon from early May to
+  // early August, and on the nights either side astronomical twilight ends
+  // after the clock's midnight (solar midnight is about 01:14 BST); nautical
+  // twilight does the same either side of late May to late July. A day's dusk
+  // is its own evening's, not the one before its dawn. Reference:
+  // sunrise-sunset.org's API at 55.8593, −4.2491 (read 17 October 2026). Its
+  // method runs a few minutes off near these limits (its dusk and next dawn
+  // are not centred on solar midnight), so astronomical times get six minutes.
+  const hall = { latitude: 55.8593, longitude: -4.2491 };
+  const near = (actual: number | null, expected: number, minutes: number) => {
+    expect(actual).not.toBeNull();
+    expect(Math.abs((actual ?? 0) - expected)).toBeLessThan(minutes * 60_000);
+  };
+  /** The evening's dusk and the next morning's dawn sit either side of solar midnight. */
+  const pairsAboutMidnight = (dayStart: number, twilight: "astronomical" | "nautical") => {
+    const day = sunTimes(dayStart, hall);
+    const next = sunTimes(dayStart + 86_400_000, hall);
+    const dusk = twilight === "astronomical" ? day.astronomicalDusk : day.nauticalDusk;
+    const dawn = twilight === "astronomical" ? next.astronomicalDawn : next.nauticalDawn;
+    expect(dusk).not.toBeNull();
+    expect(dawn).not.toBeNull();
+    const midnight = (day.solarNoon + next.solarNoon) / 2;
+    expect(dusk ?? 0).toBeGreaterThan(day.solarNoon);
+    expect(dusk ?? 0).toBeLessThan(midnight);
+    expect(Math.abs(((dusk ?? 0) + (dawn ?? 0)) / 2 - midnight)).toBeLessThan(2 * 60_000);
+  };
+
+  it("on 1 May: the evening's astronomical dusk falls at about 00:20 on the 2nd", () => {
+    const day = sunTimes(Date.UTC(2026, 3, 30, 23), hall);
+    near(day.nauticalDusk, Date.UTC(2026, 4, 1, 21, 40, 31), 2);
+    near(day.astronomicalDusk, Date.UTC(2026, 4, 1, 23, 18, 12), 6);
+    near(day.astronomicalDawn, Date.UTC(2026, 4, 1, 1, 9, 59), 6);
+    pairsAboutMidnight(Date.UTC(2026, 3, 30, 23), "astronomical");
+  });
+
+  it("on 29 April finds the dusk just after midnight, and on 4 May finds none", () => {
+    // 29 April's evening reaches −18° a few minutes into the 30th.
+    const april = sunTimes(Date.UTC(2026, 3, 28, 23), hall);
+    expect(april.astronomicalDusk ?? 0).toBeGreaterThan(Date.UTC(2026, 3, 29, 23));
+    pairsAboutMidnight(Date.UTC(2026, 3, 28, 23), "astronomical");
+    // The night of 4–5 May no longer gets that dark, though the night before did.
+    const may = sunTimes(Date.UTC(2026, 4, 3, 23), hall);
+    expect(may.astronomicalDawn).not.toBeNull();
+    expect(may.astronomicalDusk).toBeNull();
+  });
+
+  it("in late May: the nautical dusk after midnight is the evening's", () => {
+    pairsAboutMidnight(Date.UTC(2026, 4, 23, 23), "nautical");
+    const day = sunTimes(Date.UTC(2026, 4, 23, 23), hall);
+    expect(day.nauticalDusk ?? 0).toBeGreaterThan(Date.UTC(2026, 4, 24, 23));
+  });
+
+  it("on 12 August: the evening's dusk falls after midnight", () => {
+    const day = sunTimes(Date.UTC(2026, 7, 11, 23), hall);
+    near(day.nauticalDusk, Date.UTC(2026, 7, 12, 21, 45, 12), 3);
+    near(day.astronomicalDusk, Date.UTC(2026, 7, 12, 23, 18, 0), 6);
+    near(day.astronomicalDawn, Date.UTC(2026, 7, 12, 1, 26, 6), 6);
+    pairsAboutMidnight(Date.UTC(2026, 7, 11, 23), "astronomical");
+    // The first dark night after the summer: 8 August has a dusk but no dawn.
+    const first = sunTimes(Date.UTC(2026, 7, 7, 23), hall);
+    expect(first.astronomicalDawn).toBeNull();
+    expect(first.astronomicalDusk ?? 0).toBeGreaterThan(Date.UTC(2026, 7, 8, 23));
+  });
+});
+
 describe("the moon", () => {
   it("matches Meeus's worked example 47.a (1992 April 12, 0h TD)", () => {
     const moon = moonEcliptic(instantAtJde(2_448_724.5, 1992));

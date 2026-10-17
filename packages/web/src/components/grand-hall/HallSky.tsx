@@ -4,9 +4,10 @@
 // Reads the moment from the hall time store (the clock by default), carries
 // the shown time toward it on a spring so a chosen hour arrives as the sun
 // sweeping across the sky rather than a cut, and publishes the sky for each
-// frame's time (hall-sky-runtime.ts). Draws the sky dome around the camera.
-// While nothing moves it does no work: the frame loop is on demand, and
-// following the clock re-evaluates twice a minute.
+// frame's time (hall-sky-runtime.ts). A moment on another day arrives at
+// once. Draws the sky dome around the camera. While nothing moves it does no
+// work: the frame loop is on demand, and following the clock looks again
+// twice a minute and steps there in a single frame.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
@@ -17,15 +18,25 @@ import { useHallTimeStore } from "../../stores/hall-time-store.js";
 import { hallSkyAt } from "./hall-sky.js";
 import { clearHallSky, publishHallSky } from "./hall-sky-runtime.js";
 import { SKY_DOME_RADIUS, createSkyDomeGeometry, createSkyDomeMaterial } from "./hall-sky-dome.js";
+import { hallDaySpan, type TimeSpan } from "./hall-sun-times.js";
 
 /** A chosen hour: the sun sweeps there in about a second, critically damped. */
 const SWEEP: SpringConfig = { stiffness: 38, damping: 12.3 };
 /** A dragged time: close behind the hand, still without a jerk. */
 const SCRUB: SpringConfig = { stiffness: 420, damping: 41 };
-/** Further than this the moment is a new day: arrive at once. */
-const JUMP_MINUTES = 36 * 60;
 /** Closer than this the shown time has arrived, minutes. */
 const ARRIVED_MINUTES = 0.05;
+/**
+ * Following the clock from rest, a step up to this long (the half-minute
+ * tick, or a frame drawn for something else) is taken at once, minutes:
+ * swept, half a minute of sun is invisible and costs about forty frames.
+ */
+const FOLLOW_STEP_MINUTES = 5;
+
+/** The shown time (minutes since the epoch) and its rate, with the venue day it was set on. */
+interface ShownTime extends SpringState {
+  readonly day: TimeSpan;
+}
 
 export interface HallSkyProps {
   /** Draw the sky dome (the light is published either way). */
@@ -37,8 +48,7 @@ export function HallSky({ dome = true }: HallSkyProps): ReactElement | null {
   const geometry = useMemo(createSkyDomeGeometry, []);
   const material = useMemo(createSkyDomeMaterial, []);
   const mesh = useRef<Mesh | null>(null);
-  /** The shown time, minutes since the epoch, and its rate. */
-  const shown = useRef<SpringState | null>(null);
+  const shown = useRef<ShownTime | null>(null);
   const lastPublished = useRef<{ minutes: number; moving: boolean } | null>(null);
   const wasMoving = useRef(false);
 
@@ -73,11 +83,20 @@ export function HallSky({ dome = true }: HallSkyProps): ReactElement | null {
 
   useFrame((state, delta) => {
     const { mode, at, scrubbing } = useHallTimeStore.getState();
-    const target = (mode === "now" ? Date.now() : at) / 60_000;
+    const targetMs = mode === "now" ? Date.now() : at;
+    const target = targetMs / 60_000;
     let current = shown.current;
-    if (current === null || Math.abs(target - current.value) > JUMP_MINUTES) {
-      current = { value: target, velocity: 0 };
+    if (current === null || targetMs < current.day.start || targetMs >= current.day.end) {
+      // Another day arrives at once. Its date is the change, and a sweep
+      // there would spin the sun through a whole night and day (a date picked
+      // a day on keeps the hour, so it is 23–25 hours away). The hour within
+      // the day is what sweeps.
+      current = { value: target, velocity: 0, day: hallDaySpan(targetMs) };
       shown.current = current;
+    } else if (mode === "now" && !scrubbing && !wasMoving.current && Math.abs(target - current.value) < FOLLOW_STEP_MINUTES) {
+      // Following the clock from rest: step to it, one frame per tick.
+      current.value = target;
+      current.velocity = 0;
     } else {
       // The first frame of a move does not spend the on-demand loop's idle gap.
       const dt = wasMoving.current ? Math.min(delta, 0.1) : 1 / 60;
@@ -94,6 +113,10 @@ export function HallSky({ dome = true }: HallSkyProps): ReactElement | null {
     if (last === null || Math.abs(current.value - last.minutes) > 0.01 || last.moving !== settling) {
       publishHallSky(hallSkyAt(current.value * 60_000), settling);
       lastPublished.current = { minutes: current.value, moving: settling };
+      // The lights and reflections that read the sky earlier in this frame
+      // take the new one on the next: ask for it, or the light at rest would
+      // wait for an unrelated frame.
+      invalidate();
     }
     mesh.current?.position.copy(state.camera.position);
     if (moving) invalidate();

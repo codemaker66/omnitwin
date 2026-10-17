@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hallDay, hallDayStart, sunReachesFloor, windowSkyline } from "../hall-sun-times.js";
+import { hallDay, hallDaySpan, hallDayStart, sunReachesFloor, windowSkyline } from "../hall-sun-times.js";
 
 const minutes = (ms: number) => Math.round(ms / 60_000);
 
@@ -9,6 +9,25 @@ describe("the Grand Hall's day", () => {
     expect(hallDayStart(Date.UTC(2026, 11, 21, 12))).toBe(Date.UTC(2026, 11, 21, 0));
     // A minute past local midnight in summer is still the new day.
     expect(hallDayStart(Date.UTC(2026, 5, 20, 23, 1))).toBe(Date.UTC(2026, 5, 20, 23));
+  });
+
+  it("never begins a day after the moment, even in a year the wall format cannot hold", () => {
+    // Year 202 is before the epoch and reads as "202-10-17", which the wall
+    // parser refuses, so the UTC fallback answers: it must not round forward.
+    for (const at of [Date.UTC(202, 9, 17, 12), Date.UTC(202, 9, 17, 23, 59), Date.UTC(12000, 3, 2, 6)]) {
+      const start = hallDayStart(at);
+      expect(start).toBeLessThanOrEqual(at);
+      expect(at - start).toBeLessThan(86_400_000);
+    }
+  });
+
+  it("spans the venue's day: 23 hours when the clocks go forward, 25 when they go back", () => {
+    const spring = hallDaySpan(Date.UTC(2026, 2, 29, 12));
+    expect(spring).toEqual({ start: Date.UTC(2026, 2, 29, 0), end: Date.UTC(2026, 2, 29, 23) });
+    const autumn = hallDaySpan(Date.UTC(2026, 9, 25, 12));
+    expect(autumn).toEqual({ start: Date.UTC(2026, 9, 24, 23), end: Date.UTC(2026, 9, 26, 0) });
+    // The next midnight belongs to the next day.
+    expect(hallDaySpan(autumn.end).start).toBe(autumn.end);
   });
 
   it("reads the measured skylines: the blocks across Glassford Street and the Garth Street gap", () => {

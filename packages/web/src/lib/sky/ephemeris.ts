@@ -407,8 +407,14 @@ export const SUN_EVENT_ALTITUDE = {
   astronomical: -18,
 } as const;
 
+/**
+ * Instants as epoch milliseconds, or null where the sun does not cross. The
+ * morning's crossings are the ones since the solar midnight before the day's
+ * noon, the evening's those up to the solar midnight after it: in a short
+ * summer night an evening twilight can end after the clock's midnight, and it
+ * is still that evening's.
+ */
 export interface SunTimes {
-  /** Instants as epoch milliseconds, or null where the sun does not cross. */
   readonly sunrise: number | null;
   readonly sunset: number | null;
   readonly solarNoon: number;
@@ -426,48 +432,39 @@ export interface SunTimes {
 }
 
 /**
- * Where the sun's true altitude crosses `altitude` upward and downward in
- * [start, end): stepped every ten minutes and each crossing bisected to a
- * second.
+ * The first instant in [start, end] at which the sun's true altitude crosses
+ * `altitude` upward (or downward): stepped every ten minutes and bisected to
+ * a second. Null where it does not cross that way.
  */
-function crossings(start: number, end: number, altitude: number, observer: Observer): { rising: number | null; setting: number | null } {
+function crossing(start: number, end: number, altitude: number, upward: boolean, observer: Observer): number | null {
   const step = 10 * 60_000;
-  let rising: number | null = null;
-  let setting: number | null = null;
   let previousTime = start;
   let previous = sunPosition(start, observer).trueAltitude - altitude;
   for (let time = start + step; time <= end; time += step) {
     const current = sunPosition(time, observer).trueAltitude - altitude;
-    if ((previous < 0) !== (current < 0)) {
+    if ((previous < 0) === upward && (current < 0) !== upward) {
       let low = previousTime;
       let high = time;
-      const upward = previous < 0;
       while (high - low > 1000) {
         const middle = (low + high) / 2;
         const value = sunPosition(middle, observer).trueAltitude - altitude;
         if ((value < 0) === upward) low = middle; else high = middle;
       }
-      const at = (low + high) / 2;
-      if (upward && rising === null) rising = at;
-      if (!upward && setting === null) setting = at;
+      return (low + high) / 2;
     }
     previousTime = time;
     previous = current;
   }
-  return { rising, setting };
+  return null;
 }
 
 /**
  * The sun's day from `dayStart` (epoch ms, the local midnight that begins it)
- * for `observer`: rise and set, the three twilights, golden hour and noon.
+ * for `observer`: noon, then rise and set, the three twilights and golden
+ * hour around it (see SunTimes for which night's twilights these are).
  */
 export function sunTimes(dayStart: number, observer: Observer): SunTimes {
   const end = dayStart + MS_PER_DAY;
-  const horizon = crossings(dayStart, end, SUN_EVENT_ALTITUDE.horizon, observer);
-  const civil = crossings(dayStart, end, SUN_EVENT_ALTITUDE.civil, observer);
-  const nautical = crossings(dayStart, end, SUN_EVENT_ALTITUDE.nautical, observer);
-  const astronomical = crossings(dayStart, end, SUN_EVENT_ALTITUDE.astronomical, observer);
-  const golden = crossings(dayStart, end, SUN_EVENT_ALTITUDE.golden, observer);
   // Solar noon is the highest point: golden-section search over the day.
   const ratio = (Math.sqrt(5) - 1) / 2;
   let low = dayStart;
@@ -486,18 +483,25 @@ export function sunTimes(dayStart: number, observer: Observer): SunTimes {
     }
   }
   const solarNoon = (low + high) / 2;
+  // Mornings are searched from the solar midnight before noon, evenings to the
+  // one after it, not across the clock's day: at Glasgow from late April to
+  // mid August a twilight can end after midnight, and the clock's day would
+  // take the previous evening's for this one and lose this evening's.
+  const halfDay = MS_PER_DAY / 2;
+  const rises = (altitude: number) => crossing(solarNoon - halfDay, solarNoon, altitude, true, observer);
+  const sets = (altitude: number) => crossing(solarNoon, solarNoon + halfDay, altitude, false, observer);
   return {
-    sunrise: horizon.rising,
-    sunset: horizon.setting,
+    sunrise: rises(SUN_EVENT_ALTITUDE.horizon),
+    sunset: sets(SUN_EVENT_ALTITUDE.horizon),
     solarNoon,
-    civilDawn: civil.rising,
-    civilDusk: civil.setting,
-    nauticalDawn: nautical.rising,
-    nauticalDusk: nautical.setting,
-    astronomicalDawn: astronomical.rising,
-    astronomicalDusk: astronomical.setting,
-    goldenMorningEnd: golden.rising,
-    goldenEveningStart: golden.setting,
+    civilDawn: rises(SUN_EVENT_ALTITUDE.civil),
+    civilDusk: sets(SUN_EVENT_ALTITUDE.civil),
+    nauticalDawn: rises(SUN_EVENT_ALTITUDE.nautical),
+    nauticalDusk: sets(SUN_EVENT_ALTITUDE.nautical),
+    astronomicalDawn: rises(SUN_EVENT_ALTITUDE.astronomical),
+    astronomicalDusk: sets(SUN_EVENT_ALTITUDE.astronomical),
+    goldenMorningEnd: rises(SUN_EVENT_ALTITUDE.golden),
+    goldenEveningStart: sets(SUN_EVENT_ALTITUDE.golden),
     noonAltitude: sunPosition(solarNoon, observer).altitude,
   };
 }
