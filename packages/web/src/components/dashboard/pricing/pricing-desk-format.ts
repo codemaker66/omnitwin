@@ -191,12 +191,57 @@ export function settersWords(setters: readonly string[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Day and month adjustments
+//
+// A rate may carry multipliers for days of the week and months ("saturday":
+// 1.2), which the estimate and the proposals price list apply on top of its
+// price. The desk does not edit them, but it says they are there, because
+// the price shown is the price before them.
+// ---------------------------------------------------------------------------
+
+export type Adjustments = Readonly<Record<string, number>>;
+
+const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+const DAY_PLURALS = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"] as const;
+const MONTH_KEYS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"] as const;
+
+function adjustedBy(label: string, factor: number): string {
+  const percent = Math.round(Math.abs(factor - 1) * 1000) / 10;
+  return `${label} ${String(percent)}% ${factor > 1 ? "more" : "less"}`;
+}
+
+/** "Saturdays 20% more, December 10% more"; null when the rate carries none. */
+export function adjustmentWords(rule: {
+  readonly dayOfWeekModifiers?: Adjustments | null;
+  readonly seasonalModifiers?: Adjustments | null;
+}): string | null {
+  const days = rule.dayOfWeekModifiers ?? {};
+  const months = rule.seasonalModifiers ?? {};
+  const parts: string[] = [];
+  DAY_KEYS.forEach((key, index) => {
+    const factor = days[key];
+    if (factor !== undefined && factor !== 1) parts.push(adjustedBy(DAY_PLURALS[index] ?? key, factor));
+  });
+  MONTH_KEYS.forEach((key, index) => {
+    const factor = months[key];
+    if (factor !== undefined && factor !== 1) parts.push(adjustedBy(MONTHS_LONG[index] ?? key, factor));
+  });
+  return parts.length === 0 ? null : parts.join(", ");
+}
+
+// ---------------------------------------------------------------------------
 // The form
 // ---------------------------------------------------------------------------
 
 export type EditableType = PricingRule["type"];
 
 export interface RateDraft {
+  /** The day and month adjustments the rate carries, as the rule holds
+   *  them. The form does not edit them: a change leaves them as they are,
+   *  and a rate added from a suggestion keeps those of the rate it is
+   *  based on, so the suggested price moves the same way on every day. */
+  readonly dayAdjustments: Adjustments | null;
+  readonly monthAdjustments: Adjustments | null;
   readonly name: string;
   readonly type: EditableType;
   /** Pounds as typed: "2800", "45.50". */
@@ -214,6 +259,7 @@ export interface RateDraft {
 }
 
 export const EMPTY_DRAFT: RateDraft = {
+  dayAdjustments: null, monthAdjustments: null,
   name: "", type: "flat_rate", amount: "", spaceId: "", from: "", until: "", validFrom: "", validTo: "", minimum: "", isActive: true,
 };
 
@@ -225,6 +271,9 @@ function poundsText(amount: string): string {
 export function draftOf(rule: PricingRule): RateDraft {
   const minimum = rule.type === "per_head" ? rule.minGuests : rule.type === "per_hour" ? rule.minHours : null;
   return {
+    // The rule's own objects, so two drafts of one rule compare as unchanged.
+    dayAdjustments: rule.dayOfWeekModifiers ?? null,
+    monthAdjustments: rule.seasonalModifiers ?? null,
     name: rule.name,
     type: rule.type,
     amount: poundsText(rule.amount),
@@ -286,6 +335,9 @@ export function readDraft(draft: RateDraft): DraftReading {
       minHours: draft.type === "per_hour" ? minimum : null,
       minGuests: draft.type === "per_head" ? minimum : null,
       isActive: draft.isActive,
+      // Carried, never edited here; a change (changeOf) does not send them.
+      ...(draft.dayAdjustments === null ? {} : { dayOfWeekModifiers: draft.dayAdjustments }),
+      ...(draft.monthAdjustments === null ? {} : { seasonalModifiers: draft.monthAdjustments }),
     },
   };
 }
@@ -368,6 +420,14 @@ export function consequenceWords(input: {
   const replaced = replacedBy(body, others);
   if (replaced !== null) {
     lines.push(`${whenWords(body.validFrom ?? null, body.validTo ?? null)} it takes the place of “${replaced.name}” (${priceWords(replaced)}).`);
+    // The replaced rate's adjustments go with it unless this rate carries them.
+    const theirs = adjustmentWords(replaced);
+    const ours = adjustmentWords(body);
+    if (theirs !== null && ours === theirs) {
+      lines.push(`It keeps the same adjustments: ${theirs}.`);
+    } else if (theirs !== null) {
+      lines.push(`This rate does not carry “${replaced.name}”'s adjustments (${theirs}).`);
+    }
   }
   return lines;
 }

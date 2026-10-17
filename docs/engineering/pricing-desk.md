@@ -29,6 +29,14 @@ decides it, `standingRates` / `rateReplacements` in
 (`services/price-calculator.ts`), the proposals price list
 (`proposals/price-list-format.ts`) and the desk's consequence line.
 
+A set-aside rate's day and month adjustments (`dayOfWeekModifiers`,
+`seasonalModifiers`) go with it. Suggestions are worked out on a rate's price
+before its adjustments, so a rate added from a suggestion carries the same
+adjustments as the rate it is based on; otherwise a "raise" on an adjusted
+Saturday could charge less than today. The desk does not edit adjustments; it
+shows them on the rate and the suggestion, and the consequence line says when a
+dated rate typed in by hand does not carry them.
+
 ## How a suggestion is worked out
 
 `packages/api/src/services/pricing-advice.ts` is pure (no database, no clock);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PricingAdvice, PricingAdviceItem } from "@omnitwin/types";
 import type { DeskRule } from "../../../../api/pricing-desk.js";
 import {
+  adjustmentWords,
   adviceHeadline,
   basisWords,
   changeLine,
@@ -9,8 +10,10 @@ import {
   consequenceWords,
   datesWords,
   dayWords,
+  draftChanged,
   draftFromAdvice,
   draftOf,
+  EMPTY_DRAFT,
   groupAdvice,
   groupRates,
   lastChangeLine,
@@ -184,6 +187,39 @@ describe("suggestions", () => {
     expect(opened.draft).toMatchObject({ name: "Grand Hall — Evening, 12 Jun 2027", amount: "3150", validFrom: "2027-06-12", validTo: "2027-06-12", from: "19:00", until: "00:30", spaceId: HALL });
     const own = draftFromAdvice(item({ accept: "edit" }), rule({ validFrom: "2027-06-12", validTo: "2027-06-12" }));
     expect(own).toMatchObject({ mode: "edit", draft: { amount: "3150", validFrom: "2027-06-12" } });
+  });
+
+  it("keep the day and month adjustments of the rate a dated rate is based on, so a raise is not a cut", () => {
+    // Saturdays already cost 20% more on the everyday rate. A rate for one
+    // Saturday that dropped that adjustment would charge £3,150 where the
+    // venue charges £3,360 today, the opposite of the suggestion.
+    const everyday = rule({ dayOfWeekModifiers: { saturday: 1.2 }, seasonalModifiers: { december: 1.1, june: 1 } });
+    expect(adjustmentWords(everyday)).toBe("Saturdays 20% more, December 10% more");
+    expect(adjustmentWords(rule())).toBeNull();
+
+    const opened = draftFromAdvice(item(), everyday);
+    const reading = readDraft(opened.draft);
+    if (!reading.ok) throw new Error(reading.problem);
+    expect(reading.body).toMatchObject({ amount: 3150, dayOfWeekModifiers: { saturday: 1.2 }, seasonalModifiers: { december: 1.1, june: 1 } });
+    expect(consequenceWords({ mode: "create", original: null, body: reading.body, currency: "GBP", others: [everyday] })).toEqual([
+      "Quotes made from now, and enquiry estimates, can use this rate. Quotes already made are unchanged.",
+      "On Sat 12 Jun 2027 it takes the place of “Grand Hall — Evening” (£2,800).",
+      "It keeps the same adjustments: Saturdays 20% more, December 10% more.",
+    ]);
+
+    // A dated rate typed in by hand carries none, and says so.
+    const typed = readDraft({ ...EMPTY_DRAFT, name: "Grand Hall, 12 Jun", amount: "3150", spaceId: HALL, from: "19:00", until: "00:30", validFrom: "2027-06-12", validTo: "2027-06-12" });
+    if (!typed.ok) throw new Error(typed.problem);
+    expect(typed.body).not.toHaveProperty("dayOfWeekModifiers");
+    expect(consequenceWords({ mode: "create", original: null, body: typed.body, currency: "GBP", others: [everyday] }))
+      .toContain("This rate does not carry “Grand Hall — Evening”'s adjustments (Saturdays 20% more, December 10% more).");
+
+    // A change never re-sends them, and two drafts of one rate are the same.
+    expect(draftChanged(draftOf(everyday), draftOf(everyday))).toBe(false);
+    const edit = draftFromAdvice(item({ accept: "edit" }), everyday);
+    const editReading = readDraft(edit.draft);
+    if (!editReading.ok) throw new Error(editReading.problem);
+    expect(changeOf(draftOf(everyday), editReading.body, edit.draft)).toEqual({ amount: 3150 });
   });
 
   it("say what the record holds, and that competitors' prices are not used", () => {

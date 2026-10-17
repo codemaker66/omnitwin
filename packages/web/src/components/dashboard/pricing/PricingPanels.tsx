@@ -4,6 +4,7 @@ import type { PricingAdviceItem } from "@omnitwin/types";
 import type { DeskRule } from "../../../api/pricing-desk.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import {
+  adjustmentWords,
   adviceHeadline,
   changeLine,
   datesWords,
@@ -121,6 +122,7 @@ export function RatePanel(props: {
   const [confirming, setConfirming] = useState(false);
   const historyId = useId();
   const status = retired ? "Retired" : rule.isActive ? "In use" : "Not in use";
+  const adjusted = adjustmentWords(rule);
   return (
     <PanelFrame label={`Rate: ${rule.name}`} layout={props.layout} onClose={props.onClose}>
       <p className="enq-eyebrow">{roomName(rule.spaceId, rooms)}</p>
@@ -134,6 +136,7 @@ export function RatePanel(props: {
         <div><dt>Time of day</dt><dd className="enq-facts__room">{timeWords(rule)}</dd></div>
         <div><dt>Dates</dt><dd className="enq-facts__room">{datesWords(rule)}</dd></div>
       </dl>
+      {adjusted !== null && <p className="pr-quiet pr-adjusted">Adjusted on top of that price: {adjusted}.</p>}
 
       {canSetPrices && !retired && !confirming && (
         <div className="enq-actions pr-panel__actions">
@@ -219,6 +222,7 @@ export function AdvicePanel(props: {
   const reasonsId = useId();
   const range = rangeWords(item);
   const usable = item.kind !== "too_little_history" && item.suggestedMinor !== null && rule !== null;
+  const adjusted = rule === null ? null : adjustmentWords(rule);
   return (
     <PanelFrame label={`Suggestion for ${item.ruleName} on ${dayWords(item.date)}`} layout={props.layout} onClose={props.onClose}>
       <p className="enq-eyebrow">Suggestion · {dayWords(item.date)}, {leadWords(item.leadDays)}</p>
@@ -237,6 +241,7 @@ export function AdvicePanel(props: {
         <div><dt>Now, {perWords(item.per)}</dt><dd>{moneyWords(item.currentMinor, item.currency)}</dd></div>
         <div><dt>Records behind it</dt><dd>{item.records.toLocaleString("en-GB")}</dd></div>
       </dl>
+      {adjusted !== null && <p className="pr-quiet pr-adjusted">These figures are before the rate's adjustments ({adjusted}), which still apply.</p>}
 
       <section className="enq-section" aria-labelledby={reasonsId}>
         <h3 id={reasonsId}>Why</h3>

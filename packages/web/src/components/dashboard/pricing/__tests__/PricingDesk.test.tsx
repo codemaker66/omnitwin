@@ -247,6 +247,28 @@ describe("suggestions", () => {
     }));
   });
 
+  it("keep the everyday rate's day and month adjustments on a rate added from a suggestion, and say they apply", async () => {
+    const adjusted = rule({ dayOfWeekModifiers: { saturday: 1.2 }, seasonalModifiers: null });
+    mocks.getPricingDesk.mockResolvedValue(desk({ rules: [adjusted] }));
+    await openDesk();
+    fireEvent.click(screen.getByRole("button", { name: /^Grand Hall — Evening, £2,800/u }));
+    const ratePanel = await screen.findByRole("complementary", { name: "Rate: Grand Hall — Evening" });
+    expect(within(ratePanel).getByText("Adjusted on top of that price: Saturdays 20% more.")).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Suggestions, 1" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sat 12 Jun 2027, Grand Hall — Evening\. Raise/u }));
+    const panel = await screen.findByRole("complementary", { name: "Suggestion for Grand Hall — Evening on Sat 12 Jun 2027" });
+    expect(within(panel).getByText("These figures are before the rate's adjustments (Saturdays 20% more), which still apply.")).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "Add a rate for this date at £3,150…" }));
+    const form = await screen.findByRole("form", { name: "Add a rate" });
+    expect(within(form).getByText("It keeps the same adjustments: Saturdays 20% more.")).toBeTruthy();
+    fireEvent.click(within(form).getByRole("button", { name: "Save rate" }));
+    await waitFor(() => { expect(mocks.createPricingRule).toHaveBeenCalledTimes(1); });
+    expect(mocks.createPricingRule).toHaveBeenCalledWith(VENUE, expect.objectContaining({
+      amount: 3150, validFrom: "2027-06-12", validTo: "2027-06-12", dayOfWeekModifiers: { saturday: 1.2 }, adviceKey: KEY,
+    }));
+  });
+
   it("say there is too little history rather than guess a figure", async () => {
     mocks.getPricingAdvice.mockResolvedValue(advice([item({
       key: `${EVENING}:2027-06-12:too_little_history`, kind: "too_little_history", lowMinor: null, highMinor: null, suggestedMinor: null, records: 2,

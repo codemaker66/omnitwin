@@ -74,6 +74,11 @@ export interface CreatePricingRuleInput {
   readonly validTo?: string | null;
   readonly minHours?: number | null;
   readonly minGuests?: number | null;
+  /** Day-of-week and month multipliers ("saturday": 1.2), applied on top of
+   *  the price. The Pricing desk only carries them, from the rate a new one
+   *  is based on. */
+  readonly dayOfWeekModifiers?: Readonly<Record<string, number>> | null;
+  readonly seasonalModifiers?: Readonly<Record<string, number>> | null;
   /** The Pricing desk suggestion this rate follows, kept in the change's record. */
   readonly adviceKey?: string | null;
 }

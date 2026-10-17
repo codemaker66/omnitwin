@@ -68,6 +68,7 @@
 .pr-facts dd { font-size: clamp(20px, 1.7vw, 26px); }
 .pr-panel__actions { margin-top: 18px; }
 .pr-quiet { margin: 0; color: var(--enq-forest-ink-2); font-size: 14.5px; line-height: 1.5; }
+.pr-adjusted { margin-top: 12px; }
 .pr-panel .enq-timeline span { overflow-wrap: anywhere; }
 
 /* A suggestion: the figure in light numerals, then the reasons. */
