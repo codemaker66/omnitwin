@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LAYOUT_STYLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 import { loadRoomDay, type RoomDayDeny } from "../services/room-day.js";
 
 // Goal 19 S6 — what a client may see of a room's day before proposing a
@@ -61,7 +62,8 @@ describe.skipIf(target === undefined)("the client's room day on migrated Postgre
     const booking = (spaceId: string, kind: "ink" | "hold" | "internal_block", title: string, from: string, to: string, extra: Record<string, unknown> = {}) =>
       ({ id: randomUUID(), venueId, spaceId, kind, status: "active" as const, title, createdBy: admin.id, startsAt: at(from), endsAt: at(to), ...extra });
     const ownHold = booking(roomId, "hold", "Fixture dinner", "18:00", "23:00", { eventId, createdBy: client.id, ...hygiene });
-    await db.insert(schema.bookings).values([
+    // Each other hold and confirmed booking is written with its own event (the bind).
+    await insertBoundBookings(db, [
       ownHold,
       booking(roomId, "ink", "Private: the MacLeod wedding", "09:00", "14:00"),
       booking(roomId, "hold", "Another family", "15:00", "17:00", hygiene),
