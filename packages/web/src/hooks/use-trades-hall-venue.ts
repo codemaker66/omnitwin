@@ -51,3 +51,28 @@ export function useTradesHallVenue(venueId: string | null): boolean | null {
   }, [venueId]);
   return venueId !== null && result?.venueId === venueId ? result.tradesHall : null;
 }
+
+export type TradesHallVenueStatus = "reading" | "trades-hall" | "other" | "unknown";
+
+/**
+ * The same read as {@link useTradesHallVenue}, with "still reading" told apart
+ * from "could not be read" and "no venue", so a surface can show honest work
+ * while the read is in flight and stop waiting when it failed.
+ */
+export function useTradesHallVenueStatus(venueId: string | null): TradesHallVenueStatus {
+  const [result, setResult] = useState<{
+    readonly venueId: string;
+    readonly status: Exclude<TradesHallVenueStatus, "reading">;
+  } | null>(null);
+  useEffect(() => {
+    if (venueId === null) return undefined;
+    let current = true;
+    void readTradesHall(venueId).then(
+      (tradesHall) => { if (current) setResult({ venueId, status: tradesHall ? "trades-hall" : "other" }); },
+      () => { if (current) setResult({ venueId, status: "unknown" }); },
+    );
+    return () => { current = false; };
+  }, [venueId]);
+  if (venueId === null) return "unknown";
+  return result?.venueId === venueId ? result.status : "reading";
+}
