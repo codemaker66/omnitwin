@@ -21,7 +21,7 @@
 import { BufferAttribute, BufferGeometry, FrontSide, Sphere, Vector3 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import {
-  Fn, cameraPosition, cross, dFdx, dFdy, dot, exp, float, floor, fract, fwidth, hash, length, max, mix, normalize,
+  Fn, cameraPosition, clamp, cross, dFdx, dFdy, dot, exp, float, floor, fract, fwidth, hash, length, max, mix, normalize,
   positionWorld, pow, sign, smoothstep, step, vec2, vec3, vec4,
 } from "three/tsl";
 import { hallSkyUniforms as u } from "./hall-sky-runtime.js";
@@ -36,7 +36,28 @@ export const CONTEXT_RADIUS = 260;
 const MAGIC = [0x56, 0x56, 0x43, 0x58] as const; // "VVCX"
 const HEADER_BYTES = 16;
 /** Coordinates outside this box mean a malformed file, metres. */
-const LIMIT = 320;
+export const CONTEXT_COORDINATE_LIMIT = 320;
+
+/**
+ * The city's windows: a grid `width` m along each wall and a storey high,
+ * starting `firstStorey` m above the pavement. Each window draws its values
+ * from whole-number hash seeds made from its cell, its storey and its block
+ * (`blockWidth` m wide), raised clear of zero by `offset` and spaced `stride`
+ * apart, one seed per value. three's hash reads its seed as an unsigned
+ * integer: a negative seed reads as 0, and a fraction added to a seed reads as
+ * the same integer. Within the reader's limit every seed is below 2^24, where
+ * a float holds whole numbers exactly.
+ */
+export const CITY_WINDOWS = {
+  width: 2.1,
+  storey: 3.2,
+  firstStorey: 3.6,
+  across: 613,
+  blockWidth: 9,
+  block: 7919,
+  offset: 1_000_000,
+  stride: 4,
+} as const;
 
 function fail(reason: string): never {
   throw new Error(`Grand Hall city model: ${reason}`);
@@ -59,7 +80,7 @@ export function parseContextModel(buffer: ArrayBuffer): BufferGeometry {
   const positions = new Float32Array(vertexCount * 3);
   for (let i = 0; i < vertexCount * 3; i++) {
     const value = view.getInt16(HEADER_BYTES + i * 2, true) / 100;
-    if (Math.abs(value) > LIMIT) fail(`coordinate ${String(value)} m`);
+    if (Math.abs(value) > CONTEXT_COORDINATE_LIMIT) fail(`coordinate ${String(value)} m`);
     positions[i] = value;
   }
   const indices = new Uint32Array(indexCount);
@@ -128,15 +149,18 @@ function cityColor(sun: HallSun) {
     // where a window would be smaller than a pixel its light is averaged in.
     const wall = float(1).sub(cap).mul(float(1).sub(ground));
     const along = normalize(vec3(n.z.negate(), 0, n.x).add(vec3(1e-4, 0, 0)));
-    const cellU = dot(vec2(p.x, p.z), vec2(along.x, along.z)).div(2.1);
-    const cellV = heightAbove.sub(3.6).div(3.2);
+    const windows = CITY_WINDOWS;
+    const cellU = dot(vec2(p.x, p.z), vec2(along.x, along.z)).div(windows.width);
+    const cellV = heightAbove.sub(windows.firstStorey).div(windows.storey);
     const cell = floor(vec2(cellU, cellV));
     const local = fract(vec2(cellU, cellV));
-    const seed = cell.x.add(cell.y.mul(613)).add(floor(p.x.add(p.z).div(9)).mul(7919)).add(5000);
+    // Whether it is lit, how brightly and its tint: three whole-number seeds.
+    const seed = cell.x.add(cell.y.mul(windows.across)).add(floor(p.x.add(p.z).div(windows.blockWidth)).mul(windows.block))
+      .add(windows.offset).mul(windows.stride);
     const pane = smoothstep(0.38, 0.42, local.x).mul(smoothstep(0.62, 0.58, local.x))
       .mul(smoothstep(0.34, 0.4, local.y)).mul(smoothstep(0.68, 0.62, local.y));
-    const on = step(hash(seed), 0.14).mul(hash(seed.add(0.71)).mul(0.65).add(0.35));
-    const tint = mix(vec3(1.0, 0.66, 0.36), vec3(0.8, 0.86, 1.0), step(0.86, hash(seed.add(0.5))));
+    const on = step(hash(seed), 0.14).mul(hash(seed.add(1)).mul(0.65).add(0.35));
+    const tint = mix(vec3(1.0, 0.66, 0.36), vec3(0.8, 0.86, 1.0), step(0.86, hash(seed.add(2))));
     const resolved = float(1).sub(smoothstep(0.2, 0.55, fwidth(cellU)));
     const glow = mix(float(0.012), pane.mul(on), resolved);
     lit.addAssign(tint.mul(glow).mul(wall).mul(step(0, cellV)).mul(u.cityGlow).mul(0.6));
@@ -154,7 +178,9 @@ function cityColor(sun: HallSun) {
     const haze = max(air.mul(0.88), edge);
     const flatSun = normalize(vec3(u.sunDirection.x, 0, u.sunDirection.z).add(vec3(1e-4, 0, 0)));
     const flatView = normalize(vec3(view.x, 0, view.z).add(vec3(1e-4, 0, 0)));
-    const horizon = mix(u.horizonAway, u.horizonSun, pow(dot(flatSun, flatView).mul(0.5).add(0.5), 2.2));
+    // Clamped: rounding can take the dot of opposed unit vectors just past
+    // -1, and pow of a negative base is undefined on the GPU (NaN).
+    const horizon = mix(u.horizonAway, u.horizonSun, pow(clamp(dot(flatSun, flatView).mul(0.5).add(0.5), 0, 1), 2.2));
     const toward = pow(max(dot(view, u.sunDirection), 0), 6);
     const hazeColor = horizon.mul(0.94).add(u.glow.mul(u.glowStrength).mul(toward).mul(0.6));
     return vec4(mix(lit, hazeColor, haze), 1);

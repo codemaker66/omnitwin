@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { BufferGeometry } from "three";
 import { useHallFinish } from "./hall-finish.js";
-import { HALL_SUN_CASTER_LAYER, createSunCaster, type ShadowBox } from "./hall-sun.js";
+import { HALL_SUN_CASTER_LAYER, createSunCaster, requestHallSunRedraw, type ShadowBox } from "./hall-sun.js";
 import { CONTEXT_MODEL_URL, createContextCasterMaterial, createContextMaterial, parseContextModel } from "./hall-context.js";
 import { hallSkyState, hallSkyUniforms } from "./hall-sky-runtime.js";
 
@@ -50,8 +50,6 @@ export function HallContext(): ReactElement | null {
         if (!live) return;
         loaded = parseContextModel(buffer);
         setGeometry(loaded);
-        sun.redraw();
-        invalidate();
       })
       .catch(() => {
         // Without the city the hall stands under the sky alone.
@@ -60,7 +58,18 @@ export function HallContext(): ReactElement | null {
       live = false;
       loaded?.dispose();
     };
-  }, [invalidate, sun]);
+  }, [sun]);
+
+  // Once the model stands in the scene, both maps that see it redraw: the
+  // city's own, and the hall's, in which the blocks across Glassford Street
+  // shade the windows. Asked before the model mounted, the hall's map could
+  // be drawn by a frame that came first, without it.
+  useEffect(() => {
+    if (geometry === null) return;
+    sun.redraw();
+    requestHallSunRedraw();
+    invalidate();
+  }, [geometry, invalidate, sun]);
 
   useEffect(() => () => {
     material.dispose();

@@ -4,13 +4,15 @@
 // Follows the published sky (hall-sky-runtime.ts): the light takes the sun's
 // direction, colour and strength by day and the moon's once the sun has set,
 // and refits and redraws its shadow map only when the light has visibly
-// moved or the furniture has changed (hall-sun.ts). The room's photographed
-// surfaces read the same direction and strength from the sky's uniforms, in
-// their own baked-light units, so the furniture and the room are lit as one.
+// moved or the furniture has changed or is in motion (hall-sun.ts). The
+// room's photographed surfaces read the same direction and strength from the
+// sky's uniforms, in their own baked-light units, so the furniture and the
+// room are lit as one.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { subscribeFurnitureSettleFrames } from "../../lib/furniture-motion.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useHallFinish } from "./hall-finish.js";
 import { hallSun, hallSunMapSize } from "./hall-sun.js";
@@ -43,6 +45,12 @@ export function HallSunLight(): ReactElement {
     sun.redraw();
     invalidate();
   }, [invalidate, items, sun]);
+
+  // Furniture in motion (dropping in, leaning in the hand, settling, setting
+  // its weight down) is posed each frame outside the store. FurnitureMotion
+  // publishes every such frame, and then the one that returns the pieces to
+  // rest, before that frame renders, so the map is drawn at the pose drawn.
+  useEffect(() => subscribeFurnitureSettleFrames(() => { sun.redraw(); }), [sun]);
 
   useFrame(() => {
     const sky = hallSkyState.sky;

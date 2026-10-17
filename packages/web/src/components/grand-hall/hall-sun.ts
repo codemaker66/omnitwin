@@ -10,8 +10,8 @@
 //
 // The map is fitted tightly around the room (the walls, the furniture's
 // height) as seen from the sun, and redrawn only when something it shows
-// changes: the sun moving, furniture placed or moved, the walls' relief
-// arriving. Orbiting the camera never redraws it.
+// changes: the sun moving, furniture placed, moved or in motion, the walls'
+// relief or the city arriving. Orbiting the camera never redraws it.
 //
 // The walls cast their full height whatever the cutaway shows, and their
 // glazing lets the sun through (the atlas marks it): the cutaway is a way of
@@ -157,10 +157,13 @@ export function createSunCaster(options: SunCasterOptions): HallSun {
 /**
  * A shadow node is the float light factor its setup returns (ShadowNode.setup,
  * read by AnalyticLightNode). three's typings leave a ShadowNode's output type
- * open, so the shadow base class's own flag stands for it.
+ * open, so the shadow base class's own flag stands for it. The flag three sets
+ * is `isShadowBaseNode` (ShadowBaseNode.js); the typings misname it
+ * `isShadowBasedNode`, which no node carries, so testing that one refused
+ * every shadow node and the sky's sun could never be made.
  */
 function isShadowFactor(node: Node): node is Node<"float"> {
-  return "isShadowBasedNode" in node && node.isShadowBasedNode === true;
+  return "isShadowBaseNode" in node && node.isShadowBaseNode === true;
 }
 
 /** The hall's sun: its map covers the room, and the street toward the sun. */
@@ -182,6 +185,36 @@ export function hallSun(mapSize: number): HallSun {
     sharedSize = mapSize;
   }
   return shared;
+}
+
+/**
+ * Redraws the hall's sun map on the next frame, if the hall has a sun: for
+ * what changes outside the room's own components (the city arriving).
+ * Never creates one. Returns whether there was a sun to redraw.
+ */
+export function requestHallSunRedraw(): boolean {
+  shared?.redraw();
+  return shared !== null;
+}
+
+/**
+ * Runs `render`, a render of part of the scene, without drawing `sun`'s map
+ * in it. three draws a pending map from whatever scene is being rendered
+ * (ShadowNode.updateBefore takes frame.scene) and then clears the request,
+ * so a private stage holding only the room would draw the shared map without
+ * the furniture or the city, and the full frame after it would not redraw.
+ * The request is held through the render and handed back for the next one.
+ */
+export function withoutSunMapDraw<T>(sun: HallSun | null, render: () => T): T {
+  if (sun === null) return render();
+  const shadow = sun.light.shadow;
+  const pending = shadow.needsUpdate;
+  shadow.needsUpdate = false;
+  try {
+    return render();
+  } finally {
+    shadow.needsUpdate = pending || shadow.needsUpdate;
+  }
 }
 
 /** The shadow map's size for a device: phones and half-size photographs take a smaller map. */

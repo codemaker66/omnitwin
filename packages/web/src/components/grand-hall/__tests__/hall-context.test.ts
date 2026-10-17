@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { CONTEXT_MODEL_URL, parseContextModel } from "../hall-context.js";
+import { CITY_WINDOWS, CONTEXT_COORDINATE_LIMIT, CONTEXT_MODEL_URL, parseContextModel } from "../hall-context.js";
+import { HALL_PAVEMENT_Y } from "../hall-site.js";
 
 /** A packed model: 'VVCX', version, counts, int16 cm vertices, uint32 indices. */
 function pack(vertices: readonly number[], indices: readonly number[], { version = 1, magic = "VVCX", extra = 0 } = {}): ArrayBuffer {
@@ -53,5 +54,25 @@ describe("parseContextModel", () => {
       vertices: geometry.getAttribute("position").count,
       bytes_raw: bytes.byteLength,
     });
+  });
+});
+
+describe("the city's lit windows", () => {
+  it("hash whole-number seeds above zero and below 2^24 anywhere the reader accepts", () => {
+    // three's hash reads its seed as an unsigned integer: a negative seed reads
+    // as 0 (every window lit across half the city), and a float holds whole
+    // numbers exactly only below 2^24.
+    const { width, storey, firstStorey, across, blockWidth, block, offset, stride } = CITY_WINDOWS;
+    const limit = CONTEXT_COORDINATE_LIMIT;
+    // The furthest cells: along a wall at most |(x, z)| from the centre, a storey
+    // anywhere from the lowest to the highest coordinate, a block across x + z.
+    const cell = Math.ceil((limit * Math.SQRT2) / width) + 1;
+    const level = Math.ceil((limit + Math.abs(HALL_PAVEMENT_Y) + firstStorey) / storey) + 1;
+    const blocks = Math.ceil((2 * limit) / blockWidth) + 1;
+    const spread = cell + level * across + blocks * block;
+    expect(offset - spread).toBeGreaterThan(0);
+    // Three values a window: the seed and the two after it.
+    expect((offset + spread) * stride + stride - 1).toBeLessThan(2 ** 24);
+    expect(stride).toBeGreaterThanOrEqual(3);
   });
 });

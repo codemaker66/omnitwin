@@ -31,6 +31,8 @@ export const SKY_DOME_RADIUS = 600;
 /** Angular radii, radians: the sun a little larger than life so it reads on a phone; the moon more so. */
 const SUN_RADIUS = 0.0062;
 const MOON_RADIUS = 0.0088;
+/** Star seeds wrap below this before spreading to one per value (2^21). */
+const STAR_SEED_WRAP = 2_097_152;
 
 export function createSkyDomeGeometry(): SphereGeometry {
   return new SphereGeometry(SKY_DOME_RADIUS, 48, 24);
@@ -44,7 +46,9 @@ const skyColor = Fn(() => {
   // Gradient: the horizon warmer on the sun's side, blue overhead.
   const flatSun = normalize(vec3(sun.x, 0, sun.z).add(vec3(1e-4, 0, 0)));
   const flatDir = normalize(vec3(dir.x, 0, dir.z).add(vec3(1e-4, 0, 0)));
-  const sunSide = pow(dot(flatSun, flatDir).mul(0.5).add(0.5), 2.2);
+  // Clamped: rounding can take the dot of opposed unit vectors just past -1,
+  // and pow of a negative base is undefined on the GPU (NaN).
+  const sunSide = pow(clamp(dot(flatSun, flatDir).mul(0.5).add(0.5), 0, 1), 2.2);
   const horizon = mix(u.horizonAway, u.horizonSun, sunSide);
   const height = pow(clamp(up, 0, 1), 0.42);
   const sky = mix(horizon, u.zenith, height).toVar();
@@ -64,15 +68,21 @@ const skyColor = Fn(() => {
   If(u.stars.greaterThan(0.001).and(up.greaterThan(0)), () => {
     const p = dir.mul(110).add(120);
     const cell = floor(p);
+    // A whole number below 2^24 (each cell index lies in 10..230).
     const seed = cell.x.add(cell.y.mul(241)).add(cell.z.mul(58081));
-    const offset = vec3(hash(seed.add(0.13)), hash(seed.add(0.27)), hash(seed.add(0.41))).sub(0.5).mul(0.7);
+    // Each star's place, brightness and tint from seeds of their own: three's
+    // hash reads its seed as an unsigned integer, so a fraction added to the
+    // seed reads as the same one. Wrapped below 2^21 and spaced eight apart,
+    // these stay below 2^24 too, where a float holds whole numbers exactly.
+    const values = seed.mod(STAR_SEED_WRAP).mul(8);
+    const offset = vec3(hash(values.add(1)), hash(values.add(2)), hash(values.add(3))).sub(0.5).mul(0.7);
     const d = length(fract(p).sub(0.5).sub(offset));
     const r = float(0.055);
     // At least about a pixel wide, dimmed to keep its light: no shimmer.
     const w = max(fwidth(d), 0.0001);
     const star = smoothstep(r.add(w), r.sub(w), d).mul(r.div(max(r, w)));
-    const magnitude = pow(hash(seed.add(0.53)), 5).mul(2.4).add(0.25);
-    const tint = mix(vec3(0.72, 0.8, 1.0), vec3(1.0, 0.88, 0.72), hash(seed.add(0.67)));
+    const magnitude = pow(hash(values.add(4)), 5).mul(2.4).add(0.25);
+    const tint = mix(vec3(0.72, 0.8, 1.0), vec3(1.0, 0.88, 0.72), hash(values.add(5)));
     const shown = step(0.972, hash(seed)).mul(u.stars).mul(smoothstep(0.03, 0.3, up));
     sky.addAssign(tint.mul(star).mul(magnitude).mul(shown));
   });

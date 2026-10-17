@@ -35,7 +35,7 @@ import { HallEnvironmentCapture } from "./hall-capture.js";
 import { createHallSection, type HallSection } from "./hall-section.js";
 import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 import { hallSkyState } from "./hall-sky-runtime.js";
-import { HALL_SUN_CASTER_LAYER, hallSun, hallSunMapSize, type HallSun } from "./hall-sun.js";
+import { HALL_SUN_CASTER_LAYER, hallSun, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
 
 /** The dark the drawn hall stands in (the planner's background around it). */
 export const HALL_VOID = "#120e0b";
@@ -146,6 +146,23 @@ function moodSignature(mood: HallMoodSpec): number {
     + mood.uplightIntensity * 1.1 + mood.skyIntensity * 0.7 + mood.exposure * 2.3 + mood.glow;
 }
 
+/**
+ * Whether light of `signature` differs enough to show from `captured`, the
+ * light the reflections were last captured in. With none recorded (no
+ * capture yet, or the last one in a mood's light rather than the sky's) it
+ * always does.
+ */
+export function reflectionsOutdated(signature: number, captured: number | null): boolean {
+  return captured === null || Math.abs(signature - captured) > 0.01;
+}
+
+/**
+ * Frames a capture waits for the main pass to draw a pending sun map, so it
+ * reflects the map of the whole scene at this moment rather than the last
+ * one; past this it goes ahead with whatever map there is.
+ */
+const CAPTURE_SUN_MAP_WAITS = 2;
+
 function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null): HallResources {
   const textures = paintHallTextures(quality);
   const photos = new HallPhotos();
@@ -222,9 +239,11 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
-  /** The published sky last applied, and the light its reflections were captured in. */
+  /** The published sky last applied, and the sky's light the reflections were last captured in. */
   const skyVersion = useRef(-1);
-  const capturedSignature = useRef(Number.NaN);
+  const capturedSignature = useRef<number | null>(null);
+  /** Frames the waiting capture has given the sun's pending map. */
+  const captureWaits = useRef(0);
   const cutState = useRef<number[]>([HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none]);
   const cutsEasing = useRef(false);
   const skinRefs = useRef<(import("three").Mesh | null)[]>([]);
@@ -333,9 +352,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       state.gl.toneMappingExposure = resources.mood.exposure;
       setSceneGrade(resources.mood.whiteBalance, resources.mood.saturation);
       setCandleLight(resources.mood.candles);
-      const signature = moodSignature(sky.mood);
-      if (!hallSkyState.moving && Math.abs(signature - capturedSignature.current) > 0.01) {
-        capturedSignature.current = signature;
+      if (!hallSkyState.moving && reflectionsOutdated(moodSignature(sky.mood), capturedSignature.current)) {
         captureNeeded.current = true;
       }
     }
@@ -352,23 +369,33 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     }
     // Recapture the room's environment once nothing is blending: whole, with
     // its chandeliers lit and no cutaway, then restore this frame's cuts below.
+    // The capture renders the room on a private stage, which must never draw
+    // the sun's shared map (hall-sun.ts): a map waiting to be redrawn is left
+    // to this frame's main pass, and the capture follows on the next.
     const roomGroup = room.current;
     if (environment !== null && captureNeeded.current && blend.current === null && !hallSkyState.moving && roomGroup !== null) {
-      captureNeeded.current = false;
-      for (let index = 0; index < cutState.current.length; index++) resources.section.set(index, HALL_CUTS.none);
-      const fittings = chandelierGroup.current;
-      const shownBefore = fittings?.visible ?? false;
-      const scaleBefore = fittings?.scale.x ?? 1;
-      if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
-      resources.bulbScale.value = CAPTURED_BULBS;
-      try {
-        state.scene.environment = environment.capture(roomGroup);
-        state.scene.environmentIntensity = resources.mood.reflections;
-      } catch {
-        // Without its own reflections the room keeps the previous environment.
-      } finally {
-        resources.bulbScale.value = 1;
-        if (fittings !== null) { fittings.visible = shownBefore; fittings.scale.setScalar(scaleBefore); }
+      if (sun !== null && sun.light.shadow.needsUpdate && captureWaits.current < CAPTURE_SUN_MAP_WAITS) {
+        captureWaits.current += 1;
+      } else {
+        captureNeeded.current = false;
+        captureWaits.current = 0;
+        for (let index = 0; index < cutState.current.length; index++) resources.section.set(index, HALL_CUTS.none);
+        const fittings = chandelierGroup.current;
+        const shownBefore = fittings?.visible ?? false;
+        const scaleBefore = fittings?.scale.x ?? 1;
+        if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
+        resources.bulbScale.value = CAPTURED_BULBS;
+        try {
+          state.scene.environment = withoutSunMapDraw(sun, () => environment.capture(roomGroup));
+          state.scene.environmentIntensity = resources.mood.reflections;
+          // The light it was captured in, so a later sky recaptures only once it differs.
+          capturedSignature.current = sky === null ? null : moodSignature(sky.mood);
+        } catch {
+          // Without its own reflections the room keeps the previous environment.
+        } finally {
+          resources.bulbScale.value = 1;
+          if (fittings !== null) { fittings.visible = shownBefore; fittings.scale.setScalar(scaleBefore); }
+        }
       }
       moving = true;
     }
