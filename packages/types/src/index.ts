@@ -2536,3 +2536,6 @@ export * from "./venue-sky.js";
 // read by the web pages, their schema.org description and the API's public
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
+
+// Live co-editing v1: presence and live ops on /ws/configurations/:configId.
+export * from "./layout-live.js";
