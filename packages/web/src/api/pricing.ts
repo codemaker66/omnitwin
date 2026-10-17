@@ -22,7 +22,7 @@ const PricingTiersSchema = z.array(z.object({ upTo: z.number().positive(), amoun
   .nullable().optional().catch(undefined);
 const PricingModifiersSchema = z.record(z.number().positive()).nullable().optional().catch(undefined);
 
-const PricingRuleResponseSchema = z.object({
+export const PricingRuleResponseSchema = z.object({
   id: z.string(),
   venueId: z.string(),
   spaceId: z.string().nullable(),
@@ -67,6 +67,15 @@ export interface CreatePricingRuleInput {
    *  null (or absent) applies at any time. The API refuses one side alone. */
   readonly appliesFrom?: string | null;
   readonly appliesUntil?: string | null;
+  /** The dates the rate is for, "YYYY-MM-DD" each; null is open on that side.
+   *  A rate for particular dates takes the place of the everyday rate for the
+   *  same room, time and way of charging on those dates. */
+  readonly validFrom?: string | null;
+  readonly validTo?: string | null;
+  readonly minHours?: number | null;
+  readonly minGuests?: number | null;
+  /** The Pricing desk suggestion this rate follows, kept in the change's record. */
+  readonly adviceKey?: string | null;
 }
 
 /** A change to a rule. Fields left out stay as they are. */
@@ -78,6 +87,11 @@ export interface UpdatePricingRuleInput {
   readonly isActive?: boolean;
   readonly appliesFrom?: string | null;
   readonly appliesUntil?: string | null;
+  readonly validFrom?: string | null;
+  readonly validTo?: string | null;
+  readonly minHours?: number | null;
+  readonly minGuests?: number | null;
+  readonly adviceKey?: string | null;
 }
 
 export interface PriceEstimateInput {
