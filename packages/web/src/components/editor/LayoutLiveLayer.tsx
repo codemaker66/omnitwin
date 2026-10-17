@@ -1,10 +1,12 @@
-import { useEffect, useMemo, type CSSProperties, type ReactElement } from "react";
+import { useEffect, useMemo, type ReactElement } from "react";
+import "./LayoutLiveLayer.css";
 import type { LiveParticipant } from "@omnitwin/types";
 import { getConfig } from "../../api/configurations.js";
 import { getAuthToken } from "../../api/client.js";
 import { API_URL } from "../../config/env.js";
 import { CO_EDITING_AUTOSAVE_MS, LayoutLiveClient, browserLiveSocket } from "../../lib/layout-live/live-client.js";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { isE2EAuthBypassEnabled, isE2ELiveSocketEnabled } from "../../lib/e2e-auth-bypass.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useLayoutLiveStore } from "../../stores/layout-live-store.js";
 import { ActivityStatus } from "../shared/Activity.js";
@@ -56,6 +58,8 @@ function useLayoutLiveRoom(): void {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   useEffect(() => {
     if (configId === null || isPublicPreview || !isAuthenticated || typeof WebSocket === "undefined") return;
+    // A mocked e2e harness has no socket server; a live-stack run opts in.
+    if (isE2EAuthBypassEnabled() && !isE2ELiveSocketEnabled()) return;
     const client = new LayoutLiveClient({
       configId,
       url: `${API_URL.replace(/^http/u, "ws")}/ws/configurations/${configId}`,
@@ -69,63 +73,29 @@ function useLayoutLiveRoom(): void {
   }, [configId, isPublicPreview, isAuthenticated]);
 }
 
-const shell: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  fontFamily: "'Inter', system-ui, sans-serif",
-  pointerEvents: "auto",
-};
-
-const avatar: CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: "50%",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  color: "#f2eee1",
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: "0.04em",
-  border: "1.5px solid rgba(20,19,17,0.9)",
-  boxSizing: "border-box",
-  userSelect: "none",
-};
-
-const capsule: CSSProperties = {
-  padding: "6px 12px",
-  borderRadius: 999,
-  background: "rgba(20,19,17,0.85)",
-  backdropFilter: "blur(8px)",
-  border: "1px solid rgba(201,138,91,0.35)",
-  color: "#f2eee1",
-  fontSize: 12,
-  lineHeight: "16px",
-  whiteSpace: "nowrap",
-};
-
 export function LayoutLivePresence({ others }: { readonly others: readonly LiveParticipant[] }): ReactElement | null {
   if (others.length === 0) return null;
   const shown = others.slice(0, MAX_AVATARS);
   const hidden = others.length - shown.length;
   const label = `Also in this layout: ${others.map(describeParticipant).join(", ")}`;
   return (
-    <div role="group" aria-label={label} data-testid="layout-live-presence" style={{ display: "flex", alignItems: "center" }}>
-      {shown.map((participant, index) => (
+    <div role="group" aria-label={label} data-testid="layout-live-presence" className="layout-live-presence">
+      {shown.map((participant) => (
         <span
           key={participant.connectionId}
           title={describeParticipant(participant)}
           data-testid="layout-live-avatar"
-          style={{ ...avatar, background: toneFor(participant.connectionId), marginLeft: index === 0 ? 0 : -6 }}
+          className="layout-live-avatar"
+          style={{ background: toneFor(participant.connectionId) }}
         >
           {initialsOf(participant.name)}
         </span>
       ))}
       {hidden > 0 && (
         <span
-          title={others.slice(MAX_AVATARS).map(describeParticipant).join("\n")}
-          style={{ ...avatar, background: "#1f3a2f", marginLeft: -6 }}
+          title={others.slice(MAX_AVATARS).map(describeParticipant).join(", ")}
+          className="layout-live-avatar"
+          style={{ background: "#1f3a2f" }}
         >
           +{hidden}
         </span>
@@ -153,20 +123,17 @@ export function LayoutLiveLayer({ mobile }: { readonly mobile: boolean }): React
   }, [notice, dismissNotice]);
 
   if (status !== "live" && status !== "reconnecting") return null;
-  const position: CSSProperties = mobile
-    ? { position: "fixed", top: "calc(env(safe-area-inset-top) + 128px)", left: 16, zIndex: 30 }
-    : { position: "fixed", top: 18, right: 148, zIndex: 30, flexDirection: "row-reverse" };
   return (
-    <div data-testid="layout-live-layer" style={{ ...shell, ...position, pointerEvents: "none" }}>
+    <div data-testid="layout-live-layer" className={mobile ? "layout-live-layer is-mobile" : "layout-live-layer"}>
       {status === "reconnecting" ? (
-        <span style={capsule}>
-          <ActivityStatus style={{ color: "#f2eee1" }}>Reconnecting to the room…</ActivityStatus>
+        <span className="layout-live-capsule">
+          <ActivityStatus>Reconnecting to the room…</ActivityStatus>
         </span>
       ) : (
-        <span style={{ pointerEvents: "auto" }}><LayoutLivePresence others={others} /></span>
+        <LayoutLivePresence others={others} />
       )}
       {notice !== null && status === "live" && (
-        <span role="status" aria-live="polite" data-testid="layout-live-notice" style={capsule}>
+        <span role="status" aria-live="polite" data-testid="layout-live-notice" className="layout-live-capsule layout-live-notice">
           {notice.text}
         </span>
       )}

@@ -44,7 +44,8 @@ import {
 //   reconnect   → overlay cleared, document refetched: the server is truth
 // ---------------------------------------------------------------------------
 
-/** Drag frames are coalesced to this interval (~20 Hz). */
+/** At most one frame per interval (~20 Hz): the first change of a gesture
+ *  leaves at once, the drag frames after it are coalesced. */
 export const LIVE_SEND_INTERVAL_MS = 50;
 /** Autosave debounce while someone else is in the layout. */
 export const CO_EDITING_AUTOSAVE_MS = 400;
@@ -117,6 +118,7 @@ export class LayoutLiveClient {
   #pingTimer: ReturnType<typeof setInterval> | null = null;
   #sweepTimer: ReturnType<typeof setInterval> | null = null;
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
+  #lastSentAtMs = Number.NEGATIVE_INFINITY;
   #busyTimer: ReturnType<typeof setTimeout> | null = null;
   #unsubscribeSpace: (() => void) | null = null;
   /** Ops waiting for the next coalesced frame, latest per object. */
@@ -303,7 +305,15 @@ export class LayoutLiveClient {
       }
     }
     if (next !== null) this.#setOverlay(next);
-    this.#flushTimer ??= setTimeout(() => { this.#flush(); }, LIVE_SEND_INTERVAL_MS);
+    if (this.#flushTimer !== null) return;
+    // Leading edge: a placement, a delete or a drag's first frame goes now;
+    // only the frames that follow within the interval wait to be coalesced.
+    const waitMs = LIVE_SEND_INTERVAL_MS - (this.#now() - this.#lastSentAtMs);
+    if (waitMs <= 0) {
+      this.#flush();
+      return;
+    }
+    this.#flushTimer = setTimeout(() => { this.#flush(); }, waitMs);
   }
 
   #flush(): void {
@@ -316,6 +326,8 @@ export class LayoutLiveClient {
     }
     const ops = [...this.#queued.values()];
     this.#queued.clear();
+    if (ops.length === 0) return;
+    this.#lastSentAtMs = this.#now();
     for (let start = 0; start < ops.length; start += LIVE_MAX_OPS_PER_FRAME) {
       const chunk = ops.slice(start, start + LIVE_MAX_OPS_PER_FRAME);
       const ids = chunk.map((op) => op.kind === "put" ? op.object.id : op.id);

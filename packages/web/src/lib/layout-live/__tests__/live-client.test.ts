@@ -167,16 +167,17 @@ describe("joining the room", () => {
 });
 
 describe("outgoing", () => {
-  it("coalesces a drag into one frame per interval carrying the latest state", async () => {
+  it("sends a gesture's first change at once and coalesces the rest per interval", async () => {
     const h = harness();
     const socket = await joined(h);
     for (let x = 1; x <= 5; x += 1) useEditorStore.getState().updateObject(T1, { positionX: x + 0.5 });
+    const positionsSent = (): number[] => socket.ofType("live.ops").map((frame) =>
+      (frame["ops"] as { object: { positionX: number } }[])[0]?.object.positionX ?? Number.NaN);
+    expect(positionsSent()).toEqual([1.5]);
     await vi.advanceTimersByTimeAsync(LIVE_SEND_INTERVAL_MS);
-    const frames = socket.ofType("live.ops");
-    expect(frames).toHaveLength(1);
-    const ops = frames[0]?.["ops"] as { kind: string; object: { positionX: number } }[];
-    expect(ops).toHaveLength(1);
-    expect(ops[0]?.object.positionX).toBe(5.5);
+    expect(positionsSent()).toEqual([1.5, 5.5]);
+    // Each frame carries one op per object: the latest state, not the path.
+    expect((socket.ofType("live.ops")[1]?.["ops"] as unknown[]).length).toBe(1);
     h.client.stop();
   });
 
@@ -195,6 +196,9 @@ describe("outgoing", () => {
     const socket = await joined(h);
     useEditorStore.getState().addObject(ROUND_TABLE, 1, 0, 1);
     const localId = useEditorStore.getState().objects.find((o) => o.id.startsWith("local-"))?.id ?? "";
+    // The placement left at once; a nudge inside the interval is still queued
+    // under the local id when the save lands.
+    useEditorStore.getState().updateObject(localId, { positionX: 2 });
     socket.sent.length = 0;
     captureHooks()?.onSaved(5, new Map([[localId, T3]]));
     const sentIds = socket.ofType("live.ops").flatMap((frame) =>
