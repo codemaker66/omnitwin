@@ -1,6 +1,8 @@
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import {
+  ConfigurationReviewStatusSchema,
   buildSheetPaperCheckUrl,
+  isTerminalReviewStatus,
   isIssuedPaperQuery,
   paperFingerprint,
   type SheetPaperCheck,
@@ -28,8 +30,15 @@ import type { Database } from "../db/client.js";
 // "this room's sheet", not the whole event, until an event-level issue exists.
 // ---------------------------------------------------------------------------
 
-/** Layout states that end a sheet's life: after the event, or never to run. */
-const RETIRED_REVIEW_STATUSES: ReadonlySet<string> = new Set(["archived", "withdrawn", "rejected"]);
+/**
+ * A layout's sheet is retired only in a state the review machine never
+ * leaves (archived after the event, or withdrawn). A rejected layout can
+ * return to draft, so it is "not approved", never "closed".
+ */
+function isRetiredReviewStatus(reviewStatus: string): boolean {
+  const parsed = ConfigurationReviewStatusSchema.safeParse(reviewStatus);
+  return parsed.success && isTerminalReviewStatus(parsed.data);
+}
 
 const UNKNOWN: SheetPaperCheckResult = { state: "unknown" };
 
@@ -94,7 +103,7 @@ export function decideSheetPaperCheck(facts: SheetPaperFacts): SheetPaperCheckRe
       ? { state: "superseded", currentVersion: inForce.version }
       : UNKNOWN;
   }
-  return RETIRED_REVIEW_STATUSES.has(facts.config.reviewStatus)
+  return isRetiredReviewStatus(facts.config.reviewStatus)
     ? { state: "retired" }
     : { state: "not_approved" };
 }

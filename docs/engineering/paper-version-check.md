@@ -26,7 +26,7 @@ upgrade brief (`D:/claude/dream-platform-20261016/redteam/final__judge.json`,
 `GET /public/sheet-check` (`packages/api/src/routes/public-sheet-check.ts`,
 rule in `services/sheet-paper-check.ts`) returns version state only:
 `current`, `superseded` (with the version to ask for), `not_approved`,
-`retired` (archived, withdrawn or rejected) or `unknown`. It never returns
+`retired` (archived or withdrawn; a rejected layout can return to draft, so it is `not_approved`) or `unknown`. It never returns
 event, room, guest or contact content. Every wrong link (unknown id, wrong
 version or fingerprint, deleted layout, damaged approval) gets the same
 `unknown`, and the route is limited to 30 checks a minute per caller, so it

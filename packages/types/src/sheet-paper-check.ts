@@ -70,7 +70,7 @@ export function isIssuedPaperQuery(query: SheetPaperCheckQuery): query is Issued
  *   current      the copy is the version in force
  *   superseded   a newer version is in force; ask for it by number
  *   not_approved no version is in force: the layout is being prepared or revised
- *   retired      the layout is closed (event over, withdrawn or rejected)
+ *   retired      the layout is closed for good (archived after the event, or withdrawn)
  *   unknown      the link cannot be confirmed (altered, unknown or damaged)
  * "unknown" is one answer for every failure, so the endpoint cannot be used
  * to learn which part of a guessed link was wrong.
