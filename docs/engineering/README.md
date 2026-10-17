@@ -108,7 +108,7 @@ on future experiments.
 | When working on… | Reference |
 | --- | --- |
 | Loading, saving or other visible work | [Activity convention](../../.claude/conventions/loading-and-working-motion.md) |
-| Prices, the Pricing desk, rates for particular dates, pricing suggestions or competitor prices | [Pricing desk](pricing-desk.md) |
+| Prices, the Pricing desk, rates for particular dates, pricing suggestions, competitor prices or the competitor watch (comp set, dated captures, who won a lost deal, the page-change check) | [Pricing desk](pricing-desk.md) |
 | Visible composition or interaction | [Product experience](../../.claude/conventions/product-experience.md) |
 | What AI assistants and search engines may read (`/mcp`, schema.org) | [Public venue discovery](public-venue-discovery.md) |
 | Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
