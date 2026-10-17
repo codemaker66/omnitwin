@@ -1,0 +1,172 @@
+import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { DIETARY_NOTE_RETENTION } from "@omnitwin/types";
+import {
+  configurationSheetSnapshots,
+  configurations,
+  eventConfigurationLinks,
+  events,
+} from "../db/schema.js";
+import type { Database } from "../db/client.js";
+
+// ---------------------------------------------------------------------------
+// Retention for guests' allergy notes (fix-first item 18).
+//
+// A layout can carry a free-text note about guests' allergies
+// (metadata.instructions.dietary.otherAllergies), and every event sheet
+// issued from it keeps a copy (configuration_sheet_snapshots.payload), as
+// does the sheet's pre-rendered PDF. The note is health information about
+// people who never used the product. It is needed to prepare the day and to
+// answer questions just after it, and not after that.
+//
+// The rule:
+//   - a layout linked to an event: the note is removed
+//     DIETARY_NOTE_DAYS_AFTER_EVENT days after the latest linked event ends;
+//   - a layout with no dated event: the note is removed
+//     DIETARY_NOTE_DAYS_WITHOUT_EVENT days after the layout last changed, the
+//     same 24 months the privacy policy gives an enquiry that did not become
+//     a booking.
+// Only the free-text note goes. The counts per diet are not about anyone in
+// particular and stay with the layout and its sheets.
+//
+// It runs through the house cleanup endpoint (POST /admin/cleanup), with a
+// dry run that changes nothing (POST /admin/retention/dietary-notes). It is
+// idempotent: a note already removed is not touched again, and the layout's
+// updated time is left alone because nobody edited it.
+//
+// A sheet whose PDF was pre-rendered keeps that file in storage until it is
+// removed; the sheet is only redacted once its PDF is gone, so a failed
+// removal leaves the sheet for the next pass instead of losing track of it.
+// ---------------------------------------------------------------------------
+
+/** From @omnitwin/types, so the privacy policy and the planner say the same. */
+export const DIETARY_NOTE_DAYS_AFTER_EVENT = DIETARY_NOTE_RETENTION.daysAfterEvent;
+export const DIETARY_NOTE_DAYS_WITHOUT_EVENT = DIETARY_NOTE_RETENTION.daysWithoutEvent;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const NOTE_PATH = "{instructions,dietary,otherAllergies}";
+
+/** A sheet whose stored PDF must go before its copy of the note is removed. */
+export interface SheetPdfToRemove {
+  readonly configurationId: string;
+  readonly version: number;
+  readonly sourceHash: string;
+}
+
+export interface DietaryRetentionOptions {
+  readonly now?: Date;
+  /** Report what would be removed, and remove nothing. */
+  readonly dryRun?: boolean;
+  /** Removes a sheet's pre-rendered PDF from storage; true once it is gone.
+   *  Without it, a sheet with a PDF is left for a pass that has one. */
+  readonly removeSheetPdf?: (sheet: SheetPdfToRemove) => Promise<boolean>;
+}
+
+export interface DietaryRetentionResult {
+  readonly dryRun: boolean;
+  /** Layouts whose note was (or would be) removed. */
+  readonly layouts: number;
+  /** Event sheets whose copy was (or would be) removed. */
+  readonly sheets: number;
+  /** Pre-rendered sheet PDFs removed from storage. */
+  readonly sheetPdfsRemoved: number;
+  /** Sheets still holding the note because their PDF could not be removed. */
+  readonly sheetsPending: number;
+}
+
+function hasNote(column: typeof configurations.metadata | typeof configurationSheetSnapshots.payload): SQL {
+  return sql`coalesce(${column} #>> ${NOTE_PATH}, '') <> ''`;
+}
+
+/** The layouts whose note has outlived its purpose at `now`. */
+async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string[]> {
+  const afterEvent = new Date(now.getTime() - DIETARY_NOTE_DAYS_AFTER_EVENT * DAY_MS);
+  const withoutEvent = new Date(now.getTime() - DIETARY_NOTE_DAYS_WITHOUT_EVENT * DAY_MS);
+  const latestEventEnd = sql`(
+    select max(coalesce(${events.endsAt}, ${events.startsAt}))
+    from ${eventConfigurationLinks}
+    join ${events} on ${events.id} = ${eventConfigurationLinks.eventId}
+    where ${eventConfigurationLinks.configurationId} = ${configurations.id}
+      and ${events.deletedAt} is null
+  )`;
+  const rows = await db
+    .select({ id: configurations.id })
+    .from(configurations)
+    .where(and(
+      sql`(
+        (${latestEventEnd} is not null and ${latestEventEnd} < ${afterEvent})
+        or (${latestEventEnd} is null and ${configurations.updatedAt} < ${withoutEvent})
+      )`,
+      sql`(
+        ${hasNote(configurations.metadata)}
+        or exists (
+          select 1 from ${configurationSheetSnapshots}
+          where ${configurationSheetSnapshots.configurationId} = ${configurations.id}
+            and ${hasNote(configurationSheetSnapshots.payload)}
+        )
+      )`,
+    ));
+  return rows.map((row) => row.id);
+}
+
+export async function removeLapsedDietaryNotes(
+  db: Database,
+  options: DietaryRetentionOptions = {},
+): Promise<DietaryRetentionResult> {
+  const now = options.now ?? new Date();
+  const dryRun = options.dryRun ?? false;
+  const ids = await lapsedLayoutIds(db, now);
+  if (ids.length === 0) return { dryRun, layouts: 0, sheets: 0, sheetPdfsRemoved: 0, sheetsPending: 0 };
+
+  const sheets = await db
+    .select({
+      id: configurationSheetSnapshots.id,
+      configurationId: configurationSheetSnapshots.configurationId,
+      version: configurationSheetSnapshots.version,
+      sourceHash: configurationSheetSnapshots.sourceHash,
+      pdfUrl: configurationSheetSnapshots.pdfUrl,
+    })
+    .from(configurationSheetSnapshots)
+    .where(and(inArray(configurationSheetSnapshots.configurationId, [...ids]), hasNote(configurationSheetSnapshots.payload)));
+
+  if (dryRun) {
+    const layouts = await db.select({ id: configurations.id }).from(configurations)
+      .where(and(inArray(configurations.id, [...ids]), hasNote(configurations.metadata)));
+    return { dryRun, layouts: layouts.length, sheets: sheets.length, sheetPdfsRemoved: 0, sheetsPending: 0 };
+  }
+
+  const clearedLayouts = await db.update(configurations)
+    .set({ metadata: sql`jsonb_set(${configurations.metadata}, ${NOTE_PATH}, '""'::jsonb)` })
+    .where(and(inArray(configurations.id, [...ids]), isNotNull(configurations.metadata), hasNote(configurations.metadata)))
+    .returning({ id: configurations.id });
+
+  let clearedSheets = 0;
+  let sheetPdfsRemoved = 0;
+  let sheetsPending = 0;
+  for (const sheet of sheets) {
+    if (sheet.pdfUrl !== null) {
+      let removed = false;
+      try {
+        removed = options.removeSheetPdf === undefined ? false : await options.removeSheetPdf(sheet);
+      } catch {
+        removed = false;
+      }
+      if (!removed) {
+        sheetsPending += 1;
+        continue;
+      }
+      sheetPdfsRemoved += 1;
+    }
+    const updated = await db.update(configurationSheetSnapshots)
+      .set({
+        payload: sql`jsonb_set(${configurationSheetSnapshots.payload}, ${NOTE_PATH}, '""'::jsonb)`,
+        // The stored PDF is gone; the sheet renders again, without the note,
+        // when someone next opens it.
+        pdfUrl: null,
+      })
+      .where(and(eq(configurationSheetSnapshots.id, sheet.id), hasNote(configurationSheetSnapshots.payload)))
+      .returning({ id: configurationSheetSnapshots.id });
+    clearedSheets += updated.length;
+  }
+
+  return { dryRun, layouts: clearedLayouts.length, sheets: clearedSheets, sheetPdfsRemoved, sheetsPending };
+}

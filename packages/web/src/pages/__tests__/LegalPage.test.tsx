@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { findUnsupportedProposalClaim } from "@omnitwin/types";
+import { DIETARY_NOTE_RETENTION, findUnsupportedProposalClaim } from "@omnitwin/types";
 import { LegalPage } from "../LegalPage.js";
 
 // ---------------------------------------------------------------------------
@@ -72,8 +72,13 @@ describe("every document", () => {
   it.each(TYPES)("shows a machine-readable last-updated date — %s", (type) => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
-    expect(time?.getAttribute("datetime")).toBe("2026-08-15");
-    expect(time?.textContent).toBe("15 August 2026");
+    // Each document carries its own date: the privacy policy changed when the
+    // dietary note gained its retention rule; the other two did not.
+    const expected = type === "privacy"
+      ? { iso: "2026-10-17", text: "17 October 2026" }
+      : { iso: "2026-08-15", text: "15 August 2026" };
+    expect(time?.getAttribute("datetime")).toBe(expected.iso);
+    expect(time?.textContent).toBe(expected.text);
   });
 
   it.each(TYPES)("gives a contents list and real section anchors — %s", (type) => {
@@ -103,6 +108,17 @@ describe("every document", () => {
 });
 
 describe("the privacy policy", () => {
+  it("says what the dietary note is, who reads it, that logs leave it out, and how long it is kept", () => {
+    const text = textOf("privacy");
+    expect(text).toContain("Dietary and allergy notes for an event");
+    expect(text).toContain("The note is health information.");
+    expect(text).toContain("Please give allergens and numbers, not guests' names.");
+    expect(text).toContain("The note is kept out of our server logs and error reports.");
+    // The period comes from the one definition the retention pass runs on.
+    expect(text).toContain(`${String(DIETARY_NOTE_RETENTION.daysAfterEvent)} days after the event`);
+    expect(text).toContain("24 months after it last changed");
+  });
+
   it("names the ICO with a route to complain", () => {
     const text = textOf("privacy");
     expect(text).toContain("Information Commissioner's Office");

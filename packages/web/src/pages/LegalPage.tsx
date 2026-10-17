@@ -19,6 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ReactElement } from "react";
+import { DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import "./LegalPage.css";
 
 interface LegalPageProps {
@@ -57,6 +58,9 @@ interface LegalSection {
 interface LegalDocument {
   readonly title: string;
   readonly standfirst: string;
+  /** When this document last changed: each document carries its own, so a
+   *  change to one does not re-date the others. */
+  readonly updated: { readonly text: string; readonly iso: string };
   readonly sections: readonly LegalSection[];
 }
 
@@ -71,9 +75,19 @@ const VENUE_EMAIL = "info@tradeshallglasgow.co.uk";
 const VENUE_PHONE = "+44 141 552 2418";
 const VENUE_PHONE_HREF = "tel:+441415522418";
 
-/** The date these documents were written. Shown on every page, and the only
- *  place it is written down. */
+/** The date the terms and the accessibility statement were written. Shown on
+ *  those pages, and the only place it is written down. */
 const LAST_UPDATED = "15 August 2026";
+const ORIGINAL_EDITION = { text: LAST_UPDATED, iso: "2026-08-15" } as const;
+
+/** The privacy policy's own date: it changed when the dietary note gained its
+ *  retention rule (fix-first item 18). */
+const PRIVACY_UPDATED = { text: "17 October 2026", iso: "2026-10-17" } as const;
+
+/** The allergy note's keeping period, from the one definition the API's
+ *  retention pass and the planner also read. */
+const NOTE_DAYS_AFTER_EVENT = DIETARY_NOTE_RETENTION.daysAfterEvent;
+const NOTE_MONTHS_WITHOUT_EVENT = Math.round(DIETARY_NOTE_RETENTION.daysWithoutEvent / 30.4);
 
 // T-616 / gate line 4 replaced every "Enquire" mailto on the public site with
 // the composer, because a mailto leaves no row in `enquiries` and the events
@@ -109,6 +123,7 @@ const PRIVACY: LegalDocument = {
   title: "Privacy Policy",
   standfirst:
     "How the Trades House of Glasgow handles the personal information you send through this site, why we hold it, how long we keep it, and what you can ask us to do with it.",
+  updated: PRIVACY_UPDATED,
   sections: [
     {
       id: "who-we-are",
@@ -221,6 +236,11 @@ const PRIVACY: LegalDocument = {
               term: "Error diagnostics",
               detail:
                 "When something goes wrong in the browser or on the server, our error-monitoring service records technical details about the failure. That can include the page you were on and the technical state of the application at the time.",
+            },
+            {
+              term: "Dietary and allergy notes for an event",
+              detail:
+                "When an event is planned with the venue, its layout can record how many guests need each kind of meal (vegetarian, vegan, gluten-free, nut-free, halal, kosher) and a short note about other allergies. The note is health information. It is read by the venue's events team and the staff preparing the room, and it is printed on the event sheets they work from. Please give allergens and numbers, not guests' names. The note is kept out of our server logs and error reports.",
             },
             {
               term: "Venue staff accounts",
@@ -407,6 +427,11 @@ const PRIVACY: LegalDocument = {
                 "Your email address, name and phone number held as a single contact record: deleted on the same 24-month rule, counted from our last contact with you.",
             },
             {
+              term: "The allergy note on an event's layout",
+              detail:
+                `Removed from the layout, and from the event sheets and their stored copies, ${String(NOTE_DAYS_AFTER_EVENT)} days after the event. A layout with no event date loses the note ${String(NOTE_MONTHS_WITHOUT_EVENT)} months after it last changed. The counts per meal, which do not identify anyone, stay with the event record.`,
+            },
+            {
               term: "Logs and error diagnostics",
               detail:
                 "Kept only for as long as our hosting and error-monitoring providers retain them under their standard settings. We do not take separate copies of them.",
@@ -526,7 +551,7 @@ const PRIVACY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: `The version in force is the one on this page, dated ${LAST_UPDATED}. If we change it, that date changes with it, and where a change directly affects people who have already sent us an enquiry we will tell them.`,
+          text: `The version in force is the one on this page, dated ${PRIVACY_UPDATED.text}. If we change it, that date changes with it, and where a change directly affects people who have already sent us an enquiry we will tell them.`,
         },
       ],
     },
@@ -553,6 +578,7 @@ const TERMS: LegalDocument = {
   title: "Terms of Service",
   standfirst:
     "The terms on which you may use this site and the planning tools on it — what the service is, what it is not, and what happens when you send an enquiry.",
+  updated: ORIGINAL_EDITION,
   sections: [
     {
       id: "these-terms",
@@ -746,6 +772,7 @@ const ACCESSIBILITY: LegalDocument = {
   title: "Accessibility Statement",
   standfirst:
     "What we have done to make this site usable, what we know is still wrong with it, and how to reach a person if something here blocks you.",
+  updated: ORIGINAL_EDITION,
   sections: [
     {
       id: "scope",
@@ -988,7 +1015,7 @@ export function LegalPage({ type }: LegalPageProps): ReactElement {
           <p className="lg-standfirst">{doc.standfirst}</p>
           <p className="lg-updated">
             <span className="lg-updated-label">Last updated</span>
-            <time dateTime="2026-08-15">{LAST_UPDATED}</time>
+            <time dateTime={doc.updated.iso}>{doc.updated.text}</time>
           </p>
 
           <nav className="lg-toc" aria-labelledby="lg-toc-heading">
