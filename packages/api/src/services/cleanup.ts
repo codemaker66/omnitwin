@@ -14,14 +14,15 @@ import type { Database } from "../db/client.js";
  * - Not the source of any compiled handoff pack
  *
  * The last rule keeps operational records. handoff_packs cascade from their
- * configuration, supplier passes (supplier_coordination_packs) cascade from
- * the handoff pack, and a supplier's acknowledgements cascade from the pass,
- * so deleting the configuration would erase what a supplier was told and
- * what they confirmed. This is the only hard delete of configurations;
- * snapshot pruning already keeps snapshots a handoff pack refers to, and
- * passes are withdrawn, never deleted. The foreign keys still cascade at the
- * database level: changing them needs a migration (a decision left for
- * Blake), so this guard is what holds the records today.
+ * configuration, so deleting it would erase the hallkeeper's handoff. Where a
+ * supplier pass was issued from that handoff pack, the database itself now
+ * refuses the delete (0092: a pass RESTRICTs its handoff pack, a reply its
+ * pass), and because this is one batch statement, a single refused row
+ * would fail the whole batch and leave every abandoned preview in place.
+ * The guard keeps cleanup working around those records; the keys are what
+ * guarantee them. This is the only hard delete of configurations; snapshot
+ * pruning already keeps snapshots a handoff pack refers to, and passes are
+ * withdrawn, never deleted.
  *
  * To run on a cron: wire into a scheduled job (e.g. node-cron, platform cron,
  * or a GitHub Actions schedule) calling POST /admin/cleanup with an admin token.

@@ -1782,12 +1782,17 @@ export const supplierInstructions = pgTable("supplier_instructions", {
 // These rows are capability-shareable extracts from frozen ops handoff packs.
 // Public supplier views resolve through hashed bearer tokens and expose only
 // supplier-scoped instructions, contact fields, and source provenance.
+//
+// What a supplier was told and what they confirmed is kept by the database
+// (0092): a pass RESTRICTs deleting its handoff pack, and an acknowledgement
+// RESTRICTs deleting its pass, so no cascade from a configuration, snapshot
+// or handoff pack can erase them. Passes are withdrawn, never deleted.
 // ---------------------------------------------------------------------------
 
 export const supplierCoordinationPacks = pgTable("supplier_coordination_packs", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
-  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id, { onDelete: "cascade" }),
+  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id, { onDelete: "restrict" }),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
   supplierId: uuid("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
   title: varchar("title", { length: 200 }).notNull(),
@@ -1845,7 +1850,7 @@ export const supplierCoordinationShareTokens = pgTable("supplier_coordination_sh
 
 export const supplierAcknowledgements = pgTable("supplier_acknowledgements", {
   id: uuid("id").primaryKey().defaultRandom(),
-  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "cascade" }),
+  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "restrict" }),
   shareTokenId: uuid("share_token_id").references(() => supplierCoordinationShareTokens.id, { onDelete: "set null" }),
   status: varchar("status", { length: 30 }).notNull().default("acknowledged"),
   acknowledgedByName: varchar("acknowledged_by_name", { length: 160 }),

@@ -617,6 +617,13 @@
       "when": 1791558000000,
       "tag": "0089_pricing_rule_windows",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1791817200000,
+      "tag": "0092_supplier_records_kept",
+      "breakpoints": true
     }
   ]
 }
