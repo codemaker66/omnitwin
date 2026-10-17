@@ -50,7 +50,13 @@ export function viewAsVisitor(): void {
 }
 
 export function openRoom(space: Space | null): void {
-  useEditorStore.setState({ space, venueId: space?.venueId ?? null, configId: space === null ? null : "config-1" });
+  useEditorStore.setState({ space, venueId: space?.venueId ?? null, configId: space === null ? null : "config-1", spaceLoadFailed: false });
+}
+
+/** A plan whose venue is known while its room is still being read, or whose
+ *  room read failed. */
+export function roomPending(venueId = TRADES_HALL_VENUE_ID, failed = false): void {
+  useEditorStore.setState({ space: null, venueId, configId: "config-1", spaceLoadFailed: failed });
 }
 
 export function resetPlannerTruth(): void {

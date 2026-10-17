@@ -128,6 +128,20 @@ describe("GuestsLensPanel — the venue's published figures lead", () => {
     expect(screen.getByTestId("guests-published-reading").textContent).toContain("Reading the venue");
     expect(screen.getByTestId("guests-published-reading").querySelector("[data-activity-indicator]")).not.toBeNull();
   });
+
+  it("shows honest work while the room itself is being read", () => {
+    fixtures.roomPending();
+    render(<GuestsLensPanel />);
+    expect(screen.getByTestId("guests-published-reading").textContent).toContain("Reading the venue");
+  });
+
+  it("stops working and offers the events team when the room could not be read", () => {
+    fixtures.roomPending(fixtures.TRADES_HALL_VENUE_ID, true);
+    render(<GuestsLensPanel />);
+    expect(screen.queryByTestId("guests-published-reading")).toBeNull();
+    expect(screen.getByTestId("guests-published-missing-status").textContent).toBe("Not recorded");
+    expect(screen.getByTestId("guests-published-missing-ask").textContent).toBe("Ask the events team");
+  });
 });
 
 describe("GuestsLensPanel — computed counts are staff-only and never a verdict", () => {

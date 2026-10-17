@@ -40,17 +40,20 @@ export function usePlannerTruth(): PlannerTruth {
   const space = useEditorStore((state) => state.space);
   const editorVenueId = useEditorStore((state) => state.venueId);
   const configId = useEditorStore((state) => state.configId);
+  const spaceLoadFailed = useEditorStore((state) => state.spaceLoadFailed);
   const venueId = space?.venueId ?? editorVenueId;
   const staff = useAuthStore((auth) => plannerViewerIsVenueStaff(auth, venueId));
   const venueStatus = useTradesHallVenueStatus(venueId);
 
   const room = useMemo((): PlannerRoomIdentity | null | "reading" => {
-    if (space === null) return venueId !== null ? "reading" : null;
+    // The room is still being read only while its read is in flight; a failed
+    // read ends the working state and the honest "not recorded" view shows.
+    if (space === null) return venueId !== null && !spaceLoadFailed ? "reading" : null;
     return {
       slug: space.slug,
       tradesHall: venueStatus === "reading" ? null : venueStatus === "trades-hall",
     };
-  }, [space, venueId, venueStatus]);
+  }, [space, venueId, venueStatus, spaceLoadFailed]);
 
   const published = useMemo(
     (): PublishedCapacityAnswer => (room === "reading" ? { kind: "reading" } : publishedCapacityFor(room)),
