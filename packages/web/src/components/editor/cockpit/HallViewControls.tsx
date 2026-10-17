@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Box, Flame, Footprints, LayoutGrid, Sparkles, Sun, Sunset, type LucideIcon } from "lucide-react";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useBookmarkStore } from "../../../stores/bookmark-store.js";
@@ -144,16 +144,49 @@ export function HallViewControls({ captureAvailable, povActive, moodLabels = fal
 
 /** How long the time of day's panel stays drawn while it fades out, ms. */
 const CLOSE_MS = 200;
+/** Between the button and the panel, px (HallSunDial.css: bottom: calc(100% + 12px)). */
+const POPOVER_GAP = 12;
+/** Kept clear above the panel, px. */
+const POPOVER_MARGIN = 8;
+/** The least the panel shrinks to, px: its clock, date and Now, and the top of the day. */
+const POPOVER_LEAST = 120;
+
+/**
+ * The height the panel may take above its button, px: up to the top of the
+ * planner's stage, or the foot of the tool pill across it (drawn over the
+ * panel), whichever is lower. Undefined while the button is not laid out.
+ * The timeline dock below is drawn over the stage too, so the panel never
+ * opens downward; on a short stage it scrolls within instead.
+ */
+function roomAbove(anchor: HTMLElement): number | undefined {
+  const box = anchor.getBoundingClientRect();
+  if (box.width === 0 && box.height === 0) return undefined;
+  const stage = anchor.closest(".cockpit-stage");
+  let ceiling = Math.max(0, stage === null ? 0 : stage.getBoundingClientRect().top);
+  const pill = stage === null ? null : stage.querySelector("[data-testid='planner-tool-pill']");
+  if (pill !== null) ceiling = Math.max(ceiling, pill.getBoundingClientRect().bottom);
+  return Math.max(POPOVER_LEAST, Math.floor(box.top - POPOVER_GAP - POPOVER_MARGIN - ceiling));
+}
 
 /** The light's button and, above it, the time of day. Closes on Escape or a press elsewhere. */
 function HallSunPopover(): ReactElement {
   const [open, setOpen] = useState(false);
   const [drawn, setDrawn] = useState(false);
+  const [room, setRoom] = useState<number | undefined>(undefined);
   const anchor = useRef<HTMLDivElement | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (open) { setDrawn(true); return undefined; }
     const timer = window.setTimeout(() => { setDrawn(false); }, CLOSE_MS);
     return () => { window.clearTimeout(timer); };
+  }, [open]);
+  // Measured as it opens, before it is painted, and again if the window changes.
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    const measure = (): void => { if (anchor.current !== null) setRoom(roomAbove(anchor.current)); };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => { window.removeEventListener("resize", measure); };
   }, [open]);
   useEffect(() => {
     if (!open) return undefined;
@@ -161,7 +194,19 @@ function HallSunPopover(): ReactElement {
       if (event.target instanceof Node && anchor.current?.contains(event.target) === true) return;
       setOpen(false);
     };
-    const onKeyDown = (event: KeyboardEvent): void => { if (event.key === "Escape") setOpen(false); };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // This Escape is the panel's alone. The planner's own listen on window
+      // (back to Select, clear the selection, leave a saved viewpoint or the
+      // walk); stopped here at document, they never hear it.
+      event.preventDefault();
+      event.stopPropagation();
+      // Focus inside the panel would fall to the page as it unmounts: hand it
+      // back to the button that opened it.
+      const focused = document.activeElement;
+      if (focused !== null && anchor.current?.contains(focused) === true) trigger.current?.focus();
+      setOpen(false);
+    };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
     return () => {
@@ -171,10 +216,10 @@ function HallSunPopover(): ReactElement {
   }, [open]);
   return (
     <div className="hall-sun-anchor" ref={anchor}>
-      <HallSunButton open={open} onToggle={() => { setOpen((value) => !value); }} />
+      <HallSunButton ref={trigger} open={open} onToggle={() => { setOpen((value) => !value); }} />
       {drawn && (
         <div className="hall-sun-popover" data-open={open ? "true" : "false"} role="dialog" aria-label="Time of day">
-          <HallSunDial />
+          <HallSunDial maxHeight={room} />
         </div>
       )}
     </div>

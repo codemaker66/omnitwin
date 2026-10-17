@@ -54,6 +54,16 @@
   color: rgba(246, 238, 220, 0.92);
   font: 12px/1.35 "Inter", system-ui, sans-serif;
 }
+/* On a short stage (a laptop with the timeline dock open) the panel is held
+   to the room above its button, which HallSunPopover measures, and scrolls
+   within: the dock below is drawn over the stage, so it cannot open downward. */
+.hall-sun-dial:not(.is-inline) {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 138, 91, 0.4) transparent;
+}
 .hall-sun-dial.is-inline {
   width: auto;
   padding: 6px 2px 4px;
@@ -243,12 +253,39 @@
   outline: var(--vv-focus-ring);
   outline-offset: var(--vv-focus-ring-offset);
 }
+
+/* The LiDAR survey's credit (Open Government Licence v3.0): quiet, in the
+   marks' small type and tone, but always legible (about 5.5:1 on the panel). */
+.hall-sun-dial__credit {
+  margin: 10px 0 0;
+  color: rgba(246, 238, 220, 0.55);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+.hall-sun-dial__credit a {
+  border-radius: 2px;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(246, 238, 220, 0.32);
+  text-underline-offset: 2px;
+  transition: color 150ms ease, text-decoration-color 150ms ease;
+}
+.hall-sun-dial__credit a:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .hall-sun-dial__date:hover,
   .hall-sun-dial__now:not(.is-active):hover,
   .hall-sun-dial__preset:hover {
     background: rgba(201, 138, 91, 0.12);
     color: #f3ddb0;
+  }
+  .hall-sun-dial__credit a:hover {
+    color: #f3ddb0;
+    text-decoration-color: currentColor;
   }
 }
 .is-inline .hall-sun-dial__preset {
