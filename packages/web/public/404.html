@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#ede7db">
+  <title>Page not found — Trades Hall of Glasgow</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <!--
+    The edge's own 404 (fix-first item 19, 16 October 2026). vercel.json
+    serves the app only at the addresses src/router.tsx declares; any other
+    address gets a real 404 status and this page, which needs no JavaScript.
+    Its words are NotFoundPage.tsx's (the route inventory test holds them
+    together), on the same Fresh paper and colours as src/pages/fresh/fresh.css,
+    in Fraunces and Geist from the files /platform already publishes.
+  -->
+  <style>
+    @font-face {
+      font-family: "Fraunces";
+      font-style: normal;
+      font-weight: 300 700;
+      font-display: swap;
+      src: url("/platform/fonts/fraunces-normal-latin.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Geist";
+      font-style: normal;
+      font-weight: 300 600;
+      font-display: swap;
+      src: url("/platform/fonts/geist-normal-latin.woff2") format("woff2");
+    }
+    :root {
+      --fr-paper: #ede7db;
+      --fr-ink: #262016;
+      --fr-ink-2: #5a5244;
+      --fr-green: #1f4a38;
+      --fr-rule: #d5cbb6;
+      --fr-arc: #c6b795;
+      --fr-ease: cubic-bezier(0.23, 1, 0.32, 1);
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+      padding: clamp(24px, 6vh, 72px) clamp(16px, 4vw, 44px);
+      padding-bottom: calc(clamp(24px, 6vh, 72px) + env(safe-area-inset-bottom));
+      background-color: var(--fr-paper);
+      background-image: linear-gradient(180deg, color-mix(in srgb, var(--fr-paper) 86%, #fff6e4 14%) 0, var(--fr-paper) 460px);
+      color: var(--fr-ink);
+      font-family: "Geist", system-ui, sans-serif;
+      line-height: 1.65;
+    }
+    main {
+      position: relative;
+      width: 100%;
+      max-width: 34rem;
+      padding-top: 72px;
+    }
+    .arch {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 40px;
+      border-top: 1px solid var(--fr-arc);
+      border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+    }
+    h1 {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: clamp(1.9rem, 5.4vw, 2.9rem);
+      font-weight: 300;
+      line-height: 1.08;
+      letter-spacing: -0.012em;
+    }
+    .body {
+      margin-top: 1rem;
+      font-family: Georgia, serif;
+      font-size: 1.02rem;
+      color: var(--fr-ink);
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.85rem 1.4rem;
+      margin-top: 1.9rem;
+    }
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      padding: 0 26px;
+      border-radius: 999px;
+      background: var(--fr-green);
+      color: var(--fr-paper);
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: transform 140ms var(--fr-ease), background-color 180ms var(--fr-ease);
+    }
+    .cta:active { transform: scale(0.97); }
+    @media (hover: hover) and (pointer: fine) {
+      .cta:hover { background: color-mix(in srgb, var(--fr-green) 86%, var(--fr-ink) 14%); }
+    }
+    .quiet {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      color: var(--fr-ink);
+      font-size: 14px;
+      text-decoration: underline;
+      text-decoration-color: var(--fr-rule);
+      text-underline-offset: 4px;
+      transition: text-decoration-color 180ms var(--fr-ease);
+    }
+    .quiet:hover { text-decoration-color: var(--fr-green); }
+    .call {
+      margin-top: 1.6rem;
+      font-size: 0.85rem;
+      color: var(--fr-ink-2);
+    }
+    .call a { color: var(--fr-green); text-underline-offset: 3px; }
+    a:focus-visible { outline: 2px solid var(--fr-green); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) {
+      .cta, .quiet { transition: none; }
+      .cta:active { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="arch" aria-hidden="true"></div>
+    <h1>That link has expired or moved</h1>
+    <p class="body">The page you asked for isn't here. If somebody at Trades Hall sent you this link, it may have been replaced since — they can send you a fresh one.</p>
+    <div class="actions">
+      <a class="cta" href="/#enquire">Ask about a date</a>
+      <a class="quiet" href="/">Go to the front door</a>
+    </div>
+    <p class="call">Or call the hall <a href="tel:+441415522418">0141 552 2418</a></p>
+  </main>
+</body>
+</html>
