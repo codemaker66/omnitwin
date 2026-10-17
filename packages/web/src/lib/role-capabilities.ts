@@ -18,7 +18,9 @@
 /** Mirrors `canManageVenue` — the base "works this venue's floor" capability. */
 export const VENUE_FLOOR_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
 
-/** Mirrors `canAdministerVenue` — the venue record, its spaces, its pricing. */
+/** Mirrors `canAdministerVenue` — the venue record and its spaces. Pricing-rule
+ *  writes are narrower in the API (`PRICING_WRITE_ROLES`: admin and manager);
+ *  the only web editor for them is the platform-admin Admin panel. */
 export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
 
 /**
