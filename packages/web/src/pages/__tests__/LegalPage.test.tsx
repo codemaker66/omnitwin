@@ -177,6 +177,21 @@ describe("the terms of service", () => {
   it("is governed by the law of Scotland", () => {
     expect(textOf("terms")).toContain("law of Scotland");
   });
+
+  it("credits the LiDAR survey the planner's city is drawn from, under its licence", () => {
+    render(<LegalPage type="terms" />);
+    const section = document.getElementById("intellectual-property");
+    expect(section?.textContent).toContain(
+      "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0",
+    );
+    const licence = screen.getByRole("link", { name: "Open Government Licence v3.0" });
+    expect(section?.contains(licence)).toBe(true);
+    expect(licence.getAttribute("href")).toBe(
+      "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+    );
+    expect(licence.getAttribute("target")).toBe("_blank");
+    expect(licence.getAttribute("rel")?.split(" ")).toContain("noopener");
+  });
 });
 
 describe("the accessibility statement", () => {
