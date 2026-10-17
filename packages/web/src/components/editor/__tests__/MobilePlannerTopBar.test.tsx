@@ -50,3 +50,55 @@ describe("MobilePlannerTopBar activity", () => {
     else expect(screen.queryByTestId("enquiry-ready")).toBeNull();
   });
 });
+
+// Fix-first item 11: phones have no Share lens, so a guest plan offers its PDF
+// beside Send. The sheet is real; only the PDF request is stubbed.
+describe("MobilePlannerTopBar plan as a PDF", () => {
+  it("offers a guest plan as a PDF in a labelled sheet, and closes on Escape", () => {
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    const open = screen.getByRole("button", { name: "Plan as a PDF" });
+    expect(open.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(screen.getByRole("button", { name: "Send to Events Team" })).toBeTruthy();
+
+    fireEvent.click(open);
+    const sheet = screen.getByRole("dialog", { name: "Send your plan" });
+    expect(sheet.getAttribute("aria-modal")).toBe("true");
+    expect(sheet.textContent).toMatch(/no prices/u);
+    expect(sheet.textContent).toMatch(/drawn by a visitor and not reviewed by the venue/u);
+    expect(screen.getByTestId("visitor-pdf-prepare").textContent).toBe("Prepare the PDF");
+    expect(mocks.prepare).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Send your plan" })).toBeNull();
+  });
+
+  it("closes when the backdrop is tapped but not when the sheet is", () => {
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Plan as a PDF" }));
+    fireEvent.click(screen.getByRole("dialog", { name: "Send your plan" }));
+    expect(screen.getByRole("dialog", { name: "Send your plan" })).toBeTruthy();
+    fireEvent.click(screen.getByTestId("visitor-pdf-sheet-backdrop"));
+    expect(screen.queryByRole("dialog", { name: "Send your plan" })).toBeNull();
+  });
+
+  it("is not offered for a plan saved to an account", () => {
+    useEditorStore.setState({ isPublicPreview: false });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Plan as a PDF" })).toBeNull();
+  });
+
+  it("is not offered before anything is placed", () => {
+    useEditorStore.setState({ objects: [] });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Plan as a PDF" })).toBeNull();
+  });
+
+  it("waits for the room timeline preview to end", () => {
+    useLayoutTimelinePreviewStore.setState({ mode: "unavailable" });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    const open = screen.getByRole("button", { name: "Plan as a PDF" });
+    expect(open).toHaveProperty("disabled", true);
+    fireEvent.click(open);
+    expect(screen.queryByRole("dialog", { name: "Send your plan" })).toBeNull();
+  });
+});

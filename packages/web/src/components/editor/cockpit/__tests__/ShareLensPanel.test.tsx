@@ -41,7 +41,7 @@ beforeEach(() => {
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
   useShareStore.getState().reset();
-  useEditorStore.setState({ configId: null });
+  useEditorStore.getState().reset();
   useAuthStore.getState().logout();
 });
 
@@ -57,10 +57,45 @@ describe("ShareLensPanel", () => {
     expect(screen.getByText(/safety, occupancy, or compliance/i)).toBeTruthy();
   });
 
-  it("blocks share creation until staff sign-in", () => {
+  it("gives an anonymous organiser a way to send the plan, never a staff sign-in", () => {
     render(<ShareLensPanel />);
-    expect(screen.getByTestId("share-precondition").textContent).toMatch(/sign in as venue staff/i);
+    const panel = screen.getByTestId("share-lens-panel");
+    expect(panel.textContent).not.toMatch(/sign in as venue staff/iu);
+    expect(screen.queryByTestId("share-precondition")).toBeNull();
+    // The proposal chain stays staff-only.
     expect(screen.queryByTestId("share-create")).toBeNull();
+    expect(screen.queryByTestId("share-title")).toBeNull();
+    expect(screen.queryByTestId("share-message")).toBeNull();
+    expect(screen.getByTestId("visitor-share-explainer").textContent)
+      .toMatch(/no prices, and says it was drawn by a visitor and not reviewed by the venue/u);
+    // Not saved yet: say what happens next instead of offering a dead button.
+    expect(screen.getByTestId("visitor-pdf-unavailable").textContent)
+      .toBe("Your plan saves as you work. Once it has saved, it can be sent as a PDF.");
+    expect(screen.getByTestId("visitor-share-venue").textContent).toMatch(/Send to Events Team/u);
+  });
+
+  it("offers a saved guest plan as a PDF, with its consequence stated", () => {
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: true });
+    useEditorStore.getState().addObject("test-chair", 0, 0, 0);
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("visitor-pdf-prepare").textContent).toBe("Prepare the PDF");
+    expect(screen.getByTestId("visitor-pdf-consequence").textContent).toMatch(/Nothing is emailed/u);
+    expect(screen.queryByTestId("share-create")).toBeNull();
+  });
+
+  it("asks for furniture before a PDF of an empty saved plan", () => {
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: true, objects: [] });
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("visitor-pdf-unavailable").textContent).toBe("Place some furniture first; the PDF shows your layout.");
+    expect(screen.queryByTestId("visitor-pdf-prepare")).toBeNull();
+  });
+
+  it("keeps the proposal chain for a signed-in account's own (claimed) plan", () => {
+    useAuthStore.getState().setUser({ id: "u2", email: "client@example.test", role: "client", platformRole: "none", venueId: null, name: "Client" });
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: false });
+    render(<ShareLensPanel />);
+    expect(screen.queryByTestId("visitor-pdf")).toBeNull();
+    expect(screen.getByTestId("share-precondition")).toBeTruthy();
   });
 
   it("asks to save the layout when signed in without a saved configuration", () => {

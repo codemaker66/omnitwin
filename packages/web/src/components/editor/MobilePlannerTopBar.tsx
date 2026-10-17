@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FileText } from "lucide-react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
@@ -7,6 +8,7 @@ import {
   deriveEditorSaveStatus,
 } from "../../lib/editor-save-status.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
+import { VisitorPlanPdfSheet } from "./VisitorPlanPdfSheet.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
@@ -135,6 +137,22 @@ const sendStyle: React.CSSProperties = {
   boxShadow: "0 8px 18px rgba(122,31,42,0.2)",
 };
 
+// The plan-as-PDF control sits beside Send: the same 44 px pill height, the
+// bar's own ink, quieter than Send because asking the venue is the main act.
+const planPdfStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 44,
+  height: 44,
+  padding: 0,
+  borderRadius: 999,
+  border: "1px solid rgba(36,25,19,0.14)",
+  background: "rgba(36,25,19,0.06)",
+  color: "#241913",
+  cursor: "pointer",
+};
+
 function segmentButtonStyle(active: boolean): React.CSSProperties {
   return {
     minHeight: 44,
@@ -164,6 +182,7 @@ export function MobilePlannerTopBar({
   const saveConflict = useEditorStore((s) => s.saveConflict);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const timelinePreviewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
   const timelinePreviewActive = timelinePreviewMode !== "inactive";
@@ -175,6 +194,7 @@ export function MobilePlannerTopBar({
     : "Banquet Draft";
   const online = useOnlineStatus();
   const [showEnquiry, setShowEnquiry] = useState(false);
+  const [showPlanPdf, setShowPlanPdf] = useState(false);
   const [sending, setSending] = useState(false);
   const mountedRef = useRef(true);
 
@@ -224,9 +244,18 @@ export function MobilePlannerTopBar({
       });
   };
 
+  // A guest plan (no account) can go to anyone as a PDF; phones have no Share
+  // lens, so the bar offers it beside Send (fix-first item 11).
+  const canSendPlanPdf = isPublicPreview && objectCount > 0 && configId !== null;
+
   return (
     <>
-      <div data-testid="mobile-planner-topbar" style={topBarStyle}>
+      <div
+        data-testid="mobile-planner-topbar"
+        style={canSendPlanPdf
+          ? { ...topBarStyle, gridTemplateColumns: "minmax(0, 1fr) auto auto auto" }
+          : topBarStyle}
+      >
         <div style={titleStyle}>
           <div data-testid="mobile-planner-room-name" style={roomStyle}>{roomName}</div>
           <div data-testid="mobile-planner-layout-name" style={layoutStyle}>{layoutName}</div>
@@ -272,6 +301,23 @@ export function MobilePlannerTopBar({
           </button>
         </div>
 
+        {canSendPlanPdf ? (
+          <button
+            type="button"
+            style={{ ...planPdfStyle, opacity: timelinePreviewActive ? 0.68 : 1 }}
+            aria-label="Plan as a PDF"
+            aria-haspopup="dialog"
+            onClick={() => { if (!timelinePreviewActive) setShowPlanPdf(true); }}
+            disabled={timelinePreviewActive}
+            title={timelinePreviewActive
+              ? "Exit the room timeline preview to make a PDF of this plan."
+              : "Send your plan to someone as a PDF"}
+            data-testid="mobile-plan-pdf"
+          >
+            <FileText size={20} aria-hidden="true" />
+          </button>
+        ) : null}
+
         {objectCount > 0 && configId !== null ? (
           <button
             type="button"
@@ -291,6 +337,14 @@ export function MobilePlannerTopBar({
           </button>
         ) : null}
       </div>
+
+      {showPlanPdf && configId !== null ? (
+        <VisitorPlanPdfSheet
+          configId={configId}
+          roomName={space?.name ?? "Room"}
+          onClose={() => { setShowPlanPdf(false); }}
+        />
+      ) : null}
 
       {showEnquiry && configId !== null ? (
         <GuestEnquiryModal
