@@ -139,6 +139,9 @@ const ProposalPreviewPage = lazyWithPreload(() =>
 const SupplierPortalPage = lazy(() =>
   cockpitImport(() => import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage }))),
 );
+const PlanViewPage = lazy(() =>
+  cockpitImport(() => import("./pages/PlanViewPage.js").then((m) => ({ default: m.PlanViewPage }))),
+);
 const OpsHandoffPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage }))),
 );
@@ -672,6 +675,13 @@ export const router = createBrowserRouter([
     // by the API through a stored hash and returns only supplier-scoped data.
     path: "/supplier-share/:token",
     element: withSuspense(<SupplierPortalPage />),
+  },
+  {
+    // A visitor's plan through a view-only link (fix-first item 11). Public —
+    // the token is resolved by the API through a stored hash, reads only, and
+    // never reveals the plan's id or planner address.
+    path: "/plan-view/:token",
+    element: withSuspense(<PlanViewPage />),
   },
   {
     path: "/privacy",

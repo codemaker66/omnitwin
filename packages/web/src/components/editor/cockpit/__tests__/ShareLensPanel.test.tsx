@@ -8,6 +8,12 @@ const mocks = vi.hoisted(() => ({
   createProposalVersion: vi.fn(),
   transitionProposal: vi.fn(),
   createProposalShareToken: vi.fn(),
+  listPlanViewLinks: vi.fn(),
+}));
+// A visitor's view-only links list the plan's working links; no network here.
+vi.mock("../../../../api/plan-view.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../../api/plan-view.js")>(),
+  listPlanViewLinks: mocks.listPlanViewLinks,
 }));
 vi.mock("../../../../api/proposals.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../../api/proposals.js")>();
@@ -38,6 +44,8 @@ beforeEach(() => {
   mocks.createProposalVersion.mockReset();
   mocks.transitionProposal.mockReset();
   mocks.createProposalShareToken.mockReset();
+  mocks.listPlanViewLinks.mockReset();
+  mocks.listPlanViewLinks.mockResolvedValue([]);
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
   useShareStore.getState().reset();
@@ -49,12 +57,29 @@ afterEach(() => { cleanup(); });
 
 describe("ShareLensPanel", () => {
   it("renders a client-safe preview built from the live layout", () => {
+    signInStaff();
     useCockpitStore.getState().setPlannedGuestCount(120);
     render(<ShareLensPanel />);
     expect(screen.getByTestId("share-lens-panel")).toBeTruthy();
     expect(screen.getByText("Share this plan")).toBeTruthy();
     expect(screen.getByTestId("share-layout-summary").textContent).toContain("120");
     expect(screen.getByText(/safety, occupancy, or compliance/i)).toBeTruthy();
+  });
+
+  it("tells a visitor only what is placed, never seating taken from the guest count", () => {
+    // Integration check, 17 Oct 2026: "Seating for 220 across 8 round tables"
+    // headed the visitor's Share lens with 64 chairs placed.
+    useCockpitStore.getState().setPlannedGuestCount(220);
+    useEditorStore.setState({ space: {
+      id: "s1", venueId: "v1", name: "Grand Hall", slug: "grand-hall",
+      widthM: "21", lengthM: "10", heightM: "7",
+      floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10 }, { x: 0, y: 10 }],
+    } });
+    render(<ShareLensPanel />);
+    const panel = screen.getByTestId("share-lens-panel");
+    expect(panel.textContent).not.toMatch(/220|Seating for/u);
+    expect(screen.queryByTestId("share-layout-summary")).toBeNull();
+    expect(screen.getByText("Placed in the Grand Hall")).toBeTruthy();
   });
 
   it("gives an anonymous organiser a way to send the plan, never a staff sign-in", () => {
@@ -88,6 +113,25 @@ describe("ShareLensPanel", () => {
     render(<ShareLensPanel />);
     expect(screen.getByTestId("visitor-pdf-unavailable").textContent).toBe("Place some furniture first; the PDF shows your layout.");
     expect(screen.queryByTestId("visitor-pdf-prepare")).toBeNull();
+  });
+
+  it("offers a view-only link beside the PDF, its consequences stated before it is made", async () => {
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: true });
+    useEditorStore.getState().addObject("test-chair", 0, 0, 0);
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("visitor-link-make").textContent).toBe("Copy a view-only link");
+    expect(screen.getByTestId("visitor-link-consequence").textContent).toMatch(/without prices, and cannot change it/u);
+    expect(screen.getByTestId("visitor-link-retention").textContent)
+      .toBe("It works for 30 days unless you stop it, and the plan is kept while it works.");
+    await waitFor(() => { expect(mocks.listPlanViewLinks).toHaveBeenCalledWith(CONFIG_ID, expect.any(AbortSignal)); });
+  });
+
+  it("asks for a saved plan before a link, as it does before a PDF", () => {
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("visitor-link-unavailable").textContent)
+      .toBe("Once your plan has saved, it can be sent as a view-only link.");
+    expect(screen.queryByTestId("visitor-link-make")).toBeNull();
+    expect(mocks.listPlanViewLinks).not.toHaveBeenCalled();
   });
 
   it("keeps the proposal chain for a signed-in account's own (claimed) plan", () => {

@@ -21,8 +21,11 @@ import {
   createProposalVersion,
   transitionProposal,
 } from "../../../api/proposals.js";
+import { seatingCountsFromPlacedItems } from "../../../lib/seating-counts.js";
 import { useVisitorPlanPdf } from "../../../hooks/use-visitor-plan-pdf.js";
+import { useVisitorPlanLinks } from "../../../hooks/use-visitor-plan-links.js";
 import { VisitorPlanPdfActions } from "../VisitorPlanPdfActions.js";
+import { VisitorPlanLinkActions } from "../VisitorPlanLinkActions.js";
 
 // ---------------------------------------------------------------------------
 // ShareLensPanel — hand this layout off to a client as a shareable proposal
@@ -42,9 +45,11 @@ import { VisitorPlanPdfActions } from "../VisitorPlanPdfActions.js";
 // VISITORS (fix-first item 11, 16 Oct 2026 brief). An organiser with no venue
 // account used to meet "Sign in as venue staff" here: a dead end on the one
 // job they came to do, sending the plan to someone. They now get the plan as
-// a PDF to send themselves (VisitorShareLens). The proposal chain stays
-// staff-only, and nothing a visitor shares carries the planner address,
-// which is the edit capability of an anonymous plan.
+// a PDF to send themselves and, beside it, a view-only link of its own
+// (VisitorShareLens). The proposal chain stays staff-only, and nothing a
+// visitor shares carries the planner address, which is the edit capability
+// of an anonymous plan. The visitor's counts are what is placed: a guest
+// count is the organiser's hope, not seating, so it is never stated as such.
 // ---------------------------------------------------------------------------
 
 type SharePhase = "idle" | "creating" | "error";
@@ -60,45 +65,38 @@ export function ShareLensPanel(): ReactElement {
 
 function VisitorShareLens(): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
-  const dimensions = useRoomDimensionsStore((state) => state.dimensions);
-  const plannedGuestCount = useCockpitStore((state) => state.plannedGuestCount);
   const configId = useEditorStore((state) => state.configId);
-  const roomName = useEditorStore((state) => state.space?.name ?? "Room");
+  const spaceName = useEditorStore((state) => state.space?.name ?? null);
+  const roomName = spaceName ?? "Room";
   const hasSavedObjects = useEditorStore((state) => state.objects.length > 0);
   const pdf = useVisitorPlanPdf(configId, roomName);
+  const links = useVisitorPlanLinks(configId);
 
-  const draft = useMemo(
-    () => buildShareProposalDraft({
-      placedItems,
-      roomWidthM: dimensions.width / RENDER_SCALE,
-      roomLengthM: dimensions.length / RENDER_SCALE,
-      plannedGuestCount,
-      titleOverride: null,
-    }),
-    [placedItems, dimensions, plannedGuestCount],
-  );
-  const totalTables = draft.summary.roundTables + draft.summary.banquetTables;
+  // What is placed, as the PDF and the link show it.
+  const seating = useMemo(() => seatingCountsFromPlacedItems(placedItems), [placedItems]);
+  const totalTables = seating.roundTables + seating.banquetTables;
   const unavailableReason = configId === null
     ? "Your plan saves as you work. Once it has saved, it can be sent as a PDF."
     : !hasSavedObjects
       ? "Place some furniture first; the PDF shows your layout."
+      : null;
+  const linkUnavailableReason = configId === null
+    ? "Once your plan has saved, it can be sent as a view-only link."
+    : !hasSavedObjects
+      ? "Place some furniture first; the link shows your layout."
       : null;
 
   return (
     <LensPanel
       title="Share this plan"
       icon={<Share2 size={18} />}
-      source="PDF"
+      source="PDF · link"
       testId="share-lens-panel"
       footer="Planning estimates require human review; no safety, occupancy, or compliance approval."
     >
-      <LensPanelSection label="Your plan">
-        <p className="lens-panel__paragraph" data-testid="share-layout-summary">{draft.layoutSummary}</p>
-      </LensPanelSection>
-
-      <LensPanelSection label="From the layout">
+      <LensPanelSection label={spaceName === null ? "Placed in the room" : `Placed in the ${spaceName}`}>
         <LensPanelMetric label="Tables" value={String(totalTables)} />
-        <LensPanelMetric label="Chairs" value={String(draft.summary.chairs)} />
+        <LensPanelMetric label="Chairs" value={String(seating.chairs)} />
       </LensPanelSection>
 
       <LensPanelSection label="Send it to someone">
@@ -107,6 +105,10 @@ function VisitorShareLens(): ReactElement {
           no prices, and says it was drawn by a visitor and not reviewed by the venue.
         </p>
         <VisitorPlanPdfActions pdf={pdf} tone="dock" unavailableReason={unavailableReason} />
+      </LensPanelSection>
+
+      <LensPanelSection label="Or send a link">
+        <VisitorPlanLinkActions links={links} tone="dock" unavailableReason={linkUnavailableReason} />
       </LensPanelSection>
 
       <LensPanelSection label="Ask the venue">

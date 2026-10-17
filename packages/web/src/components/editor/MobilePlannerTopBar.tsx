@@ -244,8 +244,9 @@ export function MobilePlannerTopBar({
       });
   };
 
-  // A guest plan (no account) can go to anyone as a PDF; phones have no Share
-  // lens, so the bar offers it beside Send (fix-first item 11).
+  // A guest plan (no account) can go to anyone as a PDF or a view-only link;
+  // phones have no Share lens, so the bar offers it beside Send (fix-first
+  // item 11).
   const canSendPlanPdf = isPublicPreview && objectCount > 0 && configId !== null;
 
   return (
@@ -305,13 +306,13 @@ export function MobilePlannerTopBar({
           <button
             type="button"
             style={{ ...planPdfStyle, opacity: timelinePreviewActive ? 0.68 : 1 }}
-            aria-label="Plan as a PDF"
+            aria-label="Send your plan"
             aria-haspopup="dialog"
             onClick={() => { if (!timelinePreviewActive) setShowPlanPdf(true); }}
             disabled={timelinePreviewActive}
             title={timelinePreviewActive
-              ? "Exit the room timeline preview to make a PDF of this plan."
-              : "Send your plan to someone as a PDF"}
+              ? "Exit the room timeline preview to send this plan."
+              : "Send your plan to someone as a PDF or a view-only link"}
             data-testid="mobile-plan-pdf"
           >
             <FileText size={20} aria-hidden="true" />
