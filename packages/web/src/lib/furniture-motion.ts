@@ -55,8 +55,14 @@ const SET_DOWN_SQUASH = 1.35;
 const DROP_HEIGHT = 0.14;
 /** Below this a drop-in has landed, metres. */
 const LANDED = 0.004;
+/** A motion's first step, seconds: one display frame. */
+const FIRST_STEP = 1 / 60;
+/** The longest step a moving piece takes, seconds: a dropped frame, never a pause. */
+const LONGEST_STEP = 0.1;
 
 const channels = new Map<string, MotionChannel>();
+/** Whether the last step left anything moving; if not, the frame loop may have slept since. */
+let movedLastStep = false;
 
 function channel(id: string): MotionChannel {
   const existing = channels.get(id);
@@ -103,6 +109,38 @@ export function carryFurniture(ids: Iterable<string>, velocityX: number, velocit
   }
 }
 
+/** The carrying hand's smoothed speed, metres a second, and when it last moved, ms. */
+export interface CarrySpeed {
+  /** The last move's time (performance.now), or null before the drag's first move. */
+  readonly at: number | null;
+  readonly vx: number;
+  readonly vz: number;
+  /** False until a move has been timed against the one before it. */
+  readonly measured: boolean;
+}
+
+/** A drag that has not moved yet. */
+export const CARRY_AT_REST: CarrySpeed = { at: null, vx: 0, vz: 0, measured: false };
+
+/**
+ * The hand's speed after it moved the pieces (dx, dz) metres at `nowMs`.
+ * A drag's first move carries all the travel since the press, the drag
+ * threshold and more, over no known time, so it only starts the clock. The
+ * next move is the first true reading and seeds the speed outright; later
+ * ones blend in, which steadies the jitter of pointer events.
+ */
+export function measureCarry(previous: CarrySpeed, dx: number, dz: number, nowMs: number): CarrySpeed {
+  if (previous.at === null) return { at: nowMs, vx: 0, vz: 0, measured: false };
+  const elapsed = Math.min(0.1, Math.max(0.004, (nowMs - previous.at) / 1000));
+  const blend = previous.measured ? 0.35 : 1;
+  return {
+    at: nowMs,
+    vx: previous.vx + (dx / elapsed - previous.vx) * blend,
+    vz: previous.vz + (dz / elapsed - previous.vz) * blend,
+    measured: true,
+  };
+}
+
 /** The hand has let go: the pieces swing upright and set their weight down. */
 export function releaseFurniture(ids: Iterable<string>): void {
   for (const id of ids) {
@@ -135,6 +173,7 @@ export function clearFurnitureSettle(id: string): void {
 /** Drop everything (room change, scene unmount). */
 export function clearAllFurnitureSettles(): void {
   channels.clear();
+  movedLastStep = false;
 }
 
 export function activeFurnitureSettleCount(): number {
@@ -205,12 +244,23 @@ function atRest(motion: MotionChannel): boolean {
 }
 
 /**
- * Advance every live motion by one frame. Motions at rest are pruned so the
- * demand loop can go back to sleep. Returns the ids that still move this
- * frame (the caller applies them, then invalidates while any remain).
+ * Advance every live motion by one frame of `frameDeltaSeconds`, the frame
+ * loop's delta. Motions at rest are pruned so the demand loop can go back to
+ * sleep. Returns the ids that still move this frame (the caller applies them,
+ * then invalidates while any remain).
+ *
+ * The on-demand loop's waking frame reports the whole idle gap as its delta:
+ * stepped as given, a drop-in or a set-down would spend most of its motion
+ * before it was ever drawn, and a hand just starting to carry would count as
+ * paused. So the first step after nothing moved is one display frame, and
+ * later steps take the real delta, capped as a dropped frame.
  */
-export function stepFurnitureSettles(dtSeconds: number): readonly string[] {
-  if (channels.size === 0) return [];
+export function stepFurnitureSettles(frameDeltaSeconds: number): readonly string[] {
+  if (channels.size === 0) {
+    movedLastStep = false;
+    return [];
+  }
+  const dtSeconds = movedLastStep ? Math.min(frameDeltaSeconds, LONGEST_STEP) : FIRST_STEP;
   const live: string[] = [];
   for (const [id, motion] of channels) {
     // A hand that has paused lets the piece stand up again.
@@ -240,6 +290,7 @@ export function stepFurnitureSettles(dtSeconds: number): readonly string[] {
     if (atRest(motion)) channels.delete(id);
     else live.push(id);
   }
+  movedLastStep = live.length > 0;
   return live;
 }
 

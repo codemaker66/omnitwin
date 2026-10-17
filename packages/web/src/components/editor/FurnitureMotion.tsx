@@ -35,8 +35,10 @@ function rest(group: Object3D): void {
 // published for the instancing layer to offset the same items identically.
 //
 // Under frameloop="demand" this component SUSTAINS the loop while springs
-// are live — the seeding site (SelectionSystem's pointer-up) is what WAKES
-// it, per the two-halves rule.
+// are live — the seeding sites (SelectionSystem's carry and release, and the
+// placement announcement below) are what WAKE it, per the two-halves rule.
+// The waking frame's delta is the whole idle gap; stepFurnitureSettles takes
+// a motion's first step as one display frame, so the delta goes in as given.
 // ---------------------------------------------------------------------------
 
 export function FurnitureMotion(): null {
