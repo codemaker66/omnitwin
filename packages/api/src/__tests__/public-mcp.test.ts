@@ -8,7 +8,13 @@ import {
   type FetchLike,
 } from "@modelcontextprotocol/client";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { PUBLIC_DAY_NO_BOOKING, TRADES_HALL_PUBLIC_PROFILE, TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
+import {
+  PUBLIC_DAY_NO_BOOKING,
+  PUBLIC_ROOM_ASK_THE_TEAM,
+  PUBLIC_ROOM_ASK_THE_TEAM_WORDING,
+  TRADES_HALL_PUBLIC_PROFILE,
+  TRADES_HALL_ROOM_CAPACITIES,
+} from "@omnitwin/types";
 import type { Env } from "../env.js";
 import {
   AI_ASSISTANT_ORIGIN_HOSTS,
@@ -19,6 +25,7 @@ import {
   publicToolInputs,
 } from "../routes/public-mcp.js";
 import type {
+  ForwardBookStanding,
   PublicDiscoveryStore,
   PublicRoomRecord,
   PublicVenueRecord,
@@ -63,11 +70,20 @@ const INTERVALS: Record<string, readonly RoomInterval[]> = {
   [OTHER.id]: [{ spaceId: "oh", effect: "busy", startsAt: new Date("2026-10-23T09:00:00.000Z"), endsAt: new Date("2026-10-23T17:00:00.000Z") }],
 };
 
+/** The venue has recorded the Grand Hall's forward book as on the Diary; the
+ *  Store Room has no record, so its dates are never described. */
+const GRAND_HALL_CHECKED_AT = new Date("2026-09-30T15:20:00.000Z");
+const STANDING: Record<string, readonly ForwardBookStanding[]> = {
+  [TRADES_HALL.id]: [{ spaceId: "gh", recordedAt: GRAND_HALL_CHECKED_AT }],
+  [OTHER.id]: [{ spaceId: "oh", recordedAt: GRAND_HALL_CHECKED_AT }],
+};
+
 const store: PublicDiscoveryStore = {
   loadVenue: (slug) => Promise.resolve([TRADES_HALL, OTHER].find((venue) => venue.slug === slug) ?? null),
   loadRoomIntervals: (venueId, from, to) => Promise.resolve(
     (INTERVALS[venueId] ?? []).filter((item) => item.startsAt < to && item.endsAt > from),
   ),
+  loadForwardBookStanding: (venueId) => Promise.resolve(STANDING[venueId] ?? []),
 };
 
 /** Records every response body the client receives. */
@@ -137,7 +153,9 @@ describe("public MCP endpoint, in-memory store", () => {
       expect(availability?.description).toContain("only the venue team confirms a date");
       expect(availability?.description).toContain(`"${PUBLIC_DAY_NO_BOOKING}" means neither is on this diary`);
       expect(availability?.description).not.toMatch(/Returns only[^.]*"free"/u);
+      expect(availability?.description).toContain(`"${PUBLIC_ROOM_ASK_THE_TEAM}": the venue team has not yet confirmed that this diary holds every booking for the room, so nothing is said about its dates`);
       expect(mcp.getInstructions()).toContain("never tell a person a date is free or available");
+      expect(mcp.getInstructions()).toContain(`Every other room answers ${PUBLIC_ROOM_ASK_THE_TEAM}`);
       expect(availability?.inputSchema.required).toEqual(["from", "to"]);
       expect(mcp.getInstructions()).toContain("Nothing here can send an enquiry, hold a date or make a booking");
     });
@@ -169,12 +187,46 @@ describe("public MCP endpoint, in-memory store", () => {
       expect(result.isError).not.toBe(true);
       const report = result.structuredContent as { rooms: unknown[]; meaning: { held: string } };
       expect(report.rooms).toEqual([
-        { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": "held", "2026-10-24": "busy", "2026-10-25": PUBLIC_DAY_NO_BOOKING } },
+        {
+          room: "grand-hall", name: "Grand Hall", answer: "dates", diaryCheckedAt: GRAND_HALL_CHECKED_AT.toISOString(),
+          days: { "2026-10-23": "held", "2026-10-24": "busy", "2026-10-25": PUBLIC_DAY_NO_BOOKING },
+        },
       ]);
       expect(report.meaning.held).toContain("A second option may be possible");
       expect(text(result)).toContain("Someone has a provisional option");
       expect(text(result)).not.toContain("\"free\"");
       expect(result.structuredContent).toMatchObject({ asOf: new Date(NOW).toISOString() });
+    });
+
+    it("says only 'ask the team' for a room whose forward book nobody has recorded, with asOf and no date status", async () => {
+      const mcp = await client(era);
+      const result = await mcp.callTool({
+        name: "check_availability", arguments: { from: "2026-10-23", to: "2026-10-25", room: "store-room" },
+      });
+      expect(result.isError).not.toBe(true);
+      const report = result.structuredContent as { rooms: Record<string, unknown>[]; meaning: Record<string, string> };
+      expect(report.rooms).toEqual([{ room: "store-room", name: "Store Room", answer: PUBLIC_ROOM_ASK_THE_TEAM }]);
+      expect(report.meaning[PUBLIC_ROOM_ASK_THE_TEAM]).toBe(PUBLIC_ROOM_ASK_THE_TEAM_WORDING.meaning);
+      expect(result.structuredContent).toMatchObject({
+        asOf: new Date(NOW).toISOString(),
+        enquire: TRADES_HALL_PUBLIC_PROFILE.enquiryUrl,
+        telephone: TRADES_HALL_PUBLIC_PROFILE.telephone,
+        email: TRADES_HALL_PUBLIC_PROFILE.email,
+      });
+      // No date status of the room's appears anywhere in the answer.
+      expect(text(result)).not.toMatch(/"2026-10-2[345]":/u);
+      expect(text(result)).not.toContain("diaryCheckedAt");
+      expect(text(result)).not.toContain("\"days\"");
+    });
+
+    it("answers each room its own way when asked about the whole venue", async () => {
+      const mcp = await client(era);
+      const result = await mcp.callTool({ name: "check_availability", arguments: { from: "2026-10-24", to: "2026-10-24" } });
+      const report = result.structuredContent as { rooms: { room: string; answer: string; days?: Record<string, string> }[] };
+      expect(report.rooms.map((entry) => [entry.room, entry.answer, entry.days])).toEqual([
+        ["grand-hall", "dates", { "2026-10-24": "busy" }],
+        ["store-room", PUBLIC_ROOM_ASK_THE_TEAM, undefined],
+      ]);
     });
 
     it("explains how to enquire, through staff", async () => {
@@ -415,6 +467,19 @@ describe("per-session budget, on top of the per-IP limit", () => {
     // A second conversation has a budget of its own.
     const second = await client(url, "legacy");
     expect((await availability(second, "2026-10-02", "2026-10-08")).isError).not.toBe(true);
+  });
+
+  it("does not charge dates for an answer that describes none", async () => {
+    const url = await serve({ requests: 50, dates: 5, windowMs: HOUR }, { requests: 50, dates: 5, windowMs: HOUR });
+    const mcp = await client(url, "modern");
+    // The Store Room answers "ask the team": ninety-two dates, none described.
+    const unchecked = await mcp.callTool({ name: "check_availability", arguments: { from: "2026-10-02", to: "2027-01-01", room: "store-room" } });
+    expect(unchecked.isError).not.toBe(true);
+    // So the whole budget of five is still there for the Grand Hall.
+    const checked = await mcp.callTool({ name: "check_availability", arguments: { from: "2026-10-02", to: "2026-10-06", room: "grand-hall" } });
+    expect(checked.isError).not.toBe(true);
+    const spent = await mcp.callTool({ name: "check_availability", arguments: { from: "2026-10-07", to: "2026-10-07", room: "grand-hall" } });
+    expect(spent.isError).toBe(true);
   });
 
   it("does not charge a question it refuses on its own terms", async () => {

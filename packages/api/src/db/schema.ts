@@ -6036,3 +6036,35 @@ export const bookingObservations = pgTable("booking_observations", {
   index("booking_observations_venue_observed_idx").on(table.venueId, table.observedAt),
   check("booking_observations_kind", sql`${table.kind} IN ('set', 'doors-open', 'live', 'flipping', 'done', 'cleaned')`),
 ]);
+
+// ---------------------------------------------------------------------------
+// The forward book on the Diary, room by room (migration 0093, provisional
+// number). Blake, 17 October 2026: "hide date status until checked". The
+// public MCP and any public web surface show a room's dates only while a
+// record stands that its whole forward book is on the Diary. A venue admin
+// or manager records it (who, when, an optional note) or clears it; a
+// cleared record stays, with who cleared it and when. One standing record
+// per room; the room belongs to the record's venue (composite key).
+// ---------------------------------------------------------------------------
+
+export const forwardBookChecks = pgTable("forward_book_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  recordedBy: uuid("recorded_by").references(() => users.id, { onDelete: "set null" }),
+  /** The recorder's name as it was when they recorded it. */
+  recordedByName: varchar("recorded_by_name", { length: 200 }).notNull(),
+  note: text("note"),
+  clearedAt: timestamp("cleared_at", { withTimezone: true }),
+  clearedBy: uuid("cleared_by").references(() => users.id, { onDelete: "set null" }),
+  clearedByName: varchar("cleared_by_name", { length: 200 }),
+}, (table) => [
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "forward_book_checks_space_venue_fk" }),
+  check("forward_book_checks_recorded_by_name_shape", sql`btrim(${table.recordedByName}) <> ''`),
+  check("forward_book_checks_note_shape", sql`${table.note} IS NULL OR (${table.note} = btrim(${table.note}) AND char_length(${table.note}) BETWEEN 1 AND 500)`),
+  check("forward_book_checks_cleared_pair", sql`(${table.clearedAt} IS NULL) = (${table.clearedByName} IS NULL)`),
+  check("forward_book_checks_cleared_after_recorded", sql`${table.clearedAt} IS NULL OR ${table.clearedAt} >= ${table.recordedAt}`),
+  uniqueIndex("forward_book_checks_one_standing").on(table.spaceId).where(sql`${table.clearedAt} IS NULL`),
+  index("forward_book_checks_venue_recorded_idx").on(table.venueId, table.recordedAt),
+]);

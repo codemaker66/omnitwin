@@ -28,8 +28,51 @@ the venue team confirms a date, so an assistant that keeps only the word still
 cannot promise a room. Every answer carries `asOf`. The words for each answer
 live once, in `PUBLIC_DAY_STATUS_WORDING` (`packages/types/src/booking.ts`),
 for the MCP and for any web surface that shows a public date status (none does
-today). Whether to hide date status by default until a room's forward book has
-been reconciled is Blake's decision and is not made here.
+today).
+
+### Hidden until checked (17 October 2026)
+
+Asked whether to hide date status by default until a room's forward book has
+been reconciled with the Diary, Blake chose **"hide date status until
+checked"**. The public MCP and any public web surface say nothing about a
+room's dates (no busy, held or `no_booking_on_our_diary_team_confirms`) until
+someone has recorded that the room's whole forward book is on the Diary.
+Until then the room answers **`ask_the_team`**, with `asOf` and the venue's
+enquiry page, telephone and email, and no date status at all
+(`PUBLIC_ROOM_ASK_THE_TEAM` and its wording in `packages/types/src/booking.ts`;
+`publicRoomAnswer` is the one rule every surface applies).
+
+- **The record.** Table `forward_book_checks` (migration 0093, provisional
+  number): per room, who recorded it (their account while it exists, and their
+  name as it was then), when, and an optional note of up to 500 characters;
+  clearing it keeps the row with who cleared it and when. At most one record
+  stands per room (a partial unique index), and the composite key holds a
+  record to its own venue's rooms.
+- **Who.** Only the venue's own admin or manager records or clears it
+  (`FORWARD_BOOK_RECORD_ROLES` in `packages/types/src/forward-book.ts`,
+  `canRecordForwardBook` in the API). There is no platform-admin shortcut: it
+  is the venue's word about its own book. Everyone who reads the Diary sees
+  where each room stands.
+- **Where.** Dashboard → Venue settings → "Dates for assistants and the
+  website" (`components/dashboard/forward-book/`), below Changeovers. Each room
+  says "Dates shown" or "Dates hidden" with who checked or hid it and when; the
+  record and hide actions say their consequence before saving ("Assistants and
+  the website will start saying whether the Grand Hall has bookings on a
+  date…"). A colleague's record is shown, never overwritten (409 with the
+  record that stands). API: `GET`/`POST /venues/:venueId/forward-book`,
+  `POST /venues/:venueId/forward-book/:id/clear` (`routes/forward-book.ts`).
+- **How fast.** The public read caches the standing records for one minute
+  (`PUBLIC_FORWARD_BOOK_CACHE_TTL_MS`), so recording or clearing takes effect
+  within a minute; the staff screen says so.
+- **What leaves.** For a shown room, `diaryCheckedAt` (when the record was
+  made) beside its days; never the name or the note. For an `ask_the_team`
+  room the diary is not even read for the answer, and a question where every
+  room answers `ask_the_team` spends no dates from the session budget.
+
+Whether to show a room is the venue's call: the brief's validation suggests
+comparing about 30 forward dates per room with every place a booking or pencil
+lives today (Salesforce export, Cvent, venue software, spreadsheet, paper,
+the members' diary) before recording it. Nothing here records it for them.
 
 These authorise exactly that exposure despite the general public WIP hold.
 Nothing beyond it is exposed: no prices, no booking details, no option ranks,
@@ -58,10 +101,13 @@ to the same cases). `venue` is optional and only ever `trades-hall-glasgow`.
   published number with its citation (`capacitySource`), or `null` with a
   "Not published" note. Nothing is estimated from dimensions.
 - **`check_availability`** — `from`/`to` (YYYY-MM-DD, at most 92 days per
-  call, today through 730 days ahead) and optional `room` slug. Returns, per
-  room per date, `"busy"`, `"held"` or `"no_booking_on_our_diary_team_confirms"`
-  and nothing else, with a plain-words `meaning` for each (the shared
-  wording), the enquiry path and `asOf`, when the diary was read.
+  call, today through 730 days ahead) and optional `room` slug. Each room
+  answers `"ask_the_team"` (no record that its forward book is on the Diary:
+  no dates at all) or `"dates"` with `diaryCheckedAt` and, per date, `"busy"`,
+  `"held"` or `"no_booking_on_our_diary_team_confirms"` and nothing else. A
+  plain-words `meaning` covers each (the shared wording), with the enquiry
+  page, telephone, email and `asOf`: when the facts were read, the older of
+  the forward-book records and the diary.
 - **`how_to_enquire`** — the enquiry composer (`https://venviewer.com/#enquire`),
   what to include, and the venue's published telephone, email and website.
   It cannot submit an enquiry, place a hold or book.
@@ -129,7 +175,13 @@ is one constant (`VENUE_DAY_START_MINUTE`) if Blake prefers midnight.
   holds beside confirmed bookings and blocks on the same and neighbouring days,
   across the autumn 2026 and spring 2027 clock changes, and proves busy beats
   held, exits and prospects leave nothing on the Diary, and non-discovery by
-  slug or id.
+  slug or id. A room whose record was cleared answers `ask_the_team`, and the
+  recorder's name, note and the clearing time never leave.
+  `forward-book-postgres.test.ts` migrates its own database and proves the
+  record's rules in the database, who may record or clear (staff, the floor,
+  sales, a platform admin and another venue's manager refused; another
+  venue's room or record not found), simultaneous records, and that the
+  public read follows a record and its clearing.
   `public-discovery.test.ts` and `public-mcp.test.ts` cover the rule, DST
   windows, bounds, caching, `asOf`, Origin policy, transport and the session
   budget through real clients; `public-mcp-budget.test.ts` covers the budget's
@@ -212,6 +264,10 @@ pnpm --filter @omnitwin/api exec vitest run src/__tests__/public-mcp.test.ts
 # Privacy against migrated PostgreSQL (disposable 127.0.0.1:55477 only).
 VENVIEWER_PLATFORM_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55477/venviewer_platform_test \
   pnpm --filter @omnitwin/api test:platform-db
+# The forward-book record: migration, access, routes and the public read
+# (a disposable loopback database named venviewer_forward_book_test).
+VENVIEWER_FORWARD_BOOK_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55476/venviewer_forward_book_test \
+  pnpm --filter @omnitwin/api exec vitest run src/__tests__/forward-book-postgres.test.ts
 
 # Live, after deployment.
 curl -s https://api.venviewer.com/mcp -H 'content-type: application/json' \

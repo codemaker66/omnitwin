@@ -3,6 +3,8 @@ import {
   CAPACITY_FORMATS,
   FloorPlanOutlineSchema,
   PUBLIC_DAY_STATUS_WORDING,
+  PUBLIC_ROOM_ASK_THE_TEAM,
+  PUBLIC_ROOM_ASK_THE_TEAM_WORDING,
   ROOM_BLOCKING_BOOKING_KINDS,
   ROOM_OPTION_BOOKING_KINDS,
   TRADES_HALL_PUBLIC_PROFILE,
@@ -10,6 +12,7 @@ import {
   bookingRoomStatus,
   formatPublishedAddress,
   publicDayStatus,
+  publicRoomAnswer,
   publishedRoomCapacity,
   resolveRotaTimeZone,
   rotaInstant,
@@ -19,7 +22,7 @@ import {
   type PublicVenueProfile,
   type PublishedPostalAddress,
 } from "@omnitwin/types";
-import { bookings, spaces, venues } from "../db/schema.js";
+import { bookings, forwardBookChecks, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +38,11 @@ import type { Database } from "../db/client.js";
 //
 //   - Only venues in PUBLIC_DISCOVERY_VENUES exist here. Every other tenant is
 //     indistinguishable from a venue that does not exist.
+//   - A room's dates are described only while the venue's record stands that
+//     the room's whole forward book is on the Diary (Blake, 17 October 2026:
+//     "hide date status until checked"; routes/forward-book.ts). Every other
+//     room answers "ask_the_team", with no date status at all, and its
+//     bookings are not read for the answer.
 //   - Bookings are read as (room, kind, start, end) of the live kinds that
 //     make a room busy (confirmed bookings, the venue's own blocks) or held
 //     (provisional options), and nothing else: no title, client, event, owner,
@@ -45,8 +53,9 @@ import type { Database } from "../db/client.js";
 //     Diary day says so itself (fix-first item 4, 16 October 2026).
 //   - Capacities are the venue's published figures with their provenance, or
 //     null with a "not published" note. Nothing is estimated.
-//   - Both reads are cached for a few minutes, so public traffic costs at most
-//     one small query per venue per cache period.
+//   - Reads are cached for a few minutes (the forward-book records for one),
+//     so public traffic costs at most a few small queries per venue per cache
+//     period.
 // ---------------------------------------------------------------------------
 
 /** The venues opted into public discovery, by DATABASE slug. Adding one is a
@@ -59,6 +68,10 @@ export const AVAILABILITY_MAX_SPAN_DAYS = 92;
 export const AVAILABILITY_HORIZON_DAYS = 730;
 /** How long a venue's rooms and busy/held times are reused before re-reading. */
 export const PUBLIC_DISCOVERY_CACHE_TTL_MS = 5 * 60_000;
+/** How long the venue's forward-book records are reused: short, so a record
+ *  that a manager clears hides the room's dates within a minute (the staff
+ *  screen says so). */
+export const PUBLIC_FORWARD_BOOK_CACHE_TTL_MS = 60_000;
 /** The Diary's operational day starts at 04:00 venue-local time
  *  (routes/room-layout-timeline.ts), so an evening that runs past midnight
  *  belongs to the date it started on. Public dates follow the same rule. */
@@ -105,11 +118,20 @@ export interface RoomInterval {
   readonly endsAt: Date;
 }
 
+/** A standing record that a room's whole forward book is on the Diary: the
+ *  room and when, and nothing about who recorded it or why. */
+export interface ForwardBookStanding {
+  readonly spaceId: string;
+  readonly recordedAt: Date;
+}
+
 export interface PublicDiscoveryStore {
   loadVenue(slug: string): Promise<PublicVenueRecord | null>;
   /** Busy and held intervals overlapping [from, to), half-open as the Diary
    *  reads, from live bookings only. */
   loadRoomIntervals(venueId: string, from: Date, to: Date): Promise<readonly RoomInterval[]>;
+  /** The venue's standing forward-book records, one per room at most. */
+  loadForwardBookStanding(venueId: string): Promise<readonly ForwardBookStanding[]>;
 }
 
 export function drizzlePublicDiscoveryStore(db: Database): PublicDiscoveryStore {
@@ -171,6 +193,15 @@ export function drizzlePublicDiscoveryStore(db: Database): PublicDiscoveryStore 
         if (effect !== null) intervals.push({ spaceId: row.spaceId, effect, startsAt: row.startsAt, endsAt: row.endsAt });
       }
       return intervals;
+    },
+    async loadForwardBookStanding(venueId) {
+      // The room and the time only: who recorded it and their note are staff
+      // facts and never leave the venue's own screens.
+      const rows = await db
+        .select({ spaceId: forwardBookChecks.spaceId, recordedAt: forwardBookChecks.recordedAt })
+        .from(forwardBookChecks)
+        .where(and(eq(forwardBookChecks.venueId, venueId), isNull(forwardBookChecks.clearedAt)));
+      return rows;
     },
   };
 }
@@ -346,7 +377,7 @@ export function describeVenue(profile: PublicVenueProfile, record: PublicVenueRe
         "Room dimensions are the venue's room records in Venviewer, in metres; floor area is computed from the recorded floor plan.",
       capacities:
         "Capacities are only the venue's own published figures, cited with their source. A layout without one is null and marked not published; final numbers depend on the layout agreed with the venue team.",
-      availability: "Use check_availability to see what Venviewer's diary holds for each date: booked, held, or nothing on our diary (which the venue team confirms). It never shows who has booked or holds a date, or why.",
+      availability: "Use check_availability. For a room whose diary the venue team has confirmed holds every booking it has, it says what Venviewer's diary holds for each date: booked, held, or nothing on our diary (which the venue team confirms). For any other room it says to ask the venue team, and nothing about its dates. It never shows who has booked or holds a date, or why.",
       enquiries: "Use how_to_enquire. Enquiries go to the venue team; nothing here can hold or book a date.",
     },
   };
@@ -411,21 +442,38 @@ export interface AvailabilityRequest {
   readonly room?: string | undefined;
 }
 
+/** One room's answer: its dates, while the venue's forward-book record for it
+ *  stands, or "ask the team" and nothing about its dates. */
+export type RoomAvailability =
+  | {
+    readonly room: string;
+    readonly name: string;
+    readonly answer: "dates";
+    /** When the venue team recorded that this room's whole forward book is
+     *  on the diary. */
+    readonly diaryCheckedAt: string;
+    readonly days: Readonly<Record<string, DayStatus>>;
+  }
+  | {
+    readonly room: string;
+    readonly name: string;
+    readonly answer: typeof PUBLIC_ROOM_ASK_THE_TEAM;
+  };
+
 export interface AvailabilityReport {
   readonly venue: string;
   readonly timeZone: string;
   readonly from: string;
   readonly to: string;
-  /** When the venue's diary was last read for this answer. */
+  /** When the facts in this answer were read: the venue's forward-book
+   *  records and, when any room shows dates, its diary; the older of the two. */
   readonly asOf: string;
   readonly dayRule: string;
-  readonly meaning: Readonly<Record<DayStatus, string>>;
-  readonly rooms: readonly {
-    readonly room: string;
-    readonly name: string;
-    readonly days: Readonly<Record<string, DayStatus>>;
-  }[];
+  readonly meaning: Readonly<Record<DayStatus | typeof PUBLIC_ROOM_ASK_THE_TEAM, string>>;
+  readonly rooms: readonly RoomAvailability[];
   readonly enquire: string;
+  readonly telephone: string;
+  readonly email: string;
 }
 
 interface CacheEntry<T> {
@@ -444,6 +492,8 @@ export interface PublicDiscoveryOptions {
   readonly venues?: readonly PublicVenueProfile[];
   readonly now?: () => number;
   readonly cacheTtlMs?: number;
+  /** How long forward-book records are reused; PUBLIC_FORWARD_BOOK_CACHE_TTL_MS by default. */
+  readonly forwardBookCacheTtlMs?: number;
   /** Told when a read fails; the caller sees only a plain message. */
   readonly onReadError?: (error: unknown) => void;
 }
@@ -453,9 +503,11 @@ export class PublicDiscovery {
   private readonly store: PublicDiscoveryStore;
   private readonly now: () => number;
   private readonly ttlMs: number;
+  private readonly forwardBookTtlMs: number;
   private readonly onReadError: (error: unknown) => void;
   private readonly venueCache = new Map<string, CacheEntry<PublicVenueRecord | null>>();
   private readonly intervalCache = new Map<string, CacheEntry<IntervalWindow>>();
+  private readonly forwardBookCache = new Map<string, CacheEntry<readonly ForwardBookStanding[]>>();
 
   constructor(options: PublicDiscoveryOptions) {
     this.venues = options.venues ?? PUBLIC_DISCOVERY_VENUES;
@@ -463,6 +515,7 @@ export class PublicDiscovery {
     this.store = options.store;
     this.now = options.now ?? Date.now;
     this.ttlMs = options.cacheTtlMs ?? PUBLIC_DISCOVERY_CACHE_TTL_MS;
+    this.forwardBookTtlMs = options.forwardBookCacheTtlMs ?? PUBLIC_FORWARD_BOOK_CACHE_TTL_MS;
     this.onReadError = options.onReadError ?? (() => undefined);
   }
 
@@ -518,26 +571,60 @@ export class PublicDiscovery {
         return { ok: false, message: `There is no room "${request.room ?? ""}" at this venue. Rooms: ${known}.` };
       }
 
-      // One cached read covers every date a request may ask about: yesterday
-      // through the horizon (plus a day), so the cache stays one entry per
-      // venue whatever ranges callers choose.
-      const windowFrom = venueDayWindow(addRotaDays(today, -1), timeZone).startMs;
-      const windowTo = venueDayWindow(addRotaDays(horizon, 1), timeZone).endMs;
-      const requestFrom = venueDayWindow(request.from, timeZone).startMs;
-      const requestTo = venueDayWindow(request.to, timeZone).endMs;
-      const { value: window, loadedAtMs } = await this.cached(
-        this.intervalCache,
+      // Which rooms' dates may be described at all: only those whose
+      // forward-book record stands. Read on a short cache, so a cleared
+      // record hides the room's dates within a minute.
+      const { value: standing, loadedAtMs: standingReadAtMs } = await this.cached(
+        this.forwardBookCache,
         record.id,
-        async () => ({
-          fromMs: windowFrom,
-          toMs: windowTo,
-          intervals: await this.store.loadRoomIntervals(record.id, new Date(windowFrom), new Date(windowTo)),
-        }),
-        (cached) => cached.fromMs <= requestFrom && cached.toMs >= requestTo,
+        () => this.store.loadForwardBookStanding(record.id),
+        undefined,
+        this.forwardBookTtlMs,
       );
+      const checkedAt = new Map(standing.map((entry) => [entry.spaceId, entry.recordedAt]));
+      const shown = rooms.filter((room) => publicRoomAnswer(checkedAt.get(room.id)) === "dates");
+
+      // The diary is read only when some room shows its dates. One cached
+      // read covers every date a request may ask about: yesterday through the
+      // horizon (plus a day), so the cache stays one entry per venue whatever
+      // ranges callers choose.
+      let window: IntervalWindow | null = null;
+      let diaryReadAtMs: number | null = null;
+      if (shown.length > 0) {
+        const windowFrom = venueDayWindow(addRotaDays(today, -1), timeZone).startMs;
+        const windowTo = venueDayWindow(addRotaDays(horizon, 1), timeZone).endMs;
+        const requestFrom = venueDayWindow(request.from, timeZone).startMs;
+        const requestTo = venueDayWindow(request.to, timeZone).endMs;
+        const read = await this.cached(
+          this.intervalCache,
+          record.id,
+          async () => ({
+            fromMs: windowFrom,
+            toMs: windowTo,
+            intervals: await this.store.loadRoomIntervals(record.id, new Date(windowFrom), new Date(windowTo)),
+          }),
+          (cached) => cached.fromMs <= requestFrom && cached.toMs >= requestTo,
+        );
+        window = read.value;
+        diaryReadAtMs = read.loadedAtMs;
+      }
 
       const dates: string[] = [];
       for (let date = request.from; date <= request.to; date = addRotaDays(date, 1)) dates.push(date);
+
+      const answers: RoomAvailability[] = rooms.map((room): RoomAvailability => {
+        const recordedAt = checkedAt.get(room.id);
+        if (window === null || recordedAt === undefined) {
+          return { room: room.slug, name: room.name, answer: PUBLIC_ROOM_ASK_THE_TEAM };
+        }
+        return {
+          room: room.slug,
+          name: room.name,
+          answer: "dates",
+          diaryCheckedAt: recordedAt.toISOString(),
+          days: roomDayStatuses(window.intervals.filter((interval) => interval.spaceId === room.id), dates, timeZone),
+        };
+      });
 
       return {
         ok: true,
@@ -546,21 +633,20 @@ export class PublicDiscovery {
           timeZone,
           from: request.from,
           to: request.to,
-          asOf: new Date(loadedAtMs).toISOString(),
+          asOf: new Date(Math.min(standingReadAtMs, diaryReadAtMs ?? standingReadAtMs)).toISOString(),
           dayRule: `Each date runs from 04:00 to 04:00 the next morning, venue time (${timeZone}), as the venue's own diary counts a day, so an evening that runs past midnight belongs to the date it started on.`,
           // The one wording the web uses too (@omnitwin/types), so the two
-          // can never say different things about a date.
+          // can never say different things about a date or a room.
           meaning: {
             no_booking_on_our_diary_team_confirms: PUBLIC_DAY_STATUS_WORDING.no_booking_on_our_diary_team_confirms.meaning,
             held: PUBLIC_DAY_STATUS_WORDING.held.meaning,
             busy: PUBLIC_DAY_STATUS_WORDING.busy.meaning,
+            [PUBLIC_ROOM_ASK_THE_TEAM]: PUBLIC_ROOM_ASK_THE_TEAM_WORDING.meaning,
           },
-          rooms: rooms.map((room) => ({
-            room: room.slug,
-            name: room.name,
-            days: roomDayStatuses(window.intervals.filter((interval) => interval.spaceId === room.id), dates, timeZone),
-          })),
+          rooms: answers,
           enquire: profile.enquiryUrl,
+          telephone: profile.telephone,
+          email: profile.email,
         },
       };
     } catch (error) {
@@ -576,10 +662,11 @@ export class PublicDiscovery {
     key: string,
     load: () => Promise<T>,
     covers?: (value: T) => boolean,
+    ttlMs: number = this.ttlMs,
   ): Promise<{ readonly value: T; readonly loadedAtMs: number }> {
     const nowMs = this.now();
     const existing = cache.get(key);
-    if (existing !== undefined && nowMs - existing.loadedAtMs < this.ttlMs) {
+    if (existing !== undefined && nowMs - existing.loadedAtMs < ttlMs) {
       const value = await existing.value;
       if (covers === undefined || covers(value)) return { value, loadedAtMs: existing.loadedAtMs };
     }

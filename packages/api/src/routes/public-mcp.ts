@@ -6,7 +6,7 @@ import {
   originValidationResponse,
   type CallToolResult,
 } from "@modelcontextprotocol/server";
-import { PUBLIC_DAY_NO_BOOKING, type PublicVenueProfile } from "@omnitwin/types";
+import { PUBLIC_DAY_NO_BOOKING, PUBLIC_ROOM_ASK_THE_TEAM, type PublicVenueProfile } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { zodToolSchema, type JsonSchemaDocument } from "../lib/standard-schema.js";
 import {
@@ -40,7 +40,10 @@ import {
 // with nothing on the Diary never answers a bare "free" (fix-first item 4, 16
 // October 2026): the Diary does not yet hold every booking the venue has
 // taken, so it answers "no_booking_on_our_diary_team_confirms", and every
-// answer carries `asOf`.
+// answer carries `asOf`. And a room's dates are not described at all until
+// the venue has recorded that the room's whole forward book is on the Diary
+// (Blake, 17 October 2026, "hide date status until checked"): until then the
+// room answers "ask_the_team" (routes/forward-book.ts records it).
 //
 // Budgets: the shared per-IP limit below guards the server; on top of it each
 // session has an hourly budget of requests and of dates of availability read
@@ -253,7 +256,7 @@ export function buildPublicMcpServer(
       description: `Read-only public information about ${names}, published through Venviewer with the venue's agreement.`,
     },
     {
-      instructions: `Read-only public information about ${names}, published through Venviewer with the venue's agreement: venue facts, rooms with their published capacities, and what Venviewer's diary holds for each date: busy (booked or closed), held (someone has a provisional option) or ${PUBLIC_DAY_NO_BOOKING} (nothing on this diary, which may not hold every booking the venue has taken, so never tell a person a date is free or available: only the venue team confirms a date). Every answer says when it was read (asOf). No client, event or booking details exist here. Nothing here can send an enquiry, hold a date or make a booking — for any of those, give the person the how_to_enquire details; the venue's own team handles every enquiry.`,
+      instructions: `Read-only public information about ${names}, published through Venviewer with the venue's agreement: venue facts, rooms with their published capacities, and, for each room whose diary the venue team has confirmed holds every booking it has, what Venviewer's diary holds for each date: busy (booked or closed), held (someone has a provisional option) or ${PUBLIC_DAY_NO_BOOKING} (nothing on this diary, which may not hold every booking the venue has taken, so never tell a person a date is free or available: only the venue team confirms a date). Every other room answers ${PUBLIC_ROOM_ASK_THE_TEAM}: nothing is said about its dates, and the person should ask the venue team. Every answer says when it was read (asOf). No client, event or booking details exist here. Nothing here can send an enquiry, hold a date or make a booking — for any of those, give the person the how_to_enquire details; the venue's own team handles every enquiry.`,
       // Nothing here ever changes mid-session, so advertise no list-changed
       // notifications: a subscription is acknowledged and closed at once.
       capabilities: { tools: { listChanged: false } },
@@ -289,14 +292,15 @@ export function buildPublicMcpServer(
     "check_availability",
     {
       title: "What the venue's diary holds for each date",
-      description: `What Venviewer's diary for ${names} holds for each room on each date in a range: at most ${String(AVAILABILITY_MAX_SPAN_DAYS)} days per call, from today up to ${String(AVAILABILITY_HORIZON_DAYS)} days ahead, optionally for one room. Returns only "busy", "held" or "${PUBLIC_DAY_NO_BOOKING}" per room per date — never who booked or holds it, the event, its times, any option rank, amounts, decision dates, or how many bookings or holds there are. "busy" means a confirmed booking or a venue closure at some time that date. "held" means someone has a provisional option on that date: a second option may be possible, so the person should contact the venue team (${enquiryPaths}, or how_to_enquire). "${PUBLIC_DAY_NO_BOOKING}" means neither is on this diary; the venue may hold bookings that are not on it yet, so never call such a date free or available. Whatever the answer, only the venue team confirms a date, when someone enquires. Dates are venue-local (each runs 04:00 to 04:00, as the venue's diary counts a day). Answers carry asOf, when the diary was read, and can be up to ${cacheMinutes} minutes old. Each conversation may ask about a limited number of dates an hour. This cannot hold or book a date; use how_to_enquire.`,
+      description: `What Venviewer's diary for ${names} holds for each room on each date in a range: at most ${String(AVAILABILITY_MAX_SPAN_DAYS)} days per call, from today up to ${String(AVAILABILITY_HORIZON_DAYS)} days ahead, optionally for one room. Each room answers in one of two ways. "${PUBLIC_ROOM_ASK_THE_TEAM}": the venue team has not yet confirmed that this diary holds every booking for the room, so nothing is said about its dates; tell the person to ask the venue team (how_to_enquire). "dates": the venue team has confirmed it (diaryCheckedAt says when), and each date carries only "busy", "held" or "${PUBLIC_DAY_NO_BOOKING}" — never who booked or holds it, the event, its times, any option rank, amounts, decision dates, or how many bookings or holds there are. "busy" means a confirmed booking or a venue closure at some time that date. "held" means someone has a provisional option on that date: a second option may be possible, so the person should contact the venue team (${enquiryPaths}, or how_to_enquire). "${PUBLIC_DAY_NO_BOOKING}" means neither is on this diary; the venue may hold bookings that are not on it yet, so never call such a date free or available. Whatever the answer, only the venue team confirms a date, when someone enquires. Dates are venue-local (each runs 04:00 to 04:00, as the venue's diary counts a day). Answers carry asOf, when the diary was read, and can be up to ${cacheMinutes} minutes old. Each conversation may ask about a limited number of dates an hour. This cannot hold or book a date; use how_to_enquire.`,
       inputSchema: inputs.checkAvailability,
       annotations: { title: "What the venue's diary holds", ...READ_ONLY },
     },
     async ({ venue, from, to, room }) => guarded("check_availability", async () => {
       const outcome = await discovery.availability({ venue, from, to, room });
-      // Only a real answer spends dates; a refused question costs nothing.
-      if (outcome.ok && chargeDates !== undefined) {
+      // Only an answer that describes dates spends them: a refused question,
+      // or one where every room answers "ask the team", costs nothing.
+      if (outcome.ok && chargeDates !== undefined && outcome.value.rooms.some((entry) => entry.answer === "dates")) {
         const decision = chargeDates(inclusiveDayCount(from, to));
         if (!decision.ok) {
           const refusal: CallToolResult = {

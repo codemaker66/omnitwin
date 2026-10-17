@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   PUBLIC_DAY_NO_BOOKING,
   PUBLIC_DAY_STATUS_WORDING,
+  PUBLIC_ROOM_ASK_THE_TEAM,
+  PUBLIC_ROOM_ASK_THE_TEAM_WORDING,
   ROOM_BLOCKING_BOOKING_KINDS,
   ROOM_OPTION_BOOKING_KINDS,
   TRADES_HALL_PUBLIC_PROFILE,
@@ -15,6 +17,7 @@ import {
 import {
   PUBLIC_DISCOVERY_CACHE_TTL_MS,
   PUBLIC_DISCOVERY_VENUES,
+  PUBLIC_FORWARD_BOOK_CACHE_TTL_MS,
   PublicDiscovery,
   VENUE_NOT_AVAILABLE_MESSAGE,
   describeRoom,
@@ -23,6 +26,7 @@ import {
   isCalendarDate,
   roomDayStatuses,
   venueDayWindow,
+  type ForwardBookStanding,
   type PublicDiscoveryStore,
   type PublicRoomRecord,
   type PublicVenueRecord,
@@ -248,13 +252,23 @@ describe("rooms: recorded dimensions and published-only capacities", () => {
 
 const NOW = Date.parse("2026-10-01T11:00:00.000Z");
 
-function memoryStore(records: Record<string, PublicVenueRecord>, intervals: Record<string, readonly RoomInterval[]> = {}) {
+const CHECKED_AT = new Date("2026-09-30T15:20:00.000Z");
+
+/** Forward-book records by venue id. Mutable so a test can clear one. */
+type Standing = Record<string, ForwardBookStanding[]>;
+
+function memoryStore(
+  records: Record<string, PublicVenueRecord>,
+  intervals: Record<string, readonly RoomInterval[]> = {},
+  standing: Standing = {},
+) {
   const loadVenue = vi.fn((slug: string) => Promise.resolve(records[slug] ?? null));
   const loadRoomIntervals = vi.fn((venueId: string, from: Date, to: Date) => Promise.resolve(
     (intervals[venueId] ?? []).filter((item) => item.startsAt < to && item.endsAt > from),
   ));
-  const store: PublicDiscoveryStore = { loadVenue, loadRoomIntervals };
-  return { store, loadVenue, loadRoomIntervals };
+  const loadForwardBookStanding = vi.fn((venueId: string) => Promise.resolve([...(standing[venueId] ?? [])]));
+  const store: PublicDiscoveryStore = { loadVenue, loadRoomIntervals, loadForwardBookStanding };
+  return { store, loadVenue, loadRoomIntervals, loadForwardBookStanding };
 }
 
 const TRADES_HALL: PublicVenueRecord = {
@@ -264,6 +278,11 @@ const TRADES_HALL: PublicVenueRecord = {
   rooms: [room("grand-hall", { id: "gh", name: "Grand Hall" }), room("saloon", { id: "sa", name: "Saloon" })],
 };
 const OTHER: PublicVenueRecord = { id: "venue-other", slug: "other-venue", timeZone: LONDON, rooms: [room("hall", { id: "oh" })] };
+
+/** Both Trades Hall rooms recorded as having their whole forward book on the Diary. */
+function bothChecked(): Standing {
+  return { [TRADES_HALL.id]: [{ spaceId: "gh", recordedAt: CHECKED_AT }, { spaceId: "sa", recordedAt: CHECKED_AT }] };
+}
 
 describe("PublicDiscovery", () => {
   it("is opted in for Trades Hall Glasgow by its database slug, and nothing else", () => {
@@ -295,13 +314,14 @@ describe("PublicDiscovery", () => {
         interval("gh", "2026-10-24T10:00:00.000Z", "2026-10-24T16:00:00.000Z", "held"),
         interval("sa", "2026-10-25T10:00:00.000Z", "2026-10-25T16:00:00.000Z", "held"),
       ],
-    });
+    }, bothChecked());
     const discovery = new PublicDiscovery({ store, now: () => NOW });
     const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-23", to: "2026-10-25" });
     if (!outcome.ok) throw new Error(outcome.message);
+    const checkedAt = CHECKED_AT.toISOString();
     expect(outcome.value.rooms).toEqual([
-      { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": NONE, "2026-10-24": "busy", "2026-10-25": NONE } },
-      { room: "saloon", name: "Saloon", days: { "2026-10-23": NONE, "2026-10-24": NONE, "2026-10-25": "held" } },
+      { room: "grand-hall", name: "Grand Hall", answer: "dates", diaryCheckedAt: checkedAt, days: { "2026-10-23": NONE, "2026-10-24": "busy", "2026-10-25": NONE } },
+      { room: "saloon", name: "Saloon", answer: "dates", diaryCheckedAt: checkedAt, days: { "2026-10-23": NONE, "2026-10-24": NONE, "2026-10-25": "held" } },
     ]);
     expect(outcome.value.timeZone).toBe(LONDON);
     expect(outcome.value.enquire).toBe("https://venviewer.com/#enquire");
@@ -319,20 +339,115 @@ describe("PublicDiscovery", () => {
   });
 
   it("never calls a date free: an empty Diary day says the team confirms, in the web's own words", async () => {
-    const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL });
+    const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {}, bothChecked());
     const discovery = new PublicDiscovery({ store, now: () => NOW });
     const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-03" });
     if (!outcome.ok) throw new Error(outcome.message);
     expect(JSON.stringify(outcome.value)).not.toMatch(/"free"/u);
     for (const entry of outcome.value.rooms) {
+      if (entry.answer !== "dates") throw new Error(`${entry.room} should show its dates`);
       expect(Object.values(entry.days)).toEqual([NONE, NONE]);
     }
-    expect(Object.keys(outcome.value.meaning).sort()).toEqual(["busy", "held", NONE].sort());
+    expect(Object.keys(outcome.value.meaning).sort()).toEqual(["busy", "held", NONE, PUBLIC_ROOM_ASK_THE_TEAM].sort());
     for (const [status, meaning] of Object.entries(outcome.value.meaning)) {
-      expect(meaning).toBe(PUBLIC_DAY_STATUS_WORDING[status as keyof typeof PUBLIC_DAY_STATUS_WORDING].meaning);
+      const wording = status === PUBLIC_ROOM_ASK_THE_TEAM
+        ? PUBLIC_ROOM_ASK_THE_TEAM_WORDING
+        : PUBLIC_DAY_STATUS_WORDING[status as keyof typeof PUBLIC_DAY_STATUS_WORDING];
+      expect(meaning).toBe(wording.meaning);
     }
     expect(outcome.value.meaning[NONE]).toContain("may hold bookings that are not on this diary");
     expect(outcome.value.meaning[NONE]).toContain("only the venue team can confirm a date");
+  });
+
+  // -------------------------------------------------------------------------
+  // Hidden until checked (Blake, 17 October 2026): a room's dates are
+  // described only while the venue's forward-book record for it stands.
+  // -------------------------------------------------------------------------
+
+  it("answers 'ask the team' for every room nobody has recorded, without reading the diary", async () => {
+    const { store, loadRoomIntervals } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {
+      [TRADES_HALL.id]: [interval("gh", "2026-10-24T17:00:00.000Z", "2026-10-25T00:30:00.000Z")],
+    });
+    const discovery = new PublicDiscovery({ store, now: () => NOW });
+    const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-23", to: "2026-10-25" });
+    if (!outcome.ok) throw new Error(outcome.message);
+    expect(outcome.value.rooms).toEqual([
+      { room: "grand-hall", name: "Grand Hall", answer: PUBLIC_ROOM_ASK_THE_TEAM },
+      { room: "saloon", name: "Saloon", answer: PUBLIC_ROOM_ASK_THE_TEAM },
+    ]);
+    expect(outcome.value.asOf).toBe(new Date(NOW).toISOString());
+    expect(outcome.value.meaning[PUBLIC_ROOM_ASK_THE_TEAM]).toBe(PUBLIC_ROOM_ASK_THE_TEAM_WORDING.meaning);
+    expect(outcome.value).toMatchObject({
+      enquire: TRADES_HALL_PUBLIC_PROFILE.enquiryUrl,
+      telephone: TRADES_HALL_PUBLIC_PROFILE.telephone,
+      email: TRADES_HALL_PUBLIC_PROFILE.email,
+    });
+    // The Grand Hall's confirmed Saturday is nowhere in the rooms' answers.
+    expect(JSON.stringify(outcome.value.rooms)).not.toMatch(/busy|held|no_booking|2026-10-2[345]|days/u);
+    expect(loadRoomIntervals).not.toHaveBeenCalled();
+  });
+
+  it("describes a recorded room's dates beside an unrecorded room that only says ask the team", async () => {
+    const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {
+      [TRADES_HALL.id]: [
+        interval("gh", "2026-10-24T17:00:00.000Z", "2026-10-25T00:30:00.000Z"),
+        interval("sa", "2026-10-24T10:00:00.000Z", "2026-10-24T16:00:00.000Z", "held"),
+      ],
+    }, { [TRADES_HALL.id]: [{ spaceId: "gh", recordedAt: CHECKED_AT }] });
+    const discovery = new PublicDiscovery({ store, now: () => NOW });
+    const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-24", to: "2026-10-24" });
+    if (!outcome.ok) throw new Error(outcome.message);
+    expect(outcome.value.rooms).toEqual([
+      { room: "grand-hall", name: "Grand Hall", answer: "dates", diaryCheckedAt: CHECKED_AT.toISOString(), days: { "2026-10-24": "busy" } },
+      { room: "saloon", name: "Saloon", answer: PUBLIC_ROOM_ASK_THE_TEAM },
+    ]);
+  });
+
+  it("ignores a record for a room that is not this venue's", async () => {
+    // The Diary's composite key keeps a record to its venue's rooms; even a
+    // record that named another venue's room id would not reveal a date here.
+    const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {
+      [TRADES_HALL.id]: [interval("gh", "2026-10-24T17:00:00.000Z", "2026-10-25T00:30:00.000Z")],
+    }, { [TRADES_HALL.id]: [{ spaceId: "oh", recordedAt: CHECKED_AT }], [OTHER.id]: [{ spaceId: "gh", recordedAt: CHECKED_AT }] });
+    const discovery = new PublicDiscovery({ store, now: () => NOW });
+    const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-24", to: "2026-10-24" });
+    if (!outcome.ok) throw new Error(outcome.message);
+    expect(outcome.value.rooms.map((entry) => entry.answer)).toEqual([PUBLIC_ROOM_ASK_THE_TEAM, PUBLIC_ROOM_ASK_THE_TEAM]);
+  });
+
+  it("hides a room's dates within a minute of its record being cleared, and shows them within a minute of one", async () => {
+    let now = NOW;
+    const standing: Standing = { [TRADES_HALL.id]: [{ spaceId: "gh", recordedAt: CHECKED_AT }] };
+    const { store, loadForwardBookStanding } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {}, standing);
+    const discovery = new PublicDiscovery({ store, now: () => now });
+    const answerFor = async (slug: string): Promise<string | undefined> => {
+      const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-24", to: "2026-10-24", room: slug });
+      if (!outcome.ok) throw new Error(outcome.message);
+      return outcome.value.rooms[0]?.answer;
+    };
+    expect(await answerFor("grand-hall")).toBe("dates");
+
+    // A manager clears the Grand Hall and records the Saloon.
+    standing[TRADES_HALL.id] = [{ spaceId: "sa", recordedAt: new Date(now) }];
+    now += PUBLIC_FORWARD_BOOK_CACHE_TTL_MS - 1;
+    expect(await answerFor("grand-hall")).toBe("dates");
+    expect(loadForwardBookStanding).toHaveBeenCalledTimes(1);
+    now += 1;
+    expect(await answerFor("grand-hall")).toBe(PUBLIC_ROOM_ASK_THE_TEAM);
+    expect(await answerFor("saloon")).toBe("dates");
+    expect(loadForwardBookStanding).toHaveBeenCalledTimes(2);
+    expect(PUBLIC_FORWARD_BOOK_CACHE_TTL_MS).toBeLessThanOrEqual(60_000);
+  });
+
+  it("dates an answer by the older of its two reads", async () => {
+    let now = NOW;
+    const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {}, bothChecked());
+    const discovery = new PublicDiscovery({ store, now: () => now });
+    await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-24", to: "2026-10-24" });
+    // Two minutes on, the records are read again but the diary is not.
+    now += 2 * 60_000;
+    const later = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-24", to: "2026-10-24" });
+    expect(later.ok && later.value.asOf).toBe(new Date(NOW).toISOString());
   });
 
   it("dates every answer: the venue as read, the enquiry guide as given", async () => {
@@ -377,7 +492,7 @@ describe("PublicDiscovery", () => {
 
   it("reads each venue once per cache period, shares concurrent reads, and re-reads after it", async () => {
     let now = NOW;
-    const { store, loadVenue, loadRoomIntervals } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL });
+    const { store, loadVenue, loadRoomIntervals, loadForwardBookStanding } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {}, bothChecked());
     const discovery = new PublicDiscovery({ store, now: () => now });
     await Promise.all([
       discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-30" }),
@@ -385,15 +500,21 @@ describe("PublicDiscovery", () => {
       discovery.describe(TRADES_HALL.slug),
     ]);
     expect(loadVenue).toHaveBeenCalledTimes(1);
+    expect(loadForwardBookStanding).toHaveBeenCalledTimes(1);
     expect(loadRoomIntervals).toHaveBeenCalledTimes(1);
     now += PUBLIC_DISCOVERY_CACHE_TTL_MS - 1;
     await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-03" });
     expect(loadRoomIntervals).toHaveBeenCalledTimes(1);
+    // The forward-book records have the shorter period, so they were re-read.
+    expect(loadForwardBookStanding).toHaveBeenCalledTimes(2);
+    const recordsReadAt = now;
     now += 2;
     const fresh = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-03" });
     expect(loadVenue).toHaveBeenCalledTimes(2);
     expect(loadRoomIntervals).toHaveBeenCalledTimes(2);
-    expect(fresh.ok && fresh.value.asOf).toBe(new Date(now).toISOString());
+    // The diary was read just now, the records two milliseconds ago: the
+    // answer is as of the older read.
+    expect(fresh.ok && fresh.value.asOf).toBe(new Date(recordsReadAt).toISOString());
   });
 
   it("answers a failed read with a plain message, reports it, and tries again next time", async () => {
@@ -401,7 +522,11 @@ describe("PublicDiscovery", () => {
     const loadVenue = vi.fn()
       .mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:5432"))
       .mockResolvedValue(TRADES_HALL);
-    const store: PublicDiscoveryStore = { loadVenue, loadRoomIntervals: () => Promise.resolve([]) };
+    const store: PublicDiscoveryStore = {
+      loadVenue,
+      loadRoomIntervals: () => Promise.resolve([]),
+      loadForwardBookStanding: () => Promise.resolve([]),
+    };
     const discovery = new PublicDiscovery({ store, now: () => NOW, onReadError });
     const failed = await discovery.describe(TRADES_HALL.slug);
     expect(failed.ok).toBe(false);

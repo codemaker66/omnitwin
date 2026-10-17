@@ -10,7 +10,14 @@ import {
   type CallToolResult,
   type FetchLike,
 } from "@modelcontextprotocol/client";
-import { PUBLIC_DAY_NO_BOOKING, PUBLIC_DAY_STATUSES, TRADES_HALL_PUBLIC_PROFILE, type PublicDayStatus, type PublicVenueProfile } from "@omnitwin/types";
+import {
+  PUBLIC_DAY_NO_BOOKING,
+  PUBLIC_DAY_STATUSES,
+  PUBLIC_ROOM_ASK_THE_TEAM,
+  TRADES_HALL_PUBLIC_PROFILE,
+  type PublicDayStatus,
+  type PublicVenueProfile,
+} from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { publicMcpRoutes } from "../routes/public-mcp.js";
@@ -28,7 +35,10 @@ import { publicMcpRoutes } from "../routes/public-mcp.js";
 // confirmed bookings and venue blocks busy, live provisional holds held (an
 // overdue decision date does not lapse one), and cancelled, released,
 // expired, deleted and prospect rows free — on the same and neighbouring days
-// and across both 2026/27 clock changes.
+// and across both 2026/27 clock changes. Only rooms whose forward book the
+// venue has recorded as on the Diary show dates (Blake, 17 October 2026):
+// the Store Room's record was cleared, so it answers "ask the team", and the
+// recorder's name and note never leave.
 //
 // Never loads .env or DATABASE_URL: only the explicit disposable platform
 // cluster (127.0.0.1:55477/venviewer_platform_test), migrated by the platform
@@ -70,7 +80,13 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
     otherVenue: `Bellweather Private Rooms ${run}`,
     otherRoom: `Bellweather Ballroom ${run}`,
     otherTitle: `ARMADILLO-OTHER-TITLE-${run}`,
+    recorder: `Ottoline Brackenbury ${run}`,
+    recorderEmail: `ottoline.brackenbury.${run}@private.invalid`,
+    recordNote: `PERIWINKLE-FORWARD-BOOK-NOTE-${run}`,
+    clearer: `Fenwick Ashdown ${run}`,
   } as const;
+  /** When the venue recorded the Grand Hall and Saloon books as on the Diary. */
+  const CHECKED_AT = "2026-09-29T08:45:00.000Z";
   // Hold hygiene dates: never to be shown. One decision date is already past
   // at NOW, so its hold is overdue but still live in the Diary.
   const PRIVATE_INSTANTS = {
@@ -85,6 +101,7 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
   const storeRoom = randomUUID();
   const otherRoom = randomUUID();
   const ownerId = randomUUID();
+  const recorderId = randomUUID();
   const eventId = randomUUID();
   const enquiryId = randomUUID();
   const bookingIds: string[] = [];
@@ -209,6 +226,19 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
     await booking({ spaceId: otherRoom, kind: "ink", title: PRIVATE.otherTitle, notes: PRIVATE.otherTitle,
       startsAt: new Date("2026-10-23T09:00:00.000Z"), endsAt: new Date("2026-10-23T17:00:00.000Z") }, otherVenueId);
 
+    // --- The forward book on the Diary -----------------------------------
+    // The venue's manager recorded the Grand Hall and the Saloon. The Store
+    // Room was recorded and then cleared, so its dates are not described;
+    // the other tenant's room has a standing record of its own.
+    await db.insert(schema.users).values({ id: recorderId, venueId, name: PRIVATE.recorder, email: PRIVATE.recorderEmail, role: "manager" });
+    const recorded = { recordedBy: recorderId, recordedByName: PRIVATE.recorder, note: PRIVATE.recordNote, recordedAt: new Date(CHECKED_AT) };
+    await db.insert(schema.forwardBookChecks).values([
+      { ...recorded, venueId, spaceId: grandHall },
+      { ...recorded, venueId, spaceId: saloon },
+      { ...recorded, venueId, spaceId: storeRoom, clearedAt: new Date("2026-09-30T10:00:00.000Z"), clearedByName: PRIVATE.clearer },
+      { ...recorded, venueId: otherVenueId, spaceId: otherRoom, recordedBy: null },
+    ]);
+
     const database: Database = db;
     server = Fastify();
     await server.register(publicMcpRoutes, { db: database, venues: [profile], corsOrigins: [], now: () => NOW });
@@ -242,22 +272,30 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
   type Days = Record<string, PublicDayStatus>;
   /** A date with nothing on the Diary: never a bare "free". */
   const NONE = PUBLIC_DAY_NO_BOOKING;
-  async function availability(mcp: Client, from: string, to: string): Promise<Record<string, Days>> {
+  /** Each room's days, or "ask_the_team" for a room whose dates are not described. */
+  async function availability(mcp: Client, from: string, to: string): Promise<Record<string, Days | typeof PUBLIC_ROOM_ASK_THE_TEAM>> {
     const result = await mcp.callTool({ name: "check_availability", arguments: { venue: allowedSlug, from, to } });
     expect(result.isError).not.toBe(true);
     const report = result.structuredContent as {
-      rooms: { room: string; name: string; days: Days }[];
+      rooms: { room: string; name: string; answer: string; diaryCheckedAt?: string; days?: Days }[];
       meaning: Record<string, string>;
       [key: string]: unknown;
     };
-    expect(Object.keys(report).sort()).toEqual(["asOf", "dayRule", "enquire", "from", "meaning", "rooms", "timeZone", "to", "venue"]);
-    expect(Object.keys(report.meaning).sort()).toEqual([...PUBLIC_DAY_STATUSES].sort());
+    expect(Object.keys(report).sort()).toEqual(
+      ["asOf", "dayRule", "email", "enquire", "from", "meaning", "rooms", "telephone", "timeZone", "to", "venue"],
+    );
+    expect(Object.keys(report.meaning).sort()).toEqual([...PUBLIC_DAY_STATUSES, PUBLIC_ROOM_ASK_THE_TEAM].sort());
     for (const entry of report.rooms) {
-      expect(Object.keys(entry).sort()).toEqual(["days", "name", "room"]);
+      if (entry.answer === PUBLIC_ROOM_ASK_THE_TEAM) {
+        expect(Object.keys(entry).sort()).toEqual(["answer", "name", "room"]);
+        continue;
+      }
+      expect(Object.keys(entry).sort()).toEqual(["answer", "days", "diaryCheckedAt", "name", "room"]);
+      expect(entry.diaryCheckedAt).toBe(CHECKED_AT);
       // One word per date: no rank, count, time or name rides along.
-      for (const status of Object.values(entry.days)) expect(PUBLIC_DAY_STATUSES).toContain(status);
+      for (const status of Object.values(entry.days ?? {})) expect(PUBLIC_DAY_STATUSES).toContain(status);
     }
-    return Object.fromEntries(report.rooms.map((entry) => [entry.room, entry.days]));
+    return Object.fromEntries(report.rooms.map((entry) => [entry.room, entry.days ?? PUBLIC_ROOM_ASK_THE_TEAM]));
   }
 
   function allFree(from: string, count: number): Days {
@@ -279,7 +317,7 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
         // 23: a lost hold; 24: the block at 03:30 GMT; 25: a live 2nd option
         // from 04:30 GMT; 26: a deleted hold.
         saloon: { "2026-10-23": NONE, "2026-10-24": "busy", "2026-10-25": "held", "2026-10-26": NONE },
-        "store-room": allFree("2026-10-23", 4),
+        "store-room": PUBLIC_ROOM_ASK_THE_TEAM,
       });
     });
 
@@ -288,7 +326,7 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
       expect(rooms).toEqual({
         "grand-hall": { ...allFree("2026-11-01", 30), "2026-11-14": "held" },
         saloon: allFree("2026-11-01", 30),
-        "store-room": allFree("2026-11-01", 30),
+        "store-room": PUBLIC_ROOM_ASK_THE_TEAM,
       });
     });
 
@@ -305,7 +343,7 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
         "grand-hall": { "2027-03-26": NONE, "2027-03-27": "busy", "2027-03-28": "busy", "2027-03-29": "held" },
         // 27: a released hold; 28: a live hold from 04:30 BST, the 28th's only.
         saloon: { "2027-03-26": NONE, "2027-03-27": NONE, "2027-03-28": "held", "2027-03-29": NONE },
-        "store-room": allFree("2027-03-26", 4),
+        "store-room": PUBLIC_ROOM_ASK_THE_TEAM,
       });
     });
 
@@ -335,7 +373,7 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
     }
   });
 
-  it("never sends a client, event, booking, owner or enquiry detail, nor the other tenant", () => {
+  it("never sends a client, event, booking, owner, enquiry or recorder detail, nor the other tenant", () => {
     expect(bodies.length).toBeGreaterThan(20);
     const forbidden = [
       ...Object.values(PRIVATE),
@@ -343,9 +381,12 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
       otherVenueId,
       otherRoom,
       ownerId,
+      recorderId,
       eventId,
       enquiryId,
       ...bookingIds,
+      // When the Store Room's record was cleared is a staff fact.
+      "2026-09-30T10:00",
       // Booking and hold times never leave as instants: only dates and the
       // cache stamp do. Decision and next-action dates never leave at all.
       "2026-10-24T17:00", "2026-10-25T03:30", "2027-03-28T02:30",
