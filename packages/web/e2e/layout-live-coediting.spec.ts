@@ -26,6 +26,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from "@pla
 // The in-page store surface this file touches. Each page.evaluate imports the
 // module Vite serves to the app (same URL, same instance) and narrows it to
 // these shapes, so the test stays strictly typed without a test hook in the app.
+// e2e/support/vite-source-modules.d.ts declares these URLs for TypeScript.
 interface StoreApi<S> {
   getState(): S;
   subscribe(listener: (state: S) => void): () => void;
