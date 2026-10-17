@@ -6,12 +6,15 @@
 // without WebGL or a DOM. No new claims are minted here — every value is the
 // simulator's own output, presented honestly (the artifact already carries its
 // "simulated planning support" disclosure). Where the doors were placed
-// mid-wall by assumption, the bottleneck score is withheld: a score out of 100
-// for doors nobody surveyed is a verdict on an assumed input (redteam
-// fix-first 2), and the panel asks the hallkeeper for the doors instead.
+// mid-wall by assumption, every figure the doors decide is withheld: travel
+// times, the density peak, the bottleneck score, the route conflicts and the
+// queue waits. A figure or an "attention" count for doors nobody surveyed is a
+// verdict on an assumed input (redteam fix-first 2), the same rule the
+// Rigging lens applies to a WLL nobody recorded; the panel asks for the doors.
 // ---------------------------------------------------------------------------
 
 import type { GuestFlowReplayArtifact } from "@omnitwin/types";
+import { countLabel } from "./count-label.js";
 
 export type FlowConflictSeverity = "info" | "attention" | "review";
 
@@ -66,8 +69,7 @@ export function formatSeconds(seconds: number): string {
  *  it is labelled "relative", never persons/m² against an egress band. */
 export function densityHotspotLabel(hotspotCount: number): string {
   if (hotspotCount <= 0) return "none flagged";
-  if (hotspotCount === 1) return "1 hotspot";
-  return `${String(hotspotCount)} hotspots`;
+  return countLabel(hotspotCount, "hotspot");
 }
 
 /** Doors count as recorded only when every door position came from the
@@ -81,13 +83,33 @@ export function doorRecordFromAssumptions(
   return doors.source === "caller-provided" && !/assumed/i.test(value) ? "recorded" : "not-recorded";
 }
 
+/** Whether the simulation's doors were surveyed, so its figures may be shown.
+ *  The panel, the in-scene conflict markers and density patches, and the plan
+ *  inset all ask this one question. */
+export function flowFiguresAllowed(artifact: Pick<GuestFlowReplayArtifact, "assumptions">): boolean {
+  return doorRecordFromAssumptions(artifact.assumptions) === "recorded";
+}
+
 function severityValue(severity: string): FlowConflictSeverity {
   return severity === "review" || severity === "attention" ? severity : "info";
 }
 
+const NO_CONFLICTS: Readonly<Record<FlowConflictSeverity, number>> = { info: 0, attention: 0, review: 0 };
+
 export function buildFlowPanelModel(artifact: GuestFlowReplayArtifact): FlowPanelModel {
   const m = artifact.metrics;
   const doors = doorRecordFromAssumptions(artifact.assumptions);
+  if (doors === "not-recorded") {
+    return {
+      summary: [],
+      conflicts: [],
+      conflictCounts: NO_CONFLICTS,
+      queues: [],
+      assumptions: [],
+      disclosure: artifact.disclosureLabel,
+      doors,
+    };
+  }
 
   const summary: FlowPanelMetricRow[] = [
     { key: "agents", label: "Simulated agents", value: m.agentCount.toLocaleString("en-GB") },
@@ -100,9 +122,7 @@ export function buildFlowPanelModel(artifact: GuestFlowReplayArtifact): FlowPane
   summary.push(
     { key: "density", label: "Peak density (relative)", value: `${m.maxDensity.toFixed(2)} · ${densityHotspotLabel(m.densityHotspotCount)}` },
   );
-  if (doors === "recorded") {
-    summary.push({ key: "bottleneck", label: "Bottleneck score", value: `${String(Math.round(m.bottleneckScore * 100))} / 100` });
-  }
+  summary.push({ key: "bottleneck", label: "Bottleneck score", value: `${String(Math.round(m.bottleneckScore * 100))} / 100` });
 
   const conflictCounts: Record<FlowConflictSeverity, number> = { info: 0, attention: 0, review: 0 };
   const conflicts: FlowPanelConflictRow[] = artifact.routeConflicts.map((conflict, index) => {

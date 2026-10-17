@@ -25,6 +25,7 @@ import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
 import { isDiningTableItem } from "../../lib/furniture-semantics.js";
 import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { circulationBandLabel } from "../../lib/circulation.js";
+import { countLabel } from "../../lib/count-label.js";
 import { placedItemsCirculation } from "../../lib/circulation-scene.js";
 import { gradeLayout, type LayoutBand, type RecommendationSeverity } from "../../lib/layout-intelligence.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
@@ -220,7 +221,8 @@ interface CapacityReadoutInput {
  * 250 (redteam fix-first 1).
  */
 function capacityReadout(input: CapacityReadoutInput): CapacityReadout {
-  const seats = input.seats.toLocaleString("en-GB");
+  // "1 seat", "220 seats": one helper for every count label.
+  const seats = countLabel(input.seats, "seat");
   const empty = "Start placing furniture to build capacity";
   if (input.staff) {
     const estimate = input.capacity.comfortableCapacity;
@@ -233,7 +235,7 @@ function capacityReadout(input: CapacityReadoutInput): CapacityReadout {
         : null,
       source: null,
       disclosure: `${GENERIC_ESTIMATE_LABEL} · venue staff only · not the venue's published figure`,
-      ariaLabel: `${seats} seats planned; estimate at generic spacing about ${String(estimate)} guests`,
+      ariaLabel: `${seats} planned; estimate at generic spacing about ${countLabel(estimate, "guest")}`,
       reading: false,
     };
   }
@@ -241,14 +243,14 @@ function capacityReadout(input: CapacityReadoutInput): CapacityReadout {
   if (input.published.kind === "reading") {
     return {
       denominator: null, fillPercent: 0, caption: "Reading the venue's published figures…", detail: null,
-      source: null, disclosure: confirmed, ariaLabel: `${seats} seats planned`, reading: true,
+      source: null, disclosure: confirmed, ariaLabel: `${seats} planned`, reading: true,
     };
   }
   if (input.published.kind === "not-published") {
     return {
       denominator: null, fillPercent: 0,
       caption: input.hasLayout ? "No published capacity for this room" : empty,
-      detail: null, source: null, disclosure: confirmed, ariaLabel: `${seats} seats planned`, reading: false,
+      detail: null, source: null, disclosure: confirmed, ariaLabel: `${seats} planned`, reading: false,
     };
   }
   const { capacity, source } = input.published;
@@ -258,7 +260,7 @@ function capacityReadout(input: CapacityReadoutInput): CapacityReadout {
       caption: input.hasLayout ? `The venue publishes no figure for ${input.styleLabel}` : empty,
       detail: input.hasLayout ? null : `Published ${publishedFiguresPhrase(capacity, null)}`,
       source: input.hasLayout ? null : source,
-      disclosure: confirmed, ariaLabel: `${seats} seats planned`, reading: false,
+      disclosure: confirmed, ariaLabel: `${seats} planned`, reading: false,
     };
   }
   const figure = capacity[input.format];
@@ -267,12 +269,12 @@ function capacityReadout(input: CapacityReadoutInput): CapacityReadout {
     denominator: figure,
     fillPercent: figure > 0 ? Math.min(100, Math.round((input.seats / figure) * 100)) : 0,
     caption: above
-      ? `${seats} seats placed; the venue publishes ${publishedFiguresPhrase(capacity, input.format)}.`
+      ? `${seats} placed; the venue publishes ${publishedFiguresPhrase(capacity, input.format)}.`
       : `Published ${publishedFiguresPhrase(capacity, input.format)}`,
     detail: above ? "The events team will say what is possible." : null,
     source,
     disclosure: confirmed,
-    ariaLabel: `${seats} seats planned; the venue publishes ${publishedFiguresPhrase(capacity, input.format)}`,
+    ariaLabel: `${seats} planned; the venue publishes ${publishedFiguresPhrase(capacity, input.format)}`,
     reading: false,
   };
 }

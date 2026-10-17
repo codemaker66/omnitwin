@@ -8,6 +8,7 @@ import { usePlannerTruth } from "../../../hooks/use-planner-truth.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { buildFlowPanelModel, type FlowConflictSeverity } from "../../../lib/cockpit-flow-panel-model.js";
 import { DEFAULT_ASSUMED_GUEST_COUNT, MAX_GUEST_FLOW_AGENTS } from "../../../lib/guest-flow-layout-input.js";
+import { countLabel } from "../../../lib/count-label.js";
 
 // ---------------------------------------------------------------------------
 // FlowLensPanel — the first real lens panel (Epic 0's reference tool).
@@ -16,7 +17,9 @@ import { DEFAULT_ASSUMED_GUEST_COUNT, MAX_GUEST_FLOW_AGENTS } from "../../../lib
 // scenario controls (guest count + arrival window) that re-simulate on change,
 // then summary metrics, route conflicts, queue zones, and the assumptions trail
 // — all from the same artifact the in-scene overlays draw. Claim-safe: simulated
-// planning support only, never a measured or certified route.
+// planning support only, never a measured or certified route. With no surveyed
+// doors, the panel shows "Not recorded" and the person to ask, and no figure
+// at all (cockpit-flow-panel-model withholds them; redteam fix-first 2).
 // ---------------------------------------------------------------------------
 
 const SOURCE_BY_STATUS: Readonly<Record<string, string>> = {
@@ -94,17 +97,20 @@ export function FlowLensPanel(): ReactElement {
         </label>
       </LensPanelSection>
 
-      {model !== null && (
+      {model !== null && model.doors === "not-recorded" && (
+        <LensPanelSection label="Doors">
+          <NotRecorded
+            label="Door positions"
+            detail="Without them the simulation can only place one entrance and one exit mid-wall, so it gives no density, queue or bottleneck figures."
+            ask={truth.ask("door-positions")}
+            testId="flow-doors-unrecorded"
+          />
+        </LensPanelSection>
+      )}
+
+      {model !== null && model.doors === "recorded" && (
         <>
           <LensPanelSection label="Flow summary">
-            {model.doors === "not-recorded" && (
-              <NotRecorded
-                label="Door positions"
-                detail="The simulation places one entrance and one exit mid-wall, so it gives no bottleneck score."
-                ask={truth.ask("door-positions")}
-                testId="flow-doors-unrecorded"
-              />
-            )}
             {model.summary.map((row) => (
               <LensPanelMetric key={row.key} label={row.label} value={row.value} />
             ))}
@@ -123,7 +129,7 @@ export function FlowLensPanel(): ReactElement {
                 <span className="lens-panel__row-title">{conflict.message}</span>
               </div>
             ))}
-            {model.conflicts.length === 0 && model.doors === "recorded" && (
+            {model.conflicts.length === 0 && (
               <p className="lens-panel__hint">No simulated route conflicts.</p>
             )}
           </LensPanelSection>
@@ -134,7 +140,7 @@ export function FlowLensPanel(): ReactElement {
                 <div key={queue.key} className="lens-panel__row lens-panel__row--info">
                   <span className="lens-panel__row-title">{queue.label}</span>
                   <span className="lens-panel__row-meta">
-                    {queue.agents.toLocaleString("en-GB")} agents · ~{queue.waitLabel} wait
+                    {countLabel(queue.agents, "agent")} · ~{queue.waitLabel} wait
                   </span>
                 </div>
               ))}

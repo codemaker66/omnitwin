@@ -12,6 +12,7 @@ import {
 } from "./planner-truth.js";
 import { BAR_CATALOGUE_SLUG } from "./guest-flow-layout-input.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
+import { countLabel } from "./count-label.js";
 
 // ---------------------------------------------------------------------------
 // cockpit-share-model — turn the LIVE layout into a client-safe proposal draft
@@ -26,6 +27,12 @@ import { isSceneFurniturePlacement } from "./table-dressing.js";
 // fix-first 1). Money is never asserted here: a cost scenario is the Costs
 // lens's editable estimate, not a client quote, so the share draft carries no
 // quote (`quote: null`). The panel's footer keeps the SAFE wording visible.
+//
+// The layout summary states what is placed ("8 round tables · 64 chairs"),
+// never the guest count as if it were seating: it once read "Seating for 220
+// across 8 round tables" with 64 chairs on the floor (integration check, 17
+// Oct 2026). When the chairs fall short of the guest count, the summary says
+// by how many, and the draft carries the planner's way forward.
 // ---------------------------------------------------------------------------
 
 export { coversSourceLabel };
@@ -42,6 +49,15 @@ export interface ShareLayoutSummary {
   readonly features: readonly string[];
 }
 
+/** Chairs placed against the planner's own guest count, when they fall short. */
+export interface ShareSeatingShortfall {
+  readonly guests: number;
+  readonly chairs: number;
+  readonly short: number;
+  /** The way forward, for the planner before sharing. */
+  readonly next: string;
+}
+
 /** A client-safe proposal draft built from the live layout. */
 export interface ShareProposalDraft {
   readonly title: string;
@@ -49,6 +65,8 @@ export interface ShareProposalDraft {
   readonly layoutSummary: string;
   readonly capacityNote: string;
   readonly summary: ShareLayoutSummary;
+  /** Null unless a seated layout has fewer chairs than the guest count. */
+  readonly seatingShortfall: ShareSeatingShortfall | null;
 }
 
 export interface ShareDraftInput {
@@ -66,10 +84,6 @@ export interface ShareDraftInput {
   /** The venue's published figures for the room. Without them the note names
    *  who confirms the capacity; it never states a computed count. */
   readonly published?: PublishedCapacityAnswer;
-}
-
-function plural(n: number, singular: string): string {
-  return n === 1 ? singular : `${singular}s`;
 }
 
 /** Join phrases as a natural English list ("a, b and c"). */
@@ -100,36 +114,53 @@ function featureLabelsFromLayout(placedItems: readonly PlacedItem[]): string[] {
   return labels;
 }
 
-function buildTableClause(roundTables: number, banquetTables: number): string {
-  const parts: string[] = [];
-  if (roundTables > 0) parts.push(`${String(roundTables)} round ${plural(roundTables, "table")}`);
-  if (banquetTables > 0) parts.push(`${String(banquetTables)} long ${plural(banquetTables, "table")}`);
-  return joinAnd(parts);
+/** Chairs short of the planner's guest count, for a layout with seating on
+ *  the floor. A standing reception (poseur tables, no chairs) is not short of
+ *  seats, and an empty floor has nothing to measure yet. */
+function seatingShortfallFor(
+  plannedGuestCount: number | null,
+  roundTables: number,
+  banquetTables: number,
+  chairs: number,
+  standing: boolean,
+): ShareSeatingShortfall | null {
+  if (plannedGuestCount === null || !Number.isFinite(plannedGuestCount) || plannedGuestCount <= 0) return null;
+  const guests = Math.floor(plannedGuestCount);
+  if (chairs >= guests) return null;
+  if (chairs === 0 && (standing || roundTables + banquetTables === 0)) return null;
+  const short = guests - chairs;
+  return {
+    guests,
+    chairs,
+    short,
+    next: `Place ${countLabel(short, "more chair", "more chairs")} or lower the guest count before you share this plan. The events team can advise on the layout.`,
+  };
 }
 
+/** What is placed, in the venue's words: "8 round tables · 64 chairs · a
+ *  stage". The guest count is never stated as seating. */
 function buildLayoutSummary(
-  covers: number,
   roundTables: number,
   banquetTables: number,
   chairs: number,
   features: readonly string[],
+  shortfall: ShareSeatingShortfall | null,
 ): string {
-  const tables = roundTables + banquetTables;
   const featurePhrases = features.map((label) => `a ${label.toLowerCase()}`);
-  const featureClause = featurePhrases.length > 0 ? `, with ${joinAnd(featurePhrases)}` : "";
-  if (covers > 0 && tables > 0) {
-    return `Seating for ${String(covers)} across ${buildTableClause(roundTables, banquetTables)}${featureClause}.`;
+  const parts: string[] = [];
+  if (roundTables > 0) parts.push(countLabel(roundTables, "round table"));
+  if (banquetTables > 0) parts.push(countLabel(banquetTables, "long table"));
+  if (chairs > 0) parts.push(countLabel(chairs, "chair"));
+  if (parts.length === 0) {
+    return featurePhrases.length > 0
+      ? `An open-plan layout with ${joinAnd(featurePhrases)}.`
+      : "An open-plan layout, ready to dress.";
   }
-  if (covers > 0) {
-    return `Seating for ${String(covers)}${featureClause}.`;
+  if (featurePhrases.length > 0) parts.push(joinAnd(featurePhrases));
+  if (shortfall !== null) {
+    parts.push(`${countLabel(shortfall.short, "seat")} short of ${countLabel(shortfall.guests, "guest")}`);
   }
-  if (chairs > 0) {
-    return `${String(chairs)} ${plural(chairs, "chair")} arranged in the room${featureClause}.`;
-  }
-  if (featurePhrases.length > 0) {
-    return `An open-plan layout with ${joinAnd(featurePhrases)}.`;
-  }
-  return "An open-plan layout, ready to dress.";
+  return parts.join(" · ");
 }
 
 function buildRoomSummary(roomWidthM: number, roomLengthM: number): string {
@@ -156,22 +187,30 @@ export function buildShareProposalDraft(input: ShareDraftInput): ShareProposalDr
     guests: quantities.covers > 0 ? quantities.covers : null,
   });
 
+  const seatingShortfall = seatingShortfallFor(
+    input.plannedGuestCount,
+    seating.roundTables,
+    seating.banquetTables,
+    seating.chairs,
+    plannerLayoutStyle(input.placedItems) === "cocktail",
+  );
+
   const trimmedTitle = input.titleOverride?.trim() ?? "";
   const title = trimmedTitle.length > 0
     ? trimmedTitle
     : quantities.covers > 0
-      ? `Event plan for ${String(quantities.covers)} guests`
+      ? `Event plan for ${countLabel(quantities.covers, "guest")}`
       : "Event plan";
 
   return {
     title,
     roomSummary: buildRoomSummary(input.roomWidthM, input.roomLengthM),
     layoutSummary: buildLayoutSummary(
-      quantities.covers,
       seating.roundTables,
       seating.banquetTables,
       seating.chairs,
       features,
+      seatingShortfall,
     ),
     capacityNote,
     summary: {
@@ -183,6 +222,7 @@ export function buildShareProposalDraft(input: ShareDraftInput): ShareProposalDr
       avItems: quantities.avItems,
       features,
     },
+    seatingShortfall,
   };
 }
 

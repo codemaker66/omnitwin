@@ -4,6 +4,7 @@ import { plannerLayoutStyle, publishedFormatForStyle, type PublishedFormat } fro
 import { roomStyleEstimates, type RoomStyleEstimate } from "./room-capacity.js";
 import { seatingCountsFromPlacedItems } from "./seating-counts.js";
 import type { PlacedItem } from "./placement.js";
+import { countLabel } from "./count-label.js";
 
 // ---------------------------------------------------------------------------
 // cockpit-guests-model — what the Guests lens can say from the LIVE layout.
@@ -91,16 +92,17 @@ export function buildGuestsCapacityModel(input: GuestsModelInput): GuestsCapacit
 /** Short sentence describing seat sufficiency for the panel. */
 export function seatSufficiencyLabel(model: GuestsCapacityModel): string {
   if (model.seatStatus === "unset") {
-    return `${String(model.seatsProvided)} seats placed. Set a guest count to check every guest has a seat.`;
+    return `${countLabel(model.seatsProvided, "seat")} placed. Set a guest count to check every guest has a seat.`;
   }
-  const guests = String(model.guestCount ?? 0);
+  const guestCount = model.guestCount ?? 0;
+  const guests = countLabel(guestCount, "guest");
   if (model.seatStatus === "short") {
     const short = Math.abs(model.seatBalance ?? 0);
-    return `Short ${String(short)} ${short === 1 ? "seat" : "seats"} for ${guests} guests — add seating or reduce the count.`;
+    return `Short ${countLabel(short, "seat")} for ${guests} — add seating or reduce the count.`;
   }
   if (model.seatStatus === "spare") {
     const spare = model.seatBalance ?? 0;
-    return `Every guest seated, with ${String(spare)} spare ${spare === 1 ? "seat" : "seats"} for ${guests} guests.`;
+    return `Every guest seated, with ${countLabel(spare, "spare seat")} for ${guests}.`;
   }
-  return `Exactly ${guests} seats for ${guests} guests — every guest seated.`;
+  return `Exactly ${countLabel(guestCount, "seat")} for ${guests} — every guest seated.`;
 }

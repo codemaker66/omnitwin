@@ -6,12 +6,20 @@ import {
   formatSeconds,
   densityHotspotLabel,
   doorRecordFromAssumptions,
+  flowFiguresAllowed,
 } from "../cockpit-flow-panel-model.js";
 
 // A real artifact from the real engine — the model maps it, it never invents.
+// ARTIFACT has its doors placed mid-wall by assumption; SURVEYED was given
+// every door, so only it may carry figures.
 const ARTIFACT = runGuestFlowReplayV0(
   buildGuestFlowReplayInputFromLayout({ roomWidthM: 21, roomLengthM: 10.5, placedItems: [], plannedGuestCount: 40 }),
 );
+const WEST_DOOR = { id: "door-west", label: "West door", xM: -10, zM: 0, widthM: 1.8 };
+const SURVEYED = runGuestFlowReplayV0(buildGuestFlowReplayInputFromLayout({
+  roomWidthM: 21, roomLengthM: 10.5, placedItems: [], plannedGuestCount: 40,
+  entrances: [WEST_DOOR], exits: [{ ...WEST_DOOR, id: "door-east", label: "East door", xM: 10 }],
+}));
 
 describe("formatSeconds", () => {
   it("formats sub-minute, exact-minute and mixed durations", () => {
@@ -34,7 +42,7 @@ describe("densityHotspotLabel", () => {
 });
 
 describe("buildFlowPanelModel", () => {
-  const model = buildFlowPanelModel(ARTIFACT);
+  const model = buildFlowPanelModel(SURVEYED);
 
   it("leads with the simulated agent count", () => {
     const agents = model.summary.find((row) => row.key === "agents");
@@ -42,8 +50,8 @@ describe("buildFlowPanelModel", () => {
   });
 
   it("carries the simulator's assumptions verbatim, not new claims", () => {
-    expect(model.assumptions).toHaveLength(ARTIFACT.assumptions.length);
-    expect(model.disclosure).toBe(ARTIFACT.disclosureLabel);
+    expect(model.assumptions).toHaveLength(SURVEYED.assumptions.length);
+    expect(model.disclosure).toBe(SURVEYED.disclosureLabel);
   });
 
   it("conflict counts sum to the conflict list length", () => {
@@ -52,7 +60,7 @@ describe("buildFlowPanelModel", () => {
   });
 
   it("mirrors the artifact's queue zones", () => {
-    expect(model.queues).toHaveLength(ARTIFACT.queueZones.length);
+    expect(model.queues).toHaveLength(SURVEYED.queueZones.length);
   });
 
   it("only uses the three known severities", () => {
@@ -67,10 +75,17 @@ describe("buildFlowPanelModel", () => {
 describe("buildFlowPanelModel — doors nobody recorded", () => {
   const surveyedDoor = { id: "door-west", label: "West door", xM: -10, zM: 0, widthM: 1.8 };
 
-  it("withholds the bottleneck score when the doors were assumed mid-wall", () => {
+  it("withholds every figure when the doors were assumed mid-wall", () => {
+    // The engine still computes them; the model must not pass them on.
+    expect(ARTIFACT.routeConflicts.length + ARTIFACT.queueZones.length).toBeGreaterThan(0);
     const model = buildFlowPanelModel(ARTIFACT);
     expect(model.doors).toBe("not-recorded");
-    expect(model.summary.some((row) => row.key === "bottleneck")).toBe(false);
+    expect(model.summary).toEqual([]);
+    expect(model.conflicts).toEqual([]);
+    expect(model.conflictCounts).toEqual({ info: 0, attention: 0, review: 0 });
+    expect(model.queues).toEqual([]);
+    expect(model.assumptions).toEqual([]);
+    expect(flowFiguresAllowed(ARTIFACT)).toBe(false);
   });
 
   it("withholds it when only some doors were given", () => {
@@ -87,6 +102,7 @@ describe("buildFlowPanelModel — doors nobody recorded", () => {
     }));
     const model = buildFlowPanelModel(surveyed);
     expect(model.doors).toBe("recorded");
+    expect(flowFiguresAllowed(surveyed)).toBe(true);
     expect(model.summary.find((row) => row.key === "bottleneck")?.value).toMatch(/^\d+ \/ 100$/);
   });
 

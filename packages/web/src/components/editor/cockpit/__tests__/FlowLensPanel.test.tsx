@@ -9,12 +9,19 @@ const { buildGuestFlowReplayInputFromLayout } = await import("../../../../lib/gu
 const { FlowLensPanel } = await import("../FlowLensPanel.js");
 const { useCockpitStore } = await import("../../../../stores/cockpit-store.js");
 
+// ARTIFACT's doors were placed mid-wall by assumption; SURVEYED was given
+// every door position, so only it may show figures.
 const ARTIFACT: GuestFlowReplayArtifact = runGuestFlowReplayV0(
   buildGuestFlowReplayInputFromLayout({ roomWidthM: 21, roomLengthM: 10.5, placedItems: [], plannedGuestCount: 50 }),
 );
+const WEST_DOOR = { id: "door-west", label: "West door", xM: -10, zM: 0, widthM: 1.8 };
+const SURVEYED: GuestFlowReplayArtifact = runGuestFlowReplayV0(buildGuestFlowReplayInputFromLayout({
+  roomWidthM: 21, roomLengthM: 10.5, placedItems: [], plannedGuestCount: 50,
+  entrances: [WEST_DOOR], exits: [{ ...WEST_DOOR, id: "door-east", label: "East door", xM: 10 }],
+}));
 
 beforeEach(() => {
-  replay.useCockpitReplay.mockReturnValue({ artifact: ARTIFACT, bounds: ARTIFACT.navmesh.roomBounds, status: "ready" });
+  replay.useCockpitReplay.mockReturnValue({ artifact: SURVEYED, bounds: SURVEYED.navmesh.roomBounds, status: "ready" });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); useCockpitStore.getState().reset(); });
 
@@ -56,7 +63,7 @@ describe("FlowLensPanel", () => {
   });
 
   it("keeps activity visible during a refresh with an existing simulation", () => {
-    replay.useCockpitReplay.mockReturnValue({ artifact: ARTIFACT, bounds: ARTIFACT.navmesh.roomBounds, status: "loading" });
+    replay.useCockpitReplay.mockReturnValue({ artifact: SURVEYED, bounds: SURVEYED.navmesh.roomBounds, status: "loading" });
     render(<FlowLensPanel />);
     expect(screen.getByText("Simulated agents")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("Simulating");
@@ -64,26 +71,29 @@ describe("FlowLensPanel", () => {
 });
 
 describe("FlowLensPanel — doors nobody recorded (redteam fix-first 2)", () => {
-  it("gives no bottleneck score for doors placed mid-wall, and asks for the doors", () => {
+  it("gives no figure at all for doors placed mid-wall, and asks for the doors", () => {
+    // The engine did compute conflicts and queues for the assumed doors.
+    expect(ARTIFACT.routeConflicts.length + ARTIFACT.queueZones.length).toBeGreaterThan(0);
+    replay.useCockpitReplay.mockReturnValue({ artifact: ARTIFACT, bounds: ARTIFACT.navmesh.roomBounds, status: "ready" });
     render(<FlowLensPanel />);
-    expect(screen.queryByText("Bottleneck score")).toBeNull();
+    const text = screen.getByTestId("flow-lens-panel").textContent;
     expect(screen.getByTestId("flow-doors-unrecorded-status").textContent).toBe("Not recorded");
     // No venue is open in this suite, so there is no address to write to:
     // the panel names who to ask instead of a dead link.
     expect(screen.getByTestId("flow-doors-unrecorded-next").textContent).toBe("Ask the venue's events team when you send your enquiry.");
-    expect(screen.queryByText("No simulated route conflicts.")).toBeNull();
-    expect(screen.getByTestId("flow-lens-panel").textContent).not.toMatch(/\b(pass|fits|valid|compliant)\b/i);
+    for (const withheld of ["Bottleneck score", "Bottlenecks & conflicts", "Peak density (relative)", "Avg travel time", "Avg travel distance", "Queues", "No simulated route conflicts."]) {
+      expect(screen.queryByText(withheld), withheld).toBeNull();
+    }
+    // The footer's "human review required" stays; no count of review or
+    // attention items, hotspot, wait or agent tally may appear.
+    expect(text).not.toMatch(/\d\s*(attention|review)\b|\b(attention|hotspots?|wait|agents)\b/i);
+    expect(text).not.toMatch(/\b(pass|fits|valid|compliant)\b/i);
   });
 
-  it("states the bottleneck score once every door position was given", () => {
-    const door = { id: "door-west", label: "West door", xM: -10, zM: 0, widthM: 1.8 };
-    const surveyed = runGuestFlowReplayV0(buildGuestFlowReplayInputFromLayout({
-      roomWidthM: 21, roomLengthM: 10.5, placedItems: [], plannedGuestCount: 50,
-      entrances: [door], exits: [{ ...door, id: "door-east", label: "East door", xM: 10 }],
-    }));
-    replay.useCockpitReplay.mockReturnValue({ artifact: surveyed, bounds: surveyed.navmesh.roomBounds, status: "ready" });
+  it("states the figures once every door position was given", () => {
     render(<FlowLensPanel />);
     expect(screen.getByText("Bottleneck score")).toBeTruthy();
+    expect(screen.getByText("Bottlenecks & conflicts")).toBeTruthy();
     expect(screen.queryByTestId("flow-doors-unrecorded")).toBeNull();
   });
 });
