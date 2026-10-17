@@ -2547,3 +2547,7 @@ export * from "./trades-hall-venue-truth.js";
 // The Pricing desk (17 Oct 2026): who sets a price, which rate stands on a
 // date beside a rate for particular dates, and the suggestions' contract.
 export * from "./pricing-desk.js";
+
+// The competitor watch (17 Oct 2026): the comp set, dated price captures,
+// who a lost deal went to and the page-change check. Context, never a price input.
+export * from "./competitor-watch.js";

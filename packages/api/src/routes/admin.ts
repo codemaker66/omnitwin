@@ -12,6 +12,8 @@ import {
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
 import { removeLapsedDietaryNotes, type SheetPdfToRemove } from "../services/dietary-retention.js";
+import { runPageChecks } from "../services/competitor-watch-data.js";
+import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check.js";
 import { pdfObjectKey, removeSheetPdfObject } from "../services/pdf-prerender.js";
 import type { Env } from "../env.js";
 
@@ -41,9 +43,13 @@ function secretEquals(presented: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+/** The workflow tokens, one per unattended route, so one leaked secret
+ *  reaches one pass only. */
+type CronTokenVariable = "DIARY_CRON_TOKEN" | "COMPETITOR_WATCH_CRON_TOKEN";
+
 /** True when the request carries the configured workflow token. */
-function hasCronToken(request: FastifyRequest): boolean {
-  const configured = process.env["DIARY_CRON_TOKEN"];
+function hasCronToken(request: FastifyRequest, variable: CronTokenVariable = "DIARY_CRON_TOKEN"): boolean {
+  const configured = process.env[variable];
   // An unset — or implausibly short — token never authenticates anything.
   if (configured === undefined || configured.length < CRON_TOKEN_MIN_LENGTH) return false;
   const header = request.headers.authorization;
@@ -57,9 +63,10 @@ function hasCronToken(request: FastifyRequest): boolean {
 
 export async function adminRoutes(
   server: FastifyInstance,
-  opts: { db: Database; env?: Env },
+  opts: { db: Database; env?: Env; pageFetcher?: PageFetcher },
 ): Promise<void> {
   const { db, env } = opts;
+  const pageFetcher = opts.pageFetcher ?? createHttpsPageFetcher();
 
   // A sheet's pre-rendered PDF goes from storage before its copy of a
   // dietary note is removed (services/dietary-retention.ts). Without the
@@ -206,5 +213,52 @@ export async function adminRoutes(
     }
     const summary = await runHoldReminderPass({ db, dryRun, logger: request.log });
     return { data: { ...summary, emailDelivery } };
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/competitor-watch/page-checks — the competitor watch's
+  // page-change pass for every venue: each page a person has recorded as
+  // allowed (terms and robots.txt read), at most weekly, robots.txt obeyed,
+  // a hash and a date kept, never a price. The same pass a venue's own
+  // "Check the pages now" runs for its set (routes/competitor-watch.ts).
+  //
+  // Two identities, as for the hold reminders: a signed-in platform
+  // administrator, or the Competitor page check workflow presenting
+  // COMPETITOR_WATCH_CRON_TOKEN (its own secret, so the reminder token
+  // cannot run it). The workflow's schedule stays commented out until Blake
+  // approves it. The answer carries counts only: the workflow's summary is
+  // public, so it never names a venue or a competitor.
+  // -------------------------------------------------------------------------
+
+  const pageCheckCron = new WeakSet<FastifyRequest>();
+
+  const authenticateOrPageCheckCron = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (hasCronToken(request, "COMPETITOR_WATCH_CRON_TOKEN")) {
+      pageCheckCron.add(request);
+      request.log.info({ actor: "competitor-watch-cron" }, "page-check pass authorised by service token");
+      return;
+    }
+    await authenticate(request, reply);
+  };
+
+  const platformAdminOrPageCheckCron = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (pageCheckCron.has(request)) return;
+    await authorizePlatformAdmin()(request, reply);
+  };
+
+  server.post("/competitor-watch/page-checks", {
+    preHandler: [authenticateOrPageCheckCron, platformAdminOrPageCheckCron],
+  }, async (request) => {
+    const scheduled = pageCheckCron.has(request);
+    const run = await runPageChecks(db, {
+      venueId: null,
+      now: new Date(),
+      fetcher: pageFetcher,
+      runBy: scheduled ? "schedule" : "person",
+      triggeredBy: scheduled ? null : request.user.id,
+    });
+    const outcomes: Record<string, number> = {};
+    for (const result of run.results) outcomes[result.outcome] = (outcomes[result.outcome] ?? 0) + 1;
+    return { data: { checkedAt: run.checkedAt, pages: run.results.length, outcomes } };
   });
 }

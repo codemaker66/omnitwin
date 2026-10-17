@@ -624,6 +624,13 @@
       "when": 1791644400000,
       "tag": "0090_booking_event_bind",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1791730800000,
+      "tag": "0095_competitor_watch",
+      "breakpoints": true
     }
   ]
 }

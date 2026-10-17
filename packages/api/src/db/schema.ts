@@ -13,6 +13,7 @@ import {
   integer,
   bigint,
   bigserial,
+  smallint,
   boolean,
   date,
   time,
@@ -27,6 +28,12 @@ import {
 } from "drizzle-orm/pg-core";
 import type {
   AgentTrajectory,
+  CaptureInclude,
+  CaptureSourceKind,
+  CompetitorTier,
+  PageCheckOutcome,
+  PriceBasis,
+  VatStatement,
   AnalyticsSnapshotPayload,
   BookingKind,
   BookingLiveness,
@@ -6063,4 +6070,141 @@ export const bookingObservations = pgTable("booking_observations", {
   index("booking_observations_booking_observed_idx").on(table.bookingId, table.observedAt),
   index("booking_observations_venue_observed_idx").on(table.venueId, table.observedAt),
   check("booking_observations_kind", sql`${table.kind} IN ('set', 'doors-open', 'live', 'flipping', 'done', 'cleaned')`),
+]);
+
+// ---------------------------------------------------------------------------
+// The competitor watch (migration 0095; Blake approved the proposal on
+// 17 October 2026). A dated notebook beside the Pricing desk: the comp set,
+// one dated and sourced figure per capture (append-only, enforced by a
+// trigger in the migration), the page-change check's log and who won a lost
+// deal. Every child is bound to its venue by a composite key. Nothing that
+// sets or suggests a price reads these tables (see @omnitwin/types
+// competitor-watch.ts for the rules, and the tests that hold them).
+// ---------------------------------------------------------------------------
+
+export const competitorVenues = pgTable("competitor_venues", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  name: varchar("name", { length: 160 }).notNull(),
+  website: text("website"),
+  /** The page the change check reads, on the venue's own website. */
+  pricePageUrl: text("price_page_url"),
+  tier: varchar("tier", { length: 10 }).$type<CompetitorTier>().notNull(),
+  reason: text("reason").notNull(),
+  reviewDueOn: date("review_due_on", { mode: "string" }).notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  /** Who recorded that the site's terms and robots.txt allow the check, and
+   *  when; both null while the check is off. */
+  checksAllowedAt: timestamp("checks_allowed_at", { withTimezone: true }),
+  checksAllowedBy: uuid("checks_allowed_by").references(() => users.id, { onDelete: "set null" }),
+  /** SHA-256 of the page's text at the last check that read it. */
+  pageHash: char("page_hash", { length: 64 }),
+  pageCheckedAt: timestamp("page_checked_at", { withTimezone: true }),
+  pageCheckOutcome: varchar("page_check_outcome", { length: 20 }).$type<PageCheckOutcome>(),
+  pageCheckStatus: integer("page_check_status"),
+  pageChangedAt: timestamp("page_changed_at", { withTimezone: true }),
+  pageChangeDismissedAt: timestamp("page_change_dismissed_at", { withTimezone: true }),
+  pageChangeDismissedBy: uuid("page_change_dismissed_by").references(() => users.id, { onDelete: "set null" }),
+  nextCheckAfter: timestamp("next_check_after", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  removedBy: uuid("removed_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+}, (table) => [
+  unique("competitor_venues_id_venue").on(table.id, table.venueId),
+  check("competitor_venues_tier", sql`${table.tier} IN ('primary', 'secondary')`),
+  check("competitor_venues_name_shape", sql`${table.name} = btrim(${table.name}) AND ${table.name} <> ''`),
+  check("competitor_venues_reason_shape", sql`btrim(${table.reason}) <> '' AND char_length(${table.reason}) <= 400`),
+  check("competitor_venues_check_permission", sql`${table.checksAllowedBy} IS NULL OR ${table.checksAllowedAt} IS NOT NULL`),
+  check("competitor_venues_page_hash_shape", sql`${table.pageHash} IS NULL OR ${table.pageHash} ~ '^[0-9a-f]{64}$'`),
+  check("competitor_venues_removal", sql`${table.removedBy} IS NULL OR ${table.removedAt} IS NOT NULL`),
+  uniqueIndex("competitor_venues_live_name").on(table.venueId, sql`lower(${table.name})`).where(sql`${table.removedAt} IS NULL`),
+  index("competitor_venues_due_check").on(table.nextCheckAfter).where(sql`${table.removedAt} IS NULL AND ${table.checksAllowedAt} IS NOT NULL`),
+]);
+
+export const competitorPriceCaptures = pgTable("competitor_price_captures", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  competitorId: uuid("competitor_id").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  sourceKind: varchar("source_kind", { length: 12 }).$type<CaptureSourceKind>().notNull(),
+  seenOn: date("seen_on", { mode: "string" }).notNull(),
+  capturedBy: uuid("captured_by").notNull().references(() => users.id),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+  packageName: varchar("package_name", { length: 160 }).notNull(),
+  amountMinor: integer("amount_minor").notNull(),
+  currency: char("currency", { length: 3 }).notNull().default("GBP"),
+  priceBasis: varchar("price_basis", { length: 10 }).$type<PriceBasis>().notNull(),
+  guests: integer("guests"),
+  priceYear: smallint("price_year"),
+  includes: text("includes").array().$type<CaptureInclude[]>().notNull().default(sql`'{}'::text[]`),
+  includesNote: text("includes_note"),
+  vat: varchar("vat", { length: 12 }).$type<VatStatement>().notNull(),
+  evidenceFileId: uuid("evidence_file_id").references(() => files.id),
+  note: text("note"),
+  supersedesId: uuid("supersedes_id"),
+  sourceGoneAt: timestamp("source_gone_at", { withTimezone: true }),
+  sourceGoneBy: uuid("source_gone_by").references(() => users.id),
+}, (table) => [
+  foreignKey({ columns: [table.competitorId, table.venueId], foreignColumns: [competitorVenues.id, competitorVenues.venueId], name: "competitor_price_captures_competitor_venue" }),
+  unique("competitor_price_captures_identity").on(table.id, table.competitorId, table.venueId),
+  foreignKey({
+    columns: [table.supersedesId, table.competitorId, table.venueId],
+    foreignColumns: [table.id, table.competitorId, table.venueId],
+    name: "competitor_price_captures_supersedes",
+  }),
+  check("competitor_price_captures_not_self", sql`${table.supersedesId} IS NULL OR ${table.supersedesId} <> ${table.id}`),
+  check("competitor_price_captures_source_kind", sql`${table.sourceKind} IN ('own_page', 'brochure')`),
+  check("competitor_price_captures_basis", sql`${table.priceBasis} IN ('per_head', 'fixed')`),
+  check("competitor_price_captures_vat", sql`${table.vat} IN ('included', 'excluded', 'not_stated')`),
+  check("competitor_price_captures_source_gone", sql`${table.sourceGoneBy} IS NULL OR ${table.sourceGoneAt} IS NOT NULL`),
+  uniqueIndex("competitor_price_captures_replaced_once").on(table.supersedesId).where(sql`${table.supersedesId} IS NOT NULL`),
+  index("competitor_price_captures_venue_competitor").on(table.venueId, table.competitorId, table.capturedAt),
+]);
+
+export const competitorPageChecks = pgTable("competitor_page_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  competitorId: uuid("competitor_id").notNull(),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+  url: text("url").notNull(),
+  /** What robots.txt said: allowed, disallowed, or unreadable. */
+  robots: varchar("robots", { length: 12 }).notNull(),
+  outcome: varchar("outcome", { length: 20 }).$type<PageCheckOutcome>().notNull(),
+  httpStatus: integer("http_status"),
+  contentHash: char("content_hash", { length: 64 }),
+  /** "person" for the office's button, "schedule" for the unattended pass. */
+  runBy: varchar("run_by", { length: 10 }).notNull(),
+  triggeredBy: uuid("triggered_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [
+  foreignKey({ columns: [table.competitorId, table.venueId], foreignColumns: [competitorVenues.id, competitorVenues.venueId], name: "competitor_page_checks_competitor_venue" }),
+  check("competitor_page_checks_robots", sql`${table.robots} IN ('allowed', 'disallowed', 'unreadable')`),
+  check("competitor_page_checks_run_by", sql`${table.runBy} IN ('person', 'schedule')`),
+  index("competitor_page_checks_competitor").on(table.competitorId, table.checkedAt),
+]);
+
+export const competitorLosses = pgTable("competitor_losses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id, { onDelete: "cascade" }),
+  /** The stage move to lost, whose note is the reason. */
+  statusHistoryId: uuid("status_history_id").notNull().references(() => opportunityStatusHistory.id, { onDelete: "cascade" }),
+  competitorId: uuid("competitor_id"),
+  otherName: varchar("other_name", { length: 160 }),
+  /** A figure the client volunteered: the client's report, unverified. */
+  clientFigureMinor: integer("client_figure_minor"),
+  clientFigureBasis: varchar("client_figure_basis", { length: 10 }).$type<PriceBasis>(),
+  currency: char("currency", { length: 3 }).notNull().default("GBP"),
+  recordedBy: uuid("recorded_by").references(() => users.id, { onDelete: "set null" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.competitorId, table.venueId], foreignColumns: [competitorVenues.id, competitorVenues.venueId], name: "competitor_losses_competitor_venue" }),
+  unique("competitor_losses_one_move").on(table.statusHistoryId),
+  check("competitor_losses_one_winner", sql`(${table.competitorId} IS NULL) <> (${table.otherName} IS NULL)`),
+  check("competitor_losses_client_figure", sql`(${table.clientFigureMinor} IS NULL) = (${table.clientFigureBasis} IS NULL)`),
+  index("competitor_losses_venue_competitor").on(table.venueId, table.competitorId, table.recordedAt),
+  index("competitor_losses_opportunity").on(table.opportunityId),
 ]);

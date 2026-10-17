@@ -25,6 +25,7 @@ import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { pricingDeskRoutes } from "./routes/pricing-desk.js";
+import { competitorWatchRoutes } from "./routes/competitor-watch.js";
 import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
@@ -442,6 +443,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
   await server.register(pricingDeskRoutes, { db, prefix: "/venues/:venueId/pricing-desk" });
+  // The competitor watch (17 Oct 2026): a dated notebook beside the price list;
+  // nothing in it is read by the suggestions or sets a price.
+  await server.register(competitorWatchRoutes, { db, prefix: "/venues/:venueId/competitor-watch" });
   await server.register(turnaroundRuleRoutes, { db, prefix: "/venues/:venueId/turnaround-rules" });
   await server.register(proposalTemplateRoutes, { db, prefix: "/venues/:venueId/proposal-templates" });
   await server.register(rotaRoutes, { db, prefix: "/venues/:venueId/rota" });
