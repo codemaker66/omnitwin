@@ -14,6 +14,8 @@ import {
   TWIN_TITLE,
   TWIN_WORK_IN_PROGRESS,
   twinNodeLabel,
+  twinOpeningViewLine,
+  twinViewpointAnnouncement,
 } from "../twin/twin-copy.js";
 import {
   TWIN_FIXTURE_MANIFEST,
@@ -178,8 +180,12 @@ describe("TwinPage — ready state", () => {
 
     const label = within(stage).getByTestId("twin-node-label");
     expect(label.querySelector(".vv-twin-node-label-text")?.textContent).toBe(twinNodeLabel("scan_000", validManifest.name));
-    expect(within(label).getByRole("status").textContent).toContain("Opening view…");
-    expect(label.querySelector("[data-activity-indicator]")).not.toBeNull();
+    // Nothing is on stage yet, so the stage itself names the wait through the
+    // shared Activity capsule; scan_000 is not a confirmed room.
+    const opening = within(stage).getByTestId("twin-load-shimmer");
+    expect(within(opening).getByRole("status").textContent).toBe(twinOpeningViewLine(null));
+    expect(opening.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(within(label).queryByRole("status")).toBeNull();
     expect(screen.getByText(TWIN_DISCLOSURE)).toBeTruthy();
     // Fullscreen targets this application root, so the product-status strip
     // must be inside it instead of only in the surrounding route shell.
@@ -261,6 +267,29 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
       ).toBe("true");
     }, { timeout: 5_000 });
     expect(screen.queryByTestId("twin-quick-actions")).toBeNull();
+  });
+});
+
+describe("twin copy — where the visitor stands", () => {
+  it("names a viewpoint by its room only where a person confirmed the room", () => {
+    // scan_046 is the Grand Hall's south end in twin-rooms.ts; scan_045, the
+    // published tour's entry, is not confirmed, so it keeps its number.
+    expect(twinNodeLabel("scan_046", "Trades Hall Glasgow")).toBe("Trades Hall Glasgow · Grand Hall");
+    expect(twinNodeLabel("scan_058", "Trades Hall Glasgow")).toBe("Trades Hall Glasgow · Saloon");
+    expect(twinNodeLabel("scan_045", "Trades Hall Glasgow")).toBe("Trades Hall Glasgow · Viewpoint 46");
+    expect(twinNodeLabel("entrance", "Trades Hall Glasgow")).toBe("Trades Hall Glasgow");
+  });
+
+  it("announces the room or the number on arrival, never a count of viewpoints", () => {
+    expect(twinViewpointAnnouncement("scan_046")).toBe("Grand Hall");
+    expect(twinViewpointAnnouncement("scan_045")).toBe("Viewpoint 46");
+    expect(twinViewpointAnnouncement("entrance")).toBe("");
+    for (const line of allTwinCopy()) expect(line).not.toMatch(/Viewpoint \d+ of \d+/u);
+  });
+
+  it("names the room it is opening only when the room is confirmed", () => {
+    expect(twinOpeningViewLine(null)).toBe("Loading the panorama…");
+    expect(twinOpeningViewLine("Grand Hall")).toBe("Loading the Grand Hall panorama…");
   });
 });
 
