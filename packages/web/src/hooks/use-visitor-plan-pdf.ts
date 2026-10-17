@@ -90,7 +90,8 @@ export function visitorPlanPdfErrorMessage(error: unknown): string {
       return "This plan isn't stored any more, so there is nothing to put in a PDF. Reload the page to start a new plan.";
     }
     if (error.status === 429) {
-      return "Several PDFs have been made from this connection in the last hour. Try again later.";
+      // Every "no" offers a way forward: when to try again, and who to ask now.
+      return "Several PDFs have been made from this connection in the last hour. Try again in an hour, or use Send to Events Team.";
     }
   }
   return "The PDF couldn't be prepared. Check the connection and try again, or use Send to Events Team.";

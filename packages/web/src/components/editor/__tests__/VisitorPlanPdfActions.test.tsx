@@ -111,6 +111,15 @@ describe("visitor plan PDF hand-off", () => {
       .toBe("This plan isn't stored any more, so there is nothing to put in a PDF. Reload the page to start a new plan.");
   });
 
+  it("names when to try again and who to ask when the hourly limit is reached", async () => {
+    mocks.fetchPdf.mockRejectedValue(new ApiError(429, "The plan PDF could not be prepared.", "HTTP_ERROR"));
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId("visitor-pdf-prepare"));
+    expect((await screen.findByTestId("visitor-pdf-error")).textContent)
+      .toBe("Several PDFs have been made from this connection in the last hour. Try again in an hour, or use Send to Events Team.");
+    expect(screen.getByTestId("visitor-pdf-prepare").textContent).toBe("Try again");
+  });
+
   it("offers a retry and the events team after a network failure, and recovers", async () => {
     mocks.fetchPdf.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValueOnce(pdfBlob());
     render(<Harness />);
