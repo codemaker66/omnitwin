@@ -118,35 +118,67 @@
       "destination": "/trades-hall/cards/index.html"
     },
     {
-      "source": "/privacy{/}?",
+      "source": "/privacy",
       "destination": "/route-documents/privacy.html"
     },
     {
-      "source": "/legal/privacy{/}?",
+      "source": "/privacy/",
       "destination": "/route-documents/privacy.html"
     },
     {
-      "source": "/terms{/}?",
+      "source": "/legal/privacy",
+      "destination": "/route-documents/privacy.html"
+    },
+    {
+      "source": "/legal/privacy/",
+      "destination": "/route-documents/privacy.html"
+    },
+    {
+      "source": "/terms",
       "destination": "/route-documents/terms.html"
     },
     {
-      "source": "/legal/terms{/}?",
+      "source": "/terms/",
       "destination": "/route-documents/terms.html"
     },
     {
-      "source": "/accessibility{/}?",
+      "source": "/legal/terms",
+      "destination": "/route-documents/terms.html"
+    },
+    {
+      "source": "/legal/terms/",
+      "destination": "/route-documents/terms.html"
+    },
+    {
+      "source": "/accessibility",
       "destination": "/route-documents/accessibility.html"
     },
     {
-      "source": "/legal/accessibility{/}?",
+      "source": "/accessibility/",
       "destination": "/route-documents/accessibility.html"
     },
     {
-      "source": "/trades-house/leaflet{/}?",
+      "source": "/legal/accessibility",
+      "destination": "/route-documents/accessibility.html"
+    },
+    {
+      "source": "/legal/accessibility/",
+      "destination": "/route-documents/accessibility.html"
+    },
+    {
+      "source": "/trades-house/leaflet",
       "destination": "/route-documents/trades-house-leaflet.html"
     },
     {
-      "source": "/pricing{/}?",
+      "source": "/trades-house/leaflet/",
+      "destination": "/route-documents/trades-house-leaflet.html"
+    },
+    {
+      "source": "/pricing",
+      "destination": "/route-documents/pricing.html"
+    },
+    {
+      "source": "/pricing/",
       "destination": "/route-documents/pricing.html"
     },
     {
@@ -154,183 +186,363 @@
       "destination": "/index.html"
     },
     {
-      "source": "/app{/}?",
+      "source": "/app",
       "destination": "/index.html"
     },
     {
-      "source": "/work-in-progress{/}?",
+      "source": "/app/",
       "destination": "/index.html"
     },
     {
-      "source": "/splats/:path*{/}?",
+      "source": "/work-in-progress",
       "destination": "/index.html"
     },
     {
-      "source": "/landing{/}?",
+      "source": "/work-in-progress/",
       "destination": "/index.html"
     },
     {
-      "source": "/welcome{/}?",
+      "source": "/splats/:path*",
       "destination": "/index.html"
     },
     {
-      "source": "/living-hall{/}?",
+      "source": "/splats/:path*/",
       "destination": "/index.html"
     },
     {
-      "source": "/editor{/}?",
+      "source": "/landing",
       "destination": "/index.html"
     },
     {
-      "source": "/demo{/}?",
+      "source": "/landing/",
       "destination": "/index.html"
     },
     {
-      "source": "/fresh{/}?",
+      "source": "/welcome",
       "destination": "/index.html"
     },
     {
-      "source": "/login{/}?",
+      "source": "/welcome/",
       "destination": "/index.html"
     },
     {
-      "source": "/register{/}?",
+      "source": "/living-hall",
       "destination": "/index.html"
     },
     {
-      "source": "/oauth-consent{/}?",
+      "source": "/living-hall/",
       "destination": "/index.html"
     },
     {
-      "source": "/onboard{/}?",
+      "source": "/editor",
       "destination": "/index.html"
     },
     {
-      "source": "/plan{/}?",
+      "source": "/editor/",
       "destination": "/index.html"
     },
     {
-      "source": "/plan/:code{/}?",
+      "source": "/demo",
       "destination": "/index.html"
     },
     {
-      "source": "/blueprint{/}?",
+      "source": "/demo/",
       "destination": "/index.html"
     },
     {
-      "source": "/blueprint/:configId{/}?",
+      "source": "/fresh",
       "destination": "/index.html"
     },
     {
-      "source": "/v/:venueSlug/plan{/}?",
+      "source": "/fresh/",
       "destination": "/index.html"
     },
     {
-      "source": "/hallkeeper{/}?",
+      "source": "/login",
       "destination": "/index.html"
     },
     {
-      "source": "/hallkeeper/:configId{/}?",
+      "source": "/login/",
       "destination": "/index.html"
     },
     {
-      "source": "/dev/hallkeeper-walkthrough{/}?",
+      "source": "/register",
       "destination": "/index.html"
     },
     {
-      "source": "/dev/capture-intake{/}?",
+      "source": "/register/",
       "destination": "/index.html"
     },
     {
-      "source": "/dev/assets/rooms{/}?",
+      "source": "/oauth-consent",
       "destination": "/index.html"
     },
     {
-      "source": "/dev/trades-hall-visual{/}?",
+      "source": "/oauth-consent/",
       "destination": "/index.html"
     },
     {
-      "source": "/diary{/}?",
+      "source": "/onboard",
       "destination": "/index.html"
     },
     {
-      "source": "/dashboard{/}?",
+      "source": "/onboard/",
       "destination": "/index.html"
     },
     {
-      "source": "/ops/handoff/:handoffPackId{/}?",
+      "source": "/plan",
       "destination": "/index.html"
     },
     {
-      "source": "/ops/events/:eventId{/}?",
+      "source": "/plan/",
       "destination": "/index.html"
     },
     {
-      "source": "/event-architect{/}?",
+      "source": "/plan/:code",
       "destination": "/index.html"
     },
     {
-      "source": "/event-architect/runs/:runId{/}?",
+      "source": "/plan/:code/",
       "destination": "/index.html"
     },
     {
-      "source": "/events/:eventId{/}?",
+      "source": "/blueprint",
       "destination": "/index.html"
     },
     {
-      "source": "/trades-house{/}?",
+      "source": "/blueprint/",
       "destination": "/index.html"
     },
     {
-      "source": "/trades-hall-leaflet{/}?",
+      "source": "/blueprint/:configId",
       "destination": "/index.html"
     },
     {
-      "source": "/trades-house/discover-your-craft{/}?",
+      "source": "/blueprint/:configId/",
       "destination": "/index.html"
     },
     {
-      "source": "/quiz{/}?",
+      "source": "/v/:venueSlug/plan",
       "destination": "/index.html"
     },
     {
-      "source": "/venues/:venueSlug/captures/:roomSlug?{/}?",
+      "source": "/v/:venueSlug/plan/",
       "destination": "/index.html"
     },
     {
-      "source": "/captures/:roomSlug?{/}?",
+      "source": "/hallkeeper",
       "destination": "/index.html"
     },
     {
-      "source": "/room/:roomSlug{/}?",
+      "source": "/hallkeeper/",
       "destination": "/index.html"
     },
     {
-      "source": "/venues/:venueSlug/twin{/}?",
+      "source": "/hallkeeper/:configId",
       "destination": "/index.html"
     },
     {
-      "source": "/venues/:venueSlug/rooms/:roomSlug{/}?",
+      "source": "/hallkeeper/:configId/",
       "destination": "/index.html"
     },
     {
-      "source": "/tour{/}?",
+      "source": "/dev/hallkeeper-walkthrough",
       "destination": "/index.html"
     },
     {
-      "source": "/proposal/:shareCode{/}?",
+      "source": "/dev/hallkeeper-walkthrough/",
       "destination": "/index.html"
     },
     {
-      "source": "/proposal-share/:token{/}?",
+      "source": "/dev/capture-intake",
       "destination": "/index.html"
     },
     {
-      "source": "/proposal-preview/:proposalId{/}?",
+      "source": "/dev/capture-intake/",
       "destination": "/index.html"
     },
     {
-      "source": "/supplier-share/:token{/}?",
+      "source": "/dev/assets/rooms",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/dev/assets/rooms/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/dev/trades-hall-visual",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/dev/trades-hall-visual/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/diary",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/diary/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/dashboard/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/ops/handoff/:handoffPackId",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/ops/handoff/:handoffPackId/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/ops/events/:eventId",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/ops/events/:eventId/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/event-architect",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/event-architect/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/event-architect/runs/:runId",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/event-architect/runs/:runId/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/events/:eventId",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/events/:eventId/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/trades-house",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/trades-house/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/trades-hall-leaflet",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/trades-hall-leaflet/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/trades-house/discover-your-craft",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/trades-house/discover-your-craft/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/quiz",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/quiz/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/venues/:venueSlug/captures/:roomSlug?",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/venues/:venueSlug/captures/:roomSlug?/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/captures/:roomSlug?",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/captures/:roomSlug?/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/room/:roomSlug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/room/:roomSlug/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/venues/:venueSlug/twin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/venues/:venueSlug/twin/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/venues/:venueSlug/rooms/:roomSlug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/venues/:venueSlug/rooms/:roomSlug/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/tour",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/tour/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/proposal/:shareCode",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/proposal/:shareCode/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/proposal-share/:token",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/proposal-share/:token/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/proposal-preview/:proposalId",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/proposal-preview/:proposalId/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/supplier-share/:token",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/supplier-share/:token/",
       "destination": "/index.html"
     }
   ],

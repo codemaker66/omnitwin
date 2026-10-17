@@ -72,9 +72,11 @@ const ROUTER_PATHS = productionRouterPaths();
 // --- Vercel's source syntax --------------------------------------------------
 // Vercel matches `source` with path-to-regexp 6 (strict, case-sensitive). The
 // rules here use only this subset, and anything else fails the test rather
-// than be guessed at: literal segments, `:name` with an optional `?`, `*` or
-// `+` (the `/` before it is its prefix), and `{/}?` for an optional trailing
-// slash.
+// than be guessed at: literal segments, and `:name` with an optional `?`, `*`
+// or `+` (the `/` before it is its prefix). A trailing slash is its own rule
+// (`/plan/:code` and `/plan/:code/`), the form this file already used before
+// the allowlist, rather than a `{/}?` group whose handling by Vercel nobody
+// here has seen on a deploy.
 const SEGMENT = "[^/#?]+?";
 
 function sourcePattern(source: string): RegExp {
@@ -88,11 +90,6 @@ function sourcePattern(source: string): RegExp {
       else if (modifier === "?") pattern += `(?:/(${SEGMENT}))?`;
       else pattern += `(?:/((?:${SEGMENT})(?:/(?:${SEGMENT}))*))${modifier === "*" ? "?" : ""}`;
       rest = rest.slice(named[0].length);
-      continue;
-    }
-    if (rest.startsWith("{/}?")) {
-      pattern += "(?:/)?";
-      rest = rest.slice(4);
       continue;
     }
     const literal = /^[A-Za-z0-9/_.-]/u.exec(rest);
@@ -206,7 +203,6 @@ describe("nothing outside the router is served the app", () => {
     "rewrites %s only because the router declares it",
     (source) => {
       const example = source
-        .replace("{/}?", "")
         .replace(/:[A-Za-z_]\w*\*/gu, "a/b")
         .replace(/:[A-Za-z_]\w*\??/gu, "x1Y2");
       expect(routerDeclares(example), example).toBe(true);
