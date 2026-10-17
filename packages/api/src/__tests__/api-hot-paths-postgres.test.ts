@@ -14,6 +14,7 @@ import { publicConfigRoutes } from "../routes/public-configs.js";
 import { analyticsRoutes } from "../routes/revenue-analytics.js";
 import { calendarRoutes } from "../routes/calendar.js";
 import { bookingRoutes } from "../routes/bookings.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 import { formatVenueDay, runHoldReminderPass } from "../services/hold-reminders.js";
 import { __resetResendClientForTests, sendEmail, type EmailLogger } from "../services/email.js";
 
@@ -427,7 +428,7 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       status: "active" | "released" | "cancelled" = "active", deleted = false) => ({
       venueId: a.venueId, spaceId, kind, status, title: `Booking ${kind}`, startsAt: from, endsAt: to, deletedAt: deleted ? new Date() : null,
     });
-    await db.insert(schema.bookings).values([
+    await insertBoundBookings(db, [
       booking(roomOne, "ink", at(1, 10), at(1, 18)),
       booking(roomOne, "prospect", at(3, 10), at(3, 18)), booking(roomOne, "hold", at(4, 10), at(4, 18)),
       booking(roomOne, "ink", at(5, 10), at(5, 18), "released"), booking(roomOne, "hold", at(6, 10), at(6, 18), "cancelled"),
@@ -521,7 +522,7 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         nextActionDueAt: new Date(now + DAY), decisionAt: new Date(now + decisionInDays * DAY),
         startsAt: new Date(now + startsInDays * DAY), endsAt: new Date(now + startsInDays * DAY + 4 * HOUR), ...extra,
       });
-      const rows = await db.insert(schema.bookings).values([
+      const rows = await insertBoundBookings(db, [
         hold(a.venueId, roomA0, "In range, decision in 3 days", 2, 3),
         hold(a.venueId, roomA1, "Six months out, decision overdue", 180, -1, { ownerUserId: elaine, rank: 2 }),
         hold(a.venueId, roomA1, "Nobody owns this, decision tomorrow", 60, 1, { ownerUserId: null, jointFlag: true }),
@@ -531,7 +532,7 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         { venueId: a.venueId, spaceId: roomA1, kind: "ink", title: "Confirmed dinner",
           startsAt: new Date(now + 3 * DAY), endsAt: new Date(now + 3 * DAY + 4 * HOUR), decisionAt: new Date(now - DAY) },
         hold(b.venueId, b.rooms[0] ?? "", "Other venue, decision overdue", 30, -1, { ownerUserId: null }),
-      ]).returning({ id: schema.bookings.id, title: schema.bookings.title });
+      ]);
       const id = (title: string): string => rows.find((row) => row.title === title)?.id ?? "";
       return { a, b, staff, otherStaff, now, id, roomA0, roomA1 };
     }
@@ -583,7 +584,7 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         nextActionDueAt: nextActionInDays === null ? null : new Date(now + nextActionInDays * DAY),
         startsAt: new Date(now + startsInDays * DAY), endsAt: new Date(now + startsInDays * DAY + 4 * HOUR), ...extra,
       });
-      await db.insert(schema.bookings).values([
+      await insertBoundBookings(db, [
         hold(a.venueId, room0, "In range, next action in 3 days", 2, 3),
         hold(a.venueId, room1, "Six months out, next action overdue", 180, -2),
         hold(a.venueId, room0, "Next action in 10 days", 60, 10),
@@ -623,7 +624,7 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         extra: Partial<typeof schema.bookings.$inferInsert> = {}): typeof schema.bookings.$inferInsert => ({
         venueId, spaceId, kind: "hold", title, rank: 1, startsAt: at(days, from), endsAt: at(days, to), ...extra,
       });
-      await db.insert(schema.bookings).values([
+      await insertBoundBookings(db, [
         // Six months out, two holds cross: the 1st option first.
         booking(a.venueId, room0, "Six months, 2nd option", 180, 13, 20, { rank: 2 }),
         booking(a.venueId, room0, "Six months, 1st option", 180, 12, 18),

@@ -35,6 +35,7 @@ describe("event phase graph contracts", () => {
       "executed",
       "closed",
       "cancelled",
+      "lost",
     ]);
   });
 
