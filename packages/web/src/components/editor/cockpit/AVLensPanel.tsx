@@ -85,8 +85,13 @@ export function AVLensPanel(): ReactElement {
   const width = coverageAngleDeg !== null && listenerDistanceM !== null
     ? coverageWidthM(listenerDistanceM, coverageAngleDeg)
     : null;
-  const speechOverAmbient = splAtListener !== null && ambientDb !== null ? splAtListener - ambientDb : null;
-  const belowAmbient = speechOverAmbient !== null && speechOverAmbient <= 0;
+  // Compared in whole decibels, the figure the panel shows, so a chip never
+  // contradicts the number beside it ("Short of the target by 0 dB", or
+  // "Below the ambient noise" beside "0 dB over ambient").
+  const speechOverAmbient = splAtListener !== null && ambientDb !== null
+    ? Math.round(splAtListener) - ambientDb
+    : null;
+  const belowAmbient = speechOverAmbient !== null && speechOverAmbient < 0;
   const shortOfTarget = speechOverAmbient !== null && targetSnrDb !== null && speechOverAmbient < targetSnrDb
     ? targetSnrDb - speechOverAmbient
     : null;
@@ -143,7 +148,9 @@ export function AVLensPanel(): ReactElement {
         {speechOverAmbient !== null && (
           <LensPanelMetric
             label="Speech over ambient"
-            value={speechOverAmbient >= 0 ? `${decibels(speechOverAmbient)} over ambient` : `${decibels(-speechOverAmbient)} under ambient`}
+            value={speechOverAmbient === 0
+              ? "Level with ambient"
+              : speechOverAmbient > 0 ? `${decibels(speechOverAmbient)} over ambient` : `${decibels(-speechOverAmbient)} under ambient`}
           />
         )}
         {targetSnrDb !== null && <LensPanelMetric label="Target entered" value={`+${String(targetSnrDb)} dB over ambient`} />}

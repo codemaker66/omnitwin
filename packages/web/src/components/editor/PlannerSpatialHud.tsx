@@ -475,7 +475,7 @@ export function PlannerSpatialHud(): React.ReactElement {
             </strong>
             <span style={{ color: "#d8d0c4", fontSize: 12, lineHeight: 1.35 }}>
               {hasLayout
-                ? `${stats.chairs.toLocaleString("en-GB")} seats can feed a revenue scenario once quote or event data is linked.`
+                ? `${countLabel(stats.chairs, "seat")} can feed a revenue scenario once quote or event data is linked.`
                 : "Place furniture and link quote/event data to calculate exact commercial scenarios."}
             </span>
           </div>

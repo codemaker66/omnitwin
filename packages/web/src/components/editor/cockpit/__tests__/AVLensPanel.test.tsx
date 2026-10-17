@@ -77,6 +77,24 @@ describe("AVLensPanel — nothing assumed", () => {
     expect(metricValue("Speech over ambient")).toBe("30 dB under ambient");
   });
 
+  it("never puts a chip beside a figure that contradicts it", () => {
+    render(<AVLensPanel />);
+    enter("av-spl", "100");
+    enter("av-distance", "9");
+    enter("av-ambient", "71");
+    enter("av-target", "10");
+    // 100 − 19.08 = 80.9 dB, shown as 81: 10 dB over a 71 dB room meets the
+    // 10 dB target as shown, so no "Short of the target by 0 dB".
+    expect(metricValue("SPL at listener")).toBe("81 dB");
+    expect(metricValue("Speech over ambient")).toBe("10 dB over ambient");
+    expect(screen.queryByTestId("av-status")).toBeNull();
+    // Level with the room: not "Below the ambient noise", and not "0 dB over".
+    enter("av-ambient", "81");
+    expect(metricValue("Speech over ambient")).toBe("Level with ambient");
+    expect(screen.getByTestId("av-status").textContent).toBe("Short of the target entered");
+    expect(metricValue("Short of the target by")).toBe("10 dB");
+  });
+
   it("clearing a figure returns it to not recorded", () => {
     render(<AVLensPanel />);
     enter("av-ambient", "70");

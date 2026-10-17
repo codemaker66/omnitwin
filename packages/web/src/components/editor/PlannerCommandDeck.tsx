@@ -35,6 +35,7 @@ import {
   isDiningTableItem,
 } from "../../lib/furniture-semantics.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
+import { countLabel } from "../../lib/count-label.js";
 
 interface CommandAction {
   readonly id: string;
@@ -76,7 +77,7 @@ function selectedCopy(
     };
   }
   return {
-    title: `${selectedCount.toLocaleString("en-GB")} items selected`,
+    title: `${countLabel(selectedCount, "item")} selected`,
     detail: "Move, group or delete the selection.",
     metric: null,
   };
@@ -410,7 +411,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
         id: "auto-fill",
         label: forGuests > 0 ? `Auto-fill ${forGuests.toLocaleString("en-GB")}` : "Auto-fill",
         ariaLabel: forGuests > 0
-          ? `Auto-fill a banquet layout for ${String(forGuests)} guests`
+          ? `Auto-fill a banquet layout for ${countLabel(forGuests, "guest")}`
           : "Auto-fill the room with banquet tables",
         icon: <LayoutGrid size={16} aria-hidden="true" />,
         onClick: () => {
@@ -426,7 +427,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
         title: "Arrange the room",
         detail: placedItems.length === 0
           ? (plannedGuestCount !== null && plannedGuestCount > 0
-            ? `Auto-fill for ${plannedGuestCount.toLocaleString("en-GB")} guests, or add furniture.`
+            ? `Auto-fill for ${countLabel(plannedGuestCount, "guest")}, or add furniture.`
             : "Auto-fill a banquet layout, or add furniture.")
           : "Add furniture or draw setup notes.",
         metric: placedItems.length === 0
