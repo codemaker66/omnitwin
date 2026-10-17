@@ -295,19 +295,10 @@ export const BOARD_COPY = {
     extendTo: (day: string): string => `Extend to ${day}`,
     extended: (title: string, day: string): string => `${title} now decides by ${day}.`,
     planTitle: "Floor plan",
-    planNone: "No floor plan. Start one with this booking's name and times.",
-    planAttached: "Floor plan attached.",
-    planStart: "Start a floor plan",
     planOpen: "Open the plan",
-    planDetach: "Detach",
-    planStarted: (title: string): string => `Started a floor plan for ${title}.`,
-    planDetached: (title: string): string => `Detached the floor plan from ${title}.`,
-    planFailed: "The floor plan could not be started — the booking is unchanged.",
-    // The second leg failed: the plan EXISTS but is not attached yet. Saying
-    // "the booking is unchanged" here would be true and useless; saying
-    // nothing about the created plan would be dishonest. Retrying re-uses
-    // the plan that was already made rather than creating a second one.
-    planLinkFailed: "Plan created but not attached. Try again to attach it.",
+    /** Interest only has no event yet: making it provisional or confirmed
+     *  makes one with it (the bind, migration 0090). */
+    planWhenHeld: "The floor plan starts when this date is made provisional or confirmed.",
     /** The room list's first line while no room is chosen: an enquiry
      *  whose guest named none is not held on the room it is filed under. */
     chooseRoom: "Choose a room",

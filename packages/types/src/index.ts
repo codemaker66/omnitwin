@@ -2507,6 +2507,9 @@ export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
 // Fix-first item 8: the promoted 2nd option's notice and drafted email.
 export * from "./hold-promotion.js";
+// The bind (event-spine Phase A): every hold and ink has its event, whose
+// status follows its bookings.
+export * from "./event-binding.js";
 export * from "./diary-command.js";
 export * from "./room-layout-timeline.js";
 // T-637 slice B: the staff rota and its working-time checks.

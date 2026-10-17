@@ -3389,7 +3389,11 @@ export const bookings = pgTable("bookings", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id),
   spaceId: uuid("space_id").notNull().references(() => spaces.id),
-  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  // The bind (migration 0090): every hold and ink has its event
+  // (bookings_bound_to_event), and an event with bookings cannot be deleted
+  // (RESTRICT; events are soft-deleted). Interest only and the venue's own
+  // blocks may have none. Writers go through services/event-binding.ts.
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "restrict" }),
   kind: varchar("kind", { length: 20 }).$type<BookingKind>().notNull(),
   status: varchar("status", { length: 20 }).$type<BookingLiveness>().notNull().default("active"),
   title: varchar("title", { length: 200 }).notNull(),
@@ -3426,7 +3430,8 @@ export const bookings = pgTable("bookings", {
     columns: [table.eventId, table.venueId],
     foreignColumns: [events.id, events.venueId],
     name: "bookings_event_venue_fk",
-  }),
+  }).onDelete("restrict"),
+  check("bookings_bound_to_event", sql`${table.kind} NOT IN ('hold', 'ink') OR ${table.eventId} IS NOT NULL`),
   foreignKey({
     columns: [table.spaceId, table.venueId],
     foreignColumns: [spaces.id, spaces.venueId],
@@ -3440,6 +3445,29 @@ export const bookings = pgTable("bookings", {
   index("bookings_venue_next_action_idx").on(table.venueId, table.nextActionDueAt),
   index("bookings_enquiry_idx").on(table.enquiryId),
   index("bookings_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
+]);
+
+// What migration 0090 asks a person to look at after binding the bookings
+// that had no event: a booking whose enquiry's bookings were in more than one
+// event, a new event that may be the same occasion as another booking's, and
+// each existing event whose status it changed (previousStatus keeps the old
+// one). Written once by the migration; read-only after.
+export const eventBindingReviews = pgTable("event_binding_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  bookingId: uuid("booking_id").references(() => bookings.id, { onDelete: "cascade" }),
+  reason: varchar("reason", { length: 40 })
+    .$type<"enquiry_events_differ" | "possibly_same_event" | "event_status_derived">().notNull(),
+  detail: text("detail").notNull(),
+  previousStatus: varchar("previous_status", { length: 30 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("event_binding_reviews_venue_idx").on(table.venueId, table.createdAt),
+  check(
+    "event_binding_reviews_reason_check",
+    sql`${table.reason} IN ('enquiry_events_differ', 'possibly_same_event', 'event_status_derived')`,
+  ),
 ]);
 
 // House status-history convention (enquiry_status_history pattern). Rows
