@@ -84,7 +84,8 @@ export function HallSunDial({ inline = false }: HallSunDialProps): ReactElement 
   }, [mode]);
   const at = mode === "now" ? now : chosen;
   const dayKey = msToWallInput(at, VENUE_TIME_ZONE).slice(0, 10);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the day changes only with its date
+  // Keyed by the date alone: a day's sun times and path are the same for any
+  // moment in it, so dragging through the day does not recompute them.
   const day: HallDay = useMemo(() => hallDay(at), [dayKey]);
   const span = day.dayEnd - day.dayStart;
   const x = (time: number): number => ((time - day.dayStart) / span) * WIDTH;

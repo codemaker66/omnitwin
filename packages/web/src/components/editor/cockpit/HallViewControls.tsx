@@ -173,7 +173,7 @@ function HallSunPopover(): ReactElement {
     <div className="hall-sun-anchor" ref={anchor}>
       <HallSunButton open={open} onToggle={() => { setOpen((value) => !value); }} />
       {drawn && (
-        <div className="hall-sun-popover" data-open={open && drawn ? "true" : "false"} role="dialog" aria-label="Time of day">
+        <div className="hall-sun-popover" data-open={open ? "true" : "false"} role="dialog" aria-label="Time of day">
           <HallSunDial />
         </div>
       )}

@@ -93,6 +93,7 @@ export function createSunCaster(options: SunCasterOptions): HallSun {
   light.shadow.bias = -0.0003;
   light.shadow.radius = 2.5;
   const node = shadow(light);
+  if (!isShadowFactor(node)) throw new Error("three's shadow() did not return a shadow node");
   // Materials lit by this light sample the same node (AnalyticLightNode reads
   // `shadow.shadowNode`), so there is one map and one redraw.
   (light.shadow as LightShadow & { shadowNode?: Node }).shadowNode = node;
@@ -143,9 +144,7 @@ export function createSunCaster(options: SunCasterOptions): HallSun {
   return {
     light,
     shadow: node,
-    // three's typings give ShadowNode no output type; at run time it is the
-    // float factor its setup returns (ShadowNode.setup, AnalyticLightNode).
-    factor: node as unknown as Node<"float">,
+    factor: node,
     aim,
     redraw: () => { light.shadow.needsUpdate = true; },
     dispose: () => {
@@ -153,6 +152,15 @@ export function createSunCaster(options: SunCasterOptions): HallSun {
       light.dispose();
     },
   };
+}
+
+/**
+ * A shadow node is the float light factor its setup returns (ShadowNode.setup,
+ * read by AnalyticLightNode). three's typings leave a ShadowNode's output type
+ * open, so the shadow base class's own flag stands for it.
+ */
+function isShadowFactor(node: Node): node is Node<"float"> {
+  return "isShadowBasedNode" in node && node.isShadowBasedNode === true;
 }
 
 /** The hall's sun: its map covers the room, and the street toward the sun. */
