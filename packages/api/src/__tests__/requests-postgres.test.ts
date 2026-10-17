@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { notificationRoutes } from "../routes/event-plan-lifecycle.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 import {
   createRequestCore,
   listRequestsForVenue,
@@ -120,12 +121,13 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       });
     }
 
-    await db.insert(schema.bookings).values({
+    // A confirmed booking is written with its event (the bind).
+    await insertBoundBookings(db, [{
       id: bookingId, venueId, spaceId: roomId, kind: "ink", title: "Fixture booking",
       createdBy: people.admin.id,
       startsAt: new Date("2030-01-10T10:00:00.000Z"),
       endsAt: new Date("2030-01-10T12:00:00.000Z"),
-    });
+    }]);
 
     if (escalationSeconds !== null) {
       await db.insert(schema.venueSettings).values({ venueId, requestEscalationSeconds: escalationSeconds });
