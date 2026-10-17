@@ -2503,6 +2503,9 @@ export * from "./booking.js";
 // The forward book on the Diary, room by room: what lets the public read a
 // room's dates (Blake, 17 October 2026, "hide date status until checked").
 export * from "./forward-book.js";
+// The bind (event-spine Phase A): every hold and ink has its event, whose
+// status follows its bookings.
+export * from "./event-binding.js";
 export * from "./diary-command.js";
 export * from "./room-layout-timeline.js";
 // T-637 slice B: the staff rota and its working-time checks.

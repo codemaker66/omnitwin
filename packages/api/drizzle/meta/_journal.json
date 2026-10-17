@@ -621,8 +621,15 @@
     {
       "idx": 88,
       "version": "7",
-      "when": 1791903600000,
-      "tag": "0093_forward_book_checks",
+      "when": 1791644400000,
+      "tag": "0090_booking_event_bind",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1791730800000,
+      "tag": "0091_forward_book_checks",
       "breakpoints": true
     }
   ]

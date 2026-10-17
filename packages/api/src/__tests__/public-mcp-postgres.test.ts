@@ -21,6 +21,7 @@ import {
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { publicMcpRoutes } from "../routes/public-mcp.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 
 // ---------------------------------------------------------------------------
 // The public MCP endpoint against migrated PostgreSQL (T-649): Blake's
@@ -116,8 +117,9 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
   async function booking(values: Omit<typeof schema.bookings.$inferInsert, "id" | "venueId">, venue = venueId): Promise<void> {
     const id = randomUUID();
     bookingIds.push(id);
-    const db = drizzle(pool, { schema });
-    await db.insert(schema.bookings).values({ id, venueId: venue, ...values });
+    // Written with its event, as every writer writes a hold or ink (the bind):
+    // the event carries the private title too, and must not leak either.
+    await insertBoundBookings(drizzle(pool, { schema }), [{ id, venueId: venue, ...values }]);
   }
 
   beforeAll(async () => {

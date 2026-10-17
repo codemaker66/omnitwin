@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
 import { ApiError } from "../../../../api/client.js";
 import { BookingDrawer } from "../BookingDrawer.js";
@@ -7,12 +7,12 @@ import { BookingDrawer } from "../BookingDrawer.js";
 // ---------------------------------------------------------------------------
 // The Diary→planner corridor (the "Floor plan" section of the booking drawer).
 //
-// The API has always accepted `eventId` on a booking — UpdateBookingSchema
-// declares it and updateBookingCore verifies the event belongs to the
-// booking's venue — but nothing in the client ever sent it, so a coordinator
-// had no way to say "this booking is the thing I am planning". Nothing pinned
-// that behaviour either, which is why reading the route adapter alone makes
-// the link look broken. These tests pin the client half.
+// Since the bind (migration 0090) every provisional and confirmed booking is
+// written together with its event, in one transaction, so the drawer no
+// longer starts, attaches or detaches a plan: that two-write path could
+// orphan an event. The section opens the event's plan; interest only is told
+// when its plan starts. events.js stays mocked so any call to create an
+// event from the drawer would be caught.
 // ---------------------------------------------------------------------------
 
 const {
@@ -103,46 +103,14 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("BookingDrawer — floor plan section", () => {
-  it.each(["resolve", "reject"] as const)("keeps activity through both plan writes and stops when the link %ss", async (settlement) => {
-    let resolveCreate: ((value: { event: { id: string } }) => void) | undefined;
-    let resolveLink: ((value: CalendarBookingEntry) => void) | undefined;
-    let rejectLink: ((reason: Error) => void) | undefined;
-    const createResponse = new Promise<{ event: { id: string } }>((resolve) => { resolveCreate = resolve; });
-    const linkResponse = new Promise<CalendarBookingEntry>((resolve, reject) => { resolveLink = resolve; rejectLink = reject; });
-    createEventMock.mockReturnValue(createResponse);
-    updateBookingMock.mockReturnValue(linkResponse);
-    renderEdit(booking());
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-    expect(screen.getByRole("status").textContent).toBe("Updating this booking…");
-    expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("true");
-    await act(async () => { resolveCreate?.({ event: { id: EVENT_ID } }); await createResponse; });
-    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { eventId: EVENT_ID });
-    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
-    await act(async () => {
-      if (settlement === "resolve") resolveLink?.(booking({ eventId: EVENT_ID }));
-      else rejectLink?.(new Error("Link unavailable"));
-      await linkResponse.catch(() => undefined);
-    });
-    expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("false");
-    if (settlement === "reject") expect(screen.getByRole("alert").textContent).toContain("created but not attached");
-  });
-  it("offers to start a plan when the booking has none", () => {
-    renderEdit(booking());
-    expect(screen.getByRole("button", { name: "Start a floor plan" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Open the plan" })).toBeNull();
-  });
-
-  it("links an attached plan into the planner at the id the planner reads, in the booking's own room", () => {
+describe("BookingDrawer — floor plan section (the bind)", () => {
+  it("opens the event's plan directly, at the id the planner reads, in the booking's own room", () => {
     renderEdit(booking({ eventId: EVENT_ID }));
     const link = screen.getByRole("link", { name: "Open the plan" });
     // /plan?eventId= is precisely what use-linked-event.ts binds from, and
     // &space= is what EditorPage's bootstrap opens; without it the planner
     // opens its default room, not the booking's.
     expect(link.getAttribute("href")).toBe(`/plan?eventId=${EVENT_ID}&space=grand-hall`);
-    expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Detach" })).toBeTruthy();
   });
 
   it("omits the room from the plan link when the booking's space is not on the board", () => {
@@ -151,105 +119,40 @@ describe("BookingDrawer — floor plan section", () => {
     expect(link.getAttribute("href")).toBe(`/plan?eventId=${EVENT_ID}`);
   });
 
-  it("seeds the new event from the booking, then links the two", async () => {
-    createEventMock.mockResolvedValue({ event: { id: EVENT_ID } });
-    updateBookingMock.mockResolvedValue(booking({ eventId: EVENT_ID }));
-    const { onSaved } = renderEdit(booking());
-
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-
-    await waitFor(() => {
-      expect(createEventMock).toHaveBeenCalledTimes(1);
-    });
-    // The event inherits the booking's identity and window — a coordinator
-    // should never retype what the Diary already knows.
-    expect(createEventMock).toHaveBeenCalledWith({
-      venueId: VENUE,
-      name: "Chamber dinner",
-      eventType: "dinner",
-      status: "draft",
-      guestCount: 0,
-      startsAt: "2026-09-18T17:00:00.000Z",
-      endsAt: "2026-09-18T22:00:00.000Z",
-    });
-    await waitFor(() => {
-      expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { eventId: EVENT_ID });
-    });
-    await waitFor(() => {
-      expect(onSaved).toHaveBeenCalledWith("Started a floor plan for Chamber dinner.");
-    });
-  });
-
-  it("detaching sends an explicit null, not an omitted field", async () => {
-    updateBookingMock.mockResolvedValue(booking());
-    const { onSaved } = renderEdit(booking({ eventId: EVENT_ID }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Detach" }));
-
-    await waitFor(() => {
-      expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { eventId: null });
-    });
-    await waitFor(() => {
-      expect(onSaved).toHaveBeenCalledWith("Detached the floor plan from Chamber dinner.");
-    });
-  });
-
-  it("never links a booking to a plan that failed to commit", async () => {
-    createEventMock.mockRejectedValue(new Error("network"));
-    const { onSaved } = renderEdit(booking());
-
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toContain("could not be started");
-    });
-    // The booking must be untouched — a half-made link is worse than none.
+  it("has no start, attach or detach step: the plan is made with the booking, in one write", () => {
+    for (const entry of [booking({ eventId: EVENT_ID }), booking({ kind: "hold", state: "hold", rank: 1, eventId: EVENT_ID })]) {
+      renderEdit(entry);
+      expect(screen.queryByRole("button", { name: /floor plan|Detach/u })).toBeNull();
+      expect(screen.queryByText(/attached|Start a floor plan/u)).toBeNull();
+      cleanup();
+    }
+    // Nothing in the drawer writes an event or a booking's link on its own.
+    expect(createEventMock).not.toHaveBeenCalled();
     expect(updateBookingMock).not.toHaveBeenCalled();
-    expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it("a failed LINK is reported honestly — the plan exists, and is not claimed otherwise", async () => {
-    createEventMock.mockResolvedValue({ event: { id: EVENT_ID } });
-    updateBookingMock.mockRejectedValue(new Error("network"));
-    const { onSaved } = renderEdit(booking());
-
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-
-    await waitFor(() => {
-      const alert = screen.getByRole("alert").textContent ?? "";
-      expect(alert).toContain("created but not attached");
-      // "the booking is unchanged" would hide the plan that now exists.
-      expect(alert).not.toContain("unchanged");
-    });
-    expect(onSaved).not.toHaveBeenCalled();
+  it("tells interest only when its plan starts, and offers no control for it", () => {
+    renderEdit(booking({ kind: "prospect", state: "prospect", eventId: null }));
+    expect(screen.getByText("Floor plan")).toBeTruthy();
+    expect(screen.getByText("The floor plan starts when this date is made provisional or confirmed.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open the plan" })).toBeNull();
   });
 
-  it("retrying after a failed link finishes the job instead of orphaning a second plan", async () => {
-    createEventMock.mockResolvedValue({ event: { id: EVENT_ID } });
-    updateBookingMock.mockRejectedValueOnce(new Error("network"));
-    renderEdit(booking());
-
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toBeTruthy();
-    });
-
-    updateBookingMock.mockResolvedValue(booking({ eventId: EVENT_ID }));
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-
-    await waitFor(() => {
-      expect(updateBookingMock).toHaveBeenCalledTimes(2);
-    });
-    // The retry must NOT mint a second event — nothing can list or delete
-    // orphans, so every stray one is invisible litter forever.
-    expect(createEventMock).toHaveBeenCalledTimes(1);
-    expect(updateBookingMock).toHaveBeenLastCalledWith(BOOKING_ID, { eventId: EVENT_ID });
+  it("shows no plan section for a house block, which never has one", () => {
+    renderEdit(booking({ kind: "internal_block", state: "internal_block", eventId: null }));
+    expect(screen.queryByText("Floor plan")).toBeNull();
   });
 
-  it("offers no plan control to a read-only role", () => {
+  it("lets a manager open the plan, though the manager does not write the Diary", () => {
+    renderEdit(booking({ eventId: EVENT_ID }), vi.fn<(message: string) => void>(), "manager");
+    expect(screen.getByRole("link", { name: "Open the plan" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  });
+
+  it("offers no plan to a role the planner does not admit", () => {
     render(
       <BookingDrawer
-        mode={{ kind: "edit", booking: booking() }}
+        mode={{ kind: "edit", booking: booking({ eventId: EVENT_ID }) }}
         rooms={ROOMS}
         venueId={VENUE}
         role="hallkeeper"
@@ -258,7 +161,7 @@ describe("BookingDrawer — floor plan section", () => {
       />,
     );
     expect(screen.queryByText("Floor plan")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open the plan" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
     expect(screen.getByRole("textbox", { name: "Title" }).closest("fieldset")?.disabled).toBe(true);
     fireEvent.submit(document.querySelector("form") as HTMLFormElement);
@@ -278,7 +181,6 @@ describe("BookingDrawer — floor plan section", () => {
       />,
     );
     expect(screen.queryByText("Floor plan")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
   });
 });
 
