@@ -150,7 +150,9 @@ describe("generateSheetPdfV2 — baseline", () => {
     };
     const text = pdfPages(await generateSheetPdfV2({ ...BASE_SHEET, floorPlan })).flat().map((line) => line.text).join("\n");
     expect(text).toContain("CATALOGUE FOOTPRINTS");
-    expect(text).toContain("0 tables · 1 chairs");
+    // Counts read as English: one chair, not "1 chairs".
+    expect(text).toContain("0 tables · 1 chair");
+    expect(text).not.toContain("1 chairs");
     // Plain orientation wording: "+X right, +Z down" is the renderer's
     // vocabulary and means nothing on a hallkeeper's printout.
     expect(text).toContain("Plan drawn looking down on the room");
