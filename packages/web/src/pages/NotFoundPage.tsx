@@ -15,8 +15,10 @@ import "./NotFoundPage.css";
 // and it is least kind to someone holding a link a person at the venue sent
 // them: they need to learn that the LINK is wrong, not their event.
 //
-// So this says what happened, offers the two things a visitor can actually do
-// (ask about a date, go to the front door), and prints the hall's telephone
+// The page cannot tell a mistyped address from an old link, so its words
+// cover both plainly (17 October 2026; the heading used to assume an expired
+// link). It says what happened, offers the two things a visitor can actually
+// do (ask about a date, go to the front door), and prints the hall's telephone
 // number — the one contact that works whatever happened to the link.
 //
 // It renders on the Fresh paper like the front door's sheet, pinned to its
@@ -25,9 +27,9 @@ import "./NotFoundPage.css";
 
 // Exported so the edge's own 404 page (public/404.html, served by Vercel for
 // any address outside the route allowlist) is held to the same words.
-export const NOT_FOUND_TITLE = "That link has expired or moved";
+export const NOT_FOUND_TITLE = "There is no page at this address";
 export const NOT_FOUND_BODY =
-  "The page you asked for isn't here. If somebody at Trades Hall sent you this link, it may have been replaced since — they can send you a fresh one.";
+  "The address may have been mistyped, or the link may be an old one that has since been replaced. If someone at Trades Hall sent it to you, they can send you a fresh one.";
 export const NOT_FOUND_HOME = "Go to the front door";
 export const NOT_FOUND_ENQUIRE = "Ask about a date";
 export const NOT_FOUND_CALL_LABEL = "Or call the hall";

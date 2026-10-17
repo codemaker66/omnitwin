@@ -46,7 +46,7 @@ describe("a link that goes nowhere", () => {
     const router = createMemoryRouter(routes, { initialEntries: ["/an-old-link-that-has-moved"] });
     render(<RouterProvider router={router} />);
     const page = await screen.findByTestId("not-found", {}, FIRST_RENDER);
-    expect(within(page).getByRole("heading", { level: 1, name: "That link has expired or moved" })).toBeTruthy();
+    expect(within(page).getByRole("heading", { level: 1, name: "There is no page at this address" })).toBeTruthy();
     expect(within(page).getByRole("link", { name: "Ask about a date" }).getAttribute("href")).toBe("/#enquire");
     expect(within(page).getByRole("link", { name: "Go to the front door" }).getAttribute("href")).toBe("/");
     expect(within(page).getByRole("link", { name: "0141 552 2418" }).getAttribute("href")).toBe("tel:+441415522418");
