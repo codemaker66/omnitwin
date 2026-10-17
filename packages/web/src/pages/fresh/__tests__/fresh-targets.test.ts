@@ -13,14 +13,16 @@ import { describe, expect, it } from "vitest";
 //
 // The browser audit measures the rendered page; this suite pins the rules the
 // targets were fixed with, so a later edit fails in the unit run. The first
-// test also reads every classed <a> and <button> in the page's own source, so
-// a new target without a 44 px rule fails here instead of shipping small.
+// test also reads every classed <a> and <button> in the page's own source (the
+// page, the dossier and the enquiry composer it carries), so a new target
+// without a 44 px rule fails here instead of shipping small.
 // ---------------------------------------------------------------------------
 
 const read = (path: string): string => readFileSync(path, "utf8");
 const FRESH = read("src/pages/fresh/fresh.css");
 const PAGE = read("src/pages/fresh/FreshPage.tsx");
 const DOSSIER = read("src/pages/fresh/RoomDossier.tsx");
+const ENQUIRY = read("src/pages/fresh/FreshEnquiry.tsx");
 
 /** The declarations inside the first top-level rule whose selector is exactly
  *  `selector`. Anchored to the start of a line, so ".fr-room-open" does not
@@ -50,6 +52,7 @@ const TARGET_RULES: Readonly<Record<string, string>> = {
   "fr-cta-quiet": ".fr-cta-quiet",
   "fr-room-open": ".fr-room-open",
   "fr-dossier-close": ".fr-dossier-close",
+  "fr-enq-copy": ".fr-enq-copy",
 };
 
 /** The first class of every <a> and <button> that carries a className. */
@@ -63,8 +66,10 @@ function classedTargets(source: string): string[] {
 }
 
 describe("/fresh's targets are 44 px", () => {
-  it("every classed link and button on the page and in the dossier has a 44 px rule", () => {
-    const classes = [...new Set([...classedTargets(PAGE), ...classedTargets(DOSSIER)])].sort();
+  it("every classed link and button on the page, in the dossier and in the composer has a 44 px rule", () => {
+    const classes = [
+      ...new Set([...classedTargets(PAGE), ...classedTargets(DOSSIER), ...classedTargets(ENQUIRY)]),
+    ].sort();
     expect(classes).toEqual(Object.keys(TARGET_RULES).sort());
     for (const name of classes) {
       const declarations = rule(FRESH, TARGET_RULES[name] ?? "");
@@ -82,6 +87,9 @@ describe("/fresh's targets are 44 px", () => {
     expect(px(legal, "min-height")).toBeGreaterThanOrEqual(44);
     // "Terms" alone is narrower than 44 px.
     expect(px(legal, "min-width")).toBeGreaterThanOrEqual(44);
+    // The composer's "or call" telephone link, beside Send and after sending.
+    expect(ENQUIRY).toContain('<span className="fr-enq-call">');
+    expect(px(rule(FRESH, ".fr-enq-call a"), "min-height")).toBeGreaterThanOrEqual(44);
   });
 
   it('"Ask about a date" in the contact block keeps the 44 px row it shares with the other contact links', () => {
