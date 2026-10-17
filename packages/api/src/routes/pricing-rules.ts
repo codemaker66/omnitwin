@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { eq, and, isNotNull, isNull } from "drizzle-orm";
+import { PricingAdviceKeySchema } from "@omnitwin/types";
 import { pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
@@ -37,6 +38,10 @@ const EstimateBody = z.object({
 
 const TierSchema = z.object({ upTo: z.number().positive(), amount: z.number().nonnegative() });
 
+/** A calendar date that exists: "2027-02-30" is refused here, not by Postgres. */
+const CalendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value, { message: "Not a calendar date" });
+
 const CreateRuleBody = z.object({
   spaceId: z.string().uuid().nullable().optional(),
   name: z.string().trim().min(1).max(200),
@@ -48,19 +53,41 @@ const CreateRuleBody = z.object({
   tiers: z.array(TierSchema).nullable().optional(),
   dayOfWeekModifiers: z.record(z.number().positive()).nullable().optional(),
   seasonalModifiers: z.record(z.number().positive()).nullable().optional(),
-  validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  validFrom: CalendarDate.nullable().optional(),
+  validTo: CalendarDate.nullable().optional(),
   isActive: z.boolean().default(true),
   // The time of day the rule is for (0089): "HH:MM", both or neither. An
   // until not after its from runs past midnight ("19:00" to "00:30").
   appliesFrom: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
   appliesUntil: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
+  // The Pricing desk's suggestion this rate follows, if any: kept in the
+  // change's record, never stored on the rule.
+  adviceKey: PricingAdviceKeySchema.nullable().optional(),
 });
+const DATE_ORDER_MESSAGE = "validFrom comes on or before validTo";
+function datesInOrder(body: { validFrom?: string | null; validTo?: string | null }): boolean {
+  const from = body.validFrom ?? null;
+  const to = body.validTo ?? null;
+  return from === null || to === null || from <= to;
+}
 const WINDOW_PAIR_MESSAGE = "appliesFrom and appliesUntil go together: both, or neither";
 function windowIsPaired(body: { appliesFrom?: string | null; appliesUntil?: string | null }): boolean {
   return ((body.appliesFrom ?? null) === null) === ((body.appliesUntil ?? null) === null);
 }
-const CreateRuleBodyChecked = CreateRuleBody.refine(windowIsPaired, { message: WINDOW_PAIR_MESSAGE, path: ["appliesUntil"] });
+const CreateRuleBodyChecked = CreateRuleBody
+  .refine(windowIsPaired, { message: WINDOW_PAIR_MESSAGE, path: ["appliesUntil"] })
+  .refine(datesInOrder, { message: DATE_ORDER_MESSAGE, path: ["validTo"] });
+
+/** A suggestion's key names one of this venue's rates, or it is not kept. */
+async function adviceKeyIsThisVenues(db: Database, venueId: string, adviceKey: string | null | undefined): Promise<boolean> {
+  if (adviceKey === null || adviceKey === undefined) return true;
+  const ruleId = adviceKey.slice(0, 36);
+  const [rule] = await db.select({ id: pricingRules.id }).from(pricingRules)
+    .where(and(eq(pricingRules.id, ruleId), eq(pricingRules.venueId, venueId)))
+    .limit(1);
+  return rule !== undefined;
+}
+const ADVICE_KEY_MESSAGE = "That suggestion is not one of this venue's";
 // A patch may send one side when the other is already stored; the handler
 // judges the pair as it will be stored.
 
@@ -180,6 +207,9 @@ export async function pricingRuleRoutes(
         return reply.status(404).send({ error: "Space not found in this venue", code: "NOT_FOUND" });
       }
     }
+    if (!await adviceKeyIsThisVenues(db, params.data.venueId, parsed.data.adviceKey)) {
+      return reply.status(400).send({ error: ADVICE_KEY_MESSAGE, code: "VALIDATION_ERROR" });
+    }
 
     const rule = await db.transaction(async (tx) => {
       const [created] = await tx.insert(pricingRules).values({
@@ -201,7 +231,9 @@ export async function pricingRuleRoutes(
       appliesUntil: parsed.data.appliesUntil ?? null,
       }).returning();
       if (created === undefined) throw new Error("Pricing rule insert returned no row");
-      await recordPricingRuleChange(tx, { kind: "created", actorUserId: request.user.id, before: null, after: created });
+      await recordPricingRuleChange(tx, {
+        kind: "created", actorUserId: request.user.id, before: null, after: created, adviceKey: parsed.data.adviceKey ?? null,
+      });
       return created;
     });
 
@@ -230,6 +262,9 @@ export async function pricingRuleRoutes(
       if (space === undefined) {
         return reply.status(404).send({ error: "Space not found in this venue", code: "NOT_FOUND" });
       }
+    }
+    if (!await adviceKeyIsThisVenues(db, params.data.venueId, parsed.data.adviceKey)) {
+      return reply.status(400).send({ error: ADVICE_KEY_MESSAGE, code: "VALIDATION_ERROR" });
     }
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
@@ -265,12 +300,20 @@ export async function pricingRuleRoutes(
         updateData["appliesFrom"] = next.appliesFrom;
         updateData["appliesUntil"] = next.appliesUntil;
       }
+      // The dates are judged as they will be stored, one side sent or both.
+      const dates = {
+        validFrom: parsed.data.validFrom === undefined ? existing.validFrom : parsed.data.validFrom,
+        validTo: parsed.data.validTo === undefined ? existing.validTo : parsed.data.validTo,
+      };
+      if (!datesInOrder(dates)) return "dates_out_of_order" as const;
       const [updated] = await tx.update(pricingRules)
         .set(updateData)
         .where(eq(pricingRules.id, existing.id))
         .returning();
       if (updated === undefined) throw new Error("Pricing rule update returned no row");
-      await recordPricingRuleChange(tx, { kind: "updated", actorUserId: request.user.id, before: existing, after: updated });
+      await recordPricingRuleChange(tx, {
+        kind: "updated", actorUserId: request.user.id, before: existing, after: updated, adviceKey: parsed.data.adviceKey ?? null,
+      });
       return updated;
     });
 
@@ -279,6 +322,9 @@ export async function pricingRuleRoutes(
     }
     if (outcome === "unpaired_window") {
       return reply.status(400).send({ error: WINDOW_PAIR_MESSAGE, code: "VALIDATION_ERROR" });
+    }
+    if (outcome === "dates_out_of_order") {
+      return reply.status(400).send({ error: DATE_ORDER_MESSAGE, code: "VALIDATION_ERROR" });
     }
     return { data: outcome };
   });

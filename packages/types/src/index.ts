@@ -2540,3 +2540,7 @@ export * from "./venue-sky.js";
 // read by the web pages, their schema.org description and the API's public
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
+
+// The Pricing desk (17 Oct 2026): who sets a price, which rate stands on a
+// date beside a rate for particular dates, and the suggestions' contract.
+export * from "./pricing-desk.js";

@@ -1,3 +1,4 @@
+import { PRICING_WRITE_ROLES as PRICE_SETTER_ROLES } from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -110,9 +111,10 @@ const VENUE_ADMINISTRATION_ROLES: ReadonlySet<string> = new Set(["admin", "manag
 /**
  * Who may set a price: create, change, delete or restore a pricing rule.
  * people-matrix.md records "A price change: admin; manager if Blake says so".
- * Whether manager stays is Blake's call, so it is this one line.
+ * Whether manager stays is Blake's call, so it is one line, in
+ * @omnitwin/types (pricing-desk.ts), which the web's controls read too.
  */
-export const PRICING_WRITE_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+export const PRICING_WRITE_ROLES: ReadonlySet<string> = new Set(PRICE_SETTER_ROLES);
 
 /** Enquiries, opportunities, CRM, proposals, quotes and revenue. */
 const COMMERCIAL_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
