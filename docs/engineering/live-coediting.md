@@ -86,12 +86,17 @@ Code: `packages/web/src/lib/layout-live/` (pure core and the socket client),
   Railway replica would split a room in half with no error anywhere. A backplane
   (Redis, or a verified Postgres LISTEN/NOTIFY) is the precondition for a second
   replica.
-- **Access is checked at join.** A role or venue change takes effect on the next
-  connection, as with the existing autosave socket.
+- **Access is checked at join and every 20 s.** The heartbeat re-reads each member's
+  role and venue and the layout's owner, venue and deletion; anyone no longer
+  admitted gets `live.revoked` and is removed (the socket stays for autosave, which
+  authorises every flush). A database error skips that pass rather than revoking all.
 - **Public-preview guests** keep single-person planning; the client never opens
   the live room for a public draft.
 - The hub drops a client frame silently when it is malformed, over 128 KB or over
-  30 frames a second (burst 40); it never closes a session over one.
+  30 frames a second (burst 40); it never closes a session over one. Object metadata
+  is flat primitives only (a nested blob once crashed `JSON.stringify` on the relay).
+  The websocket `maxPayload` is 1 MiB. A member more than 4 MiB behind skips frames.
+  A sent op not echoed within 2 s stops counting as in flight.
 
 ## Verify
 
