@@ -36,8 +36,10 @@ import { bookings, enquiries, eventPhases, events } from "../db/schema.js";
 // a draft until syncEventStatus derives its status from the bookings.
 //
 // Lock order: a booking path locks its bookings first, then the enquiry, then
-// the event (syncEventStatus). updateEventCore locks the event and only reads
-// bookings, so the two never wait on each other in a cycle.
+// the event (syncEventStatus, FOR NO KEY UPDATE so it never waits on another
+// writer's foreign-key share of the same event). updateEventCore locks the
+// event and only reads bookings, so the two never wait on each other in a
+// cycle.
 // ---------------------------------------------------------------------------
 
 /** The database or a transaction on it (nesting makes a savepoint). */
@@ -164,13 +166,20 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
  * reads its bookings in a later statement, so a concurrent writer's committed
  * booking is always seen: two holds of one event released at once leave it
  * lost, never draft. Returns the change, or null when the event is missing.
+ *
+ * The lock is FOR NO KEY UPDATE, not FOR UPDATE. Every booking written or
+ * moved onto an event takes FOR KEY SHARE on it through the foreign key, and
+ * FOR UPDATE conflicts with that: two writers adding bookings to one event at
+ * once would each hold a key share and wait for the other's, a deadlock.
+ * FOR NO KEY UPDATE still serialises the syncs with each other and with
+ * updateEventCore's FOR UPDATE, which is all the status needs.
  */
 export async function syncEventStatus(conn: BindConn, eventId: string): Promise<EventStatusChange | null> {
   const [event] = await conn.select({ id: events.id, status: events.status })
     .from(events)
     .where(eq(events.id, eventId))
     .limit(1)
-    .for("update");
+    .for("no key update");
   if (event === undefined) return null;
   const from = EventStatusSchema.parse(event.status);
   const rows = await conn.select({ kind: bookings.kind, status: bookings.status, deletedAt: bookings.deletedAt })

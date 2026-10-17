@@ -182,12 +182,20 @@ describe.skipIf(target === undefined)("the bind: every hold and ink belongs to i
   }
 
   /** Hold one row locked in another transaction while `run` starts work that
-   *  must wait for it; `run` commits to let that work through. */
-  async function withLockedRow(table: "enquiries" | "events", id: string, run: (client: PoolClient) => Promise<void>): Promise<void> {
+   *  must wait for it; `run` commits to let that work through. FOR UPDATE
+   *  also stops a booking's foreign-key check (FOR KEY SHARE) on the row;
+   *  FOR NO KEY UPDATE lets that check through and stops only the writers'
+   *  own event lock, so their bookings are written before either locks. */
+  async function withLockedRow(
+    table: "enquiries" | "events",
+    id: string,
+    run: (client: PoolClient) => Promise<void>,
+    mode: "UPDATE" | "NO KEY UPDATE" = "UPDATE",
+  ): Promise<void> {
     const client = await pool.connect();
     await client.query("BEGIN");
     try {
-      await client.query(`SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`, [id]);
+      await client.query(`SELECT id FROM ${table} WHERE id = $1 FOR ${mode}`, [id]);
       await run(client);
     } finally {
       await client.query("ROLLBACK");
@@ -464,6 +472,68 @@ describe.skipIf(target === undefined)("the bind: every hold and ink belongs to i
       expect((await both).map((result) => result.ok)).toEqual([true, true]);
     });
     expect((await eventRow(eventId)).status).toBe(expected);
+    expect(await readBindInvariant(db, v.venueId)).toEqual({ unboundBookings: 0, contradictingEvents: 0 });
+  });
+
+  it("lets two coordinators add rooms to one event at the same moment, and neither write fails", async () => {
+    const v = await venue("two writers, one event");
+    const dinner = await createBookingCore(db, v.admin, CreateBookingSchema.parse({
+      venueId: v.venueId, spaceId: v.rooms.hall, kind: "ink", title: "Incorporation dinner",
+      startsAt: at("18:00"), endsAt: at("23:00"),
+    }));
+    if (!dinner.ok || dinner.booking.eventId === null) throw new Error("Fixture not bound");
+    const eventId = dinner.booking.eventId;
+    await withLockedRow("events", eventId, async (client) => {
+      const both = Promise.all([
+        createBookingCore(db, v.admin, CreateBookingSchema.parse({
+          venueId: v.venueId, spaceId: v.rooms.saloon, kind: "hold", title: "Incorporation drinks", eventId,
+          startsAt: at("17:00"), endsAt: at("18:00"), rank: 1, ...hygiene(v.admin.id),
+        })),
+        createBookingCore(db, v.admin, CreateBookingSchema.parse({
+          venueId: v.venueId, spaceId: v.rooms.reception, kind: "ink", title: "Incorporation cloakroom", eventId,
+          startsAt: at("17:00"), endsAt: at("23:30"),
+        })),
+      ]);
+      // Both bookings are written and both writers wait for the event.
+      await blocked(2);
+      await client.query("COMMIT");
+      expect((await both).map((result) => result.ok)).toEqual([true, true]);
+    }, "NO KEY UPDATE");
+    expect((await db.select().from(schema.bookings).where(eq(schema.bookings.eventId, eventId)))).toHaveLength(3);
+    expect((await eventRow(eventId)).status).toBe("confirmed");
+    expect(await readBindInvariant(db, v.venueId)).toEqual({ unboundBookings: 0, contradictingEvents: 0 });
+  });
+
+  it("moves two bookings between two events in opposite directions at once, and both events follow", async () => {
+    const v = await venue("crossed moves");
+    const option = async (title: string, spaceId: string): Promise<{ id: string; eventId: string }> => {
+      const made = await createBookingCore(db, v.admin, CreateBookingSchema.parse({
+        venueId: v.venueId, spaceId, kind: "hold", title, startsAt: at("18:00", 30), endsAt: at("22:00", 30),
+        rank: 1, ...hygiene(v.admin.id),
+      }));
+      if (!made.ok || made.booking.eventId === null) throw new Error("Fixture not bound");
+      return { id: made.booking.id, eventId: made.booking.eventId };
+    };
+    const bell = await option("Bell dinner", v.rooms.hall);
+    const moir = await option("Moir dinner", v.rooms.saloon);
+    // Both syncs lock the lower event id first; hold it so both moves are
+    // written before either sync runs.
+    const [first] = [bell.eventId, moir.eventId].sort();
+    if (first === undefined) throw new Error("No events");
+    await withLockedRow("events", first, async (client) => {
+      const both = Promise.all([
+        updateBookingCore(db, v.admin, bell.id, { eventId: moir.eventId }),
+        updateBookingCore(db, v.admin, moir.id, { eventId: bell.eventId }),
+      ]);
+      await blocked(2);
+      await client.query("COMMIT");
+      expect((await both).map((result) => result.ok)).toEqual([true, true]);
+    }, "NO KEY UPDATE");
+    const [bellNow] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, bell.id));
+    const [moirNow] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, moir.id));
+    expect([bellNow?.eventId, moirNow?.eventId]).toEqual([moir.eventId, bell.eventId]);
+    expect((await eventRow(bell.eventId)).status).toBe("draft");
+    expect((await eventRow(moir.eventId)).status).toBe("draft");
     expect(await readBindInvariant(db, v.venueId)).toEqual({ unboundBookings: 0, contradictingEvents: 0 });
   });
 

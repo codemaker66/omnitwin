@@ -42,7 +42,12 @@ CHECK refuses anything that skips them, so it is never relaxed for an import.
 
 `deriveEventStatus` in `packages/types/src/event-binding.ts`, re-run by
 `syncEventStatus` after every booking write (it locks the event row and then
-reads the bookings, so a booking committed meanwhile is always seen):
+reads the bookings, so a booking committed meanwhile is always seen). The lock
+is `FOR NO KEY UPDATE`: each booking written or moved onto an event holds
+`FOR KEY SHARE` on it through the foreign key, and `FOR UPDATE` conflicts with
+that, so two writers adding rooms to one event at once (or moving bookings
+between two events in opposite directions) would deadlock. Both cases have
+Postgres tests.
 
 | Its bookings (deleted rows and house blocks are not evidence) | Its status |
 | --- | --- |
@@ -66,6 +71,18 @@ event the Diary speaks for takes its derived status; then the RESTRICT keys and
 the CHECK. Nothing is deleted. A group of only deleted bookings gets a deleted
 event.
 
+Deploying it: Railway's pre-deploy step runs 0090 while the previous API
+container still serves. From the moment 0090 commits until the new container
+takes over, the old code's unbound writes (a hold made from an enquiry, a Diary
+hold or ink with no event, interest made provisional) are refused by the CHECK
+and write nothing: an integrity error, or a server error for the transition.
+They succeed again once the new container is live, so deploy at a quiet time.
+The migration takes `SHARE ROW EXCLUSIVE` on both tables and later
+`ACCESS EXCLUSIVE` for its `ALTER TABLE`s; a request holding a read lock and
+then writing can deadlock with that upgrade, and Postgres then aborts one
+side: the request (one failed write) or the migration (the deploy fails, the
+old container keeps serving, and the deploy can be run again).
+
 `event_binding_reviews` lists what a person should look at: a booking whose
 enquiry was already split across events (`enquiry_events_differ`), a new event
 that may be the same occasion as another booking's (`possibly_same_event`:
@@ -81,6 +98,8 @@ out), and every existing event whose status changed, with the status it had
 - `packages/api/src/__tests__/booking-event-bind-postgres.test.ts` (platform
   database gate): the CHECK and RESTRICT, every writer, two holds from one
   enquiry at once, a release racing a confirmation and two releases at once,
+  two writers adding rooms to one event at once, two bookings moved between
+  two events in opposite directions at once,
   a released option's phases leaving the calendar, the Diary's time on the
   hallkeeper's sheet, and 0090 run by the real migrator over a database written
   before it (backfill, review list, the SQL statuses checked against
