@@ -150,7 +150,7 @@ describe("RoomsHomePage", () => {
     expect(footer.getByRole("link", { name: "About the venue" }).getAttribute("href")).toBe("/fresh");
     expect(footer.getByRole("link", { name: "Ask about a date" }).getAttribute("href")).toBe("#enquire");
     // The one switch /fresh already obeys for its own tour door.
-    expect(footer.queryByRole("link", { name: "Virtual tour · Work in progress" })?.getAttribute("href") ?? null)
+    expect(footer.queryByRole("link", { name: "Panorama tour" })?.getAttribute("href") ?? null)
       .toBe(FRESH_TOUR_ENABLED ? "/venues/trades-hall/twin" : null);
     expect(screen.queryByRole("link", { name: /Walkable tour/i })).toBeNull();
     const legal = within(screen.getByRole("navigation", { name: "Legal" }));
