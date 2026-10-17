@@ -1,0 +1,151 @@
+/* ---------------------------------------------------------------------------
+   The competitor watch on the Pricing desk, in the Enquiries desk's grammar:
+   the ivory sheet lists the set, the forest panel opens one venue. Only what
+   the watch adds is here, from the register's own tokens; no new hue. Words
+   carry every state (Current, Check due, Page changed: re-capture); the
+   tint only echoes them. Every control is at least 44px tall.
+   --------------------------------------------------------------------------- */
+
+/* Five counts on the plane for those who set prices. */
+.pr-stages:has(> .enq-stage:nth-child(5)) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+/* The sheet: a quiet line of what the set holds, and its two actions. */
+.cw-bar { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 18px; }
+.cw-bar .pr-basis { flex: 1 1 32ch; }
+.cw-bar__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.cw-bar__actions .enq-button, .cw-empty__actions .enq-button { min-height: 44px; }
+.cw-empty__actions { justify-content: center; margin-top: 18px; }
+.cw-sheet-cta { border-color: var(--enq-ink); background: var(--enq-ink); color: var(--enq-sheet); }
+.cw-sheet-cta:hover:not(:disabled) { background: var(--enq-ink-2); }
+
+/* A venue's row: when its newest figure was seen, the figure with its basis. */
+.cw-date--none { border-style: dashed; background: transparent; }
+.cw-date--none .enq-date__month { color: var(--enq-ink-3); font-size: 11px; font-weight: 600; text-align: center; }
+.cw-figure {
+  color: var(--enq-ink);
+  font: 400 18px/1.2 var(--enq-serif);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* States, each with its word. */
+.cw-chip[data-attention="page_changed"] { background: var(--house-copper-wash); color: var(--house-copper-chip); }
+.cw-chip[data-attention="review_due"] { background: var(--house-amber-wash); color: var(--house-amber-chip); }
+.pr-panel .cw-chip[data-attention] { border: 1px solid var(--enq-forest-rule); background: transparent; color: var(--enq-forest-ink); }
+.cw-chip[data-freshness] { border: 1px solid var(--enq-forest-rule); background: transparent; color: var(--enq-forest-ink); }
+.cw-chip[data-freshness="current"] { border-color: var(--house-sage-lit); }
+.cw-chip[data-freshness="check_due"] { border-color: var(--house-amber-lit); }
+.cw-chip[data-freshness="stale"], .cw-chip[data-freshness="source_gone"],
+.cw-chip[data-freshness="unverified"], .cw-chip[data-freshness="replaced"] { color: var(--enq-forest-ink-2); }
+
+/* The forest panel: one venue. */
+.cw-reason { margin: 0; color: var(--enq-forest-ink); font: 400 19px/1.45 var(--enq-serif); text-wrap: pretty; }
+.cw-facts { display: grid; gap: 10px; margin: 18px 0 0; }
+.cw-facts > div { display: grid; gap: 2px; }
+.cw-facts dt { color: var(--enq-forest-ink-2); font-size: 13px; }
+.cw-facts dd { margin: 0; color: var(--enq-forest-ink); font-size: 15px; overflow-wrap: anywhere; }
+.cw-link { color: var(--enq-forest-ink); text-decoration: underline; text-decoration-color: var(--house-forest-edge); text-underline-offset: 3px; }
+.cw-link:hover { text-decoration-color: var(--enq-cream); }
+.cw-link:focus-visible { outline: 2px solid var(--enq-cream); outline-offset: 2px; border-radius: 2px; }
+
+.cw-captures { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.cw-capture { display: grid; gap: 4px; padding: 14px 0 0; border-top: 1px solid var(--enq-forest-rule); }
+.cw-capture:first-child { padding-top: 0; border-top: 0; }
+.cw-capture__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.cw-capture__name { color: var(--enq-forest-ink); font-size: 15px; font-weight: 600; }
+.cw-capture__figure {
+  margin: 2px 0 0;
+  color: var(--enq-forest-ink);
+  font-size: clamp(24px, 2vw, 30px);
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.cw-capture__terms, .cw-capture__source, .cw-capture__note, .cw-capture__hint { margin: 0; font-size: 13.5px; line-height: 1.5; }
+.cw-capture__terms, .cw-capture__note { color: var(--enq-forest-ink); }
+.cw-capture__source, .cw-capture__hint { color: var(--enq-forest-ink-2); }
+.cw-capture__actions, .cw-capture__confirm { margin-top: 6px; }
+.cw-replaced { margin-top: 16px; }
+.cw-replaced > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--enq-forest-ink-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+.cw-replaced > summary:focus-visible { outline: 2px solid var(--enq-cream); outline-offset: 2px; }
+
+.cw-ticks { display: grid; gap: 4px; margin: 12px 0 0; padding: 0; border: 0; }
+.cw-ticks legend { margin-bottom: 4px; padding: 0; color: var(--enq-forest-ink); font-size: 14px; font-weight: 600; }
+.cw-changed { margin-bottom: 12px; }
+
+.cw-suggested { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.cw-suggested li { display: flex; justify-content: space-between; gap: 12px; color: var(--enq-forest-ink); font-size: 14.5px; }
+.cw-suggested span { color: var(--enq-forest-ink-3); font-size: 12.5px; }
+
+/* The forms. */
+.cw-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88px;
+  padding: 9px 12px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+  background: var(--enq-forest-deep);
+  color: var(--enq-forest-ink);
+  font: inherit;
+  font-size: 15.5px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.cw-textarea[aria-invalid="true"] { border-color: var(--house-amber-lit); }
+.cw-stack { display: grid; gap: 6px; }
+.cw-includes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pr-field input[type="file"] { padding: 8px; font-size: 14px; }
+
+/* The market context card beside a suggestion. */
+.cw-context__heading { margin: 0; }
+.cw-disclosure {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--enq-forest-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--house-motion-hover) var(--house-ease-standard);
+}
+.cw-disclosure:hover { color: var(--enq-cream-hover); }
+.cw-disclosure:active { transform: translateY(1px); }
+.cw-disclosure:focus-visible { outline: 2px solid var(--enq-cream); outline-offset: 3px; }
+.cw-disclosure__aside { color: var(--enq-forest-ink-2); font-size: 13px; font-weight: 400; }
+.cw-context__rule { margin: 4px 0 0; color: var(--enq-forest-ink-2); font-size: 13.5px; }
+.cw-context__body { display: grid; gap: 12px; margin-top: 14px; }
+.cw-context__retry { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cw-context__retry p { margin: 0; color: var(--enq-forest-ink); font-size: 14px; }
+.cw-lines { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.cw-lines li { display: grid; gap: 3px; padding-top: 12px; border-top: 1px solid var(--enq-forest-rule); }
+.cw-lines li:first-child { padding-top: 0; border-top: 0; }
+.cw-lines__title { color: var(--enq-forest-ink); font-size: 14.5px; font-weight: 600; }
+.cw-lines__figure { color: var(--enq-forest-ink); font: 400 20px/1.25 var(--enq-serif); font-variant-numeric: tabular-nums; }
+.cw-lines__terms { color: var(--enq-forest-ink); font-size: 13.5px; line-height: 1.5; }
+.cw-lines__source { color: var(--enq-forest-ink-2); font-size: 13px; line-height: 1.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-disclosure { transition: none; }
+  .cw-disclosure:active { transform: none; }
+}
+
+@media (max-width: 760px) {
+  .cw-figure { text-align: left; }
+  .cw-includes { grid-template-columns: minmax(0, 1fr); }
+  .cw-bar__actions { width: 100%; }
+}

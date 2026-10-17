@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
-import { isValidOpportunityStageTransition } from "@omnitwin/types";
+import { isValidOpportunityStageTransition, type OpportunityLostTo } from "@omnitwin/types";
 import { Plus, X } from "lucide-react";
 import {
   addFollowUpTask, addOpportunityActivity, createOpportunity, getOpportunity, getPipeline, updateFollowUpTaskStatus,
@@ -283,9 +283,10 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
       ? { status: "ready", detail: { ...state.detail, opportunity: next } } : state);
   };
 
-  const onMove = (to: string, reason: string | null): Promise<boolean> => attempt("step", "step", async () => {
+  const onMove = (to: string, reason: string | null, lostTo?: OpportunityLostTo): Promise<boolean> => attempt("step", "step", async () => {
     if (current === null) return;
-    const updated = await updateOpportunity(current.opportunity.id, { stage: to, note: reason });
+    // Who won rides the move to lost, with its reason, when it was said.
+    const updated = await updateOpportunity(current.opportunity.id, lostTo === undefined ? { stage: to, note: reason } : { stage: to, note: reason, lostTo });
     applyDeal(updated);
     setStampKey(Date.now());
     setAnnouncement(`${current.opportunity.title} is now ${dealStageWords(to).toLowerCase()}.`);
