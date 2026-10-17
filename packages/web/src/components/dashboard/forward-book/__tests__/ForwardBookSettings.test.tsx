@@ -75,6 +75,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ForwardBookSettings", () => {
+  it("names each room's action with the words it shows, so speech control can say them (WCAG 2.5.3)", async () => {
+    render(<ForwardBookSettings venueId={VENUE} canRecord />);
+    await screen.findByText("Grand Hall");
+    const actions = screen.getAllByRole("button").filter((button) => button.getAttribute("aria-label") !== null);
+    expect(actions.length).toBe(3);
+    for (const button of actions) {
+      expect(button.getAttribute("aria-label")).toContain(button.textContent?.trim() ?? "");
+    }
+  });
+
   it("says where each room stands and who said so, in the venue's words", async () => {
     render(<ForwardBookSettings venueId={VENUE} canRecord />);
     expect(await screen.findByText("Grand Hall")).toBeDefined();
@@ -129,7 +139,7 @@ describe("ForwardBookSettings", () => {
     });
     expect(within(row("Grand Hall")).getByText("Dates shown")).toBeDefined();
     expect(within(row("Grand Hall")).getByText("Checked by Elspeth Grant, 12 Oct 2026")).toBeDefined();
-    const hide = within(row("Grand Hall")).getByRole("button", { name: "Hide the Grand Hall's dates" });
+    const hide = within(row("Grand Hall")).getByRole("button", { name: "Hide dates for the Grand Hall" });
     await waitFor(() => { expect(document.activeElement).toBe(hide); });
   });
 
@@ -147,8 +157,8 @@ describe("ForwardBookSettings", () => {
   it("says what hiding does before doing it, then hides the room's dates and keeps who did it", async () => {
     mocks.clear.mockResolvedValue({ ...SALOON_CHECK, clearedAt: "2026-10-17T10:00:00.000Z", clearedByName: "Elspeth Grant" });
     render(<ForwardBookSettings venueId={VENUE} canRecord />);
-    fireEvent.click(await screen.findByRole("button", { name: "Hide the Saloon's dates" }));
-    const panel = screen.getByRole("group", { name: "Hide the Saloon's dates?" });
+    fireEvent.click(await screen.findByRole("button", { name: "Hide dates for the Saloon" }));
+    const panel = screen.getByRole("group", { name: "Hide dates for the Saloon?" });
     expect(panel.textContent).toContain("will stop saying whether the Saloon has bookings on a date, within a minute");
     fireEvent.click(within(panel).getByRole("button", { name: "Hide dates" }));
     expect(mocks.clear).toHaveBeenCalledWith(VENUE, SALOON_CHECK.id);

@@ -193,7 +193,7 @@ export function ForwardBookSettings({ venueId, canRecord }: ForwardBookSettingsP
                         ) : (
                           <button type="button" className="forward-book__quiet" disabled={busy !== null}
                             data-space-id={room.spaceId} data-focus="action"
-                            aria-label={`Hide the ${room.name}'s dates`}
+                            aria-label={`Hide dates for the ${room.name}`}
                             onClick={() => {
                               setNotice(null);
                               focusNext.current = { spaceId: room.spaceId, target: "panel" };
@@ -239,7 +239,7 @@ export function ForwardBookSettings({ venueId, canRecord }: ForwardBookSettingsP
                     )}
                     {panel?.kind === "clear" && room.current !== null && (
                       <div className="forward-book__panel" data-register="forest" role="group"
-                        aria-label={`Hide the ${room.name}'s dates?`}
+                        aria-label={`Hide dates for the ${room.name}?`}
                         onKeyDown={(event) => {
                           if (event.key !== "Escape" || saving) return;
                           event.preventDefault();
