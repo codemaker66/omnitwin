@@ -5,6 +5,7 @@ import { bookings, diaryCommands, events, spaces, users } from "../db/schema.js"
 import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
+import { syncEventStatus } from "./event-binding.js";
 
 // ---------------------------------------------------------------------------
 // Proposing a window (goal 19 S6; D1, D2, D5).
@@ -190,6 +191,9 @@ export async function proposeWindowCore(
       }).returning();
       if (row === undefined) return deny(500, "BOOKING_CREATE_FAILED", "The proposal could not be kept.");
       changeKind = "booking.created";
+      // The bind: the hold names its event, and the event's status follows
+      // its bookings (a lost event held again is a draft once more).
+      await syncEventStatus(tx, eventId);
     }
     try {
       await tx.insert(diaryCommands).values({
