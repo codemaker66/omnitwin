@@ -240,7 +240,7 @@ export function NotificationCenter({
                           className="vv-notifications-button"
                           aria-expanded={draftOpen}
                           aria-controls={draftOpen ? draftPanelId : undefined}
-                          aria-label={`Read the draft: ${notification.title}`}
+                          aria-label={`${draftOpen ? "Close the draft" : "Read the draft"}: ${notification.title}`}
                           onClick={() => { toggleDraft(notification.id); }}
                         >
                           {draftOpen ? "Close the draft" : "Read the draft"}

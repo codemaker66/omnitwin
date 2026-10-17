@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { composePromotionDraft, composePromotionNotice } from "../services/hold-promotion.js";
+import { composePromotionDraft, composePromotionNotice, jointlyPromoted } from "../services/hold-promotion.js";
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -87,6 +87,28 @@ describe("composePromotionDraft", () => {
   it("carries no praise or cheerleading", () => {
     const body = composePromotionDraft(base).body.toLowerCase();
     for (const word of ["great news", "good news", "congratulations", "exciting", "!"]) expect(body).not.toContain(word);
+  });
+});
+
+describe("jointlyPromoted", () => {
+  const at = (hour: number): Date => new Date(Date.UTC(2030, 5, 15, hour));
+  const hold = (id: string, rank: number | null, jointFlag: boolean, from: number, to: number) =>
+    ({ id, rank, jointFlag, startsAt: at(from), endsAt: at(to) });
+
+  it("calls two joint holds that moved up together for the same time joint", () => {
+    expect([...jointlyPromoted([hold("a", 2, true, 10, 14), hold("b", 2, true, 12, 16)])].sort()).toEqual(["a", "b"]);
+  });
+
+  it("does not call holds joint when one exit promoted two separate times", () => {
+    // The departed hold bridged a morning and an evening slot; each had a
+    // joint-flagged 2nd option whose partner had already gone.
+    expect(jointlyPromoted([hold("a", 2, true, 9, 11), hold("b", 2, true, 18, 22)]).size).toBe(0);
+  });
+
+  it("needs both flags and the same original rank", () => {
+    expect(jointlyPromoted([hold("a", 2, true, 10, 14), hold("b", 2, false, 10, 14)]).size).toBe(0);
+    expect(jointlyPromoted([hold("a", 2, true, 10, 14), hold("b", 3, true, 10, 14)]).size).toBe(0);
+    expect(jointlyPromoted([hold("a", 2, true, 10, 14)]).size).toBe(0);
   });
 });
 

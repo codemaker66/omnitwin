@@ -81,6 +81,35 @@ export interface PromotionNoticeRoles {
   readonly holdOwnerRoles: ReadonlySet<string>;
 }
 
+/** A hold that became 1st option, as the ladder held it before the exit. */
+export interface PromotedLadderHold {
+  readonly id: string;
+  readonly rank: number | null;
+  readonly jointFlag: boolean;
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+}
+
+/**
+ * The promoted holds that now share 1st option with another. Joint holds move
+ * up together: same original rank, both joint-flagged, contesting the same
+ * time. One exit can promote two separate slots (the departed hold bridged
+ * them), so a joint flag on each is not enough; they must overlap.
+ */
+export function jointlyPromoted(promoted: readonly PromotedLadderHold[]): ReadonlySet<string> {
+  const joint = new Set<string>();
+  for (const hold of promoted) {
+    if (!hold.jointFlag || hold.rank === null) continue;
+    const partner = promoted.some((other) => other.id !== hold.id
+      && other.jointFlag
+      && other.rank === hold.rank
+      && other.startsAt.getTime() < hold.endsAt.getTime()
+      && hold.startsAt.getTime() < other.endsAt.getTime());
+    if (partner) joint.add(hold.id);
+  }
+  return joint;
+}
+
 const EXIT_WORDS: Readonly<Record<HoldExit, string>> = {
   released: "released",
   expired: "marked as lapsed",

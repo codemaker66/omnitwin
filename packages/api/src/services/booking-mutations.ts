@@ -21,7 +21,7 @@ import {
   resequenceLaddersAfterExit,
   type ResequenceResult,
 } from "./hold-hygiene.js";
-import { writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
+import { jointlyPromoted, writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
 
 // ---------------------------------------------------------------------------
 // Booking mutation cores (T-537; Canon §9) — extracted VERBATIM from the
@@ -683,7 +683,7 @@ export async function transitionBookingCore(
           const survivor = survivorById.get(hold.id);
           return survivor === undefined ? [] : [survivor];
         });
-        const jointCount = promoted.filter((survivor) => survivor.jointFlag).length;
+        const joint = jointlyPromoted(promoted);
         promotionNotices = await writePromotionNotices(tx, {
           venueId: row.venueId,
           spaceId: row.spaceId,
@@ -693,7 +693,7 @@ export async function transitionBookingCore(
             id: survivor.id,
             title: survivor.title,
             ownerUserId: survivor.ownerUserId,
-            jointFlag: survivor.jointFlag && jointCount > 1,
+            jointFlag: joint.has(survivor.id),
             startsAt: survivor.startsAt,
           })),
           roles: { diaryWriteRoles: DIARY_WRITE_ROLES, holdOwnerRoles: HOLD_OWNER_ROLES },

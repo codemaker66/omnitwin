@@ -90,6 +90,9 @@ describe("a promoted hold's notice", () => {
     expect(mocks.draft).not.toHaveBeenCalled();
     fireEvent.click(open);
     expect(open.getAttribute("aria-expanded")).toBe("true");
+    // The spoken name follows the visible words (WCAG 2.5.3, label in name).
+    expect(open.textContent).toBe("Close the draft");
+    expect(open.getAttribute("aria-label")).toMatch(/^Close the draft: Now 1st option/u);
     expect(mocks.draft).toHaveBeenCalledWith(HOLD, expect.any(AbortSignal));
 
     await screen.findByText("Jane MacLeod, jane.macleod@example.test (from the enquiry)");
