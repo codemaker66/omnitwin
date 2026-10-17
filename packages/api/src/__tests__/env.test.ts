@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { validateEnv, EnvSchema } from "../env.js";
+import { monthlyAllowanceMicroUsd } from "../services/ai-usage.js";
 
 // ---------------------------------------------------------------------------
 // env.ts — Zod environment validation tests
@@ -443,5 +444,33 @@ describe("AI assistant provider configuration", () => {
 
   it("asks for nothing while AI is off", () => {
     expect(() => validateEnv({ DATABASE_URL: base.DATABASE_URL, AI_ASSISTANT_PROVIDER: "anthropic" })).not.toThrow();
+  });
+});
+
+describe("each venue's monthly AI allowance (T-656)", () => {
+  const base = { DATABASE_URL: "postgresql://user:pass@host/db" };
+
+  it("is $50 a venue a month when unset", () => {
+    const env = validateEnv(base);
+    expect(env.AI_VENUE_MONTHLY_BUDGET_USD).toBeUndefined();
+    expect(monthlyAllowanceMicroUsd(env.AI_VENUE_MONTHLY_BUDGET_USD)).toBe(50_000_000);
+  });
+
+  it("takes dollars, cents included, as micro-dollars", () => {
+    const env = validateEnv({ ...base, AI_VENUE_MONTHLY_BUDGET_USD: "12.50" });
+    expect(env.AI_VENUE_MONTHLY_BUDGET_USD).toBe(12.5);
+    expect(monthlyAllowanceMicroUsd(env.AI_VENUE_MONTHLY_BUDGET_USD)).toBe(12_500_000);
+    expect(validateEnv({ ...base, AI_VENUE_MONTHLY_BUDGET_USD: "100000" }).AI_VENUE_MONTHLY_BUDGET_USD).toBe(100_000);
+  });
+
+  it.each([
+    ["nothing", ""],
+    ["zero", "0"],
+    ["a negative amount", "-5"],
+    ["words", "fifty"],
+    ["more than $100,000", "100000.01"],
+    ["an infinite amount", "Infinity"],
+  ])("REJECTS %s at boot rather than run unbounded", (_, value) => {
+    expect(() => validateEnv({ ...base, AI_VENUE_MONTHLY_BUDGET_USD: value })).toThrow(/AI_VENUE_MONTHLY_BUDGET_USD/u);
   });
 });

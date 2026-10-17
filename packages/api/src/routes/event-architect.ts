@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
+  AI_BUDGET_REACHED,
   CreateEventArchitectRunInputSchema,
   CreateEventArchitectOpsReviewInputSchema,
   CreateEventBriefDraftInputSchema,
@@ -19,6 +20,7 @@ import {
   createAIStructuredGenerationAdapterFromEnv,
   type AIStructuredGenerationAdapter,
 } from "../services/ai-assistant.js";
+import { AIBudgetReachedError, venueAllowanceMeter, type AIUsageMeter } from "../services/ai-usage.js";
 import { loadEventBriefRoom, readEventBrief } from "../services/event-brief-draft.js";
 import { canAccessInternalEvent } from "../utils/query.js";
 import {
@@ -180,11 +182,15 @@ export async function eventArchitectRoutes(
     env?: Env;
     /** A provider a test supplies in place of the environment's. */
     briefReader?: AIStructuredGenerationAdapter;
+    /** Holds each brief read to its venue's AI allowance and records it (T-656); the venue allowance meter unless given. */
+    aiUsage?: AIUsageMeter;
   },
 ): Promise<void> {
   const { db } = opts;
   const briefReader = opts.briefReader
-    ?? (opts.env === undefined ? new DisabledAIGenerationAdapter() : createAIStructuredGenerationAdapterFromEnv(opts.env));
+    ?? (opts.env === undefined
+      ? new DisabledAIGenerationAdapter()
+      : createAIStructuredGenerationAdapterFromEnv(opts.env, opts.aiUsage ?? venueAllowanceMeter(db, opts.env, server.log)));
 
   // -------------------------------------------------------------------------
   // Typed event briefs (T-650). A planner's description is read by the AI
@@ -223,15 +229,21 @@ export async function eventArchitectRoutes(
     const onClose = (): void => { if (!reply.raw.writableEnded) abandoned.abort(); };
     reply.raw.once("close", onClose);
     try {
+      // The read is the room's venue's: held to its monthly AI allowance and
+      // recorded in the AI usage ledger (T-656).
       const draft = await readEventBrief(briefReader, {
         description: body.data.description,
         room,
+        attribution: { venueId: body.data.venueId, userId: request.user.id },
         signal: abandoned.signal,
       });
       return { data: draft };
     } catch (err) {
       if (err instanceof AIAssistantDisabledError) {
         return reply.status(503).send({ error: err.message, code: "AI_ASSISTANT_DISABLED" });
+      }
+      if (err instanceof AIBudgetReachedError) {
+        return reply.status(429).send({ error: err.message, code: AI_BUDGET_REACHED });
       }
       // The errors carry a status, a reason or contract paths, never the
       // description itself.

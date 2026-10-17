@@ -80,6 +80,20 @@ const EnvSchema = z.object({
   AI_ASSISTANT_API_KEY: z.string().min(1).optional(),
   // Anthropic only: the Console workspace for a key not scoped to one.
   AI_ASSISTANT_WORKSPACE_ID: z.string().regex(/^wrkspc_[A-Za-z0-9]+$/u).optional(),
+  // T-656: each venue's AI allowance for a UTC calendar month, in US dollars.
+  // Every model call reserves its worst-case cost against it before it is
+  // made, and is refused with AI_BUDGET_REACHED when the month's recorded
+  // spend, the calls in flight and that reservation would pass it. Unset, it
+  // is $50 (DEFAULT_AI_VENUE_MONTHLY_BUDGET_USD in services/ai-usage.ts):
+  // over a thousand drafts or briefs a venue a month at today's prices, and a
+  // hard ceiling on what one venue can cost. AI_ASSISTANT_ENABLED stays the
+  // global switch. A value that is not a number from 0.01 to 100,000 stops the
+  // API at boot rather than run unbounded.
+  AI_VENUE_MONTHLY_BUDGET_USD: z.coerce.number()
+    .finite()
+    .min(0.01, "AI_VENUE_MONTHLY_BUDGET_USD must be at least 0.01 (US dollars)")
+    .max(100_000, "AI_VENUE_MONTHLY_BUDGET_USD must be at most 100000 (US dollars)")
+    .optional(),
   // Venue sky (T-647) — Met Office Weather DataHub key for the Site-Specific
   // Blended Probabilistic Forecast v2 API, sent as the `apikey` header. A
   // DataHub key belongs to one product subscription, so a key for another
