@@ -5,7 +5,8 @@ import type { FastifyInstance } from "fastify";
 // The dietary-note retention pass through the house cleanup endpoints
 // (fix-first item 18): who may run it, that the rehearsal changes nothing,
 // and that the real pass is wired with a way to remove stored sheet PDFs.
-// The pass itself is proven in dietary-retention-postgres.test.ts.
+// The same endpoints run the remembered notes' unused period ("ask once,
+// then remember"). Both passes are proven in their -postgres tests.
 // ---------------------------------------------------------------------------
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
@@ -18,6 +19,11 @@ const removeLapsedDietaryNotes = vi.fn();
 vi.mock("../services/dietary-retention.js", () => ({
   removeLapsedDietaryNotes: (...args: unknown[]) => removeLapsedDietaryNotes(...args) as unknown,
 }));
+const removeUnusedRememberedNotes = vi.fn();
+vi.mock("../services/dietary-memory.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../services/dietary-memory.js")>(),
+  removeUnusedRememberedNotes: (...args: unknown[]) => removeUnusedRememberedNotes(...args) as unknown,
+}));
 vi.mock("../services/cleanup.js", () => ({
   cleanupPreviewConfigurations: () => Promise.resolve(0),
   cleanupOrphanedFiles: () => Promise.resolve(0),
@@ -28,7 +34,10 @@ const { buildServer } = await import("../index.js");
 let server: FastifyInstance;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
-beforeEach(() => { removeLapsedDietaryNotes.mockReset(); });
+beforeEach(() => {
+  removeLapsedDietaryNotes.mockReset();
+  removeUnusedRememberedNotes.mockReset();
+});
 
 const token = (payload: Record<string, unknown>): string => JSON.stringify(payload);
 const platformAdmin = token({ id: "u1", email: "admin@test.com", role: "admin", platformRole: "admin", venueId: "v1" });
@@ -42,29 +51,38 @@ describe("POST /admin/retention/dietary-notes (the rehearsal)", () => {
     });
     expect(res.statusCode).toBe(403);
     expect(removeLapsedDietaryNotes).not.toHaveBeenCalled();
+    expect(removeUnusedRememberedNotes).not.toHaveBeenCalled();
   });
 
   it("runs the pass as a dry run and reports it", async () => {
     removeLapsedDietaryNotes.mockResolvedValueOnce({ ...RESULT, dryRun: true, sheetPdfsRemoved: 0 });
+    removeUnusedRememberedNotes.mockResolvedValueOnce({ dryRun: true, removed: 4 });
     const res = await server.inject({
       method: "POST", url: "/admin/retention/dietary-notes", headers: { authorization: `Bearer ${platformAdmin}` },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ data: { dryRun: boolean } }>().data.dryRun).toBe(true);
+    const data = res.json<{ data: { dryRun: boolean; rememberedNotes: unknown } }>().data;
+    expect(data.dryRun).toBe(true);
+    expect(data.rememberedNotes).toEqual({ dryRun: true, removed: 4 });
     expect(removeLapsedDietaryNotes.mock.calls[0]?.[1]).toEqual({ dryRun: true });
+    expect(removeUnusedRememberedNotes.mock.calls[0]?.[1]).toEqual({ dryRun: true });
   });
 });
 
 describe("POST /admin/cleanup", () => {
   it("removes lapsed notes, with a way to remove stored sheet PDFs, and says what it did", async () => {
     removeLapsedDietaryNotes.mockResolvedValueOnce(RESULT);
+    removeUnusedRememberedNotes.mockResolvedValueOnce({ dryRun: false, removed: 1 });
     const res = await server.inject({
       method: "POST", url: "/admin/cleanup", headers: { authorization: `Bearer ${platformAdmin}` },
     });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ data: { dietaryNotes: unknown; message: string } }>().data;
+    const body = res.json<{ data: { dietaryNotes: unknown; rememberedNotes: unknown; message: string } }>().data;
     expect(body.dietaryNotes).toEqual(RESULT);
+    expect(body.rememberedNotes).toEqual({ dryRun: false, removed: 1 });
     expect(body.message).toContain("removed the allergy note from 2 layout(s) and 3 event sheet(s)");
+    expect(body.message).toContain("removed 1 remembered note(s) unused for the agreed period");
+    expect(removeUnusedRememberedNotes.mock.calls[0]?.[1]).toBeUndefined();
     const options = removeLapsedDietaryNotes.mock.calls[0]?.[1] as { dryRun?: boolean; removeSheetPdf?: unknown };
     expect(options.dryRun).toBeUndefined();
     expect(options.removeSheetPdf).toBeTypeOf("function");

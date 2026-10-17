@@ -37,6 +37,7 @@ import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-r
 import { publicMcpRoutes } from "./routes/public-mcp.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
+import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
@@ -456,6 +457,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(clientRoutes, { db, prefix: "/clients" });
+  // A client's remembered allergy notes, for their own account only.
+  await server.register(dietaryMemoryRoutes, { db, prefix: "/account/dietary-notes" });
   await server.register(adminRoutes, { db, env, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });

@@ -12,6 +12,7 @@ import {
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
 import { removeLapsedDietaryNotes, type SheetPdfToRemove } from "../services/dietary-retention.js";
+import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { pdfObjectKey, removeSheetPdfObject } from "../services/pdf-prerender.js";
 import type { Env } from "../env.js";
 
@@ -70,21 +71,25 @@ export async function adminRoutes(
       : removeSheetPdfObject(env, pdfObjectKey(sheet.configurationId, sheet.version, sheet.sourceHash));
 
   // POST /admin/cleanup — trigger manual cleanup of stale preview configs,
-  // orphaned uploads, and guests' allergy notes past their retention.
+  // orphaned uploads, guests' allergy notes past their retention, and
+  // remembered allergy notes unused for the period the client agreed to.
   server.post("/cleanup", {
     preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => {
     const deletedConfigs = await cleanupPreviewConfigurations(db);
     const deletedFiles = await cleanupOrphanedFiles(db);
     const dietaryNotes = await removeLapsedDietaryNotes(db, { removeSheetPdf });
+    const rememberedNotes = await removeUnusedRememberedNotes(db);
     return {
       data: {
         deletedConfigs,
         deletedFiles,
         dietaryNotes,
+        rememberedNotes,
         message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
           + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
-          + (dietaryNotes.sheetsPending > 0 ? `; ${String(dietaryNotes.sheetsPending)} sheet(s) wait for their stored PDF to be removed` : ""),
+          + (dietaryNotes.sheetsPending > 0 ? `; ${String(dietaryNotes.sheetsPending)} sheet(s) wait for their stored PDF to be removed` : "")
+          + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`,
       },
     };
   });
@@ -94,7 +99,9 @@ export async function adminRoutes(
   server.post("/retention/dietary-notes", {
     preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => {
-    return { data: await removeLapsedDietaryNotes(db, { dryRun: true }) };
+    const layoutNotes = await removeLapsedDietaryNotes(db, { dryRun: true });
+    const rememberedNotes = await removeUnusedRememberedNotes(db, { dryRun: true });
+    return { data: { ...layoutNotes, rememberedNotes } };
   });
 
   // -------------------------------------------------------------------------

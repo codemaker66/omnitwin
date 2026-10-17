@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { DIETARY_NOTE_RETENTION, findUnsupportedProposalClaim } from "@omnitwin/types";
+import {
+  DIETARY_MEMORY_CONSENT,
+  DIETARY_MEMORY_MONTHS_UNUSED,
+  DIETARY_NOTE_RETENTION,
+  findUnsupportedProposalClaim,
+} from "@omnitwin/types";
 import { LegalPage } from "../LegalPage.js";
 
 // ---------------------------------------------------------------------------
@@ -117,6 +122,29 @@ describe("the privacy policy", () => {
     // The period comes from the one definition the retention pass runs on.
     expect(text).toContain(`${String(DIETARY_NOTE_RETENTION.daysAfterEvent)} days after the event`);
     expect(text).toContain("24 months after it last changed");
+  });
+
+  it("describes both paths for the note: left unticked, and remembered with the planner's account", () => {
+    const text = textOf("privacy");
+    // The box, word for word as the planner shows it, and that it starts unticked.
+    expect(text).toContain(`asked "${DIETARY_MEMORY_CONSENT.question}" The box starts unticked.`);
+    expect(text).toContain("Left unticked, the note stays with that event only.");
+    expect(text).toContain("we record who ticked the box, when, and the words beside it");
+    expect(text).toContain("They can see and remove that copy at any time.");
+    // How long the remembered copy is kept, from the same definition the API runs on.
+    expect(text).toContain("An allergy note you asked us to remember");
+    expect(text).toContain(`If ${String(DIETARY_MEMORY_MONTHS_UNUSED)} months pass without it being saved with a layout, we remove it.`);
+    // Withdrawal is real and immediate.
+    expect(text).toContain("you can take that back at any time");
+    const link = screen.getByRole("link", { name: "See or remove them (sign in first)" });
+    expect(link.getAttribute("href")).toBe("/account/allergy-notes");
+  });
+
+  it("names no lawful condition for the health note: that is the venue adviser's to confirm", () => {
+    const text = textOf("privacy");
+    for (const claim of ["Article 9", "explicit consent", "9(2)"]) {
+      expect(text, `privacy policy claims "${claim}"`).not.toContain(claim);
+    }
   });
 
   it("names the ICO with a route to complain", () => {

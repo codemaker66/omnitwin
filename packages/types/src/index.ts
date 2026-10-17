@@ -2540,3 +2540,7 @@ export * from "./venue-sky.js";
 // read by the web pages, their schema.org description and the API's public
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
+
+// Remembered allergy notes (Blake, 17 October 2026: "ask once, then
+// remember"): the opt-in wording, its period and the API shapes.
+export * from "./dietary-memory.js";

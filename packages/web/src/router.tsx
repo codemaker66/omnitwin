@@ -75,6 +75,9 @@ const EditorPage = lazyWithPreload(() =>
 const ClientEventPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ClientEventPage.js").then((m) => ({ default: m.ClientEventPage }))),
 );
+const RememberedNotesPage = lazyWithPreload(() =>
+  cockpitImport(() => import("./pages/RememberedNotesPage.js").then((m) => ({ default: m.RememberedNotesPage }))),
+);
 const BlueprintPage = lazy(() =>
   cockpitImport(() => import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage }))),
 );
@@ -549,6 +552,18 @@ export const router = createBrowserRouter([
         <ClientEventPage />
       </ProtectedRoute>,
       ClientEventPage,
+    ),
+  },
+  {
+    // A client's remembered allergy notes ("ask once, then remember"): see
+    // and remove them at any time. The API answers for the signed-in account
+    // only, so any signed-in role may open it; staff simply have none.
+    path: "/account/allergy-notes",
+    element: withClerk(
+      <ProtectedRoute>
+        <RememberedNotesPage />
+      </ProtectedRoute>,
+      RememberedNotesPage,
     ),
   },
   {

@@ -22,6 +22,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/db-client-local.test.ts",
   "src/__tests__/sheet-snapshot-retention-postgres.test.ts",
   "src/__tests__/dietary-retention-postgres.test.ts",
+  "src/__tests__/remembered-dietary-notes-postgres.test.ts",
   "src/__tests__/quote-permissions-postgres.test.ts",
   "src/__tests__/proposal-permissions-postgres.test.ts",
   "src/__tests__/proposal-links-postgres.test.ts",
