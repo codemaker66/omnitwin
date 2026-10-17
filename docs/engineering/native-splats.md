@@ -403,10 +403,19 @@ Final-source local development QA passed the actual 20-second windows, twelve
 readable entries, real clipboard, Pause/Reset/Play, idle aging, collection shutdown
 and SPA renderer cleanup with zero console/page errors. Desktop and phone-viewport
 screenshots were inspected; this is UI evidence, not physical-phone performance.
-The session links the retained receipts. Implementation commit `891da44a` is
-local: final WebGL/capture lifecycle checks, production-flow QA and hosted
-checks, release, live verification and the HTML report remain pending. The Gaussian public WIP hold
-and T-632 reconstruction ownership remain unchanged.
+PR [35](https://github.com/codemaker66/omnitwin/pull/35) merged the implementation
+and launcher correction as `08b4eea7ec2ea9d461e4e78a7c06944a8461054d`.
+The matching Vercel production alias and live API version are confirmed. All
+thirteen master CI jobs, the independent 356-case browser reconciliation and
+the Deploy workflow passed. Actual deployed desktop/narrow twenty-second
+profiler windows, clipboard, controls and Gaussian hold checks passed without
+response substitutions. The public smoke passed all fifteen checks; its config
+now identifies this release, with the previous bytes backed up and the runner,
+wrapper and scheduler unchanged. These responsive checks used the desktop host;
+physical-phone performance and founder visual acceptance remain unproved.
+The [25 September session](../sessions/2026-09-25.md) records release identities,
+retained failures, the standalone HTML report and verification evidence. The
+public Gaussian WIP hold and T-632 reconstruction ownership remain unchanged.
 
 ## Historical runtime comparisons
 
