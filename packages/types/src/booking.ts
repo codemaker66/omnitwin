@@ -100,10 +100,52 @@ export const ROOM_BLOCKING_BOOKING_KINDS = ["ink", "internal_block"] as const sa
  */
 export const ROOM_OPTION_BOOKING_KINDS = ["hold"] as const satisfies readonly BookingKind[];
 
+/**
+ * The public answer when Venviewer's diary holds nothing for a room on a date.
+ * It is deliberately not "free" (fix-first item 4, 16 October 2026): the
+ * Diary does not yet hold every venue's whole forward book, which still lives
+ * partly in other systems, email and paper, so an empty Diary day is a fact
+ * about the Diary, not about the room. The token says so itself, so an AI
+ * assistant that keeps only the word still cannot tell a person the room is
+ * available.
+ */
+export const PUBLIC_DAY_NO_BOOKING = "no_booking_on_our_diary_team_confirms";
+
 /** A room's public answer for one date, in precedence order: a confirmed
- *  booking or venue block beats a provisional option, which beats nothing. */
-export const PUBLIC_DAY_STATUSES = ["free", "held", "busy"] as const;
+ *  booking or venue block beats a provisional option, which beats nothing on
+ *  the Diary. */
+export const PUBLIC_DAY_STATUSES = [PUBLIC_DAY_NO_BOOKING, "held", "busy"] as const;
 export type PublicDayStatus = (typeof PUBLIC_DAY_STATUSES)[number];
+
+/**
+ * The one wording for each public date answer, used by the public MCP and by
+ * any web surface that shows a public date status, so the two can never say
+ * different things. `label` is the short form for a calendar cell or a list;
+ * `meaning` is the full sentence an assistant can repeat to a person. Neither
+ * ever says "available" or "free": only the venue team confirms a date.
+ */
+export const PUBLIC_DAY_STATUS_WORDING: Readonly<Record<PublicDayStatus, {
+  readonly label: string;
+  readonly meaning: string;
+}>> = {
+  [PUBLIC_DAY_NO_BOOKING]: {
+    label: "Nothing on our diary — the team confirms",
+    meaning:
+      "Venviewer's diary for this venue shows no confirmed booking, closure or provisional option in this room on this date. "
+      + "The venue may hold bookings that are not on this diary yet, so this is not a confirmation: "
+      + "only the venue team can confirm a date, when you enquire.",
+  },
+  held: {
+    label: "Held — enquire",
+    meaning:
+      "Someone has a provisional option on this room for this date. A second option may be possible: "
+      + "contact the venue team to ask. Only the venue team can confirm a date, when you enquire.",
+  },
+  busy: {
+    label: "Booked",
+    meaning: "The room has a confirmed booking or a venue closure at some time on this date.",
+  },
+};
 
 const ROOM_BLOCKING_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_BLOCKING_BOOKING_KINDS);
 const ROOM_OPTION_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_OPTION_BOOKING_KINDS);
@@ -121,9 +163,10 @@ export function bookingRoomStatus(booking: {
   return null;
 }
 
-/** The day's answer from the bookings that touch it: busy beats held beats free. */
+/** The day's answer from the bookings that touch it: busy beats held beats
+ *  nothing on the Diary. */
 export function publicDayStatus(effects: Iterable<"busy" | "held">): PublicDayStatus {
-  let status: PublicDayStatus = "free";
+  let status: PublicDayStatus = PUBLIC_DAY_NO_BOOKING;
   for (const effect of effects) {
     if (effect === "busy") return "busy";
     status = "held";

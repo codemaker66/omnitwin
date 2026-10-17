@@ -2,6 +2,7 @@ import { and, asc, eq, gt, inArray, isNull, lt } from "drizzle-orm";
 import {
   CAPACITY_FORMATS,
   FloorPlanOutlineSchema,
+  PUBLIC_DAY_STATUS_WORDING,
   ROOM_BLOCKING_BOOKING_KINDS,
   ROOM_OPTION_BOOKING_KINDS,
   TRADES_HALL_PUBLIC_PROFILE,
@@ -38,7 +39,10 @@ import type { Database } from "../db/client.js";
 //     make a room busy (confirmed bookings, the venue's own blocks) or held
 //     (provisional options), and nothing else: no title, client, event, owner,
 //     note, rank, decision date or count ever leaves the query, so none can
-//     reach a response. Each date answers only "free", "held" or "busy".
+//     reach a response. Each date answers only "busy", "held" or
+//     "no_booking_on_our_diary_team_confirms" — never a bare "free": the
+//     Diary does not yet hold every booking a venue has taken, so an empty
+//     Diary day says so itself (fix-first item 4, 16 October 2026).
 //   - Capacities are the venue's published figures with their provenance, or
 //     null with a "not published" note. Nothing is estimated.
 //   - Both reads are cached for a few minutes, so public traffic costs at most
@@ -342,7 +346,7 @@ export function describeVenue(profile: PublicVenueProfile, record: PublicVenueRe
         "Room dimensions are the venue's room records in Venviewer, in metres; floor area is computed from the recorded floor plan.",
       capacities:
         "Capacities are only the venue's own published figures, cited with their source. A layout without one is null and marked not published; final numbers depend on the layout agreed with the venue team.",
-      availability: "Use check_availability for free, held or busy dates. It never shows who has booked or holds a date, or why.",
+      availability: "Use check_availability to see what Venviewer's diary holds for each date: booked, held, or nothing on our diary (which the venue team confirms). It never shows who has booked or holds a date, or why.",
       enquiries: "Use how_to_enquire. Enquiries go to the venue team; nothing here can hold or book a date.",
     },
   };
@@ -395,6 +399,11 @@ export type DiscoveryOutcome<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly message: string };
 
+/** Every public answer says when it was true: `asOf` is when the facts in it
+ *  were read (the venue's rooms, its diary) or, for the venue's published
+ *  contact details, when the answer was given. */
+export type Dated<T> = T & { readonly asOf: string };
+
 export interface AvailabilityRequest {
   readonly venue: string;
   readonly from: string;
@@ -410,7 +419,7 @@ export interface AvailabilityReport {
   /** When the venue's diary was last read for this answer. */
   readonly asOf: string;
   readonly dayRule: string;
-  readonly meaning: { readonly free: string; readonly held: string; readonly busy: string };
+  readonly meaning: Readonly<Record<DayStatus, string>>;
   readonly rooms: readonly {
     readonly room: string;
     readonly name: string;
@@ -462,24 +471,24 @@ export class PublicDiscovery {
     return this.venues.find((venue) => venue.dbSlug === slug);
   }
 
-  async describe(slug: string): Promise<DiscoveryOutcome<PublicVenueDescription>> {
+  async describe(slug: string): Promise<DiscoveryOutcome<Dated<PublicVenueDescription>>> {
     const profile = this.profile(slug);
     if (profile === undefined) return { ok: false, message: VENUE_NOT_AVAILABLE_MESSAGE };
     try {
-      const { value: record } = await this.cached(this.venueCache, slug, () => this.store.loadVenue(slug));
+      const { value: record, loadedAtMs } = await this.cached(this.venueCache, slug, () => this.store.loadVenue(slug));
       if (record === null) return { ok: false, message: VENUE_NOT_AVAILABLE_MESSAGE };
-      return { ok: true, value: describeVenue(profile, record) };
+      return { ok: true, value: { ...describeVenue(profile, record), asOf: new Date(loadedAtMs).toISOString() } };
     } catch (error) {
       this.onReadError(error);
       return { ok: false, message: TEMPORARILY_UNAVAILABLE_MESSAGE };
     }
   }
 
-  guide(slug: string): DiscoveryOutcome<EnquiryGuide> {
+  guide(slug: string): DiscoveryOutcome<Dated<EnquiryGuide>> {
     const profile = this.profile(slug);
     return profile === undefined
       ? { ok: false, message: VENUE_NOT_AVAILABLE_MESSAGE }
-      : { ok: true, value: enquiryGuide(profile) };
+      : { ok: true, value: { ...enquiryGuide(profile), asOf: new Date(this.now()).toISOString() } };
   }
 
   async availability(request: AvailabilityRequest): Promise<DiscoveryOutcome<AvailabilityReport>> {
@@ -539,10 +548,12 @@ export class PublicDiscovery {
           to: request.to,
           asOf: new Date(loadedAtMs).toISOString(),
           dayRule: `Each date runs from 04:00 to 04:00 the next morning, venue time (${timeZone}), as the venue's own diary counts a day, so an evening that runs past midnight belongs to the date it started on.`,
+          // The one wording the web uses too (@omnitwin/types), so the two
+          // can never say different things about a date.
           meaning: {
-            free: "No confirmed booking, venue closure or provisional option in this room on this date. The venue team confirms availability when you enquire.",
-            held: `Someone has a provisional option on this room for this date. A second option may be possible: contact the venue team to ask (${profile.enquiryUrl}). The venue team confirms availability when you enquire.`,
-            busy: "The room has a confirmed booking or a venue closure at some time on this date.",
+            no_booking_on_our_diary_team_confirms: PUBLIC_DAY_STATUS_WORDING.no_booking_on_our_diary_team_confirms.meaning,
+            held: PUBLIC_DAY_STATUS_WORDING.held.meaning,
+            busy: PUBLIC_DAY_STATUS_WORDING.busy.meaning,
           },
           rooms: rooms.map((room) => ({
             room: room.slug,

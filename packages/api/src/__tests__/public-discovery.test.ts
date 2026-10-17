@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  PUBLIC_DAY_NO_BOOKING,
+  PUBLIC_DAY_STATUS_WORDING,
   ROOM_BLOCKING_BOOKING_KINDS,
   ROOM_OPTION_BOOKING_KINDS,
   TRADES_HALL_PUBLIC_PROFILE,
@@ -26,6 +28,9 @@ import {
   type PublicVenueRecord,
   type RoomInterval,
 } from "../services/public-discovery.js";
+
+/** The answer for a date with nothing on the Diary: never a bare "free". */
+const NONE = PUBLIC_DAY_NO_BOOKING;
 
 // ---------------------------------------------------------------------------
 // The public discovery boundary (T-649), without a database: the Diary's
@@ -92,8 +97,8 @@ describe("the Diary's busy and held rule", () => {
     expect([...ROOM_OPTION_BOOKING_KINDS]).toEqual(["hold"]);
   });
 
-  it("answers busy over held over free, never more than the one word", () => {
-    expect(publicDayStatus([])).toBe("free");
+  it("answers busy over held over nothing on the Diary, never more than the one word", () => {
+    expect(publicDayStatus([])).toBe(NONE);
     expect(publicDayStatus(["held"])).toBe("held");
     expect(publicDayStatus(["held", "held", "held"])).toBe("held");
     expect(publicDayStatus(["held", "busy", "held"])).toBe("busy");
@@ -122,13 +127,13 @@ describe("the venue's operational day (04:00 to 04:00, Europe/London)", () => {
     // 19:00 to 01:00 BST.
     const late = [interval("r", "2026-09-12T18:00:00.000Z", "2026-09-13T00:00:00.000Z")];
     expect(roomDayStatuses(late, ["2026-09-12", "2026-09-13"], LONDON))
-      .toEqual({ "2026-09-12": "busy", "2026-09-13": "free" });
+      .toEqual({ "2026-09-12": "busy", "2026-09-13": NONE });
   });
 
   it("treats a booking that ends exactly at 04:00 as not touching the next date", () => {
     const edge = [interval("r", "2026-11-13T20:00:00.000Z", "2026-11-14T04:00:00.000Z")];
     expect(roomDayStatuses(edge, ["2026-11-13", "2026-11-14"], LONDON))
-      .toEqual({ "2026-11-13": "busy", "2026-11-14": "free" });
+      .toEqual({ "2026-11-13": "busy", "2026-11-14": NONE });
   });
 
   it("places 03:30 on the autumn change night in the earlier date, by the venue's clock", () => {
@@ -136,7 +141,7 @@ describe("the venue's operational day (04:00 to 04:00, Europe/London)", () => {
     // night. A fixed-offset BST boundary (03:00Z) would wrongly give it to the 25th.
     const night = [interval("r", "2026-10-25T03:30:00.000Z", "2026-10-25T03:59:00.000Z")];
     expect(roomDayStatuses(night, ["2026-10-24", "2026-10-25"], LONDON))
-      .toEqual({ "2026-10-24": "busy", "2026-10-25": "free" });
+      .toEqual({ "2026-10-24": "busy", "2026-10-25": NONE });
   });
 
   it("marks both dates when a booking crosses the spring 04:00 boundary", () => {
@@ -150,7 +155,7 @@ describe("the venue's operational day (04:00 to 04:00, Europe/London)", () => {
     const block = [interval("r", "2026-12-24T04:00:00.000Z", "2026-12-27T04:00:00.000Z")];
     expect(roomDayStatuses(block, ["2026-12-23", "2026-12-24", "2026-12-25", "2026-12-26", "2026-12-27"], LONDON))
       .toEqual({
-        "2026-12-23": "free", "2026-12-24": "busy", "2026-12-25": "busy", "2026-12-26": "busy", "2026-12-27": "free",
+        "2026-12-23": NONE, "2026-12-24": "busy", "2026-12-25": "busy", "2026-12-26": "busy", "2026-12-27": NONE,
       });
   });
 
@@ -161,7 +166,7 @@ describe("the venue's operational day (04:00 to 04:00, Europe/London)", () => {
       interval("r", "2026-11-21T09:00:00.000Z", "2026-11-21T12:00:00.000Z", "busy"),
     ];
     expect(roomDayStatuses(day, ["2026-11-13", "2026-11-14", "2026-11-21"], LONDON))
-      .toEqual({ "2026-11-13": "free", "2026-11-14": "held", "2026-11-21": "busy" });
+      .toEqual({ "2026-11-13": NONE, "2026-11-14": "held", "2026-11-21": "busy" });
   });
 
   it("places a hold by the venue's clock on both change nights", () => {
@@ -172,7 +177,7 @@ describe("the venue's operational day (04:00 to 04:00, Europe/London)", () => {
       interval("r", "2027-03-28T03:30:00.000Z", "2027-03-28T05:00:00.000Z", "held"),
     ];
     expect(roomDayStatuses(holds, ["2026-10-24", "2026-10-25", "2027-03-27", "2027-03-28"], LONDON)).toEqual({
-      "2026-10-24": "held", "2026-10-25": "free", "2027-03-27": "free", "2027-03-28": "held",
+      "2026-10-24": "held", "2026-10-25": NONE, "2027-03-27": NONE, "2027-03-28": "held",
     });
   });
 });
@@ -283,7 +288,7 @@ describe("PublicDiscovery", () => {
     expect(await discovery.describe(TRADES_HALL.slug)).toEqual({ ok: false, message: VENUE_NOT_AVAILABLE_MESSAGE });
   });
 
-  it("reports each room free, held or busy per date from busy and held intervals only", async () => {
+  it("reports each room busy, held or nothing on the Diary per date from busy and held intervals only", async () => {
     const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {
       [TRADES_HALL.id]: [
         interval("gh", "2026-10-24T17:00:00.000Z", "2026-10-25T00:30:00.000Z"),
@@ -295,8 +300,8 @@ describe("PublicDiscovery", () => {
     const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-23", to: "2026-10-25" });
     if (!outcome.ok) throw new Error(outcome.message);
     expect(outcome.value.rooms).toEqual([
-      { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": "free", "2026-10-24": "busy", "2026-10-25": "free" } },
-      { room: "saloon", name: "Saloon", days: { "2026-10-23": "free", "2026-10-24": "free", "2026-10-25": "held" } },
+      { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": NONE, "2026-10-24": "busy", "2026-10-25": NONE } },
+      { room: "saloon", name: "Saloon", days: { "2026-10-23": NONE, "2026-10-24": NONE, "2026-10-25": "held" } },
     ]);
     expect(outcome.value.timeZone).toBe(LONDON);
     expect(outcome.value.enquire).toBe("https://venviewer.com/#enquire");
@@ -309,9 +314,39 @@ describe("PublicDiscovery", () => {
     if (!outcome.ok) throw new Error(outcome.message);
     expect(outcome.value.meaning.held).toContain("Someone has a provisional option");
     expect(outcome.value.meaning.held).toContain("A second option may be possible");
-    expect(outcome.value.meaning.held).toContain("https://venviewer.com/#enquire");
-    expect(outcome.value.meaning.held).toContain("The venue team confirms availability");
-    expect(outcome.value.meaning.free).toContain("The venue team confirms availability");
+    expect(outcome.value.meaning.held).toContain("Only the venue team can confirm a date");
+    expect(outcome.value.enquire).toBe("https://venviewer.com/#enquire");
+  });
+
+  it("never calls a date free: an empty Diary day says the team confirms, in the web's own words", async () => {
+    const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL });
+    const discovery = new PublicDiscovery({ store, now: () => NOW });
+    const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-03" });
+    if (!outcome.ok) throw new Error(outcome.message);
+    expect(JSON.stringify(outcome.value)).not.toMatch(/"free"/u);
+    for (const entry of outcome.value.rooms) {
+      expect(Object.values(entry.days)).toEqual([NONE, NONE]);
+    }
+    expect(Object.keys(outcome.value.meaning).sort()).toEqual(["busy", "held", NONE].sort());
+    for (const [status, meaning] of Object.entries(outcome.value.meaning)) {
+      expect(meaning).toBe(PUBLIC_DAY_STATUS_WORDING[status as keyof typeof PUBLIC_DAY_STATUS_WORDING].meaning);
+    }
+    expect(outcome.value.meaning[NONE]).toContain("may hold bookings that are not on this diary");
+    expect(outcome.value.meaning[NONE]).toContain("only the venue team can confirm a date");
+  });
+
+  it("dates every answer: the venue as read, the enquiry guide as given", async () => {
+    let now = NOW;
+    const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL });
+    const discovery = new PublicDiscovery({ store, now: () => now });
+    const described = await discovery.describe(TRADES_HALL.slug);
+    expect(described.ok && described.value.asOf).toBe(new Date(NOW).toISOString());
+    now += 60_000;
+    // Within the cache period the venue answer keeps the time it was read.
+    const again = await discovery.describe(TRADES_HALL.slug);
+    expect(again.ok && again.value.asOf).toBe(new Date(NOW).toISOString());
+    const guide = discovery.guide(TRADES_HALL.slug);
+    expect(guide.ok && guide.value.asOf).toBe(new Date(now).toISOString());
   });
 
   it("narrows to one room, and names the rooms when asked about one it lacks", async () => {

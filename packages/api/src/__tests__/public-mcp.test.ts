@@ -8,7 +8,7 @@ import {
   type FetchLike,
 } from "@modelcontextprotocol/client";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { TRADES_HALL_PUBLIC_PROFILE, TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
+import { PUBLIC_DAY_NO_BOOKING, TRADES_HALL_PUBLIC_PROFILE, TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
 import type { Env } from "../env.js";
 import {
   AI_ASSISTANT_ORIGIN_HOSTS,
@@ -24,6 +24,7 @@ import type {
   PublicVenueRecord,
   RoomInterval,
 } from "../services/public-discovery.js";
+import { PublicMcpBudget, type BudgetLimits } from "../services/public-mcp-budget.js";
 
 // ---------------------------------------------------------------------------
 // POST /mcp through the official MCP client (T-649), on a real socket, in both
@@ -133,7 +134,10 @@ describe("public MCP endpoint, in-memory store", () => {
       expect(availability?.description).toContain("never who booked or holds it");
       expect(availability?.description).toContain("\"held\" means someone has a provisional option on that date: a second option may be possible");
       expect(availability?.description).toContain("https://venviewer.com/#enquire");
-      expect(availability?.description).toContain("the venue team confirms availability");
+      expect(availability?.description).toContain("only the venue team confirms a date");
+      expect(availability?.description).toContain(`"${PUBLIC_DAY_NO_BOOKING}" means neither is on this diary`);
+      expect(availability?.description).not.toMatch(/Returns only[^.]*"free"/u);
+      expect(mcp.getInstructions()).toContain("never tell a person a date is free or available");
       expect(availability?.inputSchema.required).toEqual(["from", "to"]);
       expect(mcp.getInstructions()).toContain("Nothing here can send an enquiry, hold a date or make a booking");
     });
@@ -154,9 +158,10 @@ describe("public MCP endpoint, in-memory store", () => {
       const storeRoom = venue.rooms.find((entry) => entry.slug === "store-room");
       expect(storeRoom?.capacities.every((entry) => entry.maxGuests === null && entry.note?.startsWith("Not published") === true)).toBe(true);
       expect(JSON.parse(text(result))).toEqual(result.structuredContent);
+      expect(result.structuredContent).toMatchObject({ asOf: new Date(NOW).toISOString() });
     });
 
-    it("answers free, held or busy per room per date, and says what held means", async () => {
+    it("answers busy, held or nothing on the Diary per room per date, never a bare free", async () => {
       const mcp = await client(era);
       const result = await mcp.callTool({
         name: "check_availability", arguments: { from: "2026-10-23", to: "2026-10-25", room: "grand-hall" },
@@ -164,10 +169,12 @@ describe("public MCP endpoint, in-memory store", () => {
       expect(result.isError).not.toBe(true);
       const report = result.structuredContent as { rooms: unknown[]; meaning: { held: string } };
       expect(report.rooms).toEqual([
-        { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": "held", "2026-10-24": "busy", "2026-10-25": "free" } },
+        { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": "held", "2026-10-24": "busy", "2026-10-25": PUBLIC_DAY_NO_BOOKING } },
       ]);
       expect(report.meaning.held).toContain("A second option may be possible");
       expect(text(result)).toContain("Someone has a provisional option");
+      expect(text(result)).not.toContain("\"free\"");
+      expect(result.structuredContent).toMatchObject({ asOf: new Date(NOW).toISOString() });
     });
 
     it("explains how to enquire, through staff", async () => {
@@ -178,6 +185,7 @@ describe("public MCP endpoint, in-memory store", () => {
         otherWays: { telephone: "+44 141 552 2418", email: "info@tradeshallglasgow.co.uk" },
       });
       expect(text(result)).toContain("cannot send an enquiry, hold a date or make a booking");
+      expect(result.structuredContent).toMatchObject({ asOf: new Date(NOW).toISOString() });
     });
   });
 
@@ -334,6 +342,120 @@ describe("Origin allowlist", () => {
   it("is the API's CORS origins plus the AI assistants, by hostname", () => {
     expect(mcpAllowedOriginHosts(["https://venviewer.com", "http://localhost:5173", "not a url"]).sort())
       .toEqual([...AI_ASSISTANT_ORIGIN_HOSTS, "venviewer.com", "localhost"].sort());
+  });
+});
+
+describe("per-session budget, on top of the per-IP limit", () => {
+  const HOUR = 60 * 60_000;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+  const servers: FastifyInstance[] = [];
+  const clients: Client[] = [];
+
+  async function serve(session: BudgetLimits, sessionless: BudgetLimits): Promise<URL> {
+    const server = Fastify();
+    await server.register(publicMcpRoutes, {
+      store, corsOrigins: ["https://venviewer.com"], now: () => NOW,
+      budget: new PublicMcpBudget({ session, sessionless }),
+    });
+    await server.listen({ port: 0, host: "127.0.0.1" });
+    servers.push(server);
+    const { port } = server.server.address() as AddressInfo;
+    return new URL(`http://127.0.0.1:${String(port)}/mcp`);
+  }
+
+  async function client(url: URL, era: "modern" | "legacy"): Promise<Client> {
+    const connected = await connect(url, era, []);
+    clients.push(connected);
+    return connected;
+  }
+
+  function post(url: URL, headers: Record<string, string>, body: object): Promise<Response> {
+    return fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function availability(mcp: Client, from: string, to: string): Promise<CallToolResult> {
+    return await mcp.callTool({ name: "check_availability", arguments: { from, to } });
+  }
+
+  afterAll(async () => {
+    for (const connected of clients) await connected.close();
+    for (const server of servers) await server.close();
+  });
+
+  it("gives a 2025-era handshake a session id, and a 2026-era request none", async () => {
+    const url = await serve({ requests: 50, dates: 100, windowMs: HOUR }, { requests: 50, dates: 100, windowMs: HOUR });
+    const initialize = await post(url, {}, {
+      jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } },
+    });
+    expect(initialize.status).toBe(200);
+    expect(initialize.headers.get("mcp-session-id")).toMatch(UUID);
+    const listed = await post(url, {}, { jsonrpc: "2.0", id: 2, method: "tools/list" });
+    expect(listed.status).toBe(200);
+    expect(listed.headers.get("mcp-session-id")).toBeNull();
+  });
+
+  it("stops one conversation at its hourly dates, names the venue team, and lets a smaller question fit", async () => {
+    const url = await serve({ requests: 50, dates: 10, windowMs: HOUR }, { requests: 50, dates: 100, windowMs: HOUR });
+    const first = await client(url, "legacy");
+    expect((await availability(first, "2026-10-02", "2026-10-08")).isError).not.toBe(true);
+    const refused = await availability(first, "2026-10-09", "2026-10-15");
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toContain("This conversation has asked about the most dates that can be checked here in an hour (10)");
+    expect(text(refused)).toContain(TRADES_HALL_PUBLIC_PROFILE.telephone);
+    expect(text(refused)).toContain(TRADES_HALL_PUBLIC_PROFILE.enquiryUrl);
+    expect(text(refused)).toContain("You can ask here again in about 60 minutes");
+    expect(text(refused)).not.toContain(PUBLIC_DAY_NO_BOOKING);
+    // A refusal spends nothing: three more dates still fit in what is left.
+    expect((await availability(first, "2026-10-09", "2026-10-11")).isError).not.toBe(true);
+    // A second conversation has a budget of its own.
+    const second = await client(url, "legacy");
+    expect((await availability(second, "2026-10-02", "2026-10-08")).isError).not.toBe(true);
+  });
+
+  it("does not charge a question it refuses on its own terms", async () => {
+    const url = await serve({ requests: 50, dates: 5, windowMs: HOUR }, { requests: 50, dates: 5, windowMs: HOUR });
+    const mcp = await client(url, "modern");
+    const past = await availability(mcp, "2026-09-01", "2026-09-30");
+    expect(text(past)).toMatch(/today \(2026-10-01/u);
+    expect((await availability(mcp, "2026-10-02", "2026-10-06")).isError).not.toBe(true);
+  });
+
+  it("budgets a caller with no recognised session by address and agent, whatever ids it makes up", async () => {
+    const url = await serve({ requests: 50, dates: 100, windowMs: HOUR }, { requests: 3, dates: 100, windowMs: HOUR });
+    const forged = (index: number): Record<string, string> => ({
+      "mcp-session-id": `0000000${String(index)}-0000-4000-8000-000000000000`,
+      "x-venviewer-mcp-budget": `session:escape-${String(index)}`,
+    });
+    for (let index = 0; index < 3; index += 1) {
+      const response = await post(url, forged(index), { jsonrpc: "2.0", id: index, method: "tools/list" });
+      expect(response.status).toBe(200);
+    }
+    const refused = await post(url, forged(9), { jsonrpc: "2.0", id: 42, method: "tools/list" });
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("retry-after"))).toBe(3600);
+    expect(refused.headers.get("cache-control")).toBe("no-store");
+    const body = await refused.json() as { jsonrpc: string; id: number; error: { code: number; message: string } };
+    expect(body).toMatchObject({ jsonrpc: "2.0", id: 42, error: { code: -32000 } });
+    expect(body.error.message).toContain("Questions from this connection have made the most requests");
+    expect(body.error.message).toContain(TRADES_HALL_PUBLIC_PROFILE.email);
+    expect(body.error.message).not.toMatch(STACK_TRACE);
+  });
+
+  it("keeps a session's requests apart from its address's other callers", async () => {
+    const url = await serve({ requests: 4, dates: 100, windowMs: HOUR }, { requests: 2, dates: 100, windowMs: HOUR });
+    // The handshake itself draws on the address: one of its two.
+    const mcp = await client(url, "legacy");
+    // notifications/initialized and tools/list draw on the session: two of four.
+    await mcp.listTools();
+    expect((await post(url, {}, { jsonrpc: "2.0", id: 1, method: "tools/list" })).status).toBe(200);
+    expect((await post(url, {}, { jsonrpc: "2.0", id: 2, method: "tools/list" })).status).toBe(429);
+    // The address is spent; the session still has room.
+    expect((await mcp.listTools()).tools).toHaveLength(3);
   });
 });
 

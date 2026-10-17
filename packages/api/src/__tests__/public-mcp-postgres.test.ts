@@ -10,7 +10,7 @@ import {
   type CallToolResult,
   type FetchLike,
 } from "@modelcontextprotocol/client";
-import { TRADES_HALL_PUBLIC_PROFILE, type PublicVenueProfile } from "@omnitwin/types";
+import { PUBLIC_DAY_NO_BOOKING, PUBLIC_DAY_STATUSES, TRADES_HALL_PUBLIC_PROFILE, type PublicDayStatus, type PublicVenueProfile } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { publicMcpRoutes } from "../routes/public-mcp.js";
@@ -239,7 +239,9 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
     return connected;
   }
 
-  type Days = Record<string, "free" | "held" | "busy">;
+  type Days = Record<string, PublicDayStatus>;
+  /** A date with nothing on the Diary: never a bare "free". */
+  const NONE = PUBLIC_DAY_NO_BOOKING;
   async function availability(mcp: Client, from: string, to: string): Promise<Record<string, Days>> {
     const result = await mcp.callTool({ name: "check_availability", arguments: { venue: allowedSlug, from, to } });
     expect(result.isError).not.toBe(true);
@@ -249,11 +251,11 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
       [key: string]: unknown;
     };
     expect(Object.keys(report).sort()).toEqual(["asOf", "dayRule", "enquire", "from", "meaning", "rooms", "timeZone", "to", "venue"]);
-    expect(Object.keys(report.meaning).sort()).toEqual(["busy", "free", "held"]);
+    expect(Object.keys(report.meaning).sort()).toEqual([...PUBLIC_DAY_STATUSES].sort());
     for (const entry of report.rooms) {
       expect(Object.keys(entry).sort()).toEqual(["days", "name", "room"]);
       // One word per date: no rank, count, time or name rides along.
-      for (const status of Object.values(entry.days)) expect(["free", "held", "busy"]).toContain(status);
+      for (const status of Object.values(entry.days)) expect(PUBLIC_DAY_STATUSES).toContain(status);
     }
     return Object.fromEntries(report.rooms.map((entry) => [entry.room, entry.days]));
   }
@@ -262,7 +264,7 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
     const days: Days = {};
     const start = Date.parse(`${from}T12:00:00.000Z`);
     for (let index = 0; index < count; index += 1) {
-      days[new Date(start + index * 86_400_000).toISOString().slice(0, 10)] = "free";
+      days[new Date(start + index * 86_400_000).toISOString().slice(0, 10)] = NONE;
     }
     return days;
   }
@@ -273,10 +275,10 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
       expect(rooms).toEqual({
         // 23: a live hold past its decision date; 24: confirmed plus a hold;
         // 25: an expired hold; 26: a released hold.
-        "grand-hall": { "2026-10-23": "held", "2026-10-24": "busy", "2026-10-25": "free", "2026-10-26": "free" },
+        "grand-hall": { "2026-10-23": "held", "2026-10-24": "busy", "2026-10-25": NONE, "2026-10-26": NONE },
         // 23: a lost hold; 24: the block at 03:30 GMT; 25: a live 2nd option
         // from 04:30 GMT; 26: a deleted hold.
-        saloon: { "2026-10-23": "free", "2026-10-24": "busy", "2026-10-25": "held", "2026-10-26": "free" },
+        saloon: { "2026-10-23": NONE, "2026-10-24": "busy", "2026-10-25": "held", "2026-10-26": NONE },
         "store-room": allFree("2026-10-23", 4),
       });
     });
@@ -294,15 +296,15 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
       const mcp = await client(era);
       const december = await availability(mcp, "2026-12-23", "2026-12-27");
       expect(december["saloon"]).toEqual({
-        "2026-12-23": "free", "2026-12-24": "busy", "2026-12-25": "busy", "2026-12-26": "busy", "2026-12-27": "free",
+        "2026-12-23": NONE, "2026-12-24": "busy", "2026-12-25": "busy", "2026-12-26": "busy", "2026-12-27": NONE,
       });
       const spring = await availability(mcp, "2027-03-26", "2027-03-29");
       expect(spring).toEqual({
         // 26: an expired hold; 27 and 28: the confirmed booking across 04:00
         // BST (the 28th's live hold stays under it); 29: a live hold.
-        "grand-hall": { "2027-03-26": "free", "2027-03-27": "busy", "2027-03-28": "busy", "2027-03-29": "held" },
+        "grand-hall": { "2027-03-26": NONE, "2027-03-27": "busy", "2027-03-28": "busy", "2027-03-29": "held" },
         // 27: a released hold; 28: a live hold from 04:30 BST, the 28th's only.
-        saloon: { "2027-03-26": "free", "2027-03-27": "free", "2027-03-28": "held", "2027-03-29": "free" },
+        saloon: { "2027-03-26": NONE, "2027-03-27": NONE, "2027-03-28": "held", "2027-03-29": NONE },
         "store-room": allFree("2027-03-26", 4),
       });
     });
