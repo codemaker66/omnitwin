@@ -2,6 +2,7 @@ import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
   VENUE_TRUTH_PROVENANCE,
+  isPublishedRoomSlug,
   type PublishedRoomSlug,
   type RoomCapacity,
 } from "@omnitwin/types";
@@ -60,10 +61,10 @@ export const HOME_HERO_ALT = "The Grand Hall set for a wedding beneath its chand
 export const HOME_HERO_PLAN = "Plan Grand Hall";
 export const HOME_HERO_WALK = "Walk the room";
 /** Founder hold of 19 September 2026 (lib/splat-access.ts): outside local
- *  development no captured room opens, and the page says so in these words. */
-export const HOME_HERO_SPLATS_HELD = "Gaussian splats · Work in progress";
-export const HOME_HERO_TOUR = "Try the virtual tour · Work in progress";
-export const HOME_CARD_HELD = "Work in progress";
+ *  development no captured room opens. The page names what is there (the
+ *  panorama tour, each room's published capacities) and says nothing of the
+ *  3D room until the hold lifts. */
+export const HOME_HERO_TOUR = "Take the panorama tour";
 
 export const HOME_ROOMS_TITLE = "More rooms";
 
@@ -83,7 +84,7 @@ export const HOME_ENQUIRY_TITLE = FRESH_ENQUIRY_TITLE;
 export const HOME_ENQUIRY_LEDE = FRESH_ENQUIRY_LEDE;
 
 export const HOME_FOOT_ABOUT = "About the venue";
-export const HOME_FOOT_TWIN = "Virtual tour · Work in progress";
+export const HOME_FOOT_TWIN = "Panorama tour";
 export const HOME_FOOT_TWIN_HREF = "/venues/trades-hall/twin";
 export const HOME_FOOT_ENQUIRE = "Ask about a date";
 export const HOME_FOOT_SCAN_NOTE = "Scan dimensions are estimates. Confirm measurements with the venue.";
@@ -129,6 +130,21 @@ export function envelopeLine(envelope: CapacityEnvelope): string {
     : `${String(envelope.smallest)} to ${String(envelope.largest)}`;
 }
 
+/**
+ * One room's published capacities in a line: "Dinner 180 · Reception 250".
+ * Dinner then reception, labelled as the venue labels them. Null for a room
+ * the venue publishes no figures for, so a card shows no line rather than a
+ * guess.
+ */
+export function roomCapacityLine(slug: string): string | null {
+  if (!isPublishedRoomSlug(slug)) return null;
+  const capacity = TRADES_HALL_ROOM_CAPACITIES[slug];
+  return CAPACITY_FORMATS
+    .filter((format) => format.key === "dinner" || format.key === "reception")
+    .map((format) => `${format.label} ${String(capacity[format.key])}`)
+    .join(" · ");
+}
+
 /** Everything user-visible on this page, for the public copy sweep. */
 export function allHomeCopy(): readonly string[] {
   return [
@@ -143,9 +159,7 @@ export function allHomeCopy(): readonly string[] {
     HOME_HERO_ALT,
     HOME_HERO_PLAN,
     HOME_HERO_WALK,
-    HOME_HERO_SPLATS_HELD,
     HOME_HERO_TOUR,
-    HOME_CARD_HELD,
     HOME_ROOMS_TITLE,
     HOME_CAPACITY_TITLE,
     HOME_CAPACITY_LEDE,
@@ -164,6 +178,7 @@ export function allHomeCopy(): readonly string[] {
     HOME_FOOT_NOTE,
     ...HOME_LEGAL_LINKS.map((link) => link.label),
     ...Object.values(HOME_ROOM_NAMES),
+    ...Object.keys(HOME_ROOM_NAMES).flatMap((slug) => roomCapacityLine(slug) ?? []),
     ...capacityEnvelopes().flatMap((envelope) => [envelope.label, envelopeLine(envelope)]),
   ];
 }
