@@ -268,7 +268,7 @@ export function NotificationCenter({
                         Mark read
                       </button>
                     </div>
-                    {draftOpen && promotedHold !== null && (
+                    {draftOpen && (
                       <div id={draftPanelId}>
                         <PromotionDraft bookingId={promotedHold} />
                       </div>
