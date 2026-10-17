@@ -32,6 +32,7 @@ import {
   executeDiaryCommand,
   realDiaryCommandDeps,
 } from "../services/diary-commands.js";
+import { announcePromotionNotices, loadPromotionDraft } from "../services/hold-promotion.js";
 import { canReadDiary } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
@@ -155,6 +156,7 @@ async function runKeyedCommand(
       execution.changed.kind,
       execution.changed.bookingId,
     );
+    announcePromotionNotices(request.log, execution.changed.notices);
   }
   const http = ackToHttpReply(command.kind, execution.ack);
   return reply
@@ -242,6 +244,18 @@ export async function bookingRoutes(
     return { data: serializeBooking(row) };
   });
 
+  // The drafted email for a hold that has become 1st option (Blake, 26 Sep):
+  // composed for the person reading it, addressed to the client of record,
+  // and never sent from here. A person reads it and sends it themselves.
+  server.get("/:id/promotion-draft", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const result = await loadPromotionDraft(db, request.user, params.data.id);
+    if (!result.ok) return reply.status(result.status).send({ error: result.error, code: result.code });
+    return { data: result.draft };
+  });
+
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
@@ -285,6 +299,7 @@ export async function bookingRoutes(
     const result = await transitionBookingCore(db, request.user, params.data.id, parsed.data);
     if (!result.ok) return sendDeny(reply, result);
     publishDiaryChanged(request, result.booking.venueId, result.changeKind, result.booking.id);
+    announcePromotionNotices(request.log, result.promotionNotices);
     return {
       data: serializeBooking(result.booking),
       // The Canon §3 human ping: promotions ride the response so the caller

@@ -21,6 +21,7 @@ import {
   resequenceLaddersAfterExit,
   type ResequenceResult,
 } from "./hold-hygiene.js";
+import { writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
 
 // ---------------------------------------------------------------------------
 // Booking mutation cores (T-537; Canon §9) — extracted VERBATIM from the
@@ -63,6 +64,9 @@ export interface BookingMutationOk {
   readonly booking: BookingRow;
   readonly changeKind: "booking.created" | "booking.updated" | "booking.transitioned";
   readonly resequence?: ResequenceResult | null;
+  /** Notices written in the transition's transaction for holds that became
+   *  1st option; the transport announces them after commit. */
+  readonly promotionNotices?: readonly PromotionNotice[];
 }
 
 export type BookingMutationResult = BookingMutationOk | BookingMutationDeny;
@@ -551,10 +555,12 @@ export async function transitionBookingCore(
     }
   }
 
-  const holdExited =
-    row.kind === "hold" &&
-    row.status === "active" &&
-    (toState === "released" || toState === "expired" || toState === "lost");
+  const holdExit: HoldExit | null =
+    row.kind === "hold" && row.status === "active"
+      && (toState === "released" || toState === "expired" || toState === "lost")
+      ? toState
+      : null;
+  const holdExited = holdExit !== null;
 
   try {
     const outcome = await conn.transaction(async (tx) => {
@@ -667,7 +673,34 @@ export async function transitionBookingCore(
         }
       }
 
-      return { updated, resequence };
+      // Blake's 26 September decision: the new 1st option's owner is told in
+      // the app, in THIS transaction, so a promotion is never silent and a
+      // notice never outlives a rolled-back exit. Nothing is emailed here.
+      let promotionNotices: readonly PromotionNotice[] = [];
+      if (holdExit !== null && resequence !== null && resequence.promotedToFirst.length > 0) {
+        const survivorById = new Map(ladderRows.map((survivor) => [survivor.id, survivor]));
+        const promoted = resequence.promotedToFirst.flatMap((hold) => {
+          const survivor = survivorById.get(hold.id);
+          return survivor === undefined ? [] : [survivor];
+        });
+        const jointCount = promoted.filter((survivor) => survivor.jointFlag).length;
+        promotionNotices = await writePromotionNotices(tx, {
+          venueId: row.venueId,
+          spaceId: row.spaceId,
+          exit: holdExit,
+          actorUserId: actor.id,
+          promoted: promoted.map((survivor) => ({
+            id: survivor.id,
+            title: survivor.title,
+            ownerUserId: survivor.ownerUserId,
+            jointFlag: survivor.jointFlag && jointCount > 1,
+            startsAt: survivor.startsAt,
+          })),
+          roles: { diaryWriteRoles: DIARY_WRITE_ROLES, holdOwnerRoles: HOLD_OWNER_ROLES },
+        });
+      }
+
+      return { updated, resequence, promotionNotices };
     });
 
     if (outcome === "stale") {
@@ -684,6 +717,7 @@ export async function transitionBookingCore(
       booking: outcome.updated,
       changeKind: "booking.transitioned",
       resequence: outcome.resequence,
+      promotionNotices: outcome.promotionNotices,
     };
   } catch (error) {
     const code = pgErrorCode(error);
