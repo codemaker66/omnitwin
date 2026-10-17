@@ -52,6 +52,9 @@ export const CO_EDITING_AUTOSAVE_MS = 400;
 const CLIENT_PING_MS = 15_000;
 const OVERLAY_SWEEP_MS = 1_000;
 const BUSY_RETRY_MS = 250;
+/** An op not echoed within this window was dropped by the hub (rate or size)
+ *  and no longer counts as the later write. A local echo takes milliseconds. */
+const PENDING_ECHO_MS = 2_000;
 const SOCKET_OPEN = 1;
 const SAVED_IDS_PER_FRAME = 500;
 
@@ -124,9 +127,7 @@ export class LayoutLiveClient {
   /** Ops waiting for the next coalesced frame, latest per object. */
   readonly #queued = new Map<string, LiveOp>();
   /** Ops sent but not yet echoed back with their sequence, per object. */
-  readonly #unechoed = new Map<string, number>();
-  /** The object ids of each sent frame, in send order (echoes are FIFO). */
-  readonly #sentFrames: string[][] = [];
+  readonly #unechoed = new Map<string, { count: number; lastSentAtMs: number }>();
   #refetching = false;
   #refetchAgain = false;
 
@@ -222,7 +223,6 @@ export class LayoutLiveClient {
     this.#connectionId = null;
     this.#queued.clear();
     this.#unechoed.clear();
-    this.#sentFrames.length = 0;
     this.#options.onCoEditorsChanged?.(0);
     useLayoutLiveStore.setState({ connectionId: null, participants: [], overlay: EMPTY_OVERLAY });
   }
@@ -261,7 +261,7 @@ export class LayoutLiveClient {
         return;
       case "live.ops":
         if (frame.connectionId === this.#connectionId) {
-          this.#onEcho(frame.seq);
+          this.#onEcho(frame.seq, frame.ops);
         } else {
           this.#onRemoteOps(frame);
         }
@@ -345,17 +345,22 @@ export class LayoutLiveClient {
       const chunk = ops.slice(start, start + LIVE_MAX_OPS_PER_FRAME);
       const ids = chunk.map((op) => op.kind === "put" ? op.object.id : op.id);
       socket.send(JSON.stringify({ type: "live.ops", ops: chunk }));
-      this.#sentFrames.push(ids);
-      for (const id of ids) this.#unechoed.set(id, (this.#unechoed.get(id) ?? 0) + 1);
+      const sentAtMs = this.#now();
+      for (const id of ids) {
+        this.#unechoed.set(id, { count: (this.#unechoed.get(id)?.count ?? 0) + 1, lastSentAtMs: sentAtMs });
+      }
     }
   }
 
-  #onEcho(seq: number): void {
-    const ids = this.#sentFrames.shift() ?? [];
+  /** Paired by the ids the echoed frame carries, never by send order: the
+   *  hub may drop a frame, and then every later pairing would be wrong. */
+  #onEcho(seq: number, ops: readonly LiveOp[]): void {
+    const ids = ops.map((op) => op.kind === "put" ? op.object.id : op.id);
     for (const id of ids) {
-      const remaining = (this.#unechoed.get(id) ?? 1) - 1;
-      if (remaining <= 0) this.#unechoed.delete(id);
-      else this.#unechoed.set(id, remaining);
+      const entry = this.#unechoed.get(id);
+      if (entry === undefined) continue;
+      if (entry.count <= 1) this.#unechoed.delete(id);
+      else this.#unechoed.set(id, { ...entry, count: entry.count - 1 });
     }
     this.#setOverlay(retireOverlayBefore(useLayoutLiveStore.getState().overlay, ids, seq));
   }
@@ -392,8 +397,12 @@ export class LayoutLiveClient {
     if (editor.configId !== this.#options.configId) return;
     const selected = useSelectionStore.getState().selectedIds;
     const dragging = isEditorGestureActive();
-    const isPending = (id: string): boolean =>
-      (this.#unechoed.get(id) ?? 0) > 0 || this.#queued.has(id) || (dragging && selected.has(id));
+    const nowMs = this.#now();
+    const isPending = (id: string): boolean => {
+      const sent = this.#unechoed.get(id);
+      const inFlight = sent !== undefined && nowMs - sent.lastSentAtMs < PENDING_ECHO_MS;
+      return inFlight || this.#queued.has(id) || (dragging && selected.has(id));
+    };
     const { overlay, claimedIds } = applyRemoteOps(useLayoutLiveStore.getState().overlay, frame, isPending, this.#now());
     this.#setOverlay(overlay);
     if (claimedIds.length === 0) return;

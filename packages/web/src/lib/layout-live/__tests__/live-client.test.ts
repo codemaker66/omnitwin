@@ -263,6 +263,25 @@ describe("incoming", () => {
     h.client.stop();
   });
 
+  it("stops treating an op as in flight when the server dropped it, so peers' later writes still land", async () => {
+    const h = harness();
+    const socket = await joined(h);
+    useEditorStore.getState().updateObject(T2, { positionX: 6 });
+    // The hub dropped that frame (rate limit): no echo ever comes back. A later
+    // frame of mine about another object is echoed.
+    await vi.advanceTimersByTimeAsync(LIVE_SEND_INTERVAL_MS);
+    useEditorStore.getState().updateObject(T3, { positionX: 7 });
+    socket.receive({ type: "live.ops", seq: 1, connectionId: "c-me", userId: "u-me", name: "Blake Example", ops: [put(editor(T3, 7))] });
+    // T3's echo arrived, so T3 is settled at once: a peer's later write lands.
+    socket.receive({ type: "live.ops", seq: 2, connectionId: "c-alex", userId: "u-alex", name: "Alex Murray", ops: [put(editor(T3, 9))] });
+    expect(useLayoutLiveStore.getState().overlay.get(T3)?.state?.positionX).toBe(9);
+    // T2's frame never came back; after the echo window it is not in flight.
+    await vi.advanceTimersByTimeAsync(2_500);
+    socket.receive({ type: "live.ops", seq: 3, connectionId: "c-alex", userId: "u-alex", name: "Alex Murray", ops: [put(editor(T2, 8))] });
+    expect(useLayoutLiveStore.getState().overlay.get(T2)?.state?.positionX).toBe(8);
+    h.client.stop();
+  });
+
   it("refetches and adopts when a newer commit is announced, retiring what it reflects", async () => {
     const h = harness();
     const socket = await joined(h);
