@@ -44,7 +44,8 @@ describe("migration 0090", () => {
     const index = journal.entries.findIndex((entry) => entry.tag === TAG);
     const entry = journal.entries[index];
     const previous = journal.entries[index - 1];
-    expect(index).toBe(journal.entries.length - 1);
+    // Directly after 0089; later migrations may follow it.
+    expect(index).toBeGreaterThan(0);
     expect(previous?.tag).toBe("0089_pricing_rule_windows");
     expect(entry?.idx).toBe((previous?.idx ?? -2) + 1);
     expect(entry?.when).toBeGreaterThan(previous?.when ?? Number.POSITIVE_INFINITY);
