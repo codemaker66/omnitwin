@@ -345,3 +345,8 @@ CREATE INDEX IF NOT EXISTS "competitor_losses_venue_competitor"
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "competitor_losses_opportunity"
   ON "competitor_losses" ("opportunity_id");
+--> statement-breakpoint
+
+-- The ten-second lock limit was for this file alone (as 0090 does); anything
+-- after it in the same migration run waits as the migrator itself allows.
+SET LOCAL lock_timeout TO DEFAULT;

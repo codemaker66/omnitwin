@@ -697,6 +697,10 @@ export async function runPageChecks(db: Database, options: {
     const answer = await checkPage({ fetcher: options.fetcher, pageUrl: pricePageUrl, website, previousHash: claimed.pageHash });
     const next = nextCheckAfter(now, answer.outcome);
     await db.transaction(async (tx) => {
+      // The read took time. If a person changed the page's address, stopped
+      // the check or removed the venue meanwhile, the answer belongs to the
+      // old page: it is logged, but never set on the venue as its page's
+      // state, so a new address never inherits the old page's text.
       await tx.update(competitorVenues).set({
         pageCheckedAt: now,
         pageCheckOutcome: answer.outcome,
@@ -704,7 +708,13 @@ export async function runPageChecks(db: Database, options: {
         nextCheckAfter: next,
         ...(answer.hash === null ? {} : { pageHash: answer.hash }),
         ...(answer.outcome === "changed" ? { pageChangedAt: now } : {}),
-      }).where(and(eq(competitorVenues.id, candidate.id), eq(competitorVenues.venueId, candidate.venueId)));
+      }).where(and(
+        eq(competitorVenues.id, candidate.id),
+        eq(competitorVenues.venueId, candidate.venueId),
+        isNull(competitorVenues.removedAt),
+        isNotNull(competitorVenues.checksAllowedAt),
+        eq(competitorVenues.pricePageUrl, pricePageUrl),
+      ));
       await tx.insert(competitorPageChecks).values({
         venueId: candidate.venueId,
         competitorId: candidate.id,

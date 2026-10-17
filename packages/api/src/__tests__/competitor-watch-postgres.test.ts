@@ -621,6 +621,35 @@ describe.skipIf(testUrl === undefined)("the competitor watch on isolated Postgre
     expect((await watch()).competitors.find((entry) => entry.id === voco)?.pageCheck.allowedAt).toBeNull();
   });
 
+  it("never sets an old page's answer on an address changed while it was read", async () => {
+    const voco = idOf(await startSet(), VOCO);
+    await server.inject({ method: "PUT", url: `/venues/${VENUE}/competitor-watch/${voco}/page-check`, headers: asManager, payload: { termsRead: true, robotsRead: true } });
+    const newPage = "https://grandcentral.vocohotels.com/weddings/";
+    // The office changes the address while the old page is being read.
+    const racing: PageFetcher = {
+      async get(url: URL): Promise<FetchAnswer> {
+        if (url.href === VOCO_PAGE) {
+          const moved = await server.inject({
+            method: "PATCH", url: `/venues/${VENUE}/competitor-watch/${voco}`, headers: asManager, payload: { pricePageUrl: newPage },
+          });
+          expect(moved.statusCode).toBe(200);
+          return { kind: "response", status: 200, body: PACKAGES("£130"), location: null };
+        }
+        return { kind: "response", status: 200, body: "User-agent: *\nAllow: /", location: null };
+      },
+    };
+    const run = await runPageChecks(db, { venueId: VENUE, now: new Date(), fetcher: racing, runBy: "person", triggeredBy: MANAGER });
+    expect(run.results.find((result) => result.competitorId === voco)?.outcome).toBe("first_seen");
+
+    const [row] = (await pool.query<Record<string, unknown>>(
+      "SELECT price_page_url, checks_allowed_at, page_hash, page_checked_at, page_check_outcome FROM competitor_venues WHERE id = $1", [voco],
+    )).rows;
+    expect(row).toEqual({ price_page_url: newPage, checks_allowed_at: null, page_hash: null, page_checked_at: null, page_check_outcome: null });
+    // The read itself is still logged, against the address it read.
+    expect((await pool.query("SELECT url, content_hash FROM competitor_page_checks WHERE competitor_id = $1", [voco])).rows)
+      .toEqual([{ url: VOCO_PAGE, content_hash: pageTextHash(PACKAGES("£130")) }]);
+  });
+
   it("runs the unattended pass only for its own token", async () => {
     const voco = idOf(await startSet(), VOCO);
     await server.inject({ method: "PUT", url: `/venues/${VENUE}/competitor-watch/${voco}/page-check`, headers: asManager, payload: { termsRead: true, robotsRead: true } });

@@ -77,6 +77,9 @@ describe("migration 0095", () => {
     expect(sql).toMatch(/FOREIGN KEY \("competitor_id", "venue_id"\) REFERENCES "competitor_venues"\("id", "venue_id"\)/u);
     expect(sql).toMatch(/BEFORE UPDATE OR DELETE ON "competitor_price_captures"/u);
     expect(sql).toContain("SET LOCAL lock_timeout");
+    // The lock limit is the file's own: a later migration in the same run is
+    // not held to it.
+    expect(sql.trimEnd()).toMatch(/SET LOCAL lock_timeout TO DEFAULT;$/u);
   });
 });
 
