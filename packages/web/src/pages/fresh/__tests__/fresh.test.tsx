@@ -260,42 +260,48 @@ describe("the room dossiers", () => {
   });
 });
 
-describe("3D room — work in progress", () => {
-  it("keeps a static preview without a way to mount the captured-room viewer", () => {
+describe("the 3D room — held back, so not mentioned", () => {
+  it("offers the panorama tour and the photographs, with no way to mount the captured-room viewer", () => {
     render(<FreshPage />);
-    const poster = screen.getByAltText(
-      "The Reception Room as a captured scene, rendered by Venviewer — not a photograph",
-    );
-    expect(poster.getAttribute("src")).toContain("walk-poster");
-    const region = screen.getByRole("region", { name: "The 3D room" });
-    expect(within(region).getByText("Work in progress")).toBeTruthy();
-    expect(within(region).getByText("3D room access is paused while we improve it.")).toBeTruthy();
+    const region = screen.getByRole("region", { name: "Look around" });
+    expect(within(region).getByText(/captured panoramas/u)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Step in" })).toBeNull();
-    fireEvent.click(poster);
-    fireEvent.click(within(region).getByText("Work in progress"));
     expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
     expect(region.querySelector("canvas")).toBeNull();
     expect(within(region).queryByRole("progressbar")).toBeNull();
     expect(region.querySelector("[data-activity-indicator]")).toBeNull();
-    expect(
-      document.querySelector('[data-walk-state="unavailable"]'),
-    ).toBeTruthy();
+    expect(document.querySelector("[data-walk-state]")).toBeNull();
+    expect(document.querySelector('img[src*="walk-poster"]')).toBeNull();
+  });
+
+  it("never prints Work in progress, Gaussian or the 3D room while splats are held", () => {
+    vi.stubEnv("DEV", false);
+    render(<FreshPage />);
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/work in progress/iu);
+    expect(text).not.toMatch(/gaussian/iu);
+    expect(text).not.toMatch(/3D room/iu);
+    for (const line of allFreshCopy()) {
+      expect(line, line).not.toMatch(/work in progress|gaussian|3D room/iu);
+    }
+    vi.unstubAllEnvs();
   });
 });
 
 describe("the walkthrough — wired from the front door", () => {
-  it("offers the available panorama tour with a visible work-in-progress disclosure", () => {
+  it("offers the available panorama tour under its plain name", () => {
     render(<FreshPage />);
     const tourLinks = [...document.querySelectorAll('a[href="/tour"]')];
     if (FRESH_TOUR_ENABLED) {
       expect(tourLinks.length).toBeGreaterThanOrEqual(2);
-      expect(screen.getByRole("link", { name: "Tour preview · Work in progress" })).toBeTruthy();
-      expect(screen.getByRole("heading", { name: "Panorama tour · Work in progress" })).toBeTruthy();
-      expect(screen.getByRole("link", { name: "Open the tour preview" })).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Panorama tour" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Panorama tour" })).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Open the panorama tour" })).toBeTruthy();
     } else {
       // No dead doors: nothing on the page may advertise an unreachable tour.
       expect(tourLinks).toHaveLength(0);
-      expect(screen.queryByRole("link", { name: "Open the tour preview" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Open the panorama tour" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Look around" })).toBeNull();
     }
   });
 
@@ -305,7 +311,7 @@ describe("the walkthrough — wired from the front door", () => {
     const expectHref = (index: number, marker: string): void => {
       fireEvent.click(openButtons[index] as HTMLElement);
       const link = screen.getByRole("link", {
-        name: "See this room in the tour preview · Work in progress",
+        name: "See this room in the panorama tour",
       });
       expect(link.getAttribute("href")).toContain(marker);
       fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -316,19 +322,17 @@ describe("the walkthrough — wired from the front door", () => {
     expectHref(3, "scan_105");
   });
 
-  it("labels both Reception Room destinations as work in progress", () => {
+  it("offers the Reception Room only the panorama tour, with no door to the held 3D room", () => {
     render(<FreshPage />);
     const openButtons = screen.getAllByRole("button", { name: "Open the room" });
     fireEvent.click(openButtons[2] as HTMLElement);
     expect(
       screen
-        .getByRole("link", { name: "See this room in the tour preview · Work in progress" })
+        .getByRole("link", { name: "See this room in the panorama tour" })
         .getAttribute("href"),
     ).toContain("scan_126");
-    const walkLink = screen.getByRole("link", {
-      name: "3D room · Work in progress",
-    });
-    expect(walkLink.getAttribute("href")).toBe("#walk");
+    expect(document.querySelector('.fr-dossier-actions a[href="#walk"]')).toBeNull();
+    expect(screen.queryByRole("link", { name: /3D room/iu })).toBeNull();
   });
 });
 
