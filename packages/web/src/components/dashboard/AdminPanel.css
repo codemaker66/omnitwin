@@ -447,6 +447,60 @@
   grid-column: 1 / -1;
 }
 
+/* The time of day a pricing rule is for: two clocks side by side, then a
+   line that says what empty means, or what is holding the save. */
+.admin-panel-fieldset {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.admin-panel-fieldset legend {
+  padding: 0;
+  margin-bottom: 7px;
+  color: #f7e9c9;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.admin-panel-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.admin-panel-field input[type="time"] {
+  color-scheme: dark;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-panel-field-note {
+  margin: 0;
+  color: rgba(244, 239, 228, 0.72);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.admin-panel-field-note--hold {
+  color: #ffd89a;
+}
+
+.admin-panel-hours {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.admin-panel-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .admin-panel-field input,
 .admin-panel-field select {
   min-height: 44px;
@@ -502,7 +556,8 @@
     flex-direction: column;
   }
 
-  .admin-panel-metrics {
+  .admin-panel-metrics,
+  .admin-panel-field-row {
     grid-template-columns: 1fr;
   }
 
