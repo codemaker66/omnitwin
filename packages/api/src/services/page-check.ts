@@ -36,6 +36,7 @@ export const PAGE_CHECK_INTERVAL_MS = 7 * 86_400_000;
 export const PAGE_CHECK_BACKOFF_MS = 28 * 86_400_000;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_DEADLINE_MS = 20_000;
 const MAX_REDIRECTS = 3;
 
 // ---------------------------------------------------------------------------
@@ -192,9 +193,16 @@ export function createHttpsPageFetcher(options: { readonly resolver?: Resolver }
       }
       return new Promise<FetchAnswer>((resolve) => {
         let settled = false;
+        // The socket timeout catches silence; this catches a page that drips
+        // a byte at a time and would otherwise hold the check open.
+        const deadline = setTimeout(() => {
+          req.destroy();
+          finish({ kind: "failure", failure: "timeout" });
+        }, REQUEST_DEADLINE_MS);
         const finish = (answer: FetchAnswer): void => {
           if (settled) return;
           settled = true;
+          clearTimeout(deadline);
           resolve(answer);
         };
         const req = request(url, {
