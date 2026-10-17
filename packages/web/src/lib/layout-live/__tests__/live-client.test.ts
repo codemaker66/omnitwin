@@ -296,6 +296,32 @@ describe("incoming", () => {
   });
 });
 
+describe("access and heartbeat", () => {
+  it("leaves the room for good when the server revokes access", async () => {
+    const h = harness();
+    const socket = await joined(h);
+    socket.receive({ type: "live.ops", seq: 1, connectionId: "c-alex", userId: "u-alex", name: "Alex Murray", ops: [put(editor(T2, 8))] });
+    socket.receive({ type: "live.revoked" });
+    expect(useLayoutLiveStore.getState().status).toBe("off");
+    expect(useLayoutLiveStore.getState().overlay.size).toBe(0);
+    expect(h.others.at(-1)).toBe(0);
+    socket.sent.length = 0;
+    useEditorStore.getState().updateObject(T1, { positionX: 9 });
+    await vi.advanceTimersByTimeAsync(LIVE_SEND_INTERVAL_MS * 2);
+    expect(socket.ofType("live.ops")).toEqual([]);
+    h.client.stop();
+  });
+
+  it("answers the server's heartbeat", async () => {
+    const h = harness();
+    const socket = await joined(h);
+    socket.sent.length = 0;
+    socket.receive({ type: "ping" });
+    expect(socket.ofType("ping")).toHaveLength(1);
+    h.client.stop();
+  });
+});
+
 describe("losing the room", () => {
   it("clears what it saw, shows reconnecting, and resyncs on return", async () => {
     const h = harness();

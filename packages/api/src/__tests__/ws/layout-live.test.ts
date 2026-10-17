@@ -10,7 +10,7 @@ import {
   LayoutLiveHub,
   type LayoutLiveSocket,
 } from "../../ws/layout-live.js";
-import { registerAutoSave } from "../../ws/auto-save.js";
+import { registerAutoSave, revalidateLayoutLiveRooms } from "../../ws/auto-save.js";
 import { configurations, users } from "../../db/schema.js";
 import type { Database } from "../../db/client.js";
 
@@ -246,6 +246,11 @@ describe("canJoinLayoutLive — owner and venue floor only", () => {
     expect(canJoinLayoutLive(actor(role, { userId: "u-owner" }), layout)).toBe(false);
   });
 
+  it("refuses an owner whose role is not the venue's team (a caterer), failing closed for new roles", () => {
+    expect(canJoinLayoutLive(actor("caterer", { userId: "u-owner" }), layout)).toBe(false);
+    expect(canJoinLayoutLive(actor("some-future-role", { userId: "u-owner" }), layout)).toBe(false);
+  });
+
   it("refuses sales and caterers who do not own the layout", () => {
     expect(canJoinLayoutLive(actor("sales"), layout)).toBe(false);
     expect(canJoinLayoutLive(actor("caterer"), layout)).toBe(false);
@@ -270,6 +275,31 @@ describe("layout-live — structurally incapable of persisting", () => {
 // a live op that reached a persistence path would fail the test.
 // ---------------------------------------------------------------------------
 
+/** The select chain the code under test uses, typed so one cast suffices
+ *  (the house pattern in asset-rooms-route.test.ts). */
+interface FakeFiltered extends PromiseLike<readonly unknown[]> {
+  limit: (count: number) => Promise<readonly unknown[]>;
+}
+interface FakeQuery {
+  where: (...conditions: readonly unknown[]) => FakeFiltered;
+}
+interface FakeSelectQuery {
+  from: (table: unknown) => FakeQuery;
+}
+
+function fakeSelect(rowsFor: (table: unknown) => readonly unknown[]): Database["select"] {
+  return (() => ({
+    from(table: unknown): FakeQuery {
+      const rows = rowsFor(table);
+      const filtered: FakeFiltered = {
+        limit: () => Promise.resolve(rows),
+        then: (onFulfilled, onRejected) => Promise.resolve(rows).then(onFulfilled, onRejected),
+      };
+      return { where: () => filtered };
+    },
+  }) satisfies FakeSelectQuery) as Database["select"];
+}
+
 interface StubDb {
   readonly db: Database;
   readonly writes: string[];
@@ -282,22 +312,18 @@ function stubDb(owner: string | null): StubDb {
     if (table === users) return [{ name: "Alex Murray" }];
     return [];
   };
-  const select = (): unknown => ({
-    from: (table: unknown) => ({
-      where: () => ({ limit: () => Promise.resolve(rowsFor(table)) }),
-    }),
-  });
-  const refuse = (name: string) => () => {
+  const select = fakeSelect(rowsFor);
+  const refuse = (name: string): (() => never) => () => {
     writes.push(name);
     throw new Error(`unexpected database write: ${name}`);
   };
   const db = {
     select,
-    insert: refuse("insert"),
-    update: refuse("update"),
-    delete: refuse("delete"),
-    transaction: refuse("transaction"),
-  } as unknown as Database;
+    insert: refuse("insert") as Database["insert"],
+    update: refuse("update") as Database["update"],
+    delete: refuse("delete") as Database["delete"],
+    transaction: refuse("transaction") as Database["transaction"],
+  } as Database;
   return { db, writes };
 }
 
@@ -410,5 +436,61 @@ describe("/ws/configurations/:configId — live room on the auto-save socket", (
       const latest = alex.frames.filter((frame) => frame.type === "live.presence").at(-1);
       return (latest?.["participants"] as unknown[] | undefined)?.length === 1;
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The periodic access re-check, against a database whose answers change.
+// ---------------------------------------------------------------------------
+
+describe("revalidateLayoutLiveRooms — access ends within one heartbeat", () => {
+  interface Row { readonly [key: string]: unknown }
+  function changingDb(state: { config: Row | null; users: Row[] }): Database {
+    const rowsFor = (table: unknown): Row[] => {
+      if (table === configurations) return state.config === null ? [] : [state.config];
+      if (table === users) return state.users;
+      return [];
+    };
+    return { select: fakeSelect(rowsFor) } as Database;
+  }
+
+  function joinedHub(): { hub: LayoutLiveHub; staff: FakeSocket; owner: FakeSocket } {
+    const { hub } = hubWithClock();
+    const staff = fakeSocket();
+    const owner = fakeSocket();
+    hub.join(CONFIG_A, staff, { userId: "u-staff", name: "Sam", role: "staff" });
+    hub.join(CONFIG_A, owner, { userId: "u-owner", name: "Olive", role: "staff" });
+    return { hub, staff, owner };
+  }
+
+  const staffRow = { id: "u-staff", role: "staff", venueId: VENUE, platformRole: "none" };
+  const ownerRow = { id: "u-owner", role: "staff", venueId: VENUE, platformRole: "none" };
+
+  it("keeps everyone who is still admitted", async () => {
+    const { hub } = joinedHub();
+    const db = changingDb({ config: { userId: "u-owner", venueId: VENUE }, users: [staffRow, ownerRow] });
+    expect(await revalidateLayoutLiveRooms(db, hub)).toBe(0);
+    expect(hub.connectionCount(CONFIG_A)).toBe(2);
+  });
+
+  it("revokes staff moved to another venue and an owner demoted to client", async () => {
+    const { hub, staff, owner } = joinedHub();
+    const db = changingDb({
+      config: { userId: "u-owner", venueId: VENUE },
+      users: [{ ...staffRow, venueId: OTHER_VENUE }, { ...ownerRow, role: "client" }],
+    });
+    expect(await revalidateLayoutLiveRooms(db, hub)).toBe(2);
+    expect(framesOf(staff, "live.revoked")).toHaveLength(1);
+    expect(framesOf(owner, "live.revoked")).toHaveLength(1);
+    expect(hub.connectionCount(CONFIG_A)).toBe(0);
+  });
+
+  it("revokes everyone once the layout is deleted, and a user who no longer exists", async () => {
+    const { hub } = joinedHub();
+    expect(await revalidateLayoutLiveRooms(changingDb({ config: null, users: [staffRow, ownerRow] }), hub)).toBe(2);
+    const second = joinedHub();
+    const db = changingDb({ config: { userId: "u-owner", venueId: VENUE }, users: [ownerRow] });
+    expect(await revalidateLayoutLiveRooms(db, second.hub)).toBe(1);
+    expect(second.hub.participants(CONFIG_A).map((p) => p.userId)).toEqual(["u-owner"]);
   });
 });

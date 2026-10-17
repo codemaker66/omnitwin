@@ -27,6 +27,14 @@ export const LiveObjectIdSchema = z.string().regex(
 
 const Finite = z.number().finite();
 
+/** Placed-object metadata as the planner writes it: flat, primitive values
+ *  only (cloth, table setting, dressing, group, label, note). Nested values
+ *  are refused — a deeply nested blob validates as "unknown" but breaks
+ *  JSON.stringify on the relay, which would take the API process down. */
+const LiveMetadataSchema = z
+  .record(z.union([z.string().max(2_000), Finite, z.boolean(), z.null()]))
+  .refine((value) => Object.keys(value).length <= 32, "Too many metadata keys");
+
 /** One object's complete state, in the batch save's field names and units. */
 export const LiveObjectStateSchema = z.object({
   id: LiveObjectIdSchema,
@@ -39,7 +47,7 @@ export const LiveObjectStateSchema = z.object({
   rotationZ: Finite,
   scale: Finite.positive(),
   sortOrder: z.number().int().nonnegative(),
-  metadata: z.record(z.unknown()).nullable(),
+  metadata: LiveMetadataSchema.nullable(),
 });
 export type LiveObjectState = z.infer<typeof LiveObjectStateSchema>;
 
@@ -135,6 +143,9 @@ export const LiveServerFrameSchema = z.discriminatedUnion("type", [
     ids: IdPairs,
     serverNowMs: ServerClock,
   }),
+  /** This connection may no longer be in the room (its role, venue or the
+   *  layout changed since it joined). Stop showing and sending live state. */
+  z.object({ type: z.literal("live.revoked"), serverNowMs: ServerClock }),
   /** A durable commit happened. Carries no geometry: refetch and adopt. */
   z.object({
     type: z.literal("layout.changed"),
@@ -157,6 +168,9 @@ export function parseLiveServerFrame(raw: unknown): LiveServerFrame | null {
 const LIVE_CUSTOMER_ROLES: ReadonlySet<string> = new Set(["client", "planner"]);
 /** The venue floor, matching canManageVenue in the API. */
 const LIVE_VENUE_FLOOR_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "hallkeeper"]);
+/** Who may join as the layout's OWNER: the venue's own team. An allowlist, so a
+ *  role added later (or a caterer) is refused until someone decides otherwise. */
+const LIVE_OWNER_ROLES: ReadonlySet<string> = new Set([...LIVE_VENUE_FLOOR_ROLES, "sales"]);
 
 export interface LiveAccessActor {
   readonly userId: string;
@@ -179,5 +193,5 @@ export function canJoinLayoutLive(actor: LiveAccessActor, layout: LiveAccessLayo
   if (actor.platformRole === "admin") return true;
   if (LIVE_CUSTOMER_ROLES.has(actor.role)) return false;
   if (LIVE_VENUE_FLOOR_ROLES.has(actor.role) && actor.venueId === layout.venueId) return true;
-  return layout.ownerUserId !== null && layout.ownerUserId === actor.userId;
+  return LIVE_OWNER_ROLES.has(actor.role) && layout.ownerUserId !== null && layout.ownerUserId === actor.userId;
 }

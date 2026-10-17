@@ -438,6 +438,40 @@ export async function resolveLayoutLiveUser(
   return { userId: user.userId, name: name.length > 0 ? name.slice(0, 120) : "Colleague", role: user.userRole };
 }
 
+/**
+ * The periodic access re-check: every connection in every live room is
+ * checked against the user's CURRENT role and venue and the layout's current
+ * owner, venue and deletion state, and revoked if no longer admitted. Two
+ * queries per room. A database error rejects (the caller logs and retries
+ * next beat) rather than revoking everyone on a blip.
+ */
+export async function revalidateLayoutLiveRooms(db: Database, hub: LayoutLiveHub): Promise<number> {
+  let revoked = 0;
+  for (const [configId, connections] of hub.rooms()) {
+    const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId })
+      .from(configurations)
+      .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+      .limit(1);
+    const userIds = [...new Set(connections.map((connection) => connection.user.userId))];
+    const rows = userIds.length === 0 ? [] : await db.select({
+      id: users.id, role: users.role, venueId: users.venueId, platformRole: users.platformRole,
+    }).from(users).where(inArray(users.id, userIds));
+    const current = new Map(rows.map((row) => [row.id, row]));
+    for (const connection of connections) {
+      const user = current.get(connection.user.userId);
+      const admitted = config !== undefined && user !== undefined && canJoinLayoutLive(
+        { userId: user.id, role: user.role, venueId: user.venueId, platformRole: user.platformRole },
+        { ownerUserId: config.userId, venueId: config.venueId },
+      );
+      if (!admitted) {
+        hub.revoke(connection);
+        revoked += 1;
+      }
+    }
+  }
+  return revoked;
+}
+
 export async function registerAutoSave(server: FastifyInstance, db: Database): Promise<void> {
   // Live co-editing v1: presence and live ops ride this socket after auth.
   const hub = new LayoutLiveHub();
@@ -447,9 +481,17 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
       hub.announceCommit(payload.configId, payload.revision, payload.actorUserId);
     },
   });
+  let revalidating = false;
   const heartbeat = setInterval(() => {
     hub.pingAll();
     hub.sweepStale();
+    // Re-check every member against the database: a role change, a move to
+    // another venue or a deleted layout ends live access within one beat.
+    if (revalidating) return;
+    revalidating = true;
+    void revalidateLayoutLiveRooms(db, hub)
+      .catch((err: unknown) => { server.log.warn({ err }, "layout-live access re-check failed; retried next beat"); })
+      .finally(() => { revalidating = false; });
   }, LIVE_HEARTBEAT_INTERVAL_MS);
   heartbeat.unref();
   server.addHook("onClose", () => {
@@ -593,7 +635,12 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
         // (not admitted, or still joining) they are dropped silently.
         if (liveConnection !== null) {
           const byteLength = typeof raw === "string" ? Buffer.byteLength(raw) : raw.length;
-          hub.handleClientFrame(liveConnection, data, byteLength);
+          try {
+            hub.handleClientFrame(liveConnection, data, byteLength);
+          } catch (err) {
+            // Never let one frame take the socket (or the process) down.
+            request.log.warn({ err, configId }, "layout-live frame dropped");
+          }
         }
         return;
       }

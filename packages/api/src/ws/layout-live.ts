@@ -38,10 +38,14 @@ export const LAYOUT_LIVE_BURST_FRAMES = 40;
 export const LAYOUT_LIVE_FRAMES_PER_SECOND = 30;
 /** A 300-object drag frame is ~90 KB; anything larger is not a planner. */
 export const LAYOUT_LIVE_MAX_FRAME_BYTES = 128 * 1024;
+/** A member this far behind skips frames until it catches up. */
+export const LAYOUT_LIVE_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 
 export interface LayoutLiveSocket {
   send(text: string): void;
   close(): void;
+  /** Bytes queued but not yet sent (ws's WebSocket has it). */
+  readonly bufferedAmount?: number;
 }
 
 export interface LayoutLiveUser {
@@ -127,6 +131,23 @@ export class LayoutLiveHub {
     }));
   }
 
+  isMember(connection: LayoutLiveConnection): boolean {
+    return this.#rooms.get(connection.configId)?.connections.has(connection) ?? false;
+  }
+
+  /** Every room and its connections, for the periodic access re-check. */
+  rooms(): ReadonlyMap<string, readonly LayoutLiveConnection[]> {
+    return new Map([...this.#rooms].map(([configId, room]) => [configId, [...room.connections]]));
+  }
+
+  /** Take a connection out of its room and tell it so. The socket stays open:
+   *  its autosave writes are authorised per flush on their own. */
+  revoke(connection: LayoutLiveConnection): void {
+    if (!this.isMember(connection)) return;
+    this.#sendTo([connection], { type: "live.revoked" });
+    this.leave(connection);
+  }
+
   connectionCount(configId: string): number {
     return this.#rooms.get(configId)?.connections.size ?? 0;
   }
@@ -142,6 +163,8 @@ export class LayoutLiveHub {
    * not be.
    */
   handleClientFrame(connection: LayoutLiveConnection, data: unknown, byteLength: number): LayoutLiveFrameOutcome {
+    // A revoked or departed connection speaks to no one.
+    if (!this.isMember(connection)) return "dropped";
     this.touch(connection);
     if (byteLength > LAYOUT_LIVE_MAX_FRAME_BYTES) return "dropped";
     if (!this.#admit(connection)) return "dropped";
@@ -237,15 +260,26 @@ export class LayoutLiveHub {
     this.#sendTo(targets, { type: "live.presence", participants: this.participants(configId) });
   }
 
-  #sendTo(connections: Iterable<LayoutLiveConnection>, payload: Record<string, unknown>): void {
-    // Every frame carries the server's clock (the Diary's D9 rule).
-    const text = JSON.stringify({ ...payload, serverNowMs: this.#clock() });
+  /** False when the frame could not be serialised (it is then sent to no one). */
+  #sendTo(connections: Iterable<LayoutLiveConnection>, payload: Record<string, unknown>): boolean {
+    let text: string;
+    try {
+      // Every frame carries the server's clock (the Diary's D9 rule).
+      text = JSON.stringify({ ...payload, serverNowMs: this.#clock() });
+    } catch {
+      // Schemas bound every relayed field; this is the last line, never the first.
+      return false;
+    }
     for (const connection of connections) {
+      // A member who cannot keep up misses frames rather than growing memory:
+      // ops are absolute state and a reconnect resyncs from the server.
+      if ((connection.socket.bufferedAmount ?? 0) > LAYOUT_LIVE_MAX_BUFFERED_BYTES) continue;
       try {
         connection.socket.send(text);
       } catch {
         // A broken socket never breaks the loop; close/sweep handles it.
       }
     }
+    return true;
   }
 }

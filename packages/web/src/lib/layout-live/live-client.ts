@@ -191,6 +191,13 @@ export class LayoutLiveClient {
       } catch {
         return;
       }
+      // Answer the server's heartbeat. A background tab's timers are
+      // throttled to about one a minute, but its socket messages are not, so
+      // this keeps a quiet tab in the room past the server's 65 s sweep.
+      if (typeof data === "object" && data !== null && Reflect.get(data, "type") === "ping") {
+        if (socket.readyState === SOCKET_OPEN) socket.send(JSON.stringify({ type: "ping" }));
+        return;
+      }
       const frame = parseLiveServerFrame(data);
       if (frame !== null) this.#handle(frame);
     };
@@ -245,6 +252,12 @@ export class LayoutLiveClient {
         return;
       case "live.presence":
         this.#setParticipants(frame.participants);
+        return;
+      case "live.revoked":
+        // Access ended (role, venue or the layout changed). The socket stays
+        // for autosave; nothing live is shown or sent on it again.
+        this.#leaveRoom();
+        useLayoutLiveStore.setState({ status: "off" });
         return;
       case "live.ops":
         if (frame.connectionId === this.#connectionId) {
