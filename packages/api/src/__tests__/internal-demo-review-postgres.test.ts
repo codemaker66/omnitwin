@@ -197,7 +197,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect((await state(f)).snapshots[0]?.payload).toEqual(payload);
   });
 
-  it("binds the PDF redirect and content to the latest approved version, ignoring newer unapproved snapshots", async () => {
+  it("binds the PDF and its paper check to the latest approved version, ignoring newer unapproved snapshots", async () => {
     const f = await approvedFixture();
     await db.update(schema.configurationSheetSnapshots).set({ pdfUrl: "https://example.invalid/v1.pdf" })
       .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
@@ -213,9 +213,16 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
       .where(eq(schema.configurations.id, f.configId));
     const json = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/v2`, headers: f.headers });
     expect(json.json()).toMatchObject({ data: { config: { name: "Approved second version" }, approval: { version: 2 } } });
+    // The printout's QR names v2 by its own fingerprint, never the unapproved v3.
+    expect(json.json<{ data: { paperCheck: { url: string } } }>().data.paperCheck.url)
+      .toMatch(/\/sheet-check\?s=[0-9a-f-]{36}&v=2&h=2{16}$/u);
+    // Each copy is rendered on request so it can print its own time; the
+    // approval-time copy in R2 is no longer served (hallkeeper-sheet.ts).
     const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet`, headers: f.headers });
-    expect(pdf.statusCode).toBe(302);
-    expect(pdf.headers["location"]).toBe("https://example.invalid/v2.pdf");
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers["location"]).toBeUndefined();
+    expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
   });
 
   it.each(["deleted", "cleared"])("does not fall back to an older approval when the current snapshot is %s", async defect => {

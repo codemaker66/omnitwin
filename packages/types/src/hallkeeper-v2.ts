@@ -4,6 +4,7 @@ import { SetupPhaseSchema } from "./hallkeeper-accessories.js";
 import { EventInstructionsSchema } from "./hallkeeper-instructions.js";
 import { TimezoneSchema, DEFAULT_VENUE_TIMEZONE } from "./venue.js";
 import { ZONES, ZoneSchema, type Zone } from "./zone.js";
+import { SheetPaperCheckSchema } from "./sheet-paper-check.js";
 
 // Re-export the Zone primitives so existing import paths through
 // hallkeeper-v2 (including the `index.ts` re-export block) continue to
@@ -245,6 +246,12 @@ export const HallkeeperSheetV2Schema = z.object({
    * not carry the visual authority of an approval stamp.
    */
   approval: SheetApprovalSchema.nullable(),
+  /**
+   * How a printout of this sheet can be checked as current without signing
+   * in (sheet-paper-check.ts). Added when the sheet is served, never stored
+   * in a frozen snapshot; absent from snapshots and older servers.
+   */
+  paperCheck: SheetPaperCheckSchema.optional(),
 });
 
 export type HallkeeperSheetV2 = z.infer<typeof HallkeeperSheetV2Schema>;
