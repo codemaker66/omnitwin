@@ -100,3 +100,13 @@ export async function markSourceGone(venueId: string, competitorId: string, capt
 export async function checkPagesNow(venueId: string): Promise<{ readonly run: PageCheckRun; readonly watch: CompetitorWatch }> {
   return api.post(`${base(venueId)}/page-checks`, {}, undefined, AfterRun);
 }
+
+const KeptFilesSchema = z.array(z.object({ id: z.string(), readUrl: z.string().nullable() }));
+
+/** Short-lived links to the screenshots kept with a competitor's figures,
+ *  by file, through the existing upload listing; a file with no link is
+ *  kept but cannot be opened here (storage not configured). */
+export async function getEvidenceLinks(competitorId: string, signal?: AbortSignal): Promise<ReadonlyMap<string, string | null>> {
+  const files = await api.get(`/uploads/competitor_watch/${encodeURIComponent(competitorId)}`, KeptFilesSchema, signal);
+  return new Map(files.map((file) => [file.id, file.readUrl]));
+}

@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   recordCapture: vi.fn(),
   markSourceGone: vi.fn(),
   checkPagesNow: vi.fn(),
+  getEvidenceLinks: vi.fn(),
   uploadFile: vi.fn(),
 }));
 
@@ -62,6 +63,7 @@ vi.mock("../../../../api/competitor-watch.js", () => ({
   recordCapture: mocks.recordCapture,
   markSourceGone: mocks.markSourceGone,
   checkPagesNow: mocks.checkPagesNow,
+  getEvidenceLinks: mocks.getEvidenceLinks,
 }));
 
 vi.mock("../../../../api/uploads.js", () => ({ uploadFile: mocks.uploadFile }));
@@ -256,6 +258,20 @@ describe("recording a figure", () => {
     fireEvent.click(form.getByRole("button", { name: "Save the figure" }));
     await waitFor(() => { expect(mocks.recordCapture).toHaveBeenCalledTimes(1); });
     expect(mocks.recordCapture.mock.calls[0]?.[2]).toMatchObject({ amountMinor: 13_500, priceYear: null, supersedesId: capture().id, vat: "not_stated" });
+  });
+
+  it("opens a kept screenshot from its figure, and says plainly when it cannot be opened", async () => {
+    const kept = "dddddddd-4444-4444-8444-000000000001";
+    mocks.getCompetitorWatch.mockResolvedValue(watch({ competitors: [competitor({ captures: [capture({ evidenceFileId: kept })] }), ART] }));
+    mocks.getEvidenceLinks.mockResolvedValueOnce(new Map([[kept, "https://files.example.test/signed/voco.png"]])).mockRejectedValueOnce(new Error("Unavailable"));
+    await openWatch(2);
+    fireEvent.click(await screen.findByRole("button", { name: /^voco Grand Central\./u }));
+    const link = await screen.findByRole("link", { name: /^Open the screenshot/u });
+    expect(link.getAttribute("href")).toBe("https://files.example.test/signed/voco.png");
+    expect(mocks.getEvidenceLinks).toHaveBeenCalledWith(VOCO, expect.any(AbortSignal));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^voco Grand Central\./u }));
+    expect(await screen.findByText("A screenshot is kept with it; it cannot be opened from here.")).toBeTruthy();
   });
 });
 

@@ -1,4 +1,4 @@
-import { useId, useState, type ReactElement, type RefObject } from "react";
+import { useEffect, useId, useState, type ReactElement, type RefObject } from "react";
 import {
   CAPTURE_INCLUDES,
   SUGGESTED_COMPETITOR_SET,
@@ -17,6 +17,7 @@ import {
   type PriceBasis,
   type VatStatement,
 } from "@omnitwin/types";
+import { getEvidenceLinks } from "../../../api/competitor-watch.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { PanelFrame } from "./PricingPanels.js";
 import {
@@ -207,10 +208,39 @@ export function CompetitorPanel(props: {
   );
 }
 
-function CaptureItem({ capture, busy, replaced, onRecord, onSourceGone }: {
+/** The kept screenshots' links, read once a venue with any is opened. */
+function useEvidenceLinks(competitor: Competitor): ReadonlyMap<string, string | null> | "unavailable" | null {
+  const wanted = competitor.captures.some((capture) => capture.evidenceFileId !== null);
+  const [links, setLinks] = useState<ReadonlyMap<string, string | null> | "unavailable" | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    const controller = new AbortController();
+    getEvidenceLinks(competitor.id, controller.signal)
+      .then((found) => { setLinks(found); })
+      .catch(() => { if (!controller.signal.aborted) setLinks("unavailable"); });
+    return () => { controller.abort(); };
+  }, [competitor.id, wanted]);
+  return links;
+}
+
+function EvidenceLine({ capture, links }: { readonly capture: CompetitorCapture; readonly links: ReadonlyMap<string, string | null> | "unavailable" | null }): ReactElement | null {
+  if (capture.evidenceFileId === null) return null;
+  const url = links === null || links === "unavailable" ? null : links.get(capture.evidenceFileId) ?? null;
+  if (url !== null) {
+    return (
+      <p className="cw-capture__source">
+        <a className="cw-link" href={url} target="_blank" rel="noopener noreferrer">Open the screenshot<span className="vv-sr-only"> for {capture.packageName} (opens in a new tab)</span></a>
+      </p>
+    );
+  }
+  return <p className="cw-capture__hint">{links === null ? "A screenshot is kept with it." : "A screenshot is kept with it; it cannot be opened from here."}</p>;
+}
+
+function CaptureItem({ capture, busy, replaced, links, onRecord, onSourceGone }: {
   readonly capture: CompetitorCapture;
   readonly busy: WatchBusy | null;
   readonly replaced: boolean;
+  readonly links: ReadonlyMap<string, string | null> | "unavailable" | null;
   readonly onRecord?: () => void;
   readonly onSourceGone?: () => void;
 }): ReactElement {
@@ -227,6 +257,7 @@ function CaptureItem({ capture, busy, replaced, onRecord, onSourceGone }: {
         {seenWords(capture.seenOn, capture.capturedByName)} · {sourceWords(capture.sourceKind, capture.sourceUrl)} ·{" "}
         <a className="cw-link" href={capture.sourceUrl} target="_blank" rel="noopener noreferrer">Open the source<span className="vv-sr-only"> for {capture.packageName} (opens in a new tab)</span></a>
       </p>
+      <EvidenceLine capture={capture} links={links} />
       {capture.note !== null && <p className="cw-capture__note">{capture.note}</p>}
       {!replaced && <p className="cw-capture__hint">{FRESHNESS_HINTS[capture.freshness]}</p>}
       {capture.sourceGoneAt !== null && (
@@ -266,6 +297,7 @@ function FiguresSection({ competitor, busy, onRecord, onSourceGone }: {
 }): ReactElement {
   const headingId = useId();
   const { standing, replaced } = splitCaptures(competitor.captures);
+  const links = useEvidenceLinks(competitor);
   return (
     <section className="enq-section" aria-labelledby={headingId}>
       <h3 id={headingId}>Their figures</h3>
@@ -274,7 +306,7 @@ function FiguresSection({ competitor, busy, onRecord, onSourceGone }: {
       ) : (
         <ul className="cw-captures">
           {standing.map((capture) => (
-            <CaptureItem key={capture.id} capture={capture} busy={busy} replaced={false}
+            <CaptureItem key={capture.id} capture={capture} busy={busy} replaced={false} links={links}
               onRecord={() => { onRecord(capture); }} onSourceGone={() => { onSourceGone(capture); }} />
           ))}
         </ul>
@@ -283,7 +315,7 @@ function FiguresSection({ competitor, busy, onRecord, onSourceGone }: {
         <details className="cw-replaced">
           <summary>Replaced figures, {replaced.length.toLocaleString("en-GB")}</summary>
           <ul className="cw-captures">
-            {replaced.map((capture) => <CaptureItem key={capture.id} capture={capture} busy={busy} replaced />)}
+            {replaced.map((capture) => <CaptureItem key={capture.id} capture={capture} busy={busy} replaced links={links} />)}
           </ul>
         </details>
       )}
