@@ -144,7 +144,7 @@ for name,(d,off,tz) in DATES.items():
             centrePointRevealLimited=intervals(tr,centreB[i],reveal_lim(next(o for o in openings if o['id']==i))))
 out=dict(
  source="Scottish LiDAR Phase 5 (2020) 50 cm DSM, Crown copyright Scottish Government and Fugro, OGL v3.0; tiles NS56NE, NS56SE, NS66NW, NS66SW cut to a 3 km square around HES NGR E259329 N665183 (tools/grand-hall-survey/context/fetch_dsm.py)",
- method="Per window 3x3 points (x at -30/0/+30 % of width about the centre, y at 20/50/80 % of opening height above the sill) on the OUTER face of the window wall (planner z=-5.915). Rays every 0.5 deg true azimuth 11.0..191.5; march 3..600 m, step 0.25+0.004*d m, bilinear DSM, max elevation angle atan2(h_dsm - h_eye - d^2/2R, d), R=6371 km. Samples nearer than 3 m are ignored (spec). VARIANT B (used for samples, combined and sun times) also ignores samples whose facade-frame d is below 1.25 m: the DSM carries the hall's own cornice/balustrade lip 0.4-1.0 m outboard of the wall face (facade d=0) while the hall's outer window face maps to d=-1.27, so without this the rays graze the hall's own roof and read 55-75 deg. Rays that never leave that zone (az 11.0 and 191+) are null. The literal 3 m-only centre profile is kept per window as centreProfileSpecLiteral3mSkipOnly. Values are degrees above horizontal.",
+ method="Per window 3x3 points (x at -30/0/+30 % of width about the centre, y at 20/50/80 % of opening height above the sill) on the OUTER face of the window wall (planner z=-5.915). Rays every 0.5 deg true azimuth 11.0..191.5; march 3..600 m, step 0.25+0.004*d m, bilinear DSM, max elevation angle atan2(h_dsm - h_eye - d^2/2R, d), R=6371 km. Samples nearer than 3 m are ignored (spec). VARIANT B (used for samples, combined and sun times) also ignores samples whose facade-frame d is below 1.25 m and whose facade-frame u lies on the hall's own frontage (u -15.305..15.304 m, the wall-face ends in facade.json; beyond it the neighbours count): the DSM carries the hall's own cornice/balustrade lip 0.4-1.0 m outboard of the wall face (facade d=0) while the hall's outer window face maps to d=-1.27, so without this the rays graze the hall's own roof and read 55-75 deg. Rays that never leave that zone are null. The literal 3 m-only centre profile is kept per window as centreProfileSpecLiteral3mSkipOnly. Values are degrees above horizontal.",
  frameNotes=dict(
   gridOrientation="heights_50cm.f32 is row-major float32 [6000][6000]; row 0 = SOUTH (fetch_dsm.py writes np.flipud), column 0 = WEST. Cell centre local E=(col+0.5)*0.5-1500, N=(row+0.5)*0.5-1500 (metres from HES NGR 259329,665183). Height = metres above the Hall's street level (10.7 m ODN); pavement at the facade is -0.30. Dome crown 24.187 m peaks at local (3.25, 7.75).",
   hallToLocal="local=(3,8)+plannerX*unit(bearing 192.96)+(-plannerZ)*unit(bearing 102.96); hall floor DSM height=-0.30+3.79=3.49 m; the window wall outer face (planner z=-5.915) maps to facade-frame d=-1.27, i.e. 1.27 m behind the facade wall face.",
@@ -164,10 +164,11 @@ TS_HEADER='''// ----------------------------------------------------------------
 // highest angle of the city's roofs, from the Scottish LiDAR Phase 5 50 cm
 // DSM (2020; Crown copyright Scottish Government and Fugro, OGL v3.0), cast
 // from the window's centre on the wall's outer face, 600 m out, with the
-// earth's curvature (tools/grand-hall-survey/skyline). The blocks across
-// Glassford Street stand 17–32° high; the gap at Garth Street opens to about
-// 10°. Direct sun reaches a window only above its skyline. The grazing ends,
-// where the LiDAR was not measured, repeat the nearest measured degree.
+// earth's curvature (tools/grand-hall-survey/skyline). The hall's own cornice,
+// just outboard of the wall, is left out along its 30.6 m frontage; the
+// neighbours beyond it count. The blocks across Glassford Street stand 17–32°
+// high; the gap at Garth Street opens to about 10°. Direct sun reaches a
+// window only above its skyline. {FILL}
 // ---------------------------------------------------------------------------
 
 export type HallWindowId = "arch-fireplace" | "window-fireplace" | "arch-centre" | "window-end" | "arch-end";
@@ -194,7 +195,14 @@ def whole_degrees(series):
                 if v is not None: break
         vals.append(round(v,1))
     return vals
-ts=[TS_HEADER]
+filled=sorted({a for wid in TS_IDS for a in range(11,192)
+                if combined[wid][combined['azimuthTrueDeg'].index(float(a))] is None})
+if not filled:
+    fill='Every degree is measured.'
+else:
+    fill=("Where no ray left the hall's own cornice (" + ', '.join(f'{a}°' for a in filled) + ' on some\n'
+          '// windows), the value is the nearest measured half-degree sample.')
+ts=[TS_HEADER.replace('{FILL}',fill)]
 for wid in TS_IDS:
     vals=whole_degrees(combined[wid])
     chunks=[', '.join(str(v) for v in vals[i:i+20]) for i in range(0,len(vals),20)]

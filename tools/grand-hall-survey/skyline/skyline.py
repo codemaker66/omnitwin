@@ -5,14 +5,16 @@ steps (the half of the sky the window wall faces), the highest elevation angle
 of the DSM seen from one point: rays march 3 to 600 m out (step 0.25 m + 0.4 %
 of the distance), read the DSM bilinearly and allow for the earth's curvature
 (drop d^2 / 2R, R = 6371 km; no refraction). Samples inside the hall's own
-cornice zone are ignored (see FAC_O below), so a ray that never leaves it
-returns NaN.
+cornice zone are ignored (see FAC_O below): the strip less than 1.25 m in
+front of the facade plane, along the hall's own street frontage only. A ray
+that never leaves it returns NaN.
 
 The window openings are read from hall-spec.ts, not restated here. The facade
-frame (FAC_O, FAC_N) and the frame bearing (102.96 degrees grid) are constants
-of the Trades Hall facade fit to the same DSM (the promo-film pipeline's
-spec/facade/facade.json: frames.facade.origin_local and d_axis_local); they
-are not read at run time.
+frame (FAC_O, FAC_N, FAC_U), the frontage's extent (FAC_U_RANGE) and the frame
+bearing (102.96 degrees grid) are constants of the Trades Hall facade fit to
+the same DSM (the promo-film pipeline's spec/facade/facade.json:
+frames.facade.origin_local, d_axis_local and u_axis_local, and the two ends of
+frontage.line_wall_face_local, 30.6 m apart); they are not read at run time.
 
 Library for final.py. Run directly, it is a diagnostic: it checks the grid's
 orientation against the dome crown and prints each window's centre profile.
@@ -101,7 +103,9 @@ ds = np.array(ds)
 AZ = np.arange(11.0, 191.5 + 1e-9, 0.5)   # true azimuth
 FAC_O = np.array([10.0, 6.406])            # facade frame origin, local (E, N)
 FAC_N = np.array([0.975, -0.224])          # facade outward normal (grid)
-D_CUT = 1.25   # variant B: ignore samples inside the facade/cornice zone (facade d < 1.25 m)
+FAC_U = np.array([0.224, 0.975])           # along the frontage, towards grid north
+FAC_U_RANGE = (-15.305, 15.304)            # the frontage's wall-face ends, facade u (m)
+D_CUT = 1.25   # variant B: ignore samples inside the hall's facade/cornice zone (facade d < 1.25 m, u on the frontage)
 
 
 def skyline(H, p0, z_eye, az_true=AZ, return_blocker=False, facade_mask=True):
@@ -112,12 +116,14 @@ def skyline(H, p0, z_eye, az_true=AZ, return_blocker=False, facade_mask=True):
     h = bilinear(H, xs, ys)
     if facade_mask:
         dfac = (xs - FAC_O[0]) * FAC_N[0] + (ys - FAC_O[1]) * FAC_N[1]
-        h = np.where(dfac < D_CUT, -1e4, h)
+        ufac = (xs - FAC_O[0]) * FAC_U[0] + (ys - FAC_O[1]) * FAC_U[1]
+        own = (dfac < D_CUT) & (ufac >= FAC_U_RANGE[0]) & (ufac <= FAC_U_RANGE[1])
+        h = np.where(own, -1e4, h)
     el = np.degrees(np.arctan2(h - z_eye - ds[None, :] ** 2 / (2 * EARTH_R), ds[None, :]))
     k = el.argmax(1)
     e = el[np.arange(len(az_true)), k]
     if facade_mask:
-        e = np.where((dfac < D_CUT).all(1), np.nan, e)   # ray never leaves the facade zone
+        e = np.where(own.all(1), np.nan, e)   # ray never leaves the hall's own facade zone
     if return_blocker:
         return e, ds[k], h[np.arange(len(az_true)), k]
     return e

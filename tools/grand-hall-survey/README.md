@@ -157,9 +157,8 @@ attribution "Contains LiDAR data: Crown copyright Scottish Government and Fugro 
 
 `context/fetch_dsm.py` downloads any missing tile and checks each one's size and hash. It then cuts
 the 3 km square centred on E 259329 N 665183 (E 257829–260829, N 663683–666683) at the tiles' own
-0.5 m cells. The square's edges fall on cell edges, so nothing is resampled. The published JSON
-says "resampled", but the grid is a straight cut. The four tiles have no nodata cells inside the
-square; the script would fill any by Telea inpainting. Heights are stored relative to 10.7 m ODN,
+0.5 m cells. The square's edges fall on cell edges, so nothing is resampled. The four tiles have
+no nodata cells inside the square; the script would fill any by Telea inpainting. Heights are stored relative to 10.7 m ODN,
 the Phase 5 DTM at the hall's street level. The result, `heights_50cm.f32`, is 6000 × 6000
 little-endian float32, row 0 = south, column 0 = west, with cell centres at −1500 + (i + 0.5) × 0.5 m
 from the origin. `meta.json` beside it records the origin, datum, size and tile URLs.
@@ -184,10 +183,22 @@ The skyline uses the same mapping (`skyline/skyline.py`). Rays leave the outer f
 wall (planner z = −5.915) at each opening's centre, half way up. They run out to 600 m with the
 earth's curvature, in 0.5° steps of true azimuth. The opening sizes are read from `hall-spec.ts`.
 The DSM carries the hall's own cornice just outboard of the wall, so samples less than 1.25 m in
-front of the facade plane are ignored. That plane, and the 102.96° bearing, are constants of the
-facade fit (the promo-film pipeline's `spec/facade/facade.json`, `frames.facade`), copied into the
-code rather than read at run time. A ray that never leaves that zone (11° and 191°) is not measured,
-and `hall-skyline.ts` gives it the value of the nearest measured half-degree (11.5° and 190.5°).
+front of the facade plane are ignored, but only along the hall's own frontage: facade u from
+−15.305 to +15.304 m, the two ends of the wall-face line (30.6 m apart, the adopted frontage width).
+Beyond them the neighbours' fronts count, so a ray grazing along the street meets the taller
+buildings on either side. The plane, the frontage's ends and the 102.96° bearing are constants of the
+facade fit (the promo-film pipeline's `spec/facade/facade.json`: `frames.facade` and
+`frontage.line_wall_face_local`), copied into the code rather than read at run time. Every ray now
+leaves the zone, so every degree from 11° to 191° is measured. If one ever did not, `hall-skyline.ts`
+would give it the nearest measured half-degree sample and its header would name the azimuths.
+
+Until 17 October 2026 the zone ran the whole length of the street, so the neighbours' fronts were
+ignored too. Bounding it raised the skyline only at the grazing ends, within 21° of the wall's
+plane (11°–32° and 177°–191°), by up to 66°. The only change inside a window's reveal limit is at the
+end arch, at 177°–178° (+13° and +42°). With the planner's own `hall-sun-times.ts`, run over every
+day of 2026, sun on the floor changes on 45 days, all between 23 November and 14 January. On 25 of
+them the 2–6 minute slot just before noon GMT, when only the end arch let sun in, is gone; on the
+other 20 it starts 1–4 minutes later. The rest of the year is unchanged.
 
 ### Build
 
@@ -225,19 +236,21 @@ rim (454) and the site cut (5), and 2 edges shared by more than two triangles.
 
 ### Verification
 
-On 16 October 2026 the whole chain was rebuilt from the four tiles in a clean directory and
-compared with the published files:
+On 16 October 2026 the whole chain was rebuilt from the four tiles in a clean directory. Every
+file matched the copy then published, byte for byte. On 17 October the JSON's wording (the model's
+file name, the crop, the generator) and the skyline's mask were corrected, and both files were
+regenerated and published. The current published files are:
 
 | Output | SHA-256 | Result |
 | --- | --- | --- |
 | `heights_50cm.f32` | `45c2977086bec5705cf177a6969472826bf0db328e5a2f9d4bf04853b5b4a5e4` | identical to the grid the published model was built from |
-| `merchant-city-v2.bin` | `5cdb593af128e7a2537e5a0488ecd326ff5ff116e517534abda4278650a3f59e` | identical to the published file |
-| `merchant-city-v2.json` | `0d6992d83bdb114512b5bf87525f30320fc831117eb7ef21aa7a95ccd46f1177` | identical, with `--date 2026-10-16` |
-| `hall-skyline.ts` | `0436aedc4ad91e8e8d1095463fbccf862e94f92fdf3843308c4328c94ac353f3` | identical to the published module |
+| `merchant-city-v2.bin` | `5cdb593af128e7a2537e5a0488ecd326ff5ff116e517534abda4278650a3f59e` | unchanged since the first rebuild, identical in every build since |
+| `merchant-city-v2.json` | `a1b9444967bd4c3fb10237c81e6d980ed556ac0619d71a70b509b77e0d4cceb4` | rebuilt with `--date 2026-10-16` |
+| `hall-skyline.ts` | `dda0ff9d8bcbe45db72a1b3e226c65bfe599cc24b917884b0c1e31ac9dcbe1dd` | rebuilt with the frontage-bounded mask |
 
 The module's values are the 0.5° centre profiles rounded to 0.1°: the largest difference from the
-unrounded profile is 0.05°. Each build ran twice, and once more with `SOURCE_DATE_EPOCH` instead of
-`--date`, with identical results. The libraries were Python 3.13.6, numpy 2.4.2, scipy 1.17.0,
-scikit-image 0.26.0, shapely 2.1.2, tifffile 2026.8.23 and OpenCV 5.0.0. The JSON's `bytes_gzip` is
-the length of a zlib level-9 stream and may differ by a few bytes under another zlib (1.3.1 here).
-`encoding.file` in the JSON keeps the build's original working name, `context-v2.bin`.
+unrounded profile is 0.05°. Each build ran twice, with identical results; the 16 October build also
+ran once with `SOURCE_DATE_EPOCH` instead of `--date`. The libraries were Python 3.13.6, numpy 2.4.2,
+scipy 1.17.0, scikit-image 0.26.0, shapely 2.1.2, tifffile 2026.8.23 and OpenCV 5.0.0. The JSON's
+`bytes_gzip` is the length of a zlib level-9 stream and may differ by a few bytes under another zlib
+(1.3.1 here). The web's `hall-sun-times` and `hall-sky` tests pass with the new module.

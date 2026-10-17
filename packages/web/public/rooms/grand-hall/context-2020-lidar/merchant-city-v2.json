@@ -24,7 +24,7 @@
   "y_odn": "y = ODN - 14.19 (DSM datum 10.7 m ODN; pavement 10.40 m ODN at y=-3.79)"
  },
  "encoding": {
-  "file": "context-v2.bin",
+  "file": "merchant-city-v2.bin",
   "header": "16 bytes: 'VVCX', uint32 version=1, uint32 vertexCount, uint32 indexCount (little-endian)",
   "vertices": "int16 x, y, z per vertex, centimetres (value/100 = metres)",
   "indices": "uint32, triangles, counter-clockwise seen from outside (right-hand normal points out of the solid)",
@@ -142,9 +142,9 @@
   "bytes_gzip": 571623
  },
  "terrain": "cells not in a raised blob are replaced by a normalised-convolution Gaussian (sigma terrain_sigma) of ground cells only, so street-level contours follow the terrain, not LiDAR noise; low walls/railings narrower than ~1 m vanish",
- "generator": "tools/grand-hall-survey/context/build_context.py (run against the Scottish LiDAR Phase 5 50 cm DSM prepared by the promo-film pipeline)",
+ "generator": "tools/grand-hall-survey/context/build_context.py, run on the grid cut by tools/grand-hall-survey/context/fetch_dsm.py",
  "sources": {
-  "dsm": "Scottish LiDAR Phase 5 50 cm DSM, tiles NS56NE, NS56SE, NS66NW, NS66SW (2020), resampled to a 3 km square around HES NGR E259329 N665183",
+  "dsm": "Scottish LiDAR Phase 5 50 cm DSM, tiles NS56NE, NS56SE, NS66NW, NS66SW (2020), cropped at its native 0.5 m cells (no resampling) to the 3 km square around HES NGR E259329 N665183 by fetch_dsm.py",
   "facade_frame": "Trades Hall facade fit to the same DSM (front at grid bearing 12.96 deg)"
  }
 }
