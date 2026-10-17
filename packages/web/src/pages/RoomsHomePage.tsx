@@ -25,7 +25,6 @@ import {
   HOME_CAPACITY_RANGE_HEADING,
   HOME_CAPACITY_ROOM_HEADING,
   HOME_CAPACITY_TITLE,
-  HOME_CARD_HELD,
   HOME_ENQUIRY_LEDE,
   HOME_ENQUIRY_TITLE,
   HOME_FOOT_ABOUT,
@@ -37,7 +36,6 @@ import {
   HOME_HERO_ALT,
   HOME_HERO_LEDE,
   HOME_HERO_PLAN,
-  HOME_HERO_SPLATS_HELD,
   HOME_HERO_TOUR,
   HOME_HERO_WALK,
   HOME_LEGAL_LINKS,
@@ -55,6 +53,7 @@ import {
   HOME_WORDMARK,
   capacityEnvelopes,
   envelopeLine,
+  roomCapacityLine,
 } from "./home-copy.js";
 import "./fresh/fresh.css";
 import "./RoomsHomePage.css";
@@ -109,7 +108,9 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
   const onPosterError = useCallback(() => { setPosterFailed(true); }, []);
   const showType = posterFailed;
   const walkable = isRoomWalkable(slug);
-  const state = gaussianSplatsAvailable() ? stateLine(bundle, walkable) : HOME_CARD_HELD;
+  // While the founder hold stands the card says what the venue publishes
+  // about the room; a room with no published figures shows no line.
+  const state = gaussianSplatsAvailable() ? stateLine(bundle, walkable) : roomCapacityLine(slug);
 
   const face = (
     <>
@@ -290,8 +291,7 @@ export function RoomsHomePage(): ReactElement {
               <div className="rooms__heroActions">
                 <a className="rooms__enter rooms__enter--plan" href="/plan?space=grand-hall">{HOME_HERO_PLAN}</a>
                 {heroWalkable
-                  ? <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>{HOME_HERO_WALK}</Link>
-                  : <p className="rooms__state rooms__state--hero">{HOME_HERO_SPLATS_HELD}</p>}
+                  && <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>{HOME_HERO_WALK}</Link>}
                 {!gaussianSplatsAvailable() && <Link className="rooms__enter" to="/tour">{HOME_HERO_TOUR}</Link>}
               </div>
             </div>
