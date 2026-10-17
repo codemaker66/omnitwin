@@ -6066,7 +6066,7 @@ export const bookingObservations = pgTable("booking_observations", {
 ]);
 
 // ---------------------------------------------------------------------------
-// The forward book on the Diary, room by room (migration 0091, provisional
+// The forward book on the Diary, room by room (migration 0093, provisional
 // number). Blake, 17 October 2026: "hide date status until checked". The
 // public MCP and any public web surface show a room's dates only while a
 // record stands that its whole forward book is on the Diary. A venue admin

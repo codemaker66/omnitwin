@@ -42,7 +42,7 @@ enquiry page, telephone and email, and no date status at all
 (`PUBLIC_ROOM_ASK_THE_TEAM` and its wording in `packages/types/src/booking.ts`;
 `publicRoomAnswer` is the one rule every surface applies).
 
-- **The record.** Table `forward_book_checks` (migration 0091, provisional
+- **The record.** Table `forward_book_checks` (migration 0093, provisional
   number): per room, who recorded it (their account while it exists, and their
   name as it was then), when, and an optional note of up to 500 characters;
   clearing it keeps the row with who cleared it and when. At most one record

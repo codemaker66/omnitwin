@@ -24,7 +24,7 @@ import { PublicDiscovery, drizzlePublicDiscoveryStore } from "../services/public
 // The forward book on the Diary, room by room (Blake, 17 October 2026: "hide
 // date status until checked"), on isolated PostgreSQL:
 //
-//   - migration 0091 applies with the whole migration set, and the database
+//   - migration 0093 applies with the whole migration set, and the database
 //     itself keeps one standing record per room, a record to its venue's own
 //     rooms, and a note and a clearing in shape;
 //   - only the venue's own admin or manager records or clears; staff,
