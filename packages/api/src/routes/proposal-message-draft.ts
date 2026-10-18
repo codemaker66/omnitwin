@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { isProposalEditable, type ProposalStatus } from "@omnitwin/types";
+import { AI_BUDGET_REACHED, isProposalEditable, type ProposalStatus } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { proposals } from "../db/schema.js";
 import type { Env } from "../env.js";
@@ -12,6 +12,7 @@ import {
   generateAIDraft,
   type AIGenerationAdapter,
 } from "../services/ai-assistant.js";
+import { AIBudgetReachedError, venueAllowanceMeter, type AIUsageMeter } from "../services/ai-usage.js";
 import { messageDraftContext } from "../services/proposal-message-draft.js";
 import { canManageCommercial } from "../utils/query.js";
 
@@ -25,16 +26,27 @@ import { canManageCommercial } from "../utils/query.js";
 // enquiry or words from the client) it is refused rather than invented. The
 // answer says what the AI drew on. The draft is review-gated and never sent:
 // the composer shows it, and the booker chooses to use it.
+//
+// The call is the proposal's venue's (T-656): it is held to that venue's
+// monthly AI allowance (429 AI_BUDGET_REACHED once it is used, and nothing is
+// sent) and recorded in the AI usage ledger with what it cost.
 // ---------------------------------------------------------------------------
 
 const IdParam = z.object({ id: z.string().uuid() });
 
 export async function proposalMessageDraftRoutes(
   server: FastifyInstance,
-  opts: { readonly db: Database; readonly env: Env; readonly adapter?: AIGenerationAdapter },
+  opts: {
+    readonly db: Database;
+    readonly env: Env;
+    readonly adapter?: AIGenerationAdapter;
+    /** Holds each call to its venue's allowance and records it; the venue allowance meter unless given. */
+    readonly aiUsage?: AIUsageMeter;
+  },
 ): Promise<void> {
   const { db } = opts;
-  const adapter = opts.adapter ?? createAIGenerationAdapterFromEnv(opts.env);
+  const adapter = opts.adapter
+    ?? createAIGenerationAdapterFromEnv(opts.env, opts.aiUsage ?? venueAllowanceMeter(db, opts.env, server.log));
 
   server.post("/:id/message-draft", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
@@ -67,11 +79,18 @@ export async function proposalMessageDraftRoutes(
       });
     }
     try {
-      const draft = await generateAIDraft(adapter, { useCase: "proposal_draft", context });
+      const draft = await generateAIDraft(
+        adapter,
+        { useCase: "proposal_draft", context },
+        { venueId: proposal.venueId, userId: request.user.id },
+      );
       return { data: { draft, drewOn } };
     } catch (err) {
       if (err instanceof AIAssistantDisabledError) {
         return reply.status(503).send({ error: err.message, code: "AI_ASSISTANT_DISABLED" });
+      }
+      if (err instanceof AIBudgetReachedError) {
+        return reply.status(429).send({ error: err.message, code: AI_BUDGET_REACHED });
       }
       request.log.error({ err }, "Proposal message draft failed");
       return reply.status(502).send({ error: "AI draft generation failed", code: "AI_DRAFT_GENERATION_FAILED" });
