@@ -12,7 +12,7 @@ import {
   TWIN_MODE_WALK_LABEL,
   TWIN_RETRY_LABEL,
   TWIN_TITLE,
-  TWIN_WORK_IN_PROGRESS,
+  TWIN_TOUR_LABEL,
   twinNodeLabel,
 } from "../twin/twin-copy.js";
 import {
@@ -129,7 +129,7 @@ describe("TwinPage — loading state", () => {
     fetchMock.mockReturnValue(new Promise<Response>(() => undefined));
     mount();
     expect(screen.getByText(TWIN_LOADING_LINE)).toBeTruthy();
-    expect(screen.getByText(TWIN_WORK_IN_PROGRESS)).toBeTruthy();
+    expect(screen.getByText(TWIN_TOUR_LABEL)).toBeTruthy();
   });
 
   it("requests the manifest from the venue's slug under the default asset base", () => {
@@ -149,8 +149,9 @@ describe("TwinPage — error state", () => {
     fetchMock.mockRejectedValue(new Error("network down"));
     mount();
 
-    expect(await screen.findByText(TWIN_ERROR_LINE)).toBeTruthy();
-    expect(screen.getByText(TWIN_WORK_IN_PROGRESS)).toBeTruthy();
+    expect(await screen.findByText("The panorama tour couldn't load.")).toBeTruthy();
+    expect(TWIN_ERROR_LINE).toBe("The panorama tour couldn't load.");
+    expect(screen.getByText(TWIN_TOUR_LABEL)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: TWIN_RETRY_LABEL }));
@@ -183,8 +184,8 @@ describe("TwinPage — ready state", () => {
     expect(screen.getByText(TWIN_DISCLOSURE)).toBeTruthy();
     // Fullscreen targets this application root, so the product-status strip
     // must be inside it instead of only in the surrounding route shell.
-    expect(within(screen.getByRole("application")).getByText(TWIN_WORK_IN_PROGRESS)).toBeTruthy();
-    expect(screen.getAllByText(TWIN_WORK_IN_PROGRESS)).toHaveLength(1);
+    expect(within(screen.getByRole("application")).getByText(TWIN_TOUR_LABEL)).toBeTruthy();
+    expect(screen.getAllByText(TWIN_TOUR_LABEL)).toHaveLength(1);
   });
 
   it("renders the disclosure exactly once on the page", async () => {
@@ -202,7 +203,8 @@ describe("TwinPage — document chrome and landmarks", () => {
     fetchMock.mockResolvedValue(jsonResponse(validManifest));
     const view = mount();
 
-    expect(document.title).toBe(TWIN_TITLE);
+    expect(document.title).toBe("Panorama tour — Trades Hall of Glasgow");
+    expect(TWIN_TITLE).toBe("Panorama tour — Trades Hall of Glasgow");
     await screen.findByTestId("twin-stage");
     view.unmount();
     expect(document.title).toBe("Previous title");
