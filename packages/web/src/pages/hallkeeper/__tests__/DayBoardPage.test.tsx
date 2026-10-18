@@ -32,6 +32,11 @@ vi.mock("../../../api/hallkeeper-summary.js", () => ({
   getSheetSummary: getSummaryMock,
 }));
 
+vi.mock("../../../api/operating-settings.js", () => ({
+  getOperatingSettings: () => Promise.resolve(null),
+  updateOperatingSettings: () => Promise.reject(new Error("not in this test")),
+}));
+
 vi.mock("../../../api/diary.js", () => ({
   getCalendar: getCalendarMock,
 }));

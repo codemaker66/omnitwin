@@ -60,6 +60,7 @@ import { boardFreshness, useBoardClock, useBreathPhase, useConnectionState } fro
 import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
 import { useVenueClock } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
+import { boardDayAnchorMs, nextBoardRolloverMs, soonerOf, useDayBoundaryHour } from "./lib/board-day.js";
 import {
   DayBoardSlotRequestsContext,
   type SlotRequestsComponent,
@@ -826,7 +827,12 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // derives from it; the boundary and the clock meet through state, so a
   // tick is one render at the exact instant something changes.
   const [boundaryMs, setBoundaryMs] = useState<number | null>(null);
-  const nowMs = useBoardClock(boundaryMs);
+  // The clock ticks at the earlier of the next slot boundary and the day's
+  // rollover at the venue's boundary hour (S8), read from the last tick.
+  const dayBoundaryHour = useDayBoundaryHour(venueId);
+  const [rolloverMs, setRolloverMs] = useState<number | null>(null);
+  const nowMs = useBoardClock(rolloverMs === null ? boundaryMs : soonerOf(boundaryMs, rolloverMs));
+  useEffect(() => { setRolloverMs(nextBoardRolloverMs(nowMs, dayBoundaryHour, timeZone)); }, [nowMs, dayBoundaryHour, timeZone]);
   const corrected = useClockCorrected();
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -834,9 +840,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const browsingToday = selectedDate === null;
 
-  // Today, venue-local; the range re-derives when the clock crosses
-  // midnight, so an always-on wall tablet rolls to the new day by itself.
-  const selectedMs = selectedDate === null ? nowMs : wallInputToMs(`${selectedDate}T12:00`, timeZone) ?? nowMs;
+  // Today, venue-local, ending at the venue's own boundary hour (04:00 by
+  // default; midnight for a venue without settings): an event running to
+  // 02:00 is still today's, and an always-on wall tablet rolls once, then.
+  const selectedMs = selectedDate === null ? boardDayAnchorMs(nowMs, dayBoundaryHour, timeZone) : wallInputToMs(`${selectedDate}T12:00`, timeZone) ?? nowMs;
   const range = useMemo(() => boardRange(selectedMs, "day", timeZone), [selectedMs, timeZone]);
   // The days either side are read once this one is on screen, but only once
   // someone shows they may step (a mouse over or keyboard focus on the day
