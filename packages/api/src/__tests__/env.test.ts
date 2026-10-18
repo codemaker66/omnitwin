@@ -401,3 +401,42 @@ describe("non-production environments are permissive", () => {
     expect(env.NODE_ENV).toBe("development");
   });
 });
+
+describe("AI assistant environment", () => {
+  const base = { DATABASE_URL: "postgresql://user:pass@host/db", AI_ASSISTANT_ENABLED: "true" };
+
+  it("accepts the anthropic provider without a base URL", () => {
+    const env = validateEnv({
+      ...base,
+      AI_ASSISTANT_PROVIDER: "anthropic",
+      AI_ASSISTANT_MODEL: "claude-opus-5-5",
+      AI_ASSISTANT_API_KEY: "test-key-not-real",
+    });
+    expect(env.AI_ASSISTANT_BASE_URL).toBeUndefined();
+  });
+
+  it("still requires a base URL for other providers", () => {
+    expect(() => validateEnv({
+      ...base,
+      AI_ASSISTANT_PROVIDER: "internal-gateway",
+      AI_ASSISTANT_MODEL: "m",
+      AI_ASSISTANT_API_KEY: "k",
+    })).toThrow(/AI_ASSISTANT_BASE_URL/u);
+  });
+
+  it("still requires a key and model for the anthropic provider", () => {
+    expect(() => validateEnv({ ...base, AI_ASSISTANT_PROVIDER: "anthropic" }))
+      .toThrow(/AI_ASSISTANT_MODEL, AI_ASSISTANT_API_KEY/u);
+  });
+
+  it("accepts a valid effort and rejects an unknown one", () => {
+    const anthropic = {
+      ...base,
+      AI_ASSISTANT_PROVIDER: "anthropic",
+      AI_ASSISTANT_MODEL: "claude-opus-5-5",
+      AI_ASSISTANT_API_KEY: "test-key-not-real",
+    };
+    expect(validateEnv({ ...anthropic, AI_ASSISTANT_EFFORT: "low" }).AI_ASSISTANT_EFFORT).toBe("low");
+    expect(() => validateEnv({ ...anthropic, AI_ASSISTANT_EFFORT: "turbo" })).toThrow(/AI_ASSISTANT_EFFORT/u);
+  });
+});

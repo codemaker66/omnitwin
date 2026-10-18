@@ -70,13 +70,15 @@ const EnvSchema = z.object({
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
   // AI assistant — disabled unless explicitly enabled and fully configured.
-  // Product code talks to an adapter abstraction; these vars configure the
-  // optional HTTP adapter and are never returned to clients.
+  // Product code talks to an adapter abstraction. PROVIDER=anthropic uses the
+  // Anthropic SDK (BASE_URL optional); any other provider uses the generic
+  // HTTP adapter (BASE_URL required). Never returned to clients.
   AI_ASSISTANT_ENABLED: z.enum(["true", "false"]).default("false"),
   AI_ASSISTANT_PROVIDER: z.string().min(1).max(80).optional(),
   AI_ASSISTANT_MODEL: z.string().min(1).max(120).optional(),
   AI_ASSISTANT_BASE_URL: z.string().url().optional(),
   AI_ASSISTANT_API_KEY: z.string().min(1).optional(),
+  AI_ASSISTANT_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   // Local/operator-only capture ledgers produced by tools/capture-factory.
   // When absent the protected status route returns an explicit unavailable
   // state; production does not assume a developer workstation path.
@@ -303,7 +305,9 @@ const EnvSchema = z.object({
     const missingAiFields: string[] = [];
     if (env.AI_ASSISTANT_PROVIDER === undefined) missingAiFields.push("AI_ASSISTANT_PROVIDER");
     if (env.AI_ASSISTANT_MODEL === undefined) missingAiFields.push("AI_ASSISTANT_MODEL");
-    if (env.AI_ASSISTANT_BASE_URL === undefined) missingAiFields.push("AI_ASSISTANT_BASE_URL");
+    if (env.AI_ASSISTANT_BASE_URL === undefined && env.AI_ASSISTANT_PROVIDER !== "anthropic") {
+      missingAiFields.push("AI_ASSISTANT_BASE_URL");
+    }
     if (env.AI_ASSISTANT_API_KEY === undefined) missingAiFields.push("AI_ASSISTANT_API_KEY");
     if (missingAiFields.length > 0) {
       ctx.addIssue({

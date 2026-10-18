@@ -3,7 +3,8 @@ import { CreateAIDraftRequestSchema } from "@omnitwin/types";
 import type { Env } from "../env.js";
 import { authenticate } from "../middleware/auth.js";
 import {
-  AIAssistantDisabledError,
+  AIGenerationError,
+  aiDraftFailureResponse,
   createAIGenerationAdapterFromEnv,
   generateAIDraft,
 } from "../services/ai-assistant.js";
@@ -16,7 +17,12 @@ export async function aiAssistantRoutes(
   server: FastifyInstance,
   opts: { readonly env: Env },
 ): Promise<void> {
-  const adapter = createAIGenerationAdapterFromEnv(opts.env);
+  const adapter = createAIGenerationAdapterFromEnv(opts.env, {
+    // Token counts only (no draft text or context) so spend can be traced in logs.
+    onUsage: (usage) => {
+      server.log.info({ aiUsage: usage }, "AI draft usage");
+    },
+  });
 
   server.get("/status", { preHandler: [authenticate] }, async () => {
     return { data: adapter.status };
@@ -35,17 +41,16 @@ export async function aiAssistantRoutes(
       const draft = await generateAIDraft(adapter, parsed.data);
       return { data: draft };
     } catch (err) {
-      if (err instanceof AIAssistantDisabledError) {
-        return reply.status(503).send({
-          error: err.message,
-          code: "AI_ASSISTANT_DISABLED",
-        });
+      const failure = aiDraftFailureResponse(err);
+      if (failure.body.code !== "AI_ASSISTANT_DISABLED") {
+        request.log.error(
+          err instanceof AIGenerationError
+            ? { err, reason: err.reason, providerStatus: err.status, providerRequestId: err.requestId, category: err.category }
+            : { err },
+          "AI draft generation failed",
+        );
       }
-      request.log.error({ err }, "AI draft generation failed");
-      return reply.status(502).send({
-        error: "AI draft generation failed",
-        code: "AI_DRAFT_GENERATION_FAILED",
-      });
+      return reply.status(failure.status).send(failure.body);
     }
   });
 }
