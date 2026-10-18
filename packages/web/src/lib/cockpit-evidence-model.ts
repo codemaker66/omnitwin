@@ -1,37 +1,50 @@
+import { CAPACITY_FORMATS } from "@omnitwin/types";
 import { buildGuestsCapacityModel, seatSufficiencyLabel } from "./cockpit-guests-model.js";
-import { minExitsAdb, requiredExitWidthMmAdb } from "./egress.js";
+import { guestsAbovePublished, type PublishedCapacityAnswer, type PublishedFormat } from "./planner-truth.js";
+import type { AskTopic } from "./unrecorded-ask.js";
 import type { PlacedItem } from "./placement.js";
 
 // ---------------------------------------------------------------------------
-// cockpit-evidence-model — the Layout Evidence Pack (Epic 0 Evidence lens).
+// cockpit-evidence-model — the Layout Evidence Pack (Evidence lens).
 //
-// A purpose-fit check list assembled from the LIVE layout: does the seating
-// match the headcount, is the room comfortable, and what does egress guidance
-// indicate for that many people. Each check carries an honest status and a SAFE
-// detail. Composes the same Guests capacity model and the egress planning engine
-// the rest of the app uses — no new judgement is invented here.
+// Each row states what is recorded about the layout and who stated it, and
+// names the person to ask for what is not. There is no "Pass" anywhere: a
+// green tick is only honest for something a named person checked, and nothing
+// here was checked by anyone (redteam fix-first 2). In particular:
 //
-// SAFE: every figure is a PLANNING-GRADE estimate for human review. The egress
-// check states what the guidance INDICATES for the headcount; it never confirms
-// the room's actual exits (the venue technical pack is the authority for that).
-// Nothing here is a fire, occupancy, or compliance determination.
+//   - Seating compares placed chairs with the planner's own guest count:
+//     arithmetic on the planner's inputs, flagged only when short.
+//   - Capacity reads the guest count against the venue's PUBLISHED figure for
+//     the layout's format, with its source; above it is a review, at or below
+//     it is simply noted, never a confirmation.
+//   - Escape routes and the room's maximum come from the venue's fire risk
+//     assessment, which Venviewer does not hold, so they are "not recorded"
+//     with the hallkeeper to ask. The England (Approved Document B) and US
+//     (NFPA 101) figures this lens used to quote are the wrong authority for a
+//     Glasgow building and are not shown.
+//
+// Pure: the panel turns each ask topic into a named person and a drafted
+// question for the viewer.
 // ---------------------------------------------------------------------------
 
-export type EvidenceStatus = "pass" | "attention" | "review" | "info";
+export type EvidenceStatus = "review" | "noted" | "not-recorded" | "reading";
 
 export interface EvidenceCheck {
   readonly id: string;
   readonly label: string;
   readonly status: EvidenceStatus;
   readonly detail: string;
+  /** Who stated the figure in this row, when one is shown. */
+  readonly source: string | null;
+  /** The question for the named person, when the row needs one. */
+  readonly ask: AskTopic | null;
 }
 
 export interface EvidencePack {
   readonly checks: readonly EvidenceCheck[];
-  readonly passCount: number;
-  readonly attentionCount: number;
   readonly reviewCount: number;
-  /** Headcount the pack is assessed against (guest count or placed chairs). */
+  readonly notRecordedCount: number;
+  /** Headcount the pack is read against (guest count or placed chairs). */
   readonly assessedHeadcount: number;
   readonly hasGuestCount: boolean;
 }
@@ -44,46 +57,86 @@ export interface EvidenceModelInput {
   readonly roomLengthM: number;
   /** Planner-set intended headcount, or null. */
   readonly guestCount: number | null;
+  /** The venue's published figures for the open room. */
+  readonly published: PublishedCapacityAnswer;
 }
+
+const FORMAT_WORDS = Object.fromEntries(
+  CAPACITY_FORMATS.map((format) => [format.key, format.label.toLowerCase()]),
+) as Readonly<Record<PublishedFormat, string>>;
 
 function seatingCheck(seatStatus: string, detail: string): EvidenceCheck {
-  const status: EvidenceStatus =
-    seatStatus === "short" ? "review"
-      : seatStatus === "unset" ? "info"
-        : "pass";
-  return { id: "seating", label: "Seating provision", status, detail };
+  return {
+    id: "seating",
+    label: "Seating",
+    status: seatStatus === "short" ? "review" : "noted",
+    detail,
+    source: null,
+    ask: null,
+  };
 }
 
-function comfortCheck(band: string, bandLabel: string, comfortableCapacity: number, styleLabel: string): EvidenceCheck {
-  const status: EvidenceStatus =
-    band === "over-capacity" ? "review"
-      : band === "tight" ? "attention"
-        : band === "open" ? "info"
-          : "pass";
-  const detail = comfortableCapacity > 0
-    ? `${bandLabel}. Comfortable for ~${String(comfortableCapacity)} as ${styleLabel}.`
-    : bandLabel;
-  return { id: "comfort", label: "Room comfort", status, detail };
-}
-
-function egressCheck(assessedHeadcount: number): EvidenceCheck {
-  if (assessedHeadcount <= 0) {
+function capacityCheck(
+  published: PublishedCapacityAnswer,
+  headcount: number,
+  format: PublishedFormat | null,
+  /** The layout on the floor in words, or null when nothing seating-like is placed. */
+  styleLabel: string | null,
+): EvidenceCheck {
+  const base = { id: "capacity", label: "Published capacity" } as const;
+  if (published.kind === "reading") {
+    return { ...base, status: "reading", detail: "Reading the venue's published figures.", source: null, ask: null };
+  }
+  if (published.kind === "not-published") {
     return {
-      id: "egress",
-      label: "Egress reference",
-      status: "info",
-      detail: "Add a guest count or seating for an indicative egress reference.",
+      ...base,
+      status: "not-recorded",
+      detail: "No published capacity is held here for this room.",
+      source: null,
+      ask: "room-capacity",
     };
   }
-  const exits = minExitsAdb(assessedHeadcount);
-  const widthMm = requiredExitWidthMmAdb(assessedHeadcount);
+  if (format === null) {
+    return {
+      ...base,
+      status: "noted",
+      detail: styleLabel !== null
+        ? `The venue publishes no figure for ${styleLabel}.`
+        : "Add seating to read the layout against the published figures.",
+      source: published.source,
+      ask: null,
+    };
+  }
+  const figure = published.capacity[format];
+  const above = guestsAbovePublished(headcount > 0 ? headcount : null, published.capacity, format);
+  if (above !== null) {
+    return {
+      ...base,
+      status: "review",
+      detail: above,
+      source: published.source,
+      ask: { kind: "headcount", guests: headcount, figure, formatLabel: FORMAT_WORDS[format] },
+    };
+  }
   return {
-    id: "egress",
-    label: "Egress reference",
-    status: "review",
-    detail: `For ${String(assessedHeadcount)} people, ADB guidance indicates ≥ ${String(exits)} escape `
-      + `${exits === 1 ? "route" : "routes"} and ≥ ${String(widthMm)} mm total clear exit width. `
-      + "Confirm against this room's actual exits.",
+    ...base,
+    status: "noted",
+    detail: `Published ${String(figure)} for ${FORMAT_WORDS[format]}.`,
+    source: published.source,
+    ask: null,
+  };
+}
+
+function escapeRoutesCheck(headcount: number): EvidenceCheck {
+  return {
+    id: "escape-routes",
+    label: "Escape routes and maximum",
+    status: "not-recorded",
+    detail: headcount > 0
+      ? `For ${String(headcount)} people, the escape routes and the room's maximum come from the venue's fire risk assessment, which is not recorded here.`
+      : "The escape routes and the room's maximum come from the venue's fire risk assessment, which is not recorded here.",
+    source: null,
+    ask: "escape-routes",
   };
 }
 
@@ -95,28 +148,24 @@ export function buildEvidencePack(input: EvidenceModelInput): EvidencePack {
     roomLengthM: input.roomLengthM,
     guestCount: input.guestCount,
   });
+  const headcount = guests.guestCount ?? guests.seatsProvided;
 
   const checks: readonly EvidenceCheck[] = [
     seatingCheck(guests.seatStatus, seatSufficiencyLabel(guests)),
-    comfortCheck(guests.band, guests.bandLabel, guests.comfortableCapacity, guests.styleLabel),
-    egressCheck(guests.assessedHeadcount),
+    capacityCheck(
+      input.published,
+      headcount,
+      guests.publishedFormat,
+      guests.layoutStyle === "custom" ? null : guests.styleLabel,
+    ),
+    escapeRoutesCheck(headcount),
   ];
-
-  let passCount = 0;
-  let attentionCount = 0;
-  let reviewCount = 0;
-  for (const check of checks) {
-    if (check.status === "pass") passCount += 1;
-    else if (check.status === "attention") attentionCount += 1;
-    else if (check.status === "review") reviewCount += 1;
-  }
 
   return {
     checks,
-    passCount,
-    attentionCount,
-    reviewCount,
-    assessedHeadcount: guests.assessedHeadcount,
-    hasGuestCount: input.guestCount !== null,
+    reviewCount: checks.filter((check) => check.status === "review").length,
+    notRecordedCount: checks.filter((check) => check.status === "not-recorded").length,
+    assessedHeadcount: headcount,
+    hasGuestCount: guests.guestCount !== null,
   };
 }

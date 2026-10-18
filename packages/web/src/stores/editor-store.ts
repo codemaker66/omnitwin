@@ -180,6 +180,9 @@ interface EditorState {
   readonly venueId: string | null;
   readonly configRevision: number | null;
   readonly space: Space | null;
+  /** The last read of the open room's space failed, so `space` stays null
+   *  until another load: surfaces stop showing a working state for it. */
+  readonly spaceLoadFailed: boolean;
   readonly isPublicPreview: boolean;
   readonly objects: readonly EditorObject[];
   /**
@@ -600,6 +603,7 @@ const INITIAL_STATE: EditorState = {
   venueId: null,
   configRevision: null,
   space: null,
+  spaceLoadFailed: false,
   isPublicPreview: false,
   objects: [],
   baseObjects: [],
@@ -738,14 +742,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   loadSpace: async (venueId, spaceId) => {
     const session = configurationSession;
     const early = plannerSpaceHandoff.take(`${venueId}/${spaceId}`);
+    if (get().spaceLoadFailed) set({ spaceLoadFailed: false });
     try {
       const space = await (early === null
         ? spacesApi.getSpace(venueId, spaceId)
         : early.catch(() => spacesApi.getSpace(venueId, spaceId)));
       if (session !== configurationSession || get().spaceId !== spaceId || get().venueId !== venueId) return;
-      set({ space, spaceId, venueId });
+      set({ space, spaceId, venueId, spaceLoadFailed: false });
     } catch {
-      // Non-critical — space data is for display
+      // Space data is for display, but a surface waiting on it must stop
+      // showing a working state: say the read failed for this room.
+      if (session !== configurationSession || get().spaceId !== spaceId || get().venueId !== venueId) return;
+      set({ spaceLoadFailed: true });
     }
   },
 

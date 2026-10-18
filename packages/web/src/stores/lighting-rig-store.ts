@@ -9,8 +9,10 @@ import { logPlannerAction } from "./planner-action-log.js";
 // The catalogue has no placeable lighting fixtures yet, so the rig is specified
 // here as fixture FAMILY → COUNT, exactly how a lighting designer blocks out a
 // rig before fixtures are hung. The DMX patch + power estimate (lib/dmx.ts) are
-// derived from this. Starts from a small, clearly-editable STARTER rig (like the
-// Costs lens's example rates) so the lens is illustrative on first open.
+// derived from this. The rig starts EMPTY: it used to open with 18 fixtures
+// nobody added, and those fed the Costs, Power and Rigging lenses as if they
+// were the plan's (redteam fix-first 2). Every fixture here is one a person put
+// in.
 //
 // A planner can also IMPORT real manufacturer fixtures (parsed from GDTF, see
 // lib/gdtf.ts). An imported fixture carries its REAL DMX channel footprint (and,
@@ -60,13 +62,8 @@ const EMPTY_COUNTS: RigCounts = {
   "blinder-strobe": 0,
 };
 
-/** A modest illustrative starter rig — edit to your lighting design. */
-export const DEFAULT_RIG_COUNTS: RigCounts = {
-  ...EMPTY_COUNTS,
-  par: 12,
-  wash: 4,
-  profile: 2,
-};
+/** The rig a plan opens with: empty. No fixture is assumed. */
+export const DEFAULT_RIG_COUNTS: RigCounts = { ...EMPTY_COUNTS };
 
 interface RigState {
   readonly counts: RigCounts;
@@ -187,7 +184,7 @@ export const useLightingRigStore = create<RigState & RigActions>((set, get) => (
     logPlannerAction({
       intent: "lighting.rig.reset",
       tool: "lighting-rig",
-      payload: { to: "starter-rig" },
+      payload: { to: "empty" },
       inverse: { counts: previous.counts, imported: previous.imported },
     });
   },

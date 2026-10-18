@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { TradesHallVenueStatus } from "../../../hooks/use-trades-hall-venue.js";
+import * as plannerTruth from "../cockpit/__tests__/planner-truth-fixtures.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { createPlacedItem } from "../../../lib/placement.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -10,7 +12,15 @@ import { computeCapacityIntelligence, inferSeatingStyle, comfortBandLabel } from
 import { computeCirculation, circulationBandLabel, type FurnitureFootprint } from "../../../lib/circulation.js";
 import { PlannerSpatialHud } from "../PlannerSpatialHud.js";
 
+const venue = vi.hoisted(() => ({ status: "trades-hall" as TradesHallVenueStatus }));
+vi.mock("../../../hooks/use-trades-hall-venue.js", () => ({
+  useTradesHallVenueStatus: () => venue.status,
+  useTradesHallVenue: () => venue.status === "trades-hall",
+}));
+
 function resetStore(): void {
+  venue.status = "trades-hall";
+  plannerTruth.resetPlannerTruth();
   usePlacementStore.setState({
     placedItems: [],
     ghostPosition: null,
@@ -126,12 +136,72 @@ describe("PlannerSpatialHud", () => {
     expect(screen.getByText("1 object")).toBeDefined();
   });
 
-  it("reports area-based comfortable capacity with a planning-grade disclosure", () => {
+  it("counts a visitor's seats against the venue's published figure, with who stated it", () => {
+    const roundTable = getCatalogueItemBySlug("round-table-6ft");
+    const chair = getCatalogueItemBySlug("banquet-chair");
+    if (roundTable === undefined || chair === undefined) throw new Error("catalogue items missing");
+    plannerTruth.openRoom(plannerTruth.plannerRoom());
+    usePlacementStore.setState({
+      placedItems: [
+        createPlacedItem(roundTable.id, 0, 0, 0),
+        createPlacedItem(chair.id, 0.5, 0.5, 0),
+        createPlacedItem(chair.id, -0.5, 0.5, 0),
+      ],
+    });
+
+    render(<PlannerSpatialHud />);
+
+    const panel = screen.getByTestId("planner-capacity-panel");
+    expect(panel.textContent).toContain("/ 180");
+    expect(screen.getByTestId("planner-capacity-caption").textContent).toBe("Published 180 for dinner");
+    expect(screen.getByTestId("planner-capacity-source").textContent).toBe("Published guide · Trades Hall · 9 Jul 2026");
+    // The Grand Hall's 220.5 m² at generic spacing would read 147; a visitor never sees it.
+    expect(panel.textContent).not.toMatch(/\b147\b|generic spacing|comfortable|within/i);
+  });
+
+  it("says plainly when a visitor's seats are above the published figure", () => {
+    const chair = getCatalogueItemBySlug("banquet-chair");
+    if (chair === undefined) throw new Error("catalogue items missing");
+    plannerTruth.openRoom(plannerTruth.plannerRoom());
+    usePlacementStore.setState({
+      placedItems: Array.from({ length: 260 }, (_, i) => createPlacedItem(chair.id, (i % 20) * 0.6, Math.floor(i / 20) * 0.6, 0)),
+    });
+
+    render(<PlannerSpatialHud />);
+
+    expect(screen.getByTestId("planner-capacity-caption").textContent).toBe("260 seats placed; the venue publishes 250 for theatre.");
+    expect(screen.getByTestId("planner-capacity-panel").textContent).toContain("The events team will say what is possible.");
+  });
+
+  it("shows a visitor seats alone in a room with no published figure", () => {
+    const chair = getCatalogueItemBySlug("banquet-chair");
+    if (chair === undefined) throw new Error("catalogue items missing");
+    venue.status = "other";
+    plannerTruth.openRoom(plannerTruth.plannerRoom("grand-hall", "Grand Hall", "venue-elsewhere"));
+    usePlacementStore.setState({ placedItems: [createPlacedItem(chair.id, 0, 0, 0)] });
+
+    render(<PlannerSpatialHud />);
+
+    const panel = screen.getByTestId("planner-capacity-panel");
+    expect(panel.textContent).not.toContain("/ ");
+    expect(screen.getByTestId("planner-capacity-caption").textContent).toBe("No published capacity for this room");
+  });
+
+  it("shows honest work while the venue is being read", () => {
+    venue.status = "reading";
+    plannerTruth.openRoom(plannerTruth.plannerRoom());
+    render(<PlannerSpatialHud />);
+    expect(screen.getByTestId("planner-capacity-caption").querySelector("[data-activity-indicator]")).not.toBeNull();
+  });
+
+  it("reports area-based arithmetic to venue staff, labelled as an estimate at generic spacing", () => {
     const roundTable = getCatalogueItemBySlug("round-table-6ft");
     const chair = getCatalogueItemBySlug("banquet-chair");
     expect(roundTable).toBeDefined();
     expect(chair).toBeDefined();
     if (roundTable === undefined || chair === undefined) return;
+    plannerTruth.viewAsStaff();
+    plannerTruth.openRoom(plannerTruth.plannerRoom());
 
     // 15m × 10m real → 150 m² of floor. The scene is in true metres now, so
     // the store holds the real figures directly; this fixture previously
@@ -157,10 +227,11 @@ describe("PlannerSpatialHud", () => {
     expect(cap.comfortableCapacity).toBe(100);
     expect(screen.getByText(`/ ${cap.comfortableCapacity.toLocaleString("en-GB")}`)).toBeDefined();
     expect(screen.getByText(comfortBandLabel(cap.band))).toBeDefined();
-    expect(screen.getByText((content) => content.includes("m²/guest"))).toBeDefined();
-    expect(
-      screen.getByText("Planning-grade estimate · human review required · final capacity confirmed by venue team"),
-    ).toBeDefined();
+    expect(screen.getByText((content) => content.includes("m²/guest") && content.includes("at generic spacing"))).toBeDefined();
+    expect(screen.getByTestId("planner-capacity-disclosure").textContent).toBe(
+      "Estimate at generic spacing · venue staff only · not the venue's published figure",
+    );
+    expect(screen.getByTestId("planner-capacity-panel").textContent).not.toMatch(/\bwithin\b/i);
   });
 
   it("reports the tightest furniture clearance from real placed geometry", () => {

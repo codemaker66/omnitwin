@@ -11,6 +11,7 @@ import { evidenceChipStateFromVerificationState } from "../../lib/evidence-chip-
 import { EvidenceChip } from "../evidence/EvidenceChip.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { countLabel } from "../../lib/count-label.js";
 
 export interface TruthModeIndicatorProps {
   readonly summary: TruthModeSceneSummary;
@@ -212,12 +213,12 @@ export function TruthModeIndicator({ summary, embedded = false }: TruthModeIndic
       : summary.generatedOrProceduralContent ? "Procedural" : "Source not established";
   const collapsedRuntimeLabel = summary.measuredRuntimeAssetsLoaded ? "Runtime loaded"
     : summary.displayedCaptureSource !== null ? "No signed runtime" : "Runtime not loaded";
-  const collapsedIssueLabel = issueCount > 0 ? `${String(issueCount)} issues` : "No issues";
+  const collapsedIssueLabel = issueCount > 0 ? countLabel(issueCount, "issue") : "No issues";
   const fullSourceLabel = summary.displayedCaptureSource === "staged" ? "Staged capture displayed; alignment unverified"
     : summary.displayedCaptureSource === "package" ? "Packaged capture displayed; verification not established"
       : summary.generatedOrProceduralContent ? "Procedural content present" : "Source not established";
   const fullRuntimeLabel = summary.measuredRuntimeAssetsLoaded ? "Measured runtime loaded" : "Measured runtime not loaded";
-  const fullIssueLabel = issueCount > 0 ? `${String(issueCount)} known issues` : "No known issues";
+  const fullIssueLabel = issueCount > 0 ? countLabel(issueCount, "known issue") : "No known issues";
 
   useEffect(() => {
     if (!open) return undefined;

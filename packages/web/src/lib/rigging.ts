@@ -33,24 +33,32 @@ export interface BridleInput {
   readonly bridleLegs: 1 | 2;
   /** Each leg's angle from the horizontal, degrees (two-leg only). */
   readonly legAngleFromHorizontalDeg: number;
-  /** The point's working load limit, kg. */
-  readonly pointWllKg: number;
-  /** What the venue point is rated for. */
-  readonly permittedUse: PermittedUse;
+  /** The point's working load limit, kg; null when nobody has recorded it. */
+  readonly pointWllKg: number | null;
+  /** What the venue point is rated for; null when nobody has recorded it. */
+  readonly permittedUse: PermittedUse | null;
   /** What the suspended load is. */
   readonly loadKind: LoadKind;
 }
 
+/**
+ * The arithmetic, never a pass. There is deliberately no "within WLL" field:
+ * a WLL typed into a planner is not a point anyone has checked, so the only
+ * verdict this module returns is the warning that a load is OVER the figure
+ * entered (redteam fix-first 2).
+ */
 export interface RiggingAssessment {
   readonly suspendedLoadKg: number;
   /** Tension carried by each leg / the single point, kg. */
   readonly legTensionKg: number;
-  readonly pointWllKg: number;
-  /** legTension ÷ WLL, percent. */
-  readonly utilizationPercent: number;
-  /** WLL − legTension, kg (negative when over). */
-  readonly headroomKg: number;
-  readonly withinWll: boolean;
+  /** The WLL entered, or null when none is recorded. */
+  readonly pointWllKg: number | null;
+  /** legTension ÷ WLL, percent; null without a WLL. */
+  readonly utilizationPercent: number | null;
+  /** WLL − legTension, kg (negative when over); null without a WLL. */
+  readonly headroomKg: number | null;
+  /** True only when a WLL is recorded and the leg tension exceeds it. */
+  readonly overWll: boolean;
   readonly warnings: readonly string[];
 }
 
@@ -76,20 +84,22 @@ function permittedUseAllows(permittedUse: PermittedUse, loadKind: LoadKind): boo
 /** Assess a suspended load on a point / bridle. Pure and indicative. */
 export function assessRigging(input: BridleInput): RiggingAssessment {
   const suspendedLoadKg = nonNegative(input.suspendedLoadKg);
-  const pointWllKg = nonNegative(input.pointWllKg);
+  const pointWllKg = input.pointWllKg !== null && nonNegative(input.pointWllKg) > 0 ? input.pointWllKg : null;
   const tension = legTensionKg(suspendedLoadKg, input.bridleLegs, input.legAngleFromHorizontalDeg);
-  const utilizationPercent = pointWllKg > 0 ? Math.round((tension / pointWllKg) * 100) : 0;
-  const headroomKg = pointWllKg - tension;
-  const withinWll = pointWllKg > 0 && tension <= pointWllKg;
+  const utilizationPercent = pointWllKg !== null ? Math.round((tension / pointWllKg) * 100) : null;
+  const headroomKg = pointWllKg !== null ? pointWllKg - tension : null;
+  const overWll = pointWllKg !== null && tension > pointWllKg;
 
   const warnings: string[] = [];
-  if (pointWllKg > 0 && tension > pointWllKg) {
+  if (overWll) {
     warnings.push(`Leg tension ~${String(Math.round(tension))} kg exceeds the point WLL ${String(Math.round(pointWllKg))} kg`);
   }
   if (input.bridleLegs === 2 && input.legAngleFromHorizontalDeg < SHALLOW_BRIDLE_ANGLE_DEG) {
     warnings.push(`Shallow bridle angle (<${String(SHALLOW_BRIDLE_ANGLE_DEG)}°) — leg tension climbs steeply; widen the angle or add a point`);
   }
-  if (!permittedUseAllows(input.permittedUse, input.loadKind)) {
+  // A point's rating nobody recorded raises no warning and no reassurance:
+  // the panel shows it as not recorded, with the hallkeeper to ask.
+  if (input.permittedUse !== null && !permittedUseAllows(input.permittedUse, input.loadKind)) {
     if (input.permittedUse === "static-only") {
       warnings.push("A static-only point must NOT anchor a hoist — use a hoist-rated point");
     } else {
@@ -97,7 +107,7 @@ export function assessRigging(input: BridleInput): RiggingAssessment {
     }
   }
 
-  return { suspendedLoadKg, legTensionKg: tension, pointWllKg, utilizationPercent, headroomKg, withinWll, warnings };
+  return { suspendedLoadKg, legTensionKg: tension, pointWllKg, utilizationPercent, headroomKg, overWll, warnings };
 }
 
 export const RIGGING_PLANNING_DISCLAIMER =

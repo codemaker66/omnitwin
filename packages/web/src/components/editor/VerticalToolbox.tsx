@@ -49,6 +49,7 @@ import type { CatalogueItem } from "../../lib/catalogue.js";
 import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
+import { countLabel } from "../../lib/count-label.js";
 
 const LazyAuthModal = lazy(() =>
   import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
@@ -1533,7 +1534,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
     : undefined;
   const selectedName = selectedTables.length > 1 ? `${String(selectedTables.length)} tables selected` : selectedCatalogueItem?.name ?? null;
   const selectedDetail = selectedFurniture.length > 1
-    ? `${String(selectedChairs.length)} chairs placed · ${String(selectedFurniture.length)} objects selected`
+    ? `${countLabel(selectedChairs.length, "chair")} placed · ${countLabel(selectedFurniture.length, "object")} selected`
     : selectedCatalogueItem !== undefined
     ? `${selectedCatalogueItem.subtitle} · ${selectedCatalogueItem.width.toFixed(1)}m × ${selectedCatalogueItem.depth.toFixed(1)}m`
     : null;

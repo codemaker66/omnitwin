@@ -129,15 +129,17 @@ function buildRecommendations(signals: LayoutSignals): LayoutRecommendation[] {
       id: "circulation-blocked",
       severity: "critical",
       message:
-        "Furniture is too close to pass between — widen the circulation gaps. Planning-grade only; venue review required.",
+        "Furniture is too close to walk between — widen the circulation gaps. Planning-grade only; venue review required.",
     });
   }
   if (capacity.band === "over-capacity") {
     recs.push({
       id: "capacity-over",
       severity: "critical",
+      // Arithmetic against generic spacing, never a capacity verdict: the
+      // room's capacity is the venue's to state (redteam fix-first 1).
       message:
-        "Seating is past the comfortable planning capacity — venue review required before use.",
+        "Space per guest is well below generic spacing — the events team confirms what this room takes.",
     });
   }
 
@@ -157,7 +159,7 @@ function buildRecommendations(signals: LayoutSignals): LayoutRecommendation[] {
     recs.push({
       id: "capacity-tight",
       severity: "warning",
-      message: "The room is filling up — space per guest is below the comfortable guideline.",
+      message: "Space per guest is below generic spacing — review circulation.",
     });
   }
 
@@ -177,7 +179,7 @@ function buildRecommendations(signals: LayoutSignals): LayoutRecommendation[] {
     recs.push({
       id: "capacity-headroom",
       severity: "tip",
-      message: "Plenty of room per guest — you could add more seating if you need the capacity.",
+      message: "Generous space per guest at generic spacing.",
     });
   }
 
@@ -187,7 +189,7 @@ function buildRecommendations(signals: LayoutSignals): LayoutRecommendation[] {
       recs.push({
         id: "praise-circulation",
         severity: "praise",
-        message: "Comfortable walkways throughout and capacity within guidance — nicely judged.",
+        message: "Walkways are clear, and space per guest is at or above generic spacing.",
       });
     }
   }

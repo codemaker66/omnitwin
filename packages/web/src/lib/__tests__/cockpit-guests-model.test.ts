@@ -24,7 +24,7 @@ function place(item: CatalogueItem, n: number): PlacedItem[] {
 }
 
 // 21 × 10 m = 210 m² floor. Round tables force the dinner-rounds style
-// (comfortable 1.5 m²/guest → comfortable capacity 140).
+// (generic 1.5 m²/guest → an estimate of 140, staff-only and never a verdict).
 const ROOM = { roomWidthM: 21, roomLengthM: 10 } as const;
 const withChairs = (chairs: number): PlacedItem[] => [...place(roundTable(), 8), ...place(chair(), chairs)];
 
@@ -35,7 +35,7 @@ describe("buildGuestsCapacityModel — seat sufficiency", () => {
     expect(model.seatsProvided).toBe(80);
     expect(model.seatBalance).toBeNull();
     expect(model.seatStatus).toBe("unset");
-    expect(model.assessedHeadcount).toBe(80);
+    expect(model.layoutStyle).toBe("dinner-rounds");
     expect(model.styleLabel).toMatch(/round/i);
   });
 
@@ -61,26 +61,41 @@ describe("buildGuestsCapacityModel — seat sufficiency", () => {
   });
 });
 
-describe("buildGuestsCapacityModel — room comfort", () => {
-  it("computes comfortable capacity and a spacious band for a light room", () => {
+describe("buildGuestsCapacityModel — the published format, and no verdict", () => {
+  it("reads round tables against the venue's published dinner figure", () => {
     const model = buildGuestsCapacityModel({ ...ROOM, placedItems: withChairs(80), guestCount: 80 });
-    expect(model.comfortableCapacity).toBe(140); // 210 / 1.5
-    expect(model.band).toBe("spacious"); // 210 / 80 = 2.625 ≥ 2.1
-    expect(model.utilizationPercent).toBe(57); // round(80 / 140 * 100)
-    expect(model.bandLabel).toMatch(/spacious/i);
+    expect(model.layoutStyle).toBe("dinner-rounds");
+    expect(model.publishedFormat).toBe("dinner");
   });
 
-  it("flags over comfortable capacity for a packed headcount", () => {
-    const model = buildGuestsCapacityModel({ ...ROOM, placedItems: withChairs(80), guestCount: 220 });
-    expect(model.band).toBe("over-capacity"); // 210 / 220 = 0.95 < 1.1
-    expect(model.bandLabel).toMatch(/over comfortable/i);
-    expect(model.seatStatus).toBe("short");
+  it("reads chairs alone against the published theatre figure", () => {
+    const model = buildGuestsCapacityModel({ ...ROOM, placedItems: place(chair(), 40), guestCount: null });
+    expect(model.publishedFormat).toBe("theatre");
+  });
+
+  it("has no published format for an empty floor", () => {
+    const model = buildGuestsCapacityModel({ ...ROOM, placedItems: [], guestCount: 50 });
+    expect(model.layoutStyle).toBe("custom");
+    expect(model.publishedFormat).toBeNull();
+  });
+
+  it("carries the generic-spacing arithmetic for staff, with no band, fit or comfort verdict", () => {
+    const model = buildGuestsCapacityModel({ roomWidthM: 21, roomLengthM: 10.5, placedItems: withChairs(80), guestCount: 400 });
+    const byStyle = new Map(model.estimates.map((row) => [row.style, row.estimate]));
+    // The Grand Hall's 220.5 m² at 0.65, 1.5 and 0.8 m² a guest.
+    expect(byStyle.get("cocktail")).toBe(339);
+    expect(byStyle.get("dinner-rounds")).toBe(147);
+    expect(byStyle.get("theatre")).toBe(275);
+    const keys = Object.keys(model);
+    for (const banned of ["band", "bandLabel", "comfortableCapacity", "tightCapacity", "utilizationPercent", "styleSummary"]) {
+      expect(keys).not.toContain(banned);
+    }
   });
 
   it("treats a missing room as zero floor area without throwing", () => {
     const model = buildGuestsCapacityModel({ roomWidthM: 0, roomLengthM: 0, placedItems: [], guestCount: 50 });
     expect(model.floorAreaM2).toBe(0);
-    expect(model.comfortableCapacity).toBe(0);
+    expect(model.estimates.every((row) => row.estimate === 0)).toBe(true);
     expect(model.seatsProvided).toBe(0);
     expect(model.seatStatus).toBe("short");
   });
