@@ -55,6 +55,24 @@ work and gives it an honest outside check:
 | 9 | Relit frames through the pano lane's product presentation (4090 slot), look review against the as-captured frames | render | only beautiful frames reach Blake, each beside the as-captured view |
 | 10 | Reviews: spec, an independent number check, and the frames' look | review | — |
 
+## Findings from steps 0-2 (18 October)
+
+- **Step 0 (the pano lane):** the forward model is `runs/final_2state150k/out` (day PLY sha `4a5623ad…`, 8,375,174
+  splats; evening base colour `evening_f_dc.npy`, sha `f25486cf…`). The floor was trained as an opaque skin, so the
+  model has almost no floor splats (1,576 within 10 cm): the fit's floor group comes from the skin's texels, and the
+  relight uses the pano lane's unlit restored floor albedo, never its lit showcase skin. The presentation is the pano
+  lane's `viewer/` with its capture grade and five named views.
+- **Step 1 (alignment):** the frame is confirmed. The floor plane lands within 1.4 cm of `floorZ`; three walls agree
+  with the old scan within 1.8 cm. On the y1 wall the new hall's surface sits 4–8 cm deeper (median +7.6 cm beyond
+  the box face, old scan +0.5 cm). The relight models no occlusion there, so the effect is limited to the patches and
+  the cove light at that wall; which surface is real goes to the pano lane's LiDAR before step 5.
+- **The facade bearing:** the proof uses 104.3° for the window wall's outward normal; the planner's sun work measured
+  101.1° true from LiDAR (±1°). A 3° error moves every sun patch on the floor. Step 4 re-derives it from the E57 and
+  corrects the config with that evidence.
+- **Step 2 (reader):** `relight/plyread.py` (f4af5cc6) reads the PLY into the old extractor's tables plus the evening
+  colour; `config/grand-hall-pano.json` and `proof/01_extract_ply.py` (the model's SHA-256 checked) run it into a
+  separate work folder, `D:/claude/relight/grand-hall-pano`.
+
 ## Cost (honest)
 
 - **Work:** about **7–10 days**, more than the 4–6 days in the option Blake saw. The two-state fit and rule (steps 5–6,

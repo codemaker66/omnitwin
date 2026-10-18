@@ -1,0 +1,93 @@
+{
+  "schema": "venviewer.relight-config.v1",
+  "paths": {
+    "splats": "D:/claude/pano-splat-20261003/runs/final_2state150k/out",
+    "canonicalFrame": "D:/claude/splat-quality-20260923/canonical-frame-court/canonical_frame.json",
+    "audit": "D:/claude/splat-quality-20260923/capture-lighting-audit",
+    "panoramas": "F:/downloads (some very important)/TH Panoramic",
+    "horizon": "D:/claude/splat-quality-20260923/weather-daylight/horizon.json",
+    "emitters": "D:/claude/real-hall/frontier/splats/evidence/bulbs.json",
+    "lampColours": "D:/claude/real-hall/frontier/light/evidence/lamp_colours.json",
+    "proofWork": "D:/claude/real-hall/renovation/relight/work",
+    "work": "D:/claude/relight/grand-hall-pano/work",
+    "out": "D:/claude/splats/trades-hall/grand-hall-pano/relight/v1",
+    "evidence": "D:/claude/relight/grand-hall-pano/evidence",
+    "floorSkin": "D:/claude/splats/trades-hall/grand-hall/floor-skin/v1",
+    "bundle": "packages/web/src/data/generated/trades-hall-splat-bundles.ts",
+    "repo": "D:/claude/real-hall/repo",
+    "model": "D:/claude/pano-splat-20261003/runs/final_2state150k/out/grand_hall_pano_day.ply",
+    "modelSha256": "4a5623ad9679f7e7e73dad497ff2e6254dfcd7e4aafffd279099f28f7a72288f",
+    "modelEvening": "D:/claude/pano-splat-20261003/runs/final_2state150k/out/evening_f_dc.npy",
+    "modelEveningSha256": "f25486cf4b0e7e05fdfc7fc0c8d80fb0e999f4bd725c8ff8c6d260af3454a6c1"
+  },
+  "room": {
+    "slug": "grand-hall",
+    "site": {
+      "latitude": 55.8593,
+      "longitude": -4.2491,
+      "xBearingDeg": 14.3
+    },
+    "hallE57": {
+      "x0": -1.823,
+      "x1": 19.307,
+      "y0": -10.329,
+      "y1": 0.301,
+      "floorZ": 0.02,
+      "ceilingZ": 6.78
+    },
+    "windows": {
+      "W1": [
+        -1.6,
+        1.15,
+        0.85,
+        0.9,
+        5.35,
+        "arch"
+      ],
+      "W2": [
+        3.2,
+        4.7,
+        0.63,
+        0.95,
+        3.35,
+        "rect"
+      ],
+      "W3": [
+        7.3,
+        10.45,
+        0.5,
+        0.5,
+        5.5,
+        "arch"
+      ],
+      "W4": [
+        12.9,
+        14.5,
+        0.63,
+        0.9,
+        3.35,
+        "rect"
+      ],
+      "W5": [
+        16.3,
+        19.1,
+        0.85,
+        0.85,
+        5.3,
+        "arch"
+      ]
+    },
+    "finestTiles": [
+      "grand_hall_pano_day.ply"
+    ],
+    "manifestTranslation": [
+      4.911651,
+      2.2253407083333334,
+      -8.571432999999999
+    ],
+    "probeSpacing": 0.5,
+    "floorTexel": 0.05,
+    "transferNeighbours": 8
+  },
+  "_comment": "T-639 re-aim (18 Oct 2026): the photo-trained 3D hall (pano lane T-657, runs/final_2state150k, the source model) in the same HallFrame and room as grand-hall.json; one master instead of tiles until the pano lane packages it; floorSkin and the facade bearing are revisited in the plan's steps 3-5"
+}
