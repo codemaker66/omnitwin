@@ -6,7 +6,7 @@ import { ReturnAct } from "./landing/ReturnAct.js";
 import { RiteNav } from "./landing/RiteNav.js";
 import { useCursorLight } from "./landing/useCursorLight.js";
 import { useReducedMotion } from "./landing/useReducedMotion.js";
-import { useRoomTone } from "./landing/useRoomTone.js";
+import { useRoomTone } from "../lib/sound-registry.js";
 import { hasEnteredBefore, useScrollRite } from "./landing/useScrollRite.js";
 import { isAfterDusk } from "./landing/rite-motion.js";
 import {

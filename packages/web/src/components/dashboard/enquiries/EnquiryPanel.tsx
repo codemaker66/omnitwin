@@ -94,6 +94,9 @@ interface EnquiryPanelProps {
   /** Where the enquiry stands in the Diary; null when the reader reads no
    *  Diary for it (another venue's enquiry, or a role without the Diary). */
   readonly diary: PanelDiary | null;
+  /** Only the venue's own team is offered an AI summary: the general AI
+   *  drafts are charged to the venue and refuse anyone else (T-656). */
+  readonly canDraftWithAI: boolean;
   readonly navigation: PanelNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
@@ -210,7 +213,7 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
             <EnquiryTools enquiry={enquiry} canCreateOpportunity={props.canCreateOpportunity}
               creatingOpportunity={props.creatingOpportunity} opportunityFailure={props.opportunityFailure}
               onCreateOpportunity={props.onCreateOpportunity} />
-            <EnquiryDrafts enquiry={enquiry} />
+            {props.canDraftWithAI && <EnquiryDrafts enquiry={enquiry} />}
           </>
         )}
 

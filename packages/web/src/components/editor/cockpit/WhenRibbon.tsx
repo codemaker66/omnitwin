@@ -48,7 +48,7 @@ import {
 import { parseWhenEntry } from "./when-ribbon-entry.js";
 import { applyRibbonPhaseWrites, phaseInputsFor } from "./when-ribbon-phases.js";
 import { formatPrice, priceWindowFor } from "./when-ribbon-price.js";
-import { createSnapTick, readTickPreference, writeTickPreference } from "./when-ribbon-tick.js";
+import { createSnapTick, readTickPreference, writeTickPreference } from "../../../lib/sound-registry.js";
 import { RIBBON_COPY } from "./when-ribbon-copy.js";
 import "./when-ribbon.css";
 

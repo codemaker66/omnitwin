@@ -46,6 +46,11 @@ export const CIRCULATION_AISLE = {
   blockedM: 0.45,
 } as const;
 
+/** Tables whose footprints meet within this (gap or overlap) are set edge to
+ *  edge as one table, as trestles make a top table or a banquet run: the
+ *  seam is a join, not an aisle. */
+export const JOINED_TABLE_TOLERANCE_M = 0.005;
+
 export type CirculationBand = "open" | "generous" | "comfortable" | "tight" | "blocked";
 
 export interface CirculationGap {
@@ -62,7 +67,7 @@ export interface CirculationGap {
 }
 
 export interface CirculationReport {
-  /** Number of footprint pairs evaluated. */
+  /** Number of footprint pairs evaluated as aisles (joined tables are not). */
   readonly pairCount: number;
   /** Tightest gap between any two footprints, or null with fewer than 2. */
   readonly tightestGapM: number | null;
@@ -166,6 +171,30 @@ function projectPolygon(poly: readonly Vec2[], axisX: number, axisZ: number): [n
   return [min, max];
 }
 
+/**
+ * How far two convex polygons overlap along their shallowest separating-axis
+ * candidate, in metres: positive when they overlap, 0 when they share an
+ * edge, negative (the clear gap along that axis) when they are apart.
+ */
+export function convexPolygonPenetration(a: readonly Vec2[], b: readonly Vec2[]): number {
+  let shallowest = Infinity;
+  for (const poly of [a, b]) {
+    for (let i = 0; i < poly.length; i += 1) {
+      const p1 = poly[i];
+      const p2 = poly[(i + 1) % poly.length];
+      if (p1 === undefined || p2 === undefined) continue;
+      const length = Math.hypot(p2.x - p1.x, p2.z - p1.z);
+      if (length === 0) continue;
+      const axisX = -(p2.z - p1.z) / length;
+      const axisZ = (p2.x - p1.x) / length;
+      const [minA, maxA] = projectPolygon(a, axisX, axisZ);
+      const [minB, maxB] = projectPolygon(b, axisX, axisZ);
+      shallowest = Math.min(shallowest, Math.min(maxA, maxB) - Math.max(minA, minB));
+    }
+  }
+  return shallowest;
+}
+
 /** Exact minimum distance plus the witness points realizing it. */
 export interface PolygonClosest {
   /** Minimum clear distance, metres. 0 when the polygons overlap or touch. */
@@ -243,7 +272,8 @@ export function bandForGap(gapM: number | null): CirculationBand {
 
 /**
  * Compute the circulation report for a set of footprints. Evaluates the exact
- * minimum gap between every pair and summarises the tightest aisle.
+ * minimum gap between every pair and summarises the tightest aisle. Pairs set
+ * edge to edge (within JOINED_TABLE_TOLERANCE_M) are joined, not evaluated.
  */
 export function computeCirculation(footprints: readonly FurnitureFootprint[]): CirculationReport {
   if (footprints.length < 2) {
@@ -273,9 +303,11 @@ export function computeCirculation(footprints: readonly FurnitureFootprint[]): C
       const ca = corners[i];
       const cb = corners[j];
       if (a === undefined || b === undefined || ca === undefined || cb === undefined) continue;
-      pairCount += 1;
       const closest = convexPolygonClosestPoints(ca, cb);
       const gapM = closest.distance;
+      // Tables set edge to edge are one table; their seam is not an aisle.
+      if (gapM <= JOINED_TABLE_TOLERANCE_M && convexPolygonPenetration(ca, cb) <= JOINED_TABLE_TOLERANCE_M) continue;
+      pairCount += 1;
 
       if (gapM < CIRCULATION_AISLE.blockedM) blockedCount += 1;
       else if (gapM < CIRCULATION_AISLE.tightM) tightCount += 1;

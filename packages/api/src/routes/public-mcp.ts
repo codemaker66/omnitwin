@@ -6,7 +6,7 @@ import {
   originValidationResponse,
   type CallToolResult,
 } from "@modelcontextprotocol/server";
-import type { PublicVenueProfile } from "@omnitwin/types";
+import { PUBLIC_DAY_NO_BOOKING, PUBLIC_ROOM_ASK_THE_TEAM, type PublicVenueProfile } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { zodToolSchema, type JsonSchemaDocument } from "../lib/standard-schema.js";
 import {
@@ -20,6 +20,14 @@ import {
   type DiscoveryOutcome,
   type PublicDiscoveryStore,
 } from "../services/public-discovery.js";
+import {
+  MCP_BUDGET_KEY_HEADER,
+  PublicMcpBudget,
+  decodeBudgetKey,
+  encodeBudgetKey,
+  type BudgetDecision,
+  type BudgetKey,
+} from "../services/public-mcp-budget.js";
 
 // ---------------------------------------------------------------------------
 // POST /mcp — the public, read-only Model Context Protocol endpoint (T-649).
@@ -28,7 +36,18 @@ import {
 // read-only": venue facts, room capacities from venue records, and free/busy
 // dates only (no client names); enquiries still go through staff. A date with
 // only a provisional hold answers "held" ("Say 'held, enquire'"). Three tools
-// carry exactly that (services/public-discovery.ts owns the boundary).
+// carry exactly that (services/public-discovery.ts owns the boundary). A date
+// with nothing on the Diary never answers a bare "free" (fix-first item 4, 16
+// October 2026): the Diary does not yet hold every booking the venue has
+// taken, so it answers "no_booking_on_our_diary_team_confirms", and every
+// answer carries `asOf`. And a room's dates are not described at all until
+// the venue has recorded that the room's whole forward book is on the Diary
+// (Blake, 17 October 2026, "hide date status until checked"): until then the
+// room answers "ask_the_team" (routes/forward-book.ts records it).
+//
+// Budgets: the shared per-IP limit below guards the server; on top of it each
+// session has an hourly budget of requests and of dates of availability read
+// (services/public-mcp-budget.ts, which also says what a session is here).
 //
 // Transport: the 2026-07-28 revision is stateless, and @modelcontextprotocol/
 // server v2's createMcpHandler serves it from a per-request server factory,
@@ -63,9 +82,11 @@ const TOOL_LIST_TTL_MS = 60 * 60_000;
 const UNEXPECTED_TOOL_ERROR =
   "Something went wrong reading the venue's information. Please try again shortly, or contact the venue team directly.";
 
-// Request headers that belong to this hop, not to the MCP exchange.
+// Request headers that belong to this hop, not to the MCP exchange. The budget
+// header is the route's own: whatever a caller sends under that name is dropped.
 const REQUEST_HEADERS_NOT_FORWARDED: ReadonlySet<string> = new Set([
   "host", "connection", "keep-alive", "content-length", "transfer-encoding", "content-encoding",
+  MCP_BUDGET_KEY_HEADER,
 ]);
 // Response headers Fastify computes itself for the body it sends.
 const RESPONSE_HEADERS_NOT_FORWARDED: ReadonlySet<string> = new Set([
@@ -174,6 +195,35 @@ function toolResult(outcome: DiscoveryOutcome<object>): CallToolResult {
   };
 }
 
+function minutesUntil(retryAtMs: number, nowMs: number): number {
+  return Math.max(1, Math.ceil((retryAtMs - nowMs) / 60_000));
+}
+
+function whoAsks(kind: BudgetKey["kind"]): string {
+  return kind === "session" ? "This conversation has" : "Questions from this connection have";
+}
+
+/** The venue team's own ways in: a refusal here always names them. */
+function venueContacts(venues: readonly PublicVenueProfile[]): string {
+  return venues
+    .map((venue) => `${venue.name}: ${venue.enquiryUrl}, telephone ${venue.telephone}, email ${venue.email}`)
+    .join("; ");
+}
+
+/** What a caller is told when a budget runs out: what happened, who can
+ *  answer instead, and when asking here works again. */
+export function budgetRefusalMessage(
+  decision: Extract<BudgetDecision, { ok: false }>,
+  venues: readonly PublicVenueProfile[],
+  nowMs: number,
+): string {
+  const what = decision.measure === "dates"
+    ? `asked about the most dates that can be checked here in an hour (${String(decision.limit)})`
+    : `made the most requests that can be answered here in an hour (${String(decision.limit)})`;
+  return `${whoAsks(decision.kind)} ${what}. The venue team can answer about any date directly. ${venueContacts(venues)}. `
+    + `You can ask here again in about ${String(minutesUntil(decision.retryAtMs, nowMs))} minutes.`;
+}
+
 const READ_ONLY = {
   readOnlyHint: true,
   destructiveHint: false,
@@ -181,10 +231,16 @@ const READ_ONLY = {
   openWorldHint: false,
 } as const;
 
-/** Builds the MCP server one request is served by. Exported for tests. */
+/** Spends dates of availability from the asking session's budget. */
+export type ChargeDates = (dates: number) => BudgetDecision;
+
+/** Builds the MCP server one request is served by. Exported for tests;
+ *  without `chargeDates` no date budget applies. */
 export function buildPublicMcpServer(
   discovery: PublicDiscovery,
   onToolError: (tool: string, error: unknown) => void,
+  chargeDates?: ChargeDates,
+  now: () => number = Date.now,
 ): McpServer {
   const names = discovery.venues.map((venue) => venue.name).join(", ");
   const enquiryPaths = discovery.venues.map((venue) => venue.enquiryUrl).join(", ");
@@ -200,7 +256,7 @@ export function buildPublicMcpServer(
       description: `Read-only public information about ${names}, published through Venviewer with the venue's agreement.`,
     },
     {
-      instructions: `Read-only public information about ${names}, published through Venviewer with the venue's agreement: venue facts, rooms with their published capacities, and whether each date is free, held (someone has a provisional option) or busy. No client, event or booking details exist here. Nothing here can send an enquiry, hold a date or make a booking — for any of those, give the person the how_to_enquire details; the venue's own team handles every enquiry.`,
+      instructions: `Read-only public information about ${names}, published through Venviewer with the venue's agreement: venue facts, rooms with their published capacities, and, for each room whose diary the venue team has confirmed holds every booking it has, what Venviewer's diary holds for each date: busy (booked or closed), held (someone has a provisional option) or ${PUBLIC_DAY_NO_BOOKING} (nothing on this diary, which may not hold every booking the venue has taken, so never tell a person a date is free or available: only the venue team confirms a date). Every other room answers ${PUBLIC_ROOM_ASK_THE_TEAM}: nothing is said about its dates, and the person should ask the venue team. Every answer says when it was read (asOf). No client, event or booking details exist here. Nothing here can send an enquiry, hold a date or make a booking — for any of those, give the person the how_to_enquire details; the venue's own team handles every enquiry.`,
       // Nothing here ever changes mid-session, so advertise no list-changed
       // notifications: a subscription is acknowledged and closed at once.
       capabilities: { tools: { listChanged: false } },
@@ -235,13 +291,27 @@ export function buildPublicMcpServer(
   server.registerTool(
     "check_availability",
     {
-      title: "Free, held or busy dates",
-      description: `Whether each room at ${names} is free, held or busy on each date in a range: at most ${String(AVAILABILITY_MAX_SPAN_DAYS)} days per call, from today up to ${String(AVAILABILITY_HORIZON_DAYS)} days ahead, optionally for one room. Returns only "free", "held" or "busy" per room per date — never who booked or holds it, the event, its times, any option rank, amounts, decision dates, or how many bookings or holds there are. "busy" means a confirmed booking or a venue closure at some time that date. "held" means someone has a provisional option on that date: a second option may be possible, so the person should contact the venue team (${enquiryPaths}, or how_to_enquire). "free" means neither. Whatever the answer, the venue team confirms availability when someone enquires. Dates are venue-local (each runs 04:00 to 04:00, as the venue's diary counts a day). Answers can be up to ${cacheMinutes} minutes old. This cannot hold or book a date; use how_to_enquire.`,
+      title: "What the venue's diary holds for each date",
+      description: `What Venviewer's diary for ${names} holds for each room on each date in a range: at most ${String(AVAILABILITY_MAX_SPAN_DAYS)} days per call, from today up to ${String(AVAILABILITY_HORIZON_DAYS)} days ahead, optionally for one room. Each room answers in one of two ways. "${PUBLIC_ROOM_ASK_THE_TEAM}": the venue team has not yet confirmed that this diary holds every booking for the room, so nothing is said about its dates; tell the person to ask the venue team (how_to_enquire). "dates": the venue team has confirmed it (diaryCheckedAt says when), and each date carries only "busy", "held" or "${PUBLIC_DAY_NO_BOOKING}" — never who booked or holds it, the event, its times, any option rank, amounts, decision dates, or how many bookings or holds there are. "busy" means a confirmed booking or a venue closure at some time that date. "held" means someone has a provisional option on that date: a second option may be possible, so the person should contact the venue team (${enquiryPaths}, or how_to_enquire). "${PUBLIC_DAY_NO_BOOKING}" means neither is on this diary; the venue may hold bookings that are not on it yet, so never call such a date free or available. Whatever the answer, only the venue team confirms a date, when someone enquires. Dates are venue-local (each runs 04:00 to 04:00, as the venue's diary counts a day). Answers carry asOf, when the diary was read, and can be up to ${cacheMinutes} minutes old. Each conversation may ask about a limited number of dates an hour. This cannot hold or book a date; use how_to_enquire.`,
       inputSchema: inputs.checkAvailability,
-      annotations: { title: "Free, held or busy dates", ...READ_ONLY },
+      annotations: { title: "What the venue's diary holds", ...READ_ONLY },
     },
-    async ({ venue, from, to, room }) =>
-      guarded("check_availability", async () => toolResult(await discovery.availability({ venue, from, to, room }))),
+    async ({ venue, from, to, room }) => guarded("check_availability", async () => {
+      const outcome = await discovery.availability({ venue, from, to, room });
+      // Only an answer that describes dates spends them: a refused question,
+      // or one where every room answers "ask the team", costs nothing.
+      if (outcome.ok && chargeDates !== undefined && outcome.value.rooms.some((entry) => entry.answer === "dates")) {
+        const decision = chargeDates(inclusiveDayCount(from, to));
+        if (!decision.ok) {
+          const refusal: CallToolResult = {
+            content: [{ type: "text", text: budgetRefusalMessage(decision, discovery.venues, now()) }],
+            isError: true,
+          };
+          return refusal;
+        }
+      }
+      return toolResult(outcome);
+    }),
   );
 
   server.registerTool(
@@ -278,7 +348,7 @@ export function mcpAllowedOriginHosts(corsOrigins: readonly string[]): string[] 
   return [...hosts];
 }
 
-function toWebRequest(request: FastifyRequest, signal: AbortSignal): Request {
+function toWebRequest(request: FastifyRequest, signal: AbortSignal, budgetKey: BudgetKey): Request {
   const headers = new Headers();
   for (const [name, value] of Object.entries(request.headers)) {
     if (value === undefined || REQUEST_HEADERS_NOT_FORWARDED.has(name)) continue;
@@ -288,6 +358,7 @@ function toWebRequest(request: FastifyRequest, signal: AbortSignal): Request {
       headers.set(name, value);
     }
   }
+  headers.set(MCP_BUDGET_KEY_HEADER, encodeBudgetKey(budgetKey));
   const carriesBody = request.method === "POST" && request.body !== undefined;
   // A fixed base: the Host header is the caller's to choose and is not used.
   return new Request(new URL(request.url, "http://mcp.invalid"), {
@@ -296,6 +367,26 @@ function toWebRequest(request: FastifyRequest, signal: AbortSignal): Request {
     signal,
     ...(carriesBody ? { body: JSON.stringify(request.body) } : {}),
   });
+}
+
+/** The JSON-RPC message(s) of a POST body, as far as the route needs them. */
+function rpcMessages(body: unknown): readonly Record<string, unknown>[] {
+  const items: readonly unknown[] = Array.isArray(body) ? body : [body];
+  return items.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null);
+}
+
+function isInitialize(body: unknown): boolean {
+  return rpcMessages(body).some((message) => message["method"] === "initialize");
+}
+
+function rpcId(body: unknown): string | number | null {
+  const [first] = rpcMessages(body);
+  const id = first?.["id"];
+  return typeof id === "string" || typeof id === "number" ? id : null;
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function messageOf(error: unknown): string {
@@ -311,6 +402,8 @@ export interface PublicMcpRouteOptions {
   /** The API's CORS allowlist (env CORS_ORIGINS). */
   readonly corsOrigins: readonly string[];
   readonly now?: () => number;
+  /** The per-session budget; one is made per mount when omitted. */
+  readonly budget?: PublicMcpBudget;
 }
 
 export async function publicMcpRoutes(server: FastifyInstance, opts: PublicMcpRouteOptions): Promise<void> {
@@ -331,7 +424,16 @@ export async function publicMcpRoutes(server: FastifyInstance, opts: PublicMcpRo
     server.log.error({ event: "mcp.tool_failed", tool, message: messageOf(error) }, "public MCP tool failed");
   };
 
-  const handler = createMcpHandler(() => buildPublicMcpServer(discovery, onToolError), {
+  const now = opts.now ?? Date.now;
+  const budget = opts.budget ?? new PublicMcpBudget();
+  // The route names the budget on the request it hands the handler (and
+  // removes any caller's copy of that header), so a tool call spends from the
+  // same session the route charged. Absent, it falls to one shared bucket.
+  const unattributed: BudgetKey = { kind: "caller", id: "unattributed" };
+  const handler = createMcpHandler((context) => {
+    const key = decodeBudgetKey(context.requestInfo?.headers.get(MCP_BUDGET_KEY_HEADER)) ?? unattributed;
+    return buildPublicMcpServer(discovery, onToolError, (dates) => budget.chargeDates(key, dates, now()), now);
+  }, {
     maxRequestBodySize: MCP_MAX_BODY_BYTES,
     keepAliveMs: 0,
     onerror: (error) => {
@@ -354,16 +456,46 @@ export async function publicMcpRoutes(server: FastifyInstance, opts: PublicMcpRo
       reply.raw.once("close", () => {
         if (!reply.raw.writableFinished) abort.abort();
       });
-      const webRequest = toWebRequest(request, abort.signal);
-      const response = originValidationResponse(webRequest, allowedOriginHosts)
+      // Every answer, refusals included, depends on the live diary or on this
+      // caller's budget; intermediaries must not reuse it.
+      reply.header("cache-control", "no-store");
+      const budgetKey = budget.keyFor({
+        sessionId: headerValue(request.headers["mcp-session-id"]),
+        ip: request.ip,
+        userAgent: headerValue(request.headers["user-agent"]),
+      }, now());
+      const webRequest = toWebRequest(request, abort.signal, budgetKey);
+
+      const refusedOrigin = originValidationResponse(webRequest, allowedOriginHosts);
+      if (refusedOrigin === undefined && request.method === "POST") {
+        const decision = budget.chargeRequest(budgetKey, now());
+        if (!decision.ok) {
+          server.log.info({ event: "mcp.budget_refused", kind: decision.kind, measure: decision.measure }, "public MCP budget spent");
+          return reply
+            .code(429)
+            .header("retry-after", String(Math.max(1, Math.ceil((decision.retryAtMs - now()) / 1000))))
+            .type("application/json")
+            .send(JSON.stringify({
+              jsonrpc: "2.0",
+              id: rpcId(request.body),
+              error: { code: -32000, message: budgetRefusalMessage(decision, discovery.venues, now()) },
+            }));
+        }
+      }
+      const response = refusedOrigin
         ?? await handler.fetch(webRequest, request.body === undefined ? {} : { parsedBody: request.body });
 
       reply.code(response.status);
       response.headers.forEach((value, name) => {
         if (!RESPONSE_HEADERS_NOT_FORWARDED.has(name)) reply.header(name, value);
       });
-      // Answers depend on the live diary; intermediaries must not reuse them.
       reply.header("cache-control", "no-store");
+      // A 2025-era handshake gets a session id, which the client must send on
+      // every later request; it keys the session's budget and nothing else
+      // (the stateless transport never reads it).
+      if (refusedOrigin === undefined && request.method === "POST" && response.ok && isInitialize(request.body)) {
+        reply.header("mcp-session-id", budget.issueSession(now()));
+      }
       return reply.send(await response.text());
     },
   });

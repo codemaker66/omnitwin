@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import { Sparkles } from "lucide-react";
-import { MAX_CLIENT_MESSAGE_LENGTH, findUnsupportedProposalClaim, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
+import { AI_BUDGET_REACHED, MAX_CLIENT_MESSAGE_LENGTH, findUnsupportedProposalClaim, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import { draftProposalMessage } from "../../../api/ai-assistant.js";
 import { markAIDraftsUnavailable, useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
@@ -113,9 +113,11 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
       .catch((error: unknown) => {
         if (askNumber.current !== mine) return;
         setSaid("");
-        // Only the server's own word that AI is switched off takes it away for
-        // the visit; a proxy's or a deploy's 503 is a failure to try again.
-        if (error instanceof ApiError && error.status === 503 && error.code === "AI_ASSISTANT_DISABLED") {
+        // Only the server's own word takes AI away for the visit: that it is
+        // switched off, or that the venue's AI allowance for the month is
+        // used (T-656). A proxy's or a deploy's 503 is a failure to try again.
+        if (error instanceof ApiError && ((error.status === 503 && error.code === "AI_ASSISTANT_DISABLED")
+          || (error.status === 429 && error.code === AI_BUDGET_REACHED))) {
           setStep({ kind: "gone" });
           markAIDraftsUnavailable();
           setFocusTo("said");

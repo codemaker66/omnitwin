@@ -3,8 +3,9 @@ import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, Outlet, useLocation, useMatches, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import {
-  COMMERCIAL_ROLES, DIARY_ROLES, hasRole, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
+  CLIENT_SIDE_ROLES, COMMERCIAL_ROLES, DIARY_ROLES, hasRole, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
 } from "./lib/role-capabilities.js";
+import { CLIENT_HOME_ROUTE } from "./lib/role-routing.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { InternalEventRoute } from "./components/auth/InternalEventRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
@@ -75,6 +76,9 @@ const EditorPage = lazyWithPreload(() =>
 const ClientEventPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ClientEventPage.js").then((m) => ({ default: m.ClientEventPage }))),
 );
+const ClientHomePage = lazyWithPreload(() =>
+  cockpitImport(() => import("./pages/ClientHomePage.js").then((m) => ({ default: m.ClientHomePage }))),
+);
 const BlueprintPage = lazy(() =>
   cockpitImport(() => import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage }))),
 );
@@ -108,6 +112,9 @@ const AccessibilityPage = lazy(() =>
 const PricingPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage }))),
 );
+const PricingRoute = lazy(() =>
+  import("./pages/SubscriptionsNotPublicPage.js").then((m) => ({ default: m.PricingRoute })),
+);
 const TradesHallVisualPage = lazy(() =>
   cockpitImport(() => import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage }))),
 );
@@ -138,6 +145,9 @@ const ProposalPreviewPage = lazyWithPreload(() =>
 );
 const SupplierPortalPage = lazy(() =>
   cockpitImport(() => import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage }))),
+);
+const SheetCheckPage = lazy(() =>
+  cockpitImport(() => import("./pages/SheetCheckPage.js").then((m) => ({ default: m.SheetCheckPage }))),
 );
 const OpsHandoffPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage }))),
@@ -543,6 +553,17 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    // The client's own home (fix-first 12): where a client or planner lands
+    // after sign-in — their events, their plans, or what will appear there.
+    path: CLIENT_HOME_ROUTE,
+    element: withClerk(
+      <ProtectedRoute allowedRoles={CLIENT_SIDE_ROLES}>
+        <ClientHomePage />
+      </ProtectedRoute>,
+      ClientHomePage,
+    ),
+  },
+  {
     path: "/events/:eventId",
     element: withClerk(
       <ProtectedRoute>
@@ -554,13 +575,15 @@ export const router = createBrowserRouter([
   {
     // The Venviewer subscription page. Admin-only until billing exists
     // (Blake, 26 September 2026): it sells a tier nothing can yet bill, so it
-    // is off the public site, the sitemap and the crawl (robots.txt).
+    // is off the sitemap and the crawl (robots.txt). Everyone else reads a
+    // plain page saying subscriptions are not yet public, with a person to
+    // write to, instead of a sign-in wall (fix-first item 19). Like the
+    // planner, a visitor with no sign-in cookie never loads Clerk here.
     path: "/pricing",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={["admin"]}>
-        <PricingPage />
-      </ProtectedRoute>,
-      PricingPage,
+    element: withSuspense(
+      <PlannerAuthBoundary>
+        <PricingRoute admin={<PricingPage />} />
+      </PlannerAuthBoundary>,
     ),
   },
   {
@@ -674,6 +697,12 @@ export const router = createBrowserRouter([
     element: withSuspense(<SupplierPortalPage />),
   },
   {
+    // The page a printed hallkeeper sheet's QR code opens. Public — it answers
+    // only whether that copy is current, never with anything from the sheet.
+    path: "/sheet-check",
+    element: withSuspense(<SheetCheckPage />),
+  },
+  {
     path: "/privacy",
     element: withSuspense(<PrivacyPage />),
   },
@@ -708,7 +737,7 @@ export const router = createBrowserRouter([
   {
     // Role-aware post-sign-in destination. Used by the in-app Venviewer
     // logo click: signed-in staff land on their dashboard, admins on admin,
-    // planners on /editor. Kept off `/` so the public landing isn't
+    // clients and planners on their own events. Kept off `/` so the public landing isn't
     // bypassed for unauthenticated visitors.
     path: "/app",
     element: withClerk(<RoleAwareRedirect />),
