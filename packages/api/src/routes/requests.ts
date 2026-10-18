@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
+  HandoverShiftResultSchema,
+  HandoverShiftSchema,
   CreateVenueRequestSchema,
   RequestListQuerySchema,
   RequestStatusHistoryEntrySchema,
@@ -14,8 +16,9 @@ import { requestStatusHistory } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { emit } from "../observability/event-bus.js";
-import { canManageVenue } from "../utils/query.js";
+import { canHandleRequests, canManageVenue } from "../utils/query.js";
 import {
+  handoverShiftCore,
   createRequestCore,
   listRequestHandlers,
   listRequestsForVenue,
@@ -182,6 +185,26 @@ export async function venueRequestRoutes(
     const result = await listRequestHandlers(db, actorOf(request), params.data.venueId);
     if (isDeny(result)) return sendDeny(reply, result);
     return { data: z.array(VenueHandlerSchema).parse(result) };
+  });
+
+  // Goal 19 S7: hand every open request the signed-in person holds to one
+  // named relief. The core applies the slab's own handover step to each.
+  server.post("/:venueId/requests/handover", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = VenueParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const actor = actorOf(request);
+    if (!isPlatformAdmin(actor) && !canHandleRequests(actor, params.data.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const body = HandoverShiftSchema.safeParse(request.body);
+    if (!body.success) return validationError(reply, body.error.issues);
+
+    const result = await handoverShiftCore(db, actor, params.data.venueId, body.data.toUserId);
+    if (isDeny(result)) return sendDeny(reply, result);
+    for (const changed of result.handedOver) {
+      publishRequestChange(request, "request.updated", changed, []);
+    }
+    return { data: HandoverShiftResultSchema.parse({ handedOver: result.handedOver, toName: result.toName }) };
   });
 
   // The escalation sweep as an endpoint, for an external cron and for a

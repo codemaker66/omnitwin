@@ -230,6 +230,9 @@ export const VenueRequestSchema = z.object({
   handoverToUserId: UUID.nullable(),
   handoverToName: z.string().min(1).max(160).nullable(),
   handedOverAt: IsoInstant.nullable(),
+  /** When the relief must have taken it by, or it escalates (goal 19 S7).
+   *  Absent from an older server; null when no handover is in flight. */
+  handoverDueAt: IsoInstant.nullable().optional(),
   underwayAt: IsoInstant.nullable(),
   reopenedAt: IsoInstant.nullable(),
   createdAt: IsoInstant,
@@ -296,6 +299,18 @@ export const RequestTransitionSchema = z.discriminatedUnion("to", [
   z.object({ to: z.literal("reopened"), note: Detail.nullish() }).strict(),
 ]);
 export type RequestTransition = z.infer<typeof RequestTransitionSchema>;
+
+/** Goal 19 S7: an outgoing person hands every open request they hold to one
+ *  named relief, who must take each one; responsibility stays with the
+ *  outgoing person until then. */
+export const HandoverShiftSchema = z.object({ toUserId: UUID }).strict();
+export type HandoverShift = z.infer<typeof HandoverShiftSchema>;
+
+export const HandoverShiftResultSchema = z.object({
+  handedOver: z.array(z.lazy(() => VenueRequestSchema)),
+  toName: z.string().min(1).max(160),
+});
+export type HandoverShiftResult = z.infer<typeof HandoverShiftResultSchema>;
 
 export const RequestListQuerySchema = z.object({
   bookingId: UUID.optional(),

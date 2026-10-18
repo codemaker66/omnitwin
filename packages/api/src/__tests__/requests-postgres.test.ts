@@ -13,6 +13,7 @@ import { insertBoundBookings } from "../services/event-binding.js";
 import {
   createRequestCore,
   listRequestsForVenue,
+  handoverShiftCore,
   readRequest,
   runEscalationEmailPass,
   runRequestEscalationPass,
@@ -525,6 +526,66 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       send: () => Promise.resolve(true),
     });
     expect(escalated.filter((item) => item.request.id === made.request.id)).toHaveLength(0);
+  });
+
+  it("hands every open request the person holds to one relief, who must take each; an absent relief escalates once and the owner of record stays (goal 19 S7)", async () => {
+    const f = await fixture(180);
+    const reliefId = randomUUID();
+    await db.insert(schema.users).values({ id: reliefId, venueId: f.venueId, name: "Callum", email: `${reliefId}@lane9.invalid`, role: "hallkeeper" });
+    const relief: RequestActor = { id: reliefId, name: "Callum", role: "hallkeeper", venueId: f.venueId, platformRole: "none" };
+
+    const made = await Promise.all([
+      createRequestCore(db, f.staff, f.venueId, press(f)),
+      createRequestCore(db, f.staff, f.venueId, press(f, { kind: "cleaning" })),
+      createRequestCore(db, f.staff, f.venueId, press(f, { kind: "av", quantity: null })),
+    ]);
+    const [staffs, b, c] = made;
+    if (!("request" in staffs) || !("request" in b) || !("request" in c)) throw new Error("expected requests");
+    await transitionRequestCore(db, f.staff, staffs.request.id, { to: "accepted" });
+    await transitionRequestCore(db, f.hallkeeper, b.request.id, { to: "accepted" });
+    await transitionRequestCore(db, f.hallkeeper, c.request.id, { to: "accepted" });
+    await transitionRequestCore(db, f.hallkeeper, c.request.id, { to: "underway" });
+
+    const handed = await handoverShiftCore(db, f.hallkeeper, f.venueId, reliefId);
+    if (!handed.ok) throw new Error(`expected a handover, not ${handed.code}`);
+    expect(handed.toName).toBe("Callum");
+    expect(handed.handedOver.map((row) => row.id).sort()).toEqual([b.request.id, c.request.id].sort());
+    for (const row of handed.handedOver) {
+      expect(row.state).toBe("handed-over");
+      expect(row.ownerUserId).toBe(f.hallkeeper.id);
+      expect(row.handoverToUserId).toBe(reliefId);
+      expect(Math.round((Date.parse(row.handoverDueAt ?? "") - Date.parse(row.handedOverAt ?? "")) / 1000)).toBe(300);
+    }
+    const untouched = await readRequest(db, f.staff, staffs.request.id);
+    expect("state" in untouched && untouched.state).toBe("accepted");
+
+    // The relief takes one: the deadline clears and it is theirs.
+    const taken = await transitionRequestCore(db, relief, b.request.id, { to: "accepted" });
+    expect(taken.ok && taken.request.handoverDueAt).toBeNull();
+    expect(taken.ok && taken.request.ownerUserId).toBe(reliefId);
+
+    // The other waits past the relief window: escalated once, with the
+    // reason, and still the outgoing person's.
+    const late = new Date(Date.parse(handed.handedOver[0]?.handedOverAt ?? "") + 301_000);
+    const sentTo: string[] = [];
+    const escalated = await runRequestEscalationPass(db, { now: late, send: (payload) => { sentTo.push(payload.to); return Promise.resolve(true); } });
+    const mine = escalated.filter((item) => item.request.id === c.request.id);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.reason).toBe("handover");
+    expect(mine[0]?.request.ownerUserId).toBe(f.hallkeeper.id);
+    expect(escalated.some((item) => item.request.id === b.request.id)).toBe(false);
+    expect(await runRequestEscalationPass(db, { now: late, send: () => Promise.resolve(true) })).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ id: c.request.id }) })]),
+    );
+
+    // Nothing left to hand over: said plainly. A relief from elsewhere: refused, nothing moved.
+    const empty = await handoverShiftCore(db, f.hallkeeper, f.venueId, reliefId);
+    expect(!empty.ok && empty.code).toBe("NOTHING_TO_HAND_OVER");
+    await transitionRequestCore(db, f.staff, staffs.request.id, { to: "underway" });
+    const refused = await handoverShiftCore(db, f.staff, f.venueId, f.outsider.id);
+    expect(!refused.ok && refused.code).toBe("HANDOVER_TARGET");
+    const still = await readRequest(db, f.staff, staffs.request.id);
+    expect("state" in still && still.state).toBe("underway");
   });
 
   it("shows the booking's own requests to the slab and drops finished ones", async () => {

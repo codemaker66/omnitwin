@@ -1,8 +1,10 @@
 import { z } from "zod";
 import {
+  HandoverShiftResultSchema,
   VenueHandlerSchema,
   VenueRequestSchema,
   type CreateVenueRequest,
+  type HandoverShiftResult,
   type RequestTransition,
   type VenueHandler,
   type VenueRequest,
@@ -22,6 +24,17 @@ const HandlerListSchema = z.array(VenueHandlerSchema);
 /** The people a request can be handed to, for the picker on the slab. */
 export async function listVenueHandlers(venueId: string, signal?: AbortSignal): Promise<readonly VenueHandler[]> {
   return api.get(`/venues/${encodeURIComponent(venueId)}/handlers`, HandlerListSchema, signal);
+}
+
+/** Goal 19 S7: every open request the signed-in person holds, handed to one
+ *  named relief in one go. The answer names who and lists what. */
+export async function handoverShift(venueId: string, toUserId: string): Promise<HandoverShiftResult> {
+  return api.post(
+    `/venues/${encodeURIComponent(venueId)}/requests/handover`,
+    { toUserId },
+    false,
+    HandoverShiftResultSchema,
+  );
 }
 
 export async function listVenueRequests(

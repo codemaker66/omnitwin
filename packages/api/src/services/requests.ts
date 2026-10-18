@@ -133,6 +133,7 @@ export function serializeRequest(row: RequestRow, roomName: string | null): Venu
     handoverToUserId: row.handoverToUserId,
     handoverToName: row.handoverToName,
     handedOverAt: iso(row.handedOverAt),
+    handoverDueAt: iso(row.handoverDueAt),
     underwayAt: iso(row.underwayAt),
     reopenedAt: iso(row.reopenedAt),
     createdAt: row.createdAt.toISOString(),
@@ -557,21 +558,28 @@ export async function transitionRequestCore(
       patch.ownerName = actor.name;
       patch.handoverToUserId = null;
       patch.handoverToName = null;
+      patch.handoverDueAt = null;
       break;
     case "underway":
       patch.underwayAt = now;
       break;
-    case "handed-over":
+    case "handed-over": {
       patch.handedOverAt = now;
       patch.handoverToUserId = target?.id ?? null;
       patch.handoverToName = target?.name ?? null;
+      // The relief has the venue's window to take it, or it escalates (S7);
+      // a venue with no settings row sets no deadline, as with every window.
+      const settings = await readOperatingSettings(db, row.venueId);
+      patch.handoverDueAt = settings === null ? null : new Date(now.getTime() + settings.handoverReliefSeconds * 1000);
       break;
+    }
     case "resolved":
       patch.resolvedAt = now;
       patch.outcome = transition.outcome;
       patch.outcomeNote = transition.note ?? null;
       patch.handoverToUserId = null;
       patch.handoverToName = null;
+      patch.handoverDueAt = null;
       if (row.ownerUserId === null) {
         patch.ownerUserId = actor.id;
         patch.ownerName = actor.name;
@@ -589,6 +597,7 @@ export async function transitionRequestCore(
       patch.resolvedAt = null;
       patch.handoverToUserId = null;
       patch.handoverToName = null;
+      patch.handoverDueAt = null;
       break;
     default: {
       const exhausted: never = transition;
@@ -646,6 +655,48 @@ export async function transitionRequestCore(
 // ---------------------------------------------------------------------------
 // Read
 // ---------------------------------------------------------------------------
+
+export interface HandoverShiftOk {
+  readonly ok: true;
+  readonly handedOver: readonly VenueRequest[];
+  readonly toName: string;
+}
+
+/** Goal 19 S7: every open request the actor holds (accepted or underway)
+ *  at the venue, handed to one named relief through the same step the slab
+ *  takes one at a time, so every rule of that step holds here too: the
+ *  relief must work this floor, each request stays the actor's until the
+ *  relief takes it, and each escalates if the relief does not. The first
+ *  refusal stops the handover; what was already handed stays handed. */
+export async function handoverShiftCore(
+  db: Database,
+  actor: RequestActor,
+  venueId: string,
+  toUserId: string,
+): Promise<HandoverShiftOk | RequestDeny> {
+  if (!isPlatformAdmin(actor) && !canHandleRequests(actor, venueId)) return FORBIDDEN;
+  const held = await db
+    .select({ id: requests.id })
+    .from(requests)
+    .where(and(
+      eq(requests.venueId, venueId),
+      eq(requests.ownerUserId, actor.id),
+      inArray(requests.state, ["accepted", "underway"]),
+    ))
+    .orderBy(asc(requests.createdAt))
+    .limit(100);
+  if (held.length === 0) return deny(400, "NOTHING_TO_HAND_OVER", "You hold no open request.");
+
+  const handedOver: VenueRequest[] = [];
+  let toName: string | null = null;
+  for (const { id } of held) {
+    const moved = await transitionRequestCore(db, actor, id, { to: "handed-over", toUserId });
+    if (!moved.ok) return moved;
+    handedOver.push(moved.request);
+    toName = moved.request.handoverToName ?? toName;
+  }
+  return { ok: true, handedOver, toName: toName ?? "a colleague" };
+}
 
 export async function listRequestsForVenue(
   db: Database,

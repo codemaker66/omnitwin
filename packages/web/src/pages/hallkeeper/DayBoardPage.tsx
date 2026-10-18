@@ -39,6 +39,7 @@ import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
 import { isQueuedObservation, useSlotObservations, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
+import { ShiftHandover } from "../../components/requests/ShiftHandover.js";
 import {
   DAY_BOARD_LEGEND,
   DAY_BOARD_RING_LEGEND,
@@ -1035,6 +1036,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           <button type="button" onClick={() => { setSearchParams({ register: "wall" }); }}>Wall display</button>
           {/* Opt-in, per device (D3 "Sound"): the one control that makes a sound. */}
           {venueId !== null && <ChimeToggle />}
+          {venueId !== null && !wall && <ShiftHandover venueId={venueId} meId={user?.id ?? null} />}
         </div>
       )}
       {venueId === null && <p className="dayboard-notice">No venue is linked to this account. Ask your venue administrator to connect your workspace.</p>}
