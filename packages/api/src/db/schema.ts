@@ -5927,11 +5927,61 @@ export const quizRuns = pgTable("quiz_runs", {
 
 export const venueSettings = pgTable("venue_settings", {
   venueId: uuid("venue_id").primaryKey().references(() => venues.id, { onDelete: "cascade" }),
+  /** Slice 10's single window. Kept as a column, no longer read (0092). */
   requestEscalationSeconds: integer("request_escalation_seconds").notNull(),
+  // Goal 19 S7 (0092): the people matrix's operating settings, with Blake's
+  // decided defaults. Data, never constants in code.
+  escalationNowSeconds: integer("escalation_now_seconds").notNull().default(120),
+  escalationSoonSeconds: integer("escalation_soon_seconds").notNull().default(300),
+  escalationRoutineSeconds: integer("escalation_routine_seconds").notNull().default(900),
+  quietHoursStart: time("quiet_hours_start").notNull().default("22:00"),
+  quietHoursEnd: time("quiet_hours_end").notNull().default("07:00"),
+  dutyAdminUserId: uuid("duty_admin_user_id").references(() => users.id, { onDelete: "set null" }),
+  dayBoundaryHour: integer("day_boundary_hour").notNull().default(4),
+  handoverReliefSeconds: integer("handover_relief_seconds").notNull().default(300),
+  wallShowsGuestDetails: boolean("wall_shows_guest_details").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   check("venue_settings_escalation_window", sql`${table.requestEscalationSeconds} BETWEEN 30 AND 86400`),
+  check("venue_settings_operating_windows", sql`${table.escalationNowSeconds} BETWEEN 30 AND 86400 AND ${table.escalationSoonSeconds} BETWEEN 30 AND 86400 AND ${table.escalationRoutineSeconds} BETWEEN 30 AND 86400 AND ${table.handoverReliefSeconds} BETWEEN 30 AND 86400 AND ${table.dayBoundaryHour} BETWEEN 0 AND 23`),
+]);
+
+/** A device that asked to be told (goal 19 S7). One row per browser
+ *  subscription; a push service's 404 or 410 disables it rather than
+ *  deleting, so the record of what was asked for stays. */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  deviceKind: varchar("device_kind", { length: 10 }).notNull(),
+  userAgent: varchar("user_agent", { length: 300 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  disabledAt: timestamp("disabled_at", { withTimezone: true }),
+}, (table) => [
+  index("push_subscriptions_user_idx").on(table.userId),
+  index("push_subscriptions_venue_idx").on(table.venueId),
+  check("push_subscriptions_device_kind", sql`${table.deviceKind} IN ('wall', 'phone', 'desk')`),
+]);
+
+/** Every push attempted, as a fact: the idempotency key is the guard
+ *  against a second sweep sending the same word twice. */
+export const pushSends = pgTable("push_sends", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  subscriptionId: uuid("subscription_id").notNull().references(() => pushSubscriptions.id, { onDelete: "cascade" }),
+  event: varchar("event", { length: 30 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull().unique(),
+  status: varchar("status", { length: 10 }).notNull().default("pending"),
+  statusCode: integer("status_code"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+}, (table) => [
+  check("push_sends_status", sql`${table.status} IN ('pending', 'sent', 'failed', 'gone')`),
 ]);
 
 export const requests = pgTable("requests", {
@@ -5970,6 +6020,11 @@ export const requests = pgTable("requests", {
   handedOverAt: timestamp("handed_over_at", { withTimezone: true }),
   underwayAt: timestamp("underway_at", { withTimezone: true }),
   reopenedAt: timestamp("reopened_at", { withTimezone: true }),
+  /** Goal 19 S7 (0092): when the escalation email left, or null while it
+   *  waits out quiet hours; when a handed-over request's relief must have
+   *  accepted by, or it escalates. */
+  escalationEmailedAt: timestamp("escalation_emailed_at", { withTimezone: true }),
+  handoverDueAt: timestamp("handover_due_at", { withTimezone: true }),
 }, (table) => [
   uniqueIndex("requests_venue_idempotency_unique").on(table.venueId, table.idempotencyKey),
   index("requests_venue_state_created_idx").on(table.venueId, table.state, table.createdAt),
@@ -6159,4 +6214,36 @@ export const aiUsageReservations = pgTable("ai_usage_reservations", {
   index("ai_usage_reservations_venue_expires_idx").on(table.venueId, table.expiresAt),
   check("ai_usage_reservations_amount", sql`${table.reservedMicroUsd} > 0`),
   check("ai_usage_reservations_window", sql`${table.expiresAt} > ${table.createdAt}`),
+]);
+
+// ---------------------------------------------------------------------------
+// The forward book on the Diary, room by room (migration 0093, provisional
+// number). Blake, 17 October 2026: "hide date status until checked". The
+// public MCP and any public web surface show a room's dates only while a
+// record stands that its whole forward book is on the Diary. A venue admin
+// or manager records it (who, when, an optional note) or clears it; a
+// cleared record stays, with who cleared it and when. One standing record
+// per room; the room belongs to the record's venue (composite key).
+// ---------------------------------------------------------------------------
+
+export const forwardBookChecks = pgTable("forward_book_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  recordedBy: uuid("recorded_by").references(() => users.id, { onDelete: "set null" }),
+  /** The recorder's name as it was when they recorded it. */
+  recordedByName: varchar("recorded_by_name", { length: 200 }).notNull(),
+  note: text("note"),
+  clearedAt: timestamp("cleared_at", { withTimezone: true }),
+  clearedBy: uuid("cleared_by").references(() => users.id, { onDelete: "set null" }),
+  clearedByName: varchar("cleared_by_name", { length: 200 }),
+}, (table) => [
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "forward_book_checks_space_venue_fk" }),
+  check("forward_book_checks_recorded_by_name_shape", sql`btrim(${table.recordedByName}) <> ''`),
+  check("forward_book_checks_note_shape", sql`${table.note} IS NULL OR (${table.note} = btrim(${table.note}) AND char_length(${table.note}) BETWEEN 1 AND 500)`),
+  check("forward_book_checks_cleared_pair", sql`(${table.clearedAt} IS NULL) = (${table.clearedByName} IS NULL)`),
+  check("forward_book_checks_cleared_after_recorded", sql`${table.clearedAt} IS NULL OR ${table.clearedAt} >= ${table.recordedAt}`),
+  uniqueIndex("forward_book_checks_one_standing").on(table.spaceId).where(sql`${table.clearedAt} IS NULL`),
+  index("forward_book_checks_venue_recorded_idx").on(table.venueId, table.recordedAt),
 ]);

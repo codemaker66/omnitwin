@@ -31,8 +31,9 @@ Disallow: /fresh
 Disallow: /editor
 
 # Off the public surface: /pricing until billing exists (Blake, 26 September
-# 2026) and /demo, an internal sales deck. Both are admin-only behind the route
-# guard, which sends anyone else to sign in, and neither is in the sitemap.
+# 2026) and /demo, an internal sales deck. Both are admin-only and neither is in
+# the sitemap. /demo sends anyone else to sign in; /pricing tells them plainly
+# that subscriptions are not yet public, with a person to write to.
 Disallow: /pricing
 Disallow: /demo
 

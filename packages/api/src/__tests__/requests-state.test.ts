@@ -103,6 +103,7 @@ describe("which unanswered request is due to escalate", () => {
     urgency: "now",
     escalationDueAt: new Date("2026-09-16T14:03:00.000Z"),
     escalatedAt: null,
+    handoverDueAt: null,
   };
   const now = new Date("2026-09-16T14:03:01.000Z");
 
@@ -120,9 +121,20 @@ describe("which unanswered request is due to escalate", () => {
     expect(selectDueRequestEscalations([{ ...base, state: "resolved" }], now)).toEqual([]);
   });
 
-  it("only escalates the urgent ones", () => {
-    expect(selectDueRequestEscalations([{ ...base, urgency: "soon" }], now)).toEqual([]);
-    expect(selectDueRequestEscalations([{ ...base, urgency: "routine" }], now)).toEqual([]);
+  it("escalates every urgency once its own window has passed (goal 19 S7)", () => {
+    expect(selectDueRequestEscalations([{ ...base, urgency: "soon" }], now).map((row) => row.id)).toEqual(["r-1"]);
+    expect(selectDueRequestEscalations([{ ...base, urgency: "routine" }], now).map((row) => row.id)).toEqual(["r-1"]);
+  });
+
+  it("escalates a handed-over request whose relief has not taken it by the relief window", () => {
+    const handed = { ...base, state: "handed-over" as const, escalationDueAt: null, handoverDueAt: new Date("2026-09-16T14:03:00.000Z") };
+    expect(selectDueRequestEscalations([handed], now).map((row) => row.id)).toEqual(["r-1"]);
+    expect(selectDueRequestEscalations([handed], new Date("2026-09-16T14:02:59.000Z"))).toEqual([]);
+    expect(selectDueRequestEscalations([{ ...handed, handoverDueAt: null }], now)).toEqual([]);
+    expect(selectDueRequestEscalations([{ ...handed, escalatedAt: now }], now)).toEqual([]);
+    // A sent request's handover window means nothing; an accepted one never escalates.
+    expect(selectDueRequestEscalations([{ ...base, escalationDueAt: null, handoverDueAt: new Date(0) }], now)).toEqual([]);
+    expect(selectDueRequestEscalations([{ ...handed, state: "accepted" }], now)).toEqual([]);
   });
 
   it("never escalates a request twice", () => {
