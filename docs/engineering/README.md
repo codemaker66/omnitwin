@@ -129,6 +129,7 @@ on future experiments.
 | V8 memory or test contention | [Windows/V8 notes](../../.claude/gotchas/windows-v8-heap.md) |
 | Zod input/output inference | [Passthrough inference](../../.claude/gotchas/zod-passthrough-inference.md) |
 | Raw SQL subqueries inside a Drizzle select | [Bare columns belong to the subquery](../../.claude/gotchas/drizzle-single-table-subquery-columns.md) |
+| Writing URL search params from hooks or loops | [setSearchParams builds on its render](../../.claude/gotchas/react-router-search-param-writes.md) |
 | Docker build arguments | [ARG scope](../../.claude/gotchas/dockerfile-arg-scope.md) |
 | Deploying the API or adding a migration | [Deploy ordering](deploy-ordering.md) |
 | Windows pycolmap/database work | [pycolmap traps](../../.claude/gotchas/pycolmap-windows-traps.md) |
