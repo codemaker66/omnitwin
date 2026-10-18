@@ -64,7 +64,7 @@ spacing, never the room's capacity.
 | Cap line | `lib/placement-cap.ts`, `stores/placement-notice-store.ts`, `components/editor/PlacementNotice.tsx` |
 | Store actions | `autoArrangeBanquet` and `autoArrangeTheatre` return what they placed; `fillSeatShortfall(guests)` writes once and announces the new ids (`announcePlaced`), so one undo takes it back; `placeItem`, `placeTableGroup` and the ghost post or show the cap line |
 | Interface | `components/editor/cockpit/AutoFillPrompt.tsx`, `SeatShortfallFix.tsx`, `AutoFill.css`; `stores/auto-fill-request-store.ts` carries the command deck's request to the Guests lens |
-| Ask | `LayoutQuestion` in `lib/unrecorded-ask.ts`: "We are planning 170 guests for a seated dinner in the Grand Hall. The online planner fits 140 at its spacing. How would you lay the room out for 170?" |
+| Ask | `LayoutQuestion` in `lib/unrecorded-ask.ts`: "We are planning 170 guests for a seated dinner in the Grand Hall. The plan has 140 seats, with no room for another table at the online planner's spacing. How would you lay the room out for 170?" It states seats placed, never a capacity; the Guests and Share lenses both offer it. |
 
 ## Checks
 

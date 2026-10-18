@@ -18,6 +18,7 @@ vi.mock("../../../../hooks/use-trades-hall-venue.js", () => ({
 
 const { GuestsLensPanel } = await import("../GuestsLensPanel.js");
 const { LensSheet } = await import("../LensSheet.js");
+const { ShareLensPanel } = await import("../ShareLensPanel.js");
 const { usePlacementStore } = await import("../../../../stores/placement-store.js");
 const { useRoomDimensionsStore } = await import("../../../../stores/room-dimensions-store.js");
 const { useCockpitStore } = await import("../../../../stores/cockpit-store.js");
@@ -238,7 +239,22 @@ describe.each(VIEWPORTS)("a seat shortfall offers one tap ($label)", ({ width, p
     expect(ask.textContent).toBe("Ask the events team");
     const href = ask.getAttribute("href") ?? "";
     expect(href.startsWith("mailto:")).toBe(true);
-    expect(decodeURIComponent(href)).toContain("We are planning 170 guests for a seated dinner in the Grand Hall. The online planner fits 140 at its spacing.");
+    expect(decodeURIComponent(href)).toContain("We are planning 170 guests for a seated dinner in the Grand Hall. The plan has 140 seats, with no room for another table at the online planner's spacing.");
+    expect(decodeURIComponent(href)).not.toMatch(/\bfits?\b/);
+  });
+
+  it("gives the Share lens the same way forward when the hall is full at this spacing", () => {
+    usePlacementStore.setState({ placedItems: fullHall() });
+    useCockpitStore.getState().setPlannedGuestCount(170);
+    render(<ShareLensPanel />);
+    const share = within(screen.getByTestId("share-lens-panel"));
+    expect(share.getByTestId("share-seat-fix-statement").textContent).toBe("30 seats short of 170 guests.");
+    expect(share.queryByTestId("share-seat-fix-action")).toBeNull();
+    expect(share.getByTestId("share-seat-fix-no-room").textContent)
+      .toBe("The tables are full, and there is no room for another at this spacing.");
+    const ask = share.getByTestId("share-seat-fix-ask");
+    expect(ask.textContent).toBe("Ask the events team");
+    expect(decodeURIComponent(ask.getAttribute("href") ?? "")).toContain("The plan has 140 seats, with no room for another table at the online planner's spacing.");
   });
 });
 

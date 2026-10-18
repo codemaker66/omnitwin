@@ -198,8 +198,8 @@ export function GuestsLensPanel(): ReactElement {
     ? truth.ask({
       kind: "layout",
       guests: model.guestCount,
-      roomFor: model.seatsProvided,
-      occasion: model.publishedFormat === null ? "your event" : occasionPhrase(model.publishedFormat),
+      seatsPlaced: model.seatsProvided,
+      occasion: model.publishedFormat === null ? "our event" : occasionPhrase(model.publishedFormat),
     })
     : null;
 

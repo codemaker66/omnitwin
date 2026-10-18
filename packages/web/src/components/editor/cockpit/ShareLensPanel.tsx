@@ -12,6 +12,9 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 import { useShareStore } from "../../../stores/share-store.js";
 import { usePlannerTruth } from "../../../hooks/use-planner-truth.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
+import { plannerLayoutStyle, publishedFormatForStyle } from "../../../lib/planner-truth.js";
+import { seatingCountsFromPlacedItems } from "../../../lib/seating-counts.js";
+import { occasionPhrase } from "../../../lib/auto-fill.js";
 import {
   buildShareProposalDraft,
   buildShareVersionPayloadCandidate,
@@ -62,7 +65,20 @@ export function ShareLensPanel(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // The capacity line states the venue's published figure, never a computed one.
-  const { published, roomName } = usePlannerTruth();
+  const { published, roomName, ask } = usePlannerTruth();
+  // When the tables are full and there is no room for another, the shortfall
+  // fix names the person to ask; the capacity note above already gives the
+  // published figure.
+  const shortfallAsk = useMemo(() => {
+    if (plannedGuestCount === null) return null;
+    const format = publishedFormatForStyle(plannerLayoutStyle(placedItems));
+    return ask({
+      kind: "layout",
+      guests: plannedGuestCount,
+      seatsPlaced: seatingCountsFromPlacedItems(placedItems).chairs,
+      occasion: format === null ? "our event" : occasionPhrase(format),
+    });
+  }, [ask, placedItems, plannedGuestCount]);
 
   const draft = useMemo(
     () => buildShareProposalDraft({
@@ -161,7 +177,7 @@ export function ShareLensPanel(): ReactElement {
       <LensPanelSection label="What the client sees">
         <p className="lens-panel__paragraph" data-testid="share-layout-summary">{draft.layoutSummary}</p>
         <p className="lens-panel__paragraph lens-panel__paragraph--muted">{draft.capacityNote}</p>
-        <SeatShortfallFix statement testId="share-seat-fix" />
+        <SeatShortfallFix statement testId="share-seat-fix" ask={shortfallAsk} />
         <label className="lens-panel__field">
           <span className="lens-panel__field-label">Message to the client (optional)</span>
           <textarea
