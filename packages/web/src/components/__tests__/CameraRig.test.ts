@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   DAMPING_FACTOR,
   DAMPING_SETTLE_FRAMES,
+  MAX_ZOOM_FRAME_DELTA_SECONDS,
   ZOOM_FRICTION,
   ZOOM_VELOCITY_THRESHOLD,
+  computeZoomFrameScale,
 } from "../../lib/camera-rig.js";
 
 describe("CameraRig source guards", () => {
@@ -46,5 +48,21 @@ describe("CameraRig source guards", () => {
     expect(source).toContain("onStart={markCameraInteractionActive}");
     expect(source).toContain("onEnd={markCameraInteractionSettling}");
     expect(source).not.toContain("setCameraInteractionActive(true);\\n    invalidate();");
+  });
+
+  it("caps an idle demand-render frame before applying wheel zoom", () => {
+    expect(computeZoomFrameScale(1 / 60)).toBeCloseTo(1);
+    expect(computeZoomFrameScale(1 / 30)).toBeCloseTo(2);
+    // Two idle seconds must not become 120 frames of zoom in one step.
+    expect(computeZoomFrameScale(2)).toBeCloseTo(MAX_ZOOM_FRAME_DELTA_SECONDS * 60);
+    expect(computeZoomFrameScale(Number.NaN)).toBe(0);
+    expect(computeZoomFrameScale(-1)).toBe(0);
+  });
+
+  it("applies the capped scale in the inertial zoom step", async () => {
+    const source = await readFile("src/components/CameraRig.tsx", "utf8");
+
+    expect(source).toContain("zoomVelocity.current * computeZoomFrameScale(delta)");
+    expect(source).not.toContain("zoomVelocity.current * delta * 60");
   });
 });

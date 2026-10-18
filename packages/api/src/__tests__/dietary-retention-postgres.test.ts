@@ -8,13 +8,12 @@ import {
   DIETARY_NOTE_DAYS_AFTER_EVENT,
   DIETARY_NOTE_DAYS_WITHOUT_EVENT,
   removeLapsedDietaryNotes,
-  type SheetPdfToRemove,
 } from "../services/dietary-retention.js";
 
 // ---------------------------------------------------------------------------
 // Retention for guests' allergy notes (fix-first item 18), on Goal 12's
 // migrated disposable cluster: the JSON paths, the event anchor and the
-// "PDF first, then the sheet" order are database behaviour a mock cannot
+// one-pass redaction of layouts and sheets are database behaviour a mock cannot
 // prove. The cluster is shared by the platform suites, so these cases assert
 // on their own rows, never on totals.
 //
@@ -64,7 +63,7 @@ describe.skipIf(target === undefined)("dietary note retention on migrated Postgr
   afterAll(async () => { await pool?.end(); });
 
   /** A layout with the note, an event sheet copying it, and optionally
-   *  dated events and a pre-rendered PDF. */
+   *  dated events and a legacy public PDF address (from before PR #130). */
   async function layout(options: { events?: readonly Date[]; updatedAt?: Date; pdf?: boolean } = {}) {
     const configId = randomUUID();
     const updatedAt = options.updatedAt ?? daysBefore(5);
@@ -121,19 +120,15 @@ describe.skipIf(target === undefined)("dietary note retention on migrated Postgr
     expect((await stored(current)).config.metadata).toEqual(metadataWith(NOTE));
   });
 
-  it("removes a sheet's stored PDF before its copy, and keeps the sheet for later when the PDF cannot go", async () => {
+  it("clears a legacy sheet's copy and its old public PDF address in one pass", async () => {
+    // Sheets issued before PR #130 named a pre-rendered public PDF. Sheets are
+    // no longer stored, so the pass redacts the copy and drops the address
+    // together, with no storage step to wait on.
     const f = await layout({ events: [daysBefore(60)], pdf: true });
-    const failing = await removeLapsedDietaryNotes(db, { now: NOW, removeSheetPdf: () => Promise.resolve(false) });
-    expect(failing.sheetsPending).toBeGreaterThanOrEqual(1);
-    let { config, sheet } = await stored(f);
+    expect((await stored(f)).sheet.pdfUrl).not.toBeNull();
+    await removeLapsedDietaryNotes(db, { now: NOW });
+    const { config, sheet } = await stored(f);
     expect(config.metadata).toEqual(metadataWith(""));
-    expect(sheet.payload).toEqual(metadataWith(NOTE));
-    expect(sheet.pdfUrl).not.toBeNull();
-
-    const removed: SheetPdfToRemove[] = [];
-    await removeLapsedDietaryNotes(db, { now: NOW, removeSheetPdf: (pdf) => { removed.push(pdf); return Promise.resolve(true); } });
-    expect(removed).toContainEqual(expect.objectContaining({ configurationId: f.configId, version: 1, sourceHash: "a".repeat(64) }));
-    ({ config, sheet } = await stored(f));
     expect(sheet.payload).toEqual(metadataWith(""));
     expect(sheet.pdfUrl).toBeNull();
   });

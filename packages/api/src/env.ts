@@ -28,6 +28,12 @@ const EnvSchema = z.object({
   VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID: z.string().uuid().optional(),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),
+  // Web push — VAPID (goal 19 S7). All three or push is off, the way email
+  // is off without a Resend key. The subject must be a real mailto: address:
+  // Apple's push service refuses a placeholder.
+  VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+  VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  VAPID_SUBJECT: z.string().regex(/^(mailto:[^@\s]+@[^@\s]+|https:\/\/\S+)$/u).optional(),
   // Where a public enquiry goes when the venue has no hallkeeper user yet.
   // Without this, an enquiry with no hallkeeper is stored and silently never
   // announced — the guest sees success and the lead reaches nobody.
@@ -80,6 +86,20 @@ const EnvSchema = z.object({
   AI_ASSISTANT_API_KEY: z.string().min(1).optional(),
   // Anthropic only: the Console workspace for a key not scoped to one.
   AI_ASSISTANT_WORKSPACE_ID: z.string().regex(/^wrkspc_[A-Za-z0-9]+$/u).optional(),
+  // T-656: each venue's AI allowance for a UTC calendar month, in US dollars.
+  // Every model call reserves its worst-case cost against it before it is
+  // made, and is refused with AI_BUDGET_REACHED when the month's recorded
+  // spend, the calls in flight and that reservation would pass it. Unset, it
+  // is $50 (DEFAULT_AI_VENUE_MONTHLY_BUDGET_USD in services/ai-usage.ts):
+  // over a thousand drafts or briefs a venue a month at today's prices, and a
+  // hard ceiling on what one venue can cost. AI_ASSISTANT_ENABLED stays the
+  // global switch. A value that is not a number from 0.01 to 100,000 stops the
+  // API at boot rather than run unbounded.
+  AI_VENUE_MONTHLY_BUDGET_USD: z.coerce.number()
+    .finite()
+    .min(0.01, "AI_VENUE_MONTHLY_BUDGET_USD must be at least 0.01 (US dollars)")
+    .max(100_000, "AI_VENUE_MONTHLY_BUDGET_USD must be at most 100000 (US dollars)")
+    .optional(),
   // Venue sky (T-647) — Met Office Weather DataHub key for the Site-Specific
   // Blended Probabilistic Forecast v2 API, sent as the `apikey` header. A
   // DataHub key belongs to one product subscription, so a key for another

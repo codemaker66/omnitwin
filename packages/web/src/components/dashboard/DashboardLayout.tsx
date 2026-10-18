@@ -15,6 +15,7 @@ import { SignOutAskContext, StaffShellContext, useInStaffShell, useShellFrame, t
 import { FindPalette } from "./find/FindPalette.js";
 import type { FindPlace, FindSource, FindTarget } from "./find/find-model.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
+import { forgetPushAlertsThen } from "../../lib/push-alerts.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
   ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
@@ -149,7 +150,11 @@ interface SignOutButtonProps {
 function ClerkSignOutButton(props: SignOutButtonProps): React.ReactElement {
   const { signOut } = useClerk();
   const handleSignOut = (): void => {
-    props.askFirst(() => { props.onLocalSignOut(); void signOut(); });
+    // This device's alerts are forgotten first, while the token still works;
+    // the sign-out itself never waits on that for long.
+    props.askFirst(() => {
+      forgetPushAlertsThen(() => { props.onLocalSignOut(); void signOut(); });
+    });
   };
 
   return (

@@ -18,6 +18,7 @@ import { generateManifestV2, type ManifestObjectV2, type AccessoryRule } from ".
 import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
 import { buildHallkeeperFloorPlan, type FloorPlanAsset } from "./hallkeeper-floor-plan.js";
 import { resolveTurnaroundRule } from "./calendar-conflicts.js";
+import type { SheetIssue } from "./sheet-paper-check.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Sheet V2 — data assembly
@@ -62,8 +63,13 @@ export interface SheetDataV2Internal {
     readonly configUserId: string | null;
   };
   readonly payload: HallkeeperSheetV2;
-  /** Only the validated approved snapshot's PDF; live sheets never reuse it. */
-  readonly approvedPdfUrl: string | null;
+  /**
+   * The approved snapshot this payload was read from, so a printout can name
+   * the exact version it is (services/sheet-paper-check.ts). Null for a live,
+   * unapproved sheet. Kept beside the payload, never inside it, so nothing
+   * here is ever written into a frozen snapshot.
+   */
+  readonly issue: SheetIssue | null;
 }
 
 export class ApprovedSnapshotUnavailableError extends Error {
@@ -101,7 +107,9 @@ export async function assembleSheetDataV2(
     return {
       authPivot: { venueId: config.venueId, configUserId: config.userId },
       payload: { ...frozen, generatedAt: nowIso, webViewUrl },
-      approvedPdfUrl: snapshot?.pdfUrl ?? null,
+      issue: snapshot === null
+        ? null
+        : { snapshotId: snapshot.id, version: snapshot.version, sourceHash: snapshot.sourceHash },
     };
   }
 
@@ -239,7 +247,7 @@ export async function assembleSheetDataV2(
   return {
     authPivot: { venueId: venue.id, configUserId: config.userId },
     payload: livePayload,
-    approvedPdfUrl: null,
+    issue: null,
   };
 }
 
@@ -251,18 +259,19 @@ interface ApprovedSnapshot {
   readonly approver: { name: string; displayName: string | null } | null;
 }
 
-/** A single row binds the payload, stamp and optional PDF to the same version. */
+/** A single row binds the payload, stamp and issued identity to the same version. */
 async function loadLatestApprovedSnapshot(
   db: Database,
   configId: string,
-): Promise<(ApprovedSnapshot & { pdfUrl: string | null }) | null> {
+): Promise<(ApprovedSnapshot & { id: string; sourceHash: string }) | null> {
   const [snap] = await db.select({
+    id: configurationSheetSnapshots.id,
+    sourceHash: configurationSheetSnapshots.sourceHash,
     payload: configurationSheetSnapshots.payload,
     coordinateSpace: configurationSheetSnapshots.coordinateSpace,
     version: configurationSheetSnapshots.version,
     approvedAt: configurationSheetSnapshots.approvedAt,
     currentApprovedAt: configurations.approvedAt,
-    pdfUrl: configurationSheetSnapshots.pdfUrl,
     approver: { name: users.name, displayName: users.displayName },
   })
     .from(configurationSheetSnapshots)

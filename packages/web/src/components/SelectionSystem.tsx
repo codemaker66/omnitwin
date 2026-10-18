@@ -26,7 +26,15 @@ import {
   rotationFromDrag,
   scaleFromDrag,
 } from "../lib/planner-tools.js";
-import { beginFurnitureSettle, clearFurnitureSettle } from "../lib/furniture-motion.js";
+import {
+  CARRY_AT_REST,
+  beginFurnitureSettle,
+  carryFurniture,
+  clearFurnitureSettle,
+  measureCarry,
+  releaseFurniture,
+  type CarrySpeed,
+} from "../lib/furniture-motion.js";
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
@@ -157,6 +165,8 @@ export function SelectionSystem(): null {
   const isDragging = useRef(false);
   const isMarquee = useRef(false);
   const dragStartScreen = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  /** The carried pieces' smoothed speed, metres a second, and when it was last measured. */
+  const carry = useRef<CarrySpeed>(CARRY_AT_REST);
   const dragItemId = useRef<string | null>(null);
   const dragGrabOffset = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
   // Which hand the drag belongs to, decided at pointer-down from the tool
@@ -359,6 +369,9 @@ export function SelectionSystem(): null {
       isMarquee.current = false;
       dragItemId.current = null;
       lastMovingIds.current = new Set();
+      // Every press passes through here, so no drag inherits the speed of
+      // one that was cancelled, blurred or refused mid-carry.
+      carry.current = CARRY_AT_REST;
       gestureInitial.current = new Map();
       // An interrupted touch is no longer a tap, and its finger stays the camera's.
       if (touchGesture.current !== null) touchGesture.current = "camera";
@@ -736,6 +749,11 @@ export function SelectionSystem(): null {
               usePlacementStore.getState().moveItemsByDelta(allMovingIds, frame.dx, frame.dz);
               useSelectionStore.getState().setActiveGuides(frame.guides);
               lastMovingIds.current = allMovingIds;
+              // Carried pieces lean a little back from the way they travel.
+              if (!prefersReducedMotion()) {
+                carry.current = measureCarry(carry.current, frame.dx, frame.dz, performance.now());
+                if (carry.current.measured) carryFurniture(allMovingIds, carry.current.vx, carry.current.vz);
+              }
               invalidateRef.current();
             }
           }
@@ -855,6 +873,12 @@ export function SelectionSystem(): null {
               }
               invalidateRef.current();
             }
+          }
+          // Let go: the pieces swing upright and set their weight down. A hand
+          // that rested let the loop sleep, so the release must wake it.
+          if (!prefersReducedMotion() && lastMovingIds.current.size > 0) {
+            releaseFurniture(lastMovingIds.current);
+            invalidateRef.current();
           }
           lastMovingIds.current = new Set();
         } else {

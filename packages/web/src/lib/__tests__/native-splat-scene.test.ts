@@ -700,12 +700,12 @@ describe("native complete draw lifecycle", () => {
   });
 });
 
-describe("native presentation (T-639)", () => {
-  it("draws captured sources without anti-aliasing opacity compensation", async () => {
+describe("native presentation (T-639, T-658)", () => {
+  it("draws captured sources with the anti-aliasing opacity compensation on", async () => {
     const state = setup();
     state.add(3);
     await vi.advanceTimersByTimeAsync(20);
-    expect(evidence.antialias).toEqual([false]);
+    expect(evidence.antialias).toEqual([true]);
     state.detach(); await vi.advanceTimersByTimeAsync(0);
   });
 });

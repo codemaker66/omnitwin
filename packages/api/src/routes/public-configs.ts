@@ -12,6 +12,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
+import { emit } from "../observability/event-bus.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import {
   validatePlacementsInPolygon,
@@ -283,6 +284,15 @@ export async function publicConfigRoutes(
       );
     }
 
+    // Commit, then announce: the transaction above has resolved, so an
+    // uncommitted write can never be broadcast (live co-editing v1).
+    emit(request.log, "layout.changed", {
+      configId,
+      revision: saveResult.revision,
+      actorUserId: null,
+      source: "public_batch",
+      at: new Date().toISOString(),
+    });
     reply.header("ETag", configurationRevisionEtag(saveResult.revision));
     return { data: { objects: saveResult.objects, revision: saveResult.revision } };
   });

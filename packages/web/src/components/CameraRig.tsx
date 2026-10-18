@@ -39,6 +39,7 @@ import {
   computeDistanceLimits,
   computeKeyboardPanDirection,
   computePanBounds,
+  computeZoomFrameScale,
   isCameraKeyboardInputLocked,
   isCameraKeyboardPanSuspendedByPlannerState,
   type CameraKeyboardPlannerState,
@@ -809,7 +810,8 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       const dir = zoomDir.current;
       dir.subVectors(camera.position, controls.target).normalize();
 
-      const move = zoomVelocity.current * delta * 60; // Normalize to ~60fps feel
+      // ~60 fps feel, capped so an idle demand-render frame cannot lurch.
+      const move = zoomVelocity.current * computeZoomFrameScale(delta);
       camera.position.addScaledVector(dir, move);
 
       // Clamp distance to limits

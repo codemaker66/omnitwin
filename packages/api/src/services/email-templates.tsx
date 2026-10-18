@@ -1112,6 +1112,10 @@ export interface RequestEscalationData {
   readonly detail: string | null;
   readonly waitingMinutes: number;
   readonly dayBoardUrl: string;
+  /** Why it is still waiting (goal 19 S7): nobody took it, or it was handed
+   *  to a relief who has not taken it. Absent means unowned. */
+  readonly reason?: "unowned" | "handover";
+  readonly handoverToName?: string | null;
 }
 
 export function RequestEscalationEmail(props: RequestEscalationData): ReactElement {
@@ -1119,6 +1123,9 @@ export function RequestEscalationEmail(props: RequestEscalationData): ReactEleme
   const asked = props.quantity === null
     ? props.kindLabel
     : `${props.kindLabel} × ${String(props.quantity)}`;
+  const why = props.reason === "handover"
+    ? `It was handed to ${props.handoverToName ?? "a colleague"}, who has not taken it yet.`
+    : "Nobody has picked this up yet.";
   return (
     <Layout
       label="Still waiting"
@@ -1131,7 +1138,7 @@ export function RequestEscalationEmail(props: RequestEscalationData): ReactEleme
         </Text>
       )}
       <Text style={paragraphStyle}>
-        Nobody has picked this up yet.
+        {why}
       </Text>
       <Section>
         <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>

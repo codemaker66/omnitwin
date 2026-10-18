@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 393 cases. Four hosted CPU shards execute
-388 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 401 cases. Four hosted CPU shards execute
+396 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -131,7 +131,18 @@ and the CPU partition from 384 to 386. The next, on 16 October 2026, adds two
 ordinary route-mocked cases for the enquiry's Diary answer (T-635): the
 Enquiries desk answering with nothing to press and Approve holding its place,
 on a desk and on a phone (`enquiries-diary-answer.spec.ts`); this changes the
-inventory from 391 to 393 and the CPU partition from 386 to 388.
+inventory from 391 to 393 and the CPU partition from 386 to 388. The next, on
+18 October 2026, adds eight cases as expected skips: live co-editing v1
+(T-664), two signed-in venue staff on one layout against the real stack, the
+presence row with the room each is viewing, a move, a placement and a delete
+reaching the other browser's scene within the budget by timestamps and then
+committing, the later write on one table winning with the person it overrode
+told, a dropped connection resyncing from the server, the saved layout holding
+exactly the last writes, and a client seeing nothing new
+(`layout-live-coediting.spec.ts`). They run only with the live stack
+(`E2E_LAYOUT_LIVE=1`), so the hosted shards record them as skips; this changes
+the inventory from 393 to 401, the CPU partition from 388 to 396 and the
+expected skips from 46 to 54.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
@@ -220,6 +231,40 @@ The qualification used the Ubuntu `bubblewrap_0.9.0-1ubuntu0.1_amd64.deb` packag
 downloaded and extracted into a temporary directory, without system installation.
 Its archive SHA-256 is
 `1b506492bd9c7fd0cdb4f02ac822f1d3e336b0aead5113c1239baf8db5db562a`.
+
+## Clock and publication recovery
+
+A `case start outside claimed run interval` rejection can expose a real host
+clock fault. Preserve the rejected raw report, execution envelope and publisher
+output. Do not edit timestamps, invent an envelope or relax the verifier. Compare
+consecutive wall-clock and monotonic deltas, Windows/WSL UTC, the relevant boot's
+`journalctl` output, Hyper-V implicit time synchronization and Ubuntu's
+`systemd-timesyncd` state. A small net difference between run endpoints does not
+exclude clock jumps within the run.
+
+The [Goal17 investigation](../../docs/reports/browser-release-confidence-2026-09-15.md)
+observed backward clock jumps and diagnosed competing Hyper-V and guest NTP
+corrections as the cause; individual kernel adjustments were not traced.
+Its reversible workaround kept one existing WSL session alive, recorded the
+initial active NTP service, temporarily stopped `systemd-timesyncd`, and verified
+stable wall/monotonic samples before invoking the unchanged worker. Hyper-V
+remained the time authority. Restore the original service state in guaranteed
+cleanup and retain that confirmation; do not permanently disable synchronization
+or manually set timestamps. The diagnostic controller was an output-only
+qualification artifact, not a committed runner command. Retain clock samples,
+journals, service states and rejected results alongside qualification receipts.
+
+After correcting the cause, use a new worker output directory and verify the
+request belongs to the still-active, unexpired hosted attempt. An expired request
+requires a new hosted attempt and its fresh request. The normal source, runtime,
+clock, performance and publication checks still determine acceptance.
+
+If publication is interrupted after its durable intent is written, do not delete
+the intent or blindly rerun the publisher. Inspect the retained intent, bundle
+and any blob/status responses, then query the exact nonce-bound status context
+and Git blob. Verify the source/run/attempt, actor and exact bundle hashes before
+deciding what happened. A missing local response does not establish that a remote
+write failed; an uploaded blob alone is not a published or accepted result.
 
 ## Boundaries and evidence
 
