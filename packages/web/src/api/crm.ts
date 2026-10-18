@@ -82,7 +82,7 @@ const ContactSchema = z.object({
   venueId: z.string(),
   clientAccountId: z.string().nullable(),
   name: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
   phone: z.string().nullable(),
   roleLabel: z.string().nullable(),
   sourceEnquiryId: z.string().nullable(),
@@ -174,7 +174,7 @@ export type StageMove = z.infer<typeof StageMoveSchema>;
 export const DealContactSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
   phone: z.string().nullable(),
   accountName: z.string().nullable(),
 });

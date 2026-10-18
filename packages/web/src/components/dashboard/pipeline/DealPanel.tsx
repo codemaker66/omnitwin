@@ -501,7 +501,7 @@ function WithWhom({ contact, onOpenClient }: {
       <p className="pl-contact__name">{contact.name}</p>
       {contact.accountName !== null && <p className="pl-contact__account">{contact.accountName}</p>}
       <div className="enq-contact">
-        <a href={`mailto:${contact.email}`}>{contact.email}</a>
+        {contact.email !== null && <a href={`mailto:${contact.email}`}>{contact.email}</a>}
         {contact.phone !== null && contact.phone.trim() !== "" && <a href={`tel:${contact.phone.replace(/[^\d+]/gu, "")}`}>{contact.phone}</a>}
       </div>
       {onOpenClient !== undefined && (
