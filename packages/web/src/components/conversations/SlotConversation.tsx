@@ -44,6 +44,7 @@ export interface SlotConversationProps {
 
 interface ThreadPage {
   readonly messages: readonly Message[];
+  /** How far the thread has been read with nothing missing. Only a read moves it. */
   readonly cursor: number;
 }
 
@@ -86,14 +87,33 @@ export function receiptLine(message: Message, meId: string | null): string | nul
   return `Delivered to ${message.receipts.map((receipt) => receipt.recipientName).join(", ")}`;
 }
 
+function byCursor(left: Message, right: Message): number {
+  return left.cursor - right.cursor;
+}
+
+/** A page read from the thread, forward from the cursor or whole (`replace`).
+ *  A whole read stands for the thread up to its own cursor, so a message past
+ *  that cursor stays: it reached this screen while the read was out (a send
+ *  that answered first), and dropping it would hide a note that was saved. */
 function mergePage(current: ThreadPage | undefined, fresh: ThreadPage, replace: boolean): ThreadPage {
-  if (replace || current === undefined) return fresh;
-  const known = new Set(current.messages.map((message) => message.id));
+  if (current === undefined) return fresh;
+  const kept = replace ? current.messages.filter((message) => message.cursor > fresh.cursor) : current.messages;
+  if (replace && kept.length === 0) return fresh;
+  const known = new Set(kept.map((message) => message.id));
   const added = fresh.messages.filter((message) => !known.has(message.id));
   return {
-    messages: added.length === 0 ? current.messages : [...current.messages, ...added],
-    cursor: Math.max(current.cursor, fresh.cursor),
+    messages: added.length === 0 ? kept : [...kept, ...added].sort(byCursor),
+    cursor: replace ? fresh.cursor : Math.max(current.cursor, fresh.cursor),
   };
+}
+
+/** A message this screen sent, shown at once. The cursor stays where reading
+ *  reached, so the next read forward still fetches a colleague's message
+ *  saved just before this one. */
+function withSent(current: ThreadPage | undefined, message: Message): ThreadPage {
+  if (current === undefined) return { messages: [message], cursor: 0 };
+  if (current.messages.some((shown) => shown.id === message.id)) return current;
+  return { messages: [...current.messages, message].sort(byCursor), cursor: current.cursor };
 }
 
 export function SlotConversation({ bookingId, roomName, requests }: SlotConversationProps): ReactElement | null {
@@ -241,7 +261,7 @@ export function SlotConversation({ bookingId, roomName, requests }: SlotConversa
         const threadId = thread.id;
         setPages((current) => {
           const next = new Map(current);
-          next.set(threadId, mergePage(current.get(threadId), { messages: [message], cursor: message.cursor }, false));
+          next.set(threadId, withSent(current.get(threadId), message));
           return next;
         });
         setDraft("");
