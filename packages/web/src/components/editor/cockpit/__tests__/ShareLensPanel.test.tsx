@@ -32,6 +32,8 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useShareStore } from "../../../../stores/share-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
+import { CATALOGUE_ITEMS } from "../../../../lib/catalogue.js";
+import type { PlacedItem } from "../../../../lib/placement.js";
 
 const CONFIG_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -62,8 +64,30 @@ describe("ShareLensPanel", () => {
     render(<ShareLensPanel />);
     expect(screen.getByTestId("share-lens-panel")).toBeTruthy();
     expect(screen.getByText("Share this plan")).toBeTruthy();
-    expect(screen.getByTestId("share-layout-summary").textContent).toContain("120");
+    // Nothing is placed: the guest count is never stated as seating.
+    expect(screen.getByTestId("share-layout-summary").textContent).toBe("An open-plan layout, ready to dress.");
+    expect(screen.getByTestId("share-effective-title").textContent).toContain("Event plan for 120 guests");
     expect(screen.getByText(/safety, occupancy, or compliance/i)).toBeTruthy();
+  });
+
+  it("states what is placed and the seat shortfall, with a way forward", () => {
+    // The venue's own share (a visitor sees what is placed, below).
+    signInStaff();
+    const round = CATALOGUE_ITEMS.find((c) => c.category === "table" && c.tableShape === "round");
+    const chair = CATALOGUE_ITEMS.find((c) => c.category === "chair");
+    if (round === undefined || chair === undefined) throw new Error("catalogue fixture missing");
+    const place = (id: string, n: number, prefix: string): PlacedItem[] => Array.from({ length: n }, (_u, index) => ({
+      id: `${prefix}-${String(index)}`, catalogueItemId: id, x: 0, y: 0, z: 0, rotationY: 0,
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null,
+    }));
+    usePlacementStore.setState({ placedItems: [...place(round.id, 8, "round"), ...place(chair.id, 64, "chair")] });
+    useCockpitStore.getState().setPlannedGuestCount(220);
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("share-layout-summary").textContent).toBe("8 round tables · 64 chairs · 156 seats short of 220 guests");
+    expect(screen.getByTestId("share-seating-short").textContent).toBe(
+      "Place 156 more chairs or lower the guest count before you share this plan. The events team can advise on the layout.",
+    );
+    expect(screen.getByTestId("share-lens-panel").textContent).not.toMatch(/seating for 220/i);
   });
 
   it("tells a visitor only what is placed, never seating taken from the guest count", () => {

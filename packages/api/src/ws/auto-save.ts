@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   ConfigurationReviewStatusSchema,
   PlatformRoleSchema,
+  canJoinLayoutLive,
+  isLiveClientFrameType,
   isPlannerEditable,
   type PlatformRole,
 } from "@omnitwin/types";
@@ -12,12 +14,17 @@ import {
   configurationLayoutRevisions,
   configurations,
   placedObjects,
+  users,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { clerkTokenVerificationOptions, getUserByClerkId } from "../middleware/auth.js";
 import { resolveVerifiedClerkEmailWithFallback } from "../middleware/clerk-email.js";
+import { emit, subscribe } from "../observability/event-bus.js";
+import { LayoutLiveHub, type LayoutLiveConnection } from "./layout-live.js";
 
 const FLUSH_DEBOUNCE_MS = 500;
+/** Live co-editing heartbeat: the Diary's cadence (Canon §15). */
+const LIVE_HEARTBEAT_INTERVAL_MS = 20_000;
 const EDITABLE_REVIEW_STATUSES = ["draft", "changes_requested", "rejected"] as const;
 
 export const ObjectDataSchema = z.object({
@@ -405,7 +412,93 @@ export function shouldScheduleBufferedFlush(
   return result?.status === "saved" && pendingCount > 0;
 }
 
+/**
+ * The live room this authenticated user may join for this layout, or null.
+ * Owner and venue floor only (canJoinLayoutLive); customers get nothing new.
+ * Reads the configuration and the user's display name — the hub itself never
+ * touches the database.
+ */
+export async function resolveLayoutLiveUser(
+  db: Database,
+  configId: string,
+  user: WsUser,
+): Promise<{ readonly userId: string; readonly name: string; readonly role: string } | null> {
+  const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId })
+    .from(configurations)
+    .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+    .limit(1);
+  if (config === undefined) return null;
+  const admitted = canJoinLayoutLive(
+    { userId: user.userId, role: user.userRole, venueId: user.userVenueId, platformRole: user.platformRole },
+    { ownerUserId: config.userId, venueId: config.venueId },
+  );
+  if (!admitted) return null;
+  const [profile] = await db.select({ name: users.name }).from(users).where(eq(users.id, user.userId)).limit(1);
+  const name = profile?.name.trim() ?? "";
+  return { userId: user.userId, name: name.length > 0 ? name.slice(0, 120) : "Colleague", role: user.userRole };
+}
+
+/**
+ * The periodic access re-check: every connection in every live room is
+ * checked against the user's CURRENT role and venue and the layout's current
+ * owner, venue and deletion state, and revoked if no longer admitted. Two
+ * queries per room. A database error rejects (the caller logs and retries
+ * next beat) rather than revoking everyone on a blip.
+ */
+export async function revalidateLayoutLiveRooms(db: Database, hub: LayoutLiveHub): Promise<number> {
+  let revoked = 0;
+  for (const [configId, connections] of hub.rooms()) {
+    const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId })
+      .from(configurations)
+      .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+      .limit(1);
+    const userIds = [...new Set(connections.map((connection) => connection.user.userId))];
+    const rows = userIds.length === 0 ? [] : await db.select({
+      id: users.id, role: users.role, venueId: users.venueId, platformRole: users.platformRole,
+    }).from(users).where(inArray(users.id, userIds));
+    const current = new Map(rows.map((row) => [row.id, row]));
+    for (const connection of connections) {
+      const user = current.get(connection.user.userId);
+      const admitted = config !== undefined && user !== undefined && canJoinLayoutLive(
+        { userId: user.id, role: user.role, venueId: user.venueId, platformRole: user.platformRole },
+        { ownerUserId: config.userId, venueId: config.venueId },
+      );
+      if (!admitted) {
+        hub.revoke(connection);
+        revoked += 1;
+      }
+    }
+  }
+  return revoked;
+}
+
 export async function registerAutoSave(server: FastifyInstance, db: Database): Promise<void> {
+  // Live co-editing v1: presence and live ops ride this socket after auth.
+  const hub = new LayoutLiveHub();
+  const unsubscribeLayoutChanged = subscribe("layout.changed", {
+    name: "layout-live-hub",
+    handle: (payload) => {
+      hub.announceCommit(payload.configId, payload.revision, payload.actorUserId);
+    },
+  });
+  let revalidating = false;
+  const heartbeat = setInterval(() => {
+    hub.pingAll();
+    hub.sweepStale();
+    // Re-check every member against the database: a role change, a move to
+    // another venue or a deleted layout ends live access within one beat.
+    if (revalidating) return;
+    revalidating = true;
+    void revalidateLayoutLiveRooms(db, hub)
+      .catch((err: unknown) => { server.log.warn({ err }, "layout-live access re-check failed; retried next beat"); })
+      .finally(() => { revalidating = false; });
+  }, LIVE_HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref();
+  server.addHook("onClose", () => {
+    clearInterval(heartbeat);
+    unsubscribeLayoutChanged();
+  });
+
   server.get("/ws/configurations/:configId", { websocket: true }, async (socket, request) => {
     const parsedParams = z.object({ configId: z.string().uuid() }).safeParse(request.params);
     if (!parsedParams.success) {
@@ -420,6 +513,8 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
     let flushInFlight: Promise<void> | null = null;
     let authenticatedUser: WsUser | null = null;
     let authenticationInFlight = false;
+    let liveConnection: LayoutLiveConnection | null = null;
+    let closed = false;
 
     function send(payload: Record<string, unknown>): void {
       if (socket.readyState === 1) socket.send(JSON.stringify(payload));
@@ -436,6 +531,15 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
 
       try {
         const result = await buffer.flush((snapshot) => persistAutoSaveSnapshot(db, configId, user, snapshot));
+        if (result?.status === "saved") {
+          emit(request.log, "layout.changed", {
+            configId,
+            revision: result.revision,
+            actorUserId: user.userId,
+            source: "websocket_autosave",
+            at: new Date().toISOString(),
+          });
+        }
         if (shouldScheduleBufferedFlush(result, buffer.pendingCount)) scheduleFlush();
         if (!notify || result === null) return;
         if (result.status === "saved") {
@@ -507,12 +611,37 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
           }
           authenticatedUser = resolved;
           send({ type: "authenticated" });
+          // Live co-editing: join the layout's room when this user may. A
+          // refusal is silent — the auto-save protocol is unchanged for them.
+          void resolveLayoutLiveUser(db, configId, resolved).then((liveUser) => {
+            if (liveUser === null || closed || socket.readyState !== 1) return;
+            liveConnection = hub.join(configId, socket, liveUser);
+          }).catch((err: unknown) => {
+            request.log.warn({ err, configId }, "layout-live join failed");
+          });
         }).catch((err: unknown) => {
           authenticationInFlight = false;
           request.log.warn({ err }, "WebSocket authentication failed");
           send({ type: "error", code: "UNAUTHORIZED", message: "Invalid token" });
           socket.close();
         });
+        return;
+      }
+
+      if (liveConnection !== null) hub.touch(liveConnection);
+      const frameType = typeof data === "object" && data !== null ? (data as { readonly type?: unknown }).type : undefined;
+      if (isLiveClientFrameType(frameType)) {
+        // Ephemeral frames never reach the write buffer. Without a live room
+        // (not admitted, or still joining) they are dropped silently.
+        if (liveConnection !== null) {
+          const byteLength = typeof raw === "string" ? Buffer.byteLength(raw) : raw.length;
+          try {
+            hub.handleClientFrame(liveConnection, data, byteLength);
+          } catch (err) {
+            // Never let one frame take the socket (or the process) down.
+            request.log.warn({ err, configId }, "layout-live frame dropped");
+          }
+        }
         return;
       }
 
@@ -561,6 +690,11 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
     });
 
     socket.on("close", () => {
+      closed = true;
+      if (liveConnection !== null) {
+        hub.leave(liveConnection);
+        liveConnection = null;
+      }
       if (flushTimer !== null) clearTimeout(flushTimer);
       if (authenticatedUser !== null && buffer.pendingCount > 0) void flush(false);
     });

@@ -25,6 +25,7 @@ import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
+import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
 import { rotaRoutes } from "./routes/rota.js";
@@ -40,6 +41,7 @@ import { resolveSheetPaperCheck } from "./services/sheet-paper-check.js";
 import { publicMcpRoutes } from "./routes/public-mcp.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
+import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
@@ -91,6 +93,7 @@ import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
+import { apiLoggerOptions } from "./observability/health-redaction.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
 import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
@@ -145,11 +148,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // edge overwrites the header, so the forgery buys nothing.
   // ---------------------------------------------------------------------------
   const server = Fastify({
-    logger: isDev
-      ? { level: "info", transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } } }
-      : isTest
-        ? false
-        : { level: "info" },
+    // Every logging mode scrubs guests' allergy notes from the finished line
+    // (observability/health-redaction.ts).
+    logger: apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production"),
     bodyLimit: 2_000_000,
     connectionTimeout: 30_000,
     requestTimeout: 60_000,
@@ -455,6 +456,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
   await server.register(turnaroundRuleRoutes, { db, prefix: "/venues/:venueId/turnaround-rules" });
+  // Which rooms' dates the public may read (Blake, 17 October 2026).
+  await server.register(forwardBookRoutes, { db, prefix: "/venues/:venueId/forward-book" });
   await server.register(proposalTemplateRoutes, { db, prefix: "/venues/:venueId/proposal-templates" });
   await server.register(rotaRoutes, { db, prefix: "/venues/:venueId/rota" });
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
@@ -479,6 +482,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(clientRoutes, { db, prefix: "/clients" });
+  // A client's remembered allergy notes, for their own account only.
+  await server.register(dietaryMemoryRoutes, { db, prefix: "/account/dietary-notes" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
@@ -493,7 +498,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
-  await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });
+  await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
   await server.register(publicReconstructionReleaseRoutes, {
     service: reconstructionFoundryService,
@@ -559,7 +564,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // WebSocketServer.close() dozens of times. Scoping retains the plugin-owned
   // upgrade-listener cleanup and gives the websocket server one close hook.
   await server.register(async (websocketScope) => {
-    await websocketScope.register(websocket);
+    // 1 MiB per message: a 500-object autosave batch is ~150 KB and a live-op
+    // frame is capped at 128 KB; ws's own default is 100 MiB.
+    await websocketScope.register(websocket, { options: { maxPayload: 1024 * 1024 } });
     await registerAutoSave(websocketScope, db);
     await registerDiaryLive(websocketScope, db);
   });

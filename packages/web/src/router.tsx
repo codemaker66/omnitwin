@@ -76,6 +76,9 @@ const EditorPage = lazyWithPreload(() =>
 const ClientEventPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ClientEventPage.js").then((m) => ({ default: m.ClientEventPage }))),
 );
+const RememberedNotesPage = lazyWithPreload(() =>
+  cockpitImport(() => import("./pages/RememberedNotesPage.js").then((m) => ({ default: m.RememberedNotesPage }))),
+);
 const ClientHomePage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ClientHomePage.js").then((m) => ({ default: m.ClientHomePage }))),
 );
@@ -111,6 +114,9 @@ const AccessibilityPage = lazy(() =>
 );
 const PricingPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage }))),
+);
+const PricingRoute = lazy(() =>
+  import("./pages/SubscriptionsNotPublicPage.js").then((m) => ({ default: m.PricingRoute })),
 );
 const TradesHallVisualPage = lazy(() =>
   cockpitImport(() => import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage }))),
@@ -573,15 +579,29 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    // A client's remembered allergy notes ("ask once, then remember"): see
+    // and remove them at any time. The API answers for the signed-in account
+    // only, so any signed-in role may open it; staff simply have none.
+    path: "/account/allergy-notes",
+    element: withClerk(
+      <ProtectedRoute>
+        <RememberedNotesPage />
+      </ProtectedRoute>,
+      RememberedNotesPage,
+    ),
+  },
+  {
     // The Venviewer subscription page. Admin-only until billing exists
     // (Blake, 26 September 2026): it sells a tier nothing can yet bill, so it
-    // is off the public site, the sitemap and the crawl (robots.txt).
+    // is off the sitemap and the crawl (robots.txt). Everyone else reads a
+    // plain page saying subscriptions are not yet public, with a person to
+    // write to, instead of a sign-in wall (fix-first item 19). Like the
+    // planner, a visitor with no sign-in cookie never loads Clerk here.
     path: "/pricing",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={["admin"]}>
-        <PricingPage />
-      </ProtectedRoute>,
-      PricingPage,
+    element: withSuspense(
+      <PlannerAuthBoundary>
+        <PricingRoute admin={<PricingPage />} />
+      </PlannerAuthBoundary>,
     ),
   },
   {

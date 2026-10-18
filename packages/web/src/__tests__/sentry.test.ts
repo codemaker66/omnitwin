@@ -79,6 +79,24 @@ describe("browser Sentry event scrubber", () => {
   });
 });
 
+describe("browser Sentry event scrubber and guests' allergy notes", () => {
+  it("scrubs the note from the error message, breadcrumbs and contexts, and keeps the rest", () => {
+    const note = "Table 4: severe sesame allergy";
+    const metadata = JSON.stringify({ instructions: { dietary: { vegan: 2, otherAllergies: note } } });
+    const event: Event = {
+      message: `Save failed: ${metadata}`,
+      exception: { values: [{ type: "ApiError", value: `Validation failed for ${metadata}` }] },
+      breadcrumbs: [{ category: "console", message: `saving ${metadata}`, data: { arguments: [{ otherAllergies: note }] } }],
+      contexts: { planner: { dietary: { vegan: 2, otherAllergies: note } } },
+    };
+
+    const scrubbed = scrubSentryEvent(event);
+    expect(JSON.stringify(scrubbed)).not.toContain("sesame");
+    expect(scrubbed.exception?.values?.[0]?.type).toBe("ApiError");
+    expect(scrubbed.contexts?.["planner"]).toEqual({ dietary: { vegan: 2, otherAllergies: "[redacted]" } });
+  });
+});
+
 describe("browser Sentry loading", () => {
   const DSN = "https://public@example.ingest.sentry.io/1";
 

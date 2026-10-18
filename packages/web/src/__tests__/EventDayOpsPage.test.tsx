@@ -91,6 +91,14 @@ vi.mock("../components/mission-control/EventMissionControl.js", () => ({
   },
 }));
 
+// Supplier passes read their own board beside this one; their own spec covers
+// them (components/supplier-passes/__tests__). The stub records the event.
+vi.mock("../components/supplier-passes/SupplierPassesSection.js", () => ({
+  SupplierPassesSection: (props: { readonly eventId: string }) => (
+    <section data-testid="supplier-passes" data-event-id={props.eventId}>Supplier passes</section>
+  ),
+}));
+
 const NOW = "2026-06-12T09:00:00.000Z";
 const HASH = "b".repeat(64);
 const EVENT_ID = "00000000-0000-4000-8000-000000003001";
@@ -420,6 +428,8 @@ describe("EventDayOpsPage", () => {
     expect(screen.getByText("Task checklist")).toBeTruthy();
     expect(screen.getByText("Issue report")).toBeTruthy();
     expect(screen.getByText("Supplier arrivals")).toBeTruthy();
+    // The event's supplier passes sit on the same board, for the same event.
+    expect(screen.getByTestId("supplier-passes").getAttribute("data-event-id")).toBe(EVENT_ID);
     expect(screen.getByRole("link", { name: "Open current setup sheet" }).getAttribute("href"))
       .toBe("/hallkeeper/00000000-0000-4000-8000-000000003007?eventId=00000000-0000-4000-8000-000000003001");
     expect(screen.getByRole("link", { name: "Open version 1 handoff" }).getAttribute("href"))

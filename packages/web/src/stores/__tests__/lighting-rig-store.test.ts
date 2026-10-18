@@ -20,12 +20,11 @@ const MEGAPOINTE: ImportedFixtureSpec = {
 afterEach(() => { useLightingRigStore.getState().reset(); });
 
 describe("lighting-rig-store", () => {
-  it("starts from the illustrative starter rig", () => {
-    const { counts } = useLightingRigStore.getState();
-    expect(counts.par).toBe(DEFAULT_RIG_COUNTS.par);
-    expect(counts.wash).toBe(DEFAULT_RIG_COUNTS.wash);
-    expect(counts.profile).toBe(DEFAULT_RIG_COUNTS.profile);
-    expect(counts.spot).toBe(0);
+  it("starts empty: no fixture is assumed (redteam fix-first 2)", () => {
+    const { counts, imported } = useLightingRigStore.getState();
+    expect(Object.values(DEFAULT_RIG_COUNTS).every((count) => count === 0)).toBe(true);
+    expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(0);
+    expect(imported).toHaveLength(0);
   });
 
   it("sets counts, flooring decimals and clamping negatives to zero", () => {
@@ -45,10 +44,11 @@ describe("lighting-rig-store", () => {
     expect(counts.profile).toBe(0);
   });
 
-  it("reset restores the starter rig", () => {
-    useLightingRigStore.getState().clear();
+  it("reset returns to the empty rig a plan opens with", () => {
+    useLightingRigStore.getState().setCount("par", 12);
     useLightingRigStore.getState().reset();
-    expect(useLightingRigStore.getState().counts.par).toBe(DEFAULT_RIG_COUNTS.par);
+    expect(useLightingRigStore.getState().counts).toEqual(DEFAULT_RIG_COUNTS);
+    expect(useLightingRigStore.getState().counts.par).toBe(0);
   });
 });
 

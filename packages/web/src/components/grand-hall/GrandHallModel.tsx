@@ -25,7 +25,7 @@ import { paintHallTextures, disposeHallTextures, type HallTextures } from "./hal
 import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useHallFinish, type HallFinish } from "./hall-finish.js";
-import { createHallMaterials, disposeHallMaterials, HallSectionUniforms } from "./hall-materials.js";
+import { createHallCasterMaterials, createHallMaterials, disposeHallMaterials, HallSectionUniforms, type HallCasterMaterials } from "./hall-materials.js";
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
 import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
@@ -34,6 +34,8 @@ import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { HallEnvironmentCapture } from "./hall-capture.js";
 import { createHallSection, type HallSection } from "./hall-section.js";
 import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
+import { hallSkyState } from "./hall-sky-runtime.js";
+import { HALL_SUN_CASTER_LAYER, hallSun, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
 
 /** The dark the drawn hall stands in (the planner's background around it). */
 export const HALL_VOID = "#120e0b";
@@ -64,6 +66,11 @@ export interface GrandHallModelProps {
   readonly overviewChandeliers?: boolean;
   /** Seconds a mood takes to blend into the next. */
   readonly moodSeconds?: number;
+  /**
+   * Lit by the real sun and moon (HallSky, HallSunLight): every surface takes
+   * their direct, shadowed light, and the room casts its shadows.
+   */
+  readonly sunlit?: boolean;
 }
 
 /** Heights the cutaway uses. */
@@ -114,6 +121,8 @@ interface HallResources {
   readonly bulbScale: { value: number };
   /** The cut walls' bodies, caps and the plinth. */
   readonly cutaway: HallSection;
+  /** Stand-ins the sun's shadow camera draws for the room, where the sun lights it. */
+  readonly casters: HallCasterMaterials | null;
 }
 
 /** The chandeliers' own light on their metal where no reflection map gives it anything to mirror. */
@@ -128,13 +137,40 @@ const SELF_LIT_WITHOUT_REFLECTIONS = 2.5;
  */
 const CAPTURED_BULBS = 0.5;
 
-function createResources(quality: number, initialMood: HallMoodSpec): HallResources {
+/**
+ * One number that moves with a mood's light (the channels' strengths and the
+ * exposure), so reflections are recaptured only when the light has changed.
+ */
+function moodSignature(mood: HallMoodSpec): number {
+  return mood.ambientIntensity + mood.chandelierIntensity * 1.3 + mood.daylightIntensity * 1.7
+    + mood.uplightIntensity * 1.1 + mood.skyIntensity * 0.7 + mood.exposure * 2.3 + mood.glow;
+}
+
+/**
+ * Whether light of `signature` differs enough to show from `captured`, the
+ * light the reflections were last captured in. With none recorded (no
+ * capture yet, or the last one in a mood's light rather than the sky's) it
+ * always does.
+ */
+export function reflectionsOutdated(signature: number, captured: number | null): boolean {
+  return captured === null || Math.abs(signature - captured) > 0.01;
+}
+
+/**
+ * Frames a capture waits for the main pass to draw a pending sun map, so it
+ * reflects the map of the whole scene at this moment rather than the last
+ * one; past this it goes ahead with whatever map there is.
+ */
+const CAPTURE_SUN_MAP_WAITS = 2;
+
+function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null): HallResources {
   const textures = paintHallTextures(quality);
   const photos = new HallPhotos();
   const mood = new HallMoodUniforms();
   mood.apply(initialMood, initialMood, 1);
   const section = new HallSectionUniforms();
-  const materials = createHallMaterials(textures, photos, mood, section);
+  const materials = createHallMaterials(textures, photos, mood, section, sun);
+  const casters = sun === null ? null : createHallCasterMaterials(photos);
 
   // As scanned: pale silver-gilt fittings on dark bronze stems, and white
   // bulbs, which warm with the mood's chandelier light.
@@ -175,7 +211,7 @@ function createResources(quality: number, initialMood: HallMoodSpec): HallResour
   const bulb = new MeshBasicNodeMaterial();
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
   const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
-  return { textures, photos, mood, section, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection() };
+  return { textures, photos, mood, section, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(), casters };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -184,9 +220,11 @@ function disposeResources(resources: HallResources): void {
   disposeHallMaterials(resources.materials);
   for (const material of resources.chandelierMaterials.values()) material.dispose();
   resources.cutaway.dispose();
+  resources.casters?.glazed.dispose();
+  resources.casters?.solid.dispose();
 }
 
-export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6 }: GrandHallModelProps): ReactElement {
+export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false }: GrandHallModelProps): ReactElement {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
@@ -196,10 +234,16 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const chandeliers = useMemo(() => hallChandeliers(), []);
   const deviceFinish = useHallFinish();
   const { photoQuality: quality, liveLight } = finishOverride ?? deviceFinish;
-  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood]), [quality]);
+  const sun = useMemo(() => (sunlit ? hallSun(hallSunMapSize(quality, liveLight)) : null), [liveLight, quality, sunlit]);
+  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun), [quality, sun]);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
+  /** The published sky last applied, and the sky's light the reflections were last captured in. */
+  const skyVersion = useRef(-1);
+  const capturedSignature = useRef<number | null>(null);
+  /** Frames the waiting capture has given the sun's pending map. */
+  const captureWaits = useRef(0);
   const cutState = useRef<number[]>([HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none]);
   const cutsEasing = useRef(false);
   const skinRefs = useRef<(import("three").Mesh | null)[]>([]);
@@ -252,13 +296,16 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     resources.photos.load(quality, (_kind, loaded) => {
       if (!live) return;
       useHallViewStore.getState().settleSurface(loaded);
-      if (loaded) { captureNeeded.current = true; invalidate(); }
+      // A photograph arriving changes what the light falls on, and the walls'
+      // glazing (its alpha) decides where the sun comes through.
+      if (loaded) { captureNeeded.current = true; sun?.redraw(); invalidate(); }
     });
     loadWallRelief().then((loaded) => {
       if (!live) return;
       setRelief(loaded);
       useHallViewStore.getState().settleSurface(true);
       captureNeeded.current = true;
+      sun?.redraw();
       invalidate();
     }, () => {
       // Without the relief the walls stay flat photographs.
@@ -268,7 +315,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       live = false;
       useHallViewStore.getState().endSurfaces();
     };
-  }, [invalidate, quality, resources]);
+  }, [invalidate, quality, resources, sun]);
 
   // The mood's exposure and grade apply from the first frame and are restored on exit.
   useEffect(() => {
@@ -294,7 +341,22 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
 
   useFrame((state, delta) => {
     let moving = false;
-    const active = blend.current;
+    // The real sky, where it drives the hall, replaces the moods: its light is
+    // applied as published; reflections are recaptured once the sun is at rest
+    // and only if the light has changed enough to show.
+    const sky = hallSkyState.sky;
+    if (sky !== null && skyVersion.current !== hallSkyState.version) {
+      skyVersion.current = hallSkyState.version;
+      blend.current = null;
+      resources.mood.apply(sky.mood, sky.mood, 1);
+      state.gl.toneMappingExposure = resources.mood.exposure;
+      setSceneGrade(resources.mood.whiteBalance, resources.mood.saturation);
+      setCandleLight(resources.mood.candles);
+      if (!hallSkyState.moving && reflectionsOutdated(moodSignature(sky.mood), capturedSignature.current)) {
+        captureNeeded.current = true;
+      }
+    }
+    const active = sky === null ? blend.current : null;
     if (active !== null) {
       active.t = Math.min(1, active.t + hallFrameStep(delta, !active.started) / Math.max(0.05, moodSeconds));
       active.started = true;
@@ -307,23 +369,33 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     }
     // Recapture the room's environment once nothing is blending: whole, with
     // its chandeliers lit and no cutaway, then restore this frame's cuts below.
+    // The capture renders the room on a private stage, which must never draw
+    // the sun's shared map (hall-sun.ts): a map waiting to be redrawn is left
+    // to this frame's main pass, and the capture follows on the next.
     const roomGroup = room.current;
-    if (environment !== null && captureNeeded.current && blend.current === null && roomGroup !== null) {
-      captureNeeded.current = false;
-      for (let index = 0; index < cutState.current.length; index++) resources.section.set(index, HALL_CUTS.none);
-      const fittings = chandelierGroup.current;
-      const shownBefore = fittings?.visible ?? false;
-      const scaleBefore = fittings?.scale.x ?? 1;
-      if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
-      resources.bulbScale.value = CAPTURED_BULBS;
-      try {
-        state.scene.environment = environment.capture(roomGroup);
-        state.scene.environmentIntensity = resources.mood.reflections;
-      } catch {
-        // Without its own reflections the room keeps the previous environment.
-      } finally {
-        resources.bulbScale.value = 1;
-        if (fittings !== null) { fittings.visible = shownBefore; fittings.scale.setScalar(scaleBefore); }
+    if (environment !== null && captureNeeded.current && blend.current === null && !hallSkyState.moving && roomGroup !== null) {
+      if (sun !== null && sun.light.shadow.needsUpdate && captureWaits.current < CAPTURE_SUN_MAP_WAITS) {
+        captureWaits.current += 1;
+      } else {
+        captureNeeded.current = false;
+        captureWaits.current = 0;
+        for (let index = 0; index < cutState.current.length; index++) resources.section.set(index, HALL_CUTS.none);
+        const fittings = chandelierGroup.current;
+        const shownBefore = fittings?.visible ?? false;
+        const scaleBefore = fittings?.scale.x ?? 1;
+        if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
+        resources.bulbScale.value = CAPTURED_BULBS;
+        try {
+          state.scene.environment = withoutSunMapDraw(sun, () => environment.capture(roomGroup));
+          state.scene.environmentIntensity = resources.mood.reflections;
+          // The light it was captured in, so a later sky recaptures only once it differs.
+          capturedSignature.current = sky === null ? null : moodSignature(sky.mood);
+        } catch {
+          // Without its own reflections the room keeps the previous environment.
+        } finally {
+          resources.bulbScale.value = 1;
+          if (fittings !== null) { fittings.visible = shownBefore; fittings.scale.setScalar(scaleBefore); }
+        }
       }
       moving = true;
     }
@@ -381,13 +453,28 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       {[...geometry.geometries].map(([key, part]) => {
         const material = resources.materials.get(key);
         if (material === undefined) return null;
-        return <mesh key={key} name={`grand-hall-${key}`} geometry={part} material={material} frustumCulled={false} />;
+        return <mesh key={key} name={`grand-hall-${key}`} geometry={part} material={material} frustumCulled={false} receiveShadow={sun !== null} />;
       })}
       {[...walls.geometries].map(([key, part]) => {
         const material = resources.materials.get(key);
         if (material === undefined) return null;
-        return <mesh key={`walls-${key}`} name={`grand-hall-walls-${key}`} geometry={part} material={material} frustumCulled={false} />;
+        return <mesh key={`walls-${key}`} name={`grand-hall-walls-${key}`} geometry={part} material={material} frustumCulled={false} receiveShadow={sun !== null} />;
       })}
+      {resources.casters !== null && (
+        <group name="grand-hall-sun-casters">
+          {[...geometry.geometries, ...walls.geometries].filter(([key]) => key !== "floor").map(([key, part], index) => (
+            <mesh
+              key={`caster-${String(index)}-${key}`}
+              geometry={part}
+              material={key === "wallPhoto" || key === "wallPhotoGloss" ? resources.casters?.glazed : resources.casters?.solid}
+              layers={HALL_SUN_CASTER_LAYER}
+              castShadow
+              frustumCulled={false}
+              raycast={() => undefined}
+            />
+          ))}
+        </group>
+      )}
       <group ref={chandelierGroup} name="grand-hall-chandeliers" visible={false}>
         {[...chandeliers.geometries].map(([key, part]) => (
           <mesh key={key} name={`chandelier-${key}`} geometry={part} material={resources.chandelierMaterials.get(key)} />

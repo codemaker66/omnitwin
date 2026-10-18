@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -13,18 +13,25 @@ import {
   SupplierCoordinationShareTokenResultSchema,
   SupplierCoordinationShareTokenSchema,
   SupplierSafePackViewSchema,
+  checkSupplierPassExpiry,
+  defaultSupplierPassExpiry,
+  latestSupplierPassExpiry,
   supplierCoordinationPayloadDigest,
+  SUPPLIER_PASS_MAX_DAYS_AFTER_EVENT,
   type SupplierAcknowledgement,
   type SupplierCoordinationPack,
   type SupplierCoordinationPackBundle,
   type SupplierCoordinationPackItem,
   type SupplierCoordinationShareToken,
+  type SupplierPassDetails,
   type SupplierSafePackView,
   type EventPlanAudienceRole,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
   configurations,
+  events,
+  generalAuditLog,
   handoffPacks,
   supplierAcknowledgements,
   supplierCoordinationPackItems,
@@ -36,18 +43,33 @@ import {
   venues,
 } from "../db/schema.js";
 import { authenticate } from "../middleware/auth.js";
-import { canManageVenue } from "../utils/query.js";
+import { canAdministerVenue, canManageVenue } from "../utils/query.js";
 import { notifyVenueRoles } from "../services/commercial-notifications.js";
+import {
+  NO_EVENT_MOMENTS,
+  SUPPLIER_PASS_AUDIT,
+  SUPPLIER_PASS_AUDIT_TARGET,
+  buildPassDetails,
+  buildSupplierPassBoard,
+  effectivePassExpiry,
+  passContact,
+  readEventMoments,
+  readUserContact,
+  samePassHolder,
+  type EventMoments,
+} from "../services/supplier-passes.js";
 
 /**
  * Who hears a supplier's response: the people running the day, as for an
  * event-day issue (services/event-day-ops.ts). Before this a clarification
- * request was stored on the pack and reached nobody, and no staff screen
- * shows packs, so the notification carries the supplier's own words.
+ * request was stored on the pack and reached nobody. The notification
+ * carries the supplier's own words and opens the event board, whose
+ * Supplier passes section shows who has opened and read each pass.
  */
 export const SUPPLIER_RESPONSE_AUDIENCE: readonly EventPlanAudienceRole[] = ["staff", "hallkeeper"];
 
 const IdParam = z.object({ id: z.string().uuid() });
+const EventParam = z.object({ eventId: z.string().uuid() });
 const ShareTokenParam = z.object({
   token: z.string().min(32).max(96).regex(/^[A-Za-z0-9_-]+$/),
 });
@@ -205,6 +227,44 @@ function dateFromOptionalIso(value: string | null | undefined): Date | null {
   return value === undefined || value === null ? null : new Date(value);
 }
 
+/**
+ * Every pass stops working on a date (A Door for Everyone Outside, stage 1):
+ * the one asked for, else seven days after the event. A pass whose event has
+ * no date must be given one. Returns the date, or sends the refusal and
+ * returns null. The words say what to do next.
+ */
+function passExpiryOrRefuse(
+  reply: FastifyReply,
+  requested: Date | null,
+  eventLastMoment: Date | null,
+  now: Date,
+): Date | null {
+  const expiresAt = requested ?? defaultSupplierPassExpiry(eventLastMoment);
+  const check = checkSupplierPassExpiry(expiresAt, eventLastMoment, now);
+  if (check === "ok" && expiresAt !== null) return expiresAt;
+  const latestExpiresAt = latestSupplierPassExpiry(eventLastMoment, now).toISOString();
+  if (check === "missing") {
+    void reply.status(422).send({
+      error: "Choose the day this pass stops working: the event has no date in the Diary yet.",
+      code: "PASS_EXPIRY_REQUIRED",
+      details: { latestExpiresAt },
+    });
+  } else if (check === "past") {
+    void reply.status(422).send({
+      error: "That day has already passed. Choose a later day for the pass to stop working.",
+      code: "PASS_EXPIRY_PAST",
+      details: { latestExpiresAt },
+    });
+  } else {
+    void reply.status(422).send({
+      error: `A pass can stay open until ${String(SUPPLIER_PASS_MAX_DAYS_AFTER_EVENT)} days after the event at most.`,
+      code: "PASS_EXPIRY_TOO_LATE",
+      details: { latestExpiresAt },
+    });
+  }
+  return null;
+}
+
 function isExpired(value: Date | null, now: Date): boolean {
   return value !== null && value.getTime() <= now.getTime();
 }
@@ -268,7 +328,10 @@ export async function supplierCoordinationRoutes(
     if (source === null) {
       return reply.status(404).send({ error: "Handoff pack not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenue(request.user, source.venueId)) {
+    // Sending a link in the venue's name to someone outside it is the events
+    // team's call: staff, managers and admins. Hallkeepers read passes on the
+    // event board; they do not issue them.
+    if (!canAdministerVenue(request.user, source.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (source.status !== "compiled" && source.status !== "exported") {
@@ -327,7 +390,9 @@ export async function supplierCoordinationRoutes(
       itemDetails: selectedInstructions.map((instruction) => instruction.detail),
     });
     const now = new Date();
-    const expiresAt = dateFromOptionalIso(parsed.data.expiresAt);
+    const moments = source.eventId === null ? NO_EVENT_MOMENTS : await readEventMoments(db, source.eventId, source.venueId);
+    const expiresAt = passExpiryOrRefuse(reply, dateFromOptionalIso(parsed.data.expiresAt), moments.lastAt, now);
+    if (expiresAt === null) return reply;
 
     const insertedPack = await db.transaction(async (tx) => {
       const [pack] = await tx.insert(supplierCoordinationPacks).values({
@@ -402,12 +467,50 @@ export async function supplierCoordinationRoutes(
     if (pack === undefined) {
       return reply.status(404).send({ error: "Supplier pack not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenue(request.user, pack.venueId)) {
+    if (!canAdministerVenue(request.user, pack.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (pack.status === "revoked" || pack.status === "expired" || pack.revokedAt !== null) {
-      return reply.status(409).send({ error: "Supplier pack is not shareable", code: "SUPPLIER_PACK_NOT_SHAREABLE" });
+      return reply.status(409).send({
+        error: "This pass was withdrawn. Make a fresh pass to send the supplier a new link.",
+        code: "SUPPLIER_PACK_NOT_SHAREABLE",
+      });
     }
+
+    // A fresh pass replaces an earlier one only for the same venue, the same
+    // event and the same holder; anything else is refused in the same words,
+    // so the answer never says whether another venue's pass exists.
+    const supersedesPackId = parsed.data.supersedesPackId ?? null;
+    let superseded: typeof supplierCoordinationPacks.$inferSelect | null = null;
+    if (supersedesPackId !== null) {
+      const [earlier] = await db.select().from(supplierCoordinationPacks)
+        .where(eq(supplierCoordinationPacks.id, supersedesPackId))
+        .limit(1);
+      if (
+        earlier === undefined ||
+        earlier.id === pack.id ||
+        earlier.venueId !== pack.venueId ||
+        earlier.eventId === null ||
+        earlier.eventId !== pack.eventId ||
+        !samePassHolder(earlier, pack)
+      ) {
+        return reply.status(422).send({
+          error: "A fresh pass can only replace an earlier pass for the same supplier on the same event.",
+          code: "SUPERSEDED_PASS_MISMATCH",
+        });
+      }
+      superseded = earlier;
+    }
+
+    const now = new Date();
+    const moments = pack.eventId === null ? NO_EVENT_MOMENTS : await readEventMoments(db, pack.eventId, pack.venueId);
+    const expiresAt = passExpiryOrRefuse(
+      reply,
+      dateFromOptionalIso(parsed.data.expiresAt) ?? pack.expiresAt,
+      moments.lastAt,
+      now,
+    );
+    if (expiresAt === null) return reply;
 
     let token = generateShareToken();
     let tokenHash = hashShareToken(token);
@@ -426,9 +529,24 @@ export async function supplierCoordinationRoutes(
     }
     if (!hasUniqueToken) throw new Error("unable to generate unique supplier share token");
 
-    const now = new Date();
-    const expiresAt = dateFromOptionalIso(parsed.data.expiresAt) ?? pack.expiresAt;
     const result = await db.transaction(async (tx) => {
+      // The pass is read again under a row lock: a withdrawal that landed
+      // since the check above wins, and no new link is made for it.
+      const [locked] = await tx.select({ status: supplierCoordinationPacks.status, revokedAt: supplierCoordinationPacks.revokedAt })
+        .from(supplierCoordinationPacks)
+        .where(eq(supplierCoordinationPacks.id, pack.id))
+        .for("update");
+      if (locked === undefined || locked.revokedAt !== null || locked.status === "revoked" || locked.status === "expired") {
+        return null;
+      }
+
+      // One live link per pass: a new link closes the ones before it, so a
+      // link that went astray stops working the moment its replacement exists.
+      const closedLinks = await tx.update(supplierCoordinationShareTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(supplierCoordinationShareTokens.packId, pack.id), isNull(supplierCoordinationShareTokens.revokedAt)))
+        .returning({ id: supplierCoordinationShareTokens.id });
+
       const [shareToken] = await tx.insert(supplierCoordinationShareTokens).values({
         packId: pack.id,
         tokenHash,
@@ -440,7 +558,7 @@ export async function supplierCoordinationRoutes(
 
       const [updatedPack] = await tx.update(supplierCoordinationPacks)
         .set({
-          status: pack.status === "draft" ? "issued" : pack.status,
+          status: locked.status === "draft" ? "issued" : locked.status,
           issuedAt: pack.issuedAt ?? now,
           expiresAt,
           updatedAt: now,
@@ -448,8 +566,56 @@ export async function supplierCoordinationRoutes(
         .where(eq(supplierCoordinationPacks.id, pack.id))
         .returning();
       if (updatedPack === undefined) throw new Error("supplier pack update returned no row");
+
+      const audit: (typeof generalAuditLog.$inferInsert)[] = [{
+        actorUserId: request.user.id,
+        action: SUPPLIER_PASS_AUDIT.issued,
+        targetType: SUPPLIER_PASS_AUDIT_TARGET,
+        targetId: pack.id,
+        summary: "Supplier pass link made.",
+        metadata: {
+          venueId: pack.venueId,
+          eventId: pack.eventId,
+          tokenPrefix: shareToken.tokenPrefix,
+          expiresAt: expiresAt.toISOString(),
+          closedLinks: closedLinks.length,
+        },
+      }];
+
+      if (superseded !== null) {
+        // The earlier pass is withdrawn, never deleted: what its holder was
+        // told, and what they acknowledged, stays on record.
+        await tx.update(supplierCoordinationShareTokens)
+          .set({ revokedAt: now })
+          .where(and(eq(supplierCoordinationShareTokens.packId, superseded.id), isNull(supplierCoordinationShareTokens.revokedAt)));
+        await tx.update(supplierCoordinationPacks)
+          .set({ status: "revoked", revokedAt: superseded.revokedAt ?? now, updatedAt: now })
+          .where(and(eq(supplierCoordinationPacks.id, superseded.id), eq(supplierCoordinationPacks.venueId, pack.venueId)));
+        audit.push({
+          actorUserId: request.user.id,
+          action: SUPPLIER_PASS_AUDIT.replaces,
+          targetType: SUPPLIER_PASS_AUDIT_TARGET,
+          targetId: pack.id,
+          summary: "Fresh supplier pass replaces an earlier one.",
+          metadata: { venueId: pack.venueId, eventId: pack.eventId, previousPackId: superseded.id },
+        }, {
+          actorUserId: request.user.id,
+          action: SUPPLIER_PASS_AUDIT.withdrawn,
+          targetType: SUPPLIER_PASS_AUDIT_TARGET,
+          targetId: superseded.id,
+          summary: "Supplier pass withdrawn: replaced by a fresh pass.",
+          metadata: { venueId: pack.venueId, eventId: pack.eventId, reason: "replaced", replacedByPackId: pack.id },
+        });
+      }
+      await tx.insert(generalAuditLog).values(audit);
       return { shareToken, pack: updatedPack };
     });
+    if (result === null) {
+      return reply.status(409).send({
+        error: "This pass was withdrawn. Make a fresh pass to send the supplier a new link.",
+        code: "SUPPLIER_PACK_NOT_SHAREABLE",
+      });
+    }
 
     const payload = SupplierCoordinationShareTokenResultSchema.parse({
       token,
@@ -458,6 +624,74 @@ export async function supplierCoordinationRoutes(
       pack: serializePack(result.pack),
     });
     return reply.status(201).send({ data: payload });
+  });
+
+  // One tap: the pass and every link to it stop working at once. The pass is
+  // kept, with what its holder acknowledged, and says when it was withdrawn.
+  server.post("/packs/:id/revoke", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid supplier pack ID", code: "VALIDATION_ERROR" });
+    }
+    const [pack] = await db.select().from(supplierCoordinationPacks)
+      .where(eq(supplierCoordinationPacks.id, params.data.id))
+      .limit(1);
+    if (pack === undefined) {
+      return reply.status(404).send({ error: "Supplier pack not found", code: "NOT_FOUND" });
+    }
+    if (!canAdministerVenue(request.user, pack.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    const now = new Date();
+    const updated = await db.transaction(async (tx) => {
+      await tx.update(supplierCoordinationShareTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(supplierCoordinationShareTokens.packId, pack.id), isNull(supplierCoordinationShareTokens.revokedAt)));
+      if (pack.revokedAt !== null && pack.status === "revoked") return pack;
+      const [row] = await tx.update(supplierCoordinationPacks)
+        .set({ status: "revoked", revokedAt: pack.revokedAt ?? now, updatedAt: now })
+        .where(eq(supplierCoordinationPacks.id, pack.id))
+        .returning();
+      if (row === undefined) throw new Error("supplier pack revoke returned no row");
+      await tx.insert(generalAuditLog).values({
+        actorUserId: request.user.id,
+        action: SUPPLIER_PASS_AUDIT.withdrawn,
+        targetType: SUPPLIER_PASS_AUDIT_TARGET,
+        targetId: pack.id,
+        summary: "Supplier pass withdrawn.",
+        metadata: { venueId: pack.venueId, eventId: pack.eventId, reason: "withdrawn" },
+      });
+      return row;
+    });
+
+    return { data: serializePack(updated) };
+  });
+
+  // The event's passes, for the event board: what new passes are made from,
+  // who can receive one, and who has opened and read the passes already sent.
+  server.get("/events/:eventId/passes", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = EventParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid event ID", code: "VALIDATION_ERROR" });
+    }
+    const [event] = await db.select({ id: events.id, venueId: events.venueId })
+      .from(events)
+      .where(and(eq(events.id, params.data.eventId), isNull(events.deletedAt)))
+      .limit(1);
+    if (event === undefined) {
+      return reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
+    }
+    if (!canManageVenue(request.user, event.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    const canIssue = canAdministerVenue(request.user, event.venueId);
+    const issuer = canIssue
+      ? (await readUserContact(db, request.user.id)) ?? passContact(request.user.name, null)
+      : null;
+    const board = await buildSupplierPassBoard(db, { event, canIssue, issuer, now: new Date() });
+    return { data: board };
   });
 }
 
@@ -478,6 +712,9 @@ async function resolveSupplierShareToken(
   readonly diffAddedCount: number | null;
   readonly diffRemovedCount: number | null;
   readonly diffChangedCount: number | null;
+  readonly moments: EventMoments;
+  /** The stop date that applies, stored or (for an older pass) assumed. */
+  readonly packExpiresAt: Date;
 } | null> {
   const tokenHash = hashShareToken(token);
   const [shareToken] = await db.select().from(supplierCoordinationShareTokens)
@@ -514,18 +751,30 @@ async function resolveSupplierShareToken(
     resolved.pack.status === "draft" ||
     resolved.pack.status === "revoked" ||
     resolved.pack.status === "expired" ||
-    resolved.pack.revokedAt !== null ||
-    isExpired(resolved.pack.expiresAt, now)
+    resolved.pack.revokedAt !== null
   ) {
     return null;
   }
 
-  return { shareToken, ...resolved };
+  // Every pass stops working on a date. One made before passes carried a
+  // date is read as stopping seven days after its event; with no stored date
+  // and no event date the link does not open at all.
+  const moments = resolved.pack.eventId === null
+    ? NO_EVENT_MOMENTS
+    : await readEventMoments(db, resolved.pack.eventId, resolved.pack.venueId);
+  const packExpiresAt = effectivePassExpiry(resolved.pack.expiresAt, moments.lastAt).expiresAt;
+  const linkExpiresAt = shareToken.expiresAt ?? packExpiresAt;
+  if (packExpiresAt === null || linkExpiresAt === null || isExpired(packExpiresAt, now) || isExpired(linkExpiresAt, now)) {
+    return null;
+  }
+
+  return { shareToken, ...resolved, moments, packExpiresAt };
 }
 
 async function buildSupplierSafePackView(
   db: Database,
   resolved: NonNullable<Awaited<ReturnType<typeof resolveSupplierShareToken>>>,
+  onDetailsFailed: (error: unknown) => void,
 ): Promise<SupplierSafePackView> {
   const [itemRows, acknowledgementRows] = await Promise.all([
     db.select().from(supplierCoordinationPackItems)
@@ -535,6 +784,22 @@ async function buildSupplierSafePackView(
       .where(eq(supplierAcknowledgements.packId, resolved.pack.id))
       .orderBy(supplierAcknowledgements.createdAt),
   ]);
+
+  // The plain words are read beside the brief, never in front of it: if they
+  // cannot be read the supplier still gets their part of the event.
+  let passDetails: SupplierPassDetails | undefined;
+  try {
+    passDetails = await buildPassDetails(db, {
+      pack: resolved.pack,
+      builtFromCompiledAt: resolved.compiledAt,
+      supplierContactName: resolved.supplierContactName,
+      moments: resolved.moments,
+      items: itemRows,
+    });
+  } catch (error: unknown) {
+    onDetailsFailed(error);
+    passDetails = undefined;
+  }
 
   return SupplierSafePackViewSchema.parse({
     title: resolved.pack.title,
@@ -546,7 +811,7 @@ async function buildSupplierSafePackView(
     status: resolved.pack.status,
     safeStatus: resolved.pack.safeStatus,
     issuedAt: toIsoOrNull(resolved.pack.issuedAt),
-    expiresAt: toIsoOrNull(resolved.pack.expiresAt),
+    expiresAt: toIso(resolved.packExpiresAt),
     source: {
       sourceLabel: resolved.pack.sourceLabel,
       handoffVersion: resolved.handoffVersion,
@@ -574,7 +839,8 @@ async function buildSupplierSafePackView(
       note: ack.note,
       createdAt: toIso(ack.createdAt),
     })),
-    supplierNotice: "Supplier-facing planning handoff from approved venue operations data. Confirm timing and delivery details with the venue team before arrival.",
+    supplierNotice: "Your part of the event, from the venue's approved plan. Check anything unclear with the venue before you arrive.",
+    ...(passDetails === undefined ? {} : { passDetails }),
   });
 }
 
@@ -595,7 +861,9 @@ export async function supplierShareRoutes(
       return reply.status(404).send({ error: "Supplier pack not found", code: "NOT_FOUND" });
     }
 
-    const supplierSafe = await buildSupplierSafePackView(db, resolved);
+    const supplierSafe = await buildSupplierSafePackView(db, resolved, (error) => {
+      request.log.warn({ err: error, packId: resolved.pack.id }, "supplier pass details could not be read");
+    });
     await db.update(supplierCoordinationShareTokens)
       .set({ lastViewedAt: new Date() })
       .where(eq(supplierCoordinationShareTokens.id, resolved.shareToken.id));
@@ -619,6 +887,10 @@ export async function supplierShareRoutes(
     }
 
     const now = new Date();
+    const itemTitles = await db.select({ title: supplierCoordinationPackItems.title })
+      .from(supplierCoordinationPackItems)
+      .where(eq(supplierCoordinationPackItems.packId, resolved.pack.id))
+      .orderBy(supplierCoordinationPackItems.sortOrder);
     const result = await db.transaction(async (tx) => {
       const [acknowledgement] = await tx.insert(supplierAcknowledgements).values({
         packId: resolved.pack.id,
@@ -638,12 +910,42 @@ export async function supplierShareRoutes(
         })
         .where(eq(supplierCoordinationPacks.id, resolved.pack.id));
 
+      // The supplier's proof of what they were told, kept where no cascade
+      // reaches it: supplier_acknowledgements still cascade from the pass at
+      // the database level (changing that needs a migration), and the audit
+      // log has no foreign key to the pass. It holds what was shown (titles
+      // and the digest of the brief), the name as given and when; the note
+      // stays on the pass only, so free text is not copied twice.
+      await tx.insert(generalAuditLog).values({
+        actorUserId: null,
+        action: SUPPLIER_PASS_AUDIT.replied,
+        targetType: SUPPLIER_PASS_AUDIT_TARGET,
+        targetId: resolved.pack.id,
+        summary: parsed.data.status === "acknowledged"
+          ? "Supplier marked their brief as read."
+          : "Supplier sent a question about their brief.",
+        metadata: {
+          venueId: resolved.pack.venueId,
+          eventId: resolved.pack.eventId,
+          acknowledgementId: acknowledgement.id,
+          status: acknowledgement.status,
+          nameGiven: acknowledgement.acknowledgedByName,
+          passTitle: resolved.pack.title,
+          sourceDigest: resolved.pack.sourceDigest,
+          itemTitles: itemTitles.map((item) => item.title),
+          linkPrefix: resolved.shareToken.tokenPrefix,
+          at: acknowledgement.createdAt.toISOString(),
+        },
+      });
+
       return acknowledgement;
     });
 
     // The response is saved whatever happens here: a notification that
     // cannot be written is logged, never turned into a failed response.
-    const supplier = resolved.supplierName ?? "A supplier";
+    // The name is whatever the holder of the link typed, so it is reported as
+    // given, never as a verified identity.
+    const supplier = resolved.supplierName ?? resolved.pack.title;
     const who = [
       parsed.data.acknowledgedByName ?? null,
       parsed.data.acknowledgedByEmail ?? null,
@@ -654,11 +956,11 @@ export async function supplierShareRoutes(
         venueId: resolved.pack.venueId,
         audienceRoles: SUPPLIER_RESPONSE_AUDIENCE,
         title: parsed.data.status === "needs_clarification"
-          ? `${supplier} needs clarification`
-          : `${supplier} acknowledged the handoff`,
-        body: `${resolved.pack.title}. ${who.length > 0 ? `From ${who}. ` : ""}${note === null ? "No note." : `"${note}"`}`,
+          ? `${supplier} has a question`
+          : `${supplier} has read their brief`,
+        body: `${resolved.pack.title}. ${who.length > 0 ? `Name given on the link: ${who}. ` : ""}${note === null ? "No note." : `"${note}"`}`,
         severity: parsed.data.status === "needs_clarification" ? "attention" : "info",
-        actionPath: null,
+        actionPath: resolved.pack.eventId === null ? null : `/ops/events/${resolved.pack.eventId}`,
       });
     } catch (error: unknown) {
       request.log.warn({ err: error, packId: resolved.pack.id }, "supplier response notification failed");

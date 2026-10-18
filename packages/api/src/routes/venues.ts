@@ -31,6 +31,47 @@ const UpdateVenueBody = z.object({
 const IdParam = z.object({ id: z.string().uuid() });
 
 // ---------------------------------------------------------------------------
+// Public projections
+//
+// GET /venues and GET /venues/:id answer anyone, signed in or not. They name
+// the columns a member of the public may see instead of selecting the whole
+// row, so a column added to `venues` or `spaces` later stays private until
+// someone adds it here on purpose. Never list subscriptionStatus, planTier,
+// deletedAt or anything else about billing, plans or deletion.
+//
+// What each column is for (the fields the web client and tools read):
+//   venues: id, name, slug, address, logoUrl, brandColour (the venue picker,
+//   dashboard and planner), timezone (hallkeeper clocks), latitude and
+//   longitude (venue:verify-site checks the stored location against the
+//   agreed site; the venue's address is already public).
+//   spaces: id, venueId, name, slug, widthM, lengthM, heightM and
+//   floorPlanOutline (the room list, planner and editor).
+// ---------------------------------------------------------------------------
+
+export const PUBLIC_VENUE_COLUMNS = {
+  id: venues.id,
+  name: venues.name,
+  slug: venues.slug,
+  address: venues.address,
+  logoUrl: venues.logoUrl,
+  brandColour: venues.brandColour,
+  timezone: venues.timezone,
+  latitude: venues.latitude,
+  longitude: venues.longitude,
+} as const;
+
+export const PUBLIC_SPACE_COLUMNS = {
+  id: spaces.id,
+  venueId: spaces.venueId,
+  name: spaces.name,
+  slug: spaces.slug,
+  widthM: spaces.widthM,
+  lengthM: spaces.lengthM,
+  heightM: spaces.heightM,
+  floorPlanOutline: spaces.floorPlanOutline,
+} as const;
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -53,7 +94,7 @@ export async function venueRoutes(
 
     const total = countResult?.count ?? 0;
 
-    const rows = await db.select()
+    const rows = await db.select(PUBLIC_VENUE_COLUMNS)
       .from(venues)
       .where(isNull(venues.deletedAt))
       .limit(pq.data.limit)
@@ -70,16 +111,18 @@ export async function venueRoutes(
       return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
     }
 
-    const [venue] = await db.select()
+    // A deleted venue is filtered in the query so its row never leaves the
+    // database, and the public projection has no deletedAt to inspect.
+    const [venue] = await db.select(PUBLIC_VENUE_COLUMNS)
       .from(venues)
-      .where(eq(venues.id, params.data.id))
+      .where(and(eq(venues.id, params.data.id), isNull(venues.deletedAt)))
       .limit(1);
 
-    if (venue === undefined || venue.deletedAt !== null) {
+    if (venue === undefined) {
       return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
     }
 
-    const venueSpaces = await db.select()
+    const venueSpaces = await db.select(PUBLIC_SPACE_COLUMNS)
       .from(spaces)
       .where(and(eq(spaces.venueId, venue.id), isNull(spaces.deletedAt)));
 

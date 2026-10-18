@@ -8,12 +8,15 @@ import {
   canEverReadRoomDay,
   canManageVenue,
   canProposeWindow,
+  canRecordForwardBook,
   canReadInventory,
   canReadRoomDay,
   canReadVenuePlanningData,
   canWriteEvents,
   canWriteInventory,
+  canWritePricing,
   isEventWriteRole,
+  PRICING_WRITE_ROLES,
 } from "../../utils/query.js";
 import type { JwtUser } from "../../middleware/auth.js";
 
@@ -410,5 +413,53 @@ describe("canProposeWindow (goal 19 D2)", () => {
     for (const role of ["client", "planner", "admin", "manager", "staff", "hallkeeper"]) expect(canEverReadRoomDay(makeUser({ role })), role).toBe(true);
     for (const role of ["sales", "caterer", "future_role"]) expect(canEverReadRoomDay(makeUser({ role })), role).toBe(false);
     expect(canEverReadRoomDay(makeUser({ role: "sales", platformRole: "admin" }))).toBe(true);
+  });
+});
+
+describe("canWritePricing (fix-first item 5)", () => {
+  it("is admin and manager at the venue, and nobody else", () => {
+    expect([...PRICING_WRITE_ROLES].sort()).toEqual(["admin", "manager"]);
+    for (const role of ["admin", "manager"]) {
+      expect(canWritePricing(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(true);
+      expect(canWritePricing(makeUser({ role, venueId: VENUE_A }), VENUE_B), `${role} elsewhere`).toBe(false);
+    }
+    for (const role of ["staff", "sales", "hallkeeper", "planner", "caterer", "client"]) {
+      expect(canWritePricing(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(false);
+    }
+  });
+
+  it("is narrower than venue administration: staff administer the venue but do not set prices", () => {
+    const staff = makeUser({ role: "staff", venueId: VENUE_A });
+    expect(canAdministerVenue(staff, VENUE_A)).toBe(true);
+    expect(canWritePricing(staff, VENUE_A)).toBe(false);
+  });
+
+  it("lets a platform administrator through, as every venue gate does", () => {
+    expect(canWritePricing(makeUser({ role: "staff", platformRole: "admin" }), VENUE_B)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// canRecordForwardBook (Blake, 17 October 2026: "hide date status until
+// checked"). Recording that a room's whole forward book is on the Diary is
+// the venue's own word, so only its admin or manager makes it: no staff, no
+// floor, no sales, and no platform-admin shortcut.
+// ---------------------------------------------------------------------------
+
+describe("canRecordForwardBook", () => {
+  it("admits the venue's own admin and manager only", () => {
+    for (const role of ["admin", "manager"]) {
+      expect(canRecordForwardBook(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(true);
+    }
+    for (const role of ["staff", "hallkeeper", "sales", "planner", "client", "caterer"]) {
+      expect(canRecordForwardBook(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(false);
+    }
+  });
+
+  it("refuses another venue's manager and a Venviewer platform admin who is not the venue's", () => {
+    expect(canRecordForwardBook(makeUser({ role: "manager", venueId: VENUE_B }), VENUE_A)).toBe(false);
+    expect(canRecordForwardBook(makeUser({ role: "admin", venueId: null }), VENUE_A)).toBe(false);
+    expect(canRecordForwardBook(makeUser({ role: "staff", platformRole: "admin", venueId: VENUE_A }), VENUE_A)).toBe(false);
+    expect(canRecordForwardBook(makeUser({ role: "admin", platformRole: "admin", venueId: VENUE_B }), VENUE_A)).toBe(false);
   });
 });
