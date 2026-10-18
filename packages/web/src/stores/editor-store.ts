@@ -1123,6 +1123,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         objects: server,
         baseObjects: server,
         history,
+        // A rename by someone else arrives with the document (the phone's top bar reads it).
+        configName: config.name,
         configRevision: config.revision,
         isDirty: false,
         saveError: null,
@@ -1137,6 +1139,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       objects: rebased.objects,
       baseObjects: server,
       history,
+      configName: config.name,
       configRevision: config.revision,
       isDirty: true,
       saveError: null,

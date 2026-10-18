@@ -143,6 +143,7 @@ describe("adoptServerConfiguration", () => {
     expect(state.baseObjects).toBe(state.objects);
     expect(state.configRevision).toBe(3);
     expect(state.isDirty).toBe(false);
+    expect(state.configName).toBe("Duncan wedding");
   });
 
   it("rebases when dirty: keeps my move, takes theirs, keeps my new placement", () => {
