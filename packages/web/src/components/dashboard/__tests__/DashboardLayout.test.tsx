@@ -179,9 +179,9 @@ describe("DashboardLayout navigation", () => {
     expect(screen.getByRole("button", { name: "Proposals" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Pipeline" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Executive analytics" })).toBeDefined();
-    // The Clients desk reads /clients, which gates on canManageVenue — sales
-    // is refused there, so the tab is not offered.
-    expect(screen.queryByRole("button", { name: "Clients" })).toBeNull();
+    // The Clients desk reads /clients, which gates on canReadClients — the
+    // venue floor and sales (People Book design §6.7) — so the tab is offered.
+    expect(screen.getByRole("button", { name: "Clients" })).toBeDefined();
     // The pending-review queue takes the review state machine's role set.
     expect(screen.queryByRole("button", { name: "Pending reviews" })).toBeNull();
   });
