@@ -3,6 +3,7 @@ import {
   ContactPointInputSchema, CreatePersonSchema, PersonProfileSchema, SetMembershipsSchema, UpdatePersonSchema,
   isUsablePhone, normaliseEmail, normalisePhone,
 } from "../people.js";
+import { PeopleOrganisationSchema } from "../index.js";
 
 const VENUE = "00000000-0000-4000-8000-0000000000a1";
 const ORG_A = "00000000-0000-4000-8000-0000000000b1";
@@ -55,6 +56,15 @@ describe("the people contracts", () => {
     expect(SetMembershipsSchema.safeParse({ memberships: [{ organisationId: ORG_A, isPrimary: true }, { organisationId: ORG_B, isPrimary: true }] }).success).toBe(false);
     expect(SetMembershipsSchema.safeParse({ memberships: [{ organisationId: ORG_A }, { organisationId: ORG_A }] }).success).toBe(false);
     expect(SetMembershipsSchema.parse({ memberships: [] })).toEqual({ memberships: [] });
+  });
+  it("reaches the People Book's organisation from the package entry, apart from onboarding's", () => {
+    const household = PeopleOrganisationSchema.parse({
+      id: ORG_A, venueId: VENUE, name: "Murray household", kind: "household", accountType: "household",
+      address: null, website: null, vatNumber: null, notes: null, ownerUserId: null, primaryContactId: null,
+      sourceSystem: null, sourceId: null, sourceEnquiryId: null,
+      createdAt: "2026-10-18T09:00:00.000Z", updatedAt: "2026-10-18T09:00:00.000Z",
+    });
+    expect(household.kind).toBe("household");
   });
   it("reads a merged person as where they went", () => {
     const merged = PersonProfileSchema.parse({ status: "merged", mergedInto: { id: ORG_A, name: "Aileen Murray" }, mergeId: ORG_B, mergedAt: "2026-10-18T09:00:00.000Z" });

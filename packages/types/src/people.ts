@@ -184,7 +184,8 @@ export const PersonRowSchema = PersonSchema.extend({
 });
 export type PersonRow = z.infer<typeof PersonRowSchema>;
 
-export const OrganisationSchema = z.object({
+// Named apart from onboarding's OrganisationSchema/Organisation, which the package root already exports.
+export const PeopleOrganisationSchema = z.object({
   id: ClientAccountIdSchema,
   venueId: VenueIdSchema,
   name: NameSchema,
@@ -202,7 +203,7 @@ export const OrganisationSchema = z.object({
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema,
 });
-export type Organisation = z.infer<typeof OrganisationSchema>;
+export type PeopleOrganisation = z.infer<typeof PeopleOrganisationSchema>;
 
 export const MembershipRowSchema = z.object({
   id: z.string().uuid(),
@@ -243,7 +244,7 @@ export const PersonProfileSchema = z.discriminatedUnion("status", [
 export type PersonProfile = z.infer<typeof PersonProfileSchema>;
 
 export const OrganisationProfileSchema = z.object({
-  organisation: OrganisationSchema,
+  organisation: PeopleOrganisationSchema,
   members: z.array(z.object({
     personId: ContactIdSchema,
     name: z.string(),
