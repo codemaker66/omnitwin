@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import {
   STAFF_AUDIENCE_ROLES,
@@ -6,6 +6,7 @@ import {
   describeRequestKind,
   describeRequestOutcome,
   describeRequestUrgency,
+  escalationWindowSeconds,
   isClientSideRole,
   isOfficeRole,
   nextRequestState,
@@ -26,7 +27,6 @@ import {
   requests,
   spaces,
   users,
-  venueSettings,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
@@ -34,6 +34,8 @@ import { canHandleRequests, canManageVenue } from "../utils/query.js";
 import { clientHoldsEventLink, createRequestThread, postSystemMessage } from "./conversations.js";
 import { sendEmail, type EmailPayload, type SendOptions } from "./email.js";
 import { requestEscalation } from "./email-templates.js";
+import { withinQuietHours } from "./escalation-clock.js";
+import { readOperatingSettings } from "./venue-operating-settings.js";
 
 // ---------------------------------------------------------------------------
 // Requests — the core (Ship Friday slice 10, widened by goal 19 S1).
@@ -157,17 +159,6 @@ export function audienceForNewRequest(): readonly string[] {
   return [...STAFF_AUDIENCE_ROLES];
 }
 
-/** The venue's escalation window in seconds, or null when the venue has not
- *  set one — in which case nothing escalates. */
-export async function readEscalationSeconds(db: Database, venueId: string): Promise<number | null> {
-  const [row] = await db
-    .select({ seconds: venueSettings.requestEscalationSeconds })
-    .from(venueSettings)
-    .where(eq(venueSettings.venueId, venueId))
-    .limit(1);
-  return row?.seconds ?? null;
-}
-
 async function roomNameFor(db: Conn, roomId: string): Promise<string | null> {
   const [room] = await db
     .select({ name: spaces.name })
@@ -266,12 +257,14 @@ interface RequestSeed {
 /** The insert both doors share: the row, its first step of history, the
  *  inbox copies and the thread, in one transaction. */
 async function insertRequest(db: Database, actor: RequestActor, seed: RequestSeed): Promise<CreateRequestOk | RequestDeny> {
-  const escalationSeconds = seed.urgency === "now" ? await readEscalationSeconds(db, seed.venueId) : null;
+  // Every urgency has its own window now (goal 19 S7); a venue with no
+  // settings row still has none and never escalates.
+  const settings = await readOperatingSettings(db, seed.venueId);
   const audienceRoles = audienceForNewRequest();
   const now = new Date();
-  const escalationDueAt = escalationSeconds === null
+  const escalationDueAt = settings === null
     ? null
-    : new Date(now.getTime() + escalationSeconds * 1000);
+    : new Date(now.getTime() + escalationWindowSeconds(settings, seed.urgency) * 1000);
 
   const outcome = await db.transaction(async (tx) => {
     const insertedRows = await tx
@@ -772,24 +765,30 @@ export interface EscalationCandidate {
   readonly urgency: RequestRow["urgency"];
   readonly escalationDueAt: Date | null;
   readonly escalatedAt: Date | null;
+  /** When a handed-over request's relief must have accepted by (S7). */
+  readonly handoverDueAt: Date | null;
 }
 
-/** Which candidates are due at `now`: still only SENT (nobody has even said
- *  they have seen it), urgent, past their window, not already escalated. */
+/** Which candidates are due at `now`, never one escalated already: still
+ *  only SENT (nobody has even said they have seen it) and past its own
+ *  urgency's window, or HANDED OVER to a relief who has not taken it by the
+ *  venue's relief window. */
 export function selectDueRequestEscalations<T extends EscalationCandidate>(
   candidates: readonly T[],
   now: Date,
 ): readonly T[] {
-  return candidates.filter((candidate) =>
-    candidate.state === "sent"
-    && candidate.urgency === "now"
-    && candidate.escalatedAt === null
-    && candidate.escalationDueAt !== null
-    && candidate.escalationDueAt.getTime() <= now.getTime());
+  const nowMs = now.getTime();
+  return candidates.filter((candidate) => candidate.escalatedAt === null && (
+    (candidate.state === "sent" && candidate.escalationDueAt !== null && candidate.escalationDueAt.getTime() <= nowMs)
+    || (candidate.state === "handed-over" && candidate.handoverDueAt !== null && candidate.handoverDueAt.getTime() <= nowMs)
+  ));
 }
+
+export type EscalationReason = "unowned" | "handover";
 
 export interface EscalatedRequest {
   readonly request: VenueRequest;
+  readonly reason: EscalationReason;
   readonly notificationIds: readonly string[];
   /** The administrators the escalation was addressed to, BY NAME. An
    *  escalation's inbox copy is written per person rather than per role, so
@@ -797,6 +796,87 @@ export interface EscalatedRequest {
    *  nav sits still until they navigate. */
   readonly recipientUserIds: readonly string[];
   readonly emailedAdmins: number;
+  /** True when the venue's quiet hours held the email back; the email pass
+   *  sends it when they end, if the request is still unowned. */
+  readonly emailDeferred: boolean;
+}
+
+export interface DutyAdmin {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
+}
+
+/** Who an escalation is addressed to: the duty admin the venue named, if
+ *  that person is still an administrator or manager of the venue; otherwise
+ *  every administrator of the venue, as before. */
+export async function dutyAdminsFor(
+  db: Database,
+  venueId: string,
+  settings: { readonly dutyAdminUserId: string | null } | null,
+): Promise<readonly DutyAdmin[]> {
+  if (settings?.dutyAdminUserId !== null && settings?.dutyAdminUserId !== undefined) {
+    const named = await db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .where(and(
+        eq(users.id, settings.dutyAdminUserId),
+        eq(users.venueId, venueId),
+        inArray(users.role, ["admin", "manager"]),
+      ))
+      .limit(1);
+    if (named.length > 0) return named;
+  }
+  return db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(and(eq(users.venueId, venueId), inArray(users.role, ["admin"])))
+    .limit(20);
+}
+
+function quietHoursOf(settings: { readonly quietHoursStart: string; readonly quietHoursEnd: string } | null): { start: string; end: string } | null {
+  return settings === null ? null : { start: settings.quietHoursStart, end: settings.quietHoursEnd };
+}
+
+interface EscalationEmailTarget {
+  readonly row: RequestRow;
+  readonly roomName: string | null;
+  readonly admins: readonly DutyAdmin[];
+  readonly reason: EscalationReason;
+}
+
+/** The escalation email to each duty admin, one message per person however
+ *  many times any pass runs (the key is the request and the person). */
+async function sendEscalationEmails(
+  db: Database,
+  target: EscalationEmailTarget,
+  now: Date,
+  deps: EscalationPassDeps,
+  send: (payload: EmailPayload, options: SendOptions) => Promise<boolean>,
+): Promise<number> {
+  const dayBoardUrl = `${deps.appUrl ?? process.env["APP_URL"] ?? "https://venviewer.com"}${DAY_BOARD_PATH}`;
+  let emailedAdmins = 0;
+  for (const admin of target.admins) {
+    const { subject, html } = await requestEscalation({
+      adminName: admin.name,
+      kindLabel: describeRequestKind(target.row.kind),
+      quantity: target.row.quantity,
+      roomName: target.roomName ?? "a room in the building",
+      requestedByName: target.row.requestedByName,
+      detail: target.row.detail,
+      waitingMinutes: Math.max(1, Math.round((now.getTime() - target.row.createdAt.getTime()) / 60_000)),
+      dayBoardUrl,
+      reason: target.reason,
+      handoverToName: target.row.handoverToName,
+    });
+    const sent = await send({ to: admin.email, subject, html }, {
+      db,
+      idempotencyKey: `request-escalation:${target.row.id}:${admin.id}`,
+      logger: deps.logger,
+    });
+    if (sent) emailedAdmins += 1;
+  }
+  return emailedAdmins;
 }
 
 export interface EscalationPassDeps {
@@ -818,16 +898,17 @@ export async function runRequestEscalationPass(
     .select()
     .from(requests)
     .where(and(
-      eq(requests.state, "sent"),
-      eq(requests.urgency, "now"),
       isNull(requests.escalatedAt),
-      isNotNull(requests.escalationDueAt),
-      lte(requests.escalationDueAt, now),
+      or(
+        and(eq(requests.state, "sent"), isNotNull(requests.escalationDueAt), lte(requests.escalationDueAt, now)),
+        and(eq(requests.state, "handed-over"), isNotNull(requests.handoverDueAt), lte(requests.handoverDueAt, now)),
+      ),
     ))
     .limit(100);
 
   const due = selectDueRequestEscalations(candidates, now);
   const escalated: EscalatedRequest[] = [];
+  const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
 
   for (const candidate of due) {
     // Claim it. A second process (or a second sweep) matches nothing.
@@ -839,15 +920,19 @@ export async function runRequestEscalationPass(
     const row = claimed[0];
     if (row === undefined) continue;
 
+    const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
     const roomName = await roomNameFor(db, row.roomId);
-    const admins = await db
-      .select({ id: users.id, name: users.name, email: users.email })
-      .from(users)
-      .where(and(eq(users.venueId, row.venueId), inArray(users.role, ["admin"])))
-      .limit(20);
+    let settings = settingsByVenue.get(row.venueId);
+    if (settings === undefined) {
+      settings = await readOperatingSettings(db, row.venueId);
+      settingsByVenue.set(row.venueId, settings);
+    }
+    const admins = await dutyAdminsFor(db, row.venueId, settings);
 
     const title = `Still waiting: ${summariseRequest({ kind: row.kind, quantity: row.quantity, roomName })}`;
-    const body = `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
+    const body = reason === "handover"
+      ? `${row.ownerName ?? "A colleague"} handed this to ${row.handoverToName ?? "a colleague"}, who has not taken it yet.`
+      : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
     const notificationIds = await insertNotifications(db, admins.map((admin) => ({
       venueId: row.venueId,
       eventId: row.eventId,
@@ -858,39 +943,89 @@ export async function runRequestEscalationPass(
       severity: "urgent" as const,
     })));
 
-    const dayBoardUrl = `${deps.appUrl ?? process.env["APP_URL"] ?? "https://venviewer.com"}${DAY_BOARD_PATH}`;
+    // Email outside quiet hours only; inside them the inbox copy stands and
+    // the email pass sends when they end, if the request is still unowned.
+    const quiet = quietHoursOf(settings);
+    const emailDeferred = quiet !== null && withinQuietHours(now.getTime(), quiet);
     let emailedAdmins = 0;
-    for (const admin of admins) {
-      const { subject, html } = await requestEscalation({
-        adminName: admin.name,
-        kindLabel: describeRequestKind(row.kind),
-        quantity: row.quantity,
-        roomName: roomName ?? "a room in the building",
-        requestedByName: row.requestedByName,
-        detail: row.detail,
-        waitingMinutes: Math.max(1, Math.round((now.getTime() - row.createdAt.getTime()) / 60_000)),
-        dayBoardUrl,
-      });
-      const sent = await send({ to: admin.email, subject, html }, {
-        db,
-        // One escalation, one message, however many times the sweep runs.
-        idempotencyKey: `request-escalation:${row.id}:${admin.id}`,
-        logger: deps.logger,
-      });
-      if (sent) emailedAdmins += 1;
+    if (!emailDeferred) {
+      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
+      await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
     }
 
     deps.logger?.info(
-      { event: "request.escalated", requestId: row.id, venueId: row.venueId, admins: admins.length },
+      { event: "request.escalated", requestId: row.id, venueId: row.venueId, reason, admins: admins.length, emailDeferred },
       "request.escalated",
     );
     escalated.push({
       request: serializeRequest(row, roomName),
+      reason,
       notificationIds,
       recipientUserIds: admins.map((admin) => admin.id),
       emailedAdmins,
+      emailDeferred,
     });
   }
 
   return escalated;
+}
+
+export interface EscalationEmailSent {
+  readonly requestId: string;
+  readonly venueId: string;
+  readonly emailedAdmins: number;
+}
+
+/** The emails quiet hours held back: every escalated request whose email
+ *  has not left and that is still waiting on somebody (sent, or handed over
+ *  and not taken), sent once the venue's quiet hours have ended. The claim
+ *  is the conditional UPDATE of escalation_emailed_at; the message key is
+ *  the same one the escalation pass uses, so a message never goes twice. */
+export async function runEscalationEmailPass(
+  db: Database,
+  deps: EscalationPassDeps = {},
+): Promise<readonly EscalationEmailSent[]> {
+  const now = deps.now ?? new Date();
+  const send = deps.send ?? sendEmail;
+
+  const waiting = await db
+    .select()
+    .from(requests)
+    .where(and(
+      isNotNull(requests.escalatedAt),
+      isNull(requests.escalationEmailedAt),
+      inArray(requests.state, ["sent", "handed-over"]),
+    ))
+    .limit(100);
+
+  const sent: EscalationEmailSent[] = [];
+  const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
+  for (const row of waiting) {
+    let settings = settingsByVenue.get(row.venueId);
+    if (settings === undefined) {
+      settings = await readOperatingSettings(db, row.venueId);
+      settingsByVenue.set(row.venueId, settings);
+    }
+    const quiet = quietHoursOf(settings);
+    if (quiet !== null && withinQuietHours(now.getTime(), quiet)) continue;
+
+    const claimed = await db
+      .update(requests)
+      .set({ escalationEmailedAt: now })
+      .where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)))
+      .returning();
+    const fresh = claimed[0];
+    if (fresh === undefined) continue;
+
+    const roomName = await roomNameFor(db, fresh.roomId);
+    const admins = await dutyAdminsFor(db, fresh.venueId, settings);
+    const reason: EscalationReason = fresh.state === "handed-over" ? "handover" : "unowned";
+    const emailedAdmins = await sendEscalationEmails(db, { row: fresh, roomName, admins, reason }, now, deps, send);
+    deps.logger?.info(
+      { event: "request.escalation_emailed", requestId: fresh.id, venueId: fresh.venueId, admins: admins.length },
+      "request.escalation_emailed",
+    );
+    sent.push({ requestId: fresh.id, venueId: fresh.venueId, emailedAdmins });
+  }
+  return sent;
 }

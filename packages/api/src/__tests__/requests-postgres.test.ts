@@ -14,6 +14,7 @@ import {
   createRequestCore,
   listRequestsForVenue,
   readRequest,
+  runEscalationEmailPass,
   runRequestEscalationPass,
   transitionRequestCore,
   type RequestActor,
@@ -130,7 +131,11 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     }]);
 
     if (escalationSeconds !== null) {
-      await db.insert(schema.venueSettings).values({ venueId, requestEscalationSeconds: escalationSeconds });
+      // The "now" window; the other windows and quiet hours keep the
+      // decided defaults (soon 300 s, routine 900 s, quiet 22:00 to 07:00).
+      await db.insert(schema.venueSettings).values({
+        venueId, requestEscalationSeconds: escalationSeconds, escalationNowSeconds: escalationSeconds,
+      });
     }
 
     const actor = (
@@ -397,11 +402,81 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(unwatched.request.escalationDueAt).toBeNull();
   });
 
-  it("gives a routine request no escalation window at all", async () => {
+  it("gives soon and routine requests their own windows from the venue's row (goal 19 S7)", async () => {
     const f = await fixture(180);
+    const soon = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { urgency: "soon" }));
     const calm = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { urgency: "routine" }));
-    if (!("request" in calm)) throw new Error("expected a request");
-    expect(calm.request.escalationDueAt).toBeNull();
+    if (!("request" in soon) || !("request" in calm)) throw new Error("expected requests");
+    const window = (made: { readonly escalationDueAt: string | null; readonly createdAt: string }): number =>
+      Math.round((Date.parse(made.escalationDueAt ?? "") - Date.parse(made.createdAt)) / 1000);
+    expect(window(soon.request)).toBe(300);
+    expect(window(calm.request)).toBe(900);
+  });
+
+  it("escalates to the duty admin alone when one is named, and to every administrator when the named one has left", async () => {
+    const f = await fixture(180);
+    const secondAdminId = randomUUID();
+    await db.insert(schema.users).values({ id: secondAdminId, venueId: f.venueId, name: "Second admin", email: `${secondAdminId}@lane9.invalid`, role: "admin" });
+    await db.update(schema.venueSettings).set({ dutyAdminUserId: f.admin.id }).where(eq(schema.venueSettings.venueId, f.venueId));
+
+    const sentTo: string[] = [];
+    const send = (payload: { readonly to: string }): Promise<boolean> => { sentTo.push(payload.to); return Promise.resolve(true); };
+    // 13:00 UTC on a weekday in June: outside quiet hours on the venue's clock.
+    const daytime = new Date("2026-06-10T13:00:00.000Z");
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    if (!("request" in made)) throw new Error("expected a request");
+    await db.update(schema.requests).set({ escalationDueAt: new Date(daytime.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
+    const first = await runRequestEscalationPass(db, { now: daytime, send });
+    const mine = first.find((item) => item.request.id === made.request.id);
+    expect(mine?.recipientUserIds).toEqual([f.admin.id]);
+    expect(mine?.reason).toBe("unowned");
+    expect(mine?.emailDeferred).toBe(false);
+    expect(sentTo).toEqual([f.adminEmail]);
+
+    // The named duty admin moves on: the next escalation reaches every administrator.
+    await db.update(schema.users).set({ venueId: f.otherVenueId }).where(eq(schema.users.id, f.admin.id));
+    const again = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    if (!("request" in again)) throw new Error("expected a request");
+    await db.update(schema.requests).set({ escalationDueAt: new Date(daytime.getTime() - 1000) }).where(eq(schema.requests.id, again.request.id));
+    const second = await runRequestEscalationPass(db, { now: daytime, send });
+    expect(second.find((item) => item.request.id === again.request.id)?.recipientUserIds).toEqual([secondAdminId]);
+  });
+
+  it("inside quiet hours the inbox copy lands and the email waits; the email pass sends at 07:00 if still unowned, never if owned by then", async () => {
+    const f = await fixture(180);
+    const sentTo: string[] = [];
+    const send = (payload: { readonly to: string }): Promise<boolean> => { sentTo.push(payload.to); return Promise.resolve(true); };
+    // 22:30 UTC in January is 22:30 on the venue's clock: quiet.
+    const night = new Date("2026-01-20T22:30:00.000Z");
+    const morning = new Date("2026-01-21T07:00:00.000Z");
+
+    const waiting = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    const taken = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { kind: "cleaning" }));
+    if (!("request" in waiting) || !("request" in taken)) throw new Error("expected requests");
+    for (const id of [waiting.request.id, taken.request.id]) {
+      await db.update(schema.requests).set({ escalationDueAt: new Date(night.getTime() - 1000) }).where(eq(schema.requests.id, id));
+    }
+
+    const escalated = await runRequestEscalationPass(db, { now: night, send });
+    const ids = new Set([waiting.request.id, taken.request.id]);
+    const mine = escalated.filter((item) => ids.has(item.request.id));
+    expect(mine).toHaveLength(2);
+    expect(mine.every((item) => item.emailDeferred && item.notificationIds.length > 0)).toBe(true);
+    expect(sentTo).toEqual([]);
+
+    // Still quiet at 06:59: nothing leaves.
+    expect(await runEscalationEmailPass(db, { now: new Date(morning.getTime() - 60_000), send })).toEqual([]);
+    expect(sentTo).toEqual([]);
+
+    // By 07:00 one has been taken: only the other's email goes, once.
+    await transitionRequestCore(db, f.staff, taken.request.id, { to: "accepted" });
+    const sent = await runEscalationEmailPass(db, { now: morning, send });
+    expect(sent.map((item) => item.requestId)).toEqual([waiting.request.id]);
+    expect(sentTo).toEqual([f.adminEmail]);
+    expect(await runEscalationEmailPass(db, { now: morning, send })).toEqual([]);
+    expect(sentTo).toHaveLength(1);
+    const [row] = await db.select({ emailedAt: schema.requests.escalationEmailedAt }).from(schema.requests).where(eq(schema.requests.id, waiting.request.id));
+    expect(row?.emailedAt).not.toBeNull();
   });
 
   it("escalates an unanswered urgent request to the venue administrator, once", async () => {

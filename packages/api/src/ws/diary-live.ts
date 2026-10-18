@@ -18,7 +18,7 @@ import {
 } from "../services/diary-commands.js";
 import { executeConversationCommand, type ConversationChanged } from "../services/conversation-commands.js";
 import type { MutationActor } from "../services/booking-mutations.js";
-import { runRequestEscalationPass } from "../services/requests.js";
+import { runEscalationEmailPass, runRequestEscalationPass } from "../services/requests.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 // ---------------------------------------------------------------------------
@@ -592,6 +592,8 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
           }
         }
       })
+      // Then the emails quiet hours held back, once they have ended (S7).
+      .then(() => runEscalationEmailPass(db, { logger: server.log }))
       .catch((error: unknown) => {
         server.log.error({ err: error }, "request escalation sweep failed");
       })
