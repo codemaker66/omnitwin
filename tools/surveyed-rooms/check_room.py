@@ -28,6 +28,7 @@ DOORWAY_REACH = 2.0      # a doorway station may stand this far beyond its wall'
 DOORWAY_SLACK = 0.1      # and this far past the opening's jambs
 ON_WALL = 0.05           # an opening's centreE57 must lie this close to its wall's face
 ANCHOR_LIMIT = 0.05      # a survey anchor may sit this far from its corner
+GEOMETRIC_GLAZING = ("stained-backlit", "frosted-lower", "sheer")
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +261,10 @@ def check_openings(rep, room, wmap):
         twin = reveal.get("glassDepthFrom")
         if twin is not None and (twin not in openings or twin == o["id"]):
             rep.error(f"opening {o['id']}: glassDepthFrom {twin} is not another opening")
+        if "glass" in o:
+            check_glass(rep, o, c)
+        elif o["kind"] == "window" and o["glazing"] in GEOMETRIC_GLAZING:
+            rep.warn(f"opening {o['id']}: {o['glazing']} glazing without a glass block; the build needs its planes")
         spans.setdefault(o["wall"], []).append((u0, u1, o["id"]))
         rep.fact(f"opening {o['id']:<17} {o['wall']:<10} u {u0:7.3f}..{u1:7.3f}  v {o['sill']:.3f}..{top:.3f}  {o['kind']}/{o['headShape']}/{o['glazing']}")
     for wall, items in spans.items():
@@ -268,6 +273,53 @@ def check_openings(rep, room, wmap):
             if b0 < a1 - TOL:
                 rep.error(f"openings {a} and {b} overlap on wall {wall}")
     return openings
+
+
+def check_glass(rep, o, c):
+    """The measured glazing: inside the face opening, planes from the bottom up covering it."""
+    g = o["glass"]
+    label = f"opening {o['id']} glass"
+    width, sill = g.get("width", o["width"]), g.get("sill", o["sill"])
+    head, shape = g.get("head", o["head"]), g.get("headShape", o["headShape"])
+    rise = g.get("headRise")
+    if shape == "segmental" and rise is None:
+        rep.error(f"{label}: a segmental head needs headRise")
+        return
+    if width > o["width"] + TOL:
+        rep.error(f"{label}: width {width} exceeds the face opening's {o['width']}")
+    if sill < o["sill"] - TOL:
+        rep.error(f"{label}: sill {sill} lies below the face opening's {o['sill']}")
+    if not sill < head:
+        rep.error(f"{label}: sill {sill} must lie below head {head}")
+    for k in range(41):
+        u = c - width / 2 + width * k / 40
+        top = roomlib.outline_top(shape, c, width, head, u, rise)
+        face = roomlib.outline_top(o["headShape"], c, o["width"], o["head"], u, o.get("headRise"))
+        if top > face + TOL:
+            rep.error(f"{label}: its outline rises above the face opening at u {u:.3f} ({top:.3f} > {face:.3f})")
+            break
+    top = roomlib.outline_top(shape, c, width, head, c, rise)
+    planes = g.get("planes", [])
+    if not planes:
+        rep.warn(f"{label}: no planes")
+    previous = sill
+    for i, p in enumerate(planes):
+        last = i == len(planes) - 1
+        if last and "below" in p:
+            rep.error(f"{label}: the top plane takes no `below`")
+        if not last:
+            if "below" not in p:
+                rep.error(f"{label}: plane {i} needs `below`, the height where plane {i + 1} takes over")
+                continue
+            if not previous < p["below"] < top:
+                rep.error(f"{label}: plane {i} ends at {p['below']}, not between {previous:.3f} and the glass top {top:.3f}")
+            previous = p["below"]
+    for b0, b1 in g.get("bars", []):
+        if not sill <= b0 < b1 <= top:
+            rep.error(f"{label}: bar {b0}..{b1} is not inside the glass ({sill}..{top:.3f})")
+    if g.get("frostedBelow") is not None and o["glazing"] != "frosted-lower":
+        rep.warn(f"{label}: frostedBelow given for {o['glazing']} glazing")
+    rep.fact(f"{label}: {width} wide, v {sill}..{top:.3f}, planes {[p['depth'] for p in planes]}")
 
 
 def check_edits(rep, room, wmap, openings):
@@ -292,7 +344,25 @@ def check_edits(rep, room, wmap, openings):
         if not (-TOL <= v0 < v1 <= w["height"] + TOL):
             rep.error(f"{label}: v {v0}..{v1} is not inside wall {w['id']} (0..{w['height']})")
         if e["type"] == "patch":
-            if e["mode"] == "shift":
+            src_wall = w
+            if e["mode"] == "copy":
+                src = e.get("from")
+                if src is None or "by" in e or "about" in e:
+                    rep.error(f"{label}: a copy patch takes `from`, not `by` or `about`")
+                    continue
+                src_wall = wmap.get(src["wall"])
+                if src_wall is None:
+                    rep.error(f"{label}: no source wall {src['wall']}")
+                    continue
+                if src_wall["id"] == w["id"]:
+                    rep.warn(f"{label}: a copy from its own wall (shift or mirror says so)")
+                s0, s1 = src["u"], src["u"] + (u1 - u0)
+                if v1 > src_wall["height"] + TOL:
+                    rep.error(f"{label}: v {v0}..{v1} rises above source wall {src_wall['id']}")
+            elif "from" in e:
+                rep.error(f"{label}: `from` belongs to a copy patch")
+                continue
+            elif e["mode"] == "shift":
                 if "by" not in e or "about" in e:
                     rep.error(f"{label}: a shift patch takes `by`, not `about`")
                     continue
@@ -307,11 +377,12 @@ def check_edits(rep, room, wmap, openings):
                     rep.error(f"{label}: a mirror patch takes `about`, not `by`")
                     continue
                 s0, s1 = 2 * e["about"] - u1, 2 * e["about"] - u0
-            if s0 < -TOL or s1 > w["length"] + TOL:
-                rep.error(f"{label}: its source u {s0:.3f}..{s1:.3f} runs outside wall {w['id']}")
-            elif max(u0, s0) < min(u1, s1) - TOL:
+            if s0 < -TOL or s1 > src_wall["length"] + TOL:
+                rep.error(f"{label}: its source u {s0:.3f}..{s1:.3f} runs outside wall {src_wall['id']}")
+            elif src_wall is w and max(u0, s0) < min(u1, s1) - TOL:
                 rep.warn(f"{label}: its source overlaps the area it covers")
-            rep.fact(f"{label} {w['id']:<10} u {u0:7.3f}..{u1:7.3f} from {s0:7.3f}..{s1:7.3f}  v {v0}..{v1}")
+            source = "" if src_wall is w else f" on {src_wall['id']}"
+            rep.fact(f"{label} {w['id']:<10} u {u0:7.3f}..{u1:7.3f} from {s0:7.3f}..{s1:7.3f}{source}  v {v0}..{v1}")
         else:
             if e.get("leafPlane", 0) > e["depth"] + TOL:
                 rep.error(f"{label}: leafPlane {e['leafPlane']} lies behind the recess ({e['depth']})")
@@ -414,6 +485,10 @@ def check_room_contents(rep, room, wmap):
         if "radius" in f and roomlib.distance_to_outline(verts, x, z) < f["radius"]:
             rep.warn(f"fitting {f['id']}: its reach touches a wall")
     fitting_ids = {f["id"] for f in room["fittings"]}
+    occluded = {oc.get("fitting") for oc in room["occluders"]}
+    for f in room["fittings"]:
+        if f["id"] not in occluded:
+            rep.error(f"fitting {f['id']}: no occluder keeps the projection's rays out of it")
     for oc in room["occluders"]:
         x, z = roomlib.to_planner(room, *oc["centreE57"])
         z0, z1 = oc["zE57"]
@@ -469,6 +544,18 @@ def check_survey(rep, room, wmap):
         rep.error(f"survey.wallViews.heightRange {h0}..{h1} does not cover the walls (0..{tallest})")
     if not wv["near"] <= wv["eyeInset"] < wv["far"]:
         rep.error("survey.wallViews: the wall face must lie between near and far (near <= eyeInset < far)")
+    for oc in room["occluders"]:
+        x, z = roomlib.to_planner(room, *oc["centreE57"])
+        clear = roomlib.distance_to_outline(room["walls"]["vertices"], x, z) - oc["radius"]
+        if clear < wv["eyeInset"]:
+            rep.warn(f"occluder {oc['id']}: {clear:.3f} m from a wall face, inside the wall views' reach ({wv['eyeInset']} m): "
+                     "the fitting would be drawn as wall relief")
+    behind = wv["far"] - wv["eyeInset"]
+    needs = [("relief.depthRange", -survey["relief"]["depthRange"][0])] if "relief" in survey else []
+    needs += [(f"opening {o['id']}'s glass", p["depth"]) for o in room["openings"] for p in o.get("glass", {}).get("planes", [])]
+    for what, depth in needs:
+        if behind < depth - TOL:
+            rep.error(f"survey.wallViews sees {behind:.3f} m behind the wall face (far - eyeInset), not {what} at {depth} m")
     cv = survey.get("ceilingView")
     if cv:
         ceiling = room["ceiling"]
@@ -483,12 +570,12 @@ def check_survey(rep, room, wmap):
     if atlas:
         ppm = atlas["ppm"]["pixels"] / atlas["ppm"]["span"]
         row = math.ceil((atlas["vRange"][1] - atlas["vRange"][0]) * ppm)
-        for p in atlas["placement"]:
+        for p in atlas.get("placement", []):
             w = wmap.get(p["wall"])
             if w is None:
                 rep.error(f"survey.atlas: no wall {p['wall']}")
                 continue
-            if p["column"] + math.ceil(w["length"] * ppm) > atlas["size"] or (p["row"] + 1) * row > atlas["size"]:
+            if p["column"] + math.ceil(w["length"] * ppm) > atlas["size"] or (p["row"] + 1) * row > atlas.get("height", atlas["size"]):
                 rep.error(f"survey.atlas: wall {p['wall']} does not fit at column {p['column']}, row {p['row']}")
         rep.fact(f"survey.atlas: {ppm:.3f} px/m, strips {row} px high")
     relief = survey.get("relief")
@@ -496,6 +583,34 @@ def check_survey(rep, room, wmap):
         for wid in relief.get("order", []):
             if wid not in wmap:
                 rep.error(f"survey.relief.order: no wall {wid}")
+        ids = {}
+        for w in wmap.values():
+            rid = w["segment"].get("survey", {}).get("reliefId", w["id"])
+            if len(rid.encode("utf-8")) > 12 or not rid.isascii():
+                rep.error(f"wall {w['id']}: GHR1 relief id {rid!r} is {len(rid.encode('utf-8'))} bytes (limit 12 ASCII); give survey.reliefId")
+            if rid in ids:
+                rep.error(f"walls {ids[rid]} and {w['id']}: the same GHR1 relief id {rid!r}")
+            ids[rid] = w["id"]
+    cr = survey.get("ceilingRelief")
+    if cr:
+        lo, hi = cr["heightRange"]
+        if not lo < room["ceiling"]["height"] < hi:
+            rep.error(f"survey.ceilingRelief.heightRange {lo}..{hi} does not hold the ceiling's height {room['ceiling']['height']}")
+        if not cv:
+            rep.error("survey.ceilingRelief needs survey.ceilingView")
+        elif not cv["eyeHeight"] + cv["near"] - TOL <= lo < hi <= cv["eyeHeight"] + cv["far"] + TOL:
+            rep.error(f"survey.ceilingRelief.heightRange {lo}..{hi} is not inside what the ceiling view sees "
+                      f"({cv['eyeHeight'] + cv['near']:.3f}..{cv['eyeHeight'] + cv['far']:.3f})")
+    outputs = survey.get("outputs")
+    if outputs:
+        names = [o["file"] for key in ("walls", "ceiling", "floor") for o in outputs.get(key, [])]
+        names += [o["file"] for files in outputs.get("domes", {}).values() for o in files]
+        names += [outputs[key] for key in ("relief", "ceilingRelief", "manifest") if outputs.get(key)]
+        for name in sorted({n for n in names if names.count(n) > 1}):
+            rep.error(f"survey.outputs: {name} is named twice")
+        for dome in outputs.get("domes", {}):
+            if dome not in {d["id"] for d in room["ceiling"].get("domes", [])}:
+                rep.error(f"survey.outputs.domes: no dome {dome}")
     if not rep.errors:
         views = roomlib.wall_views(room)
         rep.fact(f"survey: {len(views)} wall tiles, {sum(v['pixels'][0] * v['pixels'][1] for v in views) / 1e6:.1f} Mpx")

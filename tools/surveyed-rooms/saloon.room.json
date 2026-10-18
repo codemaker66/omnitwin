@@ -234,6 +234,9 @@
         "name": "Window wall, front end",
         "kind": "solid",
         "height": 5.515,
+        "survey": {
+          "reliefId": "win-f-end"
+        },
         "note": "E57 X = 1.429 (panelling; plaster 1.470, pedestal 1.341). Carries the open door to the passage beside the booking suite (FIRST 2010 F.03)."
       },
       {
@@ -241,6 +244,9 @@
         "name": "Return to the window recess",
         "kind": "solid",
         "height": 5.515,
+        "survey": {
+          "reliefId": "win-f-ret"
+        },
         "note": "0.240 m step from the end section to the pier line, at E57 Y 3.630."
       },
       {
@@ -255,6 +261,9 @@
         "name": "Return from the window recess",
         "kind": "solid",
         "height": 5.515,
+        "survey": {
+          "reliefId": "win-r-ret"
+        },
         "note": "0.194 m step at E57 Y 11.400."
       },
       {
@@ -262,6 +271,9 @@
         "name": "Window wall, rear end",
         "kind": "solid",
         "height": 5.515,
+        "survey": {
+          "reliefId": "win-r-end"
+        },
         "note": "E57 X = 1.475 (panelling incl. the door leaves; pier 1.453, plaster 1.468, pedestal 1.333). Carries the door to Stair 8 (FIRST 2010 F.02)."
       },
       {
@@ -276,6 +288,9 @@
         "name": "Fireplace wall, rear end",
         "kind": "solid",
         "height": 5.515,
+        "survey": {
+          "reliefId": "fire-r-end"
+        },
         "note": "E57 X = -5.626 (panelling; plaster -5.633, pedestal -5.50). Closed panelled door, purpose unconfirmed (cupboard or symmetry door)."
       },
       {
@@ -283,6 +298,9 @@
         "name": "Return to the fireplace recess",
         "kind": "solid",
         "height": 5.515,
+        "survey": {
+          "reliefId": "fire-r-ret"
+        },
         "note": "0.178 m step at E57 Y 11.462."
       },
       {
@@ -297,6 +315,9 @@
         "name": "Return from the fireplace recess",
         "kind": "solid",
         "height": 5.515,
+        "survey": {
+          "reliefId": "fire-f-ret"
+        },
         "note": "0.225 m step at E57 Y 3.679."
       },
       {
@@ -304,6 +325,9 @@
         "name": "Fireplace wall, front end",
         "kind": "solid",
         "height": 5.515,
+        "survey": {
+          "reliefId": "fire-f-end"
+        },
         "note": "E57 X = -5.579 (panelling; plaster -5.581, pedestal -5.539). Closed panelled door, purpose unconfirmed."
       }
     ],
@@ -348,7 +372,31 @@
         "depth": 0.546,
         "sashHalfWidth": 0.81
       },
-      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above about 3.6 m at X 2.24..2.29, 4-7 cm further back, in all three bays."
+      "glass": {
+        "width": 1.625,
+        "sill": 1.31,
+        "head": 4.49,
+        "headShape": "semicircular",
+        "planes": [
+          {
+            "depth": 0.546,
+            "below": 3.52,
+            "note": "Lower light, E57 X 2.20..2.23. It ends at the transom's top: on the mesh the plane changes at v 3.518 in this bay, 0 of 260 rows misassigned (measure/saloon/32_glass_split.py, 18 Oct); the 'about 3.6 m' seen before is where the mesh's ramp between the planes settles. Median depth on the mesh 0.542 (v 2.4-3.35)."
+          },
+          {
+            "depth": 0.596,
+            "note": "Upper light, E57 X 2.24..2.29; median depth on the mesh 0.610 (v 3.65-4.45, p10-p90 0.590-0.621)."
+          }
+        ],
+        "bars": [
+          [
+            3.45,
+            3.52
+          ]
+        ],
+        "note": "Glazed outline measured on the centre bay only (native skybox faces of scan_053): 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52; the other bays assumed the same."
+      },
+      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above 3.51-3.52 m (the transom's top; the mesh's ramp between the planes settles by about 3.6 m) at X 2.24..2.29, 4-7 cm further back, in all three bays."
     },
     {
       "id": "window-centre",
@@ -369,7 +417,31 @@
         "depth": 0.546,
         "sashHalfWidth": 0.81
       },
-      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above about 3.6 m at X 2.24..2.29, 4-7 cm further back, in all three bays."
+      "glass": {
+        "width": 1.625,
+        "sill": 1.31,
+        "head": 4.49,
+        "headShape": "semicircular",
+        "planes": [
+          {
+            "depth": 0.546,
+            "below": 3.52,
+            "note": "Lower light, E57 X 2.20..2.23. It ends at the transom's top: on the mesh the plane changes at v 3.513 in this bay, 0 of 260 rows misassigned (measure/saloon/32_glass_split.py, 18 Oct); the 'about 3.6 m' seen before is where the mesh's ramp between the planes settles. Median depth on the mesh 0.547 (v 2.4-3.35)."
+          },
+          {
+            "depth": 0.596,
+            "note": "Upper light, E57 X 2.24..2.29; median depth on the mesh 0.614 (v 3.65-4.45, p10-p90 0.588-0.625)."
+          }
+        ],
+        "bars": [
+          [
+            3.45,
+            3.52
+          ]
+        ],
+        "note": "Glazed outline measured on the centre bay only (native skybox faces of scan_053): 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52; the other bays assumed the same."
+      },
+      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above 3.51-3.52 m (the transom's top; the mesh's ramp between the planes settles by about 3.6 m) at X 2.24..2.29, 4-7 cm further back, in all three bays."
     },
     {
       "id": "window-rear",
@@ -390,7 +462,31 @@
         "depth": 0.546,
         "sashHalfWidth": 0.81
       },
-      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above about 3.6 m at X 2.24..2.29, 4-7 cm further back, in all three bays."
+      "glass": {
+        "width": 1.625,
+        "sill": 1.31,
+        "head": 4.49,
+        "headShape": "semicircular",
+        "planes": [
+          {
+            "depth": 0.546,
+            "below": 3.52,
+            "note": "Lower light, E57 X 2.20..2.23. It ends at the transom's top: on the mesh the plane changes at v 3.518 in this bay, 0 of 260 rows misassigned (measure/saloon/32_glass_split.py, 18 Oct); the 'about 3.6 m' seen before is where the mesh's ramp between the planes settles. Median depth on the mesh 0.534 (v 2.4-3.35)."
+          },
+          {
+            "depth": 0.596,
+            "note": "Upper light, E57 X 2.24..2.29; median depth on the mesh 0.592 (v 3.65-4.45, p10-p90 0.570-0.617)."
+          }
+        ],
+        "bars": [
+          [
+            3.45,
+            3.52
+          ]
+        ],
+        "note": "Glazed outline measured on the centre bay only (native skybox faces of scan_053): 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52; the other bays assumed the same."
+      },
+      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above 3.51-3.52 m (the transom's top; the mesh's ramp between the planes settles by about 3.6 m) at X 2.24..2.29, 4-7 cm further back, in all three bays."
     },
     {
       "id": "door-lobby",
@@ -2204,8 +2300,8 @@
       "type": "patch",
       "wall": "front",
       "u": [
-        2.211,
-        2.7
+        1.999,
+        2.489
       ],
       "v": [
         0.0,
@@ -2217,7 +2313,7 @@
         "photo",
         "relief"
       ],
-      "note": "PROPOSED. The lobby door's open leaf stands in front of the panelling at E57 X -1.27..-0.57; mirrored about the door's centre (u 1.434). The source is narrowed to E57 X 0.56..1.05 (checked 18 Oct): beyond it the source wall has a slot (X 1.14..1.22, 1.8..2.6 m) and, below 1.0 m, a 9 cm set-back (X 1.06..1.26) that the hidden target does not. The remaining strip u 2.0..2.211 (X -1.27..-1.06) needs another source (the room's XGRIDS frames). The source holds a corner loudspeaker above 1.6 m: patch that first or split v."
+      "note": "PROPOSED. The lobby door's open leaf stands in front of the panelling at E57 X -1.27..-0.57 (u 1.999..2.699); mirrored about the door's centre (u 1.434). The target is u 1.999..2.489 (X -0.57..-1.06), so its source is E57 X 0.56..1.05 (u 0.379..0.869): beyond that the source wall has a slot (X 1.14..1.22, 1.8..2.6 m) and, below 1.0 m, a 9 cm set-back (X 1.06..1.26) that the hidden target does not. Corrected 18 Oct (T-662 stage 2): the earlier target u 2.211..2.7 mirrored onto X 0.77..1.26, which holds the slot and the set-back. The remaining strip u 2.489..2.699 (X -1.06..-1.27) needs another source (the room's XGRIDS frames). The source holds a corner loudspeaker above 1.6 m: patch that first or split v."
     }
   ],
   "occluders": [
@@ -2281,6 +2377,11 @@
     }
   ],
   "survey": {
+    "methodRevision": 2,
+    "publish": {
+      "folder": "packages/web/public/rooms/saloon/survey-2026-07-11",
+      "revision": 1
+    },
     "projection": {
       "walls": {
         "cosMin": 0.2,
@@ -2293,6 +2394,14 @@
         "pCos": 4.0,
         "qDist": 3.0,
         "maxDist": 16.0
+      },
+      "floor": {
+        "cosMin": 0.12,
+        "pCos": 2.0,
+        "qDist": 2.0,
+        "maxDist": 16.0,
+        "glare": 1,
+        "nadir": true
       }
     },
     "wallViews": {
@@ -2318,6 +2427,105 @@
       "modes": [
         "position"
       ]
+    },
+    "floorPhoto": {
+      "ppm": 120,
+      "refill": {
+        "innerFraction": 0.75,
+        "easeDeg": 4
+      }
+    },
+    "atlas": {
+      "size": 4096,
+      "height": 2304,
+      "ppm": {
+        "pixels": 200,
+        "span": 1
+      },
+      "vRange": [
+        -0.02,
+        5.535
+      ],
+      "featherTexels": 10,
+      "gutter": 8
+    },
+    "relief": {
+      "container": "GHR1",
+      "ppm": 100,
+      "vRange": [
+        0,
+        5.515
+      ],
+      "depthRange": [
+        -0.8,
+        0.9
+      ],
+      "simplifyError": 0.005,
+      "holdFloor": 0.04,
+      "holdCeiling": 5.475
+    },
+    "ceilingRelief": {
+      "container": "GHR1",
+      "id": "ceiling",
+      "ppm": 75,
+      "heightRange": [
+        5.4,
+        5.9
+      ],
+      "simplifyError": 0.005
+    },
+    "outputs": {
+      "walls": [
+        {
+          "file": "walls-4096.webp",
+          "size": [
+            4096,
+            2304
+          ]
+        },
+        {
+          "file": "walls-2048.webp",
+          "size": [
+            2048,
+            1152
+          ]
+        }
+      ],
+      "relief": "walls-relief.bin",
+      "ceiling": [
+        {
+          "file": "ceiling-1829.webp",
+          "size": [
+            1829,
+            1121
+          ]
+        },
+        {
+          "file": "ceiling-915.webp",
+          "size": [
+            915,
+            561
+          ]
+        }
+      ],
+      "ceilingRelief": "ceiling-relief.bin",
+      "floor": [
+        {
+          "file": "floor-1463.webp",
+          "size": [
+            1463,
+            897
+          ]
+        },
+        {
+          "file": "floor-732.webp",
+          "size": [
+            732,
+            449
+          ]
+        }
+      ],
+      "manifest": "survey.json"
     }
   },
   "provenance": {

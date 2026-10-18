@@ -198,6 +198,7 @@
             "name": { "type": "string", "pattern": "^[a-z0-9]+$", "description": "The wall's name in survey file names, if not its id." },
             "anchorE57": { "$ref": "#/$defs/pair", "description": "E57 (X, Y) where the rendered elevation's u = 0 lies, if not the corner itself." },
             "tiles": { "type": "integer", "minimum": 1, "description": "Elevation tiles along the wall, if not ceil(length / tileMaxLength)." },
+            "reliefId": { "type": "string", "pattern": "^[a-z0-9-]{1,12}$", "description": "The wall's id in the GHR1 relief file (12 ASCII bytes at most), if not its id." },
             "note": { "$ref": "#/$defs/note" }
           }
         },
@@ -234,6 +235,37 @@
             "glassDepthFrom": { "$ref": "#/$defs/id", "description": "Another opening whose measured glass depth this one takes (its own glazing was not reconstructed)." }
           }
         },
+        "glass": { "$ref": "#/$defs/glass" },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "glass": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The glazing as measured behind the face opening, centred on the opening: its outline (width, sill, head and head shape, as an opening's), its planes and its bars. The survey builds the glass mask from it for glazing other than clear. Depths are metres behind the wall face.",
+      "properties": {
+        "width": { "$ref": "#/$defs/positive" },
+        "sill": { "$ref": "#/$defs/nonNegative" },
+        "head": { "$ref": "#/$defs/positive", "description": "Top of a square glazed outline, or where an arched one springs." },
+        "headShape": { "enum": ["square", "semicircular", "segmental"] },
+        "headRise": { "type": ["number", "null"], "description": "Rise of a segmental head above its springing." },
+        "planes": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Glass planes from the bottom up. Every plane but the last gives `below`, the height where the next one takes over.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["depth"],
+            "properties": {
+              "depth": { "$ref": "#/$defs/positive", "description": "Behind the wall face." },
+              "below": { "type": "number", "description": "This plane holds the glass below this height." },
+              "note": { "$ref": "#/$defs/note" }
+            }
+          }
+        },
+        "bars": { "type": "array", "items": { "$ref": "#/$defs/pair" }, "description": "Height bands (v0, v1) that are frame, not glass: transoms." },
+        "frostedBelow": { "type": ["number", "null"], "description": "For frosted-lower glazing: the height the frosting reaches." },
         "note": { "$ref": "#/$defs/note" }
       }
     },
@@ -380,15 +412,25 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["type", "wall", "u", "v", "mode", "applies"],
-          "description": "Copy a rectangle of the wall over a movable item or an open leaf: shift takes it from u + by, mirror reflects it about u = about.",
+          "description": "Copy a rectangle of the wall over a movable item or an open leaf: shift takes it from u + by, mirror reflects it about u = about, copy takes it from another wall (from.wall, starting at from.u, as wide as the target, mirrored if from.mirror).",
           "properties": {
             "type": { "const": "patch" },
             "wall": { "$ref": "#/$defs/id" },
             "u": { "type": "array", "items": { "$ref": "#/$defs/uRef" }, "minItems": 2, "maxItems": 2 },
             "v": { "$ref": "#/$defs/pair" },
-            "mode": { "enum": ["shift", "mirror"] },
+            "mode": { "enum": ["shift", "mirror", "copy"] },
             "by": { "$ref": "#/$defs/shiftRef" },
             "about": { "type": "number" },
+            "from": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["wall", "u"],
+              "properties": {
+                "wall": { "$ref": "#/$defs/id" },
+                "u": { "type": "number", "description": "u where the source starts on its wall." },
+                "mirror": { "type": "boolean" }
+              }
+            },
             "applies": { "type": "array", "minItems": 1, "items": { "enum": ["photo", "relief"] } },
             "note": { "$ref": "#/$defs/note" }
           }
@@ -455,6 +497,7 @@
       "additionalProperties": false,
       "required": ["wallViews"],
       "properties": {
+        "methodRevision": { "type": "integer", "minimum": 1, "description": "Which revision of the survey's method (code) builds this room; absent = 1, as the Grand Hall was built." },
         "publish": {
           "type": "object",
           "additionalProperties": false,
@@ -529,9 +572,11 @@
         "atlas": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["size", "ppm", "vRange", "placement"],
+          "required": ["size", "ppm", "vRange"],
           "properties": {
-            "size": { "type": "integer", "minimum": 1 },
+            "size": { "type": "integer", "minimum": 1, "description": "Atlas width in texels (and height, unless `height` is given)." },
+            "height": { "type": "integer", "minimum": 1, "description": "Atlas height in texels, if not `size`." },
+            "gutter": { "type": "integer", "minimum": 0, "description": "Texels between packed strips (packing without `placement`)." },
             "ppm": {
               "type": "object",
               "additionalProperties": false,
@@ -543,6 +588,7 @@
             "featherTexels": { "type": "integer", "minimum": 0 },
             "placement": {
               "type": "array",
+              "description": "Where each wall's strip goes. Without it the survey packs the strips on shelves in wall order.",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
@@ -569,8 +615,43 @@
             "holdFloor": { "$ref": "#/$defs/nonNegative" },
             "holdCeiling": { "$ref": "#/$defs/positive" }
           }
+        },
+        "ceilingRelief": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["container", "id", "ppm", "heightRange"],
+          "description": "A height field of a flat (coffered or panelled) ceiling, taken from the view up at it and stored as one GHR1 entry: u = planner x, v = planner z, depth = ceiling.height - y (positive towards the room).",
+          "properties": {
+            "container": { "enum": ["GHR1"] },
+            "id": { "type": "string", "pattern": "^[a-z0-9-]{1,12}$" },
+            "ppm": { "$ref": "#/$defs/positive" },
+            "heightRange": { "$ref": "#/$defs/pair", "description": "Heights above the floor the ceiling's surfaces span; anything outside is not ceiling." },
+            "simplifyError": { "$ref": "#/$defs/positive" }
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["walls"],
+          "description": "The files the build publishes, with their pixel sizes; the web loader reads these names.",
+          "properties": {
+            "walls": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/outputImage" } },
+            "relief": { "$ref": "#/$defs/fileName" },
+            "ceiling": { "type": "array", "items": { "$ref": "#/$defs/outputImage" } },
+            "ceilingRelief": { "$ref": "#/$defs/fileName" },
+            "domes": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/outputImage" } } },
+            "floor": { "type": "array", "items": { "$ref": "#/$defs/outputImage" } },
+            "manifest": { "anyOf": [{ "$ref": "#/$defs/fileName" }, { "type": "null" }], "description": "The published survey.json, or null for none." }
+          }
         }
       }
+    },
+    "fileName": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$" },
+    "outputImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "size"],
+      "properties": { "file": { "$ref": "#/$defs/fileName" }, "size": { "$ref": "#/$defs/pixelSize" } }
     },
     "provenance": {
       "type": "object",

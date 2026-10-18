@@ -332,6 +332,14 @@
       "simplifyError": 0.005,
       "holdFloor": 0.04,
       "holdCeiling": 6.66
+    },
+    "outputs": {
+      "walls": [{ "file": "walls-4096.webp", "size": [4096, 4096] }, { "file": "walls-2048.webp", "size": [2048, 2048] }],
+      "relief": "walls-relief.bin",
+      "ceiling": [{ "file": "ceiling-3072.webp", "size": [3072, 1536] }, { "file": "ceiling-1536.webp", "size": [1536, 768] }],
+      "domes": { "dome": [{ "file": "dome-4096.webp", "size": [4096, 768] }, { "file": "dome-2048.webp", "size": [2048, 384] }] },
+      "floor": [{ "file": "floor-2560.webp", "size": [2560, 1280] }, { "file": "floor-1280.webp", "size": [1280, 640] }],
+      "manifest": null
     }
   },
   "provenance": {

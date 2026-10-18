@@ -395,6 +395,28 @@ def prove_values(room, repo):
     led.same("hall-photos.ts HALL_PHOTO_BASE, HALL_SURVEY_REVISION",
              ["packages/web/public" + re.search(r'HALL_PHOTO_BASE = "([^"]+)"', ph).group(1), int(ts_number(ph, "HALL_SURVEY_REVISION"))],
              [room["survey"]["publish"]["folder"], room["survey"]["publish"]["revision"]])
+
+    # --- survey.outputs: the published files' names and sizes ----------------
+    out = room["survey"]["outputs"]
+    build_sh = text(os.path.join(gh, "build.sh"))
+    led.same("build.sh OUTPUTS = survey.outputs files, in order", re.search(r"OUTPUTS=\(([^)]*)\)", build_sh, re.S).group(1).split(),
+             [f["file"] for f in out["walls"]] + [out["relief"]] + [f["file"] for f in out["ceiling"]]
+             + [f["file"] for f in out["domes"]["dome"]] + [f["file"] for f in out["floor"]])
+    led.same("build.sh relief-mesh.mjs output = survey.outputs.relief",
+             re.search(r"relief-mesh\.mjs\" proj/([\w.-]+)", build_sh).group(1), out["relief"])
+    pa_text = text(os.path.join(gh, "pack-atlas.py"))
+    led.same("pack-atlas.py walls-4096 (SIZE) and walls-2048 (resize) sizes",
+             [[pa["SIZE"], pa["SIZE"]], [int(x) for x in re.search(r"out\.resize\(\((\d+), (\d+)\)", pa_text).groups()],
+              re.findall(r"'proj/(walls-\d+\.webp)'", pa_text)],
+             [out["walls"][0]["size"], out["walls"][1]["size"], [f["file"] for f in out["walls"]]])
+    po = re.findall(r"save\((ceiling|dome), f'\{out\}/([\w-]+\.webp)', \((\d+), (\d+)\)\)", text(os.path.join(gh, "pack-overhead.py")))
+    for surface, files in (("ceiling", out["ceiling"]), ("dome", out["domes"]["dome"])):
+        led.same(f"pack-overhead.py {surface} files and sizes", [[n, [int(a), int(b)]] for k, n, a, b in po if k == surface],
+                 [[f["file"], f["size"]] for f in files])
+    pf_text = text(os.path.join(gh, "pack-floor.py"))
+    sizes = [[int(a), int(b)] for a, b in re.findall(r"\((\d+), (\d+)\)", re.search(r"for size in \[(.*?)\]:", pf_text).group(1))]
+    led.same("pack-floor.py files and sizes", [[f"floor-{s[0]}.webp", s] for s in sizes], [[f["file"], f["size"]] for f in out["floor"]])
+    led.same("survey.outputs.manifest: no survey.json in the Grand Hall's folder", None, out.get("manifest"))
     return led.print()
 
 

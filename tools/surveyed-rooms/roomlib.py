@@ -116,6 +116,19 @@ def opening_top(opening):
     return opening["head"]
 
 
+def outline_top(shape, centre, width, head, u, rise=None):
+    """Height of an opening's (or glazed outline's) top at u: `head` for a square head; for a
+    semicircular one the circle on the springing line; for a segmental one the circular arc
+    through both springings that rises `rise` at the centre."""
+    half = width / 2
+    if shape == "semicircular":
+        return head + math.sqrt(max(0.0, half * half - (u - centre) ** 2))
+    if shape == "segmental":
+        radius = (rise * rise + half * half) / (2 * rise)
+        return head + rise - radius + math.sqrt(max(0.0, radius * radius - (u - centre) ** 2))
+    return head
+
+
 def resolve_u(room, ref, openings=None, wmap=None):
     """A uRef: a number, or {opening, offset} = that opening's centre + offset."""
     if isinstance(ref, (int, float)):
@@ -211,22 +224,53 @@ def wall_views(room):
     return views
 
 
-def ceiling_view(room):
-    """One view looking straight up over the outline's bounding box (views-ceiling.json):
-    image right is E57 +X, image up E57 +Y."""
-    cv = room["survey"]["ceilingView"]
+def bounding_box(room):
+    """(x0, x1, z0, z1) of the outline in the planner frame."""
     verts = room["walls"]["vertices"]
     xs = [v[0] for v in verts]
     zs = [v[1] for v in verts]
-    x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
+    return min(xs), max(xs), min(zs), max(zs)
+
+
+def _plain(value):
+    """A direction component as JSON writes it: an integral value as an int (never -0)."""
+    return int(value) if float(value).is_integer() else value
+
+
+def ceiling_view(room):
+    """One view looking straight up over the outline's bounding box (views-ceiling.json).
+    The camera's up is planner +z, so every room's image has the Grand Hall's orientation:
+    image right is planner +x and image up planner +z (for the Grand Hall, E57 -X and E57 +Y).
+    The view's size is therefore (x span, z span) whatever the room's quarter turns."""
+    cv = room["survey"]["ceilingView"]
+    x0, x1, z0, z1 = bounding_box(room)
     X, Y = to_e57(room, (x0 + x1) / 2, (z0 + z1) / 2)
     span_x, span_z = x1 - x0, z1 - z0
-    size = [span_x, span_z] if turns(room) % 2 == 0 else [span_z, span_x]
+    size = [span_x, span_z]
+    up = [_plain(c) for c in to_e57_dir(room, 0, 1)] + [0]
     eye_z = room["transform"]["floorZ"] + cv["eyeHeight"]
     ppm = cv["ppm"]
-    return dict(name=cv["name"], eye=[X, Y, eye_z], target=[X, Y, eye_z + 1.0], up=[0, 1, 0], size=size,
+    return dict(name=cv["name"], eye=[X, Y, eye_z], target=[X, Y, eye_z + 1.0], up=up, size=size,
                 pixels=[half_up(size[0] * ppm), half_up(size[1] * ppm)], near=cv["near"], far=cv["far"],
                 modes=list(cv["modes"]))
+
+
+def corner_convex(room):
+    """Per outline vertex: True at a convex corner (every corner of a rectangle), False at a
+    reflex one, where the outline steps out of the room (into a bay or recess). The outline runs
+    counter-clockwise seen from above (signed_area > 0), so a vertex is reflex when the cross
+    product of its incoming and outgoing edges, in (x, z), is positive. A straight-through
+    vertex counts as convex. Vertex i is the right end (u = length) of segment i and the left
+    end (u = 0) of segment i - 1."""
+    verts = room["walls"]["vertices"]
+    n = len(verts)
+    out = []
+    for i in range(n):
+        a, b, c = verts[i - 1], verts[i], verts[(i + 1) % n]
+        e1 = (b[0] - a[0], b[1] - a[1])
+        e2 = (c[0] - b[0], c[1] - b[1])
+        out.append(e1[0] * e2[1] - e1[1] * e2[0] <= 0)
+    return out
 
 
 def wall_views_bytes(room):

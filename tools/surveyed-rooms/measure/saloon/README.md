@@ -22,3 +22,11 @@ then took five corrections from an independent check by ray casting (18 October)
 width (7.10 m between the end sections, 7.01 m at the front), a narrower source for the mirror
 patch behind the open lobby door, the two glass planes, the mantel shelf's extent and the
 unverified capture date.
+
+`32_glass_split.py` (added after the build's review, 18 October) casts rays into the three bays
+to find where the glass changes from the lower plane to the upper one, and how deep each plane
+sits. On the mesh the change is at v 3.513 to 3.518 m in all three bays (0 of 260 rows
+misassigned), at the transom's top and so at the configured 3.52 m. The "about 3.6 m" noted
+earlier is where the mesh's ramp between the planes settles. The upper light's median depth is
+0.592 to 0.614 m, against the configured 0.596 m. The build's windows step repeats the split
+check on the rendered elevations, and refuses to publish if they disagree (`roombuild/windows.py`).
