@@ -26,6 +26,9 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
+  AIUsageAttempt,
+  AIUsageFeature,
+  AIUsageOutcome,
   AgentTrajectory,
   AnalyticsSnapshotPayload,
   BookingKind,
@@ -3414,7 +3417,11 @@ export const bookings = pgTable("bookings", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id),
   spaceId: uuid("space_id").notNull().references(() => spaces.id),
-  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  // The bind (migration 0090): every hold and ink has its event
+  // (bookings_bound_to_event), and an event with bookings cannot be deleted
+  // (RESTRICT; events are soft-deleted). Interest only and the venue's own
+  // blocks may have none. Writers go through services/event-binding.ts.
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "restrict" }),
   kind: varchar("kind", { length: 20 }).$type<BookingKind>().notNull(),
   status: varchar("status", { length: 20 }).$type<BookingLiveness>().notNull().default("active"),
   title: varchar("title", { length: 200 }).notNull(),
@@ -3451,7 +3458,8 @@ export const bookings = pgTable("bookings", {
     columns: [table.eventId, table.venueId],
     foreignColumns: [events.id, events.venueId],
     name: "bookings_event_venue_fk",
-  }),
+  }).onDelete("restrict"),
+  check("bookings_bound_to_event", sql`${table.kind} NOT IN ('hold', 'ink') OR ${table.eventId} IS NOT NULL`),
   foreignKey({
     columns: [table.spaceId, table.venueId],
     foreignColumns: [spaces.id, spaces.venueId],
@@ -3465,6 +3473,29 @@ export const bookings = pgTable("bookings", {
   index("bookings_venue_next_action_idx").on(table.venueId, table.nextActionDueAt),
   index("bookings_enquiry_idx").on(table.enquiryId),
   index("bookings_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
+]);
+
+// What migration 0090 asks a person to look at after binding the bookings
+// that had no event: a booking whose enquiry's bookings were in more than one
+// event, a new event that may be the same occasion as another booking's, and
+// each existing event whose status it changed (previousStatus keeps the old
+// one). Written once by the migration; read-only after.
+export const eventBindingReviews = pgTable("event_binding_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  bookingId: uuid("booking_id").references(() => bookings.id, { onDelete: "cascade" }),
+  reason: varchar("reason", { length: 40 })
+    .$type<"enquiry_events_differ" | "possibly_same_event" | "event_status_derived">().notNull(),
+  detail: text("detail").notNull(),
+  previousStatus: varchar("previous_status", { length: 30 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("event_binding_reviews_venue_idx").on(table.venueId, table.createdAt),
+  check(
+    "event_binding_reviews_reason_check",
+    sql`${table.reason} IN ('enquiry_events_differ', 'possibly_same_event', 'event_status_derived')`,
+  ),
 ]);
 
 // House status-history convention (enquiry_status_history pattern). Rows
@@ -5885,11 +5916,61 @@ export const quizRuns = pgTable("quiz_runs", {
 
 export const venueSettings = pgTable("venue_settings", {
   venueId: uuid("venue_id").primaryKey().references(() => venues.id, { onDelete: "cascade" }),
+  /** Slice 10's single window. Kept as a column, no longer read (0092). */
   requestEscalationSeconds: integer("request_escalation_seconds").notNull(),
+  // Goal 19 S7 (0092): the people matrix's operating settings, with Blake's
+  // decided defaults. Data, never constants in code.
+  escalationNowSeconds: integer("escalation_now_seconds").notNull().default(120),
+  escalationSoonSeconds: integer("escalation_soon_seconds").notNull().default(300),
+  escalationRoutineSeconds: integer("escalation_routine_seconds").notNull().default(900),
+  quietHoursStart: time("quiet_hours_start").notNull().default("22:00"),
+  quietHoursEnd: time("quiet_hours_end").notNull().default("07:00"),
+  dutyAdminUserId: uuid("duty_admin_user_id").references(() => users.id, { onDelete: "set null" }),
+  dayBoundaryHour: integer("day_boundary_hour").notNull().default(4),
+  handoverReliefSeconds: integer("handover_relief_seconds").notNull().default(300),
+  wallShowsGuestDetails: boolean("wall_shows_guest_details").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   check("venue_settings_escalation_window", sql`${table.requestEscalationSeconds} BETWEEN 30 AND 86400`),
+  check("venue_settings_operating_windows", sql`${table.escalationNowSeconds} BETWEEN 30 AND 86400 AND ${table.escalationSoonSeconds} BETWEEN 30 AND 86400 AND ${table.escalationRoutineSeconds} BETWEEN 30 AND 86400 AND ${table.handoverReliefSeconds} BETWEEN 30 AND 86400 AND ${table.dayBoundaryHour} BETWEEN 0 AND 23`),
+]);
+
+/** A device that asked to be told (goal 19 S7). One row per browser
+ *  subscription; a push service's 404 or 410 disables it rather than
+ *  deleting, so the record of what was asked for stays. */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  deviceKind: varchar("device_kind", { length: 10 }).notNull(),
+  userAgent: varchar("user_agent", { length: 300 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  disabledAt: timestamp("disabled_at", { withTimezone: true }),
+}, (table) => [
+  index("push_subscriptions_user_idx").on(table.userId),
+  index("push_subscriptions_venue_idx").on(table.venueId),
+  check("push_subscriptions_device_kind", sql`${table.deviceKind} IN ('wall', 'phone', 'desk')`),
+]);
+
+/** Every push attempted, as a fact: the idempotency key is the guard
+ *  against a second sweep sending the same word twice. */
+export const pushSends = pgTable("push_sends", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  subscriptionId: uuid("subscription_id").notNull().references(() => pushSubscriptions.id, { onDelete: "cascade" }),
+  event: varchar("event", { length: 30 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull().unique(),
+  status: varchar("status", { length: 10 }).notNull().default("pending"),
+  statusCode: integer("status_code"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+}, (table) => [
+  check("push_sends_status", sql`${table.status} IN ('pending', 'sent', 'failed', 'gone')`),
 ]);
 
 export const requests = pgTable("requests", {
@@ -5928,6 +6009,11 @@ export const requests = pgTable("requests", {
   handedOverAt: timestamp("handed_over_at", { withTimezone: true }),
   underwayAt: timestamp("underway_at", { withTimezone: true }),
   reopenedAt: timestamp("reopened_at", { withTimezone: true }),
+  /** Goal 19 S7 (0092): when the escalation email left, or null while it
+   *  waits out quiet hours; when a handed-over request's relief must have
+   *  accepted by, or it escalates. */
+  escalationEmailedAt: timestamp("escalation_emailed_at", { withTimezone: true }),
+  handoverDueAt: timestamp("handover_due_at", { withTimezone: true }),
 }, (table) => [
   uniqueIndex("requests_venue_idempotency_unique").on(table.venueId, table.idempotencyKey),
   index("requests_venue_state_created_idx").on(table.venueId, table.state, table.createdAt),
@@ -6060,4 +6146,61 @@ export const bookingObservations = pgTable("booking_observations", {
   index("booking_observations_booking_observed_idx").on(table.bookingId, table.observedAt),
   index("booking_observations_venue_observed_idx").on(table.venueId, table.observedAt),
   check("booking_observations_kind", sql`${table.kind} IN ('set', 'doors-open', 'live', 'flipping', 'done', 'cleaned')`),
+]);
+
+// ---------------------------------------------------------------------------
+// AI usage (T-656, migration 0091) — one append-only row per model call, or
+// per call the venue's monthly allowance refused, with its tokens and its
+// cost in integer micro-USD from the versioned price table
+// (services/ai-usage.ts). Counts, model names, ids and money only: never
+// prompt text, names or contact details. Triggers refuse every update, delete
+// and truncate. The CHECK lists match AI_USAGE_FEATURES and AI_USAGE_OUTCOMES
+// in @omnitwin/types ai-usage.ts.
+//
+// Reservations are what calls in flight hold against the allowance: taken
+// under a per-venue advisory lock before a call, given up when its ledger row
+// is written, and lapsing after ten minutes if a process died holding one.
+// ---------------------------------------------------------------------------
+
+export const aiUsageLedger = pgTable("ai_usage_ledger", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  feature: varchar("feature", { length: 40 }).$type<AIUsageFeature>().notNull(),
+  /** As long as AI_ASSISTANT_PROVIDER may be, so every provider's call can be recorded. */
+  provider: varchar("provider", { length: 80 }).notNull(),
+  requestedModel: varchar("requested_model", { length: 120 }).notNull(),
+  /** The model that served the answer: a fallback's after a refusal. */
+  model: varchar("model", { length: 120 }).notNull(),
+  requestId: varchar("request_id", { length: 200 }),
+  inputTokens: integer("input_tokens").notNull(),
+  outputTokens: integer("output_tokens").notNull(),
+  cacheCreationInputTokens: integer("cache_creation_input_tokens").notNull(),
+  cacheReadInputTokens: integer("cache_read_input_tokens").notNull(),
+  outcome: varchar("outcome", { length: 16 }).$type<AIUsageOutcome>().notNull(),
+  costMicroUsd: bigint("cost_micro_usd", { mode: "number" }).notNull(),
+  priceTableVersion: varchar("price_table_version", { length: 40 }).notNull(),
+  attempts: jsonb("attempts").$type<readonly AIUsageAttempt[]>().notNull().default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("ai_usage_ledger_venue_created_idx").on(table.venueId, table.createdAt),
+  check("ai_usage_ledger_feature", sql`${table.feature} IN ('enquiry_summary', 'lead_qualification', 'proposal_draft', 'beo_supplier_instruction_draft', 'route_conflict_explanation', 'truth_mode_explanation', 'event_brief')`),
+  check("ai_usage_ledger_outcome", sql`${table.outcome} IN ('ok', 'refusal', 'max_tokens', 'error', 'budget_blocked')`),
+  check("ai_usage_ledger_names", sql`${table.provider} <> '' AND ${table.requestedModel} <> '' AND ${table.model} <> '' AND ${table.priceTableVersion} <> ''`),
+  check("ai_usage_ledger_tokens", sql`${table.inputTokens} >= 0 AND ${table.outputTokens} >= 0 AND ${table.cacheCreationInputTokens} >= 0 AND ${table.cacheReadInputTokens} >= 0`),
+  check("ai_usage_ledger_cost", sql`${table.costMicroUsd} >= 0`),
+  check("ai_usage_ledger_attempts", sql`jsonb_typeof(${table.attempts}) = 'array'`),
+  check("ai_usage_ledger_blocked", sql`${table.outcome} <> 'budget_blocked' OR (${table.inputTokens} = 0 AND ${table.outputTokens} = 0 AND ${table.cacheCreationInputTokens} = 0 AND ${table.cacheReadInputTokens} = 0 AND ${table.costMicroUsd} = 0 AND ${table.requestId} IS NULL AND ${table.attempts} = '[]'::jsonb)`),
+]);
+
+export const aiUsageReservations = pgTable("ai_usage_reservations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  reservedMicroUsd: bigint("reserved_micro_usd", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  index("ai_usage_reservations_venue_expires_idx").on(table.venueId, table.expiresAt),
+  check("ai_usage_reservations_amount", sql`${table.reservedMicroUsd} > 0`),
+  check("ai_usage_reservations_window", sql`${table.expiresAt} > ${table.createdAt}`),
 ]);

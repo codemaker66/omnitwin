@@ -111,3 +111,32 @@ describe("MobilePlannerTopBar plan as a PDF", () => {
     expect(screen.queryByRole("dialog", { name: "Send your plan" })).toBeNull();
   });
 });
+
+describe("MobilePlannerTopBar identity", () => {
+  const RECEPTION = {
+    id: "space-reception", venueId: "venue", name: "Reception Room", slug: "reception-room",
+    widthM: "13.4", lengthM: "11.2", heightM: "3.2", floorPlanOutline: [],
+  };
+
+  it("shows the room and layout the server actually returned", () => {
+    useEditorStore.setState({ space: RECEPTION, configId: "cfg-ceilidh", configName: "Ceilidh long tables" });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.getByTestId("mobile-planner-room-name").textContent).toBe("Reception Room");
+    expect(screen.getByTestId("mobile-planner-layout-name").textContent).toBe("Ceilidh long tables");
+  });
+
+  it("never guesses the flagship's names while the room or layout is still loading", () => {
+    useEditorStore.setState({ space: null, configId: "cfg-loading", configName: null });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.queryByText("Grand Hall")).toBeNull();
+    expect(screen.queryByText("Banquet Draft")).toBeNull();
+    expect(screen.getByTestId("mobile-planner-room-name").textContent).toBe("Loading room…");
+    expect(screen.getByTestId("mobile-planner-layout-name").textContent).toBe("Loading layout…");
+  });
+
+  it("calls a draft that has never been saved what it is", () => {
+    useEditorStore.setState({ space: RECEPTION, configId: null, configName: null });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.getByTestId("mobile-planner-layout-name").textContent).toBe("Unsaved layout");
+  });
+});

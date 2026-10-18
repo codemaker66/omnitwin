@@ -19,12 +19,22 @@ function layout(configurationId: string, name: string): { configurationId: strin
 }
 
 describe("describeSlotSheet", () => {
-  it("sends a booking with no event to the Diary, not to a dead sheet link", () => {
-    const state = describeSlotSheet({ eventId: null, roomName: "Grand Hall", layouts: [], unavailableCount: 0 });
+  it("says a house block has no sheet, and sends it to the Diary rather than a dead sheet link", () => {
+    const state = describeSlotSheet({ eventId: null, bookingKind: "internal_block", roomName: "Grand Hall", layouts: [], unavailableCount: 0 });
     expect(state.kind).toBe("no-event");
     if (state.kind !== "no-event") throw new Error("expected no-event");
-    expect(state.message).toContain("not linked to an event");
-    expect(state.nextAction).toContain("Diary");
+    expect(state.message).toBe("A house block has no setup sheet.");
+    expect(state.nextAction).toBe("See the block in the Diary.");
+  });
+
+  it("never asks anyone to link an event: a booking is born with one (the bind)", () => {
+    for (const bookingKind of ["hold", "ink", "prospect", undefined] as const) {
+      const state = describeSlotSheet({ eventId: null, bookingKind, roomName: "Grand Hall", layouts: [], unavailableCount: 0 });
+      if (state.kind !== "no-event") throw new Error("expected no-event");
+      expect(state.message).toBe("No setup sheet: this booking has no event.");
+      expect(state.nextAction).toBe("Open the booking in the Diary.");
+      expect(`${state.message} ${state.nextAction}`).not.toMatch(/\blink\b/u);
+    }
   });
 
   it("names the room in the honest empty state and points at the event", () => {

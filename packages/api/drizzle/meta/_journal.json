@@ -621,8 +621,29 @@
     {
       "idx": 88,
       "version": "7",
+      "when": 1791644400000,
+      "tag": "0090_booking_event_bind",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
       "when": 1791730800000,
-      "tag": "0091_configuration_view_tokens",
+      "tag": "0091_ai_usage_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1791903600000,
+      "tag": "0092_operating_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792249200000,
+      "tag": "0096_configuration_view_tokens",
       "breakpoints": true
     }
   ]

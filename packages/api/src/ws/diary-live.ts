@@ -18,7 +18,9 @@ import {
 } from "../services/diary-commands.js";
 import { executeConversationCommand, type ConversationChanged } from "../services/conversation-commands.js";
 import type { MutationActor } from "../services/booking-mutations.js";
-import { runRequestEscalationPass } from "../services/requests.js";
+import { EscalationScheduler } from "../services/escalation-scheduler.js";
+import { installEscalationScheduler } from "../services/escalation-wake.js";
+import { pushForRequestEscalated, tell } from "../services/push-triggers.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 // ---------------------------------------------------------------------------
@@ -72,7 +74,6 @@ const STALE_AFTER_MS = 65_000; // three missed beats and the connection is gone
 /** How often the request escalation sweep looks for an unanswered "now".
  *  Short against the shortest sensible venue window, cheap because the query
  *  is a partial index on exactly those rows. */
-const ESCALATION_SWEEP_INTERVAL_MS = 15_000;
 /** How much of the conversation stream a reconnecting screen is replayed
  *  before it is told to refetch its snapshot instead. */
 const REPLAY_LIMIT = 500;
@@ -96,6 +97,11 @@ export interface DiaryLiveUser {
   readonly platformRole?: PlatformRole;
 }
 
+/** What kind of screen a connection is (goal 19 S7): the wall display in
+ *  the corridor, a phone in a pocket, or a desk. Absent from an older client. */
+export type DiaryLiveDevice = "wall" | "phone" | "desk";
+export const DIARY_LIVE_DEVICES = ["wall", "phone", "desk"] as const;
+
 export interface DiaryLiveConnection {
   readonly socket: DiaryLiveSocket;
   readonly user: DiaryLiveUser;
@@ -103,12 +109,20 @@ export interface DiaryLiveConnection {
    *  open for requests and the unread count. It hears the frames its role
    *  may hear, but its person is not on the Diary, so it is not presence. */
   readonly present: boolean;
+  readonly device: DiaryLiveDevice | null;
   lastSeenMs: number;
 }
 
 export interface DiaryLiveJoinOptions {
   /** Defaults to true: the Diary and the Day Board are where people are. */
   readonly present?: boolean;
+  readonly device?: DiaryLiveDevice;
+}
+
+/** A person in the presence list, with every kind of screen they are on.
+ *  One person on the wall and on a phone is one entry with two devices. */
+export interface DiaryLivePresence extends DiaryLiveUser {
+  readonly devices: readonly DiaryLiveDevice[];
 }
 
 /**
@@ -135,6 +149,7 @@ export class DiaryLiveHub {
       socket,
       user,
       present: options.present ?? true,
+      device: options.device ?? null,
       lastSeenMs: nowMs,
     };
     const set = this.#byVenue.get(venueId) ?? new Set<DiaryLiveConnection>();
@@ -169,13 +184,18 @@ export class DiaryLiveHub {
    *  from connections that are somewhere people are: a page that merely
    *  listens for requests does not put its person "here" (T-619's rule that
    *  the count names only colleagues who are there). */
-  presenceFor(venueId: string): readonly DiaryLiveUser[] {
-    const byUser = new Map<string, DiaryLiveUser>();
+  presenceFor(venueId: string): readonly DiaryLivePresence[] {
+    const byUser = new Map<string, { user: DiaryLiveUser; devices: Set<DiaryLiveDevice> }>();
     for (const connection of this.#byVenue.get(venueId) ?? []) {
       if (!connection.present) continue;
-      byUser.set(connection.user.userId, connection.user);
+      const entry = byUser.get(connection.user.userId) ?? { user: connection.user, devices: new Set<DiaryLiveDevice>() };
+      if (connection.device !== null) entry.devices.add(connection.device);
+      byUser.set(connection.user.userId, entry);
     }
-    return [...byUser.values()];
+    return [...byUser.values()].map(({ user, devices }) => ({
+      ...user,
+      devices: DIARY_LIVE_DEVICES.filter((device) => devices.has(device)),
+    }));
   }
 
   /** Send to every connection of the venue; a broken socket never breaks
@@ -273,6 +293,9 @@ export class DiaryLiveHub {
 export const DiaryAuthMessage = AuthMessage.extend({
   presence: z.boolean().optional(),
   afterCursor: z.number().int().nonnegative().optional(),
+  /** Which kind of screen this is (S7), so the office can read "Wall
+   *  display live · Elaine's phone live". Absent from an older client. */
+  device: z.enum(DIARY_LIVE_DEVICES).optional(),
 });
 
 const IncomingLiveMessage = z.discriminatedUnion("type", [
@@ -549,16 +572,15 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
   // shutdown grace timer in index.ts).
   heartbeat.unref();
 
-  // The escalation sweep. A short timer rather than a cron because the claim
-  // is a conditional UPDATE (escalated_at IS NULL) and the email carries its
-  // own idempotency key: two replicas sweeping together escalate once between
-  // them. An external cron can still call the endpoint; it is the same pass.
-  let sweeping = false;
-  const escalationSweep = setInterval(() => {
-    if (sweeping) return;
-    sweeping = true;
-    void runRequestEscalationPass(db, { logger: server.log })
-      .then((escalated) => {
+  // The escalation sweep, run by a scheduler that wakes only when something
+  // is due (S7; the 18 October outage: a 15-second poll kept Neon awake).
+  // The claim is a conditional UPDATE (escalated_at IS NULL) and the email
+  // carries its own idempotency key, so two replicas sweeping together still
+  // escalate once between them; the endpoint stays for an external cron.
+  const escalationScheduler = new EscalationScheduler({
+    db,
+    logger: server.log,
+    onEscalated: (escalated) => {
         for (const item of escalated) {
           const at = new Date().toISOString();
           emit(server.log, "request.changed", {
@@ -577,6 +599,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
           // path writes the notification row but the number on their nav sits
           // still until they navigate, and the two paths disagree about what
           // "escalated" feels like.
+          tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: server.log }), server.log, "request.escalated");
           if (item.notificationIds.length > 0) {
             emit(server.log, "notification.created", {
               venueId: item.request.venueId,
@@ -591,19 +614,15 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
             });
           }
         }
-      })
-      .catch((error: unknown) => {
-        server.log.error({ err: error }, "request escalation sweep failed");
-      })
-      .finally(() => {
-        sweeping = false;
-      });
-  }, ESCALATION_SWEEP_INTERVAL_MS);
-  escalationSweep.unref();
+    },
+  });
+  escalationScheduler.start();
+  installEscalationScheduler(escalationScheduler);
 
   server.addHook("onClose", () => {
     clearInterval(heartbeat);
-    clearInterval(escalationSweep);
+    escalationScheduler.stop();
+    installEscalationScheduler(null);
     unsubscribe();
     unsubscribeRequestFrames();
     unsubscribeConversationFrames();
@@ -676,7 +695,12 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
               role: user.userRole,
               platformRole: user.platformRole,
             };
-            connection = hub.join(venueId, socket, liveUser, Date.now(), { present: auth.data.presence !== false });
+            // The device (S7) rides along when the client names one; an
+            // older client's frame is read exactly as before.
+            const joinOptions: DiaryLiveJoinOptions = auth.data.device === undefined
+              ? { present: auth.data.presence !== false }
+              : { present: auth.data.presence !== false, device: auth.data.device };
+            connection = hub.join(venueId, socket, liveUser, Date.now(), joinOptions);
             server.log.info(
               { event: "diary-live.connections", venueId, connections: hub.connectionCount(venueId) },
               "diary-live.joined",

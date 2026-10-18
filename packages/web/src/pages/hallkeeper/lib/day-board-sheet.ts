@@ -1,4 +1,4 @@
-import type { HallkeeperSheetSummary } from "@omnitwin/types";
+import type { BookingKind, HallkeeperSheetSummary } from "@omnitwin/types";
 import type { LinkedLayoutChoice } from "../../../lib/event-linked-layouts.js";
 import { formatWallTime } from "../../diary/lib/board-time.js";
 
@@ -30,7 +30,9 @@ export interface SlotSheetChoice {
 }
 
 export type SlotSheetState =
-  /** The booking is not attached to an event, so no layout can exist yet. */
+  /** The booking has no event, so no layout can exist. Since the bind
+   *  (migration 0090) every provisional and confirmed booking has its event,
+   *  so on the board this is the venue's own house block. */
   | { readonly kind: "no-event"; readonly message: string; readonly nextAction: string }
   /** Attached to an event, but no layout for this room is linked. */
   | { readonly kind: "no-layout"; readonly message: string; readonly nextAction: string; readonly eventId: string }
@@ -48,6 +50,8 @@ export type SlotSheetState =
 
 export interface SlotSheetInput {
   readonly eventId: string | null;
+  /** What the slot is: a house block never has a sheet. */
+  readonly bookingKind?: BookingKind;
   readonly roomName: string;
   readonly layouts: readonly LinkedLayoutChoice[];
   /** References the signed-in account may not read. Surfaced, never hidden. */
@@ -64,11 +68,20 @@ export function describeSlotSheet(input: SlotSheetInput): SlotSheetState {
   const { eventId, roomName, layouts, unavailableCount } = input;
 
   if (eventId === null) {
-    return {
-      kind: "no-event",
-      message: "No setup sheet yet — this booking is not linked to an event.",
-      nextAction: "Open the booking in the Diary and link it to an event.",
-    };
+    // A provisional or confirmed booking is born with its event (the bind),
+    // so there is nothing for anyone to link: a house block simply has no
+    // sheet, and any other booking without an event is the office's to see.
+    return input.bookingKind === "internal_block"
+      ? {
+        kind: "no-event",
+        message: "A house block has no setup sheet.",
+        nextAction: "See the block in the Diary.",
+      }
+      : {
+        kind: "no-event",
+        message: "No setup sheet: this booking has no event.",
+        nextAction: "Open the booking in the Diary.",
+      };
   }
 
   if (layouts.length === 0) {

@@ -20,6 +20,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { emit } from "../observability/event-bus.js";
+import { pushForRequestLanded, tell } from "../services/push-triggers.js";
 import { canManageVenue } from "../utils/query.js";
 import {
   clientConversationSnapshot,
@@ -310,7 +311,12 @@ export async function clientConversationRoutes(server: FastifyInstance, opts: { 
 
     const result = await createClientRequestCore(db, actor, params.data.eventId, parsed.data);
     if (isDeny(result)) return sendDeny(reply, result);
-    if (!result.replay) announceRequest(request, "request.created", result.request, result.notificationIds);
+    if (!result.replay) {
+      announceRequest(request, "request.created", result.request, result.notificationIds);
+      // The floor's phones are told the same way as for a request raised on
+      // the venue route; the client who asked is never pushed, only told in product.
+      tell(pushForRequestLanded(db, result.request, { logger: request.log }), request.log, "request.landed");
+    }
     return reply
       .status(result.replay ? 200 : 201)
       .header("idempotency-replay", String(result.replay))
