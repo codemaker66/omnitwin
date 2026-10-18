@@ -1,12 +1,22 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { AIAssistantStatusSchema, stableCanonicalJson, type AIAssistantStatus } from "@omnitwin/types";
+import { AIAssistantStatusSchema, stableCanonicalJson, type AIAssistantStatus, type AIUsageFeature } from "@omnitwin/types";
 import type {
   AIGenerationAdapter,
   AIGenerationInput,
   AIStructuredGenerationAdapter,
   AIStructuredGenerationInput,
 } from "./ai-assistant.js";
+import {
+  ANTHROPIC_PRICE_TABLE,
+  anthropicOutcome,
+  failedCall,
+  meterAnthropicMessage,
+  reserveForAnthropicRequest,
+  type AICallAttribution,
+  type AIUsageMeter,
+  type PriceTable,
+} from "./ai-usage.js";
 
 // ---------------------------------------------------------------------------
 // Claude, through Anthropic's own SDK, as an AI draft provider. The draft's
@@ -17,6 +27,12 @@ import type {
 //
 // It also answers in a given JSON shape (structured outputs) for typed event
 // briefs (T-650), with the same refusal and cut-off rules.
+//
+// Every call is metered (T-656): its worst case is reserved against the
+// venue's monthly allowance before it is sent (AIBudgetReachedError when it
+// does not fit, and nothing is sent), and its tokens and cost, priced from
+// the versioned table in ai-usage.ts, are recorded in the ledger after it,
+// whatever the answer was.
 // ---------------------------------------------------------------------------
 
 export const ANTHROPIC_PROVIDER = "anthropic";
@@ -50,16 +66,21 @@ export class AIDraftNotProducedError extends Error {
 }
 
 export type AnthropicDraftRequest = Anthropic.Beta.MessageCreateParamsNonStreaming;
+/** A message as the SDK returns it, with the request id it reads from the response. */
+export type AnthropicDraftReply = Anthropic.Beta.BetaMessage & { readonly _request_id?: string | null };
 export type AnthropicDraftSend = (
   request: AnthropicDraftRequest,
   options?: { readonly signal?: AbortSignal },
-) => Promise<Anthropic.Beta.BetaMessage>;
+) => Promise<AnthropicDraftReply>;
 
 function withServerFallback(model: string, request: AnthropicDraftRequest): AnthropicDraftRequest {
   if (!MODELS_WITH_SERVER_FALLBACK.has(model)) return request;
   return { ...request, betas: [SERVER_FALLBACK_BETA], fallbacks: "default" };
 }
 
+// Drafts carry no cache breakpoint: their rules (about 1,500 characters for a
+// proposal's message, under 600 for the other drafts) are below the 512-token
+// minimum Claude Opus 5.5 caches, and a shorter prefix silently never caches.
 export function buildAnthropicDraftRequest(model: string, input: AIGenerationInput): AnthropicDraftRequest {
   return withServerFallback(model, {
     model,
@@ -73,13 +94,22 @@ export function buildAnthropicDraftRequest(model: string, input: AIGenerationInp
   });
 }
 
-/** A request whose answer must match a JSON schema (structured outputs). */
+/**
+ * A request whose answer must match a JSON schema (structured outputs). A
+ * frozen system prompt long enough to cache (`cacheSystem`) carries a
+ * 5-minute cache breakpoint: everything before it (the system prompt and the
+ * route's fixed thinking, effort and format) is the same on every request,
+ * and everything that varies (the room, today's date, the description) is in
+ * the user turn after it.
+ */
 export function buildAnthropicStructuredRequest(model: string, input: AIStructuredGenerationInput): AnthropicDraftRequest {
   return withServerFallback(model, {
     model,
     max_tokens: MAX_TOKENS,
     output_config: { effort: "medium", format: { type: "json_schema", schema: input.schema } },
-    system: input.system,
+    system: input.cacheSystem
+      ? [{ type: "text", text: input.system, cache_control: { type: "ephemeral" } }]
+      : input.system,
     messages: [{ role: "user", content: input.prompt }],
   });
 }
@@ -127,6 +157,8 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
   readonly status: AIAssistantStatus;
   private readonly model: string;
   private readonly send: AnthropicDraftSend;
+  private readonly usage: AIUsageMeter;
+  private readonly prices: PriceTable;
 
   constructor(input: {
     readonly model: string;
@@ -134,6 +166,10 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
     readonly baseUrl?: string;
     /** The Console workspace to bill, needed when the key is not scoped to one. */
     readonly workspaceId?: string;
+    /** Reserves each call against its venue's allowance and records what it cost (T-656). */
+    readonly usage: AIUsageMeter;
+    /** The prices calls are recorded at; the current table unless a test names another. */
+    readonly prices?: PriceTable;
     /** Replaces the network call, for tests. */
     readonly send?: AnthropicDraftSend;
   }) {
@@ -144,6 +180,8 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
       disabledReason: null,
     });
     this.model = input.model;
+    this.usage = input.usage;
+    this.prices = input.prices ?? ANTHROPIC_PRICE_TABLE;
     if (input.send !== undefined) {
       this.send = input.send;
     } else {
@@ -160,13 +198,51 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
     }
   }
 
-  async generateText(input: AIGenerationInput): Promise<string> {
-    const message = await this.send(buildAnthropicDraftRequest(this.model, input));
-    return readAnthropicDraftText(message);
+  async generateText(input: AIGenerationInput, attribution: AICallAttribution): Promise<string> {
+    return this.metered(buildAnthropicDraftRequest(this.model, input), input.useCase, attribution, undefined, readAnthropicDraftText);
   }
 
-  async generateStructured(input: AIStructuredGenerationInput): Promise<unknown> {
-    const message = await this.send(buildAnthropicStructuredRequest(this.model, input), { signal: input.signal });
-    return readAnthropicStructuredAnswer(message);
+  async generateStructured(input: AIStructuredGenerationInput, attribution: AICallAttribution): Promise<unknown> {
+    return this.metered(buildAnthropicStructuredRequest(this.model, input), input.useCase, attribution, input.signal, readAnthropicStructuredAnswer);
+  }
+
+  /**
+   * One call, held to the venue's allowance and recorded: reserve (or be
+   * refused, with nothing sent), send, record what came back, then read it.
+   * Every failure keeps its own error; the record never replaces it.
+   */
+  private async metered<T>(
+    request: AnthropicDraftRequest,
+    feature: AIUsageFeature,
+    attribution: AICallAttribution,
+    signal: AbortSignal | undefined,
+    read: (message: Anthropic.Beta.BetaMessage) => T,
+  ): Promise<T> {
+    const hold = await this.usage.hold({
+      venueId: attribution.venueId,
+      userId: attribution.userId,
+      feature,
+      provider: ANTHROPIC_PROVIDER,
+      requestedModel: this.model,
+      priceTableVersion: this.prices.version,
+      reserveMicroUsd: reserveForAnthropicRequest(this.prices, request),
+    });
+    let message: AnthropicDraftReply;
+    try {
+      message = await this.send(request, { signal });
+    } catch (error) {
+      await hold.settle(failedCall(this.model, error));
+      throw error;
+    }
+    const used = meterAnthropicMessage(this.prices, this.model, message);
+    let answer: T;
+    try {
+      answer = read(message);
+    } catch (error) {
+      await hold.settle({ ...used, outcome: anthropicOutcome(message, false) });
+      throw error;
+    }
+    await hold.settle({ ...used, outcome: anthropicOutcome(message, true) });
+    return answer;
   }
 }
