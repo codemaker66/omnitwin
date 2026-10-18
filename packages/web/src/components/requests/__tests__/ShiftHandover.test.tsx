@@ -67,6 +67,18 @@ describe("ShiftHandover", () => {
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "That person does not work this venue's floor.");
   });
 
+  it("says which had moved on meanwhile and were left as they were", async () => {
+    mocks.handoverShift.mockResolvedValue({ handedOver: [request("a"), request("b")], refused: 1, toName: "Callum" });
+    render(<ShiftHandover venueId={VENUE} meId={ME} />);
+    fireEvent.click(screen.getByRole("button", { name: "Hand over my shift" }));
+    fireEvent.change(await screen.findByLabelText<HTMLSelectElement>("Hand to"), { target: { value: CALLUM } });
+    fireEvent.click(screen.getByRole("button", { name: "Hand over" }));
+    expect(await screen.findByRole("status")).toHaveProperty(
+      "textContent",
+      "Handed 2 requests to Callum. Each stays yours until they take it. One had moved on meanwhile and was left as it was.",
+    );
+  });
+
   it("one request reads in the singular", async () => {
     mocks.handoverShift.mockResolvedValue({ handedOver: [request("a")], toName: "Callum" });
     render(<ShiftHandover venueId={VENUE} meId={ME} />);

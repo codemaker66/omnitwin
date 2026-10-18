@@ -1,6 +1,10 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
-import * as webpush from "web-push";
+// web-push is CommonJS. The API runs as native Node ESM from tsc output,
+// where a namespace import of a CommonJS module carries only `default`:
+// `import * as webpush` left `sendNotification` undefined in production
+// while tsx and the tests (which inject `send`) never noticed.
+import webpush from "web-push";
 import { pushSends, pushSubscriptions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
@@ -28,9 +32,13 @@ export interface PushPayload {
   readonly tag: string;
 }
 
+export type PushDeviceKind = "wall" | "phone" | "desk";
+
 export interface PushSendInput extends PushPayload {
   readonly venueId: string;
   readonly userIds: readonly string[];
+  /** Devices never told this: a corridor wall is not shown a reply's words (D11). */
+  readonly skipDeviceKinds?: readonly PushDeviceKind[];
   /** One send per device per event: the key is this plus the subscription. */
   readonly idempotencyKeyBase: string;
 }
@@ -112,7 +120,7 @@ export async function sendPush(db: Database, input: PushSendInput, deps: PushDep
   const send = deps.send ?? defaultSender;
   const now = deps.now ?? new Date();
 
-  const devices = await db
+  const subscribed = await db
     .select()
     .from(pushSubscriptions)
     .where(and(
@@ -121,6 +129,8 @@ export async function sendPush(db: Database, input: PushSendInput, deps: PushDep
       isNull(pushSubscriptions.disabledAt),
     ))
     .limit(200);
+  const skip = input.skipDeviceKinds ?? [];
+  const devices = subscribed.filter((device) => !skip.some((kind) => kind === device.deviceKind));
 
   const payload = JSON.stringify({ event: input.event, title: input.title, body: input.body, url: input.url, tag: input.tag });
   const records: PushSendRecord[] = [];

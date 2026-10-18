@@ -240,7 +240,8 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void, options: Dia
       setConnected(false);
       setPresence([]);
     };
-  }, [enabled]);
+    // The screen's kind is told in the auth frame, so a change reconnects.
+  }, [enabled, device]);
 
   return { connected, presence };
 }

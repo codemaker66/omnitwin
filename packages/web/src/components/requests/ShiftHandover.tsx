@@ -23,6 +23,9 @@ export const SHIFT_HANDOVER_COPY = {
   nothing: "You hold no open request.",
   handed: (count: number, toName: string): string =>
     `Handed ${String(count)} ${count === 1 ? "request" : "requests"} to ${toName}. Each stays yours until they take it.`,
+  /** Requests that had moved on while the handover ran (a colleague resolved one). */
+  leftAlone: (count: number): string =>
+    count === 1 ? " One had moved on meanwhile and was left as it was." : ` ${String(count)} had moved on meanwhile and were left as they were.`,
   failed: "Could not hand over. Nothing changed.",
 } as const;
 
@@ -62,7 +65,8 @@ export function ShiftHandover({ venueId, meId }: ShiftHandoverProps): ReactEleme
     setBusy(true);
     try {
       const result = await handoverShift(venueId, target);
-      setOutcome({ kind: "done", text: SHIFT_HANDOVER_COPY.handed(result.handedOver.length, result.toName) });
+      const leftAlone = result.refused > 0 ? SHIFT_HANDOVER_COPY.leftAlone(result.refused) : "";
+      setOutcome({ kind: "done", text: `${SHIFT_HANDOVER_COPY.handed(result.handedOver.length, result.toName)}${leftAlone}` });
       setOpen(false);
       setTarget("");
     } catch (error: unknown) {

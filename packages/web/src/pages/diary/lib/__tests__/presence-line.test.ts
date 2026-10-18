@@ -32,6 +32,12 @@ describe("the office's line about the screens", () => {
       .toBe("Wall display live");
   });
 
+  it("a hallkeeper reading the Diary is a hallkeeper screen: never told nobody is on", () => {
+    const hallkeeperMe: LivePresenceUser = { userId: ME, name: "Me", role: "hallkeeper", devices: ["phone"] };
+    expect(presenceLine([hallkeeperMe], { nowWindowSeconds: 120, selfUserId: ME })).toBe("Your screen is the hallkeeper screen");
+    expect(presenceLine([hallkeeperMe, fiona], { nowWindowSeconds: 120, selfUserId: ME })).toBe("Fiona's desk live");
+  });
+
   it("an older server that names no devices: a present hallkeeper is live somewhere", () => {
     expect(presenceLine([elaine()], { nowWindowSeconds: 120, selfUserId: ME })).toBe("Elaine live");
   });

@@ -46,6 +46,10 @@ ALTER TABLE "requests" ADD COLUMN "escalation_emailed_at" timestamptz;
 --> statement-breakpoint
 ALTER TABLE "requests" ADD COLUMN "handover_due_at" timestamptz;
 --> statement-breakpoint
+-- A request escalated before this migration was emailed then and there (slice 10 sent
+-- at once); mark it so the email pass never sends a stale "Still waiting" for it.
+UPDATE "requests" SET "escalation_emailed_at" = "escalated_at" WHERE "escalated_at" IS NOT NULL AND "escalation_emailed_at" IS NULL;
+--> statement-breakpoint
 CREATE TABLE "push_subscriptions" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,

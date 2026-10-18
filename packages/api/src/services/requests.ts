@@ -523,8 +523,9 @@ export async function transitionRequestCore(
   if ((transition.to === "underway" || transition.to === "handed-over") && !ownsIt && !senior) {
     return deny(409, "NOT_OWNER", `${row.ownerName ?? "Somebody else"} has this.`, row.ownerName ?? undefined);
   }
-  // A handover in flight may be accepted only by the person it was handed to.
-  if (transition.to === "accepted" && row.state === "handed-over" && row.handoverToUserId !== actor.id && !isPlatformAdmin(actor)) {
+  // A handover in flight may be accepted only by the person it was handed
+  // to, or taken back by the owner of record when the relief never came.
+  if (transition.to === "accepted" && row.state === "handed-over" && row.handoverToUserId !== actor.id && !ownsIt && !isPlatformAdmin(actor)) {
     return deny(
       409,
       "HANDOVER_NAMED_SOMEONE_ELSE",
@@ -574,6 +575,10 @@ export async function transitionRequestCore(
       // a venue with no settings row sets no deadline, as with every window.
       const settings = await readOperatingSettings(db, row.venueId);
       patch.handoverDueAt = settings === null ? null : new Date(now.getTime() + settings.handoverReliefSeconds * 1000);
+      // An earlier escalation (while unowned, or an earlier relief) is spent:
+      // an absent relief escalates this handover on its own (people matrix §2).
+      patch.escalatedAt = null;
+      patch.escalationEmailedAt = null;
       break;
     }
     case "resolved":
@@ -664,15 +669,22 @@ export async function transitionRequestCore(
 export interface HandoverShiftOk {
   readonly ok: true;
   readonly handedOver: readonly VenueRequest[];
+  /** Requests that had moved on between the reading and the step (a colleague
+   *  resolved one, say); each is left as it is and the person is told. */
+  readonly refused: number;
   readonly toName: string;
 }
+
+/** Refusals about one request rather than the handover itself. */
+const PER_REQUEST_REFUSALS: ReadonlySet<string> = new Set(["REQUEST_STATE_CONFLICT", "REQUEST_TAKEN", "NOT_OWNER", "NOT_FOUND", "REQUEST_RACE"]);
 
 /** Goal 19 S7: every open request the actor holds (accepted or underway)
  *  at the venue, handed to one named relief through the same step the slab
  *  takes one at a time, so every rule of that step holds here too: the
  *  relief must work this floor, each request stays the actor's until the
- *  relief takes it, and each escalates if the relief does not. The first
- *  refusal stops the handover; what was already handed stays handed. */
+ *  relief takes it, and each escalates if the relief does not. A request
+ *  that moved on meanwhile is left as it is and counted; a refusal about
+ *  the relief or the floor stops the handover with nothing moved. */
 export async function handoverShiftCore(
   db: Database,
   actor: RequestActor,
@@ -693,14 +705,20 @@ export async function handoverShiftCore(
   if (held.length === 0) return deny(400, "NOTHING_TO_HAND_OVER", "You hold no open request.");
 
   const handedOver: VenueRequest[] = [];
+  let refused = 0;
   let toName: string | null = null;
   for (const { id } of held) {
     const moved = await transitionRequestCore(db, actor, id, { to: "handed-over", toUserId });
-    if (!moved.ok) return moved;
+    if (!moved.ok) {
+      if (!PER_REQUEST_REFUSALS.has(moved.code)) return moved;
+      refused += 1;
+      continue;
+    }
     handedOver.push(moved.request);
     toName = moved.request.handoverToName ?? toName;
   }
-  return { ok: true, handedOver, toName: toName ?? "a colleague" };
+  if (handedOver.length === 0) return deny(400, "NOTHING_TO_HAND_OVER", "You hold no open request.");
+  return { ok: true, handedOver, refused, toName: toName ?? "a colleague" };
 }
 
 export async function listRequestsForVenue(
@@ -967,11 +985,12 @@ export async function runRequestEscalationPass(
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
 
   for (const candidate of due) {
-    // Claim it. A second process (or a second sweep) matches nothing.
+    // Claim it. A second process (or a second sweep) matches nothing, and
+    // neither does a request somebody took between the reading and now.
     const claimed = await db
       .update(requests)
       .set({ escalatedAt: now, updatedAt: now })
-      .where(and(eq(requests.id, candidate.id), isNull(requests.escalatedAt)))
+      .where(and(eq(requests.id, candidate.id), eq(requests.state, candidate.state), isNull(requests.escalatedAt)))
       .returning();
     const row = claimed[0];
     if (row === undefined) continue;
@@ -1001,12 +1020,17 @@ export async function runRequestEscalationPass(
 
     // Email outside quiet hours only; inside them the inbox copy stands and
     // the email pass sends when they end, if the request is still unowned.
+    // The mark is set once every admin's email went; a send that failed
+    // leaves it for the email pass to try again (each email is keyed per
+    // request and person, so nobody hears twice).
     const quiet = quietHoursOf(settings);
     const emailDeferred = quiet !== null && withinQuietHours(now.getTime(), quiet);
     let emailedAdmins = 0;
     if (!emailDeferred) {
       emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
-      await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
+      if (emailedAdmins === admins.length) {
+        await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
+      }
     }
 
     deps.logger?.info(
@@ -1065,23 +1089,21 @@ export async function runEscalationEmailPass(
     const quiet = quietHoursOf(settings);
     if (quiet !== null && withinQuietHours(now.getTime(), quiet)) continue;
 
-    const claimed = await db
-      .update(requests)
-      .set({ escalationEmailedAt: now })
-      .where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)))
-      .returning();
-    const fresh = claimed[0];
-    if (fresh === undefined) continue;
-
-    const roomName = await roomNameFor(db, fresh.roomId);
-    const admins = await dutyAdminsFor(db, fresh.venueId, settings);
-    const reason: EscalationReason = fresh.state === "handed-over" ? "handover" : "unowned";
-    const emailedAdmins = await sendEscalationEmails(db, { row: fresh, roomName, admins, reason }, now, deps, send);
+    // Send first, mark after: each email is keyed per request and person in
+    // email_sends, so a second process sends nothing twice, and a send that
+    // failed is tried again on the next pass instead of being marked done.
+    const roomName = await roomNameFor(db, row.roomId);
+    const admins = await dutyAdminsFor(db, row.venueId, settings);
+    const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
+    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
+    if (emailedAdmins === admins.length) {
+      await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
+    }
     deps.logger?.info(
-      { event: "request.escalation_emailed", requestId: fresh.id, venueId: fresh.venueId, admins: admins.length },
+      { event: "request.escalation_emailed", requestId: row.id, venueId: row.venueId, admins: admins.length, emailedAdmins },
       "request.escalation_emailed",
     );
-    sent.push({ requestId: fresh.id, venueId: fresh.venueId, emailedAdmins });
+    sent.push({ requestId: row.id, venueId: row.venueId, emailedAdmins });
   }
   return sent;
 }

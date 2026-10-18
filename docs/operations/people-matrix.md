@@ -61,7 +61,8 @@ the hallkeeper who takes it sees the client's words only inside that request.
   the venue admins. The rota (`rota_shifts`, T-637) is the source; nobody is written into code.
 - **Shift handover:** an outgoing hallkeeper's open requests pass to a named person who must
   accept them; responsibility stays with the outgoing person until that acceptance. Absent
-  relief escalates to the duty admin after the "soon" window. A shift is never silently
+  relief escalates to the duty admin after the relief window (`handover_relief_seconds`,
+  300 s by default). A shift is never silently
   extended.
 
 ## 3. Escalation windows and quiet hours

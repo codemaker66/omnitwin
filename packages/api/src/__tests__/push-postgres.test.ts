@@ -164,5 +164,15 @@ describe.skipIf(testUrl === undefined)("web push (0092)", () => {
     const own = await pushForReply(db, { requestId: REQUEST, messageId: "m-2", authorUserId: REQUESTER, authorName: "Elaine", body: "Thanks." }, { send: sender.send });
     expect(own).toEqual([]);
     expect(sender.calls).toHaveLength(1);
+
+    // The requester also signed in on the corridor wall: a reply's words never
+    // go there (D11), while a request landing still does.
+    await pool.query(
+      "INSERT INTO push_subscriptions (user_id, venue_id, endpoint, p256dh, auth, device_kind) VALUES ($1, $2, $3, 'k', 'a', 'wall')",
+      [REQUESTER, VENUE, "https://push.example.test/corridor-wall"],
+    );
+    const again = await pushForReply(db, { requestId: REQUEST, messageId: "m-3", authorUserId: STAFF, authorName: "Fiona", body: "Done." }, { send: sender.send });
+    expect(again.map((record) => record.userId)).toEqual([REQUESTER]);
+    expect(sender.calls.map((call) => call.endpoint)).not.toContain("https://push.example.test/corridor-wall");
   });
 });

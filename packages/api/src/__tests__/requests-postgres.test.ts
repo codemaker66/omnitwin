@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
-import { planNextWake } from "../services/escalation-scheduler.js";
+import { EMAIL_RETRY_MS, planNextWake } from "../services/escalation-scheduler.js";
 import { notificationRoutes } from "../routes/event-plan-lifecycle.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import {
@@ -472,11 +472,12 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
 
     // By 07:00 one has been taken: only the other's email goes, once.
     await transitionRequestCore(db, f.staff, taken.request.id, { to: "accepted" });
-    const sent = await runEscalationEmailPass(db, { now: morning, send });
+    // The pass is house-wide; another test's venue may have an email waiting too.
+    const sent = (await runEscalationEmailPass(db, { now: morning, send })).filter((item) => item.venueId === f.venueId);
     expect(sent.map((item) => item.requestId)).toEqual([waiting.request.id]);
     expect(sentTo).toEqual([f.adminEmail]);
-    expect(await runEscalationEmailPass(db, { now: morning, send })).toEqual([]);
-    expect(sentTo).toHaveLength(1);
+    expect((await runEscalationEmailPass(db, { now: morning, send })).filter((item) => item.venueId === f.venueId)).toEqual([]);
+    expect(sentTo.filter((to) => to === f.adminEmail)).toHaveLength(1);
     const [row] = await db.select({ emailedAt: schema.requests.escalationEmailedAt }).from(schema.requests).where(eq(schema.requests.id, waiting.request.id));
     expect(row?.emailedAt).not.toBeNull();
   });
@@ -529,7 +530,7 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(escalated.filter((item) => item.request.id === made.request.id)).toHaveLength(0);
   });
 
-  it("hands every open request the person holds to one relief, who must take each; an absent relief escalates once and the owner of record stays (goal 19 S7)", async () => {
+  it("hands every open request the person holds to one relief, who must take each; an absent relief escalates, and the owner of record stays and may hand on again (goal 19 S7)", async () => {
     const f = await fixture(180);
     const reliefId = randomUUID();
     await db.insert(schema.users).values({ id: reliefId, venueId: f.venueId, name: "Callum", email: `${reliefId}@lane9.invalid`, role: "hallkeeper" });
@@ -579,6 +580,28 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       expect.not.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ id: c.request.id }) })]),
     );
 
+    // The relief never came: the owner of record hands it on to somebody else
+    // (the earlier escalation is spent), or takes it back.
+    const rehanded = await transitionRequestCore(db, f.hallkeeper, c.request.id, { to: "handed-over", toUserId: f.staff.id });
+    if (!rehanded.ok) throw new Error(`expected a second handover, not ${rehanded.code}`);
+    expect(rehanded.request.handoverToUserId).toBe(f.staff.id);
+    expect(rehanded.request.escalatedAt).toBeNull();
+    const notTheirs = await transitionRequestCore(db, relief, c.request.id, { to: "accepted" });
+    expect(!notTheirs.ok && notTheirs.code).toBe("HANDOVER_NAMED_SOMEONE_ELSE");
+    const retaken = await transitionRequestCore(db, f.hallkeeper, c.request.id, { to: "accepted" });
+    if (!retaken.ok) throw new Error(`expected the owner to take it back, not ${retaken.code}`);
+    expect(retaken.request.ownerUserId).toBe(f.hallkeeper.id);
+    expect(retaken.request.handoverDueAt).toBeNull();
+
+    // Handed over again and left again: it escalates again, as a handover.
+    const second = await handoverShiftCore(db, f.hallkeeper, f.venueId, reliefId);
+    if (!second.ok) throw new Error(`expected a handover, not ${second.code}`);
+    expect(second.handedOver.map((row) => row.id)).toEqual([c.request.id]);
+    expect(second.refused).toBe(0);
+    const later = new Date(Date.parse(second.handedOver[0]?.handedOverAt ?? "") + 301_000);
+    const twice = await runRequestEscalationPass(db, { now: later, send: () => Promise.resolve(true) });
+    expect(twice.filter((item) => item.request.id === c.request.id).map((item) => item.reason)).toEqual(["handover"]);
+
     // Nothing left to hand over: said plainly. A relief from elsewhere: refused, nothing moved.
     const empty = await handoverShiftCore(db, f.hallkeeper, f.venueId, reliefId);
     expect(!empty.ok && empty.code).toBe("NOTHING_TO_HAND_OVER");
@@ -587,6 +610,37 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(!refused.ok && refused.code).toBe("HANDOVER_TARGET");
     const still = await readRequest(db, f.staff, staffs.request.id);
     expect("state" in still && still.state).toBe("underway");
+  });
+
+  it("an escalation email that failed to send is not marked sent; the email pass tries again later and marks it once it went (goal 19 S7)", async () => {
+    const f = await fixture(180);
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    if (!("request" in made)) throw new Error("expected a request");
+    // Midday in January: outside quiet hours, and earlier than any other test's window.
+    const noon = new Date("2026-01-21T12:00:00.000Z");
+    await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
+
+    const escalated = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(false) });
+    expect(escalated.map((item) => item.request.id)).toContain(made.request.id);
+    const [afterFailure] = await db.select().from(schema.requests).where(eq(schema.requests.id, made.request.id));
+    expect(afterFailure?.escalatedAt).not.toBeNull();
+    expect(afterFailure?.escalationEmailedAt).toBeNull();
+
+    // The sweep does not spin on it: the retry is a while off, not now.
+    const retry = await planNextWake(db, noon.getTime());
+    expect(retry).toBe(noon.getTime() + EMAIL_RETRY_MS);
+
+    const stillDown = await runEscalationEmailPass(db, { now: new Date(noon.getTime() + EMAIL_RETRY_MS), send: () => Promise.resolve(false) });
+    expect(stillDown.filter((item) => item.requestId === made.request.id).map((item) => item.emailedAdmins)).toEqual([0]);
+    const [stillWaiting] = await db.select().from(schema.requests).where(eq(schema.requests.id, made.request.id));
+    expect(stillWaiting?.escalationEmailedAt).toBeNull();
+
+    const sentTo: string[] = [];
+    const sent = await runEscalationEmailPass(db, { now: new Date(noon.getTime() + 2 * EMAIL_RETRY_MS), send: (payload) => { sentTo.push(payload.to); return Promise.resolve(true); } });
+    expect(sent.filter((item) => item.requestId === made.request.id).map((item) => item.emailedAdmins)).toEqual([1]);
+    expect(sentTo).toContain(f.adminEmail);
+    const [emailed] = await db.select().from(schema.requests).where(eq(schema.requests.id, made.request.id));
+    expect(emailed?.escalationEmailedAt).not.toBeNull();
   });
 
   it("plans the next wake from the database: the soonest window, then the end of quiet hours for an email waiting, then nothing (goal 19 S7)", async () => {
@@ -608,6 +662,8 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     await runRequestEscalationPass(db, { now: night, send: () => Promise.resolve(true) });
     const morning = await planNextWake(db, night.getTime());
     expect(morning).toBe(Date.parse("2026-01-21T07:00:00.000Z"));
+    // Leave nothing waiting for the next run's quiet-hours test to find.
+    await db.update(schema.requests).set({ escalationEmailedAt: night }).where(eq(schema.requests.id, made.request.id));
   });
 
   it("shows the booking's own requests to the slab and drops finished ones", async () => {

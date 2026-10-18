@@ -26,6 +26,10 @@ import { runEscalationEmailPass, runRequestEscalationPass, type EscalatedRequest
 export const MAX_SLEEP_MS = 6 * 3_600_000;
 /** Never spin: a due instant in the past still waits a beat. */
 export const MIN_SLEEP_MS = 250;
+/** An escalation email that could not be sent (Resend down, an address
+ *  refused) is tried again this often, not every beat: the wait keeps the
+ *  database asleep between tries and ends when the request is taken. */
+export const EMAIL_RETRY_MS = 15 * 60_000;
 
 export function soonest(instants: readonly (number | null)[]): number | null {
   let best: number | null = null;
@@ -66,8 +70,11 @@ export async function planNextWake(db: Database, nowMs: number): Promise<number 
   const emailWakes: (number | null)[] = [];
   for (const { venueId } of waiting) {
     const settings = await readOperatingSettings(db, venueId);
-    // A venue with no settings has no quiet hours: its email is due now.
-    emailWakes.push(settings === null ? nowMs : quietHoursEndAfter(nowMs, { start: settings.quietHoursStart, end: settings.quietHoursEnd }));
+    // Inside quiet hours the email is due when they end. Outside them an
+    // email still waiting is one that failed to send (the escalation pass
+    // sends at once otherwise): try again after a while, not every beat.
+    const quietEnd = settings === null ? nowMs : quietHoursEndAfter(nowMs, { start: settings.quietHoursStart, end: settings.quietHoursEnd });
+    emailWakes.push(quietEnd <= nowMs ? nowMs + EMAIL_RETRY_MS : quietEnd);
   }
   return soonest([
     nextWindow?.at?.getTime() ?? null,

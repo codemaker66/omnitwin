@@ -100,8 +100,9 @@ const ALLOWED_NEXT: Readonly<Record<RequestState, readonly RequestState[]>> = {
   acknowledged: ["accepted", "resolved"],
   accepted: ["underway", "handed-over", "resolved"],
   underway: ["handed-over", "resolved"],
-  // Only the person it was handed to may accept; the API holds that by the row.
-  "handed-over": ["accepted", "resolved"],
+  // Only the person it was handed to may accept; the API holds that by the
+  // row. The owner of record may hand it on again when the relief never came.
+  "handed-over": ["accepted", "handed-over", "resolved"],
   resolved: ["reopened"],
   reopened: ["acknowledged", "accepted", "resolved"],
 };
@@ -166,10 +167,10 @@ export function describeRequestOutcome(outcome: RequestOutcome): string {
 /** The only place a state change is judged. Same answer on the server, in the
  *  slab, and in a test — the slab greys a button the server would refuse. */
 export function nextRequestState(from: RequestState, to: RequestState): RequestTransitionCheck {
+  if (ALLOWED_NEXT[from].includes(to)) return { ok: true };
   if (from === to) {
     return { ok: false, reason: `This request is already marked “${describeRequestState(to)}”.` };
   }
-  if (ALLOWED_NEXT[from].includes(to)) return { ok: true };
   if (from === "resolved") return { ok: false, reason: "This request is finished." };
   return { ok: false, reason: "That is not the next step for this request." };
 }
@@ -308,6 +309,8 @@ export type HandoverShift = z.infer<typeof HandoverShiftSchema>;
 
 export const HandoverShiftResultSchema = z.object({
   handedOver: z.array(z.lazy(() => VenueRequestSchema)),
+  /** Requests that had moved on meanwhile and were left as they are. */
+  refused: z.number().int().min(0).default(0),
   toName: z.string().min(1).max(160),
 });
 export type HandoverShiftResult = z.infer<typeof HandoverShiftResultSchema>;

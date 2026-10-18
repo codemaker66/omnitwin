@@ -1,4 +1,4 @@
-import { getVapidPublicKey, removePushSubscription, savePushSubscription, type PushDeviceKind } from "../api/push.js";
+import { getVapidPublicKey, listMyPushSubscriptions, removePushSubscription, savePushSubscription, type PushDeviceKind } from "../api/push.js";
 
 // ---------------------------------------------------------------------------
 // Alerts on this device (goal 19 S7, D8). One subscription per browser, saved
@@ -11,8 +11,12 @@ import { getVapidPublicKey, removePushSubscription, savePushSubscription, type P
 //                installed from Share → Add to Home Screen)
 //   off-server   the server has no VAPID key yet
 //   denied       the person blocked notifications for this site
-//   off          nothing subscribed on this device
-//   on           this device is subscribed
+//   off          nothing subscribed on this device, or the browser's
+//                subscription is saved against somebody else (a shared PC)
+//   on           this device is subscribed, for the person signed in
+//
+// Signing out forgets the device on both sides, so the next person at the
+// same screen hears nothing meant for the last until they switch it on.
 // ---------------------------------------------------------------------------
 
 export type PushAlertsState = "unsupported" | "off-server" | "denied" | "off" | "on";
@@ -69,12 +73,52 @@ async function currentSubscription(browser: PushBrowser): Promise<PushSubscripti
   return registration.pushManager.getSubscription();
 }
 
-/** What this device says right now, without asking anything of the person. */
+/** What this device says right now, without asking anything of the person.
+ *  "On" means the browser's subscription is saved against the person signed
+ *  in: a subscription somebody else left on this screen reads as off. When
+ *  the server cannot be asked, the browser's word stands. */
 export async function readPushAlertsState(browser: PushBrowser = browserPush()): Promise<PushAlertsState> {
   if (!browser.pushSupported) return "unsupported";
   if (browser.permission() === "denied") return "denied";
   const subscription = await currentSubscription(browser);
-  return subscription === null ? "off" : "on";
+  if (subscription === null) return "off";
+  try {
+    const mine = await listMyPushSubscriptions();
+    return mine.some((row) => row.endpoint === subscription.endpoint) ? "on" : "off";
+  } catch {
+    return "on";
+  }
+}
+
+const SIGN_OUT_FORGET_MS = 1500;
+
+/** Runs the sign-out once this device's alerts are forgotten; where push is
+ *  unsupported there is nothing to forget and the sign-out runs at once. */
+export function forgetPushAlertsThen(then: () => void, browser: PushBrowser = browserPush()): void {
+  if (!browser.pushSupported || browser.serviceWorker === undefined) {
+    then();
+    return;
+  }
+  void forgetPushAlertsOnSignOut(browser).finally(then);
+}
+
+/** On sign-out: the server forgets this device and the browser drops the
+ *  subscription, each on its own; neither failing, nor taking long, holds
+ *  the sign-out up. */
+export async function forgetPushAlertsOnSignOut(browser: PushBrowser = browserPush()): Promise<void> {
+  let subscription: PushSubscriptionLike | null = null;
+  try {
+    subscription = await currentSubscription(browser);
+  } catch {
+    return;
+  }
+  if (subscription === null) return;
+  const forget = Promise.allSettled([
+    removePushSubscription(subscription.endpoint),
+    subscription.unsubscribe(),
+  ]).then(() => undefined);
+  const deadline = new Promise<void>((resolve) => { setTimeout(resolve, SIGN_OUT_FORGET_MS); });
+  await Promise.race([forget, deadline]);
 }
 
 /** The press that turns alerts on: asks the browser, subscribes with the

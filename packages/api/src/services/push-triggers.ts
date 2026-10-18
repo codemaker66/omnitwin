@@ -93,6 +93,9 @@ export async function pushForReply(
     url: request.eventId === null ? DAY_BOARD_PATH : `/events/${request.eventId}`,
     tag: `request:${reply.requestId}:reply`,
     idempotencyKeyBase: `push:request.replied:${reply.messageId}`,
+    // The words of a reply are the floor's own; a wall display in a corridor
+    // never shows them (D11), whoever is signed in on it.
+    skipDeviceKinds: ["wall"],
   }, deps);
 }
 

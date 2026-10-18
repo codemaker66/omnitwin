@@ -206,7 +206,7 @@ export async function venueRequestRoutes(
     for (const changed of result.handedOver) {
       publishRequestChange(request, "request.updated", changed, []);
     }
-    return { data: HandoverShiftResultSchema.parse({ handedOver: result.handedOver, toName: result.toName }) };
+    return { data: HandoverShiftResultSchema.parse({ handedOver: result.handedOver, refused: result.refused, toName: result.toName }) };
   });
 
   // The escalation sweep as an endpoint, for an external cron and for a
@@ -227,12 +227,14 @@ export async function venueRequestRoutes(
       });
     }
 
+    // The pass is house-wide (the claim is per request); every escalation it
+    // made is announced to its own venue's boards, and this venue's are counted.
     const escalated = await runRequestEscalationPass(db, { logger: request.log });
-    const mine = escalated.filter((item) => item.request.venueId === params.data.venueId);
-    for (const item of mine) {
+    for (const item of escalated) {
       publishRequestChange(request, "request.escalated", item.request, item.notificationIds);
       tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: request.log }), request.log, "request.escalated");
     }
+    const mine = escalated.filter((item) => item.request.venueId === params.data.venueId);
     return { data: { escalated: mine.length } };
   });
 }
