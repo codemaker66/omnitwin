@@ -16,10 +16,12 @@
 // to black.
 // ---------------------------------------------------------------------------
 
-import { Color, FrontSide, type Material, type Side, type Texture } from "three";
+import { Color, DoubleSide, FrontSide, type Material, type Side, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
-import { attribute, color, float, luminance, mix, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { attribute, color, dot, float, luminance, max, mix, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import type { HallMaterialKey } from "./hall-builders.js";
+import type { HallSun } from "./hall-sun.js";
+import { hallSkyUniforms } from "./hall-sky-runtime.js";
 import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
 import type { HallTextures } from "./hall-textures.js";
 import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
@@ -123,14 +125,27 @@ function wallTexel(photos: HallPhotos) {
   return mix(reveal, sample, smoothstep(0.18, 0.42, facing));
 }
 
+/**
+ * The sun's (or moon's) direct light on this fragment, in the baked channels'
+ * units: the light's strength, the cosine of its angle, and the shared
+ * shadow map (hall-sun.ts), which admits it only through the windows' glass.
+ */
+function sunIrradiance(sun: HallSun) {
+  const sky = hallSkyUniforms;
+  const facing = max(dot(normalWorld, sky.lightDirection), 0);
+  return sky.lightRadiance.mul(facing).mul(sun.factor);
+}
+
 /** A photographed surface's colour under the current mood. */
-function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUniforms) {
+function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUniforms, sun: HallSun | null) {
   const sample = kind === "walls" ? wallTexel(photos) : photos.sample(kind, uv());
   const image = sample.rgb;
   // (baked + k) / (scan + k): exactly 1 under the scan's own light, so
   // Daylight is the photograph, and finite where the bake is nearly dark.
+  // Direct sun is light the scan did not hold, so it adds to the bake.
   const k = float(0.06);
-  const lit = image.mul(bakedIrradiance(mood).add(k).div(scanIrradiance().add(k)));
+  const baked = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
+  const lit = image.mul(baked.add(k).div(scanIrradiance().add(k)));
   if (kind !== "walls") return lit;
   // Glazing seen between the curtains is the view out, not a lit surface: it
   // follows the daylight alone, falling to dusk blue and then dark. The
@@ -147,10 +162,10 @@ function albedoNode(style: SurfaceStyle) {
   return texture(style.map, uv().mul(vec2(repeat[0], repeat[1]))).rgb.mul(tint);
 }
 
-function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: HallPhotos): Material {
+function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: HallPhotos, sun: HallSun | null): Material {
   const side = style.side ?? FrontSide;
   if (style.shading === "photo" || style.shading === "photoGloss") {
-    const lit = relitPhoto(photos, style.photo ?? "walls", mood);
+    const lit = relitPhoto(photos, style.photo ?? "walls", mood, sun);
     if (style.shading === "photo") {
       const material = new MeshBasicNodeMaterial({ side, fog: false });
       material.colorNode = lit;
@@ -162,7 +177,7 @@ function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: Hall
     return material;
   }
   const albedo = albedoNode(style);
-  const irradiance = bakedIrradiance(mood);
+  const irradiance = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
   if (style.shading === "gloss") {
     const material = new MeshStandardNodeMaterial({ side, roughness: style.roughness ?? 0.4, metalness: 0, fog: false });
     material.colorNode = vec3(0);
@@ -193,12 +208,17 @@ function styles(textures: HallTextures): Record<HallMaterialKey, SurfaceStyle> {
 
 export type HallMaterials = ReadonlyMap<HallMaterialKey, Material>;
 
-export function createHallMaterials(textures: HallTextures, photos: HallPhotos, mood: HallMoodUniforms, section: HallSectionUniforms): HallMaterials {
+/**
+ * The hall's materials. With a `sun` (the real sky drives the hall), every
+ * surface also takes the sun's or moon's direct, shadowed light.
+ */
+export function createHallMaterials(textures: HallTextures, photos: HallPhotos, mood: HallMoodUniforms, section: HallSectionUniforms, sun: HallSun | null = null): HallMaterials {
   const table = styles(textures);
   const materials = new Map<HallMaterialKey, Material>();
   for (const key of Object.keys(table) as HallMaterialKey[]) {
     // The floor is drawn (hall-floor.ts), lit by the same baked light.
-    const material = key === "floor" ? createOakFloorMaterial(bakedIrradiance(mood)) : createSurface(table[key], mood, photos);
+    const floorLight = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
+    const material = key === "floor" ? createOakFloorMaterial(floorLight) : createSurface(table[key], mood, photos, sun);
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
       material.maskNode = sectionMask(section);
     }
@@ -206,6 +226,32 @@ export function createHallMaterials(textures: HallTextures, photos: HallPhotos, 
     materials.set(key, material);
   }
   return materials;
+}
+
+export interface HallCasterMaterials {
+  /** The walls: their glazing (marked in the atlas) lets the sun through. */
+  readonly glazed: Material;
+  /** The ceiling and dome: solid. */
+  readonly solid: Material;
+}
+
+/**
+ * Plain stand-ins the sun's shadow camera alone draws for the room
+ * (hall-sun.ts HALL_SUN_CASTER_LAYER). They cast every surface's whole shape
+ * whatever the cutaway shows, because the cutaway is a way of looking, not a
+ * hole in the roof; only the glazing lets light through, so the sun's patches
+ * on the floor carry the windows' bars.
+ */
+export function createHallCasterMaterials(photos: HallPhotos): HallCasterMaterials {
+  const glazed = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false });
+  glazed.colorNode = vec4(0, 0, 0, 1);
+  // The atlas marks glazing half opaque (alpha 128/255) and everything else opaque.
+  glazed.maskShadowNode = photos.sample("walls", attribute("aAtlas", "vec2")).a.greaterThan(0.75);
+  glazed.name = "grand-hall-caster-glazed";
+  const solid = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false });
+  solid.colorNode = vec4(0, 0, 0, 1);
+  solid.name = "grand-hall-caster";
+  return { glazed, solid };
 }
 
 export function disposeHallMaterials(materials: HallMaterials): void {
