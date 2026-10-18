@@ -2561,3 +2561,5 @@ export * from "./trades-hall-venue-truth.js";
 // Remembered allergy notes (Blake, 17 October 2026: "ask once, then
 // remember"): the opt-in wording, its period and the API shapes.
 export * from "./dietary-memory.js";
+// Live co-editing v1: presence and live ops on /ws/configurations/:configId.
+export * from "./layout-live.js";

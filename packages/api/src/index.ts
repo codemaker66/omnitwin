@@ -560,7 +560,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // WebSocketServer.close() dozens of times. Scoping retains the plugin-owned
   // upgrade-listener cleanup and gives the websocket server one close hook.
   await server.register(async (websocketScope) => {
-    await websocketScope.register(websocket);
+    // 1 MiB per message: a 500-object autosave batch is ~150 KB and a live-op
+    // frame is capped at 128 KB; ws's own default is 100 MiB.
+    await websocketScope.register(websocket, { options: { maxPayload: 1024 * 1024 } });
     await registerAutoSave(websocketScope, db);
     await registerDiaryLive(websocketScope, db);
   });
