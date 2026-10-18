@@ -2529,6 +2529,8 @@ export * from "./client-event-schedule.js";
 export * from "./requests.js";
 export * from "./conversations.js";
 export * from "./observations.js";
+// Goal 19 S7: the venue's windows, quiet hours, duty admin and wall settings.
+export * from "./venue-operating-settings.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";
