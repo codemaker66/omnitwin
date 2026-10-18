@@ -18,8 +18,16 @@ upgrade brief (`D:/claude/dream-platform-20261016/redteam/final__judge.json`,
   a draft copy encodes `/sheet-check?c=<configuration id>&p=…`. The PDF adds
   its own printed minute; the browser print's QR comes from the payload
   (`paperCheck.qr`, a module matrix) and carries no printed minute.
-- Ink only: black on white, no colour carries meaning, so it survives a mono
-  laser printer.
+- On the PDF the line sits in the header under the event's name, as
+  `Approved by <name> · v7, issued 16 Oct 14:02, printed 17 Oct 06:02` (a draft
+  reads `Draft, printed 17 Oct 06:02 · not yet approved. Check with the duty
+  manager before setting up.`), with the QR drawn as vector modules at the top
+  right and its caption beneath the line; every footer repeats the line beside
+  `Page n of N` (renderer: `services/hallkeeper-pdf-v2.ts` and
+  `services/sheet-pdf/`, T-669).
+- Ink carries the meaning: the QR is black on white, and where the sheet uses
+  the House copper or brick the words say the same thing, so a mono laser print
+  loses nothing.
 
 ## What the check answers
 
