@@ -387,15 +387,15 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
 });
 
 // ---------------------------------------------------------------------------
-// The booking → plan link (`bookings.event_id`).
+// The booking → event link (`bookings.event_id`): the bind, migration 0090.
 //
-// This behaviour has existed since the T-537 core extraction, but NOTHING
-// pinned it — and the only literal `eventId` in routes/bookings.ts is the
-// deliberate `null` of the enquiry conversion. Reading the route adapter
-// alone therefore makes the link look discarded; it is not. These pins state
-// the contract so the next reader does not have to infer it from the adapter.
+// Every hold and ink is written together with its event, in the booking's
+// own transaction (services/event-binding.ts), and the database refuses one
+// without (bookings_bound_to_event). These pins state the shape of the
+// writers so the next reader does not have to infer it; the behaviour itself
+// is proven on PostgreSQL in booking-event-bind-postgres.test.ts.
 // ---------------------------------------------------------------------------
-describe("booking → plan link (bookings.event_id)", () => {
+describe("booking → event link (bookings.event_id, the bind)", () => {
   it("rejects a malformed eventId at the schema boundary", async () => {
     const res = await server.inject({
       method: "POST",
@@ -409,33 +409,43 @@ describe("booking → plan link (bookings.event_id)", () => {
     expect(body.details.flatMap((issue) => issue.path)).toContain("eventId");
   });
 
-  it("create verifies the event belongs to the venue BEFORE inserting, then persists it", async () => {
+  it("create binds the event, checked to be this venue's, BEFORE inserting, in the same transaction", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
-    const guard = source.indexOf("input.eventId !== undefined");
-    const write = source.indexOf("eventId: input.eventId ?? null");
-    expect(guard).toBeGreaterThan(-1);
-    expect(write).toBeGreaterThan(-1);
+    const create = source.slice(source.indexOf("export async function createBookingCore"), source.indexOf("export async function updateBookingCore"));
+    const transaction = create.indexOf("conn.transaction(");
+    const bind = create.indexOf("bindBookingToEvent(tx,");
+    const write = create.indexOf(".insert(bookings)");
+    expect(transaction).toBeGreaterThan(-1);
     // Tenant safety: the venue check must precede the write, never follow it.
-    expect(guard).toBeLessThan(write);
-    expect(source).toContain("EVENT_VENUE_MISMATCH");
+    expect(transaction).toBeLessThan(bind);
+    expect(bind).toBeLessThan(write);
+    expect(create).toContain("if (!bound.ok) return EVENT_VENUE_MISMATCH;");
+    const binding = await readFile(resolve("src/services/event-binding.ts"), "utf-8");
+    expect(binding).toContain("row.venueId !== seed.venueId");
   });
 
-  it("update can attach a plan and can detach one — an explicit null must survive the merge", async () => {
+  it("update may move a booking to another event of its venue; a hold or ink is never parted from its event", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
-    // `patch.eventId !== null` in the guard is what lets a detach through
-    // without being re-validated as a foreign event.
-    expect(source).toContain("patch.eventId !== undefined && patch.eventId !== null");
-    // undefined means "not supplied" (keep it); null means "detach". `??`
-    // would collapse those two, so the `=== undefined` test is load-bearing.
+    expect(source).toContain("if (patch.eventId === null && bookingKindNeedsEvent(row.kind)) return EVENT_REQUIRED;");
+    expect(source).toContain("patch.eventId !== undefined && patch.eventId !== null && patch.eventId !== row.eventId");
+    // undefined means "not supplied" (keep it); null detaches interest only.
+    // `??` would collapse those two, so the `=== undefined` test is load-bearing.
     expect(source).toContain("eventId: patch.eventId === undefined ? row.eventId : patch.eventId");
   });
 
-  it("the enquiry conversion's null event is deliberate, not a dropped field", async () => {
+  it("the enquiry conversion writes its hold with the event it binds, in one transaction", async () => {
     const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
     const conversion = source.slice(source.indexOf('server.post("/from-enquiry"'));
-    expect(conversion).toContain("eventId: null");
-    // Canon §1: the commitment axis and the enquiry axis stay independent —
-    // a pencilled-in enquiry has no plan yet, by design.
+    expect(conversion).not.toContain("eventId: null");
+    const transaction = conversion.indexOf("db.transaction(");
+    const bind = conversion.indexOf("bindBookingToEvent(tx,");
+    const write = conversion.indexOf(".insert(bookings)");
+    expect(transaction).toBeGreaterThan(-1);
+    expect(transaction).toBeLessThan(bind);
+    expect(bind).toBeLessThan(write);
+    expect(conversion).toContain('{ join: "enquiry", enquiryId: enquiry.id }');
+    expect(conversion).toContain("eventId: bound.eventId");
+    // Canon §1 still holds: the enquiry's own lifecycle is untouched.
     expect(source).toContain("enquiry axis stay independent");
   });
 

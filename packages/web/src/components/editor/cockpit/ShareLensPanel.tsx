@@ -159,6 +159,11 @@ export function ShareLensPanel(): ReactElement {
 
       <LensPanelSection label="What the client sees">
         <p className="lens-panel__paragraph" data-testid="share-layout-summary">{draft.layoutSummary}</p>
+        {draft.seatingShortfall !== null && (
+          <p className="lens-panel__note lens-panel__note--warn" data-testid="share-seating-short">
+            {draft.seatingShortfall.next}
+          </p>
+        )}
         <p className="lens-panel__paragraph lens-panel__paragraph--muted">{draft.capacityNote}</p>
         <label className="lens-panel__field">
           <span className="lens-panel__field-label">Message to the client (optional)</span>

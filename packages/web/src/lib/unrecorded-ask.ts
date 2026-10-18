@@ -16,6 +16,8 @@
 // or are told who to ask when the venue publishes none.
 // ---------------------------------------------------------------------------
 
+import { countLabel } from "./count-label.js";
+
 export type UnrecordedFact = "rigging-point" | "power-supply" | "door-positions" | "escape-routes" | "room-capacity";
 
 /** A guest count above the venue's published figure: the "no" that needs a
@@ -71,10 +73,6 @@ export function roomPhrase(roomName: string | null): string {
   return /^the\s/i.test(name) ? `the ${name.slice(4).trimStart()}` : `the ${name}`;
 }
 
-function plural(count: number, word: string): string {
-  return `${String(count)} ${word}${count === 1 ? "" : "s"}`;
-}
-
 function subjectFor(topic: AskTopic, room: string): string {
   if (typeof topic !== "string") {
     return topic.kind === "quote" ? `Quote for ${room}` : `${String(topic.guests)} guests in ${room}`;
@@ -91,9 +89,9 @@ function subjectFor(topic: AskTopic, room: string): string {
 function questionFor(topic: AskTopic, room: string): string {
   if (typeof topic !== "string") {
     if (topic.kind === "quote") {
-      const guests = topic.guests !== null ? `${plural(topic.guests, "guest")} in ${room}` : room;
+      const guests = topic.guests !== null ? `${countLabel(topic.guests, "guest")} in ${room}` : room;
       const layout = topic.tables > 0 || topic.chairs > 0
-        ? ` The plan has ${plural(topic.tables, "table")} and ${plural(topic.chairs, "chair")}.`
+        ? ` The plan has ${countLabel(topic.tables, "table")} and ${countLabel(topic.chairs, "chair")}.`
         : "";
       return `Could you quote for ${guests}, including VAT and any compulsory charges?${layout}`;
     }

@@ -49,9 +49,52 @@ describe("buildShareProposalDraft", () => {
     expect(draft.summary.roundTables).toBe(18);
     expect(draft.summary.chairs).toBe(144);
     expect(draft.summary.features).toEqual(["Stage", "Bar"]);
-    expect(draft.layoutSummary).toContain("Seating for 144");
-    expect(draft.layoutSummary).toContain("18 round tables");
-    expect(draft.layoutSummary).toContain("a stage and a bar");
+    expect(draft.layoutSummary).toBe("18 round tables · 144 chairs · a stage and a bar");
+    expect(draft.seatingShortfall).toBeNull();
+  });
+
+  // Integration check, 17 Oct 2026: "Seating for 220 across 8 round tables"
+  // with 64 chairs on the floor. The summary states what is placed.
+  it("states what is placed, never the guest count as seating", () => {
+    const items = [...place(roundTable(), 8), ...place(chair(), 64)];
+    const draft = buildShareProposalDraft({ ...ROOM, placedItems: items, plannedGuestCount: 220, titleOverride: null });
+    expect(draft.layoutSummary).toBe("8 round tables · 64 chairs · 156 seats short of 220 guests");
+    expect(draft.layoutSummary).not.toMatch(/seating for/i);
+    expect(draft.seatingShortfall).toEqual({
+      guests: 220,
+      chairs: 64,
+      short: 156,
+      next: "Place 156 more chairs or lower the guest count before you share this plan. The events team can advise on the layout.",
+    });
+    expect(findUnsupportedProposalClaim(draft.layoutSummary)).toBeNull();
+  });
+
+  it("counts a single table, chair and shortfall in the singular", () => {
+    const items = [...place(roundTable(), 1), ...place(chair(), 1)];
+    const draft = buildShareProposalDraft({ ...ROOM, placedItems: items, plannedGuestCount: 2, titleOverride: null });
+    expect(draft.layoutSummary).toBe("1 round table · 1 chair · 1 seat short of 2 guests");
+    expect(draft.seatingShortfall?.next).toMatch(/^Place 1 more chair or lower/);
+  });
+
+  it("reports tables with no chairs as short by every guest", () => {
+    const draft = buildShareProposalDraft({ ...ROOM, placedItems: place(roundTable(), 8), plannedGuestCount: 220, titleOverride: null });
+    expect(draft.layoutSummary).toBe("8 round tables · 220 seats short of 220 guests");
+  });
+
+  it("says nothing about seats for a standing reception or an empty floor", () => {
+    const poseur = find((c) => c.slug.startsWith("poseur-table"), "poseur table");
+    const reception = buildShareProposalDraft({ ...ROOM, placedItems: place(poseur, 20), plannedGuestCount: 200, titleOverride: null });
+    expect(reception.seatingShortfall).toBeNull();
+    expect(reception.layoutSummary).not.toMatch(/short/);
+    const empty = buildShareProposalDraft({ ...ROOM, placedItems: [], plannedGuestCount: 200, titleOverride: null });
+    expect(empty.seatingShortfall).toBeNull();
+    expect(empty.layoutSummary).toBe("An open-plan layout, ready to dress.");
+  });
+
+  it("states chairs alone when no guest count is set", () => {
+    const draft = buildShareProposalDraft({ ...ROOM, placedItems: place(chair(), 60), plannedGuestCount: null, titleOverride: null });
+    expect(draft.layoutSummary).toBe("60 chairs");
+    expect(draft.seatingShortfall).toBeNull();
   });
 
   it("includes the room dimensions and floor area in the room summary", () => {

@@ -37,6 +37,13 @@ describe("buildProposalCapacityNote", () => {
     expect(note).toContain("final capacity confirmed by the venue team");
   });
 
+  it("says one guest, not one guests", () => {
+    const intel = buildProposalCapacityGuidance(GRAND_HALL_AREA, 1, "dinner-rounds");
+    const note = buildProposalCapacityNote("Grand Hall", intel);
+    expect(note).toContain("for 1 guest:");
+    expect(note).not.toContain("1 guests");
+  });
+
   it("omits the fit segment when no guest count is given", () => {
     const intel = buildProposalCapacityGuidance(GRAND_HALL_AREA, 0, "cocktail");
     const note = buildProposalCapacityNote("Saloon", intel);

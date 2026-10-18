@@ -4,6 +4,7 @@ import {
   computeCapacityIntelligence,
   type CapacityIntelligence,
 } from "./layout-capacity.js";
+import { countLabel } from "./count-label.js";
 
 /**
  * Standing SAFE disclosure for every public/client capacity surface. It pairs
@@ -57,9 +58,9 @@ export function buildProposalCapacityNote(
   intel: CapacityIntelligence,
 ): string {
   const style = CAPACITY_STYLE_LABELS[intel.layoutStyle];
-  const base = `${spaceName}: comfortable for around ${String(intel.comfortableCapacity)} guests as ${style}`;
+  const base = `${spaceName}: comfortable for around ${countLabel(intel.comfortableCapacity, "guest")} as ${style}`;
   const fit = intel.plannedSeats > 0
-    ? ` — for ${String(intel.plannedSeats)} guests: ${comfortBandLabel(intel.band)}`
+    ? ` — for ${countLabel(intel.plannedSeats, "guest")}: ${comfortBandLabel(intel.band)}`
     : "";
   return `${base}${fit}. Planning estimate only; human review required; final capacity confirmed by the venue team.`;
 }

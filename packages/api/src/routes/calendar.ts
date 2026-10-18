@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, notInArray, sql } from "drizzle-orm";
 import {
   CalendarQuerySchema,
   CalendarResponseSchema,
@@ -7,6 +7,7 @@ import {
   CONTESTED_LIMIT,
   DECISIONS_DUE_HORIZON_DAYS,
   DECISIONS_DUE_LIMIT,
+  EVENT_ENDED_STATUSES,
   NEXT_ACTIONS_DUE_HORIZON_DAYS,
   NEXT_ACTIONS_DUE_LIMIT,
   deriveBookingState,
@@ -265,7 +266,9 @@ export async function calendarRoutes(
         .orderBy(asc(bookings.startsAt), asc(bookings.id)),
       // Room-scoped, timed phases joined to their event: endsAt is derived
       // from durationMinutes in SQL so the overlap window stays half-open
-      // and exact.
+      // and exact. An event that ended (lost: every option went; cancelled)
+      // occupies no room, so its phases neither paint nor conflict: since
+      // the bind, a released hold's event is lost the moment it goes.
       db
         .select({
           id: eventPhases.id,
@@ -284,6 +287,7 @@ export async function calendarRoutes(
           and(
             eq(events.venueId, query.venueId),
             isNull(events.deletedAt),
+            notInArray(events.status, [...EVENT_ENDED_STATUSES]),
             isNotNull(eventPhases.spaceId),
             isNotNull(eventPhases.startsAt),
             inArray(eventPhases.spaceId, laneSpaceIds),
