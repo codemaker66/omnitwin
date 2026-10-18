@@ -59,6 +59,32 @@ def voxel_pca(p, w):
     return n[inv].astype(np.float32), planar[inv].astype(np.float32), T[inv, 0].astype(np.float32)
 
 
+LIDAR_NEAR = 0.08   # metres: a splat farther than this from the scanned surface keeps no surface normal
+
+
+def lidar_normals(p):
+    """(normal, planarity, weight, distance) per point p (E57 frame) from the E57 LiDAR sweeps (CFG.paths["lidar"]:
+    s00.npy .. s47.npy, float32 xyz, E57 frame): the sweeps merged and deduplicated at 1 cm, each scanned point's
+    normal and planarity from voxel_pca (weight 1), and each p takes its nearest scanned point's values."""
+    import glob
+    from scipy.spatial import cKDTree
+    files = sorted(glob.glob(os.path.join(CFG.paths["lidar"], "s*.npy")))
+    if not files:
+        raise SystemExit(f"no LiDAR sweeps in {CFG.paths['lidar']}")
+    pts = np.concatenate([np.load(f, mmap_mode="r") for f in files]).astype(np.float64)
+    key = np.floor(pts / 0.01).astype(np.int64)
+    _, first = np.unique(key[:, 0] * 10_000_000_000 + key[:, 1] * 100_000 + key[:, 2], return_index=True)
+    L = pts[np.sort(first)]
+    del pts, key
+    nL, plL, wL = voxel_pca(L, np.ones(len(L)))
+    tree = cKDTree(L)
+    dist = np.empty(len(p), np.float32); idx = np.empty(len(p), np.int64)
+    for a in range(0, len(p), 1_000_000):
+        dist[a:a + 1_000_000], idx[a:a + 1_000_000] = tree.query(p[a:a + 1_000_000], k=1, workers=4)
+    print(f"LiDAR normals: {len(files)} sweeps, {len(L):,} points after 1 cm dedupe", flush=True)
+    return nL[idx], plL[idx], wL[idx], dist
+
+
 def main():
     t0 = time.time()
     d = np.load(f"{WORK}/splats.npz")
@@ -67,8 +93,9 @@ def main():
     lum = lin @ np.array([0.2126, 0.7152, 0.0722], np.float32)
     N = len(p)
     cls = np.zeros(N, np.uint8)
-    # --- exterior: env skybox, beyond the glass, or far outside the hall box
-    ext = tile == 0
+    # --- exterior: env skybox, beyond the glass, or far outside the hall box. The env tile is named by the config's
+    # finest tiles (the vendor tiles' env.sog, index 0); the photo-trained hall's one master has none (T-639 re-aim)
+    ext = np.isin(tile, [i for i, name in enumerate(TILES) if name == "env.sog"])
     ext |= p[:, 1] < Y0 - 1.3
     for x0, x1, dg, z0, z1, kind in WINDOWS.values():
         inx = (p[:, 0] > x0 - 0.25) & (p[:, 0] < x1 + 0.25)
@@ -97,11 +124,18 @@ def main():
     cls[em_dome] = 4
     print("classes", np.bincount(cls, minlength=5), f"{time.time() - t0:.1f}s", flush=True)
 
-    # --- smoothed normals
+    # --- smoothed normals: the splats' own neighbourhood PCA (the vendor tiles sit on the surface), or, for the
+    # photo-trained hall whose splats form a several-cm shell around it (T-639 re-aim, 18 October: 7.4% reliable from
+    # the splats vs 93.9% from the LiDAR), the E57 LiDAR surface's PCA at each splat's nearest scanned point
     m = (opa > 0.05) & (cls != 2)
     n_s = np.zeros((N, 3), np.float32); planar = np.zeros(N, np.float32); wsum = np.zeros(N, np.float32)
-    n_s[m], planar[m], wsum[m] = voxel_pca(p[m], opa[m].astype(np.float64))
-    print("voxel pca done", f"{time.time() - t0:.1f}s", flush=True)
+    lidar_dist = np.zeros(N, np.float32)
+    if CFG.room.get("normalsFrom") == "lidar":
+        n_s[m], planar[m], wsum[m], lidar_dist[m] = lidar_normals(p[m])
+        planar[lidar_dist > LIDAR_NEAR] = 0.0          # a splat away from every scanned surface takes no surface normal
+    else:
+        n_s[m], planar[m], wsum[m] = voxel_pca(p[m], opa[m].astype(np.float64))
+    print("normals done", f"{time.time() - t0:.1f}s", flush=True)
     # orient toward the interior spine box
     lo = np.array([X0 + 1.5, Y0 + 1.5, 1.0]); hi = np.array([X1 - 1.5, Y1 - 1.5, 5.5])
     v = np.clip(p, lo, hi) - p
@@ -132,7 +166,7 @@ def main():
 
     np.savez(f"{WORK}/geom.npz", cls=cls, chand_id=chand_id, n_s=n_s.astype(np.float16), n_raw=n_raw.astype(np.float16),
              planar=planar.astype(np.float16), reliable=reliable, occ=alpha, occ_lo=OCC_LO, occ_res=np.array(OCC_RES),
-             chandeliers=CHANDELIERS, dome_c=DOME_C, lum=lum.astype(np.float16))
+             chandeliers=CHANDELIERS, dome_c=DOME_C, lum=lum.astype(np.float16), lidar_dist=lidar_dist)
     print("saved", f"{time.time() - t0:.1f}s")
 
 
