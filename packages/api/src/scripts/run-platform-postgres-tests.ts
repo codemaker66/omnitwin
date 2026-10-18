@@ -31,6 +31,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
+  // The People Book (migration 0095): the operator's read-only check of the backfill.
+  "src/__tests__/check-people-book-postgres.test.ts",
 ] as const;
 
 export function requirePlatformTestDatabaseUrl(raw: string | undefined): string {
