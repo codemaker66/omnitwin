@@ -64,6 +64,13 @@ import { boardDayAnchorMs, nextBoardRolloverMs, soonerOf, useDayBoundaryHour } f
 import { useWakeLock } from "./lib/use-wake-lock.js";
 import { driftOffset } from "./lib/burn-in-drift.js";
 
+/** When the display dies, the day prints (S8 item 13): the paper register's
+ *  one print control and the line the printed page carries. */
+export const BOARD_PRINT_COPY = {
+  print: "Print today",
+  note: "Printed from the Day Board; the screen is the record.",
+} as const;
+
 /** The wall's burn-in drift as custom properties on the board's root (S8). */
 interface DriftStyle extends CSSProperties {
   readonly "--lt-drift-x": string;
@@ -1049,6 +1056,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
 
       {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent} onOpen={openSlot} />}
 
+      {/* Shown only on paper (S8 item 13): the printed day names itself. */}
+      {!wall && <p className="dayboard-print-note">{BOARD_PRINT_COPY.note} {formatWallDay(selectedMs, timeZone)}</p>}
       {!wall && (
         <div className="dayboard-controls">
           <div
@@ -1064,6 +1073,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           <label>Room<select value={roomId} onChange={(event) => { setRoomId(event.target.value); }}><option value="">All rooms</option>{lanes.map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
           <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/rooms">Room plans</Link>
           <button type="button" onClick={() => { setSearchParams({ register: "wall" }); }}>Wall display</button>
+          <button type="button" className="dayboard-print" onClick={() => { window.print(); }}>{BOARD_PRINT_COPY.print}</button>
           {/* Opt-in, per device (D3 "Sound"): the one control that makes a sound. */}
           {venueId !== null && <ChimeToggle />}
           {venueId !== null && <ShiftHandover venueId={venueId} meId={user?.id ?? null} />}

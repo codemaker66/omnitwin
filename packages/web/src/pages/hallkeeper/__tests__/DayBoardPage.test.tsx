@@ -1257,4 +1257,26 @@ describe("DayBoardPage", () => {
       expect(screen.getByText("Chamber dinner")).toBeTruthy();
     });
   });
+
+  // When the display dies, the day prints (goal 19 S8).
+  it("the paper register offers Print today, which prints the board", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    const print = vi.fn();
+    Object.defineProperty(window, "print", { value: print, configurable: true, writable: true });
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: "Print today" }));
+    expect(print).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Printed from the Day Board; the screen is the record\./u)).toBeTruthy();
+  });
+
+  it("the wall register offers no print", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    render(
+      <MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}>
+        <DayBoardPage />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Chamber dinner");
+    expect(screen.queryByRole("button", { name: "Print today" })).toBeNull();
+  });
 });
