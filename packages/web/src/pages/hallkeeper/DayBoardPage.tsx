@@ -61,6 +61,7 @@ import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib
 import { useVenueClock } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
 import { boardDayAnchorMs, nextBoardRolloverMs, soonerOf, useDayBoundaryHour } from "./lib/board-day.js";
+import { useWakeLock } from "./lib/use-wake-lock.js";
 import {
   DayBoardSlotRequestsContext,
   type SlotRequestsComponent,
@@ -864,6 +865,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const [handheld] = useState<"phone" | "desk">(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches ? "phone" : "desk");
   const device: "wall" | "phone" | "desk" = wall ? "wall" : handheld;
+  // The wall never sleeps (S8 item 14); phones and desks keep the system's own rule.
+  useWakeLock(wall);
   const live = useDiaryLive(venueId !== null, refetch, { device });
   // The calendar stamps its reads with the device clock; the board compares
   // and prints them on the corrected one (D9).
