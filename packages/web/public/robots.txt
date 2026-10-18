@@ -61,5 +61,6 @@ Disallow: /login
 Disallow: /register
 Disallow: /oauth-consent
 Disallow: /onboard
+Disallow: /account/
 
 Sitemap: https://venviewer.com/sitemap.xml

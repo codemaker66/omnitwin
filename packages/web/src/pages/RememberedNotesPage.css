@@ -1,0 +1,212 @@
+/* Remembered allergy notes — the client's own account page.
+ * The house register only (styles/house-tokens.css): ivory ground, a lifted
+ * ivory sheet, forest ink, copper for the one accent and the focus ring,
+ * oxblood only for a refusal. Every text ink measures at least 7:1 on the
+ * sheet (forest 10.6:1+, forest-2 about 9:1). Newsreader sets the title;
+ * Inter sets everything else. Hover is a quiet colour change and a press is
+ * a small press-down, honouring reduced motion. */
+
+.rn-page {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding: clamp(16px, 5vw, 72px);
+  background: var(--vv-ivory);
+  color: var(--vv-forest);
+  color-scheme: light;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.rn-sheet {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(22px, 5vw, 56px);
+  background: var(--vv-ivory-3);
+  border: 1px solid var(--vv-rule);
+  border-radius: 22px;
+  box-shadow: 0 28px 70px rgba(27, 58, 47, 0.08);
+}
+
+.rn-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--vv-forest-2);
+  font-size: 13px;
+  text-underline-offset: 4px;
+}
+
+.rn-kicker {
+  margin: 12px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--vv-forest-2);
+}
+
+.rn-sheet h1 {
+  margin: 10px 0 14px;
+  font: 400 clamp(30px, 5vw, 46px)/1.15 var(--house-serif);
+  letter-spacing: -0.03em;
+}
+
+.rn-lede {
+  max-width: 60ch;
+  margin: 0 0 28px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--vv-forest);
+}
+
+.rn-notes {
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rn-note {
+  padding: 22px 0 6px;
+  border-top: 1px solid var(--vv-rule);
+}
+
+.rn-venue {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--vv-forest-2);
+}
+
+.rn-text {
+  margin: 10px 0 12px;
+  padding: 14px 18px;
+  border-left: 3px solid var(--vv-copper);
+  background: var(--vv-ivory);
+  border-radius: 0 10px 10px 0;
+  font-size: 16px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rn-meta,
+.rn-consequence {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--vv-forest-2);
+  overflow-wrap: anywhere;
+}
+
+.rn-agreed {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.rn-agreed summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--vv-forest);
+  font-weight: 600;
+}
+
+.rn-agreed p {
+  margin: 4px 0 8px;
+  max-width: 64ch;
+  color: var(--vv-forest);
+}
+
+.rn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 8px;
+}
+
+.rn-actions .rn-consequence {
+  flex: 1 1 260px;
+}
+
+.rn-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 1px solid var(--vv-forest-2);
+  border-radius: 10px;
+  background: var(--vv-ivory-3);
+  color: var(--vv-forest);
+  font: 600 13px/1.3 "Inter", system-ui, sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.rn-button:hover {
+  background: var(--vv-ivory-2);
+}
+
+.rn-button:disabled {
+  cursor: default;
+}
+
+.rn-button:focus-visible,
+.rn-back:focus-visible,
+.rn-agreed summary:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rn-button {
+    transition: background-color 140ms ease, transform 90ms ease;
+  }
+
+  .rn-button:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+}
+
+.rn-removed {
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--vv-ivory);
+  border: 1px solid var(--vv-rule);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.rn-empty p {
+  max-width: 60ch;
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.rn-problem {
+  margin: 12px 0 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--vv-oxblood);
+  background: var(--vv-oxblood-bg);
+  color: var(--vv-forest);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.rn-problem p {
+  margin: 0 0 10px;
+}
+
+@media (max-width: 640px) {
+  .rn-sheet {
+    border-radius: 16px;
+    padding: 22px 18px;
+  }
+}

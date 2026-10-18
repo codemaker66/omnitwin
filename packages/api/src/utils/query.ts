@@ -104,8 +104,16 @@ export function canWriteEvents(
 // precedent already set by canManageVenue above).
 // ---------------------------------------------------------------------------
 
-/** Editing the venue record, its spaces and its pricing rules. */
+/** Editing the venue record and its spaces. Prices are narrower: see
+ *  PRICING_WRITE_ROLES. */
 const VENUE_ADMINISTRATION_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff"]);
+
+/**
+ * Who may set a price: create, change, delete or restore a pricing rule.
+ * people-matrix.md records "A price change: admin; manager if Blake says so".
+ * Whether manager stays is Blake's call, so it is this one line.
+ */
+export const PRICING_WRITE_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
 
 /** Enquiries, opportunities, CRM, proposals, quotes and revenue. */
 const COMMERCIAL_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
@@ -129,7 +137,7 @@ function holdsVenueRole(
 }
 
 /**
- * Venue administration: the venue record, its spaces, its pricing rules.
+ * Venue administration: the venue record and its spaces.
  * Hallkeepers run the room; they do not edit the venue's commercial record
  * (goal 18 §6 decision 6b), so they are deliberately absent here while
  * canManageVenue still admits them for read and room-state surfaces.
@@ -139,6 +147,15 @@ export function canAdministerVenue(
   venueId: string,
 ): boolean {
   return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLES);
+}
+
+/** Setting a price at this venue (PRICING_WRITE_ROLES). Reading prices stays
+ *  public; only the writes are narrowed. */
+export function canWritePricing(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, PRICING_WRITE_ROLES);
 }
 
 /**

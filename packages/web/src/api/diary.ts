@@ -3,7 +3,9 @@ import {
   BookingSchema,
   CalendarResponseSchema,
   DiaryAckResequenceSchema,
+  PromotionDraftSchema,
   type Booking,
+  type PromotionDraft,
   type BookingState,
   type CalendarResponse,
   type ConvertEnquiryInput,
@@ -37,6 +39,12 @@ const EnquiryBookingsSchema = z.array(BookingSchema);
 export async function listEnquiryBookings(enquiryId: string, signal?: AbortSignal): Promise<readonly Booking[]> {
   const params = new URLSearchParams({ enquiryId });
   return api.get(`/bookings?${params.toString()}`, EnquiryBookingsSchema, signal);
+}
+
+/** The drafted email for a hold that has become 1st option. Composed by the
+ *  server for the person reading it; nothing is sent by asking for it. */
+export async function getPromotionDraft(bookingId: string, signal?: AbortSignal): Promise<PromotionDraft> {
+  return api.get(`/bookings/${encodeURIComponent(bookingId)}/promotion-draft`, PromotionDraftSchema, signal);
 }
 
 export interface MoveBookingPatch {
