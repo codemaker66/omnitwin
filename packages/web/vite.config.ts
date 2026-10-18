@@ -72,7 +72,9 @@ export default defineConfig(({ mode }) => {
         filesToDeleteAfterUpload: "./dist/assets/**/*.map",
       },
       telemetry: false,
-      silent: true,
+      // Keep the upload result in the build log: a skipped or failed upload
+      // ships unreadable production stack traces, and silence would hide it.
+      silent: false,
       bundleSizeOptimizations: {
         excludeReplayCanvas: true,
         excludeReplayIframe: true,
