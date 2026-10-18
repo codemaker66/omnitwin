@@ -586,3 +586,47 @@ describe("HallkeeperPage Martyn's Law readiness", () => {
     expect(within(screen.getByRole("dialog", { name: "Brief & contacts" })).getByText("No planner instructions or day-of contact supplied on this sheet.")).toBeTruthy();
   });
 });
+
+describe("HallkeeperPage paper that knows its version", () => {
+  function serve(data: HallkeeperSheetV2): void {
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/v2")) return Promise.resolve(jsonResponse(data));
+      return Promise.resolve(jsonResponse({ checked: {} }));
+    }));
+  }
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("prints the version in words and a code that checks the copy, stamped when printing starts", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T05:02:00.000Z"));
+    const qr = { size: 21, rows: Array.from({ length: 21 }, (_, row) => row === 0 ? `1111111${"0".repeat(14)}` : "0".repeat(21)) };
+    serve(HallkeeperSheetV2Schema.parse({
+      ...sheet(CONFIG_A, "Smith wedding"),
+      approval: { version: 7, approvedAt: "2026-10-16T13:02:00.000Z", approverName: "Duty manager" },
+      paperCheck: { url: `https://venviewer.com/sheet-check?c=${CONFIG_A}`, qr },
+    }));
+    mount();
+    const stamp = await screen.findByTestId("paper-copy-stamp");
+    expect(stamp.textContent).toContain("v7, issued 16 Oct 14:02, printed 17 Oct 06:02");
+    expect(stamp.textContent).toContain("Scan to check this copy is current.");
+    expect(stamp.querySelector("svg path")?.getAttribute("d")).toBe("M4 4h7v1h-7z");
+    expect(document.querySelector(".hk-print-version")?.textContent).toBe("v7, issued 16 Oct 14:02, printed 17 Oct 06:02");
+    vi.setSystemTime(new Date("2026-10-17T06:15:00.000Z"));
+    act(() => { window.dispatchEvent(new Event("beforeprint")); });
+    expect(stamp.textContent).toContain("printed 17 Oct 07:15");
+    expect(document.querySelector(".hk-print-version")?.textContent).toBe("v7, issued 16 Oct 14:02, printed 17 Oct 07:15");
+  });
+
+  it("calls a sheet printed before approval a draft and keeps the venue's clock", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T05:02:00.000Z"));
+    serve(sheet(CONFIG_A, "Smith wedding"));
+    mount();
+    const stamp = await screen.findByTestId("paper-copy-stamp");
+    expect(stamp.textContent).toContain("Draft, printed 17 Oct 06:02");
+    expect(stamp.querySelector("svg")).toBeNull();
+    expect(stamp.textContent).toContain("Europe/London");
+  });
+});

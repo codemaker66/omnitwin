@@ -63,6 +63,21 @@ export interface CreatePricingRuleInput {
   readonly currency?: string;
   readonly spaceId?: string | null;
   readonly isActive?: boolean;
+  /** The time of day the rule is for, "HH:MM" each, both or neither; both
+   *  null (or absent) applies at any time. The API refuses one side alone. */
+  readonly appliesFrom?: string | null;
+  readonly appliesUntil?: string | null;
+}
+
+/** A change to a rule. Fields left out stay as they are. */
+export interface UpdatePricingRuleInput {
+  readonly name?: string;
+  readonly type?: z.infer<typeof PricingTypeSchema>;
+  readonly amount?: number;
+  readonly spaceId?: string | null;
+  readonly isActive?: boolean;
+  readonly appliesFrom?: string | null;
+  readonly appliesUntil?: string | null;
 }
 
 export interface PriceEstimateInput {
@@ -83,6 +98,10 @@ export async function listPricingRules(venueId: string): Promise<PricingRule[]> 
 
 export async function createPricingRule(venueId: string, data: CreatePricingRuleInput): Promise<PricingRule> {
   return api.post(`/venues/${venueId}/pricing`, data, undefined, PricingRuleResponseSchema);
+}
+
+export async function updatePricingRule(venueId: string, ruleId: string, data: UpdatePricingRuleInput): Promise<PricingRule> {
+  return api.patch(`/venues/${venueId}/pricing/${ruleId}`, data, PricingRuleResponseSchema);
 }
 
 export async function deletePricingRule(venueId: string, ruleId: string): Promise<void> {
