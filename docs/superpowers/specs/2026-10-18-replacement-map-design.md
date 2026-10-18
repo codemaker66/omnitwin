@@ -200,7 +200,7 @@ own work.
 
 ## 7. The replacement map
 
-Each row is a family of work. Open one to see what their tools do, what Venviewer has today with its verified status, and what we build, with the pain it ends. Filter by who the work is for or by wave.
+Each row is a family of work. Open one to see what their tools do, what Venviewer has today with its verified status, and what we build, with the pain it ends. Filter by who the work is for or by wave. Members, crafts and giving joined on 18 October.
 
 | Family | For | Wave | Today (live / partial / missing) | What we build | The pain it ends |
 |---|---|---|---|---|---|
@@ -224,6 +224,7 @@ Each row is a family of work. Open one to see what their tools do, what Venviewe
 | **R. Guests, tickets and arrival** | hosts and guests, planners and attendees | Hosts and guests, Tickets and conferences | 0 / 1 / 6 | Wave 2 builds what the venue must own: the guest list with households, invitations and RSVPs on a page that shows the real room, meal choices, diets and access needs asked of each guest with their own consent after a signed DPIA, the guarantee against the caterer’s cut-off, and an offline door list. Wave 3 adds table sales where each host names their guests and meals, ticketing with every fee in the first price, conference registration, sessions, badges and check-in, and imports from planners’ own tools. | A host had 132 replies but 108 guests on a count billed automatically, about $2,000 wasted. ([source](https://www.weddingwire.com/wedding-forums/no-shows-and-early-departures/6a89ef0f1d14a12b.html)) |
 | **S. Drafting and intelligence** | venue team, hosts and guests, planners and attendees | ongoing | 0 / 1 / 1 | Drafts for replies, proposals, function-sheet wording and guest messages; summaries of long threads; what changed since you last looked; an incoming RFP read into a structured enquiry. Every draft shows its sources, a person reads the exact words and sends, and AI never states availability, price, capacity or safety unless the figure comes from the record. It stays off until the privacy notice names the processor. | AI-drafted replies can say a room is free when the venue’s real calendar sits in another system. ([source](https://g2.com/products/perfect-venue/reviews)) |
 | **T. Showing the venue** | venue team, hosts and guests | Every venue | 3 / 1 / 1 | The panorama tour now, and the captured room when your splat hold lifts. Proposals, guest pages and attendee pages open in the real room, brochures are generated from the record, and from venue two each venue gets its own site. | Venues that had closed or lost their wedding licence were still listed. ([source](https://www.trustpilot.com/review/bridebook.com?stars=1)) |
+| **U. Members, crafts and giving** | venue team | Venue switches | 0 / 0 / 0 | First the export survey shows what Trades House actually keeps there. Then members, the crafts and their committees, and gifts (with Gift Aid declarations where they apply) get their own design, built on the same people record but never mixed with venue clients: a donation is never a venue deal, and a member becomes a client only when they book. You decided on 18 October that Venviewer takes all of it over. |  |
 | **Z. What only Venviewer does** | venue team, hosts and guests, planners and attendees | ongoing | 10 / 2 / 0 | Keep and extend one event record for every booking, the living timetable, the Day Board with observations and request escalation, layout review with presence, supplier passes, Martyn’s Law prompts and the captured room. Each new spine hangs from them rather than beside them. |  |
 
 ## 8. The all-day standard
@@ -387,18 +388,20 @@ These are the moments the build is judged against. They describe the target, not
 
 ## 11. Decisions only Blake can make
 
-You decided four questions on 18 October. The rest are asked when the piece they belong to is designed, so you decide each with that piece in front of you.
+You decided seven questions on 18 October. The rest are asked when the piece they belong to is designed, so you decide each with that piece in front of you.
 
 1. **Do you approve the map, and which piece do we build first?** *Decided by Blake, 18 October:* Approved on 18 October. The People Book is built first; its own short design comes to you before any code.
 2. **What does Trades Hall run its bookings on today?** *Decided by Blake, 18 October:* Salesforce for bookings and clients, and spreadsheets for the two hallkeepers’ rosters. So the Salesforce importer comes first, and hallkeeper hours move into Venviewer with suggested shifts.
 3. **When a rule is met, does Venviewer act by itself or wait for one tap?** *Decided by Blake, 18 October:* One tap for bookings and money. Templates a person approved once send by themselves; confirming a date, releasing a hold or a refund waits for one tap by a named person.
 4. **Shall I draft the guest-data impact assessment now, for the venue to sign?** *Decided by Blake, 18 October:* Yes. The draft is being written now, for the venue to review and sign.
+5. **Whose record is a guest at someone else's event?** *Decided by Blake, 18 October:* The guest belongs to their event: never in the client book, never contacted for marketing, and their named needs deleted after the event with the counts kept.
+6. **Salesforce records with no contact for over two years?** *Decided by Blake, 18 October:* Leave them out unless booked, as the privacy policy requires; they stay only in the venue's own final Salesforce export.
+7. **If Trades House's Salesforce also holds members, crafts or donations?** *Decided by Blake, 18 October:* Replace all of it, so Salesforce can be switched off entirely. The export survey comes first; charity records get their own design.
 
 **Asked when that piece is designed**
 
 - **What confirms a booking, how money reaches the venue, who numbers invoices, and whether any fee applies** (When the agreement and payments are designed). *Recommendation:* Signed agreement plus deposit, as a venue setting; the venue’s own Stripe account with direct charges; the accounting system numbers invoices; no fee on client payments for now.
 - **Does the inbox replace staff mailboxes for client mail, or sync with them both ways** (When the inbox is designed). *Recommendation:* Send from the venue’s own domain and capture replies there, with copies from staff mailboxes; two-way sync only if staff still live in Outlook after a measured month.
-- **Whose record a guest is, and whether one person spans several venues** (Now, in the People Book’s design). *Recommendation:* A guest belongs to their event: held only to run it, never in the client book or marketing, purged after it with the counts kept; each venue keeps its own records, and only a person’s own sign-in spans venues.
 - **Other companies’ audiences, gift registries, hotel systems and live streams: link or build** (Before wave 4). *Recommendation:* Take marketplace enquiries into the inbox and link to the rest; a marketplace needs many venues first.
 - **Who measures the working day** (Before the baseline week on today’s tools). *Recommendation:* An independent UX researcher for the baseline week and the comparison at week eight.
 
