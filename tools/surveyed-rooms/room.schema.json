@@ -1,0 +1,604 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://venviewer.com/schemas/surveyed-room/room.schema.json",
+  "title": "Surveyed room",
+  "description": "One room drawn as surveyed: where it sits in the scan, its measured outline, openings, ceiling, floor, free-standing elements and fittings, the edits made to the scan, and how the survey renders it. Lengths are metres. Planner positions are (x, z) or (x, y, z) in the room's planner frame: y up, origin at the centre of the floor, floor at y = 0. E57 positions are in the capture's frame: Z up. See README.md for the conventions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "slug", "name", "venue", "source", "transform", "stations", "walls", "openings", "ceiling", "floor", "freeStanding", "fittings", "edits", "occluders", "survey", "provenance"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "slug": { "$ref": "#/$defs/slug", "description": "The room's key, used for file and folder names." },
+    "name": { "type": "string", "minLength": 1, "description": "The space's name as the planner shows it." },
+    "venue": { "$ref": "#/$defs/slug", "description": "The twin's venue slug (asset namespace), e.g. trades-hall." },
+    "published": { "$ref": "#/$defs/published" },
+    "source": { "$ref": "#/$defs/source" },
+    "transform": { "$ref": "#/$defs/transform" },
+    "site": { "$ref": "#/$defs/site" },
+    "stations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/station" } },
+    "walls": { "$ref": "#/$defs/walls" },
+    "openings": { "type": "array", "items": { "$ref": "#/$defs/opening" } },
+    "ceiling": { "$ref": "#/$defs/ceiling" },
+    "floor": { "$ref": "#/$defs/floor" },
+    "freeStanding": { "type": "array", "items": { "$ref": "#/$defs/freeStanding" } },
+    "fittings": { "type": "array", "items": { "$ref": "#/$defs/fitting" } },
+    "concealedLights": { "type": "array", "items": { "$ref": "#/$defs/concealedLight" } },
+    "edits": { "type": "array", "items": { "$ref": "#/$defs/edit" } },
+    "occluders": { "type": "array", "items": { "$ref": "#/$defs/occluder" } },
+    "survey": { "$ref": "#/$defs/survey" },
+    "provenance": { "$ref": "#/$defs/provenance" }
+  },
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "note": { "type": "string" },
+    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "positive": { "type": "number", "exclusiveMinimum": 0 },
+    "nonNegative": { "type": "number", "minimum": 0 },
+    "pair": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+    "triple": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "pixelSize": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2 },
+    "uRef": {
+      "description": "A position along a wall (u, metres): a number, or an opening's centre plus an offset, so the edit moves with the opening.",
+      "anyOf": [
+        { "type": "number" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["opening", "offset"],
+          "properties": { "opening": { "$ref": "#/$defs/id" }, "offset": { "type": "number" } }
+        }
+      ]
+    },
+    "shiftRef": {
+      "description": "How far along the wall a patch's source lies from its target (metres, + = further along u): a number, or centre(second opening) - centre(first opening).",
+      "anyOf": [
+        { "type": "number" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["openingDelta"],
+          "properties": { "openingDelta": { "type": "array", "items": { "$ref": "#/$defs/id" }, "minItems": 2, "maxItems": 2 } }
+        }
+      ]
+    },
+    "published": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The venue's published figures. Drawing and planning use the measured outline; published capacities are kept.",
+      "properties": {
+        "length": { "$ref": "#/$defs/positive" },
+        "width": { "$ref": "#/$defs/positive" },
+        "height": { "$ref": "#/$defs/positive" },
+        "area": { "$ref": "#/$defs/positive" },
+        "source": { "type": "string" },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "captureId", "captured", "frame", "mesh"],
+      "properties": {
+        "kind": { "enum": ["matterport-e57-twin", "xgrids-lcc2"] },
+        "captureId": { "$ref": "#/$defs/slug" },
+        "captured": { "$ref": "#/$defs/date" },
+        "twin": { "type": "string", "pattern": "^https://" },
+        "manifest": { "type": "string" },
+        "mesh": { "type": "string" },
+        "meshSha256": { "$ref": "#/$defs/sha256" },
+        "meshTier": { "type": "string" },
+        "panoramas": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "size"],
+          "properties": {
+            "path": { "type": "string", "description": "Path template under the twin; {index:03d} is the station's number." },
+            "size": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "frame": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "units", "up"],
+          "properties": {
+            "name": { "enum": ["e57"] },
+            "units": { "const": "m" },
+            "up": { "const": "+Z" }
+          }
+        },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "E57 to planner, a rigid motion: X' = X - centre[0], Y' = Y - centre[1], then quarterTurns 0: x = X', z = -Y'; 1: x = -Y', z = -X'; 2: x = -X', z = Y'; 3: x = Y', z = X'; and y = Z - floorZ. Each quarter turn rotates a quarter turn about +y, counter-clockwise seen from above.",
+      "required": ["centre", "floorZ", "quarterTurns"],
+      "properties": {
+        "centre": { "$ref": "#/$defs/pair", "description": "E57 (X, Y) of the planner origin." },
+        "floorZ": { "type": "number", "description": "E57 Z of the floor (planner y = 0)." },
+        "quarterTurns": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame", "daylightChannel"],
+      "properties": {
+        "frame": { "enum": ["grand-hall-planner"], "description": "The shared site frame the city model and skylines use." },
+        "observer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["latitude", "longitude"],
+          "properties": { "latitude": { "type": "number" }, "longitude": { "type": "number" } }
+        },
+        "minusZBearingTrue": { "type": "number", "description": "True bearing, degrees, of the room's planner -z." },
+        "minusZBearingGrid": { "type": "number", "description": "The same on the British National Grid." },
+        "gridMinusTrueDeg": { "type": "number", "description": "Grid bearing minus true bearing at the site (meridian convergence), degrees." },
+        "gridOrigin": { "$ref": "#/$defs/pair", "description": "British National Grid (E, N) of the planner origin." },
+        "floorODN": { "type": "number", "description": "Floor height, metres above Ordnance Datum Newlyn." },
+        "pavementY": { "type": "number", "description": "Planner y of the street pavement." },
+        "daylightChannel": { "enum": ["windows", "none"] },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "station": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^scan_[0-9]{3}$" },
+        "role": { "enum": ["room", "doorway", "outside"], "description": "room: inside the outline. doorway: in an opening's reveal or the lobby just beyond it (names the opening). outside: kept deliberately, with a note." },
+        "opening": { "$ref": "#/$defs/id" },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "walls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vertices", "segments"],
+      "properties": {
+        "vertices": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/pair" },
+          "description": "Planner (x, z) of the wall-face corners, counter-clockwise seen from above (from +x towards -z). Segment i runs from vertex i to vertex i + 1, the last back to vertex 0; the room lies on its left."
+        },
+        "segments": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/segment" } },
+        "elevation": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The room's horizontal bands, by name, as its web model reads them.",
+          "properties": {
+            "levels": { "type": "object", "additionalProperties": { "type": "number" }, "description": "Heights above the floor." },
+            "offsets": { "type": "object", "additionalProperties": { "type": "number" }, "description": "How far a band stands proud of (+) or behind (-) the wall face." }
+          }
+        }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "height"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string" },
+        "kind": { "enum": ["solid", "partition", "screen", "open"], "description": "solid: a wall. partition: a movable or sliding partition. screen: a low or glazed screen. open: no wall (the room continues)." },
+        "height": { "$ref": "#/$defs/positive", "description": "Height of the wall face above the floor." },
+        "thickness": { "$ref": "#/$defs/positive", "description": "Wall thickness behind the face, where it matters (reveals, the section cut)." },
+        "sagitta": { "type": "number", "description": "For a curved wall: how far its middle bows out of the room (+) or into it (-) from the chord." },
+        "survey": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "pattern": "^[a-z0-9]+$", "description": "The wall's name in survey file names, if not its id." },
+            "anchorE57": { "$ref": "#/$defs/pair", "description": "E57 (X, Y) where the rendered elevation's u = 0 lies, if not the corner itself." },
+            "tiles": { "type": "integer", "minimum": 1, "description": "Elevation tiles along the wall, if not ceil(length / tileMaxLength)." },
+            "note": { "$ref": "#/$defs/note" }
+          }
+        },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "opening": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "wall", "kind", "headShape", "width", "sill", "head", "glazing"],
+      "description": "Wall-local: u along the wall, left to right seen from inside the room; v above the floor. Give exactly one of centre and centreE57.",
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "wall": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["door", "window", "arch"], "description": "What fills it: a door leaf, glazing, or nothing (an open arch)." },
+        "headShape": { "enum": ["square", "semicircular", "segmental"] },
+        "headRise": { "$ref": "#/$defs/positive", "description": "Rise of a segmental head above its springing." },
+        "centre": { "type": "number", "description": "u of the opening's centre." },
+        "centreE57": { "$ref": "#/$defs/pair", "description": "E57 (X, Y) of the centre on the wall face; u is its projection." },
+        "width": { "$ref": "#/$defs/positive", "description": "Clear width at the wall face." },
+        "sill": { "$ref": "#/$defs/nonNegative", "description": "Bottom of the clear opening." },
+        "head": { "$ref": "#/$defs/positive", "description": "Top of a square opening, or where an arched head springs." },
+        "glazing": { "enum": ["clear", "frosted-lower", "stained-backlit", "sheer", "none"] },
+        "dressing": { "enum": ["none", "curtains", "sheers", "curtains-and-sheers", "blinds"] },
+        "stateInScan": { "enum": ["closed", "open"] },
+        "reveal": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "depth": { "$ref": "#/$defs/positive", "description": "Reveal depth used for the sun (the wall's thickness here)." },
+            "sunLimitDeg": { "type": "number", "minimum": 0, "maximum": 90, "description": "How far round from the wall's normal the reveal still admits the sun." },
+            "sashHalfWidth": { "$ref": "#/$defs/positive", "description": "Half-width of the glazed sash about the centre." },
+            "sashInset": { "$ref": "#/$defs/nonNegative", "description": "Or: the sash's inset from each jamb." },
+            "glassDepthFrom": { "$ref": "#/$defs/id", "description": "Another opening whose measured glass depth this one takes (its own glazing was not reconstructed)." }
+          }
+        },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "ceiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "height"],
+      "properties": {
+        "kind": { "enum": ["flat", "coffered", "beamed", "domed", "vaulted", "stepped"] },
+        "height": { "$ref": "#/$defs/positive", "description": "Height of the main field above the floor." },
+        "heightRange": { "$ref": "#/$defs/pair", "description": "Measured spread of the main field." },
+        "lattice": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["shape", "pitch"],
+          "properties": {
+            "shape": { "enum": ["hexagonal", "octagonal", "square"] },
+            "pitch": { "$ref": "#/$defs/positive", "description": "Centre spacing along a row (x)." },
+            "rowPitch": { "$ref": "#/$defs/positive", "description": "Spacing between rows (z)." },
+            "outerRadius": { "$ref": "#/$defs/positive" },
+            "innerRadius": { "$ref": "#/$defs/positive" },
+            "border": { "$ref": "#/$defs/nonNegative", "description": "Plain border between the cornice and the lattice." },
+            "rows": { "type": "integer", "minimum": 0, "description": "Rows run from -rows to +rows." },
+            "centreRowOffset": { "type": "number", "description": "Offset of the centre row's cells from x = 0, in pitches." }
+          }
+        },
+        "domes": { "type": "array", "items": { "$ref": "#/$defs/dome" } },
+        "regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "outline", "height"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "kind": { "enum": ["field", "raised-panel", "soffit", "cove", "recess", "beam"] },
+              "outline": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/pair" } },
+              "height": { "$ref": "#/$defs/positive" },
+              "heightRange": { "$ref": "#/$defs/pair" },
+              "note": { "$ref": "#/$defs/note" }
+            }
+          }
+        },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "dome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "centre", "profile", "footRadius"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "centre": { "$ref": "#/$defs/pair", "description": "Planner (x, z) of the dome's axis as drawn." },
+        "axisE57": { "$ref": "#/$defs/pair", "description": "E57 (X, Y) of the axis as measured, used for projection." },
+        "profile": { "enum": ["cap-on-elliptic-band"], "description": "A spherical cap on a steep quarter-ellipse band, with a crown ring stepping down to a lowered plate (the profile generator is code)." },
+        "footRadius": { "$ref": "#/$defs/positive" },
+        "sphereCentre": { "type": "number" },
+        "sphereRadius": { "$ref": "#/$defs/positive" },
+        "bandTopRadius": { "$ref": "#/$defs/positive" },
+        "crownRadius": { "$ref": "#/$defs/positive" },
+        "plateRadius": { "$ref": "#/$defs/positive" },
+        "plateHeight": { "$ref": "#/$defs/positive" },
+        "crownHeight": { "$ref": "#/$defs/positive" },
+        "panels": { "type": "integer", "minimum": 0 },
+        "shields": { "type": "integer", "minimum": 0 },
+        "frameCircumradius": { "$ref": "#/$defs/positive" }
+      }
+    },
+    "floor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "levels"],
+      "properties": {
+        "kind": { "enum": ["strip-boards", "herringbone-parquet", "carpet", "polished", "stone", "other"] },
+        "boardWidth": { "$ref": "#/$defs/positive" },
+        "seam": { "$ref": "#/$defs/nonNegative" },
+        "boardsRun": { "enum": ["x", "z"] },
+        "levels": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "height"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "height": { "type": "number", "description": "Planner y of this floor region." },
+              "outline": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/pair" }, "description": "Omitted: the whole outline." },
+              "note": { "$ref": "#/$defs/note" }
+            }
+          }
+        },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "freeStanding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "shape", "centre", "size"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["column", "pier", "post"] },
+        "shape": { "enum": ["round", "square", "rectangle"] },
+        "centre": { "$ref": "#/$defs/pair" },
+        "size": { "$ref": "#/$defs/pair", "description": "Along x and z before rotation; a round column gives its diameter twice." },
+        "rotationDeg": { "type": "number" },
+        "height": { "$ref": "#/$defs/positive" },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "fitting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "style", "position", "lowest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["chandelier", "electrolier", "pendant"] },
+        "style": { "$ref": "#/$defs/id", "description": "The web model's fitting template." },
+        "position": { "$ref": "#/$defs/triple", "description": "Planner (x, y, z) of the centre of the light-bearing body." },
+        "latticeCell": { "$ref": "#/$defs/pair", "description": "If set on the ceiling lattice: (pitches along x, row pitches along z)." },
+        "suspension": { "$ref": "#/$defs/positive", "description": "Height where the suspension meets the ceiling." },
+        "lowest": { "type": "number", "description": "Height of the fitting's lowest point." },
+        "radius": { "$ref": "#/$defs/positive", "description": "Reach from its axis." },
+        "glowRadius": { "$ref": "#/$defs/positive", "description": "Radius of the stand-in lamp body in the reflection environment (a look setting, not a measurement)." },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "concealedLight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "height", "walls"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["uplight-strip", "cove", "downlight-run"] },
+        "height": { "type": "number" },
+        "level": { "type": "string", "description": "The elevation level it sits at, by name." },
+        "walls": { "anyOf": [{ "const": "all" }, { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/id" } }] },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "edit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "wall", "u", "v", "mode", "applies"],
+          "description": "Copy a rectangle of the wall over a movable item or an open leaf: shift takes it from u + by, mirror reflects it about u = about.",
+          "properties": {
+            "type": { "const": "patch" },
+            "wall": { "$ref": "#/$defs/id" },
+            "u": { "type": "array", "items": { "$ref": "#/$defs/uRef" }, "minItems": 2, "maxItems": 2 },
+            "v": { "$ref": "#/$defs/pair" },
+            "mode": { "enum": ["shift", "mirror"] },
+            "by": { "$ref": "#/$defs/shiftRef" },
+            "about": { "type": "number" },
+            "applies": { "type": "array", "minItems": 1, "items": { "enum": ["photo", "relief"] } },
+            "note": { "$ref": "#/$defs/note" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "wall", "u", "v", "depth", "applies"],
+          "description": "Set a rectangle of the relief to a plain recess (an open door the web model closes).",
+          "properties": {
+            "type": { "const": "recess" },
+            "wall": { "$ref": "#/$defs/id" },
+            "u": { "type": "array", "items": { "$ref": "#/$defs/uRef" }, "minItems": 2, "maxItems": 2 },
+            "v": { "$ref": "#/$defs/pair" },
+            "depth": { "$ref": "#/$defs/positive", "description": "Behind the wall face." },
+            "leafPlane": { "$ref": "#/$defs/positive", "description": "Where the web model draws the closed leaves, behind the wall face." },
+            "applies": { "type": "array", "minItems": 1, "items": { "enum": ["photo", "relief"] } },
+            "note": { "$ref": "#/$defs/note" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "centre", "radius"],
+          "description": "Refill the floor photograph in a disc from the same boards further along their run.",
+          "properties": {
+            "type": { "const": "floor-refill" },
+            "centre": { "$ref": "#/$defs/pair" },
+            "radius": { "$ref": "#/$defs/positive" },
+            "note": { "$ref": "#/$defs/note" }
+          }
+        }
+      ]
+    },
+    "occluder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "shape", "centreE57", "radius", "zE57"],
+      "description": "A volume rays may not pass through when projecting the panoramas (finer than the depth maps).",
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "shape": { "const": "vertical-cylinder" },
+        "centreE57": { "$ref": "#/$defs/pair" },
+        "radius": { "$ref": "#/$defs/positive" },
+        "zE57": { "$ref": "#/$defs/pair" },
+        "fitting": { "$ref": "#/$defs/id" },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "projectionSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cosMin": { "type": "number" },
+        "pCos": { "type": "number" },
+        "qDist": { "type": "number" },
+        "maxDist": { "type": "number" },
+        "glare": { "type": "integer", "minimum": 0 },
+        "nadir": { "type": "boolean" }
+      }
+    },
+    "survey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wallViews"],
+      "properties": {
+        "publish": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["folder"],
+          "properties": { "folder": { "type": "string" }, "revision": { "type": "integer", "minimum": 0 } }
+        },
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "walls": { "$ref": "#/$defs/projectionSettings" },
+            "ceiling": { "$ref": "#/$defs/projectionSettings" },
+            "dome": { "$ref": "#/$defs/projectionSettings" },
+            "floor": { "$ref": "#/$defs/projectionSettings" }
+          }
+        },
+        "wallViews": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ppm", "heightRange", "eyeInset", "near", "far", "modes"],
+          "properties": {
+            "file": { "type": "string" },
+            "order": { "type": "array", "items": { "$ref": "#/$defs/id" }, "description": "Wall order in the views file; default the outline's." },
+            "ppm": { "$ref": "#/$defs/positive" },
+            "heightRange": { "$ref": "#/$defs/pair", "description": "Heights above the floor the elevation covers." },
+            "eyeInset": { "$ref": "#/$defs/positive", "description": "How far inside the room the orthographic camera stands." },
+            "near": { "$ref": "#/$defs/nonNegative" },
+            "far": { "$ref": "#/$defs/positive" },
+            "tileMaxLength": { "$ref": "#/$defs/positive" },
+            "modes": { "type": "array", "minItems": 1, "items": { "enum": ["position", "color"] } }
+          }
+        },
+        "ceilingView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "ppm", "eyeHeight", "near", "far", "modes"],
+          "properties": {
+            "file": { "type": "string" },
+            "name": { "type": "string" },
+            "ppm": { "$ref": "#/$defs/positive" },
+            "eyeHeight": { "type": "number", "description": "Camera height above the floor, looking straight up over the outline's bounding box." },
+            "near": { "$ref": "#/$defs/nonNegative" },
+            "far": { "$ref": "#/$defs/positive" },
+            "modes": { "type": "array", "minItems": 1, "items": { "enum": ["position", "color"] } }
+          }
+        },
+        "floorPhoto": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ppm": { "$ref": "#/$defs/positive" },
+            "refill": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shift": { "type": "number", "description": "Source boards lie this far along their run, towards the middle." },
+                "innerFraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                "easeDeg": { "type": "number", "minimum": 0 }
+              }
+            }
+          }
+        },
+        "domePhoto": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "size": { "$ref": "#/$defs/pixelSize" },
+            "surfaceOffset": { "$ref": "#/$defs/pair", "description": "Search before and behind the profile along each normal." },
+            "profileSteps": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "atlas": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["size", "ppm", "vRange", "placement"],
+          "properties": {
+            "size": { "type": "integer", "minimum": 1 },
+            "ppm": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["pixels", "span"],
+              "description": "Atlas scale = pixels / span.",
+              "properties": { "pixels": { "$ref": "#/$defs/positive" }, "span": { "$ref": "#/$defs/positive" } }
+            },
+            "vRange": { "$ref": "#/$defs/pair" },
+            "featherTexels": { "type": "integer", "minimum": 0 },
+            "placement": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["wall", "column", "row"],
+                "properties": {
+                  "wall": { "$ref": "#/$defs/id" },
+                  "column": { "type": "integer", "minimum": 0, "description": "Texels from the left." },
+                  "row": { "type": "integer", "minimum": 0, "description": "Strip rows from the top." }
+                }
+              }
+            }
+          }
+        },
+        "relief": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "container": { "enum": ["GHR1"] },
+            "order": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+            "ppm": { "$ref": "#/$defs/positive" },
+            "vRange": { "$ref": "#/$defs/pair" },
+            "depthRange": { "$ref": "#/$defs/pair" },
+            "simplifyError": { "$ref": "#/$defs/positive" },
+            "holdFloor": { "$ref": "#/$defs/nonNegative" },
+            "holdCeiling": { "$ref": "#/$defs/positive" }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measuredBy", "method", "date", "residuals"],
+      "properties": {
+        "measuredBy": { "type": "string", "minLength": 1 },
+        "method": { "type": "string", "minLength": 1 },
+        "date": { "$ref": "#/$defs/date" },
+        "reviewedBy": { "type": "string" },
+        "sources": { "type": "array", "items": { "type": "string" } },
+        "residuals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["quantity", "kind", "value", "unit"],
+            "properties": {
+              "quantity": { "type": "string" },
+              "kind": { "enum": ["fit-rms", "fit-max", "tolerance", "check"] },
+              "value": { "type": "number" },
+              "unit": { "enum": ["m", "deg", "px"] },
+              "note": { "$ref": "#/$defs/note" }
+            }
+          }
+        },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    }
+  }
+}

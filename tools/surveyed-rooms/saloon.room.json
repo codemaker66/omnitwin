@@ -1,0 +1,2400 @@
+{
+  "$schema": "./room.schema.json",
+  "schemaVersion": 1,
+  "slug": "saloon",
+  "name": "Saloon",
+  "venue": "trades-hall",
+  "published": {
+    "length": 12,
+    "width": 7,
+    "height": 5.4,
+    "area": 84,
+    "source": "tradeshallglasgow.co.uk/rooms (research/research-room-facts.md, fetched 2026-10-17); the venue's plan labels 11.9 x 6.9 m",
+    "note": "Measured: 12.19 m (panelling, front to rear) x 7.47 m (fireplace panelling to the window piers; 7.01 m between the end sections at the front, 7.10 m at the rear), 89.3 m2 inside the panelling; ceiling field 5.515 m, raised panels to 5.855 m, wall plaster to the cornice at 5.45 m. Drawing and planning use the measured outline; published capacities are kept (website 80 theatre / 40 classroom / 60 dinner / 80 reception)."
+  },
+  "source": {
+    "kind": "matterport-e57-twin",
+    "captureId": "trades-hall-matterport-e57-2026-07-11",
+    "captured": "2026-07-11",
+    "twin": "https://twin.venviewer.com/trades-hall",
+    "manifest": "manifest.json",
+    "mesh": "mesh/dollhouse.glb",
+    "meshSha256": "21ee097393cdaf80d5924a876fc73cbf149c0d4b050bcb56011dad2e1dd3aa9a",
+    "meshTier": "ops-grade-2cm",
+    "panoramas": {
+      "path": "tiles/scan_{index:03d}/equirect_8192.webp",
+      "size": 8192
+    },
+    "frame": {
+      "name": "e57",
+      "units": "m",
+      "up": "+Z"
+    }
+  },
+  "transform": {
+    "centre": [
+      -2.065,
+      7.565
+    ],
+    "floorZ": 0.002,
+    "quarterTurns": 1,
+    "note": "x = 7.565 - Y, y = Z - 0.002, z = -2.065 - X. A proper rotation (det +1); the window wall is on -z (z = -3.734) and +x points 101.1 deg true. The centre is the panelling's centre within 4 mm (X -2.068, Y 7.566) and the ceiling's (-2.07, 7.55); floor Z 0.002 is the floor plane at the centre (fit 0.0054 + 0.00135 X, rms 7 mm)."
+  },
+  "site": {
+    "frame": "grand-hall-planner",
+    "observer": {
+      "latitude": 55.8593,
+      "longitude": -4.2491
+    },
+    "minusZBearingTrue": 11.1,
+    "minusZBearingGrid": 12.96,
+    "gridMinusTrueDeg": 1.861,
+    "gridOrigin": [
+      259317.36,
+      665183.23
+    ],
+    "floorODN": 14.147,
+    "pavementY": -3.747,
+    "daylightChannel": "none",
+    "note": "Derived from the Grand Hall frame constants (README, merchant-city-v2 frame block): the Saloon's planner -z is E57 +X, 90 deg left of the Grand Hall's -z (101.1 true, 102.96 grid). gridOrigin = the Grand Hall's (259332, 665191) + the Saloon origin's Grand Hall planner position (x 10.860, z 12.528) on +x (-0.22427, -0.97453) and +z (-0.97453, 0.22427). The windows look into a roofed space over the booking suite (LiDAR roof at Z 11.5-12 from 0.5 m out; FIRST 2010 F.03); the glass is lit from behind and no sun reaches the floor."
+  },
+  "stations": [
+    {
+      "id": "scan_048",
+      "role": "doorway",
+      "opening": "door-lobby",
+      "note": "The lobby between the Grand Hall's end door and the Saloon, 0.29 m beyond the front wall's face; the Grand Hall lists it too."
+    },
+    {
+      "id": "scan_049",
+      "role": "room"
+    },
+    {
+      "id": "scan_050",
+      "role": "room"
+    },
+    {
+      "id": "scan_051",
+      "role": "room"
+    },
+    {
+      "id": "scan_052",
+      "role": "room"
+    },
+    {
+      "id": "scan_053",
+      "role": "room"
+    },
+    {
+      "id": "scan_054",
+      "role": "room"
+    },
+    {
+      "id": "scan_055",
+      "role": "room"
+    },
+    {
+      "id": "scan_056",
+      "role": "room"
+    },
+    {
+      "id": "scan_057",
+      "role": "room"
+    },
+    {
+      "id": "scan_058",
+      "role": "room"
+    },
+    {
+      "id": "scan_059",
+      "role": "room"
+    },
+    {
+      "id": "scan_060",
+      "role": "room"
+    },
+    {
+      "id": "scan_061",
+      "role": "room"
+    },
+    {
+      "id": "scan_062",
+      "role": "room"
+    },
+    {
+      "id": "scan_063",
+      "role": "room"
+    },
+    {
+      "id": "scan_064",
+      "role": "room"
+    },
+    {
+      "id": "scan_065",
+      "role": "room"
+    },
+    {
+      "id": "scan_066",
+      "role": "room"
+    },
+    {
+      "id": "scan_067",
+      "role": "room"
+    },
+    {
+      "id": "scan_068",
+      "role": "room"
+    },
+    {
+      "id": "scan_069",
+      "role": "room"
+    },
+    {
+      "id": "scan_070",
+      "role": "room"
+    },
+    {
+      "id": "scan_071",
+      "role": "room"
+    },
+    {
+      "id": "scan_072",
+      "role": "room"
+    },
+    {
+      "id": "scan_073",
+      "role": "room"
+    },
+    {
+      "id": "scan_074",
+      "role": "room"
+    }
+  ],
+  "walls": {
+    "vertices": [
+      [
+        6.095,
+        3.514
+      ],
+      [
+        6.095,
+        -3.494
+      ],
+      [
+        3.935,
+        -3.494
+      ],
+      [
+        3.935,
+        -3.734
+      ],
+      [
+        -3.835,
+        -3.734
+      ],
+      [
+        -3.835,
+        -3.54
+      ],
+      [
+        -6.096,
+        -3.54
+      ],
+      [
+        -6.096,
+        3.561
+      ],
+      [
+        -3.897,
+        3.561
+      ],
+      [
+        -3.897,
+        3.739
+      ],
+      [
+        3.886,
+        3.739
+      ],
+      [
+        3.886,
+        3.514
+      ]
+    ],
+    "segments": [
+      {
+        "id": "front",
+        "name": "Front wall (lobby to the Grand Hall)",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "E57 Y = 1.470 (panelling; plaster 1.448, pedestal 1.510). Carries the lobby door and the store door; a carved sideboard stands against it (E57 X -3.32..-1.00)."
+      },
+      {
+        "id": "window-front-end",
+        "name": "Window wall, front end",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "E57 X = 1.429 (panelling; plaster 1.470, pedestal 1.341). Carries the open door to the passage beside the booking suite (FIRST 2010 F.03)."
+      },
+      {
+        "id": "window-front-return",
+        "name": "Return to the window recess",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "0.240 m step from the end section to the pier line, at E57 Y 3.630."
+      },
+      {
+        "id": "window",
+        "name": "Window wall (three stained-glass bays)",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "Pier line E57 X = 1.669 (panelling; plaster 1.693, pedestal 1.568). Faces 11.1 deg true, into the roofed space over the booking suite: no sky."
+      },
+      {
+        "id": "window-rear-return",
+        "name": "Return from the window recess",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "0.194 m step at E57 Y 11.400."
+      },
+      {
+        "id": "window-rear-end",
+        "name": "Window wall, rear end",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "E57 X = 1.475 (panelling incl. the door leaves; pier 1.453, plaster 1.468, pedestal 1.333). Carries the door to Stair 8 (FIRST 2010 F.02)."
+      },
+      {
+        "id": "rear",
+        "name": "Rear wall",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "E57 Y = 13.661 (panelling; plaster 13.665, pedestal 13.639). Two honours boards with pediments; no openings."
+      },
+      {
+        "id": "fireplace-rear-end",
+        "name": "Fireplace wall, rear end",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "E57 X = -5.626 (panelling; plaster -5.633, pedestal -5.50). Closed panelled door, purpose unconfirmed (cupboard or symmetry door)."
+      },
+      {
+        "id": "fireplace-rear-return",
+        "name": "Return to the fireplace recess",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "0.178 m step at E57 Y 11.462."
+      },
+      {
+        "id": "fireplace",
+        "name": "Fireplace wall",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "E57 X = -5.804 (panelling; plaster -5.823, pedestal -5.782). White marble chimneypiece centred at E57 Y 7.54: shelf top 1.55 m, Y 6.45..8.65, 0.14 m proud; surround Y 6.55..8.525, 0.05 m proud; opening Y 6.925..8.16 (1.235 m) x 0.99 m high, firebox to X -6.0 (0.2 m behind the face); hearth and brass fender 0.59 m into the room (to X -5.21), Y 6.29..8.87, at most 0.10 m high. Three honours boards with pediments above the dado."
+      },
+      {
+        "id": "fireplace-front-return",
+        "name": "Return from the fireplace recess",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "0.225 m step at E57 Y 3.679."
+      },
+      {
+        "id": "fireplace-front-end",
+        "name": "Fireplace wall, front end",
+        "kind": "solid",
+        "height": 5.515,
+        "note": "E57 X = -5.579 (panelling; plaster -5.581, pedestal -5.539). Closed panelled door, purpose unconfirmed."
+      }
+    ],
+    "elevation": {
+      "levels": {
+        "skirtingTop": 0.19,
+        "dadoRail": 1.06,
+        "dadoTop": 1.24,
+        "panelRail": 1.52,
+        "panelCorniceBottom": 2.8,
+        "panelCorniceTop": 3.16,
+        "corniceBottom": 5.45,
+        "ceiling": 5.515
+      },
+      "offsets": {
+        "skirtingProud": 0.12,
+        "dadoProud": 0.088,
+        "dadoCapProud": 0.12,
+        "panelRailProud": 0.035,
+        "panelCorniceProud": 0.11,
+        "plasterSet": -0.017
+      }
+    }
+  },
+  "openings": [
+    {
+      "id": "window-front",
+      "wall": "window",
+      "kind": "window",
+      "headShape": "semicircular",
+      "centreE57": [
+        1.669,
+        4.926
+      ],
+      "width": 1.9,
+      "sill": 1.2,
+      "head": 4.44,
+      "glazing": "stained-backlit",
+      "dressing": "none",
+      "stateInScan": "closed",
+      "reveal": {
+        "depth": 0.546,
+        "sashHalfWidth": 0.81
+      },
+      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above about 3.6 m at X 2.24..2.29, 4-7 cm further back, in all three bays."
+    },
+    {
+      "id": "window-centre",
+      "wall": "window",
+      "kind": "window",
+      "headShape": "semicircular",
+      "centreE57": [
+        1.669,
+        7.499
+      ],
+      "width": 1.88,
+      "sill": 1.2,
+      "head": 4.44,
+      "glazing": "stained-backlit",
+      "dressing": "none",
+      "stateInScan": "closed",
+      "reveal": {
+        "depth": 0.546,
+        "sashHalfWidth": 0.81
+      },
+      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above about 3.6 m at X 2.24..2.29, 4-7 cm further back, in all three bays."
+    },
+    {
+      "id": "window-rear",
+      "wall": "window",
+      "kind": "window",
+      "headShape": "semicircular",
+      "centreE57": [
+        1.669,
+        10.075
+      ],
+      "width": 1.9,
+      "sill": 1.2,
+      "head": 4.44,
+      "glazing": "stained-backlit",
+      "dressing": "none",
+      "stateInScan": "closed",
+      "reveal": {
+        "depth": 0.546,
+        "sashHalfWidth": 0.81
+      },
+      "note": "Face opening of the recessed bay (half-depth width 1.80-1.84, arch circle rms 5 mm, apex 5.39). Leaded glass in a timber frame in the plane E57 X 2.215 (0.546 behind the pier face): glazed 1.62-1.63 wide, glass sill 1.31, springing 4.49, apex 5.30, transom 3.45-3.52 (centre bay, native skybox faces of scan_053). Reveals splay from 1.89 to 1.67 at the glass. Lit from behind (no sky). Two glass planes (checked 18 Oct): the lower light at X 2.20..2.23, the upper light above about 3.6 m at X 2.24..2.29, 4-7 cm further back, in all three bays."
+    },
+    {
+      "id": "door-lobby",
+      "wall": "front",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        -0.005,
+        1.47
+      ],
+      "width": 1.1,
+      "sill": 0,
+      "head": 2.45,
+      "glazing": "none",
+      "stateInScan": "open",
+      "note": "To the lobby (scan_048) and the Grand Hall's end door (door-end there: 1.08 wide). Mesh: no surface within 0.9 m behind the face for X -0.55..0.53 below 2.40 m; photo jambs 0.575..-0.56. The 1.1 m leaf stood open into the Saloon, hinged on the -X jamb, swung to E57 (-1.25, 2.45)."
+    },
+    {
+      "id": "door-store",
+      "wall": "front",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        -4.08,
+        1.47
+      ],
+      "width": 1.19,
+      "sill": 0,
+      "head": 2.44,
+      "glazing": "none",
+      "stateInScan": "closed",
+      "note": "Single panelled leaf X -4.675..-3.485 (native skybox faces, scan_062). FIRST 2010: to F.22 store / Stair 4 corridor. Exit sign hangs above."
+    },
+    {
+      "id": "door-passage",
+      "wall": "window-front-end",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        1.429,
+        2.34
+      ],
+      "width": 1.12,
+      "sill": 0,
+      "head": 2.45,
+      "glazing": "none",
+      "stateInScan": "open",
+      "note": "Opening Y 1.78..2.90 between architraves (photo); mesh opening Y 1.85..2.92 behind splayed jambs. A leaf stands ajar in the passage. FIRST 2010: to the lobby by F.03 / F.16."
+    },
+    {
+      "id": "door-stair",
+      "wall": "window-rear-end",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        1.475,
+        12.67
+      ],
+      "width": 1.09,
+      "sill": 0,
+      "head": 2.46,
+      "glazing": "none",
+      "stateInScan": "closed",
+      "note": "Leaf-and-a-half (0.78 + 0.31 m), Y 12.125..13.215, 0.02-0.05 m behind the end panelling. FIRST 2010: to F.02 Stair 8. Exit sign hangs above."
+    },
+    {
+      "id": "door-fireplace-rear",
+      "wall": "fireplace-rear-end",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        -5.626,
+        12.71
+      ],
+      "width": 1.23,
+      "sill": 0,
+      "head": 2.46,
+      "glazing": "none",
+      "stateInScan": "closed",
+      "note": "Panelled leaf Y 12.10..13.325, flush with the end panelling; the piano stands in front of its lower half. FIRST 2010 and the venue plan draw it in a recess to the main wall line; the scan shows it flush with the proud end section."
+    },
+    {
+      "id": "door-fireplace-front",
+      "wall": "fireplace-front-end",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        -5.579,
+        2.42
+      ],
+      "width": 1.22,
+      "sill": 0,
+      "head": 2.43,
+      "glazing": "none",
+      "stateInScan": "closed",
+      "note": "Panelled leaf Y 1.81..3.025, flush with the end panelling (same disagreement with the plans as the rear one)."
+    }
+  ],
+  "ceiling": {
+    "kind": "coffered",
+    "height": 5.515,
+    "heightRange": [
+      5.505,
+      5.525
+    ],
+    "regions": [
+      {
+        "id": "inner-frame",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            4.615,
+            2.035
+          ],
+          [
+            4.615,
+            -2.065
+          ],
+          [
+            -4.635,
+            -2.065
+          ],
+          [
+            -4.635,
+            2.035
+          ]
+        ],
+        "height": 5.567,
+        "note": "Panel inside the coffer ring, 5 cm above the field; a moulding at 5.60-5.62 frames it."
+      },
+      {
+        "id": "square-front",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            3.715,
+            1.135
+          ],
+          [
+            3.715,
+            -1.115
+          ],
+          [
+            1.615,
+            -1.115
+          ],
+          [
+            1.615,
+            1.135
+          ]
+        ],
+        "height": 5.712,
+        "note": "Raised square (5 cm raster, +-0.05 m), centre E57 (-2.047, 4.909)."
+      },
+      {
+        "id": "square-centre",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            1.115,
+            1.085
+          ],
+          [
+            1.115,
+            -1.115
+          ],
+          [
+            -1.035,
+            -1.115
+          ],
+          [
+            -1.035,
+            1.085
+          ]
+        ],
+        "height": 5.713,
+        "note": "Raised square (5 cm raster, +-0.05 m), centre E57 (-2.048, 7.538)."
+      },
+      {
+        "id": "square-rear",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            -1.585,
+            1.135
+          ],
+          [
+            -1.585,
+            -1.115
+          ],
+          [
+            -3.685,
+            -1.115
+          ],
+          [
+            -3.685,
+            1.135
+          ]
+        ],
+        "height": 5.718,
+        "note": "Raised square (5 cm raster, +-0.05 m), centre E57 (-2.072, 10.201)."
+      },
+      {
+        "id": "panel-front",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            3.165,
+            0.485
+          ],
+          [
+            3.165,
+            -0.515
+          ],
+          [
+            2.165,
+            -0.515
+          ],
+          [
+            2.165,
+            0.485
+          ]
+        ],
+        "height": 5.855,
+        "note": "Central raised panel carrying an electrolier's rose."
+      },
+      {
+        "id": "panel-centre",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            0.515,
+            0.535
+          ],
+          [
+            0.515,
+            -0.515
+          ],
+          [
+            -0.485,
+            -0.515
+          ],
+          [
+            -0.485,
+            0.535
+          ]
+        ],
+        "height": 5.85,
+        "note": "Central raised panel with a shallow medallion (down to 5.80); no fitting."
+      },
+      {
+        "id": "panel-rear",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            -2.135,
+            0.535
+          ],
+          [
+            -2.135,
+            -0.515
+          ],
+          [
+            -3.135,
+            -0.515
+          ],
+          [
+            -3.135,
+            0.535
+          ]
+        ],
+        "height": 5.858,
+        "note": "Central raised panel carrying an electrolier's rose."
+      },
+      {
+        "id": "coffer-01",
+        "kind": "recess",
+        "outline": [
+          [
+            5.2531,
+            2.4461
+          ],
+          [
+            5.0821,
+            2.6171
+          ],
+          [
+            5.0821,
+            2.8589
+          ],
+          [
+            5.2531,
+            3.0299
+          ],
+          [
+            5.4949,
+            3.0299
+          ],
+          [
+            5.6659,
+            2.8589
+          ],
+          [
+            5.6659,
+            2.6171
+          ],
+          [
+            5.4949,
+            2.4461
+          ]
+        ],
+        "height": 5.626,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.803, 2.191); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-02",
+        "kind": "recess",
+        "outline": [
+          [
+            5.2421,
+            1.5371
+          ],
+          [
+            5.0711,
+            1.7081
+          ],
+          [
+            5.0711,
+            1.9499
+          ],
+          [
+            5.2421,
+            2.1209
+          ],
+          [
+            5.4839,
+            2.1209
+          ],
+          [
+            5.6549,
+            1.9499
+          ],
+          [
+            5.6549,
+            1.7081
+          ],
+          [
+            5.4839,
+            1.5371
+          ]
+        ],
+        "height": 5.633,
+        "note": "Octagonal coffer with a rosette, centre E57 (-3.894, 2.202); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-03",
+        "kind": "recess",
+        "outline": [
+          [
+            5.2401,
+            0.6281
+          ],
+          [
+            5.0691,
+            0.7991
+          ],
+          [
+            5.0691,
+            1.0409
+          ],
+          [
+            5.2401,
+            1.2119
+          ],
+          [
+            5.4819,
+            1.2119
+          ],
+          [
+            5.6529,
+            1.0409
+          ],
+          [
+            5.6529,
+            0.7991
+          ],
+          [
+            5.4819,
+            0.6281
+          ]
+        ],
+        "height": 5.627,
+        "note": "Octagonal coffer with a rosette, centre E57 (-2.985, 2.204); a regular octagon of the measured area (equivalent diameter 0.60 m)."
+      },
+      {
+        "id": "coffer-04",
+        "kind": "recess",
+        "outline": [
+          [
+            5.2441,
+            -0.3069
+          ],
+          [
+            5.0731,
+            -0.1359
+          ],
+          [
+            5.0731,
+            0.1059
+          ],
+          [
+            5.2441,
+            0.2769
+          ],
+          [
+            5.4859,
+            0.2769
+          ],
+          [
+            5.6569,
+            0.1059
+          ],
+          [
+            5.6569,
+            -0.1359
+          ],
+          [
+            5.4859,
+            -0.3069
+          ]
+        ],
+        "height": 5.628,
+        "note": "Octagonal coffer with a rosette, centre E57 (-2.05, 2.2); a regular octagon of the measured area (equivalent diameter 0.62 m)."
+      },
+      {
+        "id": "coffer-05",
+        "kind": "recess",
+        "outline": [
+          [
+            5.2461,
+            -1.2079
+          ],
+          [
+            5.0751,
+            -1.0369
+          ],
+          [
+            5.0751,
+            -0.7951
+          ],
+          [
+            5.2461,
+            -0.6241
+          ],
+          [
+            5.4879,
+            -0.6241
+          ],
+          [
+            5.6589,
+            -0.7951
+          ],
+          [
+            5.6589,
+            -1.0369
+          ],
+          [
+            5.4879,
+            -1.2079
+          ]
+        ],
+        "height": 5.633,
+        "note": "Octagonal coffer with a rosette, centre E57 (-1.149, 2.198); a regular octagon of the measured area (equivalent diameter 0.62 m)."
+      },
+      {
+        "id": "coffer-06",
+        "kind": "recess",
+        "outline": [
+          [
+            5.2391,
+            -2.1399
+          ],
+          [
+            5.0681,
+            -1.9689
+          ],
+          [
+            5.0681,
+            -1.7271
+          ],
+          [
+            5.2391,
+            -1.5561
+          ],
+          [
+            5.4809,
+            -1.5561
+          ],
+          [
+            5.6519,
+            -1.7271
+          ],
+          [
+            5.6519,
+            -1.9689
+          ],
+          [
+            5.4809,
+            -2.1399
+          ]
+        ],
+        "height": 5.63,
+        "note": "Octagonal coffer with a rosette, centre E57 (-0.217, 2.205); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-07",
+        "kind": "recess",
+        "outline": [
+          [
+            5.2321,
+            -3.0519
+          ],
+          [
+            5.0611,
+            -2.8809
+          ],
+          [
+            5.0611,
+            -2.6391
+          ],
+          [
+            5.2321,
+            -2.4681
+          ],
+          [
+            5.4739,
+            -2.4681
+          ],
+          [
+            5.6449,
+            -2.6391
+          ],
+          [
+            5.6449,
+            -2.8809
+          ],
+          [
+            5.4739,
+            -3.0519
+          ]
+        ],
+        "height": 5.631,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.695, 2.212); a regular octagon of the measured area (equivalent diameter 0.60 m)."
+      },
+      {
+        "id": "coffer-08",
+        "kind": "recess",
+        "outline": [
+          [
+            4.3621,
+            2.4601
+          ],
+          [
+            4.1911,
+            2.6311
+          ],
+          [
+            4.1911,
+            2.8729
+          ],
+          [
+            4.3621,
+            3.0439
+          ],
+          [
+            4.6039,
+            3.0439
+          ],
+          [
+            4.7749,
+            2.8729
+          ],
+          [
+            4.7749,
+            2.6311
+          ],
+          [
+            4.6039,
+            2.4601
+          ]
+        ],
+        "height": 5.626,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.817, 3.082); a regular octagon of the measured area (equivalent diameter 0.58 m)."
+      },
+      {
+        "id": "coffer-09",
+        "kind": "recess",
+        "outline": [
+          [
+            4.3441,
+            -3.0599
+          ],
+          [
+            4.1731,
+            -2.8889
+          ],
+          [
+            4.1731,
+            -2.6471
+          ],
+          [
+            4.3441,
+            -2.4761
+          ],
+          [
+            4.5859,
+            -2.4761
+          ],
+          [
+            4.7569,
+            -2.6471
+          ],
+          [
+            4.7569,
+            -2.8889
+          ],
+          [
+            4.5859,
+            -3.0599
+          ]
+        ],
+        "height": 5.627,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.703, 3.1); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-10",
+        "kind": "recess",
+        "outline": [
+          [
+            3.4581,
+            2.4591
+          ],
+          [
+            3.2871,
+            2.6301
+          ],
+          [
+            3.2871,
+            2.8719
+          ],
+          [
+            3.4581,
+            3.0429
+          ],
+          [
+            3.6999,
+            3.0429
+          ],
+          [
+            3.8709,
+            2.8719
+          ],
+          [
+            3.8709,
+            2.6301
+          ],
+          [
+            3.6999,
+            2.4591
+          ]
+        ],
+        "height": 5.624,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.816, 3.986); a regular octagon of the measured area (equivalent diameter 0.58 m)."
+      },
+      {
+        "id": "coffer-11",
+        "kind": "recess",
+        "outline": [
+          [
+            3.4471,
+            -3.0539
+          ],
+          [
+            3.2761,
+            -2.8829
+          ],
+          [
+            3.2761,
+            -2.6411
+          ],
+          [
+            3.4471,
+            -2.4701
+          ],
+          [
+            3.6889,
+            -2.4701
+          ],
+          [
+            3.8599,
+            -2.6411
+          ],
+          [
+            3.8599,
+            -2.8829
+          ],
+          [
+            3.6889,
+            -3.0539
+          ]
+        ],
+        "height": 5.626,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.697, 3.997); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-12",
+        "kind": "recess",
+        "outline": [
+          [
+            2.5801,
+            2.4631
+          ],
+          [
+            2.4091,
+            2.6341
+          ],
+          [
+            2.4091,
+            2.8759
+          ],
+          [
+            2.5801,
+            3.0469
+          ],
+          [
+            2.8219,
+            3.0469
+          ],
+          [
+            2.9929,
+            2.8759
+          ],
+          [
+            2.9929,
+            2.6341
+          ],
+          [
+            2.8219,
+            2.4631
+          ]
+        ],
+        "height": 5.627,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.82, 4.864); a regular octagon of the measured area (equivalent diameter 0.57 m)."
+      },
+      {
+        "id": "coffer-13",
+        "kind": "recess",
+        "outline": [
+          [
+            2.5501,
+            -3.0609
+          ],
+          [
+            2.3791,
+            -2.8899
+          ],
+          [
+            2.3791,
+            -2.6481
+          ],
+          [
+            2.5501,
+            -2.4771
+          ],
+          [
+            2.7919,
+            -2.4771
+          ],
+          [
+            2.9629,
+            -2.6481
+          ],
+          [
+            2.9629,
+            -2.8899
+          ],
+          [
+            2.7919,
+            -3.0609
+          ]
+        ],
+        "height": 5.63,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.704, 4.894); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-14",
+        "kind": "recess",
+        "outline": [
+          [
+            1.6941,
+            2.4681
+          ],
+          [
+            1.5231,
+            2.6391
+          ],
+          [
+            1.5231,
+            2.8809
+          ],
+          [
+            1.6941,
+            3.0519
+          ],
+          [
+            1.9359,
+            3.0519
+          ],
+          [
+            2.1069,
+            2.8809
+          ],
+          [
+            2.1069,
+            2.6391
+          ],
+          [
+            1.9359,
+            2.4681
+          ]
+        ],
+        "height": 5.628,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.825, 5.75); a regular octagon of the measured area (equivalent diameter 0.59 m)."
+      },
+      {
+        "id": "coffer-15",
+        "kind": "recess",
+        "outline": [
+          [
+            1.6641,
+            -3.0459
+          ],
+          [
+            1.4931,
+            -2.8749
+          ],
+          [
+            1.4931,
+            -2.6331
+          ],
+          [
+            1.6641,
+            -2.4621
+          ],
+          [
+            1.9059,
+            -2.4621
+          ],
+          [
+            2.0769,
+            -2.6331
+          ],
+          [
+            2.0769,
+            -2.8749
+          ],
+          [
+            1.9059,
+            -3.0459
+          ]
+        ],
+        "height": 5.627,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.689, 5.78); a regular octagon of the measured area (equivalent diameter 0.62 m)."
+      },
+      {
+        "id": "coffer-16",
+        "kind": "recess",
+        "outline": [
+          [
+            0.8081,
+            2.4881
+          ],
+          [
+            0.6371,
+            2.6591
+          ],
+          [
+            0.6371,
+            2.9009
+          ],
+          [
+            0.8081,
+            3.0719
+          ],
+          [
+            1.0499,
+            3.0719
+          ],
+          [
+            1.2209,
+            2.9009
+          ],
+          [
+            1.2209,
+            2.6591
+          ],
+          [
+            1.0499,
+            2.4881
+          ]
+        ],
+        "height": 5.626,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.845, 6.636); a regular octagon of the measured area (equivalent diameter 0.58 m)."
+      },
+      {
+        "id": "coffer-17",
+        "kind": "recess",
+        "outline": [
+          [
+            0.7851,
+            -3.0499
+          ],
+          [
+            0.6141,
+            -2.8789
+          ],
+          [
+            0.6141,
+            -2.6371
+          ],
+          [
+            0.7851,
+            -2.4661
+          ],
+          [
+            1.0269,
+            -2.4661
+          ],
+          [
+            1.1979,
+            -2.6371
+          ],
+          [
+            1.1979,
+            -2.8789
+          ],
+          [
+            1.0269,
+            -3.0499
+          ]
+        ],
+        "height": 5.63,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.693, 6.659); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-18",
+        "kind": "recess",
+        "outline": [
+          [
+            -0.0839,
+            2.4801
+          ],
+          [
+            -0.2549,
+            2.6511
+          ],
+          [
+            -0.2549,
+            2.8929
+          ],
+          [
+            -0.0839,
+            3.0639
+          ],
+          [
+            0.1579,
+            3.0639
+          ],
+          [
+            0.3289,
+            2.8929
+          ],
+          [
+            0.3289,
+            2.6511
+          ],
+          [
+            0.1579,
+            2.4801
+          ]
+        ],
+        "height": 5.625,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.837, 7.528); a regular octagon of the measured area (equivalent diameter 0.58 m)."
+      },
+      {
+        "id": "coffer-19",
+        "kind": "recess",
+        "outline": [
+          [
+            -0.9679,
+            2.4741
+          ],
+          [
+            -1.1389,
+            2.6451
+          ],
+          [
+            -1.1389,
+            2.8869
+          ],
+          [
+            -0.9679,
+            3.0579
+          ],
+          [
+            -0.7261,
+            3.0579
+          ],
+          [
+            -0.5551,
+            2.8869
+          ],
+          [
+            -0.5551,
+            2.6451
+          ],
+          [
+            -0.7261,
+            2.4741
+          ]
+        ],
+        "height": 5.624,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.831, 8.412); a regular octagon of the measured area (equivalent diameter 0.58 m)."
+      },
+      {
+        "id": "coffer-20",
+        "kind": "recess",
+        "outline": [
+          [
+            -1.0069,
+            -3.0439
+          ],
+          [
+            -1.1779,
+            -2.8729
+          ],
+          [
+            -1.1779,
+            -2.6311
+          ],
+          [
+            -1.0069,
+            -2.4601
+          ],
+          [
+            -0.7651,
+            -2.4601
+          ],
+          [
+            -0.5941,
+            -2.6311
+          ],
+          [
+            -0.5941,
+            -2.8729
+          ],
+          [
+            -0.7651,
+            -3.0439
+          ]
+        ],
+        "height": 5.629,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.687, 8.451); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-21",
+        "kind": "recess",
+        "outline": [
+          [
+            -0.1089,
+            -3.0509
+          ],
+          [
+            -0.2799,
+            -2.8799
+          ],
+          [
+            -0.2799,
+            -2.6381
+          ],
+          [
+            -0.1089,
+            -2.4671
+          ],
+          [
+            0.1329,
+            -2.4671
+          ],
+          [
+            0.3039,
+            -2.6381
+          ],
+          [
+            0.3039,
+            -2.8799
+          ],
+          [
+            0.1329,
+            -3.0509
+          ]
+        ],
+        "height": 5.63,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.694, 7.553); a regular octagon of the measured area (equivalent diameter 0.62 m)."
+      },
+      {
+        "id": "coffer-22",
+        "kind": "recess",
+        "outline": [
+          [
+            -1.8729,
+            2.4841
+          ],
+          [
+            -2.0439,
+            2.6551
+          ],
+          [
+            -2.0439,
+            2.8969
+          ],
+          [
+            -1.8729,
+            3.0679
+          ],
+          [
+            -1.6311,
+            3.0679
+          ],
+          [
+            -1.4601,
+            2.8969
+          ],
+          [
+            -1.4601,
+            2.6551
+          ],
+          [
+            -1.6311,
+            2.4841
+          ]
+        ],
+        "height": 5.627,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.841, 9.317); a regular octagon of the measured area (equivalent diameter 0.58 m)."
+      },
+      {
+        "id": "coffer-23",
+        "kind": "recess",
+        "outline": [
+          [
+            -1.8819,
+            -3.0339
+          ],
+          [
+            -2.0529,
+            -2.8629
+          ],
+          [
+            -2.0529,
+            -2.6211
+          ],
+          [
+            -1.8819,
+            -2.4501
+          ],
+          [
+            -1.6401,
+            -2.4501
+          ],
+          [
+            -1.4691,
+            -2.6211
+          ],
+          [
+            -1.4691,
+            -2.8629
+          ],
+          [
+            -1.6401,
+            -3.0339
+          ]
+        ],
+        "height": 5.636,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.677, 9.326); a regular octagon of the measured area (equivalent diameter 0.64 m)."
+      },
+      {
+        "id": "coffer-24",
+        "kind": "recess",
+        "outline": [
+          [
+            -2.7639,
+            2.4871
+          ],
+          [
+            -2.9349,
+            2.6581
+          ],
+          [
+            -2.9349,
+            2.8999
+          ],
+          [
+            -2.7639,
+            3.0709
+          ],
+          [
+            -2.5221,
+            3.0709
+          ],
+          [
+            -2.3511,
+            2.8999
+          ],
+          [
+            -2.3511,
+            2.6581
+          ],
+          [
+            -2.5221,
+            2.4871
+          ]
+        ],
+        "height": 5.627,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.844, 10.208); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-25",
+        "kind": "recess",
+        "outline": [
+          [
+            -2.7869,
+            -3.0359
+          ],
+          [
+            -2.9579,
+            -2.8649
+          ],
+          [
+            -2.9579,
+            -2.6231
+          ],
+          [
+            -2.7869,
+            -2.4521
+          ],
+          [
+            -2.5451,
+            -2.4521
+          ],
+          [
+            -2.3741,
+            -2.6231
+          ],
+          [
+            -2.3741,
+            -2.8649
+          ],
+          [
+            -2.5451,
+            -3.0359
+          ]
+        ],
+        "height": 5.633,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.679, 10.231); a regular octagon of the measured area (equivalent diameter 0.64 m)."
+      },
+      {
+        "id": "coffer-26",
+        "kind": "recess",
+        "outline": [
+          [
+            -3.6599,
+            2.4901
+          ],
+          [
+            -3.8309,
+            2.6611
+          ],
+          [
+            -3.8309,
+            2.9029
+          ],
+          [
+            -3.6599,
+            3.0739
+          ],
+          [
+            -3.4181,
+            3.0739
+          ],
+          [
+            -3.2471,
+            2.9029
+          ],
+          [
+            -3.2471,
+            2.6611
+          ],
+          [
+            -3.4181,
+            2.4901
+          ]
+        ],
+        "height": 5.629,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.847, 11.104); a regular octagon of the measured area (equivalent diameter 0.61 m)."
+      },
+      {
+        "id": "coffer-27",
+        "kind": "recess",
+        "outline": [
+          [
+            -3.6679,
+            -3.0319
+          ],
+          [
+            -3.8389,
+            -2.8609
+          ],
+          [
+            -3.8389,
+            -2.6191
+          ],
+          [
+            -3.6679,
+            -2.4481
+          ],
+          [
+            -3.4261,
+            -2.4481
+          ],
+          [
+            -3.2551,
+            -2.6191
+          ],
+          [
+            -3.2551,
+            -2.8609
+          ],
+          [
+            -3.4261,
+            -3.0319
+          ]
+        ],
+        "height": 5.635,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.675, 11.112); a regular octagon of the measured area (equivalent diameter 0.65 m)."
+      },
+      {
+        "id": "coffer-28",
+        "kind": "recess",
+        "outline": [
+          [
+            -4.5549,
+            2.4911
+          ],
+          [
+            -4.7259,
+            2.6621
+          ],
+          [
+            -4.7259,
+            2.9039
+          ],
+          [
+            -4.5549,
+            3.0749
+          ],
+          [
+            -4.3131,
+            3.0749
+          ],
+          [
+            -4.1421,
+            2.9039
+          ],
+          [
+            -4.1421,
+            2.6621
+          ],
+          [
+            -4.3131,
+            2.4911
+          ]
+        ],
+        "height": 5.63,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.848, 11.999); a regular octagon of the measured area (equivalent diameter 0.62 m)."
+      },
+      {
+        "id": "coffer-29",
+        "kind": "recess",
+        "outline": [
+          [
+            -4.5559,
+            -3.0269
+          ],
+          [
+            -4.7269,
+            -2.8559
+          ],
+          [
+            -4.7269,
+            -2.6141
+          ],
+          [
+            -4.5559,
+            -2.4431
+          ],
+          [
+            -4.3141,
+            -2.4431
+          ],
+          [
+            -4.1431,
+            -2.6141
+          ],
+          [
+            -4.1431,
+            -2.8559
+          ],
+          [
+            -4.3141,
+            -3.0269
+          ]
+        ],
+        "height": 5.637,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.67, 12.0); a regular octagon of the measured area (equivalent diameter 0.64 m)."
+      },
+      {
+        "id": "coffer-30",
+        "kind": "recess",
+        "outline": [
+          [
+            -5.4389,
+            2.4741
+          ],
+          [
+            -5.6099,
+            2.6451
+          ],
+          [
+            -5.6099,
+            2.8869
+          ],
+          [
+            -5.4389,
+            3.0579
+          ],
+          [
+            -5.1971,
+            3.0579
+          ],
+          [
+            -5.0261,
+            2.8869
+          ],
+          [
+            -5.0261,
+            2.6451
+          ],
+          [
+            -5.1971,
+            2.4741
+          ]
+        ],
+        "height": 5.63,
+        "note": "Octagonal coffer with a rosette, centre E57 (-4.831, 12.883); a regular octagon of the measured area (equivalent diameter 0.63 m)."
+      },
+      {
+        "id": "coffer-31",
+        "kind": "recess",
+        "outline": [
+          [
+            -5.4489,
+            1.5751
+          ],
+          [
+            -5.6199,
+            1.7461
+          ],
+          [
+            -5.6199,
+            1.9879
+          ],
+          [
+            -5.4489,
+            2.1589
+          ],
+          [
+            -5.2071,
+            2.1589
+          ],
+          [
+            -5.0361,
+            1.9879
+          ],
+          [
+            -5.0361,
+            1.7461
+          ],
+          [
+            -5.2071,
+            1.5751
+          ]
+        ],
+        "height": 5.634,
+        "note": "Octagonal coffer with a rosette, centre E57 (-3.932, 12.893); a regular octagon of the measured area (equivalent diameter 0.62 m)."
+      },
+      {
+        "id": "coffer-32",
+        "kind": "recess",
+        "outline": [
+          [
+            -5.4419,
+            0.6421
+          ],
+          [
+            -5.6129,
+            0.8131
+          ],
+          [
+            -5.6129,
+            1.0549
+          ],
+          [
+            -5.4419,
+            1.2259
+          ],
+          [
+            -5.2001,
+            1.2259
+          ],
+          [
+            -5.0291,
+            1.0549
+          ],
+          [
+            -5.0291,
+            0.8131
+          ],
+          [
+            -5.2001,
+            0.6421
+          ]
+        ],
+        "height": 5.632,
+        "note": "Octagonal coffer with a rosette, centre E57 (-2.999, 12.886); a regular octagon of the measured area (equivalent diameter 0.64 m)."
+      },
+      {
+        "id": "coffer-33",
+        "kind": "recess",
+        "outline": [
+          [
+            -5.4419,
+            -0.2559
+          ],
+          [
+            -5.6129,
+            -0.0849
+          ],
+          [
+            -5.6129,
+            0.1569
+          ],
+          [
+            -5.4419,
+            0.3279
+          ],
+          [
+            -5.2001,
+            0.3279
+          ],
+          [
+            -5.0291,
+            0.1569
+          ],
+          [
+            -5.0291,
+            -0.0849
+          ],
+          [
+            -5.2001,
+            -0.2559
+          ]
+        ],
+        "height": 5.635,
+        "note": "Octagonal coffer with a rosette, centre E57 (-2.101, 12.886); a regular octagon of the measured area (equivalent diameter 0.64 m)."
+      },
+      {
+        "id": "coffer-34",
+        "kind": "recess",
+        "outline": [
+          [
+            -5.4549,
+            -1.1839
+          ],
+          [
+            -5.6259,
+            -1.0129
+          ],
+          [
+            -5.6259,
+            -0.7711
+          ],
+          [
+            -5.4549,
+            -0.6001
+          ],
+          [
+            -5.2131,
+            -0.6001
+          ],
+          [
+            -5.0421,
+            -0.7711
+          ],
+          [
+            -5.0421,
+            -1.0129
+          ],
+          [
+            -5.2131,
+            -1.1839
+          ]
+        ],
+        "height": 5.635,
+        "note": "Octagonal coffer with a rosette, centre E57 (-1.173, 12.899); a regular octagon of the measured area (equivalent diameter 0.65 m)."
+      },
+      {
+        "id": "coffer-35",
+        "kind": "recess",
+        "outline": [
+          [
+            -5.4419,
+            -2.0829
+          ],
+          [
+            -5.6129,
+            -1.9119
+          ],
+          [
+            -5.6129,
+            -1.6701
+          ],
+          [
+            -5.4419,
+            -1.4991
+          ],
+          [
+            -5.2001,
+            -1.4991
+          ],
+          [
+            -5.0291,
+            -1.6701
+          ],
+          [
+            -5.0291,
+            -1.9119
+          ],
+          [
+            -5.2001,
+            -2.0829
+          ]
+        ],
+        "height": 5.636,
+        "note": "Octagonal coffer with a rosette, centre E57 (-0.274, 12.886); a regular octagon of the measured area (equivalent diameter 0.66 m)."
+      },
+      {
+        "id": "coffer-36",
+        "kind": "recess",
+        "outline": [
+          [
+            -5.4449,
+            -3.0239
+          ],
+          [
+            -5.6159,
+            -2.8529
+          ],
+          [
+            -5.6159,
+            -2.6111
+          ],
+          [
+            -5.4449,
+            -2.4401
+          ],
+          [
+            -5.2031,
+            -2.4401
+          ],
+          [
+            -5.0321,
+            -2.6111
+          ],
+          [
+            -5.0321,
+            -2.8529
+          ],
+          [
+            -5.2031,
+            -3.0239
+          ]
+        ],
+        "height": 5.641,
+        "note": "Octagonal coffer with a rosette, centre E57 (0.667, 12.889); a regular octagon of the measured area (equivalent diameter 0.64 m)."
+      }
+    ],
+    "note": "Flat field at 5.515 with a ring of 36 octagonal coffers with rosettes (recessed to 5.63; 7 per short side, 13 per long side, pitch 0.90-0.92 m, ring centrelines E57 X -4.83 / 0.69, Y 2.20 / 12.89), a framed inner panel at 5.567, three raised squares at 5.713 and central raised panels at 5.855; a shallow cornice from 5.45. From down-facing mesh surfaces on a 5 cm raster; the ceiling relief should come from the mesh, these regions summarise it."
+  },
+  "floor": {
+    "kind": "herringbone-parquet",
+    "boardsRun": "x",
+    "levels": [
+      {
+        "id": "main",
+        "height": 0
+      }
+    ],
+    "note": "Oak herringbone: spines run along the room (E57 Y, planner x); the joint direction flips every 0.355 m across the room (6 courses over E57 X -3.28..-1.15, native skybox faces of scan_058). Block width not settled (42-70 mm between an FFT and the eye): measure it on the floor photograph. Floor flat to 7 mm rms, 1.4 mm/m fall along E57 X."
+  },
+  "freeStanding": [],
+  "fittings": [
+    {
+      "id": "electrolier-front",
+      "kind": "electrolier",
+      "style": "saloon-electrolier",
+      "position": [
+        2.683,
+        4.298,
+        0.031
+      ],
+      "suspension": 5.855,
+      "lowest": 3.623,
+      "radius": 0.68,
+      "note": "Gilt scrolled electrolier, about three tiers of candle lamps. Axis E57 (-2.096, 4.882); mesh lowest point Z 3.625 (finial at 3.60 on its axis plane in the native skybox faces); widest at 4.2-4.4 m; body top about 4.9 m; rose on the raised panel at 5.857. Reach = 98th percentile radius of the mesh body. Needs a new fitting template."
+    },
+    {
+      "id": "electrolier-rear",
+      "kind": "electrolier",
+      "style": "saloon-electrolier",
+      "position": [
+        -2.624,
+        4.298,
+        0.046
+      ],
+      "suspension": 5.855,
+      "lowest": 3.612,
+      "radius": 0.7,
+      "note": "Gilt scrolled electrolier, about three tiers of candle lamps. Axis E57 (-2.111, 10.189); mesh lowest point Z 3.614 (finial at 3.60 on its axis plane in the native skybox faces); widest at 4.2-4.4 m; body top about 4.9 m; rose on the raised panel at 5.857. Reach = 98th percentile radius of the mesh body. Needs a new fitting template."
+    }
+  ],
+  "concealedLights": [],
+  "edits": [
+    {
+      "type": "recess",
+      "wall": "front",
+      "u": [
+        {
+          "opening": "door-lobby",
+          "offset": -0.55
+        },
+        {
+          "opening": "door-lobby",
+          "offset": 0.55
+        }
+      ],
+      "v": [
+        0.0,
+        2.45
+      ],
+      "depth": 0.3,
+      "leafPlane": 0.05,
+      "applies": [
+        "relief"
+      ],
+      "note": "PROPOSED. The lobby door stood open: a plain recess, its closed leaf modelled by the web (as the Grand Hall's main door). Leaf plane not measured."
+    },
+    {
+      "type": "recess",
+      "wall": "window-front-end",
+      "u": [
+        {
+          "opening": "door-passage",
+          "offset": -0.56
+        },
+        {
+          "opening": "door-passage",
+          "offset": 0.56
+        }
+      ],
+      "v": [
+        0.0,
+        2.45
+      ],
+      "depth": 0.3,
+      "leafPlane": 0.05,
+      "applies": [
+        "relief"
+      ],
+      "note": "PROPOSED. The passage door stood open. Leaf plane not measured."
+    },
+    {
+      "type": "patch",
+      "wall": "front",
+      "u": [
+        2.211,
+        2.7
+      ],
+      "v": [
+        0.0,
+        2.45
+      ],
+      "mode": "mirror",
+      "about": 1.434,
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "PROPOSED. The lobby door's open leaf stands in front of the panelling at E57 X -1.27..-0.57; mirrored about the door's centre (u 1.434). The source is narrowed to E57 X 0.56..1.05 (checked 18 Oct): beyond it the source wall has a slot (X 1.14..1.22, 1.8..2.6 m) and, below 1.0 m, a 9 cm set-back (X 1.06..1.26) that the hidden target does not. The remaining strip u 2.0..2.211 (X -1.27..-1.06) needs another source (the room's XGRIDS frames). The source holds a corner loudspeaker above 1.6 m: patch that first or split v."
+    }
+  ],
+  "occluders": [
+    {
+      "id": "electrolier-front-body",
+      "shape": "vertical-cylinder",
+      "centreE57": [
+        -2.096,
+        4.882
+      ],
+      "radius": 0.75,
+      "zE57": [
+        3.58,
+        4.95
+      ],
+      "fitting": "electrolier-front"
+    },
+    {
+      "id": "electrolier-front-stem",
+      "shape": "vertical-cylinder",
+      "centreE57": [
+        -2.096,
+        4.882
+      ],
+      "radius": 0.17,
+      "zE57": [
+        4.95,
+        5.87
+      ],
+      "fitting": "electrolier-front",
+      "note": "Stem and upper scrolls to the rose."
+    },
+    {
+      "id": "electrolier-rear-body",
+      "shape": "vertical-cylinder",
+      "centreE57": [
+        -2.111,
+        10.189
+      ],
+      "radius": 0.75,
+      "zE57": [
+        3.58,
+        4.95
+      ],
+      "fitting": "electrolier-rear"
+    },
+    {
+      "id": "electrolier-rear-stem",
+      "shape": "vertical-cylinder",
+      "centreE57": [
+        -2.111,
+        10.189
+      ],
+      "radius": 0.17,
+      "zE57": [
+        4.95,
+        5.87
+      ],
+      "fitting": "electrolier-rear",
+      "note": "Stem and upper scrolls to the rose."
+    }
+  ],
+  "survey": {
+    "projection": {
+      "walls": {
+        "cosMin": 0.2,
+        "pCos": 4.0,
+        "qDist": 3.0,
+        "maxDist": 16.0
+      },
+      "ceiling": {
+        "cosMin": 0.15,
+        "pCos": 4.0,
+        "qDist": 3.0,
+        "maxDist": 16.0
+      }
+    },
+    "wallViews": {
+      "ppm": 200,
+      "heightRange": [
+        -0.05,
+        5.6
+      ],
+      "eyeInset": 1.2,
+      "near": 0.0,
+      "far": 2.0,
+      "tileMaxLength": 6.0,
+      "modes": [
+        "position"
+      ]
+    },
+    "ceilingView": {
+      "name": "ceiling-pos",
+      "ppm": 150,
+      "eyeHeight": 1.0,
+      "near": 4.35,
+      "far": 5.0,
+      "modes": [
+        "position"
+      ]
+    }
+  },
+  "provenance": {
+    "measuredBy": "T-662 stage 0, saloon-measure (Claude)",
+    "method": "Plan sections of the reviewed Matterport dollhouse mesh (dump checked against the GLB's accessor bounds to 0.001 mm) with robust line fits (RANSAC then Tukey IRLS) in four height bands; orthographic depth rasters of each wall (2 cm) for openings, bays and relief bands; down-facing surfaces on a 5 cm raster for the ceiling; clustering for fittings and furniture; opening edges against a metric grid in orthographic crops from the native E57 skybox faces (4096^2, oriented by correlation with the twin's world-aligned 512 px panoramas, r 0.92-0.99). Scripts: tools/surveyed-rooms/measure/saloon/.",
+    "date": "2026-10-18",
+    "sources": [
+      "twin mesh/dollhouse.glb (sha256 21ee0973..., matches the twin manifest)",
+      "twin manifest.json (station poses, E57 frame)",
+      "twin panoramas tiles/scan_NNN/equirect_512.webp",
+      "native 4096 px cube faces (image2D) from the Matterport .e57 export, read-only",
+      "2010 FIRST floor plan (the venue's drawing, vector paths)",
+      "the venue's Saloon room plan supplied by Blake (saloon.png)"
+    ],
+    "residuals": [
+      {
+        "quantity": "wall face lines, panelling band 1.6-2.8 m (8 walls)",
+        "kind": "fit-rms",
+        "value": 0.0088,
+        "unit": "m",
+        "note": "Largest per-wall inlier rms (fireplace main); others 5.3-7.5 mm. Panelling mouldings stand up to 4 cm proud (p95 13-60 mm)."
+      },
+      {
+        "quantity": "plaster planes 3.4-5.2 m",
+        "kind": "fit-rms",
+        "value": 0.0063,
+        "unit": "m",
+        "note": "2.2-6.3 mm per wall, inliers 0.96-1.00."
+      },
+      {
+        "quantity": "walls' deviation from the E57 axes",
+        "kind": "fit-max",
+        "value": 0.47,
+        "unit": "deg",
+        "note": "Long walls -0.17 (fireplace) and 0.00 (piers); short walls -0.11..-0.23 (front) and -0.32..-0.47 (rear): up to 4 cm over the room. The outline is drawn axis-parallel."
+      },
+      {
+        "quantity": "window arches: circle fit to the reveal edges",
+        "kind": "fit-rms",
+        "value": 0.0055,
+        "unit": "m"
+      },
+      {
+        "quantity": "floor plane",
+        "kind": "fit-rms",
+        "value": 0.0071,
+        "unit": "m",
+        "note": "Z = 0.0054 + 0.00135 X - 0.00005 Y over 76.7 m2."
+      },
+      {
+        "quantity": "electrolier lowest point, mesh against the skybox photo",
+        "kind": "check",
+        "value": 0.02,
+        "unit": "m"
+      },
+      {
+        "quantity": "door and window edges in the skybox crops",
+        "kind": "tolerance",
+        "value": 0.02,
+        "unit": "m",
+        "note": "5 mm per pixel, edges judged by eye. The 2 cm depth rasters agree within 0.07 m for the open doors and cannot see flush closed leaves."
+      },
+      {
+        "quantity": "FIRST 2010 plan against the scan, scaled from the Grand Hall's length",
+        "kind": "check",
+        "value": 0.165,
+        "unit": "m",
+        "note": "rms over 17 features (walls, bays, doors, fireplace); max 0.33 m. See saloon.measurements.json."
+      },
+      {
+        "quantity": "venue plan (saloon.png) against the scan, scale fitted",
+        "kind": "check",
+        "value": 0.114,
+        "unit": "m",
+        "note": "rms over 17 features; its own labels (11.9 x 6.9) imply scales 6% apart."
+      }
+    ],
+    "note": "Draft, not reviewed. Edits marked PROPOSED need the projected photographs to confirm. Capture date unverified: the twin says 11 July 2026, but the .e57 export (model T9pXgB4ygNf) is dated 1 March 2026 and carries no acquisition dates."
+  }
+}

@@ -1,0 +1,352 @@
+{
+  "$schema": "./room.schema.json",
+  "schemaVersion": 1,
+  "slug": "grand-hall",
+  "name": "Grand Hall",
+  "venue": "trades-hall",
+  "published": {
+    "length": 21,
+    "width": 10.5,
+    "source": "the venue's published plan (hall-spec.ts header)",
+    "note": "The scan measures the panelled interior at 21.135 x 10.59 m. Drawing and planning use the measured outline; published capacities are kept."
+  },
+  "source": {
+    "kind": "matterport-e57-twin",
+    "captureId": "trades-hall-matterport-e57-2026-07-11",
+    "captured": "2026-07-11",
+    "twin": "https://twin.venviewer.com/trades-hall",
+    "manifest": "manifest.json",
+    "mesh": "mesh/dollhouse.glb",
+    "meshSha256": "21ee097393cdaf80d5924a876fc73cbf149c0d4b050bcb56011dad2e1dd3aa9a",
+    "meshTier": "ops-grade-2cm",
+    "panoramas": { "path": "tiles/scan_{index:03d}/equirect_8192.webp", "size": 8192 },
+    "frame": { "name": "e57", "units": "m", "up": "+Z" }
+  },
+  "transform": {
+    "centre": [8.795, -4.963],
+    "floorZ": 0.045,
+    "quarterTurns": 2,
+    "note": "x = 8.795 - X, y = Z - 0.045, z = Y + 4.963 (hall-spec.ts HALL_SURVEY, fromSurvey)."
+  },
+  "site": {
+    "frame": "grand-hall-planner",
+    "observer": { "latitude": 55.8593, "longitude": -4.2491 },
+    "minusZBearingTrue": 101.1,
+    "minusZBearingGrid": 102.96,
+    "gridMinusTrueDeg": 1.861,
+    "gridOrigin": [259332.0, 665191.0],
+    "floorODN": 14.19,
+    "pavementY": -3.79,
+    "daylightChannel": "windows",
+    "note": "This room's planner frame is the site frame (hall-site.ts, skyline/skyline.py, merchant-city-v2.json frame block). 102.96 - 1.861 = 101.099; the web rounds it to 101.1."
+  },
+  "stations": [
+    { "id": "scan_000", "role": "room" },
+    { "id": "scan_001", "role": "room" },
+    { "id": "scan_002", "role": "room" },
+    { "id": "scan_003", "role": "room" },
+    { "id": "scan_004", "role": "room" },
+    { "id": "scan_005", "role": "room" },
+    { "id": "scan_006", "role": "room" },
+    { "id": "scan_007", "role": "room" },
+    { "id": "scan_008", "role": "room" },
+    { "id": "scan_009", "role": "room" },
+    { "id": "scan_010", "role": "room" },
+    { "id": "scan_011", "role": "room" },
+    { "id": "scan_012", "role": "room" },
+    { "id": "scan_013", "role": "room" },
+    { "id": "scan_014", "role": "room" },
+    { "id": "scan_015", "role": "room" },
+    { "id": "scan_016", "role": "room" },
+    { "id": "scan_017", "role": "room" },
+    { "id": "scan_018", "role": "doorway", "opening": "door-main", "note": "In the main door's reveal, 1.39 m beyond the door wall's face." },
+    { "id": "scan_019", "role": "room" },
+    { "id": "scan_020", "role": "room" },
+    { "id": "scan_021", "role": "room" },
+    { "id": "scan_022", "role": "room" },
+    { "id": "scan_023", "role": "room" },
+    { "id": "scan_024", "role": "room" },
+    { "id": "scan_025", "role": "room" },
+    { "id": "scan_026", "role": "room" },
+    { "id": "scan_027", "role": "room" },
+    { "id": "scan_028", "role": "room" },
+    { "id": "scan_029", "role": "room" },
+    { "id": "scan_030", "role": "room" },
+    { "id": "scan_031", "role": "room" },
+    { "id": "scan_032", "role": "room" },
+    { "id": "scan_033", "role": "room" },
+    { "id": "scan_034", "role": "room" },
+    { "id": "scan_035", "role": "room" },
+    { "id": "scan_036", "role": "room" },
+    { "id": "scan_037", "role": "room" },
+    { "id": "scan_038", "role": "room" },
+    { "id": "scan_039", "role": "room" },
+    { "id": "scan_040", "role": "room" },
+    { "id": "scan_041", "role": "room" },
+    { "id": "scan_042", "role": "room" },
+    { "id": "scan_043", "role": "room" },
+    { "id": "scan_044", "role": "room" },
+    { "id": "scan_045", "role": "room" },
+    { "id": "scan_046", "role": "room" },
+    { "id": "scan_047", "role": "room" },
+    { "id": "scan_048", "role": "doorway", "opening": "door-end", "note": "The lobby between the hall's end door and the Saloon, 0.84 m beyond the door wall's face; the Saloon lists it too." }
+  ],
+  "walls": {
+    "vertices": [
+      [10.5675, -5.295],
+      [-10.5675, -5.295],
+      [-10.5675, 5.295],
+      [10.5675, 5.295]
+    ],
+    "segments": [
+      {
+        "id": "window",
+        "name": "Window wall (Glassford Street)",
+        "kind": "solid",
+        "height": 6.7,
+        "thickness": 0.62,
+        "survey": { "anchorE57": [19.36, -10.255], "tiles": 4, "note": "wall-views.py renders from X 19.36, Y -10.255: 2.5 mm and 3 mm off the corner (19.3625, -10.258)." }
+      },
+      {
+        "id": "fireplace",
+        "name": "Fireplace wall",
+        "kind": "solid",
+        "height": 6.7,
+        "survey": { "name": "fire", "anchorE57": [19.36, 0.335], "tiles": 2, "note": "Survey files call it 'fire'. Rendered from (19.36, 0.335); the corner is (19.3625, 0.332)." }
+      },
+      {
+        "id": "door",
+        "name": "Door wall",
+        "kind": "solid",
+        "height": 6.7,
+        "survey": { "anchorE57": [-1.775, 0.335], "tiles": 4, "note": "Rendered from (-1.775, 0.335); the corner is (-1.7725, 0.332)." }
+      },
+      {
+        "id": "end",
+        "name": "End wall (opposite the fireplace)",
+        "kind": "solid",
+        "height": 6.7,
+        "survey": { "anchorE57": [-1.775, -10.255], "tiles": 2, "note": "Rendered from (-1.775, -10.255); the corner is (-1.7725, -10.258)." }
+      }
+    ],
+    "elevation": {
+      "levels": {
+        "skirtingTop": 0.16,
+        "dadoTop": 1.95,
+        "dadoRail": 1.86,
+        "ledgeBottom": 4.05,
+        "friezeBottom": 4.25,
+        "friezeTop": 5.47,
+        "inscriptionTop": 5.63,
+        "corniceTop": 5.75,
+        "ceiling": 6.7
+      },
+      "offsets": {
+        "dadoProud": 0.018,
+        "ledgeProud": 0.06,
+        "friezeSet": -0.025,
+        "corniceProud": 0.05,
+        "atticSet": -0.012
+      }
+    }
+  },
+  "openings": [
+    {
+      "id": "arch-fireplace", "wall": "window", "kind": "window", "headShape": "semicircular",
+      "centreE57": [17.83, -10.258], "width": 2.7, "sill": 0.915, "head": 3.76,
+      "glazing": "clear", "dressing": "curtains", "stateInScan": "closed",
+      "reveal": { "depth": 0.62, "sunLimitDeg": 77, "sashHalfWidth": 0.55 }
+    },
+    {
+      "id": "window-fireplace", "wall": "window", "kind": "window", "headShape": "square",
+      "centreE57": [13.71, -10.258], "width": 1.43, "sill": 0.935, "head": 3.305,
+      "glazing": "clear", "dressing": "curtains", "stateInScan": "closed",
+      "reveal": { "depth": 0.62, "sunLimitDeg": 66, "sashInset": 0.1 }
+    },
+    {
+      "id": "arch-centre", "wall": "window", "kind": "window", "headShape": "semicircular",
+      "centreE57": [8.82, -10.258], "width": 2.67, "sill": 0.915, "head": 3.76,
+      "glazing": "clear", "dressing": "curtains", "stateInScan": "closed",
+      "reveal": { "depth": 0.62, "sunLimitDeg": 77, "sashHalfWidth": 0.55 }
+    },
+    {
+      "id": "window-end", "wall": "window", "kind": "window", "headShape": "square",
+      "centreE57": [3.93, -10.258], "width": 1.43, "sill": 0.935, "head": 3.305,
+      "glazing": "clear", "dressing": "curtains", "stateInScan": "closed",
+      "reveal": { "depth": 0.62, "sunLimitDeg": 66, "sashInset": 0.1 }
+    },
+    {
+      "id": "arch-end", "wall": "window", "kind": "window", "headShape": "semicircular",
+      "centreE57": [-0.19, -10.258], "width": 2.7, "sill": 0.915, "head": 3.76,
+      "glazing": "clear", "dressing": "curtains", "stateInScan": "closed",
+      "reveal": { "depth": 0.62, "sunLimitDeg": 77, "sashHalfWidth": 0.55, "glassDepthFrom": "arch-fireplace" },
+      "note": "The mesh closes this arch's glazing with a plane; it takes the glass depth of its twin at the fireplace end."
+    },
+    {
+      "id": "door-end", "wall": "door", "kind": "door", "headShape": "square",
+      "centreE57": [-0.025, 0.332], "width": 1.08, "sill": 0, "head": 2.35,
+      "glazing": "none", "stateInScan": "open"
+    },
+    {
+      "id": "door-main", "wall": "door", "kind": "door", "headShape": "square",
+      "centreE57": [8.79, 0.332], "width": 1.43, "sill": 0, "head": 2.35,
+      "glazing": "none", "stateInScan": "open",
+      "note": "Under the clock. hall-walls.ts models its closed mahogany leaves in the relief's recess."
+    },
+    {
+      "id": "door-fireplace", "wall": "door", "kind": "door", "headShape": "square",
+      "centreE57": [17.665, 0.332], "width": 1.08, "sill": 0, "head": 2.35,
+      "glazing": "none", "stateInScan": "closed"
+    }
+  ],
+  "ceiling": {
+    "kind": "coffered",
+    "height": 6.7,
+    "lattice": {
+      "shape": "hexagonal",
+      "pitch": 1.0235,
+      "rowPitch": 0.894,
+      "outerRadius": 0.465,
+      "innerRadius": 0.38,
+      "border": 0.34,
+      "rows": 5,
+      "centreRowOffset": 0.5
+    },
+    "domes": [
+      {
+        "id": "dome",
+        "centre": [0, 0],
+        "axisE57": [8.793, -4.974],
+        "profile": "cap-on-elliptic-band",
+        "footRadius": 3.32,
+        "sphereCentre": 5.371,
+        "sphereRadius": 3.67,
+        "bandTopRadius": 2.95,
+        "crownRadius": 1.2,
+        "plateRadius": 0.86,
+        "plateHeight": 8.75,
+        "crownHeight": 8.93,
+        "panels": 14,
+        "shields": 14,
+        "frameCircumradius": 4.0
+      }
+    ],
+    "regions": [],
+    "note": "Underside of the coffered ceiling at 6.7 m; a dome over the centre carrying the arms of the fourteen Incorporations."
+  },
+  "floor": {
+    "kind": "strip-boards",
+    "boardWidth": 0.073,
+    "seam": 0.0016,
+    "boardsRun": "x",
+    "levels": [{ "id": "main", "height": 0 }],
+    "note": "Oak strips, width measured from the survey's floor photograph (hall-floor.ts)."
+  },
+  "freeStanding": [],
+  "fittings": [
+    { "id": "chandelier-dome", "kind": "chandelier", "style": "gilt-leaf", "position": [0, 4.75, 0], "suspension": 8.75, "lowest": 3.85, "radius": 0.9, "glowRadius": 0.82 },
+    { "id": "chandelier-fireplace-window", "kind": "chandelier", "style": "scroll", "position": [-6.65275, 4.45, -2.682], "latticeCell": [-6.5, -3], "suspension": 6.7, "lowest": 3.58, "radius": 0.66, "glowRadius": 0.58 },
+    { "id": "chandelier-fireplace-door", "kind": "chandelier", "style": "scroll", "position": [-6.65275, 4.45, 2.682], "latticeCell": [-6.5, 3], "suspension": 6.7, "lowest": 3.58, "radius": 0.66, "glowRadius": 0.58 },
+    { "id": "chandelier-end-window", "kind": "chandelier", "style": "scroll", "position": [6.65275, 4.45, -2.682], "latticeCell": [6.5, -3], "suspension": 6.7, "lowest": 3.58, "radius": 0.66, "glowRadius": 0.58 },
+    { "id": "chandelier-end-door", "kind": "chandelier", "style": "scroll", "position": [6.65275, 4.45, 2.682], "latticeCell": [6.5, 3], "suspension": 6.7, "lowest": 3.58, "radius": 0.66, "glowRadius": 0.58 }
+  ],
+  "concealedLights": [
+    { "id": "frieze-uplight", "kind": "uplight-strip", "height": 4.25, "level": "friezeBottom", "walls": "all", "note": "A warm LED strip hidden on the ledge under the frieze." }
+  ],
+  "edits": [
+    { "type": "patch", "wall": "window", "u": [0.0, 0.8], "v": [0.0, 1.6], "mode": "mirror", "about": 10.5675, "applies": ["photo", "relief"], "note": "Movable equipment, mirrored about the wall's centre." },
+    { "type": "patch", "wall": "door", "u": [0.0, 0.75], "v": [0.0, 1.54], "mode": "shift", "by": 2.72, "applies": ["photo", "relief"], "note": "Movable equipment." },
+    { "type": "patch", "wall": "door", "u": [{ "opening": "door-end", "offset": -0.54 }, { "opening": "door-end", "offset": 0.54 }], "v": [0.0, 2.35], "mode": "shift", "by": { "openingDelta": ["door-end", "door-fireplace"] }, "applies": ["photo", "relief"], "note": "The end door stood open: it takes the fireplace-end door's closed leaves." },
+    { "type": "patch", "wall": "end", "u": [10.12, 10.59], "v": [0.3, 1.48], "mode": "shift", "by": -1.06, "applies": ["photo", "relief"], "note": "Movable equipment." },
+    { "type": "patch", "wall": "fireplace", "u": [3.15, 3.58], "v": [0.0, 1.48], "mode": "mirror", "about": 5.332, "applies": ["photo", "relief"], "note": "Movable equipment." },
+    { "type": "patch", "wall": "fireplace", "u": [9.6, 10.59], "v": [0.0, 1.72], "mode": "shift", "by": -3.18, "applies": ["photo", "relief"], "note": "Movable equipment." },
+    { "type": "recess", "wall": "door", "u": [{ "opening": "door-main", "offset": -0.715 }, { "opening": "door-main", "offset": 0.715 }], "v": [0.0, 2.35], "depth": 0.3, "leafPlane": 0.27, "applies": ["relief"], "note": "The main door stood open: a plain recess, its closed leaves modelled by the web." },
+    { "type": "floor-refill", "centre": [-0.13, -4.41], "radius": 0.85, "note": "A station in a window bay or doorway: no neighbour sees the floor round its tripod well." },
+    { "type": "floor-refill", "centre": [9.02, -4.1], "radius": 0.85, "note": "As above." },
+    { "type": "floor-refill", "centre": [-0.13, 4.93], "radius": 0.7, "note": "As above." },
+    { "type": "floor-refill", "centre": [8.85, 4.93], "radius": 0.7, "note": "As above." }
+  ],
+  "occluders": [
+    { "id": "chandelier-dome-body", "shape": "vertical-cylinder", "centreE57": [8.767, -4.958], "radius": 0.9, "zE57": [3.95, 6.35], "fitting": "chandelier-dome" },
+    { "id": "chandelier-dome-stem", "shape": "vertical-cylinder", "centreE57": [8.767, -4.958], "radius": 0.14, "zE57": [6.35, 8.9], "fitting": "chandelier-dome", "note": "The thin stem to the dome's plate." },
+    { "id": "chandelier-fireplace-door-body", "shape": "vertical-cylinder", "centreE57": [15.509, -2.288], "radius": 0.66, "zE57": [3.65, 5.3], "fitting": "chandelier-fireplace-door" },
+    { "id": "chandelier-fireplace-door-stem", "shape": "vertical-cylinder", "centreE57": [15.509, -2.288], "radius": 0.12, "zE57": [5.3, 6.8], "fitting": "chandelier-fireplace-door" },
+    { "id": "chandelier-end-door-body", "shape": "vertical-cylinder", "centreE57": [2.116, -2.286], "radius": 0.66, "zE57": [3.65, 5.3], "fitting": "chandelier-end-door" },
+    { "id": "chandelier-end-door-stem", "shape": "vertical-cylinder", "centreE57": [2.116, -2.286], "radius": 0.12, "zE57": [5.3, 6.8], "fitting": "chandelier-end-door" },
+    { "id": "chandelier-fireplace-window-body", "shape": "vertical-cylinder", "centreE57": [15.456, -7.737], "radius": 0.66, "zE57": [3.65, 5.3], "fitting": "chandelier-fireplace-window" },
+    { "id": "chandelier-fireplace-window-stem", "shape": "vertical-cylinder", "centreE57": [15.456, -7.737], "radius": 0.12, "zE57": [5.3, 6.8], "fitting": "chandelier-fireplace-window" },
+    { "id": "chandelier-end-window-body", "shape": "vertical-cylinder", "centreE57": [2.102, -7.686], "radius": 0.66, "zE57": [3.65, 5.3], "fitting": "chandelier-end-window" },
+    { "id": "chandelier-end-window-stem", "shape": "vertical-cylinder", "centreE57": [2.102, -7.686], "radius": 0.12, "zE57": [5.3, 6.8], "fitting": "chandelier-end-window" }
+  ],
+  "survey": {
+    "publish": { "folder": "packages/web/public/rooms/grand-hall/survey-2026-07-11", "revision": 3 },
+    "projection": {
+      "walls": { "cosMin": 0.2, "pCos": 4.0, "qDist": 3.0, "maxDist": 16.0 },
+      "ceiling": { "cosMin": 0.15, "pCos": 4.0, "qDist": 3.0, "maxDist": 16.0 },
+      "dome": { "cosMin": 0.1, "pCos": 4.0, "qDist": 3.0, "maxDist": 16.0 },
+      "floor": { "cosMin": 0.12, "pCos": 2.0, "qDist": 2.0, "maxDist": 16.0, "glare": 1, "nadir": true }
+    },
+    "wallViews": {
+      "file": "views-walls.json",
+      "order": ["window", "door", "end", "fireplace"],
+      "ppm": 200,
+      "heightRange": [-0.05, 7.0],
+      "eyeInset": 1.2,
+      "near": 0.0,
+      "far": 2.3,
+      "tileMaxLength": 6.0,
+      "modes": ["position"]
+    },
+    "ceilingView": {
+      "file": "views-ceiling.json",
+      "name": "ceiling-pos",
+      "ppm": 150,
+      "eyeHeight": 0.955,
+      "near": 5.55,
+      "far": 9.0,
+      "modes": ["position"]
+    },
+    "floorPhoto": {
+      "ppm": 120,
+      "refill": { "shift": 1.8, "innerFraction": 0.75, "easeDeg": 4 }
+    },
+    "domePhoto": { "size": [4096, 768], "surfaceOffset": [0.45, 0.3], "profileSteps": 64 },
+    "atlas": {
+      "size": 4096,
+      "ppm": { "pixels": 2048, "span": 10.59 },
+      "vRange": [-0.02, 6.72],
+      "featherTexels": 10,
+      "placement": [
+        { "wall": "window", "column": 0, "row": 0 },
+        { "wall": "door", "column": 0, "row": 1 },
+        { "wall": "end", "column": 0, "row": 2 },
+        { "wall": "fireplace", "column": 2048, "row": 2 }
+      ]
+    },
+    "relief": {
+      "container": "GHR1",
+      "order": ["window", "end", "door", "fireplace"],
+      "ppm": 100,
+      "vRange": [0, 6.7],
+      "depthRange": [-1.0, 0.9],
+      "simplifyError": 0.005,
+      "holdFloor": 0.04,
+      "holdCeiling": 6.66
+    }
+  },
+  "provenance": {
+    "measuredBy": "T-652 survey build (Claude): tools/grand-hall-survey/measure/ step1-step11, lattice, lattice2",
+    "method": "Plan and section cuts through the reviewed Matterport dollhouse mesh, and orthographic depth renders of each wall and the ceiling (views-elev.json); chandeliers' lowest points and reaches against a metric grid in the panoramas of scan_024 and scan_029.",
+    "date": "2026-10-09",
+    "sources": [
+      "packages/web/src/components/grand-hall/hall-spec.ts (d0583812, 2026-10-09; chandeliers 8d31f8ab and d61e1e22, 2026-10-10)",
+      "tools/grand-hall-survey/ (f95f5ce6, 2026-10-09): wall-views.py, project.py, project-*.py, fix-corners.py, window-relief.py, wall-depth.py, pack-atlas.py, pack-overhead.py, flatten-floor.py, relief-mesh.mjs",
+      "packages/web/src/components/grand-hall/hall-site.ts, hall-sun-times.ts, hall-atlas.ts, hall-floor.ts, hall-walls.ts, hall-photos.ts"
+    ],
+    "residuals": [
+      { "quantity": "wall planes and opening edges", "kind": "tolerance", "value": 0.02, "unit": "m", "note": "Stated in hall-spec.ts (mesh tier ops-grade-2cm). No fit residuals were recorded." },
+      { "quantity": "wall relief mesh against the cleaned depth maps", "kind": "tolerance", "value": 0.005, "unit": "m", "note": "meshoptimizer absolute error (relief-mesh.mjs)." },
+      { "quantity": "survey view anchors against the outline's corners", "kind": "check", "value": 0.003, "unit": "m", "note": "wall-views.py's anchors are 2.5 mm (X) and 3 mm (Y) off the hall-spec.ts corners." }
+    ]
+  }
+}
