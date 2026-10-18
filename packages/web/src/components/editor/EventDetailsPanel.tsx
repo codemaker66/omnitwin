@@ -105,6 +105,11 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A load that failed keeps `state` null, so the form stays hidden and Save
+  // stays blocked: the PATCH replaces the whole blob, and a blank form saved
+  // after a failed read would erase details the read never reached.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   // The blob the server held before the pending edits — set at hydration,
   // advanced after each successful save. It is the action log's inverse
@@ -135,7 +140,9 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
     const guard = { cancelled: false };
     setLoading(true);
     setError(null);
+    setLoadError(null);
     setState(null);
+    serverStateRef.current = null;
     // A client's remembered notes load beside the layout. Failing to load
     // them never stops the layout opening: the box then starts unticked.
     const isCancelled = (): boolean => guard.cancelled;
@@ -193,17 +200,15 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
         }
       } catch (err) {
         if (guard.cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load event details");
-        // Server truth is unknown here — a later save logs its inverse as
-        // the empty blob the form was initialised with (best known before).
-        serverStateRef.current = emptyEventInstructions();
-        setState(emptyEventInstructions());
+        // Server truth is unknown here, so there is nothing safe to edit:
+        // `state` stays null until a load succeeds.
+        setLoadError(err instanceof Error ? err.message : "");
       } finally {
         if (!guard.cancelled) setLoading(false);
       }
     })();
     return () => { guard.cancelled = true; };
-  }, [open, configId, isPublicPreview, userId, userRole]);
+  }, [open, configId, isPublicPreview, userId, userRole, loadAttempt]);
 
   if (!open || timelinePreviewActive) return null;
 
@@ -599,6 +604,17 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
             </div>
           )}
           {!signInRequired && loading && <ActivityStatus style={{ fontSize: 12, color: TEXT_SEC }}>Loading…</ActivityStatus>}
+          {!signInRequired && !loading && loadError !== null && (
+            <div role="alert" style={{ fontSize: 12, color: "#ef4444", background: "rgba(239,68,68,0.1)", padding: 10, borderRadius: 6, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+              <span>
+                This layout's event details couldn't be loaded, so they can't be edited or saved yet. Nothing has been changed.
+                {loadError === "" ? "" : ` (${loadError})`}
+              </span>
+              <button type="button" onClick={() => { setLoadAttempt((n) => n + 1); }} style={secondaryBtnStyle}>
+                Try again
+              </button>
+            </div>
+          )}
           {error !== null && (
             <div role="alert" style={{ fontSize: 12, color: "#ef4444", background: "rgba(239,68,68,0.1)", padding: 10, borderRadius: 6 }}>
               {error}
