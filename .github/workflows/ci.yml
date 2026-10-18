@@ -324,8 +324,9 @@ jobs:
 
       - name: Create dedicated setup-sheet timing and floor request test databases
         # hallkeeper-timing-postgres, requests-postgres,
-        # protected-premises-postgres and forward-book-postgres skip without
-        # their URLs; each migrates its own database and names it in its guard.
+        # protected-premises-postgres, forward-book-postgres and
+        # hallkeeper-progress-postgres skip without their URLs; each migrates
+        # its own database and names it in its guard.
         env:
           PGPASSWORD: postgres
         run: >-
@@ -335,6 +336,7 @@ jobs:
           --command="CREATE DATABASE venviewer_lane9_test"
           --command="CREATE DATABASE venviewer_sheet_access_test"
           --command="CREATE DATABASE venviewer_forward_book_test"
+          --command="CREATE DATABASE venviewer_progress_test"
 
       - name: Test (Vitest)
         # Use the same execution policy locally and in CI: serial workspaces
@@ -349,6 +351,7 @@ jobs:
           VENVIEWER_REQUESTS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_lane9_test
           VENVIEWER_SHEET_ACCESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_sheet_access_test
           VENVIEWER_FORWARD_BOOK_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_forward_book_test
+          VENVIEWER_PROGRESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_progress_test
         run: pnpm test
 
   e2e:

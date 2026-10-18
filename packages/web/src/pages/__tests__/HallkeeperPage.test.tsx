@@ -411,9 +411,9 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     vi.stubGlobal("fetch", fetchMock);
     mount();
     await screen.findByText("First dinner", { exact: true, selector: "p" });
-    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY); });
+    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null); });
 
-    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_B, otherRowKey);
+    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_B, otherRowKey, null);
     expect(queued).toEqual([
       { configId: CONFIG_B, rowKey: otherRowKey, desiredChecked: false, queuedAt: checkedAt },
     ]);
@@ -463,16 +463,16 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     await screen.findByRole("status", { name: "1 offline edit pending sync" });
     await waitFor(() => { expect(replayStarted).toHaveBeenCalledWith(CONFIG_B); });
     expect(screen.getByText("Syncing saved checks…")).toBeTruthy();
-    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY);
+    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null);
 
     await act(async () => {
       secondReplay.resolve(jsonResponse({ configId: CONFIG_B, rowKey: ROW_KEY, checked: true }));
       await secondReplay.promise;
     });
-    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_B, ROW_KEY); });
+    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_B, ROW_KEY, null); });
     await waitFor(() => { expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull(); });
     expect(screen.queryByText("Syncing saved checks…")).toBeNull();
-    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY);
+    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null);
     expect(queued).toEqual([
       { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
     ]);
@@ -481,7 +481,7 @@ describe("HallkeeperPage request and offline queue isolation", () => {
       firstReplay.resolve(jsonResponse({ configId: CONFIG_A, rowKey: ROW_KEY, checked: true }));
       await firstReplay.promise;
     });
-    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY); });
+    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null); });
     expect(queued).toEqual([]);
     expect(screen.getByText("Second dinner", { exact: true, selector: "p" })).toBeTruthy();
     expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
@@ -510,6 +510,77 @@ describe("HallkeeperPage carries the corridor's event", () => {
       .map(([input]) => requestUrl(input))
       .find((url) => url.includes("/v2"));
     expect(sheetUrl).toContain(`?eventId=${eventId}`);
+  });
+
+  // Ticks belong to an event: a layout reused from an earlier event must not
+  // arrive already ticked, so the sheet reads and writes its own event's ticks.
+  it("reads and writes the ticks of the event the hallkeeper arrived from", async () => {
+    const eventId = "00000000-0000-4000-8000-0000000000e1";
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/${CONFIG_A}/progress`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH"
+          ? { configId: CONFIG_A, eventId, rowKey: ROW_KEY, checked: true }
+          : { configId: CONFIG_A, eventId, checked: {} }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${eventId}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Round table/u, checked: false }));
+    await waitFor(() => { expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true); });
+
+    const progressCalls = fetchMock.mock.calls.filter(([input]) => requestUrl(input).includes("/progress"));
+    expect(progressCalls.length).toBeGreaterThanOrEqual(2);
+    for (const [input] of progressCalls) {
+      expect(requestUrl(input)).toContain(`/hallkeeper/${CONFIG_A}/progress?eventId=${eventId}`);
+    }
+  });
+
+  it("replays ticks queued offline into the event each was made for", async () => {
+    const tonight = "00000000-0000-4000-8000-0000000000e1";
+    const lastNight = "00000000-0000-4000-8000-0000000000e0";
+    let queued: readonly QueuedProgressOp[] = [
+      { configId: CONFIG_A, eventId: tonight, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
+      { configId: CONFIG_A, eventId: lastNight, rowKey: ROW_KEY, desiredChecked: false, queuedAt: checkedAt },
+    ];
+    vi.mocked(listPendingProgress).mockImplementation(() => Promise.resolve(queued));
+    vi.mocked(ackProgress).mockImplementation((configId, rowKey, eventId) => {
+      queued = queued.filter((op) => op.configId !== configId || op.rowKey !== rowKey || (op.eventId ?? null) !== (eventId ?? null));
+      return Promise.resolve();
+    });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/${CONFIG_A}/progress`) && init?.method === "PATCH") return Promise.resolve(jsonResponse({ checked: true }));
+      // Last night's tick is still on the server; tonight's never reached it.
+      if (url.includes(`/progress?eventId=${lastNight}`)) return Promise.resolve(jsonResponse({ checked: { [ROW_KEY]: checkedAt } }));
+      if (url.includes(`/progress?eventId=${tonight}`)) return Promise.resolve(jsonResponse({ checked: {} }));
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${tonight}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText("Shared layout", { exact: true, selector: "p" });
+    await waitFor(() => { expect(queued).toEqual([]); });
+
+    const writes = fetchMock.mock.calls
+      .filter(([, init]) => init?.method === "PATCH")
+      .map(([input, init]) => [requestUrl(input), init?.body]);
+    expect(writes).toEqual(expect.arrayContaining([
+      [expect.stringContaining(`/progress?eventId=${tonight}`), JSON.stringify({ rowKey: ROW_KEY, checked: true })],
+      [expect.stringContaining(`/progress?eventId=${lastNight}`), JSON.stringify({ rowKey: ROW_KEY, checked: false })],
+    ]));
+    expect(writes).toHaveLength(2);
+    expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, tonight);
+    expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, lastNight);
   });
 });
 
