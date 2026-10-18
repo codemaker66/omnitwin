@@ -17,6 +17,7 @@ import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
 import {
   diffObjects,
   emptyHistory,
+  forgetHistoryIds,
   performRedo,
   performUndo,
   recordChange,
@@ -38,6 +39,7 @@ import { flushActionLog } from "./action-log-sync.js";
 import { postActionBatch } from "../api/action-log.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 import { createOneShotHandoff } from "../lib/one-shot-handoff.js";
+import { changedBetween, locallyModifiedIds, rebaseOntoServer } from "../lib/layout-live/live-document.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -180,6 +182,13 @@ interface EditorState {
   readonly space: Space | null;
   readonly isPublicPreview: boolean;
   readonly objects: readonly EditorObject[];
+  /**
+   * The last document the server confirmed for this configuration (load,
+   * save echo, adopted refetch). Live co-editing rebases local edits from
+   * it; it is never sent anywhere. A restored anonymous draft keeps the
+   * server's objects here, not the draft's.
+   */
+  readonly baseObjects: readonly EditorObject[];
   readonly selectedObjectId: string | null;
   readonly isDirty: boolean;
   readonly isSaving: boolean;
@@ -253,6 +262,21 @@ interface EditorActions {
   readonly saveToServer: (isAuthenticated?: boolean) => Promise<boolean>;
   /** Reload the server copy after an explicit conflict acknowledgement. */
   readonly reloadAfterConflict: (isAuthenticated?: boolean) => Promise<void>;
+  /**
+   * Live co-editing: take a refetched server document. Clean → adopted
+   * wholesale; dirty → this client's edits rebased onto it object by object
+   * (rebaseOntoServer). Refused while a save is in flight or a pointer
+   * gesture owns the document ("busy" — retry after), and for a revision no
+   * newer than the one held ("stale").
+   */
+  readonly adoptServerConfiguration: (config: configApi.Configuration, options?: AdoptOptions) => AdoptOutcome;
+  /**
+   * Live co-editing: a later remote write took these objects. Local state for
+   * each goes back to the server base and stays tied to it until this person
+   * edits the object again, so this client's saves never overwrite the
+   * later write with an older local value. Not an undoable change.
+   */
+  readonly yieldObjectsToRemote: (ids: readonly string[]) => void;
   /** Dismiss the current save-error toast. */
   readonly clearSaveError: () => void;
   readonly reset: () => void;
@@ -278,6 +302,85 @@ interface EditorActions {
 }
 
 type EditorStore = EditorState & EditorActions;
+
+export interface AdoptOptions {
+  /** The 409 retry holds isSaving through its own refetch; only it may adopt then. */
+  readonly whileSaving?: boolean;
+  /** Ask for the autosave when rebased edits remain (default true). */
+  readonly requestSave?: boolean;
+}
+
+export type AdoptOutcome =
+  | { readonly status: "adopted" | "rebased"; readonly lostToRemoteDelete: readonly EditorObject[] }
+  | { readonly status: "stale" | "busy" | "ignored" };
+
+/** Live co-editing hooks, registered by the live client while connected. */
+export interface EditorLiveHooks {
+  /** Every local document change (gesture frames included), before → after. */
+  readonly onLocalChange: (before: readonly EditorObject[], after: readonly EditorObject[]) => void;
+  /** A save committed; idMap holds local-id → server-id for new placements. */
+  readonly onSaved: (revision: number, idMap: ReadonlyMap<string, string>) => void;
+}
+
+let liveHooks: EditorLiveHooks | null = null;
+/** "rebase": a 409 refetches, rebases and retries once (live co-editing).
+ *  "report": today's behaviour — surface the conflict and wait. */
+let conflictPolicy: "report" | "rebase" = "report";
+/** Depth of the 409 rebase-and-retry in progress: one retry per save. */
+let rebaseRetryDepth = 0;
+/** Objects a later remote write owns; kept equal to base until re-edited. */
+const yieldedIds = new Set<string>();
+
+/** Hooks are present only while in the live room. */
+export function setEditorLiveHooks(hooks: EditorLiveHooks | null): void {
+  liveHooks = hooks;
+}
+
+/** "rebase" while the live client is mounted — connected or reconnecting — so
+ *  a 409 during a dropped connection rebases instead of offering a reload
+ *  that would discard this person's work. */
+export function setEditorConflictPolicy(policy: "report" | "rebase"): void {
+  conflictPolicy = policy;
+}
+
+/** Whether a pointer gesture owns the open document right now (live
+ *  co-editing defers remote writes to the object being dragged). */
+export function isEditorGestureActive(): boolean {
+  return gestureOwnsCurrentDocument();
+}
+
+/** The objects currently yielded to a later remote write (tests, live UI). */
+export function editorYieldedIds(): ReadonlySet<string> {
+  return yieldedIds;
+}
+
+function notifyLocalChange(before: readonly EditorObject[], after: readonly EditorObject[]): void {
+  if (before === after) return;
+  if (yieldedIds.size > 0) {
+    const prior = new Map(before.map((object) => [object.id, object]));
+    for (const object of after) {
+      // Re-edited by this person: it is theirs again (their write is later).
+      if (yieldedIds.has(object.id) && prior.get(object.id) !== object) yieldedIds.delete(object.id);
+    }
+  }
+  liveHooks?.onLocalChange(before, after);
+}
+
+/** Keep yielded objects equal to the server's copy. */
+function snapYieldedToBase(objects: readonly EditorObject[], base: readonly EditorObject[]): readonly EditorObject[] {
+  if (yieldedIds.size === 0) return objects;
+  const baseById = new Map(base.map((object) => [object.id, object]));
+  const next: EditorObject[] = [];
+  for (const object of objects) {
+    if (!yieldedIds.has(object.id)) {
+      next.push(object);
+      continue;
+    }
+    const confirmed = baseById.get(object.id);
+    if (confirmed !== undefined) next.push(confirmed);
+  }
+  return next;
+}
 
 let localIdCounter = 0;
 
@@ -499,6 +602,7 @@ const INITIAL_STATE: EditorState = {
   space: null,
   isPublicPreview: false,
   objects: [],
+  baseObjects: [],
   selectedObjectId: null,
   isDirty: false,
   isSaving: false,
@@ -593,6 +697,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const previousRevision = get().configRevision;
       const previousWasPublic = get().isPublicPreview;
       configurationSession += 1;
+      yieldedIds.clear();
       set({
         configId: config.id,
         configName: config.name,
@@ -601,6 +706,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         configRevision: config.revision,
         isPublicPreview: config.isPublicPreview,
         objects,
+        baseObjects: serverObjects,
         isDirty: restoredAnonymousDraft,
         isSaving: false,
         saveError: null,
@@ -663,6 +769,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }
       if (request !== configurationLoadRequest || shouldOpen?.() === false) throw new Error("A different layout was opened while this draft was being created.");
       configurationSession += 1;
+      yieldedIds.clear();
       set({
         configId: config.id,
         configName: config.name,
@@ -671,6 +778,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         configRevision: config.revision,
         isPublicPreview: true,
         objects: [],
+        baseObjects: [],
         isDirty: false,
         isSaving: false,
         saveError: null,
@@ -727,6 +835,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
   },
 
   updateObject: (objectId, transform) => {
@@ -738,6 +847,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
   },
 
   moveObjectsByDelta: (ids, dx, dz) => {
@@ -755,6 +865,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
   },
 
   setObjectNotes: (objectId, notes) => {
@@ -766,6 +877,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
     // Notes never touch the placement store, so the bridge's scene
     // subscription cannot schedule the save — request it here, like
     // undo/redo do, or the note sits dirty until the next drag.
@@ -796,6 +908,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
     // Same as setObjectNotes: dressing text edits are editor-store-only
     // mutations; the scene bridge never sees them, so ask for the save.
     autosaveRequester?.();
@@ -812,6 +925,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       selectedObjectId: s.selectedObjectId === objectId ? null : s.selectedObjectId,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after, selectionAfter) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
   },
 
   selectObject: (id) => { set({ selectedObjectId: id }); },
@@ -906,7 +1020,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           })
         : serverObjects;
       set({
-        objects: nextObjects,
+        // A yielded object stays the server's: never resend an older local copy.
+        objects: snapYieldedToBase(nextObjects, serverObjects),
+        baseObjects: serverObjects,
         history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
         selectedObjectId: latest.selectedObjectId === null
           ? null
@@ -928,10 +1044,35 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // to the revision this save produced. Auth path only — the ingest
       // endpoint is authenticated, and public-preview planning stays local.
       if (useAuthPath) flushActionLogToServer(saved.revision);
+      liveHooks?.onSaved(saved.revision, idMap);
       return true;
     } catch (err) {
       if (session !== configurationSession || get().configId !== configId) return false;
       const conflict = configApi.parseRevisionConflict(err);
+      if (conflict !== null && conflictPolicy === "rebase" && useAuthPath && rebaseRetryDepth === 0) {
+        // Live co-editing: someone else committed first. Take their document,
+        // keep this person's edits on the objects they touched, and save
+        // again — once. isSaving stays true through the refetch, so the live
+        // client's own refetch waits ("busy") instead of racing this one.
+        rebaseRetryDepth += 1;
+        try {
+          const fresh = await configApi.getConfig(configId);
+          if (session !== configurationSession || get().configId !== configId) return false;
+          const outcome = get().adoptServerConfiguration(fresh, { whileSaving: true, requestSave: false });
+          const held = get().configRevision;
+          const current = outcome.status === "adopted" || outcome.status === "rebased"
+            || (outcome.status === "stale" && held !== null && held >= fresh.revision);
+          if (current) {
+            set({ isSaving: false });
+            return get().isDirty ? await get().saveToServer(isAuthenticated) : true;
+          }
+        } catch {
+          // Fall through to the reported conflict below.
+        } finally {
+          rebaseRetryDepth -= 1;
+        }
+        if (session !== configurationSession || get().configId !== configId) return false;
+      }
       if (conflict !== null) {
         set({
           isSaving: false,
@@ -962,6 +1103,82 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   clearSaveError: () => { set({ saveError: null, saveConflict: null }); },
 
+  adoptServerConfiguration: (config, options = {}) => {
+    const s = get();
+    if (config.id !== s.configId || config.isPublicPreview) return { status: "ignored" };
+    if (s.configRevision !== null && config.revision <= s.configRevision) return { status: "stale" };
+    if ((s.isSaving && options.whileSaving !== true) || gestureOwnsCurrentDocument()) return { status: "busy" };
+    const server = (config.objects ?? []).map(placedObjectToEditor);
+    // Undo never replays this person's older values over another person's
+    // later change: forget the steps' parts for every object someone else
+    // changed. Seal the open gesture first so the action log keeps it.
+    actionEmitter.flush(s.history);
+    const history = forgetHistoryIds(s.history, changedBetween(s.baseObjects, server));
+    const modified = locallyModifiedIds(s.baseObjects, s.objects);
+    const hasLocalEdits = [...modified].some((id) => !yieldedIds.has(id))
+      || s.baseObjects.some((object) => !s.objects.some((local) => local.id === object.id));
+    if (!hasLocalEdits) {
+      yieldedIds.clear();
+      set({
+        objects: server,
+        baseObjects: server,
+        history,
+        // A rename by someone else arrives with the document (the phone's top bar reads it).
+        configName: config.name,
+        configRevision: config.revision,
+        isDirty: false,
+        saveError: null,
+        saveConflict: null,
+        lastSavedAt: config.updatedAt === undefined ? s.lastSavedAt : new Date(config.updatedAt),
+      });
+      return { status: "adopted", lostToRemoteDelete: [] };
+    }
+    const rebased = rebaseOntoServer({ server, base: s.baseObjects, local: s.objects, yielded: yieldedIds });
+    yieldedIds.clear();
+    set({
+      objects: rebased.objects,
+      baseObjects: server,
+      history,
+      configName: config.name,
+      configRevision: config.revision,
+      isDirty: true,
+      saveError: null,
+      saveConflict: null,
+    });
+    // The rebased edits still need to reach the server.
+    if (options.requestSave !== false) autosaveRequester?.();
+    return { status: "rebased", lostToRemoteDelete: rebased.lostToRemoteDelete };
+  },
+
+  yieldObjectsToRemote: (ids) => {
+    if (ids.length === 0) return;
+    const s = get();
+    const baseById = new Map(s.baseObjects.map((object) => [object.id, object]));
+    const yielding = new Set(ids.filter((id) => baseById.has(id)));
+    if (yielding.size === 0) return;
+    for (const id of yielding) yieldedIds.add(id);
+    let changed = false;
+    const objects = s.objects.map((object) => {
+      if (!yielding.has(object.id)) return object;
+      const confirmed = baseById.get(object.id);
+      if (confirmed === undefined || confirmed === object) return object;
+      changed = true;
+      return confirmed;
+    });
+    // A yielded object this person had deleted comes back as the server's.
+    for (const id of yielding) {
+      if (s.objects.some((object) => object.id === id)) continue;
+      const confirmed = baseById.get(id);
+      if (confirmed !== undefined) {
+        objects.push(confirmed);
+        changed = true;
+      }
+    }
+    actionEmitter.flush(s.history);
+    const history = forgetHistoryIds(s.history, yielding);
+    if (changed || history !== s.history) set({ objects, history });
+  },
+
   reset: () => {
     configurationLoadRequest += 1;
     configurationSession += 1;
@@ -969,6 +1186,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     plannerSpaceHandoff.clear();
     activeHistoryGesture = null;
     interactionEpoch++;
+    yieldedIds.clear();
     useCockpitStore.getState().setPlannedGuestCount(null);
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.
@@ -986,6 +1204,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const history = recordedHistory(s.history, s.selectedObjectId, s.objects, objects);
     if (history === null) return;
     set({ objects, isDirty: true, history });
+    notifyLocalChange(s.objects, objects);
   },
 
   undo: () => {
@@ -997,6 +1216,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
     interactionEpoch++;
     set(historyStepPatch(step));
+    notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
     autosaveRequester?.();
   },
@@ -1010,6 +1230,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     actionEmitter.afterRedo(step.history); // G4: logs history.redo
     interactionEpoch++;
     set(historyStepPatch(step));
+    notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
     autosaveRequester?.();
   },
