@@ -2504,6 +2504,9 @@ export * from "./omnitwin-foundry-intake-admission.js";
 export * from "./omnitwin-foundry-phase1.js";
 export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
+// The forward book on the Diary, room by room: what lets the public read a
+// room's dates (Blake, 17 October 2026, "hide date status until checked").
+export * from "./forward-book.js";
 // The bind (event-spine Phase A): every hold and ink has its event, whose
 // status follows its bookings.
 export * from "./event-binding.js";

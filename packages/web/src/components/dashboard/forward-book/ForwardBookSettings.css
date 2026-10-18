@@ -1,0 +1,253 @@
+/* Dates for assistants and the website (Blake, 17 October 2026): an ivory
+   sheet in the workspace register, with each decision in a forest panel.
+   Colours come from the register's --reg-* names only; the words carry the
+   state, colour only echoes it. */
+
+.forward-book {
+  display: grid;
+  gap: 18px;
+  padding: 24px 26px 26px;
+  border: 1px solid var(--reg-rule);
+  border-radius: 8px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+}
+
+.forward-book__head h3 {
+  margin: 0 0 6px;
+  font: 400 28px/1.1 var(--house-serif);
+  letter-spacing: -0.01em;
+}
+
+.forward-book__head p,
+.forward-book__empty,
+.forward-book__footnote {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--reg-text-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.forward-book__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--reg-rule);
+}
+
+.forward-book__row {
+  display: grid;
+  /* Fixed tracks, so the names, the provenance and the actions line up. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 220px;
+  gap: 8px 18px;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--reg-rule);
+}
+
+.forward-book__room {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.forward-book__name {
+  font: 400 21px/1.2 var(--house-serif);
+}
+
+.forward-book__state {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--reg-text-2);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* A small mark beside the words: filled when the dates are shown, an open
+   ring when they are hidden. The shape differs as well as the colour. */
+.forward-book__state::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.forward-book__row[data-state="shown"] .forward-book__state {
+  color: var(--reg-settled);
+}
+
+.forward-book__row[data-state="shown"] .forward-book__state::before {
+  background: currentColor;
+}
+
+.forward-book__provenance {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.forward-book__provenance p {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.forward-book__provenance .forward-book__note {
+  color: var(--reg-text-1);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.forward-book__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.forward-book__panel,
+.forward-book__row-notice {
+  grid-column: 1 / -1;
+}
+
+.forward-book__panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 8px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+}
+
+.forward-book__panel .forward-book__actions {
+  justify-content: flex-start;
+}
+
+.forward-book__consequence {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.forward-book__field {
+  display: grid;
+  gap: 6px;
+  max-width: 68ch;
+  color: var(--reg-text-2);
+  font-size: 13px;
+}
+
+.forward-book__field textarea {
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 6px;
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: 400 15px/1.45 var(--house-sans);
+  resize: vertical;
+}
+
+.forward-book__hint {
+  color: var(--reg-text-2);
+  font-size: 13px;
+}
+
+.forward-book__row-notice {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.forward-book__primary,
+.forward-book__quiet {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 6px;
+  font: 600 14px/1 var(--house-sans);
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 120ms ease;
+}
+
+.forward-book__primary {
+  border: 1px solid var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.forward-book__primary:hover:not(:disabled) {
+  border-color: var(--reg-primary-hover);
+  background: var(--reg-primary-hover);
+}
+
+.forward-book__quiet {
+  border: 1px solid var(--reg-edge);
+  background: transparent;
+  color: var(--reg-text-1);
+}
+
+.forward-book__quiet:hover:not(:disabled) {
+  background: var(--reg-surface-hover);
+}
+
+.forward-book__primary:active:not(:disabled),
+.forward-book__quiet:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.forward-book__primary:disabled,
+.forward-book__quiet:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.forward-book__notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.forward-book__notice p {
+  margin: 0;
+  color: var(--reg-alert);
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .forward-book {
+    padding: 20px 16px 22px;
+  }
+
+  .forward-book__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .forward-book__actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .forward-book__primary,
+  .forward-book__quiet {
+    transition: none;
+  }
+
+  .forward-book__primary:active:not(:disabled),
+  .forward-book__quiet:active:not(:disabled) {
+    transform: none;
+  }
+}

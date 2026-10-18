@@ -18,7 +18,8 @@
 //   - Every processor named below is one actually in use.
 // ---------------------------------------------------------------------------
 
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
+import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
 import "./LegalPage.css";
 
 interface LegalPageProps {
@@ -964,6 +965,14 @@ function LegalBlockView({ block }: { readonly block: LegalBlock }): ReactElement
 
 export function LegalPage({ type }: LegalPageProps): ReactElement {
   const doc = DOCUMENTS[type];
+  // The same title the crawler-readable copy of index.html carries for this
+  // address (lib/route-documents.ts), kept when moving here inside the app.
+  const title = ROUTE_DOCUMENTS.find((entry) => entry.name === type)?.title ?? doc.title;
+  useEffect(() => {
+    const previous = document.title;
+    document.title = title;
+    return () => { document.title = previous; };
+  }, [title]);
   const theme = storedTheme();
   const others = SIBLING_ORDER.filter((key) => key !== type);
 

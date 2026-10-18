@@ -1,0 +1,50 @@
+/* /pricing for visitors: the shared route-state panel (global.css), on the
+ * ivory register. A visitor reads this as a client would, so body text is
+ * full forest (10.6:1 on lifted ivory) rather than the panel's secondary
+ * forest, which measures below the 7:1 the client register asks for. */
+
+.vv-subscriptions .vv-state-panel {
+  width: min(560px, 100%);
+}
+
+.vv-subscriptions .vv-state-panel p:not(.vv-state-kicker) {
+  color: var(--vv-forest);
+}
+
+.vv-subscriptions .vv-state-panel .vv-subscriptions__aside {
+  font-size: 14px;
+}
+
+.vv-subscriptions a:not(.vv-button) {
+  color: var(--vv-forest);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--vv-copper);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 160ms ease;
+}
+
+.vv-subscriptions a:not(.vv-button):hover {
+  text-decoration-color: var(--vv-forest);
+}
+
+.vv-subscriptions a:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+/* The panel's buttons keep their press feedback from global.css; their
+ * hover is a quiet colour change, never a swell. */
+.vv-subscriptions .vv-button:not(.primary):hover {
+  border-color: var(--vv-forest-soft);
+}
+
+.vv-subscriptions .vv-button.primary:hover {
+  background: var(--vv-forest-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-subscriptions a:not(.vv-button) {
+    transition: none;
+  }
+}
