@@ -87,6 +87,18 @@ async function isApprovedSnapshotUnavailable(response: Response): Promise<boolea
  * each toggle — map sizes are small (≤ hundreds of rows) so this is
  * cheaper than the allocator overhead of a `Set`.
  */
+/** The layout's shared checks, or null when the server would not give them. */
+async function readProgress(configId: string, headers: Readonly<Record<string, string>>): Promise<CheckMap | null> {
+  const progressRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
+  if (!progressRes.ok) return null;
+  const progressJson = z.object({ data: z.object({ checked: z.record(z.string()) }) }).parse(await progressRes.json());
+  const loaded: Record<string, boolean> = {};
+  for (const key of Object.keys(progressJson.data.checked)) {
+    loaded[key] = true;
+  }
+  return loaded;
+}
+
 function toggleCheck(prev: CheckMap, rowKey: string, next: boolean): CheckMap {
   if (next) return { ...prev, [rowKey]: true };
   const out: Record<string, boolean> = {};
@@ -150,6 +162,8 @@ export function HallkeeperPage(): React.ReactElement {
   const operationVersions = useRef(new Map<string, number>());
   const [progressUnavailable, setProgressUnavailable] = useState(false);
   const [progressNotice, setProgressNotice] = useState<string | null>(null);
+  const progressReloadRef = useRef(0);
+  const [checksReloading, setChecksReloading] = useState(false);
 
   // --- Fetch sheet data + progress in parallel ---
   const loadData = useCallback(() => {
@@ -165,6 +179,7 @@ export function HallkeeperPage(): React.ReactElement {
     checksRef.current = {};
     setProgressUnavailable(false);
     setProgressNotice(null);
+    setChecksReloading(false);
     setHighlightedRowKey(null);
     setPendingCount(0);
     fetchCountRef.current += 1;
@@ -198,18 +213,13 @@ export function HallkeeperPage(): React.ReactElement {
         setData(sheetJson.data);
 
         try {
-          const progressRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
-          if (progressRes.ok) {
-            const progressJson = z.object({ data: z.object({ checked: z.record(z.string()) }) }).parse(await progressRes.json());
-            if (!isCurrent()) return;
-            const loaded: Record<string, boolean> = {};
-            for (const key of Object.keys(progressJson.data.checked)) {
-              loaded[key] = true;
-            }
+          const loaded = await readProgress(configId, headers);
+          if (!isCurrent()) return;
+          if (loaded === null) {
+            setProgressUnavailable(true);
+          } else {
             checksRef.current = loaded;
             setChecks(loaded);
-          } else if (isCurrent()) {
-            setProgressUnavailable(true);
           }
         } catch {
           if (isCurrent()) setProgressUnavailable(true);
@@ -232,6 +242,37 @@ export function HallkeeperPage(): React.ReactElement {
       downloadOperationRef.current += 1;
     };
   }, [loadData]);
+
+  // "Reload checks" asks again for the shared checks only. The sheet already
+  // on screen stays whatever happens: on poor signal a hallkeeper must never
+  // lose the copy in hand to a second read of the sheet that fails.
+  const reloadChecks = useCallback(() => {
+    if (configId === undefined) return;
+    progressReloadRef.current += 1;
+    const thisReload = progressReloadRef.current;
+    const sheetFetch = fetchCountRef.current;
+    const isCurrent = (): boolean => mountedRef.current && thisReload === progressReloadRef.current
+      && sheetFetch === fetchCountRef.current && activeConfigRef.current === configId;
+    setChecksReloading(true);
+    void (async () => {
+      try {
+        const token = await getAuthToken();
+        if (!isCurrent()) return;
+        const headers: Record<string, string> = {};
+        if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+        const loaded = await readProgress(configId, headers);
+        // Still unavailable: the notice that says so stays, with its button.
+        if (!isCurrent() || loaded === null) return;
+        checksRef.current = loaded;
+        setChecks(loaded);
+        setProgressUnavailable(false);
+      } catch {
+        // As above: the sheet and the notice both stay as they are.
+      } finally {
+        if (isCurrent()) setChecksReloading(false);
+      }
+    })();
+  }, [configId]);
 
   // --- Toggle with optimistic UI + offline-resilient server PATCH ---
   //
@@ -504,7 +545,9 @@ export function HallkeeperPage(): React.ReactElement {
         {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
         {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
         {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
-        {progressUnavailable && <div className="hk-notice" role="alert">Shared checks could not be loaded. The layout is available; reload before changing checks. <button className="hk-text-button" onClick={loadData}>Reload checks</button></div>}
+        {progressUnavailable && <div className="hk-notice" role="alert">Shared checks could not be loaded. The layout is available; reload before changing checks. {checksReloading
+          ? <ActivityStatus>Reloading shared checks…</ActivityStatus>
+          : <button type="button" className="hk-text-button" onClick={reloadChecks}>Reload checks</button>}</div>}
         {progressNotice !== null && <div className="hk-notice" role="alert">{progressNotice}</div>}
         {downloadNotice !== null && <div className={`hk-notice hk-notice-${downloadNotice.kind}`} role={downloadNotice.kind === "error" ? "alert" : "status"}>{downloadNotice.message}</div>}
       </>}

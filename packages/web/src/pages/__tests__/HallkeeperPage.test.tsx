@@ -587,6 +587,48 @@ describe("HallkeeperPage Martyn's Law readiness", () => {
   });
 });
 
+describe("HallkeeperPage reloading checks keeps the sheet in hand", () => {
+  it("reloads only the checks, and a failed reload leaves the sheet on screen", async () => {
+    let sheetRequests = 0;
+    let progressRequests = 0;
+    let progressAnswers = false;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/v2")) {
+        sheetRequests += 1;
+        // Only the first read of the sheet succeeds: a second one would fail
+        // and, before this fix, take the sheet off the screen with it.
+        return Promise.resolve(sheetRequests === 1
+          ? jsonResponse(sheet(CONFIG_A, "First dinner"))
+          : new Response(null, { status: 502 }));
+      }
+      if (url.endsWith("/progress")) {
+        progressRequests += 1;
+        return Promise.resolve(progressAnswers
+          ? jsonResponse({ checked: { [ROW_KEY]: checkedAt } })
+          : new Response(null, { status: 503 }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    mount();
+    await screen.findByText(/Shared checks could not be loaded/u);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload checks" }));
+    await waitFor(() => { expect(progressRequests).toBe(2); });
+    await screen.findByRole("button", { name: "Reload checks" });
+    expect(screen.getByText("First dinner", { exact: true, selector: "p" })).toBeTruthy();
+    expect(screen.getByText(/Shared checks could not be loaded/u)).toBeTruthy();
+    expect(sheetRequests).toBe(1);
+
+    progressAnswers = true;
+    fireEvent.click(screen.getByRole("button", { name: "Reload checks" }));
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    expect(screen.queryByText(/Shared checks could not be loaded/u)).toBeNull();
+    expect(screen.getByText("First dinner", { exact: true, selector: "p" })).toBeTruthy();
+    expect(sheetRequests).toBe(1);
+  });
+});
+
 describe("HallkeeperPage paper that knows its version", () => {
   function serve(data: HallkeeperSheetV2): void {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
