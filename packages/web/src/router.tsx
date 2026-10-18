@@ -143,6 +143,9 @@ const ProposalPreviewPage = lazyWithPreload(() =>
 const SupplierPortalPage = lazy(() =>
   cockpitImport(() => import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage }))),
 );
+const SheetCheckPage = lazy(() =>
+  cockpitImport(() => import("./pages/SheetCheckPage.js").then((m) => ({ default: m.SheetCheckPage }))),
+);
 const OpsHandoffPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage }))),
 );
@@ -687,6 +690,12 @@ export const router = createBrowserRouter([
     // by the API through a stored hash and returns only supplier-scoped data.
     path: "/supplier-share/:token",
     element: withSuspense(<SupplierPortalPage />),
+  },
+  {
+    // The page a printed hallkeeper sheet's QR code opens. Public — it answers
+    // only whether that copy is current, never with anything from the sheet.
+    path: "/sheet-check",
+    element: withSuspense(<SheetCheckPage />),
   },
   {
     path: "/privacy",

@@ -1,7 +1,18 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { toEventPlanAudienceRole, UpdateEventSchema, sha256Hex, stableCanonicalJson, type EventPlanChangeSurface, type UpdateEvent } from "@omnitwin/types";
+import {
+  EventStatusSchema,
+  deriveEventStatus,
+  eventStatusAgreesWithDiary,
+  summariseEventBookings,
+  toEventPlanAudienceRole,
+  UpdateEventSchema,
+  sha256Hex,
+  stableCanonicalJson,
+  type EventPlanChangeSurface,
+  type UpdateEvent,
+} from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { events } from "../db/schema.js";
+import { bookings, events } from "../db/schema.js";
 import type { JwtUser } from "../middleware/auth.js";
 import { canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "./event-plan-lifecycle.js";
@@ -84,6 +95,29 @@ export async function updateEventCore(
     }
     if (precondition !== undefined && eventStateDigest(row) !== precondition.expectedStateDigest) {
       return { ok: false, status: 409, code: "EVENT_STATE_CHANGED", error: "The event changed. Prepare the decision again using the current event." };
+    }
+
+    // The bind: an event's status follows its Diary bookings
+    // (deriveEventStatus). People may record the steps the bookings allow
+    // (proposed while options stand; in planning, ready for ops, executed and
+    // closed while a confirmed booking stands), never a status the Diary
+    // contradicts. The bookings are read after the event lock, so a booking
+    // write committed meanwhile is seen.
+    if (patch.status !== undefined && patch.status !== row.status) {
+      const held = await tx.select({ kind: bookings.kind, status: bookings.status, deletedAt: bookings.deletedAt })
+        .from(bookings)
+        .where(eq(bookings.eventId, row.id));
+      const summary = summariseEventBookings(held);
+      if (!eventStatusAgreesWithDiary(patch.status, summary)) {
+        const current = EventStatusSchema.parse(row.status);
+        return {
+          ok: false,
+          status: 409,
+          code: "EVENT_STATUS_FOLLOWS_DIARY",
+          error: "This event's status follows its bookings in the Diary. Confirm, release or cancel the booking there.",
+          details: { requested: patch.status, diaryStatus: deriveEventStatus(current, summary) },
+        };
+      }
     }
 
     const next: EventRow = {

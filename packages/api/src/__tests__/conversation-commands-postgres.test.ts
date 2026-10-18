@@ -9,6 +9,7 @@ import type { ConversationCommand } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { executeConversationCommand } from "../services/conversation-commands.js";
 import { openThreadCore, sendMessageCore } from "../services/conversations.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 import type { RequestActor } from "../services/requests.js";
 
 // Goal 19 S2 — the conversation command path through the diary_commands
@@ -84,10 +85,11 @@ describe.skipIf(target === undefined)("conversation commands on migrated Postgre
         id: person.id, venueId: person.venueId, name: person.name, email: `${person.id}@s2.invalid`, role: person.role,
       });
     }
-    await db.insert(schema.bookings).values({
+    // A confirmed booking is written with its event (the bind).
+    await insertBoundBookings(db, [{
       id: bookingId, venueId, spaceId: roomId, kind: "ink", title: "Fixture booking", createdBy: people.staff.id,
       startsAt: new Date("2030-01-10T10:00:00.000Z"), endsAt: new Date("2030-01-10T12:00:00.000Z"),
-    });
+    }]);
     const actor = (person: { readonly id: string; readonly role: string; readonly venueId: string | null; readonly name: string }): RequestActor => ({
       id: person.id, name: person.name, role: person.role, venueId: person.venueId, platformRole: "none",
     });

@@ -1421,6 +1421,10 @@ export {
   type HallkeeperSheetSummary,
 } from "./hallkeeper-v2.js";
 
+// One Living Record, first slice: a printed sheet states its version in words
+// and its QR answers only "current" or "superseded" (no sign-in, no content).
+export * from "./sheet-paper-check.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
@@ -2500,6 +2504,9 @@ export * from "./omnitwin-foundry-intake-admission.js";
 export * from "./omnitwin-foundry-phase1.js";
 export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
+// The bind (event-spine Phase A): every hold and ink has its event, whose
+// status follows its bookings.
+export * from "./event-binding.js";
 export * from "./diary-command.js";
 export * from "./room-layout-timeline.js";
 // T-637 slice B: the staff rota and its working-time checks.

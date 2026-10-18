@@ -34,6 +34,7 @@ import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorP
 import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
 import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspace.js";
 import { ProtectedPremisesBlock } from "../components/hallkeeper/ProtectedPremisesBlock.js";
+import { PaperCopyStamp, paperCopyLine, usePrintedAt } from "../components/hallkeeper/PaperCopyStamp.js";
 import { formatSheetTimes } from "../components/hallkeeper/sheet-facts.js";
 import { ActivityStatus } from "../components/shared/Activity.js";
 import "../styles/hallkeeper-register.css";
@@ -460,6 +461,8 @@ export function HallkeeperPage(): React.ReactElement {
   const handlePrint = useCallback(() => { window.print(); }, []);
 
   const counts = useMemo(() => computeCounts(data, checks), [data, checks]);
+  // The printed copy states its own printed minute ("…, printed 17 Oct 06:02").
+  const printedAt = usePrintedAt();
 
   if (loading) {
     return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet loading">
@@ -515,6 +518,7 @@ export function HallkeeperPage(): React.ReactElement {
       </>} />
     <div className="hk-print-only" aria-hidden="true">
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
+      <p className="hk-print-version">{paperCopyLine(data, printedAt)}</p>
       {data.timing !== null && <p>{formatSheetTimes(data.timing, data.venue.timezone)}</p>}
       <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} />
       {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
@@ -527,7 +531,7 @@ export function HallkeeperPage(): React.ReactElement {
       {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}
       {doorSummary !== null && <DoorScheduleBlock summary={doorSummary} timezone={data.venue.timezone} />}
       <ProtectedPremisesBlock record={instructions?.protectedPremises} guestCount={data.config.guestCount} timeZone={data.venue.timezone} />
-      <p>Generated {new Date(data.generatedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })} · {data.venue.timezone}</p>
+      <PaperCopyStamp data={data} printedAt={printedAt} />
     </div>
   </main>;
 }

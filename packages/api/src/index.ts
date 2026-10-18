@@ -34,6 +34,8 @@ import { publicConfigRoutes } from "./routes/public-configs.js";
 import { layoutRoutes } from "./routes/layouts.js";
 import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
 import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-runs.js";
+import { publicSheetCheckRoutes } from "./routes/public-sheet-check.js";
+import { resolveSheetPaperCheck } from "./services/sheet-paper-check.js";
 import { publicMcpRoutes } from "./routes/public-mcp.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
@@ -451,6 +453,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
+  // One Living Record: a printed sheet's QR asks "is this copy current?" —
+  // version state only, no sign-in, no content.
+  await server.register(publicSheetCheckRoutes, {
+    check: (query) => resolveSheetPaperCheck(db, query),
+    prefix: "/public",
+  });
   // T-649: the public, read-only MCP endpoint at /mcp (Blake, 8 Oct 2026:
   // "Yes, read-only" — venue facts, published capacities, free/held/busy
   // dates only; a date with only a provisional hold says "held, enquire").
