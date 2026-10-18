@@ -7,12 +7,13 @@ import { useWakeLock, type WakeLockSentinelLike, type WakeLockSurface } from "..
 // back, released when the wall is left, and absent without fuss where the
 // browser has no such thing.
 
+/** `requests` records each ask as the length of the type word ("screen" → 6). */
 function fakeSurface(outcome: "grant" | "refuse" = "grant"): { readonly surface: WakeLockSurface; readonly sentinels: WakeLockSentinelLike[]; readonly requests: number[] } {
   const sentinels: WakeLockSentinelLike[] = [];
   const requests: number[] = [];
   const surface: WakeLockSurface = {
     request: (type) => {
-      requests.push(type === "screen" ? 1 : 0);
+      requests.push(type.length);
       if (outcome === "refuse") return Promise.reject(new Error("NotAllowedError"));
       let released = false;
       const sentinel: WakeLockSentinelLike = {
@@ -41,7 +42,7 @@ describe("useWakeLock", () => {
     const fake = fakeSurface();
     const hook = renderHook(({ active }: { active: boolean }) => { useWakeLock(active, fake.surface); }, { initialProps: { active: true } });
     await act(async () => { await Promise.resolve(); });
-    expect(fake.requests).toEqual([1]);
+    expect(fake.requests).toEqual([6]);
     expect(fake.sentinels[0]?.released).toBe(false);
 
     hook.rerender({ active: false });
@@ -70,7 +71,7 @@ describe("useWakeLock", () => {
     renderHook(() => { useWakeLock(true, refusing.surface); });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     process.off("unhandledRejection", unhandled);
-    expect(refusing.requests).toEqual([1]);
+    expect(refusing.requests).toEqual([6]);
     expect(unhandled).not.toHaveBeenCalled();
   });
 });

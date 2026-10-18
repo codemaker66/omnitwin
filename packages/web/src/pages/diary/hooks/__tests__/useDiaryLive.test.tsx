@@ -55,15 +55,15 @@ describe("useDiaryLive over a long shift", () => {
 
     const first = FakeSocket.instances[0];
     if (first === undefined) throw new Error("no socket opened");
-    await act(async () => { first.open(); });
+    act(() => { first.open(); });
     await flush();
     expect(authFrames(first)).toEqual([{ type: "auth", token: "t1", device: "wall" }]);
 
-    await act(async () => { first.drop(); });
-    await act(async () => { vi.advanceTimersByTime(nextBackoffMs(0) + 1); });
+    act(() => { first.drop(); });
+    act(() => { vi.advanceTimersByTime(nextBackoffMs(0) + 1); });
     const second = FakeSocket.instances[1];
     if (second === undefined) throw new Error("no reconnect");
-    await act(async () => { second.open(); });
+    act(() => { second.open(); });
     await flush();
     expect(getToken).toHaveBeenCalledTimes(2);
     expect(authFrames(second)).toEqual([{ type: "auth", token: "t2", device: "wall" }]);
@@ -74,7 +74,7 @@ describe("useDiaryLive over a long shift", () => {
     renderHook(() => useDiaryLive(true, () => undefined, { device: "phone" }));
     const socket = FakeSocket.instances[0];
     if (socket === undefined) throw new Error("no socket opened");
-    await act(async () => { socket.open(); });
+    act(() => { socket.open(); });
     await flush();
     expect(socket.sent).toEqual([]);
     expect(socket.closedByHook).toBe(true);
