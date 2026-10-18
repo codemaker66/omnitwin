@@ -98,11 +98,15 @@ they own, `packages/api/src/services/client-event-schedule.ts:21-27`, and that r
 
 ### 6.1 Records
 
-- **Person.** Evolve `contacts` in place, because deals and proposals already reference it. Add a normalised email
-  (lowercased and trimmed; email becomes optional, so a phone caller or an imported contact without email can be
-  stored), a normalised phone, given and family names beside the display name, a job title, an optional postal
-  address, notes, `last_contact_at`, the source system and its record id (unique per venue and system, for example
-  a Salesforce 18-character Id), `merged_into_id` and `erased_at`.
+- **Person.** Evolve `contacts` in place, because deals and proposals already reference it. Add contact points:
+  several emails and phones per person, each normalised (emails lowercased and trimmed), labelled (work, personal,
+  mobile) and one marked primary; email becomes optional, so a phone caller or an imported contact without email
+  can be stored. Add given and family names beside the display name, a job title, an optional postal address,
+  notes, a relationship owner (a staff user), `last_contact_at`, the source system and its record id (unique per
+  venue and system, for example a Salesforce 18-character Id), `merged_into_id` and `erased_at`.
+- **Owner.** Each person and organisation has a relationship owner, used for "mine", follow-ups and handover.
+  Ownership never limits who may edit: any commercial role can, and every edit shows on the timeline with who
+  made it.
 - **Organisation or household.** Evolve `client_accounts` in place with a kind, organisation or household (a
   wedding couple is a household of two), plus address, website, VAT number (for invoices later), notes, the source
   fields and `merged_into_id`.
@@ -118,7 +122,12 @@ they own, `packages/api/src/services/client-event-schedule.ts:21-27`, and that r
 
 ### 6.2 Matching and merging
 
-- Records link automatically only on an exact normalised email within one venue (public enquiries and imports).
+- Records link automatically only on an exact normalised email within one venue (public enquiries and imports),
+  and only when exactly one live person holds that email. An address two people share (a couple, say) links
+  neither and shows as a suggestion.
+- A merge keeps every email and phone from both records, so the duplicate does not come back with the next
+  enquiry. Today's duplicate contacts (one per converted enquiry) become suggestions in the backfill, never
+  automatic merges.
 - Everything else is a suggestion shown on both records as a possible duplicate: the same phone, or a close name
   within the same organisation. Nothing merges silently.
 - A merge says what moves before it happens ("2 enquiries, 1 deal and 3 notes move to Aileen Murray"), re-points
@@ -145,11 +154,16 @@ M and N choose the kind. `activities` gains an optional person and organisation 
 
 - **Consent per purpose**, each with its source, time and wording version. Service messages about a person's own
   enquiries and events need no consent. Marketing stays off for everyone until a person opts in.
-- **Retention.** A person, their enquiries and their copies fall due 24 months after the last contact, as the policy
-  promises (`LegalPage.tsx:395-407`). `last_contact_at` moves on enquiries, messages, activities, proposals and
-  events. A nightly job, built on the existing scheduled-workflow pattern and dry-run by default, lists what is due.
-  A named admin confirms the first live run; after that it runs by itself, because it neither confirms a booking nor
-  moves money. A live booking or a recorded legal hold keeps a record, and the reason shows on it.
+- **Retention follows the published policy exactly** (`LegalPage.tsx:395-418`): enquiries that do not become
+  bookings, and the contact record, are deleted 24 months after the last contact; enquiries that become bookings
+  are kept for the life of the booking and six years after the end of the financial year in which the event took
+  place. When a person's contact details fall due while their booking records must stay, the contact details
+  (emails, phones, address, notes) go and the name stays on the booking, deal, proposal and invoice records until
+  their own six-year date. `last_contact_at` moves on enquiries, messages, activities, proposals and events.
+- **The retention job itself is not built here.** It is the fix-first slate's item (T-661, PR #122: "build the
+  retention job the privacy page promises, with a dry run and an audit log"), scheduled by the chief of staff after
+  the pilot launch work. The People Book supplies what that job needs: `last_contact_at`, the booking link that
+  extends a record's life, and the per-table erasure map.
 - **Erasure** removes or anonymises the person everywhere their data sits, including the free-text copies in
   section 5, and leaves only a record that an erasure happened. **Export** gives the person's data as JSON and a
   readable summary. Both are confirmed by an admin or manager, with the exact payload shown first.
@@ -167,8 +181,17 @@ M and N choose the kind. `activities` gains an optional person and organisation 
   at switching day.
 - **Each run is a batch.** A dry run first: counts of new, changed, unchanged, possible duplicates against
   Venviewer's own people, and rows it cannot read, each with its reason. Then apply, in one tap. Records match on
-  their Salesforce Id per venue, so a re-run updates instead of duplicating. A batch can be rolled back: rows it
-  created are removed and fields it changed are restored from its snapshot.
+  their Salesforce Id per venue, so a re-run updates instead of duplicating.
+- **While both systems are in use**, Salesforce is the source of truth for the fields it supplies. A re-run updates
+  those fields unless someone changed them here since the last run; then the dry run shows a conflict and keeps
+  Venviewer's value unless a person picks Salesforce's. Records that have gone from Salesforce are listed, never
+  deleted automatically. Venviewer-only work (logged calls, merges, notes) is never touched by a re-run.
+- **Rollback** stays open until the next batch is applied. It removes rows the batch created and restores fields
+  it changed from a per-field snapshot, and it refuses, with a list, any row touched here since (merged, linked to
+  an enquiry, given a logged call, or erased).
+- **Logged emails** (Salesforce's EmailMessage records) come in as timeline entries with their text. Attachments
+  and Salesforce Files (signed contracts, plans) are listed with counts in the dry run and wait for the documents
+  spine; until then they stay in the venue's own archived export.
 
 ### 6.7 Who sees what
 
@@ -176,7 +199,7 @@ M and N choose the kind. `activities` gains an optional person and organisation 
 |---|---|
 | admin, manager | everything at their venue; merge; export and erase |
 | staff, sales | everything at their venue; merge |
-| hallkeeper | the day-of contact for events on their Day Board only |
+| hallkeeper | today's client search until slice 5; then only the day-of contact for events on their Day Board |
 | client, planner | never the book (their own details through their own sign-in, later) |
 | platform admin | as today |
 
@@ -184,8 +207,9 @@ Sales finally reaches the desk (`routes/clients.ts:59`, `lib/role-capabilities.t
 
 ### 6.8 The desk
 
-The Clients desk becomes the People Book, in the accepted desk grammar (see the mockup published with this
-design):
+The Clients desk becomes the People Book, in the accepted desk grammar. The mockup is
+`docs/design/people-book-2026-10-18/mockup.html` (published for Blake as
+https://claude.ai/artifact/BdQYQKkAqUUEpNKGSVoWFk); its names and figures are illustrative:
 
 - an opening line with the date and a greeting, the title "People", and one sentence on what is owed ("2 possible
   duplicates to look at; 5 follow-ups due this week");
@@ -206,7 +230,8 @@ design):
    included) and merge, with undo. Disposable-Postgres tests.
 2. **The desk and the timeline.** The People Book desk, the server-built timeline, the composer with person-level
    activities, and the Find palette.
-3. **Consent, retention and rights.** Consent records, the retention job (dry-run first), export and erasure.
+3. **Consent and rights.** Consent records, export and erasure, with the erasure map the retention job of T-661
+   will reuse.
 4. **The Salesforce import.** Browser parsing, batches, dry run, apply, rollback and the mapping screen.
 5. **Event parties and "same again".**
 
@@ -217,7 +242,12 @@ design):
   copy (a canary name searched across every table).
 - Route tests for every role gate (sales in; a hallkeeper sees day-of contacts only).
 - End-to-end, keyboard only: find a person, log a call, merge two records, undo.
-- The all-day standard's automated checks on the desk.
+- The all-day standard's automated checks bind the desk where this build can meet them: contrast, the text-size
+  floor (EYE-3), tabular numerals (EYE-5), status in words (MIND-4, EYE-6), one primary action per state (MIND-2),
+  no focus theft while typing (ATT-1), drafts that survive a reload (ATT-3, for the composer), target sizes
+  (HAND-4), undo for merges and edits (HAND-5), keyboard reach of the desk's tasks (HAND-3), reduced motion (ACC-1),
+  visible focus (ACC-2) and no banned patterns (TRUST-2). Working offline (AHEAD-1), the dark and night themes
+  (EYE-1, NIGHT-1) and field speed metrics (HAND-1, HAND-2) belong to the standard-as-code piece of wave 1.
 - The real proof: Trades House's own Salesforce export dry-runs with counts that match Salesforce's own record
   counts per object, and someone in the office finds three clients they know, with their full history.
 
@@ -227,9 +257,13 @@ design):
   survives.
 - Records link automatically only on an exact email within one venue; everything else is a suggestion.
 - A merge can be undone for 30 days.
-- The retention job runs by itself once a named admin has confirmed its first live run.
+- People have several emails and phones; an email two people share links nobody automatically.
+- Each person and organisation has a relationship owner, which never limits who may edit.
+- Retention follows the published policy word for word, and the job itself is T-661's, not this build's.
+- While both systems are in use Salesforce wins for its own fields, conflicts show in the dry run, nothing is
+  deleted because it vanished from Salesforce, and rollback refuses rows touched here since.
 - Export and erasure are for admins and managers, with the payload shown first.
-- Hallkeepers see only day-of contacts, and only for their own events.
+- Hallkeepers keep today's search until slice 5 brings day-of contacts; after that they see only those.
 - The Salesforce export is parsed in the browser and never stored.
 
 ## 10. Left to the builder
@@ -240,7 +274,19 @@ the desk's exact layout within the house grammar and the mockup.
 ## 11. What Trades House must supply
 
 - A full Salesforce Data Export from its org, and its metadata (custom objects and fields, reports in use, email
-  templates, flows). Its Salesforce administrator runs both from inside the org; we provide step-by-step
-  instructions.
+  templates, flows). Its Salesforce administrator runs both from inside the org, with these steps:
+  1. In Salesforce Setup, open Data Export and choose Export Now (or Schedule Export).
+  2. Tick "Include all data" and choose UTF-8 encoding. Leave images, documents and attachments unticked unless
+     signed contracts live there (they make the export much larger).
+  3. Select every object and start the export. Salesforce emails when the files are ready.
+  4. Download every zip within 48 hours: Salesforce deletes them after that, and a manual export can be repeated
+     only every 7 days (29 days on Professional and Developer editions). Keep the zips at the venue.
+  5. Send Venviewer only each file's name, its first line (the column names) and its row count. Nobody's data is
+     needed to build the mapping; the real import is run later by venue staff in their own browser, once the
+     Article 28 processor agreement is signed.
+  6. Also list any custom objects (names ending in `__c`, under Setup, Object Manager), the reports the office runs
+     each week, the email templates it sends, and any flows or workflow rules.
+  (Source: Salesforce's Data Export Service and Data Loader documentation, as read on 18 October 2026 in
+  `D:/claude/replacement-map-20261017/research/r1-salesforce.md`.)
 - Whether it sends marketing, and how any consent was collected.
 - Which staff own which client relationships (owners are matched by email).
