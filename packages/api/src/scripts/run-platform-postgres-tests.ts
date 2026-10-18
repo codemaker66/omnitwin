@@ -17,6 +17,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/client-search-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
   "src/__tests__/hold-promotion-postgres.test.ts",
+  // The bind (migration 0090): zero holds or inks without an event.
+  "src/__tests__/booking-event-bind-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
   "src/__tests__/db-client-local.test.ts",
@@ -30,6 +32,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/placed-object-batch-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
+  "src/__tests__/sheet-paper-check-postgres.test.ts",
 ] as const;
 
 export function requirePlatformTestDatabaseUrl(raw: string | undefined): string {

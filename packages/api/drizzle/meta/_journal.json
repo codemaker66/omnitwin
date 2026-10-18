@@ -621,6 +621,13 @@
     {
       "idx": 88,
       "version": "7",
+      "when": 1791644400000,
+      "tag": "0090_booking_event_bind",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
       "when": 1791990000000,
       "tag": "0094_remembered_dietary_notes",
       "breakpoints": true

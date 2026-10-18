@@ -22,7 +22,7 @@ system. T-093 owns the gated v1 deploy orchestration.
 | Web build config | `packages/web/vercel.json` builds `@omnitwin/types` then `@omnitwin/web`, outputs `dist`, rewrites SPA routes to `index.html`, and redirects `omnitwin-web.vercel.app` to `venviewer.com`. |
 | API deploy config | `railway.json` builds the root `Dockerfile`, starts `node dist/index.js`, runs one replica, and probes `/health/ready`. |
 | API container | `Dockerfile` builds `@omnitwin/types` then `@omnitwin/api`, deploys a production-only API bundle, runs as a non-root user, and defines a `/health/live` Docker healthcheck. |
-| CI | `.github/workflows/ci.yml` runs audit, lint, typecheck, unit tests, and web E2E on pushes to `master` and PRs targeting `master`. |
+| CI | `.github/workflows/ci.yml` runs audit, lint, typecheck, build, native image, tests, four E2E shards, the required GPU job and the browser release gate on pushes to `master` and `release/**` and on PRs targeting either. The GPU job needs a manual operator run per CI request (`.github/gpu/README.md`). |
 | Migration workflow | `.github/workflows/deploy.yml` runs only after the `CI` workflow succeeds on `master`, checks out the CI head SHA, and runs `pnpm --filter @omnitwin/api db:migrate` with the production `DATABASE_URL` secret. |
 | Manual ops workflows | `.github/workflows/apply-migration-0018.yml`, `.github/workflows/backfill-layout-urls.yml`, and `.github/workflows/cleanup.yml` are manual or scheduled database operations, not general deploy orchestration. |
 | Health probes | The API exposes `/health`, `/health/live`, `/health/db`, `/health/ready`, and `/health/version`. |
@@ -185,6 +185,47 @@ https://venviewer.com/dev/trades-hall-visual
 If an affected provider is on an unintended revision, or required migrations failed,
 stop treating the release as verified and investigate before making customer
 claims or registering new runtime assets.
+
+## Release 1 Migration Policy (Ship Friday, 2026-09-15)
+
+Plan 18 §4.0 sets the database path for Release 1. For this release it replaces
+reliance on `deploy.yml` applying migrations after CI.
+
+- **Allocation.** The Ship Friday captain allocates migration numbers serially
+  and publishes them under "Ship Friday" in `goals/EXECUTION.md`. Only the owner
+  of a number touches `packages/api/drizzle/meta/_journal.json`; every other PR
+  contains no `drizzle/` change. If a reservation moves, the captain renumbers at
+  merge.
+- **Integration.** Migrations land in `release/r1` in their merge window and are
+  exercised on the disposable PostgreSQL stack only, never on production.
+- **Application.** Production receives them once, on the Friday release, applied
+  by the captain before master receives `release/r1`:
+  1. Create a Neon backup branch from production named `pre-deploy-YYYY-MM-DD`
+     and record its id in the day's session log.
+  2. Check out the exact `release/r1` sha in a clean worktree.
+  3. Set `DATABASE_URL` from the file outside the repository described in
+     [diary-deploy-checklist.md §3](diary-deploy-checklist.md), confirm the
+     printed host is the production endpoint, then run the read-only state report
+     (`pnpm --filter @omnitwin/api exec tsx src/scripts/apply-diary-rollout.ts`)
+     and `pnpm --filter @omnitwin/api db:verify-tail`.
+  4. Only if migrations are pending, run `pnpm --filter @omnitwin/api db:migrate`,
+     re-run the state report, spot-check the new constraints, and remove
+     `DATABASE_URL` from the session.
+  5. Push that `release/r1` sha to master. Railway builds the API and Vercel the
+     web from it; `/health/version` must show the sha before any live check.
+- **Friday-only migration.** 0073 (the `asset_definitions` reconcile) is applied
+  only in step 4, because the live planner reads those rows until the web deploy.
+- **`deploy.yml`.** Its migrate job still runs after green CI on master and finds
+  nothing pending after step 4. Decision 9 (a required reviewer on the GitHub
+  `production` environment) makes it wait for approval; until that exists, the
+  hand path above is the only intended path. `apply-diary-rollout.ts --apply` is
+  an emergency tool and is not part of this path.
+- **Expand-contract.** Release 1 migrations are additive. Web code that needs a
+  new route or column stays feature-gated until `/health/version` shows the
+  pushed sha. Rollback is the Neon backup branch.
+- **Railway.** `railway up` only if the git build does not fire, and only from a
+  checkout that `railway status` shows linked to the existing service; an
+  unlinked `railway up` creates a new project.
 
 ## Target V1 Owned By T-093
 

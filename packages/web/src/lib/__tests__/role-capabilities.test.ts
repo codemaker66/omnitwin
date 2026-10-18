@@ -3,6 +3,7 @@ import { INVENTORY_ADJUSTER_ROLES, USER_ROLES } from "@omnitwin/types";
 import {
   ANALYTICS_ROLES,
   CLIENT_SEARCH_ROLES,
+  CLIENT_SIDE_ROLES,
   COMMERCIAL_ROLES,
   CRM_PIPELINE_ROLES,
   DIARY_ROLES,
@@ -156,6 +157,10 @@ describe("route gates and their landing surfaces agree", () => {
       }
       if (route === "/hallkeeper/today") {
         expect(hasRole(VENUE_DAY_ROLES, role), `${role} lands on the Day Board`).toBe(true);
+      }
+      if (route === "/events") {
+        // The /events route admits exactly the client's side (router.tsx).
+        expect(hasRole(CLIENT_SIDE_ROLES, role), `${role} lands on the client's home`).toBe(true);
       }
     }
   });

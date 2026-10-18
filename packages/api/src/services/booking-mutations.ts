@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   BookingSchema,
+  bookingKindNeedsEvent,
   bookingStateToColumns,
   deriveBookingState,
   isValidBookingTransition,
@@ -12,7 +13,7 @@ import {
   type TransitionBookingInput,
   type UpdateBookingInput,
 } from "@omnitwin/types";
-import { bookings, bookingStatusHistory, events, spaces, users } from "../db/schema.js";
+import { bookings, bookingStatusHistory, spaces, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { JwtUser } from "../middleware/auth.js";
 import { canReadDiary } from "../utils/query.js";
@@ -22,6 +23,7 @@ import {
   type ResequenceResult,
 } from "./hold-hygiene.js";
 import { jointlyPromoted, writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
+import { bindBookingToEvent, syncEventStatus, syncEventStatuses, type BindTarget } from "./event-binding.js";
 
 // ---------------------------------------------------------------------------
 // Booking mutation cores (T-537; Canon §9) — extracted VERBATIM from the
@@ -168,6 +170,47 @@ const INTEGRITY_VIOLATION: BookingMutationDeny = {
   error: "Booking violates a database integrity rule",
 };
 
+const EVENT_VENUE_MISMATCH: BookingMutationDeny = {
+  ok: false,
+  status: 400,
+  code: "EVENT_VENUE_MISMATCH",
+  error: "The event does not belong to this venue",
+};
+
+/** A provisional or confirmed booking cannot be parted from its event (the
+ *  bind); it may move to another event of the same venue. */
+const EVENT_REQUIRED: BookingMutationDeny = {
+  ok: false,
+  status: 400,
+  code: "EVENT_REQUIRED",
+  error: "A provisional or confirmed booking always belongs to an event. Move it to another of this venue's events instead.",
+};
+
+/** An insert or update that returned no row. Thrown inside a transaction so
+ *  the rollback takes any event made for it too. */
+class BookingWriteMissing extends Error {
+  constructor() {
+    super("Booking write returned no row");
+    this.name = "BookingWriteMissing";
+  }
+}
+
+/** The transition's compare-and-set matched nothing; thrown so its
+ *  transaction rolls back whatever it wrote before. */
+class StaleTransition extends Error {
+  constructor() {
+    super("Booking changed during its transition");
+    this.name = "StaleTransition";
+  }
+}
+
+const BOOKING_STATE_CHANGED: BookingMutationDeny = {
+  ok: false,
+  status: 409,
+  code: "BOOKING_STATE_CHANGED",
+  error: "This booking changed while you were working — reload the diary and try again.",
+};
+
 function validationDeny(details: unknown): BookingMutationDeny {
   return {
     ok: false,
@@ -275,60 +318,70 @@ export async function createBookingCore(
     };
   }
 
-  if (input.eventId !== undefined) {
-    const [eventRow] = await conn
-      .select({ id: events.id, venueId: events.venueId })
-      .from(events)
-      .where(and(eq(events.id, input.eventId), isNull(events.deletedAt)))
-      .limit(1);
-    if (eventRow === undefined || eventRow.venueId !== input.venueId) {
-      return {
-        ok: false,
-        status: 400,
-        code: "EVENT_VENUE_MISMATCH",
-        error: "The event does not belong to this venue",
-      };
-    }
-  }
-
   if (input.ownerUserId !== undefined && !(await ownerWorksAtVenue(conn, input.ownerUserId, input.venueId))) {
     return OWNER_VENUE_MISMATCH;
   }
 
+  // The bind: a named event is joined once it is checked to be this venue's
+  // (tenant safety before the write, never after); a hold or ink without one
+  // gets a new event. Both happen in the booking's own transaction, so no
+  // failure can leave an event without its booking or a booking without its
+  // event. Interest only and venue blocks join an event only when named.
+  const target: BindTarget | null = input.eventId !== undefined
+    ? { join: "event", eventId: input.eventId }
+    : bookingKindNeedsEvent(input.kind) ? { join: "new" } : null;
+
   try {
-    const [created] = await conn
-      .insert(bookings)
-      .values({
-        venueId: input.venueId,
-        spaceId: input.spaceId,
-        eventId: input.eventId ?? null,
-        kind: input.kind,
-        status: "active",
-        title: input.title,
-        eventType: input.eventType ?? null,
-        startsAt: new Date(input.startsAt),
-        endsAt: new Date(input.endsAt),
-        rank: input.rank ?? null,
-        jointFlag: input.jointFlag ?? false,
-        decisionAt: dateOrNull(input.decisionAt),
-        ownerUserId: input.ownerUserId ?? null,
-        nextAction: input.nextAction ?? null,
-        nextActionDueAt: dateOrNull(input.nextActionDueAt),
-        seriesId: input.seriesId ?? null,
-        notes: input.notes ?? null,
-        createdBy: actor.id,
-      })
-      .returning();
-    if (created === undefined) {
-      return {
-        ok: false,
-        status: 500,
-        code: "BOOKING_CREATE_FAILED",
-        error: "Failed to create booking",
-      };
-    }
-    return { ok: true, status: 201, booking: created, changeKind: "booking.created" };
+    // Nested under a command's transaction this is a savepoint, so a refused
+    // insert never poisons the caller's transaction.
+    return await conn.transaction(async (tx): Promise<BookingMutationResult> => {
+      let eventId: string | null = null;
+      if (target !== null) {
+        const bound = await bindBookingToEvent(tx, {
+          venueId: input.venueId,
+          title: input.title,
+          eventType: input.eventType ?? null,
+          startsAt: new Date(input.startsAt),
+          endsAt: new Date(input.endsAt),
+          createdBy: actor.id,
+        }, target);
+        if (!bound.ok) return EVENT_VENUE_MISMATCH;
+        eventId = bound.eventId;
+      }
+
+      const [created] = await tx
+        .insert(bookings)
+        .values({
+          venueId: input.venueId,
+          spaceId: input.spaceId,
+          eventId,
+          kind: input.kind,
+          status: "active",
+          title: input.title,
+          eventType: input.eventType ?? null,
+          startsAt: new Date(input.startsAt),
+          endsAt: new Date(input.endsAt),
+          rank: input.rank ?? null,
+          jointFlag: input.jointFlag ?? false,
+          decisionAt: dateOrNull(input.decisionAt),
+          ownerUserId: input.ownerUserId ?? null,
+          nextAction: input.nextAction ?? null,
+          nextActionDueAt: dateOrNull(input.nextActionDueAt),
+          seriesId: input.seriesId ?? null,
+          notes: input.notes ?? null,
+          createdBy: actor.id,
+        })
+        .returning();
+      // Thrown, not returned: returning would commit a new event with no
+      // booking. The rollback takes the event with it.
+      if (created === undefined) throw new BookingWriteMissing();
+      if (eventId !== null) await syncEventStatus(tx, eventId);
+      return { ok: true, status: 201, booking: created, changeKind: "booking.created" };
+    });
   } catch (error) {
+    if (error instanceof BookingWriteMissing) {
+      return { ok: false, status: 500, code: "BOOKING_CREATE_FAILED", error: "Failed to create booking" };
+    }
     const code = pgErrorCode(error);
     if (code === PG_EXCLUSION_VIOLATION) return INK_SLOT_TAKEN;
     if (code === PG_CHECK_VIOLATION) return INTEGRITY_VIOLATION;
@@ -397,20 +450,19 @@ async function updateBookingLocked(
     return validationDeny([{ path: ["rank"], message: "Only a provisional hold has an option number." }]);
   }
 
-  if (patch.eventId !== undefined && patch.eventId !== null) {
-    const [eventRow] = await conn
-      .select({ id: events.id, venueId: events.venueId })
-      .from(events)
-      .where(and(eq(events.id, patch.eventId), isNull(events.deletedAt)))
-      .limit(1);
-    if (eventRow === undefined || eventRow.venueId !== row.venueId) {
-      return {
-        ok: false,
-        status: 400,
-        code: "EVENT_VENUE_MISMATCH",
-        error: "The event does not belong to this venue",
-      };
-    }
+  // The bind: a hold or ink may move to another event of its venue, never to
+  // none. Interest only and venue blocks may still be detached.
+  if (patch.eventId === null && bookingKindNeedsEvent(row.kind)) return EVENT_REQUIRED;
+  if (patch.eventId !== undefined && patch.eventId !== null && patch.eventId !== row.eventId) {
+    const bound = await bindBookingToEvent(conn, {
+      venueId: row.venueId,
+      title: row.title,
+      eventType: row.eventType,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+      createdBy: actor.id,
+    }, { join: "event", eventId: patch.eventId });
+    if (!bound.ok) return EVENT_VENUE_MISMATCH;
   }
 
   // A new owner must work at this venue; keeping the owner it has is not
@@ -485,6 +537,8 @@ async function updateBookingLocked(
       error: "Failed to update booking",
     };
   }
+  // A booking that moved between events changes what both events hold.
+  if (updated.eventId !== row.eventId) await syncEventStatuses(conn, [row.eventId, updated.eventId]);
   return { ok: true, status: 200, booking: updated, changeKind: "booking.updated" };
 }
 
@@ -609,6 +663,26 @@ export async function transitionBookingCore(
         return "stale" as const;
       }
 
+      // The bind: interest only made provisional or confirmed takes its event
+      // now, in this transaction (its enquiry's event when it has one).
+      let eventId = current.eventId;
+      if (eventId === null && bookingKindNeedsEvent(columns.kind)) {
+        const seed = {
+          venueId: current.venueId,
+          title: current.title,
+          eventType: current.eventType,
+          startsAt: current.startsAt,
+          endsAt: current.endsAt,
+          createdBy: actor.id,
+        };
+        const joined = current.enquiryId === null
+          ? null
+          : await bindBookingToEvent(tx, seed, { join: "enquiry", enquiryId: current.enquiryId });
+        const bound = joined?.ok === true ? joined : await bindBookingToEvent(tx, seed, { join: "new" });
+        if (!bound.ok) throw new Error("A new event could not be bound");
+        eventId = bound.eventId;
+      }
+
       // Compare-and-set on the columns the transition was derived from:
       // if another transaction moved this booking between our read and
       // this write, zero rows match and the conflict is reported honestly
@@ -618,6 +692,7 @@ export async function transitionBookingCore(
         .set({
           kind: columns.kind,
           status: columns.status,
+          eventId,
           // Promotion to ink resolves the ladder; the rank is cleared
           // (bookings_rank_hold_only backs this at the DB).
           rank: toState === "ink" ? null : hygiene?.rank ?? current.rank,
@@ -639,7 +714,8 @@ export async function transitionBookingCore(
           ),
         )
         .returning();
-      if (updated === undefined) return "stale" as const;
+      // Thrown, not returned, so an event made for it above rolls back too.
+      if (updated === undefined) throw new StaleTransition();
 
       await tx.insert(bookingStatusHistory).values({
         bookingId: row.id,
@@ -700,17 +776,15 @@ export async function transitionBookingCore(
         });
       }
 
+      // The event follows its bookings: confirmed once inked, lost when its
+      // last option goes, cancelled when its confirmed booking does. Last,
+      // after every booking lock this transaction takes (the lock order).
+      if (updated.eventId !== null) await syncEventStatus(tx, updated.eventId);
+
       return { updated, resequence, promotionNotices };
     });
 
-    if (outcome === "stale") {
-      return {
-        ok: false,
-        status: 409,
-        code: "BOOKING_STATE_CHANGED",
-        error: "This booking changed while you were working — reload the diary and try again.",
-      };
-    }
+    if (outcome === "stale") return BOOKING_STATE_CHANGED;
     return {
       ok: true,
       status: 200,
@@ -720,6 +794,7 @@ export async function transitionBookingCore(
       promotionNotices: outcome.promotionNotices,
     };
   } catch (error) {
+    if (error instanceof StaleTransition) return BOOKING_STATE_CHANGED;
     const code = pgErrorCode(error);
     // The joint-first race, lost: another coordinator inked this slot
     // between our read and our write. The exclusion constraint arbitrated.

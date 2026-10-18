@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getDefaultRoute } from "../role-routing.js";
+import { CLIENT_HOME_ROUTE, getDefaultRoute } from "../role-routing.js";
 
 // ---------------------------------------------------------------------------
 // role-routing — post-login default-route picker
@@ -24,18 +24,29 @@ describe("getDefaultRoute", () => {
     expect(getDefaultRoute("admin", "admin")).toBe("/dashboard?view=onboarding");
   });
 
-  it("routes planner to /dashboard", () => {
-    expect(getDefaultRoute("planner")).toBe("/dashboard");
+  it("lands a planner on their own events and plans, never the staff dashboard (fix-first 12)", () => {
+    // The planner is still admitted to /dashboard (WORKSPACE_ROLES), so this
+    // pins the order: the client's side is decided before the workspace.
+    expect(getDefaultRoute("planner")).toBe("/events");
+    expect(getDefaultRoute("planner")).toBe(CLIENT_HOME_ROUTE);
   });
 
-  it("routes client to /plan (default)", () => {
-    expect(getDefaultRoute("client")).toBe("/plan");
+  it("lands a client on their own events and plans", () => {
+    expect(getDefaultRoute("client")).toBe("/events");
   });
 
-  it("routes staff to /dashboard (now in the dashboard-default group)", () => {
-    // staff was promoted into the dashboard-default group alongside
-    // admin/hallkeeper/planner; client and unknown roles still fall through
-    // to /plan.
+  it("keeps platform administration ahead of the client's home", () => {
+    expect(getDefaultRoute("planner", "admin")).toBe("/dashboard?view=onboarding");
+    expect(getDefaultRoute("client", "admin")).toBe("/dashboard?view=onboarding");
+  });
+
+  it("sends no venue role to the client's home", () => {
+    for (const role of ["admin", "manager", "staff", "sales", "hallkeeper"]) {
+      expect(getDefaultRoute(role), role).not.toBe(CLIENT_HOME_ROUTE);
+    }
+  });
+
+  it("routes staff to /dashboard", () => {
     expect(getDefaultRoute("staff")).toBe("/dashboard");
   });
 
