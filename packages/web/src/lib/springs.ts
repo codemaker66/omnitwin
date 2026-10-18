@@ -35,6 +35,12 @@ export const SPRING_PRESETS = {
   camera: { stiffness: 120, damping: 14 },
   /** Heavy stage equipment — weighty, deliberate, overdamped. */
   heavy: { stiffness: 280, damping: 120 },
+  /** A carried piece's lean and its rock as it settles: soft, two gentle swings (ζ ≈ 0.36). */
+  furnitureLean: { stiffness: 230, damping: 11 },
+  /** The squash as a piece sets its weight down: quick and springy (ζ ≈ 0.37). */
+  furnitureSquash: { stiffness: 520, damping: 17 },
+  /** A new piece coming down onto the floor: critically damped, no bounce through it. */
+  furnitureDrop: { stiffness: 160, damping: 25 },
 } as const satisfies Record<string, SpringConfig>;
 
 /**

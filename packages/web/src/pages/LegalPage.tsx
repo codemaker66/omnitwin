@@ -670,6 +670,21 @@ const TERMS: LegalDocument = {
           kind: "p",
           text: "You may view them, and use the planner to plan an event at the venue. Any other use — copying, redistribution, commercial reuse, or use as training material for a model or a dataset — needs written permission first.",
         },
+        {
+          kind: "p",
+          text: "The city drawn round the Grand Hall in the planner, and the rooftop heights used to work out when the sun reaches its windows, are made from the Scottish Government's open LiDAR survey. Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0. That data is published under the Open Government Licence v3.0, and its reuse is governed by that licence, not by these terms.",
+        },
+        {
+          kind: "links",
+          items: [
+            {
+              label: "Licence",
+              text: "Open Government Licence v3.0",
+              href: "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+              external: true,
+            },
+          ],
+        },
       ],
     },
     {

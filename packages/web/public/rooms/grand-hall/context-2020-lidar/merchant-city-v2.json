@@ -1,0 +1,150 @@
+{
+ "schema": "venviewer.context-model.v1",
+ "title": "Architect's contour model of the city around Trades Hall, Glasgow",
+ "generated": "2026-10-16",
+ "licence": {
+  "attribution": "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0",
+  "licence": "Open Government Licence v3.0",
+  "note": "Geometry derived only from the Scottish LiDAR Phase 5 50 cm DSM. No OpenStreetMap data."
+ },
+ "frame": {
+  "name": "planner hall frame (metres, y up, right-handed)",
+  "origin": "hall floor centre = local (E 3.0, N 8.0) m from E259329 N665183, 3.79 m above the pavement",
+  "minus_z_grid_bearing_deg": 102.96,
+  "plus_x_unit_EN": [
+   -0.22427,
+   -0.97453
+  ],
+  "plus_z_unit_EN": [
+   -0.97453,
+   0.22427
+  ],
+  "from_local": "dx=e-3.0, dn=n-8.0; x=XH.(dx,dn); z=ZH.(dx,dn); y=(DSM+0.30)-3.79",
+  "true_bearing": "true = grid - 1.861 deg",
+  "y_odn": "y = ODN - 14.19 (DSM datum 10.7 m ODN; pavement 10.40 m ODN at y=-3.79)"
+ },
+ "encoding": {
+  "file": "merchant-city-v2.bin",
+  "header": "16 bytes: 'VVCX', uint32 version=1, uint32 vertexCount, uint32 indexCount (little-endian)",
+  "vertices": "int16 x, y, z per vertex, centimetres (value/100 = metres)",
+  "indices": "uint32, triangles, counter-clockwise seen from outside (right-hand normal points out of the solid)",
+  "runs": {
+   "caps": {
+    "vertices": [
+     0,
+     34557
+    ],
+    "indices": [
+     0,
+     81648
+    ]
+   },
+   "walls": {
+    "vertices": [
+     34557,
+     69451
+    ],
+    "indices": [
+     81648,
+     208353
+    ]
+   }
+  },
+  "shading": "flat (derivative normals); caps and walls do not share vertices"
+ },
+ "method": "Architect's contour model of the city around Trades Hall, from the Scottish LiDAR Phase 5 DSM only.\n\nPipeline (all in this file, no OSM):\n  1. crop the 50 cm DSM around the hall centre, 3x3 median (drops single-cell LiDAR spikes, poles, chimneys)\n  2. planner height y = DSM + 0.30 - 3.79; inside the clamp radius y = min(y, 0) (section at the hall floor)\n  3. quantise to terrace bands (levels anchored at the hall floor, every SPACING m; band 0 = ground disc)\n  4. connected area filter on the band image (max-tree opening = drop small blobs, min-tree = fill small\n     holes) with an area threshold that grows with the component's distance from the centre\n  5. stamp OUT (beyond the radius) and CUT (the hall rectangle), remove diagonal pixel pinches\n  6. raster -> planar topology: boundary chains between 4-connected regions, split at junction nodes\n  7. Douglas-Peucker per chain with fixed end nodes (shared chains are simplified once, so stacked walls\n     stay coincident); rim chains snap to the exact circle, cut chains to the exact rectangle\n  8. faces -> cap polygons (validity loop halves a chain's tolerance until every face is valid),\n     constrained Delaunay caps, ladder-triangulated walls split at every level a neighbour uses (no T-junctions)\n  9. write VVCX v1 binary + provenance JSON",
+ "parameters": {
+  "radius": 260.0,
+  "spacing": 3.0,
+  "level_anchor_y": 0.0,
+  "ground_y": -3.79,
+  "dsm_to_y": -3.49,
+  "median_px": 3,
+  "clamp_radius": 45.0,
+  "clamp_inner_radius": 26.0,
+  "clamp_front_z": -24.0,
+  "clamp_y": 0.0,
+  "rect_half_x": 11.2,
+  "rect_half_z": 5.95,
+  "tol_near": 0.5,
+  "tol_far": 2.0,
+  "area_near": 6.0,
+  "area_far": 40.0,
+  "near_r": 80.0,
+  "far_r": 260.0,
+  "rim_step_deg": 1.5,
+  "terrain_cut_y": -1.0,
+  "terrain_sigma": 3.0,
+  "tree_max_area": 1000.0,
+  "tree_min_residual": 0.2,
+  "tree_max_height": 22.0,
+  "frame_bearing_deg": 102.96,
+  "centre_local": [
+   3.0,
+   8.0
+  ]
+ },
+ "bands": {
+  "spacing_m": 3.0,
+  "anchor_y": 0.0,
+  "ground_disc_y": -3.79,
+  "first_level_y": -3.0,
+  "levels_y_present": [
+   -3.79,
+   -3.0,
+   0.0,
+   3.0,
+   6.0,
+   9.0,
+   12.0,
+   15.0,
+   18.0,
+   21.0,
+   24.0,
+   27.0,
+   30.0,
+   33.0,
+   36.0,
+   39.0,
+   42.0,
+   45.0,
+   48.0,
+   51.0,
+   54.0,
+   57.0,
+   60.0,
+   63.0
+  ],
+  "rule": "band b>=1 is where the smoothed DSM (planner y) >= first_level_y + (b-1)*spacing; caps sit at that level; band 0 is the ground disc at the hall pavement level (terrain below it is flattened onto it)"
+ },
+ "site_cut": "nothing emitted inside |x|<=11.2, |z|<=5.95; the solids cut by it are left open there (the hall model fills it)",
+ "clamp": "within 26.0 m of the origin, and within 45.0 m where planner z > -24.0 (all but the blocks across Glassford Street), y = min(y, 0) before banding",
+ "rim": "solids crossing the 260 m circle are closed with section walls on the circle; the ground disc rim is open",
+ "bbox_m": {
+  "min": [
+   -260.0,
+   -3.79,
+   -260.0
+  ],
+  "max": [
+   260.0,
+   57.0,
+   260.0
+  ],
+  "order": "x, y, z"
+ },
+ "counts": {
+  "triangles": 69451,
+  "cap_triangles": 27216,
+  "wall_triangles": 42235,
+  "vertices": 69451,
+  "bytes_raw": 1250134,
+  "bytes_gzip": 571623
+ },
+ "terrain": "cells not in a raised blob are replaced by a normalised-convolution Gaussian (sigma terrain_sigma) of ground cells only, so street-level contours follow the terrain, not LiDAR noise; low walls/railings narrower than ~1 m vanish",
+ "generator": "tools/grand-hall-survey/context/build_context.py, run on the grid cut by tools/grand-hall-survey/context/fetch_dsm.py",
+ "sources": {
+  "dsm": "Scottish LiDAR Phase 5 50 cm DSM, tiles NS56NE, NS56SE, NS66NW, NS66SW (2020), cropped at its native 0.5 m cells (no resampling) to the 3 km square around HES NGR E259329 N665183 by fetch_dsm.py",
+  "facade_frame": "Trades Hall facade fit to the same DSM (front at grid bearing 12.96 deg)"
+ }
+}
