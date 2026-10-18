@@ -849,7 +849,11 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     [readingAhead, range, timeZone],
   );
   const { data, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range, neighbours);
-  const live = useDiaryLive(venueId !== null, refetch);
+  // The office reads which screens are on (S7): the wall says so; a narrow
+  // screen is a phone in a pocket; anything else is a desk.
+  const [device] = useState<"wall" | "phone" | "desk">(() =>
+    wall ? "wall" : (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches ? "phone" : "desk"));
+  const live = useDiaryLive(venueId !== null, refetch, { device });
   // The calendar stamps its reads with the device clock; the board compares
   // and prints them on the corrected one (D9).
   const readAtCorrectedMs = readAtMs === null ? null : correctedNowMs(readAtMs);

@@ -96,6 +96,11 @@ export interface DiaryLiveUser {
   readonly platformRole?: PlatformRole;
 }
 
+/** What kind of screen a connection is (goal 19 S7): the wall display in
+ *  the corridor, a phone in a pocket, or a desk. Absent from an older client. */
+export type DiaryLiveDevice = "wall" | "phone" | "desk";
+export const DIARY_LIVE_DEVICES = ["wall", "phone", "desk"] as const;
+
 export interface DiaryLiveConnection {
   readonly socket: DiaryLiveSocket;
   readonly user: DiaryLiveUser;
@@ -103,12 +108,20 @@ export interface DiaryLiveConnection {
    *  open for requests and the unread count. It hears the frames its role
    *  may hear, but its person is not on the Diary, so it is not presence. */
   readonly present: boolean;
+  readonly device: DiaryLiveDevice | null;
   lastSeenMs: number;
 }
 
 export interface DiaryLiveJoinOptions {
   /** Defaults to true: the Diary and the Day Board are where people are. */
   readonly present?: boolean;
+  readonly device?: DiaryLiveDevice;
+}
+
+/** A person in the presence list, with every kind of screen they are on.
+ *  One person on the wall and on a phone is one entry with two devices. */
+export interface DiaryLivePresence extends DiaryLiveUser {
+  readonly devices: readonly DiaryLiveDevice[];
 }
 
 /**
@@ -135,6 +148,7 @@ export class DiaryLiveHub {
       socket,
       user,
       present: options.present ?? true,
+      device: options.device ?? null,
       lastSeenMs: nowMs,
     };
     const set = this.#byVenue.get(venueId) ?? new Set<DiaryLiveConnection>();
@@ -169,13 +183,18 @@ export class DiaryLiveHub {
    *  from connections that are somewhere people are: a page that merely
    *  listens for requests does not put its person "here" (T-619's rule that
    *  the count names only colleagues who are there). */
-  presenceFor(venueId: string): readonly DiaryLiveUser[] {
-    const byUser = new Map<string, DiaryLiveUser>();
+  presenceFor(venueId: string): readonly DiaryLivePresence[] {
+    const byUser = new Map<string, { user: DiaryLiveUser; devices: Set<DiaryLiveDevice> }>();
     for (const connection of this.#byVenue.get(venueId) ?? []) {
       if (!connection.present) continue;
-      byUser.set(connection.user.userId, connection.user);
+      const entry = byUser.get(connection.user.userId) ?? { user: connection.user, devices: new Set<DiaryLiveDevice>() };
+      if (connection.device !== null) entry.devices.add(connection.device);
+      byUser.set(connection.user.userId, entry);
     }
-    return [...byUser.values()];
+    return [...byUser.values()].map(({ user, devices }) => ({
+      ...user,
+      devices: DIARY_LIVE_DEVICES.filter((device) => devices.has(device)),
+    }));
   }
 
   /** Send to every connection of the venue; a broken socket never breaks
@@ -273,6 +292,9 @@ export class DiaryLiveHub {
 export const DiaryAuthMessage = AuthMessage.extend({
   presence: z.boolean().optional(),
   afterCursor: z.number().int().nonnegative().optional(),
+  /** Which kind of screen this is (S7), so the office can read "Wall
+   *  display live · Elaine's phone live". Absent from an older client. */
+  device: z.enum(DIARY_LIVE_DEVICES).optional(),
 });
 
 const IncomingLiveMessage = z.discriminatedUnion("type", [
@@ -678,7 +700,12 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
               role: user.userRole,
               platformRole: user.platformRole,
             };
-            connection = hub.join(venueId, socket, liveUser, Date.now(), { present: auth.data.presence !== false });
+            // The device (S7) rides along when the client names one; an
+            // older client's frame is read exactly as before.
+            const joinOptions: DiaryLiveJoinOptions = auth.data.device === undefined
+              ? { present: auth.data.presence !== false }
+              : { present: auth.data.presence !== false, device: auth.data.device };
+            connection = hub.join(venueId, socket, liveUser, Date.now(), joinOptions);
             server.log.info(
               { event: "diary-live.connections", venueId, connections: hub.connectionCount(venueId) },
               "diary-live.joined",
