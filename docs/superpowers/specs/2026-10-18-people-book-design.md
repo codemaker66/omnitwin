@@ -118,9 +118,9 @@ they own, `packages/api/src/services/client-event-schedule.ts:21-27`, and that r
   flag, so a society secretary who also books for their firm belongs to both. `contacts.client_account_id`
   becomes the primary organisation until its readers move to memberships.
 - **Enquiry link.** `enquiries` gains an optional person. A public enquiry links to the venue's person with the same
-  normalised email or creates one, in the enquiry's own transaction, locked on venue and email. `guest_leads`
-  stops being written; existing leads become venue-scoped people at each venue where they enquired, which ends the
-  cross-venue overwrite.
+  normalised email or creates one, in the enquiry's own transaction, locked on venue and email. Existing leads
+  become venue-scoped people at each venue where they enquired. `guest_leads` becomes insert-only in slice 1, which
+  ends the cross-venue overwrite, and stops being written in slice 2, once the desk's lead profiles read the person.
 - **Event parties** (slice 5). An event's people and organisations with a role: booker, billing contact, day-of
   contact, planner, supplier contact. Labels only, never access.
 
@@ -134,6 +134,9 @@ they own, `packages/api/src/services/client-event-schedule.ts:21-27`, and that r
   automatic merges.
 - Everything else is a suggestion shown on both records as a possible duplicate: the same phone, or a close name
   within the same organisation. Nothing merges silently.
+- A suggestion is settled by merging the two or by marking them as different people (a couple who share an
+  address, say). The mark holds when either record is later merged into another, can be withdrawn, and stays in
+  the history either way.
 - A merge says what moves before it happens ("2 enquiries, 1 deal and 3 notes move to Aileen Murray"), re-points
   every reference in one transaction, keeps a merge record with a snapshot of the merged record, and leaves a
   tombstone so old links still resolve. Undo stays open for 30 days and restores the snapshot and every moved
@@ -164,10 +167,10 @@ M and N choose the kind. `activities` gains an optional person and organisation 
   place. When a person's contact details fall due while their booking records must stay, the contact details
   (emails, phones, address, notes) go and the name stays on the booking, deal, proposal and invoice records until
   their own six-year date. `last_contact_at` moves on enquiries, messages, activities, proposals and events.
-- **The retention job itself is not built here.** It is the fix-first slate's item (T-661, PR #122: "build the
-  retention job the privacy page promises, with a dry run and an audit log"), scheduled by the chief of staff after
-  the pilot launch work. The People Book supplies what that job needs: `last_contact_at`, the booking link that
-  extends a record's life, and the per-table erasure map.
+- **The retention job is built here, in slice 3.** The chief of staff confirmed on 18 October that it has no
+  separate owner (PR #122 records it under T-665): a scheduled job with a dry run first and an audit log, the
+  six-year booking rule above, and the per-table erasure map, driven by `last_contact_at` and the booking link
+  that extends a record's life.
 - **Erasure** removes or anonymises the person everywhere their data sits, including the free-text copies in
   section 5, and leaves only a record that an erasure happened. **Export** gives the person's data as JSON and a
   readable summary. Both are confirmed by an admin or manager, with the exact payload shown first.
@@ -239,11 +242,11 @@ https://claude.ai/artifact/BdQYQKkAqUUEpNKGSVoWFk); its names and figures are il
 
 1. **The record.** Migrations (person and organisation fields, memberships, the enquiry link, source ids, merge
    records), the backfill (contacts, accounts, and guest leads per venue), and the API to create, edit, search (sales
-   included) and merge, with undo. Disposable-Postgres tests.
+   included), keep apart and merge, with undo. Disposable-Postgres tests.
 2. **The desk and the timeline.** The People Book desk, the server-built timeline, the composer with person-level
    activities, and the Find palette.
-3. **Consent and rights.** Consent records, export and erasure, with the erasure map the retention job of T-661
-   will reuse.
+3. **Consent, retention and rights.** Consent records, the retention job (dry run first, audit log, the six-year
+   booking rule), export and erasure, all sharing one per-table erasure map.
 4. **The Salesforce import.** Browser parsing, batches, dry run, apply, rollback and the mapping screen.
 5. **Event parties and "same again".**
 
@@ -271,7 +274,7 @@ https://claude.ai/artifact/BdQYQKkAqUUEpNKGSVoWFk); its names and figures are il
 - A merge can be undone for 30 days.
 - People have several emails and phones; an email two people share links nobody automatically.
 - Each person and organisation has a relationship owner, which never limits who may edit.
-- Retention follows the published policy word for word, and the job itself is T-661's, not this build's.
+- Retention follows the published policy word for word, and this build owns the job (slice 3).
 - While both systems are in use Salesforce wins for its own fields, conflicts show in the dry run, nothing is
   deleted because it vanished from Salesforce, and rollback refuses rows touched here since.
 - Export and erasure are for admins and managers, with the payload shown first.

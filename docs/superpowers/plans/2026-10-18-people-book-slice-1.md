@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** One venue-scoped record per client person and organisation or household, with several emails and phones, memberships, an owner, duplicate suggestions and undoable merges, served by a commercial-only API, filled from today's data by a proven backfill, and fed by public enquiries and "Create opportunity" without making a duplicate each time.
+**Goal:** One venue-scoped record per client person and organisation or household, with several emails and phones, memberships, an owner, duplicate suggestions, a mark that keeps two people apart and undoable merges, served by a commercial-only API, filled from today's data by a proven backfill, and fed by public enquiries and "Create opportunity" without making a duplicate each time.
 
-**Architecture:** `contacts` and `client_accounts` are evolved in place by one additive migration that also backfills them; three new tables (`contact_points`, `account_memberships`, `record_merges`) hang off them with composite `(id, venue_id)` keys so tenancy is held by the database as well as the code. Small services under `packages/api/src/services/people-*.ts` own the writes (each in one transaction, locked in one fixed order), and one Fastify plugin, `routes/people.ts`, is their only door. The legacy columns (`contacts.email`, `contacts.phone`, `contacts.client_account_id`) stay as mirrors of the primary point and membership, so every existing reader keeps working unchanged.
+**Architecture:** `contacts` and `client_accounts` are evolved in place by one additive migration that also backfills them; four new tables (`contact_points`, `account_memberships`, `contact_kept_apart`, `record_merges`) hang off them with composite `(id, venue_id)` keys so tenancy is held by the database as well as the code. Small services under `packages/api/src/services/people-*.ts` own the writes (each in one transaction, locked in one fixed order), and one Fastify plugin, `routes/people.ts`, is their only door. The legacy columns (`contacts.email`, `contacts.phone`, `contacts.client_account_id`) stay as mirrors of the primary point and membership, so every existing reader keeps working unchanged.
 
 **Tech Stack:** TypeScript (strict), Fastify, Drizzle ORM on PostgreSQL 16 with `pg_trgm` (migration 0081), Zod, Vitest, Playwright (one e2e edit), pnpm.
 
@@ -16,7 +16,7 @@
 - Tenancy: every query names the venue; another venue's person, organisation or merge answers 404 `NOT_FOUND`, never 403; `contact_points` and `account_memberships` carry composite `(id, venue_id)` foreign keys.
 - Roles: every `/people` route is `canManageCommercial` (admin, manager, staff, sales; platform admins everywhere); hallkeeper, planner, client, caterer and a venue role with no venue get 403 before anything is read.
 - Hallkeepers keep exactly today's `/clients` access; sales gains the Clients desk (`routes/clients.ts` and `CLIENT_SEARCH_ROLES`).
-- Idempotent writes: advisory locks `crm-from-enquiry:<enquiryId>` (kept), `people-email:<venueId>:<normalisedEmail>` and `people-merge:<venueId>`, each taken with `pg_advisory_xact_lock(hashtextextended(<key>, 0))`; unique keys `(contact_id, kind, value)`, `(contact_id, client_account_id)` and `(venue_id, source_system, source_id) WHERE source_id IS NOT NULL`.
+- Idempotent writes: advisory locks `crm-from-enquiry:<enquiryId>` (kept), `people-email:<venueId>:<normalisedEmail>` and `people-merge:<venueId>`, each taken with `pg_advisory_xact_lock(hashtextextended(<key>, 0))`; unique keys `(contact_id, kind, value)`, `(contact_id, client_account_id)`, `(venue_id, source_system, source_id) WHERE source_id IS NOT NULL` and `(low_contact_id, high_contact_id) WHERE withdrawn_at IS NULL`.
 - Lock order in every transaction: advisory locks first, then `contacts` rows `FOR UPDATE` in ascending id, then the rows that point at them; a person is locked and re-checked as live before anything is linked to it.
 - "Live" means `deleted_at IS NULL AND merged_into_id IS NULL AND erased_at IS NULL`; a merged person is a tombstone (`merged_into_id` and `deleted_at` set together), never deleted.
 - Mirrors: `contacts.email`, `contacts.phone` and `contacts.client_account_id` equal the primary email point's `display_value`, the primary phone point's `display_value` and the primary membership's account, rewritten by `refreshContactMirror` in the same transaction as every write to points or memberships.
@@ -26,7 +26,7 @@
 - Database tests run only on `VENVIEWER_ROUTE_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55476/venviewer_route_atomicity_test` or `VENVIEWER_PLATFORM_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55477/venviewer_platform_test` (plus the venue-slug file's own `VENVIEWER_PUBLIC_ENQUIRY_TEST_DATABASE_URL`, Task 9); never `DATABASE_URL`, never `.env`.
 - Route tests for every role gate: 401 without a token, 403 for each refused role, sales admitted.
 - Fixtures are fictional: invented names, emails at `example.test` or `.invalid`, phones from Ofcom's drama ranges (0141 496 0000–0999, 07700 900000–900999).
-- Keep history: never delete status histories, activities or `record_merges` rows; points and memberships a merge removes live on in its snapshot and come back on undo.
+- Keep history: never delete status histories, activities, `record_merges` rows or kept-apart marks (withdrawing a mark stamps `withdrawn_at` and `withdrawn_by`); points and memberships a merge removes live on in its snapshot and come back on undo.
 - Personal data stays out of logs and error tracking: log ids and outcomes, never names, emails or phones.
 - Responses are `{ data }`, errors `{ error, code }`, every message in British English.
 - No new desk UI in this slice; every visible wait in later slices uses `packages/web/src/components/shared/Activity.tsx`.
@@ -35,7 +35,7 @@
 
 1. Phones typed in different shapes ("+44 7700 900123", "07700 900 123", "+44 (0)141 496 0000", "0044 141 496 0000") are one number: adding a second shape to a person who holds the first answers with the existing point, and search finds the person from any shape. Tests: Task 6 and Task 8.
 2. A returning guest types their email with other capitals or stray spaces (" Aileen.Murray@Example.TEST ") on the website form: the enquiry links to their existing person at that venue and nobody new is made. Test: Task 9.
-3. A couple sharing one email, the wedding norm: a new enquiry from it links neither and makes no third record, and "Create opportunity" on it makes a new person rather than choosing one of them. Tests: Task 9 and Task 10.
+3. A couple sharing one email, the wedding norm: a new enquiry from it links neither and makes no third record, "Create opportunity" on it makes a new person rather than choosing one of them, and once someone marks the two as different people neither is offered as the other's duplicate again, even after one of them is merged with a third record. Tests: Task 9, Task 10, Task 5 and Task 6.
 4. Two people press Merge on the same pair at once in opposite directions, or one person presses twice: exactly one merge happens, the double press answers with that same merge, the opposite one is refused, and nothing is left half-moved. Test: Task 11.
 5. A colleague moves a deal to someone else after a merge, and the merge is then undone: the deal stays where the colleague put it, the undo names it as skipped, and everything else is restored. Test: Task 12.
 
@@ -43,9 +43,11 @@
 
 ## Scope (decided by the chief of staff, 18 October 2026)
 
-**In:** the record and its API, no new desk UI: the migration and backfill (Task 2); shared types and normalisers (Task 1); the `/people` API for search, people, contact points, memberships, organisations or households, duplicate suggestions, merge preview, merge, undo and tombstones (Tasks 5–8, 11, 12); public enquiries linking to a person and `guest_leads` becoming insert-only (Task 9); create-from-enquiry reusing the person (Task 10); sales on the Clients desk (Task 4), and the web readers that must accept a person without an email (Task 3).
+**In:** the record and its API, no new desk UI: the migration and backfill (Task 2); shared types and normalisers (Task 1); the `/people` API for search, people, contact points, memberships, organisations or households, duplicate suggestions and the mark that keeps two people apart, merge preview, merge, undo and tombstones (Tasks 5–8, 11, 12); public enquiries linking to a person and `guest_leads` becoming insert-only (Task 9); create-from-enquiry reusing the person (Task 10); sales on the Clients desk (Task 4), and the web readers that must accept a person without an email (Task 3).
 
-**Out:** the People Book desk and timeline (slice 2); consent, export, erasure and the retention job (slice 3; the working copy of the design moves the job there, the committed copy names T-661); the Salesforce import (slice 4); event parties and "same again" (slice 5); guests (wave 2). Not built here although the schema allows them later: organisation merges (`record_merges.kind` admits `'organisation'`) and marking a duplicate suggestion as "kept apart".
+**Out:** the People Book desk and timeline (slice 2); consent, export, erasure and the retention job (slice 3 of the People Book, which owns the job: the chief of staff confirmed on 18 October that it has no separate owner); the Salesforce import (slice 4); event parties and "same again" (slice 5); guests (wave 2). Not built here although the schema allows it later: organisation merges (`record_merges.kind` admits `'organisation'`).
+
+**Added at review (18 October):** the mark that keeps two people apart. The design's first goal is every duplicate "either merged or knowingly kept apart"; without the mark, two people who share an email, the wedding norm, stay suggested to each other forever.
 
 ## Where the code goes
 
@@ -55,10 +57,10 @@
 | `packages/types/src/index.ts` | modify | `export * from "./people.js"` |
 | `packages/api/drizzle/0094_people_book.sql` | create | Schema, SQL normalisers and backfill, one transaction |
 | `packages/api/drizzle/meta/_journal.json` | modify | Journal entry idx 92 |
-| `packages/api/src/db/schema.ts` | modify | Columns on `contacts`, `client_accounts`, `enquiries`; tables `contactPoints`, `accountMemberships`, `recordMerges` |
+| `packages/api/src/db/schema.ts` | modify | Columns on `contacts`, `client_accounts`, `enquiries`; tables `contactPoints`, `accountMemberships`, `contactKeptApart`, `recordMerges` |
 | `packages/api/src/services/people-records.ts` | create | Person writes, contact points, memberships, mirrors, the person profile |
 | `packages/api/src/services/people-organisations.ts` | create | Organisation or household writes and profile |
-| `packages/api/src/services/people-duplicates.ts` | create | Duplicate suggestions |
+| `packages/api/src/services/people-duplicates.ts` | create | Duplicate suggestions and the kept-apart mark |
 | `packages/api/src/services/people-search.ts` | create | Search over names and contact points |
 | `packages/api/src/services/people-link.ts` | create | Enquiry-to-person linking and the household for a deal |
 | `packages/api/src/services/people-merge.ts` | create | Merge preview, apply and undo |
@@ -89,7 +91,7 @@
   - `CONTACT_POINT_KINDS = ["email", "phone"]`, `CONTACT_POINT_LABELS = ["work", "personal", "mobile", "other"]`, `CLIENT_ACCOUNT_KINDS = ["organisation", "household"]`, `DUPLICATE_REASONS = ["shared_email", "shared_phone", "close_name"]`, `MERGE_KINDS = ["person", "organisation"]`, `MERGE_MOVE_TARGETS = ["contact_points.contact_id", "account_memberships.contact_id", "enquiries.contact_id", "opportunities.primary_contact_id", "client_accounts.primary_contact_id", "contacts.merged_into_id"]` (the merge's order), `MERGE_FILLED_FIELDS = ["givenName", "familyName", "jobTitle", "postalAddress", "notes", "ownerUserId", "lastContactAt"]`, each `as const` with its `…Schema` (`z.enum`) and type (`ContactPointKind`, `ContactPointLabel`, `ClientAccountKind`, `DuplicateReason`, `MergeKind`, `MergeMoveTarget`, `MergeFilledField`).
   - `PHONE_DIGITS_MIN = 6`, `PHONE_DIGITS_MAX = 15`, `MERGE_UNDO_DAYS = 30`, `CLOSE_NAME_SIMILARITY = 0.6`.
   - `normaliseEmail(raw: string | null | undefined): string | null`, `normalisePhone(raw: string | null | undefined): string | null`, `isUsablePhone(raw: string): boolean`.
-  - Schemas and their inferred types, fields as in the table in Step 4: `ContactPointInputSchema`, `ContactPointSchema`, `ContactPointRowSchema`, `PersonSchema`, `PersonRowSchema`, `OrganisationSchema`, `MembershipRowSchema`, `PersonMembershipSchema`, `PersonProfileSchema`, `OrganisationProfileSchema`, `CreatePersonSchema`, `UpdatePersonSchema`, `CreateOrganisationSchema`, `UpdateOrganisationSchema`, `SetMembershipsSchema`, `PeopleSearchQuerySchema`, `PeopleSearchResultsSchema`, `DuplicateSuggestionSchema`, `MergeRequestSchema`, `MergeMovesSchema`, `MergePreviewSchema`, `MergeResultSchema`, `MergeSkipSchema`, `MergeUndoReportSchema`, `MergeUndoResultSchema`, `RecordMergeMoveSchema`, `RecordMergeSnapshotSchema`.
+  - Schemas and their inferred types, fields as in the table in Step 4: `ContactPointInputSchema`, `ContactPointSchema`, `ContactPointRowSchema`, `PersonSchema`, `PersonRowSchema`, `OrganisationSchema`, `MembershipRowSchema`, `PersonMembershipSchema`, `PersonProfileSchema`, `OrganisationProfileSchema`, `CreatePersonSchema`, `UpdatePersonSchema`, `CreateOrganisationSchema`, `UpdateOrganisationSchema`, `SetMembershipsSchema`, `PeopleSearchQuerySchema`, `PeopleSearchResultsSchema`, `DuplicateSuggestionSchema`, `KeepApartRequestSchema`, `KeptApartMarkSchema`, `MergeRequestSchema`, `MergeMovesSchema`, `MergePreviewSchema`, `MergeResultSchema`, `MergeSkipSchema`, `MergeUndoReportSchema`, `MergeUndoResultSchema`, `RecordMergeMoveSchema`, `RecordMergeSnapshotSchema`.
 
 - [ ] **Step 1: Bring the branch up to date and build**
 
@@ -203,6 +205,8 @@ return d
 | `PeopleSearchQuerySchema` | `q` `trim().min(2).max(200)` |
 | `PeopleSearchResultsSchema` | `people: [{ id, name, organisationName, email, phone, matched: "name" \| "email" \| "phone" }]`, `organisations: [{ id, name, kind, memberCount }]` |
 | `DuplicateSuggestionSchema` | `person: { id, name, organisationName }`, `reasons` array of `DuplicateReasonSchema`, min 1 |
+| `KeepApartRequestSchema` | `otherPersonId: ContactIdSchema` |
+| `KeptApartMarkSchema` | `id, venueId, personIds` (a tuple of the two ids, the lower first, as stored), `decidedBy` (nullable), `decidedAt` |
 | `MergeRequestSchema` | `survivorId: ContactIdSchema` |
 | `MergeMovesSchema` | an object with every `MERGE_MOVE_TARGETS` key, each an int ≥ 0 |
 | `MergePreviewSchema` | `survivor: { id, name }, merged: { id, name }, moves, alreadyHeld: { contactPoints, memberships }` |
@@ -240,7 +244,7 @@ git commit -m "feat(types): the People Book's records, normalisers and merge con
 
 **Interfaces:**
 - Consumes: Task 1's vocabularies, `normaliseEmail`, `normalisePhone`, `RecordMergeSnapshot`, `RecordMergeMove`, `MergeUndoReport`.
-- Produces: Drizzle columns `contacts.givenName, familyName, jobTitle, postalAddress, notes, ownerUserId, lastContactAt, sourceSystem, sourceId, mergedIntoId, erasedAt` (and `email` nullable); `clientAccounts.kind, address, website, vatNumber, notes, ownerUserId, sourceSystem, sourceId, mergedIntoId`; `enquiries.contactId`; tables `contactPoints`, `accountMemberships`, `recordMerges`; SQL functions `people_trim(text)`, `people_normalise_email(text)`, `people_normalise_phone(text)`, `people_name_key(text)`.
+- Produces: Drizzle columns `contacts.givenName, familyName, jobTitle, postalAddress, notes, ownerUserId, lastContactAt, sourceSystem, sourceId, mergedIntoId, erasedAt` (and `email` nullable); `clientAccounts.kind, address, website, vatNumber, notes, ownerUserId, sourceSystem, sourceId, mergedIntoId`; `enquiries.contactId`; tables `contactPoints`, `accountMemberships`, `contactKeptApart`, `recordMerges`; SQL functions `people_trim(text)`, `people_normalise_email(text)`, `people_normalise_phone(text)`, `people_name_key(text)`.
 
 - [ ] **Step 1: Start the two disposable clusters (once; Tasks 4 to 13 reuse them)**
 
@@ -280,7 +284,7 @@ it("holds the vocabularies @omnitwin/types states", async () => {
 });
 it("waits at most five seconds for a lock and creates every table idempotently", async () => {
   expect(sql).toContain("SET LOCAL lock_timeout = '5s';");
-  for (const table of ["contact_points", "account_memberships", "record_merges"]) expect(sql).toContain(`CREATE TABLE IF NOT EXISTS "${table}"`);
+  for (const table of ["contact_points", "account_memberships", "contact_kept_apart", "record_merges"]) expect(sql).toContain(`CREATE TABLE IF NOT EXISTS "${table}"`);
 });
 ```
 
@@ -305,7 +309,8 @@ Assertions (each an `it`):
 ```ts
 it("makes email optional and adds the columns as the Drizzle schema declares them", ...);
   // information_schema: contacts.email is_nullable YES; every added column of contacts, client_accounts and enquiries
-  // matches getTableConfig (name, SQL type, notNull, default); client_accounts.kind NOT NULL default 'household'
+  // matches getTableConfig (name, SQL type, notNull, default), as does every column of the four new tables;
+  // client_accounts.kind NOT NULL default 'household'
 it("gives each contact its email and phone as primary points, normalised, and trims the mirror", ...);
   // C1 points: [email, "aileen.murray@example.test", "Aileen.Murray@Example.TEST", "other", true],
   //            [phone, "07700900123", "+44 7700 900123", "other", true]; contacts.email of C1 is "Aileen.Murray@Example.TEST"
@@ -330,7 +335,9 @@ it("changes nothing when run again", ...);
 it("lets the previous API keep writing, and holds the new rules", ...);
   // INSERT client_accounts without kind → 'household'; INSERT contacts with email NULL succeeds;
   // a second primary email point for C1 → 23505; a point whose venue_id is not its contact's → 23503;
-  // label 'fax' → 23514; record_merges with survivor_id = merged_id → 23514
+  // label 'fax' → 23514; record_merges with survivor_id = merged_id → 23514;
+  // a kept-apart mark naming one person twice, or with the higher id first → 23514; a second live mark for one pair → 23505;
+  // a new mark for that pair once the first is withdrawn succeeds; a mark whose venue_id is not its people's → 23503
 ```
 
 Agreement is tested on ASCII. PostgreSQL's `lower()` follows the database locale for other letters, which is one reason every live write normalises in TypeScript and only the backfill uses the SQL functions.
@@ -351,8 +358,9 @@ A header comment in the house style (`0090_booking_event_bind.sql:1-41`) saying 
 5. `contact_points`: `id uuid pk default gen_random_uuid()`, `venue_id uuid NOT NULL REFERENCES venues(id)`, `contact_id uuid NOT NULL`, `kind varchar(10) NOT NULL`, `value varchar(255) NOT NULL`, `display_value varchar(255) NOT NULL`, `label varchar(20) NOT NULL DEFAULT 'other'`, `is_primary boolean NOT NULL DEFAULT false`, `source_system varchar(40)`, `source_id varchar(255)`, `created_at`/`updated_at timestamptz NOT NULL DEFAULT now()`; `contact_points_contact_venue_fk FOREIGN KEY (contact_id, venue_id) REFERENCES contacts(id, venue_id) ON DELETE CASCADE`; checks `contact_points_kind_check`, `contact_points_label_check`, `contact_points_value_check` (`value <> '' AND display_value <> ''`), `contact_points_source_pair_check`; `contact_points_contact_kind_value_unique UNIQUE (contact_id, kind, value)`; indexes `contact_points_one_primary_unique` (unique, `(contact_id, kind) WHERE is_primary`) and `contact_points_venue_kind_value_idx (venue_id, kind, value)`.
 6. `account_memberships`: `id`, `venue_id NOT NULL REFERENCES venues(id)`, `contact_id uuid NOT NULL`, `client_account_id uuid NOT NULL`, `role_label varchar(120)`, `is_primary boolean NOT NULL DEFAULT false`, timestamps; `account_memberships_contact_venue_fk` and `account_memberships_account_venue_fk` (composite, `ON DELETE CASCADE`, onto `contacts(id, venue_id)` and `client_accounts(id, venue_id)`); `account_memberships_pair_unique UNIQUE (contact_id, client_account_id)`; `account_memberships_one_primary_unique` (unique, `(contact_id) WHERE is_primary`); `account_memberships_account_idx (client_account_id)`.
 7. `record_merges`: `id`, `venue_id NOT NULL REFERENCES venues(id)`, `kind varchar(20) NOT NULL`, `survivor_id uuid NOT NULL`, `merged_id uuid NOT NULL`, `snapshot jsonb NOT NULL`, `moves jsonb NOT NULL`, `merged_by uuid REFERENCES users(id) ON DELETE SET NULL`, `merged_at timestamptz NOT NULL DEFAULT now()`, `undone_at timestamptz`, `undone_by uuid REFERENCES users(id) ON DELETE SET NULL`, `undo_report jsonb`; checks `record_merges_kind_check`, `record_merges_distinct_check` (`survivor_id <> merged_id`), `record_merges_shape_check` (`jsonb_typeof(moves) = 'array' AND jsonb_typeof(snapshot) = 'object'`), `record_merges_undo_pair_check` (`(undone_at IS NULL) = (undo_report IS NULL)`); indexes `record_merges_merged_idx (venue_id, kind, merged_id, merged_at DESC)` and `record_merges_survivor_idx (venue_id, kind, survivor_id)`.
-8. `enquiries`: `ADD COLUMN IF NOT EXISTS contact_id uuid REFERENCES contacts(id) ON DELETE SET NULL`; `enquiries_contact_idx (contact_id) WHERE contact_id IS NOT NULL`.
-9. The backfill, in this order:
+8. `contact_kept_apart`: `id uuid pk default gen_random_uuid()`, `venue_id uuid NOT NULL REFERENCES venues(id)`, `low_contact_id uuid NOT NULL`, `high_contact_id uuid NOT NULL`, `decided_by uuid REFERENCES users(id) ON DELETE SET NULL`, `decided_at timestamptz NOT NULL DEFAULT now()`, `withdrawn_at timestamptz`, `withdrawn_by uuid REFERENCES users(id) ON DELETE SET NULL`; `contact_kept_apart_low_venue_fk` and `contact_kept_apart_high_venue_fk` (composite, `ON DELETE CASCADE`, onto `contacts(id, venue_id)`); check `contact_kept_apart_order_check` (`low_contact_id < high_contact_id`, so one pair has one key); indexes `contact_kept_apart_live_pair_unique` (unique, `(low_contact_id, high_contact_id) WHERE withdrawn_at IS NULL`) and `contact_kept_apart_high_idx (high_contact_id)`. The backfill writes no marks.
+9. `enquiries`: `ADD COLUMN IF NOT EXISTS contact_id uuid REFERENCES contacts(id) ON DELETE SET NULL`; `enquiries_contact_idx (contact_id) WHERE contact_id IS NOT NULL`.
+10. The backfill, in this order:
 
 ```sql
 -- a. Trim the mirrors; a blank becomes none.
@@ -423,11 +431,11 @@ UPDATE contacts c SET last_contact_at = x.at FROM (
 WHERE c.id = x.id AND x.at IS NOT NULL;
 ```
 
-10. Finish `kind`: `SET DEFAULT 'household'`, `SET NOT NULL`, `client_accounts_kind_check` (`DROP IF EXISTS`, then `ADD`).
+11. Finish `kind`: `SET DEFAULT 'household'`, `SET NOT NULL`, `client_accounts_kind_check` (`DROP IF EXISTS`, then `ADD`).
 
 - [ ] **Step 6: Declare the schema in `schema.ts`**
 
-Every column, constraint and index above, with the same names; the composite keys follow `events_id_venue_unique` (`schema.ts:1356`) and `bookings_event_venue_fk`. `contacts.email` loses `.notNull()`. `clientAccounts.kind` is `varchar("kind", { length: 20 }).notNull().default("household")`. `recordMerges.snapshot` is `jsonb().$type<RecordMergeSnapshot>().notNull()`, `moves` `$type<RecordMergeMove[]>()`, `undoReport` `$type<MergeUndoReport>()`. `contactPoints` and `accountMemberships` follow `contacts`; `recordMerges` follows `followUpTasks`.
+Every column, constraint and index above, with the same names; the composite keys follow `events_id_venue_unique` (`schema.ts:1356`) and `bookings_event_venue_fk`. `contacts.email` loses `.notNull()`. `clientAccounts.kind` is `varchar("kind", { length: 20 }).notNull().default("household")`. `recordMerges.snapshot` is `jsonb().$type<RecordMergeSnapshot>().notNull()`, `moves` `$type<RecordMergeMove[]>()`, `undoReport` `$type<MergeUndoReport>()`. `contactPoints`, `accountMemberships` and `contactKeptApart` follow `contacts`; `recordMerges` follows `followUpTasks`.
 
 - [ ] **Step 7: Append the journal entry**
 
@@ -591,11 +599,11 @@ git commit -m "feat: sales reaches the Clients desk; hallkeepers keep today's ac
 - Test: `packages/api/src/__tests__/people-duplicates-postgres.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2 tables; `people_name_key`; `CLOSE_NAME_SIMILARITY`, `DUPLICATE_REASONS`, `DuplicateSuggestion`.
+- Consumes: Task 2 tables, `contactKeptApart` among them; `people_name_key`; `CLOSE_NAME_SIMILARITY`, `DUPLICATE_REASONS`, `DuplicateSuggestion`.
 - Produces:
   - In `people-records.ts`: `PeopleTx = Parameters<Parameters<Database["transaction"]>[0]>[0]`, `PeopleConn = Database | PeopleTx`, `liveContact(): SQL` and `liveAccount(): SQL` (the "live" predicates from Global Constraints; an account is live when `deleted_at` and `merged_into_id` are null).
   - `duplicateSuggestions(db: PeopleConn, venueId: string, personId: string): Promise<DuplicateSuggestion[]>` and `countDuplicateSuggestions(db: PeopleConn, venueId: string, personId: string): Promise<number>`.
-  - Fixture: `PLATFORM_TARGET: string | undefined` (guarded exactly as `client-search-postgres.test.ts:22-29`); `openPeopleFixture(register: (server: FastifyInstance, db: Database) => Promise<void>): Promise<PeopleFixture>`; `PeopleFixture` has `pool`, `db`, `server`, `venueId`, `otherVenueId` (random venues, slug = id), `users: Record<"admin" | "manager" | "staff" | "sales" | "hallkeeper" | "planner" | "caterer" | "otherStaff" | "platformAdmin", string>` (real `users` rows; `otherStaff` is staff at `otherVenueId`; `platformAdmin` has `platform_role` 'admin' and no venue), `bearer(who)` (the mock token JSON for that user), `addPerson({ name, venueId?, emails?, phones?, organisations? }): Promise<string>` (SQL inserts: the contact, its points normalised by the SQL functions with the first of each kind primary, its memberships with the first primary, and the mirrors), `addOrganisation({ name, kind?, venueId? }): Promise<string>`, `close()`.
+  - Fixture: `PLATFORM_TARGET: string | undefined` (guarded exactly as `client-search-postgres.test.ts:22-29`); `openPeopleFixture(register: (server: FastifyInstance, db: Database) => Promise<void>): Promise<PeopleFixture>`; `PeopleFixture` has `pool`, `db`, `server`, `venueId`, `otherVenueId` (random venues, slug = id), `users: Record<"admin" | "manager" | "staff" | "sales" | "hallkeeper" | "planner" | "caterer" | "otherStaff" | "platformAdmin", string>` (real `users` rows; `otherStaff` is staff at `otherVenueId`; `platformAdmin` has `platform_role` 'admin' and no venue), `bearer(who)` (the mock token JSON for that user), `addPerson({ name, venueId?, emails?, phones?, organisations? }): Promise<string>` (SQL inserts: the contact, its points normalised by the SQL functions with the first of each kind primary, its memberships with the first primary, and the mirrors), `addOrganisation({ name, kind?, venueId? }): Promise<string>`, `keepApart(a: string, b: string, options?: { withdrawn?: boolean }): Promise<void>` (an SQL insert of a mark at the fixture venue, the pair ordered with `LEAST` and `GREATEST`, decided by `users.staff`; `withdrawn` stamps it withdrawn by the same user), `close()`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -629,6 +637,17 @@ describe.skipIf(PLATFORM_TARGET === undefined)("duplicate suggestions on the mig
   it("leaves out merged, deleted and erased people, and other venues", async () => {
     // four more holders of one email: one merged_into_id set, one deleted_at, one erased_at, one at otherVenueId → []
   });
+  it("leaves out a pair someone has marked as two people, from either side", async () => {
+    // a and b hold "apart1@example.test"; f.keepApart(b, a) → duplicateSuggestions for a and for b → [], both counts 0
+  });
+  it("suggests them again once the mark is withdrawn", async () => {
+    // a and b hold "apart2@example.test"; f.keepApart(a, b, { withdrawn: true }) → each suggests the other, ["shared_email"]
+  });
+  it("holds the mark through merges into other records, and lets it go when they are undone", async () => {
+    // "Ailsa Henderson" (a), "Iain Henderson" (b), "I Henderson" (c) and "Iain H" (d) hold "hendersons@example.test"; a and b are kept apart.
+    // a's suggestions, compared as sets of ids: before → {c, d}; after b is merged into c by SQL (b.merged_into_id = c, b.deleted_at = now()) → {d};
+    // after c is merged into d the same way → {}; after both are undone by SQL (both columns back to null) → {c, d}
+  });
 });
 ```
 
@@ -641,7 +660,7 @@ Expected: FAIL, `Failed to load url ../services/people-duplicates.js`.
 
 - [ ] **Step 3: Implement**
 
-Three rules over live people at the venue, the person itself excluded: `shared_email` and `shared_phone`, the same `value` of that kind; `close_name`, both members of one live account and `similarity(people_name_key(a.name), people_name_key(b.name)) >= 0.6`. Reasons come in `DUPLICATE_REASONS` order; suggestions sort by number of reasons descending, then name, then id; at most 50. `organisationName` is the other person's primary live account's name. The count is the length of the list.
+Three rules over live people at the venue, the person itself excluded: `shared_email` and `shared_phone`, the same `value` of that kind; `close_name`, both members of one live account and `similarity(people_name_key(a.name), people_name_key(b.name)) >= 0.6`. Reasons come in `DUPLICATE_REASONS` order; suggestions sort by number of reasons descending, then name, then id; at most 50. `organisationName` is the other person's primary live account's name. The count is the length of the list. A pair is left out when a live mark (`withdrawn_at` null) joins any record of one person's family to any record of the other's, a person's family being the person and every tombstone whose `merged_into_id` leads to them, followed recursively (`WITH RECURSIVE`); so a mark holds across merges in either direction and lapses by itself when the merge is undone.
 
 - [ ] **Step 4: Run it to see it pass**
 
@@ -659,14 +678,14 @@ git commit -m "feat(api): suggest possible duplicate people, never merge them (T
 ### Task 6: People: create, read, edit, contact points and memberships
 
 **Files:**
-- Modify: `packages/api/src/services/people-records.ts`
+- Modify: `packages/api/src/services/people-records.ts`, `packages/api/src/services/people-duplicates.ts` (keeping two people apart)
 - Create: `packages/api/src/routes/people.ts`
 - Modify: `packages/api/src/index.ts` (import beside `crmRoutes`, `:69`; register after it, `:503`)
 - Modify: `packages/api/src/scripts/run-platform-postgres-tests.ts`
 - Test: `packages/api/src/__tests__/people-routes.test.ts` (no database, `buildServer` as in `commercial-spine-routes.test.ts`), `packages/api/src/__tests__/people-routes-postgres.test.ts`
 
 **Interfaces:**
-- Consumes: Task 1 schemas; Task 5 `countDuplicateSuggestions`, `duplicateSuggestions`, the fixture; `canManageCommercial`, `isPlatformAdmin`, `authenticate`.
+- Consumes: Task 1 schemas; Task 2 `contactKeptApart`; Task 5 `countDuplicateSuggestions`, `duplicateSuggestions`, the fixture; `canManageCommercial`, `isPlatformAdmin`, `authenticate`.
 - Produces, in `people-records.ts`:
   - `lockPerson(tx: PeopleTx, scopeVenueId: string | null, personId: string): Promise<PersonLock>`, with `PersonLock = { state: "missing" } | { state: "merged"; mergedIntoId: string } | { state: "live"; row: typeof contacts.$inferSelect }` (`SELECT … FOR UPDATE`; deleted or erased is `missing`).
   - `NewPerson = { venueId: string; name: string; givenName?: string | null; familyName?: string | null; jobTitle?: string | null; roleLabel?: string | null; postalAddress?: string | null; notes?: string | null; ownerUserId: string | null; sourceEnquiryId?: string | null; lastContactAt?: Date | null; contactPoints: readonly ContactPointInput[] }`.
@@ -678,6 +697,7 @@ git commit -m "feat(api): suggest possible duplicate people, never merge them (T
   - `isCommercialMember(db: PeopleConn, venueId: string, userId: string): Promise<boolean>`: a `users` row with that `venue_id` whose role passes `canManageCommercial({ role, venueId, platformRole: "none" }, venueId)`.
   - `updatePersonFields(tx: PeopleTx, row: typeof contacts.$inferSelect, patch: UpdatePerson): Promise<"ok" | "stale">`.
   - `readPersonProfile(db: PeopleConn, scopeVenueId: string | null, personId: string): Promise<PersonProfile | null>` (live only here; Task 11 adds the merged answer).
+- Produces, in `people-duplicates.ts`: `keepApart(tx: PeopleTx, venueId: string, personIds: readonly [string, string], decidedBy: string): Promise<{ mark: KeptApartMark; created: boolean }>` (inserts the ordered pair with a target-less `onConflictDoNothing()`, then reads the live mark) and `withdrawKeptApart(tx: PeopleTx, venueId: string, personIds: readonly [string, string], withdrawnBy: string): Promise<boolean>` (stamps the live mark; false when the pair has none).
 - Produces, in `routes/people.ts`: `peopleRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void>`, with a local `peopleScope(user: JwtUser): { ok: true; venueId: string | null } | { ok: false }` (the shape of `commercialScope` in `crm.ts:39-45`) run first on every route, then validation, then the venue. Routes in this task:
 
 | Route | Answers |
@@ -689,6 +709,8 @@ git commit -m "feat(api): suggest possible duplicate people, never merge them (T
 | `DELETE /people/:personId/contact-points/:pointId` | 204; 404 when the point is not this person's |
 | `PUT /people/:personId/memberships` (`SetMembershipsSchema`) | 200 profile; 404 `ORGANISATION_NOT_FOUND` (nothing changed) |
 | `GET /people/:personId/duplicates` | 200 `DuplicateSuggestion[]`; 404 |
+| `POST /people/:personId/kept-apart` (`KeepApartRequestSchema`) | 201 `KeptApartMark` for a new mark, 200 with the live mark when the pair already has one; 404 when either person is missing or the two are not at one venue; 422 `SAME_RECORD` when both ids are one person |
+| `DELETE /people/:personId/kept-apart/:otherPersonId` | 204, the live mark stamped withdrawn; 404 when the pair has none |
 
 - [ ] **Step 1: Write the failing gate test (no database)**
 
@@ -697,6 +719,7 @@ const ROUTES = [
   ["POST", "/people"], ["GET", `/people/${ID}`], ["PATCH", `/people/${ID}`],
   ["POST", `/people/${ID}/contact-points`], ["DELETE", `/people/${ID}/contact-points/${ID2}`],
   ["PUT", `/people/${ID}/memberships`], ["GET", `/people/${ID}/duplicates`],
+  ["POST", `/people/${ID}/kept-apart`], ["DELETE", `/people/${ID}/kept-apart/${ID2}`],
 ] as const; // Tasks 7, 8, 11 and 12 append theirs
 
 it("asks every people route for a sign-in", async () => { /* each → 401 */ });
@@ -706,7 +729,8 @@ it("refuses the book to every role outside the commercial team, before reading a
 it("lets sales through the door", async () => { /* sales at VENUE_A: each route → not 401 and not 403 */ });
 it("refuses a malformed id or body before the database", async () => {
   // staff: GET /people/not-a-uuid → 400; POST /people { venueId: VENUE_A } → 400;
-  // POST /people/:id/contact-points { kind: "phone", value: "123" } → 400; PUT memberships with two primaries → 400
+  // POST /people/:id/contact-points { kind: "phone", value: "123" } → 400; PUT memberships with two primaries → 400;
+  // POST /people/:id/kept-apart { otherPersonId: "x" } → 400
 });
 ```
 
@@ -745,6 +769,14 @@ it("sets a person's organisations, mirrors the primary, and refuses another venu
   // PUT with an otherVenueId organisation → 404 ORGANISATION_NOT_FOUND and the memberships unchanged; PUT [] → none, mirror null
 it("keeps one point when the same new email is added twice at once", ...);         // Promise.all → statuses [200, 201]; one row
 it("counts and lists the person's possible duplicates", ...);                      // a second holder of the email → count 1, list of one
+it("keeps two people apart, once, from either side", ...);
+  // a and b hold "pair@example.test": POST /people/a/kept-apart { otherPersonId: b } → 201; GET /people/a/duplicates → [];
+  // a's profile duplicateSuggestionCount 0; POST /people/b/kept-apart { otherPersonId: a } → 200, the same mark id; one live row
+it("keeps one mark when both sides press at once", ...);  // a fresh pair, Promise.all of a→b and b→a → statuses [200, 201]; one live row
+it("withdraws the mark, keeps its history, and suggests the pair again", ...);
+  // DELETE /people/a/kept-apart/b → 204; GET /people/a/duplicates → [b]; the row stays, withdrawn_at set, withdrawn_by the actor;
+  // DELETE again → 404
+it("refuses to keep a person apart from themself or from another venue's person", ...); // → 422 SAME_RECORD; → 404
 ```
 
 - [ ] **Step 3: Run both to see them fail**
@@ -754,7 +786,7 @@ Expected: FAIL, 404 where 401 or 201 is expected (no `/people` routes yet).
 
 - [ ] **Step 4: Implement the service and the routes**
 
-Every person write is one transaction that begins with `lockPerson`; until Task 11, a `merged` lock answers 404 like `missing`. `upsertContactPoint`: normalise the value (`normaliseEmail`/`normalisePhone`); if the person holds `(kind, value)`, return it with `created: false`, making it primary first when asked; otherwise insert it with `is_primary` false and a target-less `onConflictDoNothing()` (the schema-from-Drizzle fixtures in Tasks 9 and 10 carry no unique keys), then, when asked or when the person has no primary of that kind, demote the others and make it primary; finally `refreshContactMirror`. `refreshContactMirror`: per kind, if no point is primary make the oldest (`created_at`, then `id`) primary; the same for memberships whose account is live; then set `email`, `phone`, `client_account_id` and `updated_at`. `removeContactPoint` deletes the row then refreshes. `setPersonMemberships` checks every organisation is a live account at the person's venue before changing anything, deletes the memberships not in the list, upserts the rest (no primary in the list: the first is primary) and refreshes. The owner defaults to the actor when the actor `isCommercialMember`, otherwise none; an explicit owner must pass `isCommercialMember` or the answer is 422. `updatePersonFields` compares `expectedUpdatedAt` in SQL as `date_trunc('milliseconds', updated_at) = $1`, because the API serialises milliseconds and PostgreSQL keeps microseconds, and writes `updated_at = new Date()`. Contact points list primary first, then oldest; memberships primary first, then by name. Log `{ event: "people.<verb>", personId }` only.
+Every person write is one transaction that begins with `lockPerson`; until Task 11, a `merged` lock answers 404 like `missing`. `upsertContactPoint`: normalise the value (`normaliseEmail`/`normalisePhone`); if the person holds `(kind, value)`, return it with `created: false`, making it primary first when asked; otherwise insert it with `is_primary` false and a target-less `onConflictDoNothing()` (the schema-from-Drizzle fixtures in Tasks 9 and 10 carry no unique keys), then, when asked or when the person has no primary of that kind, demote the others and make it primary; finally `refreshContactMirror`. `refreshContactMirror`: per kind, if no point is primary make the oldest (`created_at`, then `id`) primary; the same for memberships whose account is live; then set `email`, `phone`, `client_account_id` and `updated_at`. `removeContactPoint` deletes the row then refreshes. `setPersonMemberships` checks every organisation is a live account at the person's venue before changing anything, deletes the memberships not in the list, upserts the rest (no primary in the list: the first is primary) and refreshes. The owner defaults to the actor when the actor `isCommercialMember`, otherwise none; an explicit owner must pass `isCommercialMember` or the answer is 422. `updatePersonFields` compares `expectedUpdatedAt` in SQL as `date_trunc('milliseconds', updated_at) = $1`, because the API serialises milliseconds and PostgreSQL keeps microseconds, and writes `updated_at = new Date()`. Contact points list primary first, then oldest; memberships primary first, then by name. Keeping apart and withdrawing lock both people with `lockPerson` in ascending id order and need both live at one venue: the other person at another venue answers 404 (a platform admin's unscoped lock would otherwise allow it). Log `{ event: "people.<verb>", personId }` only (for a mark, `otherPersonId` too).
 
 - [ ] **Step 5: Run both to see them pass**
 
@@ -763,7 +795,7 @@ Run the commands from Step 3. Expected: both pass, none skipped.
 - [ ] **Step 6: Add the database file to `PLATFORM_POSTGRES_TEST_FILES` and commit**
 
 ```bash
-git add packages/api/src/services/people-records.ts packages/api/src/routes/people.ts packages/api/src/index.ts packages/api/src/scripts/run-platform-postgres-tests.ts packages/api/src/__tests__/people-routes.test.ts packages/api/src/__tests__/people-routes-postgres.test.ts
+git add packages/api/src/services/people-records.ts packages/api/src/services/people-duplicates.ts packages/api/src/routes/people.ts packages/api/src/index.ts packages/api/src/scripts/run-platform-postgres-tests.ts packages/api/src/__tests__/people-routes.test.ts packages/api/src/__tests__/people-routes-postgres.test.ts
 git commit -m "feat(api): people with several emails and phones, memberships and an owner (T-665)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -1157,7 +1189,7 @@ git commit -m "feat(api): undo a merge within 30 days, keeping what changed sinc
 
 **Files:**
 - Modify: `docs/engineering/README.md` (a "People Book" row in "Find the implementation")
-- Modify: `docs/state/tasks.md` (the T-665 row; add it if master still has none)
+- Modify: `docs/state/tasks.md` (the T-665 row, only once PR #126 has merged; see Step 2)
 - Modify: `docs/design/platform-2026-09-26/roadmap.md` (row 8's "Sales has dates and pages until C2"), `docs/design/find-anything-2026-10-07/README.md:97` (the C2 note)
 - Create or modify: `docs/sessions/<date of the work>.md`
 
@@ -1176,7 +1208,7 @@ Expected: all green; the platform receipt lists the four new files passed with z
 
 - [ ] **Step 2: Record what is true**
 
-The engineering-map row names `routes/people.ts`, `services/people-*.ts` and migration 0094, and the boundaries: venue-scoped with composite keys, the mirrors, the lock order, tombstones. The session log records the calls this plan made: a merge sets `deleted_at` beside `merged_into_id` so every existing reader drops a tombstone unchanged; the legacy columns are mirrors; organisation merges and "kept apart" are not built; the pre-deploy-window residual; the provisional migration number. The roadmap and Find notes say sales searches clients since this slice. The task row says local, committed or merged as the evidence shows.
+The engineering-map row names `routes/people.ts`, `services/people-*.ts` and migration 0094, and the boundaries: venue-scoped with composite keys, the mirrors, the lock order, tombstones. The session log records the calls this plan made: a merge sets `deleted_at` beside `merged_into_id` so every existing reader drops a tombstone unchanged; the legacy columns are mirrors; organisation merges are not built; a kept-apart mark names two records and holds across merges by following tombstones; the pre-deploy-window residual; the provisional migration number. The roadmap and Find notes say sales searches clients since this slice. Merge origin/master first. PR #126 (the replacement map) adds the T-665 row: if it has merged, update that row in place to say local, committed or merged as the evidence shows; if it is still open, leave `tasks.md` alone, so the two never conflict, and put the state in the session log and the pull request.
 
 - [ ] **Step 3: Commit, push and hand to the chief of staff**
 
