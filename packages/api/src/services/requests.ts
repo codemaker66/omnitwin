@@ -36,6 +36,7 @@ import { sendEmail, type EmailPayload, type SendOptions } from "./email.js";
 import { requestEscalation } from "./email-templates.js";
 import { withinQuietHours } from "./escalation-clock.js";
 import { readOperatingSettings } from "./venue-operating-settings.js";
+import { pokeEscalationScheduler } from "./escalation-wake.js";
 
 // ---------------------------------------------------------------------------
 // Requests — the core (Ship Friday slice 10, widened by goal 19 S1).
@@ -353,6 +354,8 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
     return deny(409, "REQUEST_RACE", "That request could not be read back — try again.");
   }
 
+  // A new window to wake for (S7); a replay changes nothing.
+  if (!outcome.replay) pokeEscalationScheduler();
   return {
     ok: true,
     replay: outcome.replay,
@@ -648,6 +651,8 @@ export async function transitionRequestCore(
     );
   }
 
+  // A handover sets a relief deadline to wake for (S7).
+  if (transition.to === "handed-over") pokeEscalationScheduler();
   const roomName = await roomNameFor(db, updated.roomId);
   return { ok: true, request: serializeRequest(updated, roomName), fromState: row.state };
 }

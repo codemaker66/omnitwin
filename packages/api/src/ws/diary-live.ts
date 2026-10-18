@@ -18,7 +18,8 @@ import {
 } from "../services/diary-commands.js";
 import { executeConversationCommand, type ConversationChanged } from "../services/conversation-commands.js";
 import type { MutationActor } from "../services/booking-mutations.js";
-import { runEscalationEmailPass, runRequestEscalationPass } from "../services/requests.js";
+import { EscalationScheduler } from "../services/escalation-scheduler.js";
+import { installEscalationScheduler } from "../services/escalation-wake.js";
 import { pushForRequestEscalated, tell } from "../services/push-triggers.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
@@ -73,7 +74,6 @@ const STALE_AFTER_MS = 65_000; // three missed beats and the connection is gone
 /** How often the request escalation sweep looks for an unanswered "now".
  *  Short against the shortest sensible venue window, cheap because the query
  *  is a partial index on exactly those rows. */
-const ESCALATION_SWEEP_INTERVAL_MS = 15_000;
 /** How much of the conversation stream a reconnecting screen is replayed
  *  before it is told to refetch its snapshot instead. */
 const REPLAY_LIMIT = 500;
@@ -572,16 +572,15 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
   // shutdown grace timer in index.ts).
   heartbeat.unref();
 
-  // The escalation sweep. A short timer rather than a cron because the claim
-  // is a conditional UPDATE (escalated_at IS NULL) and the email carries its
-  // own idempotency key: two replicas sweeping together escalate once between
-  // them. An external cron can still call the endpoint; it is the same pass.
-  let sweeping = false;
-  const escalationSweep = setInterval(() => {
-    if (sweeping) return;
-    sweeping = true;
-    void runRequestEscalationPass(db, { logger: server.log })
-      .then((escalated) => {
+  // The escalation sweep, run by a scheduler that wakes only when something
+  // is due (S7; the 18 October outage: a 15-second poll kept Neon awake).
+  // The claim is a conditional UPDATE (escalated_at IS NULL) and the email
+  // carries its own idempotency key, so two replicas sweeping together still
+  // escalate once between them; the endpoint stays for an external cron.
+  const escalationScheduler = new EscalationScheduler({
+    db,
+    logger: server.log,
+    onEscalated: (escalated) => {
         for (const item of escalated) {
           const at = new Date().toISOString();
           emit(server.log, "request.changed", {
@@ -615,21 +614,15 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
             });
           }
         }
-      })
-      // Then the emails quiet hours held back, once they have ended (S7).
-      .then(() => runEscalationEmailPass(db, { logger: server.log }))
-      .catch((error: unknown) => {
-        server.log.error({ err: error }, "request escalation sweep failed");
-      })
-      .finally(() => {
-        sweeping = false;
-      });
-  }, ESCALATION_SWEEP_INTERVAL_MS);
-  escalationSweep.unref();
+    },
+  });
+  escalationScheduler.start();
+  installEscalationScheduler(escalationScheduler);
 
   server.addHook("onClose", () => {
     clearInterval(heartbeat);
-    clearInterval(escalationSweep);
+    escalationScheduler.stop();
+    installEscalationScheduler(null);
     unsubscribe();
     unsubscribeRequestFrames();
     unsubscribeConversationFrames();

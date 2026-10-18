@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
+import { planNextWake } from "../services/escalation-scheduler.js";
 import { notificationRoutes } from "../routes/event-plan-lifecycle.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import {
@@ -586,6 +587,27 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(!refused.ok && refused.code).toBe("HANDOVER_TARGET");
     const still = await readRequest(db, f.staff, staffs.request.id);
     expect("state" in still && still.state).toBe("underway");
+  });
+
+  it("plans the next wake from the database: the soonest window, then the end of quiet hours for an email waiting, then nothing (goal 19 S7)", async () => {
+    const f = await fixture(180);
+    await db.update(schema.requests).set({ state: "resolved", escalationDueAt: null, escalatedAt: new Date(), escalationEmailedAt: new Date() }).where(eq(schema.requests.venueId, f.venueId));
+    const idle = await planNextWake(db, Date.now());
+    const mineOnly = (wake: number | null): boolean => wake === null || wake > Date.now() + 86_400_000 || wake <= Date.now() + 1_000_000;
+    expect(mineOnly(idle)).toBe(true);
+
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    if (!("request" in made)) throw new Error("expected a request");
+    const planned = await planNextWake(db, Date.now());
+    expect(planned).not.toBeNull();
+    expect(Math.abs((planned ?? 0) - Date.parse(made.request.escalationDueAt ?? ""))).toBeLessThanOrEqual(1_000);
+
+    // Escalated inside quiet hours: the email waits, and the wake is 07:00 on the venue's clock.
+    const night = new Date("2026-01-20T22:30:00.000Z");
+    await db.update(schema.requests).set({ escalationDueAt: new Date(night.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
+    await runRequestEscalationPass(db, { now: night, send: () => Promise.resolve(true) });
+    const morning = await planNextWake(db, night.getTime());
+    expect(morning).toBe(Date.parse("2026-01-21T07:00:00.000Z"));
   });
 
   it("shows the booking's own requests to the slab and drops finished ones", async () => {
