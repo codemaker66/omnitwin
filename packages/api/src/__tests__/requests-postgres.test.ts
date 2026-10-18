@@ -492,7 +492,12 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       sentTo.push(payload.to);
       return Promise.resolve(true);
     };
-    const later = new Date(Date.now() + 200_000);
+    // A fixed midday, never the wall clock: between 22:00 and 07:00 the venue's
+    // quiet hours hold the email back, and this test failed every night in CI.
+    // A day before the email-retry test's noon, so neither sweep claims the
+    // other's request whichever runs first.
+    const later = new Date("2026-01-20T12:00:00.000Z");
+    await db.update(schema.requests).set({ escalationDueAt: new Date(later.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
 
     const first = await runRequestEscalationPass(db, { now: later, send });
     expect(first.filter((item) => item.request.id === made.request.id)).toHaveLength(1);
