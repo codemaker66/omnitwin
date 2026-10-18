@@ -93,11 +93,11 @@ Complete, from `packages/api/src/env.ts`. **A miss crashes boot behind Railway's
 
 **Always required:** `DATABASE_URL`.
 
-**Required when `NODE_ENV=production`:** `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, `FRONTEND_URL` (valid URL), `PUBLIC_API_ORIGIN` (must be https, no credentials, path exactly `/`, no query/fragment), `RUNTIME_PROFILE_R2_ACCOUNT_ID`, `RUNTIME_PROFILE_R2_ACCESS_KEY_ID`, `RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY`, `RUNTIME_PROFILE_R2_PRIVATE_BUCKET` (must differ from the other bucket vars).
+**Required when `NODE_ENV=production`:** `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, `FRONTEND_URL` (valid URL), `PUBLIC_API_ORIGIN` (must be https, no credentials, path exactly `/`, no query/fragment), `RUNTIME_PROFILE_R2_ACCOUNT_ID`, `RUNTIME_PROFILE_R2_ACCESS_KEY_ID`, `RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY`, `RUNTIME_PROFILE_R2_PRIVATE_BUCKET` (must differ from the other bucket vars), `PRIVATE_UPLOADS_R2_ACCOUNT_ID`, `PRIVATE_UPLOADS_R2_ACCESS_KEY_ID`, `PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY`, `PRIVATE_UPLOADS_R2_BUCKET` (a private bucket distinct from every other bucket var, with its own token, never `R2_ACCESS_KEY_ID`).
 
 **Must NOT be set:** `VITEST` (boot fails if present).
 
-**All-or-nothing groups — a *partially* set group crashes boot even though each member is individually optional:** legacy uploads (all 5: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL`); runtime profiles (all 4, above); Foundry (all 6: `FOUNDRY_R2_ACCOUNT_ID`, `FOUNDRY_R2_ACCESS_KEY_ID`, `FOUNDRY_R2_SECRET_ACCESS_KEY`, `FOUNDRY_R2_CANDIDATE_BUCKET`, `FOUNDRY_R2_RELEASE_BUCKET`, `FOUNDRY_R2_PUBLIC_URL`); AI assistant (if `AI_ASSISTANT_ENABLED="true"` then provider, model and API key are required, and a base URL too unless the provider is `anthropic`, which calls Claude through Anthropic's SDK; `AI_ASSISTANT_WORKSPACE_ID` is needed only for a Console key not scoped to a workspace).
+**All-or-nothing groups — a *partially* set group crashes boot even though each member is individually optional:** legacy uploads (all 5: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL`); runtime profiles (all 4, above); private uploads (all 4, above); Foundry (all 6: `FOUNDRY_R2_ACCOUNT_ID`, `FOUNDRY_R2_ACCESS_KEY_ID`, `FOUNDRY_R2_SECRET_ACCESS_KEY`, `FOUNDRY_R2_CANDIDATE_BUCKET`, `FOUNDRY_R2_RELEASE_BUCKET`, `FOUNDRY_R2_PUBLIC_URL`); AI assistant (if `AI_ASSISTANT_ENABLED="true"` then provider, model and API key are required, and a base URL too unless the provider is `anthropic`, which calls Claude through Anthropic's SDK; `AI_ASSISTANT_WORKSPACE_ID` is needed only for a Console key not scoped to a workspace).
 
 **AI allowance and price table (T-656):**
 

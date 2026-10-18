@@ -19,7 +19,7 @@ const ALLOWED_CONTENT_TYPES = [
   "application/pdf",
 ] as const;
 
-const UPLOAD_CONTEXTS = ["venue", "space", "asset", "enquiry", "loadout", "public_marketing"] as const;
+export const UPLOAD_CONTEXTS = ["venue", "space", "asset", "enquiry", "loadout", "public_marketing"] as const;
 const UPLOAD_VISIBILITIES = ["private", "public"] as const;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
@@ -119,49 +119,51 @@ export function publicUrlForVisibility(env: Env, key: string, visibility: Upload
 }
 
 // ---------------------------------------------------------------------------
-// S3 client factory (lazy - only created when R2 env vars are present)
+// Storage routing
+//
+// Visibility picks the bucket, and the key prefix must agree with it.
+// Private keys (`private/…`) live only in the PRIVATE_UPLOADS_R2_* bucket,
+// which has no public URL, so a signed URL is the only way to read them.
+// Public keys (`public/…`) live only in the R2_* bucket, which r2.dev serves
+// to anyone. There is no fallback: without the private bucket, private
+// uploads are refused rather than written where r2.dev would publish them.
 // ---------------------------------------------------------------------------
 
-type S3ClientType = import("@aws-sdk/client-s3").S3Client;
-
-let cachedS3: S3ClientType | null = null;
-
-async function getS3Client(env: Env): Promise<S3ClientType> {
-  if (cachedS3 !== null) return cachedS3;
-
-  const { S3Client } = await import("@aws-sdk/client-s3");
-  cachedS3 = new S3Client({
-    region: "auto",
-    endpoint: `https://${env.R2_ACCOUNT_ID ?? ""}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: env.R2_ACCESS_KEY_ID ?? "",
-      secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? "",
-    },
-  });
-  return cachedS3;
+export interface UploadStorage {
+  readonly accountId: string;
+  readonly accessKeyId: string;
+  readonly secretAccessKey: string;
+  readonly bucket: string;
 }
 
-async function createPresignedUrl(
-  env: Env,
-  key: string,
-  contentType: AllowedContentType,
-  contentLengthBytes: number,
-): Promise<string> {
-  const s3 = await getS3Client(env);
-  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+const VISIBILITY_KEY_PREFIX: Readonly<Record<UploadVisibility, string>> = {
+  private: "private/",
+  public: "public/",
+};
 
-  const command = new PutObjectCommand({
-    Bucket: env.R2_BUCKET_NAME ?? "",
-    Key: key,
-    ContentType: contentType,
-    ContentLength: contentLengthBytes,
-  });
+/** The bucket a key of this visibility is written to and read from, or null
+ *  when that storage is not configured or the key's prefix disagrees with
+ *  the visibility. */
+export function uploadStorageFor(env: Env, visibility: UploadVisibility, key: string): UploadStorage | null {
+  if (!key.startsWith(VISIBILITY_KEY_PREFIX[visibility])) return null;
 
-  return getSignedUrl(s3, command, { expiresIn: 600 }); // 10 minutes
-}
+  if (visibility === "private") {
+    if (
+      env.PRIVATE_UPLOADS_R2_ACCOUNT_ID === undefined ||
+      env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID === undefined ||
+      env.PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY === undefined ||
+      env.PRIVATE_UPLOADS_R2_BUCKET === undefined
+    ) {
+      return null;
+    }
+    return {
+      accountId: env.PRIVATE_UPLOADS_R2_ACCOUNT_ID,
+      accessKeyId: env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID,
+      secretAccessKey: env.PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY,
+      bucket: env.PRIVATE_UPLOADS_R2_BUCKET,
+    };
+  }
 
-async function createSignedReadUrl(env: Env, key: string): Promise<string | null> {
   if (
     env.R2_ACCOUNT_ID === undefined ||
     env.R2_ACCESS_KEY_ID === undefined ||
@@ -170,17 +172,92 @@ async function createSignedReadUrl(env: Env, key: string): Promise<string | null
   ) {
     return null;
   }
+  return {
+    accountId: env.R2_ACCOUNT_ID,
+    accessKeyId: env.R2_ACCESS_KEY_ID,
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    bucket: env.R2_BUCKET_NAME,
+  };
+}
 
-  const s3 = await getS3Client(env);
+// ---------------------------------------------------------------------------
+// S3 clients (lazy, one per credential set)
+// ---------------------------------------------------------------------------
+
+type S3ClientType = import("@aws-sdk/client-s3").S3Client;
+
+const s3Clients = new Map<string, S3ClientType>();
+
+async function getS3Client(storage: UploadStorage): Promise<S3ClientType> {
+  const cacheKey = `${storage.accountId}\u0000${storage.accessKeyId}`;
+  const cached = s3Clients.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  // As the asset clients do: without WHEN_REQUIRED, SDK 3.729+ presigns a
+  // PUT with the CRC32 of an empty body, which R2 then holds the upload to.
+  const client = new S3Client({
+    region: "auto",
+    endpoint: `https://${storage.accountId}.r2.cloudflarestorage.com`,
+    forcePathStyle: true,
+    maxAttempts: 3,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    credentials: {
+      accessKeyId: storage.accessKeyId,
+      secretAccessKey: storage.secretAccessKey,
+    },
+  });
+  s3Clients.set(cacheKey, client);
+  return client;
+}
+
+async function createPresignedUrl(
+  storage: UploadStorage,
+  key: string,
+  contentType: AllowedContentType,
+  contentLengthBytes: number,
+): Promise<string> {
+  const s3 = await getS3Client(storage);
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+
+  const command = new PutObjectCommand({
+    Bucket: storage.bucket,
+    Key: key,
+    ContentType: contentType,
+    ContentLength: contentLengthBytes,
+  });
+
+  // The presigner leaves Content-Type unsigned by default, which would let an
+  // uploader store, say, HTML under a PDF's key and have staff open it.
+  return getSignedUrl(s3, command, { expiresIn: 600, signableHeaders: new Set(["content-type"]) }); // 10 minutes
+}
+
+async function createSignedReadUrl(storage: UploadStorage, key: string): Promise<string> {
+  const s3 = await getS3Client(storage);
   const { GetObjectCommand } = await import("@aws-sdk/client-s3");
   const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
 
   const command = new GetObjectCommand({
-    Bucket: env.R2_BUCKET_NAME,
+    Bucket: storage.bucket,
     Key: key,
   });
 
   return getSignedUrl(s3, command, { expiresIn: 300 }); // 5 minutes
+}
+
+/** Where a client reads a stored upload: a five-minute signed URL for a
+ *  private file, the permanent public URL for a public one, or null when the
+ *  file's storage is not configured. */
+export async function readUrlForUpload(
+  env: Env,
+  fileKey: string,
+  visibility: UploadVisibility,
+): Promise<string | null> {
+  const storage = uploadStorageFor(env, visibility, fileKey);
+  if (storage === null) return null;
+  if (visibility === "public") return publicUrlForVisibility(env, fileKey, "public");
+  return createSignedReadUrl(storage, fileKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -268,8 +345,11 @@ async function serializeFileRow(env: Env, row: FileRow): Promise<FileRow & {
   readonly readUrl: string | null;
 }> {
   const visibility = row.visibility === "public" ? "public" : "private";
-  const publicUrl = publicUrlForVisibility(env, row.fileKey, visibility);
-  const readUrl = visibility === "private" ? await createSignedReadUrl(env, row.fileKey) : publicUrl;
+  // A public URL only for a key the public bucket actually holds.
+  const publicUrl = uploadStorageFor(env, visibility, row.fileKey) === null
+    ? null
+    : publicUrlForVisibility(env, row.fileKey, visibility);
+  const readUrl = await readUrlForUpload(env, row.fileKey, visibility);
   return { ...row, publicUrl, readUrl };
 }
 
@@ -307,20 +387,17 @@ export async function uploadRoutes(
       return reply.status(403).send({ error: "You do not have access to this resource", code: "FORBIDDEN" });
     }
 
-    // Check R2 is configured
-    if (
-      env.R2_ACCOUNT_ID === undefined ||
-      env.R2_ACCESS_KEY_ID === undefined ||
-      env.R2_SECRET_ACCESS_KEY === undefined ||
-      env.R2_BUCKET_NAME === undefined
-    ) {
+    const fileKey = buildScopedFileKey(scope, parsed.data.contentType);
+
+    // Refuse rather than fall back: a private file must never be written to
+    // the publicly served bucket because the private one is missing.
+    const storage = uploadStorageFor(env, scope.visibility, fileKey);
+    if (storage === null) {
       return reply.status(503).send({ error: "File uploads not configured", code: "UPLOADS_DISABLED" });
     }
 
-    const fileKey = buildScopedFileKey(scope, parsed.data.contentType);
-
     const uploadUrl = await createPresignedUrl(
-      env,
+      storage,
       fileKey,
       parsed.data.contentType,
       parsed.data.contentLengthBytes,
@@ -348,6 +425,7 @@ export async function uploadRoutes(
       userId: request.user.id,
       fileId: file.id,
       fileKey,
+      bucket: storage.bucket,
       context: parsed.data.context,
       contextId: parsed.data.contextId,
       venueId: scope.venueId,
@@ -390,6 +468,8 @@ export async function uploadRoutes(
       .orderBy(files.uploadedAt);
 
     const data = await Promise.all(rows.map((row) => serializeFileRow(env, row)));
+    // The body carries live signed URLs: no shared or browser cache may keep it.
+    reply.header("Cache-Control", "private, no-store");
     return { data };
   });
 }
