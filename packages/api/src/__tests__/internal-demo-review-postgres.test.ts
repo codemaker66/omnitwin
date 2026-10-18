@@ -9,13 +9,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import * as schema from "../db/schema.js";
 import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
 import { hallkeeperSheetRoutes } from "../routes/hallkeeper-sheet.js";
-import { validateEnv } from "../env.js";
 import { InternalDemoNameSchema } from "../services/internal-demo-review.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
 
 const email = vi.hoisted(() => vi.fn());
 vi.mock("../services/email.js", () => ({ sendEmailAsync: email }));
-vi.mock("../services/pdf-prerender.js", () => ({ schedulePrerender: vi.fn() }));
 
 const target = process.env["VENVIEWER_INTERNAL_DEMO_TEST_DATABASE_URL"];
 if (target !== undefined) {
@@ -48,8 +46,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
     server = Fastify();
-    await server.register(configurationReviewRoutes, { db, prefix: "/configurations",
-      env: validateEnv({ NODE_ENV: "test", DATABASE_URL: target }) });
+    await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
     await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
     await server.ready();
   }, 120000);
@@ -113,6 +110,8 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(saved.config?.reviewStatus).toBe("approved");
     expect(saved.snapshots).toHaveLength(1);
     expect(saved.snapshots[0]?.approvedBy).toBe(f.userId);
+    // Approval stores no PDF anywhere, so no public URL is ever recorded.
+    expect(saved.snapshots[0]?.pdfUrl).toBeNull();
     expect(saved.history.map(row => row.toStatus)).toEqual(["submitted", "under_review", "approved"]);
     expect(saved.audit).toHaveLength(2);
     expect(saved.audit[1]).toMatchObject({ actorUserId: f.userId, metadata: { notifyTeam: false, eventIds: [f.eventId], transition: "approved" } });
@@ -145,6 +144,8 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet?download=true`, headers: f.headers });
     expect(pdf.statusCode).toBe(200);
     expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.headers["cache-control"]).toBe("private, no-store");
+    expect(pdf.headers["location"]).toBeUndefined();
     expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.headers["content-disposition"]).not.toContain("UNREVIEWED");
   });

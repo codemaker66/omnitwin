@@ -12,10 +12,27 @@ import {
 } from "@omnitwin/types";
 import type { Env } from "../env.js";
 import { ANTHROPIC_PROVIDER, AnthropicAIGenerationAdapter } from "./anthropic-draft-adapter.js";
+import {
+  ANTHROPIC_PRICE_TABLE,
+  estimatedCall,
+  hasPrice,
+  reserveForUnreportedRequest,
+  type AICallAttribution,
+  type AIUsageMeter,
+  type PriceTable,
+} from "./ai-usage.js";
 
+/**
+ * A provider of AI drafts. Every call names the venue it is for and the person
+ * who asked (T-656), and every provider holds it to that venue's monthly
+ * allowance and records it in the ledger. The Anthropic provider records what
+ * the call used and cost. The bespoke HTTP gateway reports no usage, so each
+ * of its calls is charged its whole reservation at the price table's highest
+ * rates, marked as an estimate.
+ */
 export interface AIGenerationAdapter {
   readonly status: AIAssistantStatus;
-  generateText(input: AIGenerationInput): Promise<string>;
+  generateText(input: AIGenerationInput, attribution: AICallAttribution): Promise<string>;
 }
 
 export interface AIGenerationInput {
@@ -35,6 +52,12 @@ export interface AIStructuredGenerationInput {
   readonly prompt: string;
   /** JSON Schema of the answer: every object closed and every key required. */
   readonly schema: Record<string, unknown>;
+  /**
+   * Whether the system prompt carries a cache breakpoint: only for a frozen
+   * prompt above the model's minimum cacheable length (512 tokens on Claude
+   * Opus 5.5), with nothing that varies by request in it.
+   */
+  readonly cacheSystem: boolean;
   /** Aborts the provider request, e.g. when the person who asked has gone. */
   readonly signal?: AbortSignal;
 }
@@ -43,7 +66,7 @@ export interface AIStructuredGenerationInput {
  *  provider can; the gateway's bespoke protocol carries text alone. */
 export interface AIStructuredGenerationAdapter {
   readonly status: AIAssistantStatus;
-  generateStructured(input: AIStructuredGenerationInput): Promise<unknown>;
+  generateStructured(input: AIStructuredGenerationInput, attribution: AICallAttribution): Promise<unknown>;
 }
 
 const AdapterResponseSchema = z.object({
@@ -78,17 +101,35 @@ export class DisabledAIGenerationAdapter implements AIGenerationAdapter, AIStruc
   }
 }
 
+/**
+ * The bespoke HTTP gateway: any provider but `anthropic`, sent
+ * `{ model, useCase, prompt, context }` and answering `{ text }`. It reports
+ * no usage, so it is held to the venue's allowance on the safe side (T-656):
+ * each call reserves the most the price table's dearest rates could charge
+ * for it, and is recorded at that whole reservation, marked as an estimate,
+ * however it ended.
+ */
 export class HttpAIGenerationAdapter implements AIGenerationAdapter {
   readonly status: AIAssistantStatus;
+  private readonly provider: string;
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly model: string;
+  private readonly usage: AIUsageMeter;
+  private readonly prices: PriceTable;
+  private readonly send: (url: string, init: RequestInit) => Promise<Response>;
 
   constructor(input: {
     readonly provider: string;
     readonly model: string;
     readonly baseUrl: string;
     readonly apiKey: string;
+    /** Holds each call to its venue's allowance and records its estimated cost (T-656). */
+    readonly usage: AIUsageMeter;
+    /** The prices the estimate is made at; the current table unless a test names another. */
+    readonly prices?: PriceTable;
+    /** Replaces the network call, for tests. */
+    readonly send?: (url: string, init: RequestInit) => Promise<Response>;
   }) {
     this.status = AIAssistantStatusSchema.parse({
       configured: true,
@@ -96,34 +137,65 @@ export class HttpAIGenerationAdapter implements AIGenerationAdapter {
       model: input.model,
       disabledReason: null,
     });
+    this.provider = input.provider;
     this.baseUrl = input.baseUrl;
     this.apiKey = input.apiKey;
     this.model = input.model;
+    this.usage = input.usage;
+    this.prices = input.prices ?? ANTHROPIC_PRICE_TABLE;
+    this.send = input.send ?? ((url, init) => fetch(url, init));
   }
 
-  async generateText(input: AIGenerationInput): Promise<string> {
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: this.model,
-        useCase: input.useCase,
-        prompt: input.prompt,
-        context: input.context,
-      }),
+  async generateText(input: AIGenerationInput, attribution: AICallAttribution): Promise<string> {
+    const body = JSON.stringify({
+      model: this.model,
+      useCase: input.useCase,
+      prompt: input.prompt,
+      context: input.context,
     });
-    if (!response.ok) {
-      throw new Error(`AI adapter request failed with ${String(response.status)}`);
+    const reserveMicroUsd = reserveForUnreportedRequest(this.prices, body);
+    const hold = await this.usage.hold({
+      venueId: attribution.venueId,
+      userId: attribution.userId,
+      feature: input.useCase,
+      provider: this.provider,
+      requestedModel: this.model,
+      priceTableVersion: this.prices.version,
+      reserveMicroUsd,
+    });
+    let outcome: "ok" | "error" = "error";
+    try {
+      const response = await this.send(this.baseUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body,
+      });
+      if (!response.ok) {
+        throw new Error(`AI adapter request failed with ${String(response.status)}`);
+      }
+      const payload: unknown = await response.json();
+      const text = AdapterResponseSchema.parse(payload).text;
+      outcome = "ok";
+      return text;
+    } finally {
+      // Charged however the call ended: the gateway may have spent before it failed.
+      await hold.settle(estimatedCall(this.model, reserveMicroUsd, outcome));
     }
-    const payload: unknown = await response.json();
-    return AdapterResponseSchema.parse(payload).text;
   }
 }
 
-export function createAIGenerationAdapterFromEnv(env: Env): AIGenerationAdapter {
+/**
+ * The provider the environment names, or a disabled one saying why. Every
+ * provider is metered by `usage` (T-656). Claude is called only with a model
+ * the price table lists: a call that cannot be priced cannot be held to an
+ * allowance, so an unlisted model leaves AI off rather than run unbounded.
+ * The gateway, which reports no usage, is charged each call's whole
+ * reservation at the table's highest rates.
+ */
+export function createAIGenerationAdapterFromEnv(env: Env, usage: AIUsageMeter): AIGenerationAdapter {
   if (env.AI_ASSISTANT_ENABLED !== "true") {
     return new DisabledAIGenerationAdapter();
   }
@@ -137,11 +209,17 @@ export function createAIGenerationAdapterFromEnv(env: Env): AIGenerationAdapter 
   // Claude is called through Anthropic's own SDK; its endpoint is the SDK's
   // unless a base URL is set. Any other provider speaks the generic HTTP shape.
   if (env.AI_ASSISTANT_PROVIDER === ANTHROPIC_PROVIDER) {
+    if (!hasPrice(ANTHROPIC_PRICE_TABLE, env.AI_ASSISTANT_MODEL)) {
+      return new DisabledAIGenerationAdapter(
+        `AI drafts are off: ${env.AI_ASSISTANT_MODEL} has no price in the usage table, so its cost cannot be held to a venue's allowance.`,
+      );
+    }
     return new AnthropicAIGenerationAdapter({
       model: env.AI_ASSISTANT_MODEL,
       apiKey: env.AI_ASSISTANT_API_KEY,
       baseUrl: env.AI_ASSISTANT_BASE_URL,
       workspaceId: env.AI_ASSISTANT_WORKSPACE_ID,
+      usage,
     });
   }
   if (env.AI_ASSISTANT_BASE_URL === undefined) {
@@ -152,13 +230,14 @@ export function createAIGenerationAdapterFromEnv(env: Env): AIGenerationAdapter 
     model: env.AI_ASSISTANT_MODEL,
     baseUrl: env.AI_ASSISTANT_BASE_URL,
     apiKey: env.AI_ASSISTANT_API_KEY,
+    usage,
   });
 }
 
 /** The provider that reads event briefs (T-650): the Anthropic provider, or
  *  a disabled one saying why. The gateway cannot answer in a given shape. */
-export function createAIStructuredGenerationAdapterFromEnv(env: Env): AIStructuredGenerationAdapter {
-  const adapter = createAIGenerationAdapterFromEnv(env);
+export function createAIStructuredGenerationAdapterFromEnv(env: Env, usage: AIUsageMeter): AIStructuredGenerationAdapter {
+  const adapter = createAIGenerationAdapterFromEnv(env, usage);
   if (adapter instanceof AnthropicAIGenerationAdapter || adapter instanceof DisabledAIGenerationAdapter) return adapter;
   return new DisabledAIGenerationAdapter("Reading event briefs needs the Anthropic provider.");
 }
@@ -220,9 +299,11 @@ export function buildAIDraftPrompt(input: CreateAIDraftRequest): string {
   ].join("\n");
 }
 
+/** A review-gated draft, from a call attributed to the venue it is for and the person who asked. */
 export async function generateAIDraft(
   adapter: AIGenerationAdapter,
   request: CreateAIDraftRequest,
+  attribution: AICallAttribution,
   now: Date = new Date(),
 ): Promise<AIDraft> {
   const parsed = CreateAIDraftRequestSchema.parse(request);
@@ -231,7 +312,7 @@ export async function generateAIDraft(
     instructions: buildAIDraftInstructions(parsed),
     prompt: buildAIDraftPrompt(parsed),
     context: parsed.context,
-  });
+  }, attribution);
   return createReviewGatedAIDraft({
     useCase: parsed.useCase,
     title: titleForAIDraft(parsed.useCase),

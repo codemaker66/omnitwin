@@ -13,7 +13,7 @@ import { listVenueHandlers, listVenueRequests, makeVenueRequest, moveVenueReques
 import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
 import { SlotRequests } from "./SlotRequests.js";
 import { useAuthStore } from "../../stores/auth-store.js";
-import { chimeWorthy, playArrivalChime, rememberForChime, type ChimeMemory } from "./arrival-chime.js";
+import { chimeWorthy, playArrivalChime, rememberForChime, type ChimeMemory } from "../../lib/sound-registry.js";
 import {
   SLOT_REQUESTS_UNAVAILABLE,
   SlotRequestsContext,

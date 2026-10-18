@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 393 cases. Four hosted CPU shards execute
-388 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 401 cases. Four hosted CPU shards execute
+396 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -131,7 +131,18 @@ and the CPU partition from 384 to 386. The next, on 16 October 2026, adds two
 ordinary route-mocked cases for the enquiry's Diary answer (T-635): the
 Enquiries desk answering with nothing to press and Approve holding its place,
 on a desk and on a phone (`enquiries-diary-answer.spec.ts`); this changes the
-inventory from 391 to 393 and the CPU partition from 386 to 388.
+inventory from 391 to 393 and the CPU partition from 386 to 388. The next, on
+18 October 2026, adds eight cases as expected skips: live co-editing v1
+(T-664), two signed-in venue staff on one layout against the real stack, the
+presence row with the room each is viewing, a move, a placement and a delete
+reaching the other browser's scene within the budget by timestamps and then
+committing, the later write on one table winning with the person it overrode
+told, a dropped connection resyncing from the server, the saved layout holding
+exactly the last writes, and a client seeing nothing new
+(`layout-live-coediting.spec.ts`). They run only with the live stack
+(`E2E_LAYOUT_LIVE=1`), so the hosted shards record them as skips; this changes
+the inventory from 393 to 401, the CPU partition from 388 to 396 and the
+expected skips from 46 to 54.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

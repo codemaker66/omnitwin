@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { FORWARD_BOOK_RECORD_ROLES } from "@omnitwin/types";
 import * as spacesApi from "../../api/spaces.js";
 import type { VenueDetail } from "../../api/spaces.js";
+import { diaryVenueOf, hasRole } from "../../lib/role-capabilities.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { ChangeoverSettings } from "./changeovers/ChangeoverSettings.js";
+import { ForwardBookSettings } from "./forward-book/ForwardBookSettings.js";
 import { markInitials, markInk } from "./venue-mark.js";
 import "./VenueSettings.css";
 
@@ -45,6 +48,12 @@ function venueFormChanged(
 
 export function VenueSettings(): ReactElement {
   const venueId = useAuthStore((state) => state.user?.venueId) ?? null;
+  const user = useAuthStore((state) => state.user);
+  // Which rooms' dates the public may read: shown to everyone who reads the
+  // Diary (the API's canReadDiary); recorded or cleared only by the venue's
+  // own admin or manager (canRecordForwardBook).
+  const readsDiary = user !== null && diaryVenueOf(user) !== null;
+  const recordsForwardBook = user !== null && user.venueId === venueId && hasRole(FORWARD_BOOK_RECORD_ROLES, user.role);
   const addToast = useToastStore((state) => state.addToast);
 
   const [venue, setVenue] = useState<VenueDetail | null>(null);
@@ -331,6 +340,7 @@ export function VenueSettings(): ReactElement {
       </div>
 
       <ChangeoverSettings venueId={venueId} />
+      {readsDiary && <ForwardBookSettings venueId={venueId} canRecord={recordsForwardBook} />}
     </section>
   );
 }

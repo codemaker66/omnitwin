@@ -76,6 +76,11 @@ import { GrandHallModel } from "../grand-hall/GrandHallModel.js";
 import { HallViewDirector, HALL_VIEW_POSES, HALL_WALK } from "../grand-hall/HallViewDirector.js";
 import { HALL_HEIGHT } from "../grand-hall/hall-spec.js";
 import { HallLightRig } from "../grand-hall/HallLightRig.js";
+import { HallSky } from "../grand-hall/HallSky.js";
+import { HallSunLight } from "../grand-hall/HallSunLight.js";
+import { hallSettingRequested, hallSkyRequested } from "../../lib/hall-sky-access.js";
+import { HallContext } from "../grand-hall/HallContext.js";
+import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 
@@ -441,6 +446,10 @@ export function PlannerScene(): ReactElement {
   const captureDrawn = splatActive && loadedChunks > 0;
   // The drawn hall stands in a dark room; everything else on parchment.
   const hallDrawn = realHall && meshVisible;
+  // The real sun, moon and sky over the drawn hall, where this device asks for them.
+  const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
+  const skyLit = hallSkyAsked && hallDrawn && !timelinePreviewActive;
+  const hallSetting = useMemo(() => (typeof window === "undefined" ? "none" : hallSettingRequested(window.location.search)), []);
   // A capture that fails behind the drawn hall changes nothing on screen: the
   // camera and a walk of the drawn hall carry on.
   const captureInUse = !(realHall && sceneLayerMode === "mesh");
@@ -531,9 +540,10 @@ export function PlannerScene(): ReactElement {
         onPointerCancelCapture={markCameraInteractionSettling}
         onPointerLeave={markCameraInteractionSettling}
       >
+        {hallSkyAsked && <HallOpeningHour />}
         <Canvas
           onCreated={handleCanvasCreated}
-          shadows={furnitureLighting === "panorama-shadow" ? "percentage" : false}
+          shadows={furnitureLighting === "panorama-shadow" || skyLit ? "percentage" : false}
           frameloop="demand"
           dpr={canvasDpr}
           gl={canvasGl}
@@ -556,12 +566,17 @@ export function PlannerScene(): ReactElement {
           {furnitureLighting !== "baseline" ? (
             <FurnitureLightingExperiment shadows={furnitureLighting === "panorama-shadow"} />
           ) : realHall ? (
-            <HallLightRig mood={hallMood} standInEnvironment={!hallDrawn} />
+            <>
+              <HallLightRig mood={hallMood} standInEnvironment={!hallDrawn} />
+              {skyLit && <HallSky />}
+              {skyLit && <HallSunLight />}
+              {skyLit && hallSetting === "city" && <HallContext />}
+            </>
           ) : (
             <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
           )}
           {meshVisible && (realHall ? (
-            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} />
+            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} />
           ) : roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (

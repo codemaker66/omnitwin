@@ -15,6 +15,7 @@ import { SignOutAskContext, StaffShellContext, useInStaffShell, useShellFrame, t
 import { FindPalette } from "./find/FindPalette.js";
 import type { FindPlace, FindSource, FindTarget } from "./find/find-model.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
+import { forgetPushAlertsThen } from "../../lib/push-alerts.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
   ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
@@ -48,6 +49,9 @@ interface DashboardLayoutProps {
   /** What the page adds to Find while it shows (the Diary's board). It must
    *  keep its identity across the page's renders. */
   readonly findSource?: FindSource;
+  /** "none" draws the page alone: no header, nav or account menu (the wall
+   *  display, goal 19 S8, which a passer-by in a corridor can touch). */
+  readonly chrome?: "full" | "none";
   readonly children: ReactNode;
 }
 
@@ -144,7 +148,11 @@ interface SignOutButtonProps {
 function ClerkSignOutButton(props: SignOutButtonProps): React.ReactElement {
   const { signOut } = useClerk();
   const handleSignOut = (): void => {
-    props.askFirst(() => { props.onLocalSignOut(); void signOut(); });
+    // This device's alerts are forgotten first, while the token still works;
+    // the sign-out itself never waits on that for long.
+    props.askFirst(() => {
+      forgetPushAlertsThen(() => { props.onLocalSignOut(); void signOut(); });
+    });
   };
 
   return (
@@ -175,7 +183,7 @@ function anotherDialogOpen(): boolean {
   return document.querySelector('[aria-modal="true"], [role="alertdialog"]') !== null;
 }
 
-function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, findSource, children }: DashboardLayoutProps): React.ReactElement {
+function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, findSource, chrome, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -489,6 +497,14 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
   const nameInitials = user?.name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("") ?? "";
   const initials = (nameInitials.length > 0 ? nameInitials : "V").toLocaleUpperCase("en-GB");
   const roleLabel = platformRole === "admin" ? "Platform admin" : ROLE_LABELS[user?.role ?? ""] ?? "Workspace member";
+
+  if (chrome === "none") {
+    return (
+      <main className="dashboard-layout-content dashboard-layout-content--bare" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
+        <SignOutAskContext.Provider value={askBeforeSignOut}>{children}</SignOutAskContext.Provider>
+      </main>
+    );
+  }
 
   return (
     <>
