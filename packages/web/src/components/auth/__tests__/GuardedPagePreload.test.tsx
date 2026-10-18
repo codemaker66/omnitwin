@@ -92,6 +92,7 @@ vi.mock("../../../pages/DashboardPage.js", () => pageModule("DashboardPage"));
 vi.mock("../../../pages/OpsHandoffPage.js", () => pageModule("OpsHandoffPage"));
 vi.mock("../../../pages/EventDayOpsPage.js", () => pageModule("EventDayOpsPage"));
 vi.mock("../../../pages/ClientEventPage.js", () => pageModule("ClientEventPage"));
+vi.mock("../../../pages/ClientHomePage.js", () => pageModule("ClientHomePage"));
 vi.mock("../../../pages/EventArchitectPage.js", () => pageModule("EventArchitectPage"));
 vi.mock("../../../pages/TradesHallAssetStatusPage.js", () => pageModule("TradesHallAssetStatusPage"));
 vi.mock("../../../pages/CaptureIntakePage.js", () => pageModule("CaptureIntakePage"));
@@ -135,6 +136,8 @@ const DENIED: readonly DeniedRoute[] = [
   // until billing exists, and the internal sales deck with it.
   { path: "/pricing", page: "PricingPage", allowed: venueAdmin, denied: staff, heading: "Access needed" },
   { path: "/demo", page: "DemoShowcasePage", allowed: venueAdmin, denied: staff, heading: "Access needed" },
+  // Fix-first 12: the client's own home admits the client's side only.
+  { path: "/events", page: "ClientHomePage", allowed: planner, denied: staff, heading: "Access needed" },
 ];
 // Every signed-in account may open its own client event page.
 const GUARDED: readonly GuardedRoute[] = [...DENIED, { path: "/events/event-1", page: "ClientEventPage", allowed: client }];
