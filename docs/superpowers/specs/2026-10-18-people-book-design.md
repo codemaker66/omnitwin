@@ -1,6 +1,6 @@
 # The People Book: design
 
-Design, 18 October 2026. Status: **draft for Blake's approval** (nothing is built until he approves it).
+Design, 18 October 2026. Status: **approved by Blake on 18 October 2026, as shown in the mockup.**
 Part of the replacement map (T-665, `docs/superpowers/specs/2026-10-18-replacement-map-design.md`), wave 1,
 the first build. Branch `claude/people-book-20261018`.
 
@@ -13,6 +13,10 @@ the first build. Branch `claude/people-book-20261018`.
   sets their rules (requirement DR-31), and they arrive in wave 2.
 - **Marketing**: unknown; Blake will ask the venue. Until then marketing is off by default.
 - **One tap for bookings and money**; templates a person approved once send by themselves.
+- **Old Salesforce records** (18 October): records with no contact for over two years stay out unless booked, as
+  the privacy policy requires; they remain only in the venue's own final Salesforce export.
+- **Trades House's charity data** (18 October): if its Salesforce also holds members, crafts or donations,
+  Venviewer takes those over too, so Salesforce can be switched off entirely.
 
 What "reverse engineer" means in practice: Trades House exports its own data and its own org's configuration
 (custom objects and fields, reports in use, email templates and automation) from inside its own Salesforce org,
@@ -189,6 +193,14 @@ M and N choose the kind. `activities` gains an optional person and organisation 
 - **Rollback** stays open until the next batch is applied. It removes rows the batch created and restores fields
   it changed from a per-field snapshot, and it refuses, with a list, any row touched here since (merged, linked to
   an enquiry, given a logged call, or erased).
+- **What comes across** (Blake, 18 October): booked clients, and anything inside the policy's six-year accounts
+  window, with their full history. Records with no contact for over two years and no booking stay out; the dry
+  run counts them so the venue sees what it is leaving behind.
+- **Charity records** (Blake, 18 October: replace all of it). The import's first job is to survey what the org
+  holds. If it carries members, crafts, committees or donations (for example the Nonprofit Success Pack's
+  household accounts and donations stored as Opportunities, recognisable by their `npe01__`, `npo02__` and `npsp__`
+  prefixes), those records are kept apart and get their own design as a new family of the replacement map. A
+  donation never lands as a venue deal, and a member becomes a venue client only when they book.
 - **Logged emails** (Salesforce's EmailMessage records) come in as timeline entries with their text. Attachments
   and Salesforce Files (signed contracts, plans) are listed with counts in the dry run and wait for the documents
   spine; until then they stay in the venue's own archived export.
