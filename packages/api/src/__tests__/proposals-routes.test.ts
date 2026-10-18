@@ -325,6 +325,17 @@ describe("quote routes", () => {
 });
 
 describe("public proposal share route", () => {
+  // The older share-code path retires on a date (18 Oct 2026 by default);
+  // these cases read the path as it stands until then.
+  const sunset = process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+  beforeAll(() => {
+    process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = "2099-01-01T00:00:00.000Z";
+  });
+  afterAll(() => {
+    if (sunset === undefined) delete process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+    else process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = sunset;
+  });
+
   it("rejects malformed share codes at the validation boundary", async () => {
     const res = await server.inject({ method: "GET", url: "/public/proposals/ab" });
     expect(res.statusCode).toBe(400);
@@ -353,6 +364,28 @@ describe("public proposal share route", () => {
     });
     expect(res.statusCode).not.toBe(400);
     expect(res.statusCode).not.toBe(401);
+  });
+
+  it("answers 410 once the retirement date has passed, before reading the code or the database", async () => {
+    const saved = process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+    process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = "2000-01-01T00:00:00.000Z";
+    try {
+      const malformed = await server.inject({ method: "GET", url: "/public/proposals/ab" });
+      expect(malformed.statusCode).toBe(410);
+      const body = JSON.parse(malformed.body) as { code: string };
+      expect(body.code).toBe("SHARE_CODE_RETIRED");
+      expect(malformed.headers["link"]).toContain("/proposal-share/");
+
+      const respond = await server.inject({
+        method: "POST",
+        url: "/public/proposals/abcdef/respond",
+        payload: { action: "approve" },
+      });
+      expect(respond.statusCode).toBe(410);
+    } finally {
+      if (saved === undefined) delete process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+      else process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = saved;
+    }
   });
 });
 
