@@ -72,9 +72,12 @@ import type {
   EventArchitectRun,
   EventArchitectStrategy,
   LayoutValidatorRun,
+  MergeUndoReport,
   PricingAssumptionInput,
   ProposalCommentAuthorType,
   ProposalVersionPayload,
+  RecordMergeMove,
+  RecordMergeSnapshot,
   ReconstructionQaReport,
   ReconstructionReleaseArtifactRef,
   ReconstructionReleaseManifest,
@@ -732,6 +735,9 @@ export const enquiries = pgTable("enquiries", {
   // is filed against the venue's first room with roomChosen false.
   source: varchar("source", { length: 20 }),
   roomChosen: boolean("room_chosen").notNull().default(true),
+  // Migration 0095: the People Book's person this enquiry came from. The
+  // previous release wrote none; create-from-enquiry links one when worked.
+  contactId: uuid("contact_id").references((): AnyPgColumn => contacts.id, { onDelete: "set null" }),
 }, (table) => [
   index("enquiries_venue_state_idx").on(table.venueId, table.state),
   index("enquiries_user_id_idx").on(table.userId),
@@ -746,6 +752,7 @@ export const enquiries = pgTable("enquiries", {
   index("enquiries_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
   check("enquiries_state_check", sql`${table.state} IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')`),
   check("enquiries_source_check", sql`${table.source} IS NULL OR ${table.source} IN ('website', 'walkthrough', 'planner', 'phone', 'email')`),
+  index("enquiries_contact_idx").on(table.contactId).where(sql`${table.contactId} IS NOT NULL`),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -784,9 +791,33 @@ export const clientAccounts = pgTable("client_accounts", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Migration 0095, the People Book: an organisation or a household
+  // (CLIENT_ACCOUNT_KINDS in @omnitwin/types). The previous release writes no
+  // kind, so a new account it makes is a household by default.
+  kind: varchar("kind", { length: 20 }).notNull().default("household"),
+  address: text("address"),
+  website: varchar("website", { length: 255 }),
+  vatNumber: varchar("vat_number", { length: 40 }),
+  notes: text("notes"),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  // Where an imported record came from; both or neither.
+  sourceSystem: varchar("source_system", { length: 40 }),
+  sourceId: varchar("source_id", { length: 255 }),
+  // Set when merged into another account, which then speaks for it.
+  mergedIntoId: uuid("merged_into_id").references((): AnyPgColumn => clientAccounts.id, { onDelete: "restrict" }),
 }, (table) => [
   index("client_accounts_venue_name_idx").on(table.venueId, table.name),
   index("client_accounts_source_enquiry_idx").on(table.sourceEnquiryId),
+  // Composite identity for the People Book's tenant-integrity keys
+  // (account_memberships_account_venue_fk), as events_id_venue_unique.
+  unique("client_accounts_id_venue_unique").on(table.id, table.venueId),
+  uniqueIndex("client_accounts_venue_source_unique").on(table.venueId, table.sourceSystem, table.sourceId)
+    .where(sql`${table.sourceId} IS NOT NULL`),
+  index("client_accounts_merged_into_idx").on(table.mergedIntoId).where(sql`${table.mergedIntoId} IS NOT NULL`),
+  index("client_accounts_owner_idx").on(table.ownerUserId).where(sql`${table.ownerUserId} IS NOT NULL`),
+  check("client_accounts_source_pair_check", sql`(${table.sourceSystem} IS NULL) = (${table.sourceId} IS NULL)`),
+  check("client_accounts_not_merged_into_self", sql`${table.mergedIntoId} <> ${table.id}`),
+  check("client_accounts_kind_check", sql`${table.kind} IN ('organisation', 'household')`),
 ]);
 
 export const contacts = pgTable("contacts", {
@@ -794,17 +825,135 @@ export const contacts = pgTable("contacts", {
   venueId: uuid("venue_id").notNull().references(() => venues.id),
   clientAccountId: uuid("client_account_id").references(() => clientAccounts.id, { onDelete: "set null" }),
   name: varchar("name", { length: 200 }).notNull(),
-  email: varchar("email", { length: 255 }).notNull(),
+  // email, phone and clientAccountId mirror the primary email point, the
+  // primary phone point and the primary membership (0095). A person may
+  // have no email.
+  email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 50 }),
   roleLabel: varchar("role_label", { length: 120 }),
   sourceEnquiryId: uuid("source_enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Migration 0095, the People Book.
+  givenName: varchar("given_name", { length: 100 }),
+  familyName: varchar("family_name", { length: 100 }),
+  jobTitle: varchar("job_title", { length: 120 }),
+  postalAddress: text("postal_address"),
+  notes: text("notes"),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  // The latest enquiry, deal, activity or sent proposal with this person.
+  lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
+  // Where an imported record came from; both or neither.
+  sourceSystem: varchar("source_system", { length: 40 }),
+  sourceId: varchar("source_id", { length: 255 }),
+  // A merged person is a tombstone: merged_into_id and deleted_at set together.
+  mergedIntoId: uuid("merged_into_id").references((): AnyPgColumn => contacts.id, { onDelete: "restrict" }),
+  erasedAt: timestamp("erased_at", { withTimezone: true }),
 }, (table) => [
   index("contacts_venue_email_idx").on(table.venueId, table.email),
   index("contacts_account_idx").on(table.clientAccountId),
   index("contacts_source_enquiry_idx").on(table.sourceEnquiryId),
+  // Composite identity for the People Book's tenant-integrity keys
+  // (contact_points, account_memberships, contact_kept_apart), as
+  // events_id_venue_unique.
+  unique("contacts_id_venue_unique").on(table.id, table.venueId),
+  uniqueIndex("contacts_venue_source_unique").on(table.venueId, table.sourceSystem, table.sourceId)
+    .where(sql`${table.sourceId} IS NOT NULL`),
+  index("contacts_merged_into_idx").on(table.mergedIntoId).where(sql`${table.mergedIntoId} IS NOT NULL`),
+  index("contacts_owner_idx").on(table.ownerUserId).where(sql`${table.ownerUserId} IS NOT NULL`),
+  check("contacts_source_pair_check", sql`(${table.sourceSystem} IS NULL) = (${table.sourceId} IS NULL)`),
+  check("contacts_not_merged_into_self", sql`${table.mergedIntoId} <> ${table.id}`),
+]);
+
+// ---------------------------------------------------------------------------
+// 7d. The People Book (0095): a person's emails and phones, their
+// organisations, and the pairs a person has decided are two people. Each row
+// is in its person's venue, held by a composite key onto contacts(id,
+// venue_id), and goes with the person.
+// ---------------------------------------------------------------------------
+
+export const contactPoints = pgTable("contact_points", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  contactId: uuid("contact_id").notNull(),
+  // CONTACT_POINT_KINDS. value is the normalised key (normaliseEmail,
+  // normalisePhone); displayValue is what was written.
+  kind: varchar("kind", { length: 10 }).notNull(),
+  value: varchar("value", { length: 255 }).notNull(),
+  displayValue: varchar("display_value", { length: 255 }).notNull(),
+  label: varchar("label", { length: 20 }).notNull().default("other"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  sourceSystem: varchar("source_system", { length: 40 }),
+  sourceId: varchar("source_id", { length: 255 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.contactId, table.venueId],
+    foreignColumns: [contacts.id, contacts.venueId],
+    name: "contact_points_contact_venue_fk",
+  }).onDelete("cascade"),
+  unique("contact_points_contact_kind_value_unique").on(table.contactId, table.kind, table.value),
+  uniqueIndex("contact_points_one_primary_unique").on(table.contactId, table.kind).where(sql`${table.isPrimary}`),
+  index("contact_points_venue_kind_value_idx").on(table.venueId, table.kind, table.value),
+  check("contact_points_kind_check", sql`${table.kind} IN ('email', 'phone')`),
+  check("contact_points_label_check", sql`${table.label} IN ('work', 'personal', 'mobile', 'other')`),
+  check("contact_points_value_check", sql`${table.value} <> '' AND ${table.displayValue} <> ''`),
+  check("contact_points_source_pair_check", sql`(${table.sourceSystem} IS NULL) = (${table.sourceId} IS NULL)`),
+]);
+
+export const accountMemberships = pgTable("account_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  contactId: uuid("contact_id").notNull(),
+  clientAccountId: uuid("client_account_id").notNull(),
+  roleLabel: varchar("role_label", { length: 120 }),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.contactId, table.venueId],
+    foreignColumns: [contacts.id, contacts.venueId],
+    name: "account_memberships_contact_venue_fk",
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.clientAccountId, table.venueId],
+    foreignColumns: [clientAccounts.id, clientAccounts.venueId],
+    name: "account_memberships_account_venue_fk",
+  }).onDelete("cascade"),
+  unique("account_memberships_pair_unique").on(table.contactId, table.clientAccountId),
+  uniqueIndex("account_memberships_one_primary_unique").on(table.contactId).where(sql`${table.isPrimary}`),
+  index("account_memberships_account_idx").on(table.clientAccountId),
+]);
+
+export const contactKeptApart = pgTable("contact_kept_apart", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  // The lower id first, so one pair has one key.
+  lowContactId: uuid("low_contact_id").notNull(),
+  highContactId: uuid("high_contact_id").notNull(),
+  decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
+  // A withdrawn mark stays as history.
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  withdrawnBy: uuid("withdrawn_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [
+  foreignKey({
+    columns: [table.lowContactId, table.venueId],
+    foreignColumns: [contacts.id, contacts.venueId],
+    name: "contact_kept_apart_low_venue_fk",
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.highContactId, table.venueId],
+    foreignColumns: [contacts.id, contacts.venueId],
+    name: "contact_kept_apart_high_venue_fk",
+  }).onDelete("cascade"),
+  check("contact_kept_apart_order_check", sql`${table.lowContactId} < ${table.highContactId}`),
+  uniqueIndex("contact_kept_apart_live_pair_unique").on(table.lowContactId, table.highContactId)
+    .where(sql`${table.withdrawnAt} IS NULL`),
+  index("contact_kept_apart_high_idx").on(table.highContactId),
 ]);
 
 export const opportunities = pgTable("opportunities", {
@@ -871,6 +1020,35 @@ export const followUpTasks = pgTable("follow_up_tasks", {
   index("follow_up_tasks_opportunity_idx").on(table.opportunityId),
   index("follow_up_tasks_assigned_status_idx").on(table.assignedTo, table.status),
   index("follow_up_tasks_status_due_idx").on(table.status, table.dueAt),
+]);
+
+// ---------------------------------------------------------------------------
+// 7e. record_merges (0095) — every merge of two people or two organisations,
+// with what it moved, so that it can be undone. survivorId and mergedId name
+// contacts or client accounts, by kind (MERGE_KINDS). Never deleted.
+// ---------------------------------------------------------------------------
+
+export const recordMerges = pgTable("record_merges", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  kind: varchar("kind", { length: 20 }).notNull(),
+  survivorId: uuid("survivor_id").notNull(),
+  mergedId: uuid("merged_id").notNull(),
+  snapshot: jsonb("snapshot").$type<RecordMergeSnapshot>().notNull(),
+  moves: jsonb("moves").$type<RecordMergeMove[]>().notNull(),
+  mergedBy: uuid("merged_by").references(() => users.id, { onDelete: "set null" }),
+  mergedAt: timestamp("merged_at", { withTimezone: true }).defaultNow().notNull(),
+  // Undone and its report, both or neither.
+  undoneAt: timestamp("undone_at", { withTimezone: true }),
+  undoneBy: uuid("undone_by").references(() => users.id, { onDelete: "set null" }),
+  undoReport: jsonb("undo_report").$type<MergeUndoReport>(),
+}, (table) => [
+  check("record_merges_kind_check", sql`${table.kind} IN ('person', 'organisation')`),
+  check("record_merges_distinct_check", sql`${table.survivorId} <> ${table.mergedId}`),
+  check("record_merges_shape_check", sql`jsonb_typeof(${table.moves}) = 'array' AND jsonb_typeof(${table.snapshot}) = 'object'`),
+  check("record_merges_undo_pair_check", sql`(${table.undoneAt} IS NULL) = (${table.undoReport} IS NULL)`),
+  index("record_merges_merged_idx").on(table.venueId, table.kind, table.mergedId, table.mergedAt.desc()),
+  index("record_merges_survivor_idx").on(table.venueId, table.kind, table.survivorId),
 ]);
 
 // ---------------------------------------------------------------------------

@@ -645,6 +645,13 @@
       "when": 1791990000000,
       "tag": "0093_forward_book_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792162800000,
+      "tag": "0095_people_book",
+      "breakpoints": true
     }
   ]
 }
