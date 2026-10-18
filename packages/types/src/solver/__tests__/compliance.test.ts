@@ -78,7 +78,8 @@ describe("checkAisleWidths", () => {
     expect(result.valid).toBe(false);
     expect(result.violations.length).toBeGreaterThan(0);
     expect(result.violations[0]).toContain("Aisle width");
-    expect(result.violations[0]).toContain("Approved Document B");
+    expect(result.violations[0]).toContain("planning aisle setting");
+    expect(result.violations[0]).not.toMatch(/Approved Document|ADB|NFPA|BS 9999/);
   });
 
   it("ignores pairs that are far apart (>5m center-to-center)", () => {
@@ -186,8 +187,11 @@ describe("checkMaxTravelDistance", () => {
     const chairs = [makeChair(20, 0)];
     const result = checkMaxTravelDistance(chairs, exits, SQUARE_ROOM);
     expect(result.valid).toBe(false);
-    expect(result.violations[0]).toContain("BS 9999");
+    expect(result.violations[0]).toContain("planning distance setting");
     expect(result.violations[0]).toContain("18m");
+    // A Glasgow building is never told an England, US or unverified standard
+    // is the evidence (redteam fix-first 2).
+    expect(result.violations[0]).not.toMatch(/Approved Document|ADB|NFPA|BS 9999/);
   });
 
   it("considers closest exit, not all exits", () => {
