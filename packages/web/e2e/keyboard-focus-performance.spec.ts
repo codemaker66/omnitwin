@@ -18,7 +18,7 @@ import type {
 } from "@omnitwin/types";
 import { VALID_CONFIGURATION_REVIEW_TRANSITIONS } from "@omnitwin/types";
 import type { PendingReviewEntry, ReviewHistoryEntry } from "../src/api/configuration-reviews.js";
-import type { Loadout, LoadoutDetail, LoadoutPhoto } from "../src/api/loadouts.js";
+import type { Loadout, LoadoutDetail, LoadoutDetailPhoto } from "../src/api/loadouts.js";
 import type { PricingRule } from "../src/api/pricing.js";
 import type {
   ProposalCommentRow,
@@ -285,7 +285,7 @@ function loadoutFixture(): Loadout {
   };
 }
 
-function loadoutPhotoFixture(overrides: Partial<LoadoutPhoto> = {}): LoadoutPhoto {
+function loadoutPhotoFixture(overrides: Partial<LoadoutDetailPhoto> = {}): LoadoutDetailPhoto {
   return {
     id: LOADOUT_PHOTO_ID,
     fileId: "00000000-0000-4000-8000-000000004034",
@@ -294,6 +294,8 @@ function loadoutPhotoFixture(overrides: Partial<LoadoutPhoto> = {}): LoadoutPhot
     fileKey: "loadouts/setup-entrance.jpg",
     filename: "setup-entrance.jpg",
     contentType: "image/jpeg",
+    // No signed URL, so the card shows its filename, as the baselines expect.
+    readUrl: null,
     ...overrides,
   };
 }

@@ -459,7 +459,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(forwardBookRoutes, { db, prefix: "/venues/:venueId/forward-book" });
   await server.register(proposalTemplateRoutes, { db, prefix: "/venues/:venueId/proposal-templates" });
   await server.register(rotaRoutes, { db, prefix: "/venues/:venueId/rota" });
-  await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
+  await server.register(referenceLoadoutRoutes, { db, env, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
   await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
   await server.register(publicConfigRoutes, { db, prefix: "/public" });
   await server.register(layoutRoutes, { db, prefix: "/layouts" });

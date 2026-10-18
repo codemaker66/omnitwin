@@ -18,7 +18,7 @@ import type {
 import { VALID_CONFIGURATION_REVIEW_TRANSITIONS, type ConfigurationReviewStatus } from "@omnitwin/types";
 import type { PendingReviewEntry, ReviewHistoryEntry } from "../src/api/configuration-reviews.js";
 import type { Activity, FollowUpTask, Opportunity, OpportunityDetail, PipelineSummary } from "../src/api/crm.js";
-import type { Loadout, LoadoutDetail, LoadoutPhoto } from "../src/api/loadouts.js";
+import type { Loadout, LoadoutDetail, LoadoutDetailPhoto } from "../src/api/loadouts.js";
 import type { PricingRule } from "../src/api/pricing.js";
 import type { PublicProposal, PublicProposalPayload } from "../src/api/proposals.js";
 import type { ProposalCommentRow, ProposalHistoryEntry, StaffProposal, StaffProposalVersion } from "../src/api/proposals.js";
@@ -493,7 +493,7 @@ function loadoutDetailFixture(overrides: Partial<LoadoutDetail> = {}): LoadoutDe
   };
 }
 
-function loadoutPhotoFixture(overrides: Partial<LoadoutPhoto> = {}): LoadoutPhoto {
+function loadoutPhotoFixture(overrides: Partial<LoadoutDetailPhoto> = {}): LoadoutDetailPhoto {
   return {
     id: LOADOUT_PHOTO_ID,
     fileId: "00000000-0000-4000-8000-000000004034",
@@ -502,6 +502,8 @@ function loadoutPhotoFixture(overrides: Partial<LoadoutPhoto> = {}): LoadoutPhot
     fileKey: "loadouts/setup-entrance.jpg",
     filename: "setup-entrance.jpg",
     contentType: "image/jpeg",
+    // No signed URL, so the card shows its filename, as the baselines expect.
+    readUrl: null,
     ...overrides,
   };
 }
@@ -991,7 +993,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   const addedOpportunityNotes: string[] = [];
   const createdOpportunityProposalDrafts: string[] = [];
   let loadoutName = "Ceremony reference setup";
-  let loadoutPhotos: LoadoutPhoto[] = [
+  let loadoutPhotos: LoadoutDetailPhoto[] = [
     loadoutPhotoFixture(),
     loadoutPhotoFixture({
       id: LOADOUT_SECOND_PHOTO_ID,
@@ -1289,7 +1291,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
         const photo = loadoutPhotos.find((item) => item.id === id);
         return photo === undefined ? null : { ...photo, sortOrder: index };
       })
-      .filter((photo): photo is LoadoutPhoto => photo !== null);
+      .filter((photo): photo is LoadoutDetailPhoto => photo !== null);
     void route.fulfill({ json: { data: loadoutPhotos } });
   });
   await page.route(`${API}/enquiries**`, (route) => {

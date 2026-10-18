@@ -5,7 +5,6 @@ import { FileUploader } from "../shared/FileUploader.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useToastStore } from "../../stores/toast-store.js";
-import { R2_PUBLIC_URL } from "../../config/env.js";
 
 // ---------------------------------------------------------------------------
 // LoadoutDetail — photos, upload, reorder, captions
@@ -357,11 +356,12 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                 opacity: dragId === p.id ? 0.5 : 1,
                 transition: "border-color 0.15s, opacity 0.15s",
               }}>
-              {/* Punch list #38: render image preview when R2 URL is configured,
-                  fall back to filename text when it isn't. */}
-              {R2_PUBLIC_URL !== null ? (
+              {/* Punch list #38: preview through the API's short-lived signed
+                  URL (photos are private uploads; their bucket has no public
+                  URL), and fall back to the filename when there is none. */}
+              {p.readUrl !== null ? (
                 <img
-                  src={`${R2_PUBLIC_URL}/${p.fileKey}`}
+                  src={p.readUrl}
                   alt={p.caption ?? p.filename}
                   loading="lazy"
                   style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }}

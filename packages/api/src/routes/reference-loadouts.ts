@@ -5,6 +5,8 @@ import { referenceLoadouts, referencePhotos, files, spaces, venues } from "../db
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
+import type { Env } from "../env.js";
+import { readUrlForUpload } from "./uploads.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -25,19 +27,26 @@ const UpdateLoadoutBody = z.object({
 
 // ---------------------------------------------------------------------------
 // Plugin — loadout CRUD
+//
+// Loadout photos are private venue uploads, so every read is for the venue's
+// own staff: anonymous callers and other venues get 401/403 before any row
+// is read, and each photo is served through a short-lived signed URL.
 // ---------------------------------------------------------------------------
 
 export async function referenceLoadoutRoutes(
   server: FastifyInstance,
-  opts: { db: Database },
+  opts: { db: Database; env: Env },
 ): Promise<void> {
-  const { db } = opts;
+  const { db, env } = opts;
 
-  // GET / — public, list loadouts for a space with photo count + cover
-  server.get("/", async (request, reply) => {
+  // GET / — venue staff, list loadouts for a space with photo count + cover
+  server.get("/", { preHandler: [authenticate] }, async (request, reply) => {
     const params = SpaceParams.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
+    }
+    if (!canManageVenue(request.user, params.data.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
     // Verify venue and space are active — prevents leaking child data for soft-deleted parents
@@ -73,11 +82,14 @@ export async function referenceLoadoutRoutes(
     return { data: rows };
   });
 
-  // GET /:id — public, single loadout with all photos
-  server.get("/:id", async (request, reply) => {
+  // GET /:id — venue staff, single loadout with all photos
+  server.get("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = LoadoutParams.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
+    }
+    if (!canManageVenue(request.user, params.data.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
     // Verify venue and space are active
@@ -108,7 +120,9 @@ export async function referenceLoadoutRoutes(
       return reply.status(404).send({ error: "Loadout not found", code: "NOT_FOUND" });
     }
 
-    const photos = await db.select({
+    // Only files uploaded to this loadout's own scope are signed, whatever a
+    // reference_photos row points at.
+    const rows = await db.select({
       id: referencePhotos.id,
       fileId: referencePhotos.fileId,
       caption: referencePhotos.caption,
@@ -116,11 +130,21 @@ export async function referenceLoadoutRoutes(
       fileKey: files.fileKey,
       filename: files.filename,
       contentType: files.contentType,
+      visibility: files.visibility,
     })
       .from(referencePhotos)
-      .innerJoin(files, eq(referencePhotos.fileId, files.id))
+      .innerJoin(files, and(
+        eq(referencePhotos.fileId, files.id),
+        eq(files.context, "loadout"),
+        eq(files.contextId, params.data.id),
+      ))
       .where(eq(referencePhotos.loadoutId, params.data.id))
       .orderBy(referencePhotos.sortOrder);
+
+    const photos = await Promise.all(rows.map(async ({ visibility, ...photo }) => ({
+      ...photo,
+      readUrl: await readUrlForUpload(env, photo.fileKey, visibility === "public" ? "public" : "private"),
+    })));
 
     return { data: { ...loadout, photos } };
   });
