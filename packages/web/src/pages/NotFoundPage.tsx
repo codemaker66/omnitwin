@@ -15,28 +15,34 @@ import "./NotFoundPage.css";
 // and it is least kind to someone holding a link a person at the venue sent
 // them: they need to learn that the LINK is wrong, not their event.
 //
-// So this says what happened, offers the two things a visitor can actually do
-// (ask about a date, go to the front door), and prints the hall's telephone
+// The page cannot tell a mistyped address from an old link, so its words
+// cover both plainly (17 October 2026; the heading used to assume an expired
+// link). It says what happened, offers the two things a visitor can actually
+// do (ask about a date, go to the front door), and prints the hall's telephone
 // number — the one contact that works whatever happened to the link.
 //
 // It renders on the Fresh paper like the front door's sheet, pinned to its
 // light theme as `/` is, so it introduces no register of its own.
 // ---------------------------------------------------------------------------
 
-const NOT_FOUND_TITLE = "That link has expired or moved";
-const NOT_FOUND_BODY =
-  "The page you asked for isn't here. If somebody at Trades Hall sent you this link, it may have been replaced since — they can send you a fresh one.";
-const NOT_FOUND_HOME = "Go to the front door";
-const NOT_FOUND_ENQUIRE = "Ask about a date";
-const NOT_FOUND_CALL_LABEL = "Or call the hall";
-const NOT_FOUND_META_TITLE = "Page not found — Trades Hall of Glasgow";
+// Exported so the edge's own 404 page (public/404.html, served by Vercel for
+// any address outside the route allowlist) is held to the same words.
+export const NOT_FOUND_TITLE = "There is no page at this address";
+export const NOT_FOUND_BODY =
+  "The address may have been mistyped, or the link may be an old one that has since been replaced. If someone at Trades Hall sent it to you, they can send you a fresh one.";
+export const NOT_FOUND_HOME = "Go to the front door";
+export const NOT_FOUND_ENQUIRE = "Ask about a date";
+export const NOT_FOUND_CALL_LABEL = "Or call the hall";
+export const NOT_FOUND_META_TITLE = "Page not found — Trades Hall of Glasgow";
 
 export function NotFoundPage(): ReactElement {
   useEffect(() => {
     document.title = NOT_FOUND_META_TITLE;
-    // Every address is served the app with a 200 (vercel.json rewrites them
-    // all to index.html), so this page tells search engines itself that
-    // there is nothing here to index. It leaves with the page.
+    // An address outside vercel.json's route allowlist never reaches the app:
+    // Vercel answers it with a real 404 and public/404.html. This page still
+    // meets a wrong link inside a real route's shape (and every address in
+    // development), served with a 200, so it tells search engines itself
+    // that there is nothing here to index. It leaves with the page.
     const robots = document.createElement("meta");
     robots.name = "robots";
     robots.content = "noindex";

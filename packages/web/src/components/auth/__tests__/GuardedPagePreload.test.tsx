@@ -132,9 +132,9 @@ const DENIED: readonly DeniedRoute[] = [
   { path: "/event-architect/runs/run-1", page: "EventArchitectPage", allowed: { role: "client", platformRole: "admin" }, denied: planner, heading: "Access needed" },
   { path: "/dev/assets/rooms", page: "TradesHallAssetStatusPage", allowed: { role: "admin", platformRole: "admin" }, denied: { role: "admin", platformRole: "none" }, heading: "Platform access needed" },
   { path: "/dev/capture-intake", page: "CaptureIntakePage", allowed: { role: "admin", platformRole: "admin" }, denied: { role: "staff", platformRole: "admin" }, heading: "Access needed" },
-  // Blake, 26 September 2026: the Venviewer subscription page is admin-only
-  // until billing exists, and the internal sales deck with it.
-  { path: "/pricing", page: "PricingPage", allowed: venueAdmin, denied: staff, heading: "Access needed" },
+  // Blake, 26 September 2026: the internal sales deck is admin-only. The
+  // subscription page is too, but its visitors read a plain notice instead
+  // of a guard (fix-first item 19): see "the subscription page" below.
   { path: "/demo", page: "DemoShowcasePage", allowed: venueAdmin, denied: staff, heading: "Access needed" },
   // Fix-first 12: the client's own home admits the client's side only.
   { path: "/events", page: "ClientHomePage", allowed: planner, denied: staff, heading: "Access needed" },
@@ -242,6 +242,47 @@ describe.each(DENIED)("denied route $path", (route) => {
     expect(screen.getByRole("link", { name: "Back to Venviewer" }).getAttribute("href")).toBe("/");
     expect(probe.rendered).toEqual([]);
     expect(probe.fetched).toEqual([]);
+  });
+});
+
+describe("the subscription page (admin-only until billing exists)", () => {
+  const NOTICE = "Venviewer subscriptions are not yet public";
+
+  it("tells a signed-out visitor plainly, on the same address, without loading sign-in or the price list", async () => {
+    authStore.setState({ user: null, isAuthenticated: false, isLoading: true, accessStatus: "signed_out" });
+    const memoryRouter = show("/pricing");
+    expect(await screen.findByRole("heading", { name: NOTICE })).toBeTruthy();
+    expect(memoryRouter.state.location.pathname).toBe("/pricing");
+    expect(screen.queryByText("Sign in page")).toBeNull();
+    // A way forward: a named person, and the venue for anyone who came for it.
+    expect(screen.getByRole("link", { name: "Email blake@venviewer.com" }).getAttribute("href"))
+      .toBe("mailto:blake@venviewer.com?subject=Venviewer%20for%20our%20venue");
+    expect(screen.getByRole("link", { name: "About Venviewer" }).getAttribute("href")).toBe("/platform");
+    expect(screen.getByRole("link", { name: "See the rooms and ask about a date" }).getAttribute("href")).toBe("/");
+    expect(screen.getByRole("link", { name: "sign in" }).getAttribute("href")).toBe("/login?returnTo=%2Fpricing");
+    expect(probe.loaded).not.toContain("ClerkRouteProvider");
+    expect(probe.loaded).not.toContain("PricingPage");
+    expect(probe.rendered).toEqual([]);
+  });
+
+  it("shows a signed-in account that is not an admin the same notice, never the price list", async () => {
+    authStore.getState().setUser(account(staff));
+    show("/pricing");
+    expect(await screen.findByRole("heading", { name: NOTICE })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "sign in" })).toBeNull();
+    expect(probe.rendered).toEqual([]);
+    expect(probe.fetched).toEqual([]);
+  });
+
+  it("checks a likely signed-in browser first, then opens the price list for an admin", async () => {
+    probe.sessionHint = true;
+    authStore.setState({ user: null, isAuthenticated: false, isLoading: true, accessStatus: "checking" });
+    show("/pricing");
+    expect(await screen.findByText("Checking who is signed in…")).toBeTruthy();
+    expect(probe.rendered).toEqual([]);
+    act(() => { authStore.getState().setUser(account(venueAdmin)); });
+    expect(await screen.findByRole("heading", { name: "PricingPage ready" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: NOTICE })).toBeNull();
   });
 });
 
