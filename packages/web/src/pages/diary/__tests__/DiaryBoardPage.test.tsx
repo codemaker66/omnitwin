@@ -34,6 +34,13 @@ const {
   getEnquiryMock: vi.fn(),
 }));
 
+// Goal 19 S7: the Diary reads the venue's window for its line about the screens;
+// a unit test has no venue settings, so the line says only that no screen is on.
+vi.mock("../../../api/operating-settings.js", () => ({
+  getOperatingSettings: () => Promise.resolve(null),
+  updateOperatingSettings: () => Promise.reject(new Error("not in this test")),
+}));
+
 vi.mock("../../../api/diary.js", () => ({
   getCalendar: getCalendarMock,
   moveBooking: moveBookingMock,

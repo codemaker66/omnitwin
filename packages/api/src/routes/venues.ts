@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { UpdateVenueOperatingSettingsSchema } from "@omnitwin/types";
 import { venues, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
+import { authenticate, authorizePlatformAdmin, isPlatformAdmin } from "../middleware/auth.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
-import { canAdministerVenue } from "../utils/query.js";
+import { canAdministerVenue, canManageVenue } from "../utils/query.js";
+import { readOperatingSettings, writeOperatingSettings } from "../services/venue-operating-settings.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -133,6 +135,46 @@ export async function venueRoutes(
       .returning();
 
     return { data: updated };
+  });
+
+  // GET /venues/:id/operating-settings — anyone who works the venue (goal 19 S7).
+  // Null when the venue has never set them: no windows, nothing escalates.
+  server.get("/:id/operating-settings", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    if (!canManageVenue(request.user, params.data.id)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    return { data: await readOperatingSettings(db, params.data.id) };
+  });
+
+  // PATCH /venues/:id/operating-settings — the venue's administrator, or a
+  // Venviewer operator. Any subset of the fields; the first write fills the
+  // rest with the decided defaults.
+  server.patch("/:id/operating-settings", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const parsed = UpdateVenueOperatingSettingsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+    const actor = request.user;
+    if (!canAdministerVenue(actor, params.data.id) || (actor.role !== "admin" && !isPlatformAdmin(actor))) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const [venue] = await db.select({ id: venues.id, deletedAt: venues.deletedAt }).from(venues).where(eq(venues.id, params.data.id)).limit(1);
+    if (venue === undefined || venue.deletedAt !== null) {
+      return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
+    }
+    const result = await writeOperatingSettings(db, params.data.id, parsed.data);
+    if (!result.ok) {
+      return reply.status(404).send({ error: "That person is not an administrator or manager of this venue", code: result.code });
+    }
+    return { data: result.settings };
   });
 
   // DELETE /venues/:id — Venviewer platform admin only, soft delete
