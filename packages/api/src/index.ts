@@ -53,6 +53,7 @@ import { windowProposalRoutes } from "./routes/window-proposals.js";
 import { roomDayRoutes } from "./routes/room-day.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { requestRoutes, venueRequestRoutes } from "./routes/requests.js";
+import { pushRoutes } from "./routes/push.js";
 import { venueObservationRoutes } from "./routes/observations.js";
 import { clientConversationRoutes, messageRoutes, threadRoutes, venueThreadRoutes } from "./routes/conversations.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
@@ -433,6 +434,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // --- Routes ---
   await server.register(venueRoutes, { db, prefix: "/venues" });
+  // Goal 19 S7: the devices that ask to be told.
+  await server.register(pushRoutes, { db, prefix: "/push" });
   // T-647: the weather over a venue: the Met Office forecast when it can be
   // served, otherwise the committed HadUK-Grid monthly normals for the venue's
   // 1 km cell (a venue in a cell with no file answers 503 SKY_UNAVAILABLE).

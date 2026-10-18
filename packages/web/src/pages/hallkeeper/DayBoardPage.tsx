@@ -39,6 +39,8 @@ import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
 import { isQueuedObservation, useSlotObservations, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
+import { ShiftHandover } from "../../components/requests/ShiftHandover.js";
+import { PushAlertsToggle } from "../../components/requests/PushAlertsToggle.js";
 import {
   DAY_BOARD_LEGEND,
   DAY_BOARD_RING_LEGEND,
@@ -848,7 +850,14 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     [readingAhead, range, timeZone],
   );
   const { data, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range, neighbours);
-  const live = useDiaryLive(venueId !== null, refetch);
+  // The office reads which screens are on (S7): the wall says so; a narrow
+  // screen is a phone in a pocket; anything else is a desk. The wall is read
+  // live, so a screen made a wall display after loading says so at once and
+  // its alerts stop carrying a reply's words (D11).
+  const [handheld] = useState<"phone" | "desk">(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches ? "phone" : "desk");
+  const device: "wall" | "phone" | "desk" = wall ? "wall" : handheld;
+  const live = useDiaryLive(venueId !== null, refetch, { device });
   // The calendar stamps its reads with the device clock; the board compares
   // and prints them on the corrected one (D9).
   const readAtCorrectedMs = readAtMs === null ? null : correctedNowMs(readAtMs);
@@ -1035,6 +1044,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           <button type="button" onClick={() => { setSearchParams({ register: "wall" }); }}>Wall display</button>
           {/* Opt-in, per device (D3 "Sound"): the one control that makes a sound. */}
           {venueId !== null && <ChimeToggle />}
+          {venueId !== null && <ShiftHandover venueId={venueId} meId={user?.id ?? null} />}
+          {venueId !== null && <PushAlertsToggle venueId={venueId} deviceKind={device} />}
         </div>
       )}
       {venueId === null && <p className="dayboard-notice">No venue is linked to this account. Ask your venue administrator to connect your workspace.</p>}
