@@ -108,10 +108,10 @@ describe("enquiryApproved", () => {
     expect(subject).toBe("Your enquiry for the Grand Hall: next steps");
   });
 
-  it("says the venue's answer in one sentence: the room, the venue and the day as a person says it", async () => {
+  it("says the venue's answer in one paragraph: the room, the venue and the day as a person says it", async () => {
     const { html } = await enquiryApproved(baseData);
     expect(html).toContain(
-      "We have reviewed your enquiry for the Grand Hall at Trades Hall Glasgow on Monday 15 June 2026, and we would like to go ahead.",
+      "Thank you for your enquiry for the Grand Hall at Trades Hall Glasgow on Monday 15 June 2026. We have reviewed it and would like to take it further with you.",
     );
     // Never the stored ISO date.
     expect(html).not.toContain("2026-06-15");
@@ -120,7 +120,7 @@ describe("enquiryApproved", () => {
   it("words 14 May 2027 as the Friday it is, with no comma after the day", async () => {
     const { html } = await enquiryApproved({ ...baseData, eventDate: "2027-05-14" });
     expect(html).toContain(
-      "We have reviewed your enquiry for the Grand Hall at Trades Hall Glasgow on Friday 14 May 2027, and we would like to go ahead.",
+      "Thank you for your enquiry for the Grand Hall at Trades Hall Glasgow on Friday 14 May 2027. We have reviewed it and would like to take it further with you.",
     );
     expect(visibleText(html)).not.toContain("Friday,");
   });
@@ -128,7 +128,7 @@ describe("enquiryApproved", () => {
   it("does not double an article the room's name already has", async () => {
     const { subject, html } = await enquiryApproved({ ...baseData, roomName: "The Saloon" });
     expect(subject).toBe("Your enquiry for The Saloon: next steps");
-    expect(html).toContain("We have reviewed your enquiry for The Saloon at Trades Hall Glasgow on Monday 15 June 2026, and we would like to go ahead.");
+    expect(html).toContain("Thank you for your enquiry for The Saloon at Trades Hall Glasgow on Monday 15 June 2026. We have reviewed it and would like to take it further with you.");
     expect(html).not.toContain("the The Saloon");
   });
 
@@ -143,7 +143,11 @@ describe("enquiryApproved", () => {
       // A claim, not the denial below: "your date is booked", "has been confirmed".
       expect(text).not.toMatch(/\byour (?:date|booking|room|event)\b[^.:]*\b(?:is|has been)\s+(?:now\s+)?(?:booked|confirmed|reserved|held|secured)\b/iu);
       expect(text).not.toMatch(/\b(?:has been|is now)\s+(?:booked|confirmed|reserved|held|secured)\b/iu);
-      expect(visibleText(html)).toContain("This is not yet a booking: nothing is booked until we confirm it to you in writing.");
+      // True whatever the Diary holds: no date, a provisional hold or a
+      // confirmed booking already made for this enquiry.
+      expect(visibleText(html)).toContain("This email does not book or hold a date. A date is booked only when we confirm it to you in writing.");
+      // "Go ahead" read as a promise of the room on the date; approval checks no availability.
+      expect(text).not.toMatch(/go ahead/iu);
     }
   });
 
@@ -161,26 +165,26 @@ describe("enquiryApproved", () => {
   it("names the venue, not a room, for a guest who chose none", async () => {
     const { subject, html } = await enquiryApproved({ ...baseData, roomName: null, configUrl: null });
     expect(subject).toBe("Your enquiry at Trades Hall Glasgow: next steps");
-    expect(html).toContain("We have reviewed your enquiry at Trades Hall Glasgow on Monday 15 June 2026, and we would like to go ahead.");
+    expect(html).toContain("Thank you for your enquiry at Trades Hall Glasgow on Monday 15 June 2026. We have reviewed it and would like to take it further with you.");
     expect(html).not.toContain("Grand Hall");
   });
 
   it("leaves the day out when there is none, or none that is a real date, and still renders", async () => {
     for (const eventDate of [null, "", "not-a-date", "15/06/2026", "2027-02-29", "2027-13-01"]) {
       const { html } = await enquiryApproved({ ...baseData, eventDate });
-      expect(html, String(eventDate)).toContain("We have reviewed your enquiry for the Grand Hall at Trades Hall Glasgow, and we would like to go ahead.");
+      expect(html, String(eventDate)).toContain("Thank you for your enquiry for the Grand Hall at Trades Hall Glasgow. We have reviewed it and would like to take it further with you.");
       if (eventDate !== null && eventDate !== "") expect(html, eventDate).not.toContain(eventDate);
     }
     const { html } = await enquiryApproved({ ...baseData, roomName: null, eventDate: null });
-    expect(html).toContain("We have reviewed your enquiry at Trades Hall Glasgow, and we would like to go ahead.");
+    expect(html).toContain("Thank you for your enquiry at Trades Hall Glasgow. We have reviewed it and would like to take it further with you.");
   });
 
   it("is plain: a sentence-case heading, no praise and no exclamation marks", async () => {
     for (const data of [baseData, { ...baseData, roomName: null, eventDate: null, configUrl: null }]) {
       const { subject, html } = await enquiryApproved(data);
       const text = `${subject} ${visibleText(html)}`;
-      expect(html).toMatch(/<h\d[^>]*>Next steps for your enquiry<\/h\d>/u);
-      expect(text).not.toContain("Next Steps");
+      expect(html).toMatch(/<h\d[^>]*>Your enquiry<\/h\d>/u);
+      expect(text).not.toContain("Your Enquiry");
       expect(text).not.toContain("!");
       for (const praise of [/great/iu, /congrat/iu, /delighted/iu, /pleased/iu, /amazing/iu, /awesome/iu]) {
         expect(text).not.toMatch(praise);

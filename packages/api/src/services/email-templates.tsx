@@ -512,35 +512,39 @@ export interface EnquiryApprovedData {
   readonly configUrl: string | null;
 }
 
-/** "We have reviewed your enquiry for the Grand Hall at Trades Hall Glasgow
- *  on Friday 14 May 2027, and we would like to go ahead." The room only when
- *  the guest chose one, the date only when there is a real one. */
+/** "Thank you for your enquiry for the Grand Hall at Trades Hall Glasgow on
+ *  Friday 14 May 2027. We have reviewed it and would like to take it further
+ *  with you." The room only when the guest chose one, the date only when
+ *  there is a real one. */
 function approvalSentence(data: EnquiryApprovedData): string {
   const place = data.roomName === null
     ? `at ${data.venueName}`
     : `for ${theRoom(data.roomName)} at ${data.venueName}`;
   const day = formatCalendarDay(data.eventDate);
-  return `We have reviewed your enquiry ${place}${day === null ? "" : ` on ${day}`}, and we would like to go ahead.`;
+  return `Thank you for your enquiry ${place}${day === null ? "" : ` on ${day}`}. We have reviewed it and would like to take it further with you.`;
 }
 
-/** The venue saying yes to an enquiry holds no date: only the Diary holds or
- *  confirms one. So this email never says "approved", which a guest reads as
- *  "booked", and says in so many words that it is not a booking. */
+/** The venue saying yes to an enquiry checks no availability and holds no
+ *  date: only the Diary holds or confirms one. So this email never says
+ *  "approved", which a guest reads as booked, nor anything that reads as a
+ *  promise of the room on the day, and it says plainly that it books nothing —
+ *  a sentence true whether the Diary holds nothing, a provisional hold or a
+ *  confirmed booking made for this enquiry. */
 export function EnquiryApprovedEmail(props: EnquiryApprovedData): ReactElement {
   return (
     <Layout
-      label="Next steps"
+      label="Your enquiry"
       preview={`We have reviewed your enquiry ${enquiryPlace(props)}`}
     >
-      <Heading style={h2Style("#059669")}>Next steps for your enquiry</Heading>
+      <Heading style={h2Style("#059669")}>Your enquiry</Heading>
       {/* The sentence as a single string, so the HTML carries it as one text
           node rather than fragments separated by React's comment markers. */}
       <Text style={paragraphStyle}>{approvalSentence(props)}</Text>
       <Text style={paragraphStyle}>
-        This is not yet a booking: nothing is booked until we confirm it to you in writing.
+        This email does not book or hold a date. A date is booked only when we confirm it to you in writing.
       </Text>
       <Text style={paragraphStyle}>
-        The events team will be in touch shortly to talk through the date, your numbers and the next steps.
+        The events team will be in touch shortly to talk through dates, numbers and what happens next.
       </Text>
       {props.configUrl !== null && (
         <Section style={{ marginTop: 16 }}>
