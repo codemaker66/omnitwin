@@ -2530,6 +2530,8 @@ export * from "./client-home.js";
 export * from "./requests.js";
 export * from "./conversations.js";
 export * from "./observations.js";
+// Goal 19 S7: the venue's windows, quiet hours, duty admin and wall settings.
+export * from "./venue-operating-settings.js";
 
 // T-656: every model call attributed to a venue and a feature, priced, and
 // held to the venue's monthly allowance (migration 0089).
