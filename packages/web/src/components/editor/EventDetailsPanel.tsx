@@ -107,8 +107,10 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
   const [error, setError] = useState<string | null>(null);
   // A load that failed keeps `state` null, so the form stays hidden and Save
   // stays blocked: the PATCH replaces the whole blob, and a blank form saved
-  // after a failed read would erase details the read never reached.
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // after a failed read would erase details the read never reached. The
+  // failure is kept, for its layout, until a load succeeds, so the alert and
+  // its Try again button stay where the focus is while a retry runs.
+  const [loadError, setLoadError] = useState<{ readonly configId: string; readonly reason: string } | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   // The blob the server held before the pending edits — set at hydration,
@@ -140,9 +142,8 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
     const guard = { cancelled: false };
     setLoading(true);
     setError(null);
-    setLoadError(null);
+    setSavedAt(null);
     setState(null);
-    serverStateRef.current = null;
     // A client's remembered notes load beside the layout. Failing to load
     // them never stops the layout opening: the box then starts unticked.
     const isCancelled = (): boolean => guard.cancelled;
@@ -198,11 +199,12 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
           const ticked = startsTicked(remembered, loaded?.dietary?.otherAllergies ?? "", prefilling);
           setMemory({ status: memoryStatus, remembered, initiallyTicked: ticked, ticked, prefilled: prefilling });
         }
+        setLoadError(null);
       } catch (err) {
         if (guard.cancelled) return;
         // Server truth is unknown here, so there is nothing safe to edit:
         // `state` stays null until a load succeeds.
-        setLoadError(err instanceof Error ? err.message : "");
+        setLoadError({ configId, reason: err instanceof Error ? err.message : "" });
       } finally {
         if (!guard.cancelled) setLoading(false);
       }
@@ -251,6 +253,10 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
 
   const handleSave = async (): Promise<void> => {
     if (configId === null || state === null || isLayoutTimelineMutationLocked()) return;
+    // What the server held when this save began: the action log's inverse.
+    // Read now, not after the PATCH, because closing and reopening the sheet
+    // while the PATCH is in flight starts a fresh load.
+    const before = serverStateRef.current;
     setSaving(true);
     setError(null);
     try {
@@ -275,7 +281,6 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
       // refetches the pre-PATCH blob (the logged inverse is exactly that)
       // or the post-PATCH blob (the comparison dedups the entry).
       if (useEditorStore.getState().configId === configId) {
-        const before = serverStateRef.current;
         if (before === null || JSON.stringify(before) !== JSON.stringify(payload)) {
           logPlannerAction({
             intent: "event.details.update",
@@ -545,6 +550,8 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
 
   const signInRequired = isPublicPreview;
   const saveBlocked = computeSaveBlocked({ saving, loading, configId, state });
+  // Only this layout's failure: another layout's is not this one's to show.
+  const failedLoad = loadError !== null && loadError.configId === configId ? loadError : null;
 
   return (
     <div
@@ -603,15 +610,22 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
               can edit them later.
             </div>
           )}
-          {!signInRequired && loading && <ActivityStatus style={{ fontSize: 12, color: TEXT_SEC }}>Loading…</ActivityStatus>}
-          {!signInRequired && !loading && loadError !== null && (
+          {!signInRequired && loading && failedLoad === null && <ActivityStatus style={{ fontSize: 12, color: TEXT_SEC }}>Loading…</ActivityStatus>}
+          {!signInRequired && failedLoad !== null && (
             <div role="alert" style={{ fontSize: 12, color: "#ef4444", background: "rgba(239,68,68,0.1)", padding: 10, borderRadius: 6, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
               <span>
-                This layout's event details couldn't be loaded, so they can't be edited or saved yet. Nothing has been changed.
-                {loadError === "" ? "" : ` (${loadError})`}
+                This layout's event details couldn't be loaded, so they can't be edited or saved here until they load. Nothing here can overwrite them.
+                {failedLoad.reason === "" ? "" : ` (${failedLoad.reason})`}
               </span>
-              <button type="button" onClick={() => { setLoadAttempt((n) => n + 1); }} style={secondaryBtnStyle}>
-                Try again
+              <button
+                type="button"
+                onClick={() => { setLoadAttempt((n) => n + 1); }}
+                disabled={loading}
+                aria-busy={loading}
+                style={{ ...secondaryBtnStyle, display: "inline-flex", alignItems: "center", gap: 6 }}
+              >
+                {loading && <ActivityIndicator size={16} />}
+                {loading ? "Trying again…" : "Try again"}
               </button>
             </div>
           )}

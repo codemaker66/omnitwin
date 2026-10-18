@@ -48,7 +48,7 @@ describe("event details after a failed load", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("couldn't be loaded");
-    expect(alert.textContent).toContain("Nothing has been changed");
+    expect(alert.textContent).toContain("Nothing here can overwrite them");
     expect(screen.queryByRole("textbox")).toBeNull();
 
     const save = screen.getByRole("button", { name: "Save" });
@@ -67,7 +67,31 @@ describe("event details after a failed load", () => {
     await screen.findByDisplayValue("Two guests need the lift. Nut allergy at table 4.");
     expect(getConfigMock).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(/couldn't be loaded/)).toBeNull();
-    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", false);
+  });
+
+  it("keeps Try again where the focus is, busy, while the retry runs", async () => {
+    let rejectRetry: ((reason: Error) => void) | undefined;
+    getConfigMock.mockRejectedValueOnce(new Error("Network request failed"));
+    getConfigMock.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRetry = reject; }));
+    render(<EventDetailsPanel open onClose={() => undefined} />);
+
+    const retry = await screen.findByRole("button", { name: "Try again" });
+    retry.focus();
+    fireEvent.click(retry);
+
+    const busy = await screen.findByRole("button", { name: "Trying again…" });
+    expect(busy).toBe(retry);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect(busy.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("couldn't be loaded");
+
+    if (rejectRetry === undefined) throw new Error("retry was never started");
+    rejectRetry(new Error("Still offline"));
+    const again = await screen.findByRole("button", { name: "Try again" });
+    expect(again).toBe(retry);
+    expect(screen.getByRole("alert").textContent).toContain("Still offline");
   });
 
   it("stays unable to save when Try again fails too", async () => {
@@ -79,7 +103,7 @@ describe("event details after a failed load", () => {
     await screen.findByRole("button", { name: "Try again" });
 
     expect(screen.queryByRole("textbox")).toBeNull();
-    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
     expect(patchMock).not.toHaveBeenCalled();
   });
 });
