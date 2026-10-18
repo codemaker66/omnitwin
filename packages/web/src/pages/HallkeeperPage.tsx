@@ -36,7 +36,7 @@ import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspac
 import { ProtectedPremisesBlock } from "../components/hallkeeper/ProtectedPremisesBlock.js";
 import { PaperCopyStamp, paperCopyLine, usePrintedAt } from "../components/hallkeeper/PaperCopyStamp.js";
 import { formatSheetTimes } from "../components/hallkeeper/sheet-facts.js";
-import { ActivityStatus } from "../components/shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import "../styles/hallkeeper-register.css";
 import "./hallkeeper-sheet.css";
 
@@ -81,12 +81,6 @@ async function isApprovedSnapshotUnavailable(response: Response): Promise<boolea
   }
 }
 
-/**
- * Set-or-clear a row's checked state without dynamic `delete`, which is
- * banned by @typescript-eslint/no-dynamic-delete. We rebuild the map
- * each toggle — map sizes are small (≤ hundreds of rows) so this is
- * cheaper than the allocator overhead of a `Set`.
- */
 /** The layout's shared checks, or null when the server would not give them. */
 async function readProgress(configId: string, headers: Readonly<Record<string, string>>): Promise<CheckMap | null> {
   const progressRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
@@ -99,6 +93,12 @@ async function readProgress(configId: string, headers: Readonly<Record<string, s
   return loaded;
 }
 
+/**
+ * Set-or-clear a row's checked state without dynamic `delete`, which is
+ * banned by @typescript-eslint/no-dynamic-delete. We rebuild the map
+ * each toggle — map sizes are small (≤ hundreds of rows) so this is
+ * cheaper than the allocator overhead of a `Set`.
+ */
 function toggleCheck(prev: CheckMap, rowKey: string, next: boolean): CheckMap {
   if (next) return { ...prev, [rowKey]: true };
   const out: Record<string, boolean> = {};
@@ -164,6 +164,8 @@ export function HallkeeperPage(): React.ReactElement {
   const [progressNotice, setProgressNotice] = useState<string | null>(null);
   const progressReloadRef = useRef(0);
   const [checksReloading, setChecksReloading] = useState(false);
+  // A reload that also failed says so: otherwise the retry looks like it did nothing.
+  const [checksReloadFailed, setChecksReloadFailed] = useState(false);
 
   // --- Fetch sheet data + progress in parallel ---
   const loadData = useCallback(() => {
@@ -180,6 +182,7 @@ export function HallkeeperPage(): React.ReactElement {
     setProgressUnavailable(false);
     setProgressNotice(null);
     setChecksReloading(false);
+    setChecksReloadFailed(false);
     setHighlightedRowKey(null);
     setPendingCount(0);
     fetchCountRef.current += 1;
@@ -261,13 +264,16 @@ export function HallkeeperPage(): React.ReactElement {
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
         const loaded = await readProgress(configId, headers);
-        // Still unavailable: the notice that says so stays, with its button.
-        if (!isCurrent() || loaded === null) return;
+        if (!isCurrent()) return;
+        // Still unavailable: the sheet and the notice stay, and the notice
+        // says the reload failed too.
+        if (loaded === null) { setChecksReloadFailed(true); return; }
         checksRef.current = loaded;
         setChecks(loaded);
         setProgressUnavailable(false);
+        setChecksReloadFailed(false);
       } catch {
-        // As above: the sheet and the notice both stay as they are.
+        if (isCurrent()) setChecksReloadFailed(true);
       } finally {
         if (isCurrent()) setChecksReloading(false);
       }
@@ -545,9 +551,10 @@ export function HallkeeperPage(): React.ReactElement {
         {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
         {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
         {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
-        {progressUnavailable && <div className="hk-notice" role="alert">Shared checks could not be loaded. The layout is available; reload before changing checks. {checksReloading
-          ? <ActivityStatus>Reloading shared checks…</ActivityStatus>
-          : <button type="button" className="hk-text-button" onClick={reloadChecks}>Reload checks</button>}</div>}
+        {progressUnavailable && <div className="hk-notice" role="alert">{checksReloadFailed ? "Shared checks still could not be loaded." : "Shared checks could not be loaded."} The layout is available; reload before changing checks. <button type="button" className="hk-text-button" onClick={reloadChecks} disabled={checksReloading} aria-busy={checksReloading}>
+          {checksReloading && <ActivityIndicator size={14} />}
+          {checksReloading ? "Reloading checks…" : "Reload checks"}
+        </button></div>}
         {progressNotice !== null && <div className="hk-notice" role="alert">{progressNotice}</div>}
         {downloadNotice !== null && <div className={`hk-notice hk-notice-${downloadNotice.kind}`} role={downloadNotice.kind === "error" ? "alert" : "status"}>{downloadNotice.message}</div>}
       </>}
