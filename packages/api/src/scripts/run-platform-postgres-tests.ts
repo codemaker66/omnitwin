@@ -35,6 +35,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/check-people-book-postgres.test.ts",
   // Possible duplicates, and the marks that keep two people apart through merges.
   "src/__tests__/people-duplicates-postgres.test.ts",
+  // The /people routes: people, their points and memberships, the mirrors, the kept-apart mark.
+  "src/__tests__/people-routes-postgres.test.ts",
 ] as const;
 
 export function requirePlatformTestDatabaseUrl(raw: string | undefined): string {

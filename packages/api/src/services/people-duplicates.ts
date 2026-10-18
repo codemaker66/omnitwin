@@ -1,7 +1,14 @@
-import { sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { CLOSE_NAME_SIMILARITY, DUPLICATE_REASONS, type DuplicateReason, type DuplicateSuggestion } from "@omnitwin/types";
-import { liveAccount, liveContact, type PeopleConn } from "./people-records.js";
+import {
+  CLOSE_NAME_SIMILARITY,
+  DUPLICATE_REASONS,
+  type DuplicateReason,
+  type DuplicateSuggestion,
+  type KeptApartMark,
+} from "@omnitwin/types";
+import { contactKeptApart } from "../db/schema.js";
+import { liveAccount, liveContact, type PeopleConn, type PeopleTx } from "./people-records.js";
 
 // ---------------------------------------------------------------------------
 // Possible duplicates in the People Book (T-665).
@@ -124,4 +131,78 @@ export async function duplicateSuggestions(db: PeopleConn, venueId: string, pers
 /** How many people `duplicateSuggestions` suggests for this person. */
 export async function countDuplicateSuggestions(db: PeopleConn, venueId: string, personId: string): Promise<number> {
   return (await duplicateSuggestions(db, venueId, personId)).length;
+}
+
+// ---------------------------------------------------------------------------
+// The mark that keeps two people apart. The callers lock both people first
+// (lockPerson, ascending id) and check both are live at `venueId`. A mark is
+// never deleted: withdrawing it stamps who and when, and the pair may be
+// marked again afterwards.
+// ---------------------------------------------------------------------------
+
+/** The pair as stored: the lower id first, in the database's own order
+ *  (lower-case hex compares as uuid bytes do). */
+function storedPair(personIds: readonly [string, string]): readonly [string, string] {
+  const a = personIds[0].toLowerCase();
+  const b = personIds[1].toLowerCase();
+  if (a === b) throw new Error("A person cannot be kept apart from themself");
+  return a < b ? [a, b] : [b, a];
+}
+
+function toMark(row: typeof contactKeptApart.$inferSelect): KeptApartMark {
+  return {
+    id: row.id,
+    venueId: row.venueId,
+    personIds: [row.lowContactId, row.highContactId],
+    decidedBy: row.decidedBy,
+    decidedAt: row.decidedAt.toISOString(),
+  };
+}
+
+function livePair(venueId: string, low: string, high: string) {
+  return and(
+    eq(contactKeptApart.venueId, venueId),
+    eq(contactKeptApart.lowContactId, low),
+    eq(contactKeptApart.highContactId, high),
+    isNull(contactKeptApart.withdrawnAt),
+  );
+}
+
+/**
+ * Marks two people at `venueId` as two people. A pair already marked answers
+ * with its live mark (`created: false`); two presses at once leave one mark.
+ */
+export async function keepApart(
+  tx: PeopleTx,
+  venueId: string,
+  personIds: readonly [string, string],
+  decidedBy: string,
+): Promise<{ mark: KeptApartMark; created: boolean }> {
+  const [low, high] = storedPair(personIds);
+  // Target-less: the live-pair index is partial, and a schema built from
+  // Drizzle without the unique keys still takes it.
+  const [inserted] = await tx.insert(contactKeptApart)
+    .values({ venueId, lowContactId: low, highContactId: high, decidedBy })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted !== undefined) return { mark: toMark(inserted), created: true };
+  const [held] = await tx.select().from(contactKeptApart).where(livePair(venueId, low, high)).limit(1);
+  if (held === undefined) throw new Error("The kept-apart mark was neither written nor found");
+  return { mark: toMark(held), created: false };
+}
+
+/** Withdraws the pair's live mark, keeping it as history; false when the
+ *  pair has none. */
+export async function withdrawKeptApart(
+  tx: PeopleTx,
+  venueId: string,
+  personIds: readonly [string, string],
+  withdrawnBy: string,
+): Promise<boolean> {
+  const [low, high] = storedPair(personIds);
+  const withdrawn = await tx.update(contactKeptApart)
+    .set({ withdrawnAt: new Date(), withdrawnBy })
+    .where(livePair(venueId, low, high))
+    .returning({ id: contactKeptApart.id });
+  return withdrawn.length > 0;
 }

@@ -67,6 +67,7 @@ import { aiUsageRoutes } from "./routes/ai-usage.js";
 import { venueAllowanceMeter } from "./services/ai-usage.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
 import { crmRoutes } from "./routes/crm.js";
+import { peopleRoutes } from "./routes/people.js";
 import { guestFlowReplayRoutes } from "./routes/guest-flow-replay.js";
 import { captureIntakeRoutes } from "./routes/capture-intake.js";
 import { eventArchitectRoutes } from "./routes/event-architect.js";
@@ -501,6 +502,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(integrationRoutes, { db, prefix: "/integrations" });
   await server.register(embedConfigRoutes, { db, prefix: "/embed-configs" });
   await server.register(crmRoutes, { db, prefix: "/crm" });
+  await server.register(peopleRoutes, { db, prefix: "/people" });
   await server.register(guestFlowReplayRoutes, { db, prefix: "/guest-flow" });
   await server.register(captureIntakeRoutes, {
     inspectionPath: env.CAPTURE_INTAKE_INSPECTION_PATH,
