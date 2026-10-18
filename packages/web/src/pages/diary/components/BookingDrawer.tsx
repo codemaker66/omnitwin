@@ -8,10 +8,9 @@ import {
   transitionBooking,
   updateBooking,
 } from "../../../api/diary.js";
-import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
-import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
+import { DIARY_WRITE_ROLES, PLANNER_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 import { formatInlineDay, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../lib/board-time.js";
 import { bookingStateLabel, bookingTimeLabel } from "../lib/board-overview.js";
 import { extendedDecisionMs } from "../lib/extend-decision.js";
@@ -19,10 +18,12 @@ import { isEndingTransition, ladderAfterExit, type EndingTransition } from "../l
 import type { LadderPlace } from "../lib/ladder-place.js";
 
 /**
- * The planner link for an attached plan: the event the planner binds from,
- * and the booking's own room, because the planner's bootstrap opens its
- * default room when no `space` is given. A room the board does not know
- * (a space row the calendar lacks) is simply left to the planner's default.
+ * The planner link for a booking's event (every provisional and confirmed
+ * booking has one since the bind, migration 0090): the event the planner
+ * binds from, and the booking's own room, because the planner's bootstrap
+ * opens its default room when no `space` is given. A room the board does not
+ * know (a space row the calendar lacks) is simply left to the planner's
+ * default.
  */
 function planHref(eventId: string, spaceId: string, rooms: readonly CalendarRoom[]): string {
   const base = `/plan?eventId=${encodeURIComponent(eventId)}`;
@@ -174,9 +175,6 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  /** An event created by startPlan whose link has not landed yet — so a
-   *  retry finishes the job instead of orphaning another plan. */
-  const startedEventRef = useRef<string | null>(null);
   // Ending a booking's claim on its date is confirmed first (roadmap N3);
   // its failure is said beside it, not above the form's Save.
   const [ending, setEnding] = useState<EndingTransition | null>(null);
@@ -230,6 +228,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   // hallkeeper reads the diary but never edits it, so a read-only role is
   // never offered a control whose every path ends in a 403.
   const canWriteDiary = hasRole(DIARY_WRITE_ROLES, role);
+  // Opening the plan writes nothing: whoever the planner admits may follow
+  // the link (the dashboard's own rule for the Plan tab).
+  const canOpenPlan = hasRole(PLANNER_ROLES, role);
   // Where a live hold's decision can move to (roadmap N3's Extend): a week
   // on, never past the day before its event; null when there is no later day.
   const extendTo = canWriteDiary && mode.kind === "edit" && decisionMs !== null && mode.booking.decisionAt !== null
@@ -441,75 +442,6 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         // The reason typed so far stays; the failure is said beside it.
         setEndingError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.saveFailed);
       })
-      .finally(() => {
-        setBusy(false);
-      });
-  }
-
-  // The corridor between the Diary and the planner. The API has always
-  // accepted `eventId` on a booking (updateBookingCore checks the event
-  // belongs to the booking's venue); nothing in the client ever sent it, so
-  // a coordinator had no way to say "this booking is the thing I am planning".
-  // Starting a plan seeds the event from the booking it belongs to, then
-  // links the two — the id is what /plan?eventId= reads.
-  function startPlan(): void {
-    if (mode.kind !== "edit") return;
-    const booking = mode.booking;
-    setSubmitError(null);
-    setBusy(true);
-    // Starting a plan is TWO writes that cannot be one transaction: create the
-    // event, then link it. If the link fails the event is already committed,
-    // and there is no endpoint that can list or delete it — so a naive retry
-    // would mint a second orphan every time. Remembering the id makes the
-    // retry FINISH the operation instead of repeating its first half.
-    const existing = startedEventRef.current;
-    const eventIdPromise =
-      existing === null ? createEvent({
-        venueId,
-        name: booking.title,
-        eventType: booking.eventType,
-        // Honest defaults: a plan begun from a booking is a draft, and the
-        // headcount is genuinely unknown until someone enters it.
-        status: "draft",
-        guestCount: 0,
-        startsAt: booking.startsAt,
-        endsAt: booking.endsAt,
-      }).then((graph) => {
-        startedEventRef.current = graph.event.id;
-        return graph.event.id;
-      })
-      : Promise.resolve(existing);
-
-    eventIdPromise
-      .then((eventId) => updateBooking(booking.id, { eventId }))
-      .then((saved) => {
-        startedEventRef.current = null;
-        onSaved(BOARD_COPY.drawer.planStarted(saved.title));
-      })
-      .catch((caught: unknown) => {
-        // Which half failed decides what is true to say. Once the plan
-        // exists, "the booking is unchanged" would hide it.
-        if (startedEventRef.current !== null) {
-          setSubmitError(BOARD_COPY.drawer.planLinkFailed);
-          return;
-        }
-        setSubmitError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.planFailed);
-      })
-      .finally(() => {
-        setBusy(false);
-      });
-  }
-
-  function detachPlan(): void {
-    if (mode.kind !== "edit") return;
-    const booking = mode.booking;
-    setSubmitError(null);
-    setBusy(true);
-    updateBooking(booking.id, { eventId: null })
-      .then((saved) => {
-        onSaved(BOARD_COPY.drawer.planDetached(saved.title));
-      })
-      .catch(failure)
       .finally(() => {
         setBusy(false);
       });
@@ -923,46 +855,27 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         </div>
       </form>
 
-      {mode.kind === "edit" && canWriteDiary ? (
+      {/* The plan is the booking's event (the bind, migration 0090): a
+          provisional or confirmed date always has one, made with it, so the
+          link simply opens it. Interest only gets its event once it is made
+          provisional or confirmed; a house block never has a plan. */}
+      {mode.kind === "edit" && canOpenPlan && (mode.booking.eventId !== null || mode.booking.kind === "prospect") ? (
         <div className="diary-drawer-plan">
           <h3 className="diary-checks-title">{BOARD_COPY.drawer.planTitle}</h3>
           {mode.booking.eventId === null ? (
-            <>
-              <p className="diary-drawer-note">{BOARD_COPY.drawer.planNone}</p>
-              <div className="diary-drawer-actions">
-                <button
-                  type="button"
-                  className="diary-button"
-                  onClick={startPlan}
-                  disabled={busy}
-                >
-                  {BOARD_COPY.drawer.planStart}
-                </button>
-              </div>
-            </>
+            <p className="diary-drawer-note">{BOARD_COPY.drawer.planWhenHeld}</p>
           ) : (
-            <>
-              <p className="diary-drawer-note">{BOARD_COPY.drawer.planAttached}</p>
-              <div className="diary-drawer-actions">
-                {/* A real link, not a router push: the planner is a heavy 3D
-                    route and a deliberate context switch, and an anchor keeps
-                    this drawer testable without a router. */}
-                <a
-                  className="diary-button is-primary"
-                  href={planHref(mode.booking.eventId, mode.booking.spaceId, rooms)}
-                >
-                  {BOARD_COPY.drawer.planOpen}
-                </a>
-                <button
-                  type="button"
-                  className="diary-button"
-                  onClick={detachPlan}
-                  disabled={busy}
-                >
-                  {BOARD_COPY.drawer.planDetach}
-                </button>
-              </div>
-            </>
+            <div className="diary-drawer-actions">
+              {/* A real link, not a router push: the planner is a heavy 3D
+                  route and a deliberate context switch, and an anchor keeps
+                  this drawer testable without a router. */}
+              <a
+                className="diary-button is-primary"
+                href={planHref(mode.booking.eventId, mode.booking.spaceId, rooms)}
+              >
+                {BOARD_COPY.drawer.planOpen}
+              </a>
+            </div>
           )}
         </div>
       ) : null}
