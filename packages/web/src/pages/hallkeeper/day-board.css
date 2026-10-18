@@ -1482,6 +1482,10 @@ div.dayboard-slab {
 }
 
 @media print {
+  body {
+    background: #fff;
+  }
+
   .dayboard,
   .dayboard[data-register="wall"] {
     --lt-ground: #fff;
@@ -1502,6 +1506,9 @@ div.dayboard-slab {
 
   .dayboard-controls,
   .dayboard-print,
+  .dayboard-ring,
+  .dayboard-rail,
+  .dayboard-next-line,
   .dayboard-status,
   .dayboard-stale,
   .dayboard-now,
