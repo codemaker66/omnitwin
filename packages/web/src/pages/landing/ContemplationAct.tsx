@@ -2,7 +2,7 @@ import { useRef, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { RiteCountUp } from "./RiteCountUp.js";
 import { useSeen } from "./useSeen.js";
-import type { RoomTone } from "./useRoomTone.js";
+import type { RoomTone } from "../../lib/sound-registry.js";
 import {
   CAPACITY_DISCLOSURE,
   enquiryComposerHref,

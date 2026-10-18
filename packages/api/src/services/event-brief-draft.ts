@@ -14,6 +14,7 @@ import {
 import type { Database } from "../db/client.js";
 import { spaces, venues } from "../db/schema.js";
 import type { AIStructuredGenerationAdapter } from "./ai-assistant.js";
+import type { AICallAttribution } from "./ai-usage.js";
 import { scrubContactDetails } from "./proposal-message-draft.js";
 
 // ---------------------------------------------------------------------------
@@ -123,7 +124,10 @@ export const EVENT_BRIEF_ANSWER_SCHEMA: JsonSchema = closed({
 });
 
 /** Stable across requests; only the user message carries the room, the date
- *  and the description. */
+ *  and the description. About 3,900 characters, well above the 512 tokens
+ *  Claude Opus 5.5 needs to cache a prefix, so the request marks it for the
+ *  5-minute cache (T-656): any brief read within five minutes of another,
+ *  for any venue, reads it at a twentieth of the input price. */
 export const EVENT_BRIEF_SYSTEM_PROMPT = [
   "You read a venue events team's description of an event and fill in a typed brief for the Venviewer Event Architect, a deterministic engine that sets out furniture in one room. You read; you do not plan, judge capacity, advise or invent. A person checks everything you return before anything runs.",
   "",
@@ -195,14 +199,16 @@ export function buildEventBriefPrompt(input: {
  * Reads a planner's description into a draft brief: scrubs it, asks the
  * provider for the answer in EVENT_BRIEF_ANSWER_SCHEMA, and checks the answer
  * against the contract and the engine's bounds. Throws the provider's errors
- * (AIAssistantDisabledError, AIDraftNotProducedError, the SDK's own) and
- * EventBriefExtractionError for an answer that does not match.
+ * (AIAssistantDisabledError, AIBudgetReachedError, AIDraftNotProducedError,
+ * the SDK's own) and EventBriefExtractionError for an answer that does not
+ * match. The call is attributed to the room's venue and the person who asked.
  */
 export async function readEventBrief(
   adapter: AIStructuredGenerationAdapter,
   input: {
     readonly description: string;
     readonly room: EventBriefRoom;
+    readonly attribution: AICallAttribution;
     readonly now?: Date;
     readonly signal?: AbortSignal;
   },
@@ -219,8 +225,9 @@ export async function readEventBrief(
       contactDetailsRemoved: scrubbed.removed,
     }),
     schema: EVENT_BRIEF_ANSWER_SCHEMA,
+    cacheSystem: true,
     signal: input.signal,
-  });
+  }, input.attribution);
   return interpretEventBriefExtraction({
     extraction: answer,
     // The words as written, not the neutralised copy sent: a quote is the

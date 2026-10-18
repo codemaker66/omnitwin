@@ -4709,6 +4709,23 @@ describe("Draft the message with AI", () => {
     await waitFor(() => { expect(document.activeElement).toBe(gone); });
   });
 
+  it("takes AI drafting away for the visit, as calmly, when the venue's AI allowance for the month is used", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(429, "This venue's AI allowance for the month is used", "AI_BUDGET_REACHED"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My own words." } });
+    fireEvent.click(panel.getByTestId("ai-draft-ask"));
+    const gone = await panel.findByTestId("ai-draft-gone");
+    expect(gone.textContent).toBe("AI drafts are not available now. The message is unchanged.");
+    expect(mocks.markAIDraftsUnavailable).toHaveBeenCalledTimes(1);
+    expect(panel.queryByTestId("ai-draft-ask")).toBeNull();
+    expect(panel.queryByTestId("ai-draft-failed")).toBeNull();
+    expect(panel.queryByTestId("ai-draft-retry")).toBeNull();
+    expect(messageOf(element)).toBe("My own words.");
+    await waitFor(() => { expect(document.activeElement).toBe(gone); });
+  });
+
   it("says what a draft holds that cannot go as it is, and offers Use only for one a message can hold", async () => {
     render(<ProposalsDesk />);
     const element = await openProposal();
