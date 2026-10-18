@@ -929,6 +929,8 @@ it("makes one person when the same new email arrives twice at once", ...);
   // Promise.all of two enquiries from "twice@example.test" → both 201, one contact, both enquiries linked to it
 it("answers every guest alike, whoever they turn out to be", ...);
   // the 201 bodies of a created, a linked and a shared-email enquiry have exactly the keys enquiryId and message, the same message
+it("leaves an access request and a Venviewer pricing enquiry out of the book", ...);
+  // eventType "venue-access" and "venue-enquiry", each from a new email → 201 as today; no contact made, contact_id null
 it("writes a guest lead once and never overwrites it from another venue", ...);
   // first at A: lead name "Kirsty Lane", phone "0141 496 0001"; then at B with name "Somebody Else", phone "07700 900999" → lead unchanged
 ```
@@ -958,7 +960,7 @@ after two attempts with no live holder: ambiguous
 
 - [ ] **Step 4: Put the public enquiry in one transaction**
 
-In `public-enquiries.ts`, the enquiry insert, its status history, `linkEnquiryToPerson(tx, …, { ownerUserId: null, whenShared: "leave" })` and the guest lead run in one `db.transaction`; the in-app notice, the acknowledgement and the hallkeepers' emails stay after it, unchanged. The guest lead is inserted only when no row has that exact email (`INSERT … SELECT … WHERE NOT EXISTS`); the update branch (`:230-238`) goes, which ends the cross-venue overwrite. Log `{ event: "enquiry.person_linked", enquiryId, venueId, outcome }`. The 201 body is unchanged.
+In `public-enquiries.ts`, the enquiry insert, its status history, `linkEnquiryToPerson(tx, …, { ownerUserId: null, whenShared: "leave" })` and the guest lead run in one `db.transaction`; the in-app notice, the acknowledgement and the hallkeepers' emails stay after it, unchanged. The guest lead is inserted only when no row has that exact email (`INSERT … SELECT … WHERE NOT EXISTS`); the update branch (`:230-238`) goes, which ends the cross-venue overwrite. An enquiry that is not a booking (`isBookingEnquiry(eventType)` false: an access request or a Venviewer pricing enquiry, which ride this route) is not linked and makes no person: the People Book is the venue's client record (controller ruling, 18 October, matching migration 0095's backfill). Log `{ event: "enquiry.person_linked", enquiryId, venueId, outcome }`. The 201 body is unchanged.
 
 - [ ] **Step 4b: Let the platform gate run the venue-slug test in CI**
 
@@ -1223,7 +1225,7 @@ Make a detached worktree of origin/master at `E:/claude/people-book-rehearsal-ma
 
 - [ ] **Step 4: Build master's state and give it production's shape**
 
-In the master worktree, run the production migrator exactly as Railway's pre-deploy step does (`node --conditions=omnitwin-dist dist/scripts/migrate-before-deploy.js`), then master's seed (`pnpm --filter @omnitwin/api db:seed`). Then a generator kept in `D:/claude/people-book-rehearsal-20261018/` writes fictional rows through SQL against the 0093 schema, at about twice Trades Hall's likely volume: 10,000 enquiries over three years at the seeded venue and 500 at a second venue; a quarter converted the way today's "Create opportunity" does (an account, a contact made from the enquiry, a deal, five activities, a proposal); repeat clients typing their email with other capitals and spaces; 300 couples sharing one email; 50 contacts whose email is blank; phones in every shape Task 1's `PHONE_CASES` lists; signed-in enquirers; guest leads, some used at both venues; deleted contacts. Record each table's row count.
+In the master worktree, run the production migrator exactly as Railway's pre-deploy step does (`node --conditions=omnitwin-dist dist/scripts/migrate-before-deploy.js`), then master's seed (`pnpm --filter @omnitwin/api db:seed`). Then a generator kept in `D:/claude/people-book-rehearsal-20261018/` writes fictional rows through SQL against the 0093 schema, at about twice Trades Hall's likely volume: 10,000 enquiries over three years at the seeded venue and 500 at a second venue; a quarter converted the way today's "Create opportunity" does (an account, a contact made from the enquiry, a deal, five activities, a proposal); repeat clients typing their email with other capitals and spaces; 300 couples sharing one email; 50 contacts whose email is blank; phones in every shape Task 1's `PHONE_CASES` lists; signed-in enquirers; 200 signed-in drafts never submitted; 50 access requests and 50 Venviewer pricing enquiries (`venue-access`, `venue-enquiry`); guest leads, some used at both venues; contacts with phones the live rule refuses ("+44", "TBC", "12345"); deleted contacts. Record each table's row count.
 
 - [ ] **Step 5: Migrate it as production will**
 
@@ -1231,7 +1233,7 @@ Take an `md5(string_agg(t::text, '|' ORDER BY id))` of `contacts`, `client_accou
 
 - [ ] **Step 6: Prove the result**
 
-Run `check-people-book.ts`: every `mustBeZero` count 0 and `unlinkedWithOneHolder` 0. Check the counts against the generator: live people equal the contacts before plus one per venue and normalised enquirer email that no live contact held (seeds excluded); every converted enquiry is linked; no couple's email is linked; the blank emails have no point. `opportunities`, `activities`, `proposals` and `guest_leads` keep their checksums. Any gap is a finding to fix in Task 2's migration before going on.
+Run `check-people-book.ts`: every `mustBeZero` count 0 and `unlinkedWithOneHolder` 0. Check the counts against the generator: live people equal the contacts before plus one per venue and normalised enquirer email that no live contact held (seeds excluded); every converted enquiry is linked; no couple's email is linked; the blank emails have no point; no draft, access request or pricing enquiry made a person or was linked; no contact keeps a phone the live rule refuses. `opportunities`, `activities`, `proposals` and `guest_leads` keep their checksums. Any gap is a finding to fix in Task 2's migration before going on.
 
 - [ ] **Step 7: Prove a rerun changes nothing**
 

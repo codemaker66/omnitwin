@@ -118,8 +118,10 @@ they own, `packages/api/src/services/client-event-schedule.ts:21-27`, and that r
   flag, so a society secretary who also books for their firm belongs to both. `contacts.client_account_id`
   becomes the primary organisation until its readers move to memberships.
 - **Enquiry link.** `enquiries` gains an optional person. A public enquiry links to the venue's person with the same
-  normalised email or creates one, in the enquiry's own transaction, locked on venue and email. Existing leads
-  become venue-scoped people at each venue where they enquired. `guest_leads` becomes insert-only in slice 1, which
+  normalised email or creates one, in the enquiry's own transaction, locked on venue and email. Requests for
+  workspace access and Venviewer pricing enquiries ride the same route but are not the venue's clients, so they
+  make no person; nor does a draft nobody submitted. Existing leads become venue-scoped people at each venue
+  where they enquired. `guest_leads` becomes insert-only in slice 1, which
   ends the cross-venue overwrite, and stops being written in slice 2, once the desk's lead profiles read the person.
 - **Event parties** (slice 5). An event's people and organisations with a role: booker, billing contact, day-of
   contact, planner, supplier contact. Labels only, never access.
