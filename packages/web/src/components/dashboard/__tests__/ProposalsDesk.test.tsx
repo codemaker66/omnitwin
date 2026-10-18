@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { StrictMode } from "react";
 import { ApiError } from "../../../api/client.js";
 import { ProposalsDesk } from "../ProposalsDesk.js";
-import { forgetProposalMemory } from "../proposals/proposal-memory.js";
+import { forgetProposalMemory, recallDraft, rememberDraft } from "../proposals/proposal-memory.js";
 
 // ---------------------------------------------------------------------------
 // The Proposals desk (roadmap X1): proposals grouped as a booker works them,
@@ -289,7 +289,8 @@ describe("the ledger", () => {
     fireEvent.click(screen.getByRole("button", { name: "With the client, 2" }));
     await waitFor(() => { expect(mocks.listProposalDesk).toHaveBeenLastCalledWith({ limit: 50, offset: 0, group: "with_client" }); });
     await waitFor(() => { expect(screen.queryByTestId("proposal-row-p3")).toBeNull(); });
-    expect(screen.getByRole("button", { name: "Drafts, 1" })).toBeDefined();
+    // The stages show no counts while the group is read; these come with its answer.
+    expect(await screen.findByRole("button", { name: "Drafts, 1" })).toBeDefined();
     expect(screen.getByRole("button", { name: "All, 3" })).toBeDefined();
   });
 
@@ -1221,7 +1222,9 @@ describe("the next version", () => {
     act(() => { answer(checked()); });
     await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
     expect(panel.queryByTestId("composer-check-again")).toBeNull();
-    expect(document.activeElement).toBe(panel.getByTestId("composer-start"));
+    // Focus moves in an effect after the answer is drawn: on a loaded machine
+    // the wait above can end in between (CI, 18 October 2026).
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("composer-start")); });
   });
 
   it("gives focus to what the next composer starts from, or to the proposal, when Check again finds it moved on", async () => {
@@ -1265,8 +1268,15 @@ describe("the next version", () => {
       if (elsewhere) row("p1").focus();
       act(() => { answer(version(1)); });
       await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toMatch(/^Starts from version 1\./u); });
-      await act(async () => { await Promise.resolve(); });
-      expect(document.activeElement).toBe(elsewhere ? row("p1") : panel.getByTestId("composer-start"));
+      // Focus is handed on by an effect after the render that shows the
+      // version: wait for it to arrive, or give it time to run and find it
+      // left where the booker put it.
+      if (elsewhere) {
+        await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 50); }); });
+        expect(document.activeElement).toBe(row("p1"));
+      } else {
+        await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("composer-start")); });
+      }
       cleanup();
       forgetProposalMemory();
     }
@@ -2400,6 +2410,47 @@ describe("the next version", () => {
       saved(version(2, { clientMessage: "My words." }));
       await new Promise((resolve) => { setTimeout(resolve, 0); });
     });
+    fireEvent.click(back.getByTestId("composer-save"));
+    await waitFor(() => { expect(back.getByTestId("composer-start").textContent).toMatch(/^Starts from version 2\./u); });
+    expect(back.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("My words.");
+    expect(back.queryByTestId("kept-version")).toBeNull();
+    expect(reloadHeld()).toBe(false);
+  });
+
+  it("keeps no copy of words the stalled save stored, though they were remembered again after it answered", async () => {
+    // The answer can land between the coming-back composer appearing and its
+    // effect remembering its words, so they are remembered again after the save
+    // put them away: on a busy machine CI saw "The version that did not save"
+    // offer words that had saved (18 October 2026). Memory is put in that state
+    // here. The version the next composer starts from holds the words, so
+    // nothing is lost and nothing is kept.
+    existing = [proposal({ status: "changes_requested", currentVersion: 1 })];
+    let saved: (value: Record<string, unknown>) => void = () => undefined;
+    mocks.createProposalVersion
+      .mockImplementationOnce(() => new Promise((resolve) => { saved = resolve; }))
+      .mockRejectedValueOnce(new ApiError(409, "A newer version was saved or sent after this was read.", "PROPOSAL_VERSION_CHANGED"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My words." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    cleanup();
+    render(<ProposalsDesk />);
+    const back = within(await openProposal());
+    expect((await back.findByTestId<HTMLTextAreaElement>("composer-message")).value).toBe("My words.");
+    const written = recallDraft("u1", "p1");
+    expect(written?.draft.message).toBe("My words.");
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(2, { clientMessage: "My words." }));
+    await act(async () => {
+      saved(version(2, { clientMessage: "My words." }));
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    });
+    // The save puts the words away, and the composer's effect can remember
+    // them again before or after it: let both run, then hold memory where the
+    // late order leaves it.
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 50); }); });
+    rememberDraft("u1", "p1", written);
     fireEvent.click(back.getByTestId("composer-save"));
     await waitFor(() => { expect(back.getByTestId("composer-start").textContent).toMatch(/^Starts from version 2\./u); });
     expect(back.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("My words.");
