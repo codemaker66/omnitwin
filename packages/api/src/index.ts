@@ -48,6 +48,7 @@ import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
 import { runtimePackagePreviewRoutes } from "./routes/runtime-package-previews.js";
 import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
 import { clientEventScheduleRoutes } from "./routes/client-event-schedule.js";
+import { clientHomeRoutes } from "./routes/client-home.js";
 import { windowProposalRoutes } from "./routes/window-proposals.js";
 import { roomDayRoutes } from "./routes/room-day.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
@@ -506,6 +507,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(roomLayoutTimelineRoutes, { db, prefix: "/calendar" });
   await server.register(eventRoutes, { db, prefix: "/events" });
   await server.register(clientEventScheduleRoutes, { db, prefix: "/events" });
+  await server.register(clientHomeRoutes, { db, prefix: "/client-home" });
   await server.register(windowProposalRoutes, { db, prefix: "/events" });
   await server.register(roomDayRoutes, { db, prefix: "/events" });
   await server.register(phaseLayoutSnapshotRoutes, { db, prefix: "/events" });
