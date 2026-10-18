@@ -17,6 +17,7 @@ import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { emit } from "../observability/event-bus.js";
 import { canHandleRequests, canManageVenue } from "../utils/query.js";
+import { pushForRequestEscalated, pushForRequestLanded, tell } from "../services/push-triggers.js";
 import {
   handoverShiftCore,
   createRequestCore,
@@ -156,6 +157,7 @@ export async function venueRequestRoutes(
     // already on every board that was listening the first time.
     if (!result.replay) {
       publishRequestChange(request, "request.created", result.request, result.notificationIds);
+      tell(pushForRequestLanded(db, result.request, { logger: request.log }), request.log, "request.landed");
     }
 
     return reply
@@ -229,6 +231,7 @@ export async function venueRequestRoutes(
     const mine = escalated.filter((item) => item.request.venueId === params.data.venueId);
     for (const item of mine) {
       publishRequestChange(request, "request.escalated", item.request, item.notificationIds);
+      tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: request.log }), request.log, "request.escalated");
     }
     return { data: { escalated: mine.length } };
   });

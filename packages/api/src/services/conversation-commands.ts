@@ -26,6 +26,7 @@ import {
   type RequestDeny,
 } from "./requests.js";
 import { readObservationByKey, recordObservationCore, type ObservationDeny } from "./observations.js";
+import { pushForReply, pushForRequestLanded, tell } from "./push-triggers.js";
 
 // ---------------------------------------------------------------------------
 // Conversation command dispatch (goal 19 S2; D5).
@@ -326,6 +327,19 @@ export async function executeConversationCommand(
   if (written === "duplicate") {
     const recorded = await readRecorded(db, command.commandId);
     if (recorded !== null) return replay(db, actor, command, recorded, nowMs);
+  }
+  // Committed and recorded: tell the devices that asked (S7). Never a
+  // replay, never the author of their own words, never a failure here.
+  if (outcome.changed?.kind === "request.created") {
+    tell(pushForRequestLanded(db, outcome.changed.request), undefined, "request.landed");
+  } else if (outcome.changed?.kind === "message.sent" && outcome.changed.thread.requestId !== null) {
+    tell(pushForReply(db, {
+      requestId: outcome.changed.thread.requestId,
+      messageId: outcome.changed.message.id,
+      authorUserId: outcome.changed.message.authorUserId,
+      authorName: outcome.changed.message.authorName,
+      body: outcome.changed.message.body,
+    }), undefined, "request.replied");
   }
   return {
     ack: {

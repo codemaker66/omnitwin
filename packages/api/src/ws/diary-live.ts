@@ -19,6 +19,7 @@ import {
 import { executeConversationCommand, type ConversationChanged } from "../services/conversation-commands.js";
 import type { MutationActor } from "../services/booking-mutations.js";
 import { runEscalationEmailPass, runRequestEscalationPass } from "../services/requests.js";
+import { pushForRequestEscalated, tell } from "../services/push-triggers.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 // ---------------------------------------------------------------------------
@@ -599,6 +600,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
           // path writes the notification row but the number on their nav sits
           // still until they navigate, and the two paths disagree about what
           // "escalated" feels like.
+          tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: server.log }), server.log, "request.escalated");
           if (item.notificationIds.length > 0) {
             emit(server.log, "notification.created", {
               venueId: item.request.venueId,

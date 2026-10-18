@@ -28,6 +28,12 @@ const EnvSchema = z.object({
   VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID: z.string().uuid().optional(),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),
+  // Web push — VAPID (goal 19 S7). All three or push is off, the way email
+  // is off without a Resend key. The subject must be a real mailto: address:
+  // Apple's push service refuses a placeholder.
+  VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+  VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  VAPID_SUBJECT: z.string().regex(/^(mailto:[^@\s]+@[^@\s]+|https:\/\/\S+)$/u).optional(),
   // Where a public enquiry goes when the venue has no hallkeeper user yet.
   // Without this, an enquiry with no hallkeeper is stored and silently never
   // announced — the guest sees success and the lead reaches nobody.
