@@ -88,7 +88,7 @@ function build(layout: Layout, room: { widthM: number; lengthM: number }): Pick<
     groupId: p.groupId,
     notes: p.notes,
   }));
-  const manifest = generateManifestV2(objects, { widthM: room.widthM, lengthM: room.lengthM, heightM: 3 }, accessoryMap());
+  const manifest = generateManifestV2(objects, { widthM: room.widthM, lengthM: room.lengthM }, accessoryMap());
   const assets = new Map<string, FloorPlanAsset>(layout.placements.map((p) => [p.asset.id, {
     id: p.asset.id, name: p.asset.name, category: p.asset.category,
     widthM: String(p.asset.widthM), depthM: String(p.asset.depthM), collisionType: p.asset.collisionType,

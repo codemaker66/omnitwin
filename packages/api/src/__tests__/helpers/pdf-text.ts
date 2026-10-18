@@ -21,6 +21,24 @@ export interface PdfLine {
   readonly font: string;
   /** Advance width in points, from the font's /W array, spacing and kerning. */
   readonly width: number;
+  /** Where the run ends, after any rotation the page applied. */
+  readonly x2: number;
+  readonly y2: number;
+}
+
+/** A PDF matrix [a b c d e f]; a point maps as (a·x + c·y + e, b·x + d·y + f). */
+type Matrix = readonly [number, number, number, number, number, number];
+const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+
+/** `cm` concatenates: the new matrix applies first, then the current one. */
+function concat(m: Matrix, ctm: Matrix): Matrix {
+  const [a, b, c, d, e, f] = m;
+  const [A, B, C, D, E, F] = ctm;
+  return [a * A + b * C, a * B + b * D, c * A + d * C, c * B + d * D, e * A + f * C + E, e * B + f * D + F];
+}
+
+function apply(ctm: Matrix, x: number, y: number): [number, number] {
+  return [ctm[0] * x + ctm[2] * y + ctm[4], ctm[1] * x + ctm[3] * y + ctm[5]];
 }
 
 interface FontInfo {
@@ -125,8 +143,16 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
     const fonts = fontsOf(objects, resources);
     const content = streamOf(objects.get(refOf(page, "Contents") ?? "") ?? "");
     const lines: PdfLine[] = [];
-    for (const block of content.matchAll(/\bBT\b([\s\S]*?)\bET\b/gu)) {
-      const body = block[1] ?? "";
+    let ctm: Matrix = IDENTITY;
+    const saved: Matrix[] = [];
+    for (const op of content.matchAll(/(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|\bBT\b([\s\S]*?)\bET\b/gu)) {
+      if (op[1] === "q") { saved.push(ctm); continue; }
+      if (op[1] === "Q") { ctm = saved.pop() ?? IDENTITY; continue; }
+      if (op[2] !== undefined) {
+        ctm = concat([Number(op[2]), Number(op[3]), Number(op[4]), Number(op[5]), Number(op[6]), Number(op[7])], ctm);
+        continue;
+      }
+      const body = op[8] ?? "";
       let x = 0; let y = 0; let font: FontInfo | undefined; let size = 0; let spacing = 0;
       for (const op of body.matchAll(/([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) Tm|\/(\w+) ([\d.]+) Tf|(-?[\d.]+) Tc|\[([^\]]*)\] TJ/gu)) {
         if (op[5] !== undefined) { x = Number(op[5]); y = Number(op[6]); }
@@ -143,7 +169,9 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
               }
             } else width -= (Number(part[2]) / 1000) * size;
           }
-          lines.push({ text, x, y, size, font: font.base, width });
+          const [startX, startY] = apply(ctm, x, y);
+          const [endX, endY] = apply(ctm, x + width, y);
+          lines.push({ text, x: startX, y: startY, x2: endX, y2: endY, size, font: font.base, width });
         }
       }
     }

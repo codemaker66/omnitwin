@@ -9,6 +9,7 @@ import {
   sheetRunningOrder,
   sheetSetupSteps,
   sheetStoreList,
+  venueZoneLabel,
 } from "../sheet-brief.js";
 
 // What the paper sheet derives from a hallkeeper sheet: the day in order,
@@ -183,6 +184,14 @@ describe("sheetNoteMarkers", () => {
 
   it("is empty without a plan", () => {
     expect(sheetNoteMarkers(sheet()).size).toBe(0);
+  });
+});
+
+describe("venueZoneLabel", () => {
+  it("names the venue's zone in words, never its IANA name", () => {
+    expect(venueZoneLabel("Europe/London")).toBe("UK time");
+    expect(venueZoneLabel("America/New_York")).toBe("Eastern time");
+    expect(venueZoneLabel("Not/AZone")).toBe("Not/AZone");
   });
 });
 

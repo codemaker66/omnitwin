@@ -236,6 +236,17 @@ export function sheetNoteMarkers(sheet: HallkeeperSheetV2): Map<string, number> 
 
 // ----------------------------------------------------------- keep in view --
 
+/** The venue's zone in words, never its IANA name: "UK time", "Eastern time". */
+export function venueZoneLabel(timeZone: string): string {
+  try {
+    const name = new Intl.DateTimeFormat("en-GB", { timeZone, timeZoneName: "longGeneric" })
+      .formatToParts(0).find((part) => part.type === "timeZoneName")?.value ?? timeZone;
+    return name.replace(/^United Kingdom\b/u, "UK").replace(/ Time$/u, " time");
+  } catch {
+    return timeZone;
+  }
+}
+
 /** A guest's access needs as short phrases, in the order the brief ranks
  *  them: what must be in place before guests arrive first, then routes and
  *  print, then the planner's own words as written. */

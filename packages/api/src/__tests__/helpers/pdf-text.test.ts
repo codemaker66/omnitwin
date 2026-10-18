@@ -46,6 +46,22 @@ describe("pdf text helper", () => {
     expect(pdfImageCount(buf)).toBe(0);
   });
 
+  it("places rotated text where it lands on the page", async () => {
+    const buf = await render((doc) => {
+      doc.font("Inter-Regular").fontSize(10);
+      doc.save().rotate(-90, { origin: [50, 400] });
+      doc.text("West wall", 30, 395, { lineBreak: false });
+      doc.restore();
+    });
+    const line = pdfPages(buf)[0]?.[0];
+    // Turned a quarter anticlockwise about (50, 400): the run now climbs the
+    // page at about x = 50, from y ≈ 420 (page coordinates, top-down) upwards.
+    expect(line?.x).toBeGreaterThan(45);
+    expect(line?.x).toBeLessThan(60);
+    expect(line?.x2).toBeCloseTo(line?.x ?? 0, 0);
+    expect((line?.y2 ?? 0) - (line?.y ?? 0)).toBeCloseTo(line?.width ?? 0, 0);
+  });
+
   it("counts embedded images", async () => {
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=", "base64");
     expect(pdfImageCount(await render((doc) => { doc.image(png, 10, 10, { width: 20 }); }))).toBe(1);

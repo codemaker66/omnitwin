@@ -1,4 +1,4 @@
-import type { PhaseDeadline, Timing } from "@omnitwin/types";
+import { venueZoneLabel, type PhaseDeadline, type Timing } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // What a hallkeeper keeps in view (roadmap N4): the hour the room must be
@@ -9,16 +9,8 @@ import type { PhaseDeadline, Timing } from "@omnitwin/types";
 // down is not an allergy nobody has.
 // ---------------------------------------------------------------------------
 
-/** The venue's zone in words, never its IANA name: "UK time", "Eastern time". */
-export function venueZoneLabel(timeZone: string): string {
-  try {
-    const name = new Intl.DateTimeFormat("en-GB", { timeZone, timeZoneName: "longGeneric" })
-      .formatToParts(0).find((part) => part.type === "timeZoneName")?.value ?? timeZone;
-    return name.replace(/^United Kingdom\b/u, "UK").replace(/ Time$/u, " time");
-  } catch {
-    return timeZone;
-  }
-}
+// The zone's name in words lives in @omnitwin/types, shared with the printed sheet.
+export { venueZoneLabel };
 
 /** The zone to name beside the sheet's times, or null when the reader's
  *  device already keeps the venue's clock. */

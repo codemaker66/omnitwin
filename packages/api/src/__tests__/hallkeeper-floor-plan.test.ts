@@ -3,7 +3,8 @@ import { inflateSync } from "node:zlib";
 import PDFDocument from "pdfkit";
 import type { HallkeeperFloorPlan } from "@omnitwin/types";
 import { buildHallkeeperFloorPlan, footprintCorners, projectHallkeeperFloorPlan } from "../services/hallkeeper-floor-plan.js";
-import { renderHallkeeperFloorPlan } from "../services/hallkeeper-floor-plan-pdf.js";
+import { drawScaleBar, drawSheetPlan, planLabel } from "../services/sheet-pdf/plan-drawing.js";
+import { registerSheetFonts } from "../services/sheet-pdf/fonts.js";
 import { extractEventSheet } from "../services/event-sheet-extractor.js";
 
 const objectId = "11111111-1111-4111-8111-111111111111";
@@ -15,6 +16,14 @@ const object: HallkeeperFloorPlan["objects"][number] = {
 const plan: HallkeeperFloorPlan = {
   coordinateSpace: "real_m_v1", outline: [{ x: -10, z: -5 }, { x: 10, z: -5 }, { x: 10, z: 5 }, { x: -10, z: 5 }], objects: [object],
 };
+
+describe("plan names", () => {
+  it("prints a numbered table by its number and any other name as written", () => {
+    expect(planLabel("Table 5")).toBe("5");
+    expect(planLabel(" table 12 ")).toBe("12");
+    expect(planLabel("Top table")).toBe("Top table");
+  });
+});
 
 describe("frozen floor plan", () => {
   it("takes outline, catalogue dimensions and all actual object poses from source rows", () => {
@@ -70,19 +79,22 @@ describe("frozen floor plan", () => {
       doc.on("error", reject);
     });
     const renderedPlan = smallRoom ? { ...plan, objects: [], outline: plan.outline.map((point) => ({ x: point.x / 200, z: point.z / 100 })) } : plan;
-    renderHallkeeperFloorPlan(doc, renderedPlan, { x: 20, y: 30, width: 400, height: 260 });
+    registerSheetFonts(doc);
+    const { pointsPerMetre } = drawSheetPlan(doc, renderedPlan, { x: 20, y: 30, width: 400, height: 260 }, new Map());
+    drawScaleBar(doc, pointsPerMetre, 408, 279);
     doc.end();
     const pdf = await done;
     const streams = [...pdf.toString("latin1").matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/gu)]
       .map((match) => inflateSync(Buffer.from(match[1] ?? "", "latin1")).toString("latin1")).join("\n");
     if (smallRoom) {
-      // 2080 points/metre. A 0.02m bar uses 41.6pt, inside its 90pt allocation.
-      expect(streams).toContain("366.4 279 m\n408 279 l");
+      // 2320 points/metre. A 0.02 m bar uses 46.4 pt, inside its 80 pt allowance.
+      expect(streams).toContain("361.6 279 m\n408 279 l");
     } else {
-      // Independently calculated: 18.4 points/metre, origin (220,158), +Z down.
-      expect(streams).toContain("36 66 m\n404 66 l\n404 250 l\n36 250 l\nh");
-      expect(streams).toContain("247.6 194.8 m\n247.6 158 l\n266 158 l\n266 194.8 l\nh");
-      expect(streams).toContain("371.2 279 m\n408 279 l"); // real two-metre scale bar
+      // Independently calculated: the room sits in (34, 44, 372, 232) inside a
+      // 14 pt band for the wall names; 18.6 points/metre, top-left (34, 67), +Z down.
+      expect(streams).toContain("34 67 m\n406 67 l\n406 253 l\n34 253 l\nh");
+      expect(streams).toContain("247.9 197.2 m\n247.9 160 l\n266.5 160 l\n266.5 197.2 l\nh");
+      expect(streams).toContain("370.8 279 m\n408 279 l"); // real two-metre scale bar
     }
   });
 });
