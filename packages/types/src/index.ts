@@ -2550,3 +2550,6 @@ export * from "./venue-sky.js";
 // read by the web pages, their schema.org description and the API's public
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
+
+// T-665 slice 1: the People Book's records, matching and merges.
+export * from "./people.js";
