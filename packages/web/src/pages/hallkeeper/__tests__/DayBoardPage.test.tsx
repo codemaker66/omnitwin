@@ -1305,5 +1305,16 @@ describe("DayBoardPage", () => {
     );
     await screen.findByText("Chamber dinner");
     expect(screen.queryByRole("button", { name: "Print today" })).toBeNull();
+    // The wall's landmark keeps its name and the shell draws nothing round it.
+    expect(screen.getByRole("main", { name: "The Day Board, wall display" })).toBeTruthy();
+    expect(document.querySelector("header.dashboard-layout-header")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Diary" })).toBeNull();
+  });
+
+  it("the paper register's landmark is still named for the staff shell's header", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    expect(screen.getByRole("main", { name: "The Day Board" })).toBeTruthy();
   });
 });

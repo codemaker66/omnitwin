@@ -60,7 +60,6 @@ import { boardFreshness, useBoardClock, useBreathPhase, useConnectionState } fro
 import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
 import { useVenueClock } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
-import { useShellFrame } from "../../components/dashboard/staff-shell.js";
 import { boardDayAnchorMs, boardDayRange, useDayBoundaryHour } from "./lib/board-day.js";
 import { useWakeLock } from "./lib/use-wake-lock.js";
 import { driftOffset } from "./lib/burn-in-drift.js";
@@ -884,9 +883,6 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const device: "wall" | "phone" | "desk" = wall ? "wall" : handheld;
   // The wall never sleeps (S8 item 14); phones and desks keep the system's own rule.
   useWakeLock(wall);
-  // The wall is the whole screen: no header, nav or account menu for a
-  // passer-by to touch (D11, S8); the paper register keeps the shell.
-  useShellFrame({ chrome: wall ? "none" : "full" });
   // Nothing burns in: the wall sits a few pixels off centre and moves every
   // ten minutes (S8 item 14); nowMs ticks at least once a minute.
   const drift = wall ? driftOffset(nowMs) : null;
@@ -1202,8 +1198,14 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     </div>
   );
 
+  // The wall is the whole screen: the shell draws no header, nav or account
+  // menu for a passer-by to touch (D11, S8), only the landmark around the board.
   if (wall) {
-    return <main className="dayboard-wall" aria-label="The Day Board, wall display">{body}</main>;
+    return (
+      <DashboardLayout mainLabel="The Day Board, wall display" chrome="none">
+        <div className="dayboard-wall">{body}</div>
+      </DashboardLayout>
+    );
   }
   return <DashboardLayout mainLabel="The Day Board">{body}</DashboardLayout>;
 }
