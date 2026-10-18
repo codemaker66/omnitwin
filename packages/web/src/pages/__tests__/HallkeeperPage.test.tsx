@@ -582,6 +582,79 @@ describe("HallkeeperPage carries the corridor's event", () => {
     expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, tonight);
     expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, lastNight);
   });
+
+  function openWithoutEvent(progressBody: Record<string, unknown>) {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/${CONFIG_A}/progress`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH" ? { checked: true } : { configId: CONFIG_A, ...progressBody }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    return fetchMock;
+  }
+
+  // A link added to the layout mid-setup must not move the ticks: the sheet
+  // writes to the event the server said its ticks belong to.
+  it("pins its writes to the event the server keeps its ticks in", async () => {
+    const only = "00000000-0000-4000-8000-0000000000e1";
+    const fetchMock = openWithoutEvent({ eventId: only, linkedEvents: 1, checked: {} });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Round table/u, checked: false }));
+    await waitFor(() => { expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true); });
+    const write = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
+    expect(requestUrl(write?.[0] ?? "")).toContain(`/hallkeeper/${CONFIG_A}/progress?eventId=${only}`);
+    expect(screen.queryByText(/won't count on Today's rooms/u)).toBeNull();
+  });
+
+  it("says when its checks count on no Day Board: a reused layout opened without an event", async () => {
+    openWithoutEvent({ eventId: null, linkedEvents: 2, checked: {} });
+
+    const notice = await screen.findByText(/won't count on Today's rooms/u);
+    expect(within(notice).getByRole("link", { name: "Today's rooms" }).getAttribute("href")).toBe("/hallkeeper/today");
+  });
+
+  it("says nothing of the kind for a layout no event uses", async () => {
+    openWithoutEvent({ eventId: null, linkedEvents: 0, checked: {} });
+
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: false });
+    expect(screen.queryByText(/won't count on Today's rooms/u)).toBeNull();
+  });
+
+  it("replays a tick queued before ticks carried an event into this sheet's event, and clears it by its old key", async () => {
+    const tonight = "00000000-0000-4000-8000-0000000000e1";
+    let queued: readonly QueuedProgressOp[] = [
+      { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
+    ];
+    vi.mocked(listPendingProgress).mockImplementation(() => Promise.resolve(queued));
+    vi.mocked(ackProgress).mockImplementation((configId, rowKey, eventId) => {
+      if (eventId === null || eventId === undefined) queued = queued.filter((op) => op.configId !== configId || op.rowKey !== rowKey);
+      return Promise.resolve();
+    });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/progress?eventId=${tonight}`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH" ? { checked: true } : { configId: CONFIG_A, eventId: tonight, linkedEvents: 2, checked: {} }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${tonight}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    await waitFor(() => { expect(queued).toEqual([]); });
+
+    const writes = fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH").map(([input]) => requestUrl(input));
+    expect(writes).toEqual([expect.stringContaining(`/progress?eventId=${tonight}`)]);
+    expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null);
+  });
 });
 
 // T-648: the Martyn's Law readiness section renders on every sheet, outside

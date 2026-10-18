@@ -4,6 +4,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   configurations,
+  events,
   hallkeeperProgress,
 } from "../db/schema.js";
 import { assembleSheetDataV2, ApprovedSnapshotUnavailableError, linkedEventIds } from "../services/hallkeeper-sheet-v2-data.js";
@@ -89,11 +90,34 @@ async function loadConfigAuthPivot(
   return row === undefined ? null : row;
 }
 
-/** The event this request's ticks belong to: the one the hallkeeper arrived
- *  from (?eventId=) when the layout is linked to it, else the layout's only
- *  event, else none (lib/hallkeeper-progress.ts progressEventFor). */
-async function progressEventOf(db: Database, configId: string, query: unknown): Promise<string | null> {
-  return progressEventFor(await linkedEventIds(db, configId), requestedEventId(query));
+/** Whether an event is a live event of the layout's own venue. */
+async function isVenueEvent(db: Database, configId: string, eventId: string): Promise<boolean> {
+  const [row] = await db.select({ id: events.id })
+    .from(events)
+    .innerJoin(configurations, eq(configurations.venueId, events.venueId))
+    .where(and(eq(events.id, eventId), isNull(events.deletedAt), eq(configurations.id, configId)))
+    .limit(1);
+  return row !== undefined;
+}
+
+/** The event this request's ticks belong to (lib/hallkeeper-progress.ts
+ *  progressEventFor), and how many events the layout is linked to, so a
+ *  sheet keeping eventless ticks on a reused layout can say they count on no
+ *  Day Board. */
+async function progressEventOf(
+  db: Database,
+  configId: string,
+  query: unknown,
+): Promise<{ readonly eventId: string | null; readonly linkedEvents: number }> {
+  const requested = requestedEventId(query);
+  const [linked, requestedIsVenueEvent] = await Promise.all([
+    linkedEventIds(db, configId),
+    requested === null ? Promise.resolve(false) : isVenueEvent(db, configId, requested),
+  ]);
+  return {
+    eventId: progressEventFor({ linkedEventIds: linked, requestedEventId: requested, requestedIsVenueEvent }),
+    linkedEvents: linked.length,
+  };
 }
 
 /** One event's ticks on a layout, or the layout's eventless ticks — never
@@ -257,7 +281,7 @@ export async function hallkeeperSheetRoutes(
 
     // Tonight's ticks only: a layout reused from an earlier event must not
     // arrive on the Day Board already counted as set.
-    const eventId = await progressEventOf(db, params.data.configId, request.query);
+    const { eventId } = await progressEventOf(db, params.data.configId, request.query);
     const marks = await db.select({ rowKey: hallkeeperProgress.rowKey })
       .from(hallkeeperProgress)
       .where(progressScope(params.data.configId, eventId));
@@ -295,7 +319,7 @@ export async function hallkeeperSheetRoutes(
       return reply.status(gate.status).send({ error: gate.error, code: gate.code });
     }
 
-    const eventId = await progressEventOf(db, params.data.configId, request.query);
+    const { eventId, linkedEvents } = await progressEventOf(db, params.data.configId, request.query);
     const rows = await db.select({
       rowKey: hallkeeperProgress.rowKey,
       checkedAt: hallkeeperProgress.checkedAt,
@@ -308,7 +332,9 @@ export async function hallkeeperSheetRoutes(
       checked[row.rowKey] = row.checkedAt.toISOString();
     }
 
-    return { data: { configId: params.data.configId, eventId, checked } };
+    // eventId is the scope these ticks belong to; the sheet pins it for its
+    // writes. linkedEvents lets it say when eventless ticks count on no board.
+    return { data: { configId: params.data.configId, eventId, linkedEvents, checked } };
   });
 
   // PATCH /hallkeeper/:configId/progress — set or toggle a row's check state
@@ -330,7 +356,7 @@ export async function hallkeeperSheetRoutes(
 
     const { configId } = params.data;
     const { rowKey, checked: desired } = body.data;
-    const eventId = await progressEventOf(db, configId, request.query);
+    const { eventId } = await progressEventOf(db, configId, request.query);
 
     // Idempotent set-state path. Avoid select-then-insert races: two devices
     // replaying "checked: true" for the same row must converge, not surface a

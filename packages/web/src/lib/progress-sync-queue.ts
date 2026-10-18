@@ -44,11 +44,13 @@ export interface QueuedProgressOp {
 const DB_NAME = "omnitwin-hallkeeper";
 const STORE_NAME = "progress-queue";
 
-/** A tick with no event keeps the key ops were stored under before ticks
- *  belonged to events, so an op already queued on a device still acks. */
-function keyFor(configId: string, rowKey: string, eventId: string | null | undefined): string {
+/** The IndexedDB key of a queued tick. A tick with no event keeps the key ops
+ *  were stored under before ticks belonged to events, so an op already queued
+ *  on a device still acks: this format is load-bearing, change it never. */
+export function progressQueueKey(configId: string, rowKey: string, eventId: string | null | undefined): string {
   return eventId === null || eventId === undefined ? `${configId}:${rowKey}` : `${configId}:${eventId}:${rowKey}`;
 }
+const keyFor = progressQueueKey;
 
 /**
  * Open the progress-queue cache. Lazy-instantiated once per module

@@ -80,25 +80,37 @@ describe("checkedStateAfter", () => {
 describe("progressEventFor: which event a sheet's ticks belong to", () => {
   const A = "00000000-0000-4000-8000-00000000000a";
   const B = "00000000-0000-4000-8000-00000000000b";
+  const C = "00000000-0000-4000-8000-00000000000c";
+  const scope = (linkedEventIds: readonly string[], requestedEventId: string | null, requestedIsVenueEvent = false): string | null =>
+    progressEventFor({ linkedEventIds, requestedEventId, requestedIsVenueEvent });
 
   it("is the event the hallkeeper arrived from, when the layout is linked to it", () => {
-    expect(progressEventFor([A, B], B)).toBe(B);
-    expect(progressEventFor([A], A)).toBe(A);
+    expect(scope([A, B], B)).toBe(B);
+    expect(scope([A], A)).toBe(A);
+  });
+
+  // The Day Board can offer a layout for an event that reaches it only through
+  // a frozen phase plan, with no link row. Its ticks must be that event's own,
+  // never another event's that happens to be linked.
+  it("is the event the hallkeeper arrived from when it is the venue's event, linked or not", () => {
+    expect(scope([A], B, true)).toBe(B);
+    expect(scope([A, B], C, true)).toBe(C);
+    expect(scope([], C, true)).toBe(C);
   });
 
   it("is the layout's only event when the sheet was opened without one", () => {
-    expect(progressEventFor([A], null)).toBe(A);
+    expect(scope([A], null)).toBe(A);
   });
 
-  it("falls back as the sheet's own times do when the event named is not linked", () => {
-    expect(progressEventFor([A], B)).toBe(A);
-    expect(progressEventFor([A, B], "00000000-0000-4000-8000-00000000000c")).toBeNull();
+  it("ignores an event that is not the venue's, as the sheet's own times do", () => {
+    expect(scope([A], B)).toBe(A);
+    expect(scope([A, B], C)).toBeNull();
   });
 
   it("is no event when the layout has none, or several and none was named", () => {
-    expect(progressEventFor([], null)).toBeNull();
-    expect(progressEventFor([], A)).toBeNull();
-    expect(progressEventFor([A, B], null)).toBeNull();
+    expect(scope([], null)).toBeNull();
+    expect(scope([], A)).toBeNull();
+    expect(scope([A, B], null)).toBeNull();
   });
 });
 

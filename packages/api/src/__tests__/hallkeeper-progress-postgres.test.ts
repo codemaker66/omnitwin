@@ -10,7 +10,7 @@ import * as schema from "../db/schema.js";
 import { hallkeeperSheetRoutes } from "../routes/hallkeeper-sheet.js";
 
 // ---------------------------------------------------------------------------
-// A setup sheet's ticks against real PostgreSQL (migration 0095).
+// A setup sheet's ticks against real PostgreSQL (migration 0098).
 //
 // hallkeeper_progress keyed a tick on the layout alone, so a layout reused
 // for a second event opened with the first event's ticks and the Day Board
@@ -46,7 +46,7 @@ describe("sheet tick PostgreSQL target guard", () => {
   });
 });
 
-interface ProgressBody { readonly data: { readonly eventId: string | null; readonly checked: Record<string, string> } }
+interface ProgressBody { readonly data: { readonly eventId: string | null; readonly linkedEvents: number; readonly checked: Record<string, string> } }
 interface SummaryBody { readonly data: { readonly total: number; readonly checked: number } }
 interface SheetBody { readonly data: { readonly phases: readonly { readonly zones: readonly { readonly rows: readonly { readonly key: string }[] }[] }[] } }
 
@@ -130,7 +130,7 @@ describe.skipIf(target === undefined)("a setup sheet's ticks belong to the event
     const [lastNight, tonight] = f.eventIds as [string, string];
     await tick(f, lastNight, true);
 
-    expect(await progress(f, tonight)).toEqual({ configId: f.configId, eventId: tonight, checked: {} });
+    expect(await progress(f, tonight)).toEqual({ configId: f.configId, eventId: tonight, linkedEvents: 2, checked: {} });
     expect(await summary(f, tonight)).toMatchObject({ total: 1, checked: 0 });
 
     const earlier = await progress(f, lastNight);
@@ -170,7 +170,35 @@ describe.skipIf(target === undefined)("a setup sheet's ticks belong to the event
     await db.insert(schema.hallkeeperProgress).values({ configId: f.configId, eventId: null, rowKey: f.rowKey, checkedBy: f.userId });
 
     expect(await summary(f, only)).toMatchObject({ total: 1, checked: 0 });
-    expect(await progress(f, null)).toEqual({ configId: f.configId, eventId: only, checked: {} });
+    expect(await progress(f, null)).toEqual({ configId: f.configId, eventId: only, linkedEvents: 1, checked: {} });
+  });
+
+  // The Day Board can offer a layout for an event that reaches it only through
+  // a frozen phase plan, with no link row: that event's ticks are its own.
+  it("keeps ticks for a venue event the layout is not linked to as that event's own", async () => {
+    const f = await layout(1);
+    const [linked] = f.eventIds as [string];
+    const [{ venueId }] = await db.select({ venueId: schema.configurations.venueId }).from(schema.configurations)
+      .where(eq(schema.configurations.id, f.configId)) as [{ venueId: string }];
+    const frozenOnly = randomUUID();
+    await db.insert(schema.events).values({ id: frozenOnly, venueId, createdBy: f.userId, name: "DEMO ONLY frozen-plan event" });
+
+    await tick(f, frozenOnly, true);
+    expect(await storedEvents(f)).toEqual([frozenOnly]);
+    expect(await summary(f, frozenOnly)).toMatchObject({ checked: 1 });
+    expect(await summary(f, linked)).toMatchObject({ checked: 0 });
+    expect(await progress(f, frozenOnly)).toMatchObject({ eventId: frozenOnly, linkedEvents: 1 });
+  });
+
+  it("ignores another venue's event, keeping to the layout's own", async () => {
+    const f = await layout(1);
+    const [linked] = f.eventIds as [string];
+    const elsewhere = await layout(1);
+    const [foreign] = elsewhere.eventIds as [string];
+
+    await tick(f, foreign, true);
+    expect(await storedEvents(f)).toEqual([linked]);
+    expect(await progress(f, foreign)).toMatchObject({ eventId: linked });
   });
 
   it("keeps a layout with several events and none named to its own eventless ticks, once per row", async () => {
@@ -183,6 +211,8 @@ describe.skipIf(target === undefined)("a setup sheet's ticks belong to the event
 
     const eventless = await progress(f, null);
     expect(eventless.eventId).toBeNull();
+    // The sheet uses this to say these ticks count on no Day Board.
+    expect(eventless.linkedEvents).toBe(2);
     expect(Object.keys(eventless.checked)).toEqual([f.rowKey]);
     for (const eventId of f.eventIds) expect(await summary(f, eventId)).toMatchObject({ checked: 0 });
   });

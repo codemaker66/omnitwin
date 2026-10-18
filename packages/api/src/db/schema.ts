@@ -479,7 +479,7 @@ export const assetAccessories = pgTable("asset_accessories", {
 //
 // A tick belongs to the event the room was set for: a layout can serve more
 // than one event, and ticks keyed on the layout alone opened a reused layout
-// with the last event's ticks (migration 0095). event_id is null only for
+// with the last event's ticks (migration 0098). event_id is null only for
 // ticks stored before that, and for a layout with no single event to hold
 // them (lib/hallkeeper-progress.ts progressEventFor); those are never counted
 // towards an event.
