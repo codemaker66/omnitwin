@@ -72,6 +72,19 @@ function CurrentRoute(): React.ReactElement {
   return <output aria-label="Current route">{location.pathname}{location.search}</output>;
 }
 
+describe("a bare shell for the wall display (goal 19 S8)", () => {
+  it("draws no header, no nav and no account menu around a page that asks for none", () => {
+    render(<MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}><DashboardLayout chrome="none">
+      <h1>The Day Board</h1>
+    </DashboardLayout></MemoryRouter>);
+    expect(screen.getByRole("heading", { level: 1, name: "The Day Board" })).toBeTruthy();
+    expect(screen.queryByRole("banner")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Diary" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Sign Out/iu })).toBeNull();
+    expect(screen.getByRole("main")).toBeTruthy();
+  });
+});
+
 function renderShell({ path = "/dashboard?view=inventory", onViewChange }: {
   readonly path?: string;
   readonly onViewChange?: (view: DashboardView) => void;

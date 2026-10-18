@@ -1,49 +1,40 @@
 import { describe, it, expect } from "vitest";
-import { roomStyleCapacities, styleFitSummary } from "../room-capacity.js";
+import * as roomCapacity from "../room-capacity.js";
+import { roomStyleEstimates } from "../room-capacity.js";
 
-// Grand Hall ≈ 21 m × 10 m = 210 m².
-const GRAND_HALL = 210;
+// The Grand Hall's floor: 21 m × 10.5 m = 220.5 m² (redteam fix-first 1).
+const GRAND_HALL = 220.5;
 
-describe("roomStyleCapacities", () => {
-  it("gives every event style's comfortable/tight capacity, sorted most-to-fewest", () => {
-    const rows = roomStyleCapacities(GRAND_HALL, null);
+describe("roomStyleEstimates", () => {
+  it("gives floor area ÷ generic spacing for every style, most to fewest", () => {
+    const rows = roomStyleEstimates(GRAND_HALL);
     expect(rows).toHaveLength(7);
-    const reception = rows[0];
-    expect(reception?.style).toBe("cocktail");
-    expect(reception?.label).toBe("Reception (standing)");
-    expect(reception?.comfortable).toBe(323); // 210 / 0.65
-    expect(reception?.tight).toBe(466); // 210 / 0.45
-    expect(reception?.fit).toBe("unknown"); // no guest count
-    // Descending comfortable capacity.
+    expect(rows[0]?.style).toBe("cocktail");
+    expect(rows[0]?.label).toBe("Reception (standing)");
     for (let i = 1; i < rows.length; i += 1) {
-      expect((rows[i - 1]?.comfortable ?? 0) >= (rows[i]?.comfortable ?? 0)).toBe(true);
+      expect((rows[i - 1]?.estimate ?? 0) >= (rows[i]?.estimate ?? 0)).toBe(true);
     }
   });
 
-  it("verdicts each style against a guest count", () => {
-    const byStyle = new Map(roomStyleCapacities(GRAND_HALL, 150).map((r) => [r.style, r]));
-    expect(byStyle.get("theatre")?.fit).toBe("fits"); // 150 ≤ 262 comfortable
-    expect(byStyle.get("cabaret")?.fit).toBe("tight"); // 116 comfortable < 150 ≤ 150 tight
-    expect(byStyle.get("boardroom")?.fit).toBe("over"); // 150 > 116 tight
+  it("reproduces the arithmetic the red team quoted: 339 standing, 147 dinner, 275 theatre", () => {
+    const byStyle = new Map(roomStyleEstimates(GRAND_HALL).map((row) => [row.style, row.estimate]));
+    expect(byStyle.get("cocktail")).toBe(339); // 220.5 / 0.65
+    expect(byStyle.get("dinner-rounds")).toBe(147); // 220.5 / 1.5
+    expect(byStyle.get("theatre")).toBe(275); // 220.5 / 0.8
   });
 
-  it("is all-zero / all-over for a room with no floor area", () => {
-    const rows = roomStyleCapacities(0, 100);
-    expect(rows.every((r) => r.comfortable === 0 && r.tight === 0)).toBe(true);
-    expect(rows.every((r) => r.fit === "over")).toBe(true);
-  });
-});
-
-describe("styleFitSummary", () => {
-  it("summarises which styles suit a guest count", () => {
-    const summary = styleFitSummary(roomStyleCapacities(GRAND_HALL, 150), 150);
-    expect(summary).toContain("150 guests");
-    expect(summary).toContain("comfortable for");
-    expect(summary).toContain("tight for");
-    expect(summary).toContain("over for Boardroom");
+  it("carries no verdict and no count at the minimum allowance", () => {
+    for (const row of roomStyleEstimates(GRAND_HALL)) {
+      expect(Object.keys(row).sort()).toEqual(["estimate", "label", "style"]);
+    }
+    // 490 standing at the 0.45 m² minimum was the most dangerous figure; it is
+    // no longer produced anywhere in this module.
+    expect(roomStyleEstimates(GRAND_HALL).some((row) => row.estimate === 490)).toBe(false);
+    expect(Object.keys(roomCapacity)).not.toContain("styleFitSummary");
+    expect(Object.keys(roomCapacity)).not.toContain("styleFitLabel");
   });
 
-  it("is null without a guest count", () => {
-    expect(styleFitSummary(roomStyleCapacities(GRAND_HALL, null), null)).toBeNull();
+  it("is all-zero for a room with no floor area", () => {
+    expect(roomStyleEstimates(0).every((row) => row.estimate === 0)).toBe(true);
   });
 });

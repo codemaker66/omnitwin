@@ -361,6 +361,6 @@ export function circulationBandLabel(band: CirculationBand): string {
     case "tight":
       return "Tight walkways — review circulation";
     case "blocked":
-      return "Furniture too close to pass between — venue review required";
+      return "Furniture too close to walk between — venue review required";
   }
 }

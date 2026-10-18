@@ -4,12 +4,15 @@ import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlannerVenueIdentity } from "../../hooks/use-planner-venue-identity.js";
-import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
-import { RENDER_SCALE } from "../../constants/scale.js";
+import { usePlannerTruth } from "../../hooks/use-planner-truth.js";
 import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
-import { inferSeatingStyle } from "../../lib/layout-capacity.js";
-import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
-import { buildCapacityGuidance } from "../../lib/proposal-capacity-note.js";
+import {
+  guestsAbovePublished,
+  plannerLayoutStyle,
+  publishedFiguresPhrase,
+  publishedFormatForStyle,
+} from "../../lib/planner-truth.js";
+import { roomPhrase } from "../../lib/unrecorded-ask.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { isValidEmail } from "../../lib/email-validation.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
@@ -138,20 +141,22 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const emailValid = isValidEmail(email);
   const showEmailHint = emailTouched && email.trim().length > 0 && !emailValid;
 
-  // Planning-grade capacity guidance (T-429) keyed to the typed guest count.
-  // Floor area + inferred seating style come from the SAME basis as the
-  // planner HUD (room-dimensions store ÷ RENDER_SCALE, shared seating counts),
-  // so the enquiry estimate and the planner estimate can never disagree.
-  const dimensions = useRoomDimensionsStore((s) => s.dimensions);
+  // The venue's published capacity for this room, keyed to the typed guest
+  // count and read against the layout on the floor (standing poseurs are a
+  // reception, rounds a dinner). It used to be floor area ÷ generic spacing,
+  // which told a visitor 339 standing in a Grand Hall the venue publishes at
+  // 250 (redteam fix-first 1). Nothing is shown where nothing is published.
+  const { published, roomName } = usePlannerTruth();
   const placedItems = usePlacementStore((s) => s.placedItems);
   const guestCountNum = /^\d+$/.test(guestCount.trim()) ? Number(guestCount.trim()) : 0;
-  const capacityGuidance = useMemo(() => {
-    const floorAreaM2 = (dimensions.width / RENDER_SCALE) * (dimensions.length / RENDER_SCALE);
-    if (floorAreaM2 <= 0) return null;
-    const style = inferSeatingStyle(seatingCountsFromPlacedItems(placedItems));
-    return buildCapacityGuidance(floorAreaM2, guestCountNum, style);
-  }, [dimensions.width, dimensions.length, placedItems, guestCountNum]);
-  const showCapacityGuidance = guestCountNum > 0 && capacityGuidance !== null;
+  const publishedFormat = useMemo(() => publishedFormatForStyle(plannerLayoutStyle(placedItems)), [placedItems]);
+  const capacityLine = published.kind === "published" && guestCountNum > 0
+    ? {
+        figures: `The venue publishes ${publishedFiguresPhrase(published.capacity, publishedFormat)} in ${roomPhrase(roomName)}.`,
+        above: guestsAbovePublished(guestCountNum, published.capacity, publishedFormat),
+        source: published.source,
+      }
+    : null;
 
   const handleSubmit = useCallback(async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -510,22 +515,23 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             </div>
           </div>
 
-          {/* Planning-grade capacity guidance — SAFE, human-review-required */}
-          {showCapacityGuidance && (
+          {/* The venue's published figure for this room and layout, with who
+              stated it and when. Never floor area ÷ generic spacing. */}
+          {capacityLine !== null && (
             <div
               data-testid="enquiry-capacity-guidance"
               style={{
                 padding: "10px 14px", borderRadius: 10, marginBottom: 16,
-                background: "rgba(201, 138, 91,0.05)", border: "1px solid rgba(201, 138, 91,0.1)",
-                fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.5,
+                background: "rgba(201, 138, 91,0.05)", border: "1px solid rgba(201, 138, 91,0.14)",
+                fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.5,
               }}
             >
-              <span style={{ color: "rgba(201, 138, 91,0.7)", fontWeight: 600 }}>
-                For {guestCountNum} guests:
-              </span>{" "}
-              {capacityGuidance.fit} — this room is comfortable for {capacityGuidance.summary}.
-              <div style={{ marginTop: 4, fontSize: 12, color: "rgba(255,255,255,0.42)" }}>
-                {capacityGuidance.disclosure}
+              {capacityLine.figures}
+              {capacityLine.above !== null && (
+                <> {capacityLine.above} The events team will say what is possible when they reply.</>
+              )}
+              <div data-testid="enquiry-capacity-source" style={{ marginTop: 4, fontSize: 12, color: "rgba(255,255,255,0.64)" }}>
+                {capacityLine.source}
               </div>
             </div>
           )}

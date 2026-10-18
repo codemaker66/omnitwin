@@ -9,11 +9,23 @@ import {
   computeCapacityIntelligence,
   inferSeatingStyle,
   comfortBandLabel,
+  type CapacityIntelligence,
 } from "../../lib/layout-capacity.js";
+import {
+  GENERIC_ESTIMATE_LABEL,
+  plannerLayoutStyle,
+  publishedFiguresPhrase,
+  publishedFormatForStyle,
+  type PublishedCapacityAnswer,
+  type PublishedFormat,
+} from "../../lib/planner-truth.js";
+import { usePlannerTruth } from "../../hooks/use-planner-truth.js";
+import { ActivityStatus } from "../shared/Activity.js";
 import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
 import { isDiningTableItem } from "../../lib/furniture-semantics.js";
 import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { circulationBandLabel } from "../../lib/circulation.js";
+import { countLabel } from "../../lib/count-label.js";
 import { placedItemsCirculation } from "../../lib/circulation-scene.js";
 import { gradeLayout, type LayoutBand, type RecommendationSeverity } from "../../lib/layout-intelligence.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
@@ -177,6 +189,96 @@ function gradeRecommendationStyle(color: string): React.CSSProperties {
   };
 }
 
+interface CapacityReadout {
+  /** The figure the seats are counted against, or null to show seats alone. */
+  readonly denominator: number | null;
+  readonly fillPercent: number;
+  readonly caption: string;
+  readonly detail: string | null;
+  /** Who stated the figure, and when, when a figure is shown. */
+  readonly source: string | null;
+  readonly disclosure: string;
+  readonly ariaLabel: string;
+  readonly reading: boolean;
+}
+
+interface CapacityReadoutInput {
+  readonly staff: boolean;
+  readonly published: PublishedCapacityAnswer;
+  readonly format: PublishedFormat | null;
+  readonly seats: number;
+  readonly hasLayout: boolean;
+  readonly capacity: CapacityIntelligence;
+  readonly styleLabel: string;
+}
+
+/**
+ * What the HUD's capacity panel may say to this viewer. Venue staff keep the
+ * floor-area arithmetic, labelled as an estimate at generic spacing. Everyone
+ * else is counted against the venue's published figure for the layout, with
+ * who stated it and when, or sees seats alone: the computed count once read
+ * "80 / 147" and "339" to visitors in a room the venue publishes at 180 and
+ * 250 (redteam fix-first 1).
+ */
+function capacityReadout(input: CapacityReadoutInput): CapacityReadout {
+  // "1 seat", "220 seats": one helper for every count label.
+  const seats = countLabel(input.seats, "seat");
+  const empty = "Start placing furniture to build capacity";
+  if (input.staff) {
+    const estimate = input.capacity.comfortableCapacity;
+    return {
+      denominator: estimate,
+      fillPercent: Math.min(100, input.capacity.utilizationPercent),
+      caption: input.hasLayout ? comfortBandLabel(input.capacity.band) : empty,
+      detail: input.hasLayout && input.capacity.spacePerGuestM2 !== null
+        ? `${input.capacity.spacePerGuestM2.toFixed(1)} m²/guest · ${input.styleLabel} · ~${estimate.toLocaleString("en-GB")} at generic spacing`
+        : null,
+      source: null,
+      disclosure: `${GENERIC_ESTIMATE_LABEL} · venue staff only · not the venue's published figure`,
+      ariaLabel: `${seats} planned; estimate at generic spacing about ${countLabel(estimate, "guest")}`,
+      reading: false,
+    };
+  }
+  const confirmed = "Final numbers are confirmed by the events team.";
+  if (input.published.kind === "reading") {
+    return {
+      denominator: null, fillPercent: 0, caption: "Reading the venue's published figures…", detail: null,
+      source: null, disclosure: confirmed, ariaLabel: `${seats} planned`, reading: true,
+    };
+  }
+  if (input.published.kind === "not-published") {
+    return {
+      denominator: null, fillPercent: 0,
+      caption: input.hasLayout ? "No published capacity for this room" : empty,
+      detail: null, source: null, disclosure: confirmed, ariaLabel: `${seats} planned`, reading: false,
+    };
+  }
+  const { capacity, source } = input.published;
+  if (input.format === null) {
+    return {
+      denominator: null, fillPercent: 0,
+      caption: input.hasLayout ? `The venue publishes no figure for ${input.styleLabel}` : empty,
+      detail: input.hasLayout ? null : `Published ${publishedFiguresPhrase(capacity, null)}`,
+      source: input.hasLayout ? null : source,
+      disclosure: confirmed, ariaLabel: `${seats} planned`, reading: false,
+    };
+  }
+  const figure = capacity[input.format];
+  const above = input.seats > figure;
+  return {
+    denominator: figure,
+    fillPercent: figure > 0 ? Math.min(100, Math.round((input.seats / figure) * 100)) : 0,
+    caption: above
+      ? `${seats} placed; the venue publishes ${publishedFiguresPhrase(capacity, input.format)}.`
+      : `Published ${publishedFiguresPhrase(capacity, input.format)}`,
+    detail: above ? "The events team will say what is possible." : null,
+    source,
+    disclosure: confirmed,
+    ariaLabel: `${seats} planned; the venue publishes ${publishedFiguresPhrase(capacity, input.format)}`,
+    reading: false,
+  };
+}
+
 export function PlannerSpatialHud(): React.ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
@@ -212,8 +314,19 @@ export function PlannerSpatialHud(): React.ReactElement {
   const circulation = useMemo(() => placedItemsCirculation(placedItems), [placedItems]);
 
   const hasLayout = stats.roundTables > 0 || stats.banquetTables > 0 || stats.chairs > 0;
-  const gaugeFill = Math.min(100, capacity.utilizationPercent);
   const styleLabel = seatingStyle.replace(/-/g, " ");
+  const { staff, published } = usePlannerTruth();
+  const publishedFormat = useMemo(() => publishedFormatForStyle(plannerLayoutStyle(placedItems)), [placedItems]);
+  const readout = capacityReadout({
+    staff,
+    published,
+    format: publishedFormat,
+    seats: stats.chairs,
+    hasLayout,
+    capacity,
+    styleLabel,
+  });
+  const gaugeFill = readout.fillPercent;
 
   // Layout intelligence: synthesise the circulation + capacity + dressing
   // signals the HUD already computes into a single planning-grade grade.
@@ -305,21 +418,24 @@ export function PlannerSpatialHud(): React.ReactElement {
           <div
             className="planner-spatial-hud__gauge"
             style={{ "--capacity": `${String(gaugeFill)}%` } as React.CSSProperties}
-            aria-label={`${String(stats.chairs)} seats planned, comfortable planning capacity about ${String(capacity.comfortableCapacity)} guests`}
+            aria-label={readout.ariaLabel}
           >
             <div className="planner-spatial-hud__gauge-inner">
               <span>{stats.chairs.toLocaleString("en-GB")}</span>
-              <small>/ {capacity.comfortableCapacity.toLocaleString("en-GB")}</small>
+              {readout.denominator !== null && <small>/ {readout.denominator.toLocaleString("en-GB")}</small>}
             </div>
           </div>
-          <div className="planner-spatial-hud__caption">
-            {hasLayout
-              ? comfortBandLabel(capacity.band)
-              : "Start placing furniture to build capacity"}
+          <div className="planner-spatial-hud__caption" data-testid="planner-capacity-caption">
+            {readout.reading ? <ActivityStatus>{readout.caption}</ActivityStatus> : readout.caption}
           </div>
-          {hasLayout && capacity.spacePerGuestM2 !== null && (
+          {readout.detail !== null && (
             <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--capacity-detail">
-              {capacity.spacePerGuestM2.toFixed(1)} m²/guest · {styleLabel} · ~{capacity.comfortableCapacity.toLocaleString("en-GB")} comfortable
+              {readout.detail}
+            </div>
+          )}
+          {readout.source !== null && (
+            <div className="planner-spatial-hud__subcaption" data-testid="planner-capacity-source">
+              {readout.source}
             </div>
           )}
           {circulation.band !== "open" && circulation.tightestGapM !== null && (
@@ -342,8 +458,12 @@ export function PlannerSpatialHud(): React.ReactElement {
           <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--secondary">
             {stats.dressedTables > 0 ? `${plural(stats.dressedTables, "table")} dressed` : "No dressed tables yet"}
           </div>
-          <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--disclosure" style={{ opacity: 0.66, fontSize: 12 }}>
-            Planning-grade estimate · human review required · final capacity confirmed by venue team
+          <div
+            className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--disclosure"
+            style={{ opacity: 0.66, fontSize: 12 }}
+            data-testid="planner-capacity-disclosure"
+          >
+            {readout.disclosure}
           </div>
         </section>
 
@@ -355,11 +475,8 @@ export function PlannerSpatialHud(): React.ReactElement {
             </strong>
             <span style={{ color: "#d8d0c4", fontSize: 12, lineHeight: 1.35 }}>
               {hasLayout
-                ? `${stats.chairs.toLocaleString("en-GB")} seats can feed a revenue scenario once quote or event data is linked.`
+                ? `${countLabel(stats.chairs, "seat")} can feed a revenue scenario once quote or event data is linked.`
                 : "Place furniture and link quote/event data to calculate exact commercial scenarios."}
-            </span>
-            <span style={{ color: "#b8ad92", fontSize: 12, lineHeight: 1.35 }}>
-              Comfort status {capacity.band}; review constraints remain visible before commercial recommendations.
             </span>
           </div>
         </section>

@@ -59,6 +59,16 @@ describe("TruthModeIndicator", () => {
     expect(screen.queryByRole("dialog", { name: "Truth Mode summary" })).toBeNull();
   });
 
+  // Integration check, 17 Oct 2026: "Procedural preview · 1 issues" on a phone.
+  it("counts a single known issue in the singular", () => {
+    const base = buildProceduralTruthSummary({ surface: "planner_3d", placedObjectCount: 3, measuredRuntimeAssetsLoaded: false });
+    const summary = { ...base, knownIssues: base.knownIssues.slice(0, 1) };
+    render(<TruthModeIndicator summary={summary} embedded />);
+    const toggle = screen.getByTestId("truth-mode-toggle");
+    expect(toggle.textContent).toContain("1 issue");
+    expect(toggle.textContent).not.toMatch(/1 issues/);
+  });
+
   it("renders the persistent L1 indicator", () => {
     renderProceduralIndicator();
     expect(screen.getByTestId("truth-mode-indicator")).toBeTruthy();
