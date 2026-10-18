@@ -36,7 +36,18 @@ export interface QuoteQuestion {
   readonly chairs: number;
 }
 
-export type AskTopic = UnrecordedFact | HeadcountQuestion | QuoteQuestion;
+/** A guest count the planner cannot lay out at its own spacing: how the venue
+ *  would set the room for it. */
+export interface LayoutQuestion {
+  readonly kind: "layout";
+  readonly guests: number;
+  /** Seats the planner fits at its spacing. */
+  readonly roomFor: number;
+  /** The occasion in words: "a seated dinner". */
+  readonly occasion: string;
+}
+
+export type AskTopic = UnrecordedFact | HeadcountQuestion | QuoteQuestion | LayoutQuestion;
 
 export type AskAudience = "staff" | "guest";
 
@@ -96,6 +107,9 @@ function questionFor(topic: AskTopic, room: string): string {
         ? ` The plan has ${plural(topic.tables, "table")} and ${plural(topic.chairs, "chair")}.`
         : "";
       return `Could you quote for ${guests}, including VAT and any compulsory charges?${layout}`;
+    }
+    if (topic.kind === "layout") {
+      return `We are planning ${String(topic.guests)} guests for ${topic.occasion} in ${room}. The online planner fits ${String(topic.roomFor)} at its spacing. How would you lay the room out for ${String(topic.guests)}?`;
     }
     return `We are planning ${String(topic.guests)} guests for ${topic.formatLabel} in ${room}, more than the published ${String(topic.figure)}. Is that possible, and what would it need?`;
   }

@@ -17,8 +17,8 @@ import {
   Ungroup,
   Utensils,
 } from "lucide-react";
-import { getCatalogueItem, getCatalogueItemBySlug } from "../../lib/catalogue.js";
-import { DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../lib/furniture-defaults.js";
+import { getCatalogueItem } from "../../lib/catalogue.js";
+import { useAutoFillRequestStore } from "../../stores/auto-fill-request-store.js";
 import { buildPlannerShowcaseTour } from "../../lib/planner-showcase.js";
 import { canRedo, canUndo, redoLabel, undoLabel } from "../../lib/editor-history.js";
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
@@ -399,11 +399,10 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
       },
     ];
 
-    // Offer a one-click banquet fill only on a blank floor, so it can never
-    // overwrite work in progress. When a guest count is set (Guests lens), lay
-    // out just enough comfortable-aisle round tables for that many guests — a
-    // planner wants a layout FOR their headcount, not the room packed wall to
-    // wall. With no count, fill the whole room. Undo-safe; tune from there.
+    // Offer a banquet fill only on a blank floor, so it can never overwrite
+    // work in progress. It asks "How many guests?" first, in the Guests lens,
+    // beside the venue's published figure, and says what it will place before
+    // it places it (redteam fix-first 15). Undo-safe; tune from there.
     if (placedItems.length === 0) {
       const forGuests = plannedGuestCount !== null && plannedGuestCount > 0 ? plannedGuestCount : 0;
       emptyActions.splice(1, 0, {
@@ -414,9 +413,8 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
           : "Auto-fill the room with banquet tables",
         icon: <LayoutGrid size={16} aria-hidden="true" />,
         onClick: () => {
-          const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
-          if (table === undefined) return;
-          usePlacementStore.getState().autoArrangeBanquet(table.id, forGuests, 8);
+          useAutoFillRequestStore.getState().request("dinner-rounds");
+          useCockpitStore.getState().setMode("guests");
         },
       });
     }

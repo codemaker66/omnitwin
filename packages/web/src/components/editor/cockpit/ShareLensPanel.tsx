@@ -3,6 +3,7 @@ import { Share2 } from "lucide-react";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import { ProposalVersionPayloadSchema } from "@omnitwin/types";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
+import { SeatShortfallFix } from "./SeatShortfallFix.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -160,6 +161,7 @@ export function ShareLensPanel(): ReactElement {
       <LensPanelSection label="What the client sees">
         <p className="lens-panel__paragraph" data-testid="share-layout-summary">{draft.layoutSummary}</p>
         <p className="lens-panel__paragraph lens-panel__paragraph--muted">{draft.capacityNote}</p>
+        <SeatShortfallFix statement testId="share-seat-fix" />
         <label className="lens-panel__field">
           <span className="lens-panel__field-label">Message to the client (optional)</span>
           <textarea

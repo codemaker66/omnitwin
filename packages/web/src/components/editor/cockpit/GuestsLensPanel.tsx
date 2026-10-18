@@ -1,12 +1,15 @@
-import { useMemo, type ChangeEvent, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement } from "react";
 import { Users } from "lucide-react";
-import { CAPACITY_FORMATS, type LayoutStyle } from "@omnitwin/types";
+import { CAPACITY_FORMATS } from "@omnitwin/types";
 import { ActivityStatus } from "../../shared/Activity.js";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
 import { NotRecorded } from "./NotRecorded.js";
+import { AutoFillPrompt } from "./AutoFillPrompt.js";
+import { SeatShortfallFix } from "./SeatShortfallFix.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useAutoFillRequestStore } from "../../../stores/auto-fill-request-store.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../../../lib/guest-flow-layout-input.js";
 import {
@@ -20,8 +23,17 @@ import {
   publishedCapacityRows,
 } from "../../../lib/planner-truth.js";
 import { usePlannerTruth, type PlannerTruth } from "../../../hooks/use-planner-truth.js";
-import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG, DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../../lib/furniture-defaults.js";
+import {
+  AUTO_FILL_STYLES,
+  autoFillPlacedLine,
+  autoFillStyleOption,
+  occasionPhrase,
+  publishedFigureFor,
+  roomAtSpacingLine,
+  type AutoFillPlan,
+  type AutoFillStyle,
+} from "../../../lib/auto-fill.js";
+import type { PlacedItem } from "../../../lib/placement.js";
 import { sceneFurniturePlacements } from "../../../lib/table-dressing.js";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +48,10 @@ import { sceneFurniturePlacements } from "../../../lib/table-dressing.js";
 // capacity, and nothing here says fits, tight or over (redteam fix-first 1).
 // The guest count is the SAME cockpit-store field the Flow, Costs and Share
 // lenses read, so setting it here flows everywhere.
+//
+// Building the room asks "How many guests?" first (AutoFillPrompt), and says
+// what it placed; a seat shortfall offers one fix beside the line that states
+// it (SeatShortfallFix). Redteam fix-first 15.
 // ---------------------------------------------------------------------------
 
 type ChipTone = "ok" | "review" | "info";
@@ -174,23 +190,53 @@ export function GuestsLensPanel(): ReactElement {
 
   const seat = seatChip(model);
 
-  // One-click layouts for the styles we can generate. Only offered on a blank
+  // The floor's published format, for the shortfall's "nothing fits" line and
+  // the one question to ask. Above the published figure, the Published
+  // section already carries the ask; one next step, not two.
+  const floorFigure = model.publishedFormat === null ? null : publishedFigureFor(truth.published, model.publishedFormat);
+  const shortfallAsk = model.guestCount !== null && (floorFigure === null || model.guestCount <= floorFigure.figure)
+    ? truth.ask({
+      kind: "layout",
+      guests: model.guestCount,
+      roomFor: model.seatsProvided,
+      occasion: model.publishedFormat === null ? "your event" : occasionPhrase(model.publishedFormat),
+    })
+    : null;
+
+  // Layouts the planner can lay out for a guest count. Only offered on a blank
   // floor so it never wipes work in progress (auto-arrange replaces the layout).
   const canBuild = sceneItems.length === 0;
-  const buildRoom = (style: LayoutStyle): void => {
-    const guests = model.guestCount ?? 0;
-    if (style === "dinner-rounds") {
-      const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
-      if (table !== undefined) usePlacementStore.getState().autoArrangeBanquet(table.id, guests, 8);
-    } else {
-      const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
-      if (chair !== undefined) usePlacementStore.getState().autoArrangeTheatre(chair.id, guests);
-    }
+  const [choosing, setChoosing] = useState<AutoFillStyle | null>(null);
+  const [filled, setFilled] = useState<{ readonly plan: AutoFillPlan; readonly after: readonly PlacedItem[] } | null>(null);
+  const choiceRefs = useRef(new Map<AutoFillStyle, HTMLButtonElement>());
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  // The command deck's Auto-fill asks here, with the style already chosen.
+  const requested = useAutoFillRequestStore((state) => state.requested);
+  useEffect(() => {
+    if (requested === null) return;
+    const style = useAutoFillRequestStore.getState().take();
+    if (style !== null && canBuild) setChoosing(style);
+  }, [requested, canBuild]);
+
+  const fillCurrent = filled !== null && filled.after === placedItems ? filled : null;
+  useEffect(() => {
+    if (fillCurrent !== null) resultRef.current?.focus({ preventScroll: true });
+  }, [fillCurrent]);
+
+  const onPlaced = (plan: AutoFillPlan): void => {
+    setChoosing(null);
+    setFilled({ plan, after: usePlacementStore.getState().placedItems });
   };
-  const buildable: ReadonlyArray<{ readonly style: LayoutStyle; readonly label: string }> = [
-    { style: "dinner-rounds", label: "Banquet rounds" },
-    { style: "theatre", label: "Theatre" },
-  ];
+  const onBack = (): void => {
+    const style = choosing;
+    setChoosing(null);
+    // Back where the question was asked from.
+    if (style !== null) window.setTimeout(() => { choiceRefs.current.get(style)?.focus(); }, 0);
+  };
+  const fillShort = fillCurrent === null
+    ? null
+    : roomAtSpacingLine(fillCurrent.plan, publishedFigureFor(truth.published, autoFillStyleOption(fillCurrent.plan.style).format));
 
   return (
     <LensPanel
@@ -225,6 +271,7 @@ export function GuestsLensPanel(): ReactElement {
           <span className={`lens-panel__chip lens-panel__chip--${seat.tone}`} data-testid="guests-seat-chip">{seat.label}</span>
         </div>
         <p className="lens-panel__paragraph" data-testid="guests-seat-summary">{seatSufficiencyLabel(model)}</p>
+        <SeatShortfallFix testId="guests-seat-fix" published={floorFigure} ask={shortfallAsk} />
         <LensPanelMetric label="Seats placed" value={String(model.seatsProvided)} />
         <LensPanelMetric label="Seat balance" value={seatBalanceText(model)} />
       </LensPanelSection>
@@ -232,19 +279,36 @@ export function GuestsLensPanel(): ReactElement {
       {truth.staff && <GenericEstimateSection model={model} />}
 
       <LensPanelSection label="Build this room">
-        {canBuild ? (
+        {canBuild && choosing !== null ? (
+          <AutoFillPrompt
+            key={choosing}
+            style={choosing}
+            published={truth.published}
+            onPlaced={onPlaced}
+            onCancel={onBack}
+          />
+        ) : canBuild ? (
           <div className="lens-panel__share-buttons">
-            {buildable.map((b) => (
+            {AUTO_FILL_STYLES.map((b) => (
               <button
                 key={b.style}
+                ref={(node) => {
+                  if (node === null) choiceRefs.current.delete(b.style);
+                  else choiceRefs.current.set(b.style, node);
+                }}
                 type="button"
-                className="lens-panel__chip-link"
-                onClick={() => { buildRoom(b.style); }}
+                className="lens-panel__chip-link auto-fill__choice"
+                onClick={() => { setChoosing(b.style); }}
                 data-testid={`guests-build-${b.style}`}
               >
                 {b.label}
               </button>
             ))}
+          </div>
+        ) : fillCurrent !== null ? (
+          <div className="auto-fill__result" ref={resultRef} tabIndex={-1} data-testid="auto-fill-result">
+            <p className="auto-fill__placed" data-testid="auto-fill-placed">{autoFillPlacedLine(fillCurrent.plan)}</p>
+            {fillShort !== null && <p className="auto-fill__short" data-testid="auto-fill-result-short">{fillShort}</p>}
           </div>
         ) : (
           <p className="lens-panel__field-hint" data-testid="guests-build-blocked">Clear the floor to lay out a fresh room.</p>
