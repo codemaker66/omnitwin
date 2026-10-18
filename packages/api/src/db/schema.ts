@@ -735,7 +735,7 @@ export const enquiries = pgTable("enquiries", {
   // is filed against the venue's first room with roomChosen false.
   source: varchar("source", { length: 20 }),
   roomChosen: boolean("room_chosen").notNull().default(true),
-  // Migration 0095: the People Book's person this enquiry came from. The
+  // Migration 0096: the People Book's person this enquiry came from. The
   // previous release wrote none; create-from-enquiry links one when worked.
   contactId: uuid("contact_id").references((): AnyPgColumn => contacts.id, { onDelete: "set null" }),
 }, (table) => [
@@ -791,7 +791,7 @@ export const clientAccounts = pgTable("client_accounts", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  // Migration 0095, the People Book: an organisation or a household
+  // Migration 0096, the People Book: an organisation or a household
   // (CLIENT_ACCOUNT_KINDS in @omnitwin/types). The previous release writes no
   // kind, so a new account it makes is a household by default.
   kind: varchar("kind", { length: 20 }).notNull().default("household"),
@@ -826,7 +826,7 @@ export const contacts = pgTable("contacts", {
   clientAccountId: uuid("client_account_id").references(() => clientAccounts.id, { onDelete: "set null" }),
   name: varchar("name", { length: 200 }).notNull(),
   // email, phone and clientAccountId mirror the primary email point, the
-  // primary phone point and the primary membership (0095). A person may
+  // primary phone point and the primary membership (0096). A person may
   // have no email.
   email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 50 }),
@@ -835,7 +835,7 @@ export const contacts = pgTable("contacts", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  // Migration 0095, the People Book.
+  // Migration 0096, the People Book.
   givenName: varchar("given_name", { length: 100 }),
   familyName: varchar("family_name", { length: 100 }),
   jobTitle: varchar("job_title", { length: 120 }),
@@ -867,7 +867,7 @@ export const contacts = pgTable("contacts", {
 ]);
 
 // ---------------------------------------------------------------------------
-// 7d. The People Book (0095): a person's emails and phones, their
+// 7d. The People Book (0096): a person's emails and phones, their
 // organisations, and the pairs a person has decided are two people. Each row
 // is in its person's venue, held by a composite key onto contacts(id,
 // venue_id), and goes with the person.
@@ -1023,7 +1023,7 @@ export const followUpTasks = pgTable("follow_up_tasks", {
 ]);
 
 // ---------------------------------------------------------------------------
-// 7e. record_merges (0095) — every merge of two people or two organisations,
+// 7e. record_merges (0096) — every merge of two people or two organisations,
 // with what it moved, so that it can be undone. survivorId and mergedId name
 // contacts or client accounts, by kind (MERGE_KINDS). Never deleted.
 // ---------------------------------------------------------------------------

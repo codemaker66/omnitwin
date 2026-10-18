@@ -25,15 +25,15 @@ import { accountMemberships, clientAccounts, contactKeptApart, contactPoints, co
 const DRIZZLE = resolve(import.meta.dirname, "../../drizzle");
 // Provisional: the merge slot confirms the final number. A rename changes
 // these two constants, the SQL file name and the journal entry.
-const TAG = "0095_people_book";
+const TAG = "0096_people_book";
 const PREVIOUS = "0093_forward_book_checks";
 
 const quoted = (values: readonly string[]): string => values.map((value) => `'${value}'`).join(", ");
 
 /** The backfill's working tables: temporary, the file's own, gone when it ends. */
-const WORKING_TABLES = ["people_0095_enquiries", "people_0095_holders", "people_0095_enquirers", "people_0095_last_contact"] as const;
+const WORKING_TABLES = ["people_0096_enquiries", "people_0096_holders", "people_0096_enquirers", "people_0096_last_contact"] as const;
 /** The working tables a later statement joins, so each carries a key. */
-const KEYED_WORKING_TABLES = ["people_0095_enquiries", "people_0095_holders", "people_0095_last_contact"] as const;
+const KEYED_WORKING_TABLES = ["people_0096_enquiries", "people_0096_holders", "people_0096_last_contact"] as const;
 
 async function migration(): Promise<string> {
   return readFile(resolve(DRIZZLE, `${TAG}.sql`), "utf8");

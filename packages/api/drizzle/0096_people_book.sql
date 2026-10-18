@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- 0095 — the People Book's records (T-665, slice 1)
+-- 0096 — the People Book's records (T-665, slice 1)
 --
 -- One venue-scoped record per client person and per organisation or
 -- household. A person keeps several emails and phones (contact_points) and
@@ -391,9 +391,9 @@ WHERE e.id = c.source_enquiry_id AND e.venue_id = c.venue_id AND e.contact_id IS
 -- So is an email longer than its contacts column: it is left out rather than cut short (and
 -- no point can hold it, so g could never link it). Only a usable phone is kept, and only one
 -- that fits its column.
-DROP TABLE IF EXISTS pg_temp."people_0095_enquiries";
+DROP TABLE IF EXISTS pg_temp."people_0096_enquiries";
 --> statement-breakpoint
-CREATE TEMP TABLE "people_0095_enquiries" AS
+CREATE TEMP TABLE "people_0096_enquiries" AS
 SELECT e.id, e.venue_id, e.created_at,
   people_normalise_email(coalesce(e.guest_email, e.email)) AS email_key,
   people_trim(coalesce(e.guest_email, e.email)) AS email_display,
@@ -404,32 +404,32 @@ WHERE e.contact_id IS NULL AND e.fixture_source IS NULL AND people_normalise_ema
   AND length(people_normalise_email(coalesce(e.guest_email, e.email))) <= 255
   AND e.state <> 'draft' AND (e.event_type IS NULL OR e.event_type NOT IN ('venue-access', 'venue-enquiry'));
 --> statement-breakpoint
-ALTER TABLE pg_temp."people_0095_enquiries" ADD PRIMARY KEY ("id");
+ALTER TABLE pg_temp."people_0096_enquiries" ADD PRIMARY KEY ("id");
 --> statement-breakpoint
-ANALYZE pg_temp."people_0095_enquiries";
+ANALYZE pg_temp."people_0096_enquiries";
 --> statement-breakpoint
 -- Who holds each email in each venue: how many live people, and the one when it is one.
-DROP TABLE IF EXISTS pg_temp."people_0095_holders";
+DROP TABLE IF EXISTS pg_temp."people_0096_holders";
 --> statement-breakpoint
-CREATE TEMP TABLE "people_0095_holders" AS
+CREATE TEMP TABLE "people_0096_holders" AS
 SELECT p.venue_id, p.value::text AS email_key, count(DISTINCT p.contact_id)::int AS holders,
   (array_agg(DISTINCT p.contact_id))[1] AS contact_id
 FROM contact_points p JOIN contacts c ON c.id = p.contact_id
   AND c.deleted_at IS NULL AND c.merged_into_id IS NULL AND c.erased_at IS NULL
 WHERE p.kind = 'email' GROUP BY p.venue_id, p.value;
 --> statement-breakpoint
-ALTER TABLE pg_temp."people_0095_holders" ADD PRIMARY KEY ("venue_id", "email_key");
+ALTER TABLE pg_temp."people_0096_holders" ADD PRIMARY KEY ("venue_id", "email_key");
 --> statement-breakpoint
-ANALYZE pg_temp."people_0095_holders";
+ANALYZE pg_temp."people_0096_holders";
 --> statement-breakpoint
 -- f. One person per venue and normalised email that no live person holds, made from that
 --    venue's own client enquiries: the latest name, email and usable phone, the first enquiry
 --    as its source and its date. Its last contact is its latest enquiry, h's rule for it: g
 --    links it these enquiries and no others, and it has no deal yet. Dating it here, as it
 --    is written, spares h rewriting every row this file has just inserted.
-DROP TABLE IF EXISTS pg_temp."people_0095_enquirers";
+DROP TABLE IF EXISTS pg_temp."people_0096_enquirers";
 --> statement-breakpoint
-CREATE TEMP TABLE "people_0095_enquirers" AS
+CREATE TEMP TABLE "people_0096_enquirers" AS
 SELECT gen_random_uuid() AS contact_id, g.* FROM (
   SELECT k.venue_id, k.email_key,
     (array_agg(k.email_display ORDER BY k.created_at DESC, k.id DESC))[1] AS email_display,
@@ -437,51 +437,51 @@ SELECT gen_random_uuid() AS contact_id, g.* FROM (
     (array_agg(k.phone_display ORDER BY k.created_at DESC, k.id DESC) FILTER (WHERE k.phone_display IS NOT NULL))[1] AS phone_display,
     (array_agg(k.id ORDER BY k.created_at, k.id))[1] AS first_enquiry_id,
     min(k.created_at) AS first_at, max(k.created_at) AS last_at
-  FROM pg_temp."people_0095_enquiries" k
+  FROM pg_temp."people_0096_enquiries" k
   GROUP BY k.venue_id, k.email_key
 ) g
-WHERE NOT EXISTS (SELECT 1 FROM pg_temp."people_0095_holders" h WHERE h.venue_id = g.venue_id AND h.email_key = g.email_key);
+WHERE NOT EXISTS (SELECT 1 FROM pg_temp."people_0096_holders" h WHERE h.venue_id = g.venue_id AND h.email_key = g.email_key);
 --> statement-breakpoint
 INSERT INTO contacts (id, venue_id, name, email, phone, source_enquiry_id, created_at, last_contact_at, updated_at)
 SELECT contact_id, venue_id, left(name, 200), left(email_display, 255), left(phone_display, 50), first_enquiry_id, first_at, last_at, now()
-FROM pg_temp."people_0095_enquirers";
+FROM pg_temp."people_0096_enquirers";
 --> statement-breakpoint
 -- Their email point and, where they gave a usable phone, their phone point.
 INSERT INTO contact_points (venue_id, contact_id, kind, value, display_value, label, is_primary)
 SELECT venue_id, contact_id, 'email', email_key, email_display, 'other', true
-FROM pg_temp."people_0095_enquirers";
+FROM pg_temp."people_0096_enquirers";
 --> statement-breakpoint
 INSERT INTO contact_points (venue_id, contact_id, kind, value, display_value, label, is_primary)
 SELECT venue_id, contact_id, 'phone', people_normalise_phone(phone_display), phone_display, 'other', true
-FROM pg_temp."people_0095_enquirers"
+FROM pg_temp."people_0096_enquirers"
 WHERE phone_display IS NOT NULL;
 --> statement-breakpoint
 -- Each email f gave a person had no live holder, so that person is now its one holder. The
 -- key refuses, and the file fails, should f ever have made a person for an email already held.
-INSERT INTO pg_temp."people_0095_holders" (venue_id, email_key, holders, contact_id)
-SELECT venue_id, email_key, 1, contact_id FROM pg_temp."people_0095_enquirers";
+INSERT INTO pg_temp."people_0096_holders" (venue_id, email_key, holders, contact_id)
+SELECT venue_id, email_key, 1, contact_id FROM pg_temp."people_0096_enquirers";
 --> statement-breakpoint
-ANALYZE pg_temp."people_0095_holders";
+ANALYZE pg_temp."people_0096_holders";
 --> statement-breakpoint
-DROP TABLE pg_temp."people_0095_enquirers";
+DROP TABLE pg_temp."people_0096_enquirers";
 --> statement-breakpoint
 -- g. Every client enquiry still without a person (as in f) whose email exactly one live
 --    person holds.
 UPDATE enquiries e SET contact_id = h.contact_id
-FROM pg_temp."people_0095_enquiries" k
-  JOIN pg_temp."people_0095_holders" h ON h.venue_id = k.venue_id AND h.email_key = k.email_key AND h.holders = 1
+FROM pg_temp."people_0096_enquiries" k
+  JOIN pg_temp."people_0096_holders" h ON h.venue_id = k.venue_id AND h.email_key = k.email_key AND h.holders = 1
 WHERE e.id = k.id AND e.contact_id IS NULL;
 --> statement-breakpoint
-DROP TABLE pg_temp."people_0095_holders";
+DROP TABLE pg_temp."people_0096_holders";
 --> statement-breakpoint
-DROP TABLE pg_temp."people_0095_enquiries";
+DROP TABLE pg_temp."people_0096_enquiries";
 --> statement-breakpoint
 -- h. Every other person's last contact: their latest related enquiry, deal, activity on a
 --    deal or sent proposal. Each table is read once, and each person's latest is kept, keyed
 --    and analysed.
-DROP TABLE IF EXISTS pg_temp."people_0095_last_contact";
+DROP TABLE IF EXISTS pg_temp."people_0096_last_contact";
 --> statement-breakpoint
-CREATE TEMP TABLE "people_0095_last_contact" AS
+CREATE TEMP TABLE "people_0096_last_contact" AS
 SELECT u.contact_id, max(u.at) AS at FROM (
   SELECT e.contact_id, e.created_at AS at FROM enquiries e WHERE e.contact_id IS NOT NULL
   UNION ALL
@@ -494,15 +494,15 @@ SELECT u.contact_id, max(u.at) AS at FROM (
   WHERE o.primary_contact_id IS NOT NULL
 ) u GROUP BY u.contact_id;
 --> statement-breakpoint
-ALTER TABLE pg_temp."people_0095_last_contact" ADD PRIMARY KEY ("contact_id");
+ALTER TABLE pg_temp."people_0096_last_contact" ADD PRIMARY KEY ("contact_id");
 --> statement-breakpoint
-ANALYZE pg_temp."people_0095_last_contact";
+ANALYZE pg_temp."people_0096_last_contact";
 --> statement-breakpoint
 UPDATE contacts c SET last_contact_at = x.at
-FROM pg_temp."people_0095_last_contact" x
+FROM pg_temp."people_0096_last_contact" x
 WHERE c.id = x.contact_id AND c.last_contact_at IS NULL AND x.at IS NOT NULL;
 --> statement-breakpoint
-DROP TABLE pg_temp."people_0095_last_contact";
+DROP TABLE pg_temp."people_0096_last_contact";
 --> statement-breakpoint
 
 -- 11. Every account has a kind from here on ----------------------------------
