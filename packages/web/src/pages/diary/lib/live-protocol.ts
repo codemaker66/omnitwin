@@ -21,6 +21,9 @@ export const LivePresenceUserSchema = z.object({
   userId: z.string(),
   name: z.string(),
   role: z.string(),
+  /** Every kind of screen the person is on (goal 19 S7). An older server
+   *  sends none, so the field stays optional. */
+  devices: z.array(z.enum(["wall", "phone", "desk"])).optional(),
 });
 export type LivePresenceUser = z.infer<typeof LivePresenceUserSchema>;
 

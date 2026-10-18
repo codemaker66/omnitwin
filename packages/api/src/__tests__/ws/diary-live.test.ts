@@ -44,6 +44,26 @@ function messagesOf(socket: FakeSocket): { type: string }[] {
 }
 
 describe("DiaryLiveHub", () => {
+  // Goal 19 S7: the office reads which screens are on. One person on the
+  // wall and on a phone is one entry with both devices, in a fixed order.
+  it("names every kind of screen a person is on, once each, wall first", () => {
+    const hub = new DiaryLiveHub();
+    const wall = fakeSocket();
+    const phone = fakeSocket();
+    const phoneAgain = fakeSocket();
+    const older = fakeSocket();
+    hub.join(VENUE_A, phone, { userId: "u1", name: "Elaine", role: "hallkeeper" }, 1_000, { device: "phone" });
+    hub.join(VENUE_A, wall, { userId: "u1", name: "Elaine", role: "hallkeeper" }, 2_000, { device: "wall" });
+    hub.join(VENUE_A, phoneAgain, { userId: "u1", name: "Elaine", role: "hallkeeper" }, 3_000, { device: "phone" });
+    hub.join(VENUE_A, older, { userId: "u2", name: "Fiona", role: "staff" }, 4_000);
+    expect(hub.presenceFor(VENUE_A)).toEqual([
+      { userId: "u1", name: "Elaine", role: "hallkeeper", devices: ["wall", "phone"] },
+      { userId: "u2", name: "Fiona", role: "staff", devices: [] },
+    ]);
+    const lastPresence = messagesOf(older).filter((message) => message.type === "presence").at(-1);
+    expect(lastPresence).toEqual(expect.objectContaining({ type: "presence", users: hub.presenceFor(VENUE_A) }));
+  });
+
   it("joins a venue, broadcasts presence, and dedupes the same user twice", () => {
     const hub = new DiaryLiveHub();
     const first = fakeSocket();
@@ -53,7 +73,7 @@ describe("DiaryLiveHub", () => {
 
     expect(hub.connectionCount(VENUE_A)).toBe(2);
     expect(hub.presenceFor(VENUE_A)).toEqual([
-      { userId: "u1", name: "Elaine", role: "hallkeeper" },
+      { userId: "u1", name: "Elaine", role: "hallkeeper", devices: [] },
     ]);
     // Both sockets heard the presence broadcast triggered by the second join.
     expect(messagesOf(first).some((message) => message.type === "presence")).toBe(true);
@@ -82,7 +102,7 @@ describe("DiaryLiveHub", () => {
     hub.leave(VENUE_A, connection);
 
     expect(hub.connectionCount(VENUE_A)).toBe(1);
-    expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "A", role: "staff" }]);
+    expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "A", role: "staff", devices: [] }]);
   });
 
   it("sweeps connections with no inbound activity past the threshold and closes them", () => {
@@ -98,7 +118,7 @@ describe("DiaryLiveHub", () => {
     expect(swept).toBe(1);
     expect(stale.closed).toBe(true);
     expect(fresh.closed).toBe(false);
-    expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "A", role: "staff" }]);
+    expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "A", role: "staff", devices: [] }]);
   });
 
   // The requests channel rides this door from every floor page. T-619 made
@@ -114,7 +134,7 @@ describe("DiaryLiveHub", () => {
 
     const listener = hub.join(VENUE_A, listening, { userId: "u2", name: "Fiona", role: "staff" }, 0, { present: false });
 
-    expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "Elaine", role: "hallkeeper" }]);
+    expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "Elaine", role: "hallkeeper", devices: [] }]);
     expect(presenceFrames()).toBe(before);
     hub.broadcastToRoles(VENUE_A, ["staff"], { type: "request.event" });
     expect(messagesOf(listening).some((message) => message.type === "request.event")).toBe(true);

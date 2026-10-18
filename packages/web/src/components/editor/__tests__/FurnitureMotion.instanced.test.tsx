@@ -93,3 +93,41 @@ describe("grid settle of instanced furniture", () => {
     }
   });
 });
+
+describe("a piece placed while the frame loop sleeps", () => {
+  it("comes down from its full height: the waking frame's idle gap is not spent on the drop", () => {
+    usePlacementStore.setState({ placedItems: [] });
+    mounted = mountInStubRoot(<><FurnitureMotion /><PlacedFurniture /></>);
+    const { scene } = mounted;
+    const frameAt = (seconds: number): void => { act(() => { advance(seconds, true); }); };
+    // The loop draws, then sleeps: nothing is moving.
+    frameAt(100);
+    frameAt(100 + 1 / 60);
+
+    act(() => { usePlacementStore.getState().placeItem(catalogueId("banquet-chair"), 2, 1); });
+    const placed = usePlacementStore.getState().placedItems.at(-1);
+    if (placed === undefined) throw new Error("The chair was not placed");
+    expect(activeFurnitureSettleCount()).toBe(1);
+    const group = scene.getObjectByName(`furniture-${placed.id}`);
+    if (group === undefined) throw new Error(`Missing item group ${placed.id}`);
+
+    // Three seconds later the placement wakes the loop, and R3F hands that
+    // whole gap to the first frame as its delta.
+    let seconds = 103;
+    frameAt(seconds);
+    // A drop starts a hand's width up (0.11 m and more); one display frame
+    // takes off a few millimetres, where the gap would have taken four fifths.
+    expect(group.position.y).toBeGreaterThan(0.1);
+
+    // Then it lands, rocks and comes to rest on the floor at store truth.
+    let frames = 0;
+    while (activeFurnitureSettleCount() > 0 && frames < 600) {
+      seconds += 1 / 60;
+      frameAt(seconds);
+      frames += 1;
+    }
+    expect(frames).toBeGreaterThan(10);
+    expect(frames).toBeLessThan(180);
+    expect(group.position.y).toBe(0);
+  });
+});
