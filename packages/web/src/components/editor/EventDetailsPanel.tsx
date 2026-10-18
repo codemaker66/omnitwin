@@ -18,6 +18,7 @@ import type {
 } from "@omnitwin/types";
 import {
   ConfigurationMetadataSchema,
+  DIETARY_NOTE_RETENTION,
   DOOR_EVENT_TYPES,
   PHASE_METADATA,
   PROCEDURE_NOTE_MAX,
@@ -30,13 +31,33 @@ import {
   emptyDietarySummary,
   emptyDoorSchedule,
   emptyEventInstructions,
+  isClientSideRole,
   normalizeProtectedPremises,
 } from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { useAuthStore } from "../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { logPlannerAction } from "../../stores/planner-action-log.js";
 import { patchConfigMetadata, getConfig } from "../../api/configurations.js";
+import { ApiError } from "../../api/client.js";
+import {
+  listRememberedDietaryNotes,
+  rememberDietaryNote,
+  removeRememberedDietaryNote,
+} from "../../api/dietary-memory.js";
+import {
+  MEMORY_OFF,
+  memoryChoiceChanged,
+  memoryStepOnSave,
+  rememberedForVenue,
+  shouldPrefill,
+  startsTicked,
+  type DietaryMemoryState,
+  type MemoryStatus,
+  type MemoryStep,
+} from "../../lib/dietary-memory.js";
+import { RememberDietaryNote } from "./RememberDietaryNote.js";
 import { GOLD, BORDER, CARD_BG, INPUT_BG, TEXT_MUT, TEXT_SEC } from "../../constants/ui-palette.js";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +110,11 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
   // advanced after each successful save. It is the action log's inverse
   // (G4): reverting an event.details.update means PATCHing this back.
   const serverStateRef = useRef<EventInstructions | null>(null);
+  // The client's remembered allergy note ("ask once, then remember"). Off
+  // unless the signed-in account is a client's and this is their own layout.
+  const [memory, setMemory] = useState<DietaryMemoryState>(MEMORY_OFF);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const userRole = useAuthStore((s) => s.user?.role ?? null);
 
   // Load current metadata once when the panel opens. We hit the auth
   // GET endpoint rather than reading from the editor store because the
@@ -96,6 +122,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
   // metadata is a separate concern, independently versioned.
   useEffect(() => {
     if (!open || configId === null) return;
+    setMemory(MEMORY_OFF);
     if (isPublicPreview) {
       // Public-preview configs aren't reachable via the auth endpoints.
       // Render the sign-in affordance instead of attempting a load.
@@ -109,6 +136,13 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
     setLoading(true);
     setError(null);
     setState(null);
+    // A client's remembered notes load beside the layout. Failing to load
+    // them never stops the layout opening: the box then starts unticked.
+    const isCancelled = (): boolean => guard.cancelled;
+    const clientSide = userId !== null && userRole !== null && isClientSideRole(userRole);
+    const rememberedNotes = clientSide
+      ? listRememberedDietaryNotes().then((notes) => notes, () => null)
+      : Promise.resolve(null);
     void (async () => {
       try {
         const config = await getConfig(configId);
@@ -119,6 +153,21 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
         // against the canonical shape the panel edits.
         const parsed = ConfigurationMetadataSchema.nullable().safeParse(config.metadata ?? null);
         const loaded = parsed.success ? parsed.data?.instructions : undefined;
+
+        // Only the client's own layout offers the box: nobody agrees on
+        // someone else's behalf.
+        const eligible = clientSide && config.userId === userId;
+        const notes = eligible ? await rememberedNotes : null;
+        // Read through a call: the check above narrowed the property, and
+        // the sheet may have closed while the notes were loading.
+        if (isCancelled()) return;
+        const memoryStatus: MemoryStatus = !eligible ? "off" : notes === null ? "error" : "ready";
+        const remembered = notes === null ? null : rememberedForVenue(notes, config.venueId);
+        // A layout with no event details saved yet is the next event: its
+        // allergy note is filled in from the remembered one, unsaved until
+        // the client saves.
+        const prefilling = eligible && shouldPrefill(remembered, loaded !== undefined);
+
         if (loaded !== undefined) {
           // Spread the parsed blob verbatim — Zod .default()s on the
           // EventInstructions fields guarantee dayOfContact/phaseDeadlines
@@ -134,7 +183,13 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
           setState(hydrated);
         } else {
           serverStateRef.current = emptyEventInstructions();
-          setState(emptyEventInstructions());
+          setState(prefilling && remembered !== null
+            ? { ...emptyEventInstructions(), dietary: { ...emptyDietarySummary(), otherAllergies: remembered.otherAllergies } }
+            : emptyEventInstructions());
+        }
+        if (memoryStatus !== "off") {
+          const ticked = startsTicked(remembered, loaded?.dietary?.otherAllergies ?? "", prefilling);
+          setMemory({ status: memoryStatus, remembered, initiallyTicked: ticked, ticked, prefilled: prefilling });
         }
       } catch (err) {
         if (guard.cancelled) return;
@@ -148,16 +203,46 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
       }
     })();
     return () => { guard.cancelled = true; };
-  }, [open, configId, isPublicPreview]);
+  }, [open, configId, isPublicPreview, userId, userRole]);
 
   if (!open || timelinePreviewActive) return null;
 
+  const allergyNote = state?.dietary?.otherAllergies ?? "";
+
   // Edits not yet saved: the draft, as it would be sent, differs from what
-  // the server holds (both keep emptyEventInstructions()'s key order). A
-  // click beside the sheet then leaves it open; Close, × and Escape still
-  // close it on purpose. It used to discard the edits silently.
+  // the server holds (both keep emptyEventInstructions()'s key order), or the
+  // client changed the "remember" box. A click beside the sheet then leaves
+  // it open; Close, × and Escape still close it on purpose. It used to
+  // discard the edits silently.
   const unsaved = state !== null && serverStateRef.current !== null
-    && JSON.stringify(normalizeForSave(state)) !== JSON.stringify(serverStateRef.current);
+    && (JSON.stringify(normalizeForSave(state)) !== JSON.stringify(serverStateRef.current)
+      || memoryChoiceChanged(memory, allergyNote));
+
+  // After the layout is saved: remember its allergy note, or remove the
+  // remembered one, as the box says. A failure here leaves the layout saved
+  // and says so, with what to do next.
+  const applyMemoryStep = async (step: MemoryStep, savedConfigId: string): Promise<string | null> => {
+    if (step === "none") return null;
+    const remembered = memory.remembered;
+    const stillHere = (): boolean => useEditorStore.getState().configId === savedConfigId;
+    try {
+      if (step === "remember") {
+        const note = await rememberDietaryNote(savedConfigId);
+        if (stillHere()) setMemory((m) => ({ ...m, status: "ready", remembered: note, initiallyTicked: true, ticked: true }));
+      } else if (remembered !== null) {
+        await removeRememberedDietaryNote(remembered.id);
+        if (stillHere()) setMemory((m) => ({ ...m, remembered: null, initiallyTicked: false, ticked: false }));
+      }
+      return null;
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "";
+      const retry = !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
+      const next = retry ? " Save again to try once more." : "";
+      return step === "remember"
+        ? `Your layout is saved, but the note was not remembered. ${reason}${next}`
+        : `Your layout is saved, but the remembered note was not removed. ${reason}${next}`;
+    }
+  };
 
   const handleSave = async (): Promise<void> => {
     if (configId === null || state === null || isLayoutTimelineMutationLocked()) return;
@@ -168,6 +253,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
       // schema requires dayOfContact.name to be non-empty (min(1)). An
       // empty draft should be treated as "no contact" rather than a 400.
       const payload = normalizeForSave(state);
+      const memoryStep = memoryStepOnSave(memory, payload.dietary?.otherAllergies ?? "", configId);
       if (isLayoutTimelineMutationLocked()) return;
       await patchConfigMetadata(configId, { instructions: payload });
       // G4: one Action per changed save. A no-change save still PATCHes
@@ -194,8 +280,12 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
           });
         }
         serverStateRef.current = payload;
+        // The note is on this layout now, whether or not it came from memory.
+        setMemory((m) => (m.prefilled ? { ...m, prefilled: false } : m));
       }
       setSavedAt(new Date());
+      const memoryError = await applyMemoryStep(memoryStep, configId);
+      if (memoryError !== null) setError(memoryError);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -290,6 +380,33 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
       return { ...prev, dietary: { ...prev.dietary, ...patch } };
     });
   };
+  // The remembered note: filled in by hand on a layout already worked on,
+  // taken back out of this event, or the box changed.
+  const fillInRememberedNote = (): void => {
+    const remembered = memory.remembered;
+    if (remembered === null) return;
+    setState((prev) => (prev === null ? prev : {
+      ...prev,
+      dietary: { ...(prev.dietary ?? emptyDietarySummary()), otherAllergies: remembered.otherAllergies },
+    }));
+    setMemory((m) => ({ ...m, prefilled: true, ticked: true }));
+  };
+  const leaveRememberedNoteOut = (): void => {
+    updateDietary({ otherAllergies: "" });
+    setMemory((m) => ({ ...m, prefilled: false }));
+  };
+  const setRememberTicked = (ticked: boolean): void => {
+    setMemory((m) => ({ ...m, ticked }));
+  };
+  const memoryControl = (
+    <RememberDietaryNote
+      memory={memory}
+      note={allergyNote}
+      onTickedChange={setRememberTicked}
+      onFillIn={fillInRememberedNote}
+      onLeaveOut={leaveRememberedNoteOut}
+    />
+  );
 
   // -------------------------------------------------------------------------
   // Door schedule — per-door timeline of open/lock events.
@@ -610,14 +727,18 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
                 title="Dietary"
               >
                 {state.dietary === null ? (
-                  <button type="button" onClick={addDietary} style={secondaryBtnStyle}>
-                    + Add dietary counts
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+                    <button type="button" onClick={addDietary} style={secondaryBtnStyle}>
+                      + Add dietary counts
+                    </button>
+                    {memoryControl}
+                  </div>
                 ) : (
                   <DietaryEditor
                     value={state.dietary}
                     onChange={updateDietary}
                     onClear={clearDietary}
+                    memoryControl={memory.status === "off" ? undefined : memoryControl}
                   />
                 )}
               </Section>
@@ -943,6 +1064,9 @@ interface DietaryEditorProps {
   readonly value: DietarySummary;
   readonly onChange: (patch: Partial<DietarySummary>) => void;
   readonly onClear: () => void;
+  /** The "remember these" opt-in, offered on a client's own layout. Its
+   *  words say how long the note is kept either way. */
+  readonly memoryControl?: React.ReactNode;
 }
 
 const DIETARY_FIELDS: readonly { readonly key: keyof DietarySummary; readonly label: string }[] = [
@@ -954,7 +1078,8 @@ const DIETARY_FIELDS: readonly { readonly key: keyof DietarySummary; readonly la
   { key: "kosher", label: "Kosher" },
 ];
 
-function DietaryEditor({ value, onChange, onClear }: DietaryEditorProps): React.ReactElement {
+function DietaryEditor({ value, onChange, onClear, memoryControl }: DietaryEditorProps): React.ReactElement {
+  const allergyHintId = useId();
   const clampInt = (raw: string): number => {
     const n = Number.parseInt(raw, 10);
     if (Number.isNaN(n) || n < 0) return 0;
@@ -982,9 +1107,24 @@ function DietaryEditor({ value, onChange, onClear }: DietaryEditorProps): React.
           onChange={(e) => { onChange({ otherAllergies: e.target.value.slice(0, 1000) }); }}
           rows={2}
           placeholder="One guest: shellfish, severe. Two guests: sesame intolerance."
+          aria-describedby={allergyHintId}
           style={textareaStyle}
         />
       </Field>
+      {/* What happens to the note, said where it is written (fix-first 18).
+          On a client's own layout the opt-in beneath says how long it is
+          kept, ticked or not, so the line stops before the period. */}
+      <p id={allergyHintId} style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: TEXT_SEC }}>
+        {memoryControl === undefined ? (
+          <>
+            Allergens and numbers, not guests&apos; names. The note is printed on the event sheet and removed{" "}
+            {DIETARY_NOTE_RETENTION.daysAfterEvent} days after the event.
+          </>
+        ) : (
+          <>Allergens and numbers, not guests&apos; names. The note is printed on the event sheet.</>
+        )}
+      </p>
+      {memoryControl}
 
       <button type="button" onClick={onClear} style={secondaryBtnStyle}>
         Remove dietary block

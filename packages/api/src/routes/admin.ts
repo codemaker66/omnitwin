@@ -11,6 +11,8 @@ import {
 } from "../services/sheet-snapshot.js";
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
+import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
+import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 
 // ---------------------------------------------------------------------------
 // The hold-reminder workflow's identity (T-619).
@@ -58,19 +60,37 @@ export async function adminRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  // POST /admin/cleanup — trigger manual cleanup of stale preview configs
+  // POST /admin/cleanup — trigger manual cleanup of stale preview configs,
+  // orphaned uploads, guests' allergy notes past their retention, and
+  // remembered allergy notes unused for the period the client agreed to.
   server.post("/cleanup", {
     preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => {
     const deletedConfigs = await cleanupPreviewConfigurations(db);
     const deletedFiles = await cleanupOrphanedFiles(db);
+    const dietaryNotes = await removeLapsedDietaryNotes(db);
+    const rememberedNotes = await removeUnusedRememberedNotes(db);
     return {
       data: {
         deletedConfigs,
         deletedFiles,
-        message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s)`,
+        dietaryNotes,
+        rememberedNotes,
+        message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
+          + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
+          + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`,
       },
     };
+  });
+
+  // POST /admin/retention/dietary-notes — what the retention pass would
+  // remove now, changing nothing. The rehearsal before a real pass.
+  server.post("/retention/dietary-notes", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async () => {
+    const layoutNotes = await removeLapsedDietaryNotes(db, { dryRun: true });
+    const rememberedNotes = await removeUnusedRememberedNotes(db, { dryRun: true });
+    return { data: { ...layoutNotes, rememberedNotes } };
   });
 
   // -------------------------------------------------------------------------

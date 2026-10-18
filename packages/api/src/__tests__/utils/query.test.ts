@@ -14,7 +14,9 @@ import {
   canReadVenuePlanningData,
   canWriteEvents,
   canWriteInventory,
+  canWritePricing,
   isEventWriteRole,
+  PRICING_WRITE_ROLES,
 } from "../../utils/query.js";
 import type { JwtUser } from "../../middleware/auth.js";
 
@@ -411,6 +413,29 @@ describe("canProposeWindow (goal 19 D2)", () => {
     for (const role of ["client", "planner", "admin", "manager", "staff", "hallkeeper"]) expect(canEverReadRoomDay(makeUser({ role })), role).toBe(true);
     for (const role of ["sales", "caterer", "future_role"]) expect(canEverReadRoomDay(makeUser({ role })), role).toBe(false);
     expect(canEverReadRoomDay(makeUser({ role: "sales", platformRole: "admin" }))).toBe(true);
+  });
+});
+
+describe("canWritePricing (fix-first item 5)", () => {
+  it("is admin and manager at the venue, and nobody else", () => {
+    expect([...PRICING_WRITE_ROLES].sort()).toEqual(["admin", "manager"]);
+    for (const role of ["admin", "manager"]) {
+      expect(canWritePricing(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(true);
+      expect(canWritePricing(makeUser({ role, venueId: VENUE_A }), VENUE_B), `${role} elsewhere`).toBe(false);
+    }
+    for (const role of ["staff", "sales", "hallkeeper", "planner", "caterer", "client"]) {
+      expect(canWritePricing(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(false);
+    }
+  });
+
+  it("is narrower than venue administration: staff administer the venue but do not set prices", () => {
+    const staff = makeUser({ role: "staff", venueId: VENUE_A });
+    expect(canAdministerVenue(staff, VENUE_A)).toBe(true);
+    expect(canWritePricing(staff, VENUE_A)).toBe(false);
+  });
+
+  it("lets a platform administrator through, as every venue gate does", () => {
+    expect(canWritePricing(makeUser({ role: "staff", platformRole: "admin" }), VENUE_B)).toBe(true);
   });
 });
 

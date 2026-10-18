@@ -16,6 +16,7 @@ import {
   type BookingRow,
   type MutationActor,
 } from "./booking-mutations.js";
+import type { PromotionNotice } from "./hold-promotion.js";
 
 // ---------------------------------------------------------------------------
 // Diary command dispatch (T-537; Canon §9): "Mutations = commands validated
@@ -62,6 +63,9 @@ export interface CommandRecord {
 export interface DiaryChangedDescriptor {
   readonly kind: "booking.created" | "booking.updated" | "booking.transitioned";
   readonly bookingId: string;
+  /** Present when a transition made a hold 1st option: the in-app notices
+   *  it wrote, for the transport to announce after commit. */
+  readonly notices?: readonly PromotionNotice[];
 }
 
 export interface DiaryCommandExecution {
@@ -216,7 +220,13 @@ export async function executeDiaryCommand(
                   promotedToFirst: [...fresh.resequence.promotedToFirst],
                 },
         },
-        changed: { kind: fresh.changeKind, bookingId: fresh.booking.id },
+        changed: {
+          kind: fresh.changeKind,
+          bookingId: fresh.booking.id,
+          ...(fresh.promotionNotices !== undefined && fresh.promotionNotices.length > 0
+            ? { notices: fresh.promotionNotices }
+            : {}),
+        },
       };
     }
     return {

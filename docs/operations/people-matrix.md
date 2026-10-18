@@ -87,7 +87,7 @@ the hallkeeper who takes it sees the client's words only inside that request.
 | Propose a window (a hold on the Diary ladder linked to a plan) | client with a live event link, planner, staff, admin | `canProposeWindow`, hold rank only (S6) |
 | Approve a time (ink, move or resize ink) | staff, admin | today's set also includes manager and sales (`DIARY_WRITE_ROLES`); Blake to say whether both keep it |
 | A quantity beyond the released layout | admin; manager if Blake says so | the decision object (goal 09), never `canManageVenue` |
-| A price change | admin; manager if Blake says so | the decision object |
+| A price change | admin; manager if Blake says so | enforced on pricing-rule writes by `PRICING_WRITE_ROLES` (admin and manager until Blake decides; one line in `utils/query.ts`); each write is recorded in `general_audit_log` |
 | A layout change after release | admin, manager, staff (today's release path) | the Ops Compiler compiles only approved frozen snapshots |
 | Release staff instructions (the approved sheet) | admin, manager, staff | as today (T-633) |
 
