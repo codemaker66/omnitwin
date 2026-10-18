@@ -5,6 +5,7 @@ import {
   assertRequiredProductionEnv,
   getSentrySourceMapUploadConfig,
   resolveBuildSplatBaseUrl,
+  resolveSentryRelease,
   resolveWebClerkPublishableKey,
 } from "./src/lib/production-env";
 import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
@@ -71,7 +72,9 @@ export default defineConfig(({ mode }) => {
         filesToDeleteAfterUpload: "./dist/assets/**/*.map",
       },
       telemetry: false,
-      silent: true,
+      // Keep the upload result in the build log: a skipped or failed upload
+      // ships unreadable production stack traces, and silence would hide it.
+      silent: false,
       bundleSizeOptimizations: {
         excludeReplayCanvas: true,
         excludeReplayIframe: true,
@@ -95,6 +98,12 @@ export default defineConfig(({ mode }) => {
       // Vercel's deployment environment, so preview links can open splats
       // (T-639) while production keeps the founder hold. Empty outside Vercel.
       "import.meta.env.VITE_DEPLOY_ENV": JSON.stringify(env["VERCEL_ENV"] ?? ""),
+      // The release browser errors carry (resolveSentryRelease): an explicit
+      // VITE_SENTRY_RELEASE or SENTRY_RELEASE, else the commit Vercel built.
+      // Vite also copies this key into the import.meta.env object, which is
+      // what initBrowserSentry reads. Empty outside Vercel, which the SDK
+      // treats as no release.
+      "import.meta.env.VITE_SENTRY_RELEASE": JSON.stringify(resolveSentryRelease(env) ?? ""),
     },
     server: {
       // Transform the planner's static import graph when the dev server starts.
