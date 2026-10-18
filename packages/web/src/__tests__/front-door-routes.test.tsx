@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router-dom";
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ describe("a link that goes nowhere", () => {
     expect(within(page).getByRole("link", { name: "0141 552 2418" }).getAttribute("href")).toBe("tel:+441415522418");
     // The address stays what the visitor typed: the page answers it.
     expect(router.state.location.pathname).toBe("/an-old-link-that-has-moved");
-    expect(document.title).toBe("Page not found — Trades Hall of Glasgow");
+    await waitFor(() => { expect(document.title).toBe("Page not found — Trades Hall of Glasgow"); });
     router.dispose();
   });
 

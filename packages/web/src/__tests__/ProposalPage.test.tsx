@@ -604,7 +604,7 @@ describe("the conversation", () => {
     expect(await thread.findByText("Can we add a cheese table?")).toBeTruthy();
     // A link reaches more than one person: a nameless client message is the
     // client's, not "You".
-    expect(thread.getByText("The client")).toBeTruthy();
+    expect(await thread.findByText("The client")).toBeTruthy();
   });
 
   it("says whose each message is by where it came from, never by the name typed alone", async () => {

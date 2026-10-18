@@ -81,8 +81,9 @@ describe("PhaseLayoutSnapshotAction", () => {
         { configurationId: CONFIGURATION_ID },
       );
     });
-    expect(onFrozen).toHaveBeenCalledWith(RESULT);
-    expect(screen.getByText("Frozen layout saved.")).toBeTruthy();
+    // Said, and handed on, once the freeze answers.
+    await waitFor(() => { expect(onFrozen).toHaveBeenCalledWith(RESULT); });
+    expect(await screen.findByText("Frozen layout saved.")).toBeTruthy();
   });
 
   it("surfaces the server's exact 409 without a success claim", () => {
@@ -142,7 +143,7 @@ describe("PhaseLayoutSnapshotAction", () => {
     pending.resolve(RESULT);
 
     await waitFor(() => { expect(onFrozen).toHaveBeenCalledWith(RESULT); });
-    expect(screen.getByText("Frozen layout saved.")).toBeTruthy();
+    expect(await screen.findByText("Frozen layout saved.")).toBeTruthy();
   });
 
   it("authorizes only the same venue's event writers (staff, manager, admin) or a platform admin", () => {

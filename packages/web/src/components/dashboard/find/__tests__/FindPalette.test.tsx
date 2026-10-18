@@ -267,7 +267,7 @@ describe("Find in the staff header", () => {
     expect(activeOption()).toBe("Search clients for “henderson”, See everything found on the Clients desk");
     await waitFor(() => { expect(mocks.search).toHaveBeenCalledTimes(1); });
     expect(mocks.search).toHaveBeenCalledWith("henderson");
-    expect(screen.getByText("Searching clients…")).toBeDefined();
+    expect(await screen.findByText("Searching clients…")).toBeDefined();
     await act(async () => { answer.resolve(HENDERSON); await answer.promise; });
     expect(screen.queryByText("Searching clients…")).toBeNull();
     // The best finding is first, and Enter opens it.

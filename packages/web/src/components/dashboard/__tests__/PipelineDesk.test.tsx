@@ -488,6 +488,8 @@ describe("the open deal", () => {
     fireEvent.change(panel.getAllByLabelText("Due on").at(-1) as HTMLElement, { target: { value: "2026-10-05" } });
     fireEvent.click(panel.getByRole("button", { name: "Add" }));
     await waitFor(() => { expect(mocks.addFollowUpTask).toHaveBeenCalledWith("opp1", "Book the piper", "2026-10-05T12:00:00.000Z"); });
+    // One change at a time: Done is pressed once the follow-up is said to be added.
+    expect(await panel.findByText("Follow-up added: Book the piper.")).toBeDefined();
 
     fireEvent.click(panel.getByRole("button", { name: "Mark “Send the menu” done" }));
     await waitFor(() => { expect(mocks.updateFollowUpTaskStatus).toHaveBeenCalledWith("opp1", "task1", "done"); });
