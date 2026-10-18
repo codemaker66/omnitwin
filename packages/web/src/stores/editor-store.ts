@@ -170,6 +170,12 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
 
 interface EditorState {
   readonly configId: string | null;
+  /**
+   * What this layout is called, as the server has it. The API always returned
+   * it; the store dropped it, which is why the phone's top bar carried a
+   * hard-coded draft name. Null until a configuration loads, never a placeholder.
+   */
+  readonly configName: string | null;
   readonly spaceId: string | null;
   readonly venueId: string | null;
   readonly configRevision: number | null;
@@ -589,6 +595,7 @@ function historyStepPatch(step: HistoryStep<EditorObject>): Partial<EditorState>
 
 const INITIAL_STATE: EditorState = {
   configId: null,
+  configName: null,
   spaceId: null,
   venueId: null,
   configRevision: null,
@@ -693,6 +700,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       yieldedIds.clear();
       set({
         configId: config.id,
+        configName: config.name,
         spaceId: config.spaceId,
         venueId: config.venueId,
         configRevision: config.revision,
@@ -764,6 +772,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       yieldedIds.clear();
       set({
         configId: config.id,
+        configName: config.name,
         spaceId: config.spaceId,
         venueId: config.venueId,
         configRevision: config.revision,

@@ -90,6 +90,12 @@ export function NativeCanvas({
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"initializing" | "ready" | "error">("initializing");
   const [error, setError] = useState<Error | null>(null);
+  // A view that was running and then lost its device (a driver reset, the OS
+  // reclaiming memory, a laptop switching graphics card) is a different moment
+  // from one that never started: the person has work on screen and needs to
+  // hear that it is safe.
+  const running = useRef(false);
+  const [stoppedWhileRunning, setStoppedWhileRunning] = useState(false);
   const mounted = useRef(true);
   const renderer = useRef<WebGPURenderer | null>(null);
   const failedRenderer = useRef<WebGPURenderer | null>(null);
@@ -107,6 +113,8 @@ export function NativeCanvas({
     if (renderer.current !== null && failedRenderer.current === renderer.current) return;
     failedRenderer.current = renderer.current;
     if (!mounted.current) return;
+    setStoppedWhileRunning(running.current);
+    running.current = false;
     setError(cause);
     setStatus("error");
     lifecycle.current?.cancel();
@@ -277,6 +285,7 @@ export function NativeCanvas({
               onError: (cause) => { if (current()) fail(cause); },
             }),
           };
+          running.current = true;
           setStatus("ready");
         } catch (cause) {
           fail(nativeRendererError(cause));
@@ -332,6 +341,7 @@ export function NativeCanvas({
     initialize.current = null;
     dispose.current = null;
     setError(null);
+    setStoppedWhileRunning(false);
     setStatus("initializing");
     setAttempt((current) => current + 1);
   };
@@ -365,7 +375,11 @@ export function NativeCanvas({
           background: "#f5f1e8", color: "#183b32",
         }}>
           <div style={{ width: "100%", maxWidth: 440, lineHeight: 1.5 }}>
-            <p>The 3D view couldn’t start. Try again, or continue in the 2D planner.</p>
+            <p>
+              {stoppedWhileRunning
+                ? "The 3D view stopped. Your layout is safe; nothing you placed was lost. Try again, or continue in the 2D planner."
+                : "The 3D view couldn’t start. Try again, or continue in the 2D planner."}
+            </p>
             <button type="button" onClick={retry}>Try 3D again</button>{" "}
             <a href="/blueprint">Open the 2D planner</a>
             {import.meta.env.DEV && error !== null && <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{error.message}</pre>}

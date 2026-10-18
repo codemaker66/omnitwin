@@ -105,6 +105,7 @@ describe("AI assistant draft generation", () => {
         useCase: "proposal_draft",
         context: { proposalId: "demo-proposal" },
       },
+      { venueId: VENUE_ID, userId: USER_ID },
       new Date("2026-06-12T12:30:00.000Z"),
     );
 

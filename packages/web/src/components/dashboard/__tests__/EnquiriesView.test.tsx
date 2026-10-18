@@ -808,7 +808,7 @@ describe("EnquiriesView decisions", () => {
 
   it("mounts the enquiry summary draft only once it is asked for, and leaves proposal wording to the proposal", async () => {
     mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3)], {}));
-    render(<EnquiriesView />);
+    render(<EnquiriesView canDraftWithAI />);
 
     fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
     expect(screen.queryByText("AI draft")).toBeNull();
@@ -823,12 +823,30 @@ describe("EnquiriesView decisions", () => {
     mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3)], {}));
     for (const answer of [false, undefined]) {
       mocks.aiDraftsAvailable.mockReturnValue(answer);
-      render(<EnquiriesView />);
+      render(<EnquiriesView canDraftWithAI />);
       fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
       expect(await screen.findByRole("heading", { name: "Client 3" })).toBeTruthy();
       expect(screen.queryByText("Draft with AI")).toBeNull();
       cleanup();
     }
+  });
+
+  // T-656: the general AI drafts are the venue team's, charged to its AI
+  // allowance; POST /ai/drafts refuses anyone else, so a planner reading their
+  // own enquiry is not offered one.
+  it("offers an AI summary only to the venue's own team, never to a planner reading their own enquiry", async () => {
+    mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3)], {}));
+    // As the dashboard renders it for a planner: the flag is not given.
+    render(<EnquiriesView />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+    expect(await screen.findByRole("heading", { name: "Client 3" })).toBeTruthy();
+    expect(screen.queryByText("Draft with AI")).toBeNull();
+    expect(screen.queryByText("AI draft")).toBeNull();
+    cleanup();
+
+    render(<EnquiriesView canDraftWithAI />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+    expect(await screen.findByText("Draft with AI")).toBeTruthy();
   });
 
   it("names the room from the venue's rooms, read once, and says when it is not known", async () => {
