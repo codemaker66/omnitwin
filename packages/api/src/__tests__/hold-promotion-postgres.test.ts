@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { promotedHoldFromActionPath } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { transitionBookingCore, type MutationActor } from "../services/booking-mutations.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 import { loadPromotionDraft } from "../services/hold-promotion.js";
 
 // ---------------------------------------------------------------------------
@@ -68,7 +69,10 @@ describe.skipIf(target === undefined)("the promoted 2nd option is told, on migra
     await db.insert(schema.enquiries).values({ id: enquiryId, venueId, spaceId, name: "Jane MacLeod", email: "jane.macleod@example.test", state: "submitted" });
     const first = randomUUID(), second = randomUUID();
     const hygiene = { nextAction: "Call the client", decisionAt: new Date("2030-05-30T16:00:00.000Z"), nextActionDueAt: new Date("2030-05-20T09:00:00.000Z") };
-    await db.insert(schema.bookings).values([
+    // Holds are written with their events, as every writer does (the bind).
+    // The 2nd option's event comes from its enquiry and has no client account,
+    // so its draft goes to the enquirer unless a case binds it to another event.
+    await insertBoundBookings(db, [
       { id: first, venueId, spaceId, kind: "hold", title: "Campbell wedding", startsAt: DAY, endsAt: DAY_END, rank: 1, ownerUserId: office, createdBy: office, ...hygiene },
       { id: second, venueId, spaceId, kind: "hold", title: options.secondTitle ?? "MacLeod wedding", startsAt: DAY, endsAt: DAY_END, rank: 2,
         ownerUserId: secondOwner, createdBy: office, enquiryId, ...hygiene },
