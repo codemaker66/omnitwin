@@ -1421,6 +1421,10 @@ export {
   type HallkeeperSheetSummary,
 } from "./hallkeeper-v2.js";
 
+// One Living Record, first slice: a printed sheet states its version in words
+// and its QR answers only "current" or "superseded" (no sign-in, no content).
+export * from "./sheet-paper-check.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
@@ -2520,11 +2524,16 @@ export * from "./venue-inventory-availability.js";
 export * from "./venue-inventory-adjustment.js";
 export * from "./inventory-reservations.js";
 export * from "./client-event-schedule.js";
+export * from "./client-home.js";
 
 // Ship Friday slice 10: the one-tap request from the floor and its ladder.
 export * from "./requests.js";
 export * from "./conversations.js";
 export * from "./observations.js";
+
+// T-656: every model call attributed to a venue and a feature, priced, and
+// held to the venue's monthly allowance (migration 0089).
+export * from "./ai-usage.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";

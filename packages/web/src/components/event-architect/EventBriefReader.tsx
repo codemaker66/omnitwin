@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Check, CircleAlert, Quote, Sparkles } from "lucide-react";
 import {
+  AI_BUDGET_REACHED,
   EVENT_BRIEF_DESCRIPTION_MAX_LENGTH,
   type EventArchitectAccessibilityRequirement,
   type EventBriefDraft,
@@ -297,9 +298,11 @@ export function EventBriefReader({ venueId, spaceId, roomName, onFill }: EventBr
         if (askNumber.current !== mine) return;
         controllerRef.current = null;
         setSaid("");
-        // Only the server's own word that AI is off takes the feature away
-        // for the visit; a proxy's 503 is a failure to try again.
-        if (error instanceof ApiError && error.status === 503 && error.code === "AI_ASSISTANT_DISABLED") {
+        // Only the server's own word takes the feature away for the visit:
+        // that AI is off, or that the venue's AI allowance for the month is
+        // used (T-656). A proxy's 503 is a failure to try again.
+        if (error instanceof ApiError && ((error.status === 503 && error.code === "AI_ASSISTANT_DISABLED")
+          || (error.status === 429 && error.code === AI_BUDGET_REACHED))) {
           markEventBriefReaderUnavailable();
           setStep({ kind: "gone" });
           return;

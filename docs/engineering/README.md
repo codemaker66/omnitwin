@@ -19,6 +19,7 @@ to current code and useful checks; it is not another layer of instructions.
 | Runtime assets | `tools/xgrids-lcc2/`, `tools/xgrids-xbag/`, `packages/web/src/components/scene/` | Frames/units, manifests, resource disposal, streaming and measured delivery |
 | Grand Hall model | [Note](grand-hall-model.md), `packages/web/src/components/grand-hall/`, [survey build](../../tools/grand-hall-survey/README.md) | Survey files are rebuilt from the scan, not hand-edited; one frame for relief and photographs; public splat hold |
 | Planner rendering | [Note](planner-rendering.md), `PlannerRenderPipeline`, `lib/render-quality.ts`, `scripts/planner-tour.mjs` | One profile per device, resolution independent of motion; no shader compiled during a gesture; measure on the declared scene and device |
+| Hallkeeper sheet on paper | [Note](paper-version-check.md), `services/hallkeeper-pdf-v2.ts`, `services/sheet-paper-check.ts`, `pages/SheetCheckPage.tsx` | The version line in words; the public check returns version state only, the same `unknown` for every wrong link, and is rate-limited |
 | Crafted furniture | [Note](crafted-furniture.md), `packages/web/src/components/meshes/crafted/`, `/dev/furniture` | Catalogue footprints and chair clearance; batchable geometry and named materials; catalogue mesh and preview URLs stay as seeded |
 | Build and tests | [root scripts](../../package.json), [CI](../../.github/workflows/ci.yml), package scripts/configs | Same commands locally and in CI; resource contention; no production fixtures |
 | Product requirements | [current goals](../../GOAL.md), [domain authority map](../strategy/authority-map.md), [ADR index](../architecture/adr/README.md) | Current user direction and evidence supersede dated summaries |
@@ -111,6 +112,7 @@ on future experiments.
 | Visible composition or interaction | [Product experience](../../.claude/conventions/product-experience.md) |
 | What AI assistants and search engines may read (`/mcp`, schema.org) | [Public venue discovery](public-venue-discovery.md) |
 | Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
+| What AI calls cost, the usage ledger, a venue's AI allowance, who may spend it | [AI usage and billing](ai-usage-and-billing.md) |
 | Martyn's Law or other legal prompts | [No-claims rule and sources](martyns-law-readiness.md) |
 | Splat renderer choice/lifecycle | [Native Three.js splats](native-splats.md) |
 | Venue weather (sky) feed, Met Office sources | [Venue sky](venue-sky.md) |

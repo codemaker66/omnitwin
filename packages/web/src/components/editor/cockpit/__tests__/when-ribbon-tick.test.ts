@@ -7,7 +7,7 @@ import {
   type TickAudio,
   type TickGain,
   type TickOscillator,
-} from "../when-ribbon-tick.js";
+} from "../../../../lib/sound-registry.js";
 
 // The opt-in tick (goal 19 S6): off until asked for, remembered on the device,
 // one audio context made lazily on the first snap.

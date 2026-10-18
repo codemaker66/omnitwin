@@ -10,7 +10,13 @@ import {
   type EventBriefCaseScore,
 } from "../evals/event-brief-scoring.js";
 import { AnthropicAIGenerationAdapter, RECOMMENDED_ANTHROPIC_MODEL } from "../services/anthropic-draft-adapter.js";
+import { ANTHROPIC_PRICE_TABLE, TallyAIUsageMeter } from "../services/ai-usage.js";
 import { readEventBrief } from "../services/event-brief-draft.js";
+
+// An evaluation is no venue's call: its reads are tallied in memory, priced
+// from the same versioned table as the ledger, and nothing reaches the AI
+// usage ledger.
+const OPERATOR_EVALUATION = { venueId: "operator-evaluation", userId: "operator" } as const;
 
 // ---------------------------------------------------------------------------
 // pnpm --filter @omnitwin/api eval:event-briefs [case-id ...]
@@ -44,14 +50,20 @@ export async function runEventBriefEval(argv: readonly string[]): Promise<number
   }
 
   const workspaceId = process.env["AI_ASSISTANT_WORKSPACE_ID"];
-  const adapter = new AnthropicAIGenerationAdapter({ model, apiKey, ...(workspaceId === undefined ? {} : { workspaceId }) });
+  const usage = new TallyAIUsageMeter();
+  const adapter = new AnthropicAIGenerationAdapter({ model, apiKey, usage, ...(workspaceId === undefined ? {} : { workspaceId }) });
   console.info(`Reading ${String(cases.length)} briefs with ${model}, one at a time.\n`);
   const scores: EventBriefCaseScore[] = [];
   const failed: EventBriefEvalCase[] = [];
   for (const evalCase of cases) {
     const started = performance.now();
     try {
-      const draft = await readEventBrief(adapter, { description: evalCase.description, room: evalCase.room, now: EVAL_TODAY });
+      const draft = await readEventBrief(adapter, {
+        description: evalCase.description,
+        room: evalCase.room,
+        attribution: OPERATOR_EVALUATION,
+        now: EVAL_TODAY,
+      });
       const score = scoreEventBriefCase(evalCase, draft);
       scores.push(score);
       const misses = [
@@ -69,6 +81,9 @@ export async function runEventBriefEval(argv: readonly string[]): Promise<number
     }
   }
   console.info(`\n${formatEventBriefEval(summariseEventBriefEval(scores, failed))}`);
+  const cacheRead = usage.entries.reduce((total, entry) => total + entry.cacheReadInputTokens, 0);
+  console.info(`${String(usage.entries.length)} calls cost $${(usage.costMicroUsd / 1_000_000).toFixed(4)} at ${ANTHROPIC_PRICE_TABLE.version} prices`
+    + ` (${String(cacheRead)} input tokens read from the prompt cache).`);
   return failed.length === 0 ? 0 : 1;
 }
 

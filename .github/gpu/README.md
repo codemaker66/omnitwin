@@ -221,6 +221,40 @@ downloaded and extracted into a temporary directory, without system installation
 Its archive SHA-256 is
 `1b506492bd9c7fd0cdb4f02ac822f1d3e336b0aead5113c1239baf8db5db562a`.
 
+## Clock and publication recovery
+
+A `case start outside claimed run interval` rejection can expose a real host
+clock fault. Preserve the rejected raw report, execution envelope and publisher
+output. Do not edit timestamps, invent an envelope or relax the verifier. Compare
+consecutive wall-clock and monotonic deltas, Windows/WSL UTC, the relevant boot's
+`journalctl` output, Hyper-V implicit time synchronization and Ubuntu's
+`systemd-timesyncd` state. A small net difference between run endpoints does not
+exclude clock jumps within the run.
+
+The [Goal17 investigation](../../docs/reports/browser-release-confidence-2026-09-15.md)
+observed backward clock jumps and diagnosed competing Hyper-V and guest NTP
+corrections as the cause; individual kernel adjustments were not traced.
+Its reversible workaround kept one existing WSL session alive, recorded the
+initial active NTP service, temporarily stopped `systemd-timesyncd`, and verified
+stable wall/monotonic samples before invoking the unchanged worker. Hyper-V
+remained the time authority. Restore the original service state in guaranteed
+cleanup and retain that confirmation; do not permanently disable synchronization
+or manually set timestamps. The diagnostic controller was an output-only
+qualification artifact, not a committed runner command. Retain clock samples,
+journals, service states and rejected results alongside qualification receipts.
+
+After correcting the cause, use a new worker output directory and verify the
+request belongs to the still-active, unexpired hosted attempt. An expired request
+requires a new hosted attempt and its fresh request. The normal source, runtime,
+clock, performance and publication checks still determine acceptance.
+
+If publication is interrupted after its durable intent is written, do not delete
+the intent or blindly rerun the publisher. Inspect the retained intent, bundle
+and any blob/status responses, then query the exact nonce-bound status context
+and Git blob. Verify the source/run/attempt, actor and exact bundle hashes before
+deciding what happened. A missing local response does not establish that a remote
+write failed; an uploaded blob alone is not a published or accepted result.
+
 ## Boundaries and evidence
 
 The browser gets new user, process, network, IPC, UTS and cgroup namespaces;
