@@ -12,7 +12,8 @@ import {
 import * as schema from "../db/schema.js";
 import { eventArchitectRoutes } from "../routes/event-architect.js";
 import { DisabledAIGenerationAdapter } from "../services/ai-assistant.js";
-import { AnthropicAIGenerationAdapter } from "../services/anthropic-draft-adapter.js";
+import { AnthropicAIGenerationAdapter, type AnthropicDraftSend } from "../services/anthropic-draft-adapter.js";
+import { TallyAIUsageMeter } from "../services/ai-usage.js";
 import * as briefs from "../services/event-brief-draft.js";
 import {
   EVENT_BRIEF_ANSWER_SCHEMA,
@@ -81,14 +82,16 @@ const fakeFetch = vi.fn((_input: string | URL | Request, init?: RequestInit): Pr
 });
 
 const client = new Anthropic({ apiKey: "test-key-not-real", baseURL: "https://api.anthropic.com", fetch: fakeFetch, maxRetries: 0 });
-const reader = new AnthropicAIGenerationAdapter({
-  model: "claude-opus-5-5",
-  apiKey: "test-key-not-real",
-  send: (request, options) => client.beta.messages.create(request, { signal: options?.signal ?? null }),
-});
+const sdkSend: AnthropicDraftSend = (request, options) => client.beta.messages.create(request, { signal: options?.signal ?? null });
+/** What the brief reads were recorded as (T-656); the PostgreSQL ledger is proven in ai-usage-postgres.test.ts. */
+const usage = new TallyAIUsageMeter();
+const reader = new AnthropicAIGenerationAdapter({ model: "claude-opus-5-5", apiKey: "test-key-not-real", usage, send: sdkSend });
 
 let server: FastifyInstance;
 let offServer: FastifyInstance;
+let spentServer: FastifyInstance;
+/** A venue whose allowance is a single micro-dollar: no read's worst case fits. */
+const spent = new TallyAIUsageMeter({ limitMicroUsd: 1 });
 
 beforeAll(async () => {
   vi.stubEnv("NODE_ENV", "test");
@@ -98,17 +101,27 @@ beforeAll(async () => {
   offServer = Fastify();
   await offServer.register(eventArchitectRoutes, { db: drizzle.mock({ schema }), prefix: "/event-architect" });
   await offServer.ready();
+  spentServer = Fastify();
+  await spentServer.register(eventArchitectRoutes, {
+    db: drizzle.mock({ schema }),
+    briefReader: new AnthropicAIGenerationAdapter({ model: "claude-opus-5-5", apiKey: "test-key-not-real", usage: spent, send: sdkSend }),
+    prefix: "/event-architect",
+  });
+  await spentServer.ready();
 });
 
 afterAll(async () => {
   await server.close();
   await offServer.close();
+  await spentServer.close();
   vi.unstubAllEnvs();
 });
 
 beforeEach(() => {
   sent.length = 0;
   replies.length = 0;
+  usage.entries.length = 0;
+  spent.entries.length = 0;
   fakeFetch.mockClear();
   vi.mocked(briefs.loadEventBriefRoom).mockClear();
 });
@@ -203,9 +216,12 @@ describe("what the provider is sent", () => {
     expect(body).toContain("(email address)");
     expect(request?.body).toMatchObject({
       model: "claude-opus-5-5",
-      system: EVENT_BRIEF_SYSTEM_PROMPT,
+      // The frozen rules carry the 5-minute cache breakpoint; everything that
+      // varies (room, date, description) is in the user turn after it (T-656).
+      system: [{ type: "text", text: EVENT_BRIEF_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       output_config: { effort: "medium", format: { type: "json_schema", schema: EVENT_BRIEF_ANSWER_SCHEMA } },
     });
+    expect(EVENT_BRIEF_SYSTEM_PROMPT).not.toMatch(/\d{4}-\d{2}-\d{2}|Grand Hall|Trades Hall/u);
     const messages = request?.body["messages"];
     const prompt = Array.isArray(messages) ? String((messages[0] as { content?: unknown } | undefined)?.content) : "";
     expect(prompt).toContain("Grand Hall at Trades Hall Glasgow, 21 m by 10.5 m, 7 m high");
@@ -308,6 +324,28 @@ describe("what comes back", () => {
     const res = await readBrief("Dinner for 80");
     expect(res.statusCode).toBe(502);
     expect(res.body).toEqual({ error: "AI draft generation failed", code: "AI_DRAFT_GENERATION_FAILED" });
+  });
+});
+
+describe("what a read costs the venue (T-656)", () => {
+  it("records each read for the room's venue and the person who asked, with its tokens and cost", async () => {
+    replies.push({ json: answer() });
+    const res = await readBrief("Dinner for 80");
+    expect(res.statusCode).toBe(200);
+    // 100 in and 200 out at Claude Opus 5.5's $4 and $20 per million tokens.
+    expect(usage.entries).toEqual([expect.objectContaining({
+      venueId: VENUE_ID, userId: USER_ID, feature: "event_brief", provider: "anthropic", model: "claude-opus-5-5",
+      outcome: "ok", inputTokens: 100, outputTokens: 200, costMicroUsd: 100 * 4 + 200 * 20, priceTableVersion: "anthropic-2026-10-13",
+    })]);
+    expect(JSON.stringify(usage.entries)).not.toContain("Dinner for 80");
+  });
+
+  it("answers 429 AI_BUDGET_REACHED, sending nothing, once the venue's allowance for the month is used", async () => {
+    const res = await readBrief("Dinner for 80", STAFF, spentServer);
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual({ error: "This venue's AI allowance for the month is used", code: "AI_BUDGET_REACHED" });
+    expect(fakeFetch).not.toHaveBeenCalled();
+    expect(spent.entries).toEqual([expect.objectContaining({ venueId: VENUE_ID, feature: "event_brief", outcome: "budget_blocked", costMicroUsd: 0 })]);
   });
 });
 
