@@ -24,6 +24,18 @@ describe("frozen floor plan", () => {
     expect(result.outline).toEqual(plan.outline);
     expect(result.objects).toEqual([{ ...object, rotationY: 1.5708, scale: 1.5 }]);
   });
+  it("carries the planner's table name and note, trimmed, so the printed plan can show them", () => {
+    const assets = new Map([[assetId, { id: assetId, name: "6ft Round Table", category: "table", widthM: "1.83", depthM: "1.83", collisionType: "cylinder" }]]);
+    const frozen = (metadata: unknown) => buildHallkeeperFloorPlan(plan.outline.map((point) => ({ x: point.x, y: point.z })), [{
+      id: objectId, assetDefinitionId: assetId, positionX: "2", positionZ: "1", rotationY: "0", scale: "1", metadata,
+    }], assets).objects[0];
+    expect(frozen({ displayLabel: " Table 5 ", notes: " Peanut allergy, seat 4 " })).toMatchObject({ label: "Table 5", note: "Peanut allergy, seat 4" });
+    for (const metadata of [null, undefined, {}, { displayLabel: "  ", notes: "" }, { displayLabel: 5, notes: ["x"] }]) {
+      expect(frozen(metadata)).not.toHaveProperty("label");
+      expect(frozen(metadata)).not.toHaveProperty("note");
+    }
+    expect(frozen({ displayLabel: "L".repeat(120), notes: "N".repeat(900) })).toMatchObject({ label: "L".repeat(80), note: "N".repeat(500) });
+  });
   it("preserves Three.js yaw handedness and actual footprint size", () => {
     const corners = footprintCorners(object);
     const expected = [{ x: 1.5, z: 2 }, { x: 1.5, z: 0 }, { x: 2.5, z: 0 }, { x: 2.5, z: 2 }];
