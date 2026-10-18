@@ -1230,6 +1230,8 @@ div.dayboard-slab {
 }
 
 .dayboard[data-register="wall"] {
+  /* Burn-in drift (S8): a position set by the board every ten minutes, never a motion. */
+  translate: var(--lt-drift-x, 0) var(--lt-drift-y, 0);
   --lt-ground: var(--hk-forest-ink, #1e2721);
   --lt-raised: var(--hk-forest-raised, #263028);
   --lt-sunk: #1a221c;

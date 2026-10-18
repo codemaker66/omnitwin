@@ -62,6 +62,13 @@ import { useVenueClock } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
 import { boardDayAnchorMs, nextBoardRolloverMs, soonerOf, useDayBoundaryHour } from "./lib/board-day.js";
 import { useWakeLock } from "./lib/use-wake-lock.js";
+import { driftOffset } from "./lib/burn-in-drift.js";
+
+/** The wall's burn-in drift as custom properties on the board's root (S8). */
+interface DriftStyle extends CSSProperties {
+  readonly "--lt-drift-x": string;
+  readonly "--lt-drift-y": string;
+}
 import {
   DayBoardSlotRequestsContext,
   type SlotRequestsComponent,
@@ -867,6 +874,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const device: "wall" | "phone" | "desk" = wall ? "wall" : handheld;
   // The wall never sleeps (S8 item 14); phones and desks keep the system's own rule.
   useWakeLock(wall);
+  // Nothing burns in: the wall sits a few pixels off centre and moves every
+  // ten minutes (S8 item 14); nowMs ticks at least once a minute.
+  const drift = wall ? driftOffset(nowMs) : null;
+  const driftStyle: DriftStyle | undefined = drift === null ? undefined : { "--lt-drift-x": `${String(drift.x)}px`, "--lt-drift-y": `${String(drift.y)}px` };
   const live = useDiaryLive(venueId !== null, refetch, { device });
   // The calendar stamps its reads with the device clock; the board compares
   // and prints them on the corrected one (D9).
@@ -996,6 +1007,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     <div
       className="dayboard"
       ref={boardRef}
+      style={driftStyle}
       data-register={wall ? "wall" : "paper"}
       data-layout={vertical ? "phone" : "sheet"}
       data-frozen={frozen ? "true" : "false"}
