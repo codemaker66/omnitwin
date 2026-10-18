@@ -157,6 +157,7 @@ export function MobilePlannerTopBar({
 }: MobilePlannerTopBarProps): React.ReactElement {
   const space = useEditorStore((s) => s.space);
   const configId = useEditorStore((s) => s.configId);
+  const configName = useEditorStore((s) => s.configName);
   const objectCount = useEditorStore((s) => s.objects.length);
   const isSaving = useEditorStore((s) => s.isSaving);
   const isDirty = useEditorStore((s) => s.isDirty);
@@ -167,12 +168,16 @@ export function MobilePlannerTopBar({
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const timelinePreviewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
   const timelinePreviewActive = timelinePreviewMode !== "inactive";
+  // The room and the layout as the server has them. On a phone these two
+  // lines are the only confirmation that you opened what you meant to, so a
+  // name that has not arrived says so rather than guessing the flagship
+  // ("Grand Hall", "Banquet Draft") for everything.
   const roomName = timelinePreviewActive
     ? timelinePreviewRuntime?.spaceName ?? "Room unavailable"
-    : space?.name ?? "Grand Hall";
+    : space?.name ?? "Loading room…";
   const layoutName = timelinePreviewActive
     ? timelinePreviewRuntime === null ? "Room preview unavailable" : "Frozen phase preview"
-    : "Banquet Draft";
+    : configName ?? (configId === null ? "Unsaved layout" : "Loading layout…");
   const online = useOnlineStatus();
   const [showEnquiry, setShowEnquiry] = useState(false);
   const [sending, setSending] = useState(false);
