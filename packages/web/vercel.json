@@ -544,6 +544,14 @@
     {
       "source": "/supplier-share/:token/",
       "destination": "/index.html"
+    },
+    {
+      "source": "/sheet-check",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/sheet-check/",
+      "destination": "/index.html"
     }
   ],
   "headers": [
