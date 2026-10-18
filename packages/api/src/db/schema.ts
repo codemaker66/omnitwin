@@ -655,6 +655,10 @@ export const configurationSheetSnapshots = pgTable("configuration_sheet_snapshot
     .default(REAL_METRE_COORDINATE_SPACE)
     .notNull(),
   diagramUrl: text("diagram_url"),
+  /** Retired: inserted as null, never set to a URL and never served. Sheet
+   *  PDFs can carry health notes and are served only by the signed-in
+   *  /hallkeeper/:configId/sheet route. The nullable column stays so this
+   *  change needs no migration; legacy values in it are ignored. */
   pdfUrl: text("pdf_url"),
   sourceHash: varchar("source_hash", { length: 64 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
