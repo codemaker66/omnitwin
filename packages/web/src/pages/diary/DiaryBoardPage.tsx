@@ -42,6 +42,8 @@ import { holdScrollWhileLifted, keepTouchesHoldable, type ScrollHold } from "./l
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { useDiaryLive } from "./hooks/useDiaryLive.js";
+import { presenceLine } from "./lib/presence-line.js";
+import { getOperatingSettings } from "../../api/operating-settings.js";
 import { getEnquiry, listEnquiries, type Enquiry } from "../../api/enquiries.js";
 import { convertSourceOf, holdRefusal } from "./lib/enquiry-link.js";
 import { BoardGrid, type BoardCreate, type OpenGap } from "./components/BoardGrid.js";
@@ -286,11 +288,27 @@ export function DiaryBoardPage(): ReactElement {
     refetch();
     setEnquiryRetry((value) => value + 1);
   }, [refetch]);
-  const live = useDiaryLive(venueId !== null, onLiveChange);
+  const live = useDiaryLive(venueId !== null, onLiveChange, { device: "desk" });
   /** Presence minus yourself: "who else is on this board right now". */
   const othersPresent = useMemo(
     () => live.presence.filter((person) => person.userId !== userId),
     [live.presence, userId],
+  );
+  // The venue's "now" window, for the line about the screens (S7). Read
+  // once per venue; a venue that has set none, or a read that fails, says
+  // only that no hallkeeper screen is on.
+  const [nowWindowSeconds, setNowWindowSeconds] = useState<number | null>(null);
+  useEffect(() => {
+    if (venueId === null) return;
+    let cancelled = false;
+    getOperatingSettings(venueId)
+      .then((settings) => { if (!cancelled) setNowWindowSeconds(settings?.escalationNowSeconds ?? null); })
+      .catch(() => { if (!cancelled) setNowWindowSeconds(null); });
+    return () => { cancelled = true; };
+  }, [venueId]);
+  const screensLine = useMemo(
+    () => presenceLine(live.presence, { nowWindowSeconds, selfUserId: userId }),
+    [live.presence, nowWindowSeconds, userId],
   );
 
   // The tray reloads when the venue changes or something can actually have
@@ -1080,6 +1098,15 @@ export function DiaryBoardPage(): ReactElement {
               {live.connected ? BOARD_COPY.presence.live : BOARD_COPY.presence.offline}
               {othersPresent.length > 0 ? ` · ${String(othersPresent.length)}` : ""}
             </span>
+            {/* Which screens are on beyond this one (S7, D8): the wall, the
+                hallkeepers' phones, and when none is, how soon the duty
+                admin is told. Only while the socket is up: a line about
+                screens cannot be trusted from a stale list. */}
+            {live.connected && (
+              <span className="diary-screens" role="status" title={BOARD_COPY.presence.screensTitle}>
+                {screensLine}
+              </span>
+            )}
             {writable ? (
               <button type="button" className="diary-button is-primary" aria-keyshortcuts="N"
                 title={BOARD_COPY.withKey(BOARD_COPY.drawer.createTitle, "N")} onClick={openCreateDrawer}>

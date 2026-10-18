@@ -41,7 +41,7 @@ with no account. Stage 1 of "A Door for Everyone Outside" (October 2026).
 ## Acknowledgements are kept by the database
 
 Blake chose "supplier confirmations kept" (October 2026). Migration
-`0092_supplier_records_kept` (number provisional until merge) makes both links
+`0095_supplier_records_kept` makes both links
 in the chain `ON DELETE RESTRICT`:
 
 - `supplier_acknowledgements.pack_id` → `supplier_coordination_packs`: a pass

@@ -43,11 +43,18 @@ export interface DiaryLive {
   readonly presence: readonly LivePresenceUser[];
 }
 
-export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
+export interface DiaryLiveOptions {
+  /** What kind of screen this is (goal 19 S7), told on the auth frame so
+   *  the office can read "Wall display live · Elaine's phone live". */
+  readonly device?: "wall" | "phone" | "desk";
+}
+
+export function useDiaryLive(enabled: boolean, onEvent: () => void, options: DiaryLiveOptions = {}): DiaryLive {
   const [connected, setConnected] = useState(false);
   const [presence, setPresence] = useState<readonly LivePresenceUser[]>([]);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const device = options.device;
 
   useEffect(() => {
     if (!enabled || typeof WebSocket === "undefined") return;
@@ -119,7 +126,7 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
             ws.close();
             return;
           }
-          ws.send(JSON.stringify({ type: "auth", token }));
+          ws.send(JSON.stringify(device === undefined ? { type: "auth", token } : { type: "auth", token, device }));
           stopPing();
           pingTimer = window.setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
@@ -233,7 +240,8 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
       setConnected(false);
       setPresence([]);
     };
-  }, [enabled]);
+    // The screen's kind is told in the auth frame, so a change reconnects.
+  }, [enabled, device]);
 
   return { connected, presence };
 }

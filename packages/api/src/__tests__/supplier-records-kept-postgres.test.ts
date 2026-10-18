@@ -10,7 +10,7 @@ import { cleanupPreviewConfigurations } from "../services/cleanup.js";
 // ---------------------------------------------------------------------------
 // What a supplier was told, and what they confirmed, is kept by the database.
 //
-// Migration 0092 (supplier_records_kept) makes a supplier pass RESTRICT the
+// Migration 0095 (supplier_records_kept) makes a supplier pass RESTRICT the
 // delete of its handoff pack, and an acknowledgement RESTRICT the delete of
 // its pass. Handoff packs still cascade from their configuration and their
 // snapshot, so every route into the chain is tried here against the whole

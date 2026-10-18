@@ -149,6 +149,11 @@ interface EnquiriesViewProps {
   /** Opens the pipeline on the deal Create opportunity made or found, so the
    *  press lands on it rather than on a notice that it exists. */
   readonly onOpenOpportunity?: (opportunityId: string) => void;
+  /** Whether this actor works at the venue and so is offered an AI summary
+   *  of an enquiry: the general AI drafts are the venue team's, charged to
+   *  its AI allowance, and refuse anyone else (T-656). A permission flag, so
+   *  it defaults to false for the reason canCreateOpportunity does. */
+  readonly canDraftWithAI?: boolean;
   /** Whether this actor writes the Diary, and so may hold a date there for
    *  an enquiry. A permission flag, so it defaults to false for the reason
    *  canCreateOpportunity does. */
@@ -165,6 +170,7 @@ export function EnquiriesView({
   onDetailClose,
   canCreateOpportunity = false,
   onOpenOpportunity,
+  canDraftWithAI = false,
   canHoldDate = false,
   diaryVenueId = null,
 }: EnquiriesViewProps = {}): ReactElement {
@@ -748,6 +754,7 @@ export function EnquiriesView({
           creatingOpportunity={creatingOpportunity}
           opportunityFailure={opportunityFailure !== null && opportunityFailure.enquiryId === selected.id ? opportunityFailure.message : null}
           diary={panelDiary}
+          canDraftWithAI={canDraftWithAI}
           navigation={{
             layout: wide ? "wide" : "single",
             backLabel,

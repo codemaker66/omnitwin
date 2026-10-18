@@ -21,9 +21,9 @@ function onDeleteOf(table: PgTable, column: string): string | undefined {
 }
 
 // What a supplier was told and what they confirmed must not be erasable by a
-// cascade (0092). The Postgres proof, on the migrated schema, is
+// cascade (0095). The Postgres proof, on the migrated schema, is
 // supplier-records-kept-postgres.test.ts; these hold the schema and the SQL.
-describe("supplier records kept (0092)", () => {
+describe("supplier records kept (0095)", () => {
   it("declares a pass's handoff pack and a reply's pass as RESTRICT in the Drizzle schema", () => {
     expect(onDeleteOf(supplierCoordinationPacks, "handoff_pack_id")).toBe("restrict");
     expect(onDeleteOf(supplierAcknowledgements, "pack_id")).toBe("restrict");

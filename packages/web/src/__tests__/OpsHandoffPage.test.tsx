@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { OpsHandoffPage } from "../pages/OpsHandoffPage.js";
+import { useAuthStore, type AuthUser } from "../stores/auth-store.js";
 import type { OpsHandoffPackBundle } from "@omnitwin/types";
 
 // These pages now wear the app shell (DashboardLayout), which renders a Clerk
@@ -280,7 +281,13 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  useAuthStore.getState().setUser(null);
 });
+
+function signedInAs(role: string, venueId: string | null): void {
+  const user: AuthUser = { id: "user-1", email: `${role}@example.test`, name: "Fixture person", role, platformRole: "none", venueId };
+  useAuthStore.getState().setUser(user);
+}
 
 describe("OpsHandoffPage", () => {
   it("renders the handoff dashboard sections", async () => {
@@ -343,6 +350,32 @@ describe("OpsHandoffPage", () => {
     const css = readFileSync(resolve("src/pages/OpsHandoffPage.css"), "utf8");
     expect(css).toMatch(/\.ops-handoff-provenance li \{/u);
     expect(css).not.toMatch(/\.ops-handoff-provenance pre/u);
+  });
+
+  // T-656: the AI draft is the venue team's tool, charged to their venue's AI
+  // allowance; POST /ai/drafts refuses anyone else, so no one else is offered it.
+  it.each([["staff"], ["hallkeeper"], ["manager"], ["admin"]])("offers the AI BEO draft to the venue's %s", async (role) => {
+    signedInAs(role, "venue-1");
+    mockGetOpsHandoffPack.mockResolvedValue(fixtureBundle());
+    renderPage();
+
+    expect(await screen.findByRole("region", { name: "AI BEO / supplier draft" })).toBeTruthy();
+  });
+
+  it.each([
+    ["the planner who owns the configuration", "planner", null],
+    ["a planner at the venue", "planner", "venue-1"],
+    ["a client", "client", "venue-1"],
+    ["a staff account not yet connected to a venue", "staff", null],
+  ] as const)("shows %s the pack without the AI draft", async (_, role, venueId) => {
+    signedInAs(role, venueId);
+    mockGetOpsHandoffPack.mockResolvedValue(fixtureBundle());
+    renderPage();
+
+    expect(await screen.findByText("Ops handoff pack")).toBeTruthy();
+    expect(screen.getByText("BEO internal operations handoff from approved planning data.")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "AI BEO / supplier draft" })).toBeNull();
+    expect(document.querySelector(".ops-handoff-ai-draft")).toBeNull();
   });
 
   it("shows a retryable error state", async () => {
