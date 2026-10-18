@@ -32,6 +32,24 @@ export function resolveProgressMutation(
   return desired ? "insert" : "delete";
 }
 
+/**
+ * The event a sheet's ticks belong to, or null for the layout's own,
+ * eventless ticks.
+ *
+ * A layout can be reused across events, so a tick belongs to the event the
+ * room was set for, not to the layout: keyed on the layout alone, a reused
+ * layout opened with the last event's ticks and the Day Board counted them
+ * as tonight's. The event is chosen the way the sheet chooses its times
+ * (`resolveTiming`): the event the hallkeeper arrived from when the layout
+ * is linked to it; otherwise the layout's only event; otherwise none. Ticks
+ * stored before events were recorded carry none, so they are never counted
+ * towards any event.
+ */
+export function progressEventFor(linkedEventIds: readonly string[], requestedEventId: string | null): string | null {
+  if (requestedEventId !== null && linkedEventIds.includes(requestedEventId)) return requestedEventId;
+  return linkedEventIds.length === 1 ? linkedEventIds[0] ?? null : null;
+}
+
 /** The checked state that results from applying a resolved mutation. */
 export function checkedStateAfter(mutation: ProgressMutation, existing: boolean): boolean {
   switch (mutation) {

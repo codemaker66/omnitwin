@@ -431,7 +431,7 @@ export function deriveSheetTiming(
  * configuration that was never linked to an event yields no booking and
  * therefore no timing.
  */
-async function linkedEventIds(db: Database, configId: string): Promise<string[]> {
+export async function linkedEventIds(db: Database, configId: string): Promise<string[]> {
   const [links, variants] = await Promise.all([
     db.select({ eventId: eventConfigurationLinks.eventId })
       .from(eventConfigurationLinks)

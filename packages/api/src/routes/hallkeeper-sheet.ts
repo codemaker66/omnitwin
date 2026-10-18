@@ -6,12 +6,12 @@ import {
   configurations,
   hallkeeperProgress,
 } from "../db/schema.js";
-import { assembleSheetDataV2, ApprovedSnapshotUnavailableError } from "../services/hallkeeper-sheet-v2-data.js";
+import { assembleSheetDataV2, ApprovedSnapshotUnavailableError, linkedEventIds } from "../services/hallkeeper-sheet-v2-data.js";
 import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
 import { authenticate } from "../middleware/auth.js";
 import type { JwtUser } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
-import { resolveProgressMutation, checkedStateAfter } from "../lib/hallkeeper-progress.js";
+import { resolveProgressMutation, checkedStateAfter, progressEventFor } from "../lib/hallkeeper-progress.js";
 import { summarizeSheet } from "../lib/hallkeeper-summary.js";
 import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 
@@ -87,6 +87,22 @@ async function loadConfigAuthPivot(
     .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
     .limit(1);
   return row === undefined ? null : row;
+}
+
+/** The event this request's ticks belong to: the one the hallkeeper arrived
+ *  from (?eventId=) when the layout is linked to it, else the layout's only
+ *  event, else none (lib/hallkeeper-progress.ts progressEventFor). */
+async function progressEventOf(db: Database, configId: string, query: unknown): Promise<string | null> {
+  return progressEventFor(await linkedEventIds(db, configId), requestedEventId(query));
+}
+
+/** One event's ticks on a layout, or the layout's eventless ticks — never
+ *  another event's. */
+function progressScope(configId: string, eventId: string | null) {
+  return and(
+    eq(hallkeeperProgress.configId, configId),
+    eventId === null ? isNull(hallkeeperProgress.eventId) : eq(hallkeeperProgress.eventId, eventId),
+  );
 }
 
 async function requireConfigAccess(
@@ -239,9 +255,12 @@ export async function hallkeeperSheetRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
+    // Tonight's ticks only: a layout reused from an earlier event must not
+    // arrive on the Day Board already counted as set.
+    const eventId = await progressEventOf(db, params.data.configId, request.query);
     const marks = await db.select({ rowKey: hallkeeperProgress.rowKey })
       .from(hallkeeperProgress)
-      .where(eq(hallkeeperProgress.configId, params.data.configId));
+      .where(progressScope(params.data.configId, eventId));
 
     return { data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey)) };
   });
@@ -250,8 +269,9 @@ export async function hallkeeperSheetRoutes(
   // Progress endpoints — server-backed checkbox state
   //
   // The hallkeeper_progress table stores which rows are checked for a given
-  // config. GET returns all checked keys. Multiple hallkeepers share the same
-  // state — no localStorage isolation.
+  // config and event: both routes take the sheet's ?eventId= and keep to that
+  // event's ticks (progressEventOf). GET returns all checked keys. Multiple
+  // hallkeepers share the same state — no localStorage isolation.
   //
   // PATCH has two modes (see `resolveProgressMutation`):
   //   - `{ rowKey, checked }` → idempotent SET-STATE: force the row to
@@ -275,19 +295,20 @@ export async function hallkeeperSheetRoutes(
       return reply.status(gate.status).send({ error: gate.error, code: gate.code });
     }
 
+    const eventId = await progressEventOf(db, params.data.configId, request.query);
     const rows = await db.select({
       rowKey: hallkeeperProgress.rowKey,
       checkedAt: hallkeeperProgress.checkedAt,
     })
       .from(hallkeeperProgress)
-      .where(eq(hallkeeperProgress.configId, params.data.configId));
+      .where(progressScope(params.data.configId, eventId));
 
     const checked: Record<string, string> = {};
     for (const row of rows) {
       checked[row.rowKey] = row.checkedAt.toISOString();
     }
 
-    return { data: { configId: params.data.configId, checked } };
+    return { data: { configId: params.data.configId, eventId, checked } };
   });
 
   // PATCH /hallkeeper/:configId/progress — set or toggle a row's check state
@@ -309,37 +330,33 @@ export async function hallkeeperSheetRoutes(
 
     const { configId } = params.data;
     const { rowKey, checked: desired } = body.data;
+    const eventId = await progressEventOf(db, configId, request.query);
 
     // Idempotent set-state path. Avoid select-then-insert races: two devices
     // replaying "checked: true" for the same row must converge, not surface a
-    // duplicate-key 500 from the unique (config_id, row_key) constraint.
+    // duplicate-key 500 from the unique (config_id, event_id, row_key) key.
     if (desired !== undefined) {
       if (desired) {
         await db.insert(hallkeeperProgress).values({
           configId,
+          eventId,
           rowKey,
           checkedBy: request.user.id,
         }).onConflictDoNothing({
-          target: [hallkeeperProgress.configId, hallkeeperProgress.rowKey],
+          target: [hallkeeperProgress.configId, hallkeeperProgress.eventId, hallkeeperProgress.rowKey],
         });
       } else {
         await db.delete(hallkeeperProgress)
-          .where(and(
-            eq(hallkeeperProgress.configId, configId),
-            eq(hallkeeperProgress.rowKey, rowKey),
-          ));
+          .where(and(progressScope(configId, eventId), eq(hallkeeperProgress.rowKey, rowKey)));
       }
 
-      return { data: { configId, rowKey, checked: desired } };
+      return { data: { configId, eventId, rowKey, checked: desired } };
     }
 
     // Legacy toggle path for older clients that omit `checked`.
     const [existing] = await db.select({ id: hallkeeperProgress.id })
       .from(hallkeeperProgress)
-      .where(and(
-        eq(hallkeeperProgress.configId, configId),
-        eq(hallkeeperProgress.rowKey, rowKey),
-      ))
+      .where(and(progressScope(configId, eventId), eq(hallkeeperProgress.rowKey, rowKey)))
       .limit(1);
 
     const exists = existing !== undefined;
@@ -348,6 +365,7 @@ export async function hallkeeperSheetRoutes(
     if (mutation === "insert") {
       await db.insert(hallkeeperProgress).values({
         configId,
+        eventId,
         rowKey,
         checkedBy: request.user.id,
       });
@@ -357,6 +375,6 @@ export async function hallkeeperSheetRoutes(
     }
     // mutation === "noop" → server already in the desired state; nothing to do.
 
-    return { data: { configId, rowKey, checked: checkedStateAfter(mutation, exists) } };
+    return { data: { configId, eventId, rowKey, checked: checkedStateAfter(mutation, exists) } };
   });
 }

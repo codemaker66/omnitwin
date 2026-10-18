@@ -477,19 +477,29 @@ export const assetAccessories = pgTable("asset_accessories", {
 // (phase|zone|name|afterDepth) so checkbox state survives config
 // re-saves without resetting.
 //
-// Unique on (config_id, row_key) — one tick per manifest row per config.
-// The checked_by / checked_at fields are audit — who ticked what when.
+// A tick belongs to the event the room was set for: a layout can serve more
+// than one event, and ticks keyed on the layout alone opened a reused layout
+// with the last event's ticks (migration 0095). event_id is null only for
+// ticks stored before that, and for a layout with no single event to hold
+// them (lib/hallkeeper-progress.ts progressEventFor); those are never counted
+// towards an event.
+//
+// Unique on (config_id, event_id, row_key), nulls not distinct — one tick
+// per manifest row per layout per event, and one per row in the eventless
+// scope. The checked_by / checked_at fields are audit — who ticked what when.
 // ---------------------------------------------------------------------------
 
 export const hallkeeperProgress = pgTable("hallkeeper_progress", {
   id: uuid("id").primaryKey().defaultRandom(),
   configId: uuid("config_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
   rowKey: varchar("row_key", { length: 300 }).notNull(),
   checkedBy: uuid("checked_by").references(() => users.id),
   checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  unique("hallkeeper_progress_config_row_unique").on(table.configId, table.rowKey),
+  unique("hallkeeper_progress_config_event_row_unique").on(table.configId, table.eventId, table.rowKey).nullsNotDistinct(),
   index("hallkeeper_progress_config_idx").on(table.configId),
+  index("hallkeeper_progress_event_idx").on(table.eventId),
 ]);
 
 // ---------------------------------------------------------------------------
