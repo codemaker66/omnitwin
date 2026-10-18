@@ -22,6 +22,11 @@ export const EVENT_STATUSES = [
   "executed",
   "closed",
   "cancelled",
+  // Every option on the event went (released, lapsed or lost) and none was
+  // confirmed: the event closed as lost business (the bind, migration 0090).
+  // Kept as a record; ops views and revenue never show it. The rule that
+  // sets it is deriveEventStatus in event-binding.ts.
+  "lost",
 ] as const;
 
 export const EventStatusSchema = z.enum(EVENT_STATUSES);

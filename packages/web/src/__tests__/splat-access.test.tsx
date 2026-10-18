@@ -56,13 +56,31 @@ describe("production Gaussian splat hold", () => {
     expect(gaussianSplatsAvailable()).toBe(false);
   });
 
-  it("closes every homepage room card and offers the labelled panorama tour", () => {
+  it("closes every homepage room card and offers the panorama tour by name", () => {
     vi.stubEnv("DEV", false);
     const router = createMemoryRouter([{ path: "/", element: <RoomsHomePage /> }]);
     const { container } = render(<RouterProvider router={router} />);
     expect(container.querySelector('a[href^="/room/"]')).toBeNull();
-    expect(screen.getByText("Gaussian splats · Work in progress")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Try the virtual tour · Work in progress" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Take the panorama tour" }).getAttribute("href")).toBe("/tour");
+    expect(screen.getByRole("link", { name: "Panorama tour" }).getAttribute("href")).toBe("/venues/trades-hall/twin");
+    // The hero keeps its plan button and the tour link, and no status line.
+    expect(container.querySelector(".rooms__state--hero")).toBeNull();
+    // The hold says nothing on the page: neither labels nor the 3D room.
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/work in progress/iu);
+    expect(text).not.toMatch(/gaussian/iu);
+    expect(text).not.toMatch(/3D room/iu);
+    router.dispose();
+  });
+
+  it("shows each room's published capacities on its card while splats are held", () => {
+    vi.stubEnv("DEV", false);
+    const router = createMemoryRouter([{ path: "/", element: <RoomsHomePage /> }]);
+    render(<RouterProvider router={router} />);
+    expect(screen.getByTestId("room-card-saloon").textContent).toContain("Dinner 60 · Reception 80");
+    expect(screen.getByTestId("room-card-robert-adam-room").textContent).toContain("Dinner 60 · Reception 150");
+    // A room the venue publishes no figures for shows no state line at all.
+    expect(screen.getByTestId("room-card-lady-convenors-room").querySelector(".rooms__state")).toBeNull();
     router.dispose();
   });
 
