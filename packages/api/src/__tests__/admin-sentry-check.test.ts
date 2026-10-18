@@ -16,8 +16,8 @@ const capture = vi.hoisted(() => vi.fn<(error: unknown, request: unknown) => voi
 // The real module captures only when SENTRY_DSN is set; stand in a capture
 // hook so the test sees exactly what production would hand to Sentry.
 vi.mock("../observability/sentry.js", () => ({
-  initSentry: async (): Promise<void> => {},
-  buildSentryCapture: async () => capture,
+  initSentry: (): Promise<void> => Promise.resolve(),
+  buildSentryCapture: () => Promise.resolve(capture),
 }));
 
 const { buildServer } = await import("../index.js");
