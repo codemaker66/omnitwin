@@ -1307,10 +1307,10 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
 
     await page.goto(`/supplier-share/${SUPPLIER_TOKEN}`);
     await expect(page.getByRole("heading", { name: "Florist coordination handoff" })).toBeVisible();
-    await page.getByLabel("Name").fill("Jordan Florist");
-    await page.getByLabel("Email").fill("jordan@petal.test");
-    await page.getByRole("button", { name: "Acknowledge handoff" }).click();
-    await expect(page.getByRole("alert")).toContainText("We could not send this supplier response");
+    // The page asks only for a name: the venue already holds the supplier's email.
+    await page.getByLabel("Your name").fill("Jordan Florist");
+    await page.getByRole("button", { name: "I've read it" }).click();
+    await expect(page.getByRole("alert")).toContainText("Your reply did not reach the venue");
     await recordAccessibilityState(page, problems, "supplier acknowledgement error", `/supplier-share/${SUPPLIER_TOKEN}`, "desktop", 16);
 
     await recordFrameAndVisualState(page, problems, "supplier-acknowledgement-error", "desktop", async () => {
