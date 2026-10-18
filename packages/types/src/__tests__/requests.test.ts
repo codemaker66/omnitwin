@@ -79,6 +79,10 @@ describe("the ladder", () => {
     expect(nextRequestState("handed-over", "accepted").ok).toBe(true);
     expect(nextRequestState("handed-over", "resolved").ok).toBe(true);
     expect(nextRequestState("handed-over", "underway").ok).toBe(false);
+    // The owner of record hands it on again when the relief never came (S7);
+    // every other step still refuses to repeat itself.
+    expect(nextRequestState("handed-over", "handed-over").ok).toBe(true);
+    expect(nextRequestState("accepted", "accepted")).toEqual({ ok: false, reason: "This request is already marked “Someone is on it”." });
   });
 
   it("reopens only a finished request, and a reopened one climbs again", () => {

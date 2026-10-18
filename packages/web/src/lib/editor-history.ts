@@ -165,6 +165,32 @@ export function remapHistoryIds<T extends HistoryObject>(
 }
 
 /**
+ * Live co-editing: forget every undo/redo step's part for these objects.
+ * Someone else changed them after this person did, so replaying this
+ * person's older values over theirs would be a silent overwrite, not an
+ * undo. Steps left with nothing are dropped; seqs are untouched, so the
+ * action log's seal cursor is unaffected.
+ */
+export function forgetHistoryIds<T extends HistoryObject>(
+  history: EditorHistory<T>,
+  ids: ReadonlySet<string>,
+): EditorHistory<T> {
+  if (ids.size === 0) return history;
+  const forget = (entry: HistoryEntry<T>): HistoryEntry<T> | null => {
+    const added = entry.added.filter((placed) => !ids.has(placed.object.id));
+    const removed = entry.removed.filter((placed) => !ids.has(placed.object.id));
+    const updated = entry.updated.filter((patch) => !ids.has(patch.id));
+    if (added.length === entry.added.length && removed.length === entry.removed.length
+      && updated.length === entry.updated.length) return entry;
+    if (added.length + removed.length + updated.length === 0) return null;
+    return { ...entry, added, removed, updated };
+  };
+  const keep = (entries: readonly HistoryEntry<T>[]): HistoryEntry<T>[] =>
+    entries.map(forget).filter((entry): entry is HistoryEntry<T> => entry !== null);
+  return { past: keep(history.past), future: keep(history.future) };
+}
+
+/**
  * Fresh local ids for re-inserted objects that were server-persisted.
  * The batch save silently skips updates addressed to deleted rows, so a
  * resurrected object must re-enter as a new row, never by its dead id.

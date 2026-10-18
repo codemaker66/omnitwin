@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { and, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import { DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import {
   configurationSheetSnapshots,
@@ -14,8 +14,9 @@ import type { Database } from "../db/client.js";
 //
 // A layout can carry a free-text note about guests' allergies
 // (metadata.instructions.dietary.otherAllergies), and every event sheet
-// issued from it keeps a copy (configuration_sheet_snapshots.payload), as
-// does the sheet's pre-rendered PDF. The note is health information about
+// issued from it keeps a copy (configuration_sheet_snapshots.payload). The
+// sheet's PDF is rendered per signed-in request and never stored (PR #130),
+// so the payload is the only copy to redact. The note is health information about
 // people who never used the product. It is needed to prepare the day and to
 // answer questions just after it, and not after that.
 //
@@ -36,9 +37,10 @@ import type { Database } from "../db/client.js";
 // idempotent: a note already removed is not touched again, and the layout's
 // updated time is left alone because nobody edited it.
 //
-// A sheet whose PDF was pre-rendered keeps that file in storage until it is
-// removed; the sheet is only redacted once its PDF is gone, so a failed
-// removal leaves the sheet for the next pass instead of losing track of it.
+// A sheet issued before PR #130 may still name the public PDF that was
+// pre-rendered for it; that URL is cleared with the note. The stored objects
+// themselves go with the one-off purge of the bucket's sheets/ prefix, not
+// here, so this pass never touches object storage.
 // ---------------------------------------------------------------------------
 
 /** From @omnitwin/types, so the privacy policy and the planner say the same. */
@@ -48,20 +50,10 @@ export const DIETARY_NOTE_DAYS_WITHOUT_EVENT = DIETARY_NOTE_RETENTION.daysWithou
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOTE_PATH = "{instructions,dietary,otherAllergies}";
 
-/** A sheet whose stored PDF must go before its copy of the note is removed. */
-export interface SheetPdfToRemove {
-  readonly configurationId: string;
-  readonly version: number;
-  readonly sourceHash: string;
-}
-
 export interface DietaryRetentionOptions {
   readonly now?: Date;
   /** Report what would be removed, and remove nothing. */
   readonly dryRun?: boolean;
-  /** Removes a sheet's pre-rendered PDF from storage; true once it is gone.
-   *  Without it, a sheet with a PDF is left for a pass that has one. */
-  readonly removeSheetPdf?: (sheet: SheetPdfToRemove) => Promise<boolean>;
 }
 
 export interface DietaryRetentionResult {
@@ -70,10 +62,6 @@ export interface DietaryRetentionResult {
   readonly layouts: number;
   /** Event sheets whose copy was (or would be) removed. */
   readonly sheets: number;
-  /** Pre-rendered sheet PDFs removed from storage. */
-  readonly sheetPdfsRemoved: number;
-  /** Sheets still holding the note because their PDF could not be removed. */
-  readonly sheetsPending: number;
 }
 
 function hasNote(column: typeof configurations.metadata | typeof configurationSheetSnapshots.payload): SQL {
@@ -130,23 +118,15 @@ export async function removeLapsedDietaryNotes(
   const now = options.now ?? new Date();
   const dryRun = options.dryRun ?? false;
   const ids = await lapsedLayoutIds(db, now);
-  if (ids.length === 0) return { dryRun, layouts: 0, sheets: 0, sheetPdfsRemoved: 0, sheetsPending: 0 };
+  if (ids.length === 0) return { dryRun, layouts: 0, sheets: 0 };
 
-  const sheets = await db
-    .select({
-      id: configurationSheetSnapshots.id,
-      configurationId: configurationSheetSnapshots.configurationId,
-      version: configurationSheetSnapshots.version,
-      sourceHash: configurationSheetSnapshots.sourceHash,
-      pdfUrl: configurationSheetSnapshots.pdfUrl,
-    })
-    .from(configurationSheetSnapshots)
-    .where(and(inArray(configurationSheetSnapshots.configurationId, [...ids]), hasNote(configurationSheetSnapshots.payload)));
+  const sheetNotes = and(inArray(configurationSheetSnapshots.configurationId, [...ids]), hasNote(configurationSheetSnapshots.payload));
 
   if (dryRun) {
     const layouts = await db.select({ id: configurations.id }).from(configurations)
       .where(and(inArray(configurations.id, [...ids]), hasNote(configurations.metadata)));
-    return { dryRun, layouts: layouts.length, sheets: sheets.length, sheetPdfsRemoved: 0, sheetsPending: 0 };
+    const sheets = await db.select({ id: configurationSheetSnapshots.id }).from(configurationSheetSnapshots).where(sheetNotes);
+    return { dryRun, layouts: layouts.length, sheets: sheets.length };
   }
 
   const clearedLayouts = await db.update(configurations)
@@ -154,34 +134,15 @@ export async function removeLapsedDietaryNotes(
     .where(and(inArray(configurations.id, [...ids]), isNotNull(configurations.metadata), hasNote(configurations.metadata)))
     .returning({ id: configurations.id });
 
-  let clearedSheets = 0;
-  let sheetPdfsRemoved = 0;
-  let sheetsPending = 0;
-  for (const sheet of sheets) {
-    if (sheet.pdfUrl !== null) {
-      let removed = false;
-      try {
-        removed = options.removeSheetPdf === undefined ? false : await options.removeSheetPdf(sheet);
-      } catch {
-        removed = false;
-      }
-      if (!removed) {
-        sheetsPending += 1;
-        continue;
-      }
-      sheetPdfsRemoved += 1;
-    }
-    const updated = await db.update(configurationSheetSnapshots)
-      .set({
-        payload: sql`jsonb_set(${configurationSheetSnapshots.payload}, ${NOTE_PATH}, '""'::jsonb)`,
-        // The stored PDF is gone; the sheet renders again, without the note,
-        // when someone next opens it.
-        pdfUrl: null,
-      })
-      .where(and(eq(configurationSheetSnapshots.id, sheet.id), hasNote(configurationSheetSnapshots.payload)))
-      .returning({ id: configurationSheetSnapshots.id });
-    clearedSheets += updated.length;
-  }
+  const clearedSheets = await db.update(configurationSheetSnapshots)
+    .set({
+      payload: sql`jsonb_set(${configurationSheetSnapshots.payload}, ${NOTE_PATH}, '""'::jsonb)`,
+      // A legacy row's public PDF address goes with the note; the sheet
+      // renders again, without it, when someone signed in next opens it.
+      pdfUrl: null,
+    })
+    .where(sheetNotes)
+    .returning({ id: configurationSheetSnapshots.id });
 
-  return { dryRun, layouts: clearedLayouts.length, sheets: clearedSheets, sheetPdfsRemoved, sheetsPending };
+  return { dryRun, layouts: clearedLayouts.length, sheets: clearedSheets.length };
 }

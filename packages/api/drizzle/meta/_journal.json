@@ -629,7 +629,35 @@
       "idx": 89,
       "version": "7",
       "when": 1791730800000,
-      "tag": "0095_competitor_watch",
+      "tag": "0091_ai_usage_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1791903600000,
+      "tag": "0092_operating_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1791990000000,
+      "tag": "0093_forward_book_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792076400000,
+      "tag": "0094_remembered_dietary_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792335600000,
+      "tag": "0097_competitor_watch",
       "breakpoints": true
     }
   ]

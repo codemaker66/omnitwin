@@ -43,7 +43,7 @@ import { checkPage, nextCheckAfter, type PageFetcher } from "./page-check.js";
 // The competitor watch's reads and writes (routes/competitor-watch.ts).
 //
 // Every query names the venue, and every child row is bound to its venue by
-// a composite key in migration 0095, so one venue's watch is never read or
+// a composite key in migration 0097, so one venue's watch is never read or
 // written through another's. Nothing here is read by the suggestion maths:
 // pricing-advice.ts and pricing-desk-data.ts never import this file, and a
 // test holds them to it.

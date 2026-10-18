@@ -1,0 +1,83 @@
+/* Live co-editing v1 — the quiet presence row and its one-line notice.
+   Desktop: in the toolbar's row, right-aligned 12px clear of the Inspector
+   dock (right: 14px; width --reference-right: 248 / 230 / 205px, mirrored
+   below because this layer sits outside .reference-viewer). The notice
+   drops beneath the avatars so it never reaches the toolbar. */
+
+.layout-live-layer {
+  position: fixed;
+  z-index: 30;
+  top: 31px;
+  right: calc(14px + 248px + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+@media (max-width: 1200px) {
+  .layout-live-layer { right: calc(14px + 230px + 12px); }
+}
+
+@media (max-width: 980px) {
+  .layout-live-layer { right: calc(14px + 205px + 12px); }
+}
+
+/* Phones and tablets: under the mobile top bar, on the left. */
+.layout-live-layer.is-mobile {
+  top: calc(env(safe-area-inset-top) + 128px);
+  right: auto;
+  left: 16px;
+  align-items: flex-start;
+}
+
+.layout-live-presence {
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.layout-live-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(20, 19, 17, 0.92);
+  color: #f2eee1;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.layout-live-avatar + .layout-live-avatar { margin-left: -6px; }
+
+.layout-live-capsule {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(20, 19, 17, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(201, 138, 91, 0.35);
+  color: #f2eee1;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.layout-live-notice {
+  animation: layout-live-notice-in 180ms ease-out;
+}
+
+@keyframes layout-live-notice-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layout-live-notice { animation: none; }
+}

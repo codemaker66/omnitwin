@@ -7,6 +7,7 @@ import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/reques
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { PromotionDraft } from "./PromotionDraft.js";
+import { PushAlertsToggle } from "../requests/PushAlertsToggle.js";
 import "./NotificationCenter.css";
 
 // The notifications block inside the dashboard's More popover. It reads the
@@ -72,6 +73,7 @@ export function NotificationCenter({
     });
   };
   const listens = useAuthStore((store) => listensForFloorRequests(store.user));
+  const venueId = useAuthStore((store) => store.user?.venueId ?? null);
   // Only the newest request may write the list: an older answer landing late
   // would put back what a newer one had already replaced.
   const latestLoad = useRef(0);
@@ -205,6 +207,10 @@ export function NotificationCenter({
               Refresh
             </button>
           </div>
+
+          {/* Goal 19 S7: this device can be told beyond the screen. Only a
+              venue person has somewhere to be told about. */}
+          {venueId !== null && <PushAlertsToggle venueId={venueId} deviceKind="desk" />}
 
           {state.kind === "loading" && (
             <ActivityStatus className="vv-notifications-note">Loading notifications…</ActivityStatus>

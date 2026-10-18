@@ -7,7 +7,7 @@ import {
   playArrivalChime,
   rememberForChime,
   setChimeEnabled,
-} from "../arrival-chime.js";
+} from "../../../lib/sound-registry.js";
 
 // ---------------------------------------------------------------------------
 // The arrival chime: off until somebody turns it on, one bell per arrival

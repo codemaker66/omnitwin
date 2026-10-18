@@ -58,7 +58,7 @@ describe("the page check", () => {
   });
 });
 
-describe("migration 0095", () => {
+describe("migration 0097", () => {
   it("is journaled after 0090 with a later timestamp", async () => {
     const journal = z.object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) })
       .parse(JSON.parse(await readFile(resolve("drizzle", "meta", "_journal.json"), "utf8")));

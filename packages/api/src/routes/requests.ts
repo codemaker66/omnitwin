@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
+  HandoverShiftResultSchema,
+  HandoverShiftSchema,
   CreateVenueRequestSchema,
   RequestListQuerySchema,
   RequestStatusHistoryEntrySchema,
@@ -14,8 +16,10 @@ import { requestStatusHistory } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { emit } from "../observability/event-bus.js";
-import { canManageVenue } from "../utils/query.js";
+import { canHandleRequests, canManageVenue } from "../utils/query.js";
+import { pushForRequestEscalated, pushForRequestLanded, tell } from "../services/push-triggers.js";
 import {
+  handoverShiftCore,
   createRequestCore,
   listRequestHandlers,
   listRequestsForVenue,
@@ -153,6 +157,7 @@ export async function venueRequestRoutes(
     // already on every board that was listening the first time.
     if (!result.replay) {
       publishRequestChange(request, "request.created", result.request, result.notificationIds);
+      tell(pushForRequestLanded(db, result.request, { logger: request.log }), request.log, "request.landed");
     }
 
     return reply
@@ -184,6 +189,26 @@ export async function venueRequestRoutes(
     return { data: z.array(VenueHandlerSchema).parse(result) };
   });
 
+  // Goal 19 S7: hand every open request the signed-in person holds to one
+  // named relief. The core applies the slab's own handover step to each.
+  server.post("/:venueId/requests/handover", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = VenueParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const actor = actorOf(request);
+    if (!isPlatformAdmin(actor) && !canHandleRequests(actor, params.data.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const body = HandoverShiftSchema.safeParse(request.body);
+    if (!body.success) return validationError(reply, body.error.issues);
+
+    const result = await handoverShiftCore(db, actor, params.data.venueId, body.data.toUserId);
+    if (isDeny(result)) return sendDeny(reply, result);
+    for (const changed of result.handedOver) {
+      publishRequestChange(request, "request.updated", changed, []);
+    }
+    return { data: HandoverShiftResultSchema.parse({ handedOver: result.handedOver, refused: result.refused, toName: result.toName }) };
+  });
+
   // The escalation sweep as an endpoint, for an external cron and for a
   // rehearsal on a disposable stack. The API also sweeps on its own short
   // timer (see ws/diary-live.ts); both are safe to run together because the
@@ -202,11 +227,14 @@ export async function venueRequestRoutes(
       });
     }
 
+    // The pass is house-wide (the claim is per request); every escalation it
+    // made is announced to its own venue's boards, and this venue's are counted.
     const escalated = await runRequestEscalationPass(db, { logger: request.log });
-    const mine = escalated.filter((item) => item.request.venueId === params.data.venueId);
-    for (const item of mine) {
+    for (const item of escalated) {
       publishRequestChange(request, "request.escalated", item.request, item.notificationIds);
+      tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: request.log }), request.log, "request.escalated");
     }
+    const mine = escalated.filter((item) => item.request.venueId === params.data.venueId);
     return { data: { escalated: mine.length } };
   });
 }

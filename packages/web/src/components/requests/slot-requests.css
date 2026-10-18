@@ -11,7 +11,7 @@
 
    Motion is one spring-shaped pulse when a request ARRIVES, then a steady
    copper dot for as long as it is open. Never a repeat, never a strobe. Sound
-   is the chime this device opted into (arrival-chime.ts), nothing else. The
+   is the chime this device opted into (lib/sound-registry.ts), nothing else. The
    arrival animation is a one-shot on a freshly mounted element, so there is
    no interval to leak and nothing to stop.
 --------------------------------------------------------------------------- */
@@ -321,3 +321,22 @@
     transition: none;
   }
 }
+
+/* Goal 19 S7: the shift handover beside the chime on the Day Board. */
+.vv-shift-handover {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vv-shift-handover-done {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+/* Goal 19 S7: alerts on this device, beside the chime. */
+.vv-push-alerts { display: flex; flex-direction: column; gap: 6px; }
+.vv-push-alerts-note { margin: 0; font-size: 0.85rem; line-height: 1.45; color: inherit; opacity: 0.85; }
+.vv-push-alerts-on { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vv-push-alerts-state { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; }

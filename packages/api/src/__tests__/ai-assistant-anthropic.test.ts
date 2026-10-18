@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import Fastify, { type FastifyInstance } from "fastify";
+import { drizzle } from "drizzle-orm/neon-serverless";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
 import { aiAssistantRoutes } from "../routes/ai-assistant.js";
 import {
@@ -13,6 +15,7 @@ import {
   AnthropicAIGenerationAdapter,
   type AnthropicDraftSend,
 } from "../services/anthropic-draft-adapter.js";
+import { TallyAIUsageMeter } from "../services/ai-usage.js";
 
 // ---------------------------------------------------------------------------
 // The Anthropic provider's structured answers (T-650) and its failures at the
@@ -21,7 +24,15 @@ import {
 // and how each answer or failure is handled. Nothing leaves the machine, and
 // a mock does not prove the live integration. The text-draft request itself
 // is covered by anthropic-draft-adapter.test.ts.
+//
+// T-656: every call names its venue and the person who asked, and the general
+// draft route attributes a draft to the venue the person works at, refuses an
+// account with none, and answers 429 AI_BUDGET_REACHED, sending nothing, once
+// the venue's allowance is used. The ledger itself is proven on PostgreSQL
+// (ai-usage-postgres.test.ts).
 // ---------------------------------------------------------------------------
+
+const ATTRIBUTION = { venueId: "00000000-0000-4000-8000-000000006502", userId: "00000000-0000-4000-8000-000000006501" };
 
 interface Sent {
   readonly url: string;
@@ -82,11 +93,17 @@ function sdkSend(fetch: ReturnType<typeof provider>["fetch"]): AnthropicDraftSen
 }
 
 function adapterWith(fake: ReturnType<typeof provider>, model = "claude-opus-5-5"): AnthropicAIGenerationAdapter {
-  return new AnthropicAIGenerationAdapter({ model, apiKey: "test-key-not-real", send: sdkSend(fake.fetch) });
+  return new AnthropicAIGenerationAdapter({ model, apiKey: "test-key-not-real", usage: new TallyAIUsageMeter(), send: sdkSend(fake.fetch) });
 }
 
 const SCHEMA = { type: "object", additionalProperties: false, required: ["guests"], properties: { guests: { type: "integer" } } };
-const ASK = { useCase: "event_brief", system: "Read the brief.", prompt: "Elaine Crawford, about 120 in the Grand Hall.", schema: SCHEMA } as const;
+const ASK = {
+  useCase: "event_brief",
+  system: "Read the brief.",
+  prompt: "Elaine Crawford, about 120 in the Grand Hall.",
+  schema: SCHEMA,
+  cacheSystem: false,
+} as const;
 
 async function rejection(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -100,7 +117,7 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
 describe("the Anthropic provider's structured answers", () => {
   it("asks the Messages API for the JSON shape, rules in the system prompt, and returns the answer parsed", async () => {
     const fake = provider({ body: message([{ type: "thinking", thinking: "", signature: "sig" }, text("{\"guests\": 120}")]) });
-    await expect(adapterWith(fake).generateStructured(ASK)).resolves.toEqual({ guests: 120 });
+    await expect(adapterWith(fake).generateStructured(ASK, ATTRIBUTION)).resolves.toEqual({ guests: 120 });
     expect(fake.sent).toHaveLength(1);
     const [request] = fake.sent;
     expect(new URL(request?.url ?? "").pathname).toBe("/v1/messages");
@@ -116,9 +133,17 @@ describe("the Anthropic provider's structured answers", () => {
     });
   });
 
+  it("marks a frozen system prompt for the 5-minute cache, with nothing that varies before the breakpoint (T-656)", async () => {
+    const fake = provider({ body: message([text("{\"guests\": 120}")]) });
+    await adapterWith(fake).generateStructured({ ...ASK, cacheSystem: true }, ATTRIBUTION);
+    expect(fake.sent[0]?.body["system"]).toEqual([{ type: "text", text: "Read the brief.", cache_control: { type: "ephemeral" } }]);
+    // The request's own words stay in the user turn, after the breakpoint.
+    expect(fake.sent[0]?.body["messages"]).toEqual([{ role: "user", content: "Elaine Crawford, about 120 in the Grand Hall." }]);
+  });
+
   it("asks a model without the default refusal fallback without it", async () => {
     const fake = provider({ body: message([text("{\"guests\": 1}")]) });
-    await adapterWith(fake, "claude-haiku-5-5").generateStructured(ASK);
+    await adapterWith(fake, "claude-haiku-5-5").generateStructured(ASK, ATTRIBUTION);
     expect(fake.sent[0]?.headers.get("anthropic-beta")).toBeNull();
     expect(fake.sent[0]?.body).not.toHaveProperty("fallbacks");
   });
@@ -129,7 +154,7 @@ describe("the Anthropic provider's structured answers", () => {
     ["an empty answer", message([text("  ")])],
     ["an answer that is not JSON", message([text("about 120 guests")])],
   ] as const)("refuses %s rather than return it", async (_, body) => {
-    expect(await rejection(adapterWith(provider({ body })).generateStructured(ASK))).toBeInstanceOf(AIDraftNotProducedError);
+    expect(await rejection(adapterWith(provider({ body })).generateStructured(ASK, ATTRIBUTION))).toBeInstanceOf(AIDraftNotProducedError);
   });
 
   it.each([
@@ -137,7 +162,7 @@ describe("the Anthropic provider's structured answers", () => {
     ["a server error", 500, "api_error"],
     ["a rejected key", 401, "authentication_error"],
   ] as const)("passes on the SDK's own error for %s, never as AI switched off, and never with the prompt", async (_, status, type) => {
-    const error = await rejection(adapterWith(provider({ status, body: errorBody(type) })).generateStructured(ASK));
+    const error = await rejection(adapterWith(provider({ status, body: errorBody(type) })).generateStructured(ASK, ATTRIBUTION));
     expect(error).toBeInstanceOf(Anthropic.APIError);
     expect(error).not.toBeInstanceOf(AIAssistantDisabledError);
     expect(error instanceof Anthropic.APIError ? error.status : null).toBe(status);
@@ -148,9 +173,11 @@ describe("the Anthropic provider's structured answers", () => {
     const waiting = vi.fn((_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => { reject(new DOMException("The operation was aborted.", "AbortError")); });
     }));
-    const adapter = new AnthropicAIGenerationAdapter({ model: "claude-opus-5-5", apiKey: "test-key-not-real", send: sdkSend(waiting) });
+    const adapter = new AnthropicAIGenerationAdapter({
+      model: "claude-opus-5-5", apiKey: "test-key-not-real", usage: new TallyAIUsageMeter(), send: sdkSend(waiting),
+    });
     const gone = new AbortController();
-    const asked = rejection(adapter.generateStructured({ ...ASK, signal: gone.signal }));
+    const asked = rejection(adapter.generateStructured({ ...ASK, signal: gone.signal }, ATTRIBUTION));
     await vi.waitFor(() => { expect(waiting).toHaveBeenCalledTimes(1); });
     gone.abort();
     expect(await asked).toBeInstanceOf(Anthropic.APIUserAbortError);
@@ -163,7 +190,7 @@ describe("the provider that reads briefs", () => {
   it("is the Anthropic provider when it is configured", () => {
     const reader = createAIStructuredGenerationAdapterFromEnv(env({
       AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_PROVIDER: "anthropic", AI_ASSISTANT_MODEL: "claude-opus-5-5", AI_ASSISTANT_API_KEY: "test-key-not-real",
-    }));
+    }), new TallyAIUsageMeter());
     expect(reader).toBeInstanceOf(AnthropicAIGenerationAdapter);
     expect(reader.status).toEqual({ configured: true, provider: "anthropic", model: "claude-opus-5-5", disabledReason: null });
     expect(JSON.stringify(reader.status)).not.toContain("test-key-not-real");
@@ -172,13 +199,13 @@ describe("the provider that reads briefs", () => {
   it("is off, saying why, with the gateway, which cannot answer in a given shape", async () => {
     const reader = createAIStructuredGenerationAdapterFromEnv(env({
       AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_PROVIDER: "gateway", AI_ASSISTANT_MODEL: "m", AI_ASSISTANT_BASE_URL: "https://ai.example.test/draft", AI_ASSISTANT_API_KEY: "k",
-    }));
+    }), new TallyAIUsageMeter());
     expect(reader.status).toMatchObject({ configured: false, disabledReason: "Reading event briefs needs the Anthropic provider." });
-    await expect(reader.generateStructured(ASK)).rejects.toBeInstanceOf(AIAssistantDisabledError);
+    await expect(reader.generateStructured(ASK, ATTRIBUTION)).rejects.toBeInstanceOf(AIAssistantDisabledError);
   });
 
   it("is off while AI is off", () => {
-    expect(createAIStructuredGenerationAdapterFromEnv(env({ AI_ASSISTANT_ENABLED: "false", AI_ASSISTANT_PROVIDER: "anthropic" })))
+    expect(createAIStructuredGenerationAdapterFromEnv(env({ AI_ASSISTANT_ENABLED: "false", AI_ASSISTANT_PROVIDER: "anthropic" }), new TallyAIUsageMeter()))
       .toBeInstanceOf(DisabledAIGenerationAdapter);
   });
 });
@@ -193,20 +220,24 @@ describe("the AI draft routes with the Anthropic provider", () => {
     vi.unstubAllEnvs();
   });
 
-  async function serve(fake: ReturnType<typeof provider>): Promise<FastifyInstance> {
+  async function serve(fake: ReturnType<typeof provider>, usage = new TallyAIUsageMeter()): Promise<FastifyInstance> {
     vi.stubEnv("NODE_ENV", "test");
     // The provider is built from the environment, as in production; only the
     // global fetch under the SDK is the test's.
     vi.stubGlobal("fetch", fake.fetch);
     const app = Fastify();
     const values = { AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_PROVIDER: "anthropic", AI_ASSISTANT_MODEL: "claude-opus-5-5", AI_ASSISTANT_API_KEY: "test-key-not-real" };
-    await app.register(aiAssistantRoutes, { env: { ...values } as Env, prefix: "/ai" });
+    await app.register(aiAssistantRoutes, { env: { ...values } as Env, db: drizzle.mock({ schema }), aiUsage: usage, prefix: "/ai" });
     await app.ready();
     server = app;
     return app;
   }
 
-  const staff = { authorization: `Bearer ${JSON.stringify({ id: "00000000-0000-4000-8000-000000006501", email: "staff@test.invalid", role: "staff", venueId: "00000000-0000-4000-8000-000000006502" })}` };
+  const person = (role: string, venueId: string | null) => ({
+    authorization: `Bearer ${JSON.stringify({ id: ATTRIBUTION.userId, email: `${role}@test.invalid`, role, venueId })}`,
+  });
+  const staff = person("staff", ATTRIBUTION.venueId);
+  const DRAFT = { useCase: "enquiry_summary", context: { guestCount: 90 } };
 
   it("reports the provider and model, never the key", async () => {
     const app = await serve(provider());
@@ -225,16 +256,58 @@ describe("the AI draft routes with the Anthropic provider", () => {
       lost, lost, lost,
     ));
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: staff, payload: { useCase: "enquiry_summary", context: { guestCount: 90 } } });
+      const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: staff, payload: DRAFT });
       expect(res.statusCode).toBe(502);
       expect(res.json()).toEqual({ error: "AI draft generation failed", code: "AI_DRAFT_GENERATION_FAILED" });
     }
   });
 
-  it("returns a review-gated draft, never sent", async () => {
-    const app = await serve(provider({ body: message([text("Ninety guests, dinner on rounds.")]) }));
-    const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: staff, payload: { useCase: "enquiry_summary", context: { guestCount: 90 } } });
+  it("returns a review-gated draft, never sent, recorded for the venue the person works at", async () => {
+    const usage = new TallyAIUsageMeter();
+    const app = await serve(provider({ body: message([text("Ninety guests, dinner on rounds.")]) }), usage);
+    const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: staff, payload: DRAFT });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ data: { body: "Ninety guests, dinner on rounds.", humanReviewRequired: true, sendState: "draft_only" } });
+    expect(usage.entries).toEqual([expect.objectContaining({
+      venueId: ATTRIBUTION.venueId, userId: ATTRIBUTION.userId, feature: "enquiry_summary", outcome: "ok",
+      model: "claude-opus-5-5", requestId: "req_test_1", inputTokens: 12, outputTokens: 34, costMicroUsd: 12 * 4 + 34 * 20,
+    })]);
+  });
+
+  it.each(["admin", "manager", "hallkeeper", "sales"])("drafts for the venue's %s, charged to that venue", async (role) => {
+    const usage = new TallyAIUsageMeter();
+    const app = await serve(provider({ body: message([text("Ninety guests.")]) }), usage);
+    const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: person(role, ATTRIBUTION.venueId), payload: DRAFT });
+    expect(res.statusCode).toBe(200);
+    expect(usage.entries).toEqual([expect.objectContaining({ venueId: ATTRIBUTION.venueId, feature: "enquiry_summary", outcome: "ok" })]);
+  });
+
+  it("answers 429 AI_BUDGET_REACHED, sending nothing, once the venue's allowance for the month is used", async () => {
+    const fake = provider();
+    // An allowance of one micro-dollar: no call's worst case fits.
+    const usage = new TallyAIUsageMeter({ limitMicroUsd: 1 });
+    const app = await serve(fake, usage);
+    const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: staff, payload: DRAFT });
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toEqual({ error: "This venue's AI allowance for the month is used", code: "AI_BUDGET_REACHED" });
+    expect(fake.fetch).not.toHaveBeenCalled();
+    expect(usage.entries).toEqual([expect.objectContaining({ venueId: ATTRIBUTION.venueId, outcome: "budget_blocked", costMicroUsd: 0 })]);
+  });
+
+  it.each([
+    ["an account with no venue", person("admin", null)],
+    ["a client of the venue", person("client", ATTRIBUTION.venueId)],
+    ["a planner at the venue", person("planner", ATTRIBUTION.venueId)],
+    ["a planner with no venue", person("planner", null)],
+    ["a caterer, who is event-scoped", person("caterer", ATTRIBUTION.venueId)],
+  ])("refuses %s, which cannot spend a venue's allowance, and sends nothing", async (_, headers) => {
+    const fake = provider();
+    const usage = new TallyAIUsageMeter();
+    const app = await serve(fake, usage);
+    const res = await app.inject({ method: "POST", url: "/ai/drafts", headers, payload: DRAFT });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ code: "FORBIDDEN" });
+    expect(fake.fetch).not.toHaveBeenCalled();
+    expect(usage.entries).toEqual([]);
   });
 });

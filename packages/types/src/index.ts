@@ -1421,6 +1421,10 @@ export {
   type HallkeeperSheetSummary,
 } from "./hallkeeper-v2.js";
 
+// One Living Record, first slice: a printed sheet states its version in words
+// and its QR answers only "current" or "superseded" (no sign-in, no content).
+export * from "./sheet-paper-check.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
@@ -2507,6 +2511,9 @@ export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
 // Fix-first item 8: the promoted 2nd option's notice and drafted email.
 export * from "./hold-promotion.js";
+// The forward book on the Diary, room by room: what lets the public read a
+// room's dates (Blake, 17 October 2026, "hide date status until checked").
+export * from "./forward-book.js";
 // The bind (event-spine Phase A): every hold and ink has its event, whose
 // status follows its bookings.
 export * from "./event-binding.js";
@@ -2527,11 +2534,18 @@ export * from "./venue-inventory-availability.js";
 export * from "./venue-inventory-adjustment.js";
 export * from "./inventory-reservations.js";
 export * from "./client-event-schedule.js";
+export * from "./client-home.js";
 
 // Ship Friday slice 10: the one-tap request from the floor and its ladder.
 export * from "./requests.js";
 export * from "./conversations.js";
 export * from "./observations.js";
+// Goal 19 S7: the venue's windows, quiet hours, duty admin and wall settings.
+export * from "./venue-operating-settings.js";
+
+// T-656: every model call attributed to a venue and a feature, priced, and
+// held to the venue's monthly allowance (migration 0089).
+export * from "./ai-usage.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";
@@ -2547,7 +2561,11 @@ export * from "./trades-hall-venue-truth.js";
 // The Pricing desk (17 Oct 2026): who sets a price, which rate stands on a
 // date beside a rate for particular dates, and the suggestions' contract.
 export * from "./pricing-desk.js";
-
+// Remembered allergy notes (Blake, 17 October 2026: "ask once, then
+// remember"): the opt-in wording, its period and the API shapes.
+export * from "./dietary-memory.js";
+// Live co-editing v1: presence and live ops on /ws/configurations/:configId.
+export * from "./layout-live.js";
 // The competitor watch (17 Oct 2026): the comp set, dated price captures,
 // who a lost deal went to and the page-change check. Context, never a price input.
 export * from "./competitor-watch.js";

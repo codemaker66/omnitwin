@@ -90,7 +90,7 @@ figures to a person as context with their provenance; do not feed them into
 
 Blake approved the competitor-watch proposal on 17 October 2026: a dated
 notebook beside the price list, gathered by people, never a pricing input.
-Migration 0095 (provisional number), `services/competitor-watch-data.ts`,
+Migration 0097, `services/competitor-watch-data.ts`,
 `routes/competitor-watch.ts`, `services/page-check.ts`; the shared contract and
 the rules are in `packages/types/src/competitor-watch.ts`.
 

@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { CanonicalJsonValue } from "@omnitwin/types";
 import { generateAIDraft } from "../services/ai-assistant.js";
 import { AnthropicAIGenerationAdapter, type AnthropicDraftRequest } from "../services/anthropic-draft-adapter.js";
+import { TallyAIUsageMeter } from "../services/ai-usage.js";
 import { clientWords } from "../services/proposal-message-draft.js";
 
 // ---------------------------------------------------------------------------
@@ -23,9 +24,10 @@ import { clientWords } from "../services/proposal-message-draft.js";
 // ---------------------------------------------------------------------------
 
 const MODEL = "claude-opus-5-5";
-// Claude Opus 5.5 list prices, US dollars per million tokens.
-const INPUT_PRICE = 4;
-const OUTPUT_PRICE = 20;
+// An evaluation is no venue's call: its drafts are tallied in memory, priced
+// from the same versioned table as the ledger (services/ai-usage.ts), and
+// nothing reaches the AI usage ledger.
+const OPERATOR_EVALUATION = { venueId: "operator-evaluation", userId: "operator" } as const;
 
 interface DraftCase {
   readonly id: string;
@@ -303,9 +305,11 @@ async function main(): Promise<void> {
     const context = contextOf(c);
     // What the adapter's call returned, kept for its usage and timing.
     const call: { reply: Anthropic.Beta.BetaMessage | null; latencyMs: number } = { reply: null, latencyMs: 0 };
+    const usage = new TallyAIUsageMeter();
     const adapter = new AnthropicAIGenerationAdapter({
       model: MODEL,
       apiKey,
+      usage,
       send: async (request: AnthropicDraftRequest) => {
         const started = performance.now();
         const reply = await client.beta.messages.create(request);
@@ -318,7 +322,7 @@ async function main(): Promise<void> {
     let error: string | null = null;
     let blocked: readonly string[] = [];
     try {
-      const made = await generateAIDraft(adapter, { useCase: "proposal_draft", context });
+      const made = await generateAIDraft(adapter, { useCase: "proposal_draft", context }, OPERATOR_EVALUATION);
       draft = made.body;
       blocked = made.blockedUnsafeClaims;
     } catch (err) {
@@ -354,7 +358,7 @@ async function main(): Promise<void> {
       latencyMs,
       inputTokens,
       outputTokens,
-      costUsd: (inputTokens * INPUT_PRICE + outputTokens * OUTPUT_PRICE) / 1_000_000,
+      costUsd: usage.costMicroUsd / 1_000_000,
       stopReason: message?.stop_reason ?? null,
       inventedNumbers: draft === null ? [] : inventedNumbers(draft, context),
       formatIssues: draft === null ? [] : formatIssues(draft, context),

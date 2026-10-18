@@ -26,7 +26,7 @@ import { pageTextHash, type FetchAnswer, type PageFetcher } from "../services/pa
 import { migrationText } from "./migration-text.js";
 
 // ---------------------------------------------------------------------------
-// The competitor watch on isolated PostgreSQL, with migration 0095's own SQL
+// The competitor watch on isolated PostgreSQL, with migration 0097's own SQL
 // (its composite keys and its append-only trigger), so the database is shown
 // to hold what the code promises:
 //

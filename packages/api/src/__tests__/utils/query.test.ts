@@ -8,6 +8,7 @@ import {
   canEverReadRoomDay,
   canManageVenue,
   canProposeWindow,
+  canRecordForwardBook,
   canReadInventory,
   canReadRoomDay,
   canReadVenuePlanningData,
@@ -435,5 +436,30 @@ describe("canWritePricing (fix-first item 5)", () => {
 
   it("lets a platform administrator through, as every venue gate does", () => {
     expect(canWritePricing(makeUser({ role: "staff", platformRole: "admin" }), VENUE_B)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// canRecordForwardBook (Blake, 17 October 2026: "hide date status until
+// checked"). Recording that a room's whole forward book is on the Diary is
+// the venue's own word, so only its admin or manager makes it: no staff, no
+// floor, no sales, and no platform-admin shortcut.
+// ---------------------------------------------------------------------------
+
+describe("canRecordForwardBook", () => {
+  it("admits the venue's own admin and manager only", () => {
+    for (const role of ["admin", "manager"]) {
+      expect(canRecordForwardBook(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(true);
+    }
+    for (const role of ["staff", "hallkeeper", "sales", "planner", "client", "caterer"]) {
+      expect(canRecordForwardBook(makeUser({ role, venueId: VENUE_A }), VENUE_A), role).toBe(false);
+    }
+  });
+
+  it("refuses another venue's manager and a Venviewer platform admin who is not the venue's", () => {
+    expect(canRecordForwardBook(makeUser({ role: "manager", venueId: VENUE_B }), VENUE_A)).toBe(false);
+    expect(canRecordForwardBook(makeUser({ role: "admin", venueId: null }), VENUE_A)).toBe(false);
+    expect(canRecordForwardBook(makeUser({ role: "staff", platformRole: "admin", venueId: VENUE_A }), VENUE_A)).toBe(false);
+    expect(canRecordForwardBook(makeUser({ role: "admin", platformRole: "admin", venueId: VENUE_B }), VENUE_A)).toBe(false);
   });
 });

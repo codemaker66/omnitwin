@@ -131,6 +131,26 @@ export interface PlacementState {
   readonly ungroupItems: (ids: ReadonlySet<string>) => void;
 }
 
+/**
+ * Furniture a person has just placed — a piece, a table with its chairs, a
+ * row of chairs, an arranged room — as distinct from furniture loaded,
+ * restored or undone. The planner's motion layer lands these gently.
+ */
+type FurniturePlacedListener = (ids: readonly string[]) => void;
+
+const furniturePlacedListeners = new Set<FurniturePlacedListener>();
+
+/** Hear each placement's new ids. Returns the unsubscribe. */
+export function subscribeFurniturePlaced(listener: FurniturePlacedListener): () => void {
+  furniturePlacedListeners.add(listener);
+  return () => { furniturePlacedListeners.delete(listener); };
+}
+
+function announcePlaced(ids: readonly string[]): void {
+  if (ids.length === 0) return;
+  for (const listener of furniturePlacedListeners) listener(ids);
+}
+
 export const usePlacementStore = create<PlacementState>()((set, get) => ({
   placedItems: [],
   ghostPosition: null,
@@ -174,6 +194,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     );
     const item = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
     set({ placedItems: [...state.placedItems, item] });
+    announcePlaced([item.id]);
   },
 
   placeChairBrush: (
@@ -213,7 +234,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     });
     if (newItems.length === 0) return [];
     set({ placedItems: [...state.placedItems, ...newItems] });
-    return newItems.map((item) => item.id);
+    const ids = newItems.map((item) => item.id);
+    announcePlaced(ids);
+    return ids;
   },
 
   removeItem: (id: string) => {
@@ -510,6 +533,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return chairY !== item.y ? { ...item, y: chairY } : item;
     });
     set({ placedItems: [...state.placedItems, ...adjusted] });
+    announcePlaced(adjusted.map((item) => item.id));
   },
 
   rearrangeGroup: (tableId: string, newChairCount: number) => {
@@ -571,6 +595,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       (item) => !isSceneFurniturePlacement(item),
     );
     set({ placedItems: [...retainedApplicators, ...placedItems] });
+    announcePlaced(placedItems.map((item) => item.id));
   },
 
   autoArrangeTheatre: (chairItemId: string, targetGuests: number) => {
@@ -596,6 +621,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       (item) => !isSceneFurniturePlacement(item),
     );
     set({ placedItems: [...retainedApplicators, ...placedItems] });
+    announcePlaced(placedItems.map((item) => item.id));
   },
 
   breakFromGroup: (id: string) => {
