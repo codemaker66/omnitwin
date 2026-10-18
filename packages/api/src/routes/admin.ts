@@ -11,10 +11,8 @@ import {
 } from "../services/sheet-snapshot.js";
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
-import { removeLapsedDietaryNotes, type SheetPdfToRemove } from "../services/dietary-retention.js";
+import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
-import { pdfObjectKey, removeSheetPdfObject } from "../services/pdf-prerender.js";
-import type { Env } from "../env.js";
 
 // ---------------------------------------------------------------------------
 // The hold-reminder workflow's identity (T-619).
@@ -58,17 +56,9 @@ function hasCronToken(request: FastifyRequest): boolean {
 
 export async function adminRoutes(
   server: FastifyInstance,
-  opts: { db: Database; env?: Env },
+  opts: { db: Database },
 ): Promise<void> {
-  const { db, env } = opts;
-
-  // A sheet's pre-rendered PDF goes from storage before its copy of a
-  // dietary note is removed (services/dietary-retention.ts). Without the
-  // storage settings here the sheet waits for a pass that has them.
-  const removeSheetPdf = async (sheet: SheetPdfToRemove): Promise<boolean> =>
-    env === undefined
-      ? false
-      : removeSheetPdfObject(env, pdfObjectKey(sheet.configurationId, sheet.version, sheet.sourceHash));
+  const { db } = opts;
 
   // POST /admin/cleanup — trigger manual cleanup of stale preview configs,
   // orphaned uploads, guests' allergy notes past their retention, and
@@ -78,7 +68,7 @@ export async function adminRoutes(
   }, async () => {
     const deletedConfigs = await cleanupPreviewConfigurations(db);
     const deletedFiles = await cleanupOrphanedFiles(db);
-    const dietaryNotes = await removeLapsedDietaryNotes(db, { removeSheetPdf });
+    const dietaryNotes = await removeLapsedDietaryNotes(db);
     const rememberedNotes = await removeUnusedRememberedNotes(db);
     return {
       data: {
@@ -88,7 +78,6 @@ export async function adminRoutes(
         rememberedNotes,
         message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
           + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
-          + (dietaryNotes.sheetsPending > 0 ? `; ${String(dietaryNotes.sheetsPending)} sheet(s) wait for their stored PDF to be removed` : "")
           + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`,
       },
     };

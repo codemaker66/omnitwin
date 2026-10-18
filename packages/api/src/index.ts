@@ -480,7 +480,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(clientRoutes, { db, prefix: "/clients" });
   // A client's remembered allergy notes, for their own account only.
   await server.register(dietaryMemoryRoutes, { db, prefix: "/account/dietary-notes" });
-  await server.register(adminRoutes, { db, env, prefix: "/admin" });
+  await server.register(adminRoutes, { db, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(adminReconstructionFoundryRoutes, {
@@ -494,7 +494,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
-  await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });
+  await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
   await server.register(publicReconstructionReleaseRoutes, {
     service: reconstructionFoundryService,
