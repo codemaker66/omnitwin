@@ -17,13 +17,22 @@
 
 import { Color, DataTexture, LinearFilter, LinearMipmapLinearFilter, RedFormat, RepeatWrapping, UnsignedByteType } from "three";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { float, floor, fract, fwidth, hash, mix, positionWorld, smoothstep, texture, vec2, vec3 } from "three/tsl";
+import { dFdx, dFdy, float, floor, fract, fwidth, hash, mix, positionWorld, smoothstep, texture, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
 /** Width of one oak strip, metres (seam spacing measured on the survey's floor image). */
 export const FLOOR_BOARD_WIDTH = 0.073;
 /** The gap between strips and at their end joints, metres. */
 export const FLOOR_SEAM = 0.0016;
+/**
+ * Where each part of the pattern gives way to its average, in boards per pixel
+ * across the strips. The 1.6 mm seams would alias first, so they fade into the
+ * darkening they average to while a board is still a few pixels wide; a board's
+ * own tone and grain read as a mosaic until boards are about a pixel wide. The
+ * floor stays boards into the distance instead of changing pattern part way
+ * across, as one early fade of everything made it do.
+ */
+export const FLOOR_DETAIL_FADE = { seams: [0.2, 0.6], tone: [0.45, 1.5] } as const;
 /** Shortest and longest board in a row, metres. */
 export const FLOOR_BOARD_LENGTH: readonly [number, number] = [0.55, 1.45];
 /** How much of the board the grain texture spans along and across, metres. */
@@ -150,13 +159,16 @@ export function oakFloorNodes(): OakFloorNodes {
     p.x.div(GRAIN_SPAN[0]).add(board.mul(37.0)),
     v.mul(FLOOR_BOARD_WIDTH / GRAIN_SPAN[1]).add(boardB.mul(5.0)),
   );
-  const grain = texture(oakGrainTexture(), grainUv).r;
+  // The offset jumps at every seam, and a mip level taken from it would jump to
+  // the coarsest along each one: take it from the continuous floor instead.
+  const continuousUv = vec2(p.x.div(GRAIN_SPAN[0]), p.y.div(GRAIN_SPAN[1]));
+  const grain = texture(oakGrainTexture(), grainUv).grad(dFdx(continuousUv), dFdy(continuousUv)).r;
 
-  // Where a board is narrower than a couple of pixels its own tone, grain and
-  // seams can no longer be resolved and would only shimmer: fade them toward
-  // the floor's average, as a mip chain would for a texture.
+  // Where boards grow too small to resolve, each part of the pattern fades
+  // toward its average (FLOOR_DETAIL_FADE): the seams first, the tones later.
   const boardsPerPixel = fwidth(across);
-  const detail = float(1).sub(smoothstep(0.25, 0.75, boardsPerPixel));
+  const seamDetail = float(1).sub(smoothstep(FLOOR_DETAIL_FADE.seams[0], FLOOR_DETAIL_FADE.seams[1], boardsPerPixel));
+  const detail = float(1).sub(smoothstep(FLOOR_DETAIL_FADE.tone[0], FLOOR_DETAIL_FADE.tone[1], boardsPerPixel));
 
   // Tone: honey throughout, a few boards a shade paler or deeper.
   const tone = board.sub(0.5).mul(detail).add(0.5);
@@ -171,9 +183,9 @@ export function oakFloorNodes(): OakFloorNodes {
   // Seams along each strip and at each end joint.
   const sideDistance = v.min(float(1).sub(v)).mul(FLOOR_BOARD_WIDTH);
   const endDistance = u.min(float(1).sub(u)).mul(length);
-  const seam = seamCoverage(sideDistance, FLOOR_SEAM * 0.5).max(seamCoverage(endDistance, FLOOR_SEAM * 0.5)).mul(detail);
+  const seam = seamCoverage(sideDistance, FLOOR_SEAM * 0.5).max(seamCoverage(endDistance, FLOOR_SEAM * 0.5)).mul(seamDetail);
   // Unresolved seams still darken the floor by the share of it they cover.
-  const seamShare = float(1).sub(detail).mul(FLOOR_SEAM / FLOOR_BOARD_WIDTH);
+  const seamShare = float(1).sub(seamDetail).mul(FLOOR_SEAM / FLOOR_BOARD_WIDTH);
   const albedo = mix(boardColour, vec3(OAK.seam.r, OAK.seam.g, OAK.seam.b), seam.mul(0.85).add(seamShare));
 
   // Satin varnish: a little rougher across worn boards and in the seams.
