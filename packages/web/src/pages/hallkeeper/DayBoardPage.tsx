@@ -25,7 +25,7 @@ import {
 } from "@omnitwin/types";
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { useAuthStore } from "../../stores/auth-store.js";
-import { boardRange, formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs, type BoardRange } from "../diary/lib/board-time.js";
+import { formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs, type BoardRange } from "../diary/lib/board-time.js";
 import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { CALENDAR_REUSE_MS, useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
@@ -60,7 +60,8 @@ import { boardFreshness, useBoardClock, useBreathPhase, useConnectionState } fro
 import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
 import { useVenueClock } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
-import { boardDayAnchorMs, nextBoardRolloverMs, soonerOf, useDayBoundaryHour } from "./lib/board-day.js";
+import { useShellFrame } from "../../components/dashboard/staff-shell.js";
+import { boardDayAnchorMs, boardDayRange, useDayBoundaryHour } from "./lib/board-day.js";
 import { useWakeLock } from "./lib/use-wake-lock.js";
 import { driftOffset } from "./lib/burn-in-drift.js";
 
@@ -68,7 +69,9 @@ import { driftOffset } from "./lib/burn-in-drift.js";
  *  one print control and the line the printed page carries. */
 export const BOARD_PRINT_COPY = {
   print: "Print today",
+  printDay: "Print this day",
   note: "Printed from the Day Board; the screen is the record.",
+  readAt: (clock: string): string => `Read at ${clock}.`,
 } as const;
 
 /** The wall's burn-in drift as custom properties on the board's root (S8). */
@@ -842,12 +845,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // derives from it; the boundary and the clock meet through state, so a
   // tick is one render at the exact instant something changes.
   const [boundaryMs, setBoundaryMs] = useState<number | null>(null);
-  // The clock ticks at the earlier of the next slot boundary and the day's
-  // rollover at the venue's boundary hour (S8), read from the last tick.
+  // The venue's day boundary hour (S8). The clock already ticks on every
+  // whole minute, and a rollover falls on one, so it needs no boundary of its own.
   const dayBoundaryHour = useDayBoundaryHour(venueId);
-  const [rolloverMs, setRolloverMs] = useState<number | null>(null);
-  const nowMs = useBoardClock(rolloverMs === null ? boundaryMs : soonerOf(boundaryMs, rolloverMs));
-  useEffect(() => { setRolloverMs(nextBoardRolloverMs(nowMs, dayBoundaryHour, timeZone)); }, [nowMs, dayBoundaryHour, timeZone]);
+  const nowMs = useBoardClock(boundaryMs);
   const corrected = useClockCorrected();
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -859,7 +860,9 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // default; midnight for a venue without settings): an event running to
   // 02:00 is still today's, and an always-on wall tablet rolls once, then.
   const selectedMs = selectedDate === null ? boardDayAnchorMs(nowMs, dayBoundaryHour, timeZone) : wallInputToMs(`${selectedDate}T12:00`, timeZone) ?? nowMs;
-  const range = useMemo(() => boardRange(selectedMs, "day", timeZone), [selectedMs, timeZone]);
+  // The day runs to the next boundary hour, so the hours after midnight are
+  // drawn and a late bar is on the board it belongs to.
+  const range = useMemo(() => boardDayRange(selectedMs, dayBoundaryHour, timeZone), [selectedMs, dayBoundaryHour, timeZone]);
   // The days either side are read once this one is on screen, but only once
   // someone shows they may step (a mouse over or keyboard focus on the day
   // controls, or a step itself); the wish lapses after the reuse window, so
@@ -881,6 +884,9 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const device: "wall" | "phone" | "desk" = wall ? "wall" : handheld;
   // The wall never sleeps (S8 item 14); phones and desks keep the system's own rule.
   useWakeLock(wall);
+  // The wall is the whole screen: no header, nav or account menu for a
+  // passer-by to touch (D11, S8); the paper register keeps the shell.
+  useShellFrame({ chrome: wall ? "none" : "full" });
   // Nothing burns in: the wall sits a few pixels off centre and moves every
   // ten minutes (S8 item 14); nowMs ticks at least once a minute.
   const drift = wall ? driftOffset(nowMs) : null;
@@ -897,7 +903,9 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // board, recorded from the slot by the floor; the wall stays inert.
   const observationsApi = useSlotObservations(venueId, range, listensForFloorRequests(user), user?.name ?? "");
   const shownDate = msToWallInput(selectedMs, timeZone).slice(0, 10);
-  const today = msToWallInput(nowMs, timeZone).slice(0, 10);
+  // "Today" is the board's day, so between midnight and the boundary the
+  // calendar day that has just begun is one step ahead and can be opened.
+  const today = msToWallInput(boardDayAnchorMs(nowMs, dayBoundaryHour, timeZone), timeZone).slice(0, 10);
 
   const board = useMemo(
     () => (data === null
@@ -1057,7 +1065,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent} onOpen={openSlot} />}
 
       {/* Shown only on paper (S8 item 13): the printed day names itself. */}
-      {!wall && <p className="dayboard-print-note">{BOARD_PRINT_COPY.note} {formatWallDay(selectedMs, timeZone)}</p>}
+      {!wall && <p className="dayboard-print-note">{BOARD_PRINT_COPY.note} {formatWallDay(selectedMs, timeZone)}{readAt === null ? "" : ` ${BOARD_PRINT_COPY.readAt(readAt)}`}</p>}
       {!wall && (
         <div className="dayboard-controls">
           <div
@@ -1073,7 +1081,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           <label>Room<select value={roomId} onChange={(event) => { setRoomId(event.target.value); }}><option value="">All rooms</option>{lanes.map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
           <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/rooms">Room plans</Link>
           <button type="button" onClick={() => { setSearchParams({ register: "wall" }); }}>Wall display</button>
-          <button type="button" className="dayboard-print" onClick={() => { window.print(); }}>{BOARD_PRINT_COPY.print}</button>
+          <button type="button" className="dayboard-print" onClick={() => { window.print(); }}>{selectedDate === null ? BOARD_PRINT_COPY.print : BOARD_PRINT_COPY.printDay}</button>
           {/* Opt-in, per device (D3 "Sound"): the one control that makes a sound. */}
           {venueId !== null && <ChimeToggle />}
           {venueId !== null && <ShiftHandover venueId={venueId} meId={user?.id ?? null} />}

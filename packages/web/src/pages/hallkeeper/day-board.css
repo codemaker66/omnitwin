@@ -1230,7 +1230,7 @@ div.dayboard-slab {
 }
 
 .dayboard[data-register="wall"] {
-  /* Burn-in drift (S8): a position set by the board every ten minutes, never a motion. */
+  /* Burn-in drift (S8): a position the board moves one pixel a minute, never a motion. */
   translate: var(--lt-drift-x, 0) var(--lt-drift-y, 0);
   --lt-ground: var(--hk-forest-ink, #1e2721);
   --lt-raised: var(--hk-forest-raised, #263028);
@@ -1509,8 +1509,12 @@ div.dayboard-slab {
   .dayboard-ring,
   .dayboard-rail,
   .dayboard-next-line,
+  .dayboard-next,
+  .dayboard-ruler,
+  .dayboard-gap,
+  .dayboard-segments,
+  .dayboard-verb-short,
   .dayboard-status,
-  .dayboard-stale,
   .dayboard-now,
   .dayboard-now-line,
   .dayboard-legend,
@@ -1521,8 +1525,16 @@ div.dayboard-slab {
     display: none !important;
   }
 
-  .dayboard-lanes {
+  .dayboard-lanes,
+  .dayboard-body {
     display: block;
+  }
+
+  /* The stale band prints: a sheet from an offline board must say so. */
+  .dayboard-stale {
+    color: #000;
+    background: #fff;
+    border: 1px solid #000;
   }
 
   .dayboard-lane {
@@ -1537,9 +1549,14 @@ div.dayboard-slab {
   }
 
   .dayboard-slab {
+    /* A static block the full width of its lane: the screen's inline-size
+       containment would shrink a button to its 64 px minimum and hide its
+       time and verb through the container query. */
     position: static !important;
     display: block;
-    width: auto !important;
+    width: 100% !important;
+    min-width: 0;
+    container-type: normal;
     left: auto !important;
     margin: 4px 0;
     padding: 4px 8px;

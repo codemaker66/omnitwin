@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getOperatingSettings } from "../../../api/operating-settings.js";
-import { VENUE_TIME_ZONE, msToWallInput, wallInputToMs } from "../../diary/lib/board-time.js";
+import { VENUE_TIME_ZONE, boardRange, msToWallInput, wallInputToMs, type BoardRange } from "../../diary/lib/board-time.js";
 
 // ---------------------------------------------------------------------------
 // The board's day (goal 19 S8 item 14; people matrix §6 `day_boundary_hour`).
@@ -42,10 +42,26 @@ export function nextBoardRolloverMs(nowMs: number, dayBoundaryHour: number, time
   return wallInputToMs(`${shiftWallDate(date, 1)}T${face}`, timeZone) ?? nowMs + DAY_MS;
 }
 
+/** The board's day as a range: from the shown day's midnight to the next
+ *  day's boundary hour, so an event running to 02:00 is on today's board and
+ *  the hours after midnight are drawn. Boundary 0 is the plain calendar day. */
+export function boardDayRange(anchorMs: number, dayBoundaryHour: number, timeZone: string = VENUE_TIME_ZONE): BoardRange {
+  const plain = boardRange(anchorMs, "day", timeZone);
+  if (dayBoundaryHour <= 0) return plain;
+  const date = msToWallInput(anchorMs, timeZone).slice(0, 10);
+  const face = `${String(dayBoundaryHour).padStart(2, "0")}:00`;
+  const toMs = wallInputToMs(`${shiftWallDate(date, 1)}T${face}`, timeZone);
+  return toMs === null ? plain : { ...plain, toMs };
+}
+
 /** The earlier of a slot boundary (null when no slot has one) and the rollover. */
 export function soonerOf(slotBoundaryMs: number | null, rolloverMs: number): number {
   return slotBoundaryMs === null ? rolloverMs : Math.min(slotBoundaryMs, rolloverMs);
 }
+
+/** A read that failed (the wall booted before its network, an API deploy)
+ *  is tried again this often until it settles; midnight stands meanwhile. */
+export const BOUNDARY_RETRY_MS = 30_000;
 
 /** The venue's day boundary hour from its operating settings; 0 (midnight)
  *  until they arrive, and for a venue that has none. */
@@ -54,10 +70,17 @@ export function useDayBoundaryHour(venueId: string | null): number {
   useEffect(() => {
     if (venueId === null) return;
     let disposed = false;
-    getOperatingSettings(venueId)
-      .then((settings) => { if (!disposed && settings !== null) setHour(settings.dayBoundaryHour); })
-      .catch(() => undefined);
-    return () => { disposed = true; };
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const read = (): void => {
+      getOperatingSettings(venueId)
+        .then((settings) => { if (!disposed) setHour(settings === null ? 0 : settings.dayBoundaryHour); })
+        .catch(() => { if (!disposed) retry = setTimeout(read, BOUNDARY_RETRY_MS); });
+    };
+    read();
+    return () => {
+      disposed = true;
+      if (retry !== null) clearTimeout(retry);
+    };
   }, [venueId]);
   return hour;
 }

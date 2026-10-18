@@ -63,6 +63,24 @@ describe("useWakeLock", () => {
     expect(fake.requests).toHaveLength(2);
   });
 
+  it("asks again when the system releases the lock while the page stays visible", async () => {
+    const listeners: (() => void)[] = [];
+    let released = false;
+    const sentinel: WakeLockSentinelLike = {
+      get released() { return released; },
+      release: () => { released = true; return Promise.resolve(); },
+      addEventListener: (_type, listener) => { listeners.push(listener); },
+    };
+    let requests = 0;
+    const surface: WakeLockSurface = { request: () => { requests += 1; return Promise.resolve(sentinel); } };
+    renderHook(() => { useWakeLock(true, surface); });
+    await act(async () => { await Promise.resolve(); });
+    expect(requests).toBe(1);
+    // The system drops it (battery saver, a dimmed screen) and says so.
+    await act(async () => { released = true; for (const listener of listeners) listener(); await Promise.resolve(); });
+    expect(requests).toBe(2);
+  });
+
   it("a browser without the API does nothing and throws nothing; a refusal is asked once and dropped", async () => {
     expect(() => renderHook(() => { useWakeLock(true, null); })).not.toThrow();
     const refusing = fakeSurface("refuse");

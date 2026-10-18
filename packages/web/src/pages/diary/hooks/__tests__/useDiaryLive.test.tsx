@@ -23,7 +23,8 @@ class FakeSocket {
   onerror: (() => void) | null = null;
   constructor(readonly url: string) { FakeSocket.instances.push(this); }
   send(data: string): void { this.sent.push(data); }
-  close(): void { this.closedByHook = true; this.readyState = FakeSocket.CLOSED; }
+  /** As a browser does: close() is answered by onclose on a later tick. */
+  close(): void { this.closedByHook = true; this.readyState = FakeSocket.CLOSED; queueMicrotask(() => { this.onclose?.(); }); }
   /** The server accepted the connection. */
   open(): void { this.readyState = FakeSocket.OPEN; this.onopen?.(); }
   /** The line dropped. */
@@ -69,8 +70,9 @@ describe("useDiaryLive over a long shift", () => {
     expect(authFrames(second)).toEqual([{ type: "auth", token: "t2", device: "wall" }]);
   });
 
-  it("closes the socket and sends no auth frame when no token is available", async () => {
-    setTokenGetter(() => Promise.resolve(null));
+  it("closes the socket and sends no auth frame when no token is available, then backs off and asks again", async () => {
+    const getToken = vi.fn(() => Promise.resolve(null));
+    setTokenGetter(getToken);
     renderHook(() => useDiaryLive(true, () => undefined, { device: "phone" }));
     const socket = FakeSocket.instances[0];
     if (socket === undefined) throw new Error("no socket opened");
@@ -78,5 +80,17 @@ describe("useDiaryLive over a long shift", () => {
     await flush();
     expect(socket.sent).toEqual([]);
     expect(socket.closedByHook).toBe(true);
+    // Not a tight loop: the next socket waits for the backoff.
+    expect(FakeSocket.instances).toHaveLength(1);
+    act(() => { vi.advanceTimersByTime(nextBackoffMs(0) - 1); });
+    expect(FakeSocket.instances).toHaveLength(1);
+    act(() => { vi.advanceTimersByTime(2); });
+    expect(FakeSocket.instances).toHaveLength(2);
+    const again = FakeSocket.instances[1];
+    if (again === undefined) throw new Error("no reconnect");
+    act(() => { again.open(); });
+    await flush();
+    expect(getToken).toHaveBeenCalledTimes(2);
+    expect(again.sent).toEqual([]);
   });
 });

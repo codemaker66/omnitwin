@@ -1,7 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { msToWallInput } from "../../../diary/lib/board-time.js";
 import { nextTickMs } from "../use-board-clock.js";
-import { boardDayAnchorMs, nextBoardRolloverMs, soonerOf } from "../board-day.js";
+import { boardDayAnchorMs, boardDayRange, nextBoardRolloverMs, soonerOf, useDayBoundaryHour } from "../board-day.js";
+
+const settings = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock("../../../../api/operating-settings.js", () => ({
+  getOperatingSettings: (venueId: string) => settings.get(venueId) as Promise<unknown>,
+  updateOperatingSettings: () => Promise.reject(new Error("not in this test")),
+}));
+
+afterEach(() => { cleanup(); vi.useRealTimers(); settings.get.mockReset(); });
 
 // The board's day (goal 19 S8 item 14, people matrix §6): a wall left on
 // all night still shows yesterday's board at 03:59 when the venue's day
@@ -28,6 +37,33 @@ describe("the board's day", () => {
     expect(nextBoardRolloverMs(Date.parse("2026-10-24T12:00:00.000Z"), 4)).toBe(Date.parse("2026-10-25T04:00:00.000Z"));
     // Exactly at the boundary the next one is tomorrow's.
     expect(nextBoardRolloverMs(Date.parse("2026-01-21T04:00:00.000Z"), 4)).toBe(Date.parse("2026-01-22T04:00:00.000Z"));
+  });
+
+  it("the board's day runs from midnight to the next boundary hour, so the late part of the venue's day is on it", () => {
+    // 00:30 on 21 Jan with boundary 4: yesterday's board, ending 04:00 today.
+    const night = boardDayRange(boardDayAnchorMs(Date.parse("2026-01-21T00:30:00.000Z"), 4), 4);
+    expect(msToWallInput(night.fromMs)).toBe("2026-01-20T00:00");
+    expect(msToWallInput(night.toMs)).toBe("2026-01-21T04:00");
+    expect(night.view).toBe("day");
+    // Boundary 0 is the plain calendar day, as before S8.
+    const plain = boardDayRange(Date.parse("2026-01-21T12:00:00.000Z"), 0);
+    expect(msToWallInput(plain.fromMs)).toBe("2026-01-21T00:00");
+    expect(msToWallInput(plain.toMs)).toBe("2026-01-22T00:00");
+    // The spring Sunday is 23 hours long and the range still ends at the wall clock's 04:00.
+    const spring = boardDayRange(Date.parse("2026-03-29T12:00:00.000Z"), 4);
+    expect(msToWallInput(spring.toMs)).toBe("2026-03-30T04:00");
+  });
+
+  it("the boundary hour is read once settled, and a failed read is tried again rather than left at midnight", async () => {
+    vi.useFakeTimers();
+    settings.get.mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({ dayBoundaryHour: 4 });
+    const hook = renderHook(() => useDayBoundaryHour("venue-1"));
+    expect(hook.result.current).toBe(0);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(hook.result.current).toBe(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(hook.result.current).toBe(4);
+    expect(settings.get).toHaveBeenCalledTimes(2);
   });
 
   it("soonerOf takes the earlier instant and tolerates no slot boundary", () => {

@@ -12,6 +12,8 @@ import { useEffect, useRef } from "react";
 export interface WakeLockSentinelLike {
   readonly released: boolean;
   release(): Promise<void>;
+  /** The real sentinel says when the system took the lock back. */
+  addEventListener?(type: "release", listener: () => void): void;
 }
 
 export interface WakeLockSurface {
@@ -39,6 +41,11 @@ export function useWakeLock(active: boolean, surface: WakeLockSurface | null = d
           return;
         }
         held.current = sentinel;
+        // The system may take it back while the page stays visible (battery
+        // saver, a dimmed screen): ask again then, not only on the next show.
+        sentinel.addEventListener?.("release", () => {
+          if (!disposed && document.visibilityState === "visible") ask();
+        });
       }).catch(() => undefined);
     };
     const onVisibility = (): void => {
