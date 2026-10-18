@@ -1,4 +1,4 @@
-import type { AccessibilityRequirements, DietarySummary, PhaseDeadline, Timing } from "@omnitwin/types";
+import type { PhaseDeadline, Timing } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // What a hallkeeper keeps in view (roadmap N4): the hour the room must be
@@ -73,45 +73,9 @@ export function deadlineWhen(iso: string, timeZone: string, day: string): string
   return `${date}, ${time}`;
 }
 
-/** A guest's access needs as short phrases, in the order the brief ranks
- *  them: what must be in place before guests arrive first, then routes and
- *  print, then the planner's own words as written. */
-export function accessNeeds(access: AccessibilityRequirements | null): readonly string[] {
-  if (access === null) return [];
-  const needs: string[] = [];
-  if (access.hearingLoopRequired) needs.push(access.hearingLoopZone === null ? "Hearing loop, zone not set" : `Hearing loop in ${access.hearingLoopZone}`);
-  if (access.wheelchairSpaces > 0) needs.push(`${String(access.wheelchairSpaces)} wheelchair ${access.wheelchairSpaces === 1 ? "space" : "spaces"}`);
-  if (access.signLanguageInterpreter) needs.push("Sign-language interpreter attending");
-  if (access.stepFreeRouteRequired) needs.push("Step-free route to seating");
-  if (access.largePrintProgrammes > 0) needs.push(`${String(access.largePrintProgrammes)} large-print ${access.largePrintProgrammes === 1 ? "programme" : "programmes"}`);
-  const notes = access.notes.trim();
-  if (notes.length > 0) needs.push(notes);
-  return needs;
-}
-
-export interface AllergyFacts {
-  /** Meals made for an allergen, from the planner's counts, each a phrase a
-   *  line should not break inside: ["3 nut-free", "2 gluten-free"]. */
-  readonly counts: readonly string[];
-  /** The noun the counts share: "meal" for one in all, else "meals". */
-  readonly noun: "meal" | "meals";
-  /** The planner's own words about allergies, as written. */
-  readonly notes: string | null;
-}
-
-/** The allergies the planner recorded, or null when they recorded none.
- *  Nut-free and gluten-free meals are the counts that answer to allergens;
- *  vegetarian, vegan, halal and kosher stay with the brief. */
-export function allergyFacts(dietary: DietarySummary | null): AllergyFacts | null {
-  if (dietary === null) return null;
-  const counts = [
-    dietary.nutFree > 0 ? `${String(dietary.nutFree)} nut-free` : null,
-    dietary.glutenFree > 0 ? `${String(dietary.glutenFree)} gluten-free` : null,
-  ].filter((part): part is string => part !== null);
-  const notes = dietary.otherAllergies.trim();
-  if (counts.length === 0 && notes.length === 0) return null;
-  return { counts, noun: dietary.nutFree + dietary.glutenFree === 1 ? "meal" : "meals", notes: notes.length > 0 ? notes : null };
-}
+// Access needs and allergies are worded once, in @omnitwin/types, so the
+// printed sheet and this screen say the same thing.
+export { accessNeeds, allergyFacts, type AllergyFacts } from "@omnitwin/types";
 
 /** A phone number as a `tel:` target: digits and a leading plus only. The
  *  British "(0)" is the trunk digit a caller from abroad leaves out, so it
