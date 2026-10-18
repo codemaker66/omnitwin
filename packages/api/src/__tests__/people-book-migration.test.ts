@@ -30,6 +30,11 @@ const PREVIOUS = "0093_forward_book_checks";
 
 const quoted = (values: readonly string[]): string => values.map((value) => `'${value}'`).join(", ");
 
+/** The backfill's working tables: temporary, the file's own, gone when it ends. */
+const WORKING_TABLES = ["people_0095_enquiries", "people_0095_holders", "people_0095_enquirers", "people_0095_last_contact"] as const;
+/** The working tables a later statement joins, so each carries a key. */
+const KEYED_WORKING_TABLES = ["people_0095_enquiries", "people_0095_holders", "people_0095_last_contact"] as const;
+
 async function migration(): Promise<string> {
   return readFile(resolve(DRIZZLE, `${TAG}.sql`), "utf8");
 }
@@ -89,11 +94,24 @@ describe(`migration ${TAG}`, () => {
     expect(sql).not.toMatch(/\bDELETE\s+FROM\b/iu);
     expect(sql).not.toMatch(/\bTRUNCATE\b/iu);
     expect(sql).not.toMatch(/\bDROP\s+COLUMN\b/iu);
+    // Only the backfill's own temporary tables go, each when it is done with.
     const tables = [...sql.matchAll(/\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;]+)/giu)].map((match) => match[1]);
-    expect(new Set(tables)).toEqual(new Set(['pg_temp."people_0095_enquirers"']));
+    expect(new Set(tables)).toEqual(new Set(WORKING_TABLES.map((table) => `pg_temp."${table}"`)));
+    for (const table of WORKING_TABLES) expect(sql).toContain(`DROP TABLE pg_temp."${table}";`);
     const dropped = [...sql.matchAll(/DROP CONSTRAINT IF EXISTS "([a-z_]+)"/gu)].map((match) => match[1]);
     expect(dropped.length).toBeGreaterThan(0);
     for (const name of dropped) expect(sql).toContain(`ADD CONSTRAINT "${String(name)}"`);
+  });
+
+  it("analyses only its own working tables, keyed, never a table that existed before it", async () => {
+    const sql = code(await migration());
+    // Analysing a table production already has would change its planner statistics mid-deploy.
+    const analysed = [...sql.matchAll(/\bANALYZE\b\s*([^\s;]*)/giu)].map((match) => match[1]);
+    expect(new Set(analysed)).toEqual(new Set(KEYED_WORKING_TABLES.map((table) => `pg_temp."${table}"`)));
+    for (const table of WORKING_TABLES) expect(sql).toContain(`CREATE TEMP TABLE "${table}" AS`);
+    for (const table of KEYED_WORKING_TABLES) {
+      expect(sql).toMatch(new RegExp(`ALTER TABLE pg_temp\\."${table}" ADD PRIMARY KEY \\([^)]+\\);`, "u"));
+    }
   });
 });
 

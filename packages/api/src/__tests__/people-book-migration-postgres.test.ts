@@ -186,7 +186,10 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     acc1: randomUUID(), acc2: randomUUID(), acc3: randomUUID(), acc4: randomUUID(),
     c1: randomUUID(), c2: randomUUID(), c3: randomUUID(), c4: randomUUID(), c5: randomUUID(),
     d1: randomUUID(),
+    // Fraser's only holder was deleted; the long address no column could hold.
+    c6: randomUUID(), e11: randomUUID(), e12: randomUUID(),
   };
+  const longAddress = `${"a".repeat(250)}@example.test`;
   /** Contacts whose phone the API would refuse, and one it would take. */
   const phones = [
     { id: randomUUID(), raw: "+44", kept: null, point: null },
@@ -200,7 +203,7 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     e8: "2026-04-15T10:00:00.000Z", e9: "2026-06-01T10:00:00.000Z", e10: "2026-06-02T10:00:00.000Z",
     c1: "2026-03-01T11:00:00.000Z", d1: "2026-03-01T12:00:00.000Z", activity: "2026-03-02T09:00:00.000Z",
     proposalWritten: "2026-03-04T09:00:00.000Z", proposalSent: "2026-03-05T14:00:00.000Z",
-    others: "2026-02-01T10:00:00.000Z",
+    others: "2026-02-01T10:00:00.000Z", e11: "2026-07-01T10:00:00.000Z", e12: "2026-07-02T10:00:00.000Z",
   };
   let emailWasRequired = "";
   let migration = "";
@@ -269,6 +272,9 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     });
     await enquiry(ids.draftNew, venueA, at.e9, { userId: euan, name: "Draft Planner", email: "draft@example.test", state: "draft" });
     await enquiry(ids.draftIain, venueA, at.e9, { userId: euan, name: "Iain Robertson", email: "iain@example.test", state: "draft" });
+    await enquiry(ids.e11, venueA, at.e11, { guestName: "Fraser Ross", guestEmail: "Fraser@Example.test", name: "Fraser Ross", email: "Fraser@Example.test" });
+    // guest_email is unbounded text; the 255-character email column holds the short form.
+    await enquiry(ids.e12, venueA, at.e12, { guestName: "Long Address", guestEmail: longAddress, name: "Long Address", email: "long.address@example.test" });
     // The guest lead the public route keeps for Kirsty, last written by venue B's form. It is not a person.
     await pool.query(
       `INSERT INTO guest_leads (email, phone, name, first_enquiry_id, created_at, updated_at)
@@ -306,6 +312,8 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     for (const [index, entry] of phones.entries()) {
       await contact(entry.id, { name: `Phone Case ${String(index)}`, email: `phone.case.${String(index)}@example.test`, phone: entry.raw, createdAt: at.others });
     }
+    await contact(ids.c6, { name: "Fraser Ross", email: "fraser@example.test", createdAt: at.others });
+    await pool.query("UPDATE contacts SET deleted_at = $2 WHERE id = $1", [ids.c6, at.others]);
 
     await pool.query(
       `INSERT INTO opportunities (id, venue_id, client_account_id, primary_contact_id, source_enquiry_id, title, created_at, updated_at)
@@ -509,6 +517,30 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     expect(await contactOf(ids.e10)).toBeNull();
     expect(await query("SELECT id FROM contact_points WHERE value = 'seed@example.test'")).toEqual([]);
     expect(await query("SELECT id FROM contacts WHERE name = 'Seed Guest'")).toEqual([]);
+  });
+
+  it("does not count a deleted person as holding an email: the enquirer gets a person of their own", async () => {
+    const holdersOfFraser = await holders(venueA, "fraser@example.test");
+    expect(holdersOfFraser.map((row) => row.id)).toContain(ids.c6);
+    const [fraser, ...others] = holdersOfFraser.filter((row) => row.id !== ids.c6);
+    expect(others).toEqual([]);
+    if (fraser === undefined) throw new Error("no person for Fraser");
+    expect(fraser).toMatchObject({ name: "Fraser Ross", email: "Fraser@Example.test", phone: null, source_enquiry_id: ids.e11, deleted_at: null });
+    expect(fraser.created_at.toISOString()).toBe(at.e11);
+    expect(fraser.last_contact_at?.toISOString()).toBe(at.e11);
+    expect(await contactOf(ids.e11)).toBe(fraser.id);
+    expect(await contactRow(ids.c6)).toMatchObject({ email: "fraser@example.test", last_contact_at: null });
+    expect((await contactRow(ids.c6)).deleted_at).not.toBeNull();
+  });
+
+  it("leaves out an email longer than its column, rather than cut it short", async () => {
+    expect(await contactOf(ids.e12)).toBeNull();
+    expect(await query("SELECT id FROM contacts WHERE name = 'Long Address'")).toEqual([]);
+    expect(await query("SELECT id FROM contact_points WHERE value LIKE 'aaaa%'")).toEqual([]);
+  });
+
+  it("leaves none of its working tables behind", async () => {
+    expect(await query("SELECT relname FROM pg_class WHERE relpersistence = 't' AND relname LIKE 'people\\_0095\\_%'")).toEqual([]);
   });
 
   it("dates each person's last contact from their latest enquiry, deal, activity or proposal", async () => {

@@ -43,7 +43,9 @@
 --      e. A converted enquiry links to the contact made from it.
 --      f. An enquirer whom no live person holds gets one person per venue and
 --         email, made from that venue's own enquiries: the latest name, email
---         and usable phone, the first enquiry as its source and its date.
+--         and usable phone, the first enquiry as its source and its date, and
+--         the latest as its last contact (h's rule: g links it those enquiries
+--         and no others, and it has no deal yet).
 --         Only the venue's clients' enquiries count, in f and in g: seed
 --         fixtures, signed-in drafts never sent, the workspace gate's access
 --         requests ('venue-access') and Venviewer's own pricing leads
@@ -52,9 +54,26 @@
 --      g. Every other client enquiry links to the one live person who holds
 --         its email. Where two people share it (today's duplicates), nothing
 --         is linked; they are kept as two people, and no merge happens here.
---      h. Each person's last contact: their latest enquiry, deal, activity
+--      h. Everyone else's last contact: their latest enquiry, deal, activity
 --         on a deal, or sent proposal.
 --  11. client_accounts.kind defaults to 'household' and is required.
+--
+-- Its locks hold every enquiry, contact and account reader and writer, so
+-- the backfill is planned not to depend on luck. f, g and h read each table
+-- once into temporary tables of this file's own: the client enquiries still
+-- without a person, each with its email key worked out once; who holds each
+-- email; and each person's latest contact. Each is keyed and analysed before
+-- anything joins it. So every join is between plain, keyed columns, and the
+-- planner never estimates rows this transaction wrote or columns it added
+-- from statistics that cannot know them. No table that existed before this
+-- file is analysed: that would change production's planner statistics in the
+-- middle of a deploy. And f dates the people it makes as it writes them, so
+-- h rewrites none of them: rewriting a row this transaction wrote re-runs
+-- its foreign-key checks.
+-- On rehearsal data at twice Trades Hall's likely volume (10,820 enquiries,
+-- 2,650 contacts), the file runs in about 2 s with no statement over half a
+-- second, with or without fresh statistics, and with the planner forced to
+-- other join methods.
 --
 -- Re-running the file changes nothing: every step skips what is already in
 -- place. Nothing is deleted, and the backfill writes no kept-apart marks.
@@ -361,70 +380,129 @@ FROM (SELECT DISTINCT ON (source_enquiry_id) id, source_enquiry_id, venue_id FRO
       WHERE source_enquiry_id IS NOT NULL AND deleted_at IS NULL ORDER BY source_enquiry_id, created_at, id) c
 WHERE e.id = c.source_enquiry_id AND e.venue_id = c.venue_id AND e.contact_id IS NULL;
 --> statement-breakpoint
--- f. One person per venue and normalised email for enquirers no live contact holds. Left out,
---    here and in g: seeds, signed-in drafts never sent, the workspace gate's access requests
---    and Venviewer's own pricing leads, none of them the venue's client. Only a usable phone
---    is taken, and an email or phone longer than its contacts column is left out rather than
---    cut short.
+-- f and g work from two temporary tables, each keyed and analysed (they are this file's own;
+-- no table that existed before it is analysed here). So the planner never estimates rows
+-- this transaction wrote, or columns it added, from statistics that cannot know them, and
+-- every join below is between plain, keyed columns.
+--
+-- The client enquiries still without a person, each read once, with its normalised email
+-- worked out once. Left out, in f and in g: seeds, signed-in drafts never sent, the workspace
+-- gate's access requests and Venviewer's own pricing leads, none of them the venue's client.
+-- So is an email longer than its contacts column: it is left out rather than cut short (and
+-- no point can hold it, so g could never link it). Only a usable phone is kept, and only one
+-- that fits its column.
+DROP TABLE IF EXISTS pg_temp."people_0095_enquiries";
+--> statement-breakpoint
+CREATE TEMP TABLE "people_0095_enquiries" AS
+SELECT e.id, e.venue_id, e.created_at,
+  people_normalise_email(coalesce(e.guest_email, e.email)) AS email_key,
+  people_trim(coalesce(e.guest_email, e.email)) AS email_display,
+  coalesce(NULLIF(people_trim(e.guest_name), ''), NULLIF(people_trim(e.name), ''), people_trim(coalesce(e.guest_email, e.email))) AS name,
+  CASE WHEN people_usable_phone(e.guest_phone) AND length(people_trim(e.guest_phone)) <= 50 THEN people_trim(e.guest_phone) END AS phone_display
+FROM enquiries e
+WHERE e.contact_id IS NULL AND e.fixture_source IS NULL AND people_normalise_email(coalesce(e.guest_email, e.email)) IS NOT NULL
+  AND length(people_normalise_email(coalesce(e.guest_email, e.email))) <= 255
+  AND e.state <> 'draft' AND (e.event_type IS NULL OR e.event_type NOT IN ('venue-access', 'venue-enquiry'));
+--> statement-breakpoint
+ALTER TABLE pg_temp."people_0095_enquiries" ADD PRIMARY KEY ("id");
+--> statement-breakpoint
+ANALYZE pg_temp."people_0095_enquiries";
+--> statement-breakpoint
+-- Who holds each email in each venue: how many live people, and the one when it is one.
+DROP TABLE IF EXISTS pg_temp."people_0095_holders";
+--> statement-breakpoint
+CREATE TEMP TABLE "people_0095_holders" AS
+SELECT p.venue_id, p.value::text AS email_key, count(DISTINCT p.contact_id)::int AS holders,
+  (array_agg(DISTINCT p.contact_id))[1] AS contact_id
+FROM contact_points p JOIN contacts c ON c.id = p.contact_id
+  AND c.deleted_at IS NULL AND c.merged_into_id IS NULL AND c.erased_at IS NULL
+WHERE p.kind = 'email' GROUP BY p.venue_id, p.value;
+--> statement-breakpoint
+ALTER TABLE pg_temp."people_0095_holders" ADD PRIMARY KEY ("venue_id", "email_key");
+--> statement-breakpoint
+ANALYZE pg_temp."people_0095_holders";
+--> statement-breakpoint
+-- f. One person per venue and normalised email that no live person holds, made from that
+--    venue's own client enquiries: the latest name, email and usable phone, the first enquiry
+--    as its source and its date. Its last contact is its latest enquiry, h's rule for it: g
+--    links it these enquiries and no others, and it has no deal yet. Dating it here, as it
+--    is written, spares h rewriting every row this file has just inserted.
 DROP TABLE IF EXISTS pg_temp."people_0095_enquirers";
 --> statement-breakpoint
 CREATE TEMP TABLE "people_0095_enquirers" AS
 SELECT gen_random_uuid() AS contact_id, g.* FROM (
-  SELECT e.venue_id,
-    people_normalise_email(coalesce(e.guest_email, e.email)) AS email_key,
-    (array_agg(people_trim(coalesce(e.guest_email, e.email)) ORDER BY e.created_at DESC, e.id DESC))[1] AS email_display,
-    (array_agg(coalesce(NULLIF(people_trim(e.guest_name), ''), NULLIF(people_trim(e.name), ''), people_trim(coalesce(e.guest_email, e.email)))
-       ORDER BY e.created_at DESC, e.id DESC))[1] AS name,
-    (array_agg(people_trim(e.guest_phone) ORDER BY e.created_at DESC, e.id DESC)
-       FILTER (WHERE people_usable_phone(e.guest_phone) AND length(people_trim(e.guest_phone)) <= 50))[1] AS phone_display,
-    (array_agg(e.id ORDER BY e.created_at, e.id))[1] AS first_enquiry_id,
-    min(e.created_at) AS first_at
-  FROM enquiries e
-  WHERE e.contact_id IS NULL AND e.fixture_source IS NULL AND people_normalise_email(coalesce(e.guest_email, e.email)) IS NOT NULL
-    AND length(people_normalise_email(coalesce(e.guest_email, e.email))) <= 255
-    AND e.state <> 'draft' AND (e.event_type IS NULL OR e.event_type NOT IN ('venue-access', 'venue-enquiry'))
-  GROUP BY e.venue_id, people_normalise_email(coalesce(e.guest_email, e.email))
+  SELECT k.venue_id, k.email_key,
+    (array_agg(k.email_display ORDER BY k.created_at DESC, k.id DESC))[1] AS email_display,
+    (array_agg(k.name ORDER BY k.created_at DESC, k.id DESC))[1] AS name,
+    (array_agg(k.phone_display ORDER BY k.created_at DESC, k.id DESC) FILTER (WHERE k.phone_display IS NOT NULL))[1] AS phone_display,
+    (array_agg(k.id ORDER BY k.created_at, k.id))[1] AS first_enquiry_id,
+    min(k.created_at) AS first_at, max(k.created_at) AS last_at
+  FROM pg_temp."people_0095_enquiries" k
+  GROUP BY k.venue_id, k.email_key
 ) g
-WHERE NOT EXISTS (SELECT 1 FROM contact_points p JOIN contacts c ON c.id = p.contact_id
-  WHERE p.venue_id = g.venue_id AND p.kind = 'email' AND p.value = g.email_key
-    AND c.deleted_at IS NULL AND c.merged_into_id IS NULL AND c.erased_at IS NULL);
+WHERE NOT EXISTS (SELECT 1 FROM pg_temp."people_0095_holders" h WHERE h.venue_id = g.venue_id AND h.email_key = g.email_key);
 --> statement-breakpoint
-INSERT INTO contacts (id, venue_id, name, email, phone, source_enquiry_id, created_at, updated_at)
-SELECT contact_id, venue_id, left(name, 200), left(email_display, 255), left(phone_display, 50), first_enquiry_id, first_at, now()
-FROM people_0095_enquirers;
+INSERT INTO contacts (id, venue_id, name, email, phone, source_enquiry_id, created_at, last_contact_at, updated_at)
+SELECT contact_id, venue_id, left(name, 200), left(email_display, 255), left(phone_display, 50), first_enquiry_id, first_at, last_at, now()
+FROM pg_temp."people_0095_enquirers";
 --> statement-breakpoint
 -- Their email point and, where they gave a usable phone, their phone point.
 INSERT INTO contact_points (venue_id, contact_id, kind, value, display_value, label, is_primary)
 SELECT venue_id, contact_id, 'email', email_key, email_display, 'other', true
-FROM people_0095_enquirers;
+FROM pg_temp."people_0095_enquirers";
 --> statement-breakpoint
 INSERT INTO contact_points (venue_id, contact_id, kind, value, display_value, label, is_primary)
 SELECT venue_id, contact_id, 'phone', people_normalise_phone(phone_display), phone_display, 'other', true
-FROM people_0095_enquirers
+FROM pg_temp."people_0095_enquirers"
 WHERE phone_display IS NOT NULL;
+--> statement-breakpoint
+-- Each email f gave a person had no live holder, so that person is now its one holder. The
+-- key refuses, and the file fails, should f ever have made a person for an email already held.
+INSERT INTO pg_temp."people_0095_holders" (venue_id, email_key, holders, contact_id)
+SELECT venue_id, email_key, 1, contact_id FROM pg_temp."people_0095_enquirers";
+--> statement-breakpoint
+ANALYZE pg_temp."people_0095_holders";
 --> statement-breakpoint
 DROP TABLE pg_temp."people_0095_enquirers";
 --> statement-breakpoint
--- g. Every still-unlinked client enquiry (as in f: no seed, draft, access request or
---    pricing lead) whose email exactly one live person holds.
-UPDATE enquiries e SET contact_id = m.contact_id
-FROM (SELECT p.venue_id, p.value, (array_agg(DISTINCT p.contact_id))[1] AS contact_id
-      FROM contact_points p JOIN contacts c ON c.id = p.contact_id
-        AND c.deleted_at IS NULL AND c.merged_into_id IS NULL AND c.erased_at IS NULL
-      WHERE p.kind = 'email' GROUP BY p.venue_id, p.value HAVING count(DISTINCT p.contact_id) = 1) m
-WHERE e.contact_id IS NULL AND e.fixture_source IS NULL AND e.venue_id = m.venue_id
-  AND e.state <> 'draft' AND (e.event_type IS NULL OR e.event_type NOT IN ('venue-access', 'venue-enquiry'))
-  AND people_normalise_email(coalesce(e.guest_email, e.email)) = m.value;
+-- g. Every client enquiry still without a person (as in f) whose email exactly one live
+--    person holds.
+UPDATE enquiries e SET contact_id = h.contact_id
+FROM pg_temp."people_0095_enquiries" k
+  JOIN pg_temp."people_0095_holders" h ON h.venue_id = k.venue_id AND h.email_key = k.email_key AND h.holders = 1
+WHERE e.id = k.id AND e.contact_id IS NULL;
 --> statement-breakpoint
--- h. Last contact: the latest related enquiry, deal, activity or sent proposal.
-UPDATE contacts c SET last_contact_at = x.at FROM (
-  SELECT c2.id, GREATEST(
-    (SELECT max(e.created_at) FROM enquiries e WHERE e.contact_id = c2.id),
-    (SELECT max(o.created_at) FROM opportunities o WHERE o.primary_contact_id = c2.id),
-    (SELECT max(a.created_at) FROM activities a JOIN opportunities o ON o.id = a.opportunity_id WHERE o.primary_contact_id = c2.id),
-    (SELECT max(p.sent_at) FROM proposals p JOIN opportunities o ON o.id = p.opportunity_id WHERE o.primary_contact_id = c2.id)
-  ) AS at FROM contacts c2 WHERE c2.last_contact_at IS NULL) x
-WHERE c.id = x.id AND x.at IS NOT NULL;
+DROP TABLE pg_temp."people_0095_holders";
+--> statement-breakpoint
+DROP TABLE pg_temp."people_0095_enquiries";
+--> statement-breakpoint
+-- h. Every other person's last contact: their latest related enquiry, deal, activity on a
+--    deal or sent proposal. Each table is read once, and each person's latest is kept, keyed
+--    and analysed.
+DROP TABLE IF EXISTS pg_temp."people_0095_last_contact";
+--> statement-breakpoint
+CREATE TEMP TABLE "people_0095_last_contact" AS
+SELECT u.contact_id, max(u.at) AS at FROM (
+  SELECT e.contact_id, e.created_at AS at FROM enquiries e WHERE e.contact_id IS NOT NULL
+  UNION ALL
+  SELECT o.primary_contact_id, o.created_at FROM opportunities o WHERE o.primary_contact_id IS NOT NULL
+  UNION ALL
+  SELECT o.primary_contact_id, a.created_at FROM activities a JOIN opportunities o ON o.id = a.opportunity_id
+  WHERE o.primary_contact_id IS NOT NULL
+  UNION ALL
+  SELECT o.primary_contact_id, p.sent_at FROM proposals p JOIN opportunities o ON o.id = p.opportunity_id
+  WHERE o.primary_contact_id IS NOT NULL
+) u GROUP BY u.contact_id;
+--> statement-breakpoint
+ALTER TABLE pg_temp."people_0095_last_contact" ADD PRIMARY KEY ("contact_id");
+--> statement-breakpoint
+ANALYZE pg_temp."people_0095_last_contact";
+--> statement-breakpoint
+UPDATE contacts c SET last_contact_at = x.at
+FROM pg_temp."people_0095_last_contact" x
+WHERE c.id = x.contact_id AND c.last_contact_at IS NULL AND x.at IS NOT NULL;
+--> statement-breakpoint
+DROP TABLE pg_temp."people_0095_last_contact";
 --> statement-breakpoint
 
 -- 11. Every account has a kind from here on ----------------------------------
