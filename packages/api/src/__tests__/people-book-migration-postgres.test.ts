@@ -5,7 +5,13 @@ import { SQL, is } from "drizzle-orm";
 import { PgDialect, getTableConfig, type PgColumn, type PgTable } from "drizzle-orm/pg-core";
 import { Pool, type QueryResultRow } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { normaliseEmail, normalisePhone } from "@omnitwin/types";
+import {
+  VENUE_ACCESS_ENQUIRY_TYPE,
+  VENVIEWER_PRICING_ENQUIRY_TYPE,
+  isUsablePhone,
+  normaliseEmail,
+  normalisePhone,
+} from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -174,10 +180,20 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
   const ids = {
     e1: randomUUID(), e3: randomUUID(), e4: randomUUID(), e5: randomUUID(), e6: randomUUID(), e7: randomUUID(),
     e8: randomUUID(), e9: randomUUID(), e10: randomUUID(),
+    // Not the venue's clients: an access request and a pricing lead from new
+    // emails, an access request from Iain's email, and a signed-in draft.
+    accessNew: randomUUID(), pricingNew: randomUUID(), accessIain: randomUUID(), draftNew: randomUUID(), draftIain: randomUUID(),
     acc1: randomUUID(), acc2: randomUUID(), acc3: randomUUID(), acc4: randomUUID(),
     c1: randomUUID(), c2: randomUUID(), c3: randomUUID(), c4: randomUUID(), c5: randomUUID(),
     d1: randomUUID(),
   };
+  /** Contacts whose phone the API would refuse, and one it would take. */
+  const phones = [
+    { id: randomUUID(), raw: "+44", kept: null, point: null },
+    { id: randomUUID(), raw: "TBC", kept: null, point: null },
+    { id: randomUUID(), raw: "12345", kept: null, point: null },
+    { id: randomUUID(), raw: "07700 900123", kept: "07700 900123", point: "07700900123" },
+  ] as const;
   const at = {
     e1: "2026-03-01T10:00:00.000Z", e3: "2026-03-10T10:00:00.000Z", e4: "2026-03-12T10:00:00.000Z",
     e5: "2026-03-20T10:00:00.000Z", e6: "2026-04-01T10:00:00.000Z", e7: "2026-05-01T10:00:00.000Z",
@@ -189,7 +205,7 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
   let emailWasRequired = "";
   let migration = "";
 
-  const query =async <T extends QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> =>
+  const query = async <T extends QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> =>
     (await pool.query<T>(text, values)).rows;
   const one = async <T extends QueryResultRow>(text: string, values: unknown[] = []): Promise<T> => {
     const [row] = await query<T>(text, values);
@@ -221,13 +237,14 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
 
     const enquiry = async (id: string, venue: string, createdAt: string, fields: {
       guestName?: string; guestEmail?: string; guestPhone?: string; userId?: string; name: string; email: string; fixture?: string;
+      state?: string; eventType?: string;
     }): Promise<void> => {
       await pool.query(
         `INSERT INTO enquiries (id, venue_id, space_id, user_id, guest_email, guest_phone, guest_name, state, name, email,
-           created_at, updated_at, fixture_source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'submitted', $8, $9, $10, $10, $11)`,
+           event_type, created_at, updated_at, fixture_source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13)`,
         [id, venue, room, fields.userId ?? null, fields.guestEmail ?? null, fields.guestPhone ?? null, fields.guestName ?? null,
-          fields.name, fields.email, createdAt, fields.fixture ?? null],
+          fields.state ?? "submitted", fields.name, fields.email, fields.eventType ?? null, createdAt, fields.fixture ?? null],
       );
     };
     const aileen = " Aileen.Murray@Example.TEST ";
@@ -237,9 +254,21 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     }
     await enquiry(ids.e6, venueA, at.e6, { guestName: "Kirsty Lane", guestEmail: "Kirsty@Example.test", guestPhone: "0141 496 0001", name: "Kirsty Lane", email: "Kirsty@Example.test" });
     await enquiry(ids.e7, venueA, at.e7, { guestName: "Kirsty Lane-Brown", guestEmail: "kirsty@example.test ", name: "Kirsty Lane-Brown", email: "kirsty@example.test " });
-    await enquiry(ids.e8, venueB, at.e8, { guestName: "K. Lane", guestEmail: "kirsty@example.test", name: "K. Lane", email: "kirsty@example.test" });
+    // Five digits: it normalises, but the API would refuse it as a phone.
+    await enquiry(ids.e8, venueB, at.e8, { guestName: "K. Lane", guestEmail: "kirsty@example.test", guestPhone: "12345", name: "K. Lane", email: "kirsty@example.test" });
     await enquiry(ids.e9, venueA, at.e9, { userId: euan, name: "Euan Stewart", email: "planner@example.test" });
     await enquiry(ids.e10, venueA, at.e10, { guestName: "Seed Guest", guestEmail: "seed@example.test", name: "Seed Guest", email: "seed@example.test", fixture: "demo-seed" });
+    await enquiry(ids.accessNew, venueA, at.e9, {
+      guestName: "Rhona Access", guestEmail: "access@example.test", name: "Rhona Access", email: "access@example.test", eventType: VENUE_ACCESS_ENQUIRY_TYPE,
+    });
+    await enquiry(ids.pricingNew, venueA, at.e9, {
+      guestName: "Leith Hall", guestEmail: "pricing@example.test", name: "Leith Hall", email: "pricing@example.test", eventType: VENVIEWER_PRICING_ENQUIRY_TYPE,
+    });
+    await enquiry(ids.accessIain, venueA, at.e9, {
+      guestName: "Iain Robertson", guestEmail: "iain@example.test", name: "Iain Robertson", email: "iain@example.test", eventType: VENUE_ACCESS_ENQUIRY_TYPE,
+    });
+    await enquiry(ids.draftNew, venueA, at.e9, { userId: euan, name: "Draft Planner", email: "draft@example.test", state: "draft" });
+    await enquiry(ids.draftIain, venueA, at.e9, { userId: euan, name: "Iain Robertson", email: "iain@example.test", state: "draft" });
     // The guest lead the public route keeps for Kirsty, last written by venue B's form. It is not a person.
     await pool.query(
       `INSERT INTO guest_leads (email, phone, name, first_enquiry_id, created_at, updated_at)
@@ -274,6 +303,9 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     await contact(ids.c3, { name: "Morag Shaw", email: "morag@example.test", account: ids.acc3, role: "Primary event contact", sourceEnquiry: ids.e3, createdAt: at.e3 });
     await contact(ids.c4, { name: "Morag Shaw", email: "morag@example.test", account: ids.acc4, role: "Primary event contact", sourceEnquiry: ids.e4, createdAt: at.e4 });
     await contact(ids.c5, { name: "Blank Email", email: "   ", createdAt: at.others });
+    for (const [index, entry] of phones.entries()) {
+      await contact(entry.id, { name: `Phone Case ${String(index)}`, email: `phone.case.${String(index)}@example.test`, phone: entry.raw, createdAt: at.others });
+    }
 
     await pool.query(
       `INSERT INTO opportunities (id, venue_id, client_account_id, primary_contact_id, source_enquiry_id, title, created_at, updated_at)
@@ -388,6 +420,30 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     expect(await pointsOf(ids.c5)).toEqual([]);
   });
 
+  it("keeps only a phone the API would take, as the mirror and as a point", async () => {
+    for (const entry of phones) {
+      expect((await contactRow(entry.id)).phone, entry.raw).toBe(entry.kept);
+      const phonePoints = (await pointsOf(entry.id)).filter((point) => point.kind === "phone");
+      expect(phonePoints, entry.raw).toEqual(entry.point === null ? [] : [
+        { kind: "phone", value: entry.point, display_value: entry.raw, label: "other", is_primary: true },
+      ]);
+    }
+    // What the person typed on their enquiry stays as they typed it.
+    expect(await one("SELECT guest_phone FROM enquiries WHERE id = $1", [ids.e8])).toEqual({ guest_phone: "12345" });
+  });
+
+  it("leaves out the enquiries that are not the venue's clients: access requests, pricing leads and drafts", async () => {
+    for (const id of [ids.accessNew, ids.pricingNew, ids.accessIain, ids.draftNew, ids.draftIain]) {
+      expect(await contactOf(id)).toBeNull();
+    }
+    for (const email of ["access@example.test", "pricing@example.test", "draft@example.test"]) {
+      expect(await holders(venueA, email), email).toEqual([]);
+    }
+    expect(await query("SELECT id FROM contacts WHERE name IN ('Rhona Access', 'Leith Hall', 'Draft Planner')")).toEqual([]);
+    // Iain is one live person, but his access request and his unsent draft are not a client's enquiry.
+    expect((await holders(venueA, "iain@example.test")).map((row) => row.id)).toEqual([ids.c2]);
+  });
+
   it("makes each contact a member of its account, as its primary", async () => {
     const memberships = await query<{ venue_id: string; client_account_id: string; role_label: string | null; is_primary: boolean }>(
       "SELECT venue_id, client_account_id, role_label, is_primary FROM account_memberships WHERE contact_id = $1",
@@ -473,6 +529,12 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
       expect(row, JSON.stringify(input)).toEqual({ phone: normalisePhone(input), email: normaliseEmail(input) });
     }
     for (const [raw, expected] of PHONE_CASES) expect(normalisePhone(raw)).toBe(expected);
+    // The live rule for a usable phone: it normalises, with 6 to 15 digits.
+    for (const raw of [...PHONE_CASES.map(([input]) => input), "12345", "+44 7700 900123 456789", "call me"]) {
+      const row = await one<{ usable: boolean }>("SELECT people_usable_phone($1) AS usable", [raw]);
+      expect(row.usable, raw).toBe(isUsablePhone(raw));
+    }
+    expect(await one("SELECT people_usable_phone(NULL) AS usable")).toEqual({ usable: false });
   });
 
   it("changes nothing when run again", async () => {

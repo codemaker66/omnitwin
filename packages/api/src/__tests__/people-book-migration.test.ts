@@ -3,7 +3,16 @@ import { resolve } from "node:path";
 import { getTableName } from "drizzle-orm";
 import { PgDialect, getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import { CLIENT_ACCOUNT_KINDS, CONTACT_POINT_KINDS, CONTACT_POINT_LABELS, MERGE_KINDS } from "@omnitwin/types";
+import {
+  CLIENT_ACCOUNT_KINDS,
+  CONTACT_POINT_KINDS,
+  CONTACT_POINT_LABELS,
+  MERGE_KINDS,
+  PHONE_DIGITS_MAX,
+  PHONE_DIGITS_MIN,
+  VENUE_ACCESS_ENQUIRY_TYPE,
+  VENVIEWER_PRICING_ENQUIRY_TYPE,
+} from "@omnitwin/types";
 import { accountMemberships, clientAccounts, contactKeptApart, contactPoints, contacts, recordMerges } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +60,16 @@ describe(`migration ${TAG}`, () => {
     expect(sql).toContain(`CHECK ("label" IN (${quoted(CONTACT_POINT_LABELS)}))`);
     expect(sql).toContain(`CHECK ("kind" IN (${quoted(CLIENT_ACCOUNT_KINDS)}))`);
     expect(sql).toContain(`CHECK ("kind" IN (${quoted(MERGE_KINDS)}))`);
+  });
+
+  it("leaves out the enquiries that are not the venue's clients, and keeps only phones the API would take", async () => {
+    const sql = code(await migration());
+    // The workspace gate's access request and Venviewer's own pricing lead.
+    expect(sql).toContain(`'${VENUE_ACCESS_ENQUIRY_TYPE}'`);
+    expect(sql).toContain(`'${VENVIEWER_PRICING_ENQUIRY_TYPE}'`);
+    expect(sql).toContain(`NOT IN (${quoted([VENUE_ACCESS_ENQUIRY_TYPE, VENVIEWER_PRICING_ENQUIRY_TYPE])})`);
+    // isUsablePhone's digit range.
+    expect(sql).toContain(`BETWEEN ${String(PHONE_DIGITS_MIN)} AND ${String(PHONE_DIGITS_MAX)}`);
   });
 
   it("waits at most five seconds for a lock and creates every table idempotently", async () => {

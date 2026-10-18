@@ -15,9 +15,12 @@
 --   1. Writers of client accounts, enquiries and contacts wait until it is
 --      done. The three are locked up front, in the order the API's own
 --      transactions take them, so the file never waits holding one of them.
---   2. people_trim, people_normalise_email, people_normalise_phone and
---      people_name_key: the normalisers of @omnitwin/types in SQL, for this
---      backfill only. Every live write normalises in TypeScript.
+--   2. people_trim, people_normalise_email, people_normalise_phone,
+--      people_usable_phone and people_name_key: the normalisers and the
+--      usable-phone rule of @omnitwin/types in SQL, for this backfill only.
+--      Every live write normalises in TypeScript. A phone is usable when it
+--      normalises and has 6 to 15 digits (isUsablePhone); the backfill makes
+--      no point the API would refuse.
 --   3. contacts: email becomes optional; name parts, job title, address,
 --      notes, owner, last contact, source, merge and erasure columns; the key
 --      (id, venue_id) that the new tables point at, so nothing of one venue
@@ -28,8 +31,11 @@
 --   8. contact_kept_apart, each in its person's venue.
 --   9. enquiries.contact_id: the person an enquiry came from.
 --  10. The backfill, deterministic and never by guesswork:
---      a. contacts.email and .phone lose surrounding spaces; a blank is none.
---      b. Each contact's email and phone become its primary points.
+--      a. contacts.email and .phone lose surrounding spaces; a blank email is
+--         none, and so is a phone that is not usable ("+44", "TBC", five
+--         digits), so the mirror never holds a phone with no point. The
+--         enquiries keep the phone as it was typed.
+--      b. Each contact's email and usable phone become its primary points.
 --      c. Each contact becomes the primary member of its account, in its own
 --         venue only.
 --      d. An account named after its primary contact is a household; every
@@ -38,11 +44,14 @@
 --      f. An enquirer whom no live person holds gets one person per venue and
 --         email, made from that venue's own enquiries: the latest name, email
 --         and usable phone, the first enquiry as its source and its date.
---         Seed fixtures are left out, and so is an "email" longer than the
+--         Only the venue's clients' enquiries count, in f and in g: seed
+--         fixtures, signed-in drafts never sent, the workspace gate's access
+--         requests ('venue-access') and Venviewer's own pricing leads
+--         ('venue-enquiry') are left out. So is an "email" longer than the
 --         column holds (no real address is), so nothing is cut short.
---      g. Every other enquiry links to the one live person who holds its
---         email. Where two people share it (today's duplicates), nothing is
---         linked; they are kept as two people, and no merge happens here.
+--      g. Every other client enquiry links to the one live person who holds
+--         its email. Where two people share it (today's duplicates), nothing
+--         is linked; they are kept as two people, and no merge happens here.
 --      h. Each person's last contact: their latest enquiry, deal, activity
 --         on a deal, or sent proposal.
 --  11. client_accounts.kind defaults to 'household' and is required.
@@ -110,6 +119,12 @@ BEGIN
   RETURN CASE WHEN left(national, 1) = '0' THEN national ELSE '0' || national END;
 END
 $$;
+--> statement-breakpoint
+-- isUsablePhone in @omnitwin/types: it normalises, and its digits (a leading
+-- "+" not counted) number PHONE_DIGITS_MIN to PHONE_DIGITS_MAX.
+CREATE OR REPLACE FUNCTION people_usable_phone(raw text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE
+  AS $$ SELECT coalesce(length(regexp_replace(people_normalise_phone(raw), '[^0-9]', '', 'g')) BETWEEN 6 AND 15, false) $$;
 --> statement-breakpoint
 
 -- 3. contacts ----------------------------------------------------------------
@@ -308,9 +323,11 @@ CREATE INDEX IF NOT EXISTS "enquiries_contact_idx" ON "enquiries" ("contact_id")
 --> statement-breakpoint
 
 -- 10. The backfill -----------------------------------------------------------
--- a. Trim the mirrors; a blank becomes none.
-UPDATE contacts SET email = NULLIF(people_trim(email), ''), phone = NULLIF(people_trim(phone), '')
-WHERE email IS DISTINCT FROM NULLIF(people_trim(email), '') OR phone IS DISTINCT FROM NULLIF(people_trim(phone), '');
+-- a. Trim the mirrors; a blank email becomes none, and so does a phone that is not usable.
+UPDATE contacts SET email = NULLIF(people_trim(email), ''),
+  phone = CASE WHEN people_usable_phone(phone) THEN people_trim(phone) END
+WHERE email IS DISTINCT FROM NULLIF(people_trim(email), '')
+   OR phone IS DISTINCT FROM CASE WHEN people_usable_phone(phone) THEN people_trim(phone) END;
 --> statement-breakpoint
 -- b. Points from each contact's email and phone, primary.
 INSERT INTO contact_points (venue_id, contact_id, kind, value, display_value, label, is_primary)
@@ -321,7 +338,7 @@ ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 INSERT INTO contact_points (venue_id, contact_id, kind, value, display_value, label, is_primary)
 SELECT c.venue_id, c.id, 'phone', people_normalise_phone(c.phone), c.phone, 'other', true FROM contacts c
-WHERE people_normalise_phone(c.phone) IS NOT NULL
+WHERE people_usable_phone(c.phone)
   AND NOT EXISTS (SELECT 1 FROM contact_points p WHERE p.contact_id = c.id AND p.kind = 'phone')
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
@@ -344,8 +361,11 @@ FROM (SELECT DISTINCT ON (source_enquiry_id) id, source_enquiry_id, venue_id FRO
       WHERE source_enquiry_id IS NOT NULL AND deleted_at IS NULL ORDER BY source_enquiry_id, created_at, id) c
 WHERE e.id = c.source_enquiry_id AND e.venue_id = c.venue_id AND e.contact_id IS NULL;
 --> statement-breakpoint
--- f. One person per venue and normalised email for enquirers no live contact holds; seeds excluded.
---    An email or phone longer than its contacts column is left out rather than cut short.
+-- f. One person per venue and normalised email for enquirers no live contact holds. Left out,
+--    here and in g: seeds, signed-in drafts never sent, the workspace gate's access requests
+--    and Venviewer's own pricing leads, none of them the venue's client. Only a usable phone
+--    is taken, and an email or phone longer than its contacts column is left out rather than
+--    cut short.
 DROP TABLE IF EXISTS pg_temp."people_0095_enquirers";
 --> statement-breakpoint
 CREATE TEMP TABLE "people_0095_enquirers" AS
@@ -356,12 +376,13 @@ SELECT gen_random_uuid() AS contact_id, g.* FROM (
     (array_agg(coalesce(NULLIF(people_trim(e.guest_name), ''), NULLIF(people_trim(e.name), ''), people_trim(coalesce(e.guest_email, e.email)))
        ORDER BY e.created_at DESC, e.id DESC))[1] AS name,
     (array_agg(people_trim(e.guest_phone) ORDER BY e.created_at DESC, e.id DESC)
-       FILTER (WHERE people_normalise_phone(e.guest_phone) IS NOT NULL AND length(people_trim(e.guest_phone)) <= 50))[1] AS phone_display,
+       FILTER (WHERE people_usable_phone(e.guest_phone) AND length(people_trim(e.guest_phone)) <= 50))[1] AS phone_display,
     (array_agg(e.id ORDER BY e.created_at, e.id))[1] AS first_enquiry_id,
     min(e.created_at) AS first_at
   FROM enquiries e
   WHERE e.contact_id IS NULL AND e.fixture_source IS NULL AND people_normalise_email(coalesce(e.guest_email, e.email)) IS NOT NULL
     AND length(people_normalise_email(coalesce(e.guest_email, e.email))) <= 255
+    AND e.state <> 'draft' AND (e.event_type IS NULL OR e.event_type NOT IN ('venue-access', 'venue-enquiry'))
   GROUP BY e.venue_id, people_normalise_email(coalesce(e.guest_email, e.email))
 ) g
 WHERE NOT EXISTS (SELECT 1 FROM contact_points p JOIN contacts c ON c.id = p.contact_id
@@ -384,13 +405,15 @@ WHERE phone_display IS NOT NULL;
 --> statement-breakpoint
 DROP TABLE pg_temp."people_0095_enquirers";
 --> statement-breakpoint
--- g. Every still-unlinked, non-seed enquiry whose email exactly one live person holds.
+-- g. Every still-unlinked client enquiry (as in f: no seed, draft, access request or
+--    pricing lead) whose email exactly one live person holds.
 UPDATE enquiries e SET contact_id = m.contact_id
 FROM (SELECT p.venue_id, p.value, (array_agg(DISTINCT p.contact_id))[1] AS contact_id
       FROM contact_points p JOIN contacts c ON c.id = p.contact_id
         AND c.deleted_at IS NULL AND c.merged_into_id IS NULL AND c.erased_at IS NULL
       WHERE p.kind = 'email' GROUP BY p.venue_id, p.value HAVING count(DISTINCT p.contact_id) = 1) m
 WHERE e.contact_id IS NULL AND e.fixture_source IS NULL AND e.venue_id = m.venue_id
+  AND e.state <> 'draft' AND (e.event_type IS NULL OR e.event_type NOT IN ('venue-access', 'venue-enquiry'))
   AND people_normalise_email(coalesce(e.guest_email, e.email)) = m.value;
 --> statement-breakpoint
 -- h. Last contact: the latest related enquiry, deal, activity or sent proposal.
