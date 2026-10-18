@@ -42,19 +42,19 @@ beforeEach(() => {
 
 describe("lighting rig actions", () => {
   it("setCount logs the change with the previous value in the inverse", () => {
-    useLightingRigStore.getState().setCount("par", 18); // default is 12
+    useLightingRigStore.getState().setCount("par", 18); // the rig opens empty
 
     expect(loggedIntents()).toEqual(["lighting.rig.set-count"]);
     const action = lastAction();
     expect(ActionSchema.safeParse(action).success).toBe(true);
     expect(action.provenance).toEqual({ surface: "planner", tool: "lighting-rig" });
-    expect(action.payload).toEqual({ family: "par", count: 18, previous: 12 });
-    expect(action.inverse).toEqual({ family: "par", count: 12 });
+    expect(action.payload).toEqual({ family: "par", count: 18, previous: 0 });
+    expect(action.inverse).toEqual({ family: "par", count: 0 });
   });
 
   it("setCount to the same value stays silent (state still settles)", () => {
-    useLightingRigStore.getState().setCount("par", 12);
-    expect(useLightingRigStore.getState().counts.par).toBe(12);
+    useLightingRigStore.getState().setCount("par", 0);
+    expect(useLightingRigStore.getState().counts.par).toBe(0);
     expect(loggedIntents()).toEqual([]);
   });
 
@@ -121,7 +121,7 @@ describe("lighting rig actions", () => {
 
   it("reset logs the whole previous rig in the inverse; reset at pristine default stays silent", () => {
     useLightingRigStore.getState().reset();
-    expect(loggedIntents()).toEqual([]); // already at the starter rig
+    expect(loggedIntents()).toEqual([]); // already at the empty default
 
     useLightingRigStore.getState().setCount("wash", 9);
     useLightingRigStore.getState().addImportedFixture(SPEC, 1);
@@ -134,19 +134,24 @@ describe("lighting rig actions", () => {
     };
     expect(inverse.counts.wash).toBe(9);
     expect(inverse.imported).toHaveLength(1);
-    expect(useLightingRigStore.getState().counts.wash).toBe(4); // behaviour unchanged
+    expect(useLightingRigStore.getState().counts.wash).toBe(0); // back to the empty rig
+    expect(lastAction().payload).toEqual({ to: "empty" });
   });
 
   it("clear logs the whole previous rig in the inverse; clearing an empty rig stays silent", () => {
     useLightingRigStore.getState().clear();
-    expect(loggedIntents().at(-1)).toBe("lighting.rig.clear"); // starter rig had fixtures
+    expect(loggedIntents()).toEqual([]); // the rig opens empty: nothing to clear
 
-    useLightingRigStore.getState().clear(); // now genuinely empty
+    useLightingRigStore.getState().setCount("par", 12);
+    useLightingRigStore.getState().clear();
+    expect(loggedIntents().at(-1)).toBe("lighting.rig.clear");
+
+    useLightingRigStore.getState().clear(); // now genuinely empty again
     expect(loggedIntents().filter((i) => i === "lighting.rig.clear")).toHaveLength(1);
 
     const inverse = useActionLogStore.getState().entries.at(-1)?.inverse as {
       counts: { par: number };
     };
-    expect(inverse.counts.par).toBe(12); // the starter rig comes back on revert
+    expect(inverse.counts.par).toBe(12); // the cleared rig comes back on revert
   });
 });

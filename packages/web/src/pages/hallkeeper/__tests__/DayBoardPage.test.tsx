@@ -32,6 +32,12 @@ vi.mock("../../../api/hallkeeper-summary.js", () => ({
   getSheetSummary: getSummaryMock,
 }));
 
+const settingsMock = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock("../../../api/operating-settings.js", () => ({
+  getOperatingSettings: () => settingsMock.get() as Promise<unknown>,
+  updateOperatingSettings: () => Promise.reject(new Error("not in this test")),
+}));
+
 vi.mock("../../../api/diary.js", () => ({
   getCalendar: getCalendarMock,
 }));
@@ -236,6 +242,8 @@ beforeEach(() => {
   getVenueMock.mockReset();
   getVenueMock.mockResolvedValue({ id: "venue-1", name: "Trades Hall" });
   getCalendarMock.mockReset();
+  settingsMock.get.mockReset();
+  settingsMock.get.mockResolvedValue(null);
   seen.list.mockReset();
   seen.list.mockResolvedValue([]);
   seen.record.mockReset();
@@ -1251,5 +1259,62 @@ describe("DayBoardPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Chamber dinner")).toBeTruthy();
     });
+  });
+
+  it("between midnight and the boundary hour the board shows the venue's day to its end, and the new calendar day can still be opened (goal 19 S8)", async () => {
+    // 00:30 London on Wed 21 Jan 2026; the venue's day ends at 04:00.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], now: Date.parse("2026-01-21T00:30:00.000Z") });
+    settingsMock.get.mockResolvedValue({ dayBoundaryHour: 4 });
+    const lateBar = { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b2", title: "Late bar", startsAt: "2026-01-21T00:15:00.000Z", endsAt: "2026-01-21T02:00:00.000Z" };
+    getCalendarMock.mockImplementation((_venueId, from, to) =>
+      Promise.resolve(calendarFixture([lateBar].filter((entry) => entry.endsAt > from && entry.startsAt < to))));
+    try {
+      renderBoard();
+      const settle = async (): Promise<void> => { for (let round = 0; round < 8; round += 1) await act(async () => { await Promise.resolve(); }); };
+      await settle();
+      // Yesterday's board, read to this morning's boundary, with the bar on it.
+      expect(screen.getByText(/^Tue 20 Jan/u)).toBeTruthy();
+      expect(getCalendarMock.mock.calls.some(([, from, to]) => from === "2026-01-20T00:00:00.000Z" && to === "2026-01-21T04:00:00.000Z")).toBe(true);
+      expect(screen.getByText("Late bar")).toBeTruthy();
+      // The calendar day that has just begun is one step ahead, not the day on screen.
+      fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+      await settle();
+      expect(screen.getByText(/^Wed 21 Jan/u)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // When the display dies, the day prints (goal 19 S8).
+  it("the paper register offers Print today, which prints the board", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    const print = vi.fn();
+    Object.defineProperty(window, "print", { value: print, configurable: true, writable: true });
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: "Print today" }));
+    expect(print).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Printed from the Day Board; the screen is the record\./u)).toBeTruthy();
+  });
+
+  it("the wall register offers no print", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    render(
+      <MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}>
+        <DayBoardPage />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Chamber dinner");
+    expect(screen.queryByRole("button", { name: "Print today" })).toBeNull();
+    // The wall's landmark keeps its name and the shell draws nothing round it.
+    expect(screen.getByRole("main", { name: "The Day Board, wall display" })).toBeTruthy();
+    expect(document.querySelector("header.dashboard-layout-header")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Diary" })).toBeNull();
+  });
+
+  it("the paper register's landmark is still named for the staff shell's header", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    expect(screen.getByRole("main", { name: "The Day Board" })).toBeTruthy();
   });
 });

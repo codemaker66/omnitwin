@@ -655,6 +655,10 @@ export const configurationSheetSnapshots = pgTable("configuration_sheet_snapshot
     .default(REAL_METRE_COORDINATE_SPACE)
     .notNull(),
   diagramUrl: text("diagram_url"),
+  /** Retired: inserted as null, never set to a URL and never served. Sheet
+   *  PDFs can carry health notes and are served only by the signed-in
+   *  /hallkeeper/:configId/sheet route. The nullable column stays so this
+   *  change needs no migration; legacy values in it are ignored. */
   pdfUrl: text("pdf_url"),
   sourceHash: varchar("source_hash", { length: 64 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -665,6 +669,42 @@ export const configurationSheetSnapshots = pgTable("configuration_sheet_snapshot
   unique("config_sheet_snapshot_version_unique").on(table.configurationId, table.version),
   index("config_sheet_snapshots_config_idx").on(table.configurationId),
   index("config_sheet_snapshots_source_hash_idx").on(table.configurationId, table.sourceHash),
+]);
+
+// ---------------------------------------------------------------------------
+// 5e. remembered_dietary_notes — "ask once, then remember" (migration 0094)
+//
+// A client who ticks "Remember these for our next event?" beside a layout's
+// allergy note keeps that note with their own account, one per venue, and
+// their next layout there is filled in from it. Each row is also the consent
+// record: who (user_id), when (consented_at) and the exact words beside the
+// box (consent_wording). Removing the note — by the client, by the unused
+// period, or because the wording changed and the client agreed again —
+// clears the note and keeps the record, so the venue can show what was
+// agreed and when it ended without still holding the health information.
+// Only the owner reads or removes it (routes/dietary-memory.ts).
+// ---------------------------------------------------------------------------
+
+export const rememberedDietaryNotes = pgTable("remembered_dietary_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  /** The note, exactly as the layout carried it. Null once removed. */
+  note: text("note"),
+  consentWording: text("consent_wording").notNull(),
+  consentedAt: timestamp("consented_at", { withTimezone: true }).defaultNow().notNull(),
+  /** The layout the note was last saved from. */
+  sourceConfigurationId: uuid("source_configuration_id").references(() => configurations.id, { onDelete: "set null" }),
+  /** When the note was last saved with a layout: the unused period runs from here. */
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+  removedBy: varchar("removed_by", { length: 20 }),
+}, (table) => [
+  uniqueIndex("remembered_dietary_notes_one_per_venue").on(table.userId, table.venueId).where(sql`${table.removedAt} IS NULL`),
+  index("remembered_dietary_notes_source_configuration_idx").on(table.sourceConfigurationId),
+  check("remembered_dietary_notes_note_length", sql`${table.note} IS NULL OR char_length(${table.note}) BETWEEN 1 AND 1000`),
+  check("remembered_dietary_notes_removal", sql`(${table.removedAt} IS NULL AND ${table.note} IS NOT NULL AND ${table.removedBy} IS NULL)
+    OR (${table.removedAt} IS NOT NULL AND ${table.note} IS NULL AND ${table.removedBy} IN ('client', 'retention', 'reworded'))`),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -6183,4 +6223,36 @@ export const aiUsageReservations = pgTable("ai_usage_reservations", {
   index("ai_usage_reservations_venue_expires_idx").on(table.venueId, table.expiresAt),
   check("ai_usage_reservations_amount", sql`${table.reservedMicroUsd} > 0`),
   check("ai_usage_reservations_window", sql`${table.expiresAt} > ${table.createdAt}`),
+]);
+
+// ---------------------------------------------------------------------------
+// The forward book on the Diary, room by room (migration 0093, provisional
+// number). Blake, 17 October 2026: "hide date status until checked". The
+// public MCP and any public web surface show a room's dates only while a
+// record stands that its whole forward book is on the Diary. A venue admin
+// or manager records it (who, when, an optional note) or clears it; a
+// cleared record stays, with who cleared it and when. One standing record
+// per room; the room belongs to the record's venue (composite key).
+// ---------------------------------------------------------------------------
+
+export const forwardBookChecks = pgTable("forward_book_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  recordedBy: uuid("recorded_by").references(() => users.id, { onDelete: "set null" }),
+  /** The recorder's name as it was when they recorded it. */
+  recordedByName: varchar("recorded_by_name", { length: 200 }).notNull(),
+  note: text("note"),
+  clearedAt: timestamp("cleared_at", { withTimezone: true }),
+  clearedBy: uuid("cleared_by").references(() => users.id, { onDelete: "set null" }),
+  clearedByName: varchar("cleared_by_name", { length: 200 }),
+}, (table) => [
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "forward_book_checks_space_venue_fk" }),
+  check("forward_book_checks_recorded_by_name_shape", sql`btrim(${table.recordedByName}) <> ''`),
+  check("forward_book_checks_note_shape", sql`${table.note} IS NULL OR (${table.note} = btrim(${table.note}) AND char_length(${table.note}) BETWEEN 1 AND 500)`),
+  check("forward_book_checks_cleared_pair", sql`(${table.clearedAt} IS NULL) = (${table.clearedByName} IS NULL)`),
+  check("forward_book_checks_cleared_after_recorded", sql`${table.clearedAt} IS NULL OR ${table.clearedAt} >= ${table.recordedAt}`),
+  uniqueIndex("forward_book_checks_one_standing").on(table.spaceId).where(sql`${table.clearedAt} IS NULL`),
+  index("forward_book_checks_venue_recorded_idx").on(table.venueId, table.recordedAt),
 ]);

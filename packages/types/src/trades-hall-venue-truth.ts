@@ -129,12 +129,48 @@ export const TRADES_HALL_WEDDING_PRICING = {
   seasons: readonly WeddingSeason[];
 };
 
+/** Who stated a set of venue figures, what kind of statement it is, and on
+ *  which day, as data rather than a sentence, so a surface can label a figure
+ *  "Published guide · Trades Hall · 9 Jul 2026" without parsing prose. */
+export interface VenueTruthStatement {
+  /** What the figures are, in plain words: "Published guide". */
+  readonly kind: string;
+  /** Who stated them. */
+  readonly statedBy: string;
+  /** The day they were stated, ISO 8601 (YYYY-MM-DD). */
+  readonly statedOn: string;
+}
+
+/** The statements behind the figures in this module. VENUE_TRUTH_PROVENANCE
+ *  is written from these, so a short label and the sentence cannot disagree. */
+export const VENUE_TRUTH_STATEMENTS = {
+  capacities: { kind: "Published guide", statedBy: "Trades Hall", statedOn: "2026-07-09" },
+  pricing: { kind: "Published rates", statedBy: "Trades Hall", statedOn: "2026-07-09" },
+} as const satisfies Readonly<Record<"capacities" | "pricing", VenueTruthStatement>>;
+
+const statementDay = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** "Published guide · Trades Hall · 9 Jul 2026": who stated a figure and when,
+ *  in plain words. A malformed date is shown as written rather than guessed. */
+export function venueTruthStatementLabel(statement: VenueTruthStatement): string {
+  const ms = /^\d{4}-\d{2}-\d{2}$/.test(statement.statedOn)
+    ? Date.parse(`${statement.statedOn}T00:00:00Z`)
+    : Number.NaN;
+  const day = Number.isFinite(ms) ? statementDay.format(ms) : statement.statedOn;
+  return `${statement.kind} · ${statement.statedBy} · ${day}`;
+}
+
 /** Where each figure came from, and when — rendered wherever the numbers are. */
 export const VENUE_TRUTH_PROVENANCE = {
   capacities:
-    "Capacity figures confirmed by the Trades Hall team, 2026-07-09 — a planning guide; final numbers depend on your layout.",
+    `Capacity figures confirmed by the ${VENUE_TRUTH_STATEMENTS.capacities.statedBy} team, ${VENUE_TRUTH_STATEMENTS.capacities.statedOn} — a planning guide; final numbers depend on your layout.`,
   pricing:
-    "Room-hire rates provided by the Trades Hall team, 2026-07-09. Catering and services are quoted separately by the events team.",
+    `Room-hire rates provided by the ${VENUE_TRUTH_STATEMENTS.pricing.statedBy} team, ${VENUE_TRUTH_STATEMENTS.pricing.statedOn}. Catering and services are quoted separately by the events team.`,
 } as const;
 
 /** A postal address in schema.org's PostalAddress vocabulary. */

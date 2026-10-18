@@ -4,9 +4,10 @@ import { create } from "zustand";
 // cost-store — the planner's editable rates for the Costs lens scenario.
 //
 // Money is integer minor units (pence). The defaults are generic EXAMPLE
-// planning rates, not Trades Hall's prices — the panel says so and every rate
-// is editable. The Costs lens multiplies these by layout-derived quantities to
-// produce a scenario estimate (never a quote).
+// planning rates, not Trades Hall's prices. Only venue staff ever see them,
+// marked as examples; clients and visitors see "Ask us for a quote" instead
+// (CostsLensPanel, redteam fix-first 3). The Costs lens multiplies these by
+// layout-derived quantities to produce a staff scenario (never a quote).
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_COST_RATES = {

@@ -53,8 +53,10 @@ check gets its browser's own offline page.
   a draft printout once a version is approved.
 - `/hallkeeper/:configId/sheet` now renders every PDF on request, so each copy
   prints its own time and the check QR. It no longer redirects to the
-  approval-time copy in R2 (`services/pdf-prerender.ts`), which cannot know when
-  it is printed. The pre-render still runs at approval and nothing reads it.
+  approval-time copy that used to be pre-rendered to R2. That pre-render was
+  removed (Oct 2026): it wrote the sheet, which can carry allergy and access
+  notes, to the public bucket with a year-long cache. No sheet PDF is stored
+  anywhere; the snapshot `pdfUrl` field is always null.
 - The paper check is added when a sheet is served and is never written into a
   frozen snapshot or its hash.
 

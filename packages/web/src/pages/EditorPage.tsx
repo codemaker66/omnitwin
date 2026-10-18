@@ -11,6 +11,7 @@ import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js
 import { EventLinkedPlannerBootstrap } from "../components/editor/EventLinkedPlannerBootstrap.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
+import { LayoutLiveLayer } from "../components/editor/LayoutLiveLayer.js";
 import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
@@ -476,6 +477,8 @@ function PlannerCommsLayer(): React.ReactElement {
   return (
     <>
       <EditorBridge />
+      {/* Live co-editing v1: presence and other people's live changes. */}
+      <LayoutLiveLayer mobile={mobile} />
       {/* T-615: the planner had no <main> and no skip link. The landmark does
           NOT go on this shell: a <main> ancestor strips the implicit
           `banner` role off the room header and `contentinfo` off the event

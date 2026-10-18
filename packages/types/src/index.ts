@@ -1524,6 +1524,11 @@ export {
   emptyDietarySummary,
   dietaryTotal,
   hasDietaryContent,
+  DIETARY_NOTE_RETENTION,
+  HEALTH_FREE_TEXT_KEYS,
+  REDACTED_HEALTH_TEXT,
+  redactHealthFreeText,
+  redactHealthFreeTextInString,
   emptyDoorSchedule,
   hasDoorScheduleContent,
   type AccessibilityRequirements,
@@ -2526,6 +2531,11 @@ export * from "./omnitwin-foundry-intake-admission.js";
 export * from "./omnitwin-foundry-phase1.js";
 export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
+// Fix-first item 8: the promoted 2nd option's notice and drafted email.
+export * from "./hold-promotion.js";
+// The forward book on the Diary, room by room: what lets the public read a
+// room's dates (Blake, 17 October 2026, "hide date status until checked").
+export * from "./forward-book.js";
 // The bind (event-spine Phase A): every hold and ink has its event, whose
 // status follows its bookings.
 export * from "./event-binding.js";
@@ -2569,3 +2579,9 @@ export * from "./venue-sky.js";
 // read by the web pages, their schema.org description and the API's public
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
+
+// Remembered allergy notes (Blake, 17 October 2026: "ask once, then
+// remember"): the opt-in wording, its period and the API shapes.
+export * from "./dietary-memory.js";
+// Live co-editing v1: presence and live ops on /ws/configurations/:configId.
+export * from "./layout-live.js";

@@ -119,11 +119,14 @@ export async function hallkeeperSheetRoutes(
   //
   // Every copy is rendered when it is asked for, because each copy prints
   // its own time ("v7, issued 16 Oct 14:02, printed 17 Oct 06:02") and a QR
-  // code carrying that time. The approval-time copy pre-rendered to R2
-  // (pdf-prerender.ts) cannot know when it will be printed, and copies made
-  // before this change carry only the sign-in link, so this route no longer
-  // redirects to it. Rendering costs a few hundred milliseconds of pdfkit
-  // per download, which a venue's handful of sheets a day affords.
+  // code carrying that time. Rendering costs a few hundred milliseconds of
+  // pdfkit per download, which a venue's handful of sheets a day affords.
+  //
+  // PRIVACY: the sheet can carry free-text allergy and access notes, which
+  // are health data. It is never stored in a bucket and this route never
+  // redirects; the bytes leave only in this signed-in response, marked
+  // `private, no-store` so no shared cache keeps a copy. A legacy
+  // `snapshot.pdfUrl` left in the database is ignored.
   server.get("/:configId/sheet", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
@@ -164,6 +167,7 @@ export async function hallkeeperSheetRoutes(
 
     void reply
       .header("Content-Type", "application/pdf")
+      .header("Cache-Control", "private, no-store")
       .header("Content-Disposition", isDownload ? `attachment; filename="${filename}"` : "inline")
       .header("Content-Length", pdfBuffer.length)
       .send(pdfBuffer);

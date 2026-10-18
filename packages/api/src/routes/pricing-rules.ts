@@ -1,12 +1,22 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { eq, and, isNotNull, isNull } from "drizzle-orm";
 import { pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAdministerVenue } from "../utils/query.js";
+import { canAdministerVenue, canWritePricing } from "../utils/query.js";
 import { calculatePrice } from "../services/price-calculator.js";
 import type { PricingRuleInput } from "../services/price-calculator.js";
+import {
+  listPricingRuleHistory,
+  pricingWriteRefusal,
+  recordPricingRuleChange,
+} from "../services/pricing-rule-audit.js";
+
+/** A write by someone outside PRICING_WRITE_ROLES. The words say who can. */
+function refusePricingWrite(reply: FastifyReply): FastifyReply {
+  return reply.status(403).send({ error: pricingWriteRefusal(), code: "FORBIDDEN" });
+}
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -126,16 +136,35 @@ export async function pricingRuleRoutes(
     return { data: rule };
   });
 
-  // POST /venues/:venueId/pricing — hallkeeper or admin
+  // GET /venues/:venueId/pricing/:id/history — who changed this price, when,
+  // and what. The venue's own administration reads it; the public does not.
+  server.get("/:id/history", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = RuleIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
+    }
+    if (!canAdministerVenue(request.user, params.data.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    // Deleted rules keep their history; another venue's rule is not found.
+    const [rule] = await db.select({ id: pricingRules.id }).from(pricingRules)
+      .where(and(eq(pricingRules.id, params.data.id), eq(pricingRules.venueId, params.data.venueId)))
+      .limit(1);
+    if (rule === undefined) {
+      return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
+    }
+    reply.header("Cache-Control", "private, no-store");
+    return { data: await listPricingRuleHistory(db, rule.id) };
+  });
+
+  // POST /venues/:venueId/pricing — PRICING_WRITE_ROLES only
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
     const params = VenueIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
     }
 
-    if (!canAdministerVenue(request.user, params.data.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
+    if (!canWritePricing(request.user, params.data.venueId)) return refusePricingWrite(reply);
 
     const parsed = CreateRuleBodyChecked.safeParse(request.body);
     if (!parsed.success) {
@@ -152,7 +181,8 @@ export async function pricingRuleRoutes(
       }
     }
 
-    const [rule] = await db.insert(pricingRules).values({
+    const rule = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(pricingRules).values({
       venueId: params.data.venueId,
       spaceId: parsed.data.spaceId ?? null,
       name: parsed.data.name,
@@ -169,33 +199,27 @@ export async function pricingRuleRoutes(
       isActive: parsed.data.isActive,
       appliesFrom: parsed.data.appliesFrom ?? null,
       appliesUntil: parsed.data.appliesUntil ?? null,
-    }).returning();
+      }).returning();
+      if (created === undefined) throw new Error("Pricing rule insert returned no row");
+      await recordPricingRuleChange(tx, { kind: "created", actorUserId: request.user.id, before: null, after: created });
+      return created;
+    });
 
     return reply.status(201).send({ data: rule });
   });
 
-  // PATCH /venues/:venueId/pricing/:id — hallkeeper or admin
+  // PATCH /venues/:venueId/pricing/:id — PRICING_WRITE_ROLES only
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = RuleIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
-    if (!canAdministerVenue(request.user, params.data.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
+    if (!canWritePricing(request.user, params.data.venueId)) return refusePricingWrite(reply);
 
     const parsed = UpdateRuleBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
-    }
-
-    // Verify rule exists AND belongs to the URL venue (prevents cross-venue updates)
-    const [existing] = await db.select().from(pricingRules)
-      .where(and(eq(pricingRules.id, params.data.id), eq(pricingRules.venueId, params.data.venueId), isNull(pricingRules.deletedAt)))
-      .limit(1);
-    if (existing === undefined) {
-      return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
     }
 
     // Verify spaceId belongs to this venue if being updated
@@ -222,48 +246,71 @@ export async function pricingRuleRoutes(
     if (parsed.data.validFrom !== undefined) updateData["validFrom"] = parsed.data.validFrom;
     if (parsed.data.validTo !== undefined) updateData["validTo"] = parsed.data.validTo;
     if (parsed.data.isActive !== undefined) updateData["isActive"] = parsed.data.isActive;
-    if (parsed.data.appliesFrom !== undefined || parsed.data.appliesUntil !== undefined) {
-      const next = {
-        appliesFrom: parsed.data.appliesFrom === undefined ? existing.appliesFrom : parsed.data.appliesFrom,
-        appliesUntil: parsed.data.appliesUntil === undefined ? existing.appliesUntil : parsed.data.appliesUntil,
-      };
-      if (!windowIsPaired(next)) {
-        return reply.status(400).send({ error: WINDOW_PAIR_MESSAGE, code: "VALIDATION_ERROR" });
+
+    // The rule is read and locked inside the write's transaction, so the
+    // record's "before" is the rule this change actually replaced.
+    const outcome = await db.transaction(async (tx) => {
+      // Verify rule exists AND belongs to the URL venue (prevents cross-venue updates)
+      const [existing] = await tx.select().from(pricingRules)
+        .where(and(eq(pricingRules.id, params.data.id), eq(pricingRules.venueId, params.data.venueId), isNull(pricingRules.deletedAt)))
+        .limit(1)
+        .for("update");
+      if (existing === undefined) return "not_found" as const;
+      if (parsed.data.appliesFrom !== undefined || parsed.data.appliesUntil !== undefined) {
+        const next = {
+          appliesFrom: parsed.data.appliesFrom === undefined ? existing.appliesFrom : parsed.data.appliesFrom,
+          appliesUntil: parsed.data.appliesUntil === undefined ? existing.appliesUntil : parsed.data.appliesUntil,
+        };
+        if (!windowIsPaired(next)) return "unpaired_window" as const;
+        updateData["appliesFrom"] = next.appliesFrom;
+        updateData["appliesUntil"] = next.appliesUntil;
       }
-      updateData["appliesFrom"] = next.appliesFrom;
-      updateData["appliesUntil"] = next.appliesUntil;
+      const [updated] = await tx.update(pricingRules)
+        .set(updateData)
+        .where(eq(pricingRules.id, existing.id))
+        .returning();
+      if (updated === undefined) throw new Error("Pricing rule update returned no row");
+      await recordPricingRuleChange(tx, { kind: "updated", actorUserId: request.user.id, before: existing, after: updated });
+      return updated;
+    });
+
+    if (outcome === "not_found") {
+      return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
     }
-
-    const [updated] = await db.update(pricingRules)
-      .set(updateData)
-      .where(eq(pricingRules.id, params.data.id))
-      .returning();
-
-    return { data: updated };
+    if (outcome === "unpaired_window") {
+      return reply.status(400).send({ error: WINDOW_PAIR_MESSAGE, code: "VALIDATION_ERROR" });
+    }
+    return { data: outcome };
   });
 
-  // DELETE /venues/:venueId/pricing/:id — hallkeeper or admin, soft delete
+  // DELETE /venues/:venueId/pricing/:id — PRICING_WRITE_ROLES only, soft delete
   server.delete("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = RuleIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
-    if (!canAdministerVenue(request.user, params.data.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
+    if (!canWritePricing(request.user, params.data.venueId)) return refusePricingWrite(reply);
 
-    // Verify rule belongs to the URL venue
-    const [existing] = await db.select().from(pricingRules)
-      .where(and(eq(pricingRules.id, params.data.id), eq(pricingRules.venueId, params.data.venueId), isNull(pricingRules.deletedAt)))
-      .limit(1);
-    if (existing === undefined) {
+    const deleted = await db.transaction(async (tx) => {
+      // Verify rule belongs to the URL venue; the update re-checks it is live.
+      const [existing] = await tx.select().from(pricingRules)
+        .where(and(eq(pricingRules.id, params.data.id), eq(pricingRules.venueId, params.data.venueId), isNull(pricingRules.deletedAt)))
+        .limit(1)
+        .for("update");
+      if (existing === undefined) return null;
+      const now = new Date();
+      const [marked] = await tx.update(pricingRules)
+        .set({ deletedAt: now, updatedAt: now, isActive: false })
+        .where(eq(pricingRules.id, existing.id))
+        .returning();
+      if (marked === undefined) throw new Error("Pricing rule delete returned no row");
+      await recordPricingRuleChange(tx, { kind: "deleted", actorUserId: request.user.id, before: existing, after: marked });
+      return marked;
+    });
+    if (deleted === null) {
       return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
     }
-
-    await db.update(pricingRules)
-      .set({ deletedAt: new Date(), updatedAt: new Date(), isActive: false })
-      .where(eq(pricingRules.id, params.data.id));
 
     return reply.status(204).send();
   });
@@ -276,24 +323,32 @@ export async function pricingRuleRoutes(
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
-    if (!canAdministerVenue(request.user, params.data.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
+    if (!canWritePricing(request.user, params.data.venueId)) return refusePricingWrite(reply);
 
     const parsed = RestoreRuleBody.safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const [restored] = await db.update(pricingRules)
-      .set({ deletedAt: null, isActive: parsed.data.isActive, updatedAt: new Date() })
-      .where(and(
-        eq(pricingRules.id, params.data.id),
-        eq(pricingRules.venueId, params.data.venueId),
-        isNotNull(pricingRules.deletedAt),
-      ))
-      .returning();
-    if (restored === undefined) {
+    const restored = await db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(pricingRules)
+        .where(and(
+          eq(pricingRules.id, params.data.id),
+          eq(pricingRules.venueId, params.data.venueId),
+          isNotNull(pricingRules.deletedAt),
+        ))
+        .limit(1)
+        .for("update");
+      if (existing === undefined) return null;
+      const [back] = await tx.update(pricingRules)
+        .set({ deletedAt: null, isActive: parsed.data.isActive, updatedAt: new Date() })
+        .where(eq(pricingRules.id, existing.id))
+        .returning();
+      if (back === undefined) throw new Error("Pricing rule restore returned no row");
+      await recordPricingRuleChange(tx, { kind: "restored", actorUserId: request.user.id, before: existing, after: back });
+      return back;
+    });
+    if (restored === null) {
       return reply.status(404).send({ error: "Deleted pricing rule not found", code: "NOT_FOUND" });
     }
 

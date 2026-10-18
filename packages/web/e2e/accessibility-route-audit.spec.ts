@@ -446,7 +446,7 @@ const routeSpecs: readonly RouteSpec[] = [
     // (T-616) rather than silently becoming the homepage.
     routeName: "public room unavailable",
     path: "/rooms/not-a-room",
-    readyText: "That link has expired or moved",
+    readyText: "There is no page at this address",
     readyRole: "heading",
     mockRoutes: mockNoRoutes,
   },

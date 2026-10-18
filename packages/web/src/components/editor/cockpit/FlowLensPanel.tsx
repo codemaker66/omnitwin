@@ -2,10 +2,13 @@ import { type ChangeEvent, type ReactElement } from "react";
 import { Waypoints } from "lucide-react";
 import { ActivityStatus } from "../../shared/Activity.js";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
+import { NotRecorded } from "./NotRecorded.js";
 import { useCockpitReplay } from "../../../hooks/use-cockpit-replay.js";
+import { usePlannerTruth } from "../../../hooks/use-planner-truth.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { buildFlowPanelModel, type FlowConflictSeverity } from "../../../lib/cockpit-flow-panel-model.js";
 import { DEFAULT_ASSUMED_GUEST_COUNT, MAX_GUEST_FLOW_AGENTS } from "../../../lib/guest-flow-layout-input.js";
+import { countLabel } from "../../../lib/count-label.js";
 
 // ---------------------------------------------------------------------------
 // FlowLensPanel — the first real lens panel (Epic 0's reference tool).
@@ -14,7 +17,9 @@ import { DEFAULT_ASSUMED_GUEST_COUNT, MAX_GUEST_FLOW_AGENTS } from "../../../lib
 // scenario controls (guest count + arrival window) that re-simulate on change,
 // then summary metrics, route conflicts, queue zones, and the assumptions trail
 // — all from the same artifact the in-scene overlays draw. Claim-safe: simulated
-// planning support only, never a measured or certified route.
+// planning support only, never a measured or certified route. With no surveyed
+// doors, the panel shows "Not recorded" and the person to ask, and no figure
+// at all (cockpit-flow-panel-model withholds them; redteam fix-first 2).
 // ---------------------------------------------------------------------------
 
 const SOURCE_BY_STATUS: Readonly<Record<string, string>> = {
@@ -29,6 +34,7 @@ const MAX_ARRIVAL_MINUTES = 600;
 
 export function FlowLensPanel(): ReactElement {
   const { artifact, status } = useCockpitReplay(true);
+  const truth = usePlannerTruth();
   const plannedGuestCount = useCockpitStore((state) => state.plannedGuestCount);
   const setPlannedGuestCount = useCockpitStore((state) => state.setPlannedGuestCount);
   const arrivalMinutes = useCockpitStore((state) => state.flowArrivalMinutes);
@@ -91,7 +97,18 @@ export function FlowLensPanel(): ReactElement {
         </label>
       </LensPanelSection>
 
-      {model !== null && (
+      {model !== null && model.doors === "not-recorded" && (
+        <LensPanelSection label="Doors">
+          <NotRecorded
+            label="Door positions"
+            detail="Without them the simulation can only place one entrance and one exit mid-wall, so it gives no density, queue or bottleneck figures."
+            ask={truth.ask("door-positions")}
+            testId="flow-doors-unrecorded"
+          />
+        </LensPanelSection>
+      )}
+
+      {model !== null && model.doors === "recorded" && (
         <>
           <LensPanelSection label="Flow summary">
             {model.summary.map((row) => (
@@ -123,7 +140,7 @@ export function FlowLensPanel(): ReactElement {
                 <div key={queue.key} className="lens-panel__row lens-panel__row--info">
                   <span className="lens-panel__row-title">{queue.label}</span>
                   <span className="lens-panel__row-meta">
-                    {queue.agents.toLocaleString("en-GB")} agents · ~{queue.waitLabel} wait
+                    {countLabel(queue.agents, "agent")} · ~{queue.waitLabel} wait
                   </span>
                 </div>
               ))}

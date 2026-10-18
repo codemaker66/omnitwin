@@ -267,7 +267,8 @@ function hydrateSnapshot(row: SnapshotRow): ConfigurationSheetSnapshot {
     version: row.version,
     payload,
     diagramUrl: row.diagramUrl,
-    pdfUrl: row.pdfUrl,
+    // Retired public copy: never served, whatever a legacy row holds.
+    pdfUrl: null,
     sourceHash: row.sourceHash,
     createdAt: toIso(row.createdAt),
     createdBy: row.createdBy,
