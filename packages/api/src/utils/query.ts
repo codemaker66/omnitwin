@@ -1,3 +1,4 @@
+import { FORWARD_BOOK_RECORD_ROLES } from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -187,6 +188,24 @@ export function canWriteInventory(
   venueId: string,
 ): boolean {
   return holdsVenueRole(user, venueId, INVENTORY_WRITE_ROLES);
+}
+
+const FORWARD_BOOK_RECORD_ROLE_SET: ReadonlySet<string> = new Set<string>(FORWARD_BOOK_RECORD_ROLES);
+
+/**
+ * Recording, or clearing, that a room's whole forward book is on the Diary:
+ * the record that lets AI assistants and the website say whether the room has
+ * bookings on a date (Blake, 17 October 2026, "hide date status until
+ * checked"). It is the venue's own word about its own book, so only the
+ * venue's admin or manager makes it. Unlike the capabilities above there is
+ * no platform-admin shortcut: a Venviewer administrator who is not that
+ * venue's admin or manager does not know its paper diary.
+ */
+export function canRecordForwardBook(
+  user: Pick<JwtUser, "role" | "venueId">,
+  venueId: string,
+): boolean {
+  return FORWARD_BOOK_RECORD_ROLE_SET.has(user.role) && user.venueId === venueId;
 }
 
 // ---------------------------------------------------------------------------

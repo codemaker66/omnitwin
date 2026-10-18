@@ -56,7 +56,12 @@ export const ConfigurationSheetSnapshotSchema = z.object({
   payload: HallkeeperSheetV2Schema,
   /** Diagram thumbnail URL captured at snapshot creation (null in tests). */
   diagramUrl: z.string().url().nullable(),
-  /** Pre-rendered PDF URL in R2, populated on approval. */
+  /**
+   * Retired: the API always sends null. Sheet PDFs can carry health notes,
+   * so they are served only by the signed-in /hallkeeper/:configId/sheet
+   * route and are never stored at a public URL. The field stays nullable on
+   * the wire so clients built before the change keep parsing.
+   */
   pdfUrl: z.string().url().nullable(),
   /**
    * sha256 hex digest of the canonicalised extraction input (sorted

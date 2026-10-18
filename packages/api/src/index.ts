@@ -25,6 +25,7 @@ import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
+import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
 import { rotaRoutes } from "./routes/rota.js";
@@ -53,6 +54,7 @@ import { windowProposalRoutes } from "./routes/window-proposals.js";
 import { roomDayRoutes } from "./routes/room-day.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { requestRoutes, venueRequestRoutes } from "./routes/requests.js";
+import { pushRoutes } from "./routes/push.js";
 import { venueObservationRoutes } from "./routes/observations.js";
 import { clientConversationRoutes, messageRoutes, threadRoutes, venueThreadRoutes } from "./routes/conversations.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
@@ -433,6 +435,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // --- Routes ---
   await server.register(venueRoutes, { db, prefix: "/venues" });
+  // Goal 19 S7: the devices that ask to be told.
+  await server.register(pushRoutes, { db, prefix: "/push" });
   // T-647: the weather over a venue: the Met Office forecast when it can be
   // served, otherwise the committed HadUK-Grid monthly normals for the venue's
   // 1 km cell (a venue in a cell with no file answers 503 SKY_UNAVAILABLE).
@@ -451,6 +455,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
   await server.register(turnaroundRuleRoutes, { db, prefix: "/venues/:venueId/turnaround-rules" });
+  // Which rooms' dates the public may read (Blake, 17 October 2026).
+  await server.register(forwardBookRoutes, { db, prefix: "/venues/:venueId/forward-book" });
   await server.register(proposalTemplateRoutes, { db, prefix: "/venues/:venueId/proposal-templates" });
   await server.register(rotaRoutes, { db, prefix: "/venues/:venueId/rota" });
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
@@ -486,7 +492,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
-  await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });
+  await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
   await server.register(publicReconstructionReleaseRoutes, {
     service: reconstructionFoundryService,
