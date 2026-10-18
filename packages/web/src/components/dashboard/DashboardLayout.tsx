@@ -49,6 +49,9 @@ interface DashboardLayoutProps {
   /** What the page adds to Find while it shows (the Diary's board). It must
    *  keep its identity across the page's renders. */
   readonly findSource?: FindSource;
+  /** "none" draws the page alone: no header, nav or account menu (the wall
+   *  display, goal 19 S8, which a passer-by in a corridor can touch). */
+  readonly chrome?: "full" | "none";
   readonly children: ReactNode;
 }
 
@@ -185,7 +188,7 @@ function anotherDialogOpen(): boolean {
   return document.querySelector('[aria-modal="true"], [role="alertdialog"]') !== null;
 }
 
-function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, findSource, children }: DashboardLayoutProps): React.ReactElement {
+function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, findSource, chrome, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -499,6 +502,14 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
   const nameInitials = user?.name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("") ?? "";
   const initials = (nameInitials.length > 0 ? nameInitials : "V").toLocaleUpperCase("en-GB");
   const roleLabel = platformRole === "admin" ? "Platform admin" : ROLE_LABELS[user?.role ?? ""] ?? "Workspace member";
+
+  if (chrome === "none") {
+    return (
+      <main className="dashboard-layout-content dashboard-layout-content--bare" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
+        <SignOutAskContext.Provider value={askBeforeSignOut}>{children}</SignOutAskContext.Provider>
+      </main>
+    );
+  }
 
   return (
     <>

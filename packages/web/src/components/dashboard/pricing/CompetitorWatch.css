@@ -7,11 +7,11 @@
    --------------------------------------------------------------------------- */
 
 /* Five counts on the plane for those who set prices. */
-.pr-stages:has(> .enq-stage:nth-child(5)) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.pdk-stages:has(> .enq-stage:nth-child(5)) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
 /* The sheet: a quiet line of what the set holds, and its two actions. */
 .cw-bar { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 18px; }
-.cw-bar .pr-basis { flex: 1 1 32ch; }
+.cw-bar .pdk-basis { flex: 1 1 32ch; }
 .cw-bar__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .cw-bar__actions .enq-button, .cw-empty__actions .enq-button { min-height: 44px; }
 .cw-empty__actions { justify-content: center; margin-top: 18px; }
@@ -31,7 +31,7 @@
 /* States, each with its word. */
 .cw-chip[data-attention="page_changed"] { background: var(--house-copper-wash); color: var(--house-copper-chip); }
 .cw-chip[data-attention="review_due"] { background: var(--house-amber-wash); color: var(--house-amber-chip); }
-.pr-panel .cw-chip[data-attention] { border: 1px solid var(--enq-forest-rule); background: transparent; color: var(--enq-forest-ink); }
+.pdk-panel .cw-chip[data-attention] { border: 1px solid var(--enq-forest-rule); background: transparent; color: var(--enq-forest-ink); }
 .cw-chip[data-freshness] { border: 1px solid var(--enq-forest-rule); background: transparent; color: var(--enq-forest-ink); }
 .cw-chip[data-freshness="current"] { border-color: var(--house-sage-lit); }
 .cw-chip[data-freshness="check_due"] { border-color: var(--house-amber-lit); }
@@ -103,7 +103,7 @@
 .cw-textarea[aria-invalid="true"] { border-color: var(--house-amber-lit); }
 .cw-stack { display: grid; gap: 6px; }
 .cw-includes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.pr-field input[type="file"] { padding: 8px; font-size: 14px; }
+.pdk-field input[type="file"] { padding: 8px; font-size: 14px; }
 
 /* The market context card beside a suggestion. */
 .cw-context__heading { margin: 0; }

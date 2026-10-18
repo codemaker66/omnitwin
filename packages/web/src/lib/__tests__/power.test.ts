@@ -33,6 +33,15 @@ describe("buildDistroPlan", () => {
     expect(plan.imbalancePercent).toBe(0); // single-phase
   });
 
+  it("says nothing about a breaker nobody recorded", () => {
+    const plan = buildDistroPlan([7000], { phaseCount: 1, perPhaseBreakerA: null });
+    expect(plan.perPhaseBreakerA).toBeNull();
+    expect(plan.warnings.some((w) => /breaker/.test(w))).toBe(false);
+    // The load arithmetic and the feeder it implies still stand.
+    expect(plan.phases[0]?.amps).toBeCloseTo(7000 / legVA, 1);
+    expect(plan.recommendedSupplyA).toBe(63);
+  });
+
   it("warns when three phases are badly unbalanced", () => {
     const plan = buildDistroPlan([1000, 100, 100]);
     expect(plan.phases.map((p) => p.watts)).toEqual([1000, 100, 100]);

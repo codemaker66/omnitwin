@@ -72,7 +72,7 @@ export function CompetitorLedger({ read, titleId, openId, busy, onRetry, onOpen,
   return (
     <>
       <div className="cw-bar">
-        <p className="pr-basis pr-basis--quiet">{watchSummary(watch.competitors)} Context only: no figure here sets or suggests a price.</p>
+        <p className="pdk-basis pdk-basis--quiet">{watchSummary(watch.competitors)} Context only: no figure here sets or suggests a price.</p>
         <div className="cw-bar__actions">
           {allowed && (
             <button type="button" className="enq-button" disabled={busy !== null} aria-busy={busy === "check"} onClick={onCheckPages}>
@@ -103,7 +103,7 @@ export function CompetitorLedger({ read, titleId, openId, busy, onRetry, onOpen,
               ].filter((part): part is string => part !== null).join(". ");
               return (
                 <li key={competitor.id}>
-                  <button type="button" className="enq-row pr-row cw-row" data-row-key={`competitor:${competitor.id}`}
+                  <button type="button" className="enq-row pdk-row cw-row" data-row-key={`competitor:${competitor.id}`}
                     aria-current={openId === competitor.id ? "true" : undefined} aria-label={`${label}.`}
                     onClick={() => { onOpen(competitor.id); }}>
                     {tile === null ? (
@@ -118,12 +118,12 @@ export function CompetitorLedger({ read, titleId, openId, busy, onRetry, onOpen,
                     <span className="enq-row__main" aria-hidden="true">
                       <span className="enq-row__title">{competitor.name}</span>
                       <span className="enq-row__meta">{competitor.reason}</span>
-                      <span className="pr-row__change">{seen ?? "No figure recorded yet"} · {reviewWords(competitor)}</span>
+                      <span className="pdk-row__change">{seen ?? "No figure recorded yet"} · {reviewWords(competitor)}</span>
                     </span>
                     <span className="enq-row__side" aria-hidden="true">
                       <span className="cw-figure">{latest === null ? "" : figureWords(latest)}</span>
                       {attention.map((entry) => (
-                        <span key={entry} className="enq-chip pr-chip cw-chip" data-attention={entry}>{ATTENTION_WORDS[entry]}</span>
+                        <span key={entry} className="enq-chip pdk-chip cw-chip" data-attention={entry}>{ATTENTION_WORDS[entry]}</span>
                       ))}
                     </span>
                   </button>

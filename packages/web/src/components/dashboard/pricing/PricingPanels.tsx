@@ -37,16 +37,16 @@ export function PanelFrame({ label, layout, onClose, children }: {
   readonly children: ReactNode;
 }): ReactElement {
   return (
-    <aside className="enq-panel pr-panel" data-register="forest" aria-label={label}>
+    <aside className="enq-panel pdk-panel" data-register="forest" aria-label={label}>
       <div className="enq-panel__body">
         <div className="enq-panel__bar">
           {layout === "single" ? (
-            <button type="button" className="enq-back pr-back" onClick={onClose}>
+            <button type="button" className="enq-back pdk-back" onClick={onClose}>
               <ArrowLeft size={16} aria-hidden="true" /> Back to the price list
             </button>
           ) : <span />}
           {layout === "wide" && (
-            <button type="button" className="enq-close pr-close" aria-label="Close" aria-keyshortcuts="Escape" onClick={onClose}>
+            <button type="button" className="enq-close pdk-close" aria-label="Close" aria-keyshortcuts="Escape" onClick={onClose}>
               <X size={16} aria-hidden="true" />
             </button>
           )}
@@ -70,7 +70,7 @@ export function DeskOverview(props: {
   readonly onAdd: () => void;
 }): ReactElement {
   return (
-    <aside className="enq-panel pr-panel" data-register="forest" aria-label="Price list overview">
+    <aside className="enq-panel pdk-panel" data-register="forest" aria-label="Price list overview">
       <div className="enq-panel__body enq-overview">
         <h2>The venue's prices</h2>
         {props.canSetPrices ? (
@@ -128,18 +128,18 @@ export function RatePanel(props: {
       <p className="enq-eyebrow">{roomName(rule.spaceId, rooms)}</p>
       <h2 className="enq-panel__name" ref={props.headingRef} tabIndex={-1}>{rule.name}</h2>
       <div className="enq-panel__status">
-        <span className="enq-chip pr-chip" data-state={retired ? "retired" : rule.isActive ? "in_use" : "paused"}>{status}</span>
+        <span className="enq-chip pdk-chip" data-state={retired ? "retired" : rule.isActive ? "in_use" : "paused"}>{status}</span>
       </div>
 
-      <dl className="enq-facts pr-facts">
+      <dl className="enq-facts pdk-facts">
         <div><dt>Price, {perWords(rule.type)}</dt><dd>{priceWords(rule)}</dd></div>
         <div><dt>Time of day</dt><dd className="enq-facts__room">{timeWords(rule)}</dd></div>
         <div><dt>Dates</dt><dd className="enq-facts__room">{datesWords(rule)}</dd></div>
       </dl>
-      {adjusted !== null && <p className="pr-quiet pr-adjusted">Adjusted on top of that price: {adjusted}.</p>}
+      {adjusted !== null && <p className="pdk-quiet pdk-adjusted">Adjusted on top of that price: {adjusted}.</p>}
 
       {canSetPrices && !retired && !confirming && (
-        <div className="enq-actions pr-panel__actions">
+        <div className="enq-actions pdk-panel__actions">
           <button type="button" className="enq-cta" onClick={props.onEdit}>Change this rate</button>
           <button type="button" className="enq-quiet" onClick={() => { setConfirming(true); }}>Retire…</button>
         </div>
@@ -177,7 +177,7 @@ export function RatePanel(props: {
       <section className="enq-section" aria-labelledby={historyId}>
         <h3 id={historyId}>Who changed it</h3>
         {rule.history.length === 0 ? (
-          <p className="pr-quiet">No change has been recorded since it was entered. Changes from now on are recorded here, with who made them and when.</p>
+          <p className="pdk-quiet">No change has been recorded since it was entered. Changes from now on are recorded here, with who made them and when.</p>
         ) : (
           <ol className="enq-timeline">
             {rule.history.map((entry) => (
@@ -230,28 +230,28 @@ export function AdvicePanel(props: {
     <PanelFrame label={`Suggestion for ${item.ruleName} on ${dayWords(item.date)}`} layout={props.layout} onClose={props.onClose}>
       <p className="enq-eyebrow">Suggestion · {dayWords(item.date)}, {leadWords(item.leadDays)}</p>
       <h2 className="enq-panel__name" ref={props.headingRef} tabIndex={-1}>{item.ruleName}</h2>
-      <p className="pr-advice__part">{item.roomName} · {item.dayPart}</p>
+      <p className="pdk-advice__part">{item.roomName} · {item.dayPart}</p>
 
       {range === null ? (
-        <p className="pr-advice__headline">Too little history to suggest a change</p>
+        <p className="pdk-advice__headline">Too little history to suggest a change</p>
       ) : (
         <>
-          <p className="pr-advice__figure">{range}</p>
-          <p className="pr-advice__headline">{adviceHeadline(item)}</p>
+          <p className="pdk-advice__figure">{range}</p>
+          <p className="pdk-advice__headline">{adviceHeadline(item)}</p>
         </>
       )}
-      <dl className="enq-facts pr-facts">
+      <dl className="enq-facts pdk-facts">
         <div><dt>Now, {perWords(item.per)}</dt><dd>{moneyWords(item.currentMinor, item.currency)}</dd></div>
         <div><dt>Records behind it</dt><dd>{item.records.toLocaleString("en-GB")}</dd></div>
       </dl>
-      {adjusted !== null && <p className="pr-quiet pr-adjusted">These figures are before the rate's adjustments ({adjusted}), which still apply.</p>}
+      {adjusted !== null && <p className="pdk-quiet pdk-adjusted">These figures are before the rate's adjustments ({adjusted}), which still apply.</p>}
 
       <section className="enq-section" aria-labelledby={reasonsId}>
         <h3 id={reasonsId}>Why</h3>
-        <ul className="pr-reasons">
+        <ul className="pdk-reasons">
           {item.reasons.map((reason) => (
             <li key={reason.text} data-direction={reason.direction}>
-              <span className="pr-reasons__mark" aria-hidden="true">{MARK[reason.direction].glyph}</span>
+              <span className="pdk-reasons__mark" aria-hidden="true">{MARK[reason.direction].glyph}</span>
               <span className="vv-sr-only">{MARK[reason.direction].words}: </span>
               <span>{reason.text}</span>
             </li>

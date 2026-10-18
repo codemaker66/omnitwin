@@ -9,6 +9,7 @@ import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useShareStore } from "../../../stores/share-store.js";
+import { usePlannerTruth } from "../../../hooks/use-planner-truth.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
 import {
   buildShareProposalDraft,
@@ -27,8 +28,9 @@ import {
 // (Epic 0 Share lens, third real lens panel).
 //
 // The preview is built LIVE from the placed layout by cockpit-share-model: an
-// honest title, room + layout summary, and a planning-grade capacity note that
-// passes the proposal claim guard by construction. "Create client share link"
+// honest title, room + layout summary, and a capacity note stating the venue's
+// published figure for the layout with who stated it and when (never floor
+// area ÷ generic spacing). "Create client share link"
 // runs the proven proposal chain (createProposal → version → send → share
 // token) so the planner gets a real, sendable /proposal-share link — the same
 // surface the dashboard uses — without leaving the cockpit. The server captures
@@ -58,6 +60,8 @@ export function ShareLensPanel(): ReactElement {
   const [phase, setPhase] = useState<SharePhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // The capacity line states the venue's published figure, never a computed one.
+  const { published, roomName } = usePlannerTruth();
 
   const draft = useMemo(
     () => buildShareProposalDraft({
@@ -66,8 +70,10 @@ export function ShareLensPanel(): ReactElement {
       roomLengthM: dimensions.length / RENDER_SCALE,
       plannedGuestCount,
       titleOverride: eventTitle,
+      roomName,
+      published,
     }),
-    [placedItems, dimensions, plannedGuestCount, eventTitle],
+    [placedItems, dimensions, plannedGuestCount, eventTitle, roomName, published],
   );
 
   const canShare = venueId !== null && configId !== null;
@@ -153,6 +159,11 @@ export function ShareLensPanel(): ReactElement {
 
       <LensPanelSection label="What the client sees">
         <p className="lens-panel__paragraph" data-testid="share-layout-summary">{draft.layoutSummary}</p>
+        {draft.seatingShortfall !== null && (
+          <p className="lens-panel__note lens-panel__note--warn" data-testid="share-seating-short">
+            {draft.seatingShortfall.next}
+          </p>
+        )}
         <p className="lens-panel__paragraph lens-panel__paragraph--muted">{draft.capacityNote}</p>
         <label className="lens-panel__field">
           <span className="lens-panel__field-label">Message to the client (optional)</span>

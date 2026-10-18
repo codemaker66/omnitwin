@@ -1,6 +1,9 @@
 import { useMemo, type ChangeEvent, type ReactElement } from "react";
 import { Users } from "lucide-react";
+import { CAPACITY_FORMATS, type LayoutStyle } from "@omnitwin/types";
+import { ActivityStatus } from "../../shared/Activity.js";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
+import { NotRecorded } from "./NotRecorded.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -11,25 +14,31 @@ import {
   seatSufficiencyLabel,
   type GuestsCapacityModel,
 } from "../../../lib/cockpit-guests-model.js";
-import { styleFitLabel, type StyleFit } from "../../../lib/room-capacity.js";
-import type { ComfortBand } from "../../../lib/layout-capacity.js";
+import {
+  GENERIC_ESTIMATE_LABEL,
+  guestsAbovePublished,
+  publishedCapacityRows,
+} from "../../../lib/planner-truth.js";
+import { usePlannerTruth, type PlannerTruth } from "../../../hooks/use-planner-truth.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { DEFAULT_PLANNER_CHAIR_SLUG, DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../../lib/furniture-defaults.js";
 import { sceneFurniturePlacements } from "../../../lib/table-dressing.js";
-import type { LayoutStyle } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
-// GuestsLensPanel — guests & seating (Epic 0, fourth real lens panel).
+// GuestsLensPanel — guests & seating.
 //
-// Answers the two questions a planner actually asks of a headcount: is there a
-// seat for every guest (placed chairs vs the guest count), and is the room
-// comfortable for them (the planning-grade capacity engine, in the seating
-// style on the floor). The guest count is the SAME cockpit-store field the
-// Flow, Costs and Share lenses read, so setting it here flows everywhere.
-// SAFE: comfort figures are planning-grade estimates, not an occupancy limit.
+// Leads with the venue's own published figure for the room, by layout, with
+// who stated it and when ("Published guide · Trades Hall · 9 Jul 2026"), and
+// marks the format the layout on the floor is read against (standing
+// reception for the planner's "cocktail"). Below it, the planner's own
+// arithmetic: is there a seat for every guest. Floor area ÷ generic spacing
+// is shown to venue staff only, labelled as an estimate, never as the room's
+// capacity, and nothing here says fits, tight or over (redteam fix-first 1).
+// The guest count is the SAME cockpit-store field the Flow, Costs and Share
+// lenses read, so setting it here flows everywhere.
 // ---------------------------------------------------------------------------
 
-type ChipTone = "ok" | "attention" | "review" | "info";
+type ChipTone = "ok" | "review" | "info";
 
 function seatChip(model: GuestsCapacityModel): { readonly tone: ChipTone; readonly label: string } {
   switch (model.seatStatus) {
@@ -40,16 +49,6 @@ function seatChip(model: GuestsCapacityModel): { readonly tone: ChipTone; readon
   }
 }
 
-function comfortChip(band: ComfortBand): { readonly tone: ChipTone; readonly label: string } {
-  switch (band) {
-    case "over-capacity": return { tone: "review", label: "Over capacity" };
-    case "tight": return { tone: "attention", label: "Tight" };
-    case "comfortable": return { tone: "ok", label: "Comfortable" };
-    case "spacious": return { tone: "ok", label: "Spacious" };
-    case "open": return { tone: "info", label: "Open floor" };
-  }
-}
-
 function seatBalanceText(model: GuestsCapacityModel): string {
   if (model.seatBalance === null) return "—";
   if (model.seatBalance === 0) return "Exact";
@@ -57,16 +56,94 @@ function seatBalanceText(model: GuestsCapacityModel): string {
   return `${String(Math.abs(model.seatBalance))} short`;
 }
 
-function meterTone(band: ComfortBand): ChipTone {
-  if (band === "over-capacity") return "review";
-  if (band === "tight") return "attention";
-  return "ok";
+function formatArea(areaM2: number): string {
+  return `${areaM2.toLocaleString("en-GB", { maximumFractionDigits: 1 })} m²`;
 }
 
-function fitTone(fit: StyleFit): ChipTone {
-  if (fit === "over") return "review";
-  if (fit === "tight") return "attention";
-  return "ok";
+/** The venue's published figures for the open room, or the honest gap. */
+function PublishedSection({ model, truth }: { readonly model: GuestsCapacityModel; readonly truth: PlannerTruth }): ReactElement {
+  const { published } = truth;
+
+  if (published.kind === "reading") {
+    return (
+      <LensPanelSection label="Published capacity">
+        <div data-testid="guests-published-reading">
+          <ActivityStatus className="lens-panel__field-hint">Reading the venue&apos;s published figures…</ActivityStatus>
+        </div>
+      </LensPanelSection>
+    );
+  }
+
+  if (published.kind === "not-published") {
+    return (
+      <LensPanelSection label="Published capacity">
+        <NotRecorded label="Published capacity" ask={truth.ask("room-capacity")} testId="guests-published-missing" />
+      </LensPanelSection>
+    );
+  }
+
+  const rows = publishedCapacityRows(published.capacity, model.publishedFormat);
+  const format = model.publishedFormat;
+  const above = guestsAbovePublished(model.guestCount, published.capacity, format);
+  const formatLabel = format === null ? null : CAPACITY_FORMATS.find((f) => f.key === format)?.label.toLowerCase() ?? null;
+  const headcountAsk = above !== null && model.guestCount !== null && format !== null && formatLabel !== null
+    ? truth.ask({ kind: "headcount", guests: model.guestCount, figure: published.capacity[format], formatLabel })
+    : null;
+
+  return (
+    <LensPanelSection label="Published capacity">
+      <ul className="lens-panel__published" data-testid="guests-published">
+        {rows.map((row) => (
+          <li
+            key={row.format}
+            className={row.onFloor ? "lens-panel__published-row is-on-floor" : "lens-panel__published-row"}
+            data-testid={`guests-published-${row.format}`}
+            aria-current={row.onFloor ? "true" : undefined}
+          >
+            <span className="lens-panel__published-format">
+              {row.label}
+              <small>{row.description}</small>
+              {row.onFloor && <span className="lens-panel__published-mark">Your layout</span>}
+            </span>
+            <span className="lens-panel__published-figure">{String(row.figure)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="lens-panel__stated" data-testid="guests-published-source">{published.source}</p>
+      {above !== null && headcountAsk !== null && (
+        <div className="lens-panel__row lens-panel__row--review" data-testid="guests-above-published">
+          <span className="lens-panel__row-title">{above}</span>
+          {headcountAsk.href !== null ? (
+            <a className="lens-panel__ask" href={headcountAsk.href} data-testid="guests-above-published-ask">
+              {headcountAsk.label}
+            </a>
+          ) : (
+            <span className="lens-panel__unrecorded-hint">{headcountAsk.fallback}</span>
+          )}
+        </div>
+      )}
+    </LensPanelSection>
+  );
+}
+
+/** Staff-only: floor area ÷ generic spacing, every style. Never a capacity. */
+function GenericEstimateSection({ model }: { readonly model: GuestsCapacityModel }): ReactElement | null {
+  if (model.floorAreaM2 <= 0) return null;
+  return (
+    <LensPanelSection label={GENERIC_ESTIMATE_LABEL}>
+      <p className="lens-panel__field-hint" data-testid="guests-estimates-basis">
+        {formatArea(model.floorAreaM2)} of floor divided by generic space per guest. Shown to venue staff only; not the venue&apos;s figure.
+      </p>
+      <ul className="lens-panel__estimates" data-testid="guests-estimates">
+        {model.estimates.map((row) => (
+          <li key={row.style} className="lens-panel__estimate" data-testid={`guests-estimate-${row.style}`}>
+            <span>{row.label}</span>
+            <span className="lens-panel__estimate-figure">{String(row.estimate)}</span>
+          </li>
+        ))}
+      </ul>
+    </LensPanelSection>
+  );
 }
 
 export function GuestsLensPanel(): ReactElement {
@@ -75,6 +152,7 @@ export function GuestsLensPanel(): ReactElement {
   const plannedGuestCount = useCockpitStore((state) => state.plannedGuestCount);
   const setPlannedGuestCount = useCockpitStore((state) => state.setPlannedGuestCount);
   const sceneItems = useMemo(() => sceneFurniturePlacements(placedItems), [placedItems]);
+  const truth = usePlannerTruth();
 
   const model = useMemo(
     () => buildGuestsCapacityModel({
@@ -95,8 +173,6 @@ export function GuestsLensPanel(): ReactElement {
   };
 
   const seat = seatChip(model);
-  const comfort = comfortChip(model.band);
-  const meterPct = Math.min(100, Math.max(0, model.utilizationPercent));
 
   // One-click layouts for the styles we can generate. Only offered on a blank
   // floor so it never wipes work in progress (auto-arrange replaces the layout).
@@ -120,10 +196,12 @@ export function GuestsLensPanel(): ReactElement {
     <LensPanel
       title="Guests & seating"
       icon={<Users size={18} />}
-      source="Planning"
+      source={truth.published.kind === "published" ? "Published guide" : "Planning"}
       testId="guests-lens-panel"
-      footer="Planning estimates; human review required. Not occupancy or fire limits."
+      footer="Published figures are the venue's planning guide; final numbers depend on your layout and are confirmed by the events team."
     >
+      <PublishedSection model={model} truth={truth} />
+
       <LensPanelSection label="Headcount">
         <label className="lens-panel__field lens-panel__field--inline">
           <span className="lens-panel__field-label">Expected guests</span>
@@ -151,58 +229,23 @@ export function GuestsLensPanel(): ReactElement {
         <LensPanelMetric label="Seat balance" value={seatBalanceText(model)} />
       </LensPanelSection>
 
-      <LensPanelSection label="Room comfort">
-        <div className="lens-panel__chips">
-          <span className={`lens-panel__chip lens-panel__chip--${comfort.tone}`} data-testid="guests-comfort-chip">{comfort.label}</span>
-        </div>
-        <p className="lens-panel__paragraph lens-panel__paragraph--muted">{model.bandLabel}</p>
-        <div className="lens-panel__meter" aria-hidden="true">
-          <div
-            className={`lens-panel__meter-fill lens-panel__meter-fill--${meterTone(model.band)}`}
-            style={{ transform: `scaleX(${String(meterPct / 100)})` }}
-          />
-        </div>
-        <LensPanelMetric label="Comfortable capacity" value={`${String(model.comfortableCapacity)} · ${model.styleLabel}`} />
-        <LensPanelMetric label="Using" value={`${String(model.utilizationPercent)}% of comfortable`} />
-        <LensPanelMetric label="Tight capacity" value={String(model.tightCapacity)} />
-      </LensPanelSection>
-
-      <LensPanelSection label="Room by style">
-        <p className="lens-panel__field-hint" data-testid="guests-style-summary">
-          {model.styleSummary ?? "Set a guest count to compare styles."}
-        </p>
-        {model.styles.map((s) => (
-          <div key={s.style} className="lens-panel__style-row" data-testid={`guests-style-${s.style}`}>
-            <span className="lens-panel__style-label">{s.label}</span>
-            <span className="lens-panel__style-cap">
-              {String(s.comfortable)}<small>~{String(s.tight)} tight</small>
-            </span>
-            {s.fit !== "unknown" && (
-              <span className={`lens-panel__chip lens-panel__chip--${fitTone(s.fit)}`} data-testid={`guests-style-fit-${s.style}`}>
-                {styleFitLabel(s.fit)}
-              </span>
-            )}
-          </div>
-        ))}
-      </LensPanelSection>
+      {truth.staff && <GenericEstimateSection model={model} />}
 
       <LensPanelSection label="Build this room">
         {canBuild ? (
-          <>
-            <div className="lens-panel__share-buttons">
-              {buildable.map((b) => (
-                <button
-                  key={b.style}
-                  type="button"
-                  className="lens-panel__chip-link"
-                  onClick={() => { buildRoom(b.style); }}
-                  data-testid={`guests-build-${b.style}`}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-          </>
+          <div className="lens-panel__share-buttons">
+            {buildable.map((b) => (
+              <button
+                key={b.style}
+                type="button"
+                className="lens-panel__chip-link"
+                onClick={() => { buildRoom(b.style); }}
+                data-testid={`guests-build-${b.style}`}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
         ) : (
           <p className="lens-panel__field-hint" data-testid="guests-build-blocked">Clear the floor to lay out a fresh room.</p>
         )}

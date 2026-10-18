@@ -72,10 +72,10 @@ function ContextLines({ context, per }: { readonly context: MarketContext; reado
   return (
     <>
       {context.lines.length === 0 ? (
-        <p className="pr-quiet">No current figures for {year} from the venues in the set. Figures are recorded under Competitors, with the date each was seen.</p>
+        <p className="pdk-quiet">No current figures for {year} from the venues in the set. Figures are recorded under Competitors, with the date each was seen.</p>
       ) : (
         <>
-          <p className="pr-quiet">This rate is charged {perWords(per)}. Each figure below keeps its own basis; none is converted, averaged or ranked.</p>
+          <p className="pdk-quiet">This rate is charged {perWords(per)}. Each figure below keeps its own basis; none is converted, averaged or ranked.</p>
           <ul className="cw-lines" aria-label={`Other venues' current figures for ${year}`}>
             {context.lines.map((line) => {
               const words = contextLineWords(line);

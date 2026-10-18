@@ -71,7 +71,7 @@ export function WatchOverview({ watch, busy, onStart, onAdd, onCheckPages }: {
 }): ReactElement {
   const allowed = watch.competitors.filter((competitor) => competitor.pageCheck.allowedAt !== null).length;
   return (
-    <aside className="enq-panel pr-panel" data-register="forest" aria-label="The competitor watch">
+    <aside className="enq-panel pdk-panel" data-register="forest" aria-label="The competitor watch">
       <div className="enq-panel__body enq-overview">
         <h2>The competitor watch</h2>
         <p>Other venues' own published prices, each dated and sourced, kept beside yours. Context only: nothing here sets or suggests a price.</p>
@@ -147,7 +147,7 @@ export function CompetitorPanel(props: {
       <h2 className="enq-panel__name" ref={props.headingRef} tabIndex={-1}>{competitor.name}</h2>
       {attention.length > 0 && (
         <div className="enq-panel__status">
-          {attention.map((entry) => <span key={entry} className="enq-chip pr-chip cw-chip" data-attention={entry}>{ATTENTION_WORDS[entry]}</span>)}
+          {attention.map((entry) => <span key={entry} className="enq-chip pdk-chip cw-chip" data-attention={entry}>{ATTENTION_WORDS[entry]}</span>)}
         </div>
       )}
 
@@ -174,7 +174,7 @@ export function CompetitorPanel(props: {
 
       {!removing ? (
         <>
-          <div className="enq-actions pr-panel__actions">
+          <div className="enq-actions pdk-panel__actions">
             <button type="button" className="enq-cta" disabled={busy !== null} onClick={() => { props.onRecord(null); }}>Record a figure</button>
             <button type="button" className="enq-quiet" disabled={busy !== null} onClick={props.onChange}>Change</button>
             <button type="button" className="enq-quiet" disabled={busy !== null} aria-busy={busy === "review"} onClick={props.onReviewed}>
@@ -249,7 +249,7 @@ function CaptureItem({ capture, busy, replaced, links, onRecord, onSourceGone }:
     <li className="cw-capture">
       <div className="cw-capture__head">
         <span className="cw-capture__name">{capture.packageName}</span>
-        <span className="enq-chip pr-chip cw-chip" data-freshness={replaced ? "replaced" : capture.freshness}>{replaced ? "Replaced" : FRESHNESS_WORDS[capture.freshness]}</span>
+        <span className="enq-chip pdk-chip cw-chip" data-freshness={replaced ? "replaced" : capture.freshness}>{replaced ? "Replaced" : FRESHNESS_WORDS[capture.freshness]}</span>
       </div>
       <p className="cw-capture__figure">{figureWords(capture)}</p>
       <p className="cw-capture__terms">{yearWords(capture.priceYear)} · {VAT_WORDS[capture.vat]} · {includesWords(capture.includes, capture.includesNote)}</p>
@@ -302,7 +302,7 @@ function FiguresSection({ competitor, busy, onRecord, onSourceGone }: {
     <section className="enq-section" aria-labelledby={headingId}>
       <h3 id={headingId}>Their figures</h3>
       {standing.length === 0 ? (
-        <p className="pr-quiet">No figure recorded yet. Record one from their own page or brochure, with the date you saw it.</p>
+        <p className="pdk-quiet">No figure recorded yet. Record one from their own page or brochure, with the date you saw it.</p>
       ) : (
         <ul className="cw-captures">
           {standing.map((capture) => (
@@ -340,14 +340,14 @@ function PageCheckSection({ competitor, timeZone, busy, onAllow, onStop, onDismi
     <section className="enq-section" aria-labelledby={headingId}>
       <h3 id={headingId}>Weekly page check</h3>
       {competitor.pricePageUrl === null ? (
-        <p className="pr-quiet">No page with their prices is recorded. Add it with Change: a page on their own website.</p>
+        <p className="pdk-quiet">No page with their prices is recorded. Add it with Change: a page on their own website.</p>
       ) : check.allowedAt === null ? (
         <>
-          <p className="pr-quiet">{pageCheckWords(check, timeZone)}</p>
+          <p className="pdk-quiet">{pageCheckWords(check, timeZone)}</p>
           <fieldset className="cw-ticks">
             <legend>Before turning it on</legend>
-            <label className="pr-check"><input type="checkbox" checked={termsRead} onChange={(event) => { setTermsRead(event.target.checked); }} />I have read the site's terms, and they allow an automated check</label>
-            <label className="pr-check"><input type="checkbox" checked={robotsRead} onChange={(event) => { setRobotsRead(event.target.checked); }} />I have read its robots.txt, and it allows this page</label>
+            <label className="pdk-check"><input type="checkbox" checked={termsRead} onChange={(event) => { setTermsRead(event.target.checked); }} />I have read the site's terms, and they allow an automated check</label>
+            <label className="pdk-check"><input type="checkbox" checked={robotsRead} onChange={(event) => { setRobotsRead(event.target.checked); }} />I have read its robots.txt, and it allows this page</label>
           </fieldset>
           <p className="enq-next__hint">At most once a week the check reads this one page, names itself as Venviewer's page check, obeys robots.txt and keeps no copy of the page: only enough to tell whether its words have changed, and the date. It never reads a price. Your name and the date are recorded.</p>
           <div className="enq-actions">
@@ -372,7 +372,7 @@ function PageCheckSection({ competitor, timeZone, busy, onAllow, onStop, onDismi
               </div>
             </div>
           )}
-          <p className="pr-quiet">{pageCheckWords(check, timeZone)}</p>
+          <p className="pdk-quiet">{pageCheckWords(check, timeZone)}</p>
           <div className="enq-actions">
             <button type="button" className="enq-quiet" disabled={busy !== null} aria-busy={busy === "stop"} onClick={onStop}>
               {busy === "stop" && <ActivityIndicator size={16} />}
@@ -392,10 +392,10 @@ function LossesSection({ competitor, timeZone }: { readonly competitor: Competit
     <section className="enq-section" aria-labelledby={headingId}>
       <h3 id={headingId}>Deals lost to them</h3>
       {losses.count === 0 ? (
-        <p className="pr-quiet">No deal has been marked lost to them in the last twelve months.</p>
+        <p className="pdk-quiet">No deal has been marked lost to them in the last twelve months.</p>
       ) : (
         <>
-          <p className="pr-quiet">{losses.count === 1 ? "1 deal" : `${losses.count.toLocaleString("en-GB")} deals`} marked lost to them in the last twelve months.</p>
+          <p className="pdk-quiet">{losses.count === 1 ? "1 deal" : `${losses.count.toLocaleString("en-GB")} deals`} marked lost to them in the last twelve months.</p>
           <ol className="enq-timeline">
             {losses.recent.map((loss) => (
               <li key={`${loss.at}-${loss.dealTitle}`}>
@@ -481,42 +481,42 @@ export function CompetitorForm({ competitor, today, saving, error, headingRef, o
   };
 
   return (
-    <form className="pr-form" onSubmit={(event) => { event.preventDefault(); save(); }} noValidate>
+    <form className="pdk-form" onSubmit={(event) => { event.preventDefault(); save(); }} noValidate>
       <p className="enq-eyebrow">The competitor set</p>
       <h2 className="enq-panel__name" ref={headingRef} tabIndex={-1}>{competitor === null ? "Add a venue" : `Change ${competitor.name}`}</h2>
-      <div className="pr-fields">
-        <label className="pr-field pr-field--wide">
+      <div className="pdk-fields">
+        <label className="pdk-field pdk-field--wide">
           <span>Name</span>
           <input value={draft.name} maxLength={160} disabled={saving} onChange={(event) => { set("name", event.target.value); }} />
         </label>
-        <label className="pr-field pr-field--wide">
+        <label className="pdk-field pdk-field--wide">
           <span>Their website</span>
           <input type="url" inputMode="url" value={draft.website} placeholder="https://" maxLength={2000} disabled={saving} onChange={(event) => { set("website", event.target.value); }} />
         </label>
-        <label className="pr-field pr-field--wide">
+        <label className="pdk-field pdk-field--wide">
           <span>The page with their prices, on that website (optional)</span>
           <input type="url" inputMode="url" value={draft.pricePageUrl} placeholder="https://" maxLength={2000} disabled={saving} onChange={(event) => { set("pricePageUrl", event.target.value); }} />
         </label>
-        <fieldset className="pr-pair pr-field--wide">
+        <fieldset className="pdk-pair pdk-field--wide">
           <legend>In the set as</legend>
           {(["primary", "secondary"] as const).map((tier) => (
-            <label key={tier} className="pr-check">
+            <label key={tier} className="pdk-check">
               <input type="radio" name="cw-tier" checked={draft.tier === tier} disabled={saving} onChange={() => { set("tier", tier); }} />
               {tierWords(tier)}
             </label>
           ))}
         </fieldset>
-        <label className="pr-field pr-field--wide">
+        <label className="pdk-field pdk-field--wide">
           <span>Why it is in the set</span>
           <textarea className="cw-textarea" rows={3} value={draft.reason} maxLength={400} disabled={saving}
             aria-invalid={tried && draft.reason.trim() === "" ? "true" : undefined}
             onChange={(event) => { set("reason", event.target.value); }} />
         </label>
       </div>
-      {tried && problem !== null && <p className="pr-problem" role="alert">{problem}</p>}
+      {tried && problem !== null && <p className="pdk-problem" role="alert">{problem}</p>}
       {error !== null && <p className="enq-confirm__error" role="alert">{error}</p>}
-      <p className="enq-confirm__consequence pr-consequence">{consequence}</p>
-      <div className="enq-actions pr-form__actions">
+      <p className="enq-confirm__consequence pdk-consequence">{consequence}</p>
+      <div className="enq-actions pdk-form__actions">
         <button type="submit" className="enq-cta" disabled={saving} aria-busy={saving}>
           {saving && <ActivityIndicator size={18} />}
           {saving ? "Saving…" : competitor === null ? "Add to the set" : "Save the change"}
@@ -629,88 +629,88 @@ export function CaptureForm({ competitor, replaces, today, saving, uploadPercent
 
   const seen = /^\d{4}-\d{2}-\d{2}$/u.test(draft.seenOn) ? dateWords(draft.seenOn) : "on the date you give";
   return (
-    <form className="pr-form" onSubmit={(event) => { event.preventDefault(); save(); }} noValidate>
+    <form className="pdk-form" onSubmit={(event) => { event.preventDefault(); save(); }} noValidate>
       <p className="enq-eyebrow">{competitor.name}</p>
       <h2 className="enq-panel__name" ref={headingRef} tabIndex={-1}>{replaces === null ? "Record a figure" : "Record a newer figure"}</h2>
-      {replaces !== null && <p className="pr-quiet">For {replaces.packageName}, last seen {dateWords(replaces.seenOn)} at {figureWords(replaces)}.</p>}
-      <div className="pr-fields">
-        <fieldset className="pr-pair pr-field--wide">
+      {replaces !== null && <p className="pdk-quiet">For {replaces.packageName}, last seen {dateWords(replaces.seenOn)} at {figureWords(replaces)}.</p>}
+      <div className="pdk-fields">
+        <fieldset className="pdk-pair pdk-field--wide">
           <legend>Where you saw it</legend>
-          <label className="pr-check"><input type="radio" name="cw-kind" checked={draft.sourceKind === "own_page"} disabled={saving} onChange={() => { set("sourceKind", "own_page"); }} />Their own website</label>
-          <label className="pr-check"><input type="radio" name="cw-kind" checked={draft.sourceKind === "brochure"} disabled={saving} onChange={() => { set("sourceKind", "brochure"); }} />Their brochure</label>
+          <label className="pdk-check"><input type="radio" name="cw-kind" checked={draft.sourceKind === "own_page"} disabled={saving} onChange={() => { set("sourceKind", "own_page"); }} />Their own website</label>
+          <label className="pdk-check"><input type="radio" name="cw-kind" checked={draft.sourceKind === "brochure"} disabled={saving} onChange={() => { set("sourceKind", "brochure"); }} />Their brochure</label>
         </fieldset>
-        <label className="pr-field pr-field--wide">
+        <label className="pdk-field pdk-field--wide">
           <span>{draft.sourceKind === "own_page" ? "The page's address" : "The brochure's address"}</span>
           <input type="url" inputMode="url" value={draft.sourceUrl} placeholder="https://" maxLength={2000} disabled={saving} onChange={(event) => { set("sourceUrl", event.target.value); }} />
         </label>
-        <label className="pr-field">
+        <label className="pdk-field">
           <span>Seen on</span>
           <input type="date" value={draft.seenOn} max={today} disabled={saving} onChange={(event) => { set("seenOn", event.target.value); }} />
         </label>
-        <label className="pr-field">
+        <label className="pdk-field">
           <span>Package, as they name it</span>
           <input value={draft.packageName} maxLength={160} disabled={saving} onChange={(event) => { set("packageName", event.target.value); }} />
         </label>
-        <label className="pr-field">
+        <label className="pdk-field">
           <span>Price, £</span>
           <input inputMode="decimal" value={draft.price} disabled={saving} onChange={(event) => { set("price", event.target.value); }} />
         </label>
-        <fieldset className="pr-pair">
+        <fieldset className="pdk-pair">
           <legend>Charged</legend>
-          <label className="pr-check"><input type="radio" name="cw-basis" checked={draft.priceBasis === "per_head"} disabled={saving} onChange={() => { set("priceBasis", "per_head"); }} />A head</label>
-          <label className="pr-check"><input type="radio" name="cw-basis" checked={draft.priceBasis === "fixed"} disabled={saving} onChange={() => { set("priceBasis", "fixed"); }} />In total</label>
+          <label className="pdk-check"><input type="radio" name="cw-basis" checked={draft.priceBasis === "per_head"} disabled={saving} onChange={() => { set("priceBasis", "per_head"); }} />A head</label>
+          <label className="pdk-check"><input type="radio" name="cw-basis" checked={draft.priceBasis === "fixed"} disabled={saving} onChange={() => { set("priceBasis", "fixed"); }} />In total</label>
         </fieldset>
-        <label className="pr-field">
+        <label className="pdk-field">
           <span>{draft.priceBasis === "per_head" ? "At least how many guests (optional)" : "For how many guests (optional)"}</span>
           <input inputMode="numeric" value={draft.guests} disabled={saving} onChange={(event) => { set("guests", event.target.value); }} />
         </label>
-        <div className="pr-field">
+        <div className="pdk-field">
           <label className="cw-stack">
             <span>The year it is for</span>
             <input inputMode="numeric" value={draft.noYear ? "" : draft.priceYear} disabled={saving || draft.noYear}
               onChange={(event) => { set("priceYear", event.target.value); }} />
           </label>
-          <label className="pr-check"><input type="checkbox" checked={draft.noYear} disabled={saving} onChange={(event) => { set("noYear", event.target.checked); }} />The page gives no year</label>
+          <label className="pdk-check"><input type="checkbox" checked={draft.noYear} disabled={saving} onChange={(event) => { set("noYear", event.target.checked); }} />The page gives no year</label>
         </div>
-        <fieldset className="pr-pair pr-field--wide cw-includes">
+        <fieldset className="pdk-pair pdk-field--wide cw-includes">
           <legend>What it includes</legend>
           {CAPTURE_INCLUDES.map((entry) => (
-            <label key={entry} className="pr-check">
+            <label key={entry} className="pdk-check">
               <input type="checkbox" checked={draft.includes.includes(entry)} disabled={saving} onChange={() => { toggleInclude(entry); }} />
               {capitalised(INCLUDE_WORDS[entry])}
             </label>
           ))}
         </fieldset>
-        <label className="pr-field pr-field--wide">
+        <label className="pdk-field pdk-field--wide">
           <span>Anything else it includes (optional)</span>
           <input value={draft.includesNote} maxLength={400} disabled={saving} onChange={(event) => { set("includesNote", event.target.value); }} />
         </label>
-        <fieldset className="pr-pair pr-field--wide">
+        <fieldset className="pdk-pair pdk-field--wide">
           <legend>VAT, as the page says</legend>
           {(["included", "excluded", "not_stated"] as const).map((vat) => (
-            <label key={vat} className="pr-check">
+            <label key={vat} className="pdk-check">
               <input type="radio" name="cw-vat" checked={draft.vat === vat} disabled={saving} onChange={() => { set("vat", vat); }} />
               {capitalised(VAT_WORDS[vat])}
             </label>
           ))}
         </fieldset>
-        <label className="pr-field pr-field--wide">
+        <label className="pdk-field pdk-field--wide">
           <span>A screenshot or the brochure (optional)</span>
           <input type="file" accept={EVIDENCE_TYPES.join(",")} disabled={saving} onChange={(event) => { setFile(event.target.files?.[0] ?? null); }} />
         </label>
-        <label className="pr-field pr-field--wide">
+        <label className="pdk-field pdk-field--wide">
           <span>Note (optional)</span>
           <input value={draft.note} maxLength={1000} disabled={saving} onChange={(event) => { set("note", event.target.value); }} />
         </label>
       </div>
-      {tried && problem !== null && <p className="pr-problem" role="alert">{problem}</p>}
+      {tried && problem !== null && <p className="pdk-problem" role="alert">{problem}</p>}
       {error !== null && <p className="enq-confirm__error" role="alert">{error}</p>}
       {uploadPercent !== null && <ActivityStatus progress={uploadPercent}>Storing the screenshot…</ActivityStatus>}
-      <p className="enq-confirm__consequence pr-consequence">
+      <p className="enq-confirm__consequence pdk-consequence">
         Saving adds this figure, seen {seen}, to {competitor.name}'s record under your name. It is never edited afterwards; a newer figure replaces it.
         {replaces !== null ? ` It replaces the figure seen ${dateWords(replaces.seenOn)}.` : ""}
       </p>
-      <div className="enq-actions pr-form__actions">
+      <div className="enq-actions pdk-form__actions">
         <button type="submit" className="enq-cta" disabled={saving} aria-busy={saving}>
           {saving && <ActivityIndicator size={18} />}
           {saving ? "Saving…" : "Save the figure"}

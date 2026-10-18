@@ -473,7 +473,7 @@ export function PricingDesk(): ReactElement {
 
   if (venueId === null) {
     return (
-      <div className="enq-desk enq-desk--single pr-desk" data-register="ivory">
+      <div className="enq-desk enq-desk--single pdk-desk" data-register="ivory">
         <section className="enq-sheet" aria-labelledby={titleId}>
           <header className="enq-head"><h1 id={titleId}>Pricing</h1></header>
           <p className="enq-summary">Prices are kept for each venue, and this account is not connected to one. A Venviewer administrator can change any venue's prices from Admin.</p>
@@ -506,7 +506,7 @@ export function PricingDesk(): ReactElement {
   ];
 
   return (
-    <div className={`enq-desk pr-desk${wide ? "" : " enq-desk--single"}`} data-register="ivory" onKeyDown={onDeskKey}>
+    <div className={`enq-desk pdk-desk${wide ? "" : " enq-desk--single"}`} data-register="ivory" onKeyDown={onDeskKey}>
       {showSheet && (
         <section className="enq-sheet" aria-labelledby={titleId}>
           <header className="enq-head">
@@ -515,10 +515,10 @@ export function PricingDesk(): ReactElement {
               <span aria-hidden="true">·</span>
               <span>{greeting.greeting}</span>
             </p>
-            <div className="pr-head">
+            <div className="pdk-head">
               <h1 id={titleId}>Pricing</h1>
               {canSetPrices && (
-                <button type="button" className="enq-button pr-add" onClick={addRate} disabled={busy !== null}>Add a rate</button>
+                <button type="button" className="enq-button pdk-add" onClick={addRate} disabled={busy !== null}>Add a rate</button>
               )}
             </div>
           </header>
@@ -544,7 +544,7 @@ export function PricingDesk(): ReactElement {
           </div>
 
           {desk !== null && (
-            <div className="enq-stages pr-stages" role="group" aria-label="Show rates">
+            <div className="enq-stages pdk-stages" role="group" aria-label="Show rates">
               {stages.map((stage) => {
                 const shown = stage.count === null ? "" : stage.count.toLocaleString("en-GB");
                 return (
@@ -566,7 +566,7 @@ export function PricingDesk(): ReactElement {
           {read.status === "ready" && read.refreshing && <ActivityStatus className="enq-sheet__activity">Reading the price list again…</ActivityStatus>}
 
           {desk !== null && (
-            <div className="enq-ledger pr-ledger" ref={listRef} onKeyDown={moveFocus}>
+            <div className="enq-ledger pdk-ledger" ref={listRef} onKeyDown={moveFocus}>
               {filter === "suggestions" ? (
                 <AdviceList read={adviceRead} openKey={open?.kind === "advice" ? open.key : null}
                   onRetry={() => { setAdviceReloads((count) => count + 1); }}
@@ -596,7 +596,7 @@ export function PricingDesk(): ReactElement {
       )}
 
       {showPanel && open.kind === "form" && (
-        <aside className="enq-panel pr-panel" data-register="forest" aria-label={open.mode === "create" ? "Add a rate" : "Change a rate"}>
+        <aside className="enq-panel pdk-panel" data-register="forest" aria-label={open.mode === "create" ? "Add a rate" : "Change a rate"}>
           <div className="enq-panel__body">
             <RateForm
               key={`${open.mode}:${open.ruleId ?? "new"}:${open.adviceKey ?? ""}`}
@@ -692,7 +692,7 @@ export function PricingDesk(): ReactElement {
         />
       )}
       {showPanel && open.kind === "competitor-form" && watch !== null && (
-        <aside className="enq-panel pr-panel" data-register="forest" aria-label={open.id === null ? "Add a venue" : "Change a venue"}>
+        <aside className="enq-panel pdk-panel" data-register="forest" aria-label={open.id === null ? "Add a venue" : "Change a venue"}>
           <div className="enq-panel__body">
             <CompetitorForm
               key={open.id ?? "new"}
@@ -711,7 +711,7 @@ export function PricingDesk(): ReactElement {
         </aside>
       )}
       {showPanel && captureCompetitor !== null && open.kind === "capture-form" && watch !== null && (
-        <aside className="enq-panel pr-panel" data-register="forest" aria-label={open.replaces === null ? "Record a figure" : "Record a newer figure"}>
+        <aside className="enq-panel pdk-panel" data-register="forest" aria-label={open.replaces === null ? "Record a figure" : "Record a newer figure"}>
           <div className="enq-panel__body">
             <CaptureForm
               key={`${captureCompetitor.id}:${open.replaces?.id ?? "new"}`}
@@ -758,7 +758,7 @@ function NoticeLine({ notice, busy, onUndoRetire, onUndoDismiss, onDone }: {
   readonly onDone: () => void;
 }): ReactElement {
   return (
-    <div className="pr-notice-slot" role="status" aria-live="polite">
+    <div className="pdk-notice-slot" role="status" aria-live="polite">
       {notice !== null && (
         <div className={`enq-notice${notice.kind === "failed" ? " enq-notice--alert" : ""}`}>
           {notice.kind === "saved" && <p>Saved “{notice.name}”.</p>}
@@ -777,7 +777,7 @@ function NoticeLine({ notice, busy, onUndoRetire, onUndoDismiss, onDone }: {
             </>
           )}
           {notice.kind === "failed" && <p>{notice.text}</p>}
-          <button type="button" className="enq-button pr-notice__done" onClick={onDone}>Done</button>
+          <button type="button" className="enq-button pdk-notice__done" onClick={onDone}>Done</button>
         </div>
       )}
     </div>
@@ -825,23 +825,23 @@ function RateList({ rules, filter, rooms, timeZone, titleId, openId, onOpen }: {
               const change = lastChangeLine(rule, timeZone);
               return (
                 <li key={rule.id}>
-                  <button type="button" className="enq-row pr-row" data-row-key={`rate:${rule.id}`}
+                  <button type="button" className="enq-row pdk-row" data-row-key={`rate:${rule.id}`}
                     aria-current={openId === rule.id ? "true" : undefined}
                     aria-label={`${rule.name}, ${priceWords(rule)}, ${timeWords(rule)}, ${datesWords(rule)}. ${change}.`}
                     onClick={() => { onOpen(rule); }}>
-                    <span className={`pr-time${tile.until === null ? " pr-time--any" : ""}`} aria-hidden="true">
-                      <span className="pr-time__from">{tile.from}</span>
-                      <span className="pr-time__until">{tile.until === null ? "time" : `to ${tile.until}`}</span>
+                    <span className={`pdk-time${tile.until === null ? " pdk-time--any" : ""}`} aria-hidden="true">
+                      <span className="pdk-time__from">{tile.from}</span>
+                      <span className="pdk-time__until">{tile.until === null ? "time" : `to ${tile.until}`}</span>
                     </span>
                     <span className="enq-row__main" aria-hidden="true">
                       <span className="enq-row__title">{rule.name}</span>
                       <span className="enq-row__meta">{roomName(rule.spaceId, rooms)} · {datesWords(rule)}</span>
-                      <span className="pr-row__change">{change}</span>
+                      <span className="pdk-row__change">{change}</span>
                     </span>
                     <span className="enq-row__side" aria-hidden="true">
-                      <span className="pr-price">{priceWords(rule)}</span>
-                      {filter === "paused" && <span className="enq-chip pr-chip" data-state="paused">Not in use</span>}
-                      {filter === "retired" && <span className="enq-chip pr-chip" data-state="retired">Retired</span>}
+                      <span className="pdk-price">{priceWords(rule)}</span>
+                      {filter === "paused" && <span className="enq-chip pdk-chip" data-state="paused">Not in use</span>}
+                      {filter === "retired" && <span className="enq-chip pdk-chip" data-state="retired">Retired</span>}
                     </span>
                   </button>
                 </li>
@@ -880,8 +880,8 @@ function AdviceList({ read, openKey, onRetry, onOpen }: {
   const looked = `Looked at ${advice.checked.toLocaleString("en-GB")} room, date and time combinations from ${dayWords(advice.from)} to ${dayWords(advice.through)}: the current rate suits ${advice.rateHolds.toLocaleString("en-GB")}, and the record is too thin to judge ${advice.tooLittleHistory.toLocaleString("en-GB")}.`;
   return (
     <>
-      <p className="pr-basis">{basisWords(advice)}</p>
-      <p className="pr-basis pr-basis--quiet">
+      <p className="pdk-basis">{basisWords(advice)}</p>
+      <p className="pdk-basis pdk-basis--quiet">
         {looked}
         {advice.dismissed > 0 ? ` ${advice.dismissed.toLocaleString("en-GB")} dismissed.` : ""}
         {advice.total > advice.items.length ? ` The first ${advice.items.length.toLocaleString("en-GB")} of ${advice.total.toLocaleString("en-GB")} are listed.` : ""}
@@ -904,7 +904,7 @@ function AdviceList({ read, openKey, onRetry, onOpen }: {
               const now = `Now ${moneyWords(item.currentMinor, item.currency)}`;
               return (
                 <li key={item.key}>
-                  <button type="button" className="enq-row pr-row" data-row-key={`advice:${item.key}`}
+                  <button type="button" className="enq-row pdk-row" data-row-key={`advice:${item.key}`}
                     aria-current={openKey === item.key ? "true" : undefined}
                     aria-label={`${dayWords(item.date)}, ${item.ruleName}. ${adviceKindWords(item)}${range === null ? "" : `, ${range}`}. ${now}.`}
                     onClick={() => { onOpen(item); }}>
@@ -920,7 +920,7 @@ function AdviceList({ read, openKey, onRetry, onOpen }: {
                       <span className="enq-row__meta">{now}{range === null ? "" : ` · suggested ${range}`}</span>
                     </span>
                     <span className="enq-row__side" aria-hidden="true">
-                      <span className="enq-chip pr-chip" data-kind={item.kind}>{adviceKindWords(item)}</span>
+                      <span className="enq-chip pdk-chip" data-kind={item.kind}>{adviceKindWords(item)}</span>
                     </span>
                   </button>
                 </li>

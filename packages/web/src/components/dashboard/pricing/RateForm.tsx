@@ -103,21 +103,21 @@ export function RateForm(props: RateFormProps): ReactElement {
     : draft.type === "tiered" ? "Base price, £" : "Price, £";
 
   return (
-    <form className="pr-form" aria-labelledby={ids.title} onSubmit={submit} onKeyDown={onKeyDown} noValidate>
+    <form className="pdk-form" aria-labelledby={ids.title} onSubmit={submit} onKeyDown={onKeyDown} noValidate>
       <p className="enq-eyebrow">{props.fromAdvice ?? (mode === "create" ? "New rate" : "Change a rate")}</p>
       <h2 id={ids.title} ref={headingRef} tabIndex={-1} className="enq-panel__name">
         {mode === "create" ? "Add a rate" : props.ruleName ?? "Change this rate"}
       </h2>
 
-      <div className="pr-fields">
-        <label className="pr-field pr-field--wide">
+      <div className="pdk-fields">
+        <label className="pdk-field pdk-field--wide">
           <span>Name, as the price list shows it</span>
           <input type="text" value={draft.name} maxLength={200} autoComplete="off" disabled={saving}
             aria-invalid={problem?.field === "name"} aria-describedby={describedBy("name")}
             onChange={(event) => { set("name", event.target.value); }} />
         </label>
 
-        <label className="pr-field">
+        <label className="pdk-field">
           <span>Room</span>
           <select value={draft.spaceId} disabled={saving} onChange={(event) => { set("spaceId", event.target.value); }}>
             {rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
@@ -125,7 +125,7 @@ export function RateForm(props: RateFormProps): ReactElement {
           </select>
         </label>
 
-        <label className="pr-field">
+        <label className="pdk-field">
           <span>Charged</span>
           <select value={draft.type} disabled={saving}
             onChange={(event) => { set("type", event.target.value as RateDraft["type"]); }}>
@@ -133,7 +133,7 @@ export function RateForm(props: RateFormProps): ReactElement {
           </select>
         </label>
 
-        <label className="pr-field">
+        <label className="pdk-field">
           <span>{priceLabel}</span>
           <input type="text" inputMode="decimal" value={draft.amount} autoComplete="off" disabled={saving}
             aria-invalid={problem?.field === "amount"} aria-describedby={describedBy("amount")}
@@ -141,7 +141,7 @@ export function RateForm(props: RateFormProps): ReactElement {
         </label>
 
         {counted && (
-          <label className="pr-field">
+          <label className="pdk-field">
             <span>{draft.type === "per_head" ? "At least, guests" : "At least, hours"}</span>
             <input type="text" inputMode="numeric" value={draft.minimum} autoComplete="off" disabled={saving}
               aria-invalid={problem?.field === "minimum"} aria-describedby={describedBy("minimum")}
@@ -149,49 +149,49 @@ export function RateForm(props: RateFormProps): ReactElement {
           </label>
         )}
 
-        <fieldset className="pr-pair pr-field--wide" aria-describedby={describedBy("time", ids.time)}>
+        <fieldset className="pdk-pair pdk-field--wide" aria-describedby={describedBy("time", ids.time)}>
           <legend>Time of day</legend>
-          <label className="pr-field">
+          <label className="pdk-field">
             <span>From</span>
             <input type="text" inputMode="numeric" placeholder="19:00" value={draft.from} autoComplete="off" disabled={saving}
               aria-invalid={problem?.field === "time"} onChange={(event) => { set("from", event.target.value); }} />
           </label>
-          <label className="pr-field">
+          <label className="pdk-field">
             <span>Until</span>
             <input type="text" inputMode="numeric" placeholder="00:30" value={draft.until} autoComplete="off" disabled={saving}
               aria-invalid={problem?.field === "time"} onChange={(event) => { set("until", event.target.value); }} />
           </label>
-          <p className="pr-hint" id={ids.time}>{WINDOW_COPY.hint}</p>
+          <p className="pdk-hint" id={ids.time}>{WINDOW_COPY.hint}</p>
         </fieldset>
 
-        <fieldset className="pr-pair pr-field--wide" aria-describedby={describedBy("dates", ids.dates)}>
+        <fieldset className="pdk-pair pdk-field--wide" aria-describedby={describedBy("dates", ids.dates)}>
           <legend>Dates</legend>
-          <label className="pr-field">
+          <label className="pdk-field">
             <span>First date</span>
             <input type="date" value={draft.validFrom} disabled={saving} aria-invalid={problem?.field === "dates"}
               onChange={(event) => { readDate("validFrom", event.currentTarget); }}
               onBlur={(event) => { readDate("validFrom", event.currentTarget); }} />
           </label>
-          <label className="pr-field">
+          <label className="pdk-field">
             <span>Last date</span>
             <input type="date" value={draft.validTo} disabled={saving} aria-invalid={problem?.field === "dates"}
               onChange={(event) => { readDate("validTo", event.currentTarget); }}
               onBlur={(event) => { readDate("validTo", event.currentTarget); }} />
           </label>
-          <p className="pr-hint" id={ids.dates}>Leave both empty for every date. A rate for particular dates takes the place of the everyday rate for the same room, time and charge on those dates.</p>
+          <p className="pdk-hint" id={ids.dates}>Leave both empty for every date. A rate for particular dates takes the place of the everyday rate for the same room, time and charge on those dates.</p>
         </fieldset>
 
-        <label className="pr-check pr-field--wide">
+        <label className="pdk-check pdk-field--wide">
           <input type="checkbox" checked={draft.isActive} disabled={saving} onChange={(event) => { set("isActive", event.target.checked); }} />
           <span>Offer this rate in quotes and estimates</span>
         </label>
       </div>
 
-      {problem !== null && <p className="pr-problem" id={ids.problem}>{problem.text}</p>}
-      {unchanged && <p className="pr-problem">Nothing has changed yet.</p>}
+      {problem !== null && <p className="pdk-problem" id={ids.problem}>{problem.text}</p>}
+      {unchanged && <p className="pdk-problem">Nothing has changed yet.</p>}
 
       {consequence.length > 0 && (
-        <div className="enq-confirm pr-consequence" id={ids.consequence}>
+        <div className="enq-confirm pdk-consequence" id={ids.consequence}>
           <p className="enq-confirm__question">When you save</p>
           {consequence.map((line) => <p key={line} className="enq-confirm__consequence">{line}</p>)}
         </div>
@@ -199,7 +199,7 @@ export function RateForm(props: RateFormProps): ReactElement {
 
       {error !== null && <p className="enq-confirm__error" role="alert">{error}</p>}
 
-      <div className="enq-actions pr-form__actions">
+      <div className="enq-actions pdk-form__actions">
         <button type="submit" className="enq-cta" aria-busy={saving} aria-describedby={consequence.length > 0 ? ids.consequence : undefined}
           disabled={saving || problem !== null || unchanged}>
           {saving && <ActivityIndicator size={18} />}

@@ -28,9 +28,17 @@ const { TRADES_HALL_GUEST_FLOW_REPLAY_INPUT } = await import("../../../lib/trade
 const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
 const { CockpitSceneOverlays } = await import("../CockpitSceneOverlays.js");
 
-const REAL_ARTIFACT: GuestFlowReplayArtifact = GuestFlowReplayArtifactSchema.parse(
+// The demo input names its doors but carries no door provenance; these suites
+// exercise the markers, so the fixture records its doors as surveyed. Doors
+// placed mid-wall by assumption draw no marker (redteam fix-first 2).
+const SURVEYED_DOORS = { key: "door_positions", label: "Door positions", value: "surveyed (provided door positions)", source: "caller-provided" };
+const ASSUMED_ARTIFACT: GuestFlowReplayArtifact = GuestFlowReplayArtifactSchema.parse(
   runGuestFlowReplayV0(TRADES_HALL_GUEST_FLOW_REPLAY_INPUT),
 );
+const REAL_ARTIFACT: GuestFlowReplayArtifact = {
+  ...ASSUMED_ARTIFACT,
+  assumptions: [...ASSUMED_ARTIFACT.assumptions, SURVEYED_DOORS],
+};
 
 describe("CockpitSceneOverlays", () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -63,6 +71,22 @@ describe("CockpitSceneOverlays", () => {
     useCockpitStore.getState().setMode("evidence");
     render(<CockpitSceneOverlays />);
     expect(screen.getByText(/Heritage & wall buffer/)).toBeTruthy();
+  });
+
+  it("draws no conflict marker or density patch from doors placed mid-wall", () => {
+    replayHook.useCockpitReplay.mockReturnValue({
+      artifact: ASSUMED_ARTIFACT,
+      bounds: ASSUMED_ARTIFACT.navmesh.roomBounds,
+      status: "ready",
+    });
+    expect(ASSUMED_ARTIFACT.routeConflicts.length).toBeGreaterThan(0);
+    useCockpitStore.getState().setMode("flow");
+    const { container } = render(<CockpitSceneOverlays />);
+    expect(screen.queryAllByRole("button", { name: /Simulated/ })).toHaveLength(0);
+    expect(screen.queryByText(/attention|review required/i)).toBeNull();
+    expect(container.querySelector('[name="cockpit-density"]')).toBeNull();
+    // The routes guests would walk still show; only the figures are withheld.
+    expect(container.querySelector('[name="cockpit-flow-paths"]')).not.toBeNull();
   });
 
   it("renders overlays in the Flow lens", () => {
