@@ -5,6 +5,7 @@ import {
   users, configurations, enquiries, guestLeads,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../db/outer-column.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canManageCommercial, canManageVenue } from "../utils/query.js";
 import { contactProfile, searchClients } from "../services/client-search.js";
@@ -32,7 +33,7 @@ const enquiryClientColumns = {
   guestPhone: enquiries.guestPhone,
   guestName: enquiries.guestName,
   userId: enquiries.userId,
-  leadId: sql<string | null>`(SELECT id FROM guest_leads WHERE email = ${enquiries.guestEmail} LIMIT 1)`,
+  leadId: sql<string | null>`(SELECT gl.id FROM guest_leads gl WHERE gl.email = ${outerColumn(enquiries.guestEmail)} LIMIT 1)`,
   eventType: enquiries.eventType,
   preferredDate: enquiries.preferredDate,
   createdAt: enquiries.createdAt,
@@ -141,8 +142,8 @@ export async function clientRoutes(
     const configs = await db.select({
       id: configurations.id,
       name: configurations.name,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${configurations.spaceId})`,
-      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects WHERE configuration_id = ${configurations.id})`,
+      spaceName: sql<string>`(SELECT s.name FROM spaces s WHERE s.id = ${outerColumn(configurations.spaceId)})`,
+      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects po WHERE po.configuration_id = ${outerColumn(configurations.id)})`,
       createdAt: configurations.createdAt,
     })
       .from(configurations)
@@ -157,7 +158,7 @@ export async function clientRoutes(
       state: enquiries.state,
       eventType: enquiries.eventType,
       preferredDate: enquiries.preferredDate,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      spaceName: sql<string>`(SELECT s.name FROM spaces s WHERE s.id = ${outerColumn(enquiries.spaceId)})`,
       // False when the guest named no room: spaceName is then where the
       // enquiry is filed, not what they asked for (migration 0079).
       roomChosen: enquiries.roomChosen,
@@ -201,7 +202,7 @@ export async function clientRoutes(
         .from(guestLeads)
         .where(and(
           eq(guestLeads.id, params.data.leadId),
-          sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${leadVenueId})`,
+          sql`EXISTS (SELECT 1 FROM enquiries e WHERE e.guest_email = ${outerColumn(guestLeads.email)} AND e.venue_id = ${leadVenueId})`,
         ))
         .limit(1);
       if (hasRelation === undefined) {
@@ -227,7 +228,7 @@ export async function clientRoutes(
       state: enquiries.state,
       eventType: enquiries.eventType,
       preferredDate: enquiries.preferredDate,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      spaceName: sql<string>`(SELECT s.name FROM spaces s WHERE s.id = ${outerColumn(enquiries.spaceId)})`,
       roomChosen: enquiries.roomChosen,
       createdAt: enquiries.createdAt,
     })
