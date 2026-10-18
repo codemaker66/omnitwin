@@ -143,6 +143,20 @@ export function diaryVenueOf(user: { readonly role: string; readonly venueId: st
   return user.platformRole === "admin" || hasRole(DIARY_ROLES, user.role) ? user.venueId : null;
 }
 
+/**
+ * Who is offered the general AI draft panel (T-656): someone who works at a
+ * venue and is connected to it. `POST /ai/drafts` charges every draft to the
+ * venue of the person asking and holds it to that venue's monthly AI
+ * allowance, so it answers only the venue's floor and commercial team (a
+ * platform admin through the venue it is connected to) and refuses everyone
+ * else with 403: a planner or client is a customer, and a caterer is
+ * event-scoped. Offering them the panel would be offering a refusal.
+ */
+export function canDraftWithAI(user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null): boolean {
+  if (user === null || user.venueId === null) return false;
+  return user.platformRole === "admin" || hasRole(VENUE_MEMBER_ROLES, user.role);
+}
+
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test
 // (__tests__/rota-capabilities.test.ts), because the rota answers three ways

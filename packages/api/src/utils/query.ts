@@ -123,6 +123,9 @@ const INVENTORY_READ_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "
 /** Adjusting counted stock. Narrow on purpose: this moves real numbers. */
 const INVENTORY_WRITE_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
 
+/** Reading what the venue's AI use has cost (T-656): money, so its managers and admins. */
+const AI_USAGE_READ_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+
 function holdsVenueRole(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
@@ -177,6 +180,14 @@ export function canReadDiary(
   venueId: string,
 ): boolean {
   return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
+/** Reading the venue's AI usage and spend (T-656): its managers and admins. */
+export function canReadAIUsage(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, AI_USAGE_READ_ROLES);
 }
 
 /** Reading venue inventory levels. Never a price. */
