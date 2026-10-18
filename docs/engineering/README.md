@@ -128,6 +128,7 @@ on future experiments.
 | XGRIDS level counts/budgets | [LOD level copies](../../.claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md) |
 | V8 memory or test contention | [Windows/V8 notes](../../.claude/gotchas/windows-v8-heap.md) |
 | Zod input/output inference | [Passthrough inference](../../.claude/gotchas/zod-passthrough-inference.md) |
+| Raw SQL subqueries inside a Drizzle select | [Bare columns belong to the subquery](../../.claude/gotchas/drizzle-single-table-subquery-columns.md) |
 | Docker build arguments | [ARG scope](../../.claude/gotchas/dockerfile-arg-scope.md) |
 | Deploying the API or adding a migration | [Deploy ordering](deploy-ordering.md) |
 | Windows pycolmap/database work | [pycolmap traps](../../.claude/gotchas/pycolmap-windows-traps.md) |

@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../db/outer-column.js";
 import {
   clientAccounts,
   configurations,
@@ -97,8 +98,8 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
   // People who have a layout or an enquiry at this venue.
   const userName = sql`COALESCE(${users.displayName}, ${users.name})`;
   const venueUsers = venueId === null ? undefined : sql`(
-    EXISTS (SELECT 1 FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)
-    OR EXISTS (SELECT 1 FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})
+    EXISTS (SELECT 1 FROM configurations c WHERE c.user_id = ${outerColumn(users.id)} AND c.venue_id = ${venueId} AND c.deleted_at IS NULL)
+    OR EXISTS (SELECT 1 FROM enquiries e WHERE e.user_id = ${outerColumn(users.id)} AND e.venue_id = ${venueId})
   )`;
   const usersQuery = db.select({
     id: users.id,
@@ -107,11 +108,11 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     email: users.email,
     phone: users.phone,
     configurationCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND deleted_at IS NULL)`
-      : sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)`,
+      ? sql<number>`(SELECT count(*)::int FROM configurations c WHERE c.user_id = ${outerColumn(users.id)} AND c.deleted_at IS NULL)`
+      : sql<number>`(SELECT count(*)::int FROM configurations c WHERE c.user_id = ${outerColumn(users.id)} AND c.venue_id = ${venueId} AND c.deleted_at IS NULL)`,
     enquiryCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id})`
-      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})`,
+      ? sql<number>`(SELECT count(*)::int FROM enquiries e WHERE e.user_id = ${outerColumn(users.id)})`
+      : sql<number>`(SELECT count(*)::int FROM enquiries e WHERE e.user_id = ${outerColumn(users.id)} AND e.venue_id = ${venueId})`,
   })
     .from(users)
     .where(and(match.where(userName, users.organizationName, users.email), venueUsers))
@@ -122,15 +123,15 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
   // so a lead whose layout was later claimed is still found.
   const venueLeads = venueId === null
     ? undefined
-    : sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`;
+    : sql`EXISTS (SELECT 1 FROM enquiries e WHERE e.guest_email = ${outerColumn(guestLeads.email)} AND e.venue_id = ${venueId})`;
   const leadsQuery = db.select({
     id: guestLeads.id,
     email: guestLeads.email,
     phone: guestLeads.phone,
     name: guestLeads.name,
     enquiryCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email})`
-      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`,
+      ? sql<number>`(SELECT count(*)::int FROM enquiries e WHERE e.guest_email = ${outerColumn(guestLeads.email)})`
+      : sql<number>`(SELECT count(*)::int FROM enquiries e WHERE e.guest_email = ${outerColumn(guestLeads.email)} AND e.venue_id = ${venueId})`,
     convertedToUserId: guestLeads.convertedToUserId,
   })
     .from(guestLeads)
@@ -142,7 +143,7 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     id: configurations.id,
     name: configurations.name,
     spaceName: spaces.name,
-    userName: sql<string | null>`(SELECT name FROM users WHERE id = ${configurations.userId})`,
+    userName: sql<string | null>`(SELECT u.name FROM users u WHERE u.id = ${outerColumn(configurations.userId)})`,
     createdAt: configurations.createdAt,
   })
     .from(configurations)
