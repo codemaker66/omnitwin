@@ -459,7 +459,7 @@ const routeSpecs: readonly RouteSpec[] = [
     routeName: "public room unavailable",
     contrastTarget: "client",
     path: "/rooms/not-a-room",
-    readyText: "That link has expired or moved",
+    readyText: "There is no page at this address",
     readyRole: "heading",
     mockRoutes: mockNoRoutes,
   },

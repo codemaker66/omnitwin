@@ -115,3 +115,142 @@ the build has filled (they read `data/`), after `mkdir analysis` and
     node $SURVEY/render.mjs $SURVEY/views-elev.json out
 
 (`views-plan.json` draws the whole building from above, for orientation.)
+
+## City context and window skylines
+
+The city drawn around the hall, and the sky each window sees, come from one public source: the
+Scottish LiDAR Phase 5 50 cm digital surface model (DSM). No OpenStreetMap data and no photograph
+is used. Two outputs are published:
+
+- `packages/web/public/rooms/grand-hall/context-2020-lidar/merchant-city-v2.bin` and `.json`: an
+  architect's contour model of the Merchant City within 260 m of the hall, the DSM cut into 3 m
+  terraces of flat caps and vertical walls. `hall-context.ts` loads the `.bin` and `HallContext.tsx`
+  draws it. The `.json` records the frame, the encoding, every parameter and the counts. The
+  binary is VVCX v1: a 16-byte header (`VVCX`, then uint32 version 1, vertex count and index
+  count, little-endian), int16 x, y, z per vertex in centimetres, then uint32 triangle indices,
+  caps before walls.
+- `packages/web/src/components/grand-hall/hall-skyline.ts`: for each of the five openings in the
+  window wall, the skyline above its centre (the highest angle of the roofs) at every degree of
+  true azimuth from 11° to 191°. `hall-sun-times.ts` lets direct sun in at a window only above
+  that window's skyline.
+
+### Source
+
+The Scottish Government publishes the Phase 5 LiDAR, flown by Fugro in 2020, on the Scottish
+Remote Sensing Portal (`https://remotesensingdata.gov.scot`). The files are in the public bucket
+`srsp-open-data`. The DSM comes as 5 km GeoTIFF tiles on the British National Grid (EPSG:27700):
+float32 metres above ODN, 0.5 m cells, pixel-is-area, nodata −9999. The hall (HES listing
+LB32713, NGR NS 59329 65183) is 671 m from the east edge and 183 m from the south edge of NS56NE,
+so a 3 km square centred on it needs four tiles, each at
+`https://srsp-open-data.s3-eu-west-2.amazonaws.com/lidar/phase-5/dsm/27700/gridded/<tile>_50CM_DSM_PHASE5.tif`:
+
+| Tile | Bytes | SHA-256 |
+| --- | --- | --- |
+| NS56NE | 417 259 095 | `19b4472c5cd390c841a85532e16e757542cdecc631331bd0e71d209f61527a3e` |
+| NS56SE | 409 688 376 | `a8d697f352e12e26367e31312be2e7bb1bdd7c86b71b1257aa25900c0fc43541` |
+| NS66NW | 419 800 871 | `da06c7237795693cc56e056c2e83e76d2fce405f33cd090b08f6d76e5de99777` |
+| NS66SW | 405 615 130 | `10115dd97929fdd3a4245b33217639fd4047be07be73f3b9d76fc0bb685814ee` |
+
+The tiles were downloaded on 23 September 2026. The bucket gives all four a Last-Modified date of
+6 July 2022. The data is under the Open Government Licence v3.0, and every use carries the
+attribution "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0".
+
+`context/fetch_dsm.py` downloads any missing tile and checks each one's size and hash. It then cuts
+the 3 km square centred on E 259329 N 665183 (E 257829–260829, N 663683–666683) at the tiles' own
+0.5 m cells. The square's edges fall on cell edges, so nothing is resampled. The four tiles have
+no nodata cells inside the square; the script would fill any by Telea inpainting. Heights are stored relative to 10.7 m ODN,
+the Phase 5 DTM at the hall's street level. The result, `heights_50cm.f32`, is 6000 × 6000
+little-endian float32, row 0 = south, column 0 = west, with cell centres at −1500 + (i + 0.5) × 0.5 m
+from the origin. `meta.json` beside it records the origin, datum, size and tile URLs.
+
+### Frame
+
+The model is in the planner's frame: metres, y up, origin at the centre of the hall's floor. These
+facts are copied from the `frame` block of `merchant-city-v2.json`:
+
+- The origin is at local (E 3.0, N 8.0) m from E 259329 N 665183, where the dome's crown peaks in
+  the DSM. The frame takes the dome as standing over the centre of the hall, which `hall-spec.ts`
+  places at the planner's origin.
+- −z, the window wall's outward normal, points to grid bearing 102.96°. That figure comes from a
+  fit of the Glassford Street front to the same DSM: the front runs at grid bearing 12.96°, fitted
+  range 12.46–13.44°. True bearing = grid − 1.861°, the meridian convergence at the site, so the
+  window wall faces 101.1° true and +x points to 191.1° true. In (E, N), +x = (−0.22427, −0.97453)
+  and +z = (−0.97453, 0.22427).
+- Heights: y = (DSM + 0.30) − 3.79 = ODN − 14.19. The pavement is at 10.40 m ODN (y = −3.79) and the
+  hall's floor at 14.19 m ODN (y = 0).
+
+The skyline uses the same mapping (`skyline/skyline.py`). Rays leave the outer face of the window
+wall (planner z = −5.915) at each opening's centre, half way up. They run out to 600 m with the
+earth's curvature, in 0.5° steps of true azimuth. The opening sizes are read from `hall-spec.ts`.
+The DSM carries the hall's own cornice just outboard of the wall, so samples less than 1.25 m in
+front of the facade plane are ignored, but only along the hall's own frontage: facade u from
+−15.305 to +15.304 m, the two ends of the wall-face line (30.6 m apart, the adopted frontage width).
+Beyond them the neighbours' fronts count, so a ray grazing along the street meets the taller
+buildings on either side. The plane, the frontage's ends and the 102.96° bearing are constants of the
+facade fit (the promo-film pipeline's `spec/facade/facade.json`: `frames.facade` and
+`frontage.line_wall_face_local`), copied into the code rather than read at run time. Every ray now
+leaves the zone, so every degree from 11° to 191° is measured. If one ever did not, `hall-skyline.ts`
+would give it the nearest measured half-degree sample and its header would name the azimuths.
+
+Until 17 October 2026 the zone ran the whole length of the street, so the neighbours' fronts were
+ignored too. Bounding it raised the skyline only at the grazing ends, within 21° of the wall's
+plane (11°–32° and 177°–191°), by up to 66°. The only change inside a window's reveal limit is at the
+end arch, at 177°–178° (+13° and +42°). With the planner's own `hall-sun-times.ts`, run over every
+day of 2026, sun on the floor changes on 45 days, all between 23 November and 14 January. On 25 of
+them the 2–6 minute slot just before noon GMT, when only the end arch let sun in, is gone; on the
+other 20 it starts 1–4 minutes later. The rest of the year is unchanged.
+
+### Build
+
+Requirements: Python 3 with numpy, scipy, scikit-image and shapely 2.1 or later. Fetching also
+needs tifffile and opencv-python, the checks need Pillow and the plot needs matplotlib. The tiles
+take 1.65 GB and the grid 144 MB. Building the model takes about 15 s and the skylines about
+7 s.
+
+    python3 tools/grand-hall-survey/context/fetch_dsm.py <work>/lidar <work>/dsm
+    python3 tools/grand-hall-survey/context/build_context.py <work>/dsm <work>/context --date 2026-10-16
+    python3 tools/grand-hall-survey/skyline/final.py <work>/dsm <work>/skyline
+
+`build_context.py` writes `merchant-city-v2.bin` and `.json` (the published pair) and
+`merchant-city-v2.build.json`. The last is the build's own report: the 15 suppressed trees, the repair
+counts, the inputs' hashes and the library versions. `--date` sets the JSON's `generated` field,
+the only one that would otherwise change from run to run. Without it, the date comes from
+`SOURCE_DATE_EPOCH`, else today; pass the published date to reproduce the published file. `--keep-work`
+also writes `_work.npz` for the checks. `final.py` writes `hall-skyline.ts` and `window-skylines.json`.
+The JSON is the record behind the module: every 3 × 3 profile, the method, and the times direct sun
+clears each window on 20 March, 21 June and 21 December 2026. Pass `--ts
+packages/web/src/components/grand-hall/hall-skyline.ts` to write the module in place; `--plot` draws
+`window-skylines.png`. A change to the window openings in `hall-spec.ts` changes the skylines, so
+rerun `final.py` after one.
+
+To publish a changed model, copy the pair into `packages/web/public/rooms/grand-hall/context-2020-lidar/`
+and raise the `?r=` revision in `CONTEXT_MODEL_URL` (`hall-context.ts`), for the same reason as
+`HALL_SURVEY_REVISION` above.
+
+Diagnostics, not part of the build: `context/probe.py <dsm>` shows that in the grid's documented
+orientation the dome's crown (24.19 m) is the local maximum at (3.0, 8.0), and that flipped or
+transposed it is not; it also prints the terrain's spread within 260 m. `skyline/skyline.py <dsm>` prints each window's centre
+profile. `context/check_render.py <build-dir> <dsm>` checks the mesh and renders it. On the published
+model it finds all 27 216 caps facing up, no zero-area triangles, no cracks, open edges only on the
+rim (454) and the site cut (5), and 2 edges shared by more than two triangles.
+
+### Verification
+
+On 16 October 2026 the whole chain was rebuilt from the four tiles in a clean directory. Every
+file matched the copy then published, byte for byte. On 17 October the JSON's wording (the model's
+file name, the crop, the generator) and the skyline's mask were corrected, and both files were
+regenerated and published. The current published files are:
+
+| Output | SHA-256 | Result |
+| --- | --- | --- |
+| `heights_50cm.f32` | `45c2977086bec5705cf177a6969472826bf0db328e5a2f9d4bf04853b5b4a5e4` | identical to the grid the published model was built from |
+| `merchant-city-v2.bin` | `5cdb593af128e7a2537e5a0488ecd326ff5ff116e517534abda4278650a3f59e` | unchanged since the first rebuild, identical in every build since |
+| `merchant-city-v2.json` | `a1b9444967bd4c3fb10237c81e6d980ed556ac0619d71a70b509b77e0d4cceb4` | rebuilt with `--date 2026-10-16` |
+| `hall-skyline.ts` | `dda0ff9d8bcbe45db72a1b3e226c65bfe599cc24b917884b0c1e31ac9dcbe1dd` | rebuilt with the frontage-bounded mask |
+
+The module's values are the 0.5° centre profiles rounded to 0.1°: the largest difference from the
+unrounded profile is 0.05°. Each build ran twice, with identical results; the 16 October build also
+ran once with `SOURCE_DATE_EPOCH` instead of `--date`. The libraries were Python 3.13.6, numpy 2.4.2,
+scipy 1.17.0, scikit-image 0.26.0, shapely 2.1.2, tifffile 2026.8.23 and OpenCV 5.0.0. The JSON's
+`bytes_gzip` is the length of a zlib level-9 stream and may differ by a few bytes under another zlib
+(1.3.1 here). The web's `hall-sun-times` and `hall-sky` tests pass with the new module.

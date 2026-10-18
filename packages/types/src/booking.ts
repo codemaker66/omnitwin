@@ -100,10 +100,87 @@ export const ROOM_BLOCKING_BOOKING_KINDS = ["ink", "internal_block"] as const sa
  */
 export const ROOM_OPTION_BOOKING_KINDS = ["hold"] as const satisfies readonly BookingKind[];
 
+/**
+ * The public answer when Venviewer's diary holds nothing for a room on a date.
+ * It is deliberately not "free" (fix-first item 4, 16 October 2026): the
+ * Diary does not yet hold every venue's whole forward book, which still lives
+ * partly in other systems, email and paper, so an empty Diary day is a fact
+ * about the Diary, not about the room. The token says so itself, so an AI
+ * assistant that keeps only the word still cannot tell a person the room is
+ * available.
+ */
+export const PUBLIC_DAY_NO_BOOKING = "no_booking_on_our_diary_team_confirms";
+
 /** A room's public answer for one date, in precedence order: a confirmed
- *  booking or venue block beats a provisional option, which beats nothing. */
-export const PUBLIC_DAY_STATUSES = ["free", "held", "busy"] as const;
+ *  booking or venue block beats a provisional option, which beats nothing on
+ *  the Diary. */
+export const PUBLIC_DAY_STATUSES = [PUBLIC_DAY_NO_BOOKING, "held", "busy"] as const;
 export type PublicDayStatus = (typeof PUBLIC_DAY_STATUSES)[number];
+
+/**
+ * The one wording for each public date answer, used by the public MCP and by
+ * any web surface that shows a public date status, so the two can never say
+ * different things. They are shown only for a room whose forward book the
+ * venue has recorded as on the Diary (publicRoomAnswer below); every other
+ * room answers PUBLIC_ROOM_ASK_THE_TEAM. `label` is the short form for a calendar cell or a list;
+ * `meaning` is the full sentence an assistant can repeat to a person. Neither
+ * ever says "available" or "free": only the venue team confirms a date.
+ */
+export const PUBLIC_DAY_STATUS_WORDING: Readonly<Record<PublicDayStatus, {
+  readonly label: string;
+  readonly meaning: string;
+}>> = {
+  [PUBLIC_DAY_NO_BOOKING]: {
+    label: "Nothing on our diary — the team confirms",
+    meaning:
+      "Venviewer's diary for this venue shows no confirmed booking, closure or provisional option in this room on this date. "
+      + "The venue may hold bookings that are not on this diary yet, so this is not a confirmation: "
+      + "only the venue team can confirm a date, when you enquire.",
+  },
+  held: {
+    label: "Held — enquire",
+    meaning:
+      "Someone has a provisional option on this room for this date. A second option may be possible: "
+      + "contact the venue team to ask. Only the venue team can confirm a date, when you enquire.",
+  },
+  busy: {
+    label: "Booked",
+    meaning: "The room has a confirmed booking or a venue closure at some time on this date.",
+  },
+};
+
+/**
+ * A room's public answer until the venue has recorded that the room's whole
+ * forward book is on the Diary (Blake, 17 October 2026: "hide date status
+ * until checked"). The Diary still lacks bookings kept in other systems,
+ * email and paper, so for such a room no date is described as booked, held or
+ * empty: the answer is to ask the venue team. Recording and clearing that
+ * record belongs to the venue's admin or manager (forward-book.ts).
+ */
+export const PUBLIC_ROOM_ASK_THE_TEAM = "ask_the_team";
+
+/** What a public surface says about a room's dates: its date statuses
+ *  ("dates"), or only that the venue team answers ("ask_the_team"). */
+export const PUBLIC_ROOM_ANSWERS = ["dates", PUBLIC_ROOM_ASK_THE_TEAM] as const;
+export type PublicRoomAnswer = (typeof PUBLIC_ROOM_ANSWERS)[number];
+
+/** The one wording for a room whose dates are not shown, for the MCP and any
+ *  web surface, beside PUBLIC_DAY_STATUS_WORDING. */
+export const PUBLIC_ROOM_ASK_THE_TEAM_WORDING: Readonly<{ readonly label: string; readonly meaning: string }> = {
+  label: "Ask the team",
+  meaning:
+    "The venue team has not yet confirmed that Venviewer's diary holds every booking for this room, "
+    + "so this service says nothing about its dates. Ask the venue team about any date: they answer every enquiry themselves.",
+};
+
+/**
+ * The one rule every public surface applies before it shows a room's dates:
+ * only while the venue's record that the room's forward book is on the Diary
+ * stands. No record, or a cleared one, answers "ask_the_team".
+ */
+export function publicRoomAnswer(forwardBookCheckedAt: string | Date | null | undefined): PublicRoomAnswer {
+  return forwardBookCheckedAt === null || forwardBookCheckedAt === undefined ? PUBLIC_ROOM_ASK_THE_TEAM : "dates";
+}
 
 const ROOM_BLOCKING_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_BLOCKING_BOOKING_KINDS);
 const ROOM_OPTION_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_OPTION_BOOKING_KINDS);
@@ -121,9 +198,10 @@ export function bookingRoomStatus(booking: {
   return null;
 }
 
-/** The day's answer from the bookings that touch it: busy beats held beats free. */
+/** The day's answer from the bookings that touch it: busy beats held beats
+ *  nothing on the Diary. */
 export function publicDayStatus(effects: Iterable<"busy" | "held">): PublicDayStatus {
-  let status: PublicDayStatus = "free";
+  let status: PublicDayStatus = PUBLIC_DAY_NO_BOOKING;
   for (const effect of effects) {
     if (effect === "busy") return "busy";
     status = "held";
