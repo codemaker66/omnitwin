@@ -106,6 +106,39 @@ export const HALL_MOODS: Readonly<Record<HallMoodName, HallMoodSpec>> = {
 
 const color = (hex: string): Color => new Color(hex);
 
+const mixA = new Color();
+const mixB = new Color();
+
+/** `from` blended toward `to` by `t` ∈ [0, 1], as a spec (the label is `to`'s). */
+export function mixMoodSpec(from: HallMoodSpec, to: HallMoodSpec, t: number): HallMoodSpec {
+  const k = Math.max(0, Math.min(1, t));
+  const mixColor = (a: string, b: string): string => `#${mixA.set(a).lerp(mixB.set(b), k).getHexString()}`;
+  const mix = (a: number, b: number): number => a + (b - a) * k;
+  return {
+    label: to.label,
+    ambient: mixColor(from.ambient, to.ambient),
+    ambientIntensity: mix(from.ambientIntensity, to.ambientIntensity),
+    chandelier: mixColor(from.chandelier, to.chandelier),
+    chandelierIntensity: mix(from.chandelierIntensity, to.chandelierIntensity),
+    daylight: mixColor(from.daylight, to.daylight),
+    daylightIntensity: mix(from.daylightIntensity, to.daylightIntensity),
+    uplight: mixColor(from.uplight, to.uplight),
+    uplightIntensity: mix(from.uplightIntensity, to.uplightIntensity),
+    skyHorizon: mixColor(from.skyHorizon, to.skyHorizon),
+    skyIntensity: mix(from.skyIntensity, to.skyIntensity),
+    glow: mix(from.glow, to.glow),
+    exposure: mix(from.exposure, to.exposure),
+    reflections: mix(from.reflections, to.reflections),
+    whiteBalance: [
+      mix(from.whiteBalance[0], to.whiteBalance[0]),
+      mix(from.whiteBalance[1], to.whiteBalance[1]),
+      mix(from.whiteBalance[2], to.whiteBalance[2]),
+    ],
+    saturation: mix(from.saturation, to.saturation),
+    candles: mix(from.candles, to.candles),
+  };
+}
+
 /**
  * The uniform nodes the hall's materials and light rig read. Each user holds
  * its own instance; `apply` sets them from a blend of two moods.

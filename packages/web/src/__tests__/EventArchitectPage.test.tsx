@@ -612,6 +612,17 @@ describe("Describe the event", () => {
     expect(screen.getByLabelText("Guests")).toHaveProperty("value", "80");
   });
 
+  it("takes reading away for the visit, as calmly, when the venue's AI allowance for the month is used", async () => {
+    mockReadEventBrief.mockRejectedValue(new ApiError(429, "This venue's AI allowance for the month is used", "AI_BUDGET_REACHED"));
+    await describeEvent(WEDDING_WORDS);
+    fireEvent.click(screen.getByRole("button", { name: "Read the brief" }));
+    expect((await screen.findByTestId("brief-reader-gone")).textContent)
+      .toBe("Reading briefs is not available now. The request form below works as before.");
+    expect(screen.queryByTestId("brief-failed")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Describe the event" })).toBeNull();
+    expect(screen.getByLabelText("Guests")).toHaveProperty("value", "80");
+  });
+
   it("asks for some words before reading", async () => {
     await describeEvent("   ");
     fireEvent.click(screen.getByRole("button", { name: "Read the brief" }));

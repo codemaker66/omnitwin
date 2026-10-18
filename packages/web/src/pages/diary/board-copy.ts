@@ -428,6 +428,7 @@ export const BOARD_COPY = {
     offline: "Reconnecting…",
     here: (names: readonly string[]): string =>
       names.length === 0 ? "Only you are here." : `Also here: ${names.join(", ")}.`,
+    screensTitle: "The screens on beyond this one. When no hallkeeper screen is on, an unowned request reaches the duty admin after the venue's window.",
   },
 
   trayEnquiries: {

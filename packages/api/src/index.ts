@@ -25,6 +25,7 @@ import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
+import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
 import { rotaRoutes } from "./routes/rota.js";
@@ -53,6 +54,7 @@ import { windowProposalRoutes } from "./routes/window-proposals.js";
 import { roomDayRoutes } from "./routes/room-day.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { requestRoutes, venueRequestRoutes } from "./routes/requests.js";
+import { pushRoutes } from "./routes/push.js";
 import { venueObservationRoutes } from "./routes/observations.js";
 import { clientConversationRoutes, messageRoutes, threadRoutes, venueThreadRoutes } from "./routes/conversations.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
@@ -61,6 +63,8 @@ import { opsHandoffRoutes } from "./routes/ops-handoff.js";
 import { supplierCoordinationRoutes, supplierShareRoutes } from "./routes/supplier-coordination.js";
 import { analyticsRoutes, eventRevenueRoutes, revenueScenarioRoutes } from "./routes/revenue-analytics.js";
 import { aiAssistantRoutes } from "./routes/ai-assistant.js";
+import { aiUsageRoutes } from "./routes/ai-usage.js";
+import { venueAllowanceMeter } from "./services/ai-usage.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
 import { crmRoutes } from "./routes/crm.js";
 import { guestFlowReplayRoutes } from "./routes/guest-flow-replay.js";
@@ -425,8 +429,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // Inject DB into auth middleware for Clerk user lookups
   setAuthDb(db);
 
+  // T-656: every model call is held to its venue's monthly AI allowance and
+  // recorded in the AI usage ledger. One meter serves every AI route.
+  const aiUsage = venueAllowanceMeter(db, env, server.log);
+
   // --- Routes ---
   await server.register(venueRoutes, { db, prefix: "/venues" });
+  // Goal 19 S7: the devices that ask to be told.
+  await server.register(pushRoutes, { db, prefix: "/push" });
   // T-647: the weather over a venue: the Met Office forecast when it can be
   // served, otherwise the committed HadUK-Grid monthly normals for the venue's
   // 1 km cell (a venue in a cell with no file answers 503 SKY_UNAVAILABLE).
@@ -445,6 +455,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
   await server.register(turnaroundRuleRoutes, { db, prefix: "/venues/:venueId/turnaround-rules" });
+  // Which rooms' dates the public may read (Blake, 17 October 2026).
+  await server.register(forwardBookRoutes, { db, prefix: "/venues/:venueId/forward-book" });
   await server.register(proposalTemplateRoutes, { db, prefix: "/venues/:venueId/proposal-templates" });
   await server.register(rotaRoutes, { db, prefix: "/venues/:venueId/rota" });
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
@@ -480,7 +492,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
-  await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });
+  await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
   await server.register(publicReconstructionReleaseRoutes, {
     service: reconstructionFoundryService,
@@ -511,13 +523,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(requestRoutes, { db, prefix: "/requests" });
   await server.register(venueObservationRoutes, { db, prefix: "/venues" });
   await server.register(venueThreadRoutes, { db, prefix: "/venues" });
+  await server.register(aiUsageRoutes, { db, env, prefix: "/venues" });
   await server.register(threadRoutes, { db, prefix: "/threads" });
   await server.register(messageRoutes, { db, prefix: "/messages" });
   await server.register(clientConversationRoutes, { db, prefix: "/events" });
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });
   await server.register(eventMissionEventRoutes, { db, prefix: "/events" });
   await server.register(eventMissionRoutes, { db, prefix: "/event-missions" });
-  await server.register(eventArchitectRoutes, { db, env, prefix: "/event-architect" });
+  await server.register(eventArchitectRoutes, { db, env, aiUsage, prefix: "/event-architect" });
   await server.register(eventRevenueRoutes, { db, prefix: "/events" });
   await server.register(eventPhaseRoutes, { db, prefix: "/event-phases" });
   await server.register(eventDayOpsTaskRoutes, { db, prefix: "/ops-tasks" });
@@ -530,9 +543,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(webhookOutboundRoutes, { db, prefix: "/webhooks" });
   await server.register(revenueScenarioRoutes, { db, prefix: "/revenue-scenarios" });
   await server.register(analyticsRoutes, { db, prefix: "/analytics" });
-  await server.register(aiAssistantRoutes, { env, prefix: "/ai" });
+  await server.register(aiAssistantRoutes, { env, db, aiUsage, prefix: "/ai" });
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
-  await server.register(proposalMessageDraftRoutes, { db, env, prefix: "/proposals" });
+  await server.register(proposalMessageDraftRoutes, { db, env, aiUsage, prefix: "/proposals" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
   await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });

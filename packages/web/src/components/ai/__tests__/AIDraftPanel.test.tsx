@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AIDraft, AIAssistantStatus } from "@omnitwin/types";
+import { ApiError } from "../../../api/client.js";
 
 const { getAIAssistantStatusMock, createAIDraftMock } = vi.hoisted(() => ({
   getAIAssistantStatusMock: vi.fn(),
@@ -83,6 +84,19 @@ describe("AIDraftPanel", () => {
     expect(document.querySelector("[data-activity-indicator]")).toBeNull();
     if (outcome === "failure") expect(screen.getByRole("alert")).toBeDefined();
     else expect(screen.getByDisplayValue(draft().body)).toBeDefined();
+  });
+
+  // T-656: a venue whose AI allowance for the month is used is told so in the
+  // panel's own words for any failure, and carries on by hand.
+  it("answers a used monthly allowance (429 AI_BUDGET_REACHED) calmly, as any failure", async () => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    createAIDraftMock.mockRejectedValue(new ApiError(429, "This venue's AI allowance for the month is used", "AI_BUDGET_REACHED"));
+    render(<AIDraftPanel title="Draft" useCase="enquiry_summary" context={{ guests: 90 }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("AI draft generation is unavailable. Continue with manual review.");
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Generate draft" }).disabled).toBe(false);
+    expect(document.querySelector("[data-activity-indicator]")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 
   it("renders nothing and never offers generation when no provider is configured", async () => {

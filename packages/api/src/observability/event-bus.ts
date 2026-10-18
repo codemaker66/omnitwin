@@ -13,7 +13,6 @@ import type {
 //
 // The hallkeeper approval flow has multiple downstream side effects:
 //
-//   - Fire the pdf-prerender service (writes to R2, updates pdfUrl)
 //   - Send configApproved email to the planner
 //   - Send hallkeeperNotified email to each hallkeeper at the venue
 //   - Append a row to configuration_review_history (audit trail)
