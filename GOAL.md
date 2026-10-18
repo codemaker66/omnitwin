@@ -4,6 +4,10 @@ Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportion
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
+## Latest founder direction — 16 October 2026: launch shape, a Trades Hall invite-only pilot first
+
+Blake chose the completion audit's recommended launch shape: a limited pilot with Trades Hall. Accounts are by invitation only; the public front door and enquiries stay open. Outside users wait until the pilot's gates close: error tracking and an uptime monitor (T-060), a restore drill, branch protection, honest public claims (T-661), legal copy that matches the product, Clerk polish (T-660), venue admins inviting their own staff, one real event run end to end, and his acceptance. AI drafting stays off (T-650). The full plan 18 public gate is not re-issued. Status: [the task list](docs/state/tasks.md) and the [17 October log](docs/sessions/2026-10-17.md).
+
 ## Latest operational constraint — 13 October 2026 (T-655; validated 16 October): the splat training environment has moved
 
 Blake, verbatim: "Upgrrade the splat and pytorch to the latest and inform our repo we are doing so, multiple sessions may need that info. Try PPISP."
