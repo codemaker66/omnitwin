@@ -51,7 +51,7 @@ describe("loadouts response validation", () => {
   const validDetail = {
     id: "l1", spaceId: "s1", venueId: "v1", name: "Gala", description: null,
     createdAt: "2026-06-06T10:00:00.000Z", updatedAt: "2026-06-06T10:00:00.000Z",
-    photos: [{ id: "p1", fileId: "f1", caption: null, sortOrder: 0, fileKey: "k", filename: "a.jpg", contentType: "image/jpeg" }],
+    photos: [{ id: "p1", fileId: "f1", caption: null, sortOrder: 0, fileKey: "k", filename: "a.jpg", contentType: "image/jpeg", readUrl: null }],
   };
 
   it("parses a valid loadout detail", async () => {

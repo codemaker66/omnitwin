@@ -293,16 +293,20 @@ const EnvSchema = z.object({
       message: "Private uploads require a dedicated private bucket distinct from the public upload, runtime-profile and Foundry buckets",
     });
   }
-  // The public bucket's token also lives in developer .env files for splat
-  // publishing; reusing it here would let that token read customer files.
+  // The other R2 tokens also live in developer .env files and tile-publishing
+  // tools; reusing any of them here would let that token read customer files.
   if (
     env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID !== undefined &&
-    env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID === env.R2_ACCESS_KEY_ID
+    [
+      env.R2_ACCESS_KEY_ID,
+      env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID,
+      env.FOUNDRY_R2_ACCESS_KEY_ID,
+    ].includes(env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID)
   ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["PRIVATE_UPLOADS_R2_ACCESS_KEY_ID"],
-      message: "Private uploads require their own R2 token, scoped to the private bucket, not the public upload bucket's token",
+      message: "Private uploads require their own R2 token, scoped to the private bucket, not another bucket's token",
     });
   }
 

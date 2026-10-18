@@ -63,13 +63,17 @@ export async function referenceLoadoutRoutes(
       return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
     }
 
+    // Count and cover only the photos the detail read will show: files
+    // uploaded into this loadout's own scope. The outer row is named in full
+    // because Drizzle renders ${referenceLoadouts.id} in a select list as a
+    // bare "id", which inside these subqueries means rp.id or f.id instead.
     const rows = await db.select({
       id: referenceLoadouts.id,
       name: referenceLoadouts.name,
       description: referenceLoadouts.description,
       createdAt: referenceLoadouts.createdAt,
-      photoCount: sql<number>`(SELECT count(*)::int FROM reference_photos WHERE loadout_id = ${referenceLoadouts.id})`,
-      coverFileKey: sql<string | null>`(SELECT f.file_key FROM reference_photos rp JOIN files f ON f.id = rp.file_id WHERE rp.loadout_id = ${referenceLoadouts.id} ORDER BY rp.sort_order LIMIT 1)`,
+      photoCount: sql<number>`(SELECT count(*)::int FROM reference_photos rp JOIN files f ON f.id = rp.file_id AND f.context = 'loadout' AND f.context_id = reference_loadouts.id WHERE rp.loadout_id = reference_loadouts.id)`,
+      coverFileKey: sql<string | null>`(SELECT f.file_key FROM reference_photos rp JOIN files f ON f.id = rp.file_id AND f.context = 'loadout' AND f.context_id = reference_loadouts.id WHERE rp.loadout_id = reference_loadouts.id ORDER BY rp.sort_order LIMIT 1)`,
     })
       .from(referenceLoadouts)
       .where(and(
@@ -146,6 +150,8 @@ export async function referenceLoadoutRoutes(
       readUrl: await readUrlForUpload(env, photo.fileKey, visibility === "public" ? "public" : "private"),
     })));
 
+    // The body carries live signed URLs: no shared or browser cache may keep it.
+    reply.header("Cache-Control", "private, no-store");
     return { data: { ...loadout, photos } };
   });
 

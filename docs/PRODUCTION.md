@@ -157,6 +157,11 @@ Tick each box when done. After each one, **paste the credential(s) into chat wit
    R2_BUCKET_NAME=omnitwin-prod
    R2_PUBLIC_URL=https://uploads.your-domain.com
    ```
+6. **The private uploads bucket (required; the API will not start without it).** Everything in the bucket above is public, so venue files, loadout photos and enquiry attachments live in a second bucket that only signed URLs can read (T-668, [upload access policy](operations/upload-access-policy.md)).
+   - **Create bucket** `omnitwin-private-uploads`. Leave **Public Development URL** off and connect **no** custom domain, now or later.
+   - **Settings** → **CORS Policy** → JSON: allow `PUT`, `GET`, `HEAD` from `https://venviewer.com` and `https://www.venviewer.com` with header `Content-Type`, exposing `ETag`.
+   - **Manage R2 API tokens** → **Create API token**: `Object Read & Write`, scoped to `omnitwin-private-uploads` only. Not an Admin token, and not the token above or any token kept in a developer `.env`.
+   - In Railway `@omnitwin/api` production, enter `PRIVATE_UPLOADS_R2_ACCESS_KEY_ID` and `PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY` yourself. Claude sets `PRIVATE_UPLOADS_R2_ACCOUNT_ID` and `PRIVATE_UPLOADS_R2_BUCKET`.
 
 
 ### 1.8 🧑 Neon production branch — `[BLAKE]` or 🤖 I can do this

@@ -194,9 +194,14 @@ async function getS3Client(storage: UploadStorage): Promise<S3ClientType> {
   if (cached !== undefined) return cached;
 
   const { S3Client } = await import("@aws-sdk/client-s3");
+  // As the asset clients do: without WHEN_REQUIRED, SDK 3.729+ presigns a
+  // PUT with the CRC32 of an empty body, which R2 then holds the upload to.
   const client = new S3Client({
     region: "auto",
     endpoint: `https://${storage.accountId}.r2.cloudflarestorage.com`,
+    forcePathStyle: true,
+    maxAttempts: 3,
+    requestChecksumCalculation: "WHEN_REQUIRED",
     credentials: {
       accessKeyId: storage.accessKeyId,
       secretAccessKey: storage.secretAccessKey,
@@ -223,7 +228,9 @@ async function createPresignedUrl(
     ContentLength: contentLengthBytes,
   });
 
-  return getSignedUrl(s3, command, { expiresIn: 600 }); // 10 minutes
+  // The presigner leaves Content-Type unsigned by default, which would let an
+  // uploader store, say, HTML under a PDF's key and have staff open it.
+  return getSignedUrl(s3, command, { expiresIn: 600, signableHeaders: new Set(["content-type"]) }); // 10 minutes
 }
 
 async function createSignedReadUrl(storage: UploadStorage, key: string): Promise<string> {
@@ -338,7 +345,10 @@ async function serializeFileRow(env: Env, row: FileRow): Promise<FileRow & {
   readonly readUrl: string | null;
 }> {
   const visibility = row.visibility === "public" ? "public" : "private";
-  const publicUrl = publicUrlForVisibility(env, row.fileKey, visibility);
+  // A public URL only for a key the public bucket actually holds.
+  const publicUrl = uploadStorageFor(env, visibility, row.fileKey) === null
+    ? null
+    : publicUrlForVisibility(env, row.fileKey, visibility);
   const readUrl = await readUrlForUpload(env, row.fileKey, visibility);
   return { ...row, publicUrl, readUrl };
 }
@@ -458,6 +468,8 @@ export async function uploadRoutes(
       .orderBy(files.uploadedAt);
 
     const data = await Promise.all(rows.map((row) => serializeFileRow(env, row)));
+    // The body carries live signed URLs: no shared or browser cache may keep it.
+    reply.header("Cache-Control", "private, no-store");
     return { data };
   });
 }

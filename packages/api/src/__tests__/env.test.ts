@@ -282,16 +282,31 @@ describe("production environment validation", () => {
     }
   });
 
-  it("REJECTS a private-upload connection that reuses the public bucket's token", () => {
-    expect(() => withoutVitest(() => validateEnv({
-      ...validProdBase,
-      R2_ACCOUNT_ID: "upload-account",
-      R2_ACCESS_KEY_ID: "shared-key",
-      R2_SECRET_ACCESS_KEY: "upload-secret",
-      R2_BUCKET_NAME: "public-uploads",
-      R2_PUBLIC_URL: "https://pub-uploads.r2.dev",
-      PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: "shared-key",
-    }))).toThrow("Private uploads require their own R2 token");
+  it("REJECTS a private-upload connection that reuses another bucket's token", () => {
+    for (const reuse of [
+      {
+        R2_ACCOUNT_ID: "upload-account",
+        R2_ACCESS_KEY_ID: "shared-key",
+        R2_SECRET_ACCESS_KEY: "upload-secret",
+        R2_BUCKET_NAME: "public-uploads",
+        R2_PUBLIC_URL: "https://pub-uploads.r2.dev",
+      },
+      { RUNTIME_PROFILE_R2_ACCESS_KEY_ID: "shared-key" },
+      {
+        FOUNDRY_R2_ACCOUNT_ID: "foundry-account",
+        FOUNDRY_R2_ACCESS_KEY_ID: "shared-key",
+        FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
+        FOUNDRY_R2_CANDIDATE_BUCKET: "foundry-private-candidates",
+        FOUNDRY_R2_RELEASE_BUCKET: "foundry-public-releases",
+        FOUNDRY_R2_PUBLIC_URL: "https://releases.example.com",
+      },
+    ]) {
+      expect(() => withoutVitest(() => validateEnv({
+        ...validProdBase,
+        ...reuse,
+        PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: "shared-key",
+      }))).toThrow("Private uploads require their own R2 token");
+    }
   });
 
   it("REJECTS production when VITEST is set", () => {

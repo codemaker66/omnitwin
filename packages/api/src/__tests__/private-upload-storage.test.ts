@@ -32,14 +32,27 @@ interface RecordedCommand {
 interface FakeClientConfig {
   readonly endpoint: string;
   readonly credentials: { readonly accessKeyId: string };
+  readonly requestChecksumCalculation?: string;
 }
 
-const s3 = vi.hoisted(() => ({ commands: [] as RecordedCommand[] }));
+interface RecordedSigning {
+  readonly expiresIn: number;
+  readonly signableHeaders?: ReadonlySet<string>;
+}
+
+const s3 = vi.hoisted(() => ({
+  commands: [] as RecordedCommand[],
+  clients: [] as FakeClientConfig[],
+  signings: [] as RecordedSigning[],
+}));
 
 vi.mock("@aws-sdk/client-s3", () => {
   class S3Client {
     readonly config: FakeClientConfig;
-    constructor(config: FakeClientConfig) { this.config = config; }
+    constructor(config: FakeClientConfig) {
+      this.config = config;
+      s3.clients.push(config);
+    }
   }
   class PutObjectCommand {
     readonly input: RecordedCommand["input"];
@@ -58,18 +71,22 @@ vi.mock("@aws-sdk/client-s3", () => {
   return { S3Client, PutObjectCommand, GetObjectCommand };
 });
 
-// A deterministic stand-in for SigV4 that still records which endpoint,
-// bucket, key and token a URL was signed for.
+// A deterministic stand-in for SigV4 that records which endpoint, bucket,
+// key, token and signing options a URL was made with. The URL shape itself
+// is pinned against the real presigner in private-upload-signing.test.ts.
 vi.mock("@aws-sdk/s3-request-presigner", () => ({
   getSignedUrl: (
     client: { readonly config: FakeClientConfig },
     command: { readonly input: RecordedCommand["input"] },
-    options: { readonly expiresIn: number },
-  ): Promise<string> => Promise.resolve(
-    `${client.config.endpoint}/${command.input.Bucket}/${command.input.Key}` +
-    `?X-Amz-Credential=${client.config.credentials.accessKeyId}` +
-    `&X-Amz-Expires=${String(options.expiresIn)}&X-Amz-Signature=test`,
-  ),
+    options: RecordedSigning,
+  ): Promise<string> => {
+    s3.signings.push(options);
+    return Promise.resolve(
+      `${client.config.endpoint}/${command.input.Bucket}/${command.input.Key}` +
+      `?X-Amz-Credential=${client.config.credentials.accessKeyId}` +
+      `&X-Amz-Expires=${String(options.expiresIn)}&X-Amz-Signature=test`,
+    );
+  },
 }));
 
 const {
@@ -181,6 +198,7 @@ Reflect.set(untouchableDb, "select", (): never => { throw new Error("database re
 beforeEach(() => {
   vi.stubEnv("NODE_ENV", "test");
   s3.commands.length = 0;
+  s3.signings.length = 0;
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -262,6 +280,12 @@ describe("POST /uploads/presigned", () => {
     expect(response.body).not.toContain(PUBLIC_URL);
     expect(s3.commands).toEqual([expect.objectContaining({ kind: "put", input: expect.objectContaining({ Bucket: PRIVATE_BUCKET }) })]);
     expect(fake.inserted).toEqual([expect.objectContaining({ fileKey: data.fileKey, visibility: "private" })]);
+    // The declared type is part of the signature, so the bytes cannot be
+    // stored under another one.
+    expect([...(s3.signings[0]?.signableHeaders ?? [])]).toEqual(["content-type"]);
+    // Every upload client presigns without the SDK's default checksum.
+    const privateClient = s3.clients.find((config) => config.credentials.accessKeyId === PRIVATE_R2.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID);
+    expect(privateClient?.requestChecksumCalculation).toBe("WHEN_REQUIRED");
   });
 
   it("refuses a private upload when only the public bucket is configured", async () => {
@@ -307,12 +331,30 @@ describe("GET /uploads/:context/:contextId", () => {
     await server.close();
 
     expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
     const [file] = response.json<{ data: { publicUrl: string | null; readUrl: string | null }[] }>().data;
     expect(file?.publicUrl).toBeNull();
     expect(file?.readUrl).toBe(
       `https://private-account.r2.cloudflarestorage.com/${PRIVATE_BUCKET}/${fileKey}` +
       "?X-Amz-Credential=private-access-key&X-Amz-Expires=300&X-Amz-Signature=test",
     );
+    expect(response.body).not.toContain(PUBLIC_URL);
+  });
+
+  it("builds no public URL for a row marked public whose key is private", async () => {
+    const fileKey = `private/venues/${VENUE_ID}/venue-files/${FILE_ID}.pdf`;
+    const row = {
+      id: FILE_ID, fileKey, filename: "floor-plan.pdf", contentType: "application/pdf",
+      contentLengthBytes: 2048, sha256: null, context: "venue", contextId: VENUE_ID,
+      visibility: "public", uploadedBy: "staff-user", uploadedAt: "2026-10-18T12:00:00.000Z",
+    };
+    const server = await uploadsServer(BOTH_BUCKETS, fakeDb([[row]]).db);
+    const response = await server.inject({ method: "GET", url: `/uploads/venue/${VENUE_ID}`, headers: STAFF });
+    await server.close();
+
+    expect(response.statusCode).toBe(200);
+    const [file] = response.json<{ data: { publicUrl: string | null; readUrl: string | null }[] }>().data;
+    expect(file).toMatchObject({ publicUrl: null, readUrl: null });
     expect(response.body).not.toContain(PUBLIC_URL);
   });
 });
@@ -365,6 +407,7 @@ describe("loadout reads", () => {
     await server.close();
 
     expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
     const { photos } = response.json<{ data: { photos: Record<string, unknown>[] } }>().data;
     expect(photos).toEqual([{
       id: PHOTO_ID, fileId: FILE_ID, caption: "Top table", sortOrder: 0,
