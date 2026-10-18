@@ -552,6 +552,14 @@
     {
       "source": "/sheet-check/",
       "destination": "/index.html"
+    },
+    {
+      "source": "/account/allergy-notes",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/account/allergy-notes/",
+      "destination": "/index.html"
     }
   ],
   "headers": [
