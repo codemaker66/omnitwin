@@ -8,6 +8,7 @@ import { authenticate, type JwtUser } from "../middleware/auth.js";
 import { requireEditableConfig } from "../middleware/require-editable-config.js";
 import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
 import { canAccessResource } from "../utils/query.js";
+import { emit } from "../observability/event-bus.js";
 import {
   validatePlacementsInPolygon,
   loadSpacePolygon,
@@ -369,6 +370,15 @@ export async function placedObjectRoutes(
       );
     }
 
+    // Commit, then announce: the transaction above has resolved, so an
+    // uncommitted write can never be broadcast (live co-editing v1).
+    emit(request.log, "layout.changed", {
+      configId,
+      revision: saveResult.revision,
+      actorUserId: request.user.id,
+      source: "authenticated_batch",
+      at: new Date().toISOString(),
+    });
     reply.header("ETag", configurationRevisionEtag(saveResult.revision));
     return { data: { objects: saveResult.objects, revision: saveResult.revision } };
   });

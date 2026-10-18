@@ -9,6 +9,7 @@ import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
 import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
+import { registerPushWorker } from "./lib/push-worker.js";
 import { appendFontBuildStyle, fontBuildFor } from "./lib/self-hosted-fonts.js";
 import siteFontsFirefoxWindows from "./styles/fonts/site.firefox-windows.css?inline";
 import "./global.css";
@@ -87,3 +88,7 @@ createRoot(rootElement).render(
 // after React owns the root so a slow import can never hold the first screen
 // blank. The error boundary shares the same idempotent initializer.
 void initBrowserSentry();
+
+// The push worker (goal 19 S7): registered after the root is up, harmless
+// where the browser has no push. It caches nothing and answers no fetch.
+registerPushWorker();

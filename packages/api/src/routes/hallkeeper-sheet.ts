@@ -13,12 +13,13 @@ import type { JwtUser } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 import { resolveProgressMutation, checkedStateAfter } from "../lib/hallkeeper-progress.js";
 import { summarizeSheet } from "../lib/hallkeeper-summary.js";
+import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper sheet routes — v2 end-to-end
 //
 // Endpoints (all authenticated):
-//   GET   /hallkeeper/:configId/sheet     → portrait A4 PDF
+//   GET   /hallkeeper/:configId/sheet     → portrait A4 PDF, rendered per request
 //   GET   /hallkeeper/:configId/v2        → JSON HallkeeperSheetV2
 //   GET   /hallkeeper/:configId/summary   → ready-by time and rows checked
 //   GET   /hallkeeper/:configId/progress  → checked row keys
@@ -30,6 +31,10 @@ import { summarizeSheet } from "../lib/hallkeeper-summary.js";
 //   - Venue staff / hallkeepers for the config's venue
 //   - Admin
 // Anonymous access is blocked — punch list #4.
+//
+// Paper that knows its version: both the JSON and the PDF carry a paper
+// check (services/sheet-paper-check.ts) — the link the printout's QR code
+// opens, which tells anyone holding the paper only whether it is current.
 // ---------------------------------------------------------------------------
 
 const ConfigIdParam = z.object({ configId: z.string().uuid() });
@@ -110,18 +115,18 @@ export async function hallkeeperSheetRoutes(
 
   const frontendUrl = process.env["FRONTEND_URL"] ?? null;
 
-  // GET /hallkeeper/:configId/sheet — pre-rendered CDN redirect OR on-demand render
+  // GET /hallkeeper/:configId/sheet — the PDF, rendered for this request
   //
-  // Fast path: if the latest approved snapshot has a `pdfUrl`, the
-  // PDF has been pre-rendered to R2. Return a 302 redirect to the
-  // CDN URL; the browser fetches bytes from the edge, not from our
-  // cpu-bound pdfkit event loop.
+  // Every copy is rendered when it is asked for, because each copy prints
+  // its own time ("v7, issued 16 Oct 14:02, printed 17 Oct 06:02") and a QR
+  // code carrying that time. Rendering costs a few hundred milliseconds of
+  // pdfkit per download, which a venue's handful of sheets a day affords.
   //
-  // Slow path: no pre-rendered PDF (R2 not configured / pre-render
-  // failed / snapshot not approved). Fall back to on-demand
-  // generation — the original behaviour. This keeps dev environments
-  // without R2 fully functional and gives us graceful degradation
-  // when the pre-render worker trips.
+  // PRIVACY: the sheet can carry free-text allergy and access notes, which
+  // are health data. It is never stored in a bucket and this route never
+  // redirects; the bytes leave only in this signed-in response, marked
+  // `private, no-store` so no shared cache keeps a copy. A legacy
+  // `snapshot.pdfUrl` left in the database is ignored.
   server.get("/:configId/sheet", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
@@ -155,24 +160,14 @@ export async function hallkeeperSheetRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    // Fast-path: PDF from the same validated approved snapshot as the payload.
-    // The `download` query param is NOT honoured on the redirect path
-    // because Content-Disposition must be set by the CDN response;
-    // browsers opening the redirected URL render inline. To preserve
-    // download-mode for admin-triggered exports, we fall through to
-    // on-demand rendering when the caller asked for a download.
-    if (!isDownload) {
-      const cdn = result.approvedPdfUrl;
-      if (cdn !== null) {
-        return reply.redirect(cdn, 302);
-      }
-    }
-
-    const pdfBuffer = await generateSheetPdfV2(result.payload);
-    const filename = `hallkeeper-sheet-${result.payload.config.name.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-")}.pdf`;
+    const paperCheck = await buildSheetPaperCheck(baseUrl, params.data.configId, result.issue);
+    const payload = paperCheck === null ? result.payload : { ...result.payload, paperCheck };
+    const pdfBuffer = await generateSheetPdfV2(payload);
+    const filename = `hallkeeper-sheet-${payload.config.name.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-")}.pdf`;
 
     void reply
       .header("Content-Type", "application/pdf")
+      .header("Cache-Control", "private, no-store")
       .header("Content-Disposition", isDownload ? `attachment; filename="${filename}"` : "inline")
       .header("Content-Length", pdfBuffer.length)
       .send(pdfBuffer);
@@ -209,7 +204,8 @@ export async function hallkeeperSheetRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    return { data: result.payload };
+    const paperCheck = await buildSheetPaperCheck(baseUrl, params.data.configId, result.issue);
+    return { data: paperCheck === null ? result.payload : { ...result.payload, paperCheck } };
   });
 
   // GET /hallkeeper/:configId/summary — the Day Board's line about a sheet:

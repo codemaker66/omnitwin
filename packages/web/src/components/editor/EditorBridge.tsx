@@ -5,6 +5,8 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
+import { useLayoutLiveStore } from "../../stores/layout-live-store.js";
+import { composeWithOverlay, isRemotePlacementKey, type RemoteOverlay } from "../../lib/layout-live/live-document.js";
 
 // ---------------------------------------------------------------------------
 // EditorBridge — syncs editor-store ↔ placement-store bidirectionally
@@ -124,22 +126,72 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
     const pa = a[i];
     const eb = b[i];
     if (pa === undefined || eb === undefined) return false;
-    if (pa.id !== eb.id) return false;
-    if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
-    if (pa.rotationY !== eb.rotationY) return false;
-    // scale round-trips (see editorToPlacedItem). Omitting it here would let a
-    // resize compare "equal", so the bridge would push the pre-resize value
-    // back and then persist that revert.
-    if ((pa.scale ?? 1) !== eb.scale) return false;
-    if (pa.clothed !== eb.clothed) return false;
-    if (pa.clothStyle !== eb.clothStyle) return false;
-    if (pa.tableSetting !== eb.tableSetting) return false;
-    if ((pa.chairStyle ?? null) !== (eb.chairStyle ?? null)) return false;
-    if ((pa.centerpiece ?? null) !== (eb.centerpiece ?? null)) return false;
-    if (pa.groupId !== eb.groupId) return false;
-    if ((pa.label ?? "") !== (eb.label ?? "")) return false;
+    if (!itemMatchesObject(pa, eb)) return false;
   }
   return true;
+}
+
+/** One scene item against one editor object, across every mutable field. */
+function itemMatchesObject(pa: PlacedItem, eb: EditorObject): boolean {
+  if (pa.id !== eb.id) return false;
+  if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
+  if (pa.rotationY !== eb.rotationY) return false;
+  // scale round-trips (see editorToPlacedItem). Omitting it here would let a
+  // resize compare "equal", so the bridge would push the pre-resize value
+  // back and then persist that revert.
+  if ((pa.scale ?? 1) !== eb.scale) return false;
+  if (pa.clothed !== eb.clothed) return false;
+  if (pa.clothStyle !== eb.clothStyle) return false;
+  if (pa.tableSetting !== eb.tableSetting) return false;
+  if ((pa.chairStyle ?? null) !== (eb.chairStyle ?? null)) return false;
+  if ((pa.centerpiece ?? null) !== (eb.centerpiece ?? null)) return false;
+  if (pa.groupId !== eb.groupId) return false;
+  if ((pa.label ?? "") !== (eb.label ?? "")) return false;
+  return true;
+}
+
+/**
+ * Live co-editing: the scene shows the local document with other people's
+ * live ops on top (composeWithOverlay). When the scene changes, take back
+ * ONLY this person's edits: an item still showing a peer's state keeps the
+ * local document's object, a peer's unsaved placement is not this person's,
+ * and an object a peer deleted is still in the local document. Without this,
+ * every gesture would write the peer's prediction into the saved layout.
+ */
+export function decomposeSceneItems(
+  items: readonly PlacedItem[],
+  local: readonly EditorObject[],
+  overlay: RemoteOverlay,
+): EditorObject[] {
+  const localById = new Map(local.map((object) => [object.id, object]));
+  const seen = new Set<string>();
+  const result: EditorObject[] = [];
+  for (const item of items) {
+    const existing = localById.get(item.id);
+    const entry = overlay.get(item.id);
+    if (existing === undefined) {
+      if (entry === undefined) {
+        result.push(placedItemToEditor(item, undefined));
+      } else if (!isRemotePlacementKey(item.id) && entry.state !== null
+        && !itemMatchesObject(item, { ...entry.state, id: item.id })) {
+        // A peer's committed object this editor has not refetched yet, now
+        // moved by this person: the row exists, so it is theirs to save.
+        result.push(placedItemToEditor(item, entry.state));
+      }
+      // A peer's unsaved placement has no row yet; it cannot be edited here.
+      continue;
+    }
+    seen.add(item.id);
+    if (entry !== undefined && entry.state !== null && itemMatchesObject(item, { ...entry.state, id: item.id })) {
+      result.push(existing);
+      continue;
+    }
+    result.push(placedItemToEditor(item, existing));
+  }
+  for (const object of local) {
+    if (!seen.has(object.id) && overlay.get(object.id)?.state === null) result.push(object);
+  }
+  return result;
 }
 
 // Module-level mount counter — see the concurrency-model comment above.
@@ -165,6 +217,7 @@ export function __resetEditorBridgeMountCountForTests(): void {
 export function EditorBridge(): null {
   const editorObjects = useEditorStore((s) => s.objects);
   const configId = useEditorStore((s) => s.configId);
+  const overlay = useLayoutLiveStore((s) => s.overlay);
   const authState = useAuthStore((s) => s.isAuthenticated);
   const isAuthenticated = useRef(authState);
 
@@ -206,14 +259,16 @@ export function EditorBridge(): null {
     syncing.current = true;
 
     const currentPlaced = usePlacementStore.getState().placedItems;
-    if (!itemsMatch(currentPlaced, editorObjects)) {
+    // Other people's live ops are drawn on top; they never enter editor-store.
+    const shown = composeWithOverlay(editorObjects, overlay);
+    if (!itemsMatch(currentPlaced, shown)) {
       // Replace placement-store items with editor-store objects
-      const newItems = editorObjects.map(editorToPlacedItem);
+      const newItems = shown.map(editorToPlacedItem);
       usePlacementStore.setState({ placedItems: newItems });
     }
 
     syncing.current = false;
-  }, [editorObjects]);
+  }, [editorObjects, overlay]);
 
   // --- Placement → Editor: subscribe to placement-store changes ---
   useEffect(() => {
@@ -226,11 +281,15 @@ export function EditorBridge(): null {
       syncing.current = true;
 
       const editorState = useEditorStore.getState();
+      const liveOverlay = useLayoutLiveStore.getState().overlay;
       const existingById = new Map(editorState.objects.map((o) => [o.id, o]));
-      const newEditorObjects = state.placedItems.map((item) => placedItemToEditor(item, existingById.get(item.id)));
+      const newEditorObjects = liveOverlay.size === 0
+        ? state.placedItems.map((item) => placedItemToEditor(item, existingById.get(item.id)))
+        : decomposeSceneItems(state.placedItems, editorState.objects, liveOverlay);
+      const shown = composeWithOverlay(editorState.objects, liveOverlay);
 
       // Only update if actually different
-      if (!itemsMatch(state.placedItems, editorState.objects)) {
+      if (!itemsMatch(state.placedItems, shown)) {
         // Route through the store action so the change lands on the undo
         // timeline; successive drag frames coalesce by interaction epoch.
         editorState.replaceObjectsFromScene(newEditorObjects);
@@ -285,9 +344,21 @@ const AUTOSAVE_RETRY_MS = 400;
 
 /** Exported so the autosave contract can be tested by behaviour rather than
  *  by asserting on this module's source text. */
+/** Live co-editing: while someone else is in the layout, commit sooner, so
+ *  the room converges on the server's truth in well under a second and two
+ *  people rarely race the same revision. Null restores the solo debounce. */
+let autosaveDelayOverrideMs: number | null = null;
+
+export function setAutoSaveDelayOverride(delayMs: number | null): void {
+  autosaveDelayOverrideMs = delayMs;
+}
+
 export function scheduleAutoSave(isAuthenticated: boolean): void {
   if (bridgeSaveTimer !== null) clearTimeout(bridgeSaveTimer);
-  bridgeSaveTimer = setTimeout(() => { attemptAutoSave(isAuthenticated); }, AUTOSAVE_DEBOUNCE_MS);
+  bridgeSaveTimer = setTimeout(
+    () => { attemptAutoSave(isAuthenticated); },
+    autosaveDelayOverrideMs ?? AUTOSAVE_DEBOUNCE_MS,
+  );
 }
 
 /** The debounce has already elapsed; decide what to do with the tick.

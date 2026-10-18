@@ -9,13 +9,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import * as schema from "../db/schema.js";
 import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
 import { hallkeeperSheetRoutes } from "../routes/hallkeeper-sheet.js";
-import { validateEnv } from "../env.js";
 import { InternalDemoNameSchema } from "../services/internal-demo-review.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
 
 const email = vi.hoisted(() => vi.fn());
 vi.mock("../services/email.js", () => ({ sendEmailAsync: email }));
-vi.mock("../services/pdf-prerender.js", () => ({ schedulePrerender: vi.fn() }));
 
 const target = process.env["VENVIEWER_INTERNAL_DEMO_TEST_DATABASE_URL"];
 if (target !== undefined) {
@@ -48,8 +46,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
     server = Fastify();
-    await server.register(configurationReviewRoutes, { db, prefix: "/configurations",
-      env: validateEnv({ NODE_ENV: "test", DATABASE_URL: target }) });
+    await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
     await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
     await server.ready();
   }, 120000);
@@ -113,6 +110,8 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(saved.config?.reviewStatus).toBe("approved");
     expect(saved.snapshots).toHaveLength(1);
     expect(saved.snapshots[0]?.approvedBy).toBe(f.userId);
+    // Approval stores no PDF anywhere, so no public URL is ever recorded.
+    expect(saved.snapshots[0]?.pdfUrl).toBeNull();
     expect(saved.history.map(row => row.toStatus)).toEqual(["submitted", "under_review", "approved"]);
     expect(saved.audit).toHaveLength(2);
     expect(saved.audit[1]).toMatchObject({ actorUserId: f.userId, metadata: { notifyTeam: false, eventIds: [f.eventId], transition: "approved" } });
@@ -145,6 +144,8 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet?download=true`, headers: f.headers });
     expect(pdf.statusCode).toBe(200);
     expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.headers["cache-control"]).toBe("private, no-store");
+    expect(pdf.headers["location"]).toBeUndefined();
     expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.headers["content-disposition"]).not.toContain("UNREVIEWED");
   });
@@ -197,7 +198,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect((await state(f)).snapshots[0]?.payload).toEqual(payload);
   });
 
-  it("binds the PDF redirect and content to the latest approved version, ignoring newer unapproved snapshots", async () => {
+  it("binds the PDF and its paper check to the latest approved version, ignoring newer unapproved snapshots", async () => {
     const f = await approvedFixture();
     await db.update(schema.configurationSheetSnapshots).set({ pdfUrl: "https://example.invalid/v1.pdf" })
       .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
@@ -213,9 +214,16 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
       .where(eq(schema.configurations.id, f.configId));
     const json = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/v2`, headers: f.headers });
     expect(json.json()).toMatchObject({ data: { config: { name: "Approved second version" }, approval: { version: 2 } } });
+    // The printout's QR names v2 by its own fingerprint, never the unapproved v3.
+    expect(json.json<{ data: { paperCheck: { url: string } } }>().data.paperCheck.url)
+      .toMatch(/\/sheet-check\?s=[0-9a-f-]{36}&v=2&h=2{16}$/u);
+    // Each copy is rendered on request so it can print its own time; the
+    // approval-time copy in R2 is no longer served (hallkeeper-sheet.ts).
     const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet`, headers: f.headers });
-    expect(pdf.statusCode).toBe(302);
-    expect(pdf.headers["location"]).toBe("https://example.invalid/v2.pdf");
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers["location"]).toBeUndefined();
+    expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
   });
 
   it.each(["deleted", "cleared"])("does not fall back to an older approval when the current snapshot is %s", async defect => {

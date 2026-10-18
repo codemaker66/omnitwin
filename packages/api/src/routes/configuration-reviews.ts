@@ -37,11 +37,9 @@ import {
   SnapshotConflictError,
   SnapshotNotFoundError,
 } from "../services/sheet-snapshot.js";
-import { schedulePrerender } from "../services/pdf-prerender.js";
 import { pendingReviewFacts } from "../services/pending-review-facts.js";
 import { internalDemoReviewScope, InternalDemoReviewForbiddenError, recordSuppressedReviewNotifications } from "../services/internal-demo-review.js";
 import { incrementCounter } from "../observability/metrics.js";
-import type { Env } from "../env.js";
 import { emit as emitEvent } from "../observability/event-bus.js";
 import {
   endReviewSession,
@@ -368,14 +366,13 @@ async function executeTransition(input: ExecuteTransitionInput): Promise<void> {
 
 interface ReviewRoutesOpts {
   readonly db: Database;
-  readonly env: Env;
 }
 
 export async function configurationReviewRoutes(
   server: FastifyInstance,
   opts: ReviewRoutesOpts,
 ): Promise<void> {
-  const { db, env } = opts;
+  const { db } = opts;
 
   const frontendUrl = process.env["FRONTEND_URL"] ?? null;
 
@@ -612,18 +609,10 @@ export async function configurationReviewRoutes(
       throw err;
     }
 
-    // Fire-and-forget PDF pre-render. Uploads the rendered PDF to R2
-    // under a content-hashed key and sets `snapshot.pdfUrl`, so the
-    // /hallkeeper/:configId/sheet route can redirect to a CDN URL
-    // instead of rendering on-demand. Failures log and fall back to
-    // on-demand — no error path blocks the approval response.
-    schedulePrerender(db, env, request.log, {
-      snapshotId: approved.id,
-      configId: config.id,
-      version: approved.version,
-      sourceHash: approved.sourceHash,
-      payload: approved.payload,
-    });
+    // No PDF is rendered or stored here. The sheet can carry allergy and
+    // access notes, so it is served only by the signed-in
+    // /hallkeeper/:configId/sheet route, rendered per request; nothing is
+    // written to a bucket and `snapshot.pdfUrl` is never set.
 
     // Notify planner + every hallkeeper on duty at the venue. The two
     // emails are intentionally distinct: planner's CTA is planner / sheet

@@ -448,6 +448,29 @@ describe("NativeCanvas", () => {
     expect(instance?.rawRender).not.toHaveBeenCalled();
   });
 
+  it("tells someone whose running view stopped that their layout is safe, not that 3D couldn't start", async () => {
+    render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+    const running = native.instances[0];
+    await act(() => { running?.resolve(); return Promise.resolve(); });
+    act(() => { running?.onDeviceLost({ message: "Device lost" }); });
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("The 3D view stopped. Your layout is safe");
+    expect(alert.textContent).not.toContain("couldn’t start");
+
+    // A retry that then fails to start speaks about starting again.
+    fireEvent.click(screen.getByRole("button", { name: "Try 3D again" }));
+    await act(() => { native.instances[1]?.reject(new Error("No graphics adapter")); return Promise.resolve(); });
+    expect(screen.getByRole("alert").textContent).toContain("The 3D view couldn’t start.");
+  });
+
+  it("says a view that never started couldn't start", async () => {
+    render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+    await act(() => { native.instances[0]?.reject(new Error("No graphics adapter")); return Promise.resolve(); });
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("The 3D view couldn’t start.");
+    expect(alert.textContent).not.toContain("Your layout is safe");
+  });
+
   it("recovers from a synchronous main-frame failure without drawing the failed or stale renderer again", async () => {
     const view = render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
     const first = native.instances[0];

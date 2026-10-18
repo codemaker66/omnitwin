@@ -401,9 +401,14 @@ export class NativeSplatScene {
         kernelRadius: this.kernelRadius,
         minSortIntervalMs: this.minSortIntervalMs,
         colorSpace: SRGBColorSpace,
-        // Every native source is non-anti-aliased: the SOG and SPZ loaders refuse
-        // mip-anti-aliased assets. Upstream's always-on compensation dimmed them (T-639).
-        antialias: false,
+        // The SOG and SPZ loaders refuse mip-anti-aliased assets; the draw's own
+        // compensation (each splat's opacity scaled by the share of its footprint
+        // left after the screen-space low-pass) stays on. Measured on the twelve
+        // production Grand Hall tiles (T-658, 17 October 2026): at DPR 1 and 0.5
+        // it is 3-7 dB closer to a supersampled reference and keeps gilt
+        // lettering and frames from blowing out at phone scale, at under 1.5 %
+        // less brightness at DPR 1; at 4K it cannot be seen.
+        antialias: true,
         sphericalHarmonicsDirectionNode: (index, direction) => inverseMatrices.element(tileIds.element(index)).mul(direction),
         opacityNode: (index, position) => Fn(() => {
           const opacity = opacities.element(tileIds.element(index)).toVar();

@@ -196,6 +196,22 @@ describe("requests API — the door", () => {
     expect(res.statusCode).toBe(403);
   });
 
+  // Goal 19 S7: a shift's open requests pass to one named relief.
+  it("refuses an unsigned shift handover, a client's, and a malformed body before any database work", async () => {
+    const unsigned = await server.inject({ method: "POST", url: `/venues/${VENUE_ID}/requests/handover`, payload: { toUserId: KEY } });
+    expect(unsigned.statusCode).toBe(401);
+    const client = await server.inject({ method: "POST", url: `/venues/${VENUE_ID}/requests/handover`, headers: auth("client", null), payload: { toUserId: KEY } });
+    expect(client.statusCode).toBe(403);
+    const elsewhere = await server.inject({
+      method: "POST", url: `/venues/${VENUE_ID}/requests/handover`, headers: auth("hallkeeper", "00000000-0000-4000-8000-0000000099ff"), payload: { toUserId: KEY },
+    });
+    expect(elsewhere.statusCode).toBe(403);
+    const malformed = await server.inject({ method: "POST", url: `/venues/${VENUE_ID}/requests/handover`, headers: auth(), payload: { toUserId: "callum" } });
+    expect(malformed.statusCode).toBe(400);
+    const extra = await server.inject({ method: "POST", url: `/venues/${VENUE_ID}/requests/handover`, headers: auth(), payload: { toUserId: KEY, note: "x" } });
+    expect(extra.statusCode).toBe(400);
+  });
+
   // Goal 19 S4: the handover picker asks who on the floor may take a request.
   it("refuses an unsigned read of the venue's handlers", async () => {
     const res = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/handlers` });
