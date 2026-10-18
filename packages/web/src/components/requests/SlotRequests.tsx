@@ -41,7 +41,7 @@ import "./slot-requests.css";
 //
 //   NO CONFIRMATION DIALOGS. Every action is one press on the slab itself:
 //   "Seen", "I’ll do it", "On it", "Hand over", and how it finished. Sound is
-//   the chime this device opted into (arrival-chime.ts), never a surprise.
+//   the chime this device opted into (lib/sound-registry.ts), never a surprise.
 //
 //   THE WORDS CARRY THE MEANING. Under reduced motion the pulse simply does
 //   not happen and nothing is lost: the summary line says what is waiting.
