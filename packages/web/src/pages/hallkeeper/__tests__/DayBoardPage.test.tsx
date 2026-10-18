@@ -1186,12 +1186,18 @@ describe("DayBoardPage", () => {
       .toBe(`/ops/events/${EVENT_ID}`);
   });
 
-  it("points an unlinked booking at the Diary rather than a dead sheet link", async () => {
-    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+  it("says a house block has no sheet and points at the Diary rather than a dead sheet link", async () => {
+    // Since the bind (migration 0090) every provisional and confirmed booking
+    // has its event; on the board only the venue's own blocks have none.
+    getCalendarMock.mockResolvedValue(calendarFixture([{
+      ...liveBooking(), kind: "internal_block", state: "internal_block", title: "Floor maintenance",
+    } as CalendarResponse["entries"][number]]));
     renderBoard();
-    await openSlot("Chamber dinner");
+    await openSlot("Floor maintenance");
 
-    expect(await screen.findByText(/this booking is not linked to an event/u)).toBeTruthy();
+    expect(await screen.findByText("A house block has no setup sheet.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "See the block in the Diary." }).getAttribute("href")).toBe("/diary");
+    expect(screen.queryByText(/link it to an event/u)).toBeNull();
     expect(resolveLayoutsMock).not.toHaveBeenCalled();
   });
 

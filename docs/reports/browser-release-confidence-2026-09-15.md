@@ -1,48 +1,77 @@
 # Browser release confidence — Goal 17 / T-613
 
-Status: **in progress**, 15 September 2026. This is working evidence, not a
-completed release or acceptance claim. The [goal contract](../../goals/17-browser-release-confidence.md)
-requires complete browser qualification, coordinated integration and the changed live journey.
+Status: **complete**, 15 September 2026, for the [bounded goal](../../goals/17-browser-release-confidence.md).
 
-## Delivered candidate and deployment follow-up — 15 September
+## Completed release — 15 September 2026
 
-PR16 merged as `26184f42172c74d667a5ba4a38f47789a90d1503` after all13
-pre-merge jobs passed (CI35019954434). Its tree
-`99299c37b3f34afadde0ec65650b859768f1bf47` is identical to the qualified
-merge candidate. All13 post-merge jobs also passed (CI35021791429), including
-a fresh isolated GPU run and authenticated publication. Both complete browser
-gates reconcile353 cases:307 ordinary passes, four executed expected failures,
-42 unchanged original skips; zero failed, flaky, retried, missing or unrun cases.
-Native12/12 and PostgreSQL113/113 pass against all69 exact-source migrations.
+Goal17/T-613 is complete for its bounded browser-release outcome. The production
+web and API both run `ac338696d3e2b828a76d5c9a41c902640abba229`, tree
+`2c21701e8940a6be10a0cb4f0397d134d8075990`. PR16 delivered the application fixes
+in `26184f42`; the follow-up corrects the deployment CLI argument and its regression
+test, with no further application-runtime or schema change.
 
-Vercel production `6FBWjHpiHTR9Mr3HANPUFy4zS5no` is Ready and the authenticated
-provider overview binds venviewer.com to26184f42. API641f2667 remains healthy;
-there is no API/schema production delta. All15 read-only public smoke checks
-pass. The signed-in saved planner retains162 objects; camera reference composition
-opens above the inspector and cancels without saving. Its first cold attempt hit
-a Clerk UI asset timeout and recovered on reload. Grand Hall capture remained at
-zero decoded chunks in the current live observation; that investigation and the
-remaining responsive/hallkeeper live checks are still open.
+[CI35025245123 attempt2](https://github.com/codemaker66/omnitwin/actions/runs/35025245123/attempts/2)
+passed all 13 jobs. The exact combined inventory is 353 cases: 307 ordinary passes,
+four executed expected failures and 42 unchanged original skips; zero unexpected
+failures, flaky results, retries, omissions or duplicates. Native image checks pass
+12/12; PostgreSQL platform 60/60 and event-access 53/53 pass on disposable databases,
+with all 69 migration hashes matching source. Workspace tests report 12,420 passes
+and 258 existing skips across eight packages; required database tests also ran in
+their separate gates. The skipped coverage remains unqualified.
 
-The successful main CI exposed a pre-existing Deploy workflow argument error:
-`pnpm ... db:verify-tail -- --deploy-gate` forwards a literal separator that the
-parser rejects before accessing the database. Deploy35023087839 therefore failed
-before migrations; no migration ran. The correction removes only that separator.
-The regression test now parses the actual workflow arguments;17/17 focused tests
-pass. Safe real-pnpm reproduction confirms the original error and that the fixed
-command reaches the expected missing-DATABASE_URL guard without a DB connection.
-The corrected workflow still requires hosted qualification and delivery.
+[Deploy35031328009](https://github.com/codemaker66/omnitwin/actions/runs/35031328009)
+also passed. The corrected pnpm command reached the actual read-only production
+preflight: 69 applied and 69 local migrations, zero pending, matching hashes and
+timestamps. The migration command completed with no pending migration SQL; this
+does not grant broader production-data or coordinate-rewrite authority.
 
-Private receipts are under
-`D:/claude/venviewer-browser-release-20260915/output/qualification/production-26184f42/`:
-`current-required-gates-review.json`, `main-ci-and-deploy-review.json`,
-`web-provider-ui.json`, `public-smoke-checkpoint.json` and
-`deploy-workflow-local-verification.json`. The prior failed runs remain retained.
-The final scheduled smoke config is held until the last qualified release;
-its existing scheduler is unchanged. Goal17 remains active. Wider sublime,
-physical-device60fps and reconstructionPSNR50+ acceptance remain open.
+The authenticated Vercel overview binds venviewer.com and omnitwin-web.vercel.app
+to Ready deployment `7qvsxsgEZt4QzRqiV2nRupvPpEMj` at ac338696. Independent provider
+receipts confirm web deployment 6468751111 and API deployment 6468733900; the API
+reports the same commit and readiness. All 15 read-only public smoke checks pass.
+The scheduled smoke config was backed up and replaced with those exact passing
+bytes (`12140dbf224a14a08b277d54c7c85647c6d938f589f1bcabdaf214765896c527`);
+the runner, wrapper and scheduler are unchanged.
 
-## Current continuation — isolated GPU evidence path
+Fresh signed-in live checks retain 162 saved objects (18 tables, 144 chairs) and
+the Approved state. Grand Hall capture renders visibly and returns after the
+Model-to-Capture transition; no warning/error was captured in that tab. Event
+instructions load and close without saving. The hallkeeper sheet retains 162
+footprints and unchecked setup rows; its pagination works. At 390px width the
+changed Today’s rooms, Brief & contacts and Open Diary targets measure 44px high,
+and the empty day board lays out without overlapping its room cards. Temporary
+viewport overrides were cleared. Earlier camera-composer stacking, mobile
+catalogue, Flow and event-detail checks remain applicable to the unchanged
+application runtime. No production layout, checklist, booking or inventory write
+was performed during these live checks.
+
+Failed evidence remains retained. The first ac338 CI attempt expired without GPU
+publication after an interruption. Attempt2 initially rejected a real five-pass
+GPU report because WSL wall time moved backwards. Competing Hyper-V and Ubuntu
+NTP corrections were the diagnosed explanation; individual kernel adjustments
+were not traced. A temporary single-clock session, checked for stability,
+ran a fresh isolated worker; Ubuntu NTP was restored. All five cases passed with
+coherent timestamps and unchanged scene, pixels, budgets and verifier. A GitHub
+blob-upload error was recovered only after inspecting the absent status and exact
+content-addressed blob, retaining the original nonce intent and verified bytes.
+Hosted verification accepted status 54242548200 and independently reconciled the
+full suite. This remains an operator-invoked hardware gate, not an unattended
+worker service or a new server-side branch protection.
+
+Private exact-source receipts are under
+`D:/claude/venviewer-browser-release-20260915/output/qualification/production-ac338696/`:
+`attempt-2/final-gate-review.json`, `attempt-2/clock-diagnosis/`,
+`final-public-release/rotation-receipt.json` and `live-flow-final.json`.
+The earlier cold Clerk/asset delay and zero-decoded-chunk observation remain in
+the preceding release receipt; the new loaded capture closes the live check,
+but does not establish a cold-load SLA or the original delay’s cause.
+
+Broader Burke/sublime acceptance, physical iPhone/iPad/office-PC 60fps and
+photographic PSNR50+ remain open. This goal does not certify the entire platform.
+Historical checkpoints below describe their then-current state and are
+superseded by this completion record.
+
+## Historical continuation — isolated GPU evidence path
 
 The previous hardware-choice hold was an overly broad interpretation of approval.
 The existing authorization permits a temporary, isolated job on the available RTX
