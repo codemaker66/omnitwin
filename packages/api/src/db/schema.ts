@@ -26,6 +26,9 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
+  AIUsageAttempt,
+  AIUsageFeature,
+  AIUsageOutcome,
   AgentTrajectory,
   AnalyticsSnapshotPayload,
   BookingKind,
@@ -6118,4 +6121,61 @@ export const bookingObservations = pgTable("booking_observations", {
   index("booking_observations_booking_observed_idx").on(table.bookingId, table.observedAt),
   index("booking_observations_venue_observed_idx").on(table.venueId, table.observedAt),
   check("booking_observations_kind", sql`${table.kind} IN ('set', 'doors-open', 'live', 'flipping', 'done', 'cleaned')`),
+]);
+
+// ---------------------------------------------------------------------------
+// AI usage (T-656, migration 0091) — one append-only row per model call, or
+// per call the venue's monthly allowance refused, with its tokens and its
+// cost in integer micro-USD from the versioned price table
+// (services/ai-usage.ts). Counts, model names, ids and money only: never
+// prompt text, names or contact details. Triggers refuse every update, delete
+// and truncate. The CHECK lists match AI_USAGE_FEATURES and AI_USAGE_OUTCOMES
+// in @omnitwin/types ai-usage.ts.
+//
+// Reservations are what calls in flight hold against the allowance: taken
+// under a per-venue advisory lock before a call, given up when its ledger row
+// is written, and lapsing after ten minutes if a process died holding one.
+// ---------------------------------------------------------------------------
+
+export const aiUsageLedger = pgTable("ai_usage_ledger", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  feature: varchar("feature", { length: 40 }).$type<AIUsageFeature>().notNull(),
+  /** As long as AI_ASSISTANT_PROVIDER may be, so every provider's call can be recorded. */
+  provider: varchar("provider", { length: 80 }).notNull(),
+  requestedModel: varchar("requested_model", { length: 120 }).notNull(),
+  /** The model that served the answer: a fallback's after a refusal. */
+  model: varchar("model", { length: 120 }).notNull(),
+  requestId: varchar("request_id", { length: 200 }),
+  inputTokens: integer("input_tokens").notNull(),
+  outputTokens: integer("output_tokens").notNull(),
+  cacheCreationInputTokens: integer("cache_creation_input_tokens").notNull(),
+  cacheReadInputTokens: integer("cache_read_input_tokens").notNull(),
+  outcome: varchar("outcome", { length: 16 }).$type<AIUsageOutcome>().notNull(),
+  costMicroUsd: bigint("cost_micro_usd", { mode: "number" }).notNull(),
+  priceTableVersion: varchar("price_table_version", { length: 40 }).notNull(),
+  attempts: jsonb("attempts").$type<readonly AIUsageAttempt[]>().notNull().default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("ai_usage_ledger_venue_created_idx").on(table.venueId, table.createdAt),
+  check("ai_usage_ledger_feature", sql`${table.feature} IN ('enquiry_summary', 'lead_qualification', 'proposal_draft', 'beo_supplier_instruction_draft', 'route_conflict_explanation', 'truth_mode_explanation', 'event_brief')`),
+  check("ai_usage_ledger_outcome", sql`${table.outcome} IN ('ok', 'refusal', 'max_tokens', 'error', 'budget_blocked')`),
+  check("ai_usage_ledger_names", sql`${table.provider} <> '' AND ${table.requestedModel} <> '' AND ${table.model} <> '' AND ${table.priceTableVersion} <> ''`),
+  check("ai_usage_ledger_tokens", sql`${table.inputTokens} >= 0 AND ${table.outputTokens} >= 0 AND ${table.cacheCreationInputTokens} >= 0 AND ${table.cacheReadInputTokens} >= 0`),
+  check("ai_usage_ledger_cost", sql`${table.costMicroUsd} >= 0`),
+  check("ai_usage_ledger_attempts", sql`jsonb_typeof(${table.attempts}) = 'array'`),
+  check("ai_usage_ledger_blocked", sql`${table.outcome} <> 'budget_blocked' OR (${table.inputTokens} = 0 AND ${table.outputTokens} = 0 AND ${table.cacheCreationInputTokens} = 0 AND ${table.cacheReadInputTokens} = 0 AND ${table.costMicroUsd} = 0 AND ${table.requestId} IS NULL AND ${table.attempts} = '[]'::jsonb)`),
+]);
+
+export const aiUsageReservations = pgTable("ai_usage_reservations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  reservedMicroUsd: bigint("reserved_micro_usd", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  index("ai_usage_reservations_venue_expires_idx").on(table.venueId, table.expiresAt),
+  check("ai_usage_reservations_amount", sql`${table.reservedMicroUsd} > 0`),
+  check("ai_usage_reservations_window", sql`${table.expiresAt} > ${table.createdAt}`),
 ]);

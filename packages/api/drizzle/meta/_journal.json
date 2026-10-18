@@ -628,6 +628,13 @@
     {
       "idx": 89,
       "version": "7",
+      "when": 1791730800000,
+      "tag": "0091_ai_usage_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
       "when": 1791903600000,
       "tag": "0092_operating_settings",
       "breakpoints": true

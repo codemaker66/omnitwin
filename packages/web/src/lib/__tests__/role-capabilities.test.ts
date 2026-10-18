@@ -17,6 +17,7 @@ import {
   VENUE_MEMBER_ROLES,
   WORKSPACE_ROLES,
   awaitsVenue,
+  canDraftWithAI,
   diaryVenueOf,
   hasRole,
 } from "../role-capabilities.js";
@@ -307,5 +308,30 @@ describe("the Diary a person reads from the desks", () => {
       }
     }
     expect(diaryVenueOf(null)).toBeNull();
+  });
+});
+
+// T-656: POST /ai/drafts charges a draft to the venue of the person asking,
+// so it answers the venue's floor and commercial team (canManageVenue or
+// canManageCommercial at their own venue) and refuses everyone else with
+// 403. The panel is offered to exactly the people the API answers.
+describe("who is offered the general AI draft panel", () => {
+  const placed = { venueId: "venue-1", platformRole: "none" } as const;
+
+  it("is the venue's own team, and never a customer or an event-scoped role", () => {
+    for (const role of USER_ROLES) {
+      expect(canDraftWithAI({ ...placed, role }), role).toBe(hasRole(VENUE_MEMBER_ROLES, role));
+    }
+    for (const role of ["planner", "client", "caterer"]) {
+      expect(canDraftWithAI({ ...placed, role }), role).toBe(false);
+    }
+  });
+
+  it("is nobody without a venue to charge, and a platform admin only through its venue", () => {
+    expect(canDraftWithAI({ ...placed, role: "staff", venueId: null })).toBe(false);
+    expect(canDraftWithAI({ role: "admin", venueId: null, platformRole: "admin" })).toBe(false);
+    expect(canDraftWithAI({ role: "planner", venueId: "venue-1", platformRole: "admin" })).toBe(true);
+    expect(canDraftWithAI({ ...placed, role: "planner", platformRole: "operator" })).toBe(false);
+    expect(canDraftWithAI(null)).toBe(false);
   });
 });

@@ -11,7 +11,7 @@
 
    Motion is one spring-shaped pulse when a request ARRIVES, then a steady
    copper dot for as long as it is open. Never a repeat, never a strobe. Sound
-   is the chime this device opted into (arrival-chime.ts), nothing else. The
+   is the chime this device opted into (lib/sound-registry.ts), nothing else. The
    arrival animation is a one-shot on a freshly mounted element, so there is
    no interval to leak and nothing to stop.
 --------------------------------------------------------------------------- */
