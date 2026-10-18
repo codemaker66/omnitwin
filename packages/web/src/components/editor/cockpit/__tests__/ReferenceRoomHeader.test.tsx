@@ -83,7 +83,7 @@ describe("ReferenceRoomHeader", () => {
     });
     useAuthStore.setState({ user: { id: "user-city", email: "planner@example.com", name: "City Planner", role: "planner", platformRole: "none", venueId: cityRooms.id } });
     showHeader();
-    const identity = await screen.findByRole("link", { name: "Trade's Hall of Glasgow home" });
+    const identity = await screen.findByRole("link", { name: "Trades Hall of Glasgow home" });
     expect(venueRequest).toHaveBeenCalledWith(tradesHall.id);
     expect(venueRequest).not.toHaveBeenCalledWith(cityRooms.id);
     expect(identity.textContent).toContain("Grand Hall");
@@ -114,7 +114,7 @@ describe("ReferenceRoomHeader", () => {
     await act(async () => { first.resolve(tradesHall); await first.promise; });
     const identity = screen.getByRole("link", { name: "City Rooms diary" });
     expect(identity.querySelector("img")?.getAttribute("src")).toBe(cityRooms.logoUrl);
-    expect(screen.queryByRole("link", { name: "Trade's Hall of Glasgow diary" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Trades Hall of Glasgow diary" })).toBeNull();
   });
 
   it("clears the previous identity during a selection change and reports a failed lookup without its crest", async () => {
@@ -122,11 +122,11 @@ describe("ReferenceRoomHeader", () => {
     venueRequest.mockImplementation((venueId) => venueId === tradesHall.id ? Promise.resolve(tradesHall) : second.promise);
     useEditorStore.setState({ venueId: tradesHall.id });
     showHeader();
-    await screen.findByRole("link", { name: "Trade's Hall of Glasgow diary" });
+    await screen.findByRole("link", { name: "Trades Hall of Glasgow diary" });
     act(() => { useEditorStore.setState({ venueId: cityRooms.id }); });
     const pending = screen.getByRole("link", { name: "Venue planner diary" });
     expect(pending.querySelector("img")).toBeNull();
-    expect(screen.queryByRole("link", { name: "Trade's Hall of Glasgow diary" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Trades Hall of Glasgow diary" })).toBeNull();
     await act(async () => { second.reject(new Error("Venue lookup failed")); await second.promise.catch(() => undefined); });
     const unavailable = screen.getByRole("link", { name: "Venue unavailable diary" });
     expect(unavailable.querySelector("img")).toBeNull();

@@ -248,7 +248,8 @@ describe.each(VIEWPORTS)("a seat shortfall offers one tap ($label)", ({ width, p
     useCockpitStore.getState().setPlannedGuestCount(170);
     render(<ShareLensPanel />);
     const share = within(screen.getByTestId("share-lens-panel"));
-    expect(share.getByTestId("share-seat-fix-statement").textContent).toBe("30 seats short of 170 guests.");
+    expect(share.getByTestId("share-layout-summary").textContent).toContain("30 seats short of 170 guests");
+    expect(share.queryByTestId("share-seat-fix-statement")).toBeNull();
     expect(share.queryByTestId("share-seat-fix-action")).toBeNull();
     expect(share.getByTestId("share-seat-fix-no-room").textContent)
       .toBe("The tables are full, and there is no room for another at this spacing.");

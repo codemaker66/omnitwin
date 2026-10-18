@@ -92,6 +92,7 @@ describe("guestsAbovePublished — the one thing worth saying about a count", ()
 
   it("says plainly when the count is above it", () => {
     expect(guestsAbovePublished(260, grandHall, "reception")).toBe("260 guests is more than the published 250 for reception.");
+    expect(guestsAbovePublished(1, { ...grandHall, reception: 0 }, "reception")).toBe("1 guest is more than the published 0 for reception.");
   });
 
   it("says nothing without a count, a format or a sensible number", () => {

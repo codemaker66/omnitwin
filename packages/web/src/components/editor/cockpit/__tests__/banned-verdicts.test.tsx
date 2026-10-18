@@ -11,7 +11,10 @@ import type { PlacedItem } from "../../../../lib/placement.js";
 // occupancy (guests, evidence, the HUD) question is rendered for a visitor, a
 // client and the venue's staff, empty and loaded, under and over; none may
 // show within, fits, pass, valid or compliant, nor quote another country's
-// code. The source-text side of this guard is in __tests__/public-claim-guard.
+// code. The Flow lens (doors nobody surveyed) and the AV lens (a speaker and a
+// room nobody entered) may show no figure at all that only an assumed input
+// could produce. The source-text side of this guard is in
+// __tests__/public-claim-guard.
 // ---------------------------------------------------------------------------
 
 const venue = vi.hoisted(() => ({ status: "trades-hall" as TradesHallVenueStatus }));
@@ -23,6 +26,26 @@ vi.mock("../../../../api/action-log.js", () => ({
   getActionLog: () => Promise.resolve({ entries: [], nextAfter: 0 }),
 }));
 vi.mock("../FixtureModelPreview.js", () => ({ FixtureModelPreview: () => null }));
+// The Flow lens reads the real engine's output for the scenario on the floor,
+// run synchronously here instead of in the browser worker. Its doors are the
+// planner's own: placed mid-wall by assumption, because no venue records them.
+vi.mock("../../../../hooks/use-cockpit-replay.js", async () => {
+  const { runGuestFlowReplayV0 } = await import("@omnitwin/types");
+  const { buildGuestFlowReplayInputFromLayout } = await import("../../../../lib/guest-flow-layout-input.js");
+  const placement = await import("../../../../stores/placement-store.js");
+  const cockpit = await import("../../../../stores/cockpit-store.js");
+  return {
+    useCockpitReplay: () => {
+      const artifact = runGuestFlowReplayV0(buildGuestFlowReplayInputFromLayout({
+        roomWidthM: 21,
+        roomLengthM: 10.5,
+        placedItems: placement.usePlacementStore.getState().placedItems,
+        plannedGuestCount: cockpit.useCockpitStore.getState().plannedGuestCount,
+      }));
+      return { artifact, bounds: artifact.navmesh.roomBounds, status: "ready" as const };
+    },
+  };
+});
 
 const { RiggingLensPanel } = await import("../RiggingLensPanel.js");
 const { PowerLensPanel } = await import("../PowerLensPanel.js");
@@ -31,6 +54,8 @@ const { EvidenceLensPanel } = await import("../EvidenceLensPanel.js");
 const { GuestsLensPanel } = await import("../GuestsLensPanel.js");
 const { CostsLensPanel } = await import("../CostsLensPanel.js");
 const { PlannerSpatialHud } = await import("../../PlannerSpatialHud.js");
+const { FlowLensPanel } = await import("../FlowLensPanel.js");
+const { AVLensPanel } = await import("../AVLensPanel.js");
 const { usePlacementStore } = await import("../../../../stores/placement-store.js");
 const { useCockpitStore } = await import("../../../../stores/cockpit-store.js");
 const { useRoomDimensionsStore } = await import("../../../../stores/room-dimensions-store.js");
@@ -98,7 +123,16 @@ const SURFACES: ReadonlyArray<{ readonly name: string; readonly render: () => Re
   { name: "Guests", render: () => <GuestsLensPanel />, testId: "guests-lens-panel" },
   { name: "Costs", render: () => <CostsLensPanel />, testId: "costs-lens-panel" },
   { name: "Layout summary", render: () => <PlannerSpatialHud />, testId: "planner-spatial-hud" },
+  { name: "Flow", render: () => <FlowLensPanel />, testId: "flow-lens-panel" },
+  { name: "AV", render: () => <AVLensPanel />, testId: "av-lens-panel" },
 ];
+
+// A verdict or figure that only an assumed input could produce: the Flow
+// lens's density, queue, bottleneck and attention figures for doors nobody
+// surveyed, and the AV lens's speech verdict for a speaker and room nobody
+// entered (integration check, 17 Oct 2026: "1 review · 6 attention", a peak
+// density of 97.78, an 11-minute queue, and "Clear speech" from defaults).
+const ASSUMED_FIGURE = /\b(bottleneck score|peak density|hotspots?|queues|wait|simulated agents|avg travel|clear speech|marginal|below ambient|spl at listener|speech over ambient|coverage width)\b|\d+\s*(attention|review|info)\b/i;
 
 function assertNoVerdict(testId: string, context: string): void {
   const text = screen.getByTestId(testId).textContent ?? "";
@@ -137,6 +171,45 @@ describe("no verdict on a safety question, for anyone, in any state", () => {
         });
       }
     }
+  }
+});
+
+describe("no figure from an input nobody stated (Flow doors, AV defaults)", () => {
+  for (const viewer of VIEWERS) {
+    for (const scenario of SCENARIOS) {
+      it(`Flow · ${viewer} · ${scenario.name}`, () => {
+        viewAs(viewer);
+        usePlacementStore.setState({ placedItems: scenario.items() });
+        useCockpitStore.getState().setPlannedGuestCount(scenario.guests);
+        render(<FlowLensPanel />);
+        const text = screen.getByTestId("flow-lens-panel").textContent ?? "";
+        expect(text, `${viewer} · ${scenario.name}: ${text}`).not.toMatch(ASSUMED_FIGURE);
+        expect(screen.getByTestId("flow-doors-unrecorded-status").textContent).toBe("Not recorded");
+        // The way forward: a drafted question, or who to ask when there is no address.
+        expect(screen.queryByTestId("flow-doors-unrecorded-ask") ?? screen.queryByTestId("flow-doors-unrecorded-next")).not.toBeNull();
+      });
+    }
+
+    it(`AV · ${viewer} · nothing entered`, () => {
+      viewAs(viewer);
+      render(<AVLensPanel />);
+      const text = screen.getByTestId("av-lens-panel").textContent ?? "";
+      expect(text).not.toMatch(ASSUMED_FIGURE);
+      expect(screen.getByTestId("av-unrecorded-ambient").textContent).toContain("Not recorded");
+    });
+
+    it(`AV · ${viewer} · figures entered, loud and quiet room`, () => {
+      viewAs(viewer);
+      render(<AVLensPanel />);
+      fireEvent.change(screen.getByTestId("av-spl"), { target: { value: "127" } });
+      fireEvent.change(screen.getByTestId("av-distance"), { target: { value: "12" } });
+      fireEvent.change(screen.getByTestId("av-ambient"), { target: { value: "40" } });
+      fireEvent.change(screen.getByTestId("av-target"), { target: { value: "10" } });
+      assertNoVerdict("av-lens-panel", `${viewer} quiet`);
+      expect(screen.getByTestId("av-lens-panel").textContent).not.toMatch(/\b(clear speech|clear|good|marginal)\b/i);
+      fireEvent.change(screen.getByTestId("av-ambient"), { target: { value: "120" } });
+      assertNoVerdict("av-lens-panel", `${viewer} loud`);
+    });
   }
 });
 

@@ -14,6 +14,7 @@ import { inferSeatingStyle } from "./layout-capacity.js";
 import { seatingCountsFromPlacedItems } from "./seating-counts.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 import { roomPhrase } from "./unrecorded-ask.js";
+import { countLabel } from "./count-label.js";
 import type { PlacedItem } from "./placement.js";
 import type { AuthUser } from "../stores/auth-store.js";
 
@@ -160,7 +161,7 @@ export function guestsAbovePublished(
   if (guestCount === null || format === null || !Number.isFinite(guestCount) || guestCount <= 0) return null;
   const figure = capacity[format];
   if (guestCount <= figure) return null;
-  return `${String(guestCount)} guests is more than the published ${String(figure)} for ${publishedFormatWord(format)}.`;
+  return `${countLabel(guestCount, "guest")} is more than the published ${String(figure)} for ${publishedFormatWord(format)}.`;
 }
 
 /** A published format in words, lower case: "dinner", "reception". */
