@@ -38,6 +38,11 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   createProposal: mocks.createProposal,
 }));
 
+// Who won a lost deal is chosen from the venue's competitor set (the
+// competitor watch); its names come from here.
+const competitorNames = vi.hoisted(() => vi.fn());
+vi.mock("../../../api/competitor-watch.js", () => ({ getCompetitorNames: competitorNames }));
+
 const authState = vi.hoisted(() => ({
   user: { id: "u1", role: "staff", platformRole: "none" as const, venueId: "v1" as string | null, email: "staff@test.com", name: "Catherine Tait" },
 }));
@@ -148,6 +153,11 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   mocks.getPipeline.mockResolvedValue(pipeline());
   mocks.getOpportunity.mockResolvedValue(detail());
+  competitorNames.mockReset();
+  competitorNames.mockResolvedValue([
+    { id: "aaaaaaaa-1111-4111-8111-000000000001", name: "voco Grand Central" },
+    { id: "aaaaaaaa-1111-4111-8111-000000000002", name: "The Merchants House of Glasgow" },
+  ]);
   wideDesk();
 });
 
@@ -319,6 +329,62 @@ describe("the open deal", () => {
     fireEvent.click(mark);
     await waitFor(() => { expect(mocks.updateOpportunity).toHaveBeenCalledWith("opp1", { stage: "won", note: "Accepted the proposal" }); });
     expect(await screen.findByText("Henderson wedding is now won.")).toBeDefined();
+  });
+
+  it("marks a deal lost with who won and any figure the client gave, kept as theirs, unverified", async () => {
+    mocks.getOpportunity.mockResolvedValue(detail({}, { stage: "proposal_sent" }));
+    mocks.updateOpportunity.mockResolvedValue(deal({ stage: "lost", closedAt: NOW }));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    fireEvent.click(panel.getByRole("button", { name: "Mark lost…" }));
+    const confirm = within(await screen.findByTestId("deal-confirm-lost"));
+    fireEvent.click(confirm.getByRole("button", { name: "Chose another venue" }));
+    // Saying who won is optional: Not said is where it starts.
+    expect(confirm.getByRole("button", { name: "Not said" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(await confirm.findByRole("button", { name: "voco Grand Central" }));
+    expect(confirm.getByText("Kept on this deal as the client's figure, unverified. It is never added to that venue's prices.")).toBeDefined();
+    fireEvent.change(confirm.getByLabelText("Their figure, if the client gave one (optional)"), { target: { value: "11,500" } });
+    fireEvent.click(confirm.getByRole("button", { name: "Mark lost" }));
+    await waitFor(() => {
+      expect(mocks.updateOpportunity).toHaveBeenCalledWith("opp1", {
+        stage: "lost", note: "Chose another venue",
+        lostTo: { competitorId: "aaaaaaaa-1111-4111-8111-000000000001", otherName: null, clientFigureMinor: 1_150_000, clientFigureBasis: "fixed" },
+      });
+    });
+    expect(competitorNames).toHaveBeenCalledWith("v1", expect.any(AbortSignal));
+  });
+
+  it("asks for another venue's name, and marks a deal lost without a winner when none was said", async () => {
+    mocks.getOpportunity.mockResolvedValue(detail({}, { stage: "proposal_sent" }));
+    mocks.updateOpportunity.mockResolvedValue(deal({ stage: "lost", closedAt: NOW }));
+    competitorNames.mockRejectedValue(new Error("Unavailable"));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    fireEvent.click(panel.getByRole("button", { name: "Mark lost…" }));
+    const confirm = within(await screen.findByTestId("deal-confirm-lost"));
+    expect(await confirm.findByText("The competitor set could not be read. Name the venue instead.")).toBeDefined();
+    fireEvent.click(confirm.getByRole("button", { name: "Over budget" }));
+    fireEvent.click(confirm.getByRole("button", { name: "Another venue" }));
+    const mark = confirm.getByRole("button", { name: "Mark lost" });
+    expect((mark as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm.getByRole("alert").textContent).toBe("Give the other venue's name, or choose Not said.");
+    fireEvent.click(confirm.getByRole("button", { name: "Not said" }));
+    expect((mark as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(mark);
+    await waitFor(() => { expect(mocks.updateOpportunity).toHaveBeenCalledWith("opp1", { stage: "lost", note: "Over budget" }); });
+  });
+
+  it("tells who won in the timeline, with the client's figure labelled as theirs", async () => {
+    mocks.getOpportunity.mockResolvedValue(detail({
+      history: [{
+        id: "m1", fromStage: "proposal_sent", toStage: "lost", note: "Chose another venue", changedByName: "Catherine Tait",
+        createdAt: "2026-10-01T10:00:00.000Z",
+        lostTo: { name: "voco Grand Central", competitorId: null, clientFigureMinor: 1_150_000, clientFigureBasis: "fixed", currency: "GBP" },
+      }],
+    }, { stage: "lost", closedAt: "2026-10-01T10:00:00.000Z" }));
+    render(<PipelineDesk />);
+    await openDeal();
+    expect(await screen.findByText("Lost to voco Grand Central. Client's figure, unverified: £11,500 in total.")).toBeDefined();
   });
 
   it("keeps it open when Keep it open is chosen, and says so plainly when the move is refused", async () => {
