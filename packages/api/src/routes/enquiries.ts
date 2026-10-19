@@ -427,9 +427,14 @@ export async function enquiryRoutes(
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
 
-    // A quote is a price: the enquirer and the roles that work the pipeline
-    // see it; a hallkeeper, who can open the enquiry, does not (decision 6b).
-    if (enquiry.userId !== request.user.id && !canManageCommercial(request.user, enquiry.venueId)) {
+    // A quote is a price worked from every active rule, dated and
+    // suggestion-born rates included, so only the roles that work the pipeline
+    // see it (Blake, 17 October 2026). The enquirer asks for a quote and the
+    // venue's team sends one; owning the enquiry, whose date and guests its
+    // owner may change while it is a draft, never turns this into a price
+    // calculator. A hallkeeper, who can open the enquiry, does not see it
+    // either (decision 6b).
+    if (!canManageCommercial(request.user, enquiry.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -468,6 +473,7 @@ export async function enquiryRoutes(
       guestCount: enquiry.estimatedGuests ?? 0,
     });
 
+    reply.header("Cache-Control", "private, no-store");
     return { data: result };
   });
 
