@@ -92,7 +92,7 @@ import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
-import { requestLogSerializer } from "./observability/redact.js";
+import { errorLogSerializer, requestLogSerializer } from "./observability/redact.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
 import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
@@ -150,15 +150,17 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     // `serializers.req` replaces Fastify's default request serializer so the
     // query string (a client's name, email or phone on the search routes)
     // never reaches the log: the url is logged as "/people/search?[redacted]".
+    // `serializers.err` does the same for errors: no query parameters in the
+    // message or stack, no pg `detail`/`where`, down the cause chain.
     logger: isDev
       ? {
           level: "info",
-          serializers: { req: requestLogSerializer },
+          serializers: { req: requestLogSerializer, err: errorLogSerializer },
           transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } },
         }
       : isTest
         ? false
-        : { level: "info", serializers: { req: requestLogSerializer } },
+        : { level: "info", serializers: { req: requestLogSerializer, err: errorLogSerializer } },
     bodyLimit: 2_000_000,
     connectionTimeout: 30_000,
     requestTimeout: 60_000,

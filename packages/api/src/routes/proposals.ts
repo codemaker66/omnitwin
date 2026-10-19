@@ -459,7 +459,9 @@ async function recordProposalLifecycleChange(
       sourceKind: input.sourceKind,
       sourceId: input.sourceId,
       lost: writing,
-      error: err instanceof Error ? err.message : String(err),
+      // `err`, not `err.message`: the logger's error serializer drops the
+      // query parameters a drizzle failure's message carries.
+      err,
     }, "proposal change committed but its announcement could not be written");
   }
 }

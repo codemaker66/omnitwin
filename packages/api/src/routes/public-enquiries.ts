@@ -348,7 +348,10 @@ export async function publicEnquiryRoutes(
           event: "enquiry.notification_failed",
           enquiryId: enquiry.id,
           venueId: anchor.venueId,
-          error: err instanceof Error ? err.message : String(err),
+          // Under `err` so the logger's error serializer owns the policy: a
+          // drizzle failure's message carries the notification's parameters
+          // (the guest's name or email), which `error: err.message` would log.
+          err,
         },
         "enquiry stored but the in-app notification could not be written",
       );

@@ -2,11 +2,16 @@ import { Writable } from "node:stream";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type { Breadcrumb, ErrorEvent } from "@sentry/node";
+import { DrizzleQueryError } from "drizzle-orm";
+import { registerErrorNormalizer } from "../middleware/error-normalizer.js";
 import {
+  REDACTED_PARAMS_MARKER,
   REDACTED_QUERY_MARKER,
+  errorLogSerializer,
   requestLogSerializer,
   scrubBreadcrumb,
   scrubErrorEvent,
+  scrubErrorMessage,
   scrubTransaction,
   withoutQuery,
   type ScrubbableTransaction,
@@ -180,6 +185,215 @@ describe("scrubErrorEvent", () => {
   it("passes an event with no request through untouched", () => {
     const event: ErrorEvent = { type: undefined, message: "boom" };
     expect(scrubErrorEvent(event)).toEqual({ type: undefined, message: "boom" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Error values. drizzle-orm's DrizzleQueryError writes its parameters into
+// the message ("Failed query: <sql>\nparams: <values>") and wraps the pg error
+// whose `detail` quotes the offending row. Neither may reach the error log or
+// a Sentry exception.
+// ---------------------------------------------------------------------------
+
+const PHONE = "0141 555 0100";
+const SQL = 'insert into "contact_methods" ("contact_id", "kind", "value") values ($1, $2, $3)';
+const CONSTRAINT = "contact_methods_value_key";
+
+/** The shape node-postgres gives a unique-violation: personal data in detail and where. */
+function pgUniqueViolation(): Error {
+  return Object.assign(new Error(`duplicate key value violates unique constraint "${CONSTRAINT}"`), {
+    name: "error",
+    severity: "ERROR",
+    code: "23505",
+    detail: `Key (contact_id, kind, value)=(c1, email, ${EMAIL}) already exists.`,
+    hint: undefined,
+    where: `SQL statement for ${EMAIL}`,
+    schema: "public",
+    table: "contact_methods",
+    column: "value",
+    constraint: CONSTRAINT,
+    routine: "_bt_check_unique",
+  });
+}
+
+function drizzleQueryError(): DrizzleQueryError {
+  return new DrizzleQueryError(SQL, ["c1", "email", EMAIL, PHONE], pgUniqueViolation());
+}
+
+describe("scrubErrorMessage", () => {
+  it("replaces a DrizzleQueryError's parameters and keeps the SQL", () => {
+    const message = `Failed query: ${SQL}\nparams: c1,email,${EMAIL},${PHONE}`;
+    const out = scrubErrorMessage(message);
+    expect(out).toBe(`Failed query: ${SQL}\n${REDACTED_PARAMS_MARKER}`);
+    expect(out).not.toContain("aileen");
+    expect(out).not.toContain("0141");
+  });
+
+  it("works on the message of a real DrizzleQueryError", () => {
+    const out = scrubErrorMessage(drizzleQueryError().message);
+    expect(out).toBe(`Failed query: ${SQL}\nparams: [redacted]`);
+  });
+
+  it("redacts a parameters block that itself spans several lines, but stops at the stack", () => {
+    const stack = [
+      `Error: Failed query: ${SQL}`,
+      `params: c1,email,${EMAIL},12 High Street`,
+      "Glasgow G1 1AA",
+      "    at PgPreparedQuery.queryWithCache (file.js:1:1)",
+      "    at async handler (file.js:2:2)",
+    ].join("\n");
+    const out = scrubErrorMessage(stack);
+    expect(out).not.toContain("aileen");
+    expect(out).not.toContain("High Street");
+    expect(out).not.toContain("G1 1AA");
+    expect(out).toContain("    at PgPreparedQuery.queryWithCache (file.js:1:1)");
+    expect(out).toContain("    at async handler (file.js:2:2)");
+    expect(out).toContain(`Error: Failed query: ${SQL}\nparams: [redacted]\n    at`);
+  });
+
+  it("stops the block at a following 'caused by:' line", () => {
+    const out = scrubErrorMessage(`Failed query: ${SQL}\nparams: ${EMAIL}\ncaused by: connection reset`);
+    expect(out).toBe(`Failed query: ${SQL}\nparams: [redacted]\ncaused by: connection reset`);
+  });
+
+  it("leaves a message with no params unchanged", () => {
+    expect(scrubErrorMessage("connection terminated unexpectedly")).toBe("connection terminated unexpectedly");
+    expect(scrubErrorMessage("")).toBe("");
+    // 'params' mid-line is not a parameters block.
+    expect(scrubErrorMessage("route params: id is required")).toBe("route params: id is required");
+  });
+});
+
+describe("errorLogSerializer", () => {
+  it("keeps the diagnostic fields and drops query values, detail and where, down the cause chain", () => {
+    const serialised = errorLogSerializer(drizzleQueryError());
+
+    expect(serialised.type).toBe("DrizzleQueryError");
+    expect(serialised.message).toBe(`Failed query: ${SQL}\nparams: [redacted]`);
+    expect(serialised.stack).toContain(REDACTED_PARAMS_MARKER);
+    expect(serialised).not.toHaveProperty("params");
+    expect(serialised).not.toHaveProperty("query");
+
+    const cause = serialised["cause"] as Record<string, unknown>;
+    expect(cause["type"]).toBe("Error");
+    expect(cause["message"]).toBe(`duplicate key value violates unique constraint "${CONSTRAINT}"`);
+    expect(cause["code"]).toBe("23505");
+    expect(cause["constraint"]).toBe(CONSTRAINT);
+    expect(cause["table"]).toBe("contact_methods");
+    expect(cause["column"]).toBe("value");
+    expect(cause["routine"]).toBe("_bt_check_unique");
+    expect(cause["severity"]).toBe("ERROR");
+    expect(cause).not.toHaveProperty("detail");
+    expect(cause).not.toHaveProperty("where");
+    expect(cause["stack"]).toEqual(expect.any(String));
+  });
+
+  it("leaves no email or phone anywhere in the serialised output", () => {
+    const text = JSON.stringify(errorLogSerializer(drizzleQueryError()));
+    expect(text).not.toContain("aileen");
+    expect(text).not.toContain("example.test");
+    expect(text).not.toContain("0141");
+  });
+
+  it("scrubs the stack, which begins with the message", () => {
+    const err = drizzleQueryError();
+    expect(err.stack).toContain(EMAIL);
+    const serialised = errorLogSerializer(err);
+    expect(serialised.stack).not.toContain(EMAIL);
+    expect(serialised.stack).toContain("    at ");
+  });
+
+  it("scrubs a personal-data property even when it is on a nested cause two levels down", () => {
+    const outer = new Error("outer", {
+      cause: new Error("middle", { cause: Object.assign(new Error("inner"), { detail: EMAIL, code: "23505" }) }),
+    });
+    const text = JSON.stringify(errorLogSerializer(outer));
+    expect(text).not.toContain("aileen");
+    expect(text).toContain("23505");
+  });
+
+  it("copes with a circular cause chain", () => {
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    (a as { cause?: unknown }).cause = b;
+    expect(() => JSON.stringify(errorLogSerializer(a))).not.toThrow();
+  });
+
+  it("serialises a thrown non-error as a scrubbed message", () => {
+    const serialised = errorLogSerializer(`Failed query: ${SQL}\nparams: ${EMAIL}`);
+    expect(serialised.type).toBe("NonError");
+    expect(serialised.message).toBe(`Failed query: ${SQL}\nparams: [redacted]`);
+  });
+
+  it("keeps the email out of the real Fastify error log, which leaks it by default", async () => {
+    async function logOutput(withSerializer: boolean): Promise<string> {
+      const chunks: string[] = [];
+      const stream = new Writable({
+        write(chunk: Buffer, _encoding, callback): void {
+          chunks.push(chunk.toString("utf8"));
+          callback();
+        },
+      });
+      const app = Fastify({
+        logger: {
+          level: "info",
+          stream,
+          ...(withSerializer ? { serializers: { err: errorLogSerializer } } : {}),
+        },
+      });
+      registerErrorNormalizer(app);
+      app.post("/people", () => {
+        throw drizzleQueryError();
+      });
+      const response = await app.inject({ method: "POST", url: "/people" });
+      await app.close();
+      expect(response.statusCode).toBe(500);
+      return chunks.join("");
+    }
+
+    // The baseline really does leak, so the comparison is meaningful.
+    expect(await logOutput(false)).toContain(EMAIL);
+
+    const redacted = await logOutput(true);
+    expect(redacted).toContain("request errored");
+    expect(redacted).not.toContain("aileen");
+    expect(redacted).not.toContain("example.test");
+    expect(redacted).not.toContain("0141");
+    // Still diagnosable: the constraint and code survive.
+    expect(redacted).toContain(CONSTRAINT);
+    expect(redacted).toContain("23505");
+  });
+});
+
+describe("scrubErrorEvent exception values", () => {
+  it("redacts parameters in every exception value, including linked causes", () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      exception: {
+        values: [
+          { type: "error", value: `duplicate key value violates unique constraint "${CONSTRAINT}"` },
+          { type: "DrizzleQueryError", value: `Failed query: ${SQL}\nparams: c1,email,${EMAIL},${PHONE}` },
+          { type: "Error" },
+        ],
+      },
+    };
+    const out = scrubErrorEvent(event);
+    expect(out.exception?.values?.[0]?.value).toBe(`duplicate key value violates unique constraint "${CONSTRAINT}"`);
+    expect(out.exception?.values?.[1]?.value).toBe(`Failed query: ${SQL}\nparams: [redacted]`);
+    expect(out.exception?.values?.[2]).toEqual({ type: "Error" });
+    const text = JSON.stringify(out);
+    expect(text).not.toContain("aileen");
+    expect(text).not.toContain("0141");
+  });
+
+  it("still scrubs the request when exception values are present", () => {
+    const out = scrubErrorEvent({
+      type: undefined,
+      request: { url: `https://api.example.test/people/search?q=${EMAIL}` },
+      exception: { values: [{ value: `Failed query: ${SQL}\nparams: ${EMAIL}` }] },
+    });
+    expect(out.request?.url).toBe("https://api.example.test/people/search?[redacted]");
+    expect(out.exception?.values?.[0]?.value).toBe(`Failed query: ${SQL}\nparams: [redacted]`);
   });
 });
 
