@@ -229,6 +229,8 @@ describe("ShareLensPanel", () => {
     const positions = [-6.435, -2.145, 2.145, 6.435].flatMap((x) => [[x, -2.145], [x, 2.145]] as const);
     usePlacementStore.setState({ placedItems: positions.flatMap(([x, z]) => [...createTableGroup(round.id, x, z, 0, 8)]) });
     useCockpitStore.getState().setPlannedGuestCount(80);
+    // The shortfall belongs to the staff lens; a visitor's states only what is placed.
+    signInStaff();
 
     render(<ShareLensPanel />);
     // The Share summary states the shortfall once; the fix itself adds no second statement.
@@ -242,6 +244,7 @@ describe("ShareLensPanel", () => {
 
   it("offers no seat fix when every guest has a seat", () => {
     useCockpitStore.getState().setPlannedGuestCount(120);
+    signInStaff();
     render(<ShareLensPanel />);
     expect(screen.queryByTestId("share-seat-fix-action")).toBeNull();
     expect(screen.queryByTestId("share-seat-fix-statement")).toBeNull();

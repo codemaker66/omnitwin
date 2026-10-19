@@ -23,6 +23,7 @@ const { usePlacementStore } = await import("../../../../stores/placement-store.j
 const { useRoomDimensionsStore } = await import("../../../../stores/room-dimensions-store.js");
 const { useCockpitStore } = await import("../../../../stores/cockpit-store.js");
 const { useAutoFillRequestStore } = await import("../../../../stores/auto-fill-request-store.js");
+const { useAuthStore } = await import("../../../../stores/auth-store.js");
 const { getCatalogueItemBySlug } = await import("../../../../lib/catalogue.js");
 const { createTableGroup } = await import("../../../../lib/table-group.js");
 const { seatingCountsFromPlacedItems } = await import("../../../../lib/seating-counts.js");
@@ -101,6 +102,7 @@ afterEach(() => {
   restoreWidth?.();
   restoreWidth = null;
   useCockpitStore.getState().reset();
+  useAuthStore.getState().setUser(null);
   fixtures.resetPlannerTruth();
 });
 
@@ -244,6 +246,10 @@ describe.each(VIEWPORTS)("a seat shortfall offers one tap ($label)", ({ width, p
   });
 
   it("gives the Share lens the same way forward when the hall is full at this spacing", () => {
+    // A visitor's Share lens (#111) states only what is placed, never a guest
+    // count, so the shortfall's way forward there is the staff lens's; a
+    // visitor meets it in the Guests lens above.
+    useAuthStore.getState().setUser({ id: "u1", email: "staff@venue.test", role: "owner", platformRole: "none", venueId: "v1", name: "Staff" });
     usePlacementStore.setState({ placedItems: fullHall() });
     useCockpitStore.getState().setPlannedGuestCount(170);
     render(<ShareLensPanel />);

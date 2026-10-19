@@ -26,7 +26,6 @@ import {
   createProposalVersion,
   transitionProposal,
 } from "../../../api/proposals.js";
-import { seatingCountsFromPlacedItems } from "../../../lib/seating-counts.js";
 import { useVisitorPlanPdf } from "../../../hooks/use-visitor-plan-pdf.js";
 import { useVisitorPlanLinks } from "../../../hooks/use-visitor-plan-links.js";
 import { VisitorPlanPdfActions } from "../VisitorPlanPdfActions.js";
