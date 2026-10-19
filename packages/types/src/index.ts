@@ -1447,6 +1447,10 @@ export {
 // and its QR answers only "current" or "superseded" (no sign-in, no content).
 export * from "./sheet-paper-check.js";
 
+// The hallkeeper's brief derived from a sheet (day in order, store list,
+// setup steps, plan markers, keep-in-view facts), shared by paper and screen.
+export * from "./sheet-brief.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
