@@ -115,11 +115,14 @@ export async function openPeopleFixture(
     // Only this fixture's venues, children first: what the People Book's
     // routes write around a person, then the people. Tombstones point at
     // their survivors (ON DELETE RESTRICT), so the links go before the people.
+    // A guest lead names no venue, so it goes by the enquiry that opened it.
     for (const statement of [
       "DELETE FROM record_merges WHERE venue_id = ANY($1::uuid[])",
       "DELETE FROM opportunities WHERE venue_id = ANY($1::uuid[])",
       "DELETE FROM enquiry_status_history WHERE enquiry_id IN (SELECT id FROM enquiries WHERE venue_id = ANY($1::uuid[]))",
+      "DELETE FROM guest_leads WHERE first_enquiry_id IN (SELECT id FROM enquiries WHERE venue_id = ANY($1::uuid[]))",
       "DELETE FROM enquiries WHERE venue_id = ANY($1::uuid[])",
+      "DELETE FROM spaces WHERE venue_id = ANY($1::uuid[])",
       "DELETE FROM contact_kept_apart WHERE venue_id = ANY($1::uuid[])",
       "UPDATE contacts SET merged_into_id = NULL, client_account_id = NULL WHERE venue_id = ANY($1::uuid[])",
       "UPDATE client_accounts SET merged_into_id = NULL, primary_contact_id = NULL WHERE venue_id = ANY($1::uuid[])",

@@ -37,7 +37,19 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/people-duplicates-postgres.test.ts",
   // The /people routes: people, their points and memberships, the mirrors, the kept-apart mark.
   "src/__tests__/people-routes-postgres.test.ts",
+  // A public enquiry finds or makes its person; guest leads are written once.
+  "src/__tests__/people-enquiry-link-postgres.test.ts",
+  // POST /public/enquiries against real constraints, on its own database (below).
+  "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
 ] as const;
+
+/**
+ * The venue-slug enquiry test's own database on the platform test cluster. It
+ * builds and drops a schema of its own there, never the migrated platform
+ * database, and skips without its variable, so this gate creates the database
+ * and passes the variable; the zero-skip check then fails a run where it skips.
+ */
+const PUBLIC_ENQUIRY_TEST_DATABASE = "venviewer_public_enquiry_test";
 
 export function requirePlatformTestDatabaseUrl(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === "") {
@@ -50,6 +62,39 @@ export function requirePlatformTestDatabaseUrl(raw: string | undefined): string 
     throw new Error("Platform tests require their disposable 127.0.0.1:55477/venviewer_platform_test target without URL parameters");
   }
   return raw;
+}
+
+/** The validated platform target with its database replaced by the venue-slug
+ *  test's own: exactly the URL that file's guard accepts. */
+export function publicEnquiryTestDatabaseUrl(target: string): string {
+  const url = new URL(requirePlatformTestDatabaseUrl(target));
+  url.pathname = `/${PUBLIC_ENQUIRY_TEST_DATABASE}`;
+  return url.toString();
+}
+
+/** Creates the venue-slug test's database on the platform cluster when it is missing. */
+async function ensurePublicEnquiryDatabase(target: string): Promise<{ database: string; created: boolean }> {
+  const pool = new Pool({ connectionString: target, max: 1, application_name: "platform-db-public-enquiry-database",
+    connectionTimeoutMillis: 10000, options: "-c statement_timeout=60000" });
+  try {
+    const existing = await pool.query<{ present: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS present", [PUBLIC_ENQUIRY_TEST_DATABASE],
+    );
+    if (existing.rows[0]?.present === true) return { database: PUBLIC_ENQUIRY_TEST_DATABASE, created: false };
+    try {
+      // CREATE DATABASE takes no parameters; the name is this file's constant.
+      await pool.query(`CREATE DATABASE ${PUBLIC_ENQUIRY_TEST_DATABASE}`);
+    } catch (error) {
+      // duplicate_database: another run made it between the look and the create.
+      if (error instanceof Error && "code" in error && error.code === "42P04") {
+        return { database: PUBLIC_ENQUIRY_TEST_DATABASE, created: false };
+      }
+      throw error;
+    }
+    return { database: PUBLIC_ENQUIRY_TEST_DATABASE, created: true };
+  } finally {
+    await pool.end();
+  }
 }
 
 interface AppliedMigration { hash: string; created_at: string }
@@ -155,6 +200,7 @@ function runVitest(target: string, outputFile: string): Promise<{ code: number |
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toUpperCase() !== "DATABASE_URL"));
   env["NODE_ENV"] = "test";
   env["VENVIEWER_PLATFORM_TEST_DATABASE_URL"] = target;
+  env["VENVIEWER_PUBLIC_ENQUIRY_TEST_DATABASE_URL"] = publicEnquiryTestDatabaseUrl(target);
   return new Promise((resolveExit, reject) => {
     const child = spawn(process.execPath, [cli, "run", ...PLATFORM_POSTGRES_TEST_FILES,
       "--reporter=default", "--reporter=json", `--outputFile=${outputFile}`], {
@@ -187,6 +233,7 @@ export async function runPlatformPostgresTests(): Promise<void> {
     await Promise.all(PLATFORM_POSTGRES_TEST_FILES.map(file => access(join(apiRoot, file))));
     receipt["migration"] = await qualifyMigrations(target);
     await writeFile(join(outputDirectory, "migration.json"), `${JSON.stringify(receipt["migration"], null, 2)}\n`);
+    receipt["publicEnquiryDatabase"] = await ensurePublicEnquiryDatabase(target);
     receipt["stage"] = "tests";
     const reportPath = join(outputDirectory, "vitest.json");
     const execution = await runVitest(target, reportPath);

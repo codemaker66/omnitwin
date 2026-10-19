@@ -31,6 +31,8 @@ import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
 //
 // It skips unless VENVIEWER_PUBLIC_ENQUIRY_TEST_DATABASE_URL names its own
 // explicit disposable loopback database on the platform test cluster's port.
+// The platform gate (scripts/run-platform-postgres-tests.ts) creates that
+// database and sets the variable, and fails the run if this file skips.
 // It never reads DATABASE_URL, never loads .env, and creates and drops its own
 // schema, so it cannot reach an ambient or production database by accident.
 // ---------------------------------------------------------------------------
@@ -89,7 +91,9 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
   beforeEach(async () => {
     sendEmailAsyncSpy.mockClear();
     notifyCommercialTeamSpy.mockClear();
-    await pool.query("TRUNCATE guest_leads, enquiry_status_history, enquiries, configurations, spaces, users, venues CASCADE");
+    await pool.query(
+      "TRUNCATE guest_leads, enquiry_status_history, contact_points, account_memberships, contacts, client_accounts, enquiries, configurations, spaces, users, venues CASCADE",
+    );
     await pool.query(
       "INSERT INTO venues(id, name, slug, address) VALUES ($1, 'Trades Hall fixture', $2, '85 Glassford Street')",
       [VENUE, TRADES_HALL_ENQUIRY_VENUE_SLUG],
@@ -209,9 +213,11 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
 
     const enquiries = await pool.query("SELECT id FROM enquiries");
     expect(enquiries.rowCount).toBe(2);
+    // A lead is written once and never overwritten: it keeps what the first
+    // enquiry said (T-665).
     const leads = await pool.query<{ phone: string | null }>("SELECT phone FROM guest_leads");
     expect(leads.rowCount).toBe(1);
-    expect(leads.rows[0]?.phone).toBe("0141 999 9999");
+    expect(leads.rows[0]?.phone).toBe("0141 000 0000");
   });
 
   it("404s the asset slug, and stores nothing when it does", async () => {
