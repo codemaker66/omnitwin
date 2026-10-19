@@ -3,6 +3,7 @@ import type { FastifyBaseLogger, LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { VENUE_ACCESS_ENQUIRY_TYPE, VENVIEWER_PRICING_ENQUIRY_TYPE } from "@omnitwin/types";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
+import { linkEnquiryToPerson, type LinkOutcome } from "../services/people-link.js";
 import { openPeopleFixture, PLATFORM_TARGET, type PeopleFixture } from "./support/people-platform-fixture.js";
 
 // ---------------------------------------------------------------------------
@@ -320,6 +321,87 @@ describe.skipIf(PLATFORM_TARGET === undefined)("a public enquiry and the People 
     expect(await holders(f.venueId, "let-me-in@example.test")).toEqual([]);
     expect(await holders(f.venueId, "operations@other-venue.invalid")).toEqual([]);
     expect(await peopleAt(f.venueId)).toBe(people);
+  });
+
+  /** Whether another connection could lock the person this moment: "held"
+   *  when someone holds their row. */
+  async function rowLockOn(personId: string): Promise<"free" | "held"> {
+    const probe = await f.pool.connect();
+    try {
+      await probe.query("BEGIN");
+      await probe.query("SELECT id FROM contacts WHERE id = $1 FOR UPDATE NOWAIT", [personId]);
+      return "free";
+    } catch (error) {
+      // lock_not_available
+      if (error instanceof Error && "code" in error && error.code === "55P03") return "held";
+      throw error;
+    } finally {
+      await probe.query("ROLLBACK");
+      probe.release();
+    }
+  }
+
+  /** Waits until some session waits on a lock the given backend holds. */
+  async function waitUntilBlockedBy(pid: number): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const { rows } = await f.pool.query<{ waiting: number }>(
+        "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+        [pid],
+      );
+      if ((rows[0]?.waiting ?? 0) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("Nothing ever waited on the held row");
+  }
+
+  it("looks again, keeping no lock, when the one holder is merged away between the look and the lock", async () => {
+    const email = `rhona.begg-${run}@example.test`;
+    const holder = await f.addPerson({ name: "Rhona Begg", emails: [email] });
+    const survivor = await f.addPerson({ name: "Rhona Begg", emails: [`r.begg-${run}@example.test`] });
+    const { rows: [made] } = await f.pool.query<{ id: string }>(
+      `INSERT INTO enquiries (venue_id, space_id, name, email, state)
+       SELECT $1, id, 'Rhona Begg', $2, 'submitted' FROM spaces WHERE venue_id = $1 LIMIT 1 RETURNING id`,
+      [f.venueId, email],
+    );
+    if (made === undefined) throw new Error("No enquiry was made");
+
+    // A merge of the holder into the survivor, written by hand, holds the
+    // holder's row while the link looks.
+    const merger = await f.pool.connect();
+    let linking: Promise<{ outcome: LinkOutcome; tombstone: "free" | "held"; survivor: "free" | "held" }> | undefined;
+    try {
+      await merger.query("BEGIN");
+      await merger.query("SELECT id FROM contacts WHERE id = $1 FOR UPDATE", [holder]);
+      const { rows: [me] } = await merger.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      if (me === undefined) throw new Error("No backend pid");
+      linking = f.db.transaction(async (tx) => {
+        const outcome = await linkEnquiryToPerson(tx, {
+          id: made.id, venueId: f.venueId, contactId: null, email, name: "Rhona Begg", phone: null,
+        }, { ownerUserId: null, whenShared: "leave" });
+        // Still inside the link's transaction.
+        return { outcome, tombstone: await rowLockOn(holder), survivor: await rowLockOn(survivor) };
+      });
+      // ... until the link has looked, found the holder live and waits on them;
+      await waitUntilBlockedBy(me.pid);
+      // ... then moves their email to the survivor and closes them, as a merge does.
+      await merger.query("UPDATE contact_points SET contact_id = $2, is_primary = false WHERE contact_id = $1", [holder, survivor]);
+      await merger.query("UPDATE contacts SET merged_into_id = $2, deleted_at = now(), email = NULL WHERE id = $1", [holder, survivor]);
+      await merger.query("COMMIT");
+    } catch (error) {
+      await merger.query("ROLLBACK");
+      throw error;
+    } finally {
+      merger.release();
+    }
+    if (linking === undefined) throw new Error("The link never started");
+
+    const result = await linking;
+    expect(result.outcome).toEqual({ outcome: "linked", contactId: survivor });
+    // The survivor is held; the tombstone it found merged is not, so the two
+    // were never held together out of ascending id order.
+    expect(result.survivor).toBe("held");
+    expect(result.tombstone).toBe("free");
+    expect(await personOf(made.id)).toBe(survivor);
   });
 
   it("writes a guest lead once and never overwrites it from another venue", async () => {

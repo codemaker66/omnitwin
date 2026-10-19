@@ -1,7 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { isUsablePhone, normaliseEmail, type ContactPointInput } from "@omnitwin/types";
 import { accountMemberships, clientAccounts, contactPoints, contacts, enquiries } from "../db/schema.js";
-import { insertOrganisation, lockOrganisation, type OrganisationRow } from "./people-organisations.js";
+import { insertOrganisation, type OrganisationRow } from "./people-organisations.js";
 import {
   adoptLegacyMirror,
   insertPerson,
@@ -36,6 +36,13 @@ import {
 // transaction-level advisory lock taken inside it is released with it, which
 // is safe, because nothing the lock guarded was written.
 //
+// A person found to be no longer live (merged, erased, deleted) is never
+// kept locked: lockIfLive takes the lock in a savepoint and rolls it back
+// when they are not live, which releases the row. The transaction then holds
+// only the one person it goes on with, so contacts are never held out of
+// ascending id order (a tombstone, then its survivor with a lower id, while
+// a merge, its undo or a keep-apart takes the survivor first).
+//
 // "Create opportunity" (routes/crm.ts from-enquiry) works an enquiry a
 // colleague has chosen. Its deal is with the person the enquiry is linked to
 // while they are live, else the person found or made by its email as above;
@@ -44,8 +51,8 @@ import {
 // lock, which ensureEnquiryPerson takes before locking anyone, even when the
 // link answers, so falling back to the email never takes an advisory lock
 // after a row lock; the person; the enquiry; then the organisation the deal
-// joins. An organisation is only ever locked after its person here, never
-// before.
+// joins, FOR SHARE (holdOrganisation says why). An organisation is only ever
+// locked after its person here, never before.
 // ---------------------------------------------------------------------------
 
 /** The lock every writer that finds or makes a person by their email takes. */
@@ -100,6 +107,53 @@ async function emailHolders(tx: PeopleTx, venueId: string, key: string): Promise
   return rows.map((row) => row.id);
 }
 
+/** Thrown inside lockIfLive's savepoint to roll it back; never escapes it. */
+class NotLive extends Error {}
+
+/**
+ * Locks the person, then checks they are live at the venue; true when they
+ * are, and the lock is kept. The lock is taken in a savepoint that is rolled
+ * back when they are not (merged, erased, deleted, or another venue's), and
+ * rolling back the savepoint releases that row lock. The transaction's
+ * advisory locks were taken before the savepoint and stay held.
+ */
+async function lockIfLive(tx: PeopleTx, venueId: string, personId: string): Promise<boolean> {
+  try {
+    return await tx.transaction(async (savepoint) => {
+      const locked = await lockPerson(savepoint, venueId, personId);
+      if (locked.state !== "live") throw new NotLive();
+      return true;
+    });
+  } catch (error) {
+    if (error instanceof NotLive) return false;
+    throw error;
+  }
+}
+
+/**
+ * The organisation a deal joins, held FOR SHARE until the transaction ends,
+ * or undefined when it is no longer live at the venue. liveAccount() is
+ * checked again on the version locked, so a close that commits first is seen.
+ *
+ * FOR SHARE, not lockOrganisation's FOR UPDATE. This transaction already
+ * holds the person FOR UPDATE, and a deal written elsewhere (POST or PATCH
+ * /opportunities) takes FOR KEY SHARE on its organisation and then on its
+ * person through its foreign keys (client_account_id is checked before
+ * primary_contact_id). FOR UPDATE here would wait on that KEY SHARE while the
+ * other deal waits on the person: a deadlock. FOR SHARE does not conflict
+ * with KEY SHARE, and anything that would close or merge the organisation
+ * (FOR NO KEY UPDATE or stronger, as an UPDATE takes) still waits for this
+ * deal, as does an edit (lockOrganisation, FOR UPDATE), which locks only the
+ * organisation and so cannot wait on this transaction in turn.
+ */
+async function holdOrganisation(tx: PeopleTx, venueId: string, organisationId: string): Promise<OrganisationRow | undefined> {
+  const [row] = await tx.select().from(clientAccounts)
+    .where(and(eq(clientAccounts.id, organisationId), eq(clientAccounts.venueId, venueId), liveAccount()))
+    .limit(1)
+    .for("share");
+  return row;
+}
+
 /** Points the enquiry at its person; it must be the enquiry at that venue. */
 async function pointEnquiryAt(tx: PeopleTx, enquiry: EnquiryForLink, contactId: string): Promise<void> {
   const linked = await tx.update(enquiries).set({ contactId })
@@ -141,7 +195,8 @@ async function makePerson(tx: PeopleTx, enquiry: EnquiryForLink, ownerUserId: st
  * makes them from it when nobody does. When two people hold it, "leave"
  * links neither and writes nothing; "create" makes a new person. A person
  * merged away between the look and the lock has had their points moved to
- * the survivor, so the look is taken once more. Linking writes no point or
+ * the survivor, so their lock is let go (lockIfLive) and the look is taken
+ * once more. Linking writes no point or
  * membership: it moves the person's last contact forward and nothing else,
  * so their mirrors stand as they are.
  */
@@ -165,8 +220,7 @@ export async function linkEnquiryToPerson(
         ? AMBIGUOUS
         : { outcome: "created", contactId: await makePerson(tx, enquiry, options.ownerUserId, true) };
     }
-    const locked = await lockPerson(tx, enquiry.venueId, holder);
-    if (locked.state !== "live") continue;
+    if (!(await lockIfLive(tx, enquiry.venueId, holder))) continue;
     await pointEnquiryAt(tx, enquiry, holder);
     await tx.update(contacts).set({ lastContactAt: sql`GREATEST(${contacts.lastContactAt}, now())` })
       .where(and(eq(contacts.id, holder), eq(contacts.venueId, enquiry.venueId)));
@@ -175,14 +229,19 @@ export async function linkEnquiryToPerson(
   return AMBIGUOUS;
 }
 
+/** What a person made by "Create opportunity" is to the deal, as that button
+ *  has always labelled them (the Clients desk shows "Contact · <label>"). */
+const PRIMARY_EVENT_CONTACT = "Primary event contact";
+
 /**
  * The person "Create opportunity" makes a deal with, locked and live: the one
  * the enquiry is linked to while they are live at its venue; otherwise the
  * one linkEnquiryToPerson finds or makes by the enquiry's email, a new person
  * when two people share it; or, when the email cannot be a point, a new
- * person without it. The email's lock comes first, before anyone is locked.
- * A linked person who is no longer live keeps the row lock taken to find
- * that out; nothing is written to them.
+ * person without it. The email's lock comes first, before anyone is locked;
+ * a linked person who is no longer live is not kept locked (lockIfLive). A
+ * person made here is labelled the primary event contact; someone already
+ * known keeps whatever label they have.
  */
 export async function ensureEnquiryPerson(
   tx: PeopleTx,
@@ -192,17 +251,25 @@ export async function ensureEnquiryPerson(
   const key = emailKeyOf(enquiry);
   if (key !== null) await lockEmail(tx, enquiry.venueId, key);
 
-  if (enquiry.contactId !== null) {
-    const linked = await lockPerson(tx, enquiry.venueId, enquiry.contactId);
-    if (linked.state === "live") return { contactId: linked.row.id, created: false };
+  if (enquiry.contactId !== null && await lockIfLive(tx, enquiry.venueId, enquiry.contactId)) {
+    return { contactId: enquiry.contactId, created: false };
   }
-  if (key === null) return { contactId: await makePerson(tx, enquiry, ownerUserId, false), created: true };
 
-  const outcome = await linkEnquiryToPerson(tx, enquiry, { ownerUserId, whenShared: "create" });
-  // With "create" and a usable email, only a holder merged away twice between
-  // the look and the lock answers ambiguous; the press can be made again.
-  if (outcome.outcome === "ambiguous") throw new Error("The enquiry's person was merged away while being found");
-  return { contactId: outcome.contactId, created: outcome.outcome === "created" };
+  let contactId: string;
+  if (key === null) {
+    contactId = await makePerson(tx, enquiry, ownerUserId, false);
+  } else {
+    const outcome = await linkEnquiryToPerson(tx, enquiry, { ownerUserId, whenShared: "create" });
+    // With "create" and a usable email, only a holder merged away twice
+    // between the look and the lock answers ambiguous; the press can be made
+    // again.
+    if (outcome.outcome === "ambiguous") throw new Error("The enquiry's person was merged away while being found");
+    if (outcome.outcome === "linked") return { contactId: outcome.contactId, created: false };
+    contactId = outcome.contactId;
+  }
+  await tx.update(contacts).set({ roleLabel: PRIMARY_EVENT_CONTACT })
+    .where(and(eq(contacts.id, contactId), eq(contacts.venueId, enquiry.venueId), isNull(contacts.roleLabel)));
+  return { contactId, created: true };
 }
 
 /** The person's primary membership's organisation, while it is live. */
@@ -252,7 +319,7 @@ async function joinNewHousehold(
   }).onConflictDoNothing().returning({ id: accountMemberships.id });
   if (membership === undefined) throw new Error("The household's membership was not written");
   await refreshContactMirror(tx, person.id);
-  const account = await lockOrganisation(tx, person.venueId, accountId);
+  const account = await holdOrganisation(tx, person.venueId, accountId);
   if (account === undefined) throw new Error("The new household could not be read back");
   return account;
 }
@@ -265,8 +332,8 @@ async function joinNewHousehold(
  * are taken again here for their row. What an older writer left on them is
  * adopted first, so someone the create-from-enquiry before T-665 wrote, with
  * an account but no membership, joins that account rather than a new one;
- * then their mirrors are rewritten. The organisation is locked after the
- * person, so it stays live until the deal is written.
+ * then their mirrors are rewritten. The organisation is held FOR SHARE after
+ * the person (holdOrganisation), so it stays live until the deal is written.
  */
 export async function ensurePrimaryAccount(
   tx: PeopleTx,
@@ -284,7 +351,7 @@ export async function ensurePrimaryAccount(
     await refreshContactMirror(tx, person.id);
     const accountId = await primaryAccountId(tx, person);
     if (accountId === undefined) return { account: await joinNewHousehold(tx, person, input), created: true };
-    const account = await lockOrganisation(tx, person.venueId, accountId);
+    const account = await holdOrganisation(tx, person.venueId, accountId);
     if (account !== undefined) return { account, created: false };
     // Closed between the look and the lock: settle and look once more.
   }

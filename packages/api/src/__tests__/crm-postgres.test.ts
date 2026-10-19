@@ -4,8 +4,10 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { crmRoutes } from "../routes/crm.js";
+import { ensureEnquiryPerson } from "../services/people-link.js";
 
 // ---------------------------------------------------------------------------
 // CRM pipeline on isolated PostgreSQL.
@@ -76,6 +78,7 @@ interface PipelineBody {
 
 describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", () => {
   let pool: Pool;
+  let db: Database;
   let server: FastifyInstance;
   const fixtureSchema = `crm_pipeline_${randomUUID().replaceAll("-", "")}`;
   // Only the tables the routes under test read and write. `POST
@@ -108,7 +111,7 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
       });
       await pool.query(`CREATE TABLE "${config.name}" (${columns.join(", ")})`);
     }
-    const db = drizzle(pool, { schema });
+    db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(crmRoutes, { db, prefix: "/crm" });
     await server.ready();
@@ -323,9 +326,11 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
       [callum],
     );
     expect(memberships).toEqual([{ client_account_id: deal.client_account_id, is_primary: true }]);
-    const { rows: mirror } = await pool.query("SELECT client_account_id, email, owner_user_id FROM contacts WHERE id = $1", [callum]);
-    // A person already known keeps the owner they had.
-    expect(mirror).toEqual([{ client_account_id: deal.client_account_id, email: "callum.baird@example.test", owner_user_id: null }]);
+    const { rows: mirror } = await pool.query("SELECT client_account_id, email, owner_user_id, role_label FROM contacts WHERE id = $1", [callum]);
+    // A person already known keeps the owner and the label they had.
+    expect(mirror).toEqual([{
+      client_account_id: deal.client_account_id, email: "callum.baird@example.test", owner_user_id: null, role_label: null,
+    }]);
     expect(body.data.contact).toMatchObject({ id: callum, clientAccountId: deal.client_account_id });
     expect(body.data.clientAccount).toMatchObject({ id: deal.client_account_id, name: "Callum Baird", kind: "household" });
   });
@@ -363,21 +368,22 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     expect(await enquiryContact(enquiryId)).toBe(third);
 
     const { rows: made } = await pool.query(
-      "SELECT name, email, client_account_id, source_enquiry_id FROM contacts WHERE id = $1",
+      "SELECT name, email, client_account_id, source_enquiry_id, role_label FROM contacts WHERE id = $1",
       [third],
     );
+    // Labelled as Create opportunity has always labelled who it makes.
     expect(made).toEqual([{
       name: "Fiona Cameron", email: "the.camerons@example.test",
-      client_account_id: deal.client_account_id, source_enquiry_id: enquiryId,
+      client_account_id: deal.client_account_id, source_enquiry_id: enquiryId, role_label: "Primary event contact",
     }]);
     // Neither of the two was chosen, or touched.
     const { rows: couple } = await pool.query(
-      "SELECT client_account_id, last_contact_at FROM contacts WHERE id = ANY($1::uuid[])",
+      "SELECT client_account_id, last_contact_at, role_label FROM contacts WHERE id = ANY($1::uuid[])",
       [[fiona, angus]],
     );
     expect(couple).toEqual([
-      { client_account_id: null, last_contact_at: null },
-      { client_account_id: null, last_contact_at: null },
+      { client_account_id: null, last_contact_at: null, role_label: null },
+      { client_account_id: null, last_contact_at: null, role_label: null },
     ]);
     expect((JSON.parse(res.body) as FromEnquiryBody).data.contact?.id).toBe(third);
   });
@@ -454,6 +460,117 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     expect(await enquiryContact(first)).toBe(deals[0]?.primary_contact_id);
     expect(await enquiryContact(second)).toBe(deals[0]?.primary_contact_id);
   });
+
+  /** A tombstone: merged into the survivor, deleted with it, holding nothing. */
+  async function mergedAway(name: string, survivor: string): Promise<string> {
+    const id = randomUUID();
+    await pool.query(
+      "INSERT INTO contacts (id, venue_id, name, merged_into_id, deleted_at) VALUES ($1, $2, $3, $4, now())",
+      [id, VENUE, name, survivor],
+    );
+    return id;
+  }
+
+  /** Whether another connection could lock the person this moment: "held"
+   *  when someone holds their row. */
+  async function rowLockOn(personId: string): Promise<"free" | "held"> {
+    const probe = await pool.connect();
+    try {
+      await probe.query("BEGIN");
+      await probe.query("SELECT id FROM contacts WHERE id = $1 FOR UPDATE NOWAIT", [personId]);
+      return "free";
+    } catch (error) {
+      // lock_not_available
+      if (error instanceof Error && "code" in error && error.code === "55P03") return "held";
+      throw error;
+    } finally {
+      await probe.query("ROLLBACK");
+      probe.release();
+    }
+  }
+
+  it("deals with the email's holder when the enquiry's person was merged away", async () => {
+    const isla = await person({ name: "Isla Grant", email: "isla.grant@example.test" });
+    const home = await household("The Grant household", isla);
+    const tombstone = await mergedAway("Isla Grant", isla);
+    const enquiryId = await enquiry({ name: "Isla Grant", email: "isla.grant@example.test", contactId: tombstone });
+    const before = { contacts: await count("contacts"), accounts: await count("client_accounts") };
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    expect(await dealFor(enquiryId)).toEqual({ primary_contact_id: isla, client_account_id: home });
+    expect(await enquiryContact(enquiryId)).toBe(isla);
+    expect({ contacts: await count("contacts"), accounts: await count("client_accounts") }).toEqual(before);
+  });
+
+  it("deals with a new person when the enquiry's person was erased", async () => {
+    const erased = randomUUID();
+    await pool.query("INSERT INTO contacts (id, venue_id, name, erased_at) VALUES ($1, $2, 'Erased', now())", [erased, VENUE]);
+    const enquiryId = await enquiry({ name: "Eilidh Moffat", email: "eilidh.moffat@example.test", contactId: erased });
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    const deal = await dealFor(enquiryId);
+    expect(deal.primary_contact_id).not.toBe(erased);
+    expect(await enquiryContact(enquiryId)).toBe(deal.primary_contact_id);
+    const { rows: made } = await pool.query(
+      "SELECT name, email, role_label, source_enquiry_id FROM contacts WHERE id = $1",
+      [deal.primary_contact_id],
+    );
+    expect(made).toEqual([{
+      name: "Eilidh Moffat", email: "eilidh.moffat@example.test", role_label: "Primary event contact", source_enquiry_id: enquiryId,
+    }]);
+    const { rows: untouched } = await pool.query("SELECT client_account_id, role_label FROM contacts WHERE id = $1", [erased]);
+    expect(untouched).toEqual([{ client_account_id: null, role_label: null }]);
+  });
+
+  it("keeps no lock on a linked person who is not live while it finds who the deal is with", async () => {
+    const isla = await person({ name: "Isla Grant", email: "isla.grant@example.test" });
+    const tombstone = await mergedAway("Isla Grant", isla);
+    const enquiryId = await enquiry({ name: "Isla Grant", email: "isla.grant@example.test", contactId: tombstone });
+
+    await db.transaction(async (tx) => {
+      const found = await ensureEnquiryPerson(tx, {
+        id: enquiryId, venueId: VENUE, contactId: tombstone, email: "isla.grant@example.test", name: "Isla Grant", phone: null,
+      }, null);
+      expect(found).toEqual({ contactId: isla, created: false });
+      // Still inside the transaction: the person it goes on with is held, the
+      // tombstone it looked at is not, so contacts are never held out of order.
+      expect(await rowLockOn(isla)).toBe("held");
+      expect(await rowLockOn(tombstone)).toBe("free");
+    });
+  });
+
+  it("writes the deal while another deal's foreign keys hold the household", async () => {
+    const una = await person({ name: "Una Kerr", email: "una.kerr@example.test" });
+    const home = await household("The Kerr household", una);
+    const enquiryId = await enquiry({ name: "Una Kerr", email: "una.kerr@example.test", contactId: una });
+
+    // Another deal being written against the household holds it FOR KEY
+    // SHARE, as its foreign key check does, and would ask for the person next.
+    const otherDeal = await pool.connect();
+    let answer: number | "waiting";
+    try {
+      await otherDeal.query("BEGIN");
+      await otherDeal.query("SELECT 1 FROM client_accounts WHERE id = $1 FOR KEY SHARE", [home]);
+      const pressing = createFrom(enquiryId);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const waited = new Promise<"waiting">((resolve) => { timer = setTimeout(() => { resolve("waiting"); }, 3000); });
+      const first = await Promise.race([pressing, waited]);
+      clearTimeout(timer);
+      answer = first === "waiting" ? first : first.statusCode;
+      await otherDeal.query("COMMIT");
+      // Settles either way once the other deal is done.
+      await pressing;
+    } catch (error) {
+      await otherDeal.query("ROLLBACK");
+      throw error;
+    } finally {
+      otherDeal.release();
+    }
+    expect(answer).toBe(201);
+    expect(await dealFor(enquiryId)).toEqual({ primary_contact_id: una, client_account_id: home });
+  }, 20_000);
 
   it("returns the pipeline newest first", async () => {
     const body = await pipeline();
