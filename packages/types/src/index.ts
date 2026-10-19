@@ -2599,3 +2599,6 @@ export * from "./layout-live.js";
 // The competitor watch (17 Oct 2026): the comp set, dated price captures,
 // who a lost deal went to and the page-change check. Context, never a price input.
 export * from "./competitor-watch.js";
+// The enquiry funnel (migration 0100): first replies, where enquiries come from,
+// proposal link visits, and engagement attached to an enquiry or a proposal.
+export * from "./enquiry-funnel.js";

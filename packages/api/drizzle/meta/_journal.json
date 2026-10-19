@@ -673,6 +673,13 @@
       "when": 1792335600000,
       "tag": "0097_competitor_watch",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1792681200000,
+      "tag": "0100_enquiry_funnel",
+      "breakpoints": true
     }
   ]
 }
