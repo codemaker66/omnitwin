@@ -1,16 +1,19 @@
-import { and, asc, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   MERGE_FILLED_FIELDS,
   MERGE_MOVE_TARGETS,
   MERGE_UNDO_DAYS,
+  MergeUndoReportSchema,
   RecordMergeMoveSchema,
   RecordMergeSnapshotSchema,
   type MergeMoves,
   type MergeMoveTarget,
   type MergePreview,
   type MergeResult,
+  type MergeSkip,
+  type MergeUndoResult,
   type RecordMergeMove,
   type RecordMergeSnapshot,
 } from "@omnitwin/types";
@@ -23,6 +26,7 @@ import {
   readPersonState,
   refreshContactMirror,
   toPerson,
+  writeOrRefuse,
   type PeopleConn,
   type PeopleTx,
   type PersonLock,
@@ -92,6 +96,22 @@ export function mergeLockKey(venueId: string): string {
 const NOT_FOUND: MergeFailure = { kind: "not_found" };
 const SAME_RECORD: MergeFailure = { kind: "same_record" };
 const DAY_MS = 86_400_000;
+
+/**
+ * A merge record whose stored jsonb does not match its schema, or does not
+ * agree with the record it is in. Its message and its one field name only the
+ * merge, never what the record holds about a person; the transaction that met
+ * it rolls back, so nothing changes, and the request answers 500.
+ */
+export class UnreadableMergeRecord extends Error {
+  readonly mergeId: string;
+
+  constructor(mergeId: string) {
+    super(`Merge record ${mergeId} does not match its schema`);
+    this.name = "UnreadableMergeRecord";
+    this.mergeId = mergeId;
+  }
+}
 
 type ContactRow = typeof contacts.$inferSelect;
 type Checked = { kind: "pair"; closing: ContactRow; survivor: ContactRow } | { kind: "replay" } | MergeFailure;
@@ -262,7 +282,7 @@ async function replayMerge(tx: PeopleTx, venueId: string, mergedId: string, surv
   if (record === undefined) return undefined;
   const moves = RecordMergeMoveSchema.array().safeParse(record.moves);
   const snapshot = RecordMergeSnapshotSchema.safeParse(record.snapshot);
-  if (!moves.success || !snapshot.success) throw new Error(`Merge record ${record.id} does not match its schema`);
+  if (!moves.success || !snapshot.success) throw new UnreadableMergeRecord(record.id);
   return resultOf(record, { survivorId, mergedId }, moves.data, snapshot.data.removed, true);
 }
 
@@ -475,5 +495,405 @@ export async function applyPersonMerge(
     }
     if (checked.kind !== "pair") return checked;
     return mergeLocked(tx, checked.closing, checked.survivor, actorId);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Undoing a merge (T-665, Task 12).
+//
+// For MERGE_UNDO_DAYS × 24 hours after it was made, counted by the database's
+// clock in hours so no session time zone can stretch or shrink it, a merge of
+// L into S can be undone, in one transaction:
+// - L is live again;
+// - every reference the merge moved that is still on S moves back to L;
+// - the points and memberships the merge removed are made again for L, with
+//   their own ids;
+// - each of L's primaries is set as the record's snapshot had it;
+// - each of S's fields the merge filled is put back, while it still holds
+//   what the merge put there.
+// Whatever a colleague changed since (a deal moved on, a field edited, a
+// point removed) is left as they left it and named in the report. The record
+// is kept, marked undone with its report, so a second press answers with the
+// same report. A merge undone out of order would strand references, so while
+// S has itself been merged since, that later merge must be undone first.
+//
+// Locks, in the merge's order:
+// 1. the venue's people-merge advisory lock, so merges and undos at a venue
+//    happen one at a time, and a second press waits here and then finds the
+//    record undone;
+// 2. the record, FOR UPDATE. Every writer of record_merges holds the venue's
+//    merge lock first, so this row lock can never be part of a cycle;
+// 3. L and S, FOR UPDATE, the lower id first;
+// 4. the rows that point at them, by the undo's own UPDATEs and INSERTs,
+//    exactly the rows the merge took (see the header above for why the
+//    organisations after the people cannot deadlock with a deal being made).
+// ---------------------------------------------------------------------------
+
+export type UndoFailure =
+  | { kind: "not_found" }
+  | { kind: "undo_expired" }
+  | { kind: "later_merge_first"; laterMergeId: string }
+  | { kind: "erased" };
+
+/** A refusal rather than an undo. */
+export function isUndoFailure(answer: MergeUndoResult | UndoFailure): answer is UndoFailure {
+  return "kind" in answer;
+}
+
+/** How long a merge can be undone, in hours: 30 × 24, never "30 days", which
+ *  daylight saving in the session's time zone would move by an hour. */
+const UNDO_WINDOW_HOURS = MERGE_UNDO_DAYS * 24;
+
+/** A merge record's jsonb, parsed and checked against the record. */
+interface ReadableMerge {
+  readonly id: string;
+  readonly venueId: string;
+  readonly mergedId: string;
+  readonly survivorId: string;
+  readonly moves: ReadonlyMap<MergeMoveTarget, readonly string[]>;
+  readonly snapshot: RecordMergeSnapshot;
+}
+
+/**
+ * The record's moves and snapshot, parsed with their schemas and checked
+ * against the record itself before anything is written from them: every
+ * target once; the snapshot of the merged person, at the record's venue, with
+ * every point and membership theirs and there; and every removed row in the
+ * snapshot. Anything else is an unreadable record.
+ */
+function readMerge(record: {
+  id: string; venueId: string; mergedId: string; survivorId: string; moves: unknown; snapshot: unknown;
+}): ReadableMerge {
+  const moves = RecordMergeMoveSchema.array().safeParse(record.moves);
+  const snapshot = RecordMergeSnapshotSchema.safeParse(record.snapshot);
+  if (!moves.success || !snapshot.success) throw new UnreadableMergeRecord(record.id);
+  const kept = snapshot.data;
+  const byTarget = new Map(moves.data.map((move) => [move.target, move.ids] as const));
+  const theirs = (row: { venueId: string; contactId: string }): boolean =>
+    row.venueId === record.venueId && row.contactId === record.mergedId;
+  const pointIds = new Set(kept.contactPoints.map((point) => point.id));
+  const membershipIds = new Set(kept.memberships.map((membership) => membership.id));
+  const agrees = moves.data.length === MERGE_MOVE_TARGETS.length && byTarget.size === MERGE_MOVE_TARGETS.length
+    && kept.person.id === record.mergedId && kept.person.venueId === record.venueId
+    && kept.contactPoints.every(theirs) && kept.memberships.every(theirs)
+    && kept.removed.contactPointIds.every((id) => pointIds.has(id))
+    && kept.removed.membershipIds.every((id) => membershipIds.has(id));
+  if (!agrees) throw new UnreadableMergeRecord(record.id);
+  return { id: record.id, venueId: record.venueId, mergedId: record.mergedId, survivorId: record.survivorId, moves: byTarget, snapshot: kept };
+}
+
+/** The person as stored, FOR UPDATE, whatever their state; undefined when
+ *  there is no such person at the venue. */
+async function lockRow(tx: PeopleTx, venueId: string, personId: string): Promise<ContactRow | undefined> {
+  const [row] = await tx.select().from(contacts)
+    .where(and(eq(contacts.id, personId), eq(contacts.venueId, venueId)))
+    .limit(1)
+    .for("update");
+  return row;
+}
+
+/** The newest merge of the person into anyone that has not been undone. */
+async function newestMergeOf(tx: PeopleTx, venueId: string, personId: string): Promise<string | undefined> {
+  const [record] = await tx.select({ id: recordMerges.id }).from(recordMerges)
+    .where(and(
+      eq(recordMerges.venueId, venueId),
+      eq(recordMerges.kind, "person"),
+      eq(recordMerges.mergedId, personId),
+      isNull(recordMerges.undoneAt),
+    ))
+    .orderBy(desc(recordMerges.mergedAt), desc(recordMerges.id))
+    .limit(1);
+  return record?.id;
+}
+
+/**
+ * Step 6 for one target: of the rows the merge moved from L to S, those still
+ * on S move back to L; answers the ids moved. Points and memberships come back
+ * not primary (step 8 sets L's primaries). Each UPDATE changes no other column.
+ */
+async function moveBack(tx: PeopleTx, merge: ReadableMerge, target: MergeMoveTarget): Promise<string[]> {
+  const ids = [...(merge.moves.get(target) ?? [])];
+  if (ids.length === 0) return [];
+  const { venueId, mergedId: L, survivorId: S } = merge;
+  switch (target) {
+    case "contact_points.contact_id":
+      return (await tx.update(contactPoints).set({ contactId: L, isPrimary: false, updatedAt: sql`clock_timestamp()` })
+        .where(and(inArray(contactPoints.id, ids), eq(contactPoints.contactId, S), eq(contactPoints.venueId, venueId)))
+        .returning({ id: contactPoints.id })).map((row) => row.id);
+    case "account_memberships.contact_id":
+      return (await tx.update(accountMemberships).set({ contactId: L, isPrimary: false, updatedAt: sql`clock_timestamp()` })
+        .where(and(inArray(accountMemberships.id, ids), eq(accountMemberships.contactId, S), eq(accountMemberships.venueId, venueId)))
+        .returning({ id: accountMemberships.id })).map((row) => row.id);
+    case "enquiries.contact_id":
+      return (await tx.update(enquiries).set({ contactId: L })
+        .where(and(inArray(enquiries.id, ids), eq(enquiries.contactId, S), eq(enquiries.venueId, venueId)))
+        .returning({ id: enquiries.id })).map((row) => row.id);
+    case "opportunities.primary_contact_id":
+      return (await tx.update(opportunities).set({ primaryContactId: L })
+        .where(and(inArray(opportunities.id, ids), eq(opportunities.primaryContactId, S), eq(opportunities.venueId, venueId)))
+        .returning({ id: opportunities.id })).map((row) => row.id);
+    case "client_accounts.primary_contact_id":
+      return (await tx.update(clientAccounts).set({ primaryContactId: L })
+        .where(and(inArray(clientAccounts.id, ids), eq(clientAccounts.primaryContactId, S), eq(clientAccounts.venueId, venueId)))
+        .returning({ id: clientAccounts.id })).map((row) => row.id);
+    case "contacts.merged_into_id":
+      return (await tx.update(contacts).set({ mergedIntoId: L })
+        .where(and(inArray(contacts.id, ids), eq(contacts.mergedIntoId, S), eq(contacts.venueId, venueId)))
+        .returning({ id: contacts.id })).map((row) => row.id);
+  }
+}
+
+/** The snapshot's rows with these ids, in the order the ids are listed. */
+function rowsFor<T extends { id: string }>(rows: readonly T[], ids: readonly string[]): T[] {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row === undefined ? [] : [row];
+  });
+}
+
+/**
+ * Step 7: the points and memberships the merge removed (S held their like),
+ * made again for L as the snapshot kept them, with their own ids and times,
+ * not primary. Target-less: any row a unique key refuses is not made, and is
+ * named in the report. Answers the ids made.
+ */
+async function remakeRemoved(tx: PeopleTx, merge: ReadableMerge): Promise<{ points: string[]; memberships: string[] }> {
+  const { venueId, mergedId: L, snapshot } = merge;
+  const points = rowsFor(snapshot.contactPoints, snapshot.removed.contactPointIds);
+  const memberships = rowsFor(snapshot.memberships, snapshot.removed.membershipIds);
+  const madePoints = points.length === 0 ? [] : await tx.insert(contactPoints).values(points.map((point) => ({
+    id: point.id,
+    venueId,
+    contactId: L,
+    kind: point.kind,
+    value: point.value,
+    displayValue: point.displayValue,
+    label: point.label,
+    isPrimary: false,
+    sourceSystem: point.sourceSystem,
+    sourceId: point.sourceId,
+    createdAt: new Date(point.createdAt),
+    updatedAt: new Date(point.updatedAt),
+  }))).onConflictDoNothing().returning({ id: contactPoints.id });
+  const madeMemberships = memberships.length === 0 ? [] : await tx.insert(accountMemberships).values(memberships.map((membership) => ({
+    id: membership.id,
+    venueId,
+    contactId: L,
+    clientAccountId: membership.clientAccountId,
+    roleLabel: membership.roleLabel,
+    isPrimary: false,
+    createdAt: new Date(membership.createdAt),
+    updatedAt: new Date(membership.updatedAt),
+  }))).onConflictDoNothing().returning({ id: accountMemberships.id });
+  return { points: madePoints.map((row) => row.id), memberships: madeMemberships.map((row) => row.id) };
+}
+
+/**
+ * Step 8: each point and membership the snapshot had primary, now back on L,
+ * is L's primary again; any other primary of its kind on L stops being one
+ * first, so the one-primary keys never see two.
+ */
+async function restorePrimaries(tx: PeopleTx, merge: ReadableMerge, back: { points: ReadonlySet<string>; memberships: ReadonlySet<string> }): Promise<void> {
+  const { venueId, mergedId: L, snapshot } = merge;
+  for (const point of snapshot.contactPoints) {
+    if (!point.isPrimary || !back.points.has(point.id)) continue;
+    await tx.update(contactPoints).set({ isPrimary: false, updatedAt: sql`clock_timestamp()` })
+      .where(and(
+        eq(contactPoints.contactId, L),
+        eq(contactPoints.venueId, venueId),
+        eq(contactPoints.kind, point.kind),
+        eq(contactPoints.isPrimary, true),
+        ne(contactPoints.id, point.id),
+      ));
+    await tx.update(contactPoints).set({ isPrimary: true, updatedAt: sql`clock_timestamp()` })
+      .where(and(eq(contactPoints.id, point.id), eq(contactPoints.contactId, L), eq(contactPoints.venueId, venueId)));
+  }
+  for (const membership of snapshot.memberships) {
+    if (!membership.isPrimary || !back.memberships.has(membership.id)) continue;
+    await tx.update(accountMemberships).set({ isPrimary: false, updatedAt: sql`clock_timestamp()` })
+      .where(and(
+        eq(accountMemberships.contactId, L),
+        eq(accountMemberships.venueId, venueId),
+        eq(accountMemberships.isPrimary, true),
+        ne(accountMemberships.id, membership.id),
+      ));
+    await tx.update(accountMemberships).set({ isPrimary: true, updatedAt: sql`clock_timestamp()` })
+      .where(and(eq(accountMemberships.id, membership.id), eq(accountMemberships.contactId, L), eq(accountMemberships.venueId, venueId)));
+  }
+}
+
+/**
+ * Step 9: each of S's fields the merge filled goes back to what it was, only
+ * while it still holds what the merge put there (a last contact compared to
+ * the millisecond, the precision the record keeps). Answers the fields left
+ * as someone has changed them since.
+ */
+async function emptyFilled(tx: PeopleTx, merge: ReadableMerge): Promise<MergeSkip[]> {
+  const skipped: MergeSkip[] = [];
+  for (const { field, before, after } of merge.snapshot.survivorFilled) {
+    const column = contacts[field];
+    const set: PgUpdateSetSource<typeof contacts> = {};
+    let unchanged: SQL;
+    if (field === "lastContactAt") {
+      set.lastContactAt = before === null ? null : new Date(before);
+      unchanged = sql`date_trunc('milliseconds', ${column}) IS NOT DISTINCT FROM ${after}::timestamptz`;
+    } else {
+      set[field] = before;
+      unchanged = sql`${column} IS NOT DISTINCT FROM ${after}`;
+    }
+    const put = await tx.update(contacts).set(set)
+      .where(and(eq(contacts.id, merge.survivorId), eq(contacts.venueId, merge.venueId), unchanged))
+      .returning({ id: contacts.id });
+    if (put.length === 0) skipped.push({ target: "survivor_field", ref: field });
+  }
+  return skipped;
+}
+
+/** Steps 5 to 11 on a readable, unexpired record whose two people are locked:
+ *  L the tombstone of S, neither erased. */
+async function undoLocked(tx: PeopleTx, merge: ReadableMerge, actorId: string): Promise<MergeUndoResult> {
+  const { venueId, mergedId: L, survivorId: S, snapshot } = merge;
+
+  // 5. L is live again. updated_at moves on in step 10, by the book's own
+  // stamp, which is always past the tombstone's (a bare now() might not be).
+  const deletedAt = snapshot.person.deletedAt;
+  await tx.update(contacts).set({ mergedIntoId: null, deletedAt: deletedAt === null ? null : new Date(deletedAt) })
+    .where(and(eq(contacts.id, L), eq(contacts.venueId, venueId)));
+
+  // 6. Every reference still on S moves back, in the reverse of the merge's
+  // order; each one no longer on S stays where it is, named.
+  const skipped: MergeSkip[] = [];
+  const back = new Map<MergeMoveTarget, string[]>();
+  for (const target of [...MERGE_MOVE_TARGETS].reverse()) {
+    const moved = await moveBack(tx, merge, target);
+    back.set(target, moved);
+    const returned = new Set(moved);
+    for (const id of merge.moves.get(target) ?? []) {
+      if (!returned.has(id)) skipped.push({ target, ref: id });
+    }
+  }
+
+  // 7. What the merge removed, made again.
+  const made = await remakeRemoved(tx, merge);
+  const madePoints = new Set(made.points);
+  const madeMemberships = new Set(made.memberships);
+  for (const id of snapshot.removed.contactPointIds) {
+    if (!madePoints.has(id)) skipped.push({ target: "removed_row", ref: id });
+  }
+  for (const id of snapshot.removed.membershipIds) {
+    if (!madeMemberships.has(id)) skipped.push({ target: "removed_row", ref: id });
+  }
+
+  // 8. L's primaries, as they were.
+  const pointsBack = [...(back.get("contact_points.contact_id") ?? []), ...made.points];
+  const membershipsBack = [...(back.get("account_memberships.contact_id") ?? []), ...made.memberships];
+  await restorePrimaries(tx, merge, { points: new Set(pointsBack), memberships: new Set(membershipsBack) });
+
+  // 9. S's filled fields, emptied again where nobody has changed them.
+  skipped.push(...await emptyFilled(tx, merge));
+
+  // 10. Both people's mirrors from their primaries (a kind left with no
+  // primary has its oldest point promoted).
+  await refreshContactMirror(tx, L);
+  await refreshContactMirror(tx, S);
+
+  // 11. The record, undone, with its report. Parsed before it is written, so
+  // a second press can always read it back.
+  const restored: MergeMoves = {
+    "contact_points.contact_id": pointsBack.length,
+    "account_memberships.contact_id": membershipsBack.length,
+    "enquiries.contact_id": back.get("enquiries.contact_id")?.length ?? 0,
+    "opportunities.primary_contact_id": back.get("opportunities.primary_contact_id")?.length ?? 0,
+    "client_accounts.primary_contact_id": back.get("client_accounts.primary_contact_id")?.length ?? 0,
+    "contacts.merged_into_id": back.get("contacts.merged_into_id")?.length ?? 0,
+  };
+  const report = MergeUndoReportSchema.parse({ restored, skipped });
+  await tx.update(recordMerges).set({ undoneAt: sql`now()`, undoneBy: actorId, undoReport: report })
+    .where(eq(recordMerges.id, merge.id));
+  return { mergeId: merge.id, ...report, replayed: false };
+}
+
+/**
+ * Undoes the merge `mergeId` within MERGE_UNDO_DAYS of its making, in one
+ * transaction, or answers why not; a refusal keeps nothing (writeOrRefuse).
+ * A merge already undone answers with the same report (`replayed`). The
+ * restored counts are the rows back on L by each target: for points and
+ * memberships, those moved back and those made again.
+ */
+export async function undoPersonMerge(
+  db: Database,
+  scopeVenueId: string | null,
+  mergeId: string,
+  actorId: string,
+): Promise<MergeUndoResult | UndoFailure> {
+  const id = mergeId.toLowerCase();
+
+  return writeOrRefuse<MergeUndoResult | UndoFailure>(db, async (tx, refuse) => {
+    // 1. The record within the actor's scope; the venue's merge lock; then the
+    // record again, held, as it stands once every earlier merge or undo at the
+    // venue has finished.
+    const [found] = await tx.select({ venueId: recordMerges.venueId }).from(recordMerges)
+      .where(and(
+        eq(recordMerges.id, id),
+        eq(recordMerges.kind, "person"),
+        scopeVenueId === null ? undefined : eq(recordMerges.venueId, scopeVenueId),
+      ))
+      .limit(1);
+    if (found === undefined) return refuse({ kind: "not_found" });
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${mergeLockKey(found.venueId)}, 0))`);
+    const [record] = await tx.select({
+      id: recordMerges.id,
+      venueId: recordMerges.venueId,
+      mergedId: recordMerges.mergedId,
+      survivorId: recordMerges.survivorId,
+      moves: recordMerges.moves,
+      snapshot: recordMerges.snapshot,
+      undoneAt: recordMerges.undoneAt,
+      undoReport: recordMerges.undoReport,
+      // 30 × 24 hours by the database's clock.
+      expired: sql<boolean>`${recordMerges.mergedAt} + make_interval(hours => ${UNDO_WINDOW_HOURS}) <= now()`,
+    }).from(recordMerges)
+      .where(eq(recordMerges.id, id))
+      .limit(1)
+      .for("update");
+    // record_merges rows are never deleted.
+    if (record === undefined) throw new Error(`Merge record ${id} could not be read again`);
+
+    // 2. Undone already: the same report again.
+    if (record.undoneAt !== null) {
+      const report = MergeUndoReportSchema.safeParse(record.undoReport);
+      if (!report.success) throw new UnreadableMergeRecord(record.id);
+      return { mergeId: record.id, ...report.data, replayed: true };
+    }
+
+    // 3. Past the window.
+    if (record.expired) return refuse({ kind: "undo_expired" });
+    const merge = readMerge(record);
+
+    // 4. Both people, the lower id first; what an older writer left on them
+    // is adopted before anything moves back. Then the checks: neither erased,
+    // and L still S's tombstone (else S has been merged since, and that merge
+    // comes first).
+    const [lowId, highId] = merge.mergedId < merge.survivorId
+      ? [merge.mergedId, merge.survivorId]
+      : [merge.survivorId, merge.mergedId];
+    const low = await lockRow(tx, merge.venueId, lowId);
+    const high = await lockRow(tx, merge.venueId, highId);
+    const closing = merge.mergedId === lowId ? low : high;
+    const survivor = merge.mergedId === lowId ? high : low;
+    if (closing === undefined || survivor === undefined) {
+      throw new Error(`Merge record ${merge.id} names a person who is not at its venue`);
+    }
+    await adoptLegacyMirror(tx, closing);
+    await adoptLegacyMirror(tx, survivor);
+    if (closing.erasedAt !== null || survivor.erasedAt !== null) return refuse({ kind: "erased" });
+    if (closing.mergedIntoId !== merge.survivorId) {
+      const later = await newestMergeOf(tx, merge.venueId, merge.survivorId);
+      if (later === undefined) throw new Error(`Merge record ${merge.id}'s merged person is not its survivor's tombstone`);
+      return refuse({ kind: "later_merge_first", laterMergeId: later });
+    }
+
+    return undoLocked(tx, merge, actorId);
   });
 }

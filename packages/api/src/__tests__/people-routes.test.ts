@@ -27,7 +27,8 @@ const ROUTES = [
   ["POST", "/people/organisations"], ["GET", `/people/organisations/${ID}`], ["PATCH", `/people/organisations/${ID}`],
   ["GET", "/people/search?q=murray"],
   ["GET", `/people/${ID}/merge-preview?survivorId=${ID2}`], ["POST", `/people/${ID}/merge`],
-] as const; // Task 12 appends its own
+  ["POST", `/people/merges/${ID}/undo`],
+] as const;
 
 type Method = typeof ROUTES[number][0];
 
@@ -121,6 +122,7 @@ describe("the People Book's door", () => {
       ["POST", `/people/not-a-uuid/merge`, { survivorId: ID2 }],
       ["POST", `/people/${ID}/merge`, {}],
       ["POST", `/people/${ID}/merge`, { survivorId: "x" }],
+      ["POST", "/people/merges/not-a-uuid/undo"],
     ];
     for (const [method, url, payload] of cases) {
       const res = await server.inject(request(method, url, staff, payload));

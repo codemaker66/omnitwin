@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, eq, TransactionRollbackError } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   ContactPointInputSchema,
   CreateOrganisationSchema,
   CreatePersonSchema,
   KeepApartRequestSchema,
+  MERGE_UNDO_DAYS,
   MergeRequestSchema,
   PeopleSearchQuerySchema,
   SetMembershipsSchema,
@@ -28,6 +29,7 @@ import {
   setPersonMemberships,
   updatePersonFields,
   upsertContactPoint,
+  writeOrRefuse,
   type PeopleTx,
 } from "../services/people-records.js";
 import { duplicateSuggestions, keepApart, withdrawKeptApart } from "../services/people-duplicates.js";
@@ -38,7 +40,15 @@ import {
   updateOrganisationFields,
 } from "../services/people-organisations.js";
 import { searchPeople } from "../services/people-search.js";
-import { applyPersonMerge, isMergeFailure, previewPersonMerge, type MergeFailure } from "../services/people-merge.js";
+import {
+  applyPersonMerge,
+  isMergeFailure,
+  isUndoFailure,
+  previewPersonMerge,
+  undoPersonMerge,
+  type MergeFailure,
+  type UndoFailure,
+} from "../services/people-merge.js";
 
 // ---------------------------------------------------------------------------
 // The People Book's only door (T-665): /people.
@@ -57,6 +67,7 @@ const PersonParams = z.object({ personId: z.string().uuid() });
 const OrganisationParams = z.object({ organisationId: z.string().uuid() });
 const PointParams = PersonParams.extend({ pointId: z.string().uuid() });
 const PairParams = PersonParams.extend({ otherPersonId: z.string().uuid() });
+const MergeParams = z.object({ mergeId: z.string().uuid() });
 
 const FORBIDDEN = { error: "Only the venue's commercial team can use the People Book", code: "FORBIDDEN" } as const;
 const INVALID_ID = { error: "Invalid ID", code: "VALIDATION_ERROR" } as const;
@@ -89,6 +100,29 @@ function refuseMerge(reply: FastifyReply, failure: MergeFailure): FastifyReply {
         error: "The record to keep has itself been merged into another record",
         code: "SURVIVOR_MERGED",
         mergedIntoId: failure.mergedIntoId,
+      });
+  }
+}
+
+/** Why an undo was refused; every refusal changed nothing. */
+function refuseUndo(reply: FastifyReply, failure: UndoFailure): FastifyReply {
+  switch (failure.kind) {
+    case "not_found": return reply.status(404).send({ error: "Merge not found", code: "NOT_FOUND" });
+    case "undo_expired":
+      return reply.status(409).send({
+        error: `This merge can no longer be undone: the ${String(MERGE_UNDO_DAYS)} days to undo it have passed`,
+        code: "UNDO_EXPIRED",
+      });
+    case "later_merge_first":
+      return reply.status(409).send({
+        error: "The record kept by this merge has since been merged into another; undo that merge first",
+        code: "UNDO_LATER_MERGE_FIRST",
+        laterMergeId: failure.laterMergeId,
+      });
+    case "erased":
+      return reply.status(409).send({
+        error: "Someone in this merge has been erased, so it cannot be undone",
+        code: "ERASED",
       });
   }
 }
@@ -129,27 +163,6 @@ async function lockedProfile(tx: PeopleTx, person: { id: string; venueId: string
   const profile = await readPersonProfile(tx, person.venueId, person.id);
   if (profile === null) throw new Error("A locked live person could not be read back");
   return profile;
-}
-
-/**
- * One write transaction whose refusals keep nothing: `work` either returns an
- * answer, which commits, or calls `refuse(answer)`, which rolls back every row
- * the transaction wrote (adopted legacy rows included) and returns that answer.
- */
-async function writeOrRefuse<T>(
-  db: Database,
-  work: (tx: PeopleTx, refuse: (answer: T) => never) => Promise<T>,
-): Promise<T> {
-  const refusal: { answer: T | undefined } = { answer: undefined };
-  try {
-    return await db.transaction((tx) => work(tx, (answer: T): never => {
-      refusal.answer = answer;
-      return tx.rollback();
-    }));
-  } catch (error) {
-    if (error instanceof TransactionRollbackError && refusal.answer !== undefined) return refusal.answer;
-    throw error;
-  }
 }
 
 /** Two ids, the lower first: the order every transaction locks people in. */
@@ -496,6 +509,29 @@ export async function peopleRoutes(
       answer.replayed ? "merge answered again" : "people merged",
     );
     return reply.status(answer.replayed ? 200 : 201).send({ data: answer });
+  });
+
+  // `/merges` is a static path, so it wins over `/:personId` in the router.
+  // An undo is one transaction whose refusals roll back (writeOrRefuse); a
+  // record that cannot be read throws, so the request answers 500 and its log
+  // line names only the merge.
+  server.post("/merges/:mergeId/undo", { preHandler: [authenticate] }, async (request, reply) => {
+    const scope = peopleScope(request.user);
+    if (!scope.ok) return reply.status(403).send(FORBIDDEN);
+    const params = MergeParams.safeParse(request.params);
+    if (!params.success) return reply.status(400).send(INVALID_ID);
+
+    const answer = await undoPersonMerge(db, scope.venueId, params.data.mergeId, request.user.id);
+    if (isUndoFailure(answer)) return refuseUndo(reply, answer);
+    request.log.info(
+      {
+        event: answer.replayed ? "people.merge_undo_replayed" : "people.merge_undone",
+        mergeId: answer.mergeId,
+        skipped: answer.skipped.length,
+      },
+      answer.replayed ? "merge undo answered again" : "merge undone",
+    );
+    return { data: answer };
   });
 
   server.post("/:personId/kept-apart", { preHandler: [authenticate] }, async (request, reply) => {

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, notInArray, sql, TransactionRollbackError, type SQL } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import {
   ClientAccountKindSchema,
@@ -42,6 +42,27 @@ export type PeopleTx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /** The database itself or a transaction on it. */
 export type PeopleConn = Database | PeopleTx;
+
+/**
+ * One write transaction whose refusals keep nothing: `work` either returns an
+ * answer, which commits, or calls `refuse(answer)`, which rolls back every row
+ * the transaction wrote (adopted legacy rows included) and returns that answer.
+ */
+export async function writeOrRefuse<T>(
+  db: Database,
+  work: (tx: PeopleTx, refuse: (answer: T) => never) => Promise<T>,
+): Promise<T> {
+  const refusal: { answer: T | undefined } = { answer: undefined };
+  try {
+    return await db.transaction((tx) => work(tx, (answer: T): never => {
+      refusal.answer = answer;
+      return tx.rollback();
+    }));
+  } catch (error) {
+    if (error instanceof TransactionRollbackError && refusal.answer !== undefined) return refusal.answer;
+    throw error;
+  }
+}
 
 /** A live person, on the unaliased `contacts` table. */
 export function liveContact(): SQL {
