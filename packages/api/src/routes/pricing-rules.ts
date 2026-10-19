@@ -5,7 +5,7 @@ import { PricingAdviceKeySchema } from "@omnitwin/types";
 import { pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAdministerVenue, canWritePricing } from "../utils/query.js";
+import { canAdministerVenue, canManageCommercial, canWritePricing } from "../utils/query.js";
 import { calculatePrice } from "../services/price-calculator.js";
 import type { PricingRuleInput } from "../services/price-calculator.js";
 import {
@@ -17,6 +17,19 @@ import {
 /** A write by someone outside PRICING_WRITE_ROLES. The words say who can. */
 function refusePricingWrite(reply: FastifyReply): FastifyReply {
   return reply.status(403).send({ error: pricingWriteRefusal(), code: "FORBIDDEN" });
+}
+
+// Reading a price (Blake, 17 October 2026): the venue's prices, and above all
+// a dated rate born from a Pricing desk suggestion, are the venue's own
+// commercial team's (canManageCommercial: admin, manager, staff, sales; a
+// platform admin too). Suggestions are advice, never exposed; a visitor is
+// asked to enquire for a quote and never shown a price. The refusal names no
+// rule, amount or date, and comes before any lookup, so it says nothing about
+// whether the venue or the rule exists.
+const PRICE_READ_REFUSAL = "The price list is kept by the venue's own team.";
+
+function refusePricingRead(reply: FastifyReply): FastifyReply {
+  return reply.status(403).send({ error: PRICE_READ_REFUSAL, code: "FORBIDDEN" });
 }
 
 // ---------------------------------------------------------------------------
@@ -107,12 +120,13 @@ export async function pricingRuleRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  // GET /venues/:venueId/pricing — public
-  server.get("/", async (request, reply) => {
+  // GET /venues/:venueId/pricing — the venue's commercial team only
+  server.get("/", { preHandler: [authenticate] }, async (request, reply) => {
     const params = VenueIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
     }
+    if (!canManageCommercial(request.user, params.data.venueId)) return refusePricingRead(reply);
 
     // Verify venue is active — prevents leaking pricing for soft-deleted venues
     const [venueCheck] = await db.select({ id: venues.id }).from(venues)
@@ -130,15 +144,17 @@ export async function pricingRuleRoutes(
       ))
       .orderBy(pricingRules.createdAt);
 
+    reply.header("Cache-Control", "private, no-store");
     return { data: rows };
   });
 
-  // GET /venues/:venueId/pricing/:id — public
-  server.get("/:id", async (request, reply) => {
+  // GET /venues/:venueId/pricing/:id — the venue's commercial team only
+  server.get("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = RuleIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
+    if (!canManageCommercial(request.user, params.data.venueId)) return refusePricingRead(reply);
 
     // Verify venue is active
     const [venueCheck] = await db.select({ id: venues.id }).from(venues)
@@ -160,6 +176,7 @@ export async function pricingRuleRoutes(
       return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
     }
 
+    reply.header("Cache-Control", "private, no-store");
     return { data: rule };
   });
 
@@ -401,12 +418,19 @@ export async function pricingRuleRoutes(
     return { data: restored };
   });
 
-  // POST /venues/:venueId/pricing/estimate — public price calculator
-  server.post("/estimate", async (request, reply) => {
+  // POST /venues/:venueId/pricing/estimate — the venue's commercial team only.
+  // It prices a window from every active rule, dated and suggestion-born rates
+  // included, so stepping through dates would map the venue's high-demand
+  // days and their raised totals. Its one caller is the staff planner's office
+  // ribbon, which shows no price line when refused. A price a client may ever
+  // see would be a deliberate projection without dated or suggested rates,
+  // not this route.
+  server.post("/estimate", { preHandler: [authenticate] }, async (request, reply) => {
     const params = VenueIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
     }
+    if (!canManageCommercial(request.user, params.data.venueId)) return refusePricingRead(reply);
 
     const parsed = EstimateBody.safeParse(request.body);
     if (!parsed.success) {
@@ -473,6 +497,7 @@ export async function pricingRuleRoutes(
       guestCount: parsed.data.guestCount,
     });
 
+    reply.header("Cache-Control", "private, no-store");
     return { data: result };
   });
 }

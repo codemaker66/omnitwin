@@ -150,8 +150,8 @@ export function canAdministerVenue(
   return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLES);
 }
 
-/** Setting a price at this venue (PRICING_WRITE_ROLES). Reading prices stays
- *  public; only the writes are narrowed. */
+/** Setting a price at this venue (PRICING_WRITE_ROLES). Reading one is the
+ *  wider commercial team's (canManageCommercial), never the public's. */
 export function canWritePricing(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
