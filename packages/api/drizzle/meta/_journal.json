@@ -659,6 +659,13 @@
       "when": 1792162800000,
       "tag": "0095_supplier_records_kept",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1792249200000,
+      "tag": "0096_configuration_view_tokens",
+      "breakpoints": true
     }
   ]
 }

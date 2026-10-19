@@ -1506,6 +1506,7 @@ export {
 
 export {
   CANONICAL_ASSETS,
+  assetDisplayName,
   getCanonicalAssetById,
   getCanonicalAssetBySlug,
   type CanonicalAsset,
@@ -2584,6 +2585,9 @@ export * from "./venue-sky.js";
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
 
+// Fix-first item 11 (16 Oct 2026 brief): a visitor's plan seen through a
+// view-only link (migration configuration_view_tokens).
+export * from "./plan-view.js";
 // Remembered allergy notes (Blake, 17 October 2026: "ask once, then
 // remember"): the opt-in wording, its period and the API shapes.
 export * from "./dietary-memory.js";
