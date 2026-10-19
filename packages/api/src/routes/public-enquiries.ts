@@ -15,7 +15,7 @@ import type { Database } from "../db/client.js";
 import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
-import { linkEnquiryToPerson } from "../services/people-link.js";
+import { linkEnquiryToPerson, type LinkOutcome } from "../services/people-link.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -53,6 +53,26 @@ const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
   phone: "by phone",
   email: "by email",
 };
+
+/** A SQLSTATE (five digits or capitals) on an error, or null. */
+function sqlStateOf(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || !("code" in value)) return null;
+  const code = value.code;
+  return typeof code === "string" && /^[0-9A-Z]{5}$/u.test(code) ? code : null;
+}
+
+/**
+ * What a failure to find an enquiry's person may say in a log: its class and
+ * its SQLSTATE (drizzle wraps the driver's error as the cause). Never its
+ * message, which drizzle builds from the query's parameters, the guest's
+ * email among them.
+ */
+function linkFailureOf(error: unknown): { errorName: string; pgCode: string | null } {
+  return {
+    errorName: error instanceof Error ? error.name : typeof error,
+    pgCode: sqlStateOf(error) ?? (error instanceof Error ? sqlStateOf(error.cause) : null),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Plugin — public guest enquiry submission
@@ -182,18 +202,19 @@ export async function publicEnquiryRoutes(
       : accessRequest || pricingEnquiry ? "website"
         : parsed.data.source ?? "walkthrough";
 
-    // The enquiry (status: submitted, skipping draft), its status history, the
-    // person it came from and the guest lead are written together or not at
-    // all. The guest is not signed in and can be anyone, so nothing they send
-    // is trusted to choose a person: the enquiry finds the venue's one live
-    // person who holds its email, however it was typed, or makes them, locked
-    // on the venue and the email so two at once make one person. An email two
-    // people share (a couple) links neither and makes no third. The answer
-    // below is the same whichever happened, so it never says whether an
-    // email is known. An access request or a Venviewer pricing enquiry rides
-    // this route without being one of the venue's clients, so it is neither
-    // linked nor made a person, as the People Book's backfill (0096) leaves
-    // those out.
+    // The enquiry (status: submitted, skipping draft), its status history and
+    // the guest lead are written together or not at all; the person the
+    // enquiry came from is found or made in the same transaction, in a
+    // savepoint of its own (below). The guest is not signed in and
+    // can be anyone, so nothing they send is trusted to choose a person: the
+    // enquiry finds the venue's one live person who holds its email, however
+    // it was typed, or makes them, locked on the venue and the email so two
+    // at once make one person. An email two people share (a couple) links
+    // neither and makes no third. The answer below is the same whichever
+    // happened, so it never says whether an email is known. An access request
+    // or a Venviewer pricing enquiry rides this route without being one of
+    // the venue's clients, so it is neither linked nor made a person, as the
+    // People Book's backfill (0096) leaves those out.
     const displayName = parsed.data.name ?? parsed.data.email;
     const stored = await db.transaction(async (tx) => {
       const [enquiry] = await tx.insert(enquiries).values({
@@ -225,16 +246,28 @@ export async function publicEnquiryRoutes(
         note: "Guest submission",
       });
 
-      const link = isBookingEnquiry(parsed.data.eventType)
-        ? await linkEnquiryToPerson(tx, {
-          id: enquiry.id,
-          venueId: enquiry.venueId,
-          contactId: null,
-          email: parsed.data.email,
-          name: parsed.data.name ?? null,
-          phone: parsed.data.phone ?? null,
-        }, { ownerUserId: null, whenShared: "leave" })
-        : null;
+      // Finding the person enriches the enquiry; the enquiry is the venue's
+      // business record. So the link runs in a savepoint: should it fail, it
+      // is rolled back alone (its advisory lock with it, which is safe, as
+      // nothing it guarded was written) and the enquiry, its history and its
+      // lead are still kept, with no person. Create-from-enquiry links it
+      // when the team works it.
+      let link: LinkOutcome | null = null;
+      let linkFailure: { errorName: string; pgCode: string | null } | null = null;
+      if (isBookingEnquiry(parsed.data.eventType)) {
+        try {
+          link = await tx.transaction((savepoint) => linkEnquiryToPerson(savepoint, {
+            id: enquiry.id,
+            venueId: enquiry.venueId,
+            contactId: null,
+            email: parsed.data.email,
+            name: parsed.data.name ?? null,
+            phone: parsed.data.phone ?? null,
+          }, { ownerUserId: null, whenShared: "leave" }));
+        } catch (error) {
+          linkFailure = linkFailureOf(error);
+        }
+      }
 
       // The guest lead is written once, by the first enquiry from that exact
       // email, and never changed afterwards. It names no venue, so updating
@@ -245,18 +278,25 @@ export async function publicEnquiryRoutes(
         SELECT ${parsed.data.email}::text, ${parsed.data.phone ?? null}::text, ${parsed.data.name ?? null}::text, ${enquiry.id}::uuid
         WHERE NOT EXISTS (SELECT 1 FROM guest_leads WHERE email = ${parsed.data.email}::text)
       `);
-      return { enquiry, link };
+      return { enquiry, link, linkFailure };
     });
 
     if (stored === null) {
       return reply.status(500).send({ error: "Failed to create enquiry", code: "INTERNAL_ERROR" });
     }
-    const { enquiry, link } = stored;
+    const { enquiry, link, linkFailure } = stored;
+    // Ids, the outcome and a failure's class and SQLSTATE only: never the
+    // guest's email, name or phone, nor an error's message.
     if (link !== null) {
-      // Ids and the outcome only: never the guest's email, name or phone.
       request.log.info(
         { event: "enquiry.person_linked", enquiryId: enquiry.id, venueId: anchor.venueId, outcome: link.outcome },
         "enquiry.person_linked",
+      );
+    }
+    if (linkFailure !== null) {
+      request.log.error(
+        { event: "enquiry.person_link_failed", enquiryId: enquiry.id, venueId: anchor.venueId, ...linkFailure },
+        "enquiry kept without a person: finding or making its person failed",
       );
     }
 

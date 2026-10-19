@@ -18,6 +18,14 @@ import { insertPerson, liveContact, lockPerson, type PeopleTx } from "./people-r
 // from one new email make one person. It is the first lock on the People Book
 // in the transaction: then the one person found, FOR UPDATE, then the
 // enquiry that points at them.
+//
+// The public enquiry route inserts its enquiry before this lock is taken.
+// That is safe only because the new row is invisible to every other
+// transaction until commit, so no one can wait on it; it is not a precedent
+// for taking a row lock before an advisory lock. The route runs this function
+// in a savepoint: should it throw, the savepoint is rolled back and the
+// transaction-level advisory lock taken inside it is released with it, which
+// is safe, because nothing the lock guarded was written.
 // ---------------------------------------------------------------------------
 
 /** The lock every writer that finds or makes a person by their email takes. */
