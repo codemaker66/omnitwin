@@ -988,7 +988,7 @@ git commit -m "feat(api): a public enquiry finds or makes its person, and never 
 - Test: `packages/api/src/__tests__/crm-postgres.test.ts:84-87` (tables), `:116` (reset), new cases
 
 **Interfaces:**
-- Consumes: Task 9 `linkEnquiryToPerson`, `EnquiryForLink`; Task 6 `lockPerson`, `isCommercialMember`, `refreshContactMirror`; Task 7 `insertOrganisation`.
+- Consumes: Task 9 `linkEnquiryToPerson`, `EnquiryForLink`; Task 6 `lockPerson`, `isCommercialMember`, `refreshContactMirror`, `adoptLegacyMirror` (every write path that will refresh a person's mirror calls it first, on each person it has locked; `ensurePrimaryAccount` does); Task 7 `insertOrganisation`.
 - Produces:
   - `ensureEnquiryPerson(tx: PeopleTx, enquiry: EnquiryForLink, ownerUserId: string | null): Promise<{ contactId: string; created: boolean }>`: the linked person when `enquiry.contactId` is live (locked), otherwise `linkEnquiryToPerson(…, { ownerUserId, whenShared: "create" })`.
   - `ensurePrimaryAccount(tx: PeopleTx, person: { id: string; venueId: string; name: string }, input: { sourceEnquiryId: string; createdBy: string; ownerUserId: string | null }): Promise<{ account: typeof clientAccounts.$inferSelect; created: boolean }>`: the person's primary membership's live account, or a new household named after them (kind `household`, account type `event_client`, primary contact the person) with a primary membership, followed by `refreshContactMirror`.
@@ -1043,7 +1043,7 @@ git commit -m "feat(api): a deal from an enquiry joins the person and household 
 - Test: `packages/api/src/__tests__/people-routes.test.ts`, `packages/api/src/__tests__/people-merge-postgres.test.ts`
 
 **Interfaces:**
-- Consumes: Task 6 `lockPerson`, `refreshContactMirror`, `readPersonProfile`; `RecordMergeSnapshot`, `RecordMergeMove`, `MergePreview`, `MergeResult`, `MERGE_MOVE_TARGETS`, `MERGE_FILLED_FIELDS`, `MERGE_UNDO_DAYS`.
+- Consumes: Task 6 `lockPerson`, `refreshContactMirror`, `adoptLegacyMirror` (called on L and S right after they are locked, before anything moves, so a person written without points keeps their email, phone and organisation), `readPersonProfile`; `RecordMergeSnapshot`, `RecordMergeMove`, `MergePreview`, `MergeResult`, `MERGE_MOVE_TARGETS`, `MERGE_FILLED_FIELDS`, `MERGE_UNDO_DAYS`.
 - Produces:
   - `MergeFailure = { kind: "not_found" } | { kind: "same_record" } | { kind: "already_merged"; survivorId: string } | { kind: "survivor_merged"; mergedIntoId: string }`.
   - `previewPersonMerge(db: PeopleConn, scopeVenueId: string | null, mergedId: string, survivorId: string): Promise<MergePreview | MergeFailure>`.
@@ -1084,7 +1084,7 @@ Expected: FAIL, 404 for the merge routes.
 
 ```text
 1. Read L's venue (404 outside the scope); advisory lock people-merge:<venue>.
-2. Lock L and S: SELECT … FOR UPDATE, ascending id. Checks, in order: L = S → same_record (before any read);
+2. Lock L and S: SELECT … FOR UPDATE, ascending id; after the checks, adoptLegacyMirror on each. Checks, in order: L = S → same_record (before any read);
    either missing, deleted or erased, or S at another venue → not_found; L.merged_into_id = S → replay the newest
    not-undone record for (venue, 'person', L, S); L merged elsewhere → already_merged; S merged → survivor_merged.
 3. Snapshot: L's row, all of L's points and memberships; removed and survivorFilled empty.
@@ -1163,7 +1163,7 @@ Run the command from Task 11 Step 2. Expected: FAIL, 404 for the undo route.
 1. Load the record within the scope (404); advisory lock people-merge:<venue>; reload it FOR UPDATE.
 2. undone_at set → replay undo_report with replayed true.
 3. SQL clock: merged_at <= now() - interval '30 days' → undo_expired.
-4. Lock L and S (ascending id). L erased → erased. L.merged_into_id ≠ S → later_merge_first with the newest not-undone
+4. Lock L and S (ascending id); adoptLegacyMirror on each. L erased → erased. L.merged_into_id ≠ S → later_merge_first with the newest not-undone
    record whose merged_id is S.
 5. Restore L: merged_into_id = null, deleted_at = snapshot.person.deletedAt, updated_at = now().
 6. For each move, in reverse merge order: UPDATE <table> SET <column> = L WHERE id = ANY(ids) AND <column> = S RETURNING id;
