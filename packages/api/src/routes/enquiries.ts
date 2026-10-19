@@ -1,7 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, desc, inArray, isNull, sql } from "drizzle-orm";
-import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, venues } from "../db/schema.js";
+import {
+  FIRST_RESPONSE_FUTURE_SKEW_MS,
+  RecordFirstResponseSchema,
+  type RecordFirstResponseResult,
+} from "@omnitwin/types";
+import { enquiries, enquiryStatusHistory, configurations, generalAuditLog, pricingRules, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
@@ -10,6 +15,7 @@ import { canTransition, enquiryKind, ENQUIRY_STATES, isCustomerMove } from "../s
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
+import { stampFirstResponse } from "../services/enquiry-funnel.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -87,6 +93,18 @@ const StatusFilterQuery = z.object({
  */
 function canWorkEnquiry(user: JwtUser, enquiry: { readonly userId: string | null; readonly venueId: string }): boolean {
   return canAccessResource(user, enquiry.userId, enquiry.venueId) || canManageCommercial(user, enquiry.venueId);
+}
+
+/**
+ * Who answers a venue's enquiries, so who may say a reply was made: the
+ * venue's own commercial team, the roles canManageCommercial admits, without
+ * its pass for a Venviewer platform admin, who answers no venue's guests. The
+ * floor (a hallkeeper) reads the inbox but does not answer it.
+ */
+const REPLYING_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
+
+function answersFor(person: { readonly role: string; readonly venueId: string | null }, venueId: string): boolean {
+  return REPLYING_ROLES.has(person.role) && person.venueId === venueId;
 }
 
 // ---------------------------------------------------------------------------
@@ -342,6 +360,19 @@ export async function enquiryRoutes(
         changedBy: request.user.id,
         note: parsed.data.note ?? null,
       });
+      // A decision is emailed to the guest below, so it is a reply Venviewer
+      // sends itself: the enquiry's first unless an earlier one is recorded.
+      if (parsed.data.status === "approved" || parsed.data.status === "rejected") {
+        await stampFirstResponse(tx, {
+          enquiryId: row.id,
+          venueId: row.venueId,
+          at: "now",
+          byUserId: request.user.id,
+          channel: "decision",
+        });
+        const [stamped] = await tx.select().from(enquiries).where(eq(enquiries.id, row.id)).limit(1);
+        return stamped ?? row;
+      }
       return row;
     });
     if (updated === null) return reply.status(409).send(ENQUIRY_STATUS_CHANGED);
@@ -383,6 +414,109 @@ export async function enquiryRoutes(
     }
 
     return { data: updated };
+  });
+
+  // POST /enquiries/:id/first-response — someone on the venue's team reports
+  // a reply made outside Venviewer (an email from the venue's own mailbox, a
+  // call, a meeting): the enquiry's first reply when it is earlier than the
+  // one recorded (migration 0100). `respondedAt` defaults to now and may not
+  // be before the enquiry arrived or later than now; `respondedBy` defaults to
+  // the person reporting and must be on the venue's team. Every report is kept
+  // in the audit log, including one that changes nothing, so the stamp's
+  // history can be read back even though only the earliest is on the enquiry.
+  server.post("/:id/first-response", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const parsed = RecordFirstResponseSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    const [enquiry] = await db.select({
+      id: enquiries.id,
+      venueId: enquiries.venueId,
+      state: enquiries.state,
+      createdAt: enquiries.createdAt,
+    }).from(enquiries).where(eq(enquiries.id, params.data.id)).limit(1);
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
+    }
+    if (!answersFor(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    if (enquiry.state === "draft") {
+      return reply.status(422).send({
+        error: "This enquiry has not been sent yet, so there is no reply to record.",
+        code: "ENQUIRY_NOT_SENT",
+      });
+    }
+
+    const respondedAt = parsed.data.respondedAt === undefined ? null : new Date(parsed.data.respondedAt);
+    if (respondedAt !== null && respondedAt.getTime() > Date.now() + FIRST_RESPONSE_FUTURE_SKEW_MS) {
+      return reply.status(422).send({ error: "A reply cannot be later than now.", code: "FIRST_RESPONSE_IN_FUTURE" });
+    }
+    if (respondedAt !== null && respondedAt.getTime() < enquiry.createdAt.getTime()) {
+      return reply.status(422).send({
+        error: "A reply cannot be earlier than the enquiry it answers.",
+        code: "FIRST_RESPONSE_BEFORE_ENQUIRY",
+      });
+    }
+
+    const respondedBy = parsed.data.respondedBy ?? request.user.id;
+    if (respondedBy !== request.user.id) {
+      const [person] = await db.select({ role: users.role, venueId: users.venueId })
+        .from(users).where(eq(users.id, respondedBy)).limit(1);
+      if (person === undefined || !answersFor(person, enquiry.venueId)) {
+        return reply.status(422).send({
+          error: "Name someone on this venue's team as the person who replied.",
+          code: "RESPONDER_NOT_AT_VENUE",
+        });
+      }
+    }
+
+    const stamped = await db.transaction(async (tx) => {
+      const result = await stampFirstResponse(tx, {
+        enquiryId: enquiry.id,
+        venueId: enquiry.venueId,
+        at: respondedAt ?? "now",
+        byUserId: respondedBy,
+        channel: parsed.data.channel,
+      });
+      await tx.insert(generalAuditLog).values({
+        actorUserId: request.user.id,
+        action: "enquiry.first_response_reported",
+        targetType: "enquiry",
+        targetId: enquiry.id,
+        summary: result.changed
+          ? "Recorded the enquiry's first reply."
+          : "Reported a reply no earlier than the enquiry's first, which stands.",
+        metadata: {
+          channel: parsed.data.channel,
+          respondedAt: respondedAt?.toISOString() ?? null,
+          respondedBy,
+          changed: result.changed,
+        },
+      });
+      return result;
+    });
+    // The enquiry was read at this venue, after it arrived, with a time no
+    // earlier than its arrival, so it holds a reply now unless it moved away.
+    if (stamped.stamp === null) {
+      return reply.status(409).send({ error: "The enquiry changed while the reply was being recorded. Open it again.", code: "ENQUIRY_CHANGED" });
+    }
+    const data: RecordFirstResponseResult = {
+      enquiryId: enquiry.id,
+      firstResponse: {
+        at: stamped.stamp.at.toISOString(),
+        byUserId: stamped.stamp.byUserId,
+        channel: stamped.stamp.channel,
+        recordedAt: stamped.stamp.recordedAt.toISOString(),
+      },
+      changed: stamped.changed,
+    };
+    return { data };
   });
 
   // GET /enquiries/:id/history — status change history

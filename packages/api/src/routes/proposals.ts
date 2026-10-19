@@ -11,6 +11,7 @@ import {
   isProposalEditable,
   ShortCodeSchema,
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
+  RecordProposalEngagementSchema,
   type EventPlanAudienceRole,
   type EventPlanChangeSurface,
   type ProposalCommentAuthorType,
@@ -54,6 +55,12 @@ import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } fro
 import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
 import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
+import {
+  countProposalView,
+  enquiryAnsweredByProposal,
+  recordProposalEngagement,
+  stampFirstResponse,
+} from "../services/enquiry-funnel.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -859,6 +866,20 @@ export async function proposalRoutes(
         changedBy: request.user.id,
         note: parsed.data.note ?? null,
       });
+      // A proposal sent is a reply Venviewer itself sends: the first reply to
+      // the enquiry it answers, unless an earlier one is recorded (0100).
+      if (parsed.data.status === "sent") {
+        const enquiryId = await enquiryAnsweredByProposal(tx, row);
+        if (enquiryId !== null) {
+          await stampFirstResponse(tx, {
+            enquiryId,
+            venueId: row.venueId,
+            at: "now",
+            byUserId: request.user.id,
+            channel: "proposal",
+          });
+        }
+      }
       // Answered as its row on the desk now reads, read with the move: the
       // figure that stands and whether the client's link opens change with it.
       const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, params.data.id)).limit(1);
@@ -1852,11 +1873,39 @@ export async function proposalShareRoutes(
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
 
-    await db.update(proposalShareTokens)
-      .set({ lastViewedAt: new Date() })
-      .where(eq(proposalShareTokens.id, resolved.shareToken.id));
+    // A visit, counted once per PROPOSAL_VIEW_VISIT_GAP_MINUTES (0100).
+    await countProposalView(db, resolved.shareToken.id);
 
     return { data: clientSafe };
+  });
+
+  // POST /proposal-share/:token/engagement — a moment on the proposal's page
+  // (a 30-second walk of the twin from it), attached to this proposal and
+  // nothing about the reader (migration 0100). Only for a link that opens a
+  // proposal shown to its client. The same moment within the repeat window is
+  // one, so a reload or a retry adds nothing. No page sends it yet: it waits
+  // for the privacy notice (see @omnitwin/types enquiry-funnel.ts).
+  server.post("/:token/engagement", {
+    config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+  }, async (request, reply) => {
+    const params = ShareTokenParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
+    }
+    const parsed = RecordProposalEngagementSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+    const resolved = await resolveProposalShareToken(db, params.data.token);
+    if (resolved === null || sentVersionOf(resolved.proposal) === null) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    const recorded = await recordProposalEngagement(db, {
+      venueId: resolved.proposal.venueId,
+      proposalId: resolved.proposal.id,
+      kind: parsed.data.kind,
+    });
+    return { data: { recorded } };
   });
 
   server.post("/:token/comment", async (request, reply) => {

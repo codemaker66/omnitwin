@@ -4,8 +4,10 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
   VENVIEWER_PRICING_ENQUIRY_TYPE,
+  attributeEnquiry,
   occasionLabel,
   occasionPhrase,
+  type EnquiryAttributionRecord,
   type EnquirySource,
 } from "@omnitwin/types";
 import { eq, and, isNull, asc } from "drizzle-orm";
@@ -14,6 +16,7 @@ import type { Database } from "../db/client.js";
 import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
+import { acquisitionContextFor, recordEnquiryEngagement } from "../services/enquiry-funnel.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -50,6 +53,8 @@ const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
   planner: "from the planner",
   phone: "by phone",
   email: "by email",
+  listing: "through a listing site",
+  assistant: "through an AI assistant",
 };
 
 // ---------------------------------------------------------------------------
@@ -180,6 +185,17 @@ export async function publicEnquiryRoutes(
       : accessRequest || pricingEnquiry ? "website"
         : parsed.data.source ?? "walkthrough";
 
+    // Where the person found the venue (migration 0100), when the page sent
+    // it: only the referring site's host and the cleaned UTM tags are kept,
+    // with the channel they name. No page sends it until the privacy notice
+    // describes it (see @omnitwin/types enquiry-funnel.ts), so today this is
+    // null for every enquiry and the columns stay empty.
+    let attribution: EnquiryAttributionRecord | null = null;
+    if (parsed.data.attribution !== undefined) {
+      const [venueSlugRow] = await db.select({ slug: venues.slug }).from(venues).where(eq(venues.id, anchor.venueId)).limit(1);
+      attribution = attributeEnquiry(parsed.data.attribution, acquisitionContextFor(venueSlugRow?.slug ?? null));
+    }
+
     // Create enquiry with guest fields, status: submitted (skip draft).
     const displayName = parsed.data.name ?? parsed.data.email;
     const [enquiry] = await db.insert(enquiries).values({
@@ -199,10 +215,41 @@ export async function publicEnquiryRoutes(
       message: parsed.data.message ?? null,
       source,
       roomChosen: anchor.roomName !== null,
+      ...(attribution === null ? {} : {
+        referrerHost: attribution.referrerHost,
+        utmSource: attribution.utmSource,
+        utmMedium: attribution.utmMedium,
+        utmCampaign: attribution.utmCampaign,
+        utmTerm: attribution.utmTerm,
+        utmContent: attribution.utmContent,
+        acquisitionChannel: attribution.acquisitionChannel,
+      }),
     }).returning();
 
     if (enquiry === undefined) {
       return reply.status(500).send({ error: "Failed to create enquiry", code: "INTERNAL_ERROR" });
+    }
+
+    // What happened before the person sent it (a 30-second walk of the twin),
+    // attached to this enquiry and nothing else. Held under the same rule as
+    // attribution. The enquiry is already stored and is the record of truth,
+    // so a failure here is logged, never turned into a failed submission the
+    // guest would send again.
+    const engagement = parsed.data.engagement ?? [];
+    if (engagement.length > 0) {
+      try {
+        await recordEnquiryEngagement(db, {
+          venueId: anchor.venueId,
+          enquiryId: enquiry.id,
+          spaceId: anchor.roomName === null ? null : anchor.spaceId,
+          kinds: engagement,
+        });
+      } catch (err) {
+        request.log.error(
+          { event: "enquiry.engagement_failed", enquiryId: enquiry.id, venueId: anchor.venueId, error: err instanceof Error ? err.message : String(err) },
+          "enquiry stored but its engagement could not be recorded",
+        );
+      }
     }
 
     // Write status history: guest submission (changedBy is null for guests)
