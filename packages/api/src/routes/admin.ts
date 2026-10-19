@@ -51,6 +51,23 @@ function hasCronToken(request: FastifyRequest): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Error-reporting check.
+//
+// Proves that a production failure reaches Sentry, through the same path a
+// real one takes: the handler throws, the error normaliser logs it and hands
+// the raw error to the Sentry capture hook, the event is scrubbed, and the
+// caller receives the ordinary 500 envelope. Run it after a deploy or a DSN
+// change; a 500 here plus a SentryVerificationError issue in the venviewer-api
+// project means errors are arriving. It reads and writes no data.
+// ---------------------------------------------------------------------------
+
+/** The deliberate error the check throws; its name keeps it grouped as one
+ *  Sentry issue, apart from any real failure. */
+export class SentryVerificationError extends Error {
+  override readonly name = "SentryVerificationError";
+}
+
+// ---------------------------------------------------------------------------
 // Plugin — admin-only endpoints
 // ---------------------------------------------------------------------------
 
@@ -202,5 +219,14 @@ export async function adminRoutes(
     }
     const summary = await runHoldReminderPass({ db, dryRun, logger: request.log });
     return { data: { ...summary, emailDelivery } };
+  });
+
+  // POST /admin/observability/sentry-check — see SentryVerificationError.
+  server.post("/observability/sentry-check", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async () => {
+    throw new SentryVerificationError(
+      "Deliberate error from POST /admin/observability/sentry-check, raised to prove production errors reach Sentry.",
+    );
   });
 }

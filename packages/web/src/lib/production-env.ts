@@ -28,6 +28,21 @@ export function resolveWebClerkPublishableKey(
   return candidates.find((value) => value.startsWith("pk_live_")) ?? candidates[0];
 }
 
+/**
+ * The release a build reports to Sentry: an explicit VITE_SENTRY_RELEASE or
+ * SENTRY_RELEASE wins, otherwise the commit Vercel is building. Vercel cannot
+ * interpolate one variable into another, so a hand-set release would name the
+ * wrong commit after the next deploy. The browser SDK and the source-map
+ * upload read this one value, so uploaded maps match the events they decode.
+ */
+export function resolveSentryRelease(
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  return trimmedEnv(env["VITE_SENTRY_RELEASE"])
+    ?? trimmedEnv(env["SENTRY_RELEASE"])
+    ?? trimmedEnv(env["VERCEL_GIT_COMMIT_SHA"]);
+}
+
 export function getSentrySourceMapUploadConfig(
   env: Record<string, string | undefined>,
 ): SentrySourceMapUploadConfig | null {
@@ -49,7 +64,7 @@ export function getSentrySourceMapUploadConfig(
     authToken,
     org,
     project,
-    release: trimmedEnv(env["VITE_SENTRY_RELEASE"]) ?? trimmedEnv(env["SENTRY_RELEASE"]),
+    release: resolveSentryRelease(env),
   };
 }
 

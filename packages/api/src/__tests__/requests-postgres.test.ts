@@ -4,7 +4,7 @@ import Fastify from "fastify";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
@@ -605,6 +605,13 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     const later = new Date(Date.parse(second.handedOver[0]?.handedOverAt ?? "") + 301_000);
     const twice = await runRequestEscalationPass(db, { now: later, send: () => Promise.resolve(true) });
     expect(twice.filter((item) => item.request.id === c.request.id).map((item) => item.reason)).toEqual(["handover"]);
+    // This test escalates on the real clock, so from 22:00 to 07:00 on the
+    // venue's clock both emails wait for the morning. The planner is
+    // house-wide and the planner test expects nothing of ours to be due within
+    // the day, so mark the venue's emails sent before leaving.
+    await db.update(schema.requests)
+      .set({ escalationEmailedAt: later })
+      .where(and(eq(schema.requests.venueId, f.venueId), isNull(schema.requests.escalationEmailedAt)));
 
     // Nothing left to hand over: said plainly. A relief from elsewhere: refused, nothing moved.
     const empty = await handoverShiftCore(db, f.hallkeeper, f.venueId, reliefId);

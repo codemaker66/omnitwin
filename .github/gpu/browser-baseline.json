@@ -698,6 +698,34 @@
       ],
       "expectedStatus": "skipped",
       "limits": "This is reviewed inventory admission, not execution evidence. These eight cases were absent from sourceRunId, sourceReports and the earlier admissions; they self-gate (skipped) unless E2E_LAYOUT_LIVE=1 provides the live stack, exactly as diary-live.spec.ts does, so the hosted CPU shards record them as skips and every executed case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-18",
+      "reason": "The planner on a phone (PR #118, T-661): the touch-placement case 0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c ('a table chosen above the expanded schedule is placed and saved through touch') is restated as 'a signed-out visitor places and saves a table through touch', because the event schedule card is no longer shown to anonymous visitors, so there is no expanded schedule to place above; the case still places a table by touch and proves it saved.",
+      "sourceCommit": "db84dad2cd972b257ce6e8a0095ff91d7c7b1f6a",
+      "sourceFile": "packages/web/e2e/editor-mobile-shell.spec.ts",
+      "sourceFileGitBlobSha256": "c62a7abbc56a9398f67f561f2633a50a2357ce789371f726c40b93aafa816f04",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f07d342940edf52a7c6e09df5b4b1eca1d3ea986b8877321ca8684d69c13ade9",
+      "caseIds": [
+        "0566ce7e918d6e1cf20c-15fe0152b3208f80750d"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-18",
+      "reason": "The planner on a phone (PR #118, T-661): the layout case 098b539f18aead5c39f5-f4847f7a36ef5d419a55 ('Plan navigation and capacity controls clear the event schedule and command deck') is restated as 'Plan navigation and capacity controls clear the view mode and command deck', because a visitor no longer has the event schedule card; the case still proves the plan navigation and capacity controls clear the controls they sit beside.",
+      "sourceCommit": "db84dad2cd972b257ce6e8a0095ff91d7c7b1f6a",
+      "sourceFile": "packages/web/e2e/public-config-flow.spec.ts",
+      "sourceFileGitBlobSha256": "82ffc67fc936292809da2491eef32b6bc7070e62c590e4c9e72ba1566cae57c2",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f07d342940edf52a7c6e09df5b4b1eca1d3ea986b8877321ca8684d69c13ade9",
+      "caseIds": [
+        "098b539f18aead5c39f5-4002f671ea2c5386d172"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 098b539f18aead5c39f5-f4847f7a36ef5d419a55 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -777,9 +805,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c",
+      "id": "0566ce7e918d6e1cf20c-15fe0152b3208f80750d",
       "file": "editor-mobile-shell.spec.ts",
-      "title": "a table chosen above the expanded schedule is placed and saved through touch",
+      "title": "a signed-out visitor places and saves a table through touch",
       "suitePath": [
         "editor-mobile-shell.spec.ts",
         "Small phone canvas placement"
@@ -953,9 +981,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "098b539f18aead5c39f5-f4847f7a36ef5d419a55",
+      "id": "098b539f18aead5c39f5-4002f671ea2c5386d172",
       "file": "public-config-flow.spec.ts",
-      "title": "Plan navigation and capacity controls clear the event schedule and command deck",
+      "title": "Plan navigation and capacity controls clear the view mode and command deck",
       "suitePath": [
         "public-config-flow.spec.ts",
         "Editor with placed objects"
