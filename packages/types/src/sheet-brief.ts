@@ -36,8 +36,8 @@ export interface DayLine {
   readonly emphasis: boolean;
   /** A planner's phase deadline later than the room's ready-by time. */
   readonly late: boolean;
-  /** Falls on a later venue-local day than the event starts. */
-  readonly nextDay: boolean;
+  /** Falls on another venue-local day than the event starts (the night before, after midnight). */
+  readonly otherDay: boolean;
 }
 
 const BRIEFING_DETAIL = "Evacuation, invacuation, lockdown and communication";
@@ -56,7 +56,7 @@ export function sheetRunningOrder(sheet: HallkeeperSheetV2): DayLine[] {
   const eventDay = sheet.timing === null ? null : venueDay(sheet.timing.eventStart, timeZone);
   const lines: (DayLine & { readonly ms: number })[] = [];
   const add = (at: string, title: string, detail: string | null, emphasis = false, late = false): void => {
-    lines.push({ at, ms: Date.parse(at), title, detail, emphasis, late, nextDay: eventDay !== null && venueDay(at, timeZone) > eventDay });
+    lines.push({ at, ms: Date.parse(at), title, detail, emphasis, late, otherDay: eventDay !== null && venueDay(at, timeZone) !== eventDay });
   };
   const text = (value: string): string | null => (value.trim().length > 0 ? value.trim() : null);
 
@@ -149,7 +149,7 @@ export interface SetupItem {
 export interface SetupStep {
   readonly phase: SetupPhase;
   readonly label: string;
-  readonly deadline: { readonly at: string; readonly reason: string | null; readonly late: boolean } | null;
+  readonly deadline: { readonly at: string; readonly reason: string | null; readonly late: boolean; readonly otherDay: boolean } | null;
   readonly items: readonly SetupItem[];
 }
 
@@ -161,6 +161,8 @@ interface ItemDraft {
   qty: number;
   chairTotal: number;
   chairEach: Set<number>;
+  /** A merged row carried no chairs, so "N chairs each" would overstate. */
+  someBare: boolean;
   where: Map<Zone, number>;
   notes: string[];
   accessory: boolean;
@@ -174,6 +176,8 @@ interface ItemDraft {
  */
 export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
   const setupBy = sheet.timing?.setupBy ?? null;
+  const timeZone = sheet.venue.timezone;
+  const eventDay = sheet.timing === null ? null : venueDay(sheet.timing.eventStart, timeZone);
   const seenNotes = new Set<string>();
   return sheet.phases.filter((phase) => phase.zones.some((zone) => zone.rows.length > 0)).map((phase) => {
     const drafts = new Map<string, ItemDraft>();
@@ -181,12 +185,14 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
       const chairs = WITH_CHAIRS.exec(row.name);
       const name = chairs?.[1] ?? row.name;
       const key = `${name}|${String(row.afterDepth)}|${String(row.isAccessory)}`;
-      const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory };
+      const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), someBare: false, where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory };
       draft.qty += row.qty;
       if (chairs?.[2] !== undefined) {
         const each = Number(chairs[2]);
         draft.chairTotal += row.qty * each;
         draft.chairEach.add(each);
+      } else {
+        draft.someBare = true;
       }
       draft.where.set(zone.zone, (draft.where.get(zone.zone) ?? 0) + row.qty);
       for (const note of row.notes.split(NOTE_SEPARATOR).map((part) => part.trim())) {
@@ -204,11 +210,12 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
         at: deadline.deadline,
         reason: deadline.reason.trim().length > 0 ? deadline.reason.trim() : null,
         late: setupBy !== null && Date.parse(deadline.deadline) > Date.parse(setupBy),
+        otherDay: eventDay !== null && venueDay(deadline.deadline, timeZone) !== eventDay,
       },
       items: [...drafts.values()].map((draft) => ({
         name: draft.name,
         qty: draft.qty,
-        chairs: draft.chairEach.size === 0 ? null : { total: draft.chairTotal, each: draft.chairEach.size === 1 ? [...draft.chairEach][0] ?? null : null },
+        chairs: draft.chairEach.size === 0 ? null : { total: draft.chairTotal, each: draft.chairEach.size === 1 && !draft.someBare ? [...draft.chairEach][0] ?? null : null },
         where: [...draft.where].map(([zone, qty]) => ({ zone, qty })).sort((a, b) => b.qty - a.qty),
         notes: draft.notes,
         accessory: draft.accessory,

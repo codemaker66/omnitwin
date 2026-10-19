@@ -136,10 +136,44 @@ export function drawLine(doc: Doc, style: TextStyle, text: string, x: number, y:
 }
 
 /**
+ * Break a word wider than the line (a pasted link, a paragraph of Chinese)
+ * between characters. Each character is measured once and the cut found by
+ * walking those widths, then checked against the real measure (kerning), so
+ * the work grows with the word's length, not its square. A cut always moves
+ * on by at least one character, and never inside a surrogate pair.
+ */
+function breakWord(doc: Doc, style: TextStyle, word: string, width: number): { lines: string[]; rest: string } {
+  const chars = Array.from(word);
+  const widths = chars.map((char) => textWidth(doc, style, char));
+  const lines: string[] = [];
+  let start = 0;
+  for (;;) {
+    let end = start;
+    let sum = 0;
+    while (end < chars.length && sum + (widths[end] ?? 0) <= width) { sum += widths[end] ?? 0; end++; }
+    if (end === start) end = start + 1;
+    while (end - start > 1 && textWidth(doc, style, chars.slice(start, end).join("")) > width) end--;
+    const piece = chars.slice(start, end).join("");
+    if (end >= chars.length) return { lines, rest: piece };
+    lines.push(piece);
+    start = end;
+  }
+}
+
+/** Wrapped lines per document, so a block measured and then drawn wraps once. */
+const wrapped = new WeakMap<Doc, Map<string, readonly string[]>>();
+
+/**
  * Greedy wrap at spaces, keeping the writer's own line breaks; a word wider
  * than the line (an email address, a link) breaks between characters.
  */
-export function wrapLines(doc: Doc, style: TextStyle, text: string, width: number): string[] {
+export function wrapLines(doc: Doc, style: TextStyle, text: string, width: number): readonly string[] {
+  const key = `${style.face}|${String(style.size)}|${String(style.tracking ?? 0)}|${style.upper === true ? "U" : ""}${style.tnum === true ? "T" : ""}|${String(width)}|${text}`;
+  let cache = wrapped.get(doc);
+  if (cache === undefined) { cache = new Map(); wrapped.set(doc, cache); }
+  const known = cache.get(key);
+  if (known !== undefined) return known;
+
   const out: string[] = [];
   const fits = (candidate: string): boolean => textWidth(doc, style, candidate) <= width;
   for (const paragraph of printed(style, text).split(/\r?\n/u)) {
@@ -148,18 +182,14 @@ export function wrapLines(doc: Doc, style: TextStyle, text: string, width: numbe
       const candidate = line.length === 0 ? word : `${line} ${word}`;
       if (fits(candidate)) { line = candidate; continue; }
       if (line.length > 0) out.push(line);
-      line = "";
-      let rest = word;
-      while (!fits(rest)) {
-        let cut = rest.length - 1;
-        while (cut > 1 && !fits(rest.slice(0, cut))) cut--;
-        out.push(rest.slice(0, cut));
-        rest = rest.slice(cut);
-      }
-      line = rest;
+      if (fits(word)) { line = word; continue; }
+      const broken = breakWord(doc, style, word, width);
+      out.push(...broken.lines);
+      line = broken.rest;
     }
     out.push(line);
   }
+  cache.set(key, out);
   return out;
 }
 

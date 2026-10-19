@@ -18,8 +18,6 @@ import { pdfImageCount, pdfPages, pdfText, type PdfLine } from "./helpers/pdf-te
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
 const MARGIN = 40;
-/** Footer baselines sit in the bottom 40 pt; everything else above it. */
-const FOOTER_TOP = 40;
 
 const BASE_SHEET: HallkeeperSheetV2 = {
   config: { id: "00000000-0000-0000-0000-000000000001", name: "Anderson Wedding Reception", guestCount: 120, layoutStyle: "dinner-rounds" },
@@ -50,7 +48,10 @@ async function withPaperCheck(sheet: HallkeeperSheetV2, issued: boolean): Promis
 }
 
 const textOf = (lines: readonly PdfLine[]): string => lines.map((line) => line.text).join(" ").replace(/\s+/gu, " ");
-const isFooter = (line: PdfLine): boolean => line.y < FOOTER_TOP;
+/** Footer runs sit on one baseline about 23 pt above the page's foot. */
+const isFooter = (line: PdfLine): boolean => line.y > 18 && line.y < 30;
+/** Body text keeps clear of the footer band: baselines at least 44 pt up. */
+const BODY_FLOOR = 44;
 
 function expectInsideMargins(pages: readonly (readonly PdfLine[])[]): void {
   for (const [index, page] of pages.entries()) {
@@ -58,10 +59,24 @@ function expectInsideMargins(pages: readonly (readonly PdfLine[])[]): void {
       const where = `page ${String(index + 1)}: "${line.text.slice(0, 40)}"`;
       expect(Math.min(line.x, line.x2), where).toBeGreaterThanOrEqual(MARGIN - 1);
       expect(Math.max(line.x, line.x2), where).toBeLessThanOrEqual(PAGE_W - MARGIN + 1);
-      expect(Math.min(line.y, line.y2), where).toBeGreaterThan(20);
+      if (!isFooter(line)) expect(Math.min(line.y, line.y2), where).toBeGreaterThanOrEqual(BODY_FLOOR);
       expect(Math.max(line.y, line.y2), where).toBeLessThan(PAGE_H - MARGIN + 6);
     }
   }
+}
+
+/** The wedding with `count` seats carrying a planner's note each. */
+function withSeatNotes(count: number): HallkeeperSheetV2 {
+  const base = weddingSheet();
+  const plan = base.floorPlan;
+  if (plan === null || plan === undefined) throw new Error("wedding fixture has a plan");
+  const seats = new Set(plan.objects.filter((object) => object.category === "chair").slice(0, count).map((object) => object.objectId));
+  let n = 0;
+  return { ...base, floorPlan: { ...plan, objects: plan.objects.map((object) => {
+    if (!seats.has(object.objectId)) return object;
+    n += 1;
+    return { ...object, note: `Seat ${String(n)}: guest needs the aisle side and a cushion; ask catering about the soup` };
+  }) } };
 }
 
 function expectFooterOnEveryPage(pages: readonly (readonly PdfLine[])[], copyLine: string): void {
@@ -185,6 +200,79 @@ describe("inputs that bite", () => {
     expectFooterOnEveryPage(pages, sheetCopyLine(sheet));
     const text = textOf(pages.flat());
     for (const door of doors) expect(text).toContain(`${door.label} opens`);
+  });
+
+  it("keeps the day and the store on page 1 for a bigger event", async () => {
+    const base = weddingSheet();
+    const plan = base.floorPlan;
+    if (plan === null || plan === undefined) throw new Error("wedding fixture has a plan");
+    const template = plan.objects.find((object) => object.category === "other");
+    if (template === undefined) throw new Error("wedding fixture has a bar");
+    const extras = ["Coat Rail", "Gift Table", "Easel", "Welcome Sign", "Photo Booth", "DJ Booth", "Lantern Stand", "Card Box"]
+      .map((name, index) => ({ ...template, objectId: `00000000-0000-4000-9000-${String(index).padStart(12, "0")}`, name, x: 0, z: 0 }));
+    const sheet = await withPaperCheck({ ...base, floorPlan: { ...plan, objects: [...plan.objects, ...extras] } }, true);
+    const pages = pdfPages(await generateSheetPdfV2(sheet));
+    const first = pages[0] ?? [];
+    expect(textOf(first)).toContain("THE DAY, IN ORDER");
+    expect(textOf(first)).toContain("FROM THE STORE");
+    expect(textOf(first)).toContain("Room ready");
+    expect(Math.min(...first.filter((line) => !isFooter(line)).map((line) => line.y))).toBeLessThan(120);
+    expect(textOf(pages.flat())).toContain("Card Box");
+    expectInsideMargins(pages);
+  });
+
+  it("keeps every note on the page when forty seats carry one", async () => {
+    const sheet = await withPaperCheck(withSeatNotes(40), true);
+    const pages = pdfPages(await generateSheetPdfV2(sheet));
+    expectInsideMargins(pages);
+    expectFooterOnEveryPage(pages, sheetCopyLine(sheet));
+    const text = textOf(pages.flat());
+    for (let n = 1; n <= 40; n++) expect(text).toContain(`Seat ${String(n)}: guest needs the aisle side`);
+  });
+
+  it("flows a setup line with forty-five notes onto the next page", async () => {
+    const notes = Array.from({ length: 45 }, (_, n) => `Table ${String(n + 1)}: keep the place cards in seating order; the florist checks the centrepieces at noon and the duty manager lights the candles at 18:30`).join(" · ");
+    const sheet: HallkeeperSheetV2 = { ...BASE_SHEET, phases: [{ phase: "furniture", zones: [{ zone: "Centre", rows: [{
+      key: "k", name: "6ft Round Table with 10 chairs", category: "table", qty: 45, afterDepth: 0, isAccessory: false, notes, positions: [],
+    }] }] }] };
+    const pages = pdfPages(await generateSheetPdfV2(sheet));
+    expectInsideMargins(pages);
+    const text = textOf(pages.flat());
+    for (let n = 1; n <= 45; n++) expect(text).toContain(`Table ${String(n)}: keep the place cards`);
+  });
+
+  it("keeps Martyn's Law on the page when every field is at its maximum", async () => {
+    const fill = (max: number): string => "Door team briefed at the side entrance before guests arrive. ".repeat(40).slice(0, max).trim();
+    const sheet: HallkeeperSheetV2 = { ...BASE_SHEET, instructions: { ...EMPTY_INSTRUCTIONS, protectedPremises: {
+      responsiblePerson: fill(200),
+      dutyLead: { name: fill(120), role: fill(120) },
+      procedures: { evacuation: { briefed: true, note: fill(300) }, invacuation: { briefed: false, note: fill(300) }, lockdown: { briefed: true, note: fill(300) }, communication: { briefed: true, note: fill(300) } },
+      briefingAt: "2026-06-15T16:30:00.000Z",
+      doorSupervision: { arranged: true, note: fill(300) },
+      notes: `${fill(1450)} Last words here.`,
+    } } };
+    const pages = pdfPages(await generateSheetPdfV2(sheet));
+    expectInsideMargins(pages);
+    expect(textOf(pages.flat())).toContain("Last words here.");
+  });
+
+  it("breaks a 4,000-character note with no spaces quickly and keeps all of it", async () => {
+    const word = "https://example.com/menu/" + "x7".repeat(1985);
+    const started = performance.now();
+    const buf = await generateSheetPdfV2({ ...weddingSheet(), instructions: { ...(weddingSheet().instructions ?? EMPTY_INSTRUCTIONS), specialInstructions: word } });
+    expect(performance.now() - started).toBeLessThan(8000);
+    const pages = pdfPages(buf);
+    expectInsideMargins(pages);
+    expect(textOf(pages.flat().filter((line) => !isFooter(line))).replace(/\s+/gu, "")).toContain(word);
+  });
+
+  it("dates a setup deadline that falls the evening before", async () => {
+    const base = weddingSheet();
+    const before = new Date(Date.UTC(2026, 9, 23, 19, 0)).toISOString();
+    const instructions = base.instructions ?? EMPTY_INSTRUCTIONS;
+    const text = pdfText(await generateSheetPdfV2({ ...base, instructions: { ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) => deadline.phase === "structure" ? { ...deadline, deadline: before } : deadline) } }));
+    expect(text).toContain("done by Fri 23 Oct 20:00");
+    expect(text).toMatch(/20:00 Structure done Fri 23 Oct/u);
   });
 
   it("sets a Greek title in Inter", async () => {

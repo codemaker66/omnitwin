@@ -88,8 +88,13 @@ describe("sheetRunningOrder", () => {
   });
 
   it("marks a time on the day after the event", () => {
-    expect(day.find((line) => line.title === "Service door locks")?.nextDay).toBe(true);
-    expect(day.find((line) => line.title === "Service door opens")?.nextDay).toBe(false);
+    expect(day.find((line) => line.title === "Service door locks")?.otherDay).toBe(true);
+    expect(day.find((line) => line.title === "Service door opens")?.otherDay).toBe(false);
+  });
+
+  it("marks a time on the day before the event too", () => {
+    const before = sheetRunningOrder(sheet({ instructions: { ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "structure", deadline: bst(20, 0, -1), reason: "" }] } }));
+    expect(before[0]).toMatchObject({ title: "Structure done", otherDay: true });
   });
 
   it("names the briefing's procedures", () => {
@@ -149,7 +154,7 @@ describe("sheetSetupSteps", () => {
       name: "Parquet Dance Floor Panel", qty: 30, chairs: null, accessory: false, notes: [],
       where: [{ zone: "Perimeter", qty: 16 }, { zone: "East wall", qty: 10 }, { zone: "Centre", qty: 4 }],
     }]);
-    expect(steps[0]?.deadline).toEqual({ at: bst(10), reason: "Band at 10:15", late: false });
+    expect(steps[0]?.deadline).toEqual({ at: bst(10), reason: "Band at 10:15", late: false, otherDay: false });
   });
 
   it("reads chairs out of the generator's names", () => {
@@ -161,6 +166,23 @@ describe("sheetSetupSteps", () => {
   it("prints a note once, where it first belongs", () => {
     expect(steps[1]?.items[0]?.notes).toEqual(["Table 5: peanut allergy", "Table 3: wheelchair"]);
     expect(steps[2]?.items[0]?.notes).toEqual([]);
+  });
+
+  it("counts chairs in all when some merged tables have none", () => {
+    const mixed = sheetSetupSteps(sheet({ phases: [{ phase: "furniture", zones: [
+      { zone: "Centre", rows: [row({ name: "6ft Round Table with 10 chairs", qty: 3 })] },
+      { zone: "Perimeter", rows: [row({ name: "6ft Round Table", qty: 2 })] },
+    ] }] }));
+    expect(mixed[0]?.items[0]).toMatchObject({ name: "6ft Round Table", qty: 5, chairs: { total: 30, each: null } });
+  });
+
+  it("dates a phase deadline on another day than the event's", () => {
+    const early = sheetSetupSteps(sheet({
+      phases: [{ phase: "structure", zones: [{ zone: "Centre", rows: [row({ name: "Platform", qty: 2 })] }] }],
+      instructions: { ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "structure", deadline: bst(20, 0, -1), reason: "" }] },
+    }));
+    expect(early[0]?.deadline).toMatchObject({ otherDay: true });
+    expect(steps[0]?.deadline?.otherDay).toBe(false);
   });
 
   it("labels steps in sentence case", () => {

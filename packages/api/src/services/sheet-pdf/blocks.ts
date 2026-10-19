@@ -14,7 +14,7 @@ import {
   type SetupItem,
   type StoreGroup,
 } from "@omnitwin/types";
-import type { Flow } from "./flow.js";
+import { paragraphUnits, type Flow, type Unit } from "./flow.js";
 import { WALL_BAND, drawMarker, drawScaleBar, drawSheetPlan } from "./plan-drawing.js";
 import {
   INK, PAGE, TYPE,
@@ -262,7 +262,7 @@ const LATE = "After the room's ready-by time";
 function dayLineHeight(doc: Doc, line: DayLine, width: number): number {
   const textW = width - TIME_W;
   let height = blockHeight(doc, line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title, textW);
-  if (line.nextDay) height += lineHeight(doc, TYPE.detailAccent);
+  if (line.otherDay) height += lineHeight(doc, TYPE.detailAccent);
   if (line.detail !== null) height += 0.5 + blockHeight(doc, TYPE.detail, line.detail, textW);
   if (line.late) height += 0.5 + blockHeight(doc, TYPE.detailAlert, LATE, textW);
   return Math.max(height, lineHeight(doc, TYPE.time)) + 4;
@@ -272,7 +272,7 @@ function drawDayLine(doc: Doc, line: DayLine, timeZone: string, x: number, y: nu
   const textW = width - TIME_W;
   drawLine(doc, line.emphasis ? TYPE.timeAccent : TYPE.time, clock(line.at, timeZone), x, y);
   let cursor = drawBlock(doc, line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title, x + TIME_W, y, textW);
-  if (line.nextDay) cursor = drawLine(doc, TYPE.detailAccent, shortDay(line.at, timeZone), x + TIME_W, cursor);
+  if (line.otherDay) cursor = drawLine(doc, TYPE.detailAccent, shortDay(line.at, timeZone), x + TIME_W, cursor);
   if (line.detail !== null) cursor = drawBlock(doc, TYPE.detail, line.detail, x + TIME_W, cursor + 0.5, textW);
   if (line.late) drawBlock(doc, TYPE.detailAlert, LATE, x + TIME_W, cursor + 0.5, textW);
 }
@@ -323,41 +323,64 @@ function storeColumnHeight(doc: Doc, parts: BriefParts, width: number): number {
   return 14 + (parts.store.length === 0 ? lineHeight(doc, TYPE.bodyQuiet) : parts.store.reduce((sum, group) => sum + storeGroupHeight(doc, group, width), 0));
 }
 
-function drawDayColumn(doc: Doc, parts: BriefParts, x: number, top: number, width: number): number {
-  drawLine(doc, TYPE.overline, "The day, in order", x, top);
-  let y = top + 14;
-  if (parts.day.length === 0) return drawBlock(doc, TYPE.bodyQuiet, NO_TIMES, x, y, width);
-  for (const line of parts.day) { drawDayLine(doc, line, parts.timeZone, x, y, width); y += dayLineHeight(doc, line, width); }
-  return y;
+const DAY_HEADING = "The day, in order";
+const STORE_HEADING = "From the store";
+
+function dayUnits(doc: Doc, parts: BriefParts, x: number, width: number): Unit[] {
+  const [firstLine] = parts.day;
+  if (firstLine === undefined) {
+    return [{ height: 14 + blockHeight(doc, TYPE.bodyQuiet, NO_TIMES, width), draw: (y) => {
+      drawLine(doc, TYPE.overline, DAY_HEADING, x, y);
+      drawBlock(doc, TYPE.bodyQuiet, NO_TIMES, x, y + 14, width);
+    } }];
+  }
+  return [
+    { height: 14, need: 14 + dayLineHeight(doc, firstLine, width), draw: (y) => { drawLine(doc, TYPE.overline, DAY_HEADING, x, y); } },
+    ...parts.day.map((line): Unit => ({ height: dayLineHeight(doc, line, width), draw: (y) => { drawDayLine(doc, line, parts.timeZone, x, y, width); } })),
+  ];
 }
 
-function drawNotesColumn(doc: Doc, parts: BriefParts, x: number, top: number, width: number): number {
-  let y = top;
-  for (const [heading, text] of parts.notes) {
-    hairline(doc, x, y + 5, x + width);
-    drawLine(doc, TYPE.overline, heading, x, y + 14);
-    y = drawBlock(doc, TYPE.paragraph, text, x, y + 27, width);
-  }
-  return y;
+/** The planner's notes under the day: a rule, the heading, then the words line by line. */
+function notesUnits(doc: Doc, parts: BriefParts, x: number, width: number): Unit[] {
+  return parts.notes.flatMap(([heading, text]) => {
+    const body = paragraphUnits(doc, TYPE.paragraph, text, x, width);
+    const lines = body.slice(0, 2).reduce((sum, unit) => sum + unit.height, 0);
+    const head: Unit = { height: 27, need: 27 + lines, draw: (y) => {
+      hairline(doc, x, y + 5, x + width);
+      drawLine(doc, TYPE.overline, heading, x, y + 14);
+    } };
+    return [head, ...body];
+  });
 }
 
-function drawStoreColumn(doc: Doc, parts: BriefParts, x: number, top: number, width: number): number {
-  drawLine(doc, TYPE.overline, "From the store", x, top);
-  let y = top + 14;
-  if (parts.store.length === 0) return drawLine(doc, TYPE.bodyQuiet, NOTHING_PLACED, x, y);
-  for (const group of parts.store) {
-    drawLine(doc, TYPE.storeGroup, group.title, x, y);
-    y += 12;
-    for (const item of group.items) y = drawStoreRow(doc, item.name, item.qty, x, y, width);
-    y += 6;
+function storeUnits(doc: Doc, parts: BriefParts, x: number, width: number): Unit[] {
+  if (parts.store.length === 0) {
+    return [{ height: 14 + lineHeight(doc, TYPE.bodyQuiet), draw: (y) => {
+      drawLine(doc, TYPE.overline, STORE_HEADING, x, y);
+      drawLine(doc, TYPE.bodyQuiet, NOTHING_PLACED, x, y + 14);
+    } }];
   }
-  return y;
+  return parts.store.flatMap((group, index): Unit[] => {
+    const lead = index === 0 ? 14 : 0;
+    const title: Unit = {
+      height: lead + 12,
+      need: lead + 12 + storeRowHeight(doc, group.items[0]?.name ?? "", width),
+      ...(index === 0 ? {} : { before: 6 }),
+      draw: (y) => {
+        if (index === 0) drawLine(doc, TYPE.overline, STORE_HEADING, x, y);
+        drawLine(doc, TYPE.storeGroup, group.title, x, y + lead);
+      },
+    };
+    const rows = group.items.map((item): Unit => ({ height: storeRowHeight(doc, item.name, width), draw: (y) => { drawStoreRow(doc, item.name, item.qty, x, y, width); } }));
+    return [title, ...rows];
+  });
 }
 
 /**
- * The rest of the brief: the day in order with the planner's notes beneath
- * it, beside what to bring from the store. Columns when they fit the page;
- * otherwise the parts follow one another, each line asking for its room.
+ * The rest of the brief: the day in order beside what to bring from the
+ * store, each column free to carry on overleaf by itself. The planner's
+ * notes sit under the day when that keeps the brief no longer than the
+ * store or this page already make it; otherwise they follow full width.
  */
 export function brief(flow: Flow, sheet: HallkeeperSheetV2): void {
   const { doc } = flow;
@@ -368,49 +391,11 @@ export function brief(flow: Flow, sheet: HallkeeperSheetV2): void {
   const rightW = W - leftW - gutter;
   const dayH = dayColumnHeight(doc, parts, leftW);
   const storeH = storeColumnHeight(doc, parts, rightW);
-  const withNotes = Math.max(dayH + notesColumnHeight(doc, parts, leftW), storeH);
-  const withoutNotes = Math.max(dayH, storeH);
-
-  const columns = (height: number, notesBeside: boolean): void => {
-    const top = flow.y;
-    const leftBottom = drawDayColumn(doc, parts, X, top, leftW);
-    if (notesBeside) drawNotesColumn(doc, parts, X, leftBottom, leftW);
-    drawStoreColumn(doc, parts, rightX, top, rightW);
-    upright(doc, X + leftW + gutter / 2, top, top + height - 5);
-    flow.y = top + height + 14;
-  };
-
-  if (withNotes <= flow.room) { columns(withNotes, true); return; }
-  if (withoutNotes <= flow.room) { columns(withoutNotes, false); notesFlowing(flow, parts); return; }
-  if (withNotes <= flow.pageRoom) { flow.newPage(); columns(withNotes, true); return; }
-  if (withoutNotes <= flow.pageRoom) { flow.newPage(); columns(withoutNotes, false); notesFlowing(flow, parts); return; }
-
-  // Longer than a page: the day, then the store, then the notes.
-  flow.ensure(14 + lineHeight(doc, TYPE.time));
-  drawLine(doc, TYPE.overline, "The day, in order", X, flow.y);
+  const notesBeside = parts.notes.length > 0 && dayH + notesColumnHeight(doc, parts, leftW) <= Math.max(storeH, flow.room);
+  const left = [...dayUnits(doc, parts, X, leftW), ...(notesBeside ? notesUnits(doc, parts, X, leftW) : [])];
+  flow.lanes([left, storeUnits(doc, parts, rightX, rightW)], (top, bottom) => { upright(doc, X + leftW + gutter / 2, top, bottom - 5); });
   flow.y += 14;
-  for (const line of parts.day) {
-    const lineH = dayLineHeight(doc, line, W);
-    flow.ensure(lineH);
-    drawDayLine(doc, line, parts.timeZone, X, flow.y, W);
-    flow.y += lineH;
-  }
-  flow.y += 14;
-  flow.ensure(26);
-  drawLine(doc, TYPE.overline, "From the store", X, flow.y);
-  flow.y += 14;
-  for (const group of parts.store) {
-    flow.ensure(12 + storeRowHeight(doc, group.items[0]?.name ?? "", W));
-    drawLine(doc, TYPE.storeGroup, group.title, X, flow.y);
-    flow.y += 12;
-    for (const item of group.items) {
-      flow.ensure(storeRowHeight(doc, item.name, W));
-      flow.y = drawStoreRow(doc, item.name, item.qty, X, flow.y, W);
-    }
-    flow.y += 6;
-  }
-  flow.y += 12;
-  notesFlowing(flow, parts);
+  if (!notesBeside) notesFlowing(flow, parts);
 }
 
 /** The planner's notes full width, a paragraph free to cross pages. */
@@ -442,12 +427,82 @@ function diagramBytes(url: string | null): Buffer | null {
 const NO_PLAN = "No plan was saved with this layout. Set the room from the list.";
 const LEGEND_SIDE = 130;
 
-function legendHeight(doc: Doc, entries: readonly (readonly [string, number])[]): number {
-  const columnW = (W - LEGEND_SIDE - 14) / 2;
+const LEGEND_STYLE: TextStyle = { ...TYPE.note, size: 8.6 };
+const LEGEND_GAP = 14;
+/** Room the scale bar and caption need beside the legend. */
+const LEGEND_MIN = 34;
+type LegendEntry = readonly [string, number];
+
+/** Beneath the plan the legend leaves room for the scale bar; overleaf it has the page. */
+function legendColumnW(besidePlan: boolean): number {
+  return (W - (besidePlan ? LEGEND_SIDE : 0) - LEGEND_GAP) / 2;
+}
+
+function legendEntryHeight(doc: Doc, note: string, columnW: number): number {
+  return blockHeight(doc, LEGEND_STYLE, note, columnW - 14) + 3;
+}
+
+function legendHeight(doc: Doc, entries: readonly LegendEntry[]): number {
+  const columnW = legendColumnW(true);
   const half = Math.ceil(entries.length / 2);
-  const column = (part: readonly (readonly [string, number])[]): number =>
-    part.reduce((sum, [note]) => sum + blockHeight(doc, { ...TYPE.note, size: 8.6 }, note, columnW - 14) + 3, 0);
-  return Math.max(34, column(entries.slice(0, half)), column(entries.slice(half)));
+  const column = (part: readonly LegendEntry[]): number => part.reduce((sum, [note]) => sum + legendEntryHeight(doc, note, columnW), 0);
+  return Math.max(LEGEND_MIN, column(entries.slice(0, half)), column(entries.slice(half)));
+}
+
+/**
+ * The plan's numbered notes in two columns from `top`. When they fit, the
+ * columns split evenly; when they don't, each page fills the first column,
+ * then the second, and the rest carries on overleaf in reading order.
+ * Returns the y below the last note and whether it ran onto a new page.
+ */
+function drawLegend(flow: Flow, entries: readonly LegendEntry[], top: number): { bottom: number; turned: boolean } {
+  const { doc } = flow;
+  let rest = entries;
+  let pageTop = top;
+  let turned = false;
+  let bottom = top;
+  while (rest.length > 0) {
+    const columnW = legendColumnW(!turned);
+    const room = flow.bottom - pageTop;
+    const height = (entry: LegendEntry): number => legendEntryHeight(doc, entry[0], columnW);
+    const total = (part: readonly LegendEntry[]): number => part.reduce((sum, entry) => sum + height(entry), 0);
+    const half = Math.ceil(rest.length / 2);
+    let columns: LegendEntry[][];
+    if (Math.max(total(rest.slice(0, half)), total(rest.slice(half))) <= room) {
+      columns = [rest.slice(0, half), rest.slice(half)];
+    } else {
+      columns = [[], []];
+      let next = 0;
+      for (const column of columns) {
+        let used = 0;
+        for (let entry = rest[next]; entry !== undefined && used + height(entry) <= room; entry = rest[next]) {
+          used += height(entry);
+          column.push(entry);
+          next++;
+        }
+      }
+      // A fresh page always takes at least one note, so the loop moves on.
+      const [only] = rest;
+      if (next === 0 && turned && only !== undefined) columns[0]?.push(only);
+    }
+    for (const [index, part] of columns.entries()) {
+      const x = X + index * (columnW + LEGEND_GAP);
+      let y = pageTop;
+      for (const [note, number] of part) {
+        drawMarker(doc, number, x + 5, y + 5, 4.6);
+        y = drawBlock(doc, LEGEND_STYLE, note, x + 14, y, columnW - 14) + 3;
+      }
+      bottom = Math.max(bottom, y);
+    }
+    rest = rest.slice(columns.reduce((sum, part) => sum + part.length, 0));
+    if (rest.length > 0) {
+      flow.newPage();
+      pageTop = flow.top;
+      bottom = pageTop;
+      turned = true;
+    }
+  }
+  return { bottom, turned };
 }
 
 export function room(flow: Flow, sheet: HallkeeperSheetV2): void {
@@ -465,7 +520,10 @@ export function room(flow: Flow, sheet: HallkeeperSheetV2): void {
   const fullH = plan !== null || diagram !== null
     ? Math.min((W - WALL_BAND * 2) * (span.length / span.width), 280) + WALL_BAND * 2
     : 70;
-  const overhead = 14 + 6 + legendH + 16;
+  // A legend too long to share any page with the plan flows on from beneath
+  // it, so only its first lines need to fit beside the scale bar here.
+  const legendFits = 14 + fullH + 6 + legendH + 16 <= flow.pageRoom;
+  const overhead = 14 + 6 + (legendFits ? legendH : LEGEND_MIN) + 16;
 
   let planH = fullH;
   if (flow.room >= overhead + fullH) hairline(doc, X, flow.y - 8, X + W);
@@ -495,22 +553,14 @@ export function room(flow: Flow, sheet: HallkeeperSheetV2): void {
 
   if (drawn !== null) {
     const top = flow.y;
-    const columnW = (W - LEGEND_SIDE - 14) / 2;
-    const half = Math.ceil(legend.length / 2);
-    for (const [part, x] of [[legend.slice(0, half), X], [legend.slice(half), X + columnW + 14]] as const) {
-      let y = top;
-      for (const [note, number] of part) {
-        drawMarker(doc, number, x + 5, y + 5, 4.6);
-        y = drawBlock(doc, { ...TYPE.note, size: 8.6 }, note, x + 14, y, columnW - 14) + 3;
-      }
-    }
     drawScaleBar(doc, drawn.pointsPerMetre, X + W, top + 6);
     const caption = drawn.named ? "Drawn from the saved layout, looking down. Numbers are the planner's table names." : "Drawn from the saved layout, looking down.";
     const captionW = LEGEND_SIDE - 10;
     const lines = wrapLines(doc, TYPE.small, caption, captionW);
     let y = top + 12;
     for (const line of lines) y = drawLine(doc, TYPE.small, line, X + W - captionW, y, { width: captionW, to: "right" });
-    flow.y = top + legendH + 16;
+    const placed = drawLegend(flow, legend, top);
+    flow.y = (placed.turned ? placed.bottom : Math.max(top + LEGEND_MIN, placed.bottom)) + 16;
   } else {
     flow.y += 10;
   }
@@ -540,7 +590,7 @@ function whereText(item: SetupItem): string {
 const CHAIRS_STYLE: TextStyle = { face: "Inter-Regular", size: 8.4, color: INK.quiet };
 
 /** The name's lines, and whether the chair count fits after the last one. */
-function nameLayout(doc: Doc, item: SetupItem, nameW: number): { lines: string[]; chairsInline: boolean } {
+function nameLayout(doc: Doc, item: SetupItem, nameW: number): { lines: readonly string[]; chairsInline: boolean } {
   const style = item.accessory ? TYPE.itemPlain : TYPE.item;
   const lines = wrapLines(doc, style, item.name, nameW);
   const chairs = chairsText(item);
@@ -580,6 +630,26 @@ function drawSetupRow(doc: Doc, item: SetupItem, y: number, geometry: RowGeometr
   }
 }
 
+/** A line whose notes run longer than a page: the line itself, then its notes line by line across pages. */
+function tallSetupRow(flow: Flow, item: SetupItem, geometry: RowGeometry, markers: ReadonlyMap<string, number>): void {
+  const { doc } = flow;
+  const bare: SetupItem = { ...item, notes: [] };
+  const head = setupRowHeight(doc, bare, geometry, markers) - 8;
+  flow.ensure(head + lineHeight(doc, TYPE.note) * 2);
+  drawSetupRow(doc, bare, flow.y, geometry, markers);
+  flow.y += head;
+  const ordered = [...item.notes].sort((a, b) => (markers.get(a) ?? Infinity) - (markers.get(b) ?? Infinity));
+  for (const note of ordered) {
+    const number = markers.get(note);
+    const indent = number === undefined ? 0 : 12;
+    flow.y += 1.5;
+    flow.ensure(lineHeight(doc, TYPE.note));
+    if (number !== undefined) drawMarker(doc, number, geometry.nameX + 4.2, flow.y + 6, 4.2);
+    flow.paragraph(TYPE.note, note, geometry.nameX + indent, geometry.nameW - indent);
+  }
+  flow.y += 8;
+}
+
 export function setupSteps(flow: Flow, sheet: HallkeeperSheetV2): void {
   const { doc } = flow;
   const timeZone = sheet.venue.timezone;
@@ -603,7 +673,7 @@ export function setupSteps(flow: Flow, sheet: HallkeeperSheetV2): void {
     drawLine(doc, TYPE.step, String(index + 1), X, top - 4);
     drawLine(doc, { ...TYPE.section, size: 13 }, step.label, X + 18, top);
     if (step.deadline !== null) {
-      const words = `done by ${clock(step.deadline.at, timeZone)}${step.deadline.reason === null ? "" : ` · ${step.deadline.reason}`}${step.deadline.late ? " · after the ready-by time" : ""}`;
+      const words = `done by ${step.deadline.otherDay ? `${shortDay(step.deadline.at, timeZone)} ` : ""}${clock(step.deadline.at, timeZone)}${step.deadline.reason === null ? "" : ` · ${step.deadline.reason}`}${step.deadline.late ? " · after the ready-by time" : ""}`;
       const style: TextStyle = { face: "Inter-Medium", size: 8.4, color: step.deadline.late ? INK.alert : INK.secondary, tnum: true };
       const rightW = W - 18 - textWidth(doc, { ...TYPE.section, size: 13 }, step.label) - 24;
       drawLine(doc, style, oneLine(doc, style, words, rightW), X, top + 3.5, { width: W, to: "right" });
@@ -613,9 +683,13 @@ export function setupSteps(flow: Flow, sheet: HallkeeperSheetV2): void {
     flow.y += 6;
     for (const item of step.items) {
       const height = setupRowHeight(doc, item, geometry, markers);
-      flow.ensure(height);
-      drawSetupRow(doc, item, flow.y, geometry, markers);
-      flow.y += height;
+      if (height <= flow.pageRoom) {
+        flow.ensure(height);
+        drawSetupRow(doc, item, flow.y, geometry, markers);
+        flow.y += height;
+      } else {
+        tallSetupRow(flow, item, geometry, markers);
+      }
       hairline(doc, geometry.nameX, flow.y - 3.5, X + W, INK.rule, 0.4);
     }
     flow.y += 10;
@@ -688,9 +762,46 @@ function martynsLayout(doc: Doc, sheet: HallkeeperSheetV2, y: number, draw: bool
 export function martynsLaw(flow: Flow, sheet: HallkeeperSheetV2): void {
   const { doc } = flow;
   const height = martynsLayout(doc, sheet, 0, false) + 8;
+  if (height > flow.pageRoom) { martynsFlowing(flow, sheet); return; }
   flow.ensure(height);
   hairline(doc, X, flow.y - 8, X + W);
   flow.y = martynsLayout(doc, sheet, flow.y, true) + 10;
+}
+
+/**
+ * Martyn's Law when what was entered runs longer than a page: one column,
+ * label beside value, every value and note free to cross pages line by line.
+ */
+function martynsFlowing(flow: Flow, sheet: HallkeeperSheetV2): void {
+  const { doc } = flow;
+  const summary = buildProtectedPremisesSummary(sheet.instructions?.protectedPremises, { guestCount: sheet.config.guestCount, timeZone: sheet.venue.timezone });
+  const valueX = X + MARTYNS_LABEL_W;
+  const valueW = W - MARTYNS_LABEL_W;
+  flow.ensure(13 + lineHeight(doc, TYPE.bodyDim) * 2);
+  hairline(doc, X, flow.y - 8, X + W);
+  drawLine(doc, TYPE.overline, `${summary.heading} · prompts only`, X, flow.y);
+  flow.y += 13;
+  flow.paragraph(TYPE.bodyDim, summary.intro, X, W);
+  flow.y += 4;
+  const entry = (item: ProtectedPremisesLine): void => {
+    const style = item.entered ? MARTYNS_VALUE : MARTYNS_UNSET;
+    flow.ensure(lineHeight(doc, style) * 2);
+    drawBlock(doc, { ...TYPE.label, size: 7.8 }, item.label, X, flow.y + 0.6, MARTYNS_LABEL_W - 6);
+    flow.paragraph(style, item.value, valueX, valueW);
+    if (item.note !== null) { flow.y += 0.5; flow.paragraph(MARTYNS_NOTE, item.note, valueX, valueW); }
+    flow.y += 3;
+  };
+  for (const item of [...summary.people, ...summary.arrangements.filter((item) => item.key !== "notes")]) entry(item);
+  flow.ensure(11 + lineHeight(doc, MARTYNS_VALUE) * 2);
+  flow.y += 4;
+  drawLine(doc, { ...TYPE.overline, size: 6.2 }, "Staff briefed on", valueX, flow.y);
+  flow.y += 11;
+  for (const item of summary.procedures) entry(item);
+  const notes = summary.arrangements.find((item) => item.key === "notes");
+  if (notes !== undefined) { flow.y += 4; entry(notes); }
+  flow.y += 4;
+  flow.paragraph(TYPE.small, [summary.guestLine, ...summary.context].join(" "), X, W);
+  flow.y += 10;
 }
 
 // ------------------------------------------------------------- footers ----
