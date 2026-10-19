@@ -41,6 +41,13 @@ vi.mock("../../../../api/pricing.js", () => ({
   restorePricingRule: mocks.restorePricingRule,
 }));
 
+// The competitor watch beside the list: empty here; its own behaviour is in
+// CompetitorWatch.test.tsx.
+vi.mock("../../../../api/competitor-watch.js", () => ({
+  getCompetitorWatch: () => Promise.resolve({ today: "2026-10-17", timezone: "Europe/London", limit: 12, suggestedSetOffered: false, competitors: [] }),
+  getMarketContext: () => Promise.resolve({ year: 2027, today: "2026-10-17", lines: [], more: 0, checkDue: 0 }),
+}));
+
 const authState = vi.hoisted(() => ({
   user: { id: "u1", role: "manager", platformRole: "none" as const, venueId: "v1" as string | null, email: "m@test.com", name: "Callum Reid" },
 }));

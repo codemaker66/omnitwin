@@ -2592,3 +2592,6 @@ export * from "./plan-view.js";
 export * from "./dietary-memory.js";
 // Live co-editing v1: presence and live ops on /ws/configurations/:configId.
 export * from "./layout-live.js";
+// The competitor watch (17 Oct 2026): the comp set, dated price captures,
+// who a lost deal went to and the page-change check. Context, never a price input.
+export * from "./competitor-watch.js";

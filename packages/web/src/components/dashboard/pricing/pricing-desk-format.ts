@@ -11,7 +11,9 @@ import { clockFace, describeWindow, readWindowDraft } from "../pricing-rule-wind
 // figure, the reasons and the records behind them.
 // ---------------------------------------------------------------------------
 
-export type DeskFilter = "in_use" | "paused" | "suggestions" | "retired";
+/** The copper plane's counts; "competitors" is the competitor watch, for
+ *  those who set prices. */
+export type DeskFilter = "in_use" | "paused" | "suggestions" | "retired" | "competitors";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;

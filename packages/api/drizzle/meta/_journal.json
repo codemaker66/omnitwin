@@ -666,6 +666,13 @@
       "when": 1792249200000,
       "tag": "0096_configuration_view_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1792335600000,
+      "tag": "0097_competitor_watch",
+      "breakpoints": true
     }
   ]
 }

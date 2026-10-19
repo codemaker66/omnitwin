@@ -124,6 +124,10 @@ const EnvSchema = z.object({
   // weak value that slips through review is caught here at startup. It must
   // be byte-identical to the GitHub Actions secret of the same name.
   DIARY_CRON_TOKEN: z.string().min(32).optional(),
+  // Service token for the competitor watch's page-check workflow, its own
+  // secret so the reminder token cannot run it. Unset: only a signed-in
+  // platform administrator reaches POST /admin/competitor-watch/page-checks.
+  COMPETITOR_WATCH_CRON_TOKEN: z.string().min(32).optional(),
 }).superRefine((env, ctx) => {
   // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
   // the webhook route can verify signatures. The route itself also fails

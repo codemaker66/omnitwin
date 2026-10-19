@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -76,8 +76,28 @@ describe("the Pricing desk's styles stay in its own namespace", () => {
   });
 
   it("uses no pr- class in its markup", () => {
-    for (const file of ["PricingDesk.tsx", "PricingPanels.tsx", "RateForm.tsx"]) {
+    const markup = readdirSync(resolve(DIR)).filter((file) => file.endsWith(".tsx"));
+    expect(markup.length).toBeGreaterThan(3);
+    for (const file of markup) {
       expect(read(`${DIR}/${file}`), file).not.toMatch(/(?<![a-z0-9_-])pr-[a-z0-9]/u);
     }
+  });
+});
+
+describe("the competitor watch's styles stay inside the Pricing desk", () => {
+  const css = read(`${DIR}/CompetitorWatch.css`);
+  const rules = selectors(css);
+
+  it("anchors every rule on its own cw- class or the desk's pdk- class", () => {
+    expect(rules.length).toBeGreaterThan(20);
+    const loose = rules.filter((selector) => {
+      const anchor = splitTop(selector, /[\s>+~]/u)[0] ?? "";
+      return !/\.(cw|pdk)-[a-z0-9]/u.test(anchor);
+    });
+    expect(loose).toEqual([]);
+  });
+
+  it("defines no pr- class, the Proposals desk's names", () => {
+    expect(css).not.toMatch(/\.pr-[a-z0-9]/u);
   });
 });

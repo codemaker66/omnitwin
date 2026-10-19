@@ -30,7 +30,7 @@ import {
 
 type Rooms = readonly { readonly id: string; readonly name: string }[];
 
-function PanelFrame({ label, layout, onClose, children }: {
+export function PanelFrame({ label, layout, onClose, children }: {
   readonly label: string;
   readonly layout: "wide" | "single";
   readonly onClose: () => void;
@@ -217,6 +217,9 @@ export function AdvicePanel(props: {
   readonly onClose: () => void;
   readonly onUse: () => void;
   readonly onDismiss: () => void;
+  /** Other venues' dated figures, as context only (the competitor watch);
+   *  never read by the suggestion. */
+  readonly context?: ReactNode;
 }): ReactElement {
   const { item, rule, busy } = props;
   const reasonsId = useId();
@@ -256,6 +259,8 @@ export function AdvicePanel(props: {
         </ul>
         <p className="enq-next__hint">{recordsWords(item.records)}</p>
       </section>
+
+      {props.context}
 
       <section className="enq-section">
         {props.error !== null && <p className="enq-confirm__error" role="alert">{props.error}</p>}
