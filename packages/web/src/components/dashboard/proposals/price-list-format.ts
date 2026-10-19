@@ -1,3 +1,4 @@
+import { rateReplacements } from "@omnitwin/types";
 import type { PricingRule } from "../../../api/pricing.js";
 import type { Space } from "../../../api/spaces.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
@@ -104,6 +105,21 @@ function dayAndMonth(date: string): { readonly day: number; readonly month: numb
   const at = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
   if (Number.isNaN(at.getTime()) || at.getUTCMonth() !== Number(match[2]) - 1) return null;
   return { day: at.getUTCDay(), month: at.getUTCMonth() };
+}
+
+/** On the event's date, each rate a rate for particular dates takes the
+ *  place of (same room, time and charge), as the venue's estimate charges
+ *  it (@omnitwin/types standingRates). None without a date. */
+function replacementsOn(rules: readonly PricingRule[], date: string | null): ReadonlyMap<PricingRule, PricingRule> {
+  if (date === null) return new Map();
+  const fields = rules
+    .filter((rule) => rule.isActive && pricedOn(rule, date))
+    .map((rule) => ({
+      rule, spaceId: rule.spaceId, type: rule.type, appliesFrom: rule.appliesFrom ?? null, appliesUntil: rule.appliesUntil ?? null,
+      validFrom: rule.validFrom, validTo: rule.validTo,
+    }));
+  const replacements = rateReplacements(fields);
+  return new Map([...replacements].map(([setAside, standing]) => [setAside.rule, standing.rule] as const));
 }
 
 /** Whether the entry is priced for the date, by its first and last day. */
@@ -281,10 +297,18 @@ export function priceListView(rules: readonly PricingRule[], rooms: readonly Spa
   const notOnDate: string[] = [];
   const leftOut = new Map<"currency" | "unreadable" | "guests" | "no_price", string[]>();
   const byRoom = new Map<string | null, PriceListOffer[]>();
+  const replaced = replacementsOn(rules, event.eventDate);
+  /** The rates set aside on the date, under the rate that stands. */
+  const setAside = new Map<string, string[]>();
   for (const rule of rules) {
     if (!rule.isActive) continue;
     if (event.eventDate !== null && !pricedOn(rule, event.eventDate)) {
       notOnDate.push(rule.name);
+      continue;
+    }
+    const standing = replaced.get(rule);
+    if (standing !== undefined) {
+      setAside.set(standing.name, [...(setAside.get(standing.name) ?? []), rule.name]);
       continue;
     }
     const priced = priceEntry(rule, event);
@@ -319,6 +343,9 @@ export function priceListView(rules: readonly PricingRule[], rooms: readonly Spa
   const said: string[] = [];
   if (notOnDate.length > 0 && event.eventDate !== null) {
     said.push(`Not priced for ${venueLongDate(event.eventDate) ?? event.eventDate}: ${listNames(notOnDate)}.`);
+  }
+  for (const [standing, names] of setAside) {
+    said.push(`On ${venueLongDate(event.eventDate) ?? event.eventDate ?? "this date"}, “${standing}” takes the place of ${listNames(names)}.`);
   }
   for (const why of ["guests", "currency", "no_price", "unreadable"] as const) {
     const names = leftOut.get(why);

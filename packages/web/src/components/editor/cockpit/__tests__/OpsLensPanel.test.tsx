@@ -109,10 +109,12 @@ describe("OpsLensPanel", () => {
     expect(screen.getByTestId("ops-task-lighting").textContent).toMatch(/12 to place/);
   });
 
-  it("blocks compiling until staff sign-in", () => {
+  it("tells an anonymous organiser who prepares the pack and how to reach them", () => {
     usePlacementStore.setState({ placedItems: place(chair(), 10) });
     renderPanel();
-    expect(screen.getByTestId("ops-precondition").textContent).toMatch(/sign in as venue staff/i);
+    const note = screen.getByTestId("ops-precondition").textContent ?? "";
+    expect(note).not.toMatch(/sign in as venue staff/iu);
+    expect(note).toBe("The events team prepares the setup pack once they have your plan. To send it to them, use Send to Events Team.");
     expect(screen.queryByTestId("ops-compile")).toBeNull();
   });
 

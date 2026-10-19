@@ -186,6 +186,9 @@ describe("GuestsLensPanel — seats and building the room", () => {
     useCockpitStore.getState().setPlannedGuestCount(16);
     render(<GuestsLensPanel />);
     fireEvent.click(screen.getByTestId(`guests-build-${style}`));
+    // It asks how many guests first; nothing is placed until the answer.
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+    fireEvent.click(screen.getByTestId("auto-fill-place"));
     const items = usePlacementStore.getState().placedItems;
     const turini = find((item) => item.slug === "burgess-turini-18-3", "Turini");
     const whiteRound = find((item) => item.slug === "round-table-6ft-white", "white round");

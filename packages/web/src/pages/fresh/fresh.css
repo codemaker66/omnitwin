@@ -14,7 +14,10 @@
   --fr-paper: #ede7db;
   --fr-paper-2: #e4dccb;
   --fr-ink: #262016;
-  --fr-ink-2: #5a5244;
+  /* Client body text holds 7:1 (goals/01). #5a5244 measured 6.26:1 on the
+     composer's paper, so the secondary ink is one step deeper: 7.9:1 on
+     --fr-paper and 7.2:1 on --fr-paper-2, the darkest ground it sits on. */
+  --fr-ink-2: #4a4336;
   --fr-green: #1f4a38;
   --fr-green-soft: rgba(31, 74, 56, 0.14);
   --fr-ochre: #c98a5b;
@@ -98,7 +101,11 @@
   left: 16px;
   top: 10px;
   z-index: 40;
-  padding: 10px 16px;
+  /* 44 px tall (the padding alone made 43); hidden 12 px clear of the top. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
   background: var(--fr-paper);
   border: 1px solid var(--fr-rule);
   border-radius: 4px;
@@ -106,7 +113,7 @@
   font-family: var(--fr-ui);
   font-size: 13px;
   text-decoration: none;
-  transform: translateY(-56px);
+  transform: translateY(-66px);
   transition: transform 200ms var(--fr-ease);
 }
 .fr-skip:focus-visible {
@@ -368,6 +375,13 @@
   gap: 16px;
 }
 .fr-cta {
+  /* 47 px from the padding and the page's line height; the minimum holds the
+     44 px target if either changes. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px; /* the sending indicator beside "Send" */
+  min-height: 44px;
   font-family: var(--fr-ui);
   font-size: 14px;
   font-weight: 500;
@@ -386,7 +400,14 @@
     background: color-mix(in srgb, var(--fr-green) 86%, var(--fr-ink) 14%);
   }
 }
+/* The quiet links ("See the rooms", "Panorama tour", the dossier's walk link)
+   were the 23 px line of their own text. The hit area now takes the full 44 px
+   while the words keep their size and place: each sits in a row whose height
+   the 47 px filled CTA beside it already sets. */
 .fr-cta-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-family: var(--fr-ui);
   font-size: 14px;
   color: var(--fr-ink);
@@ -702,7 +723,12 @@
   text-transform: uppercase;
   color: var(--fr-ink-2);
 }
+/* The telephone and address links were their own line of serif, 31 px at
+   phone width; they take a 44 px row and the words keep their size. */
 .fr-contact-way a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   font-family: var(--fr-display);
   font-weight: 460;
   font-variation-settings: "opsz" 40;
@@ -727,9 +753,11 @@
   color: var(--fr-ink);
   overflow-wrap: anywhere;
 }
+/* "Ask about a date" was 23 px; its 44 px row replaces the 4 px margin, so
+   the words sit about 7 px lower and nothing else moves. */
 .fr-contact-way .fr-contact-address + a {
   align-self: flex-start;
-  margin-top: 4px;
+  margin-top: 0;
   font-family: var(--fr-ui);
   font-size: 14px;
   font-variation-settings: normal;
@@ -839,6 +867,9 @@
   border: 1px solid var(--fr-rule);
   border-radius: 999px;
   padding: 9px 18px;
+  /* The padding alone made 42 px; the occasion pills are a thumb's first
+     touch on the composer, so they take the full 44 px target. */
+  min-height: 44px;
   cursor: pointer;
   transition:
     color 180ms var(--fr-ease),
@@ -983,6 +1014,9 @@
   border: 1px solid var(--fr-rule);
   border-radius: 999px;
   padding: 11px 22px;
+  /* 47 px from the padding and the line; the minimum holds the 44 px target
+     if either changes, as on the filled Send beside it. */
+  min-height: 44px;
   cursor: pointer;
   min-width: 150px;
   transition:
@@ -1176,8 +1210,14 @@
 
 /* ————————————————— the room dossiers ————————————————— */
 
+/* "Open the room" was the 23 px line of its words. It takes a 44 px row; the
+   12 px margin it replaces becomes the air above the centred words, so they
+   sit within a couple of pixels of where they did and the hit area grew. */
 .fr-room-open {
-  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 0;
   padding: 0;
   font-family: var(--fr-ui);
   font-size: 14px;
@@ -1245,7 +1285,11 @@
   background: transparent;
   border: 1px solid var(--fr-rule);
   border-radius: 999px;
-  padding: 7px 16px;
+  /* 44 px, the same pill as the format buttons beneath it (it was 37). */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
   cursor: pointer;
   transition:
     border-color 180ms var(--fr-ease),
@@ -1377,8 +1421,9 @@
   font-style: normal;
   text-transform: none;
   letter-spacing: 0;
+  /* Set apart by its lower case, not by fading: an opacity here took the
+     word under the 7:1 the rest of the label holds. */
   color: var(--fr-ink-2);
-  opacity: 0.7;
 }
 .fr-enq-field input[type="email"],
 .fr-enq-field input[type="text"],
@@ -1446,17 +1491,44 @@
   text-underline-offset: 3px;
   /* The 13px sentence left this link a 17px-tall target. Vertical padding on
      an inline link widens what a finger or pointer can hit without moving the
-     sentence: the line box keeps its height. 6px makes it 29px, over the
-     production route pass's 28px floor. */
-  padding-block: 6px;
+     sentence: the line box keeps its height. 14px makes it 45px, the full
+     44px target (goals/01) rather than the route pass's 28px floor. */
+  padding-block: 14px;
+}
+
+/* On a phone every field takes the column's full width. At 375 px the fixed
+   110/200/220 px widths left the fields a ragged 60% of the sheet, which read
+   as unfinished and made the address the hardest thing on the page to type. */
+@media (max-width: 640px) {
+  .fr-enq-fields {
+    flex-direction: column;
+    width: 100%;
+  }
+  .fr-enq-field {
+    display: block;
+    width: 100%;
+  }
+  .fr-enq-field input,
+  .fr-enq-field input[type="number"],
+  .fr-enq-field input[type="date"],
+  .fr-enq-field input[type="email"],
+  .fr-enq-field input[type="text"],
+  .fr-enq-field input[type="tel"] {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+  }
 }
 
 /* ——— footer legal links ——— */
 .fr-legal {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
-  margin-top: 28px;
+  /* The links' 44 px rows bring their own air (10 px above the words), so the
+     row starts 10 px into the 44 px margin it collapses with under the
+     contact grid, and the words sit where they did. */
+  gap: 0 18px;
+  margin-top: -10px;
 }
 .fr-legal a {
   font-family: var(--fr-ui);
@@ -1466,11 +1538,14 @@
   text-decoration: underline;
   text-decoration-color: var(--fr-rule);
   text-underline-offset: 4px;
-  /* WCAG 2.5.8 target size — these are the only route to the privacy notice
-     from the page that collects the data, so they get a real touch target. */
+  /* 44 px both ways (goals/01's target; WCAG 2.5.8's 24 px was the old
+     floor): these are the only route to the privacy notice from the page that
+     collects the data. "Terms" alone is narrower than 44, so it centres. */
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
 }
 .fr-legal a:hover {
   color: var(--fr-ink);

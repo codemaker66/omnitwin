@@ -508,7 +508,7 @@ placedObjectsTest.describe("Editor with placed objects", () => {
     await expect(panel.locator(".lens-panel__footer")).toContainText("fire risk assessment");
   });
 
-  placedObjectsTest("Plan navigation and capacity controls clear the event schedule and command deck", async ({ page }, testInfo) => {
+  placedObjectsTest("Plan navigation and capacity controls clear the view mode and command deck", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
     await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
     await openPlacedLayout(page);
@@ -521,9 +521,10 @@ placedObjectsTest.describe("Editor with placed objects", () => {
     await expect(minimap.getByRole("complementary", { name: "Plan view minimap" })).toBeVisible();
     await minimap.scrollIntoViewIfNeeded();
     const viewMode = page.getByRole("group", { name: "View mode", exact: true });
-    const schedule = page.getByRole("contentinfo", { name: "Your event schedule" });
+    // A signed-out visitor with no event link has no schedule card to clear.
+    await expect(page.getByRole("contentinfo", { name: "Your event schedule" })).toHaveCount(0);
     const commandDeck = page.getByRole("region", { name: "Planner command deck" });
-    await expectClearPairs([[tools, viewMode], [tools, schedule], [tools, commandDeck]]);
+    await expectClearPairs([[tools, viewMode], [tools, commandDeck]]);
     await tools.getByText("Recorded evidence", { exact: true }).click();
     const truth = page.getByTestId("cockpit-truth-rail");
     await truth.scrollIntoViewIfNeeded();
@@ -543,7 +544,7 @@ placedObjectsTest.describe("Editor with placed objects", () => {
     await expect(capacity).toBeVisible();
     const seats = capacity.locator(".lens-panel__metric").filter({ hasText: "Seats placed" });
     await expect(seats.locator(".lens-panel__metric-value")).toHaveText("144");
-    await expectClearPairs([[capacity, commandDeck], [capacity, schedule], [capacity, viewMode]]);
+    await expectClearPairs([[capacity, commandDeck], [capacity, viewMode]]);
     await expectPanelCopyContained(capacity, [".lens-panel__metric", ".lens-panel__footer"]);
     await expect(capacity.locator(".lens-panel__footer")).toContainText("confirmed by the events team");
     await testInfo.attach("capacity-controls-clear", {

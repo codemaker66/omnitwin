@@ -1,0 +1,113 @@
+/* VisitorPlanPdfActions — the visitor's plan as a PDF (fix-first item 11).
+   The dock tone borrows the cockpit lens-panel classes; these rules add what
+   both tones need (44 px targets, a hidden live region) and the ivory sheet
+   tone used on phones. Colours come only from house-tokens.css. Client body
+   text stays forest on ivory (well over 7:1); copper-ink is for small labels. */
+
+.visitor-pdf { display: grid; gap: 10px; }
+
+.visitor-pdf__target { min-height: 44px; box-sizing: border-box; }
+
+.visitor-pdf__live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Dock tone: lens chips are a little short for a thumb; give them a row. */
+.visitor-pdf--dock .lens-panel__chip-link { justify-content: center; padding-inline: 16px; }
+
+/* Sheet tone (ivory, phones). */
+.visitor-pdf--sheet { color: var(--vv-forest); font-family: "Inter", system-ui, sans-serif; }
+
+.visitor-pdf__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--vv-forest);
+  color: var(--vv-ivory-3);
+  font: 600 15px/1.2 "Inter", system-ui, sans-serif;
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+.visitor-pdf__button:hover:not(:disabled) { background: var(--vv-forest-2); }
+.visitor-pdf__button:active:not(:disabled) { transform: translateY(1px); }
+.visitor-pdf__button:disabled { cursor: default; }
+.visitor-pdf__button[aria-busy="true"] { background: var(--vv-forest-2); }
+
+.visitor-pdf__note,
+.visitor-pdf__hint,
+.visitor-pdf__file { margin: 0; color: var(--vv-forest); line-height: 1.5; }
+.visitor-pdf__note { font-size: 15px; }
+.visitor-pdf__hint { font-size: 14px; }
+.visitor-pdf__file { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+
+.visitor-pdf__error {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--vv-oxblood);
+  border-radius: 4px;
+  background: var(--vv-oxblood-bg);
+  color: var(--vv-oxblood);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.visitor-pdf__result {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--vv-rule);
+  border-radius: 14px;
+  background: var(--vv-ivory);
+}
+.visitor-pdf__result-label {
+  color: var(--vv-copper-ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.visitor-pdf__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.visitor-pdf__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 140px;
+  padding: 0 18px;
+  border: 1px solid var(--vv-forest);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--vv-forest);
+  font: 600 15px/1 "Inter", system-ui, sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+.visitor-pdf__chip:hover { background: var(--vv-ivory-2); }
+.visitor-pdf__chip:active { transform: translateY(1px); }
+.visitor-pdf__chip--primary { background: var(--vv-forest); color: var(--vv-ivory-3); }
+.visitor-pdf__chip--primary:hover { background: var(--vv-forest-2); }
+
+.visitor-pdf__button:focus-visible,
+.visitor-pdf__chip:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+
+@media (prefers-reduced-motion: reduce) {
+  .visitor-pdf__button,
+  .visitor-pdf__chip { transition: none; }
+  .visitor-pdf__button:active:not(:disabled),
+  .visitor-pdf__chip:active { transform: none; }
+}

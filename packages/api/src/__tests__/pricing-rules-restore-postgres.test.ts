@@ -103,7 +103,9 @@ describe.skipIf(testUrl === undefined)("pricing rule restore on isolated Postgre
   }
 
   it("brings a deleted rule back as it was, and it reads again", async () => {
-    const before = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing/${RULE}` });
+    // Prices are read by the venue's commercial team; staff reads them here.
+    const asStaff = headers(VENUE, "staff", STAFF_ID);
+    const before = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing/${RULE}`, headers: asStaff });
     expect(before.statusCode).toBe(404);
 
     const res = await server.inject({
@@ -113,9 +115,9 @@ describe.skipIf(testUrl === undefined)("pricing rule restore on isolated Postgre
     expect(res.statusCode).toBe(200);
     expect(await row(RULE)).toEqual({ deleted_at: null, is_active: true });
 
-    const after = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing/${RULE}` });
+    const after = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing/${RULE}`, headers: asStaff });
     expect(after.statusCode).toBe(200);
-    const list = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing` });
+    const list = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing`, headers: asStaff });
     const listed = list.json<{ data: { id: string }[] }>().data.map((rule) => rule.id);
     expect([...listed].sort()).toEqual([LIVE_RULE, RULE].sort());
   });

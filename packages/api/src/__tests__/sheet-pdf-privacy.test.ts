@@ -258,8 +258,11 @@ describe("API source cannot publish a sheet PDF", () => {
   });
 
   it("keeps every module that renders a sheet PDF away from object storage and the public bucket", () => {
-    const renderers = files.filter((path) => /hallkeeper-pdf-v2(\.js)?["']/u.test(code(path)));
+    // The modules that import the renderer, and the renderer's own parts.
+    const renderers = files.filter((path) => /hallkeeper-pdf-v2(\.js)?["']/u.test(code(path))
+      || path.includes(join("services", "sheet-pdf")) || path.endsWith(join("services", "hallkeeper-pdf-v2.ts")));
     expect(renderers.length).toBeGreaterThan(0);
+    expect(renderers.some((path) => path.endsWith(join("sheet-pdf", "blocks.ts")))).toBe(true);
     for (const path of renderers) {
       const source = code(path);
       const name = relative(API_SRC, path);

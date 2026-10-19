@@ -5,7 +5,8 @@ import { randomUUID } from "node:crypto";
 import { files, spaces, enquiries, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
-import { canManageVenue } from "../utils/query.js";
+import { canManageVenue, canWritePricing } from "../utils/query.js";
+import { competitorVenueOf } from "../services/competitor-watch-data.js";
 import type { Env } from "../env.js";
 
 // ---------------------------------------------------------------------------
@@ -19,7 +20,9 @@ const ALLOWED_CONTENT_TYPES = [
   "application/pdf",
 ] as const;
 
-const UPLOAD_CONTEXTS = ["venue", "space", "asset", "enquiry", "loadout", "public_marketing"] as const;
+// competitor_watch: a screenshot or brochure kept with a price capture; its
+// context id is the competitor's, scoped to the people who set prices.
+const UPLOAD_CONTEXTS = ["venue", "space", "asset", "enquiry", "loadout", "public_marketing", "competitor_watch"] as const;
 const UPLOAD_VISIBILITIES = ["private", "public"] as const;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
@@ -242,6 +245,13 @@ export async function resolveUploadScope(
     const allowed = enq.userId === user.id || canManageVenue(user, enq.venueId);
     if (!allowed) return null;
     return { venueId: enq.venueId, keyPrefix: `private/venues/${enq.venueId}/enquiries/${contextId}`, visibility };
+  }
+
+  if (context === "competitor_watch") {
+    // The competitor's venue, and only those who keep its watch.
+    const venueId = await competitorVenueOf(db, contextId);
+    if (venueId === null || !canWritePricing(user, venueId)) return null;
+    return { venueId, keyPrefix: `private/venues/${venueId}/competitor-watch/${contextId}`, visibility };
   }
 
   return null;
