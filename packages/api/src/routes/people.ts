@@ -3,9 +3,11 @@ import { and, eq, TransactionRollbackError } from "drizzle-orm";
 import { z } from "zod";
 import {
   ContactPointInputSchema,
+  CreateOrganisationSchema,
   CreatePersonSchema,
   KeepApartRequestSchema,
   SetMembershipsSchema,
+  UpdateOrganisationSchema,
   UpdatePersonSchema,
   type PersonProfile,
 } from "@omnitwin/types";
@@ -27,6 +29,12 @@ import {
   type PeopleTx,
 } from "../services/people-records.js";
 import { duplicateSuggestions, keepApart, withdrawKeptApart } from "../services/people-duplicates.js";
+import {
+  insertOrganisation,
+  lockOrganisation,
+  readOrganisationProfile,
+  updateOrganisationFields,
+} from "../services/people-organisations.js";
 
 // ---------------------------------------------------------------------------
 // The People Book's only door (T-665): /people.
@@ -40,12 +48,14 @@ import { duplicateSuggestions, keepApart, withdrawKeptApart } from "../services/
 // ---------------------------------------------------------------------------
 
 const PersonParams = z.object({ personId: z.string().uuid() });
+const OrganisationParams = z.object({ organisationId: z.string().uuid() });
 const PointParams = PersonParams.extend({ pointId: z.string().uuid() });
 const PairParams = PersonParams.extend({ otherPersonId: z.string().uuid() });
 
 const FORBIDDEN = { error: "Only the venue's commercial team can use the People Book", code: "FORBIDDEN" } as const;
 const INVALID_ID = { error: "Invalid ID", code: "VALIDATION_ERROR" } as const;
 const PERSON_NOT_FOUND = { error: "Person not found", code: "NOT_FOUND" } as const;
+const ORGANISATION_NOT_FOUND = { error: "Organisation not found", code: "NOT_FOUND" } as const;
 const OWNER_NOT_AT_VENUE = {
   error: "The owner must be on this venue's commercial team",
   code: "OWNER_NOT_AT_VENUE",
@@ -199,6 +209,82 @@ export async function peopleRoutes(
         });
       case "updated":
         request.log.info({ event: "people.updated", personId: outcome.personId }, "person updated");
+        return { data: outcome.profile };
+    }
+  });
+
+  // `/organisations` is a static path, so it wins over `/:personId` in the router.
+  server.post("/organisations", { preHandler: [authenticate] }, async (request, reply) => {
+    const scope = peopleScope(request.user);
+    if (!scope.ok) return reply.status(403).send(FORBIDDEN);
+    const body = CreateOrganisationSchema.safeParse(request.body);
+    if (!body.success) return invalidBody(reply, body.error);
+    const input = body.data;
+    if (!canManageCommercial(request.user, input.venueId)) return reply.status(403).send(FORBIDDEN);
+    const actorId = request.user.id;
+
+    const outcome = await db.transaction(async (tx) => {
+      const owner = await resolveOwner(tx, input.venueId, input.ownerUserId, actorId);
+      if (!owner.ok) return { kind: "owner_not_at_venue" } as const;
+      const organisationId = await insertOrganisation(tx, { ...input, ownerUserId: owner.ownerUserId, createdBy: actorId });
+      const profile = await readOrganisationProfile(tx, input.venueId, organisationId);
+      if (profile === null) throw new Error("A new organisation could not be read back");
+      return { kind: "created", organisationId, profile } as const;
+    });
+
+    if (outcome.kind === "owner_not_at_venue") return reply.status(422).send(OWNER_NOT_AT_VENUE);
+    request.log.info({ event: "people.organisation_created", organisationId: outcome.organisationId }, "organisation created");
+    return reply.status(201).send({ data: outcome.profile });
+  });
+
+  server.get("/organisations/:organisationId", { preHandler: [authenticate] }, async (request, reply) => {
+    const scope = peopleScope(request.user);
+    if (!scope.ok) return reply.status(403).send(FORBIDDEN);
+    const params = OrganisationParams.safeParse(request.params);
+    if (!params.success) return reply.status(400).send(INVALID_ID);
+
+    // One snapshot, so the organisation, its members and its owner are read as
+    // they stood at one moment.
+    const profile = await db.transaction(
+      (tx) => readOrganisationProfile(tx, scope.venueId, params.data.organisationId),
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    if (profile === null) return reply.status(404).send(ORGANISATION_NOT_FOUND);
+    return { data: profile };
+  });
+
+  server.patch("/organisations/:organisationId", { preHandler: [authenticate] }, async (request, reply) => {
+    const scope = peopleScope(request.user);
+    if (!scope.ok) return reply.status(403).send(FORBIDDEN);
+    const params = OrganisationParams.safeParse(request.params);
+    if (!params.success) return reply.status(400).send(INVALID_ID);
+    const body = UpdateOrganisationSchema.safeParse(request.body);
+    if (!body.success) return invalidBody(reply, body.error);
+    const patch = body.data;
+
+    const outcome = await db.transaction(async (tx) => {
+      const row = await lockOrganisation(tx, scope.venueId, params.data.organisationId);
+      if (row === undefined) return { kind: "not_found" } as const;
+      const owner = patch.ownerUserId;
+      if (typeof owner === "string" && !(await isCommercialMember(tx, row.venueId, owner))) {
+        return { kind: "owner_not_at_venue" } as const;
+      }
+      if (await updateOrganisationFields(tx, row, patch) === "stale") return { kind: "stale" } as const;
+      const profile = await readOrganisationProfile(tx, row.venueId, row.id);
+      if (profile === null) throw new Error("A locked live organisation could not be read back");
+      return { kind: "updated", organisationId: row.id, profile } as const;
+    });
+
+    switch (outcome.kind) {
+      case "not_found": return reply.status(404).send(ORGANISATION_NOT_FOUND);
+      case "owner_not_at_venue": return reply.status(422).send(OWNER_NOT_AT_VENUE);
+      case "stale":
+        return reply.status(409).send({
+          error: "Someone has changed this organisation since you opened it; reload to see their changes",
+          code: "STALE_RECORD",
+        });
+      case "updated":
+        request.log.info({ event: "people.organisation_updated", organisationId: outcome.organisationId }, "organisation updated");
         return { data: outcome.profile };
     }
   });

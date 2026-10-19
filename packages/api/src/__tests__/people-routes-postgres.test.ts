@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LightMyRequestResponse } from "fastify";
-import { DuplicateSuggestionSchema, KeptApartMarkSchema, PersonProfileSchema, type PersonProfile } from "@omnitwin/types";
+import {
+  DuplicateSuggestionSchema,
+  KeptApartMarkSchema,
+  OrganisationProfileSchema,
+  PersonProfileSchema,
+  type OrganisationProfile,
+  type PersonProfile,
+} from "@omnitwin/types";
 import { peopleRoutes } from "../routes/people.js";
 import { openPeopleFixture, PLATFORM_TARGET, type PeopleFixture, type PeopleFixtureUser } from "./support/people-platform-fixture.js";
 
@@ -564,5 +571,147 @@ describe.skipIf(PLATFORM_TARGET === undefined)("the People Book's people routes 
     expect(res.statusCode, res.body).toBe(201);
     expect(KeptApartMarkSchema.parse(res.json().data).personIds).toEqual([a, b].sort());
     expect((await del(`/people/${b.toUpperCase()}/kept-apart/${a.toUpperCase()}`)).statusCode).toBe(204);
+  });
+
+  function organisation(res: LightMyRequestResponse): OrganisationProfile {
+    return OrganisationProfileSchema.parse(res.json().data);
+  }
+
+  async function createOrganisation(who: PeopleFixtureUser, body: Record<string, unknown>): Promise<OrganisationProfile> {
+    const res = await post("/people/organisations", who, { venueId: f.venueId, ...body });
+    expect(res.statusCode, res.body).toBe(201);
+    return organisation(res);
+  }
+
+  it("creates a household and an organisation, each owned by its creator", async () => {
+    const household = await createOrganisation("staff", { name: "Murray household", kind: "household" });
+    expect(household.organisation).toMatchObject({
+      name: "Murray household", kind: "household", accountType: "event_client", venueId: f.venueId,
+      ownerUserId: f.users.staff, primaryContactId: null, address: null, website: null, vatNumber: null, notes: null,
+    });
+    expect(household.members).toEqual([]);
+    expect(household.owner?.id).toBe(f.users.staff);
+
+    const society = await createOrganisation("staff", {
+      name: "Glasgow Medical Society", kind: "organisation", website: "medsoc.example.test", vatNumber: "GB000000000",
+    });
+    expect(society.organisation).toMatchObject({
+      kind: "organisation", website: "medsoc.example.test", vatNumber: "GB000000000", ownerUserId: f.users.staff,
+    });
+    const { rows } = await f.pool.query<{ created_by: string | null; kind: string }>(
+      "SELECT created_by, kind FROM client_accounts WHERE id = $1", [society.organisation.id],
+    );
+    expect(rows[0]).toEqual({ created_by: f.users.staff, kind: "organisation" });
+
+    // A platform admin works across venues and so owns nothing by default.
+    expect((await createOrganisation("platformAdmin", { name: "Nobody's club", kind: "organisation" })).owner).toBeNull();
+  });
+
+  it("refuses an owner who is not on the commercial team, and a venue that is not the actor's", async () => {
+    for (const owner of [f.users.hallkeeper, f.users.otherStaff]) {
+      const res = await post("/people/organisations", "staff", { venueId: f.venueId, name: "Owned Elsewhere Ltd", kind: "organisation", ownerUserId: owner });
+      expect(res.statusCode, res.body).toBe(422);
+      expect(res.json()).toMatchObject({ code: "OWNER_NOT_AT_VENUE" });
+    }
+    const { rows } = await f.pool.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM client_accounts WHERE venue_id = $1 AND name = 'Owned Elsewhere Ltd'", [f.venueId],
+    );
+    expect(rows[0]?.count).toBe(0);
+
+    const managed = await createOrganisation("staff", { name: "Managed club", kind: "organisation", ownerUserId: f.users.manager });
+    expect(managed.owner).toEqual({ id: f.users.manager, name: "People Book manager" });
+    const moved = await patch(`/people/organisations/${managed.organisation.id}`, "staff", { ownerUserId: f.users.hallkeeper });
+    expect(moved.statusCode, moved.body).toBe(422);
+    expect(moved.json()).toMatchObject({ code: "OWNER_NOT_AT_VENUE" });
+    expect(organisation(await get(`/people/organisations/${managed.organisation.id}`)).organisation.ownerUserId).toBe(f.users.manager);
+
+    const elsewhere = await post("/people/organisations", "staff", { venueId: f.otherVenueId, name: "Somewhere Else", kind: "household" });
+    expect(elsewhere.statusCode, elsewhere.body).toBe(403);
+    expect(elsewhere.json()).toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("reads an organisation with its live members, primary first", async () => {
+    const society = await createOrganisation("staff", { name: "Perth Rotary Club", kind: "organisation" });
+    const club = society.organisation.id;
+    const other = await f.addOrganisation({ name: "Reid household" });
+    const alasdair = await create("staff", { name: "Alasdair Reid" });
+    const morven = await create("staff", { name: "Morven Reid" });
+    const gone = await create("staff", { name: "Duplicate Reid" });
+    // Alasdair is listed under the club first by name, but the club is Morven's primary.
+    expect((await put(`/people/${alasdair.person.id}/memberships`, "staff", {
+      memberships: [{ organisationId: other, isPrimary: true }, { organisationId: club, roleLabel: "Treasurer" }],
+    })).statusCode).toBe(200);
+    expect((await put(`/people/${morven.person.id}/memberships`, "staff", {
+      memberships: [{ organisationId: club, roleLabel: "Secretary", isPrimary: true }],
+    })).statusCode).toBe(200);
+    expect((await put(`/people/${gone.person.id}/memberships`, "staff", {
+      memberships: [{ organisationId: club, roleLabel: "Chair", isPrimary: true }],
+    })).statusCode).toBe(200);
+    await f.pool.query("UPDATE contacts SET merged_into_id = $2, deleted_at = now() WHERE id = $1", [gone.person.id, morven.person.id]);
+
+    const res = await get(`/people/organisations/${club}`);
+    expect(res.statusCode, res.body).toBe(200);
+    const profile = organisation(res);
+    expect(profile.members).toEqual([
+      { personId: morven.person.id, name: "Morven Reid", roleLabel: "Secretary", isPrimary: true },
+      { personId: alasdair.person.id, name: "Alasdair Reid", roleLabel: "Treasurer", isPrimary: false },
+    ]);
+    expect(profile.organisation).toMatchObject({ id: club, name: "Perth Rotary Club", kind: "organisation" });
+    expect(profile.owner?.id).toBe(f.users.staff);
+
+    // A deleted organisation is not read.
+    await f.pool.query("UPDATE client_accounts SET deleted_at = now() WHERE id = $1", [club]);
+    expect((await get(`/people/organisations/${club}`)).statusCode).toBe(404);
+  });
+
+  it("edits an organisation with the time it last read, and refuses an older read", async () => {
+    const created = await createOrganisation("staff", { name: "Kelvin Bridge Society", kind: "organisation" });
+    const url = `/people/organisations/${created.organisation.id}`;
+    const first = await patch(url, "staff", {
+      website: "kelvin.example.test", kind: "household", address: "Fictional Lane, Glasgow", expectedUpdatedAt: created.organisation.updatedAt,
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    const edited = organisation(first);
+    expect(edited.organisation).toMatchObject({
+      name: "Kelvin Bridge Society", website: "kelvin.example.test", kind: "household", address: "Fictional Lane, Glasgow",
+    });
+    expect(edited.organisation.updatedAt).not.toBe(created.organisation.updatedAt);
+
+    const stale = await patch(url, "staff", { vatNumber: "GB111111111", expectedUpdatedAt: created.organisation.updatedAt });
+    expect(stale.statusCode, stale.body).toBe(409);
+    expect(stale.json()).toMatchObject({ code: "STALE_RECORD" });
+    expect(organisation(await get(url)).organisation.vatNumber).toBeNull();
+
+    const fresh = await patch(url, "staff", { vatNumber: "GB111111111", website: null, expectedUpdatedAt: edited.organisation.updatedAt });
+    expect(fresh.statusCode, fresh.body).toBe(200);
+    expect(organisation(fresh).organisation).toMatchObject({ vatNumber: "GB111111111", website: null });
+
+    // An edit that names no time still lands, and renames the organisation.
+    const renamed = await patch(url, "staff", { name: "Kelvin Bridge Association" });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(organisation(renamed).organisation.name).toBe("Kelvin Bridge Association");
+  });
+
+  it("answers not found for another venue's organisation, a deleted one and a made-up id", async () => {
+    const foreign = await f.addOrganisation({ name: "A club elsewhere", kind: "organisation", venueId: f.otherVenueId });
+    const deleted = await f.addOrganisation({ name: "Gone household" });
+    await f.pool.query("UPDATE client_accounts SET deleted_at = now() WHERE id = $1", [deleted]);
+    for (const id of [foreign, deleted, randomUUID()]) {
+      for (const [method, payload] of [["GET", undefined], ["PATCH", { website: "intruder.example.test" }]] as const) {
+        const res = await send(method, `/people/organisations/${id}`, "staff", payload);
+        expect(res.statusCode, `${method} ${id}: ${res.body}`).toBe(404);
+        expect(res.json()).toMatchObject({ code: "NOT_FOUND" });
+      }
+    }
+    const { rows } = await f.pool.query<{ website: string | null }>("SELECT website FROM client_accounts WHERE id = $1", [foreign]);
+    expect(rows[0]?.website).toBeNull();
+  });
+
+  it("lets sales create an organisation", async () => {
+    const created = await createOrganisation("sales", { name: "Bearsden Book Group", kind: "organisation" });
+    expect(created.organisation.ownerUserId).toBe(f.users.sales);
+    const edited = await patch(`/people/organisations/${created.organisation.id}`, "sales", { notes: "Meets on the first Tuesday" });
+    expect(edited.statusCode, edited.body).toBe(200);
+    expect(organisation(edited).organisation.notes).toBe("Meets on the first Tuesday");
   });
 });
