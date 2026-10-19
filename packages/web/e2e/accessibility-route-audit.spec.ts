@@ -429,7 +429,7 @@ const routeSpecs: readonly RouteSpec[] = [
   {
     routeName: "supplier portal unavailable",
     path: `/supplier-share/${SUPPLIER_TOKEN}-missing`,
-    readyText: "This supplier link is not available",
+    readyText: "This link no longer opens",
     mockRoutes: mockSupplierUnavailableRoutes,
   },
   {
