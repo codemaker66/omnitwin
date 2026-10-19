@@ -560,6 +560,14 @@
     {
       "source": "/account/allergy-notes/",
       "destination": "/index.html"
+    },
+    {
+      "source": "/plan-view/:token",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/plan-view/:token/",
+      "destination": "/index.html"
     }
   ],
   "headers": [

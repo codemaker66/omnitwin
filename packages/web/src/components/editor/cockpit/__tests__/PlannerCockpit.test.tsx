@@ -10,6 +10,9 @@ vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-
 vi.mock("../ReferenceRoomHeader.js", () => ({ ReferenceRoomHeader: () => <header data-testid="reference-room-header-mock" /> }));
 vi.mock("../CockpitRightDock.js", () => ({ CockpitRightDock: () => <aside data-testid="cockpit-dock-mock" /> }));
 vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid="cockpit-bottom-mock" /> }));
+// The phone lens sheet has its own suite (LensSheet.test.tsx); here only where
+// it is mounted matters.
+vi.mock("../LensSheet.js", () => ({ LensSheet: () => <div data-testid="lens-sheet-mock" /> }));
 // The When ribbon reads router search params (its ?eventId corridor) and
 // fetches the calendar — out of scope for a structural shell test.
 vi.mock("../WhenRibbon.js", () => ({ WhenRibbon: () => <aside data-testid="when-ribbon-mock" /> }));
@@ -104,6 +107,18 @@ describe("PlannerCockpit", () => {
     rerender(<PlannerCockpit hasLinkedEvent={false} />);
     expect(screen.queryByText("Booking time")).toBeNull();
   });
+  it("gives phones and tablets the lens sheet in place of the right dock", () => {
+    render(<PlannerCockpit mobile />);
+    expect(screen.getByTestId("lens-sheet-mock")).toBeTruthy();
+    expect(screen.queryByTestId("cockpit-dock-mock")).toBeNull();
+  });
+
+  it("keeps lenses in the right dock on a desktop, with no sheet", () => {
+    render(<PlannerCockpit />);
+    expect(screen.getByTestId("cockpit-dock-mock")).toBeTruthy();
+    expect(screen.queryByTestId("lens-sheet-mock")).toBeNull();
+  });
+
   it("renders the grid regions, the live editor, and the nav rail", () => {
     render(<PlannerCockpit />);
     expect(screen.getByTestId("cockpit-shell")).toBeTruthy();

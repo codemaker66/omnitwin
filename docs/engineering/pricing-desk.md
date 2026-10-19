@@ -17,6 +17,19 @@ written only through `/venues/:venueId/pricing`; every write is recorded in
 `general_audit_log` in its own transaction (`services/pricing-rule-audit.ts`),
 with `followedAdvice` in the metadata when a suggestion was followed.
 
+Reading a price is never public (Blake, 17 October 2026: suggestions are advice,
+never automatic and never exposed; a visitor is asked to enquire for a quote).
+`GET /venues/:venueId/pricing`, `GET .../pricing/:id`, `POST .../pricing/estimate`
+and `GET /enquiries/:id/quote` all need a sign-in and `canManageCommercial` for
+the venue: signed out is 401; a client, an enquirer, a planner, the hallkeeper or
+another venue's team is 403, with no rule, amount or date in the body (the
+`/pricing` routes refuse before any lookup; the quote first finds the enquiry to
+learn its venue). Allowed answers carry `Cache-Control: private, no-store`.
+A dated rate saved from a suggestion is an ordinary active rule, so this gate is
+what keeps a venue's high-demand dates and raised prices to its own team. A price
+a client may one day see would be a separate projection that leaves out dated
+and suggested rates, not these routes.
+
 ## A rate for particular dates
 
 Rules stack: each applicable rule adds a line. A rate for particular dates
@@ -163,7 +176,8 @@ report. Competition counsel should read the proposal's sections 4.3, 4.4 and
 ## Checks
 
 - Maths: `pnpm --filter @omnitwin/api exec vitest run src/__tests__/pricing-advice.test.ts`
-- Access: `src/__tests__/pricing-desk-routes.test.ts`; on Postgres,
+- Access: `src/__tests__/pricing-desk-routes.test.ts`, and for reading a price
+  `src/__tests__/pricing-rules-read-guard.test.ts`; on Postgres,
   `src/__tests__/pricing-desk-postgres.test.ts` with
   `VENVIEWER_ROUTE_TEST_DATABASE_URL` naming a loopback
   `venviewer_route_atomicity_test`.

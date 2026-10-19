@@ -324,7 +324,29 @@ export {
   SupplierSafeAcknowledgementSchema,
   SupplierSafeChangeSummarySchema,
   SupplierSafePackViewSchema,
+  SupplierPassChangesSchema,
+  SupplierPassContactSchema,
+  SupplierPassDetailsSchema,
+  SupplierPassLinkSchema,
+  SupplierPassSummarySchema,
+  SupplierPassScopeItemSchema,
+  SupplierPassDirectoryEntrySchema,
+  SupplierPassBoardSchema,
+  SUPPLIER_PASS_GRACE_DAYS,
+  SUPPLIER_PASS_MAX_DAYS_AFTER_EVENT,
+  defaultSupplierPassExpiry,
+  latestSupplierPassExpiry,
+  checkSupplierPassExpiry,
   supplierCoordinationPayloadDigest,
+  type SupplierPassChanges,
+  type SupplierPassContact,
+  type SupplierPassDetails,
+  type SupplierPassLink,
+  type SupplierPassSummary,
+  type SupplierPassScopeItem,
+  type SupplierPassDirectoryEntry,
+  type SupplierPassBoard,
+  type SupplierPassExpiryCheck,
   type SupplierCoordinationPackId,
   type SupplierCoordinationPackItemId,
   type SupplierCoordinationShareTokenId,
@@ -1480,6 +1502,7 @@ export {
 
 export {
   CANONICAL_ASSETS,
+  assetDisplayName,
   getCanonicalAssetById,
   getCanonicalAssetBySlug,
   type CanonicalAsset,
@@ -2561,6 +2584,9 @@ export * from "./trades-hall-venue-truth.js";
 // The Pricing desk (17 Oct 2026): who sets a price, which rate stands on a
 // date beside a rate for particular dates, and the suggestions' contract.
 export * from "./pricing-desk.js";
+// Fix-first item 11 (16 Oct 2026 brief): a visitor's plan seen through a
+// view-only link (migration configuration_view_tokens).
+export * from "./plan-view.js";
 // Remembered allergy notes (Blake, 17 October 2026: "ask once, then
 // remember"): the opt-in wording, its period and the API shapes.
 export * from "./dietary-memory.js";

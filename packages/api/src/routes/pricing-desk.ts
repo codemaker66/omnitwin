@@ -20,9 +20,10 @@ import { loadPricingAdvice, loadPricingDesk, recordAdviceDecision } from "../ser
 //
 // Who reads what:
 //   - The list, with who changed each rate and when, is the commercial team's
-//     (canManageCommercial: admin, manager, staff, sales). Prices are public,
-//     but the record of who set them is the venue's own. The hallkeeper does
-//     not see prices (goal 18 decision 6b).
+//     (canManageCommercial: admin, manager, staff, sales), as are the prices
+//     themselves (/venues/:venueId/pricing): a visitor is asked to enquire
+//     for a quote and never shown a price. The hallkeeper does not see prices
+//     (goal 18 decision 6b).
 //   - Suggestions are for the people who set prices (canWritePricing: admin
 //     and manager), so there is one price sheet everyone else quotes from.
 //   - Rates themselves are changed through /venues/:venueId/pricing, gated

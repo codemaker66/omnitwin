@@ -257,12 +257,30 @@ describe.skipIf(testUrl === undefined)("the Pricing desk on isolated PostgreSQL"
     expect(audit.rows[0]?.summary).toBe(`Added "Grand Hall — Evening, ${dates.target}", from a suggestion.`);
     expect(audit.rows[0]?.metadata).toMatchObject({ followedAdvice: key });
 
-    const estimate = (date: string) => server.inject({
+    // Sales reads prices it cannot set; null is someone signed out.
+    const estimate = (date: string, as: { authorization: string } | null = asSales) => server.inject({
       method: "POST", url: `/venues/${VENUE}/pricing/estimate`,
       payload: { spaceId: HALL, eventDate: date, startTime: "19:00", endTime: "23:00", guestCount: 120 },
+      ...(as === null ? {} : { headers: as }),
     });
     expect((await estimate(dates.target)).json<{ data: { total: number } }>().data.total).toBe(3150);
     expect((await estimate(dates.next)).json<{ data: { total: number } }>().data.total).toBe(2800);
+
+    // The raised rate is advice the venue followed, never a price shown
+    // outside its team: no one signed out, no client, no other venue.
+    const client = { authorization: `Bearer ${JSON.stringify({ id: randomUUID(), email: "client@example.test", role: "client", platformRole: "none", venueId: null })}` };
+    const outsiders = [null, client, headers("manager", OTHER_MANAGER, OTHER_VENUE)];
+    for (const as of outsiders) {
+      const refused = await estimate(dates.target, as);
+      expect(refused.statusCode).toBe(as === null ? 401 : 403);
+      expect(refused.body).not.toContain("3150");
+      for (const url of [`/venues/${VENUE}/pricing`, `/venues/${VENUE}/pricing/${id}`]) {
+        const read = await server.inject({ method: "GET", url, ...(as === null ? {} : { headers: as }) });
+        expect(read.statusCode, url).toBe(as === null ? 401 : 403);
+        expect(read.body).not.toContain(dates.target);
+        expect(read.body).not.toContain("3150");
+      }
+    }
   });
 
   it("refuses a saved rate whose dates would run backwards", async () => {
