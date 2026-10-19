@@ -2581,6 +2581,9 @@ export * from "./venue-sky.js";
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
 
+// The Pricing desk (17 Oct 2026): who sets a price, which rate stands on a
+// date beside a rate for particular dates, and the suggestions' contract.
+export * from "./pricing-desk.js";
 // Fix-first item 11 (16 Oct 2026 brief): a visitor's plan seen through a
 // view-only link (migration configuration_view_tokens).
 export * from "./plan-view.js";
@@ -2589,3 +2592,6 @@ export * from "./plan-view.js";
 export * from "./dietary-memory.js";
 // Live co-editing v1: presence and live ops on /ws/configurations/:configId.
 export * from "./layout-live.js";
+// The competitor watch (17 Oct 2026): the comp set, dated price captures,
+// who a lost deal went to and the page-change check. Context, never a price input.
+export * from "./competitor-watch.js";
