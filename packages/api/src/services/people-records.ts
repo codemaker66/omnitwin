@@ -16,7 +16,7 @@ import {
   type UpdatePerson,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { accountMemberships, clientAccounts, contactPoints, contacts, users } from "../db/schema.js";
+import { accountMemberships, clientAccounts, contactPoints, contacts, recordMerges, users } from "../db/schema.js";
 import { canManageCommercial } from "../utils/query.js";
 import { countDuplicateSuggestions } from "./people-duplicates.js";
 
@@ -65,6 +65,19 @@ export type PersonLock =
   | { state: "merged"; mergedIntoId: string }
   | { state: "live"; row: ContactRow };
 
+/** What a person is: erased or absent is missing; a tombstone is merged
+ *  (before deleted, since a tombstone is deleted too); else deleted is missing. */
+function stateOf(row: ContactRow | undefined): PersonLock {
+  if (row === undefined || row.erasedAt !== null) return { state: "missing" };
+  if (row.mergedIntoId !== null) return { state: "merged", mergedIntoId: row.mergedIntoId };
+  if (row.deletedAt !== null) return { state: "missing" };
+  return { state: "live", row };
+}
+
+function personAt(scopeVenueId: string | null, personId: string): SQL | undefined {
+  return and(eq(contacts.id, personId), scopeVenueId === null ? undefined : eq(contacts.venueId, scopeVenueId));
+}
+
 /**
  * Locks the person (`SELECT … FOR UPDATE`) and says what they are: live, a
  * tombstone pointing at the record that speaks for them, or missing (no such
@@ -72,14 +85,15 @@ export type PersonLock =
  * platform admin's unscoped lock.
  */
 export async function lockPerson(tx: PeopleTx, scopeVenueId: string | null, personId: string): Promise<PersonLock> {
-  const [row] = await tx.select().from(contacts)
-    .where(and(eq(contacts.id, personId), scopeVenueId === null ? undefined : eq(contacts.venueId, scopeVenueId)))
-    .limit(1)
-    .for("update");
-  if (row === undefined || row.erasedAt !== null) return { state: "missing" };
-  if (row.mergedIntoId !== null) return { state: "merged", mergedIntoId: row.mergedIntoId };
-  if (row.deletedAt !== null) return { state: "missing" };
-  return { state: "live", row };
+  const [row] = await tx.select().from(contacts).where(personAt(scopeVenueId, personId)).limit(1).for("update");
+  return stateOf(row);
+}
+
+/** What lockPerson would answer, read without a lock: for a preview, which
+ *  writes nothing and so needs no lock. */
+export async function readPersonState(db: PeopleConn, scopeVenueId: string | null, personId: string): Promise<PersonLock> {
+  const [row] = await db.select().from(contacts).where(personAt(scopeVenueId, personId)).limit(1);
+  return stateOf(row);
 }
 
 export interface NewPerson {
@@ -309,11 +323,47 @@ export async function setPersonMemberships(
   return "ok";
 }
 
-async function holdsKind(tx: PeopleTx, person: { id: string; venueId: string }, kind: ContactPointKind): Promise<boolean> {
-  const [point] = await tx.select({ id: contactPoints.id }).from(contactPoints)
+async function holdsKind(db: PeopleConn, person: { id: string; venueId: string }, kind: ContactPointKind): Promise<boolean> {
+  const [point] = await db.select({ id: contactPoints.id }).from(contactPoints)
     .where(and(eq(contactPoints.contactId, person.id), eq(contactPoints.venueId, person.venueId), eq(contactPoints.kind, kind)))
     .limit(1);
   return point !== undefined;
+}
+
+/** What adoptLegacyMirror would write for a person: each point as its
+ *  primary of that kind, and the membership as their primary. */
+export interface LegacyAdoption {
+  readonly points: readonly { kind: ContactPointKind; value: string; displayValue: string }[];
+  readonly membership: { clientAccountId: string; roleLabel: string | null } | null;
+}
+
+/**
+ * What adoptLegacyMirror would bring into the book for this person, by its
+ * rules, read without writing (a merge preview counts it as moving).
+ */
+export async function legacyAdoption(db: PeopleConn, row: ContactRow): Promise<LegacyAdoption> {
+  const person = { id: row.id, venueId: row.venueId };
+  const points: { kind: ContactPointKind; value: string; displayValue: string }[] = [];
+
+  const email = normaliseEmail(row.email);
+  if (row.email !== null && email !== null && !(await holdsKind(db, person, "email"))) {
+    points.push({ kind: "email", value: email, displayValue: row.email.trim() });
+  }
+
+  const phone = row.phone !== null && isUsablePhone(row.phone) ? normalisePhone(row.phone) : null;
+  if (row.phone !== null && phone !== null && !(await holdsKind(db, person, "phone"))) {
+    points.push({ kind: "phone", value: phone, displayValue: row.phone.trim() });
+  }
+
+  if (row.clientAccountId === null) return { points, membership: null };
+  const [membership] = await db.select({ id: accountMemberships.id }).from(accountMemberships)
+    .where(and(eq(accountMemberships.contactId, person.id), eq(accountMemberships.venueId, person.venueId)))
+    .limit(1);
+  if (membership !== undefined) return { points, membership: null };
+  const [account] = await db.select({ id: clientAccounts.id }).from(clientAccounts)
+    .where(and(eq(clientAccounts.id, row.clientAccountId), eq(clientAccounts.venueId, person.venueId), liveAccount()))
+    .limit(1);
+  return { points, membership: account === undefined ? null : { clientAccountId: account.id, roleLabel: row.roleLabel } };
 }
 
 /**
@@ -335,52 +385,26 @@ async function holdsKind(tx: PeopleTx, person: { id: string; venueId: string }, 
  * Every write path that will refresh a person's mirror calls this first, on each person it has locked.
  */
 export async function adoptLegacyMirror(tx: PeopleTx, row: ContactRow): Promise<void> {
-  const person = { id: row.id, venueId: row.venueId };
-
-  const email = normaliseEmail(row.email);
-  if (row.email !== null && email !== null && !(await holdsKind(tx, person, "email"))) {
+  const adoption = await legacyAdoption(tx, row);
+  for (const point of adoption.points) {
     await tx.insert(contactPoints).values({
-      venueId: person.venueId,
-      contactId: person.id,
-      kind: "email",
-      value: email,
-      displayValue: row.email.trim(),
+      venueId: row.venueId,
+      contactId: row.id,
+      kind: point.kind,
+      value: point.value,
+      displayValue: point.displayValue,
       label: "other",
       isPrimary: true,
       createdAt: sql`clock_timestamp()`,
       updatedAt: sql`clock_timestamp()`,
     }).onConflictDoNothing();
   }
-
-  const phone = row.phone !== null && isUsablePhone(row.phone) ? normalisePhone(row.phone) : null;
-  if (row.phone !== null && phone !== null && !(await holdsKind(tx, person, "phone"))) {
-    await tx.insert(contactPoints).values({
-      venueId: person.venueId,
-      contactId: person.id,
-      kind: "phone",
-      value: phone,
-      displayValue: row.phone.trim(),
-      label: "other",
-      isPrimary: true,
-      createdAt: sql`clock_timestamp()`,
-      updatedAt: sql`clock_timestamp()`,
-    }).onConflictDoNothing();
-  }
-
-  if (row.clientAccountId !== null) {
-    const [membership] = await tx.select({ id: accountMemberships.id }).from(accountMemberships)
-      .where(and(eq(accountMemberships.contactId, person.id), eq(accountMemberships.venueId, person.venueId)))
-      .limit(1);
-    if (membership !== undefined) return;
-    const [account] = await tx.select({ id: clientAccounts.id }).from(clientAccounts)
-      .where(and(eq(clientAccounts.id, row.clientAccountId), eq(clientAccounts.venueId, person.venueId), liveAccount()))
-      .limit(1);
-    if (account === undefined) return;
+  if (adoption.membership !== null) {
     await tx.insert(accountMemberships).values({
-      venueId: person.venueId,
-      contactId: person.id,
-      clientAccountId: account.id,
-      roleLabel: row.roleLabel,
+      venueId: row.venueId,
+      contactId: row.id,
+      clientAccountId: adoption.membership.clientAccountId,
+      roleLabel: adoption.membership.roleLabel,
       isPrimary: true,
       createdAt: sql`clock_timestamp()`,
       updatedAt: sql`clock_timestamp()`,
@@ -475,7 +499,8 @@ export async function updatePersonFields(tx: PeopleTx, row: ContactRow, patch: U
   return updated.length === 0 ? "stale" : "ok";
 }
 
-function toPerson(row: ContactRow): Person {
+/** A person as stored, in the API's shape (dates as ISO strings). */
+export function toPerson(row: ContactRow): Person {
   return {
     id: row.id,
     venueId: row.venueId,
@@ -515,16 +540,42 @@ function toContactPoint(row: typeof contactPoints.$inferSelect): ContactPoint {
 }
 
 /**
- * A live person as the book shows them: their points (primary first, then
- * oldest), their live organisations (primary first, then by name), their
- * owner and how many possible duplicates they have. Null when there is no
- * live person with that id at the scoped venue.
+ * Where a tombstone went: the record its merged_into_id names (one hop from a
+ * live record, as every merge re-points earlier tombstones), with the newest
+ * merge of it that has not been undone. Null when no such merge is recorded,
+ * which only a tombstone written outside the book's merge can be.
+ */
+async function readMergedProfile(db: PeopleConn, row: ContactRow, mergedIntoId: string): Promise<PersonProfile | null> {
+  const [merge] = await db.select({ id: recordMerges.id, mergedAt: recordMerges.mergedAt }).from(recordMerges)
+    .where(and(
+      eq(recordMerges.venueId, row.venueId),
+      eq(recordMerges.kind, "person"),
+      eq(recordMerges.mergedId, row.id),
+      isNull(recordMerges.undoneAt),
+    ))
+    .orderBy(desc(recordMerges.mergedAt), desc(recordMerges.id))
+    .limit(1);
+  const [into] = await db.select({ id: contacts.id, name: contacts.name }).from(contacts)
+    .where(and(eq(contacts.id, mergedIntoId), eq(contacts.venueId, row.venueId)))
+    .limit(1);
+  if (merge === undefined || into === undefined) return null;
+  return { status: "merged", mergedInto: into, mergeId: merge.id, mergedAt: merge.mergedAt.toISOString() };
+}
+
+/**
+ * A person as the book shows them. A live person: their points (primary
+ * first, then oldest), their live organisations (primary first, then by
+ * name), their owner and how many possible duplicates they have. A merged
+ * person (a tombstone): where they went, and the merge that took them there,
+ * so an old link still leads somewhere. Null when there is no such person at
+ * the scoped venue, or they are deleted or erased.
  */
 export async function readPersonProfile(db: PeopleConn, scopeVenueId: string | null, personId: string): Promise<PersonProfile | null> {
-  const [row] = await db.select().from(contacts)
-    .where(and(eq(contacts.id, personId), scopeVenueId === null ? undefined : eq(contacts.venueId, scopeVenueId), liveContact()))
-    .limit(1);
-  if (row === undefined) return null;
+  const [found] = await db.select().from(contacts).where(personAt(scopeVenueId, personId)).limit(1);
+  const state = stateOf(found);
+  if (state.state === "merged" && found !== undefined) return readMergedProfile(db, found, state.mergedIntoId);
+  if (state.state !== "live") return null;
+  const row = state.row;
 
   const points = await db.select().from(contactPoints)
     .where(and(eq(contactPoints.contactId, row.id), eq(contactPoints.venueId, row.venueId)))

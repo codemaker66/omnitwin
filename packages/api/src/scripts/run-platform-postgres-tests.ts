@@ -41,6 +41,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/people-enquiry-link-postgres.test.ts",
   // ... and is kept, with no person, when finding its person fails.
   "src/__tests__/people-enquiry-link-failure-postgres.test.ts",
+  // Merging two people: the preview, the merge, its record and the tombstone.
+  "src/__tests__/people-merge-postgres.test.ts",
   // POST /public/enquiries against real constraints, on its own database (below).
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
 ] as const;

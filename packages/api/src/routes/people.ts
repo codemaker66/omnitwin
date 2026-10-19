@@ -6,6 +6,7 @@ import {
   CreateOrganisationSchema,
   CreatePersonSchema,
   KeepApartRequestSchema,
+  MergeRequestSchema,
   PeopleSearchQuerySchema,
   SetMembershipsSchema,
   UpdateOrganisationSchema,
@@ -37,6 +38,7 @@ import {
   updateOrganisationFields,
 } from "../services/people-organisations.js";
 import { searchPeople } from "../services/people-search.js";
+import { applyPersonMerge, isMergeFailure, previewPersonMerge, type MergeFailure } from "../services/people-merge.js";
 
 // ---------------------------------------------------------------------------
 // The People Book's only door (T-665): /people.
@@ -46,7 +48,9 @@ import { searchPeople } from "../services/people-search.js";
 // then it finds the record at the actor's venue. Another venue's record is
 // not found, never forbidden. Every write is one transaction that locks the
 // person first, and every log line carries ids and outcomes, never a name,
-// an email or a phone.
+// an email or a phone. A person merged into another is read as where they
+// went, and every write to them is refused with the record that speaks for
+// them now (409 MERGED).
 // ---------------------------------------------------------------------------
 
 const PersonParams = z.object({ personId: z.string().uuid() });
@@ -62,6 +66,32 @@ const OWNER_NOT_AT_VENUE = {
   error: "The owner must be on this venue's commercial team",
   code: "OWNER_NOT_AT_VENUE",
 } as const;
+
+/** A write to a person who has been merged into another record. */
+function mergedPerson(mergedIntoId: string): { error: string; code: "MERGED"; mergedIntoId: string } {
+  return { error: "This person has been merged into another record", code: "MERGED", mergedIntoId };
+}
+
+/** Why a merge, or its preview, was refused. */
+function refuseMerge(reply: FastifyReply, failure: MergeFailure): FastifyReply {
+  switch (failure.kind) {
+    case "not_found": return reply.status(404).send(PERSON_NOT_FOUND);
+    case "same_record":
+      return reply.status(422).send({ error: "A person cannot be merged into themself", code: "SAME_RECORD" });
+    case "already_merged":
+      return reply.status(409).send({
+        error: "This person has already been merged into another record",
+        code: "ALREADY_MERGED",
+        survivorId: failure.survivorId,
+      });
+    case "survivor_merged":
+      return reply.status(409).send({
+        error: "The record to keep has itself been merged into another record",
+        code: "SURVIVOR_MERGED",
+        mergedIntoId: failure.mergedIntoId,
+      });
+  }
+}
 
 /**
  * The venue this actor works the People Book at: null means every venue (a
@@ -125,6 +155,25 @@ async function writeOrRefuse<T>(
 /** Two ids, the lower first: the order every transaction locks people in. */
 function ascending(a: string, b: string): readonly [string, string] {
   return a < b ? [a, b] : [b, a];
+}
+
+type PairLock =
+  | { kind: "not_found" }
+  | { kind: "merged"; mergedIntoId: string }
+  | { kind: "live"; venueId: string; ids: readonly [string, string] };
+
+/** Locks two people, the lower id first, and needs both live at one venue. */
+async function lockPair(tx: PeopleTx, scopeVenueId: string | null, personId: string, otherPersonId: string): Promise<PairLock> {
+  const [first, second] = ascending(personId, otherPersonId);
+  const a = await lockPerson(tx, scopeVenueId, first);
+  if (a.state === "merged") return { kind: "merged", mergedIntoId: a.mergedIntoId };
+  if (a.state !== "live") return { kind: "not_found" };
+  const b = await lockPerson(tx, scopeVenueId, second);
+  if (b.state === "merged") return { kind: "merged", mergedIntoId: b.mergedIntoId };
+  // An unscoped (platform admin) lock finds people anywhere: the two must
+  // still be at one venue.
+  if (b.state !== "live" || b.row.venueId !== a.row.venueId) return { kind: "not_found" };
+  return { kind: "live", venueId: a.row.venueId, ids: [a.row.id, b.row.id] };
 }
 
 export async function peopleRoutes(
@@ -201,6 +250,7 @@ export async function peopleRoutes(
 
     const outcome = await db.transaction(async (tx) => {
       const lock = await lockPerson(tx, scope.venueId, params.data.personId);
+      if (lock.state === "merged") return { kind: "merged", mergedIntoId: lock.mergedIntoId } as const;
       if (lock.state !== "live") return { kind: "not_found" } as const;
       const owner = patch.ownerUserId;
       if (typeof owner === "string" && !(await isCommercialMember(tx, lock.row.venueId, owner))) {
@@ -212,6 +262,7 @@ export async function peopleRoutes(
 
     switch (outcome.kind) {
       case "not_found": return reply.status(404).send(PERSON_NOT_FOUND);
+      case "merged": return reply.status(409).send(mergedPerson(outcome.mergedIntoId));
       case "owner_not_at_venue": return reply.status(422).send(OWNER_NOT_AT_VENUE);
       case "stale":
         return reply.status(409).send({
@@ -311,6 +362,7 @@ export async function peopleRoutes(
 
     const outcome = await db.transaction(async (tx) => {
       const lock = await lockPerson(tx, scope.venueId, params.data.personId);
+      if (lock.state === "merged") return { kind: "merged", mergedIntoId: lock.mergedIntoId } as const;
       if (lock.state !== "live") return { kind: "not_found" } as const;
       await adoptLegacyMirror(tx, lock.row);
       const { created } = await upsertContactPoint(tx, lock.row, point);
@@ -318,6 +370,7 @@ export async function peopleRoutes(
     });
 
     if (outcome.kind === "not_found") return reply.status(404).send(PERSON_NOT_FOUND);
+    if (outcome.kind === "merged") return reply.status(409).send(mergedPerson(outcome.mergedIntoId));
     request.log.info(
       { event: outcome.created ? "people.contact_point_added" : "people.contact_point_already_held", personId: outcome.personId },
       "contact point saved",
@@ -331,9 +384,14 @@ export async function peopleRoutes(
     const params = PointParams.safeParse(request.params);
     if (!params.success) return reply.status(400).send(INVALID_ID);
 
-    type Outcome = { kind: "not_found" } | { kind: "point_not_found" } | { kind: "removed"; personId: string };
+    type Outcome =
+      | { kind: "not_found" }
+      | { kind: "merged"; mergedIntoId: string }
+      | { kind: "point_not_found" }
+      | { kind: "removed"; personId: string };
     const outcome = await writeOrRefuse<Outcome>(db, async (tx, refuse) => {
       const lock = await lockPerson(tx, scope.venueId, params.data.personId);
+      if (lock.state === "merged") return { kind: "merged", mergedIntoId: lock.mergedIntoId };
       if (lock.state !== "live") return { kind: "not_found" };
       await adoptLegacyMirror(tx, lock.row);
       const removed = await removeContactPoint(tx, lock.row.id, params.data.pointId);
@@ -341,6 +399,7 @@ export async function peopleRoutes(
     });
 
     if (outcome.kind === "not_found") return reply.status(404).send(PERSON_NOT_FOUND);
+    if (outcome.kind === "merged") return reply.status(409).send(mergedPerson(outcome.mergedIntoId));
     if (outcome.kind === "point_not_found") {
       return reply.status(404).send({ error: "Contact point not found", code: "NOT_FOUND" });
     }
@@ -359,10 +418,12 @@ export async function peopleRoutes(
 
     type Outcome =
       | { kind: "not_found" }
+      | { kind: "merged"; mergedIntoId: string }
       | { kind: "organisation_not_found" }
       | { kind: "set"; personId: string; profile: PersonProfile };
     const outcome = await writeOrRefuse<Outcome>(db, async (tx, refuse) => {
       const lock = await lockPerson(tx, scope.venueId, params.data.personId);
+      if (lock.state === "merged") return { kind: "merged", mergedIntoId: lock.mergedIntoId };
       if (lock.state !== "live") return { kind: "not_found" };
       await adoptLegacyMirror(tx, lock.row);
       if (await setPersonMemberships(tx, lock.row, memberships) === "organisation_not_found") {
@@ -372,6 +433,7 @@ export async function peopleRoutes(
     });
 
     if (outcome.kind === "not_found") return reply.status(404).send(PERSON_NOT_FOUND);
+    if (outcome.kind === "merged") return reply.status(409).send(mergedPerson(outcome.mergedIntoId));
     if (outcome.kind === "organisation_not_found") {
       return reply.status(404).send({ error: "Organisation not found", code: "ORGANISATION_NOT_FOUND" });
     }
@@ -396,6 +458,46 @@ export async function peopleRoutes(
     return { data: await duplicateSuggestions(db, person.venueId, person.id) };
   });
 
+  // :personId is the record that closes; survivorId the one that stays.
+  server.get("/:personId/merge-preview", { preHandler: [authenticate] }, async (request, reply) => {
+    const scope = peopleScope(request.user);
+    if (!scope.ok) return reply.status(403).send(FORBIDDEN);
+    const params = PersonParams.safeParse(request.params);
+    if (!params.success) return reply.status(400).send(INVALID_ID);
+    const query = MergeRequestSchema.safeParse(request.query);
+    if (!query.success) return invalidBody(reply, query.error);
+
+    // One snapshot, so every count is of the records as they stood at one moment.
+    const answer = await db.transaction(
+      (tx) => previewPersonMerge(tx, scope.venueId, params.data.personId, query.data.survivorId),
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    if (isMergeFailure(answer)) return refuseMerge(reply, answer);
+    return { data: answer };
+  });
+
+  server.post("/:personId/merge", { preHandler: [authenticate] }, async (request, reply) => {
+    const scope = peopleScope(request.user);
+    if (!scope.ok) return reply.status(403).send(FORBIDDEN);
+    const params = PersonParams.safeParse(request.params);
+    if (!params.success) return reply.status(400).send(INVALID_ID);
+    const body = MergeRequestSchema.safeParse(request.body);
+    if (!body.success) return invalidBody(reply, body.error);
+
+    const answer = await applyPersonMerge(db, scope.venueId, params.data.personId, body.data.survivorId, request.user.id);
+    if (isMergeFailure(answer)) return refuseMerge(reply, answer);
+    request.log.info(
+      {
+        event: answer.replayed ? "people.merge_replayed" : "people.merged",
+        mergeId: answer.mergeId,
+        survivorId: answer.survivorId,
+        mergedId: answer.mergedId,
+      },
+      answer.replayed ? "merge answered again" : "people merged",
+    );
+    return reply.status(answer.replayed ? 200 : 201).send({ data: answer });
+  });
+
   server.post("/:personId/kept-apart", { preHandler: [authenticate] }, async (request, reply) => {
     const scope = peopleScope(request.user);
     if (!scope.ok) return reply.status(403).send(FORBIDDEN);
@@ -411,17 +513,13 @@ export async function peopleRoutes(
     const actorId = request.user.id;
 
     const outcome = await db.transaction(async (tx) => {
-      const [first, second] = ascending(personId, otherPersonId);
-      const a = await lockPerson(tx, scope.venueId, first);
-      if (a.state !== "live") return { kind: "not_found" } as const;
-      const b = await lockPerson(tx, scope.venueId, second);
-      // An unscoped (platform admin) lock finds people anywhere: the two must
-      // still be at one venue.
-      if (b.state !== "live" || b.row.venueId !== a.row.venueId) return { kind: "not_found" } as const;
-      return { kind: "kept", ...(await keepApart(tx, a.row.venueId, [a.row.id, b.row.id], actorId)) } as const;
+      const pair = await lockPair(tx, scope.venueId, personId, otherPersonId);
+      if (pair.kind !== "live") return pair;
+      return { kind: "kept", ...(await keepApart(tx, pair.venueId, pair.ids, actorId)) } as const;
     });
 
     if (outcome.kind === "not_found") return reply.status(404).send(PERSON_NOT_FOUND);
+    if (outcome.kind === "merged") return reply.status(409).send(mergedPerson(outcome.mergedIntoId));
     request.log.info(
       { event: outcome.created ? "people.kept_apart" : "people.kept_apart_already", personId, otherPersonId },
       "people kept apart",
@@ -441,17 +539,15 @@ export async function peopleRoutes(
     const actorId = request.user.id;
 
     const outcome = await db.transaction(async (tx) => {
-      const [first, second] = ascending(personId, otherPersonId);
-      const a = await lockPerson(tx, scope.venueId, first);
-      if (a.state !== "live") return { kind: "not_found" } as const;
-      const b = await lockPerson(tx, scope.venueId, second);
-      if (b.state !== "live" || b.row.venueId !== a.row.venueId) return { kind: "not_found" } as const;
-      return await withdrawKeptApart(tx, a.row.venueId, [a.row.id, b.row.id], actorId)
+      const pair = await lockPair(tx, scope.venueId, personId, otherPersonId);
+      if (pair.kind !== "live") return pair;
+      return await withdrawKeptApart(tx, pair.venueId, pair.ids, actorId)
         ? { kind: "withdrawn" } as const
         : { kind: "not_marked" } as const;
     });
 
     if (outcome.kind === "not_found") return reply.status(404).send(PERSON_NOT_FOUND);
+    if (outcome.kind === "merged") return reply.status(409).send(mergedPerson(outcome.mergedIntoId));
     if (outcome.kind === "not_marked") return reply.status(404).send(notMarked);
     request.log.info({ event: "people.kept_apart_withdrawn", personId, otherPersonId }, "kept-apart mark withdrawn");
     return reply.status(204).send();

@@ -26,14 +26,28 @@ const ROUTES = [
   ["POST", `/people/${ID}/kept-apart`], ["DELETE", `/people/${ID}/kept-apart/${ID2}`],
   ["POST", "/people/organisations"], ["GET", `/people/organisations/${ID}`], ["PATCH", `/people/organisations/${ID}`],
   ["GET", "/people/search?q=murray"],
-] as const; // Tasks 11 and 12 append theirs
+  ["GET", `/people/${ID}/merge-preview?survivorId=${ID2}`], ["POST", `/people/${ID}/merge`],
+] as const; // Task 12 appends its own
 
 type Method = typeof ROUTES[number][0];
+
+// One user per role and venue: the server's rate limit (100 a minute) keys a
+// signed-in request by its user, and one shared id would spend every case in
+// this file from a single budget.
+const userIds = new Map<string, string>();
+function userIdFor(role: string, venueId: string | null): string {
+  const key = `${role}:${venueId ?? "none"}`;
+  const known = userIds.get(key);
+  if (known !== undefined) return known;
+  const id = `00000000-0000-4000-8000-${(0x101 + userIds.size).toString(16).padStart(12, "0")}`;
+  userIds.set(key, id);
+  return id;
+}
 
 function bearer(role: string, venueId: string | null): { authorization: string } {
   return {
     authorization: `Bearer ${JSON.stringify({
-      id: "00000000-0000-4000-8000-000000000101",
+      id: userIdFor(role, venueId),
       email: `${role}-a@example.test`,
       role,
       venueId,
@@ -101,6 +115,12 @@ describe("the People Book's door", () => {
       ["GET", "/people/search?q=m"],
       ["GET", "/people/search"],
       ["GET", `/people/search?q=${"m".repeat(201)}`],
+      ["GET", `/people/not-a-uuid/merge-preview?survivorId=${ID2}`],
+      ["GET", `/people/${ID}/merge-preview`],
+      ["GET", `/people/${ID}/merge-preview?survivorId=x`],
+      ["POST", `/people/not-a-uuid/merge`, { survivorId: ID2 }],
+      ["POST", `/people/${ID}/merge`, {}],
+      ["POST", `/people/${ID}/merge`, { survivorId: "x" }],
     ];
     for (const [method, url, payload] of cases) {
       const res = await server.inject(request(method, url, staff, payload));
