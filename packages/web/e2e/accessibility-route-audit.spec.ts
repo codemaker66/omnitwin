@@ -13,6 +13,7 @@ import {
   watchPageProblems,
   type AccessibilityAuditResult,
   type AccessibilityViewport,
+  type ContrastTarget,
 } from "./support/accessibility-audit.js";
 
 const API = "http://localhost:3001";
@@ -36,6 +37,9 @@ interface RouteSpec {
   readonly readyText: string | RegExp;
   readonly readyRole?: "heading";
   readonly seedRole?: SeedRole;
+  /** "client" holds body text to 7:1 (goals/01): every page a client, couple
+   *  or supplier reads. Staff tools stay at the AA floor. */
+  readonly contrastTarget?: ContrastTarget;
   readonly mockRoutes: (page: Page) => Promise<void>;
 }
 
@@ -356,6 +360,7 @@ async function runRouteAudit(page: Page, spec: RouteSpec, viewport: Accessibilit
     problems,
     viewport,
     maxFocusSteps: viewport.name === "mobile" ? 14 : 18,
+    contrastTarget: spec.contrastTarget ?? "standard",
   });
   auditResults.push(result);
   expectAccessibilityAuditClean(result);
@@ -366,6 +371,7 @@ async function runRouteAudit(page: Page, spec: RouteSpec, viewport: Accessibilit
 const routeSpecs: readonly RouteSpec[] = [
   {
     routeName: "public rooms home",
+    contrastTarget: "client",
     path: "/",
     readyText: "Grand Hall",
     readyRole: "heading",
@@ -376,6 +382,7 @@ const routeSpecs: readonly RouteSpec[] = [
     // /landing now forwards to the front door, which is what a stale link
     // reaches and what this audits. The name is kept: it names the address.
     routeName: "the rite (previous landing)",
+    contrastTarget: "client",
     path: "/landing",
     readyText: "Grand Hall",
     readyRole: "heading",
@@ -410,24 +417,28 @@ const routeSpecs: readonly RouteSpec[] = [
   },
   {
     routeName: "proposal share",
+    contrastTarget: "client",
     path: `/proposal-share/${PROPOSAL_TOKEN}`,
     readyText: "Reception Room wedding proposal",
     mockRoutes: mockProposalRoutes,
   },
   {
     routeName: "proposal share unavailable",
+    contrastTarget: "client",
     path: `/proposal-share/${PROPOSAL_TOKEN}-missing`,
     readyText: "This proposal link isn't available",
     mockRoutes: mockProposalUnavailableRoutes,
   },
   {
     routeName: "supplier portal",
+    contrastTarget: "client",
     path: `/supplier-share/${SUPPLIER_TOKEN}`,
     readyText: "Florist coordination handoff",
     mockRoutes: mockSupplierRoutes,
   },
   {
     routeName: "supplier portal unavailable",
+    contrastTarget: "client",
     path: `/supplier-share/${SUPPLIER_TOKEN}-missing`,
     readyText: "This link no longer opens",
     mockRoutes: mockSupplierUnavailableRoutes,
@@ -436,6 +447,7 @@ const routeSpecs: readonly RouteSpec[] = [
     // T-616 retired the room showcase: its address forwards to the front
     // door, whose rail and capacity table now carry the Reception Room.
     routeName: "public Reception Room",
+    contrastTarget: "client",
     path: "/venues/trades-hall/rooms/reception-room",
     readyText: "Grand Hall",
     readyRole: "heading",
@@ -445,6 +457,7 @@ const routeSpecs: readonly RouteSpec[] = [
     // A room address that does not exist meets the designed not-found page
     // (T-616) rather than silently becoming the homepage.
     routeName: "public room unavailable",
+    contrastTarget: "client",
     path: "/rooms/not-a-room",
     readyText: "There is no page at this address",
     readyRole: "heading",

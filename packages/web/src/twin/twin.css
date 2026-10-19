@@ -242,7 +242,10 @@
   position: absolute;
   top: calc(18px + env(safe-area-inset-top));
   left: calc(18px + env(safe-area-inset-left));
-  z-index: 2;
+  /* Above the room dossier (z 3), whose top edge sits where the label's
+   * status pill and its "could not load" retry hang: both are brief, and
+   * both must be seen while they last. */
+  z-index: 4;
   padding: 7px 14px;
   border: 1px solid var(--rule);
   border-radius: 999px;
@@ -290,6 +293,26 @@
 }
 
 .vv-twin-load-shimmer--out {
+  opacity: 0;
+}
+
+/* The opening wait, centred on the black stage until the first panorama is
+ * up (TwinViewer). The shared Activity capsule in the tour's own ink; above
+ * First Light's wash, beside the HUD, never in the way of a pointer. */
+.vv-twin-opening {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--ink);
+  font-size: 15px;
+  pointer-events: none;
+  transition: opacity 400ms var(--settle);
+}
+
+.vv-twin-opening--out {
   opacity: 0;
 }
 
@@ -935,8 +958,21 @@
     /* 38vw keeps clear air between the label and the mode control. */
     max-width: 38vw;
     white-space: nowrap;
+  }
+
+  /* The text truncates, not the pill: an overflow on the pill clipped the
+   * detail pill and the "could not load" retry hung beneath it, so a phone
+   * never saw either. The venue is the page itself, so the narrow label
+   * spends its width on where the visitor is standing. */
+  .vv-twin-node-label-text {
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+
+  .vv-twin-node-label-venue {
+    display: none;
   }
 
   .vv-twin-mode {
@@ -1061,7 +1097,8 @@
     animation: none;
   }
 
-  .vv-twin-load-shimmer {
+  .vv-twin-load-shimmer,
+  .vv-twin-opening {
     transition: none;
   }
 
