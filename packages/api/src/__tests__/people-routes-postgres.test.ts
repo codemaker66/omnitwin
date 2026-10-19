@@ -343,6 +343,111 @@ describe.skipIf(PLATFORM_TARGET === undefined)("the People Book's people routes 
     expect((await mirror(created.person.id)).client_account_id).toBeNull();
   });
 
+  /** A person as the older from-enquiry writer leaves them (crm.ts): the
+   *  mirror columns set, no points and no membership. */
+  async function legacyContact(input: { name: string; email: string | null; phone: string | null; clientAccountId: string | null }): Promise<string> {
+    const { rows } = await f.pool.query<{ id: string }>(
+      `INSERT INTO contacts (venue_id, client_account_id, name, email, phone, role_label)
+       VALUES ($1, $2, $3, $4, $5, 'Primary event contact') RETURNING id`,
+      [f.venueId, input.clientAccountId, input.name, input.email, input.phone],
+    );
+    const id = rows[0]?.id;
+    if (id === undefined) throw new Error("The legacy contact was not written");
+    return id;
+  }
+
+  async function heldRows(personId: string): Promise<{ points: number; memberships: number }> {
+    const { rows } = await f.pool.query<{ points: number; memberships: number }>(
+      `SELECT (SELECT count(*)::int FROM contact_points WHERE contact_id = $1) AS points,
+              (SELECT count(*)::int FROM account_memberships WHERE contact_id = $1) AS memberships`,
+      [personId],
+    );
+    const row = rows[0];
+    if (row === undefined) throw new Error("No counts");
+    return row;
+  }
+
+  it("keeps what an older writer left on a person when the book first writes to them", async () => {
+    const household = await f.addOrganisation({ name: "Legacy household" });
+    const id = await legacyContact({ name: "Morven Legacy", email: "Morven.Legacy@Example.TEST", phone: "+44 7700 900123", clientAccountId: household });
+
+    // A refused write leaves no trace, adopted rows included.
+    const refused = await del(`/people/${id}/contact-points/${randomUUID()}`);
+    expect(refused.statusCode, refused.body).toBe(404);
+    expect(await heldRows(id)).toEqual({ points: 0, memberships: 0 });
+
+    const res = await post(`/people/${id}/contact-points`, "staff", { kind: "phone", value: "0141 496 0123", label: "work" });
+    expect(res.statusCode, res.body).toBe(201);
+    const profile = live(res);
+    expect(profile.contactPoints.map((p) => [p.kind, p.value, p.displayValue, p.label, p.isPrimary])).toEqual([
+      ["email", "morven.legacy@example.test", "Morven.Legacy@Example.TEST", "other", true],
+      ["phone", "07700900123", "+44 7700 900123", "other", true],
+      ["phone", "01414960123", "0141 496 0123", "work", false],
+    ]);
+    expect(profile.memberships.map((m) => [m.organisation.id, m.roleLabel, m.isPrimary])).toEqual([
+      [household, "Primary event contact", true],
+    ]);
+    expect(profile.person).toMatchObject({ email: "Morven.Legacy@Example.TEST", phone: "+44 7700 900123", clientAccountId: household });
+    expect(await mirror(id)).toEqual({ email: "Morven.Legacy@Example.TEST", phone: "+44 7700 900123", client_account_id: household });
+  });
+
+  it("keeps a legacy email when the book first sets the person's organisations", async () => {
+    const household = await f.addOrganisation({ name: "Older household" });
+    const society = await f.addOrganisation({ name: "Newer society", kind: "organisation" });
+    const foreign = await f.addOrganisation({ name: "Elsewhere society", kind: "organisation", venueId: f.otherVenueId });
+    const id = await legacyContact({ name: "Euan Legacy", email: "euan.legacy@example.test", phone: "+44 7700 900124", clientAccountId: household });
+    const url = `/people/${id}/memberships`;
+
+    const refused = await put(url, "staff", { memberships: [{ organisationId: foreign }] });
+    expect(refused.statusCode, refused.body).toBe(404);
+    expect(refused.json()).toMatchObject({ code: "ORGANISATION_NOT_FOUND" });
+    expect(await heldRows(id)).toEqual({ points: 0, memberships: 0 });
+    expect(await mirror(id)).toEqual({ email: "euan.legacy@example.test", phone: "+44 7700 900124", client_account_id: household });
+
+    const res = await put(url, "staff", { memberships: [{ organisationId: society }] });
+    expect(res.statusCode, res.body).toBe(200);
+    const profile = live(res);
+    expect(profile.contactPoints.map((p) => [p.kind, p.value, p.isPrimary])).toEqual([
+      ["email", "euan.legacy@example.test", true],
+      ["phone", "07700900124", true],
+    ]);
+    expect(profile.memberships.map((m) => [m.organisation.id, m.isPrimary])).toEqual([[society, true]]);
+    expect(await mirror(id)).toEqual({ email: "euan.legacy@example.test", phone: "+44 7700 900124", client_account_id: society });
+  });
+
+  it("leaves an unusable legacy phone out, as the backfill does", async () => {
+    const id = await legacyContact({ name: "Isla Legacy", email: null, phone: "TBC", clientAccountId: null });
+    const res = await post(`/people/${id}/contact-points`, "staff", { kind: "email", value: "isla.legacy@example.test" });
+    expect(res.statusCode, res.body).toBe(201);
+    const profile = live(res);
+    expect(profile.contactPoints.map((p) => [p.kind, p.value])).toEqual([["email", "isla.legacy@example.test"]]);
+    expect(profile.person.phone).toBeNull();
+    expect(await mirror(id)).toEqual({ email: "isla.legacy@example.test", phone: null, client_account_id: null });
+  });
+
+  it("moves the primary off an organisation that is no longer live", async () => {
+    const closing = await f.addOrganisation({ name: "Closing club", kind: "organisation" });
+    const continuing = await f.addOrganisation({ name: "Continuing club", kind: "organisation" });
+    const absorbed = await f.addOrganisation({ name: "Absorbed club", kind: "organisation" });
+    const first = await f.addPerson({ name: "Fiona Kerr", organisations: [closing, continuing] });
+    const second = await f.addPerson({ name: "Ruaridh Kerr", organisations: [absorbed, continuing] });
+    await f.pool.query("UPDATE client_accounts SET deleted_at = now() WHERE id = $1", [closing]);
+    await f.pool.query("UPDATE client_accounts SET merged_into_id = $2, deleted_at = now() WHERE id = $1", [absorbed, continuing]);
+
+    for (const [id, gone, value] of [[first, closing, "fiona@kerr.example.test"], [second, absorbed, "ruaridh@kerr.example.test"]] as const) {
+      const res = await post(`/people/${id}/contact-points`, "staff", { kind: "email", value });
+      expect(res.statusCode, res.body).toBe(201);
+      const profile = live(res);
+      expect(profile.memberships.map((m) => [m.organisation.id, m.isPrimary])).toEqual([[continuing, true]]);
+      expect(profile.person.clientAccountId).toBe(continuing);
+      expect((await mirror(id)).client_account_id).toBe(continuing);
+      const { rows } = await f.pool.query<{ is_primary: boolean }>(
+        "SELECT is_primary FROM account_memberships WHERE contact_id = $1 AND client_account_id = $2", [id, gone],
+      );
+      expect(rows).toEqual([{ is_primary: false }]);
+    }
+  });
+
   it("keeps one point when the same new email is added twice at once", async () => {
     const created = await create("staff", { name: "Callum Reid" });
     const url = `/people/${created.person.id}/contact-points`;

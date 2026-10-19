@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, TransactionRollbackError } from "drizzle-orm";
 import { z } from "zod";
 import {
   ContactPointInputSchema,
@@ -14,6 +14,7 @@ import { contacts } from "../db/schema.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canManageCommercial } from "../utils/query.js";
 import {
+  adoptLegacyMirror,
   insertPerson,
   isCommercialMember,
   liveContact,
@@ -86,6 +87,27 @@ async function lockedProfile(tx: PeopleTx, person: { id: string; venueId: string
   const profile = await readPersonProfile(tx, person.venueId, person.id);
   if (profile === null) throw new Error("A locked live person could not be read back");
   return profile;
+}
+
+/**
+ * One write transaction whose refusals keep nothing: `work` either returns an
+ * answer, which commits, or calls `refuse(answer)`, which rolls back every row
+ * the transaction wrote (adopted legacy rows included) and returns that answer.
+ */
+async function writeOrRefuse<T>(
+  db: Database,
+  work: (tx: PeopleTx, refuse: (answer: T) => never) => Promise<T>,
+): Promise<T> {
+  const refusal: { answer: T | undefined } = { answer: undefined };
+  try {
+    return await db.transaction((tx) => work(tx, (answer: T): never => {
+      refusal.answer = answer;
+      return tx.rollback();
+    }));
+  } catch (error) {
+    if (error instanceof TransactionRollbackError && refusal.answer !== undefined) return refusal.answer;
+    throw error;
+  }
 }
 
 /** Two ids, the lower first: the order every transaction locks people in. */
@@ -193,6 +215,7 @@ export async function peopleRoutes(
     const outcome = await db.transaction(async (tx) => {
       const lock = await lockPerson(tx, scope.venueId, params.data.personId);
       if (lock.state !== "live") return { kind: "not_found" } as const;
+      await adoptLegacyMirror(tx, lock.row);
       const { created } = await upsertContactPoint(tx, lock.row, point);
       return { kind: "saved", created, personId: lock.row.id, profile: await lockedProfile(tx, lock.row) } as const;
     });
@@ -211,11 +234,13 @@ export async function peopleRoutes(
     const params = PointParams.safeParse(request.params);
     if (!params.success) return reply.status(400).send(INVALID_ID);
 
-    const outcome = await db.transaction(async (tx) => {
+    type Outcome = { kind: "not_found" } | { kind: "point_not_found" } | { kind: "removed"; personId: string };
+    const outcome = await writeOrRefuse<Outcome>(db, async (tx, refuse) => {
       const lock = await lockPerson(tx, scope.venueId, params.data.personId);
-      if (lock.state !== "live") return { kind: "not_found" } as const;
+      if (lock.state !== "live") return { kind: "not_found" };
+      await adoptLegacyMirror(tx, lock.row);
       const removed = await removeContactPoint(tx, lock.row.id, params.data.pointId);
-      return removed ? { kind: "removed", personId: lock.row.id } as const : { kind: "point_not_found" } as const;
+      return removed ? { kind: "removed", personId: lock.row.id } : refuse({ kind: "point_not_found" });
     });
 
     if (outcome.kind === "not_found") return reply.status(404).send(PERSON_NOT_FOUND);
@@ -235,13 +260,18 @@ export async function peopleRoutes(
     if (!body.success) return invalidBody(reply, body.error);
     const memberships = body.data;
 
-    const outcome = await db.transaction(async (tx) => {
+    type Outcome =
+      | { kind: "not_found" }
+      | { kind: "organisation_not_found" }
+      | { kind: "set"; personId: string; profile: PersonProfile };
+    const outcome = await writeOrRefuse<Outcome>(db, async (tx, refuse) => {
       const lock = await lockPerson(tx, scope.venueId, params.data.personId);
-      if (lock.state !== "live") return { kind: "not_found" } as const;
+      if (lock.state !== "live") return { kind: "not_found" };
+      await adoptLegacyMirror(tx, lock.row);
       if (await setPersonMemberships(tx, lock.row, memberships) === "organisation_not_found") {
-        return { kind: "organisation_not_found" } as const;
+        return refuse({ kind: "organisation_not_found" });
       }
-      return { kind: "set", personId: lock.row.id, profile: await lockedProfile(tx, lock.row) } as const;
+      return { kind: "set", personId: lock.row.id, profile: await lockedProfile(tx, lock.row) };
     });
 
     if (outcome.kind === "not_found") return reply.status(404).send(PERSON_NOT_FOUND);

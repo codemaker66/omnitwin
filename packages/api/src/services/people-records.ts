@@ -4,6 +4,7 @@ import {
   ClientAccountKindSchema,
   ContactPointKindSchema,
   ContactPointLabelSchema,
+  isUsablePhone,
   normaliseEmail,
   normalisePhone,
   type ContactPoint,
@@ -308,12 +309,93 @@ export async function setPersonMemberships(
   return "ok";
 }
 
+async function holdsKind(tx: PeopleTx, person: { id: string; venueId: string }, kind: ContactPointKind): Promise<boolean> {
+  const [point] = await tx.select({ id: contactPoints.id }).from(contactPoints)
+    .where(and(eq(contactPoints.contactId, person.id), eq(contactPoints.venueId, person.venueId), eq(contactPoints.kind, kind)))
+    .limit(1);
+  return point !== undefined;
+}
+
+/**
+ * Brings what an older writer left on a person into the book before it is
+ * rebuilt from points and memberships. Today's crm.ts from-enquiry writer,
+ * and the rows written before 0096 was deployed, set contacts.email, phone
+ * and client_account_id with no points and no membership; refreshing such a
+ * person would set those columns to NULL and lose them. So:
+ * - an email with no email point becomes the primary email point (none when
+ *   it normalises to nothing);
+ * - a phone with no phone point becomes the primary phone point, only when it
+ *   is usable (the backfill's rule; an unusable phone is left to the refresh,
+ *   which clears it, as the backfill does);
+ * - an organisation with no membership, live at the person's venue, becomes
+ *   the primary membership, with the person's role label.
+ * Otherwise it does nothing. It never runs inside refreshContactMirror, where
+ * removing the last email would adopt it straight back.
+ *
+ * Every write path that will refresh a person's mirror calls this first, on each person it has locked.
+ */
+export async function adoptLegacyMirror(tx: PeopleTx, row: ContactRow): Promise<void> {
+  const person = { id: row.id, venueId: row.venueId };
+
+  const email = normaliseEmail(row.email);
+  if (row.email !== null && email !== null && !(await holdsKind(tx, person, "email"))) {
+    await tx.insert(contactPoints).values({
+      venueId: person.venueId,
+      contactId: person.id,
+      kind: "email",
+      value: email,
+      displayValue: row.email.trim(),
+      label: "other",
+      isPrimary: true,
+      createdAt: sql`clock_timestamp()`,
+      updatedAt: sql`clock_timestamp()`,
+    }).onConflictDoNothing();
+  }
+
+  const phone = row.phone !== null && isUsablePhone(row.phone) ? normalisePhone(row.phone) : null;
+  if (row.phone !== null && phone !== null && !(await holdsKind(tx, person, "phone"))) {
+    await tx.insert(contactPoints).values({
+      venueId: person.venueId,
+      contactId: person.id,
+      kind: "phone",
+      value: phone,
+      displayValue: row.phone.trim(),
+      label: "other",
+      isPrimary: true,
+      createdAt: sql`clock_timestamp()`,
+      updatedAt: sql`clock_timestamp()`,
+    }).onConflictDoNothing();
+  }
+
+  if (row.clientAccountId !== null) {
+    const [membership] = await tx.select({ id: accountMemberships.id }).from(accountMemberships)
+      .where(and(eq(accountMemberships.contactId, person.id), eq(accountMemberships.venueId, person.venueId)))
+      .limit(1);
+    if (membership !== undefined) return;
+    const [account] = await tx.select({ id: clientAccounts.id }).from(clientAccounts)
+      .where(and(eq(clientAccounts.id, row.clientAccountId), eq(clientAccounts.venueId, person.venueId), liveAccount()))
+      .limit(1);
+    if (account === undefined) return;
+    await tx.insert(accountMemberships).values({
+      venueId: person.venueId,
+      contactId: person.id,
+      clientAccountId: account.id,
+      roleLabel: row.roleLabel,
+      isPrimary: true,
+      createdAt: sql`clock_timestamp()`,
+      updatedAt: sql`clock_timestamp()`,
+    }).onConflictDoNothing();
+  }
+}
+
 /**
  * Rewrites the person's mirrors from their primaries. A kind of point with no
- * primary has its oldest point (created_at, then id) made primary, and so do
- * memberships, among those whose organisation is live. Then contacts.email,
- * contacts.phone and contacts.client_account_id are set from the primaries,
- * and updated_at moves on.
+ * primary has its oldest point (created_at, then id) made primary. A primary
+ * membership whose organisation is no longer live (deleted or merged) stops
+ * being primary, and when no membership is primary the oldest one whose
+ * organisation is live is made primary. Then contacts.email, contacts.phone
+ * and contacts.client_account_id are set from the primaries (so the
+ * organisation mirrored is always a live one), and updated_at moves on.
  */
 export async function refreshContactMirror(tx: PeopleConn, personId: string): Promise<void> {
   await tx.execute(sql`
@@ -326,6 +408,13 @@ export async function refreshContactMirror(tx: PeopleConn, personId: string): Pr
         )
       ORDER BY p.kind, p.created_at, p.id
     )
+  `);
+  await tx.execute(sql`
+    UPDATE account_memberships m SET is_primary = false, updated_at = clock_timestamp()
+    FROM client_accounts
+    WHERE m.contact_id = ${personId} AND m.is_primary
+      AND client_accounts.id = m.client_account_id AND client_accounts.venue_id = m.venue_id
+      AND NOT (${liveAccount()})
   `);
   await tx.execute(sql`
     UPDATE account_memberships SET is_primary = true, updated_at = clock_timestamp()
