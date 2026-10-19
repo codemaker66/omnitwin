@@ -94,14 +94,15 @@ describe("client surfaces hold 7:1", () => {
     expect(contrast(token(HOUSE, "--house-ink-1"), token(HOUSE, "--house-plane"))).toBeGreaterThanOrEqual(7);
   });
 
-  it("the supplier pack's muted ink and copper labels on its panels", () => {
-    const muted = token(SUPPLIER, "--supplier-muted");
-    const label = token(SUPPLIER, "--supplier-gold-text");
-    for (const ground of ["--supplier-bg", "--supplier-panel"]) {
-      expect(contrast(muted, token(SUPPLIER, ground)), `muted on ${ground}`).toBeGreaterThanOrEqual(7);
-      expect(contrast(label, token(SUPPLIER, ground)), `label on ${ground}`).toBeGreaterThanOrEqual(7);
+  it("the supplier's page: the house inks on its paper", () => {
+    // The dark pack measured above was redesigned (PR #106, "A door for
+    // everyone outside"): ivory paper and the house inks replace its supplier
+    // tokens, so the 7:1 rule is held on the tokens the page now uses.
+    expect(rule(SUPPLIER, ".supplier-pass")).toContain("color: var(--house-ink-1)");
+    expect(rule(SUPPLIER, ".supplier-pass__sheet")).toContain("background: var(--house-paper)");
+    for (const ink of ["--house-ink-1", "--house-ink-2"]) {
+      expect(contrast(token(HOUSE, ink), token(HOUSE, "--house-paper")), `${ink} on paper`).toBeGreaterThanOrEqual(7);
     }
-    expect(rule(SUPPLIER, ".supplier-portal__label")).toContain("color: var(--supplier-gold-text)");
   });
 });
 

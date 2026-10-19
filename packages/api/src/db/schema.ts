@@ -672,6 +672,42 @@ export const configurationSheetSnapshots = pgTable("configuration_sheet_snapshot
 ]);
 
 // ---------------------------------------------------------------------------
+// 5e. remembered_dietary_notes — "ask once, then remember" (migration 0094)
+//
+// A client who ticks "Remember these for our next event?" beside a layout's
+// allergy note keeps that note with their own account, one per venue, and
+// their next layout there is filled in from it. Each row is also the consent
+// record: who (user_id), when (consented_at) and the exact words beside the
+// box (consent_wording). Removing the note — by the client, by the unused
+// period, or because the wording changed and the client agreed again —
+// clears the note and keeps the record, so the venue can show what was
+// agreed and when it ended without still holding the health information.
+// Only the owner reads or removes it (routes/dietary-memory.ts).
+// ---------------------------------------------------------------------------
+
+export const rememberedDietaryNotes = pgTable("remembered_dietary_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  /** The note, exactly as the layout carried it. Null once removed. */
+  note: text("note"),
+  consentWording: text("consent_wording").notNull(),
+  consentedAt: timestamp("consented_at", { withTimezone: true }).defaultNow().notNull(),
+  /** The layout the note was last saved from. */
+  sourceConfigurationId: uuid("source_configuration_id").references(() => configurations.id, { onDelete: "set null" }),
+  /** When the note was last saved with a layout: the unused period runs from here. */
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+  removedBy: varchar("removed_by", { length: 20 }),
+}, (table) => [
+  uniqueIndex("remembered_dietary_notes_one_per_venue").on(table.userId, table.venueId).where(sql`${table.removedAt} IS NULL`),
+  index("remembered_dietary_notes_source_configuration_idx").on(table.sourceConfigurationId),
+  check("remembered_dietary_notes_note_length", sql`${table.note} IS NULL OR char_length(${table.note}) BETWEEN 1 AND 1000`),
+  check("remembered_dietary_notes_removal", sql`(${table.removedAt} IS NULL AND ${table.note} IS NOT NULL AND ${table.removedBy} IS NULL)
+    OR (${table.removedAt} IS NOT NULL AND ${table.note} IS NULL AND ${table.removedBy} IN ('client', 'retention', 'reworded'))`),
+]);
+
+// ---------------------------------------------------------------------------
 // 6. placed_objects
 // ---------------------------------------------------------------------------
 
@@ -1789,12 +1825,17 @@ export const supplierInstructions = pgTable("supplier_instructions", {
 // These rows are capability-shareable extracts from frozen ops handoff packs.
 // Public supplier views resolve through hashed bearer tokens and expose only
 // supplier-scoped instructions, contact fields, and source provenance.
+//
+// What a supplier was told and what they confirmed is kept by the database
+// (0095): a pass RESTRICTs deleting its handoff pack, and an acknowledgement
+// RESTRICTs deleting its pass, so no cascade from a configuration, snapshot
+// or handoff pack can erase them. Passes are withdrawn, never deleted.
 // ---------------------------------------------------------------------------
 
 export const supplierCoordinationPacks = pgTable("supplier_coordination_packs", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
-  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id, { onDelete: "cascade" }),
+  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id, { onDelete: "restrict" }),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
   supplierId: uuid("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
   title: varchar("title", { length: 200 }).notNull(),
@@ -1852,7 +1893,7 @@ export const supplierCoordinationShareTokens = pgTable("supplier_coordination_sh
 
 export const supplierAcknowledgements = pgTable("supplier_acknowledgements", {
   id: uuid("id").primaryKey().defaultRandom(),
-  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "cascade" }),
+  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "restrict" }),
   shareTokenId: uuid("share_token_id").references(() => supplierCoordinationShareTokens.id, { onDelete: "set null" }),
   status: varchar("status", { length: 30 }).notNull().default("acknowledged"),
   acknowledgedByName: varchar("acknowledged_by_name", { length: 160 }),
