@@ -92,6 +92,7 @@ import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
+import { requestLogSerializer } from "./observability/redact.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
 import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
@@ -146,11 +147,18 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // edge overwrites the header, so the forgery buys nothing.
   // ---------------------------------------------------------------------------
   const server = Fastify({
+    // `serializers.req` replaces Fastify's default request serializer so the
+    // query string (a client's name, email or phone on the search routes)
+    // never reaches the log: the url is logged as "/people/search?[redacted]".
     logger: isDev
-      ? { level: "info", transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } } }
+      ? {
+          level: "info",
+          serializers: { req: requestLogSerializer },
+          transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } },
+        }
       : isTest
         ? false
-        : { level: "info" },
+        : { level: "info", serializers: { req: requestLogSerializer } },
     bodyLimit: 2_000_000,
     connectionTimeout: 30_000,
     requestTimeout: 60_000,

@@ -1,5 +1,6 @@
 import type { FastifyRequest } from "fastify";
 import type { Env } from "../env.js";
+import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Sentry — error tracking + tracing for Fastify
@@ -11,8 +12,10 @@ import type { Env } from "../env.js";
 //   2. Init BEFORE Fastify routes register so the instrumentation
 //      patches the HTTP layer before any handler runs.
 //   3. Scrub PII — we never send `request.user.email` or planner
-//      notes to Sentry. The beforeSend hook strips request bodies
-//      and query/path params that might carry sensitive values.
+//      notes to Sentry. The beforeSend hook strips request bodies;
+//      query strings are scrubbed everywhere (error events,
+//      breadcrumbs, transactions and their spans), because the search
+//      routes carry a name, email or phone in `?q=`.
 // ---------------------------------------------------------------------------
 
 /**
@@ -33,19 +36,13 @@ export async function initSentry(env: Env): Promise<void> {
 
     // Redact anything that could carry PII before the event leaves
     // the process. Sentry's default `sendDefaultPii` is false but we
-    // go further and actively scrub request bodies + headers, since
-    // our routes include planner notes and email addresses.
-    beforeSend(event) {
-      if (event.request !== undefined) {
-        event.request.data = undefined;
-        event.request.query_string = undefined;
-        if (event.request.headers !== undefined) {
-          delete event.request.headers["authorization"];
-          delete event.request.headers["cookie"];
-        }
-      }
-      return event;
-    },
+    // go further and actively scrub request bodies + headers + query
+    // strings, since our routes include planner notes and email
+    // addresses, and the search routes carry a name, email or phone in
+    // `?q=`. One scrubber per hook; see `./redact.ts`.
+    beforeSend: scrubErrorEvent,
+    beforeSendTransaction: scrubTransaction,
+    beforeBreadcrumb: scrubBreadcrumb,
   });
 }
 
