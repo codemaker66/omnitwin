@@ -6,6 +6,7 @@ import {
   CreateOrganisationSchema,
   CreatePersonSchema,
   KeepApartRequestSchema,
+  PeopleSearchQuerySchema,
   SetMembershipsSchema,
   UpdateOrganisationSchema,
   UpdatePersonSchema,
@@ -35,6 +36,7 @@ import {
   readOrganisationProfile,
   updateOrganisationFields,
 } from "../services/people-organisations.js";
+import { searchPeople } from "../services/people-search.js";
 
 // ---------------------------------------------------------------------------
 // The People Book's only door (T-665): /people.
@@ -161,6 +163,15 @@ export async function peopleRoutes(
     if (outcome.kind === "owner_not_at_venue") return reply.status(422).send(OWNER_NOT_AT_VENUE);
     request.log.info({ event: "people.created", personId: outcome.personId }, "person created");
     return reply.status(201).send({ data: outcome.profile });
+  });
+
+  // `/search` is a static path, so it wins over `/:personId` in the router.
+  server.get("/search", { preHandler: [authenticate] }, async (request, reply) => {
+    const scope = peopleScope(request.user);
+    if (!scope.ok) return reply.status(403).send(FORBIDDEN);
+    const query = PeopleSearchQuerySchema.safeParse(request.query);
+    if (!query.success) return invalidBody(reply, query.error);
+    return { data: await searchPeople(db, query.data.q, scope.venueId) };
   });
 
   server.get("/:personId", { preHandler: [authenticate] }, async (request, reply) => {

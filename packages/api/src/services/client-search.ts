@@ -44,14 +44,14 @@ export function containsPattern(query: string): string {
   return `%${query.replace(/[\\%_]/gu, (character) => `\\${character}`)}%`;
 }
 
-interface Matcher {
+export interface Matcher {
   /** True when any of the columns matches. */
   readonly where: (...columns: readonly (AnyPgColumn | SQL)[]) => SQL;
   /** How well the best of the columns matches, for ordering (1 for a substring). */
   readonly rank: (...columns: readonly (AnyPgColumn | SQL)[]) => SQL<number>;
 }
 
-function matcher(query: string): Matcher {
+export function matcher(query: string): Matcher {
   const pattern = containsPattern(query);
   const lowered = query.toLowerCase();
   const fuzzy = query.length >= FUZZY_MIN_LENGTH;

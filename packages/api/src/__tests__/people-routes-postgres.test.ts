@@ -5,8 +5,10 @@ import {
   DuplicateSuggestionSchema,
   KeptApartMarkSchema,
   OrganisationProfileSchema,
+  PeopleSearchResultsSchema,
   PersonProfileSchema,
   type OrganisationProfile,
+  type PeopleSearchResults,
   type PersonProfile,
 } from "@omnitwin/types";
 import { peopleRoutes } from "../routes/people.js";
@@ -713,5 +715,141 @@ describe.skipIf(PLATFORM_TARGET === undefined)("the People Book's people routes 
     const edited = await patch(`/people/organisations/${created.organisation.id}`, "sales", { notes: "Meets on the first Tuesday" });
     expect(edited.statusCode, edited.body).toBe(200);
     expect(organisation(edited).organisation.notes).toBe("Meets on the first Tuesday");
+  });
+});
+
+// Search has its own venues: the book above has already made Murrays of its own.
+describe.skipIf(PLATFORM_TARGET === undefined)("the People Book's search on the migrated disposable database", () => {
+  let f: PeopleFixture;
+  let aileen: string;
+  let household: string;
+  beforeAll(async () => {
+    f = await openPeopleFixture(async (server, db) => { await server.register(peopleRoutes, { db, prefix: "/people" }); });
+    household = await f.addOrganisation({ name: "Murray household" });
+    aileen = await f.addPerson({
+      name: "Aileen Murray", emails: ["aileen.murray@example.test"], phones: ["07700 900123"], organisations: [household],
+    });
+  }, 120_000);
+  afterAll(async () => { await f?.close(); });
+
+  function search(q: string, who: PeopleFixtureUser = "staff"): Promise<LightMyRequestResponse> {
+    return f.server.inject({ method: "GET", url: `/people/search?q=${encodeURIComponent(q)}`, headers: f.bearer(who) });
+  }
+
+  async function found(q: string, who: PeopleFixtureUser = "staff"): Promise<PeopleSearchResults> {
+    const res = await search(q, who);
+    expect(res.statusCode, res.body).toBe(200);
+    return PeopleSearchResultsSchema.parse(res.json().data);
+  }
+
+  it("finds a person by a name heard rather than read", async () => {
+    const results = await found("Aileen Murrey");
+    expect(results.people[0]).toEqual({
+      id: aileen, name: "Aileen Murray", organisationName: "Murray household",
+      email: "aileen.murray@example.test", phone: "07700 900123", matched: "name",
+    });
+  });
+
+  it("finds a person by part of their email", async () => {
+    for (const q of ["aileen.murray@", "AILEEN.MURRAY@Example"]) {
+      const results = await found(q);
+      expect(results.people.map((p) => [p.id, p.matched]), q).toEqual([[aileen, "email"]]);
+    }
+  });
+
+  it("finds a person from any shape of their phone", async () => {
+    for (const q of ["07700 900 123", "+44 7700 900123", "0044 7700 900123", "7700900123", "(07700) 900-123", "900123"]) {
+      const results = await found(q);
+      expect(results.people.map((p) => [p.id, p.matched]), q).toEqual([[aileen, "phone"]]);
+    }
+  });
+
+  it("does not take five digits for a phone number, or digits inside words", async () => {
+    expect((await found("90012")).people).toEqual([]);
+    expect((await found("aileen 900123")).people).toEqual([]);
+  });
+
+  it("finds a person by a second email or phone and shows the mirrors", async () => {
+    const ruaridh = await f.addPerson({
+      name: "Ruaridh Kerr",
+      emails: ["ruaridh.main@example.test", "r.kerr.second@example.test"],
+      phones: ["0141 496 0123", "0141 496 0456"],
+    });
+    for (const [q, matched] of [["r.kerr.second", "email"], ["0141 496 0456", "phone"]] as const) {
+      const results = await found(q);
+      expect(results.people, q).toEqual([{
+        id: ruaridh, name: "Ruaridh Kerr", organisationName: null,
+        email: "ruaridh.main@example.test", phone: "0141 496 0123", matched,
+      }]);
+    }
+  });
+
+  it("finds organisations and counts their live members", async () => {
+    const gone = await f.addPerson({ name: "Gone Murray", organisations: [household] });
+    await f.pool.query("UPDATE contacts SET deleted_at = now() WHERE id = $1", [gone]);
+    const closed = await f.addOrganisation({ name: "Murray household (closed)" });
+    await f.pool.query("UPDATE client_accounts SET deleted_at = now() WHERE id = $1", [closed]);
+
+    const results = await found("Murray");
+    expect(results.organisations).toEqual([{ id: household, name: "Murray household", kind: "household", memberCount: 1 }]);
+    expect(results.people.map((p) => p.id)).toEqual([aileen]);
+    const society = await f.addOrganisation({ name: "Kelvin Bridge Society", kind: "organisation" });
+    expect((await found("Kelvin Bridge")).organisations).toEqual([{ id: society, name: "Kelvin Bridge Society", kind: "organisation", memberCount: 0 }]);
+  });
+
+  it("finds only this venue's live people", async () => {
+    const merged = await f.addPerson({ name: "Aileen Murray", emails: ["aileen.murray.old@example.test"] });
+    await f.pool.query("UPDATE contacts SET merged_into_id = $2, deleted_at = now() WHERE id = $1", [merged, aileen]);
+    const deleted = await f.addPerson({ name: "Aileen Murray", emails: ["aileen.murray.deleted@example.test"] });
+    await f.pool.query("UPDATE contacts SET deleted_at = now() WHERE id = $1", [deleted]);
+    const erased = await f.addPerson({ name: "Aileen Murray", emails: ["aileen.murray.erased@example.test"] });
+    await f.pool.query("UPDATE contacts SET erased_at = now() WHERE id = $1", [erased]);
+    const elsewhere = await f.addPerson({
+      name: "Aileen Murray", venueId: f.otherVenueId, emails: ["aileen.murray@example.test"], phones: ["07700 900123"],
+    });
+    const elsewhereHousehold = await f.addOrganisation({ name: "Murray household", venueId: f.otherVenueId });
+
+    for (const q of ["Aileen Murray", "aileen.murray", "07700 900123"]) {
+      expect((await found(q)).people.map((p) => p.id), q).toEqual([aileen]);
+    }
+    expect((await found("Murray household")).organisations.map((o) => o.id)).toEqual([household]);
+
+    // A platform admin searches every venue.
+    const everywhere = await found("aileen.murray@example.test", "platformAdmin");
+    expect(everywhere.people.map((p) => p.id).sort()).toEqual([aileen, elsewhere].sort());
+    expect((await found("Murray household", "platformAdmin")).organisations.map((o) => o.id).sort())
+      .toEqual([household, elsewhereHousehold].sort());
+  });
+
+  it("takes the query's own wildcards literally", async () => {
+    for (const q of ["%%", "__", "\\\\", "%u%"]) {
+      expect(await found(q), q).toEqual({ people: [], organisations: [] });
+    }
+  });
+
+  it("returns at most twenty of each, the closest first", async () => {
+    for (let n = 0; n < 25; n += 1) {
+      const org = await f.addOrganisation({ name: `Limitville Club ${String(n).padStart(2, "0")}` });
+      await f.addPerson({ name: `Limitville Person ${String(n).padStart(2, "0")}`, organisations: [org] });
+    }
+    const results = await found("Limitville");
+    expect(results.people).toHaveLength(20);
+    expect(results.organisations).toHaveLength(20);
+    expect(results.people[0]?.name).toBe("Limitville Person 00");
+    expect(results.organisations[0]?.name).toBe("Limitville Club 00");
+  }, 60_000);
+
+  it("refuses a query under two characters, and lets sales and no one outside the team search", async () => {
+    for (const url of ["/people/search?q=m", "/people/search?q=%20m%20", "/people/search"]) {
+      const res = await f.server.inject({ method: "GET", url, headers: f.bearer("staff") });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.json(), url).toMatchObject({ code: "VALIDATION_ERROR" });
+    }
+    expect((await search("Aileen", "sales")).statusCode).toBe(200);
+    for (const who of ["hallkeeper", "planner", "caterer"] as const) {
+      const res = await search("Aileen", who);
+      expect(res.statusCode, who).toBe(403);
+      expect(res.json()).toMatchObject({ code: "FORBIDDEN" });
+    }
   });
 });
