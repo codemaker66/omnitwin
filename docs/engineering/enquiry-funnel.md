@@ -187,7 +187,14 @@ venue and computes both. Days to a decision on a hold read `booking_status_histo
   tables they point at, with a 5-second lock timeout: a busy moment fails the deploy
   cleanly rather than holding writes. It is additive for the release before it, and
   it must not ship in the same deploy as 0098 (the People Book), whose backfill holds
-  `enquiries` for about two seconds.
+  `enquiries` for about two seconds. 0098 went live first (`ced4a1bb`, 20 October).
+- In the journal 0100 follows 0098 (idx 97, its `when` above 0098's). The migrator
+  skips a migration whose `when` is not above the last one applied, so a migration
+  merged after 0100 needs a larger `when`, and a test database that ran an earlier
+  0100 before 0098 existed must be recreated, not migrated.
+- On `POST /public/enquiries`, attribution is written in the People Book's one
+  enquiry insert, and engagement inside the same transaction in a savepoint of its
+  own, as the person link is: a failure there is logged and the enquiry kept.
 - The new fields are optional in the shared schemas, so a web build and an API build
   of either side of 0100 parse each other. The widened enums (`viewing`,
   `viewing_overlap`, the two sources) reach an older reader only once a viewing has
