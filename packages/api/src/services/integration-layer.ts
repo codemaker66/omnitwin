@@ -33,8 +33,8 @@ export const MANAGED_EMAIL_TEMPLATE_SEEDS: readonly ManagedEmailTemplateSeed[] =
   {
     templateKey: "enquiry_approved",
     label: "Enquiry approved",
-    subjectTemplate: "Your enquiry for {{spaceName}} has been approved",
-    bodyTemplate: "Planner/client update prepared by the venue team. Final arrangements remain with venue staff.",
+    subjectTemplate: "Your enquiry for {{spaceName}}: next steps",
+    bodyTemplate: "Planner/client update prepared by the venue team. Says plainly that it is not yet a booking: nothing is booked until the venue confirms it in writing.",
   },
   {
     templateKey: "configuration_submitted",

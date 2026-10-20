@@ -11,6 +11,7 @@ import {
   isProposalEditable,
   ShortCodeSchema,
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
+  RecordProposalEngagementSchema,
   type EventPlanAudienceRole,
   type EventPlanChangeSurface,
   type ProposalCommentAuthorType,
@@ -40,7 +41,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canManageCommercial, roleReadsInternalEvents } from "../utils/query.js";
+import { canManageCommercial, isVenueCommercialMember, roleReadsInternalEvents } from "../utils/query.js";
 import {
   PROPOSAL_STATES,
   canTransitionProposal,
@@ -54,6 +55,13 @@ import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } fro
 import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
 import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
+import {
+  countProposalView,
+  enquiryAnsweredByProposal,
+  funnelBrowserSignalsEnabled,
+  recordProposalEngagement,
+  stampFirstResponse,
+} from "../services/enquiry-funnel.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -861,6 +869,21 @@ export async function proposalRoutes(
         changedBy: request.user.id,
         note: parsed.data.note ?? null,
       });
+      // A proposal sent is a reply Venviewer itself sends: the first reply to
+      // the enquiry it answers, unless an earlier one is recorded (0100).
+      if (parsed.data.status === "sent") {
+        const enquiryId = await enquiryAnsweredByProposal(tx, row);
+        if (enquiryId !== null) {
+          await stampFirstResponse(tx, {
+            enquiryId,
+            venueId: row.venueId,
+            at: "now",
+            // A Venviewer operator who sends it for the venue is not its team.
+            byUserId: isVenueCommercialMember(request.user, row.venueId) ? request.user.id : null,
+            channel: "proposal",
+          });
+        }
+      }
       // Answered as its row on the desk now reads, read with the move: the
       // figure that stands and whether the client's link opens change with it.
       const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, params.data.id)).limit(1);
@@ -1854,11 +1877,49 @@ export async function proposalShareRoutes(
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
 
-    await db.update(proposalShareTokens)
-      .set({ lastViewedAt: new Date() })
-      .where(eq(proposalShareTokens.id, resolved.shareToken.id));
+    // A visit, counted once per PROPOSAL_VIEW_VISIT_GAP_MINUTES (0100). A
+    // measure, never the page: if counting fails the client still reads it.
+    try {
+      await countProposalView(db, resolved.shareToken.id);
+    } catch (err) {
+      request.log.error({ event: "proposal.view_count_failed", proposalId: resolved.proposal.id, err }, "proposal view not counted");
+    }
 
     return { data: clientSafe };
+  });
+
+  // POST /proposal-share/:token/engagement — a moment on the proposal's page
+  // (a 30-second walk of the twin from it), attached to this proposal and
+  // nothing about the reader (migration 0100). Only for a link that opens a
+  // proposal shown to its client. The same moment within the repeat window is
+  // one, so a reload or a retry adds nothing. Answers 404 until
+  // ENQUIRY_FUNNEL_BROWSER_SIGNALS is "on", which waits for the privacy notice
+  // (see funnelBrowserSignalsEnabled).
+  server.post("/:token/engagement", {
+    config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+  }, async (request, reply) => {
+    // Off until the privacy page describes it: then there is nothing here.
+    if (!funnelBrowserSignalsEnabled()) {
+      return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
+    }
+    const params = ShareTokenParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
+    }
+    const parsed = RecordProposalEngagementSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+    const resolved = await resolveProposalShareToken(db, params.data.token);
+    if (resolved === null || sentVersionOf(resolved.proposal) === null) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    const recorded = await recordProposalEngagement(db, {
+      venueId: resolved.proposal.venueId,
+      proposalId: resolved.proposal.id,
+      kind: parsed.data.kind,
+    });
+    return { data: { recorded } };
   });
 
   server.post("/:token/comment", async (request, reply) => {

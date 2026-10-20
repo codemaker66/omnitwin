@@ -1,6 +1,8 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   BookingSchema,
+  VIEWING_BOOKING_KIND,
+  VIEWING_HAS_NO_EVENT_MESSAGE,
   bookingKindNeedsEvent,
   bookingStateToColumns,
   deriveBookingState,
@@ -244,6 +246,7 @@ export function serializeBooking(row: BookingRow): Booking {
     notes: row.notes,
     createdBy: row.createdBy,
     enquiryId: row.enquiryId,
+    lostReason: row.lostReason,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
   });
@@ -449,6 +452,11 @@ async function updateBookingLocked(
   if (patch.rank !== undefined && row.kind !== "hold") {
     return validationDeny([{ path: ["rank"], message: "Only a provisional hold has an option number." }]);
   }
+  // A viewing is a show-round for its enquiry, never part of an event
+  // (bookings_viewing_has_no_event backs this at the database).
+  if (row.kind === VIEWING_BOOKING_KIND && patch.eventId !== undefined && patch.eventId !== null) {
+    return validationDeny([{ path: ["eventId"], message: VIEWING_HAS_NO_EVENT_MESSAGE }]);
+  }
 
   // The bind: a hold or ink may move to another event of its venue, never to
   // none. Interest only and venue blocks may still be detached.
@@ -553,6 +561,30 @@ export async function transitionBookingCore(
 
   const currentState = deriveBookingState(row.kind, row.status);
   const toState: BookingState = body.toState;
+
+  // A viewing is a different thing from a commitment, not a stage of one: no
+  // booking becomes one (a hold or ink would carry its event into a viewing,
+  // which takes none). This is the booking's kind, not its lifecycle, so the
+  // admin's structural override does not reach it. Book a viewing instead.
+  if (toState === VIEWING_BOOKING_KIND && row.kind !== VIEWING_BOOKING_KIND) {
+    return {
+      ok: false,
+      status: 400,
+      code: "INVALID_TRANSITION",
+      error: "A booking cannot become a viewing. Book the viewing as its own booking.",
+    };
+  }
+  // Nor does a viewing become a commitment: its only move is to be called
+  // off (and, by the admin's override, a called-off one put back). A hold or
+  // confirmed booking for the same guest is booked as its own booking.
+  if (row.kind === VIEWING_BOOKING_KIND && toState !== "cancelled" && toState !== VIEWING_BOOKING_KIND) {
+    return {
+      ok: false,
+      status: 400,
+      code: "INVALID_TRANSITION",
+      error: "A viewing can only be called off. Book the hold or the confirmed booking as its own booking.",
+    };
+  }
 
   // Structure first (admin may override structure per the house rule),
   // then role policy.
@@ -696,6 +728,10 @@ export async function transitionBookingCore(
           // Promotion to ink resolves the ladder; the rank is cleared
           // (bookings_rank_hold_only backs this at the DB).
           rank: toState === "ink" ? null : hygiene?.rank ?? current.rank,
+          // The lost reason (migration 0100) is written with the loss and
+          // cleared by any other move, so it only ever sits on a lost booking
+          // (bookings_lost_reason_check).
+          lostReason: toState === "lost" ? body.lostReason ?? null : null,
           ...(hygiene === null ? {} : {
             decisionAt: hygiene.decisionAt,
             ownerUserId: hygiene.ownerUserId,

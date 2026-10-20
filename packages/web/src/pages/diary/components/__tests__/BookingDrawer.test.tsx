@@ -20,12 +20,14 @@ const {
   updateBookingMock,
   transitionBookingMock,
   convertEnquiryMock,
+  bookViewingMock,
   createEventMock,
 } = vi.hoisted(() => ({
   createBookingMock: vi.fn(),
   updateBookingMock: vi.fn(),
   transitionBookingMock: vi.fn(),
   convertEnquiryMock: vi.fn(),
+  bookViewingMock: vi.fn(),
   createEventMock: vi.fn(),
 }));
 
@@ -34,6 +36,7 @@ vi.mock("../../../../api/diary.js", () => ({
   updateBooking: updateBookingMock,
   transitionBooking: transitionBookingMock,
   convertEnquiry: convertEnquiryMock,
+  bookViewing: bookViewingMock,
 }));
 
 vi.mock("../../../../api/events.js", () => ({
@@ -691,5 +694,176 @@ describe("BookingDrawer — extending a hold's decision (roadmap N3)", () => {
     cleanup();
     renderHold(GUILD, vi.fn<(message: string) => void>(), "hallkeeper");
     expect(screen.queryByRole("button", { name: /^Extend to/u })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Viewings (migration 0100; Blake, 19 October 2026): a show-round is booked
+// from the Diary drawer, and from an enquiry's drawer beside its hold. It
+// carries no hold's hygiene, option or event, and its one exit is said as
+// the viewing's own.
+// ---------------------------------------------------------------------------
+
+describe("BookingDrawer — viewings (migration 0100)", () => {
+  const OWNER = "00000000-0000-4000-8000-0000000000aa";
+  const ENQUIRY_ID = "00000000-0000-4000-8000-0000000000e9";
+
+  function renderConvert(roomChosen: boolean, onSaved: SavedSpy = vi.fn<(message: string) => void>()): SavedSpy {
+    render(
+      <BookingDrawer
+        mode={{
+          kind: "convert",
+          enquiry: { id: ENQUIRY_ID, spaceId: SALOON, roomChosen, name: "Elaine Fraser", eventType: "wedding", preferredDate: "2026-09-18" },
+          ownerUserId: OWNER,
+        }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={onSaved}
+      />,
+    );
+    return onSaved;
+  }
+
+  it("offers Viewing when adding a booking, with no hold hygiene, option or event type", async () => {
+    createBookingMock.mockResolvedValue({ title: "Law Society viewing" });
+    const onSaved = vi.fn<(message: string) => void>();
+    render(
+      <BookingDrawer
+        mode={{ kind: "create", spaceId: GRAND_HALL, dayStartMs: Date.parse("2026-09-17T23:00:00.000Z"), ownerUserId: OWNER }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={onSaved}
+      />,
+    );
+    const commitment = screen.getByRole<HTMLSelectElement>("combobox", { name: "Commitment" });
+    expect(Array.from(commitment.options).map((option) => option.textContent))
+      .toEqual(["Provisional", "Confirmed", "House block", "Interest only", "Viewing"]);
+    fireEvent.change(commitment, { target: { value: "viewing" } });
+    expect(screen.queryByRole("spinbutton", { name: "Option" })).toBeNull();
+    expect(screen.queryByLabelText("Decision date")).toBeNull();
+    expect(screen.queryByLabelText("Event type")).toBeNull();
+    expect(screen.getByText("You will host this viewing.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Law Society viewing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to the diary" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalledWith("Added Law Society viewing to the diary."); });
+    expect(createBookingMock).toHaveBeenCalledWith({
+      venueId: VENUE, spaceId: GRAND_HALL, kind: "viewing", title: "Law Society viewing",
+      startsAt: "2026-09-18T16:00:00.000Z", endsAt: "2026-09-18T22:00:00.000Z", ownerUserId: OWNER,
+    });
+  });
+
+  it("opens an enquiry's drawer on today's hold, unchanged, with a viewing beside it", () => {
+    renderConvert(true);
+    expect(screen.getByRole("dialog", { name: "Hold a date for this enquiry" })).toBeTruthy();
+    const choice = screen.getByRole("group", { name: "For this enquiry" });
+    expect(within(choice).getByRole<HTMLInputElement>("radio", { name: "Hold a date" }).checked).toBe(true);
+    expect(within(choice).getByRole<HTMLInputElement>("radio", { name: "Book a viewing" }).checked).toBe(false);
+    expect(screen.getByText("A provisional date for Elaine Fraser. The enquiry stays in review.")).toBeTruthy();
+    expect(screen.getByRole("spinbutton", { name: "Option" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hold the date" })).toBeTruthy();
+  });
+
+  it("books a viewing for the enquiry: an hour from the same start, its own words, and no hold", async () => {
+    bookViewingMock.mockResolvedValue({ title: "Elaine Fraser — Wedding" });
+    const onSaved = renderConvert(true);
+    fireEvent.click(screen.getByRole("radio", { name: "Book a viewing" }));
+
+    expect(screen.getByRole("dialog", { name: "Book a viewing for this enquiry" })).toBeTruthy();
+    expect(screen.getByText("A viewing of a room for Elaine Fraser. It does not hold the date, and the enquiry stays in review.")).toBeTruthy();
+    expect(screen.queryByRole("spinbutton", { name: "Option" })).toBeNull();
+    expect(screen.queryByLabelText("Decision date")).toBeNull();
+    expect(screen.queryByLabelText("Event type")).toBeNull();
+    expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Title" }).value).toBe("Elaine Fraser — Wedding");
+    expect(screen.getByLabelText<HTMLInputElement>("Ends").value).toBe("2026-09-18T18:00");
+
+    fireEvent.click(screen.getByRole("button", { name: "Book the viewing" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalledWith("Booked a viewing: Elaine Fraser — Wedding."); });
+    expect(bookViewingMock).toHaveBeenCalledWith({
+      enquiryId: ENQUIRY_ID, spaceId: SALOON, title: "Elaine Fraser — Wedding",
+      startsAt: "2026-09-18T16:00:00.000Z", endsAt: "2026-09-18T17:00:00.000Z", ownerUserId: OWNER,
+    });
+    expect(convertEnquiryMock).not.toHaveBeenCalled();
+  });
+
+  it("asks for a room for a viewing when the guest named none, as the hold does", () => {
+    renderConvert(false);
+    fireEvent.click(screen.getByRole("radio", { name: "Book a viewing" }));
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Room" }).value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Book the viewing" }));
+    expect(screen.getByText("Choose a room.")).toBeTruthy();
+    expect(bookViewingMock).not.toHaveBeenCalled();
+  });
+
+  it("says a viewing as a viewing, and calls it off in its own words", async () => {
+    transitionBookingMock.mockResolvedValue({ booking: { title: "Fraser viewing" }, promotedToFirst: [] });
+    const onSaved = vi.fn<(message: string) => void>();
+    renderEdit(booking({ kind: "viewing", state: "viewing", title: "Fraser viewing", eventType: null }), onSaved);
+    expect(within(screen.getByLabelText("Booking summary")).getByText("Viewing")).toBeTruthy();
+    expect(screen.queryByText("Floor plan")).toBeNull();
+    expect(screen.queryByLabelText("Event type")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel the booking…" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel the viewing…" }));
+    const question = screen.getByRole("group", { name: "Cancel Fraser viewing?" });
+    expect(question.getAttribute("data-tone")).toBe("amber");
+    expect(within(question).getByText("Grand Hall, Fri 18 Sept 18:00–23:00: the viewing ends. Nothing is sent to the client.")).toBeTruthy();
+    expect(within(question).queryByLabelText("Why it was lost (optional)")).toBeNull();
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel the viewing" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalledWith("Cancelled Fraser viewing."); });
+    expect(transitionBookingMock).toHaveBeenCalledWith(BOOKING_ID, "cancelled", undefined);
+  });
+});
+
+describe("BookingDrawer — why a booking was lost (migration 0100)", () => {
+  const hold = booking({ kind: "hold", state: "hold", title: "MacLeod wedding", rank: 2, decisionAt: "2026-09-10T11:00:00.000Z" });
+
+  function openLost(): HTMLElement {
+    renderEdit(hold);
+    fireEvent.click(screen.getByRole("button", { name: "Mark lost…" }));
+    return screen.getByRole("group", { name: "Mark MacLeod wedding lost?" });
+  }
+
+  it("offers the reasons in plain words, none chosen until one is, beside the note", () => {
+    const question = openLost();
+    const reason = within(question).getByRole<HTMLSelectElement>("combobox", { name: "Why it was lost (optional)" });
+    expect(Array.from(reason.options).map((option) => option.textContent)).toEqual([
+      "No reason chosen", "Price", "Date taken by someone else", "Room or capacity didn't suit", "Chose another venue",
+      "Plans changed or cancelled", "Stopped replying", "Other",
+    ]);
+    expect(reason.value).toBe("");
+    expect(within(question).getByLabelText("Reason (optional, kept with this change)")).toBeTruthy();
+  });
+
+  it("sends the reason chosen with the loss, and the note with it", async () => {
+    transitionBookingMock.mockResolvedValue({ booking: { title: "MacLeod wedding" }, promotedToFirst: [] });
+    const question = openLost();
+    fireEvent.change(within(question).getByLabelText("Why it was lost (optional)"), { target: { value: "chose_elsewhere" } });
+    fireEvent.change(within(question).getByLabelText("Reason (optional, kept with this change)"), { target: { value: "Went to the Corinthian." } });
+    fireEvent.click(within(question).getByRole("button", { name: "Mark lost" }));
+    await waitFor(() => {
+      expect(transitionBookingMock).toHaveBeenCalledWith(BOOKING_ID, "lost", "Went to the Corinthian.", undefined, "chose_elsewhere");
+    });
+  });
+
+  it("still marks it lost when no reason is chosen, and sends none", async () => {
+    transitionBookingMock.mockResolvedValue({ booking: { title: "MacLeod wedding" }, promotedToFirst: [] });
+    const question = openLost();
+    const reason = within(question).getByLabelText("Why it was lost (optional)");
+    fireEvent.change(reason, { target: { value: "price" } });
+    fireEvent.change(reason, { target: { value: "" } });
+    fireEvent.click(within(question).getByRole("button", { name: "Mark lost" }));
+    await waitFor(() => { expect(transitionBookingMock).toHaveBeenCalledWith(BOOKING_ID, "lost", undefined); });
+  });
+
+  it("asks no reason of any other ending", () => {
+    renderEdit(hold);
+    fireEvent.click(screen.getByRole("button", { name: "Release…" }));
+    expect(screen.getByRole("group", { name: "Release MacLeod wedding?" })).toBeTruthy();
+    expect(screen.queryByLabelText("Why it was lost (optional)")).toBeNull();
   });
 });
