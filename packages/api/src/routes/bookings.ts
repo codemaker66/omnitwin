@@ -489,9 +489,10 @@ export async function bookingRoutes(
       const [created] = await db
         .insert(bookings)
         .values({
+          // No event, ever: the column's default, and
+          // bookings_viewing_has_no_event refuses any other.
           venueId: enquiry.venueId,
           spaceId,
-          eventId: null,
           kind: VIEWING_BOOKING_KIND,
           status: "active",
           title: input.title ?? enquiry.name.slice(0, 200),
