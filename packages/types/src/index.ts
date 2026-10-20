@@ -2585,6 +2585,8 @@ export * from "./venue-sky.js";
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
 
+// T-665 slice 1: the People Book's records, matching and merges.
+export * from "./people.js";
 // The Pricing desk (17 Oct 2026): who sets a price, which rate stands on a
 // date beside a rate for particular dates, and the suggestions' contract.
 export * from "./pricing-desk.js";

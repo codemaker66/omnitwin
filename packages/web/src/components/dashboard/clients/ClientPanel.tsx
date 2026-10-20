@@ -112,7 +112,7 @@ interface Who {
   readonly eyebrow: string;
   readonly name: string;
   readonly organisation: string | null;
-  readonly email: string;
+  readonly email: string | null;
   readonly phone: string | null;
   readonly since: string;
 }
@@ -153,7 +153,7 @@ function Profile(props: ClientPanelProps & { readonly loaded: Loaded; readonly w
     <>
       {who.organisation !== null && <p className="cl-organisation">{who.organisation}</p>}
       <div className="enq-contact cl-reach">
-        <a href={`mailto:${who.email}`}>{who.email}</a>
+        {who.email !== null && <a href={`mailto:${who.email}`}>{who.email}</a>}
         {who.phone !== null && who.phone.trim() !== "" && <a href={`tel:${who.phone.replace(/[^\d+]/gu, "")}`}>{who.phone}</a>}
         {loaded.kind === "lead" && loaded.data.lead.convertedToUserId !== null
           && <span className="enq-contact__note">Now has a Venviewer account</span>}
