@@ -12,9 +12,11 @@ import {
   getPlacementViolations,
 } from "../lib/placement.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
-import { createTableGroup, rearrangeTableGroup, seatCapacity, tableGroupChairFootprint, tableGroupPlanningFootprint } from "../lib/table-group.js";
-import { planBanquetLayout } from "../lib/auto-layout.js";
-import { planTheatreLayout } from "../lib/theatre-layout.js";
+import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
+import { planBanquetFill, planTheatreFill, type BanquetFillPlan, type TheatreFillPlan } from "../lib/auto-fill.js";
+import { applySeatShortfallFix, type SeatShortfallFixResult } from "../lib/seat-shortfall.js";
+import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
+import { postPlacementNotice } from "./placement-notice-store.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
@@ -109,16 +111,25 @@ export interface PlacementState {
   /** Re-arrange chairs for an existing table group. */
   readonly rearrangeGroup: (tableId: string, newChairCount: number) => void;
   /**
-   * Auto-fill the room with an even, circulation-safe grid of table groups for
-   * a target guest count. Replaces the current layout. A target of 0 fills the
-   * whole room.
+   * Auto-fill the room with an even, circulation-safe arrangement of table
+   * groups for a target guest count, at the banquet spacing (lib/auto-fill).
+   * Replaces the current layout. A target of 0 fills the whole room. Returns
+   * what it placed, including the seats the room takes at this spacing, or
+   * null when it placed nothing.
    */
-  readonly autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => void;
+  readonly autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => BanquetFillPlan | null;
   /**
    * Auto-fill the room with theatre-style rows of chairs facing a stage at one
-   * end. A target of 0 fills the room. Replaces the current layout.
+   * end. A target of 0 fills the room. Replaces the current layout. Returns
+   * what it placed, or null when it placed nothing.
    */
-  readonly autoArrangeTheatre: (chairItemId: string, targetGuests: number) => void;
+  readonly autoArrangeTheatre: (chairItemId: string, targetGuests: number) => TheatreFillPlan | null;
+  /**
+   * Add the seats the floor is short of the guest count, in one step: chairs
+   * at the tables while they have room, otherwise tables like those placed
+   * (lib/seat-shortfall). Returns what it added, or null when nothing could be.
+   */
+  readonly fillSeatShortfall: (guests: number) => SeatShortfallFixResult | null;
   /** Break a single item out of its group (set groupId to null). */
   readonly breakFromGroup: (id: string) => void;
   /** Move all items in the same group as the given item by a delta. */
@@ -166,8 +177,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // be persisted as standalone PlacedItems through this lower-level API.
     if (isTableDressingApplicator(catalogueItemId)) return;
     const state = get();
-    // Enforce inventory limits
-    if (isAtMaxCount(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId))) return;
+    // Enforce inventory limits, and say why nothing was placed.
+    const atCap = capReachedFor(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId));
+    if (atCap !== null) {
+      postPlacementNotice(atCap);
+      return;
+    }
     const pos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     // Apply platform edge snapping (fixes bug where placeItem lost edge snap)
     const catItem = getCatalogueItem(catalogueItemId);
@@ -371,7 +386,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       reason = "Unknown catalogue item";
     } else if (isAtMaxCount(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId))) {
       valid = false;
-      reason = "Maximum reached for this item";
+      reason = capReachedLine(catalogueItem.maxCount ?? 0);
     } else {
       const violations = getPlacementViolations(pos[0], pos[2], catalogueItem, rot, state.placedItems, new Set(), surfaceY, roomDims);
       if (violations.length > 0) {
@@ -494,6 +509,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     if (isTableDressingApplicator(catalogueItemId)) return;
     const state = get();
+    const atCap = capReachedFor(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId));
+    if (atCap !== null) {
+      postPlacementNotice(atCap);
+      return;
+    }
     const pos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     // Apply edge + wall snap (same as placeItem) so position matches the ghost
     const catItem = getCatalogueItem(catalogueItemId);
@@ -556,25 +576,16 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => {
-    if (isLayoutTimelineMutationLocked()) return;
+    if (isLayoutTimelineMutationLocked()) return null;
     const tableItem = getCatalogueItem(catalogueItemId);
-    if (tableItem === undefined || !isDiningTableItem(tableItem)) return;
+    if (tableItem === undefined || !isDiningTableItem(tableItem)) return null;
     const state = get();
 
-    const seats = Math.min(seatCapacity(tableItem), Math.max(0, Math.floor(chairsPerTable)));
-    const occupied = tableGroupPlanningFootprint(tableItem, seats);
     const dims = useRoomDimensionsStore.getState().dimensions;
-    const plan = planBanquetLayout({
-      // Room dimensions are render-space; the engine works in metres.
-      roomWidthM: toRealWorld(dims.width),
-      roomLengthM: toRealWorld(dims.length),
-      // Keep the configured aisle clear beyond the complete chair group.
-      tableWidthM: occupied.width,
-      tableDepthM: occupied.depth,
-      seatsPerTable: seats,
-      targetGuests: targetGuests > 0 ? targetGuests : undefined,
-    });
-    if (plan.tables.length === 0) return;
+    // Room dimensions are render-space; the plan works in metres. Spacing runs
+    // between the backs of the chairs (lib/auto-fill).
+    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length));
+    if (plan === null) return null;
 
     // Map each planned table (metres, room-centred) back to render space and
     // build a full table+chairs group at floor level.
@@ -585,32 +596,29 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         toRenderSpace(t.xM),
         toRenderSpace(t.zM),
         t.rotationY,
-        seats,
+        plan.seatsPerTable,
       );
       placedItems.push(...group);
     }
-    if (placedItems.length === 0) return;
+    if (placedItems.length === 0) return null;
 
     const retainedApplicators = state.placedItems.filter(
       (item) => !isSceneFurniturePlacement(item),
     );
     set({ placedItems: [...retainedApplicators, ...placedItems] });
     announcePlaced(placedItems.map((item) => item.id));
+    return plan;
   },
 
   autoArrangeTheatre: (chairItemId: string, targetGuests: number) => {
-    if (isLayoutTimelineMutationLocked()) return;
+    if (isLayoutTimelineMutationLocked()) return null;
     const chairItem = getCatalogueItem(chairItemId);
-    if (chairItem === undefined || chairItem.category !== "chair") return;
+    if (chairItem === undefined || chairItem.category !== "chair") return null;
 
     const dims = useRoomDimensionsStore.getState().dimensions;
-    const plan = planTheatreLayout(
-      // Room dimensions are render-space; the engine works in metres.
-      toRealWorld(dims.width),
-      toRealWorld(dims.length),
-      { targetGuests: targetGuests > 0 ? targetGuests : undefined },
-    );
-    if (plan.seats.length === 0) return;
+    // Room dimensions are render-space; the plan works in metres.
+    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length));
+    if (plan === null) return null;
 
     // Each planned seat (metres, room-centred, facing the stage) → a floor-level
     // chair in render space. No groups — theatre chairs stand alone.
@@ -622,6 +630,23 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     );
     set({ placedItems: [...retainedApplicators, ...placedItems] });
     announcePlaced(placedItems.map((item) => item.id));
+    return plan;
+  },
+
+  fillSeatShortfall: (guests: number) => {
+    if (isLayoutTimelineMutationLocked()) return null;
+    const dims = useRoomDimensionsStore.getState().dimensions;
+    const fix = applySeatShortfallFix({
+      placedItems: get().placedItems,
+      guests,
+      roomWidthM: toRealWorld(dims.width),
+      roomLengthM: toRealWorld(dims.length),
+    });
+    if (fix === null) return null;
+    // One write, so the editor history records one step and one undo takes it back.
+    set({ placedItems: [...fix.placedItems] });
+    announcePlaced(fix.addedIds);
+    return fix;
   },
 
   breakFromGroup: (id: string) => {

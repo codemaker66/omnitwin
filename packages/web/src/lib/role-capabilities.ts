@@ -18,7 +18,8 @@
 /** Mirrors `canManageVenue` — the base "works this venue's floor" capability. */
 export const VENUE_FLOOR_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
 
-/** Mirrors `canAdministerVenue` — the venue record, its spaces, its pricing. */
+/** Mirrors `canAdministerVenue` — the venue record and its spaces. Pricing-rule
+ *  writes are narrower (`PRICING_WRITE_ROLES` below: admin and manager). */
 export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
 
 /**
@@ -29,6 +30,22 @@ export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
  * the whole set may open the tab. #24 does not narrow it.
  */
 export const COMMERCIAL_ROLES = ["admin", "manager", "staff", "sales"] as const;
+
+/**
+ * The Pricing tab: `GET /venues/:venueId/pricing-desk` reads
+ * `canManageCommercial` (`routes/pricing-desk.ts`), so the commercial team
+ * reads the price list and who changed each rate; the hallkeeper, who does
+ * not see prices (goal 18 decision 6b), is not offered it.
+ */
+export const PRICING_READ_ROLES = COMMERCIAL_ROLES;
+
+/**
+ * Who sets a price, sees the desk's edit controls and its suggestions: the
+ * API's `PRICING_WRITE_ROLES` (`canWritePricing`), read from the one list in
+ * @omnitwin/types so the two cannot drift. Everyone else on the desk is told
+ * who can.
+ */
+export { PRICING_WRITE_ROLES } from "@omnitwin/types";
 
 /**
  * The Analytics tab. What it opens is `ExecutiveAnalyticsView`, whose only

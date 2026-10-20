@@ -20,7 +20,7 @@ import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
   ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
-  REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
+  PRICING_READ_ROLES, REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
 import "./DashboardLayout.css";
 
@@ -28,7 +28,7 @@ import "./DashboardLayout.css";
 // DashboardLayout — shared venue navigation and a single workspace landmark
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "inventory" | "rota" | "onboarding" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "pricing" | "search" | "loadouts" | "settings" | "inventory" | "rota" | "onboarding" | "admin";
 
 interface DashboardLayoutProps {
   /** Present only on /dashboard, which owns the view switch itself. Every
@@ -61,7 +61,7 @@ interface DashboardLayoutProps {
 // that answers 403.
 type NavCapability =
   | "workspace" | "commercial" | "crmPipeline" | "analytics" | "clientSearch"
-  | "reviewQueue" | "venueAdmin" | "rota" | "platformAdmin";
+  | "reviewQueue" | "venueAdmin" | "rota" | "pricing" | "platformAdmin";
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavCapability }[] = [
   { view: "enquiries", label: "Enquiries", capability: "workspace" },
@@ -74,6 +74,10 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   // Proposals is ProposalsDesk, which reads api/proposals.js — already on
   // canManageCommercial, so the whole commercial set can open it.
   { view: "proposals", label: "Proposals", capability: "commercial" },
+  // Pricing is PricingDesk, reading api/pricing-desk.js — routes/pricing-desk.ts
+  // answers the commercial team; its edit controls and suggestions are for
+  // PRICING_WRITE_ROLES alone, and the desk says who to ask otherwise.
+  { view: "pricing", label: "Pricing", capability: "pricing" },
   // Clients is the Clients desk, reading api/clients.js — its search and
   // lists gate on canManageVenue, so sales and planner are refused.
   { view: "search", label: "Clients", capability: "clientSearch" },
@@ -135,6 +139,7 @@ export function canShowNavItem(
   if (item.capability === "clientSearch") return hasRole(CLIENT_SEARCH_ROLES, role);
   if (item.capability === "reviewQueue") return hasRole(REVIEW_QUEUE_ROLES, role);
   if (item.capability === "rota") return hasRole(ROTA_TAB_ROLES, role);
+  if (item.capability === "pricing") return hasRole(PRICING_READ_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 

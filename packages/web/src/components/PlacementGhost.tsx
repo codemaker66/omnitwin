@@ -35,6 +35,8 @@ import {
 } from "../lib/table-dressing.js";
 import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-brush.js";
 import { findPlacementFloor } from "../lib/planner-interaction-floor.js";
+import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
+import { postPlacementNotice } from "../stores/placement-notice-store.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -204,7 +206,13 @@ export function PlacementGhost(): React.ReactElement | null {
 
       // Seated dining tables request chairs; service/standing tables place directly.
       const item = getCatalogueItem(catState.selectedItemId);
-      if (item === undefined || placeState.ghostInvalidReason === "Maximum reached for this item") return;
+      if (item === undefined) return;
+      // Every piece the venue has is already on the floor: say so, near the tap.
+      const atCap = capReachedFor(catState.selectedItemId, placeState.placedItems.map((p) => p.catalogueItemId));
+      if (atCap !== null) {
+        postPlacementNotice(atCap);
+        return;
+      }
 
       if (item.tableShape !== null && isDiningTableItem(item)) {
         useChairDialogStore.getState().showDialog({
@@ -466,8 +474,9 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // --- Normal furniture ghost ---
   const ghostColor = ghostValid ? PLACEMENT_COLOR_VALID : PLACEMENT_COLOR_INVALID;
+  const atCapReason = catalogueItem.maxCount !== null && ghostInvalidReason === capReachedLine(catalogueItem.maxCount);
   const showConstraintSkin = !ghostValid &&
-    ghostInvalidReason !== "Maximum reached for this item" &&
+    !atCapReason &&
     ghostInvalidReason !== "Unknown catalogue item";
 
   if (catalogueItem.category === "chair" && chairBrushPreview.length > 1) {

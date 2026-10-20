@@ -5,12 +5,19 @@ import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 
-const mocks = vi.hoisted(() => ({ prepare: vi.fn() }));
+const mocks = vi.hoisted(() => ({ prepare: vi.fn(), listLinks: vi.fn() }));
 vi.mock("../send-layout-flow.js", () => ({ prepareLayoutForGuestEnquiry: mocks.prepare }));
+// The sheet's view-only links read the plan's working links; no network here.
+vi.mock("../../../api/plan-view.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/plan-view.js")>(),
+  listPlanViewLinks: mocks.listLinks,
+}));
 vi.mock("../GuestEnquiryModal.js", () => ({ GuestEnquiryModal: () => <div data-testid="enquiry-ready" /> }));
 
 beforeEach(() => {
   mocks.prepare.mockReset();
+  mocks.listLinks.mockReset();
+  mocks.listLinks.mockResolvedValue([]);
   useEditorStore.getState().reset();
   useEditorStore.setState({ configId: "cfg-activity", isPublicPreview: true });
   useAuthStore.getState().logout();
@@ -48,6 +55,60 @@ describe("MobilePlannerTopBar activity", () => {
     expect(mocks.prepare).toHaveBeenCalledTimes(1);
     if (outcome === "ready") expect(screen.getByTestId("enquiry-ready")).toBeTruthy();
     else expect(screen.queryByTestId("enquiry-ready")).toBeNull();
+  });
+});
+
+// Fix-first item 11: phones have no Share lens, so a guest plan offers its PDF
+// and a view-only link beside Send. The sheet is real; only requests are stubbed.
+describe("MobilePlannerTopBar plan as a PDF", () => {
+  it("offers a guest plan as a PDF in a labelled sheet, and closes on Escape", () => {
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    const open = screen.getByRole("button", { name: "Send your plan" });
+    expect(open.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(screen.getByRole("button", { name: "Send to Events Team" })).toBeTruthy();
+
+    fireEvent.click(open);
+    const sheet = screen.getByRole("dialog", { name: "Send your plan" });
+    expect(sheet.getAttribute("aria-modal")).toBe("true");
+    expect(sheet.textContent).toMatch(/no prices/u);
+    expect(sheet.textContent).toMatch(/drawn by a visitor and not reviewed by the venue/u);
+    expect(screen.getByTestId("visitor-pdf-prepare").textContent).toBe("Prepare the PDF");
+    // Beside the PDF, the same plan as a view-only link (as on the Share lens).
+    expect(screen.getByTestId("visitor-link-make").textContent).toBe("Copy a view-only link");
+    expect(mocks.prepare).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Send your plan" })).toBeNull();
+  });
+
+  it("closes when the backdrop is tapped but not when the sheet is", () => {
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Send your plan" }));
+    fireEvent.click(screen.getByRole("dialog", { name: "Send your plan" }));
+    expect(screen.getByRole("dialog", { name: "Send your plan" })).toBeTruthy();
+    fireEvent.click(screen.getByTestId("visitor-pdf-sheet-backdrop"));
+    expect(screen.queryByRole("dialog", { name: "Send your plan" })).toBeNull();
+  });
+
+  it("is not offered for a plan saved to an account", () => {
+    useEditorStore.setState({ isPublicPreview: false });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Send your plan" })).toBeNull();
+  });
+
+  it("is not offered before anything is placed", () => {
+    useEditorStore.setState({ objects: [] });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Send your plan" })).toBeNull();
+  });
+
+  it("waits for the room timeline preview to end", () => {
+    useLayoutTimelinePreviewStore.setState({ mode: "unavailable" });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    const open = screen.getByRole("button", { name: "Send your plan" });
+    expect(open).toHaveProperty("disabled", true);
+    fireEvent.click(open);
+    expect(screen.queryByRole("dialog", { name: "Send your plan" })).toBeNull();
   });
 });
 
