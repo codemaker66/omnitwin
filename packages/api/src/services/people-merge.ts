@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
@@ -449,6 +449,11 @@ async function mergeLocked(tx: PeopleTx, closing: ContactRow, survivor: ContactR
     removed: { contactPointIds: removedPointIds, membershipIds: removedMembershipIds },
     survivorFilled,
   });
+  // merged_at is the clock when the record is written, under the venue's
+  // merge lock, not the transaction's start: so the venue's merges are in
+  // merged_at order exactly as the lock let them run, which the undo's
+  // last-in, first-out rule relies on. A merge that began first but waited
+  // for the lock is the later one, and its stamp says so.
   const [record] = await tx.insert(recordMerges).values({
     venueId,
     kind: "person",
@@ -457,6 +462,7 @@ async function mergeLocked(tx: PeopleTx, closing: ContactRow, survivor: ContactR
     snapshot,
     moves,
     mergedBy: actorId,
+    mergedAt: sql`clock_timestamp()`,
   }).returning({ id: recordMerges.id, mergedAt: recordMerges.mergedAt });
   if (record === undefined) throw new Error("The merge record was not written");
   return resultOf(record, { survivorId: S, mergedId: L }, moves, snapshot.removed, false);
@@ -514,8 +520,17 @@ export async function applyPersonMerge(
 // Whatever a colleague changed since (a deal moved on, a field edited, a
 // point removed) is left as they left it and named in the report. The record
 // is kept, marked undone with its report, so a second press answers with the
-// same report. A merge undone out of order would strand references, so while
-// S has itself been merged since, that later merge must be undone first.
+// same report.
+//
+// Undo is last in, first out for each survivor. While a later merge that S
+// is party to stands (S merged into someone else, or someone else merged
+// into S), this one is refused and names the newest such merge, to be undone
+// first. Out of order, an undo would strand what the later merge moved on
+// through S, or take back from S what the later merge relied on: a merge of
+// Z into S deletes Z's own copy of an address S already held from L, so
+// undoing L into S first would leave S, which now stands for Z too, without
+// Z's address, kept only in the later merge's snapshot. The same holds for
+// memberships and filled fields.
 //
 // Locks, in the merge's order:
 // 1. the venue's people-merge advisory lock, so merges and undos at a venue
@@ -592,14 +607,21 @@ async function lockRow(tx: PeopleTx, venueId: string, personId: string): Promise
   return row;
 }
 
-/** The newest merge of the person into anyone that has not been undone. */
-async function newestMergeOf(tx: PeopleTx, venueId: string, personId: string): Promise<string | undefined> {
+/**
+ * The newest merge made after this one, and not undone, that its survivor is
+ * party to: the survivor merged into someone else, or someone else merged
+ * into the survivor. Undefined when there is none. "After" is compared in the
+ * database, at the precision merged_at is stored.
+ */
+async function laterMergeOfSurvivor(tx: PeopleTx, merge: ReadableMerge): Promise<string | undefined> {
   const [record] = await tx.select({ id: recordMerges.id }).from(recordMerges)
     .where(and(
-      eq(recordMerges.venueId, venueId),
+      eq(recordMerges.venueId, merge.venueId),
       eq(recordMerges.kind, "person"),
-      eq(recordMerges.mergedId, personId),
+      or(eq(recordMerges.survivorId, merge.survivorId), eq(recordMerges.mergedId, merge.survivorId)),
       isNull(recordMerges.undoneAt),
+      ne(recordMerges.id, merge.id),
+      sql`${recordMerges.mergedAt} > (SELECT m.merged_at FROM record_merges m WHERE m.id = ${merge.id})`,
     ))
     .orderBy(desc(recordMerges.mergedAt), desc(recordMerges.id))
     .limit(1);
@@ -872,9 +894,9 @@ export async function undoPersonMerge(
     const merge = readMerge(record);
 
     // 4. Both people, the lower id first; what an older writer left on them
-    // is adopted before anything moves back. Then the checks: neither erased,
-    // and L still S's tombstone (else S has been merged since, and that merge
-    // comes first).
+    // is adopted before anything moves back. Then the checks: neither erased;
+    // no later merge that S is party to still stands (last in, first out for
+    // each survivor); and L is still S's tombstone.
     const [lowId, highId] = merge.mergedId < merge.survivorId
       ? [merge.mergedId, merge.survivorId]
       : [merge.survivorId, merge.mergedId];
@@ -888,10 +910,12 @@ export async function undoPersonMerge(
     await adoptLegacyMirror(tx, closing);
     await adoptLegacyMirror(tx, survivor);
     if (closing.erasedAt !== null || survivor.erasedAt !== null) return refuse({ kind: "erased" });
+    const later = await laterMergeOfSurvivor(tx, merge);
+    if (later !== undefined) return refuse({ kind: "later_merge_first", laterMergeId: later });
+    // With no later merge of S standing, L is still S's tombstone; anything
+    // else was written outside the book's merges.
     if (closing.mergedIntoId !== merge.survivorId) {
-      const later = await newestMergeOf(tx, merge.venueId, merge.survivorId);
-      if (later === undefined) throw new Error(`Merge record ${merge.id}'s merged person is not its survivor's tombstone`);
-      return refuse({ kind: "later_merge_first", laterMergeId: later });
+      throw new Error(`Merge record ${merge.id}'s merged person is not its survivor's tombstone`);
     }
 
     return undoLocked(tx, merge, actorId);

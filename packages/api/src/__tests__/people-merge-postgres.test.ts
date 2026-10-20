@@ -1072,6 +1072,34 @@ describe.skipIf(PLATFORM_TARGET === undefined)("merging two people on the migrat
     expect(await bookState()).toEqual(before);
   });
 
+  it("undoes merges into one survivor newest first", async () => {
+    const p = await pair();
+    // Z holds its own copy of L's work address and belongs to L's household,
+    // so merging Z into S after L deletes both of Z's copies: S already holds
+    // them from L.
+    const z = await f.addPerson({ name: "Aileen Murray", emails: [p.workEmail], organisations: [p.y] });
+    const before = await bookState();
+    const first = await mergeOf(p.l, p.s);
+    const second = await mergeOf(z, p.s);
+    const removedBySecond = (await snapshotOf(second.mergeId)).removed;
+    expect(removedBySecond.contactPointIds).toHaveLength(1);
+    expect(removedBySecond.membershipIds).toHaveLength(1);
+
+    // Undoing L's merge first would take the work address and the household
+    // back from S, which stands for Z too: refused, naming Z's merge, and
+    // nothing changes.
+    const waiting = await venueRows();
+    const refused = await undo(first.mergeId);
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: "UNDO_LATER_MERGE_FIRST", laterMergeId: second.mergeId });
+    expect(await venueRows()).toEqual(waiting);
+
+    // Newest first, both answer, and the book is as it was before either.
+    expect(undone(await undo(second.mergeId)).skipped).toEqual([]);
+    expect(undone(await undo(first.mergeId)).skipped).toEqual([]);
+    expect(await bookState()).toEqual(before);
+  });
+
   it("answers not found for another venue's merge, and lets sales undo", async () => {
     const p = await pair();
     const made = await mergeOf(p.l, p.s);

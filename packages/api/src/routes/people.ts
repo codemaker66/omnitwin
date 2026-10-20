@@ -115,7 +115,7 @@ function refuseUndo(reply: FastifyReply, failure: UndoFailure): FastifyReply {
       });
     case "later_merge_first":
       return reply.status(409).send({
-        error: "The record kept by this merge has since been merged into another; undo that merge first",
+        error: "A later merge involving the record this merge kept must be undone first; merges are undone newest first",
         code: "UNDO_LATER_MERGE_FIRST",
         laterMergeId: failure.laterMergeId,
       });
