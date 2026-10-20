@@ -9,7 +9,7 @@ import {
   occasionPhrase,
   type EnquirySource,
 } from "@omnitwin/types";
-import { eq, and, isNull, asc, sql } from "drizzle-orm";
+import { eq, and, isNull, asc, inArray, sql } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
@@ -45,6 +45,11 @@ function twinPublicVenueSlugs(): readonly string[] {
     .map((slug) => slug.trim())
     .filter((slug) => slug.length > 0);
 }
+
+/** Who is emailed a new web enquiry: the people who sell, so a lead reaches
+ *  them the moment it lands, and the venue's hallkeepers, as before (Blake,
+ *  18 October 2026). Office staff and admins keep the in-app notice. */
+const ENQUIRY_EMAIL_ROLES = ["sales", "manager", "hallkeeper"] as const;
 
 /** How a notice says where an enquiry came from, when it names no room. */
 const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
@@ -371,19 +376,27 @@ export async function publicEnquiryRoutes(
       });
     }
 
-    const hallkeepers = await db.select({ id: users.id, email: users.email })
+    // ENQUIRY_EMAIL_ROLES at this venue, one email per inbox.
+    const venueRecipients = await db.select({ id: users.id, email: users.email })
       .from(users)
-      .where(and(eq(users.venueId, anchor.venueId), eq(users.role, "hallkeeper")));
+      .where(and(eq(users.venueId, anchor.venueId), inArray(users.role, [...ENQUIRY_EMAIL_ROLES])));
+    const seenInboxes = new Set<string>();
+    const announced = venueRecipients.filter((user) => {
+      const inbox = user.email.trim().toLowerCase();
+      if (seenInboxes.has(inbox)) return false;
+      seenInboxes.add(inbox);
+      return true;
+    });
 
-    // A venue with no hallkeeper user is the silent-revenue-leak case: the
+    // A venue with none of those users is the silent-revenue-leak case: the
     // enquiry is stored, this loop runs zero times, and the guest still gets a
     // 201 saying the events team has it. Fall back to a configured address so a
     // lead can never reach nobody, and log loudly when there is no one at all.
     const fallbackRaw = process.env["ENQUIRY_FALLBACK_EMAIL"] ?? "";
     const fallback = fallbackRaw.trim();
     const recipients: readonly { id: string; email: string }[] =
-      hallkeepers.length > 0
-        ? hallkeepers
+      announced.length > 0
+        ? announced
         : fallback !== ""
           ? [{ id: "fallback", email: fallback }]
           : [];
@@ -391,7 +404,7 @@ export async function publicEnquiryRoutes(
     if (recipients.length === 0) {
       request.log.error(
         { enquiryId: enquiry.id, venueId: anchor.venueId },
-        "enquiry stored but NOT announced: venue has no hallkeeper user and ENQUIRY_FALLBACK_EMAIL is unset",
+        "enquiry stored but NOT announced: venue has no sales, manager or hallkeeper user and ENQUIRY_FALLBACK_EMAIL is unset",
       );
     }
 
