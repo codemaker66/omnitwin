@@ -22,7 +22,7 @@
 - Mirrors: `contacts.email`, `contacts.phone` and `contacts.client_account_id` equal the primary email point's `display_value`, the primary phone point's `display_value` and the primary membership's account, rewritten by `refreshContactMirror` in the same transaction as every write to points or memberships.
 - A person with points of a kind has exactly one primary of that kind; a person with memberships has exactly one primary membership (`refreshContactMirror` promotes the oldest when none is primary).
 - Schema first: the migration is additive and the previous API keeps working on it (new columns nullable, `client_accounts.kind` defaults to `'household'`).
-- Migration number is provisional: `0096_people_book` (the chief of staff, 18 October). Two open PRs merge first: #108 takes `0094_remembered_dietary_notes` (idx 92, `when` 1792076400000) and #106 takes `0095_supplier_records_kept` (idx 93, `when` 1792162800000). Until they are on master, ours is journal `idx` 92 after `0093_forward_book_checks` (`when` 1791990000000) with `when` 1792249200000, later than #106's, because the migrator skips any migration whose `when` is not above the last one applied. At the merge slot, merging master makes ours idx 94 after `0095_supplier_records_kept`, and the previous-tag constant in both migration tests follows. The chief of staff confirms the final number and idx at the slot (after #108, alone); a rename touches the SQL file name, its temporary tables, the journal entry and the `TAG` and previous-tag constants in both migration tests.
+- Migration number, final at the merge slot (20 October): `0098_people_book`, journal `idx` 96, `when` 1792422000000, after master's `0097_competitor_watch` (idx 95, `when` 1792335600000); master holds 0094 to 0097 and production's ledger reports them applied (the chief of staff, from `/health/ready`), so 0098 runs alone. The migrator skips any migration whose `when` is not above the last one applied, which is why ours moved twice before the slot. A rename touches the SQL file name, its working tables, the journal entry and the `TAG` and previous-tag constants in both migration tests.
 - Database tests run only on `VENVIEWER_ROUTE_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55476/venviewer_route_atomicity_test` or `VENVIEWER_PLATFORM_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55477/venviewer_platform_test` (plus the venue-slug file's own `VENVIEWER_PUBLIC_ENQUIRY_TEST_DATABASE_URL`, Task 9); never `DATABASE_URL`, never `.env`.
 - Route tests for every role gate: 401 without a token, 403 for each refused role, sales admitted.
 - Fixtures are fictional: invented names, emails at `example.test` or `.invalid`, phones from Ofcom's drama ranges (0141 496 0000–0999, 07700 900000–900999).
@@ -55,7 +55,7 @@
 | --- | --- | --- |
 | `packages/types/src/people.ts` | create | Vocabularies, `normaliseEmail`, `normalisePhone`, `isUsablePhone`, every people Zod schema |
 | `packages/types/src/index.ts` | modify | `export * from "./people.js"` |
-| `packages/api/drizzle/0096_people_book.sql` | create | Schema, SQL normalisers and backfill, one transaction |
+| `packages/api/drizzle/0098_people_book.sql` | create | Schema, SQL normalisers and backfill, one transaction |
 | `packages/api/drizzle/meta/_journal.json` | modify | Journal entry idx 92 |
 | `packages/api/src/db/schema.ts` | modify | Columns on `contacts`, `client_accounts`, `enquiries`; tables `contactPoints`, `accountMemberships`, `contactKeptApart`, `recordMerges` |
 | `packages/api/src/services/people-records.ts` | create | Person writes, contact points, memberships, mirrors, the person profile |
@@ -237,7 +237,7 @@ git commit -m "feat(types): the People Book's records, normalisers and merge con
 ### Task 2: The migration, its backfill and the Drizzle schema
 
 **Files:**
-- Create: `packages/api/drizzle/0096_people_book.sql`
+- Create: `packages/api/drizzle/0098_people_book.sql`
 - Modify: `packages/api/drizzle/meta/_journal.json` (append one entry)
 - Modify: `packages/api/src/db/schema.ts:28-94` (type imports), `:705-745` (`enquiries`), `:772-786` (`clientAccounts`), `:788-804` (`contacts`); new tables after `:804` and after `followUpTasks` (`:856-870`)
 - Modify: `packages/api/src/services/client-search.ts:80-82` and `:233-237` (`email: string | null`)
@@ -262,14 +262,14 @@ foreach ($c in @(@{ dir = "route"; port = 55476 }, @{ dir = "platform"; port = 5
 & "$bin/psql.exe" -h 127.0.0.1 -p 55477 -U postgres -c "CREATE DATABASE venviewer_platform_test"
 ```
 
-If `0096_people_book.sql` changes after the platform database has applied it, the platform gate refuses the drifting journal: drop and recreate `venviewer_platform_test`, then rerun Step 10.
+If `0098_people_book.sql` changes after the platform database has applied it, the platform gate refuses the drifting journal: drop and recreate `venviewer_platform_test`, then rerun Step 10.
 
 - [ ] **Step 2: Write the failing file test (no database)**
 
 `people-book-migration.test.ts`, following `booking-event-bind.test.ts:36-60`:
 
 ```ts
-const TAG = "0096_people_book";
+const TAG = "0098_people_book";
 const PREVIOUS = "0093_forward_book_checks";
 const quoted = (values: readonly string[]): string => values.map((value) => `'${value}'`).join(", ");
 
@@ -291,7 +291,7 @@ it("waits at most five seconds for a lock and creates every table idempotently",
 
 - [ ] **Step 3: Write the failing migration test on the route database**
 
-`people-book-migration-postgres.test.ts`, in the style of `enquiry-source-migration-postgres.test.ts`: the same URL guard (127.0.0.1:55476 `/venviewer_route_atomicity_test`), `describe.skipIf(testUrl === undefined)`, a random schema on `search_path`, the same `applyMigration` (split on `--> statement-breakpoint`, one transaction). Build the tables as the release before 0096 defined them: `venues`, `users`, `opportunities`, `activities`, `proposals` and `guest_leads` from `getTableConfig` in full; `contacts`, `client_accounts` and `enquiries` from `getTableConfig` without the columns 0096 adds, with `contacts.email` declared `NOT NULL`. Every `id` is `primary key default gen_random_uuid()`, `created_at`/`updated_at` default `now()`.
+`people-book-migration-postgres.test.ts`, in the style of `enquiry-source-migration-postgres.test.ts`: the same URL guard (127.0.0.1:55476 `/venviewer_route_atomicity_test`), `describe.skipIf(testUrl === undefined)`, a random schema on `search_path`, the same `applyMigration` (split on `--> statement-breakpoint`, one transaction). Build the tables as the release before 0098 defined them: `venues`, `users`, `opportunities`, `activities`, `proposals` and `guest_leads` from `getTableConfig` in full; `contacts`, `client_accounts` and `enquiries` from `getTableConfig` without the columns 0098 adds, with `contacts.email` declared `NOT NULL`. Every `id` is `primary key default gen_random_uuid()`, `created_at`/`updated_at` default `now()`.
 
 Rows, at venue A unless said (every timestamp explicit):
 
@@ -346,9 +346,9 @@ Agreement is tested on ASCII. PostgreSQL's `lower()` follows the database locale
 - [ ] **Step 4: Run both to see them fail**
 
 Run: `pnpm --filter @omnitwin/api exec vitest run src/__tests__/people-book-migration.test.ts`, then `VENVIEWER_ROUTE_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55476/venviewer_route_atomicity_test pnpm --filter @omnitwin/api exec vitest run src/__tests__/people-book-migration-postgres.test.ts`
-Expected: FAIL, `ENOENT ... drizzle/0096_people_book.sql`.
+Expected: FAIL, `ENOENT ... drizzle/0098_people_book.sql`.
 
-- [ ] **Step 5: Write `0096_people_book.sql`**
+- [ ] **Step 5: Write `0098_people_book.sql`**
 
 A header comment in the house style (`0090_booking_event_bind.sql:1-41`) saying what it does and in what order, that rerunning changes nothing, and the residual: in the pre-deploy window the previous container writes `contacts` with no points and enquiries with no person; create-from-enquiry (Task 10) links such an enquiry when it is worked. Then, separated by `--> statement-breakpoint`:
 
@@ -390,8 +390,8 @@ FROM (SELECT DISTINCT ON (source_enquiry_id) id, source_enquiry_id, venue_id FRO
       WHERE source_enquiry_id IS NOT NULL AND deleted_at IS NULL ORDER BY source_enquiry_id, created_at, id) c
 WHERE e.id = c.source_enquiry_id AND e.venue_id = c.venue_id AND e.contact_id IS NULL;
 -- f. One person per venue and normalised email for enquirers no live contact holds; seeds excluded.
-DROP TABLE IF EXISTS pg_temp."people_0096_enquirers";
-CREATE TEMP TABLE "people_0096_enquirers" AS
+DROP TABLE IF EXISTS pg_temp."people_0098_enquirers";
+CREATE TEMP TABLE "people_0098_enquirers" AS
 SELECT gen_random_uuid() AS contact_id, g.* FROM (
   SELECT e.venue_id,
     people_normalise_email(coalesce(e.guest_email, e.email)) AS email_key,
@@ -411,7 +411,7 @@ WHERE NOT EXISTS (SELECT 1 FROM contact_points p JOIN contacts c ON c.id = p.con
     AND c.deleted_at IS NULL AND c.merged_into_id IS NULL AND c.erased_at IS NULL);
 INSERT INTO contacts (id, venue_id, name, email, phone, source_enquiry_id, created_at, updated_at)
 SELECT contact_id, venue_id, left(name, 200), left(email_display, 255), left(phone_display, 50), first_enquiry_id, first_at, now()
-FROM people_0096_enquirers;
+FROM people_0098_enquirers;
 -- then their email point (email_key, email_display, 'other', primary) and, where phone_display is not null, their phone point.
 -- g. Every still-unlinked, non-seed enquiry whose email exactly one live person holds.
 UPDATE enquiries e SET contact_id = m.contact_id
@@ -440,7 +440,7 @@ Every column, constraint and index above, with the same names; the composite key
 
 - [ ] **Step 7: Append the journal entry**
 
-`{ "idx": 92, "version": "7", "when": 1792249200000, "tag": "0096_people_book", "breakpoints": true }`
+`{ "idx": 96, "version": "7", "when": 1792422000000, "tag": "0098_people_book", "breakpoints": true }`
 
 - [ ] **Step 8: Let the client search carry a person without an email**
 
@@ -454,13 +454,13 @@ Expected: both files pass with none skipped; typecheck clean.
 - [ ] **Step 10: Migrate the platform database**
 
 Run: `VENVIEWER_PLATFORM_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55477/venviewer_platform_test pnpm --filter @omnitwin/api test:platform-db`
-Expected: the receipt's `migration` stage lists 0096 applied and replayed unchanged, and the existing platform files pass.
+Expected: the receipt's `migration` stage lists 0098 applied and replayed unchanged, and the existing platform files pass.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add packages/api/drizzle/0096_people_book.sql packages/api/drizzle/meta/_journal.json packages/api/src/db/schema.ts packages/api/src/services/client-search.ts packages/api/src/__tests__/people-book-migration.test.ts packages/api/src/__tests__/people-book-migration-postgres.test.ts
-git commit -m "feat(api): the People Book's records and their backfill, migration 0096 (T-665)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git add packages/api/drizzle/0098_people_book.sql packages/api/drizzle/meta/_journal.json packages/api/src/db/schema.ts packages/api/src/services/client-search.ts packages/api/src/__tests__/people-book-migration.test.ts packages/api/src/__tests__/people-book-migration-postgres.test.ts
+git commit -m "feat(api): the People Book's records and their backfill, migration 0098 (T-665)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -960,7 +960,7 @@ after two attempts with no live holder: ambiguous
 
 - [ ] **Step 4: Put the public enquiry in one transaction**
 
-In `public-enquiries.ts`, the enquiry insert, its status history, `linkEnquiryToPerson(tx, …, { ownerUserId: null, whenShared: "leave" })` and the guest lead run in one `db.transaction`; the in-app notice, the acknowledgement and the hallkeepers' emails stay after it, unchanged. The guest lead is inserted only when no row has that exact email (`INSERT … SELECT … WHERE NOT EXISTS`); the update branch (`:230-238`) goes, which ends the cross-venue overwrite. An enquiry that is not a booking (`isBookingEnquiry(eventType)` false: an access request or a Venviewer pricing enquiry, which ride this route) is not linked and makes no person: the People Book is the venue's client record (controller ruling, 18 October, matching migration 0096's backfill). Log `{ event: "enquiry.person_linked", enquiryId, venueId, outcome }`. The 201 body is unchanged.
+In `public-enquiries.ts`, the enquiry insert, its status history, `linkEnquiryToPerson(tx, …, { ownerUserId: null, whenShared: "leave" })` and the guest lead run in one `db.transaction`; the in-app notice, the acknowledgement and the hallkeepers' emails stay after it, unchanged. The guest lead is inserted only when no row has that exact email (`INSERT … SELECT … WHERE NOT EXISTS`); the update branch (`:230-238`) goes, which ends the cross-venue overwrite. An enquiry that is not a booking (`isBookingEnquiry(eventType)` false: an access request or a Venviewer pricing enquiry, which ride this route) is not linked and makes no person: the People Book is the venue's client record (controller ruling, 18 October, matching migration 0098's backfill). Log `{ event: "enquiry.person_linked", enquiryId, venueId, outcome }`. The 201 body is unchanged.
 
 - [ ] **Step 4b: Let the platform gate run the venue-slug test in CI**
 
@@ -1192,9 +1192,9 @@ git commit -m "feat(api): undo a merge within 30 days, keeping what changed sinc
 
 ---
 
-### Task 13: Rehearse 0096 on a production-shaped database
+### Task 13: Rehearse 0098 on a production-shaped database
 
-The chief of staff asked on 18 October, before the merge slot: run the migration on a disposable database shaped like production (master's seed migrated to 0093, then 0096), prove that rerunning it is safe, and prove the previous API keeps working on the new schema, as the bind's 0090 did; never touch the production database; record the rehearsal in the pull request. This task depends only on Task 2, so it runs straight after Task 2, and Task 14 runs it again at the merge slot once the final number is known.
+The chief of staff asked on 18 October, before the merge slot: run the migration on a disposable database shaped like production (master's seed migrated to master's last migration, then ours), prove that rerunning it is safe, and prove the previous API keeps working on the new schema, as the bind's 0090 did; never touch the production database; record the rehearsal in the pull request. This task depends only on Task 2, so it runs straight after Task 2, and Task 14 runs it again at the merge slot once the final number is known.
 
 **Files:**
 - Create: `packages/api/src/scripts/check-people-book.ts`
@@ -1229,7 +1229,7 @@ In the master worktree, run the production migrator exactly as Railway's pre-dep
 
 - [ ] **Step 5: Migrate it as production will**
 
-Take an `md5(string_agg(t::text, '|' ORDER BY id))` of `contacts`, `client_accounts`, `enquiries`, `opportunities`, `activities`, `proposals` and `guest_leads`. Run this worktree's build of `migrate-before-deploy` with the same URL and time it. Expected: 0096 applied once, in one transaction, in a few seconds (the pre-deploy limit is 900 s); `contacts`, `client_accounts` and `enquiries` are locked for that long, so record the duration.
+Take an `md5(string_agg(t::text, '|' ORDER BY id))` of `contacts`, `client_accounts`, `enquiries`, `opportunities`, `activities`, `proposals` and `guest_leads`. Run this worktree's build of `migrate-before-deploy` with the same URL and time it. Expected: 0098 applied once, in one transaction, in a few seconds (the pre-deploy limit is 900 s); `contacts`, `client_accounts` and `enquiries` are locked for that long, so record the duration.
 
 - [ ] **Step 6: Prove the result**
 
@@ -1237,7 +1237,7 @@ Run `check-people-book.ts`: every `mustBeZero` count 0 and `unlinkedWithOneHolde
 
 - [ ] **Step 7: Prove a rerun changes nothing**
 
-Apply `0096_people_book.sql` a second time directly, in one transaction, split on `--> statement-breakpoint` as the migration test does: the checksums of `contacts`, `contact_points`, `account_memberships`, `client_accounts`, `enquiries`, `contact_kept_apart` and `record_merges` are equal before and after. Run the migrator again: nothing to apply.
+Apply `0098_people_book.sql` a second time directly, in one transaction, split on `--> statement-breakpoint` as the migration test does: the checksums of `contacts`, `contact_points`, `account_memberships`, `client_accounts`, `enquiries`, `contact_kept_apart` and `record_merges` are equal before and after. Run the migrator again: nothing to apply.
 
 - [ ] **Step 8: Prove the previous API works on the new schema**
 
@@ -1272,7 +1272,7 @@ Expected: all green; the platform receipt lists the five new files and the venue
 
 - [ ] **Step 2: Record what is true**
 
-The engineering-map row names `routes/people.ts`, `services/people-*.ts` and migration 0096, and the boundaries: venue-scoped with composite keys, the mirrors, the lock order, tombstones. The session log records the calls this plan made: a merge sets `deleted_at` beside `merged_into_id` so every existing reader drops a tombstone unchanged; the legacy columns are mirrors; organisation merges are not built; a kept-apart mark names two records and holds across merges by following tombstones; the pre-deploy-window residual; the provisional migration number. The roadmap and Find notes say sales searches clients since this slice. Merge origin/master first. PR #126 (the replacement map) adds the T-665 row: if it has merged, update that row in place to say local, committed or merged as the evidence shows; if it is still open, leave `tasks.md` alone, so the two never conflict, and put the state in the session log and the pull request.
+The engineering-map row names `routes/people.ts`, `services/people-*.ts` and migration 0098, and the boundaries: venue-scoped with composite keys, the mirrors, the lock order, tombstones. The session log records the calls this plan made: a merge sets `deleted_at` beside `merged_into_id` so every existing reader drops a tombstone unchanged; the legacy columns are mirrors; organisation merges are not built; a kept-apart mark names two records and holds across merges by following tombstones; the pre-deploy-window residual; the provisional migration number. The roadmap and Find notes say sales searches clients since this slice. Merge origin/master first. PR #126 (the replacement map) adds the T-665 row: if it has merged, update that row in place to say local, committed or merged as the evidence shows; if it is still open, leave `tasks.md` alone, so the two never conflict, and put the state in the session log and the pull request.
 
 - [ ] **Step 3: Commit, push and hand to the chief of staff**
 
@@ -1282,4 +1282,4 @@ git commit -m "docs: record People Book slice 1 (T-665)" -m "Co-Authored-By: Cla
 git push
 ```
 
-Open the pull request against master with the check evidence, the platform receipt and Task 13's rehearsal record, and send the chief of staff its head SHA for the migration number and the merge queue. At the slot, after #108 merges: merge origin/master, take the number and idx the chief of staff confirms (journal, SQL file name, the `TAG` and previous-tag constants), rerun Task 13 Steps 3 to 8 with master's new state, add the branch's own API to Step 8 (the same flows, then `GET /people/search`, a person's profile and a couple's duplicate suggestion), update the record and the pull request, then merge. After it deploys: `/health/version` reports the merge SHA, the ledger holds the migration, and a signed-in sales session's `GET /clients/search?q=<a real client's name>` answers 200; with Blake's approval for a production read, `check-people-book.ts` prints 0 for every `mustBeZero` count. Record those facts in the task row.
+Open the pull request against master with the check evidence, the platform receipt and Task 13's rehearsal record, and send the chief of staff its head SHA for the migration number and the merge queue. At the slot, after #108 merges: merge origin/master, take the number and idx the chief of staff confirms (journal, SQL file name, the `TAG` and previous-tag constants), rerun Task 13 Steps 3 to 8 with master's new state, add the branch's own API to Step 8 (the same flows, then `GET /people/search`, a person's profile and a couple's duplicate suggestion), update the record and the pull request, then merge. After it deploys: `/health/version` reports the merge SHA, the ledger holds the migration, and a signed-in sales session's `GET /clients/search?q=<a fictional term>` answers 200 (a real name would put personal data in a URL; a 200 with no results still proves the gate); with Blake's approval for a production read, `check-people-book.ts` prints 0 for every `mustBeZero` count. Record those facts in the task row.
