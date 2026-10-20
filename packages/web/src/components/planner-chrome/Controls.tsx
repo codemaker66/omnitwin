@@ -198,15 +198,18 @@ export interface SwitchProps {
 
 export function Switch({ label, checked, onChange, disabledReason, className }: SwitchProps): ReactElement {
   const id = useId();
+  const labelId = useId();
   const disabled = disabledReason !== undefined;
   return (
     <div className={["pc-switch-row", className ?? ""].filter(Boolean).join(" ")}>
-      <label htmlFor={id}>{label}</label>
+      {/* The label clicks the switch; aria-labelledby names it for every reader, not only those that follow label[for] to a button. */}
+      <label id={labelId} htmlFor={id}>{label}</label>
       <button
         id={id}
         type="button"
         role="switch"
         className="pc-switch"
+        aria-labelledby={disabled ? undefined : labelId}
         aria-checked={checked}
         aria-disabled={disabled ? true : undefined}
         aria-label={disabled ? keyAccessibleName({ label, disabledReason }) : undefined}
