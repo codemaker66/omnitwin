@@ -30,8 +30,22 @@ development builds only) shows the room alone, posed through a window bridge for
 - **Floor** (`hall-floor.ts`): drawn oak strips 73 mm wide, the width measured from the survey's
   floor photograph, in staggered lengths with a tiling grain, lit by the same baked channels.
   Board detail fades with distance so it never shimmers; the photograph is no longer fetched.
+  Each row's stagger and length and each board's tones come from three's `hash()`, which reads its
+  seed as an unsigned integer (WGSL `u32()`: a negative seed is 0, a fraction is dropped), so every
+  row and column index is raised by `FLOOR_SEED_OFFSET` first. Without it the window half (z < 0)
+  drew one stagger and one length for nearly every row: rendered on 19 October, 98% of its end
+  joints lined up with the next row's against 2% on the door side.
 - **Cut walls** (`hall-section.ts`): where the cutaway lowers a wall, its body stands as a solid
-  section with a dark cap and a gilt edge on the room side, over a plinth round the hall.
+  section with a dark cap and a gilt edge on the room side. The hall stands in a plinth that is a
+  ring round the floor, never a slab under it: its top lies at the floor's level only outside the
+  floor, from the room's planes to the walls' outer faces (it is also the floor of the door
+  recesses and the firebox), its outer faces drop 0.42 m, and under the floor's edge only a strip
+  2 cm down reaches 5 cm in, so a crack would show slab, not the void. Its inner edge repeats the
+  floor's own edge vertices. A slab 1 mm under the oak, as before, lost the depth test at scattered
+  pixels (depth24, near 0.1, far 900: a few depth steps per millimetre at 20-30 m), the black specks
+  Blake saw while the camera moved. No two surfaces of the hall may share a plane: keep any new one
+  centimetres clear of the floor and of the city's caps at y = 0 beyond the cut-out (|x| > 11.2,
+  |z| > 5.95).
 - **Chandeliers** (`hall-chandeliers.ts`): the five fittings as scanned, gilt scrollwork and
   acanthus on dark bronze stems with white flame bulbs, drawn to the lowest points, reaches and
   bulb heights measured in the panoramas (`HALL_CHANDELIERS`; method in the 10 October session log).
@@ -61,6 +75,60 @@ without filling the reflections' sky beneath the dome fitting. `HallEnvironment`
 while the room is not drawn. The canvas uses Khronos PBR Neutral tone mapping for the
 photographed room (`lib/capture-display.ts`), which keeps the photographs' mid-tones, after the
 planner's pipeline grades each mood ([planner rendering](planner-rendering.md)).
+
+## The real sky (`?sky=1`)
+
+Behind a device switch while Blake reviews it: `?sky=1` turns it on and is remembered on the
+device (`lib/hall-sky-access.ts`); `?sky=0` turns it off. The drawn hall then stands under the true
+sky over Glassford Street at the moment the planner shows (`stores/hall-time-store.ts`). A plan
+opened for an event (`?eventId`) opens at the event's start, read by the venue's team from the
+event and by a client from their shared schedule (`HallOpeningHour.tsx`); any other plan follows
+the clock. Presentation only: nothing is saved, and nothing is kept between visits.
+
+- **Sun and moon** (`lib/sky/ephemeris.ts`): Meeus: the sun (ch. 25), the moon (ch. 47,
+  truncated), its phase (ch. 48), sidereal time, refraction tapered below the horizon and the
+  moon's parallax. The tests hold it to Meeus' worked examples, NREL's SPA and Glasgow's 2026 sun
+  and moon tables (sun times within 75 s).
+- **Sky** (`lib/sky/sky-palette.ts`, `hall-sky.ts`, `hall-sky-dome.ts`): an art-directed palette
+  keyed to the sun's true altitude, with sunlight's colour from its air mass (Rayleigh and aerosol
+  extinction); a dome round the camera with the sun's disc and glow, stars, the moon lit from the
+  sun's direction and the city's glow. The hall's mood follows the same sun from the scan's
+  daylight through golden hour and dusk to night (`hallMoodForSun`, `mixMoodSpec`). `HallSky`
+  carries the shown time on a spring, so a chosen hour arrives as the sun sweeping across the
+  sky; a jump of more than 36 hours arrives at once.
+- **Light and shadow** (`hall-sun.ts`, `HallSunLight.tsx`): one shadow-casting directional light,
+  the sun by day and the moon by night. Its map covers the room and 90 m of street toward the sun,
+  so the blocks across Glassford Street shade the windows, and is refitted only when the light
+  has turned or the furniture has changed (coarsely while the time is dragged). On WebGPU a
+  material that samples the shadow map cannot also cast into it, so the hall casts through plain
+  stand-ins on layer 9 (`createHallCasterMaterials`); the glass, marked at alpha 128/255 in the
+  wall atlas, is left out so the sun falls through it. The photographed surfaces add the sun in
+  their own baked units (`sunIrradiance`).
+- **Windows** (`hall-site.ts`, `hall-skyline.ts`, `hall-sun-times.ts`): the window wall faces
+  101.1° true (from the 2020 LiDAR). Each window's skyline, the elevation of what stands across
+  the street from 11° to 191°, was measured from the LiDAR; with the reveals' limits (77° for the
+  arches, 66° for the sashes) it decides when sun reaches the floor, the gold bars on the dial.
+- **The city** (`hall-context.ts`, `HallContext.tsx`): the Merchant City as an architect's white
+  contour model in 3 m bands (69,451 triangles, 1.25 MB,
+  `public/rooms/grand-hall/context-2020-lidar/merchant-city-v2.bin`), lit by the same sky with its
+  own coarse shadow, aerial haze and a few lit windows at night; it also stands in the hall's sun
+  shadow. Built from the Scottish LiDAR Phase 5 DSM (OGL v3, attributed in the model's JSON) by
+  `tools/grand-hall-survey/context`, which rebuilds it byte for byte. `?setting=none` leaves the
+  hall under the sky alone, for measuring.
+- **The dial** (`editor/cockpit/HallSunDial.tsx`): in the hall's Light controls, a popover on a
+  desktop and inline in a phone's View sheet. The day is a band of its own sky with the sun's
+  real path, ticks at sunrise, noon and sunset (a dragged sun settles on them), the gold floor
+  bars, six named moments, a date and Now. To assistive technology it is a slider: arrows move
+  five minutes, Shift an hour, the Page keys an hour, Home and End go to sunrise and sunset.
+- **Furniture motion** (`lib/furniture-motion.ts`): a carried piece leans back from its travel
+  (about 4° at most) and, let go, swings upright and sets its weight down with a small squash; a
+  newly placed piece drops in from a hand's width. It pivots on the base and keeps its volume, and
+  stays still under reduced motion.
+
+Measured on the RTX 4090 on 16 October: an orbit drew 159 frames a second with the sky and city
+against 167 without, and 35 against 38 with the CPU slowed 4x as a phone stand-in (within noise
+over three interleaved pairs); dragging the time held 123, and 68-112 slowed. A real phone's GPU
+is unmeasured, and one 1 s stall was seen once in a profiled run.
 
 ## Views and loading
 
@@ -103,6 +171,12 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   it against the room: plaster flat beside the main door, glass deep in every window, the firebox
   behind and the mantel proud of the chimney breast, the door recess, the geometry envelope, and
   rejection of malformed files.
+- `src/components/grand-hall/__tests__/hall-section.test.ts` keeps the plinth off the floor:
+  nothing under it within 1.5 cm, the band out to the walls' outer faces covered at its level, the
+  floor's own edge vertices on its inner edge, everything inside the city's cut-out;
+  `hall-floor.test.ts` holds every hash seed above zero and the two halves' end joints alike. The
+  rendered proof (the plinth painted magenta never shows through the floor in any orbit, pose or
+  profile) is browser evidence, recorded in the [19 October session log](../sessions/2026-10-19.md).
 - `src/components/grand-hall/__tests__/hall-chandeliers.test.ts` checks each chandelier's lowest
   point and reach against the survey, its bulbs, that every triangle faces along its normals (the
   metal is single-sided) with none degenerate, that every bulb faces outward, and the triangle
@@ -116,6 +190,13 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
 - `grand-hall/__tests__/hall-photos.test.ts` covers the off-thread decode and every bitmap's
   release; `hall-lighting-model.test.ts` holds the allocation-free bake to the original to 12
   decimals over 4000 samples.
+- The real sky: `lib/sky/__tests__/ephemeris.test.ts` (Meeus, SPA and Glasgow's 2026 tables) and
+  `sky-palette.test.ts`; `grand-hall/__tests__/hall-sky.test.ts` (the light and mood for the
+  sun), `hall-sun-times.test.ts` (sun on the floor at the solstices and equinox) and
+  `hall-context.test.ts` (the city model's parser, and the published model against its own
+  counts); `stores/__tests__/hall-time-store.test.ts` (the opening hour) and
+  `cockpit/__tests__/HallSunDial.test.tsx` (keys, drag, snapping, named moments, the moon);
+  `lib/__tests__/furniture-motion.test.ts` (the lean, squash and drop-in).
 - The rendered room needs browser evidence: `/dev/grand-hall`, `/dev/planner-lab` (with
   `scripts/planner-lab.mjs`) or the planner itself (`scripts/planner-tour.mjs`).
 

@@ -7,10 +7,10 @@ import { createDbConnection } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
 // The People Book's backfill, read once against a real database (T-665,
-// migration 0096). CI proves it on the platform database
+// migration 0098). CI proves it on the platform database
 // (check-people-book-postgres.test.ts); this is the operator's read of the
 // same query against a rehearsal copy or, with approval, production after
-// 0096 has run:
+// 0098 has run:
 //
 //   pnpm --filter @omnitwin/api exec tsx src/scripts/check-people-book.ts
 //
@@ -98,7 +98,7 @@ export async function checkPeopleBook(db: PeopleBookReader, venueIds: readonly s
     if (venueIds.length === 0) return sql`false`;
     return sql`${sql.raw(column)} IN (${sql.join(venueIds.map((id) => sql`${id}::uuid`), sql`, `)})`;
   };
-  // normaliseEmail in @omnitwin/types, as migration 0096's people_normalise_email
+  // normaliseEmail in @omnitwin/types, as migration 0098's people_normalise_email
   // runs it, written out so this check outlives the backfill's helpers.
   const enquiryEmail = sql.raw(
     "NULLIF(lower(regexp_replace(coalesce(e.guest_email, e.email), '^[[:space:]]+|[[:space:]]+$', '', 'g')), '')",

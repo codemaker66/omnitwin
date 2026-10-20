@@ -16,7 +16,7 @@ import { checkPeopleBook, type PeopleBookCheck } from "../scripts/check-people-b
 // The People Book's read-only check on the migrated platform database (T-665).
 //
 // check-people-book.ts is what an operator runs once against a database after
-// migration 0096 has run: every mirror equals its primary point or
+// migration 0098 has run: every mirror equals its primary point or
 // membership, every person has one primary of each kind they hold, and no
 // enquiry names another venue's person. Each test writes its own two venues by
 // SQL, as the backfill or a later write would leave them, breaks one rule,

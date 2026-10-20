@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
 import { buildEvidencePack, type EvidenceCheck } from "../cockpit-evidence-model.js";
+import { PUBLISHED_CAPACITY_LABEL, type PublishedCapacityAnswer } from "../planner-truth.js";
 import { CATALOGUE_ITEMS, type CatalogueItem } from "../catalogue.js";
 import type { PlacedItem } from "../placement.js";
 
@@ -20,7 +22,12 @@ function place(item: CatalogueItem, n: number): PlacedItem[] {
   }));
 }
 
-const ROOM = { roomWidthM: 21, roomLengthM: 10 } as const; // 210 m², comfortable 140 (rounds)
+const GRAND_HALL: PublishedCapacityAnswer = {
+  kind: "published",
+  capacity: TRADES_HALL_ROOM_CAPACITIES["grand-hall"],
+  source: PUBLISHED_CAPACITY_LABEL,
+};
+const ROOM = { roomWidthM: 21, roomLengthM: 10.5, published: GRAND_HALL } as const;
 const withChairs = (chairs: number): PlacedItem[] => [...place(roundTable(), 8), ...place(chair(), chairs)];
 const byId = (checks: readonly EvidenceCheck[], id: string): EvidenceCheck => {
   const c = checks.find((check) => check.id === id);
@@ -28,49 +35,73 @@ const byId = (checks: readonly EvidenceCheck[], id: string): EvidenceCheck => {
   return c;
 };
 
-describe("buildEvidencePack", () => {
-  it("passes seating and comfort when the room fits the headcount", () => {
-    const pack = buildEvidencePack({ ...ROOM, placedItems: withChairs(80), guestCount: 80 });
-    expect(byId(pack.checks, "seating").status).toBe("pass");
-    expect(byId(pack.checks, "comfort").status).toBe("pass");
-    expect(byId(pack.checks, "egress").status).toBe("review");
-    expect(pack.passCount).toBe(2);
+describe("buildEvidencePack — no pass, only what is recorded", () => {
+  it("never returns a pass status, whatever the layout", () => {
+    for (const guests of [null, 40, 80, 180, 400]) {
+      const pack = buildEvidencePack({ ...ROOM, placedItems: withChairs(80), guestCount: guests });
+      for (const check of pack.checks) {
+        expect(["review", "noted", "not-recorded", "reading"]).toContain(check.status);
+      }
+      expect(Object.keys(pack)).not.toContain("passCount");
+    }
+  });
+
+  it("notes seating when every guest has a seat, and reviews a shortfall", () => {
+    expect(byId(buildEvidencePack({ ...ROOM, placedItems: withChairs(80), guestCount: 80 }).checks, "seating").status).toBe("noted");
+    const short = byId(buildEvidencePack({ ...ROOM, placedItems: withChairs(80), guestCount: 120 }).checks, "seating");
+    expect(short.status).toBe("review");
+    expect(short.detail).toMatch(/Short 40 seats/);
+  });
+
+  it("reads the guest count against the published dinner figure, with its source", () => {
+    const capacity = byId(buildEvidencePack({ ...ROOM, placedItems: withChairs(80), guestCount: 80 }).checks, "capacity");
+    expect(capacity.status).toBe("noted");
+    expect(capacity.detail).toBe("Published 180 for dinner.");
+    expect(capacity.source).toBe("Published guide · Trades Hall · 9 Jul 2026");
+  });
+
+  it("reviews a count above the published figure and asks about it", () => {
+    const pack = buildEvidencePack({ ...ROOM, placedItems: withChairs(200), guestCount: 200 });
+    const capacity = byId(pack.checks, "capacity");
+    expect(capacity.status).toBe("review");
+    expect(capacity.detail).toBe("200 guests is more than the published 180 for dinner.");
+    expect(capacity.ask).toEqual({ kind: "headcount", guests: 200, figure: 180, formatLabel: "dinner" });
     expect(pack.reviewCount).toBe(1);
-    expect(pack.hasGuestCount).toBe(true);
-    expect(pack.assessedHeadcount).toBe(80);
   });
 
-  it("flags a seating shortfall as review", () => {
-    const pack = buildEvidencePack({ ...ROOM, placedItems: withChairs(80), guestCount: 120 });
-    expect(byId(pack.checks, "seating").status).toBe("review");
-    expect(byId(pack.checks, "seating").detail).toMatch(/Short 40 seats/);
+  it("says the capacity is not recorded for a room with no published figure", () => {
+    const capacity = byId(
+      buildEvidencePack({ ...ROOM, published: { kind: "not-published" }, placedItems: withChairs(80), guestCount: 80 }).checks,
+      "capacity",
+    );
+    expect(capacity.status).toBe("not-recorded");
+    expect(capacity.ask).toBe("room-capacity");
   });
 
-  it("flags an over-capacity room as review", () => {
-    const pack = buildEvidencePack({ ...ROOM, placedItems: withChairs(80), guestCount: 220 });
-    expect(byId(pack.checks, "comfort").status).toBe("review");
-    expect(byId(pack.checks, "comfort").detail).toMatch(/over comfortable/i);
+  it("waits honestly while the venue's figures are being read", () => {
+    const capacity = byId(
+      buildEvidencePack({ ...ROOM, published: { kind: "reading" }, placedItems: withChairs(80), guestCount: 80 }).checks,
+      "capacity",
+    );
+    expect(capacity.status).toBe("reading");
   });
 
-  it("states the ADB egress reference for the headcount", () => {
+  it("shows escape routes as not recorded, asks about them, and cites no other country's code", () => {
     const pack = buildEvidencePack({ ...ROOM, placedItems: withChairs(80), guestCount: 80 });
-    const egress = byId(pack.checks, "egress");
-    expect(egress.detail).toMatch(/≥ 2 escape routes/);
-    expect(egress.detail).toMatch(/850 mm/);
-    expect(egress.detail).toMatch(/Confirm against this room's actual exits/);
+    const escape = byId(pack.checks, "escape-routes");
+    expect(escape.status).toBe("not-recorded");
+    expect(escape.ask).toBe("escape-routes");
+    expect(escape.detail).toContain("fire risk assessment");
+    for (const check of pack.checks) {
+      expect(check.detail).not.toMatch(/ADB|Approved Document|NFPA|BS 9999|≥ \d+ escape route|mm total clear/);
+    }
+    expect(pack.notRecordedCount).toBe(1);
   });
 
-  it("uses singular routes wording for small rooms", () => {
-    const pack = buildEvidencePack({ ...ROOM, placedItems: withChairs(50), guestCount: 50 });
-    expect(byId(pack.checks, "egress").detail).toMatch(/≥ 1 escape route\b/);
-  });
-
-  it("is all-informational for an empty layout with no guest count", () => {
+  it("asks for seating rather than reading an empty floor against a format", () => {
     const pack = buildEvidencePack({ ...ROOM, placedItems: [], guestCount: null });
-    expect(byId(pack.checks, "seating").status).toBe("info");
-    expect(byId(pack.checks, "comfort").status).toBe("info");
-    expect(byId(pack.checks, "egress").status).toBe("info");
-    expect(pack.passCount).toBe(0);
+    expect(byId(pack.checks, "seating").status).toBe("noted");
+    expect(byId(pack.checks, "capacity").detail).toBe("Add seating to read the layout against the published figures.");
     expect(pack.reviewCount).toBe(0);
     expect(pack.hasGuestCount).toBe(false);
   });

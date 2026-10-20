@@ -53,8 +53,8 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
   const fixtureSchema = `supplier_response_${randomUUID().replaceAll("-", "")}`;
   const tables: PgTable[] = [
     schema.venues, schema.suppliers, schema.handoffPacks, schema.snapshotDiffs,
-    schema.supplierCoordinationPacks, schema.supplierCoordinationShareTokens,
-    schema.supplierAcknowledgements, schema.eventPlanNotifications,
+    schema.supplierCoordinationPacks, schema.supplierCoordinationPackItems, schema.supplierCoordinationShareTokens,
+    schema.supplierAcknowledgements, schema.eventPlanNotifications, schema.generalAuditLog,
   ];
 
   beforeAll(async () => {
@@ -81,7 +81,8 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
 
   beforeEach(async () => {
     await pool.query(`TRUNCATE venues, suppliers, handoff_packs, snapshot_diffs, supplier_coordination_packs,
-      supplier_coordination_share_tokens, supplier_acknowledgements, event_plan_notifications`);
+      supplier_coordination_pack_items, supplier_coordination_share_tokens, supplier_acknowledgements,
+      event_plan_notifications, general_audit_log`);
     await pool.query("INSERT INTO venues (id, name, slug) VALUES ($1, 'Trades Hall Glasgow', 'trades-hall')", [VENUE]);
     await pool.query(
       "INSERT INTO suppliers (id, venue_id, name, category, contact_name, email) VALUES ($1, $2, 'Bloom & Co', 'florist', 'Sam', 'sam@example.test')",
@@ -90,9 +91,9 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     await pool.query("INSERT INTO handoff_packs (id, version, snapshot_hash, source_label, summary) VALUES ($1, 1, $2, 'Approved snapshot v1', 'Handoff')", [HANDOFF, "a".repeat(64)]);
     await pool.query(
       `INSERT INTO supplier_coordination_packs (id, venue_id, handoff_pack_id, supplier_id, title, status,
-        source_snapshot_hash, source_digest, source_label, safe_status, issued_at)
+        source_snapshot_hash, source_digest, source_label, safe_status, issued_at, expires_at)
        VALUES ($1, $2, $3, $4, 'Flowers for the Grand Hall dinner', 'issued', $5, $6, 'Approved snapshot v1',
-        'supplier_safe_operations_handoff', now())`,
+        'supplier_safe_operations_handoff', now(), now() + interval '7 days')`,
       [PACK, VENUE, HANDOFF, SUPPLIER, "a".repeat(64), "b".repeat(64)],
     );
     await pool.query(
@@ -131,9 +132,10 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     for (const row of rows) {
       expect(row).toMatchObject({
         venue_id: VENUE, event_id: null, change_id: null,
-        title: "Bloom & Co needs clarification", severity: "attention",
+        title: "Bloom & Co has a question", severity: "attention",
       });
-      expect(row.body).toBe("Flowers for the Grand Hall dinner. From Sam, sam@example.test. \"Which door do we load through?\"");
+      // The name is whatever the holder of the link typed: reported as given.
+      expect(row.body).toBe("Flowers for the Grand Hall dinner. Name given on the link: Sam, sam@example.test. \"Which door do we load through?\"");
     }
   });
 
@@ -145,8 +147,8 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     expect(res.statusCode).toBe(201);
     const rows = await notifications();
     expect(rows).toHaveLength(2);
-    expect(rows.every((row) => row.title === "Bloom & Co acknowledged the handoff" && row.severity === "info")).toBe(true);
-    expect(rows[0]?.body).toBe("Flowers for the Grand Hall dinner. From Sam. No note.");
+    expect(rows.every((row) => row.title === "Bloom & Co has read their brief" && row.severity === "info")).toBe(true);
+    expect(rows[0]?.body).toBe("Flowers for the Grand Hall dinner. Name given on the link: Sam. No note.");
   });
 
   it("keeps the supplier's response when the notification cannot be written", async () => {
@@ -159,6 +161,9 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
       expect(res.statusCode).toBe(201);
       const saved = await pool.query<{ status: string }>("SELECT status FROM supplier_acknowledgements WHERE pack_id = $1", [PACK]);
       expect(saved.rows.map((row) => row.status)).toEqual(["needs_clarification"]);
+      // The durable copy is written with the response, not with the notification.
+      const kept = await pool.query("SELECT 1 FROM general_audit_log WHERE action = 'supplier_pass.replied' AND target_id = $1", [PACK]);
+      expect(kept.rowCount).toBe(1);
     } finally {
       await pool.query("ALTER TABLE event_plan_notifications_away RENAME TO event_plan_notifications");
     }

@@ -25,6 +25,7 @@ const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", 
 const staffToken = (): string => signToken({ id: "u2", email: "staff@test.com", role: "staff", venueId: VENUE_ID });
 const clientToken = (): string => signToken({ id: "u3", email: "client@test.com", role: "client", venueId: null });
 const otherStaff = (): string => signToken({ id: "u4", email: "other@test.com", role: "staff", venueId: "00000000-0000-0000-0000-999999999999" });
+const roleToken = (role: string): string => signToken({ id: `u-${role}`, email: `${role}@test.com`, role, venueId: VENUE_ID });
 
 const validRule = {
   name: "Grand Hall Hire",
@@ -33,13 +34,17 @@ const validRule = {
 };
 
 describe("GET /venues/:venueId/pricing", () => {
-  it("is public (no auth required)", async () => {
+  // Prices are the venue's commercial team's (Blake, 17 October 2026); the
+  // full gate is in pricing-rules-read-guard.test.ts.
+  it("asks who you are", async () => {
     const res = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/pricing` });
-    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).toBe(401);
   });
 
   it("returns 400 for invalid venue UUID", async () => {
-    const res = await server.inject({ method: "GET", url: "/venues/bad/pricing" });
+    const res = await server.inject({
+      method: "GET", url: "/venues/bad/pricing", headers: { authorization: `Bearer ${staffToken()}` },
+    });
     expect(res.statusCode).toBe(400);
   });
 });
@@ -94,10 +99,10 @@ describe("POST /venues/:venueId/pricing", () => {
     expect(res.statusCode).not.toBe(403);
   });
 
-  it("passes validation for venue staff (fails at DB)", async () => {
+  it("passes the gate for a venue manager (fails at DB)", async () => {
     const res = await server.inject({
       method: "POST", url: `/venues/${VENUE_ID}/pricing`,
-      headers: { authorization: `Bearer ${staffToken()}` }, payload: validRule,
+      headers: { authorization: `Bearer ${roleToken("manager")}` }, payload: validRule,
     });
     expect(res.statusCode).not.toBe(400);
     expect(res.statusCode).not.toBe(403);
@@ -173,6 +178,77 @@ describe("POST /venues/:venueId/pricing/:id/restore", () => {
       method: "POST", url, headers: { authorization: `Bearer ${adminToken()}` }, payload: { isActive: "yes" },
     });
     expect(badBody.statusCode).toBe(400);
+  });
+});
+
+describe("who may set a price (PRICING_WRITE_ROLES)", () => {
+  const writes = [
+    { method: "POST" as const, url: `/venues/${VENUE_ID}/pricing`, payload: validRule },
+    { method: "PATCH" as const, url: `/venues/${VENUE_ID}/pricing/${RULE_ID}`, payload: { amount: 1750 } },
+    { method: "DELETE" as const, url: `/venues/${VENUE_ID}/pricing/${RULE_ID}`, payload: undefined },
+    { method: "POST" as const, url: `/venues/${VENUE_ID}/pricing/${RULE_ID}/restore`, payload: {} },
+  ];
+
+  it.each(["staff", "sales", "hallkeeper", "planner", "caterer"])("refuses every price write to %s at the venue", async (role) => {
+    for (const write of writes) {
+      const res = await server.inject({
+        method: write.method, url: write.url,
+        headers: { authorization: `Bearer ${roleToken(role)}` },
+        ...(write.payload === undefined ? {} : { payload: write.payload }),
+      });
+      expect(res.statusCode, `${role} ${write.method} ${write.url}`).toBe(403);
+      // The refusal says who can make the change, as a way forward.
+      expect(res.json<{ error: string; code: string }>()).toEqual({
+        error: "Prices are set by an administrator or a manager at the venue. Ask them to make this change.",
+        code: "FORBIDDEN",
+      });
+    }
+  });
+
+  it("lets an admin and a manager past the gate for every write (the mock database then fails)", async () => {
+    for (const role of ["admin", "manager"]) {
+      for (const write of writes) {
+        const res = await server.inject({
+          method: write.method, url: write.url,
+          headers: { authorization: `Bearer ${roleToken(role)}` },
+          ...(write.payload === undefined ? {} : { payload: write.payload }),
+        });
+        expect(res.statusCode, `${role} ${write.method} ${write.url}`).not.toBe(403);
+        expect(res.statusCode).not.toBe(401);
+      }
+    }
+  });
+
+  it("lets the commercial team read prices it cannot set, and no one signed out", async () => {
+    for (const role of ["staff", "sales"]) {
+      const res = await server.inject({
+        method: "GET", url: `/venues/${VENUE_ID}/pricing`, headers: { authorization: `Bearer ${roleToken(role)}` },
+      });
+      expect(res.statusCode, role).not.toBe(401);
+      expect(res.statusCode, role).not.toBe(403);
+    }
+    const signedOut = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/pricing` });
+    expect(signedOut.statusCode).toBe(401);
+  });
+});
+
+describe("GET /venues/:venueId/pricing/:id/history", () => {
+  const url = `/venues/${VENUE_ID}/pricing/${RULE_ID}/history`;
+
+  it("needs a signed-in member of the venue's administration", async () => {
+    expect((await server.inject({ method: "GET", url })).statusCode).toBe(401);
+    for (const token of [clientToken(), otherStaff(), roleToken("sales"), roleToken("hallkeeper")]) {
+      const res = await server.inject({ method: "GET", url, headers: { authorization: `Bearer ${token}` } });
+      expect(res.statusCode).toBe(403);
+    }
+  });
+
+  it("returns 400 for a rule id that is not a uuid", async () => {
+    const res = await server.inject({
+      method: "GET", url: `/venues/${VENUE_ID}/pricing/not-a-uuid/history`,
+      headers: { authorization: `Bearer ${staffToken()}` },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });
 

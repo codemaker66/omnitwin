@@ -12,6 +12,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
+import { emit } from "../observability/event-bus.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import {
   validatePlacementsInPolygon,
@@ -22,6 +23,11 @@ import {
   configurationRevisionEtag,
   revisionConflictBody,
 } from "../lib/configuration-revision.js";
+import {
+  generateVisitorPlanPdf,
+  loadVisitorPlan,
+  visitorPlanFilename,
+} from "../services/visitor-plan-pdf.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -283,6 +289,15 @@ export async function publicConfigRoutes(
       );
     }
 
+    // Commit, then announce: the transaction above has resolved, so an
+    // uncommitted write can never be broadcast (live co-editing v1).
+    emit(request.log, "layout.changed", {
+      configId,
+      revision: saveResult.revision,
+      actorUserId: null,
+      source: "public_batch",
+      at: new Date().toISOString(),
+    });
     reply.header("ETag", configurationRevisionEtag(saveResult.revision));
     return { data: { objects: saveResult.objects, revision: saveResult.revision } };
   });
@@ -384,5 +399,37 @@ export async function publicConfigRoutes(
 
     reply.header("ETag", configurationRevisionEtag(config.revision));
     return { data: { ...config, objects } };
+  });
+
+  // GET /public/configurations/:configId/plan.pdf — the visitor's plan, to send on
+  //
+  // Fix-first item 11: an organiser with no account can hand the plan to
+  // someone else. The organiser's own browser asks with the id it already
+  // holds, under exactly the GET rule above (a live public preview). The PDF
+  // it gets back is read-only by nature and carries no configuration id,
+  // short code or planner URL, no prices, and the line "Drawn by a visitor;
+  // not reviewed by the venue." (services/visitor-plan-pdf.ts). Drawing is
+  // CPU work, so the hourly limit sits below the batch save's.
+  server.get("/configurations/:configId/plan.pdf", {
+    config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+  }, async (request, reply) => {
+    const params = ConfigIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
+    }
+
+    const plan = await loadVisitorPlan(db, params.data.configId);
+    if (plan === null) {
+      return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
+    }
+
+    const pdf = await generateVisitorPlanPdf(plan);
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header("Content-Disposition", `attachment; filename="${visitorPlanFilename(plan.roomName)}"`)
+      // A guest plan keeps changing; a cached copy would send yesterday's layout.
+      .header("Cache-Control", "no-store")
+      .header("Content-Length", pdf.length)
+      .send(pdf);
   });
 }

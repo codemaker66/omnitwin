@@ -39,8 +39,8 @@ if (testUrl !== undefined) {
   }
 }
 
-// Provisional: the merge slot confirms the final number (see people-book-migration.test.ts).
-const TAG = "0096_people_book";
+// Confirmed at the merge slot (see people-book-migration.test.ts).
+const TAG = "0098_people_book";
 
 // Task 1's cases (packages/types/src/__tests__/people.test.ts), listed again:
 // the SQL function must agree with normalisePhone on every one.
@@ -540,7 +540,7 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
   });
 
   it("leaves none of its working tables behind", async () => {
-    expect(await query("SELECT relname FROM pg_class WHERE relpersistence = 't' AND relname LIKE 'people\\_0096\\_%'")).toEqual([]);
+    expect(await query("SELECT relname FROM pg_class WHERE relpersistence = 't' AND relname LIKE 'people\\_0098\\_%'")).toEqual([]);
   });
 
   it("dates each person's last contact from their latest enquiry, deal, activity or proposal", async () => {

@@ -1,5 +1,6 @@
 import type { ErrorInfo } from "react";
 import type { ErrorEvent, Event } from "@sentry/react";
+import { redactHealthFreeText } from "@omnitwin/types";
 
 type SentryReactModule = typeof import("./sentry-sdk.js");
 
@@ -84,7 +85,10 @@ export function scrubSentryEvent(event: Event): Event {
   delete scrubbed.user;
   delete scrubbed.extra;
 
-  return scrubbed;
+  // A guest's allergy note typed into the planner can surface in an error
+  // message or a breadcrumb; it never leaves the browser (fix-first item 18).
+  // The event is plain data, so the scrubbed copy keeps its shape.
+  return redactHealthFreeText(scrubbed) as Event;
 }
 
 export function scrubSentryErrorEvent(event: ErrorEvent): ErrorEvent {

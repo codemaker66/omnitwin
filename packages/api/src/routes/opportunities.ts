@@ -14,6 +14,8 @@ import {
 import {
   activities,
   clientAccounts,
+  competitorLosses,
+  competitorVenues,
   contacts,
   enquiries,
   followUpTasks,
@@ -32,6 +34,7 @@ import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { nextActionForStage } from "../services/deal-next-action.js";
 import type { PeopleConn, PeopleTx } from "../services/people-records.js";
 import { mergedPerson } from "./people.js";
+import { lostToRefusal, recordLoss } from "../services/competitor-watch-data.js";
 
 const IdParam = z.object({ id: z.string().uuid() });
 const TaskParam = z.object({ id: z.string().uuid(), taskId: z.string().uuid() });
@@ -314,6 +317,9 @@ export async function opportunityRoutes(
         .orderBy(desc(proposals.createdAt), desc(proposals.id))
         .limit(50),
       // Every move between stages, newest first, with who made it and why.
+      // A move to lost carries who won, when it was said (the competitor
+      // watch): a venue in the set, or another by name, with any figure the
+      // client volunteered, which the timeline labels as theirs, unverified.
       db.select({
         id: opportunityStatusHistory.id,
         fromStage: opportunityStatusHistory.fromStage,
@@ -321,12 +327,35 @@ export async function opportunityRoutes(
         note: opportunityStatusHistory.note,
         changedByName: sql<string | null>`COALESCE(${users.displayName}, ${users.name})`,
         createdAt: opportunityStatusHistory.createdAt,
+        lostToName: sql<string | null>`COALESCE(${competitorVenues.name}, ${competitorLosses.otherName})`,
+        lostToCompetitorId: competitorLosses.competitorId,
+        clientFigureMinor: competitorLosses.clientFigureMinor,
+        clientFigureBasis: competitorLosses.clientFigureBasis,
+        lossCurrency: competitorLosses.currency,
       })
         .from(opportunityStatusHistory)
         .leftJoin(users, eq(users.id, opportunityStatusHistory.changedBy))
+        .leftJoin(competitorLosses, and(
+          eq(competitorLosses.statusHistoryId, opportunityStatusHistory.id),
+          eq(competitorLosses.venueId, opportunity.venueId),
+        ))
+        .leftJoin(competitorVenues, and(
+          eq(competitorVenues.id, competitorLosses.competitorId),
+          eq(competitorVenues.venueId, competitorLosses.venueId),
+        ))
         .where(eq(opportunityStatusHistory.opportunityId, opportunity.id))
         .orderBy(desc(opportunityStatusHistory.createdAt), desc(opportunityStatusHistory.id))
-        .limit(100),
+        .limit(100)
+        .then((rows) => rows.map(({ lostToName, lostToCompetitorId, clientFigureMinor, clientFigureBasis, lossCurrency, ...move }) => ({
+          ...move,
+          lostTo: lostToName === null ? null : {
+            name: lostToName,
+            competitorId: lostToCompetitorId,
+            clientFigureMinor,
+            clientFigureBasis,
+            currency: lossCurrency ?? "GBP",
+          },
+        }))),
       // Who the deal is with, at this venue.
       opportunity.primaryContactId === null ? [] : db.select({
         id: contacts.id,
@@ -404,16 +433,33 @@ export async function opportunityRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    // Answered after the links, as before: a bad link is said first.
+    // Checked here, before the transaction, and answered after the links, as
+    // before: a bad link is said first, then a bad stage move, then who won.
     const fromStage = opportunity.stage as OpportunityStage;
     const toStage = parsed.data.stage;
-    type StageRefusal = { error: string; code: "INVALID_TRANSITION" | "REASON_REQUIRED" };
-    const stageRefusal: StageRefusal | null =
-      toStage !== undefined && toStage !== fromStage && !isPlatformAdmin(request.user) && !isValidOpportunityStageTransition(fromStage, toStage)
-        ? { error: `Cannot transition opportunity from ${fromStage} to ${toStage}`, code: "INVALID_TRANSITION" }
-        : toStage !== undefined && toStage !== fromStage && CLOSING_STAGES.has(toStage) && (parsed.data.note ?? "").trim() === ""
-          ? { error: "Say why the deal was won or lost.", code: "REASON_REQUIRED" }
-          : null;
+    const lostTo = parsed.data.lostTo;
+    type StageRefusal = {
+      error: string;
+      code: "INVALID_TRANSITION" | "REASON_REQUIRED" | "LOST_TO_WITHOUT_LOSS" | "COMPETITOR_NOT_IN_SET";
+    };
+    const refuseStage = async (): Promise<StageRefusal | null> => {
+      if (toStage !== undefined && toStage !== fromStage && !isPlatformAdmin(request.user) && !isValidOpportunityStageTransition(fromStage, toStage)) {
+        return { error: `Cannot transition opportunity from ${fromStage} to ${toStage}`, code: "INVALID_TRANSITION" };
+      }
+      if (toStage !== undefined && toStage !== fromStage && CLOSING_STAGES.has(toStage) && (parsed.data.note ?? "").trim() === "") {
+        return { error: "Say why the deal was won or lost.", code: "REASON_REQUIRED" };
+      }
+      // Who won is said with the reason, on the move to lost and no other.
+      if (lostTo !== undefined) {
+        if (toStage !== "lost" || fromStage === "lost") {
+          return { error: "Who won is recorded only as the deal is marked lost.", code: "LOST_TO_WITHOUT_LOSS" };
+        }
+        const refused = await lostToRefusal(db, opportunity.venueId, lostTo);
+        if (refused !== null) return { error: refused, code: "COMPETITOR_NOT_IN_SET" };
+      }
+      return null;
+    };
+    const stageRefusal = await refuseStage();
 
     const updateData: Partial<typeof opportunities.$inferInsert> = { updatedAt: new Date() };
     if (parsed.data.title !== undefined) updateData.title = parsed.data.title;
@@ -438,6 +484,8 @@ export async function opportunityRoutes(
       | { kind: "stage_refused"; refusal: StageRefusal }
       | { kind: "not_found" }
       | { kind: "updated"; opportunity: typeof opportunities.$inferSelect };
+    // The deal, its stage move and who won are written together, or not at
+    // all: a loss is never recorded without the reason it hangs on.
     const write = async (tx: PeopleTx): Promise<Updated> => {
       // The person a move names first (refuseLinks → holdContact), and only
       // then the deal row, by this UPDATE: never the deal before the person,
@@ -452,13 +500,23 @@ export async function opportunityRoutes(
       if (updated === undefined) return { kind: "not_found" };
 
       if (toStage !== undefined && toStage !== fromStage) {
-        await tx.insert(opportunityStatusHistory).values({
+        const [move] = await tx.insert(opportunityStatusHistory).values({
           opportunityId: opportunity.id,
           fromStage,
           toStage,
           changedBy: request.user.id,
           note: parsed.data.note ?? null,
-        });
+        }).returning({ id: opportunityStatusHistory.id });
+        if (lostTo !== undefined && move !== undefined) {
+          await recordLoss(tx, {
+            venueId: opportunity.venueId,
+            opportunityId: opportunity.id,
+            statusHistoryId: move.id,
+            lostTo,
+            actorId: request.user.id,
+            currency: updated.currency,
+          });
+        }
       }
       return { kind: "updated", opportunity: updated };
     };

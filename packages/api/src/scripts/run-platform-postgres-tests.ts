@@ -16,12 +16,15 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/client-search-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
+  "src/__tests__/hold-promotion-postgres.test.ts",
   // The bind (migration 0090): zero holds or inks without an event.
   "src/__tests__/booking-event-bind-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
   "src/__tests__/db-client-local.test.ts",
   "src/__tests__/sheet-snapshot-retention-postgres.test.ts",
+  "src/__tests__/dietary-retention-postgres.test.ts",
+  "src/__tests__/remembered-dietary-notes-postgres.test.ts",
   "src/__tests__/quote-permissions-postgres.test.ts",
   "src/__tests__/proposal-permissions-postgres.test.ts",
   "src/__tests__/proposal-links-postgres.test.ts",
@@ -31,7 +34,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
-  // The People Book (migration 0096): the operator's read-only check of the backfill.
+  // The People Book (migration 0098): the operator's read-only check of the backfill.
   "src/__tests__/check-people-book-postgres.test.ts",
   // Possible duplicates, and the marks that keep two people apart through merges.
   "src/__tests__/people-duplicates-postgres.test.ts",

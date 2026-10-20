@@ -76,7 +76,7 @@ export type LinkOutcome =
 const AMBIGUOUS: LinkOutcome = { outcome: "ambiguous", contactId: null };
 
 // The columns a new person's details land in: contact_points.value and
-// display_value, contacts.name and contacts.phone. Like the backfill (0096), an
+// display_value, contacts.name and contacts.phone. Like the backfill (0098), an
 // email that does not fit is left out rather than cut short, a phone that does
 // not fit is not kept, and a name is cut to fit.
 const POINT_MAX = 255;

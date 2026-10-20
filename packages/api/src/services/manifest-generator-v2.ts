@@ -109,8 +109,11 @@ export function generateManifestV2(
   }
 
   for (const obj of objects) {
-    if (obj.assetCategory === "chair" && obj.groupId !== null) {
-      addAccessoriesForItem(bucket, obj, room, accessories);
+    // Grouped chairs fold into their table's row; ungrouped chairs get their
+    // own row in the loop below. Either way a chair is never a parent here,
+    // or a loose chair (a highchair, a lectern seat) would be listed twice.
+    if (obj.assetCategory === "chair") {
+      if (obj.groupId !== null) addAccessoriesForItem(bucket, obj, room, accessories);
       continue;
     }
 

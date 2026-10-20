@@ -1,3 +1,4 @@
+import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
 import { toRenderSpace, toRealWorld } from "../constants/scale.js";
 import type { CatalogueItem } from "./catalogue.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
@@ -375,4 +376,39 @@ export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: nu
     }
   }
   return { width: toRealWorld(halfWidth * 2), depth: toRealWorld(halfDepth * 2) };
+}
+
+/**
+ * Radius in metres of a round table group: from the table's centre to the
+ * outer corners of its chairs. Chairs around a round table face its centre,
+ * so each back edge sits at the table's radius + the gap + the chair's depth,
+ * and its corners half a chair-width either side. Layout spacing between
+ * rounds is measured between these circles.
+ */
+export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: number): number {
+  const tableRadius = table.width / 2;
+  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  if (chair === undefined || table.tableShape !== "round" || chairCount <= 0) return tableRadius;
+  return Math.max(tableRadius, Math.hypot(tableRadius + CHAIR_GAP_M + chair.depth, chair.width / 2));
+}
+
+/**
+ * The seats a dining table is set for at a banquet, by the catalogue's own
+ * record: its recorded seat count, or that of a catalogue table of the same
+ * shape and size (the cloth-dressed 6 ft rounds take the 6ft Round Table's
+ * 10), never more than fit around it. With nothing recorded, as many as fit.
+ */
+export function banquetSeatsPerTable(table: CatalogueItem): number {
+  const fit = seatCapacity(table);
+  if (fit === 0) return 0;
+  const sameSize = (asset: CanonicalAsset): boolean => (
+    asset.category === "table"
+    && asset.tableShape === table.tableShape
+    && Math.abs(asset.widthM - table.width) < 0.005
+    && Math.abs(asset.depthM - table.depth) < 0.005
+  );
+  const recorded = CANONICAL_ASSETS.find((asset) => asset.id === table.id && asset.seatCount !== null && asset.seatCount > 1)
+    ?? CANONICAL_ASSETS.find((asset) => sameSize(asset) && asset.seatCount !== null && asset.seatCount > 1);
+  const seats = recorded?.seatCount ?? fit;
+  return Math.max(1, Math.min(fit, seats));
 }

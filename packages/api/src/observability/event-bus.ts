@@ -129,6 +129,17 @@ export interface EventMap {
     readonly actorUserId: string | null;
     readonly at: string;
   };
+  /** A layout's document changed (live co-editing v1): emitted AFTER the
+   *  revision compare-and-swap commits, by every writer that advances
+   *  configurations.revision. Carries no geometry — the layout-live hub tells
+   *  the room to refetch, and the server's answer is the truth. */
+  readonly "layout.changed": {
+    readonly configId: string;
+    readonly revision: number;
+    readonly actorUserId: string | null;
+    readonly source: "authenticated_batch" | "public_batch" | "websocket_autosave";
+    readonly at: string;
+  };
   readonly "notification.created": {
     readonly venueId: string;
     readonly audienceRoles: readonly string[];
@@ -189,6 +200,9 @@ function setListFor<K extends EventName>(event: K, list: Subscriber<K>[]): void 
       return;
     case "observation.changed":
       registry["observation.changed"] = list as Subscriber<"observation.changed">[];
+      return;
+    case "layout.changed":
+      registry["layout.changed"] = list as Subscriber<"layout.changed">[];
       return;
   }
 }

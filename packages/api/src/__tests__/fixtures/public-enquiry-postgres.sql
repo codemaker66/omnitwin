@@ -4,8 +4,8 @@
 -- the columns that path actually reads or writes: the route SELECTs named
 -- columns from venues/spaces/users, but `db.insert(enquiries).returning()`
 -- projects the whole drizzle model, so enquiries carries every column. The
--- People Book's tables (0096), which the enquiry finds or makes its person
--- in, carry every column the drizzle model declares and the keys 0096 gives
+-- People Book's tables (0098), which the enquiry finds or makes its person
+-- in, carry every column the drizzle model declares and the keys 0098 gives
 -- them: lockPerson selects a whole contacts row. This does not run the
 -- application seed and does not claim to qualify the historical migration
 -- chain — it exists so the 201 is a real INSERT against real NOT NULL and FK
@@ -77,7 +77,7 @@ CREATE TABLE enquiries (
   -- 0079: how the enquiry arrived, and whether the guest chose its room.
   source varchar(20),
   room_chosen boolean NOT NULL DEFAULT true,
-  -- 0096: the person the enquiry came from; its key is added once contacts exists.
+  -- 0098: the person the enquiry came from; its key is added once contacts exists.
   contact_id uuid,
   CONSTRAINT enquiries_state_check CHECK (state IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')),
   CONSTRAINT enquiries_source_check CHECK (source IS NULL OR source IN ('website', 'walkthrough', 'planner', 'phone', 'email'))
@@ -104,7 +104,7 @@ CREATE TABLE guest_leads (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- The People Book (0096). client_accounts and contacts point at each other,
+-- The People Book (0098). client_accounts and contacts point at each other,
 -- so each key across them is added once both exist.
 CREATE TABLE client_accounts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

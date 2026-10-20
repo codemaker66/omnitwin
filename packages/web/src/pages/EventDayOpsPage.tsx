@@ -19,6 +19,7 @@ import "../styles/hallkeeper-register.css";
 import "./EventDayOpsPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 import { HallkeeperEventLinks } from "../components/hallkeeper/HallkeeperEventLinks.js";
+import { SupplierPassesSection } from "../components/supplier-passes/SupplierPassesSection.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { getCalendar } from "../api/diary.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -1042,6 +1043,11 @@ export function EventDayOpsPage(): ReactElement {
           </div>
         )}
       </Section>
+
+      {/* Everyone outside the venue with a part in the event: who has their
+          pass, who has read it, and who still needs a word. Read beside the
+          board, never in front of it. */}
+      <SupplierPassesSection eventId={readyBoard.event.id} />
 
       {handoffNotes.length > 0 && (
         <Section

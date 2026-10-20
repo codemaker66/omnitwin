@@ -1230,6 +1230,8 @@ div.dayboard-slab {
 }
 
 .dayboard[data-register="wall"] {
+  /* Burn-in drift (S8): a position the board moves one pixel a minute, never a motion. */
+  translate: var(--lt-drift-x, 0) var(--lt-drift-y, 0);
   --lt-ground: var(--hk-forest-ink, #1e2721);
   --lt-raised: var(--hk-forest-raised, #263028);
   --lt-sunk: #1a221c;
@@ -1468,5 +1470,106 @@ div.dayboard-slab {
     top: 100% !important;
     left: 50% !important;
     transform: translate(-50%, -100%);
+  }
+}
+
+/* When the display dies, the day prints (goal 19 S8 item 13). On screen the
+   note is silent; on paper the controls, switches and the live chrome go,
+   every lane stacks, and each slab is a plain black-on-white line: room,
+   title, time and state. */
+.dayboard-print-note {
+  display: none;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .dayboard,
+  .dayboard[data-register="wall"] {
+    --lt-ground: #fff;
+    --lt-raised: #fff;
+    --lt-sunk: #fff;
+    --lt-line: #000;
+    translate: 0 0;
+    color: #000;
+    background: #fff;
+  }
+
+  .dayboard-print-note {
+    display: block;
+    margin: 0 0 8px;
+    font-size: 11px;
+    color: #000;
+  }
+
+  .dayboard-controls,
+  .dayboard-print,
+  .dayboard-ring,
+  .dayboard-rail,
+  .dayboard-next-line,
+  .dayboard-next,
+  .dayboard-ruler,
+  .dayboard-gap,
+  .dayboard-segments,
+  .dayboard-verb-short,
+  .dayboard-status,
+  .dayboard-now,
+  .dayboard-now-line,
+  .dayboard-legend,
+  .dayboard-wall-foot,
+  .dayboard-slot-requests,
+  .dayboard-slot-progress-bar,
+  .dayboard-announcer {
+    display: none !important;
+  }
+
+  .dayboard-lanes,
+  .dayboard-body {
+    display: block;
+  }
+
+  /* The stale band prints: a sheet from an offline board must say so. */
+  .dayboard-stale {
+    color: #000;
+    background: #fff;
+    border: 1px solid #000;
+  }
+
+  .dayboard-lane {
+    display: block;
+    break-inside: avoid;
+    border-top: 1px solid #000;
+    padding: 6px 0;
+  }
+
+  .dayboard-track {
+    min-height: 0;
+  }
+
+  .dayboard-slab {
+    /* A static block the full width of its lane: the screen's inline-size
+       containment would shrink a button to its 64 px minimum and hide its
+       time and verb through the container query. */
+    position: static !important;
+    display: block;
+    width: 100% !important;
+    min-width: 0;
+    container-type: normal;
+    left: auto !important;
+    margin: 4px 0;
+    padding: 4px 8px;
+    border: 1px solid #000;
+    border-left-width: 4px;
+    border-radius: 0;
+    box-shadow: none;
+    color: #000;
+    background: #fff;
+    animation: none !important;
+  }
+
+  .dayboard-slab-face {
+    color: #000;
   }
 }

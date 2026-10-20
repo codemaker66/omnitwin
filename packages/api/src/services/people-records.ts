@@ -390,7 +390,7 @@ export async function legacyAdoption(db: PeopleConn, row: ContactRow): Promise<L
 /**
  * Brings what an older writer left on a person into the book before it is
  * rebuilt from points and memberships. Today's crm.ts from-enquiry writer,
- * and the rows written before 0096 was deployed, set contacts.email, phone
+ * and the rows written before 0098 was deployed, set contacts.email, phone
  * and client_account_id with no points and no membership; refreshing such a
  * person would set those columns to NULL and lose them. So:
  * - an email with no email point becomes the primary email point (none when

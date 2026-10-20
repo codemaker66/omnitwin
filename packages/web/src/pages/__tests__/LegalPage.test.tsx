@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { findUnsupportedProposalClaim } from "@omnitwin/types";
+import {
+  DIETARY_MEMORY_CONSENT,
+  DIETARY_MEMORY_MONTHS_UNUSED,
+  DIETARY_NOTE_RETENTION,
+  findUnsupportedProposalClaim,
+} from "@omnitwin/types";
 import { LegalPage } from "../LegalPage.js";
 
 // ---------------------------------------------------------------------------
@@ -72,8 +77,13 @@ describe("every document", () => {
   it.each(TYPES)("shows a machine-readable last-updated date — %s", (type) => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
-    expect(time?.getAttribute("datetime")).toBe("2026-08-15");
-    expect(time?.textContent).toBe("15 August 2026");
+    // Each document carries its own date: the privacy policy changed when the
+    // dietary note gained its retention rule; the other two did not.
+    const expected = type === "privacy"
+      ? { iso: "2026-10-17", text: "17 October 2026" }
+      : { iso: "2026-08-15", text: "15 August 2026" };
+    expect(time?.getAttribute("datetime")).toBe(expected.iso);
+    expect(time?.textContent).toBe(expected.text);
   });
 
   it.each(TYPES)("gives a contents list and real section anchors — %s", (type) => {
@@ -103,6 +113,40 @@ describe("every document", () => {
 });
 
 describe("the privacy policy", () => {
+  it("says what the dietary note is, who reads it, that logs leave it out, and how long it is kept", () => {
+    const text = textOf("privacy");
+    expect(text).toContain("Dietary and allergy notes for an event");
+    expect(text).toContain("The note is health information.");
+    expect(text).toContain("Please give allergens and numbers, not guests' names.");
+    expect(text).toContain("The note is kept out of our server logs and error reports.");
+    // The period comes from the one definition the retention pass runs on.
+    expect(text).toContain(`${String(DIETARY_NOTE_RETENTION.daysAfterEvent)} days after the event`);
+    expect(text).toContain("24 months after it last changed");
+  });
+
+  it("describes both paths for the note: left unticked, and remembered with the planner's account", () => {
+    const text = textOf("privacy");
+    // The box, word for word as the planner shows it, and that it starts unticked.
+    expect(text).toContain(`asked "${DIETARY_MEMORY_CONSENT.question}" The box starts unticked.`);
+    expect(text).toContain("Left unticked, the note stays with that event only.");
+    expect(text).toContain("we record who ticked the box, when, and the words beside it");
+    expect(text).toContain("They can see and remove that copy at any time.");
+    // How long the remembered copy is kept, from the same definition the API runs on.
+    expect(text).toContain("An allergy note you asked us to remember");
+    expect(text).toContain(`If ${String(DIETARY_MEMORY_MONTHS_UNUSED)} months pass without it being saved with a layout, we remove it.`);
+    // Withdrawal is real and immediate.
+    expect(text).toContain("you can take that back at any time");
+    const link = screen.getByRole("link", { name: "See or remove them (sign in first)" });
+    expect(link.getAttribute("href")).toBe("/account/allergy-notes");
+  });
+
+  it("names no lawful condition for the health note: that is the venue adviser's to confirm", () => {
+    const text = textOf("privacy");
+    for (const claim of ["Article 9", "explicit consent", "9(2)"]) {
+      expect(text, `privacy policy claims "${claim}"`).not.toContain(claim);
+    }
+  });
+
   it("names the ICO with a route to complain", () => {
     const text = textOf("privacy");
     expect(text).toContain("Information Commissioner's Office");
@@ -176,6 +220,21 @@ describe("the terms of service", () => {
 
   it("is governed by the law of Scotland", () => {
     expect(textOf("terms")).toContain("law of Scotland");
+  });
+
+  it("credits the LiDAR survey the planner's city is drawn from, under its licence", () => {
+    render(<LegalPage type="terms" />);
+    const section = document.getElementById("intellectual-property");
+    expect(section?.textContent).toContain(
+      "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0",
+    );
+    const licence = screen.getByRole("link", { name: "Open Government Licence v3.0" });
+    expect(section?.contains(licence)).toBe(true);
+    expect(licence.getAttribute("href")).toBe(
+      "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+    );
+    expect(licence.getAttribute("target")).toBe("_blank");
+    expect(licence.getAttribute("rel")?.split(" ")).toContain("noopener");
   });
 });
 

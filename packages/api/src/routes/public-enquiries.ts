@@ -208,7 +208,7 @@ export async function publicEnquiryRoutes(
     // happened, so it never says whether an email is known. An access request
     // or a Venviewer pricing enquiry rides this route without being one of
     // the venue's clients, so it is neither linked nor made a person, as the
-    // People Book's backfill (0096) leaves those out.
+    // People Book's backfill (0098) leaves those out.
     const displayName = parsed.data.name ?? parsed.data.email;
     const stored = await db.transaction(async (tx) => {
       const [enquiry] = await tx.insert(enquiries).values({

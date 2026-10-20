@@ -37,7 +37,7 @@ export interface ObjectMetadata {
   readonly notes?: string;
 }
 
-const ObjectMetadataResponseSchema = z.object({
+export const ObjectMetadataResponseSchema = z.object({
   clothed: z.boolean().optional(),
   clothStyle: z.enum(["black", "white"]).nullable().optional(),
   tableSetting: z.enum(["dinner"]).nullable().optional(),

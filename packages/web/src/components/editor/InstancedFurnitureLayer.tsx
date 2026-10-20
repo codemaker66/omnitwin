@@ -20,7 +20,7 @@ import {
 import { GltfFurnitureTemplateContext } from "../meshes/GltfFurnitureTemplateContext.js";
 import { isImportedFurnitureMaterial } from "../../lib/gltf-furniture-instance.js";
 import { furnitureMaterialParts } from "../../lib/gltf-furniture-parts.js";
-import { furnitureSettleOffset, subscribeFurnitureSettleFrames } from "../../lib/furniture-motion.js";
+import { composeFurnitureMotion, furnitureMotionPose, subscribeFurnitureSettleFrames, type FurnitureMotionPose } from "../../lib/furniture-motion.js";
 import {
   materialAppearanceSignature,
   mergePartsByMaterial,
@@ -298,25 +298,27 @@ function editableInstanceScale(item: PlacedItem, itemScale: number): number {
   return normalizedFurniturePresentationScale(item.scale) * itemScale;
 }
 
-/** Compose one slot: the placed transform, moved like its item group by a settle offset. */
+const editableMotion = new Matrix4();
+
+/** Compose one slot: the placed transform, moved like its item group by its motion. */
 function composeEditableSlot(
   pool: EditableInstancePool,
   slot: number,
   item: PlacedItem,
   scale: number,
-  offset: { readonly x: number; readonly z: number } | null,
+  pose: FurnitureMotionPose | null,
 ): void {
-  editableInstanceTransform.position.set(
-    offset === null ? item.x : item.x + offset.x,
-    item.y,
-    offset === null ? item.z : item.z + offset.z,
-  );
+  editableInstanceTransform.position.set(item.x, item.y, item.z);
   editableInstanceTransform.rotation.set(0, item.rotationY, 0);
   editableInstanceTransform.scale.setScalar(scale);
   editableInstanceTransform.updateMatrix();
+  if (pose !== null) {
+    // Settle offset, lean and squash about the piece's base, as its item group.
+    editableInstanceTransform.matrix.premultiply(composeFurnitureMotion(pose, item.x, item.y, item.z, editableMotion));
+  }
   editableInstanceTransform.matrix.toArray(pool.matrices.array, slot * 16);
   const written = slot * WRITTEN_STRIDE;
-  if (offset !== null) {
+  if (pose !== null) {
     // No longer the placed transform: the next write recomposes it.
     pool.written[written] = Number.NaN;
     return;
@@ -400,11 +402,11 @@ export function drawEditableSettleFrame(
   }
   let first = pool.capacity;
   let last = -1;
-  const draw = (id: string, offset: { readonly x: number; readonly z: number } | null): void => {
+  const draw = (id: string, pose: FurnitureMotionPose | null): void => {
     const slot = pool.slots.byId.get(id);
     const item = slot === undefined ? undefined : items[slot];
     if (slot === undefined || item === undefined) return;
-    composeEditableSlot(pool, slot, item, editableInstanceScale(item, itemScale), offset);
+    composeEditableSlot(pool, slot, item, editableInstanceScale(item, itemScale), pose);
     first = Math.min(first, slot);
     last = Math.max(last, slot);
   };
@@ -415,10 +417,10 @@ export function drawEditableSettleFrame(
     draw(id, null);
   }
   for (const id of live) {
-    const offset = furnitureSettleOffset(id);
-    if (offset === null || !pool.slots.byId.has(id)) continue;
+    const pose = furnitureMotionPose(id);
+    if (pose === null || !pool.slots.byId.has(id)) continue;
     pool.settling.add(id);
-    draw(id, offset);
+    draw(id, pose);
   }
   if (last >= 0) uploadEditableSlots(pool, first, last);
 }

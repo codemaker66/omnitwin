@@ -165,7 +165,9 @@ describe("Find in the staff header", () => {
     const find = openFind();
     const pages = within(find).getAllByRole("option").map((option) => option.getAttribute("aria-label")?.split(",")[0]);
     expect(pages).toEqual(["Plan", "Diary", "Hallkeeper", "Rota", "Enquiries", "Pipeline", "Pending reviews",
-      "Executive analytics", "Proposals", "Clients", "Reference loadouts", "Venue settings"]);
+      "Executive analytics", "Proposals", "Pricing", "Clients", "Reference loadouts", "Venue settings"]);
+    fireEvent.change(field(), { target: { value: "room hire" } });
+    expect(activeOption()).toBe("Pricing, page, Rates, and who changed them when");
     fireEvent.change(field(), { target: { value: "quotes" } });
     expect(activeOption()).toBe("Proposals, page, Proposals and their versions");
     fireEvent.keyDown(field(), { key: "Enter" });
