@@ -126,6 +126,52 @@ script) and the rectified views:
 
     python3 $SURVEY/measure/glazing-bars.py --data data --atlas walls-4096.webp --relief walls-relief.bin --out analysis/glazing
 
+## Beyond the doors
+
+Each open door in the planner shows a short stub of the space beyond it (`hall-beyond.ts`,
+`hall-neighbours.ts`). Three scripts make what it draws; run them in order in a work directory
+whose `data/` holds the manifest, the mesh and the panoramas named below (each checked against the
+manifest's hash).
+
+| Step | Script | Result |
+| --- | --- | --- |
+| The first floor | `measure/first-floor.py` | `first-floor-2010.json`: the 2010 FIRST plan's walls (its grey poche paths, read as vectors) and floor, registered to the scan (the hall's inner faces, then trimmed iterated closest points to the mesh's wall sections at 2.6 and 3.2 m; fitted residuals: hall median 4.6 cm, p90 16 cm; Saloon 8.2 / 26.5 cm; stair hall 13.6 / 40.6 cm), with the hall's own bodies and ring cut away; published |
+| The stubs | `measure/beyond-doors.py` | `measure/beyond-doors.json`: each doorway's floor beyond it within its reach (D1 the Saloon and D2 the landing at the head of Stair 5 from the scan's height map, their levels -4.3 and -4.6 cm; D3 the east end of F.16 and D4 Stair 7's landing from the plan), D2's stairwell, the landing's balustrade (rail top 0.811 m, newels, 13 balusters at 14.5 cm) and the Saloon's panelling on the door wall (its plaster within 2.5 cm of the modelled face); `hall-neighbours.ts` carries its figures |
+| The photographs | `project-beyond.py` | `beyond-832.webp`, `beyond-416.webp` and `beyond-atlas.json`: the Saloon's floor (stations 048-050), the landing with its inlaid TRADES HALL (018, 075, 076) and the end and main doors' linings (000, 048, 049; 016-019, 075, 076), projected as `project.py` does with occlusion from CPU depth maps of the mesh; two runs give identical files; published |
+
+    python3 $SURVEY/measure/first-floor.py --plan "FIRST 2010.pdf" --mesh data/mesh --out first-floor-2010.json
+    python3 $SURVEY/measure/beyond-doors.py --mesh data/mesh --first-floor first-floor-2010.json --out beyond-doors.json
+    python3 $SURVEY/project-beyond.py --beyond $SURVEY/measure/beyond-doors.json --out proj
+
+Edited rather than measured here: the Saloon's floor under the open leaf's pocket, which no
+station saw, is filled with its herringbone copied six teeth (0.692 m) along the floor from texels
+that were seen (`herringbone_fill`); scan_147, on the landing, is read but not used (its pose puts
+the inlay 15 cm from where the other three stations agree). D3 and D4 are the plan's alone (the
+scan did not reach them), drawn in the corridor's measured colours as art direction.
+
+## Beyond the doors
+
+Each open door in the planner shows a short stub of the space beyond it (`hall-beyond.ts`,
+`hall-neighbours.ts`). Three scripts make what it draws; run them in order in a work directory
+whose `data/` holds the manifest, the mesh and the panoramas named below (each checked against the
+manifest's hash).
+
+| Step | Script | Result |
+| --- | --- | --- |
+| The first floor | `measure/first-floor.py` | `first-floor-2010.json`: the 2010 FIRST plan's walls (its grey poche paths, read as vectors) and floor, registered to the scan (the hall's inner faces, then trimmed iterated closest points to the mesh's wall sections at 2.6 and 3.2 m; fitted residuals: hall median 4.6 cm, p90 16 cm; Saloon 8.2 / 26.5 cm; stair hall 13.6 / 40.6 cm), with the hall's own bodies and ring cut away; published |
+| The stubs | `measure/beyond-doors.py` | `measure/beyond-doors.json`: each doorway's floor beyond it within its reach (D1 the Saloon and D2 the landing at the head of Stair 5 from the scan's height map, their levels -4.3 and -4.6 cm; D3 the east end of F.16 and D4 Stair 7's landing from the plan), D2's stairwell, the landing's balustrade (rail top 0.811 m, newels, 13 balusters at 14.5 cm) and the Saloon's panelling on the door wall (its plaster within 2.5 cm of the modelled face); `hall-neighbours.ts` carries its figures |
+| The photographs | `project-beyond.py` | `beyond-832.webp`, `beyond-416.webp` and `beyond-atlas.json`: the Saloon's floor (stations 048-050), the landing with its inlaid TRADES HALL (018, 075, 076) and the end and main doors' linings (000, 048, 049; 016-019, 075, 076), projected as `project.py` does with occlusion from CPU depth maps of the mesh; two runs give identical files; published |
+
+    python3 $SURVEY/measure/first-floor.py --plan "FIRST 2010.pdf" --mesh data/mesh --out first-floor-2010.json
+    python3 $SURVEY/measure/beyond-doors.py --mesh data/mesh --first-floor first-floor-2010.json --out beyond-doors.json
+    python3 $SURVEY/project-beyond.py --beyond $SURVEY/measure/beyond-doors.json --out proj
+
+Edited rather than measured here: the Saloon's floor under the open leaf's pocket, which no
+station saw, is filled with its herringbone copied six teeth (0.692 m) along the floor from texels
+that were seen (`herringbone_fill`); scan_147, on the landing, is read but not used (its pose puts
+the inlay 15 cm from where the other three stations agree). D3 and D4 are the plan's alone (the
+scan did not reach them), drawn in the corridor's measured colours as art direction.
+
 ## City context and window skylines
 
 The city drawn around the hall, and the sky each window sees, come from one public source: the

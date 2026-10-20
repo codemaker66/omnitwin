@@ -30,7 +30,8 @@ import { Color, DoubleSide, FrontSide, type Material, type Side, type Texture } 
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { attribute, bool, color, dot, float, luminance, max, min, mix, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import type { HallMaterialKey } from "./hall-builders.js";
-import { HALL_GLAZING_PAINT, HALL_OPENINGS, isWindow } from "./hall-spec.js";
+import { HALL_GLAZING_PAINT, HALL_OPENINGS, HALL_WALLS, isWindow } from "./hall-spec.js";
+import { CARD, cardColour, cardLit } from "./hall-beyond.js";
 import { DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP } from "./hall-wall-body.js";
 import { cutEdge, GILT_COLOUR, type CutEdge } from "./hall-cut-lines.js";
 import type { HallSun } from "./hall-sun.js";
@@ -39,7 +40,7 @@ import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
 import type { HallTextures } from "./hall-textures.js";
 import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
 import { createOakFloorMaterial } from "./hall-floor.js";
-import { doorLeafMask, doorLeafPosition, type DoorSwingUniforms } from "./hall-doors.js";
+import { doorLeafMask, doorLeafPosition, doorLeafTurn, type DoorSwingUniforms } from "./hall-doors.js";
 
 type Shading = "gloss" | "metal" | "photo" | "photoGloss" | "paint";
 
@@ -143,7 +144,7 @@ export function bakedIrradiance(mood: HallMoodUniforms) {
  * The same irradiance under the light the scan was made in — the Daylight
  * mood's channels, fixed — against which photographs are relit.
  */
-function scanIrradiance() {
+export function scanIrradiance() {
   const scan = HALL_MOODS.daylight;
   const light = attribute("aLight", "vec4");
   const ao = light.x;
@@ -416,14 +417,21 @@ export function createHallMaterials(
  */
 export function createDoorLeafMaterials(
   textures: HallTextures, photos: HallPhotos, mood: HallMoodUniforms, section: HallSectionUniforms, swing: DoorSwingUniforms, sun: HallSun | null = null,
+  options: { readonly card?: boolean } = {},
 ): HallMaterials {
   const table = styles(textures);
   const position = doorLeafPosition(section, swing);
   const mask = doorLeafMask(section);
   const materials = new Map<HallMaterialKey, Material>();
+  const card = options.card === true ? cardLeafColour(mood, swing, sun) : null;
   for (const key of ["wallPhoto", "wallPhotoGloss", "mahoganyDark", "brass"] as const) {
     let material: Material;
-    if (key === "wallPhoto") {
+    if (card !== null) {
+      // Atelier: every leaf in the city's card, its panels scored (cardLeafColour).
+      const basic = new MeshBasicNodeMaterial({ fog: false });
+      basic.colorNode = card;
+      material = basic;
+    } else if (key === "wallPhoto") {
       // Above the dado the walls' photograph is matte, on the leaves as on the relief they replace.
       const photo = new MeshBasicNodeMaterial({ fog: false });
       photo.colorNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false));
@@ -444,6 +452,35 @@ export function createDoorLeafMaterials(
     materials.set(key, material);
   }
   return materials;
+}
+
+/**
+ * A door leaf in card (the Atelier section): the city's wall card, lit as the
+ * city is (hall-beyond.ts cardLit), every face not square to the leaf's own
+ * face darker in proportion (the panels' sunk margins nearly half as bright,
+ * their bevels a little, the slab's edges as the margins), so the panels read
+ * as lines scored in card. The leaf's facing turns with it (doorLeafTurn).
+ */
+function cardLeafColour(mood: HallMoodUniforms, swing: DoorSwingUniforms, sun: HallSun | null): Node<"vec3"> {
+  const wall = attribute("aWall", "float");
+  const pickNormal = (axis: 0 | 2): Node<"float"> => {
+    const value = (index: number): Node<"float"> => float(HALL_WALLS[index]?.normal[axis] ?? 0);
+    return wall.lessThan(0.5).select(value(0), wall.lessThan(1.5).select(value(1), wall.lessThan(2.5).select(value(2), value(3))));
+  };
+  const nx = pickNormal(0);
+  const nz = pickNormal(2);
+  const turn = doorLeafTurn(swing);
+  const c = turn.cos();
+  const s = turn.sin();
+  const facing = vec3(nx.mul(c).add(nz.mul(s)), 0, nx.negate().mul(s).add(nz.mul(c)));
+  // The face's own normal turned with its leaf (as doorLeafPosition turns it), read from the
+  // geometry rather than normalWorld, which in an unlit material upset the pass's normal target.
+  const n0 = attribute("normal", "vec3");
+  const normal = vec3(n0.x.mul(c).add(n0.z.mul(s)), n0.y, n0.x.negate().mul(s).add(n0.z.mul(c)));
+  const score = mix(float(0.55), float(1), dot(normal, facing).abs().pow(6));
+  // In the doorway the room's own light reaches it too (the leaves' bake).
+  const albedo = cardColour(CARD.wall).mul(score);
+  return cardLit(albedo, normal, sun, mood, float(1)).add(albedo.mul(bakedIrradiance(mood)).mul(0.6));
 }
 
 export interface HallCasterMaterials {

@@ -7,26 +7,36 @@
 // flame bulbs, and the dollhouse cutaway (with the walls' cut bodies, whose
 // section follows the relief's mouldings) that lets the planner look in from
 // above; where it cuts a wall, that wall's doors swing open on a spring
-// (hall-doors.ts). Under the real sky its windows open
+// (hall-doors.ts), and each open door shows a short stub of the space beyond
+// it, dissolving into the city or the dark, as the section style (`?section=`)
+// draws it: the photographed floors (Ashlar), the first floor in card
+// (Atelier, its plan loaded when chosen) or pools of light (Nocturne)
+// (hall-beyond.ts, hall-neighbours.ts; the photographs load the first time a
+// door opens and cross-fade in). Under the real sky its windows open
 // onto the drawn city through panes of glass that reflect the room, behind
 // the measured glazing bars (hall-glazing.ts). Its real lights are HallLightRig,
 // mounted beside it; its reflections are its own, captured from the room
 // itself (hall-capture.ts).
 // The relief and the photographs stream in after the first frame (flat walls
 // in their average colour until then). Everything here renders on demand:
-// frames are requested only while a mood blends, the cutaway eases or a door
-// swings.
+// frames are requested only while a mood blends, the cutaway eases, a door
+// swings or the beyond's photographs fade in.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Color, Vector3, type Material, type Mesh, type Texture } from "three";
+import { Color, Vector3, type BufferGeometry, type Material, type Mesh, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { color, lights, mix, normalWorld, uniform, vec3 } from "three/tsl";
 import { hallGeometry, hallThresholdGeometry, hallWallGeometry } from "./hall-geometry.js";
 import { loadWallRelief, type WallRelief } from "./hall-relief.js";
 import { hallChandeliers } from "./hall-chandeliers.js";
 import { paintHallTextures, disposeHallTextures, type HallTextures } from "./hall-textures.js";
+import {
+  HallBeyondPhotos, buildBeyondFloors, buildBeyondPools, buildBeyondSolids, buildFirstFloorCard, createBeyondFloorMaterial,
+  createBeyondPoolMaterial, createBeyondSolidMaterial, createFirstFloorCardMaterial, type BeyondMaterialContext,
+} from "./hall-beyond.js";
+import { loadFirstFloor, type FirstFloorPlan } from "./hall-neighbours.js";
 import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useHallFinish, type HallFinish } from "./hall-finish.js";
@@ -145,7 +155,52 @@ interface HallResources {
   /** The doors' angles, and their leaves' materials, which turn them in the shader (hall-doors.ts). */
   readonly doorSwing: DoorSwingUniforms;
   readonly doorMaterials: HallMaterials;
+  /** What shows past the open doors for the section's preset (hall-beyond.ts). */
+  readonly beyond: BeyondResources;
 }
+
+/** The beyond's materials for one preset; the photographs only for Ashlar. */
+interface BeyondResources {
+  readonly photos: HallBeyondPhotos | null;
+  readonly floors: Material | null;
+  readonly solids: Material | null;
+  readonly pools: Material | null;
+  readonly card: Material | null;
+  dispose(): void;
+}
+
+/** How bright the pools past the doors are, of the room's chandelier light: Nocturne's are all there is beyond; Atelier's warm the card. */
+const POOL_STRENGTH = { "first-floor": 0.9, pools: 1.6 } as const;
+
+function createBeyondResources(preset: SectionPreset, context: BeyondMaterialContext, textures: HallTextures): BeyondResources {
+  const photos = preset.beyond === "photographs" || preset.liningPhotos ? new HallBeyondPhotos() : null;
+  const floors = preset.beyond === "photographs" && photos !== null ? createBeyondFloorMaterial(context, photos) : null;
+  const solids = preset.beyond === "photographs" ? createBeyondSolidMaterial(context, textures) : null;
+  const pools = preset.beyond === "photographs" ? null : createBeyondPoolMaterial(context, POOL_STRENGTH[preset.beyond]);
+  const card = preset.beyond === "first-floor" ? createFirstFloorCardMaterial(context) : null;
+  return {
+    photos, floors, solids, pools, card,
+    dispose: () => {
+      for (const material of [floors, solids, pools, card]) material?.dispose();
+      photos?.dispose();
+    },
+  };
+}
+
+let beyondFloors: BufferGeometry | null = null;
+let beyondSolids: BufferGeometry | null = null;
+let beyondPools: BufferGeometry | null = null;
+
+/** The beyond's geometry, built on first use and shared: it never changes (the shader follows the doors). */
+function beyondGeometry(): { readonly floors: BufferGeometry; readonly solids: BufferGeometry; readonly pools: BufferGeometry } {
+  beyondFloors ??= buildBeyondFloors();
+  beyondSolids ??= buildBeyondSolids();
+  beyondPools ??= buildBeyondPools();
+  return { floors: beyondFloors, solids: beyondSolids, pools: beyondPools };
+}
+
+/** Draw order of the beyond's blended meshes, after the opaque room: the floors, then the joinery, then the light on them. */
+const BEYOND_ORDER = { floors: 1, solids: 2, pools: 3 } as const;
 
 /** The chandeliers' own light on their metal where no reflection map gives it anything to mirror. */
 const SELF_LIT_WITHOUT_REFLECTIONS = 2.5;
@@ -195,7 +250,8 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const materials = createHallMaterials(textures, photos, mood, section, sun, { glazing, alphaToCoverage: multisampled });
   const casters = sun === null ? null : createHallCasterMaterials(photos);
   const doorSwing = new DoorSwingUniforms();
-  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun);
+  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card" });
+  const beyond = createBeyondResources(sectionPreset, { mood, swing: doorSwing, section, sun }, textures);
 
   // As scanned: pale silver-gilt fittings on dark bronze stems, and white
   // bulbs, which warm with the mood's chandelier light.
@@ -236,7 +292,8 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const bulb = new MeshBasicNodeMaterial();
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
   const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
-  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(section, mood, { preset: sectionPreset, sunlit: sun !== null, multisampled }), casters, doorSwing, doorMaterials };
+  const cutaway = createHallSection(section, mood, { preset: sectionPreset, sunlit: sun !== null, multisampled, sun, textures, beyond: beyond.photos });
+  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway, casters, doorSwing, doorMaterials, beyond };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -246,6 +303,7 @@ function disposeResources(resources: HallResources): void {
   disposeHallMaterials(resources.doorMaterials);
   for (const material of resources.chandelierMaterials.values()) material.dispose();
   resources.cutaway.dispose();
+  resources.beyond.dispose();
   resources.casters?.glazed.dispose();
   resources.casters?.solid.dispose();
 }
@@ -279,6 +337,24 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const doorsMoving = useRef(false);
   // The relief's section, cut wherever the walls are cut (hall-relief-section.ts).
   const sectionCap = useMemo(() => (relief === null ? null : sectionCapGeometry(relief)), [relief]);
+  // Past the open doors (hall-beyond.ts): Ashlar's floors and joinery, the
+  // pools of light, and for Atelier the first floor in card, its plan fetched
+  // only then (without it the card is simply not drawn). The card's own floor
+  // is drawn only without the real sky, whose city gives the floor otherwise.
+  const beyondFading = useRef(false);
+  const [firstFloor, setFirstFloor] = useState<FirstFloorPlan | null>(null);
+  useEffect(() => {
+    if (sectionPreset.beyond !== "first-floor") return undefined;
+    const controller = new AbortController();
+    loadFirstFloor(controller.signal).then((plan) => {
+      if (controller.signal.aborted) return;
+      setFirstFloor(plan);
+      invalidate();
+    }, () => { /* Without the plan the first floor is not drawn; the doors' light still falls. */ });
+    return () => { controller.abort(); };
+  }, [invalidate, sectionPreset]);
+  const cardGeometry = useMemo(() => (firstFloor === null ? null : buildFirstFloorCard(firstFloor, !sunlit)), [firstFloor, sunlit]);
+  useEffect(() => () => { cardGeometry?.dispose(); }, [cardGeometry]);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
@@ -508,6 +584,17 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     doorsMoving.current = swinging;
     resources.doorSwing.set((door) => doorSwing.current.angle(door));
     moving = moving || swinging;
+    // The photographs beyond the doors load the first time a door opens, and
+    // cross-fade in once they arrive (at once under reduced motion).
+    const beyondPhotos = resources.beyond.photos;
+    if (beyondPhotos !== null) {
+      if (beyondPhotos.status === "idle" && resources.doorSwing.values().some((angle) => angle > 0.01)) {
+        beyondPhotos.load(quality, () => { invalidate(); });
+      }
+      const fading = beyondPhotos.step(hallFrameStep(delta, !beyondFading.current), prefersReducedMotion);
+      beyondFading.current = fading;
+      moving = moving || fading;
+    }
     // The relief's section follows each wall's cut (cut again only when it moves).
     resources.cutaway.profile.update(cutState.current, WALL_BODY_TOP);
     // The walls' bodies follow the cuts in their shader (hall-wall-body.ts).
@@ -569,6 +656,21 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       <mesh name="grand-hall-wall-body" geometry={resources.cutaway.body} material={resources.cutaway.materials.body} raycast={() => undefined} />
       {sectionCap !== null && (
         <mesh name="grand-hall-section-cap" geometry={sectionCap} material={resources.cutaway.materials.cap} frustumCulled={false} raycast={() => undefined} />
+      )}
+      {resources.cutaway.coping !== null && (
+        <mesh name="grand-hall-coping" geometry={resources.cutaway.coping.geometry} material={resources.cutaway.coping.material} raycast={() => undefined} />
+      )}
+      {resources.beyond.floors !== null && (
+        <mesh name="grand-hall-beyond-floors" geometry={beyondGeometry().floors} material={resources.beyond.floors} renderOrder={BEYOND_ORDER.floors} raycast={() => undefined} />
+      )}
+      {resources.beyond.solids !== null && (
+        <mesh name="grand-hall-beyond-solids" geometry={beyondGeometry().solids} material={resources.beyond.solids} renderOrder={BEYOND_ORDER.solids} raycast={() => undefined} />
+      )}
+      {resources.beyond.pools !== null && (
+        <mesh name="grand-hall-beyond-pools" geometry={beyondGeometry().pools} material={resources.beyond.pools} renderOrder={BEYOND_ORDER.pools} raycast={() => undefined} />
+      )}
+      {resources.beyond.card !== null && cardGeometry !== null && (
+        <mesh name="grand-hall-first-floor-card" geometry={cardGeometry} material={resources.beyond.card} raycast={() => undefined} />
       )}
       {[...thresholds.geometries].map(([key, part]) => {
         const material = resources.materials.get(key);

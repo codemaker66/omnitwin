@@ -688,6 +688,24 @@ export function doorLeafPosition(section: HallSectionUniforms, swing: DoorSwingU
   })();
 }
 
+/**
+ * How far a leaf is turned about its hinge at this frame (radians about +y,
+ * the sense included): doorLeafPosition's rotation, for a fragment that needs
+ * the leaf's own facing (the card leaves' scored panels, hall-materials.ts).
+ */
+export function doorLeafTurn(swing: DoorSwingUniforms): Node<"float"> {
+  const hinge = attribute("aHinge", "vec4");
+  const code = hinge.w;
+  const lagged = code.greaterThan(LEAF_LAG_CODE - 0.5);
+  const rest = lagged.select(code.sub(LEAF_LAG_CODE), code);
+  const door = rest.greaterThan(LEAF_CAP_CODE - 0.5).select(rest.sub(LEAF_CAP_CODE), rest);
+  const [a0, a1, a2, a3] = swing.angles;
+  if (a0 === undefined || a1 === undefined || a2 === undefined || a3 === undefined) throw new Error("The hall has four doors");
+  const phi = door.lessThan(0.5).select(a0, door.lessThan(1.5).select(a1, door.lessThan(2.5).select(a2, a3)));
+  const trailed = lagged.select(min(phi, max(phi.sub(LEAF_LAG).mul(DOOR_OPEN_ANGLE / (DOOR_OPEN_ANGLE - LEAF_LAG)), 0)), phi);
+  return hinge.z.mul(trailed);
+}
+
 /** The leaves' fragments stand at or below their wall's cut (a cap lies on it). */
 export function doorLeafMask(section: HallSectionUniforms): Node<"bool"> {
   return positionWorld.y.lessThanEqual(doorLeafCut(section).add(0.0015));

@@ -114,7 +114,16 @@ development builds only) shows the room alone, posed through a window bridge for
   under 1.5 px), and the room's face under every cut a gilt band 8 mm deep and a soft shadow below it
   (35% at most, gone by 4 cm; `hall-cut-lines.ts`), on upright faces and not on what stands in a
   window; every line box-filtered and, once widened past its width, dimmed to carry the same light.
-  Atelier and Nocturne carry their palettes only. The faces are unlit, the mood's light baked into
+  Ashlar's outer faces other than the street front wear the spaces they look into, as photographed
+  (`INTERIOR_FACES`: the F.16 corridor's dado to 1.2 m under a gilt band and its wall above, the
+  Saloon's mahogany panelling; beyond the end and fireplace walls, which nobody surveyed, the
+  corridor's wall as art direction), and the end and main doors' linings are their photographs.
+  Atelier is the city's card model: the city's card colours (`CARD`, copied from `hall-context.ts`),
+  lit as the city is (`cardLit`) with the room's glow on the cut, card leaves with their panels
+  scored. Nocturne is ebonised (linear 0.012/0.009/0.007) under a moulded top of dark polished stone,
+  60 mm high and 30 mm proud of each face, gilt lines along both crests (`hall-coping.ts`, 460
+  triangles; a real reflection on desktops, a drawn glint toward the dome fitting on phones); the
+  top is a presentation device, not the building. The faces are unlit, the mood's light baked into
   their colour: the cut by the room's ambient, its chandeliers falling off from the wall's plane
   (`0.10 + 0.33 exp(-d / 0.4 m)` of their light; a corner block by its distance behind the nearer
   wall), the sky over the lifted ceiling, and under the real sky the sun or moon on its level tops with
@@ -129,6 +138,30 @@ development builds only) shows the room alone, posed through a window bridge for
   either shows: keep any new one centimetres clear of the floor and of the city's caps at y = 0
   beyond the cut-out (|x| > 11.2, |z| > 5.95); the ring's top lies on those caps only under the
   bodies, where neither is seen.
+  None of the section's materials reads `normalWorld` or the sun's shadow map (whose normal offset
+  reads it): in these unlit materials either put the pass's normal target out of step, and the
+  ambient occlusion went dark on the cut's tops (0.36 on Ashlar's through `normalWorld`; black
+  speckles on Atelier's through the map). The bodies read their geometry's own normal
+  (`bodyNormal`); check `?pipeline=ao` after touching their shaders.
+- **Beyond the doors** (`hall-beyond.ts`, `hall-neighbours.ts`; data in `tools/grand-hall-survey`,
+  "Beyond the doors"): each open door shows a short stub of the space beyond it, its floor at
+  +1 cm (`BEYOND_FLOOR_Y`, clear of the city's caps) fading out from 30% to 96% of its reach from
+  the doorway's centre (2.4 m; the fire exit 1.2 m) into the city under the real sky or the dark
+  without it, and present only as its door opens. The four spaces: D1 the Saloon, D2 the landing at
+  the head of Stair 5 with its inlaid TRADES HALL, balustrade (1,276 triangles with the Saloon's dado)
+  and stairwell into the dark, both from the scan; D3 the east end of F.16 and D4 Stair 7's landing
+  from the 2010 FIRST plan (`first-floor-2010.json`, registered to the scan). Light falls out of each
+  open door (`spillLight`: strongest straight out, half of the chandeliers' light, 0.9 m), added to
+  the photographs relit like every photograph of the hall (`relitBeyond`). The section style draws
+  them: Ashlar the photographed floors (`beyond-832.webp`, `beyond-416.webp` on phones: 693 KB on
+  the GPU; loaded the first time a door opens, cross-fading in over 200 ms, at once under reduced
+  motion; their median colours until then or if they fail), Atelier the first floor's walls in card
+  to 1.2 m (its plan fetched when Atelier is chosen, its floor drawn only without the real sky,
+  where the city's caps do not give one), Nocturne pools of warm light 1.5-2 m across (additive,
+  faded out as the sun climbs). Two draws each style: Ashlar 1,358 triangles, Atelier 1,106,
+  Nocturne 468 with its top. Not drawn: the Saloon's case 0.4 m proud of its east panelling (its
+  floor stops at it), the landing's globe lamps and side balustrades; the balustrade is straight, as
+  the scan has it.
 - **Chandeliers** (`hall-chandeliers.ts`): the five fittings as scanned, gilt scrollwork and
   acanthus on dark bronze stems with white flame bulbs, drawn to the lowest points, reaches and
   bulb heights measured in the panoramas (`HALL_CHANDELIERS`; method in the 10 October session log).
@@ -307,7 +340,13 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   opening, every measured bar where it was measured (and the panes between them open), the budgets
   (panes 200, bars 2,500, reveals 1,500 triangles), the reveals from the glass to the outer face,
   the glass presets and the capture's closing and reopening, also when it throws;
-  `hall-floor.test.ts` holds every hash seed above zero and the two halves' end joints alike. The
+  `hall-floor.test.ts` holds every hash seed above zero and the two halves' end joints alike;
+  `hall-neighbours.test.ts` holds the plan's polygons closed, each stub meeting its doorway's outer
+  face within 2 cm, every figure to its provenance and the plan's registration residuals;
+  `hall-beyond.test.ts` the stubs at +1 cm, their fade and presence, each style's draws and
+  triangles, the first floor's card, the pools, the moulded top, the published atlases at their
+  stated sizes and hashes, the photographs' load and cross-fade, and that no section material
+  samples the sun's shadow map. The
   rendered proof (the plinth painted magenta never shows through the floor in any orbit, pose or
   profile) is browser evidence, recorded in the [19 October session log](../sessions/2026-10-19.md).
 - `src/components/grand-hall/__tests__/hall-chandeliers.test.ts` checks each chandelier's lowest
