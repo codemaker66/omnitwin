@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { Resend } from "resend";
 import { emailSends } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { scrubErrorMessage } from "../observability/redact.js";
 
 // ---------------------------------------------------------------------------
 // Email service
@@ -171,7 +172,14 @@ function isTransientError(err: unknown): boolean {
   return code >= 500 || code === 429;
 }
 
+// Read for the log and for `email_sends.last_error`. A drizzle failure's
+// message carries the query parameters (the recipient, the subject), so every
+// message goes through `scrubErrorMessage`.
 function errorMessage(err: unknown): string {
+  return scrubErrorMessage(rawErrorMessage(err));
+}
+
+function rawErrorMessage(err: unknown): string {
   if (err === null || err === undefined) return "unknown error";
   if (err instanceof Error) return err.message;
   if (typeof err === "object") {

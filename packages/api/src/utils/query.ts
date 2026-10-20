@@ -184,6 +184,20 @@ export function canReadDiary(
   return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
 }
 
+/**
+ * Reading the Clients desk (search, recent and upcoming lists, the client and
+ * guest-lead profiles): the venue floor, and sales, who works the clients
+ * (People Book design §6.7, approved 18 October 2026). Hallkeepers keep exactly
+ * the access they had. The commercial record inside the desk, and the contact
+ * profile, stay with `canManageCommercial` alone.
+ */
+export function canReadClients(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
 /** Reading the venue's AI usage and spend (T-656): its managers and admins. */
 export function canReadAIUsage(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,

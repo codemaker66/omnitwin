@@ -202,6 +202,21 @@ describe.skipIf(target === undefined)("the promoted 2nd option is told, on migra
     expect(await loadPromotionDraft(db, reader, f.second)).toMatchObject({ ok: false, status: 409, code: "NOT_FIRST_OPTION" });
   });
 
+  it("asks the enquirer when the event's main contact has no email (the People Book lets a person have none)", async () => {
+    const f = await ladder();
+    const accountId = randomUUID(), contactId = randomUUID(), eventId = randomUUID();
+    await db.insert(schema.clientAccounts).values({ id: accountId, venueId: f.venueId, name: "MacLeod family" });
+    await db.insert(schema.contacts).values({ id: contactId, venueId: f.venueId, clientAccountId: accountId, name: "Iain MacLeod", email: null });
+    await db.update(schema.clientAccounts).set({ primaryContactId: contactId }).where(eq(schema.clientAccounts.id, accountId));
+    await db.insert(schema.events).values({ id: eventId, venueId: f.venueId, name: "MacLeod wedding", clientAccountId: accountId });
+    await db.update(schema.bookings).set({ eventId }).where(eq(schema.bookings.id, f.second));
+    expect((await transitionBookingCore(db, f.actor, f.first, { toState: "lost" })).ok).toBe(true);
+
+    const reader: MutationActor = { id: f.office, venueId: f.venueId, role: "staff", platformRole: "none" };
+    const drafted = await loadPromotionDraft(db, reader, f.second, new Date("2030-06-01T09:00:00.000Z"));
+    expect(drafted.ok && drafted.draft.to).toEqual({ name: "Jane MacLeod", email: "jane.macleod@example.test", source: "enquiry" });
+  });
+
   it("rolls the exit and the new ranks back when the notice cannot be written", async () => {
     const marker = `FAIL-NOTICE-${randomUUID().slice(0, 8)}`;
     const fn = `promotion_notice_fails_${randomUUID().replaceAll("-", "")}`;

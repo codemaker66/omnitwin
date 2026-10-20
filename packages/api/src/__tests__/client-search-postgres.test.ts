@@ -115,6 +115,24 @@ describe.skipIf(target === undefined)("client search on the migrated disposable 
     expect(found).toMatchObject({ contacts: [], accounts: [], deals: [], proposals: [] });
   });
 
+  it("lets sales search the clients, with the commercial record, and open the desk's lists", async () => {
+    const found = await search("henderson", "sales");
+    expect(found.contacts.map((contact) => contact.name)).toEqual(["Ailsa Henderson"]);
+    expect(found.deals).toHaveLength(1);
+    for (const url of ["/clients/recent", "/clients/upcoming"]) {
+      expect((await server.inject({ method: "GET", url, headers: bearer("sales") })).statusCode, url).toBe(200);
+    }
+  });
+
+  it("still refuses the Clients desk to planners, clients and caterers", async () => {
+    for (const role of ["planner", "client", "caterer"]) {
+      for (const url of ["/clients/search?q=henderson", "/clients/recent", "/clients/upcoming",
+        `/clients/${randomUUID()}/profile`, `/clients/leads/${randomUUID()}/profile`]) {
+        expect((await server.inject({ method: "GET", url, headers: bearer(role) })).statusCode, `${role} ${url}`).toBe(403);
+      }
+    }
+  });
+
   it("lets a platform admin search every venue", async () => {
     const found = await search("henderson", "admin", null, "admin");
     expect(found.contacts.map((row) => row.name)).toEqual(expect.arrayContaining(["Ailsa Henderson", "Morag Henderson"]));
@@ -180,6 +198,11 @@ describe.skipIf(target === undefined)("client search on the migrated disposable 
     expect(rows.map((row) => row.guestName)).toEqual(["Today", "In a month"]);
     const lead = await pool.query<{ id: string }>("SELECT id FROM guest_leads WHERE email = $1", [email]);
     expect(rows.every((row) => row.leadId === lead.rows[0]?.id)).toBe(true);
+    // Sales opens that lead's profile, as the desk's upcoming list links to it.
+    const leadProfile = await server.inject({
+      method: "GET", url: `/clients/leads/${lead.rows[0]?.id ?? ""}/profile`, headers: bearer("sales"),
+    });
+    expect(leadProfile.statusCode).toBe(200);
     // Another venue's staff see none of them.
     const other = await server.inject({ method: "GET", url: "/clients/upcoming", headers: bearer("staff", otherVenueId) });
     expect(other.json<{ data: unknown[] }>().data).toEqual([]);

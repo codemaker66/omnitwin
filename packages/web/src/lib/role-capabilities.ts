@@ -59,13 +59,14 @@ export { PRICING_WRITE_ROLES } from "@omnitwin/types";
 export const ANALYTICS_ROLES = COMMERCIAL_ROLES;
 
 /**
- * The Clients desk: its search, recent and upcoming lists and the client and
- * guest profiles gate on `canManageVenue` (`routes/clients.ts`), so sales and
- * planner are refused — both were being offered the tab. The commercial
- * record inside it (contacts, organisations, deals, proposals) is further
- * limited to the roles `canManageCommercial` admits.
+ * The Clients desk. Mirrors `canReadClients` (`utils/query.ts`): its search,
+ * recent and upcoming lists and the client and guest profiles admit the venue
+ * floor and sales (People Book design §6.7, approved 18 October 2026); planner,
+ * client and caterer are refused. The commercial record inside it (contacts,
+ * organisations, deals, proposals) is further limited to the roles
+ * `canManageCommercial` admits, so a hallkeeper still finds none of it.
  */
-export const CLIENT_SEARCH_ROLES = VENUE_FLOOR_ROLES;
+export const CLIENT_SEARCH_ROLES = ["admin", "manager", "staff", "hallkeeper", "sales"] as const;
 
 /**
  * The pending-review queue. Mirrors `VENUE_REVIEW_ROLES` in the API's
