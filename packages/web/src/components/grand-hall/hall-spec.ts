@@ -145,10 +145,19 @@ export const HALL_OPENINGS: readonly HallOpening[] = [
   { id: "window-end", kind: "window", wall: "window", centre: windowU(3.93), width: 1.43, sill: 0.935, head: 3.305 },
   { id: "arch-end", kind: "arched-window", wall: "window", centre: windowU(-0.19), width: 2.7, sill: 0.915, head: 3.76 },
   // Door wall: three doorways in carved mahogany doorcases; the centre one,
-  // under the clock, is the main door.
-  { id: "door-end", kind: "door", wall: "door", centre: doorU(-0.025), width: 1.08, sill: 0, head: 2.35 },
-  { id: "door-main", kind: "door", wall: "door", centre: doorU(8.79), width: 1.43, sill: 0, head: 2.35 },
+  // under the clock, is the main door. Widths are the scan's jambs at the
+  // hall face (horizontal sections through the dollhouse mesh at 1.2 and
+  // 2.0 m, investigate/scripts/mesh_doors.py, 19 October 2026): the end door
+  // x 8.268-9.366 (1.10 m; its far half widens to 1.14 m), the main door
+  // x -0.724..0.734 and -0.714..0.724 (1.45 m). The fireplace door was closed
+  // in the scan; its width is the doorcase's (1.08 m).
+  { id: "door-end", kind: "door", wall: "door", centre: doorU(-0.025), width: 1.1, sill: 0, head: 2.35 },
+  { id: "door-main", kind: "door", wall: "door", centre: doorU(8.79), width: 1.45, sill: 0, head: 2.35 },
   { id: "door-fireplace", kind: "door", wall: "door", centre: doorU(17.665), width: 1.08, sill: 0, head: 2.35 },
+  // The fire exit in the fireplace wall, beside the chimney breast: a pair of
+  // three-panel leaves set flush in the dado with brass panic bars, measured in
+  // the wall atlas (u 8.00-9.06, its head 1.91 m under the exit sign).
+  { id: "door-fire-exit", kind: "door", wall: "fireplace", centre: 8.53, width: 1.06, sill: 0, head: 1.91 },
 ];
 
 export function isWindow(opening: HallOpening): boolean {
@@ -178,6 +187,104 @@ export const HALL_WALL_THICKNESS: Readonly<Record<HallWallId, HallWallThickness>
   end: { thickness: 1.21, source: "2010 FIRST plan only: 1.21 m (no opening, nothing scanned beyond it)" },
   fireplace: { thickness: 1.21, source: "2010 FIRST plan only: 1.21-1.25 m (the firebox is set into it)" },
 };
+
+/**
+ * A stretch of a wall whose outer face departs from HALL_WALL_THICKNESS,
+ * wall-local u from `from` to `to`.
+ */
+export interface HallWallStretch {
+  readonly from: number;
+  readonly to: number;
+  readonly thickness: number;
+  readonly source: string;
+}
+
+/** Door-wall u of a planner x (the fireplace door's jambs: x -8.33 and -9.41). */
+const doorWallU = (x: number): number => HALL_HALF_LENGTH - x;
+
+/**
+ * Where a wall's outer face departs from its main thickness. Only the door
+ * wall does: the scan measured its corridor side between the end and main
+ * doors, and the 2010 plan shows the lobby by the fireplace door.
+ */
+export const HALL_WALL_STRETCHES: Readonly<Record<HallWallId, readonly HallWallStretch[]>> = {
+  window: [],
+  end: [],
+  door: [
+    {
+      from: doorWallU(7.0), to: doorWallU(3.0), thickness: 1.28,
+      source: "scan: the corridor face at z 6.54-6.65 from x 3 to 7, at every height sectioned (0.6-3.2 m); the 2010 plan draws a 0.5 m recess here, so the face is joinery filling it",
+    },
+    {
+      from: doorWallU(-7.0), to: doorWallU(-8.33), thickness: 0.46,
+      source: "2010 FIRST plan: 0.44-0.46 m where the corridor widens into the lobby before the fireplace door; the plan starts it at x -6.2, moved to x -7.0 where the scan last saw the 1.1 m face",
+    },
+    {
+      from: doorWallU(-9.41), to: HALL_LENGTH, thickness: 0.78,
+      source: "2010 FIRST plan: 0.76-0.78 m from the fireplace door to the hall's corner (the scan did not reach the lobby)",
+    },
+  ],
+  fireplace: [],
+};
+
+/** How far a wall's outer face lies behind its plane at wall-local `u`. */
+export function wallThicknessAt(wall: HallWallId, u: number): number {
+  for (const stretch of HALL_WALL_STRETCHES[wall]) {
+    if (u >= stretch.from - 1e-9 && u <= stretch.to + 1e-9) return stretch.thickness;
+  }
+  return HALL_WALL_THICKNESS[wall].thickness;
+}
+
+/** A doorway through a wall: its depth, its leaves and what lies beyond. */
+export interface HallDoor {
+  /** The HALL_OPENINGS id. */
+  readonly opening: string;
+  /** How deep the opening runs through the wall, metres. */
+  readonly depth: number;
+  /** Leaves hung at the hall face, opening outward into the opening's sides. */
+  readonly leaves: { readonly count: 1 | 2; readonly hinge: "hall-face"; readonly swing: "outward" };
+  /** A further leaf at the far face, hinged on the side named, opening away from the hall. */
+  readonly farLeaf: { readonly hinge: "end-wall-side"; readonly into: string } | null;
+  /** What lies beyond. */
+  readonly beyond: string;
+  readonly source: string;
+}
+
+export const HALL_DOORS: readonly HallDoor[] = [
+  {
+    opening: "door-end", depth: 1.14,
+    leaves: { count: 2, hinge: "hall-face", swing: "outward" },
+    farLeaf: { hinge: "end-wall-side", into: "F.01 Saloon" },
+    beyond: "F.01 Saloon, on the same floor level (its face at z 6.43)",
+    source: "scan: open, sides 1.14-1.20 m deep, a single leaf at the Saloon face (panorama 048)",
+  },
+  {
+    opening: "door-main", depth: 1.09,
+    leaves: { count: 2, hinge: "hall-face", swing: "outward" },
+    farLeaf: null,
+    beyond: "F.16 Corridor at the head of Stair 5, the TRADES HALL inlay",
+    source: "scan: open, sides 1.09 m deep (z 5.276-6.371)",
+  },
+  {
+    opening: "door-fireplace", depth: 0.78,
+    leaves: { count: 2, hinge: "hall-face", swing: "outward" },
+    farLeaf: null,
+    beyond: "the east end of F.16, a lobby toward the Kitchen F.10 and Corridor F.08 (plan only)",
+    source: "2010 FIRST plan: the wall 0.46 m on one side of it and 0.78 m on the other; closed in the scan",
+  },
+  {
+    opening: "door-fire-exit", depth: 1.21,
+    leaves: { count: 2, hinge: "hall-face", swing: "outward" },
+    farLeaf: null,
+    beyond: "F.11 Stair 7 (plan only)",
+    source: "2010 FIRST plan: about 1.2 m through the fireplace wall; atlas: a flush pair with panic bars",
+  },
+];
+
+/** A door's record by its opening's id. */
+export function hallDoor(opening: string): HallDoor | undefined {
+  return HALL_DOORS.find((door) => door.opening === opening);
+}
 
 /**
  * One window's glazing. Positions are wall-local: `u` along the window wall,

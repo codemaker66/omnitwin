@@ -35,21 +35,44 @@ development builds only) shows the room alone, posed through a window bridge for
   row and column index is raised by `FLOOR_SEED_OFFSET` first. Without it the window half (z < 0)
   drew one stagger and one length for nearly every row: rendered on 19 October, 98% of its end
   joints lined up with the next row's against 2% on the door side.
-- **Cut walls** (`hall-section.ts`): where the cutaway lowers a wall, its body stands as a solid
-  section with a dark cap and a gilt edge on the room side, as thick as the wall
+- **Cut walls** (`hall-wall-body.ts`, `hall-section.ts`): every wall has a body as thick as the wall
   (`HALL_WALL_THICKNESS`: the window wall 0.95 m from the 2010 plan, the door wall 1.14 m from the
-  scan, the end and fireplace walls 1.21 m from the plan only). The hall stands in a plinth that is a
-  ring round the floor, never a slab under it: its top lies at the floor's level only outside the
-  floor, from the room's planes to the walls' outer faces or a centimetre inside the city's cut-out
-  for the hall, whichever is nearer (the walls stand beyond the cut-out on every side; their skins
-  stand on the city's own caps there), and it is also the floor of the door
-  recesses and the firebox; its outer faces drop 0.42 m, and under the floor's edge only a strip
-  2 cm down reaches 5 cm in, so a crack would show slab, not the void. Its inner edge repeats the
-  floor's own edge vertices. A slab 1 mm under the oak, as before, lost the depth test at scattered
-  pixels (depth24, near 0.1, far 900: a few depth steps per millimetre at 20-30 m), the black specks
-  Blake saw while the camera moved. No two surfaces of the hall may share a plane: keep any new one
-  centimetres clear of the floor and of the city's caps at y = 0 beyond the cut-out (|x| > 11.2,
-  |z| > 5.95).
+  scan, the end and fireplace walls 1.21 m from the plan only; `HALL_WALL_STRETCHES`: the door wall's
+  corridor face 1.28 m out between the end and main doors, joinery the scan measured where the plan
+  draws a recess, and 0.46 and 0.78 m either side of the fireplace door's lobby, from the plan), from
+  the floor to the relief's own top (6.70 m), with every window and door open through it. In front,
+  back to 2 cm behind the deepest relief in an opening, the hole is the relief's own footprint
+  (`OPENING_RELIEF`, measured on `walls-relief.bin`), and the scanned reveals, curtains and closed
+  leaves line it; behind, a window's hole is its masonry opening, lined by its outer reveal
+  (`hall-glazing.ts`; the body carries it on the last 2.6 cm where the reveal stops short), and a
+  doorway is lined in mahogany with an oak threshold 8 mm above the floor's level. The four doors
+  are `HALL_DOORS` (depth, leaves, what lies beyond); the fire exit in the fireplace wall (D4) is one
+  of them. All four bodies and the four corner blocks are one mesh: the cutaway lowers them in the
+  shader (`bodyVertexHeight`), so no object moves when a cut eases, and a top clamped to the cut
+  becomes the section. A corner block stands no higher than the lower of its two walls. Once a wall
+  is cut to `LINTEL_RELEASE` (3.5 m) or lower, the walling over its doors goes, the relief over each
+  doorway with it (`DOOR_SLOTS`, `sectionMask`), so every doorway reads from above, in Plan (3.12 m)
+  and at the fire exit, whose head is 5 cm under the dado cut; a wall cut higher keeps its lintels.
+  Relief standing in a corner against the neighbouring wall (the doorcases' sides and the radiator
+  cases, which each wall's depth map also saw) takes the lower of the two walls' cuts
+  (`sharedNeighbour`, `aWallB`). The finish is a preset (`SECTION_PRESETS`, `?section=`, nothing
+  remembered): Ashlar by default, pale sandstone outside with no joints (art direction: no
+  photograph of the facade gives its coursing), the cut a warm stone core with a lime-plaster line at
+  the room edge (mahogany through the dado, oak through the attic) and a fine arris at the outer
+  edge, the lines never thinner than 0.75 px; Atelier and Nocturne carry their palettes only. The
+  faces are unlit, the mood's light baked into their colour (the cut: the room's ambient, a share of
+  its chandeliers and the sky over the lifted ceiling; the outer faces: the sky and a little of the
+  room's glow). The hall stands in a plinth that is a ring round the floor, never a slab under it:
+  its top lies at the floor's level only outside the floor, out to the walls' outer faces (and a
+  centimetre short of the city's cut-out where a wall is thinner than that), so it is the slab under
+  the bodies and the floor of the firebox; its outer faces drop 0.42 m, and under the floor's edge
+  only a strip 2 cm down reaches 5 cm in, so a crack would show slab, not the void. Its inner edge
+  repeats the floor's own edge vertices. A slab 1 mm under the oak, as before, lost the depth test at
+  scattered pixels (depth24, near 0.1, far 900: a few depth steps per millimetre at 20-30 m), the
+  black specks Blake saw while the camera moved. No two surfaces of the hall may share a plane where
+  either shows: keep any new one centimetres clear of the floor and of the city's caps at y = 0
+  beyond the cut-out (|x| > 11.2, |z| > 5.95); the ring's top lies on those caps only under the
+  bodies, where neither is seen.
 - **Chandeliers** (`hall-chandeliers.ts`): the five fittings as scanned, gilt scrollwork and
   acanthus on dark bronze stems with white flame bulbs, drawn to the lowest points, reaches and
   bulb heights measured in the panoramas (`HALL_CHANDELIERS`; method in the 10 October session log).
@@ -174,7 +197,8 @@ turns the head in Walk and two fingers walk: spreading them steps forward along 
 closing them steps back (`pinchStepMetres`: 6 m for a spread across the whole screen, at most 1 m
 an event). The cutaway
 (`wallCutHeight`) lowers the walls between the camera and the room to the dado rail and, in plan,
-cuts every wall at 3.12 m, above the doors. A wall the camera stands behind also stays 0.6 m below
+cuts every wall at 3.12 m, above the doors' heads, the walling over each door going with it so the
+doorways read (Cut walls, above). A wall the camera stands behind also stays 0.6 m below
 the camera's eye (below the dado rail too for a camera lower than it). A phone opens at eye height
 inside the hall, about 6.8 m from the orbit's target, so one finger's orbit crosses the long walls
 1-2 m out. There the cut eased from the full height was still above the eye, and the cut wall's
@@ -204,8 +228,14 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   rejection of malformed files.
 - `src/components/grand-hall/__tests__/hall-section.test.ts` keeps the plinth off the floor:
   nothing under it within 1.5 cm, the band out to its edge covered at its level, the floor's own
-  edge vertices on its inner edge, everything inside the city's cut-out, and each wall's body as
-  thick as `HALL_WALL_THICKNESS`; `hall-glazing.test.ts` holds the panes at the glass inside each
+  edge vertices on its inner edge, its outline flush with the bodies' outer faces, and the section
+  presets; `hall-wall-body.test.ts` holds the doors and thicknesses to their sources, each wall's
+  outer face whole at its own thickness except through its openings (5 cm grid), the tops flush at
+  6.70 m, the cut full thickness in Plan and open over every door, the lintels' and corner blocks'
+  rules, the jambs of every hole within 5 mm of the shipped relief's footprint (medians), no relief
+  in another wall's body, the corners' shared relief, the 6k-triangle budget, and no two surfaces
+  (floor, ring, thresholds, bodies, outer reveals, relief) sharing a plane over more than 1 cm² at
+  the whole, Plan and opening view's cuts; `hall-glazing.test.ts` holds the panes at the glass inside each
   opening, every measured bar where it was measured (and the panes between them open), the budgets
   (panes 200, bars 2,500, reveals 1,500 triangles), the reveals from the glass to the outer face,
   the glass presets and the capture's closing and reopening, also when it throws;

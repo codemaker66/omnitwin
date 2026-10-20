@@ -21,10 +21,11 @@
 // ---------------------------------------------------------------------------
 
 import { Color, DoubleSide, FrontSide, type Material, type Side, type Texture } from "three";
-import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
-import { attribute, color, dot, float, luminance, max, mix, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
+import { attribute, bool, color, dot, float, luminance, max, min, mix, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import type { HallMaterialKey } from "./hall-builders.js";
 import { HALL_GLAZING_PAINT } from "./hall-spec.js";
+import { DOOR_SLOTS, LINTEL_RELEASE } from "./hall-wall-body.js";
 import type { HallSun } from "./hall-sun.js";
 import { hallSkyUniforms } from "./hall-sky-runtime.js";
 import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
@@ -66,19 +67,37 @@ export class HallSectionUniforms {
   }
 }
 
+/**
+ * A fragment stands below its part's cut (hall-wall-body.ts reliefVisible
+ * mirrors the rule). Relief standing in a corner against the neighbouring
+ * wall (`aWallB`, hall-walls.ts sharedNeighbour) takes the lower of the two
+ * walls' cuts. Over each doorway, once its wall is cut low enough that the
+ * body drops the lintel (LINTEL_RELEASE), the relief over the door goes too,
+ * so the doorway reads from above as a gap through the whole wall.
+ */
 function sectionMask(section: HallSectionUniforms) {
-  const wall = attribute("aWall", "float");
   const [c0, c1, c2, c3, c4] = section.cuts;
-  const cut = wall.lessThan(-0.5).select(float(1000),
-    wall.lessThan(0.5).select(c0,
-      wall.lessThan(1.5).select(c1,
-        wall.lessThan(2.5).select(c2,
-          wall.lessThan(3.5).select(c3, c4)))));
-  return positionWorld.y.lessThan(cut);
+  const wall = attribute("aWall", "float");
+  const neighbour = attribute("aWallB", "float");
+  const cutOf = (index: typeof wall) => index.lessThan(-0.5).select(float(1000),
+    index.lessThan(0.5).select(c0,
+      index.lessThan(1.5).select(c1,
+        index.lessThan(2.5).select(c2,
+          index.lessThan(3.5).select(c3, c4)))));
+  const own = cutOf(wall);
+  const cut = min(own, cutOf(neighbour));
+  const p = positionWorld;
+  let overDoor: Node<"bool"> = bool(false);
+  for (const slot of DOOR_SLOTS) {
+    const u = p.x.sub(slot.origin[0]).mul(slot.tangent[0]).add(p.z.sub(slot.origin[1]).mul(slot.tangent[1]));
+    overDoor = overDoor.or(wall.greaterThan(slot.wall - 0.5).and(wall.lessThan(slot.wall + 0.5))
+      .and(u.greaterThan(slot.u0)).and(u.lessThan(slot.u1)).and(p.y.greaterThan(slot.head)));
+  }
+  return p.y.lessThan(cut).and(overDoor.and(own.lessThan(LINTEL_RELEASE)).not());
 }
 
 /** The baked irradiance at this vertex under the current mood. */
-function bakedIrradiance(mood: HallMoodUniforms) {
+export function bakedIrradiance(mood: HallMoodUniforms) {
   const light = attribute("aLight", "vec4");
   const ao = light.x;
   return mood.ambient.rgb.mul(mood.ambientIntensity).mul(ao)

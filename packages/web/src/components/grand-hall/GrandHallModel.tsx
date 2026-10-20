@@ -20,7 +20,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Color, Vector3, type Material, type Mesh, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { color, lights, mix, normalWorld, uniform, vec3 } from "three/tsl";
-import { hallGeometry, hallWallGeometry } from "./hall-geometry.js";
+import { hallGeometry, hallThresholdGeometry, hallWallGeometry } from "./hall-geometry.js";
 import { loadWallRelief, type WallRelief } from "./hall-relief.js";
 import { hallChandeliers } from "./hall-chandeliers.js";
 import { paintHallTextures, disposeHallTextures, type HallTextures } from "./hall-textures.js";
@@ -35,7 +35,7 @@ import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
 import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
-import { createHallSection, type HallSection } from "./hall-section.js";
+import { createHallSection, parseSectionPreset, SECTION_PRESETS, type HallSection, type SectionPreset } from "./hall-section.js";
 import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 import { hallSkyState } from "./hall-sky-runtime.js";
 import { HALL_SUN_CASTER_LAYER, hallSun, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
@@ -130,7 +130,7 @@ interface HallResources {
   readonly selfLit: { value: number };
   /** The bulbs' brightness: 1 on screen, CAPTURED_BULBS in the room's reflections. */
   readonly bulbScale: { value: number };
-  /** The cut walls' bodies, caps and the plinth. */
+  /** The walls' bodies (cut in the shader) and the plinth. */
   readonly cutaway: HallSection;
   /** Stand-ins the sun's shadow camera draws for the room, where the sun lights it. */
   readonly casters: HallCasterMaterials | null;
@@ -174,7 +174,7 @@ export function reflectionsOutdated(signature: number, captured: number | null):
  */
 const CAPTURE_SUN_MAP_WAITS = 2;
 
-function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null, multisampled: boolean): HallResources {
+function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null, multisampled: boolean, sectionPreset: SectionPreset): HallResources {
   const textures = paintHallTextures(quality);
   const photos = new HallPhotos();
   const mood = new HallMoodUniforms();
@@ -223,7 +223,7 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const bulb = new MeshBasicNodeMaterial();
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
   const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
-  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(), casters };
+  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(section, mood, sectionPreset), casters };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -255,7 +255,10 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const deviceFinish = useHallFinish();
   const { photoQuality: quality, liveLight } = finishOverride ?? deviceFinish;
   const sun = useMemo(() => (sunlit ? hallSun(hallSunMapSize(quality, liveLight)) : null), [liveLight, quality, sunlit]);
-  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun, multisampled), [multisampled, quality, sun]);
+  // The section's finish: `?section=` (Ashlar by default; nothing is remembered).
+  const sectionPreset = useMemo(() => SECTION_PRESETS[parseSectionPreset(typeof window === "undefined" ? null : window.location.search)], []);
+  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun, multisampled, sectionPreset), [multisampled, quality, sectionPreset, sun]);
+  const thresholds = useMemo(() => hallThresholdGeometry(), []);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
@@ -266,8 +269,6 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const captureWaits = useRef(0);
   const cutState = useRef<number[]>([HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none]);
   const cutsEasing = useRef(false);
-  const skinRefs = useRef<(import("three").Mesh | null)[]>([]);
-  const capRefs = useRef<(import("three").Group | null)[]>([]);
   const resolvedView = useRef<Exclude<HallView, "auto">>(view === "auto" ? "overview" : view);
   const chandelierGroup = useRef<import("three").Group | null>(null);
   const chandeliersShown = useRef(false);
@@ -470,19 +471,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     });
     cutsEasing.current = easing;
     moving = moving || easing;
-    resources.cutaway.pieces.forEach((_piece, index) => {
-      const height = cutState.current[index] ?? HALL_CUTS.none;
-      const cut = height < HALL_HEIGHT - 0.01;
-      // Uncut walls keep their full body; cut ones stop at the cut.
-      const top = cut ? Math.max(0.05, height) : HALL_HEIGHT + 0.3;
-      const skin = skinRefs.current[index];
-      if (skin !== null && skin !== undefined) skin.scale.y = top;
-      const cap = capRefs.current[index];
-      if (cap !== null && cap !== undefined) {
-        cap.visible = cut;
-        cap.position.y = top;
-      }
-    });
+    // The walls' bodies follow the cuts in their shader (hall-wall-body.ts).
     if (moving) invalidate();
   });
 
@@ -529,21 +518,12 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
         />
       )}
       <mesh name="grand-hall-plinth" geometry={resources.cutaway.plinth} material={resources.cutaway.materials.plinth} />
-      {resources.cutaway.pieces.map((piece, index) => (
-        <group key={piece.wall.id} name={`grand-hall-section-${piece.wall.id}`} position={[piece.centre[0], 0, piece.centre[1]]} rotation={[0, piece.rotationY, 0]}>
-          <mesh
-            ref={(mesh) => { skinRefs.current[index] = mesh; }}
-            name={`grand-hall-section-skin-${piece.wall.id}`}
-            geometry={piece.skin}
-            material={resources.cutaway.materials.skin}
-            scale={[1, HALL_HEIGHT + 0.3, 1]}
-          />
-          <group ref={(group) => { capRefs.current[index] = group; }} visible={false}>
-            <mesh name={`grand-hall-section-cap-${piece.wall.id}`} geometry={piece.cap} material={resources.cutaway.materials.cap} />
-            <mesh name={`grand-hall-section-edge-${piece.wall.id}`} geometry={piece.edge} material={resources.cutaway.materials.edge} />
-          </group>
-        </group>
-      ))}
+      <mesh name="grand-hall-wall-body" geometry={resources.cutaway.body} material={resources.cutaway.materials.body} raycast={() => undefined} />
+      {[...thresholds.geometries].map(([key, part]) => {
+        const material = resources.materials.get(key);
+        if (material === undefined) return null;
+        return <mesh key={`thresholds-${key}`} name="grand-hall-thresholds" geometry={part} material={material} frustumCulled={false} receiveShadow={sun !== null} />;
+      })}
     </group>
   );
 }

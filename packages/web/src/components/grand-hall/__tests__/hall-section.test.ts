@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { BufferGeometry } from "three";
 import { buildHallGeometry } from "../hall-geometry.js";
-import { PLINTH_DEPTH, PLINTH_UNDERLAP, buildPlinthRing, createHallSection, plinthExtents, wallThickness } from "../hall-section.js";
-import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_WALLS, HALL_WALL_THICKNESS, hallWall } from "../hall-spec.js";
+import { CITY_CUTOUT as SECTION_CUTOUT, PLINTH_DEPTH, PLINTH_UNDERLAP, SECTION_PRESETS, buildPlinthRing, parseSectionPreset, plinthExtents, plinthOutline, wallThickness } from "../hall-section.js";
+import { bodyOutline } from "../hall-wall-body.js";
+import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_WALL_THICKNESS, hallWall } from "../hall-spec.js";
 
 type Vec3 = readonly [number, number, number];
 
@@ -23,10 +24,36 @@ const CITY_CUTOUT = [11.2, 5.95] as const;
 
 const L = HALL_HALF_LENGTH;
 const W = HALL_HALF_WIDTH;
-/** The ring reaches each wall's outer face or a centimetre inside the city's cut-out, whichever is nearer. */
+/** The ring reaches the walls' outer faces, or a centimetre inside the city's cut-out where a wall is thinner. */
 const EXTENTS = plinthExtents();
-const reach = (id: "window" | "door" | "fireplace" | "end", half: number, limit: number): number =>
-  Math.min(half + HALL_WALL_THICKNESS[id].thickness, limit - 0.01);
+const OUTLINE = plinthOutline();
+
+/** Whether (x, z) lies inside the ring's outline. */
+function insideOutline(x: number, z: number): boolean {
+  let inside = false;
+  for (let i = 0, j = OUTLINE.length - 1; i < OUTLINE.length; j = i++) {
+    const a = OUTLINE[i];
+    const b = OUTLINE[j];
+    if (a === undefined || b === undefined) continue;
+    if ((a[1] > z) !== (b[1] > z) && x < ((b[0] - a[0]) * (z - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
+/** Distance from (x, z) to the outline. */
+function toOutline(x: number, z: number): number {
+  let best = Infinity;
+  for (let i = 0; i < OUTLINE.length; i++) {
+    const a = OUTLINE[i];
+    const b = OUTLINE[(i + 1) % OUTLINE.length];
+    if (a === undefined || b === undefined) continue;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+    best = Math.min(best, Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz));
+  }
+  return best;
+}
 
 function trianglesOf(geometry: BufferGeometry): Triangle[] {
   const position = geometry.getAttribute("position");
@@ -79,9 +106,10 @@ describe("the plinth round the Grand Hall's floor", () => {
   it("covers the band from the room's planes to its outer edge at the floor's level", () => {
     let sampled = 0;
     const missing: string[] = [];
-    for (let x = EXTENTS.xMin; x <= EXTENTS.xMax + 1e-9; x += 0.05) {
-      for (let z = EXTENTS.zMin; z <= EXTENTS.zMax + 1e-9; z += 0.05) {
+    for (let x = EXTENTS.xMin + 0.01; x <= EXTENTS.xMax; x += 0.05) {
+      for (let z = EXTENTS.zMin + 0.01; z <= EXTENTS.zMax; z += 0.05) {
         if (Math.abs(x) <= L && Math.abs(z) <= W) continue;
+        if (!insideOutline(x, z) || toOutline(x, z) < 1e-4) continue;
         sampled += 1;
         if (!tops.some((t) => covers(t, x, z))) missing.push(`${x.toFixed(3)},${z.toFixed(3)}`);
       }
@@ -90,50 +118,32 @@ describe("the plinth round the Grand Hall's floor", () => {
     expect(missing.slice(0, 5)).toEqual([]);
   });
 
-  it("ends at the walls' outer faces or inside the city's cut-out, whichever is nearer, and stands PLINTH_DEPTH deep", () => {
+  it("reaches the walls' outer faces, or a centimetre short of the city's cut-out where a wall is thinner, and stands PLINTH_DEPTH deep", () => {
     ring.computeBoundingBox();
     const box = ring.boundingBox;
     expect(box).not.toBeNull();
     if (box === null) return;
-    expect(box.max.x).toBeCloseTo(reach("end", L, CITY_CUTOUT[0]), 5);
-    expect(box.min.x).toBeCloseTo(-reach("fireplace", L, CITY_CUTOUT[0]), 5);
-    expect(box.max.z).toBeCloseTo(reach("door", W, CITY_CUTOUT[1]), 5);
-    expect(box.min.z).toBeCloseTo(-reach("window", W, CITY_CUTOUT[1]), 5);
+    expect(box.max.x).toBeCloseTo(EXTENTS.xMax, 6);
+    expect(box.min.x).toBeCloseTo(EXTENTS.xMin, 6);
+    expect(box.max.z).toBeCloseTo(EXTENTS.zMax, 6);
+    expect(box.min.z).toBeCloseTo(EXTENTS.zMin, 6);
     expect(box.max.y).toBe(0);
     expect(box.min.y).toBeCloseTo(-PLINTH_DEPTH, 6);
-    expect(Math.max(box.max.x, -box.min.x)).toBeLessThan(CITY_CUTOUT[0]);
-    expect(Math.max(box.max.z, -box.min.z)).toBeLessThan(CITY_CUTOUT[1]);
-  });
-
-  it("gives each wall's body its own thickness, its skin reaching its neighbours' outer faces", () => {
-    const section = createHallSection();
-    try {
-      section.pieces.forEach((piece, index) => {
-        const thickness = wallThickness(piece.wall);
-        expect(thickness).toBe(HALL_WALL_THICKNESS[piece.wall.id].thickness);
-        piece.skin.computeBoundingBox();
-        const skin = piece.skin.boundingBox;
-        expect(skin).not.toBeNull();
-        if (skin === null) return;
-        // The skin lies half the thickness behind the body's centre, which
-        // lies half behind the room's plane: on the wall's outer face.
-        expect(skin.min.z).toBeCloseTo(-thickness / 2, 6);
-        const middle = [piece.wall.origin[0] + piece.wall.tangent[0] * piece.wall.length / 2, piece.wall.origin[2] + piece.wall.tangent[2] * piece.wall.length / 2];
-        const behind = Math.hypot(piece.centre[0] - (middle[0] ?? 0), piece.centre[1] - (middle[1] ?? 0));
-        expect(behind).toBeCloseTo(thickness / 2, 6);
-        // Along the wall (local x from its middle) it reaches the outer face
-        // of the wall before it at u = 0 and of the next one at its end.
-        const before = HALL_WALLS[(index + 3) % 4];
-        const after = HALL_WALLS[(index + 1) % 4];
-        if (before === undefined || after === undefined) return;
-        expect(skin.min.x).toBeCloseTo(-piece.wall.length / 2 - wallThickness(before), 6);
-        expect(skin.max.x).toBeCloseTo(piece.wall.length / 2 + wallThickness(after), 6);
-      });
-      // The window wall's skin is where its windows' outer reveals end.
-      expect(wallThickness(hallWall("window"))).toBe(0.95);
-    } finally {
-      section.dispose();
-    }
+    // Flush with the bodies' outer faces wherever they stand beyond the cut-out.
+    const body = bodyOutline();
+    expect(OUTLINE).toHaveLength(body.length);
+    OUTLINE.forEach((point, i) => {
+      const face = body[i];
+      if (face === undefined) return;
+      const beyond = Math.abs(face[0]) >= CITY_CUTOUT[0] - 0.01 - 1e-9 || Math.abs(face[1]) >= CITY_CUTOUT[1] - 0.01 - 1e-9;
+      if (beyond) expect(point).toEqual(face);
+      else expect(Math.max(Math.abs(point[0]) - (CITY_CUTOUT[0] - 0.01), Math.abs(point[1]) - (CITY_CUTOUT[1] - 0.01))).toBeCloseTo(0, 9);
+    });
+    // The window wall stands at its true street face, 0.95 m out.
+    expect(EXTENTS.zMin).toBeCloseTo(-W - HALL_WALL_THICKNESS.window.thickness, 6);
+    expect(SECTION_CUTOUT.x).toBe(CITY_CUTOUT[0]);
+    expect(SECTION_CUTOUT.z).toBe(CITY_CUTOUT[1]);
+    expect(wallThickness(hallWall("window"))).toBe(0.95);
   });
 
   it("meets the floor's edge on the floor's own vertices, so no crack opens between them", () => {
@@ -173,15 +183,30 @@ describe("the plinth round the Grand Hall's floor", () => {
     expect(sides.length).toBeGreaterThan(0);
     for (const t of sides) {
       const [x, y, z] = centroid(t);
-      const acrossX = Math.abs(t.normal[0]) > 0.5;
-      const edge = acrossX ? (x > 0 ? EXTENTS.xMax : EXTENTS.xMin) : (z > 0 ? EXTENTS.zMax : EXTENTS.zMin);
-      expect(acrossX ? x : z).toBeCloseTo(edge, 5);
-      expect(Math.sign(acrossX ? x : z)).toBe(Math.sign(acrossX ? t.normal[0] : t.normal[2]));
+      expect(toOutline(x, z)).toBeLessThan(1e-6);
+      expect(insideOutline(x + t.normal[0] * 0.01, z + t.normal[2] * 0.01)).toBe(false);
+      expect(insideOutline(x - t.normal[0] * 0.01, z - t.normal[2] * 0.01)).toBe(true);
       expect(y).toBeLessThan(0);
     }
   });
 
   it("is one light mesh", () => {
     expect(triangles.length).toBeLessThan(1500);
+  });
+});
+
+describe("the section's finish", () => {
+  it("is Ashlar unless ?section= names another, and remembers nothing", () => {
+    expect(parseSectionPreset(null)).toBe("ashlar");
+    expect(parseSectionPreset("?section=atelier")).toBe("atelier");
+    expect(parseSectionPreset("?sky=1&section=nocturne")).toBe("nocturne");
+    expect(parseSectionPreset("?section=marble")).toBe("ashlar");
+    for (const preset of Object.values(SECTION_PRESETS)) {
+      for (const colour of [preset.outer, preset.core, preset.plaster, preset.dado, preset.attic, preset.arris, preset.doorLining, preset.windowLining]) {
+        expect(colour).toMatch(/^#[0-9a-f]{6}$/);
+      }
+    }
+    // The dado's mahogany, as the brief measured it.
+    expect(SECTION_PRESETS.ashlar.dado).toBe("#5c3132");
   });
 });

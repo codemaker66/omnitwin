@@ -14,6 +14,7 @@ import { HALL_HALF_LENGTH, HALL_HALF_WIDTH } from "./hall-spec.js";
 import { buildHallWalls } from "./hall-walls.js";
 import { buildHallCeiling } from "./hall-ceiling.js";
 import { buildGlazingBars, buildGlazingReveals } from "./hall-glazing.js";
+import { buildThresholds } from "./hall-wall-body.js";
 import type { WallRelief } from "./hall-relief.js";
 
 export interface HallGeometry {
@@ -62,12 +63,22 @@ export function buildHallGeometry(): HallGeometry {
   });
 }
 
+/**
+ * The doorways' oak thresholds, drawn with the floor's material in a mesh of
+ * their own (hall-wall-body.ts): the floor's mesh stays the floor's rectangle,
+ * whose edge the plinth ring repeats vertex for vertex.
+ */
+export function buildHallThresholdGeometry(): HallGeometry {
+  return timed((hb) => { buildThresholds(hb); });
+}
+
 /** The four walls: the scan's relief, or flat photographs without it. */
 export function buildHallWallGeometry(relief: WallRelief | null): HallGeometry {
   return timed((hb) => { buildHallWalls(hb, relief); });
 }
 
 let cachedRoom: HallGeometry | null = null;
+let cachedThresholds: HallGeometry | null = null;
 let cachedFlatWalls: HallGeometry | null = null;
 const cachedWalls = new WeakMap<WallRelief, HallGeometry>();
 
@@ -75,6 +86,12 @@ const cachedWalls = new WeakMap<WallRelief, HallGeometry>();
 export function hallGeometry(): HallGeometry {
   cachedRoom ??= buildHallGeometry();
   return cachedRoom;
+}
+
+/** The doorways' thresholds, built on first use and shared by every canvas. */
+export function hallThresholdGeometry(): HallGeometry {
+  cachedThresholds ??= buildHallThresholdGeometry();
+  return cachedThresholds;
 }
 
 /** The walls for a relief (or flat without one), built once each. */

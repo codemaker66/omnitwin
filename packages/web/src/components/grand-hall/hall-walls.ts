@@ -30,6 +30,38 @@ export const MODELLED_DOOR = "door-main";
 const DOOR_RECESS = -0.3;
 const LEAF_PLANE = -0.27;
 
+/**
+ * Relief that stands out from its wall in a corner, against the neighbouring
+ * wall, belongs to that wall as much as to its own: each wall's depth map saw
+ * the side of whatever stands in the corner (at the door wall's two corners,
+ * the doorcases' sides and the radiator case, up to 0.79 m proud). A triangle
+ * reaching further from its own wall than SHARED_REACH_MARGIN beyond its
+ * nearest point's distance from the neighbour's plane, and more than
+ * SHARED_MIN_PROUD in all, takes the lower of the two walls' cuts, so it
+ * never stands above a neighbour cut lower than its own wall (Blake's
+ * overview, 19 October: a doorcase's side left standing over the cut door
+ * wall). Panelling and boards near a corner (under 0.2 m proud, further from
+ * the neighbour than that) keep their own wall's cut.
+ */
+export const SHARED_MIN_PROUD = 0.1;
+export const SHARED_REACH_MARGIN = 0.05;
+
+/**
+ * The neighbouring wall a relief triangle shares (its index in HALL_WALLS), or
+ * -1. `corners` are its wall-local (u, v, depth) points.
+ */
+export function sharedNeighbour(wallIndex: number, wallLength: number, corners: readonly (readonly [number, number, number])[]): number {
+  const proud = Math.max(...corners.map((c) => c[2]));
+  if (proud <= SHARED_MIN_PROUD) return -1;
+  // The wall before this one meets its start (u = 0), the next its end.
+  const fromStart = Math.min(...corners.map((c) => c[0]));
+  const fromEnd = Math.min(...corners.map((c) => wallLength - c[0]));
+  const count = HALL_WALLS.length;
+  if (fromStart <= fromEnd && proud > fromStart + SHARED_REACH_MARGIN) return (wallIndex + count - 1) % count;
+  if (fromEnd < fromStart && proud > fromEnd + SHARED_REACH_MARGIN) return (wallIndex + 1) % count;
+  return -1;
+}
+
 /** Whether wall-local height `v` is in the varnished panelling (dado or attic). */
 export function isPanelling(v: number): boolean {
   return v < E.dadoTop + 0.02 || v > E.corniceTop - 0.02;
@@ -46,7 +78,7 @@ export function buildHallWalls(hb: HallBuilders, relief: WallRelief | null): voi
       hb.withRole("wall", () => {
         const mesh = relief?.get(wall.id);
         if (mesh === undefined) flatWall(hb, wall);
-        else reliefWall(hb, wall, mesh);
+        else reliefWall(hb, wall, index, mesh);
       });
       hb.withRole("detail", () => {
         for (const opening of HALL_OPENINGS) {
@@ -71,7 +103,7 @@ function flatWall(hb: HallBuilders, wall: HallWall): void {
 }
 
 /** The wall's measured relief, split between the glossy and matte photographs. */
-function reliefWall(hb: HallBuilders, wall: HallWall, mesh: WallReliefMesh): void {
+function reliefWall(hb: HallBuilders, wall: HallWall, wallIndex: number, mesh: WallReliefMesh): void {
   const { positions, indices } = mesh;
   const count = positions.length / 3;
   const local = (i: number): readonly [number, number, number] => [positions[i * 3] ?? 0, positions[i * 3 + 1] ?? 0, positions[i * 3 + 2] ?? 0];
@@ -101,28 +133,34 @@ function reliefWall(hb: HallBuilders, wall: HallWall, mesh: WallReliefMesh): voi
     const n: V3 = [sums[i * 3] ?? 0, sums[i * 3 + 1] ?? 0, sums[i * 3 + 2] ?? 0];
     return Math.hypot(n[0], n[1], n[2]) > 1e-12 ? vec.normalize(n) : wall.normal;
   };
-  // Each material's builder gets its own copy of the vertices it uses.
-  const remaps = new Map<HallMaterialKey, Int32Array>();
+  // Each material's builder gets its own copy of the vertices it uses, and a
+  // triangle shared with a neighbouring wall its own copies again (they carry
+  // that wall's cut too).
+  const remaps = new Map<string, Int32Array>();
   for (let t = 0; t < indices.length; t += 3) {
     const corners = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0] as const;
     const centreV = (local(corners[0])[1] + local(corners[1])[1] + local(corners[2])[1]) / 3;
     const key = wallMaterial(centreV);
+    const neighbour = sharedNeighbour(wallIndex, wall.length, corners.map(local));
     const builder = hb.get(key);
-    let remap = remaps.get(key);
+    const remapKey = `${key}:${String(neighbour)}`;
+    let remap = remaps.get(remapKey);
     if (remap === undefined) {
       remap = new Int32Array(count).fill(-1);
-      remaps.set(key, remap);
+      remaps.set(remapKey, remap);
     }
     const target = remap;
-    const ids = corners.map((i) => {
-      const existing = target[i] ?? -1;
-      if (existing >= 0) return existing;
-      const [u, v] = local(i);
-      const created = builder.vertex(world[i] ?? wallPoint(wall, u, v), normalOf(i), [u, v]);
-      target[i] = created;
-      return created;
+    hb.withNeighbour(neighbour, () => {
+      const ids = corners.map((i) => {
+        const existing = target[i] ?? -1;
+        if (existing >= 0) return existing;
+        const [u, v] = local(i);
+        const created = builder.vertex(world[i] ?? wallPoint(wall, u, v), normalOf(i), [u, v]);
+        target[i] = created;
+        return created;
+      });
+      builder.triangle(ids[0] ?? 0, ids[1] ?? 0, ids[2] ?? 0);
     });
-    builder.triangle(ids[0] ?? 0, ids[1] ?? 0, ids[2] ?? 0);
   }
 }
 
