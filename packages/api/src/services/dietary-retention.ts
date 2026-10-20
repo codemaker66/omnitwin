@@ -30,7 +30,11 @@ import type { Database } from "../db/client.js";
 //   - either way, never while an enquiry filed with the layout has a
 //     preferred date still ahead or within the after-event period.
 // Only the free-text note goes. The counts per diet are not about anyone in
-// particular and stay with the layout and its sheets.
+// particular and stay with the layout and its sheets. A planner's note on a
+// single piece (placed_objects.metadata.notes, copied into the sheet's rows
+// and, since T-669, onto its plan) is not covered: it is an operational note
+// that can still mention an allergy ("Table 5: nut allergy"), and whether such
+// notes count as health text is an open decision, not a rule this job applies.
 //
 // It runs through the house cleanup endpoint (POST /admin/cleanup), with a
 // dry run that changes nothing (POST /admin/retention/dietary-notes). It is

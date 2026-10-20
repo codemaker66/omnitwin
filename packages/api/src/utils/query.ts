@@ -1,4 +1,4 @@
-import { FORWARD_BOOK_RECORD_ROLES } from "@omnitwin/types";
+import { FORWARD_BOOK_RECORD_ROLES, PRICING_WRITE_ROLES as PRICE_SETTER_ROLES } from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -111,9 +111,10 @@ const VENUE_ADMINISTRATION_ROLES: ReadonlySet<string> = new Set(["admin", "manag
 /**
  * Who may set a price: create, change, delete or restore a pricing rule.
  * people-matrix.md records "A price change: admin; manager if Blake says so".
- * Whether manager stays is Blake's call, so it is this one line.
+ * Whether manager stays is Blake's call, so it is one line, in
+ * @omnitwin/types (pricing-desk.ts), which the web's controls read too.
  */
-export const PRICING_WRITE_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+export const PRICING_WRITE_ROLES: ReadonlySet<string> = new Set(PRICE_SETTER_ROLES);
 
 /** Enquiries, opportunities, CRM, proposals, quotes and revenue. */
 const COMMERCIAL_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
@@ -149,8 +150,8 @@ export function canAdministerVenue(
   return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLES);
 }
 
-/** Setting a price at this venue (PRICING_WRITE_ROLES). Reading prices stays
- *  public; only the writes are narrowed. */
+/** Setting a price at this venue (PRICING_WRITE_ROLES). Reading one is the
+ *  wider commercial team's (canManageCommercial), never the public's. */
 export function canWritePricing(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
@@ -177,6 +178,20 @@ export function canManageCommercial(
  * board would meet a 403 on opening it.
  */
 export function canReadDiary(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
+/**
+ * Reading the Clients desk (search, recent and upcoming lists, the client and
+ * guest-lead profiles): the venue floor, and sales, who works the clients
+ * (People Book design §6.7, approved 18 October 2026). Hallkeepers keep exactly
+ * the access they had. The commercial record inside the desk, and the contact
+ * profile, stay with `canManageCommercial` alone.
+ */
+export function canReadClients(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
 ): boolean {

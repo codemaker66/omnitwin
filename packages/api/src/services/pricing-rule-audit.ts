@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { generalAuditLog, pricingRules, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { PRICING_WRITE_ROLES } from "../utils/query.js";
@@ -96,13 +96,15 @@ export function describePricingRuleChange(
   kind: PricingRuleAuditKind,
   ruleName: string,
   change: PricingRuleChange,
+  fromAdvice = false,
 ): string {
   const name = `"${ruleName}"`;
-  if (kind === "created") return `Added ${name}.`;
+  const advised = fromAdvice ? ", from a suggestion" : "";
+  if (kind === "created") return `Added ${name}${advised}.`;
   if (kind === "deleted") return `Deleted ${name}.`;
   if (kind === "restored") return `Brought back ${name}.`;
   const words = [...new Set(change.changedFields.map((field) => FIELD_WORDS[field]))];
-  return words.length === 0 ? `Saved ${name} with no change.` : `Changed ${name}: ${words.join(", ")}.`;
+  return words.length === 0 ? `Saved ${name} with no change.` : `Changed ${name}: ${words.join(", ")}${advised}.`;
 }
 
 export async function recordPricingRuleChange(
@@ -112,20 +114,26 @@ export async function recordPricingRuleChange(
     readonly actorUserId: string;
     readonly before: PricingRuleRow | null;
     readonly after: PricingRuleRow;
+    /** The suggestion this change followed (PricingAdviceKeySchema). */
+    readonly adviceKey?: string | null;
   },
 ): Promise<void> {
   const change = diffPricingRule(input.before, input.after);
+  const adviceKey = input.adviceKey ?? null;
   await conn.insert(generalAuditLog).values({
     actorUserId: input.actorUserId,
     action: PRICING_RULE_AUDIT_ACTIONS[input.kind],
     targetType: PRICING_RULE_AUDIT_TARGET,
     targetId: input.after.id,
-    summary: describePricingRuleChange(input.kind, input.after.name, change),
+    summary: describePricingRuleChange(input.kind, input.after.name, change, adviceKey !== null),
     metadata: {
       venueId: input.after.venueId,
       changedFields: [...change.changedFields],
       before: { ...change.before },
       after: { ...change.after },
+      // The Pricing desk's suggestion the person followed, if any, so the
+      // venue can later see which advice it took and how that went.
+      ...(adviceKey === null ? {} : { followedAdvice: adviceKey }),
     },
   });
 }
@@ -164,6 +172,43 @@ export async function listPricingRuleHistory(
     const action = KIND_BY_ACTION.get(row.action);
     return action === undefined ? [] : [{ action, at: row.createdAt.toISOString(), by: row.by, summary: row.summary }];
   });
+}
+
+/**
+ * The latest changes to each of these rules, newest first, at most
+ * `perRule` each: the Pricing desk's line under every rate. A venue's price
+ * list changes by hand, so its whole record is small; it is read in one
+ * query and cut per rule here.
+ */
+export async function listPricingHistoryForRules(
+  db: Database,
+  ruleIds: readonly string[],
+  perRule = 5,
+): Promise<ReadonlyMap<string, readonly PricingRuleHistoryEntry[]>> {
+  const byRule = new Map<string, PricingRuleHistoryEntry[]>();
+  if (ruleIds.length === 0) return byRule;
+  const rows = await db
+    .select({
+      targetId: generalAuditLog.targetId,
+      action: generalAuditLog.action,
+      createdAt: generalAuditLog.createdAt,
+      summary: generalAuditLog.summary,
+      by: userDisplayName,
+    })
+    .from(generalAuditLog)
+    .leftJoin(users, eq(users.id, generalAuditLog.actorUserId))
+    .where(and(eq(generalAuditLog.targetType, PRICING_RULE_AUDIT_TARGET), inArray(generalAuditLog.targetId, [...ruleIds])))
+    .orderBy(desc(generalAuditLog.createdAt), desc(generalAuditLog.id))
+    .limit(5_000);
+  for (const row of rows) {
+    const action = KIND_BY_ACTION.get(row.action);
+    if (action === undefined) continue;
+    const list = byRule.get(row.targetId) ?? [];
+    if (list.length >= perRule) continue;
+    list.push({ action, at: row.createdAt.toISOString(), by: row.by, summary: row.summary });
+    byRule.set(row.targetId, list);
+  }
+  return byRule;
 }
 
 const ROLE_WORDS: Readonly<Record<string, string>> = {

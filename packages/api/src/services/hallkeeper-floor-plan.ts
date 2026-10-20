@@ -16,6 +16,17 @@ interface FloorPlanPlacement {
   readonly positionZ: string;
   readonly rotationY: string;
   readonly scale: string;
+  /** placed_objects.metadata: the planner's `displayLabel` and `notes`. */
+  readonly metadata?: unknown;
+}
+
+/** A trimmed string field of placement metadata, clipped to the frozen schema's limit. */
+function metadataText(metadata: unknown, key: "displayLabel" | "notes", max: number): string | undefined {
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const value: unknown = (metadata as Record<string, unknown>)[key];
+  if (typeof value !== "string") return undefined;
+  const text = value.trim().slice(0, max);
+  return text.length > 0 ? text : undefined;
 }
 
 /** Capture source geometry before approval. No inferred chair rings or room rectangle. */
@@ -31,11 +42,15 @@ export function buildHallkeeperFloorPlan(
     objects: [...objects].sort((a, b) => a.id.localeCompare(b.id)).map((object) => {
       const asset = assets.get(object.assetDefinitionId);
       if (asset === undefined) throw new Error(`Missing footprint catalogue entry for ${object.id}`);
+      const label = metadataText(object.metadata, "displayLabel", 80);
+      const note = metadataText(object.metadata, "notes", 500);
       return {
         objectId: object.id, assetDefinitionId: asset.id, name: asset.name, category: asset.category,
         x: Number(object.positionX), z: Number(object.positionZ), rotationY: Number(object.rotationY),
         scale: Number(object.scale), widthM: Number(asset.widthM), depthM: Number(asset.depthM),
         collisionType: asset.collisionType,
+        ...(label === undefined ? {} : { label }),
+        ...(note === undefined ? {} : { note }),
       };
     }),
   });

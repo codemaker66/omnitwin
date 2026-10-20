@@ -240,7 +240,7 @@ test.describe("3D planner mobile shell", () => {
       await expect.poll(() => item.evaluate((element) => {
         const box = element.getBoundingClientRect();
         return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
-      }), { message: "catalogue item must receive the pointer above the open schedule" }).toBe(true);
+      }), { message: "catalogue item must receive the pointer above the planner chrome" }).toBe(true);
       if (viewport.width === 320) {
         await testInfo.attach("small-phone-catalogue", { body: await page.screenshot(), contentType: "image/png" });
       }
@@ -309,15 +309,16 @@ test.describe("3D planner mobile shell", () => {
 test.describe("Small phone canvas placement", () => {
   test.use({ viewport: { width: 320, height: 568 }, hasTouch: true });
 
-  test("a table chosen above the expanded schedule is placed and saved through touch", async ({ page }, testInfo) => {
+  test("a signed-out visitor places and saves a table through touch", async ({ page }, testInfo) => {
     let savedObjects: readonly BatchObjectInput[] = [];
     await mockPlannerApis(page, (objects) => { savedObjects = objects; });
     await page.goto(`/plan/${CONFIG_ID}`);
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("cockpit-shell")).toBeVisible();
     const toolbar = page.getByTestId("planner-toolbar");
-    const schedule = page.getByRole("contentinfo", { name: "Your event schedule" });
-    await expect(schedule.getByRole("button", { name: "Hide event schedule" })).toHaveAttribute("aria-expanded", "true");
+    // A signed-out visitor with no event link has no schedule to act on, so
+    // the "No event linked" card no longer takes the bottom of the phone.
+    await expect(page.getByRole("contentinfo", { name: "Your event schedule" })).toHaveCount(0);
     const add = toolbar.getByRole("button", { name: "Add", exact: true });
     await add.tap();
     const catalogue = page.getByRole("region", { name: "Furniture catalogue" });
@@ -337,7 +338,7 @@ test.describe("Small phone canvas placement", () => {
 
     // Read actual floor triangles and project interior samples through the live
     // camera. This chooses a visible floor point without moving the camera,
-    // seeding placed objects, forcing input or closing the schedule.
+    // seeding placed objects, forcing input or closing any planner panel.
     const visibleFloorPoint = async (): Promise<{ x: number; y: number } | null> => page.evaluate(() => {
       const runtime = window.__venPerf;
       if (runtime === undefined) return null;
@@ -402,7 +403,7 @@ test.describe("Small phone canvas placement", () => {
       }), null, 2),
       contentType: "application/json",
     });
-    await expect.poll(visibleFloorPoint, { message: "expanded schedule leaves a clear 44px floor target available for touch placement" }).not.toBeNull();
+    await expect.poll(visibleFloorPoint, { message: "the planner chrome leaves a clear 44px floor target available for touch placement" }).not.toBeNull();
     const point = await visibleFloorPoint();
     expect(point).not.toBeNull();
     if (point === null) throw new Error("No visible floor point");

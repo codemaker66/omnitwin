@@ -34,13 +34,17 @@ const validRule = {
 };
 
 describe("GET /venues/:venueId/pricing", () => {
-  it("is public (no auth required)", async () => {
+  // Prices are the venue's commercial team's (Blake, 17 October 2026); the
+  // full gate is in pricing-rules-read-guard.test.ts.
+  it("asks who you are", async () => {
     const res = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/pricing` });
-    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).toBe(401);
   });
 
   it("returns 400 for invalid venue UUID", async () => {
-    const res = await server.inject({ method: "GET", url: "/venues/bad/pricing" });
+    const res = await server.inject({
+      method: "GET", url: "/venues/bad/pricing", headers: { authorization: `Bearer ${staffToken()}` },
+    });
     expect(res.statusCode).toBe(400);
   });
 });
@@ -215,10 +219,16 @@ describe("who may set a price (PRICING_WRITE_ROLES)", () => {
     }
   });
 
-  it("keeps reading prices public", async () => {
-    const res = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/pricing` });
-    expect(res.statusCode).not.toBe(401);
-    expect(res.statusCode).not.toBe(403);
+  it("lets the commercial team read prices it cannot set, and no one signed out", async () => {
+    for (const role of ["staff", "sales"]) {
+      const res = await server.inject({
+        method: "GET", url: `/venues/${VENUE_ID}/pricing`, headers: { authorization: `Bearer ${roleToken(role)}` },
+      });
+      expect(res.statusCode, role).not.toBe(401);
+      expect(res.statusCode, role).not.toBe(403);
+    }
+    const signedOut = await server.inject({ method: "GET", url: `/venues/${VENUE_ID}/pricing` });
+    expect(signedOut.statusCode).toBe(401);
   });
 });
 

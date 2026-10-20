@@ -223,10 +223,16 @@ export function OpsLensPanel(): ReactElement {
           </p>
         )}
 
+        {/* A visitor has no pack to compile: the venue makes it from a plan it
+            has been sent. Say who does the work and how to reach them (fix-first
+            item 11), instead of asking an organiser to be venue staff. */}
         {!canCompile && (
-          <p className="lens-panel__note lens-panel__note--warn" data-testid="ops-precondition">
+          <p
+            className={isSignedIn ? "lens-panel__note lens-panel__note--warn" : "lens-panel__note"}
+            data-testid="ops-precondition"
+          >
             {!isSignedIn
-              ? "Sign in as venue staff to compile an ops handoff pack."
+              ? "The events team prepares the setup pack once they have your plan. To send it to them, use Send to Events Team."
               : "Save this layout first to compile an ops handoff pack."}
           </p>
         )}

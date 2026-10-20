@@ -182,6 +182,8 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     schema.venues, schema.spaces, schema.configurations, schema.enquiries,
     schema.enquiryStatusHistory, schema.guestLeads, schema.users,
     schema.eventPlanNotifications, schema.emailSends, schema.pricingRules,
+    // A booking enquiry finds or makes its person in the People Book (T-665).
+    schema.clientAccounts, schema.contacts, schema.contactPoints, schema.accountMemberships,
   ];
   const savedTwinSlugs = process.env["TWIN_PUBLIC_VENUE_SLUGS"];
 
@@ -214,7 +216,9 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE venues, spaces, configurations, enquiries, enquiry_status_history, guest_leads, users, event_plan_notifications, email_sends, pricing_rules");
+    await pool.query(
+      "TRUNCATE venues, spaces, configurations, enquiries, enquiry_status_history, guest_leads, users, event_plan_notifications, email_sends, pricing_rules, client_accounts, contacts, contact_points, account_memberships",
+    );
     await pool.query(
       "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', $2, '85 Glassford Street')",
       [VENUE, VENUE_SLUG],
@@ -547,6 +551,34 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
         const quote = await server.inject({ method: "GET", url: `/enquiries/${enquiryId}/quote`, headers: as(role) });
         expect(quote.statusCode, `${role}: ${quote.body}`).toBe(200);
       }
+    });
+
+    // Blake, 17 October 2026: a visitor asks for a quote and is never shown a
+    // price. The enquirer owns the enquiry and may change its date while it
+    // is a draft, so their own quote would price any date, a raised one from
+    // a Pricing desk suggestion included.
+    it("never prices the enquiry for the enquirer, though they may open it", async () => {
+      const enquiryId = await submitEnquiry();
+      await pool.query(`INSERT INTO pricing_rules (venue_id, name, type, amount, currency, is_active, valid_from, valid_to)
+        VALUES ($1, 'Grand Hall, Friday 2 October', 'flat_rate', '3150.00', 'GBP', true, '2026-10-02', '2026-10-02')`, [VENUE]);
+      const enquirer = { id: randomUUID(), email: ORGANISER, role: "client", venueId: null };
+      await pool.query("UPDATE enquiries SET user_id = $1 WHERE id = $2", [enquirer.id, enquiryId]);
+      const asEnquirer = { authorization: `Bearer ${JSON.stringify(enquirer)}` };
+
+      const opens = await server.inject({ method: "GET", url: `/enquiries/${enquiryId}`, headers: asEnquirer });
+      expect(opens.statusCode).toBe(200);
+      const quote = await server.inject({ method: "GET", url: `/enquiries/${enquiryId}/quote`, headers: asEnquirer });
+      expect(quote.statusCode).toBe(403);
+      expect(quote.json()).toEqual({ error: "Insufficient permissions", code: "FORBIDDEN" });
+
+      // The venue's own team still sees the dated rate in the quote it sends.
+      const sales = await server.inject({
+        method: "GET", url: `/enquiries/${enquiryId}/quote`,
+        headers: { authorization: `Bearer ${JSON.stringify({ ...staff, id: randomUUID(), role: "sales" })}` },
+      });
+      expect(sales.statusCode).toBe(200);
+      expect(sales.headers["cache-control"]).toBe("private, no-store");
+      expect(sales.json<{ data: { total: number } }>().data.total).toBe(3150);
     });
 
     // Owning an enquiry makes someone its customer, not the venue's team: a
