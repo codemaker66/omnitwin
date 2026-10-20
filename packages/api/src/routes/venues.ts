@@ -33,11 +33,13 @@ const IdParam = z.object({ id: z.string().uuid() });
 // ---------------------------------------------------------------------------
 // Public projections
 //
-// GET /venues and GET /venues/:id answer anyone, signed in or not. They name
-// the columns a member of the public may see instead of selecting the whole
-// row, so a column added to `venues` or `spaces` later stays private until
-// someone adds it here on purpose. Never list subscriptionStatus, planTier,
-// deletedAt or anything else about billing, plans or deletion.
+// GET /venues and GET /venues/:id answer anyone, signed in or not, and so do
+// GET /venues/:venueId/spaces and GET /venues/:venueId/spaces/:id (routes/
+// spaces.ts, which reuses PUBLIC_SPACE_COLUMNS). They name the columns a
+// member of the public may see instead of selecting the whole row, so a column
+// added to `venues` or `spaces` later stays private until someone adds it here
+// on purpose. Never list subscriptionStatus, planTier, deletedAt or anything
+// else about billing, plans or deletion.
 //
 // What each column is for (the fields the web client and tools read):
 //   venues: id, name, slug, address, logoUrl, brandColour (the venue picker,
@@ -45,7 +47,8 @@ const IdParam = z.object({ id: z.string().uuid() });
 //   longitude (venue:verify-site checks the stored location against the
 //   agreed site; the venue's address is already public).
 //   spaces: id, venueId, name, slug, widthM, lengthM, heightM and
-//   floorPlanOutline (the room list, planner and editor).
+//   floorPlanOutline (the room list, planner and editor, on the venue route's
+//   nested spaces and on both space routes).
 // ---------------------------------------------------------------------------
 
 export const PUBLIC_VENUE_COLUMNS = {

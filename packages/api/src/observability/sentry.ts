@@ -1,6 +1,8 @@
 import type { FastifyRequest } from "fastify";
+import type { NodeOptions } from "@sentry/node";
 import type { Env } from "../env.js";
 import { scrubApiSentryEvent } from "./health-redaction.js";
+import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Sentry — error tracking + tracing for Fastify
@@ -12,9 +14,37 @@ import { scrubApiSentryEvent } from "./health-redaction.js";
 //   2. Init BEFORE Fastify routes register so the instrumentation
 //      patches the HTTP layer before any handler runs.
 //   3. Scrub PII — we never send `request.user.email` or planner
-//      notes to Sentry. The beforeSend hook strips request bodies
-//      and query/path params that might carry sensitive values.
+//      notes to Sentry. The beforeSend hook strips request bodies;
+//      query strings are scrubbed everywhere (error events,
+//      breadcrumbs, transactions and their spans), because the search
+//      routes carry a name, email or phone in `?q=`.
 // ---------------------------------------------------------------------------
+
+/** The settings the Sentry options are built from. */
+export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "NODE_ENV" | "SENTRY_TRACES_SAMPLE_RATE">;
+
+/**
+ * The options `initSentry` hands to `Sentry.init`. Pure, so a test can
+ * assert the redaction hooks without initialising the SDK.
+ *
+ * Redact anything that could carry PII before the event leaves the
+ * process. Sentry's default `sendDefaultPii` is false but we go further:
+ *   - beforeSend: request bodies, credentials, query strings and the
+ *     query parameters in exception values (`./redact.ts`), then any guest
+ *     allergy note left in a message or breadcrumb (`./health-redaction.ts`);
+ *   - beforeSendTransaction: the query in request urls and span attributes;
+ *   - beforeBreadcrumb: the query in http breadcrumbs.
+ */
+export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
+  return {
+    dsn: env.SENTRY_DSN,
+    environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
+    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    beforeSend: (event) => scrubApiSentryEvent(scrubErrorEvent(event)),
+    beforeSendTransaction: scrubTransaction,
+    beforeBreadcrumb: scrubBreadcrumb,
+  };
+}
 
 /**
  * Initialise the Sentry Node SDK if SENTRY_DSN is configured.
@@ -27,21 +57,7 @@ export async function initSentry(env: Env): Promise<void> {
 
   const Sentry = await import("@sentry/node");
 
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
-    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
-
-    // Redact anything that could carry PII before the event leaves
-    // the process. Sentry's default `sendDefaultPii` is false but we
-    // go further and actively scrub request bodies + headers, since
-    // our routes include planner notes and email addresses, and then
-    // any guest allergy note left in a message or breadcrumb
-    // (observability/health-redaction.ts).
-    beforeSend(event) {
-      return scrubApiSentryEvent(event);
-    },
-  });
+  Sentry.init(buildSentryOptions(env));
 }
 
 /**

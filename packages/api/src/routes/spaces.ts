@@ -6,6 +6,7 @@ import { spaces, venues, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canAdministerVenue } from "../utils/query.js";
+import { PUBLIC_SPACE_COLUMNS } from "./venues.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -97,7 +98,9 @@ export async function spaceRoutes(
       return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
     }
 
-    const rows = await db.select()
+    // Public: name the columns (see PUBLIC_SPACE_COLUMNS) instead of selecting
+    // the whole row. Ordering by sortOrder does not need it selected.
+    const rows = await db.select(PUBLIC_SPACE_COLUMNS)
       .from(spaces)
       .where(and(eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
       .orderBy(spaces.sortOrder);
@@ -120,7 +123,7 @@ export async function spaceRoutes(
       return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
     }
 
-    const [space] = await db.select()
+    const [space] = await db.select(PUBLIC_SPACE_COLUMNS)
       .from(spaces)
       .where(and(
         eq(spaces.id, params.data.id),
