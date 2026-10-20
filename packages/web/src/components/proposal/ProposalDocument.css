@@ -26,11 +26,21 @@
   box-shadow: 0 1px 0 #00000014, 0 24px 60px -32px #14302a66;
 }
 
+/* -- Client text at 7:1 ------------------------------------------------------
+   This sheet is read by the client, and client body text holds 7:1 (goals/01).
+   The register's second ink (--house-ink-2) measures 6.55:1 on the ivory sheet,
+   so here the second ink is forest authority: 8.3:1 on the sheet and 9.1:1 on
+   the raised paper. The forest decision panel and the copper plane declare
+   their own --reg-text-2 on themselves, so neither inherits this. */
+.pd-page[data-register="ivory"] { --reg-text-2: var(--vv-forest-2); }
+
 /* -- The head --------------------------------------------------------------- */
 .pd-head { margin-bottom: 28px; }
+/* The venue's name in the second ink, not copper: copper text is 5.6:1 on the
+   sheet. The copper plane under the total stays the page's one accent. */
 .pd-venue {
   margin: 0 0 14px;
-  color: var(--reg-attention);
+  color: var(--reg-text-2);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -127,7 +137,9 @@
   background: var(--reg-surface);
   color: var(--reg-text-1);
 }
-.pd-total span { color: var(--reg-text-2); font-size: 13px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
+/* On the copper plane the plane's own second ink is 6.4:1; the label takes the
+   first ink (7.5:1) and keeps its rank through size, weight and capitals. */
+.pd-total span { color: var(--reg-text-1); font-size: 13px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
 .pd-total strong { font: 400 clamp(26px, 3.6vw, 32px) / 1.1 var(--house-serif); font-variant-numeric: tabular-nums; }
 
 /* -- The conversation --------------------------------------------------------- */

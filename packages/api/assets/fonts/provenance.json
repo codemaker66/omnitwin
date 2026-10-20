@@ -1,0 +1,129 @@
+{
+ "schemaVersion": "venviewer.sheet-fonts.v1",
+ "generator": "packages/api/scripts/build-sheet-fonts.py",
+ "fontTools": "4.64.0",
+ "cutOn": "2026-10-18",
+ "licence": "SIL Open Font License 1.1 (newsreader-OFL.txt, inter-OFL.txt)",
+ "faces": {
+  "Newsreader-DisplayLight": {
+   "location": {
+    "wght": 300,
+    "opsz": 72
+   },
+   "inputs": {
+    "newsreader-normal-latin.woff2": "6e4f2958c3a7c4a80acde4e5a679abe7e01bc1e30b92be3c7a8b696ef401d101",
+    "newsreader-normal-latin-ext.woff2": "45683de03de37187604102316c0b42c0cb2d8dc9c4140a20ad471c3148cc1278",
+    "newsreader-normal-vietnamese.woff2": "6d0543f06b9d5393afe5baaeb040817e85af372bf5609d5d55746b1eb56b4010"
+   },
+   "output": {
+    "file": "Newsreader-DisplayLight.ttf",
+    "sha256": "80545417ba8aa07bb4aa68e2f7339362fe3ef2e0eb831e72f1036b85a2e2e519",
+    "bytes": 94696
+   }
+  },
+  "Newsreader-Regular": {
+   "location": {
+    "wght": 400,
+    "opsz": 24
+   },
+   "inputs": {
+    "newsreader-normal-latin.woff2": "6e4f2958c3a7c4a80acde4e5a679abe7e01bc1e30b92be3c7a8b696ef401d101",
+    "newsreader-normal-latin-ext.woff2": "45683de03de37187604102316c0b42c0cb2d8dc9c4140a20ad471c3148cc1278",
+    "newsreader-normal-vietnamese.woff2": "6d0543f06b9d5393afe5baaeb040817e85af372bf5609d5d55746b1eb56b4010"
+   },
+   "output": {
+    "file": "Newsreader-Regular.ttf",
+    "sha256": "327fbf6876f89131ea290a7dd732e93b661afb5948560859c1031c97e0080fac",
+    "bytes": 94428
+   }
+  },
+  "Newsreader-Medium": {
+   "location": {
+    "wght": 500,
+    "opsz": 16
+   },
+   "inputs": {
+    "newsreader-normal-latin.woff2": "6e4f2958c3a7c4a80acde4e5a679abe7e01bc1e30b92be3c7a8b696ef401d101",
+    "newsreader-normal-latin-ext.woff2": "45683de03de37187604102316c0b42c0cb2d8dc9c4140a20ad471c3148cc1278",
+    "newsreader-normal-vietnamese.woff2": "6d0543f06b9d5393afe5baaeb040817e85af372bf5609d5d55746b1eb56b4010"
+   },
+   "output": {
+    "file": "Newsreader-Medium.ttf",
+    "sha256": "4883d08f03ccf086a21e58f584918e66179f0a9868a13c6bb86809fe575a790b",
+    "bytes": 94712
+   }
+  },
+  "Newsreader-Italic": {
+   "location": {
+    "opsz": 16
+   },
+   "inputs": {
+    "newsreader-italic-latin.woff2": "2bf0dbb1a4a052fffcc447bdab56b12049ee804a8a0d1ee04f5e76a6ab89166a",
+    "newsreader-italic-latin-ext.woff2": "591373ce47708216fd4c9d60f841dcc12ff389d9772df092087cf81d09577e7d",
+    "newsreader-italic-vietnamese.woff2": "cb6dbc88cb8ca618ba5c4b2a63daee33302320edef65946759f3fadf16f40fbf"
+   },
+   "output": {
+    "file": "Newsreader-Italic.ttf",
+    "sha256": "3f2ad015f9e7b62a8f48ebc2047a09a750eae252984e6a277c333c49667fc0e0",
+    "bytes": 99768
+   }
+  },
+  "Inter-Regular": {
+   "location": {
+    "wght": 400
+   },
+   "inputs": {
+    "inter-normal-latin.woff2": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
+    "inter-normal-latin-ext.woff2": "34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956",
+    "inter-normal-cyrillic.woff2": "71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075",
+    "inter-normal-cyrillic-ext.woff2": "ca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd",
+    "inter-normal-greek.woff2": "1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6",
+    "inter-normal-greek-ext.woff2": "6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190",
+    "inter-normal-vietnamese.woff2": "5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2"
+   },
+   "output": {
+    "file": "Inter-Regular.ttf",
+    "sha256": "14b63d5ae3b7abf3fdd4f1333a55a2d74f812154c688362af7707d27677cac85",
+    "bytes": 228788
+   }
+  },
+  "Inter-Medium": {
+   "location": {
+    "wght": 500
+   },
+   "inputs": {
+    "inter-normal-latin.woff2": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
+    "inter-normal-latin-ext.woff2": "34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956",
+    "inter-normal-cyrillic.woff2": "71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075",
+    "inter-normal-cyrillic-ext.woff2": "ca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd",
+    "inter-normal-greek.woff2": "1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6",
+    "inter-normal-greek-ext.woff2": "6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190",
+    "inter-normal-vietnamese.woff2": "5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2"
+   },
+   "output": {
+    "file": "Inter-Medium.ttf",
+    "sha256": "8f37166eddf044e5a2c433eeb5fb2389f280a177e390b23350ceac673cfa23a8",
+    "bytes": 229204
+   }
+  },
+  "Inter-SemiBold": {
+   "location": {
+    "wght": 600
+   },
+   "inputs": {
+    "inter-normal-latin.woff2": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
+    "inter-normal-latin-ext.woff2": "34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956",
+    "inter-normal-cyrillic.woff2": "71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075",
+    "inter-normal-cyrillic-ext.woff2": "ca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd",
+    "inter-normal-greek.woff2": "1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6",
+    "inter-normal-greek-ext.woff2": "6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190",
+    "inter-normal-vietnamese.woff2": "5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2"
+   },
+   "output": {
+    "file": "Inter-SemiBold.ttf",
+    "sha256": "e90824030d8089a24eb7c4fb14366e6d30a3c036b47b858b2221cea831988b30",
+    "bytes": 229932
+   }
+  }
+ }
+}

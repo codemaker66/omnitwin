@@ -174,6 +174,22 @@ describe("the price list for the event", () => {
     expect(priceListView(rules, [], EVENT).rooms.map((group) => [group.heading, group.offers.length])).toEqual([["Other rooms", 2]]);
   });
 
+  it("offers a rate for the event's date instead of the everyday rate it takes the place of, and says so", () => {
+    const everyday = rule({ id: "n", name: "Grand Hall — Evening", appliesFrom: "19:00:00", appliesUntil: "00:30:00" });
+    const special = rule({
+      id: "o", name: "Grand Hall — Evening, 5 Jun 2027", amount: "3150.00", appliesFrom: "19:00:00", appliesUntil: "00:30:00",
+      validFrom: "2027-06-05", validTo: "2027-06-05",
+    });
+    const view = priceListView([everyday, special], ROOMS, EVENT);
+    expect(view.first.map((group) => group.offers.map((offer) => [offer.name, offer.price]))).toEqual([[["Grand Hall — Evening, 5 Jun 2027", "£3,150"]]]);
+    expect(view.leftOut).toEqual(["On 5 June 2027, “Grand Hall — Evening, 5 Jun 2027” takes the place of Grand Hall — Evening."]);
+    // Another day, the everyday rate alone.
+    const nextWeek = priceListView([everyday, special], ROOMS, { ...EVENT, eventDate: "2027-06-12" });
+    expect(nextWeek.first.map((group) => group.offers.map((offer) => offer.name))).toEqual([["Grand Hall — Evening"]]);
+    // With no date yet, both are offered, each with its dates.
+    expect(priceListView([everyday, special], ROOMS, { ...EVENT, eventDate: null }).first[0]?.offers).toHaveLength(2);
+  });
+
   it("says what it leaves out, and why, rather than dropping it", () => {
     const view = priceListView([
       rule({ id: "g", name: "Summer terrace", validFrom: "2027-07-01" }),

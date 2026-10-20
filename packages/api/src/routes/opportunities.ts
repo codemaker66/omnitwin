@@ -14,6 +14,8 @@ import {
 import {
   activities,
   clientAccounts,
+  competitorLosses,
+  competitorVenues,
   contacts,
   enquiries,
   followUpTasks,
@@ -29,6 +31,7 @@ import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.
 import { paginate } from "../utils/pagination.js";
 import { canManageCommercial } from "../utils/query.js";
 import { nextActionForStage } from "../services/deal-next-action.js";
+import { lostToRefusal, recordLoss } from "../services/competitor-watch-data.js";
 
 const IdParam = z.object({ id: z.string().uuid() });
 const TaskParam = z.object({ id: z.string().uuid(), taskId: z.string().uuid() });
@@ -239,6 +242,9 @@ export async function opportunityRoutes(
         .orderBy(desc(proposals.createdAt), desc(proposals.id))
         .limit(50),
       // Every move between stages, newest first, with who made it and why.
+      // A move to lost carries who won, when it was said (the competitor
+      // watch): a venue in the set, or another by name, with any figure the
+      // client volunteered, which the timeline labels as theirs, unverified.
       db.select({
         id: opportunityStatusHistory.id,
         fromStage: opportunityStatusHistory.fromStage,
@@ -246,12 +252,35 @@ export async function opportunityRoutes(
         note: opportunityStatusHistory.note,
         changedByName: sql<string | null>`COALESCE(${users.displayName}, ${users.name})`,
         createdAt: opportunityStatusHistory.createdAt,
+        lostToName: sql<string | null>`COALESCE(${competitorVenues.name}, ${competitorLosses.otherName})`,
+        lostToCompetitorId: competitorLosses.competitorId,
+        clientFigureMinor: competitorLosses.clientFigureMinor,
+        clientFigureBasis: competitorLosses.clientFigureBasis,
+        lossCurrency: competitorLosses.currency,
       })
         .from(opportunityStatusHistory)
         .leftJoin(users, eq(users.id, opportunityStatusHistory.changedBy))
+        .leftJoin(competitorLosses, and(
+          eq(competitorLosses.statusHistoryId, opportunityStatusHistory.id),
+          eq(competitorLosses.venueId, opportunity.venueId),
+        ))
+        .leftJoin(competitorVenues, and(
+          eq(competitorVenues.id, competitorLosses.competitorId),
+          eq(competitorVenues.venueId, competitorLosses.venueId),
+        ))
         .where(eq(opportunityStatusHistory.opportunityId, opportunity.id))
         .orderBy(desc(opportunityStatusHistory.createdAt), desc(opportunityStatusHistory.id))
-        .limit(100),
+        .limit(100)
+        .then((rows) => rows.map(({ lostToName, lostToCompetitorId, clientFigureMinor, clientFigureBasis, lossCurrency, ...move }) => ({
+          ...move,
+          lostTo: lostToName === null ? null : {
+            name: lostToName,
+            competitorId: lostToCompetitorId,
+            clientFigureMinor,
+            clientFigureBasis,
+            currency: lossCurrency ?? "GBP",
+          },
+        }))),
       // Who the deal is with, at this venue.
       opportunity.primaryContactId === null ? [] : db.select({
         id: contacts.id,
@@ -347,6 +376,15 @@ export async function opportunityRoutes(
     if (toStage !== undefined && toStage !== fromStage && CLOSING_STAGES.has(toStage) && (parsed.data.note ?? "").trim() === "") {
       return reply.status(422).send({ error: "Say why the deal was won or lost.", code: "REASON_REQUIRED" });
     }
+    // Who won is said with the reason, on the move to lost and no other.
+    const lostTo = parsed.data.lostTo;
+    if (lostTo !== undefined) {
+      if (toStage !== "lost" || fromStage === "lost") {
+        return reply.status(422).send({ error: "Who won is recorded only as the deal is marked lost.", code: "LOST_TO_WITHOUT_LOSS" });
+      }
+      const refused = await lostToRefusal(db, opportunity.venueId, lostTo);
+      if (refused !== null) return reply.status(422).send({ error: refused, code: "COMPETITOR_NOT_IN_SET" });
+    }
 
     const updateData: Partial<typeof opportunities.$inferInsert> = { updatedAt: new Date() };
     if (parsed.data.title !== undefined) updateData.title = parsed.data.title;
@@ -366,21 +404,36 @@ export async function opportunityRoutes(
       if (parsed.data.nextAction === undefined) updateData.nextAction = nextActionForStage(toStage);
     }
 
-    const [updated] = await db.update(opportunities)
-      .set(updateData)
-      .where(eq(opportunities.id, opportunity.id))
-      .returning();
+    // The deal, its stage move and who won are written together, or not at
+    // all: a loss is never recorded without the reason it hangs on.
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(opportunities)
+        .set(updateData)
+        .where(eq(opportunities.id, opportunity.id))
+        .returning();
+      if (row === undefined) return undefined;
+      if (toStage !== undefined && toStage !== fromStage) {
+        const [move] = await tx.insert(opportunityStatusHistory).values({
+          opportunityId: opportunity.id,
+          fromStage,
+          toStage,
+          changedBy: request.user.id,
+          note: parsed.data.note ?? null,
+        }).returning({ id: opportunityStatusHistory.id });
+        if (lostTo !== undefined && move !== undefined) {
+          await recordLoss(tx, {
+            venueId: opportunity.venueId,
+            opportunityId: opportunity.id,
+            statusHistoryId: move.id,
+            lostTo,
+            actorId: request.user.id,
+            currency: row.currency,
+          });
+        }
+      }
+      return row;
+    });
     if (updated === undefined) return reply.status(404).send({ error: "Opportunity not found", code: "NOT_FOUND" });
-
-    if (toStage !== undefined && toStage !== fromStage) {
-      await db.insert(opportunityStatusHistory).values({
-        opportunityId: opportunity.id,
-        fromStage,
-        toStage,
-        changedBy: request.user.id,
-        note: parsed.data.note ?? null,
-      });
-    }
 
     return { data: updated };
   });

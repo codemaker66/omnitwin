@@ -1,10 +1,13 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { occasionLabel } from "@omnitwin/types";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
+import type { OpportunityLostTo, PriceBasis } from "@omnitwin/types";
 import type { Activity, DealContact, DealQuote, FollowUpTask, Opportunity, StageMove } from "../../../api/crm.js";
+import { getCompetitorNames, type CompetitorNames } from "../../../api/competitor-watch.js";
 import type { StaffProposal } from "../../../api/proposals.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
-import { ActivityIndicator } from "../../shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
+import { poundsTyped } from "../pricing/competitor-watch-format.js";
 import { proposalStatusWords } from "../clients/clients-desk-format.js";
 import { eventDateParts, eventLead, eventWeekday, venueCalendarDate, venueMoment, venueSince } from "../enquiries/enquiry-desk-format.js";
 import {
@@ -52,8 +55,9 @@ export interface DealPanelProps {
   readonly stampKey: number | null;
   readonly navigation: DealNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
-  /** Each resolves true once saved, so the panel can put its form away. */
-  readonly onMove: (to: string, reason: string | null) => Promise<boolean>;
+  /** Each resolves true once saved, so the panel can put its form away.
+   *  `lostTo` is who won, said only as a deal is marked lost. */
+  readonly onMove: (to: string, reason: string | null, lostTo?: OpportunityLostTo) => Promise<boolean>;
   readonly onDraftProposal: () => Promise<boolean>;
   readonly onSaveValue: (minor: number) => Promise<boolean>;
   readonly onSaveNext: (nextAction: string, dueAt: string | null) => Promise<boolean>;
@@ -329,8 +333,11 @@ function NextStep({ detail, nowMs, saving, failure, onMove, onDraftProposal, onS
       {failure?.where === "next" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
 
       {closing !== null ? (
-        <ConfirmClose title={deal.title} to={closing} saving={busy}
-          onConfirm={(reason) => { void onMove(closing, reason).then((saved) => { if (saved) setClosing(null); }); }}
+        <ConfirmClose title={deal.title} venueId={deal.venueId} to={closing} saving={busy}
+          onConfirm={(reason, lostTo) => {
+            const move = lostTo === null ? onMove(closing, reason) : onMove(closing, reason, lostTo);
+            void move.then((saved) => { if (saved) setClosing(null); });
+          }}
           onCancel={() => { setClosing(null); }} />
       ) : (
         <>
@@ -364,18 +371,32 @@ function withDraft(steps: ReturnType<typeof stageSteps>, stage: string, drafted:
     hint: "Its proposal is drafted. Move it on to Proposal drafting." };
 }
 
-function ConfirmClose({ title, to, saving, onConfirm, onCancel }: {
+/** Who won, as it is being said: a venue in the set, another by name, or
+ *  nothing said (the default; recording it is optional). */
+type Winner = { readonly kind: "unsaid" } | { readonly kind: "set"; readonly id: string } | { readonly kind: "other" };
+
+type NamesRead =
+  | { readonly status: "loading" | "error" }
+  | { readonly status: "ready"; readonly names: CompetitorNames };
+
+function ConfirmClose({ title, venueId, to, saving, onConfirm, onCancel }: {
   readonly title: string;
+  readonly venueId: string;
   readonly to: "won" | "lost";
   readonly saving: boolean;
-  readonly onConfirm: (reason: string) => void;
+  readonly onConfirm: (reason: string, lostTo: OpportunityLostTo | null) => void;
   readonly onCancel: () => void;
 }): ReactElement {
   const questionId = useId();
   const [reason, setReason] = useState("");
+  const [winner, setWinner] = useState<Winner>({ kind: "unsaid" });
+  const [otherName, setOtherName] = useState("");
+  const [figure, setFigure] = useState("");
+  const [basis, setBasis] = useState<PriceBasis>("fixed");
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const questionRef = useRef<HTMLParagraphElement>(null);
-  const ready = !saving && reason.trim() !== "";
+  const lostTo = to === "lost" ? readLostTo(winner, otherName, figure, basis) : { value: null, problem: null };
+  const ready = !saving && reason.trim() !== "" && lostTo.problem === null;
 
   // A precise pointer goes straight to the reason; on touch the keyboard would
   // cover the question, so focus lands on it instead.
@@ -384,7 +405,7 @@ function ConfirmClose({ title, to, saving, onConfirm, onCancel }: {
     (finePointer ? reasonRef.current : questionRef.current)?.focus();
   }, []);
 
-  const confirm = (): void => { if (ready) onConfirm(reason.trim()); };
+  const confirm = (): void => { if (ready) onConfirm(reason.trim(), lostTo.value); };
 
   return (
     <div className="enq-confirm" role="group" aria-labelledby={questionId} data-tone={to === "won" ? "approved" : "declined"}
@@ -416,6 +437,10 @@ function ConfirmClose({ title, to, saving, onConfirm, onCancel }: {
             }
           }} />
       </label>
+      {to === "lost" && (
+        <WhoWon venueId={venueId} saving={saving} winner={winner} otherName={otherName} figure={figure} basis={basis}
+          problem={lostTo.problem} onWinner={setWinner} onOtherName={setOtherName} onFigure={setFigure} onBasis={setBasis} />
+      )}
       <div className="enq-actions">
         <button type="button" className="enq-cta" onClick={confirm} disabled={!ready} aria-busy={saving}>
           {saving && <ActivityIndicator size={18} />}
@@ -424,6 +449,94 @@ function ConfirmClose({ title, to, saving, onConfirm, onCancel }: {
         <button type="button" className="enq-quiet" onClick={onCancel} disabled={saving}>Keep it open</button>
       </div>
     </div>
+  );
+}
+
+/** Who won as the API takes it, or what is missing. Saying who won is
+ *  optional; a figure only counts with a venue named. */
+function readLostTo(winner: Winner, otherName: string, figure: string, basis: PriceBasis): { readonly value: OpportunityLostTo | null; readonly problem: string | null } {
+  if (winner.kind === "unsaid") return { value: null, problem: null };
+  if (winner.kind === "other" && otherName.trim() === "") return { value: null, problem: "Give the other venue's name, or choose Not said." };
+  const typed = figure.trim();
+  const minor = typed === "" ? null : poundsTyped(typed);
+  if (typed !== "" && minor === null) return { value: null, problem: "Give the client's figure in pounds, such as 9,500, or leave it blank." };
+  return {
+    value: {
+      competitorId: winner.kind === "set" ? winner.id : null,
+      otherName: winner.kind === "other" ? otherName.trim() : null,
+      clientFigureMinor: minor,
+      clientFigureBasis: minor === null ? null : basis,
+    },
+    problem: null,
+  };
+}
+
+/** "Who did they choose?": the venue's own competitor set, another venue by
+ *  name, or not said; and a figure the client gave, kept as theirs. */
+function WhoWon({ venueId, saving, winner, otherName, figure, basis, problem, onWinner, onOtherName, onFigure, onBasis }: {
+  readonly venueId: string;
+  readonly saving: boolean;
+  readonly winner: Winner;
+  readonly otherName: string;
+  readonly figure: string;
+  readonly basis: PriceBasis;
+  readonly problem: string | null;
+  readonly onWinner: (winner: Winner) => void;
+  readonly onOtherName: (name: string) => void;
+  readonly onFigure: (figure: string) => void;
+  readonly onBasis: (basis: PriceBasis) => void;
+}): ReactElement {
+  const [read, setRead] = useState<NamesRead>({ status: "loading" });
+  useEffect(() => {
+    const controller = new AbortController();
+    getCompetitorNames(venueId, controller.signal)
+      .then((names) => { setRead({ status: "ready", names }); })
+      .catch(() => { if (!controller.signal.aborted) setRead({ status: "error" }); });
+    return () => { controller.abort(); };
+  }, [venueId]);
+  const names = read.status === "ready" ? read.names : [];
+  const pressed = (candidate: Winner): boolean => candidate.kind === winner.kind && (candidate.kind !== "set" || (winner.kind === "set" && winner.id === candidate.id));
+
+  return (
+    <fieldset className="pl-lost-to">
+      <legend>Who did they choose? (optional)</legend>
+      {read.status === "loading" && <ActivityStatus>Reading the competitor set…</ActivityStatus>}
+      {read.status === "error" && <p className="enq-next__hint">The competitor set could not be read. Name the venue instead.</p>}
+      <div className="pl-reasons" role="group" aria-label="The venue they chose">
+        {names.map((entry) => (
+          <button key={entry.id} type="button" className="pl-reason" aria-pressed={pressed({ kind: "set", id: entry.id })} disabled={saving}
+            onClick={() => { onWinner({ kind: "set", id: entry.id }); }}>
+            {entry.name}
+          </button>
+        ))}
+        <button type="button" className="pl-reason" aria-pressed={pressed({ kind: "other" })} disabled={saving} onClick={() => { onWinner({ kind: "other" }); }}>
+          Another venue
+        </button>
+        <button type="button" className="pl-reason" aria-pressed={pressed({ kind: "unsaid" })} disabled={saving} onClick={() => { onWinner({ kind: "unsaid" }); }}>
+          Not said
+        </button>
+      </div>
+      {winner.kind === "other" && (
+        <label>
+          <span>The venue's name</span>
+          <input value={otherName} maxLength={160} disabled={saving} onChange={(event) => { onOtherName(event.target.value); }} />
+        </label>
+      )}
+      {winner.kind !== "unsaid" && (
+        <div className="pl-client-figure">
+          <label>
+            <span>Their figure, if the client gave one (optional)</span>
+            <input inputMode="decimal" value={figure} disabled={saving} placeholder="£" onChange={(event) => { onFigure(event.target.value); }} />
+          </label>
+          <div className="pl-reasons" role="radiogroup" aria-label="The figure is">
+            <label className="pl-basis"><input type="radio" name="pl-client-basis" checked={basis === "fixed"} disabled={saving} onChange={() => { onBasis("fixed"); }} />In total</label>
+            <label className="pl-basis"><input type="radio" name="pl-client-basis" checked={basis === "per_head"} disabled={saving} onChange={() => { onBasis("per_head"); }} />A head</label>
+          </div>
+          <p className="enq-next__hint">Kept on this deal as the client's figure, unverified. It is never added to that venue's prices.</p>
+        </div>
+      )}
+      {problem !== null && <p className="enq-confirm__error" role="alert">{problem}</p>}
+    </fieldset>
   );
 }
 
@@ -576,6 +689,7 @@ function Timeline({ detail, saving, failure, onAddNote }: DealPanelProps): React
             <span className="enq-dot" aria-hidden="true" />
             <strong>{moment.sentence}</strong>
             {moment.quote !== null && <q className="pl-quote">{moment.quote}</q>}
+            {moment.detail !== undefined && <span className="pl-lost-detail">{moment.detail}</span>}
             <time dateTime={moment.at}>{venueMoment(moment.at) ?? moment.at}</time>
           </li>
         ))}

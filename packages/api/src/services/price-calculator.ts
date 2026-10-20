@@ -2,7 +2,7 @@
 // Price calculator — pure functions, no DB access
 // ---------------------------------------------------------------------------
 
-import type { PricingType, LineItem, Modifier } from "@omnitwin/types";
+import { standingRates, type PricingType, type LineItem, type Modifier } from "@omnitwin/types";
 import {
   poundsToMinor,
   minorToMajor,
@@ -192,7 +192,10 @@ export function calculatePrice(input: PriceCalculationInput): PriceResult {
   const currency = rules[0]?.currency ?? "GBP";
 
   const inScope = rules.filter((rule) => isRuleValidForDate(rule, eventDate) && isRuleForSpace(rule, spaceId));
-  for (const rule of applicableRules(inScope, startTime, endTime)) {
+  // A rate for particular dates takes the place of the everyday rate for the
+  // same room, time and way of charging on those dates (@omnitwin/types
+  // standingRates), so a dated rate is charged instead of, not as well as.
+  for (const rule of standingRates(applicableRules(inScope, startTime, endTime))) {
 
     let amountMinor: Minor = 0;
     let description = "";

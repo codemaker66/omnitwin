@@ -9,13 +9,29 @@
 // Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 6).
 // -----------------------------------------------------------------------------
 
+import { lookUpRoom } from "./shell/twin-rooms.js";
+
 export const TWIN_TITLE = "Panorama tour — Trades Hall of Glasgow";
 
 /** Static product status, visible during loading, failure and exploration. */
 export const TWIN_TOUR_LABEL = "Panorama tour";
 
-/** Loading state — the manifest is being fetched. */
-export const TWIN_LOADING_LINE = "Opening the twin…";
+/** Loading state — the manifest (the list of viewpoints) is being fetched.
+ *  "Tour" is the visitor's word for it; "twin" is ours. */
+export const TWIN_LOADING_LINE = "Opening the tour…";
+
+/** The first panorama is streaming and nothing is on screen yet: the seconds
+ *  of black the live walk measured (4 s on desktop, 8 s or more on a phone).
+ *  Names the room only where twin-rooms.ts has confirmed it. */
+export function twinOpeningViewLine(roomName: string | null): string {
+  return roomName === null ? "Loading the panorama…" : `Loading the ${roomName} panorama…`;
+}
+
+/** The low-resolution preview is on screen; the full faces are arriving. */
+export const TWIN_DETAIL_LOADING_LINE = "Loading full detail…";
+
+/** A view that failed is being asked for again. */
+export const TWIN_VIEW_RETRY_LOADING_LINE = "Loading this view…";
 
 /** Error state — fetch or schema validation failed. */
 export const TWIN_ERROR_LINE =
@@ -43,16 +59,39 @@ function viewpointNumber(nodeId: string): number | null {
 }
 
 /**
- * Viewer HUD label — where you are standing. Leads with the venue and an honest
- * 1-based viewpoint index; it must NEVER lead with the raw scan id ("scan_035"
- * reads like a debug tag at a guest — finding [1]/[22]). A real room name would
- * be better still, but the nodes carry no verified roomSlug yet and inventing
- * one would risk labelling the Saloon "Grand Hall"; when tagging lands, lead
- * with the room here. An id with no numeric suffix falls back to the venue name.
+ * Where you are standing, without the venue: the room where it is known,
+ * otherwise an honest 1-based viewpoint number, never the raw scan id
+ * ("scan_035" reads like a debug tag at a guest — finding [1]/[22]).
+ *
+ * The room comes only from twin-rooms.ts, the viewpoints a person validated
+ * against photographs (five of the 149 today). The manifest carries
+ * roomSlug null on every node (checked against the published manifest on
+ * 17 October 2026), and proximity or floor would risk calling the Saloon the
+ * Grand Hall, so every other viewpoint keeps its number. The count ("of 149")
+ * is gone: it told a visitor nothing and a screen reader spoke it every hop.
+ * Null for an id with no numeric suffix.
+ */
+export function whereStanding(nodeId: string): string | null {
+  const room = lookUpRoom(nodeId);
+  if (room !== null) return room.name;
+  const viewpoint = viewpointNumber(nodeId);
+  return viewpoint === null ? null : `Viewpoint ${String(viewpoint)}`;
+}
+
+/**
+ * Viewer HUD label — the venue, then where you are standing ("Trades Hall
+ * Glasgow · Grand Hall" at a confirmed viewpoint, "… · Viewpoint 46"
+ * elsewhere). An id with no numeric suffix falls back to the venue name.
  */
 export function twinNodeLabel(nodeId: string, venueName: string): string {
-  const viewpoint = viewpointNumber(nodeId);
-  return viewpoint === null ? venueName : `${venueName} · Viewpoint ${String(viewpoint)}`;
+  const where = whereStanding(nodeId);
+  return where === null ? venueName : `${twinNodeLabelVenue(venueName)}${where}`;
+}
+
+/** The label's venue part, with its separator, so the HUD can set it apart
+ *  (a phone hides it to spend the width on the room). */
+export function twinNodeLabelVenue(venueName: string): string {
+  return `${venueName} · `;
 }
 
 /** Accessible name for the walk region — announced when a screen-reader user
@@ -65,11 +104,11 @@ export function twinViewerLabel(venueName: string): string {
 export const TWIN_VIEWER_ROLE = "Virtual walkthrough";
 
 /** Polite live-region line, spoken on each arrival so a screen-reader user
- *  hears where the walk moved to (finding [10]). Empty when unparseable — an
- *  empty live region stays silent rather than announcing nonsense. */
-export function twinViewpointAnnouncement(nodeId: string, nodeCount: number): string {
-  const viewpoint = viewpointNumber(nodeId);
-  return viewpoint === null ? "" : `Viewpoint ${String(viewpoint)} of ${String(nodeCount)}`;
+ *  hears where the walk moved to (finding [10]): the room where it is known,
+ *  else the viewpoint number. Empty when unparseable — an empty live region
+ *  stays silent rather than announcing nonsense. */
+export function twinViewpointAnnouncement(nodeId: string): string {
+  return whereStanding(nodeId) ?? "";
 }
 
 /** View-mode segmented control (Phase 2, Task 5) — shown only with a mesh. */
@@ -132,6 +171,10 @@ export function allTwinCopy(): readonly string[] {
     TWIN_TITLE,
     TWIN_TOUR_LABEL,
     TWIN_LOADING_LINE,
+    twinOpeningViewLine(null),
+    twinOpeningViewLine("Grand Hall"),
+    TWIN_DETAIL_LOADING_LINE,
+    TWIN_VIEW_RETRY_LOADING_LINE,
     TWIN_ERROR_LINE,
     TWIN_RETRY_LABEL,
     TWIN_PREPARING_LINE,
@@ -139,8 +182,10 @@ export function allTwinCopy(): readonly string[] {
     twinStageLine(1),
     twinStageLine(149),
     twinNodeLabel("scan_000", "Trades Hall Glasgow"),
+    twinNodeLabel("scan_046", "Trades Hall Glasgow"),
     twinViewerLabel("Trades Hall Glasgow"),
-    twinViewpointAnnouncement("scan_000", 149),
+    twinViewpointAnnouncement("scan_000"),
+    twinViewpointAnnouncement("scan_046"),
     TWIN_VIEWER_ROLE,
     TWIN_MODE_GROUP_LABEL,
     TWIN_MODE_WALK_LABEL,

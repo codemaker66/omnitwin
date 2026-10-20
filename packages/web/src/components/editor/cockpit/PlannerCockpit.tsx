@@ -2,6 +2,7 @@ import { type ReactElement } from "react";
 import { App as Editor3D } from "../../../App.js";
 import { CockpitNavRail } from "./CockpitNavRail.js";
 import { CockpitRightDock } from "./CockpitRightDock.js";
+import { LensSheet } from "./LensSheet.js";
 import { WhenRibbon } from "./WhenRibbon.js";
 import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
@@ -103,6 +104,9 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
           rests while a phase preview holds the stage. */}
       {mobile || timelinePreviewActive || !hasLinkedEvent || !(canViewBookingTime || clientSide) ? null : <details className="reference-when-ribbon"><summary>{clientSide ? "Your time" : "Booking time"}</summary><WhenRibbon /></details>}
       <CockpitBottom key="room-layout-timeline" initiallyCollapsed={!mobile} />
+      {/* Phones and tablets have no right dock: a chosen lens rises as a
+          bottom sheet instead (it portals itself above the planner chrome). */}
+      {mobile ? <LensSheet key="lens-sheet" /> : null}
     </div>
   );
 }

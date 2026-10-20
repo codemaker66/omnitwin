@@ -54,6 +54,11 @@ export const HOME_NAV_PLAN = "Plan an event";
 export const HOME_NAV_ENQUIRE = "Ask about a date";
 export const HOME_NAV_LOGIN = "Log in";
 
+/** The skip link the accessibility statement promises (LegalPage: "a skip
+ *  link takes you straight to the main content of a page"). First in the tab
+ *  order, ahead of the masthead. */
+export const HOME_SKIP_LABEL = "Skip to main content";
+
 /** The hero: the venue's own photograph of its signature room. */
 export const HOME_HERO_LEDE =
   "Weddings, dinners and conferences in Robert Adam's Glasgow hall.";
@@ -155,6 +160,7 @@ export function allHomeCopy(): readonly string[] {
     HOME_NAV_PLAN,
     HOME_NAV_ENQUIRE,
     HOME_NAV_LOGIN,
+    HOME_SKIP_LABEL,
     HOME_HERO_LEDE,
     HOME_HERO_ALT,
     HOME_HERO_PLAN,

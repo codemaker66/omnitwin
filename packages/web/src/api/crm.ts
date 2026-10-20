@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DealLostToSchema, type OpportunityLostTo } from "@omnitwin/types";
 import { api } from "./client.js";
 import { StaffProposalSchema } from "./proposals.js";
 
@@ -167,6 +168,9 @@ export const StageMoveSchema = z.object({
   note: z.string().nullable(),
   changedByName: z.string().nullable(),
   createdAt: z.string(),
+  /** Who won, on a move to lost where it was said (the competitor watch);
+   *  absent from an API from before it. */
+  lostTo: DealLostToSchema.nullable().optional(),
 });
 
 export type StageMove = z.infer<typeof StageMoveSchema>;
@@ -260,7 +264,12 @@ export async function getOpportunity(id: string): Promise<OpportunityDetail> {
   return api.get(`/opportunities/${id}`, OpportunityDetailSchema);
 }
 
-export async function updateOpportunity(id: string, input: Partial<CreateOpportunityInput> & { readonly stage?: string; readonly note?: string | null }): Promise<Opportunity> {
+export async function updateOpportunity(id: string, input: Partial<CreateOpportunityInput> & {
+  readonly stage?: string;
+  readonly note?: string | null;
+  /** Who won, said only as the deal is marked lost. */
+  readonly lostTo?: OpportunityLostTo;
+}): Promise<Opportunity> {
   return api.patch(`/opportunities/${id}`, input, OpportunitySchema);
 }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CANONICAL_ASSETS,
+  assetDisplayName,
   getCanonicalAssetById,
   getCanonicalAssetBySlug,
 } from "../asset-catalogue.js";
@@ -120,5 +121,32 @@ describe("deterministic UUID stability", () => {
   it("banquet-chair has the known deterministic UUID", () => {
     const item = getCanonicalAssetBySlug("banquet-chair");
     expect(item?.id).toBe("4dfcae64-b6e3-54f8-817f-af041edab935");
+  });
+});
+
+describe("the names a guest reads (assetDisplayName)", () => {
+  const turini = getCanonicalAssetBySlug("burgess-turini-18-3");
+
+  it("reads the Turini by the planner's plain name, while its stock identity stays the maker's", () => {
+    expect(turini?.name).toBe("Burgess Turini 18/3");
+    expect(assetDisplayName(turini?.id ?? "", "Burgess Turini 18/3")).toBe("Velvet Banquet Chair");
+  });
+
+  it("keeps the stored name for items without a plain name and for items outside the catalogue", () => {
+    const round = getCanonicalAssetBySlug("round-table-6ft");
+    expect(assetDisplayName(round?.id ?? "", "6ft Round Table")).toBe("6ft Round Table");
+    expect(assetDisplayName("00000000-0000-4000-8000-000000000000", "A venue's own lectern")).toBe("A venue's own lectern");
+  });
+
+  it("never gives two different items the same name a guest reads", () => {
+    const shown = CANONICAL_ASSETS.map((asset) => asset.plainName ?? asset.name);
+    expect(new Set(shown).size).toBe(shown.length);
+    for (const asset of CANONICAL_ASSETS) {
+      if (asset.plainName !== undefined) {
+        // A plain name replaces a maker's reference; it is never the same words.
+        expect(asset.plainName).not.toBe(asset.name);
+        expect(asset.plainName).not.toMatch(/\d+\/\d+/u);
+      }
+    }
   });
 });

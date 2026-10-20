@@ -21,7 +21,9 @@ to current code and useful checks; it is not another layer of instructions.
 | Live co-editing | [Note](live-coediting.md), `packages/web/src/lib/layout-live/`, `packages/api/src/ws/layout-live.ts` | The batch save's revision compare-and-swap is the only writer; live ops are never stored; owner and venue floor only; one API replica |
 | Planner rendering | [Note](planner-rendering.md), `PlannerRenderPipeline`, `lib/render-quality.ts`, `scripts/planner-tour.mjs` | One profile per device, resolution independent of motion; no shader compiled during a gesture; measure on the declared scene and device |
 | Planner figures (capacity, rigging, power, egress, costs) | [Note](planner-honest-numbers.md), `lib/planner-truth.ts`, `lib/unrecorded-ask.ts`, `hooks/use-planner-truth.ts` | A figure shows who stated it and when; computed counts and example rates are staff-only; facts nobody recorded read "Not recorded" with a person to ask; no within/fits/pass verdict on a safety question (guarded in `public-claim-guard.test.ts` and `banned-verdicts.test.tsx`) |
-| Hallkeeper sheet on paper | [Note](paper-version-check.md), `services/hallkeeper-pdf-v2.ts`, `services/sheet-paper-check.ts`, `pages/SheetCheckPage.tsx` | The version line in words; the public check returns version state only, the same `unknown` for every wrong link, and is rate-limited |
+| Planner auto-fill and seat shortfall | [Note](planner-auto-fill.md), `lib/auto-fill.ts`, `lib/auto-layout.ts`, `lib/seat-shortfall.ts`, `lib/placement-cap.ts`, `cockpit/AutoFillPrompt.tsx`, `cockpit/SeatShortfallFix.tsx` | Auto-fill asks "How many guests?" and states what it will place before it does; spacing is 0.6 m clear behind every chair, never a capacity, with the published figure beside it; a shortfall gets one action, written once so one undo takes it back; an item at its cap says why |
+| Planner lenses on phones and tablets | `components/editor/cockpit/LensSheet.tsx`, `lens-sheet-motion.ts`, `CockpitRightDock.tsx` (`LENS_PANELS`) | Touch and narrow screens (`PlannerCockpit`'s `mobile`) have no right dock: the same registered panel rises as a modal bottom sheet, open exactly while a lens with a panel is active, and closing it returns to Design; focus trap and return, Escape, scrim tap and swipe down; spring from `lib/springs.ts`, a snap under reduced motion; stands aside during a room timeline preview |
+| Hallkeeper sheet on paper | [Note](paper-version-check.md), [design](../superpowers/specs/2026-10-18-hallkeeper-sheet-redesign-design.md), `services/hallkeeper-pdf-v2.ts`, `services/sheet-pdf/`, `@omnitwin/types` `sheet-brief.ts`, `services/sheet-paper-check.ts`, `pages/SheetCheckPage.tsx` | The version line in words; the public check returns version state only, the same `unknown` for every wrong link, and is rate-limited. The PDF embeds static Newsreader/Inter from `packages/api/assets/fonts` (cut by `scripts/build-sheet-fonts.py`; pdfkit cannot instance WOFF2 variable fonts); tests read its text back through ToUnicode (`__tests__/helpers/pdf-text.ts`) |
 | Crafted furniture | [Note](crafted-furniture.md), `packages/web/src/components/meshes/crafted/`, `/dev/furniture` | Catalogue footprints and chair clearance; batchable geometry and named materials; catalogue mesh and preview URLs stay as seeded |
 | Build and tests | [root scripts](../../package.json), [CI](../../.github/workflows/ci.yml), package scripts/configs | Same commands locally and in CI; resource contention; no production fixtures |
 | Product requirements | [current goals](../../GOAL.md), [domain authority map](../strategy/authority-map.md), [ADR index](../architecture/adr/README.md) | Current user direction and evidence supersede dated summaries |
@@ -111,8 +113,10 @@ on future experiments.
 | When working on… | Reference |
 | --- | --- |
 | Loading, saving or other visible work | [Activity convention](../../.claude/conventions/loading-and-working-motion.md) |
+| Prices, the Pricing desk, rates for particular dates, pricing suggestions, competitor prices or the competitor watch (comp set, dated captures, who won a lost deal, the page-change check) | [Pricing desk](pricing-desk.md) |
 | Visible composition or interaction | [Product experience](../../.claude/conventions/product-experience.md) |
 | What AI assistants and search engines may read (`/mcp`, schema.org) | [Public venue discovery](public-venue-discovery.md) |
+| An organiser's plan without an account (the plan PDF; the read-only link awaiting a migration) | [Visitor plan hand-off](visitor-plan-handoff.md) |
 | Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
 | What AI calls cost, the usage ledger, a venue's AI allowance, who may spend it | [AI usage and billing](ai-usage-and-billing.md) |
 | Martyn's Law or other legal prompts | [No-claims rule and sources](martyns-law-readiness.md) |
@@ -130,6 +134,7 @@ on future experiments.
 | Zod input/output inference | [Passthrough inference](../../.claude/gotchas/zod-passthrough-inference.md) |
 | Docker build arguments | [ARG scope](../../.claude/gotchas/dockerfile-arg-scope.md) |
 | Deploying the API or adding a migration | [Deploy ordering](deploy-ordering.md) |
+| Supplier passes, the supplier's page or their acknowledgements | [Supplier passes](supplier-passes.md) |
 | Windows pycolmap/database work | [pycolmap traps](../../.claude/gotchas/pycolmap-windows-traps.md) |
 
 The existing directories are retained for stable references. Vendored design

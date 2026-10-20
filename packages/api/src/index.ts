@@ -24,6 +24,8 @@ import { actionLogRoutes } from "./routes/action-log.js";
 import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
+import { pricingDeskRoutes } from "./routes/pricing-desk.js";
+import { competitorWatchRoutes } from "./routes/competitor-watch.js";
 import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
 import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
@@ -32,6 +34,7 @@ import { rotaRoutes } from "./routes/rota.js";
 import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
 import { referencePhotoRoutes } from "./routes/reference-photos.js";
 import { publicConfigRoutes } from "./routes/public-configs.js";
+import { publicPlanViewRoutes } from "./routes/public-plan-views.js";
 import { layoutRoutes } from "./routes/layouts.js";
 import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
 import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-runs.js";
@@ -454,6 +457,10 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
+  await server.register(pricingDeskRoutes, { db, prefix: "/venues/:venueId/pricing-desk" });
+  // The competitor watch (17 Oct 2026): a dated notebook beside the price list;
+  // nothing in it is read by the suggestions or sets a price.
+  await server.register(competitorWatchRoutes, { db, prefix: "/venues/:venueId/competitor-watch" });
   await server.register(turnaroundRuleRoutes, { db, prefix: "/venues/:venueId/turnaround-rules" });
   // Which rooms' dates the public may read (Blake, 17 October 2026).
   await server.register(forwardBookRoutes, { db, prefix: "/venues/:venueId/forward-book" });
@@ -462,6 +469,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
   await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
   await server.register(publicConfigRoutes, { db, prefix: "/public" });
+  // A visitor's view-only links (fix-first item 11): the organiser makes and
+  // stops them with the plan's id; a recipient only reads through the token.
+  await server.register(publicPlanViewRoutes, { db, prefix: "/public" });
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });

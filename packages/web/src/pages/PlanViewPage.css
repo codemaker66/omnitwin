@@ -1,0 +1,195 @@
+/* A visitor's plan through a view-only link (fix-first item 11).
+   One ivory sheet on the sage ground, forest ink, Newsreader for the room and
+   Inter for everything else; colours only from house-tokens.css. Client body
+   text is forest on ivory (10.6:1); copper-ink is kept to small labels.
+   Phone first: a 16 px gutter, 44 px targets, nothing wider than the screen.
+   No motion of its own beyond the shared Activity and a small press-down. */
+
+.plan-view {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding: 24px 16px calc(32px + env(safe-area-inset-bottom));
+  background: var(--vv-sage);
+  background: color-mix(in srgb, var(--vv-sage) 34%, var(--vv-ivory));
+  color: var(--vv-forest);
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.plan-view__sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 18px 28px;
+  border: 1px solid var(--vv-rule);
+  border-top: 6px solid var(--vv-forest);
+  border-radius: 18px;
+  background: var(--vv-ivory-3);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--vv-forest) 14%, transparent);
+}
+
+@media (min-width: 640px) {
+  .plan-view { padding-top: 48px; }
+  .plan-view__sheet { padding: 36px 40px 40px; }
+}
+
+.plan-view__waiting {
+  display: grid;
+  place-items: center;
+  min-height: 50dvh;
+}
+
+.plan-view__plan,
+.plan-view__notice { display: grid; gap: 18px; }
+
+.plan-view__head { display: grid; gap: 4px; }
+
+.plan-view__eyebrow,
+.plan-view__label {
+  margin: 0;
+  color: var(--vv-copper-ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.plan-view__title {
+  margin: 0;
+  color: var(--vv-forest);
+  font-family: "Newsreader", Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+.plan-view__title--room { font-size: clamp(34px, 9vw, 52px); }
+
+.plan-view__plan-name {
+  margin: 0;
+  color: var(--vv-forest);
+  font-family: "Newsreader", Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+/* Who drew it and when, before the plan itself: the forest edge the PDF uses. */
+.plan-view__provenance {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 12px 14px 12px 16px;
+  border: 1px solid var(--vv-rule);
+  border-left: 4px solid var(--vv-forest);
+  border-radius: 6px;
+  background: var(--vv-ivory);
+  color: var(--vv-forest);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.plan-view__provenance strong { font-weight: 700; }
+
+.plan-view__text,
+.plan-view__foot {
+  margin: 0;
+  color: var(--vv-forest);
+  font-size: 16px;
+  line-height: 1.55;
+}
+.plan-view__foot {
+  padding-top: 14px;
+  border-top: 1px solid var(--vv-rule);
+  font-size: 14px;
+}
+
+.plan-view__figure { display: grid; gap: 6px; margin: 0; }
+.plan-view__drawing {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--vv-rule);
+  border-radius: 10px;
+  background: var(--vv-ivory);
+}
+.plan-view__caption { color: var(--vv-forest); font-size: 13px; }
+
+.plan-view__room {
+  fill: var(--vv-ivory-3);
+  stroke: var(--vv-forest);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.plan-view__shape { stroke-width: 1.4; }
+.plan-view__shape--table { fill: color-mix(in srgb, var(--vv-forest) 22%, transparent); stroke: var(--vv-forest); }
+.plan-view__shape--chair { fill: var(--vv-sage); stroke: var(--vv-sage-ink); }
+.plan-view__shape--other { fill: color-mix(in srgb, var(--vv-copper) 22%, transparent); stroke: var(--vv-copper-ink); }
+
+.plan-view__scale path { fill: none; stroke: var(--vv-forest); stroke-width: 2; }
+.plan-view__scale text { fill: var(--vv-forest); font: 600 22px "Inter", system-ui, sans-serif; }
+
+.plan-view__items { display: grid; gap: 10px; }
+.plan-view__list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 640px) {
+  .plan-view__list { grid-template-columns: 1fr 1fr; column-gap: 28px; }
+}
+.plan-view__item {
+  display: grid;
+  grid-template-columns: 12px 3ch minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--vv-rule);
+  font-size: 16px;
+}
+.plan-view__count { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.plan-view__name { overflow-wrap: anywhere; }
+
+.plan-view__swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid; }
+.plan-view__swatch--table { background: color-mix(in srgb, var(--vv-forest) 22%, transparent); border-color: var(--vv-forest); }
+.plan-view__swatch--chair { background: var(--vv-sage); border-color: var(--vv-sage-ink); }
+.plan-view__swatch--other { background: color-mix(in srgb, var(--vv-copper) 22%, transparent); border-color: var(--vv-copper-ink); }
+
+.plan-view__forward { display: grid; gap: 12px; justify-items: start; }
+
+.plan-view__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.plan-view__button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 1px solid var(--vv-forest);
+  border-radius: 999px;
+  background: var(--vv-forest);
+  color: var(--vv-ivory-3);
+  font: 600 16px/1.2 "Inter", system-ui, sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+.plan-view__button:hover { background: var(--vv-forest-2); }
+.plan-view__button:active { transform: translateY(1px); }
+.plan-view__button--quiet { background: transparent; color: var(--vv-forest); }
+.plan-view__button--quiet:hover { background: var(--vv-ivory-2); }
+.plan-view__button:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-view__button { transition: none; }
+  .plan-view__button:active { transform: none; }
+}
+
+@media print {
+  .plan-view { padding: 0; background: none; }
+  .plan-view__sheet { border: 0; box-shadow: none; max-width: none; }
+  .plan-view__actions,
+  .plan-view__forward .plan-view__button { display: none; }
+}
