@@ -4,9 +4,11 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
   VENVIEWER_PRICING_ENQUIRY_TYPE,
+  attributeEnquiry,
   isBookingEnquiry,
   occasionLabel,
   occasionPhrase,
+  type EnquiryAttributionRecord,
   type EnquirySource,
 } from "@omnitwin/types";
 import { eq, and, isNull, asc, inArray, sql } from "drizzle-orm";
@@ -15,6 +17,7 @@ import type { Database } from "../db/client.js";
 import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
+import { acquisitionContextFor, funnelBrowserSignalsEnabled, recordEnquiryEngagement } from "../services/enquiry-funnel.js";
 import { linkEnquiryToPerson, type LinkOutcome } from "../services/people-link.js";
 import { sqlStateOf } from "../utils/sql-state.js";
 
@@ -58,6 +61,8 @@ const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
   planner: "from the planner",
   phone: "by phone",
   email: "by email",
+  listing: "through a listing site",
+  assistant: "through an AI assistant",
 };
 
 /**
@@ -108,6 +113,8 @@ export async function publicEnquiryRoutes(
       configurationId: string | null;
       roomName: string | null;
       venuePath: boolean;
+      /** The venue's database slug when the path named it. */
+      venueSlug: string | null;
     };
 
     if (parsed.data.configurationId !== undefined) {
@@ -135,6 +142,7 @@ export async function publicEnquiryRoutes(
         configurationId: parsed.data.configurationId,
         roomName: space.name,
         venuePath: false,
+        venueSlug: null,
       };
     } else {
       // venueSlug path. A room the guest names (roomSlug) is filed as their
@@ -178,8 +186,8 @@ export async function publicEnquiryRoutes(
         request.log.warn({ event: "enquiry.room_unknown", venueId: venue.id, roomSlug }, "enquiry named a room the venue does not have");
       }
       anchor = named === undefined
-        ? { venueId: venue.id, spaceId: flagship.id, configurationId: null, roomName: null, venuePath: true }
-        : { venueId: venue.id, spaceId: named.id, configurationId: null, roomName: named.name, venuePath: true };
+        ? { venueId: venue.id, spaceId: flagship.id, configurationId: null, roomName: null, venuePath: true, venueSlug: slug }
+        : { venueId: venue.id, spaceId: named.id, configurationId: null, roomName: named.name, venuePath: true, venueSlug: slug };
     }
 
     // Two senders ride this route without booking this venue's rooms: the
@@ -201,6 +209,19 @@ export async function publicEnquiryRoutes(
       : accessRequest || pricingEnquiry ? "website"
         : parsed.data.source ?? "walkthrough";
 
+    // Where the person found the venue (migration 0100), when the page sent
+    // it: only the referring site's host and three cleaned UTM tags are kept,
+    // with the channel they name. Read only once the privacy notice describes
+    // it (funnelBrowserSignalsEnabled); until then whatever a page sends is
+    // ignored and the columns stay empty.
+    const browserSignals = funnelBrowserSignalsEnabled();
+    let attribution: EnquiryAttributionRecord | null = null;
+    if (browserSignals && parsed.data.attribution !== undefined) {
+      const venueSlug = anchor.venueSlug ?? (await db.select({ slug: venues.slug }).from(venues)
+        .where(eq(venues.id, anchor.venueId)).limit(1))[0]?.slug ?? null;
+      attribution = attributeEnquiry(parsed.data.attribution, acquisitionContextFor(venueSlug));
+    }
+
     // The enquiry (status: submitted, skipping draft), its status history and
     // the guest lead are written together or not at all; the person the
     // enquiry came from is found or made in the same transaction, in a
@@ -215,6 +236,7 @@ export async function publicEnquiryRoutes(
     // the venue's clients, so it is neither linked nor made a person, as the
     // People Book's backfill (0098) leaves those out.
     const displayName = parsed.data.name ?? parsed.data.email;
+    const engagement = browserSignals ? parsed.data.engagement ?? [] : [];
     const stored = await db.transaction(async (tx) => {
       const [enquiry] = await tx.insert(enquiries).values({
         configurationId: anchor.configurationId,
@@ -233,6 +255,13 @@ export async function publicEnquiryRoutes(
         message: parsed.data.message ?? null,
         source,
         roomChosen: anchor.roomName !== null,
+        ...(attribution === null ? {} : {
+          referrerHost: attribution.referrerHost,
+          utmSource: attribution.utmSource,
+          utmMedium: attribution.utmMedium,
+          utmCampaign: attribution.utmCampaign,
+          acquisitionChannel: attribution.acquisitionChannel,
+        }),
       }).returning();
       if (enquiry === undefined) return null;
 
@@ -277,13 +306,33 @@ export async function publicEnquiryRoutes(
         SELECT ${parsed.data.email}::text, ${parsed.data.phone ?? null}::text, ${parsed.data.name ?? null}::text, ${enquiry.id}::uuid
         WHERE NOT EXISTS (SELECT 1 FROM guest_leads WHERE email = ${parsed.data.email}::text)
       `);
-      return { enquiry, link, linkFailure };
+
+      // What happened before the person sent it (a 30-second walk of the
+      // twin), attached to this enquiry and nothing else, under the same rule
+      // as attribution. Like the link it enriches the enquiry, so it runs in a
+      // savepoint of its own: should it fail, it is rolled back alone and the
+      // enquiry is kept, never turned into a failed submission the guest
+      // would send again.
+      let engagementFailure: { errorName: string; pgCode: string | null } | null = null;
+      if (engagement.length > 0) {
+        try {
+          await tx.transaction((savepoint) => recordEnquiryEngagement(savepoint, {
+            venueId: anchor.venueId,
+            enquiryId: enquiry.id,
+            spaceId: anchor.roomName === null ? null : anchor.spaceId,
+            kinds: engagement,
+          }));
+        } catch (error) {
+          engagementFailure = linkFailureOf(error);
+        }
+      }
+      return { enquiry, link, linkFailure, engagementFailure };
     });
 
     if (stored === null) {
       return reply.status(500).send({ error: "Failed to create enquiry", code: "INTERNAL_ERROR" });
     }
-    const { enquiry, link, linkFailure } = stored;
+    const { enquiry, link, linkFailure, engagementFailure } = stored;
     // Ids, the outcome and a failure's class and SQLSTATE only: never the
     // guest's email, name or phone, nor an error's message.
     if (link !== null) {
@@ -296,6 +345,12 @@ export async function publicEnquiryRoutes(
       request.log.error(
         { event: "enquiry.person_link_failed", enquiryId: enquiry.id, venueId: anchor.venueId, ...linkFailure },
         "enquiry kept without a person: finding or making its person failed",
+      );
+    }
+    if (engagementFailure !== null) {
+      request.log.error(
+        { event: "enquiry.engagement_failed", enquiryId: enquiry.id, venueId: anchor.venueId, ...engagementFailure },
+        "enquiry kept without its engagement: recording it failed",
       );
     }
 

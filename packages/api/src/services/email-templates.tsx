@@ -309,6 +309,8 @@ const ENQUIRY_SOURCE_WORDS: Readonly<Record<EnquirySource, string>> = {
   planner: "The planner",
   phone: "A telephone call",
   email: "An email",
+  listing: "A listing site's enquiry form",
+  assistant: "An AI assistant",
 };
 
 export interface NewEnquiryData {

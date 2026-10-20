@@ -43,6 +43,10 @@
 .diary-booking-standing[data-kind="hold"]::before { background: var(--house-sheet); border-color: #dca475; }
 .diary-booking-standing[data-kind="prospect"]::before { background: #fbfcf8; border-style: dashed; }
 .diary-booking-standing[data-kind="internal_block"]::before { background: #d7e2de; }
+/* A viewing (migration 0100) is a show-round, not booked time: raised paper
+   inside a sage ring, never a fill. Its swatch is round, so at legend size it
+   reads apart from the square commitments. */
+.diary-booking-standing[data-kind="viewing"]::before { background: var(--house-paper); border-color: var(--house-sage-dot); border-radius: 50%; }
 .diary-booking-standing[data-kind="exited"]::before { background: transparent; border-color: #c9ccc2; }
 .diary-booking-facts dd.is-overdue { color: var(--house-copper-text); font-weight: 600; }
 .diary-booking-facts dd { margin: 0; color: var(--house-ink-1); overflow-wrap: anywhere; }
@@ -106,6 +110,7 @@
 .diary-legend-item.is-hold::before { background: var(--house-sheet); border-color: #dca475; }
 .diary-legend-item.is-prospect::before { background: #fbfcf8; border-style: dashed; }
 .diary-legend-item.is-internal_block::before { background: #d7e2de; }
+.diary-legend-item.is-viewing::before { background: var(--house-paper); border-color: var(--house-sage-dot); border-radius: 50%; }
 .diary-legend-item.is-phase::before { background: #f6f6ef; border-style: dotted; }
 .diary-layout { display: grid; grid-template-columns: minmax(0,1fr) 254px; gap: 22px; align-items: start; }
 .diary-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
@@ -159,6 +164,10 @@
 .diary-overview-booking.is-hold:hover { border-color: var(--house-copper-dot); }
 .diary-overview-booking.is-prospect { background: #f6f8f0; border-color: #b7c7ac; border-style: dashed; }
 .diary-overview-booking.is-internal_block { background: #e0e9e4; border-color: #b9cdc1; }
+/* A viewing: paper in a sage ring, ink words (13:1), quieter than any
+   commitment beside it. */
+.diary-overview-booking.is-viewing { background: var(--house-paper); border-color: var(--house-sage-dot); color: var(--house-ink-1); }
+.diary-overview-booking.is-viewing:hover { border-color: var(--house-sage-text); }
 .diary-overview-booking.is-exited { background: #f3f2ec; border-color: #e0dfd5; color: var(--house-ink-3); }
 /* A conflict is a brick edge and its word over the booking's own fill, so its
    commitment still shows; a review is the same in copper. */
@@ -199,6 +208,7 @@
 .diary-agenda-booking.is-hold { border-left-color: #dca475; }
 .diary-agenda-booking.is-prospect { border-left-style: dashed; border-left-color: #9aa89c; }
 .diary-agenda-booking.is-internal_block { border-left-color: #9fb5ad; }
+.diary-agenda-booking.is-viewing { border-left-color: var(--house-sage-dot); }
 .diary-agenda-booking.is-exited { border-left-color: #c9ccc2; color: var(--house-ink-3); }
 .diary-agenda-phase { border-left-style: dotted; border-left-color: #bdcbb4; background: #f7f8f2; }
 .diary-agenda-time { grid-row: 1 / span 2; font-size: 13px; font-weight: 600; color: var(--house-ink-2); font-variant-numeric: tabular-nums; }
@@ -322,6 +332,10 @@ button.diary-slip-date:active { transform: scale(0.97); }
 .diary-block.is-hold .diary-block-chip, .diary-block.is-hold .diary-block-decision { color: var(--house-copper-text); font-weight: 600; }
 .diary-block.is-prospect .diary-block-card { background: #f6f8ef; border-style: dashed; }
 .diary-block.is-internal_block .diary-block-card { background: #dce7e0; border-color: #b6cabe; }
+/* A viewing on the timeline: the overview's paper and sage ring, its word on
+   the face in sage (7.5:1), so the colour is never the only cue. */
+.diary-block.is-viewing .diary-block-card { background: var(--house-paper); border-color: var(--house-sage-dot); color: var(--house-ink-1); }
+.diary-block.is-viewing .diary-block-chip { color: var(--house-sage-text); font-weight: 600; }
 .diary-block.is-exited .diary-block-card { background: #f0f0e8; color: var(--house-ink-3); border-color: #dce0d3; }
 .diary-block.has-conflict-blocking .diary-block-card { --diary-conflict-edge: inset 4px 0 0 var(--house-brick-dot); }
 .diary-block.has-conflict-warning .diary-block-card { --diary-conflict-edge: inset 4px 0 0 var(--house-copper-dot); }
@@ -330,6 +344,7 @@ button.diary-slip-date:active { transform: scale(0.97); }
 .diary-block:hover .diary-block-card { border-color: #628454; }
 .diary-block.is-ink:hover .diary-block-card { border-color: var(--house-forest-edge); }
 .diary-block.is-hold:hover .diary-block-card { border-color: var(--house-copper-dot); }
+.diary-block.is-viewing:hover .diary-block-card { border-color: var(--house-sage-text); }
 .diary-block-main { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; }
 .diary-block-title { font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .diary-block-time { font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -402,6 +417,16 @@ button.diary-gap-chip:hover .diary-gap-label { background: #edf2e6; color: var(-
 .diary-field-checkbox input { width: 16px; height: 16px; accent-color: #376047; }
 .diary-hygiene, .diary-drawer-plan { border: 1px solid #dce3d1; border-radius: 8px; padding: 15px; background: #f3f6eb; display: flex; flex-direction: column; gap: 12px; }
 .diary-hygiene legend { font: 500 20px var(--diary-hand); padding: 0 7px; }
+/* The enquiry drawer's one choice (migration 0100): hold its date, or book it
+   a viewing. Two quiet segments; the chosen one is ringed in forest, and the
+   radio's own dot says it too. Colour only on hover, nothing moves. */
+.diary-choice { border: 0; padding: 0; margin: 0; min-width: 0; }
+.diary-choice legend { padding: 0; margin: 0 0 6px; font-size: 12px; color: #536a54; }
+.diary-choice-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.diary-choice-option { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; border: 1px solid #d7dcce; border-radius: 7px; background: #fffef8; color: #254235; font-size: 13px; font-weight: 600; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease; }
+.diary-choice-option:hover { background: #ebf0e6; border-color: #95ad9a; }
+.diary-choice-option input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: #2f5947; }
+.diary-choice-option:has(input:checked) { border-color: #2f5947; background: #edf2e6; }
 .diary-field-error, .diary-drawer-error { font-size: 12px; line-height: 1.5; }
 .diary-drawer-note { font-size: 12px; line-height: 1.55; color: var(--house-ink-3); }
 /* The changeover sheet (T-637): the gap in light serif numerals, the room's

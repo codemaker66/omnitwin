@@ -172,6 +172,20 @@ export function canManageCommercial(
 }
 
 /**
+ * Whether someone is on the venue's own commercial team: the roles
+ * canManageCommercial admits, at this venue, without its pass for a Venviewer
+ * platform admin. These are the people who answer a venue's guests, so the
+ * enquiry funnel records a first reply as theirs (migration 0100) and lets
+ * only them report one.
+ */
+export function isVenueCommercialMember(
+  person: Pick<JwtUser, "role" | "venueId">,
+  venueId: string,
+): boolean {
+  return COMMERCIAL_ROLES.has(person.role) && person.venueId === venueId;
+}
+
+/**
  * Reading the Diary: the venue floor, and sales, who pencils the holds. The
  * same people as DIARY_READ_ROLES on the live channel (ws/diary-live.ts), and
  * every role booking-mutations.ts lets write; a writer who could not read the

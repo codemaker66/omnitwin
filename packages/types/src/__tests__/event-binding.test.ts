@@ -105,6 +105,9 @@ describe("the derivation table, row by row", () => {
       expect(derive(status, [])).toBe(status);
       // Soft-deleted rows and the venue's own blocks are not evidence.
       expect(derive(status, [booking("ink", "active", true), booking("internal_block")])).toBe(status);
+      // Nor is a viewing, live or called off: a show-round decides nothing
+      // about an event (and takes none, bookings_viewing_has_no_event).
+      expect(derive(status, [booking("viewing"), booking("viewing", "cancelled")])).toBe(status);
     }
     expect(diarySpeaksForEvent(EMPTY_EVENT_BOOKING_SUMMARY)).toBe(false);
   });
@@ -173,8 +176,12 @@ describe("no reachable booking state leaves a contradicting event", () => {
         checked += 1;
       }
     }
-    // 40 facts, up to three of them, nine prior statuses.
-    expect(checked).toBe((1 + 40 + 820 + 11480) * EVENT_STATUSES.length);
+    // Five kinds (viewings included since migration 0100) in five liveness
+    // statuses, deleted or not: 50 facts, every multiset of up to three of
+    // them, nine prior statuses.
+    const n = ALL_FACTS.length;
+    expect(n).toBe(50);
+    expect(checked).toBe((1 + n + (n * (n + 1)) / 2 + (n * (n + 1) * (n + 2)) / 6) * EVENT_STATUSES.length);
   });
 
   it("ignores the order the bookings are read in", () => {

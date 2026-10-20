@@ -34,6 +34,8 @@ export interface DragBlockDescriptor {
   readonly startMs: number;
   readonly endMs: number;
   readonly isInk: boolean;
+  /** A viewing (migration 0100): its ghost is warned in its own words. */
+  readonly isViewing?: boolean;
 }
 
 export interface BoardDragArgs {
@@ -170,11 +172,12 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   useEffect(() => (writable ? keepTouchesHoldable() : undefined), [writable]);
 
   const envFor = useCallback(
-    (isInk: boolean, fine: boolean): DragEnv => ({
+    (block: Pick<DragBlockDescriptor, "isInk" | "isViewing">, fine: boolean): DragEnv => ({
       snapMinutes: fine ? 1 : 15,
       laneOrder: argsRef.current.laneOrder,
       inksByLane: argsRef.current.inksByLane,
-      isInk,
+      isInk: block.isInk,
+      isViewing: block.isViewing === true,
     }),
     [],
   );
@@ -264,7 +267,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
           if (travel < ACTIVATION_PX) return;
           liftSession(session);
         }
-        const env = envFor(session.block.isInk, event.shiftKey);
+        const env = envFor(session.block, event.shiftKey);
         const current = stateRef.current;
         const fallbackLane =
           current.phase === "idle" ? session.block.spaceId : current.ghost.spaceId;
@@ -281,7 +284,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         const { lifted } = session;
         endPointerSession();
         if (!lifted) return; // a click, or a press released early — open, don't drag
-        settle(envFor(session.block.isInk, event.shiftKey));
+        settle(envFor(session.block, event.shiftKey));
       },
       onPointerCancel: (event) => {
         const session = pointerRef.current;
@@ -319,7 +322,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
           return;
         }
         if (!isMine) return;
-        const env = envFor(block.isInk, event.shiftKey);
+        const env = envFor(block, event.shiftKey);
         if (event.key === "Escape") {
           event.preventDefault();
           setState(cancelDrag(current));
@@ -352,7 +355,8 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   const confirmDrop = useCallback(() => {
     const current = stateRef.current;
     if (current.phase !== "confirming") return;
-    settle(envFor(current.context.isInk, false));
+    // Only a confirmed booking's move waits to be confirmed; a viewing never does.
+    settle(envFor({ isInk: current.context.isInk }, false));
   }, [envFor, settle]);
 
   const cancel = useCallback(() => {
