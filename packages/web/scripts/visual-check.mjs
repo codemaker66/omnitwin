@@ -476,9 +476,13 @@ try {
     report.steps.push(`SKIP roombystyle: ${String(e).slice(0, 90)}`);
   }
 
-  // --- Feature: one-click Theatre layout (blank floor + count 150 from above) ---
+  // --- Feature: Theatre layout (blank floor + count 150 from above). It asks
+  // "How many guests?" first, prefilled with the 150. ---
   try {
     await page.getByTestId("guests-build-theatre").click();
+    await page.waitForTimeout(300);
+    await page.getByTestId("guests-lens-panel").screenshot({ path: join(OUT, "guests-autofill-question.png") });
+    await page.getByTestId("auto-fill-place").click();
     await page.waitForTimeout(800);
     await clickLens(page, "Design");
     await page.waitForTimeout(3000);
@@ -534,7 +538,10 @@ try {
     const autoFill = page.getByTestId("planner-command-action-auto-fill");
     report.autoFillLabel = (await autoFill.count()) ? (await autoFill.textContent()) : null;
     if (await autoFill.count()) {
+      // Auto-fill opens the Guests lens with the question asked; answer it.
       await autoFill.click();
+      await page.getByTestId("auto-fill-place").click();
+      await clickLens(page, "Design");
       await page.waitForTimeout(2800);
       await page.screenshot({ path: join(OUT, "planner-autofill-150.png") });
       const placed = await page.evaluate(() => {

@@ -32,7 +32,10 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useShareStore } from "../../../../stores/share-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
-import { CATALOGUE_ITEMS } from "../../../../lib/catalogue.js";
+import { useRoomDimensionsStore } from "../../../../stores/room-dimensions-store.js";
+import { CATALOGUE_ITEMS, getCatalogueItemBySlug } from "../../../../lib/catalogue.js";
+import { createTableGroup } from "../../../../lib/table-group.js";
+import { seatingCountsFromPlacedItems } from "../../../../lib/seating-counts.js";
 import type { PlacedItem } from "../../../../lib/placement.js";
 
 const CONFIG_ID = "11111111-1111-4111-8111-111111111111";
@@ -217,5 +220,33 @@ describe("ShareLensPanel", () => {
     await waitFor(() => { expect(screen.getByTestId("share-error")).toBeTruthy(); });
     expect(screen.getByTestId("share-error").textContent).toMatch(/couldn't create the share link/i);
     expect(screen.queryByTestId("share-url")).toBeNull();
+  });
+
+  it("says how many seats the plan is short and offers one tap to add them", () => {
+    const round = getCatalogueItemBySlug("round-table-6ft-white");
+    if (round === undefined) throw new Error("no 6 ft round");
+    useRoomDimensionsStore.setState({ dimensions: { width: 21, length: 10.5, height: 7 } });
+    const positions = [-6.435, -2.145, 2.145, 6.435].flatMap((x) => [[x, -2.145], [x, 2.145]] as const);
+    usePlacementStore.setState({ placedItems: positions.flatMap(([x, z]) => [...createTableGroup(round.id, x, z, 0, 8)]) });
+    useCockpitStore.getState().setPlannedGuestCount(80);
+    // The shortfall belongs to the staff lens; a visitor's states only what is placed.
+    signInStaff();
+
+    render(<ShareLensPanel />);
+    // The Share summary states the shortfall once; the fix itself adds no second statement.
+    expect(screen.getByTestId("share-layout-summary").textContent).toContain("16 seats short of 80 guests");
+    expect(screen.queryByTestId("share-seat-fix-statement")).toBeNull();
+    fireEvent.click(screen.getByTestId("share-seat-fix-action"));
+    expect(seatingCountsFromPlacedItems(usePlacementStore.getState().placedItems).chairs).toBe(80);
+    expect(screen.getByTestId("share-seat-fix-done").textContent).toBe("Added 16 chairs at 8 tables.");
+    expect(screen.queryByTestId("share-seat-fix-statement")).toBeNull();
+  });
+
+  it("offers no seat fix when every guest has a seat", () => {
+    useCockpitStore.getState().setPlannedGuestCount(120);
+    signInStaff();
+    render(<ShareLensPanel />);
+    expect(screen.queryByTestId("share-seat-fix-action")).toBeNull();
+    expect(screen.queryByTestId("share-seat-fix-statement")).toBeNull();
   });
 });
