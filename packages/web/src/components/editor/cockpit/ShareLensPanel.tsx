@@ -3,6 +3,7 @@ import { Share2 } from "lucide-react";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import { ProposalVersionPayloadSchema } from "@omnitwin/types";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
+import { SeatShortfallFix } from "./SeatShortfallFix.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -11,6 +12,9 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 import { useShareStore } from "../../../stores/share-store.js";
 import { usePlannerTruth } from "../../../hooks/use-planner-truth.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
+import { plannerLayoutStyle, publishedFormatForStyle } from "../../../lib/planner-truth.js";
+import { seatingCountsFromPlacedItems } from "../../../lib/seating-counts.js";
+import { occasionPhrase } from "../../../lib/auto-fill.js";
 import {
   buildShareProposalDraft,
   buildShareVersionPayloadCandidate,
@@ -22,7 +26,6 @@ import {
   createProposalVersion,
   transitionProposal,
 } from "../../../api/proposals.js";
-import { seatingCountsFromPlacedItems } from "../../../lib/seating-counts.js";
 import { useVisitorPlanPdf } from "../../../hooks/use-visitor-plan-pdf.js";
 import { useVisitorPlanLinks } from "../../../hooks/use-visitor-plan-links.js";
 import { VisitorPlanPdfActions } from "../VisitorPlanPdfActions.js";
@@ -141,7 +144,20 @@ function StaffShareLens(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // The capacity line states the venue's published figure, never a computed one.
-  const { published, roomName } = usePlannerTruth();
+  const { published, roomName, ask } = usePlannerTruth();
+  // When the tables are full and there is no room for another, the shortfall
+  // fix names the person to ask; the capacity note above already gives the
+  // published figure.
+  const shortfallAsk = useMemo(() => {
+    if (plannedGuestCount === null) return null;
+    const format = publishedFormatForStyle(plannerLayoutStyle(placedItems));
+    return ask({
+      kind: "layout",
+      guests: plannedGuestCount,
+      seatsPlaced: seatingCountsFromPlacedItems(placedItems).chairs,
+      occasion: format === null ? "our event" : occasionPhrase(format),
+    });
+  }, [ask, placedItems, plannedGuestCount]);
 
   const draft = useMemo(
     () => buildShareProposalDraft({
@@ -245,6 +261,7 @@ function StaffShareLens(): ReactElement {
           </p>
         )}
         <p className="lens-panel__paragraph lens-panel__paragraph--muted">{draft.capacityNote}</p>
+        <SeatShortfallFix statement={false} testId="share-seat-fix" ask={shortfallAsk} />
         <label className="lens-panel__field">
           <span className="lens-panel__field-label">Message to the client (optional)</span>
           <textarea
