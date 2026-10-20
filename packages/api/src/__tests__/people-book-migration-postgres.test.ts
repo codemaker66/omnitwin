@@ -206,6 +206,12 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
   /** A blank email on a record that was deleted: the rule holds over every row. */
   const deletedBlank = { id: randomUUID(), raw: "  " };
   const paddedEmail = { id: randomUUID(), raw: " a@b.example.test ", kept: "a@b.example.test" };
+  /** Client enquiries whose email is blank (guest_email too, or none), held by no contact. */
+  const blankEnquiries = [
+    { id: randomUUID(), name: "Blank Enquirer One", email: "", guestEmail: "" },
+    { id: randomUUID(), name: "Blank Enquirer Two", email: "   ", guestEmail: "   " },
+    { id: randomUUID(), name: "Blank Enquirer Three", email: "   ", guestEmail: undefined },
+  ] as const;
   const at = {
     e1: "2026-03-01T10:00:00.000Z", e3: "2026-03-10T10:00:00.000Z", e4: "2026-03-12T10:00:00.000Z",
     e5: "2026-03-20T10:00:00.000Z", e6: "2026-04-01T10:00:00.000Z", e7: "2026-05-01T10:00:00.000Z",
@@ -282,6 +288,12 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     await enquiry(ids.draftNew, venueA, at.e9, { userId: euan, name: "Draft Planner", email: "draft@example.test", state: "draft" });
     await enquiry(ids.draftIain, venueA, at.e9, { userId: euan, name: "Iain Robertson", email: "iain@example.test", state: "draft" });
     await enquiry(ids.e11, venueA, at.e11, { guestName: "Fraser Ross", guestEmail: "Fraser@Example.test", name: "Fraser Ross", email: "Fraser@Example.test" });
+    for (const blank of blankEnquiries) {
+      await enquiry(blank.id, venueA, at.e9, {
+        guestName: blank.name, name: blank.name, email: blank.email,
+        ...(blank.guestEmail === undefined ? {} : { guestEmail: blank.guestEmail }),
+      });
+    }
     // guest_email is unbounded text; the 255-character email column holds the short form.
     await enquiry(ids.e12, venueA, at.e12, { guestName: "Long Address", guestEmail: longAddress, name: "Long Address", email: "long.address@example.test" });
     // The guest lead the public route keeps for Kirsty, last written by venue B's form. It is not a person.
@@ -464,6 +476,17 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
       { kind: "email", value: paddedEmail.kept, display_value: paddedEmail.kept, label: "other", is_primary: true },
     ]);
     expect(await query("SELECT id FROM contacts WHERE email IS NOT NULL AND email !~ '[^[:space:]]'")).toEqual([]);
+  });
+
+  it("makes no person for a client enquiry whose email is blank, and leaves it unlinked", async () => {
+    for (const blank of blankEnquiries) {
+      expect(await contactOf(blank.id), blank.name).toBeNull();
+    }
+    expect(await query(
+      "SELECT id FROM contacts WHERE source_enquiry_id = ANY($1) OR name = ANY($2)",
+      [blankEnquiries.map((blank) => blank.id), blankEnquiries.map((blank) => blank.name)],
+    )).toEqual([]);
+    expect(await query("SELECT id FROM contact_points WHERE kind = 'email' AND value !~ '[^[:space:]]'")).toEqual([]);
   });
 
   /** contacts_email_not_blank as the catalogue holds it: one row per copy. */

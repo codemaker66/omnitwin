@@ -979,6 +979,18 @@ describe.skipIf(PLATFORM_TARGET === undefined)("merging two people on the migrat
     expect(await exactTimes("contacts", nudged.p.s, ["last_contact_at"])).toEqual({ last_contact_at: "2026-09-01T10:00:00.123457Z" });
   });
 
+  it("keeps the survivor's last contact when the closing record's is earlier by a microsecond, or the same", async () => {
+    const survivorAt = "2026-09-01T10:00:00.123457Z";
+    for (const closingAt of ["2026-09-01T10:00:00.123456Z", survivorAt]) {
+      const p = await pair();
+      await f.pool.query("UPDATE contacts SET last_contact_at = $2 WHERE id = $1", [p.s, survivorAt]);
+      await f.pool.query("UPDATE contacts SET last_contact_at = $2 WHERE id = $1", [p.l, closingAt]);
+      const made = await mergeOf(p.l, p.s);
+      expect(await exactTimes("contacts", p.s, ["last_contact_at"]), closingAt).toEqual({ last_contact_at: survivorAt });
+      expect((await snapshotOf(made.mergeId)).survivorFilled.map((entry) => entry.field), closingAt).not.toContain("lastContactAt");
+    }
+  });
+
   /**
    * A pair whose L holds times with microseconds: the shared email's point
    * and the membership of X, both of which S already holds (so the merge

@@ -157,7 +157,8 @@ CREATE TABLE contacts (
   erased_at timestamptz,
   CONSTRAINT contacts_id_venue_unique UNIQUE (id, venue_id),
   CONSTRAINT contacts_source_pair_check CHECK ((source_system IS NULL) = (source_id IS NULL)),
-  CONSTRAINT contacts_not_merged_into_self CHECK (merged_into_id <> id)
+  CONSTRAINT contacts_not_merged_into_self CHECK (merged_into_id <> id),
+  CONSTRAINT contacts_email_not_blank CHECK (email IS NULL OR email ~ '[^[:space:]]')
 );
 
 ALTER TABLE client_accounts ADD CONSTRAINT client_accounts_primary_contact_fk
