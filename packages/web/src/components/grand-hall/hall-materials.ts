@@ -10,6 +10,10 @@
 // Evening and Candlelight dim the windows, warm the chandeliers and lift the
 // frieze. Glossy photographs (varnished panelling, the floor) also reflect.
 //
+// Under the real sky the windows' glass opens (HallGlazingUniforms): the wall
+// photographs are cut where the atlas marks glazing, and hall-glazing.ts puts
+// panes, painted bars and outer reveals in the opening.
+//
 // The main door's painted mahogany multiplies its albedo by the vertex's baked
 // light (emissive, so the renderer adds only reflections); gilt and brass are
 // metals lit by the environment with a share of the bake so they never fall
@@ -20,6 +24,7 @@ import { Color, DoubleSide, FrontSide, type Material, type Side, type Texture } 
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { attribute, color, dot, float, luminance, max, mix, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import type { HallMaterialKey } from "./hall-builders.js";
+import { HALL_GLAZING_PAINT } from "./hall-spec.js";
 import type { HallSun } from "./hall-sun.js";
 import { hallSkyUniforms } from "./hall-sky-runtime.js";
 import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
@@ -27,7 +32,7 @@ import type { HallTextures } from "./hall-textures.js";
 import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
 import { createOakFloorMaterial } from "./hall-floor.js";
 
-type Shading = "gloss" | "metal" | "photo" | "photoGloss";
+type Shading = "gloss" | "metal" | "photo" | "photoGloss" | "paint";
 
 interface SurfaceStyle {
   readonly shading: Shading;
@@ -119,11 +124,41 @@ function wallTexel(photos: HallPhotos) {
   const wall = attribute("aWall", "float");
   // Window and door walls face along z; the end walls along x.
   const alongZ = wall.lessThan(0.5).or(wall.greaterThan(1.5).and(wall.lessThan(2.5)));
-  const facing = alongZ.select(face.z.abs(), face.x.abs());
+  const facing = smoothstep(0.18, 0.42, alongZ.select(face.z.abs(), face.x.abs()));
   const coarse = sample.bias(float(6)).rgb;
   const reveal = vec4(mix(vec3(luminance(coarse)), coarse, 0.3).mul(0.62), 1);
-  return mix(reveal, sample, smoothstep(0.18, 0.42, facing));
+  // The unbiased sample's alpha marks glazing; the window boards and heads
+  // (faces turned up or down) are never glass, whatever texel they project to.
+  const level = smoothstep(0.55, 0.8, face.y.abs());
+  return { texel: mix(reveal, sample, facing), alpha: sample.a, level };
 }
+
+type WallTexel = ReturnType<typeof wallTexel>;
+
+/**
+ * Whether the windows' glass is open: 1 under the real sky, where the drawn
+ * city and sky stand behind it (hall-glazing.ts puts panes and bars in the
+ * opening), 0 while the room's reflections are captured (the void would show
+ * through) and without the sky. Driven by GrandHallModel.
+ */
+export class HallGlazingUniforms {
+  readonly open = uniform(0);
+
+  set(open: boolean): void {
+    this.open.value = open ? 1 : 0;
+  }
+
+  get isOpen(): boolean {
+    return this.open.value > 0.5;
+  }
+}
+
+/**
+ * Where an open window's glass is cut from the wall: below this alpha the
+ * atlas shows glazing (128/255, the bars smoothed into it at about 0.65); the
+ * rest of the walls are opaque (255).
+ */
+export const GLAZING_CUT = 0.75;
 
 /**
  * The sun's (or moon's) direct light on this fragment, in the baked channels'
@@ -137,8 +172,8 @@ function sunIrradiance(sun: HallSun) {
 }
 
 /** A photographed surface's colour under the current mood. */
-function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUniforms, sun: HallSun | null) {
-  const sample = kind === "walls" ? wallTexel(photos) : photos.sample(kind, uv());
+function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUniforms, sun: HallSun | null, wall: WallTexel | null = null) {
+  const sample = kind === "walls" ? (wall ?? wallTexel(photos)).texel : photos.sample(kind, uv());
   const image = sample.rgb;
   // (baked + k) / (scan + k): exactly 1 under the scan's own light, so
   // Daylight is the photograph, and finite where the bake is nearly dark.
@@ -150,9 +185,47 @@ function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUnifo
   // Glazing seen between the curtains is the view out, not a lit surface: it
   // follows the daylight alone, falling to dusk blue and then dark. The
   // atlas's alpha marks it (half opaque where the photograph shows glass).
+  // Under the real sky the glass is cut away instead (openGlazing) and the
+  // drawn city shows through; this photograph stays for the room's captured
+  // reflections and for the moods without the sky.
   const glass = float(1).sub(sample.a).mul(2).clamp(0, 1);
   const outside = image.mul(mood.daylight.rgb.mul(mood.daylightIntensity).div(scanDaylight()));
   return mix(lit, outside, glass);
+}
+
+/**
+ * The outer reveals' finish, which no photograph shows (art direction until
+ * one does): the sash box a warm white paint (sRGB e6e0d4) and the stone
+ * beyond a pale sandstone (b4a58c), as albedos.
+ */
+const REVEAL_PAINT = new Color("#e6e0d4");
+const REVEAL_STONE = new Color("#b4a58c");
+/** How much of the sky an outer reveal sees, in the daylight channel's units. */
+const REVEAL_SKY_VIEW = 0.5;
+
+/**
+ * The windows' paint (hall-glazing.ts). Inside the glass, the bars are their
+ * photographed colour relit like the photographs around them, so they match
+ * the sash frames the atlas shows in every light. Outside it, the reveals
+ * (uv.x 1; uv.y 1 where stone) are lit as surfaces: the room's light
+ * spilling out through the glass (the bake), the sky they see and the sun.
+ */
+function paintSurface(mood: HallMoodUniforms, sun: HallSun | null): Material {
+  const outside = uv().x;
+  const stone = uv().y;
+  const k = float(0.06);
+  const room = bakedIrradiance(mood);
+  const direct = sun === null ? vec3(0) : sunIrradiance(sun);
+  const [pr, pg, pb] = HALL_GLAZING_PAINT;
+  const bars = vec3(pr, pg, pb).mul(room.add(direct).add(k).div(scanIrradiance().add(k)));
+  const albedo = mix(color(REVEAL_PAINT).rgb, color(REVEAL_STONE).rgb, stone);
+  const sky = mood.daylight.rgb.mul(mood.daylightIntensity).mul(REVEAL_SKY_VIEW);
+  const reveals = albedo.mul(room.add(sky).add(direct));
+  const material = new MeshStandardNodeMaterial({ roughness: 0.38, metalness: 0, fog: false });
+  material.colorNode = vec3(0);
+  material.emissiveNode = mix(bars, reveals, outside);
+  material.roughnessNode = mix(float(0.38), float(0.85), stone);
+  return material;
 }
 
 function albedoNode(style: SurfaceStyle) {
@@ -162,20 +235,48 @@ function albedoNode(style: SurfaceStyle) {
   return texture(style.map, uv().mul(vec2(repeat[0], repeat[1]))).rgb.mul(tint);
 }
 
-function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: HallPhotos, sun: HallSun | null): Material {
+/**
+ * The glass cut from a wall photograph where the windows are open: the
+ * opacity the alpha test reads (the atlas's own alpha, 1 whenever the glass
+ * is closed). Every upright face over glazing goes, the steep faces where
+ * the relief eases from the curtains back to the glass too: those are air in
+ * the room, and kept they showed as grey shards along the curtains' edges.
+ * The window boards stay, though they project onto the glass's lowest
+ * texels. With
+ * multisampling the test becomes alpha to coverage, so the cut's edge is
+ * smooth on a phone; desktops' temporal resolve and tablets' FXAA smooth the
+ * hard cut.
+ */
+function openGlazing(material: MeshBasicNodeMaterial | MeshStandardNodeMaterial, wall: WallTexel, glazing: HallGlazingUniforms, alphaToCoverage: boolean): void {
+  material.opacityNode = mix(float(1), wall.alpha, glazing.open.mul(float(1).sub(wall.level)));
+  material.alphaTestNode = float(GLAZING_CUT);
+  material.alphaToCoverage = alphaToCoverage;
+}
+
+interface SurfaceOptions {
+  readonly glazing: HallGlazingUniforms | null;
+  readonly alphaToCoverage: boolean;
+}
+
+function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: HallPhotos, sun: HallSun | null, options: SurfaceOptions): Material {
   const side = style.side ?? FrontSide;
   if (style.shading === "photo" || style.shading === "photoGloss") {
-    const lit = relitPhoto(photos, style.photo ?? "walls", mood, sun);
-    if (style.shading === "photo") {
-      const material = new MeshBasicNodeMaterial({ side, fog: false });
+    const kind = style.photo ?? "walls";
+    const wall = kind === "walls" ? wallTexel(photos) : null;
+    const lit = relitPhoto(photos, kind, mood, sun, wall);
+    const material = style.shading === "photo"
+      ? new MeshBasicNodeMaterial({ side, fog: false })
+      : new MeshStandardNodeMaterial({ side, roughness: style.roughness ?? 0.45, metalness: 0, fog: false });
+    if (material instanceof MeshStandardNodeMaterial) {
+      material.colorNode = vec3(0);
+      material.emissiveNode = lit;
+    } else {
       material.colorNode = lit;
-      return material;
     }
-    const material = new MeshStandardNodeMaterial({ side, roughness: style.roughness ?? 0.45, metalness: 0, fog: false });
-    material.colorNode = vec3(0);
-    material.emissiveNode = lit;
+    if (wall !== null && options.glazing !== null) openGlazing(material, wall, options.glazing, options.alphaToCoverage);
     return material;
   }
+  if (style.shading === "paint") return paintSurface(mood, sun);
   const albedo = albedoNode(style);
   const irradiance = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
   if (style.shading === "gloss") {
@@ -203,7 +304,15 @@ function styles(textures: HallTextures): Record<HallMaterialKey, SurfaceStyle> {
     mahoganyDark: { shading: "gloss", map: textures.mahoganyDark, tint: "#ffffff", repeat: [1, 1], roughness: 0.38 },
     gilt: { shading: "metal", tint: "#d6a650", roughness: 0.3, fill: 0.4 },
     brass: { shading: "metal", tint: "#c9a35a", roughness: 0.28, fill: 0.4 },
+    paint: { shading: "paint", tint: "#ffffff" },
   };
+}
+
+export interface HallMaterialOptions {
+  /** The windows' glass, opened under the real sky (null: always the photograph). */
+  readonly glazing?: HallGlazingUniforms | null;
+  /** The scene pass is multisampled (phones): the glass's cut edge uses alpha to coverage. */
+  readonly alphaToCoverage?: boolean;
 }
 
 export type HallMaterials = ReadonlyMap<HallMaterialKey, Material>;
@@ -212,13 +321,17 @@ export type HallMaterials = ReadonlyMap<HallMaterialKey, Material>;
  * The hall's materials. With a `sun` (the real sky drives the hall), every
  * surface also takes the sun's or moon's direct, shadowed light.
  */
-export function createHallMaterials(textures: HallTextures, photos: HallPhotos, mood: HallMoodUniforms, section: HallSectionUniforms, sun: HallSun | null = null): HallMaterials {
+export function createHallMaterials(
+  textures: HallTextures, photos: HallPhotos, mood: HallMoodUniforms, section: HallSectionUniforms, sun: HallSun | null = null,
+  options: HallMaterialOptions = {},
+): HallMaterials {
   const table = styles(textures);
   const materials = new Map<HallMaterialKey, Material>();
+  const surface: SurfaceOptions = { glazing: options.glazing ?? null, alphaToCoverage: options.alphaToCoverage ?? false };
   for (const key of Object.keys(table) as HallMaterialKey[]) {
     // The floor is drawn (hall-floor.ts), lit by the same baked light.
     const floorLight = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
-    const material = key === "floor" ? createOakFloorMaterial(floorLight) : createSurface(table[key], mood, photos, sun);
+    const material = key === "floor" ? createOakFloorMaterial(floorLight) : createSurface(table[key], mood, photos, sun, surface);
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
       material.maskNode = sectionMask(section);
     }
@@ -239,8 +352,10 @@ export interface HallCasterMaterials {
  * Plain stand-ins the sun's shadow camera alone draws for the room
  * (hall-sun.ts HALL_SUN_CASTER_LAYER). They cast every surface's whole shape
  * whatever the cutaway shows, because the cutaway is a way of looking, not a
- * hole in the roof; only the glazing lets light through, so the sun's patches
- * on the floor carry the windows' bars.
+ * hole in the roof; only the glazing lets light through. The atlas smoothed
+ * the glazing bars into its glass, so the bars cast as the measured geometry
+ * of hall-glazing.ts ("paint", solid), and the sun's patches on the floor
+ * carry their shadows.
  */
 export function createHallCasterMaterials(photos: HallPhotos): HallCasterMaterials {
   const glazed = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false });

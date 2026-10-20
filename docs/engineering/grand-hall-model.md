@@ -36,10 +36,14 @@ development builds only) shows the room alone, posed through a window bridge for
   drew one stagger and one length for nearly every row: rendered on 19 October, 98% of its end
   joints lined up with the next row's against 2% on the door side.
 - **Cut walls** (`hall-section.ts`): where the cutaway lowers a wall, its body stands as a solid
-  section with a dark cap and a gilt edge on the room side. The hall stands in a plinth that is a
+  section with a dark cap and a gilt edge on the room side, as thick as the wall
+  (`HALL_WALL_THICKNESS`: the window wall 0.95 m from the 2010 plan, the door wall 1.14 m from the
+  scan, the end and fireplace walls 1.21 m from the plan only). The hall stands in a plinth that is a
   ring round the floor, never a slab under it: its top lies at the floor's level only outside the
-  floor, from the room's planes to the walls' outer faces (it is also the floor of the door
-  recesses and the firebox), its outer faces drop 0.42 m, and under the floor's edge only a strip
+  floor, from the room's planes to the walls' outer faces or a centimetre inside the city's cut-out
+  for the hall, whichever is nearer (the walls stand beyond the cut-out on every side; their skins
+  stand on the city's own caps there), and it is also the floor of the door
+  recesses and the firebox; its outer faces drop 0.42 m, and under the floor's edge only a strip
   2 cm down reaches 5 cm in, so a crack would show slab, not the void. Its inner edge repeats the
   floor's own edge vertices. A slab 1 mm under the oak, as before, lost the depth test at scattered
   pixels (depth24, near 0.1, far 900: a few depth steps per millimetre at 20-30 m), the black specks
@@ -67,7 +71,9 @@ and the frieze uplights on. Each vertex carries four baked channels (`hall-light
 occlusion, chandelier, daylight, uplight); a mood (`hall-mood.ts`: Daylight, Evening,
 Candlelight) relights a texel by the ratio of the mood's light to the scan's light from the same
 channels, so Daylight shows the room exactly as photographed. Glass, marked in the atlas's alpha,
-follows the daylight alone, falling to dusk blue and then dark. `HallLightRig` adds what a bake
+follows the daylight alone, falling to dusk blue and then dark, wherever the real sky is off and in
+the room's own captured reflections; under the real sky it opens onto the drawn city (below).
+`HallLightRig` adds what a bake
 cannot: real lights for the furniture and highlights in varnish and gilt. The drawn room's
 reflections are its own (`hall-capture.ts`): it is captured whole, uncut and with its fittings
 lit, whenever a surface or a mood settles, with the bulbs at half brightness so they glint
@@ -102,12 +108,37 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   has turned or the furniture has changed (coarsely while the time is dragged). On WebGPU a
   material that samples the shadow map cannot also cast into it, so the hall casts through plain
   stand-ins on layer 9 (`createHallCasterMaterials`); the glass, marked at alpha 128/255 in the
-  wall atlas, is left out so the sun falls through it. The photographed surfaces add the sun in
-  their own baked units (`sunIrradiance`).
+  wall atlas, is left out so the sun falls through it. The atlas smoothed the glazing bars into its
+  glass, so the bars cast as the measured geometry below, and the sun's patches on the floor carry
+  the sash grid, the round heads and the fanlights' pierced rings. The photographed surfaces add the
+  sun in their own baked units (`sunIrradiance`).
 - **Windows** (`hall-site.ts`, `hall-skyline.ts`, `hall-sun-times.ts`): the window wall faces
   101.1° true (from the 2020 LiDAR). Each window's skyline, the elevation of what stands across
   the street from 11° to 191°, was measured from the LiDAR; with the reveals' limits (77° for the
   arches, 66° for the sashes) it decides when sun reaches the floor, the gold bars on the dial.
+- **Glass** (`hall-glazing.ts`, `HallGlazingUniforms` in `hall-materials.ts`): under the real sky
+  the walls' photographs are cut where the atlas marks glass (alpha below 0.75; the window boards
+  stay; alpha to coverage on a multisampled phone pass), and the drawn city and sky show through
+  real glass. Each window has one pane at the relief's glass plane that reflects the room it looks
+  into: the room's captured environment, box-projected onto the room so the chandeliers, portraits
+  and curtains stay where they hang as the camera moves, at the Fresnel reflectance of single
+  glazing (two faces at 4%, 7.7% head-on) over 97% transmission, premultiplied, so at night the lit
+  room mirrors over the dark street as the 11 July panoramas show it. The pane writes no depth and
+  leaves the normal and velocity targets alone (the pipeline blends those two by their alpha, which
+  every other surface writes as 1), so occlusion and the temporal resolve see the street. `?glass=`
+  picks `physical` (default), `clear` (half the reflection) or `lustre` (1.6×); nothing is
+  remembered. The glazing bars, the sashes' stiles and rails, the arched windows' round heads and
+  their fanlights (radials, a ring pierced every 10°, the centre petal) are painted geometry with the
+  room's baked light, measured in the public panoramas (`HALL_GLAZING`,
+  `tools/grand-hall-survey/measure/glazing-bars.py`: 2 mm rectified views from four stations per
+  window, bars triangulated to within 1.5 cm of the relief's glass, projected back into scan_039's
+  and scan_040's panoramas 0.8 and 0.9 cm from where they stand). Outer reveals run from the glass to
+  the wall's outer face (painted 6 cm, then stone; their finish is art direction until a photograph
+  of the facade gives it): a sash window's hugs its sashes, an arched window's is the whole arch,
+  its sashes flanked by side lights behind the columns. While the room's reflections are captured
+  the glass closes and the panes hide (`withGlazingClosed`). The 1794 engraved pane in the centre
+  arch (its lowest centre pane) is not drawn: a crest and an inscription etched in clear glass, which a
+  uniform frost would misstate.
 - **The city** (`hall-context.ts`, `HallContext.tsx`): the Merchant City as an architect's white
   contour model in 3 m bands (69,451 triangles, 1.25 MB,
   `public/rooms/grand-hall/context-2020-lidar/merchant-city-v2.bin`), lit by the same sky with its
@@ -172,8 +203,12 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   behind and the mantel proud of the chimney breast, the door recess, the geometry envelope, and
   rejection of malformed files.
 - `src/components/grand-hall/__tests__/hall-section.test.ts` keeps the plinth off the floor:
-  nothing under it within 1.5 cm, the band out to the walls' outer faces covered at its level, the
-  floor's own edge vertices on its inner edge, everything inside the city's cut-out;
+  nothing under it within 1.5 cm, the band out to its edge covered at its level, the floor's own
+  edge vertices on its inner edge, everything inside the city's cut-out, and each wall's body as
+  thick as `HALL_WALL_THICKNESS`; `hall-glazing.test.ts` holds the panes at the glass inside each
+  opening, every measured bar where it was measured (and the panes between them open), the budgets
+  (panes 200, bars 2,500, reveals 1,500 triangles), the reveals from the glass to the outer face,
+  the glass presets and the capture's closing and reopening, also when it throws;
   `hall-floor.test.ts` holds every hash seed above zero and the two halves' end joints alike. The
   rendered proof (the plinth painted magenta never shows through the floor in any orbit, pose or
   profile) is browser evidence, recorded in the [19 October session log](../sessions/2026-10-19.md).

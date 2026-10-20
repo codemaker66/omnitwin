@@ -2,9 +2,10 @@
 // The Grand Hall's geometry — one geometry per material, light baked in
 //
 // Pure: no DOM, no renderer. The room is two parts: the floor, ceiling and
-// dome, built from the measured spec on first use, and the walls, built from
-// the scan's relief once it has loaded (flat photographs until then). Both
-// are cached per page because the room never changes.
+// dome, with the windows' measured glazing bars and reveals, built from the
+// spec on first use, and the walls, built from the scan's relief once it has
+// loaded (flat photographs until then). Both are cached per page because the
+// room never changes.
 // ---------------------------------------------------------------------------
 
 import type { BufferGeometry } from "three";
@@ -12,6 +13,7 @@ import { HallBuilders, type HallGeometryStats, type HallMaterialKey } from "./ha
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH } from "./hall-spec.js";
 import { buildHallWalls } from "./hall-walls.js";
 import { buildHallCeiling } from "./hall-ceiling.js";
+import { buildGlazingBars, buildGlazingReveals } from "./hall-glazing.js";
 import type { WallRelief } from "./hall-relief.js";
 
 export interface HallGeometry {
@@ -50,11 +52,13 @@ function timed(build: (hb: HallBuilders) => void): HallGeometry {
   return { geometries, stats, buildMs: now() - started };
 }
 
-/** The floor, the coffered ceiling and the dome. */
+/** The floor, the coffered ceiling and the dome, and the windows' glazing bars and outer reveals. */
 export function buildHallGeometry(): HallGeometry {
   return timed((hb) => {
     buildFloor(hb);
     buildHallCeiling(hb);
+    buildGlazingBars(hb);
+    buildGlazingReveals(hb);
   });
 }
 

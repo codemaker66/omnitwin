@@ -20,8 +20,8 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { UnsignedByteType, type Camera, type Scene } from "three";
-import { RenderPipeline, type Node, type WebGPURenderer } from "three/webgpu";
+import { NormalBlending, UnsignedByteType, type Camera, type Scene } from "three";
+import { BlendMode, RenderPipeline, type Node, type WebGPURenderer } from "three/webgpu";
 import {
   float,
   luminance,
@@ -86,7 +86,18 @@ export function buildPlannerPipeline(
   // The normal target's alpha carries each surface's occlusion weight.
   if (normals) targets["normal"] = vec4(packNormalToRGB(normalView), float(1));
   if (temporal) targets["velocity"] = velocity;
-  if (Object.keys(targets).length > 1) scenePass.setMRT(mrt(targets));
+  if (Object.keys(targets).length > 1) {
+    const outputs = mrt(targets);
+    // The normal and velocity targets blend by their own alpha. Every surface
+    // writes alpha 1 there, which replaces what lies behind as before; a
+    // surface that writes alpha 0 (the Grand Hall's window panes,
+    // hall-glazing.ts) leaves the street behind it to occlusion and the
+    // temporal resolve.
+    for (const name of ["normal", "velocity"] as const) {
+      if (name in targets) outputs.setBlendMode(name, new BlendMode(NormalBlending));
+    }
+    scenePass.setMRT(outputs);
+  }
   if (normals) scenePass.getTexture("normal").type = UnsignedByteType;
 
   const color = scenePass.getTextureNode("output");

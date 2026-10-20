@@ -5,7 +5,9 @@
 // the coffered ceiling and the dome, each coloured by the scan's photographs
 // with baked light — with the scan's gilt and bronze chandeliers and their
 // flame bulbs, and the dollhouse cutaway (with the walls' cut bodies) that
-// lets the planner look in from above. Its real lights are HallLightRig,
+// lets the planner look in from above. Under the real sky its windows open
+// onto the drawn city through panes of glass that reflect the room, behind
+// the measured glazing bars (hall-glazing.ts). Its real lights are HallLightRig,
 // mounted beside it; its reflections are its own, captured from the room
 // itself (hall-capture.ts).
 // The relief and the photographs stream in after the first frame (flat walls
@@ -15,7 +17,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Color, Vector3, type Material } from "three";
+import { Color, Vector3, type Material, type Mesh, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { color, lights, mix, normalWorld, uniform, vec3 } from "three/tsl";
 import { hallGeometry, hallWallGeometry } from "./hall-geometry.js";
@@ -25,13 +27,14 @@ import { paintHallTextures, disposeHallTextures, type HallTextures } from "./hal
 import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useHallFinish, type HallFinish } from "./hall-finish.js";
-import { createHallCasterMaterials, createHallMaterials, disposeHallMaterials, HallSectionUniforms, type HallCasterMaterials } from "./hall-materials.js";
+import { createHallCasterMaterials, createHallMaterials, disposeHallMaterials, HallGlazingUniforms, HallSectionUniforms, type HallCasterMaterials } from "./hall-materials.js";
+import { buildGlazingPanes, createGlassMaterial, GLASS_PRESETS, parseGlassPreset, withGlazingClosed } from "./hall-glazing.js";
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
 import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
 import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
-import { HallEnvironmentCapture } from "./hall-capture.js";
+import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
 import { createHallSection, type HallSection } from "./hall-section.js";
 import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 import { hallSkyState } from "./hall-sky-runtime.js";
@@ -71,6 +74,12 @@ export interface GrandHallModelProps {
    * their direct, shadowed light, and the room casts its shadows.
    */
   readonly sunlit?: boolean;
+  /**
+   * The scene pass is multisampled (a phone's profile): the windows' glass,
+   * cut from the walls under the real sky, gets a smooth edge from alpha to
+   * coverage.
+   */
+  readonly multisampled?: boolean;
 }
 
 /** Heights the cutaway uses. */
@@ -113,6 +122,8 @@ interface HallResources {
   readonly photos: HallPhotos;
   readonly mood: HallMoodUniforms;
   readonly section: HallSectionUniforms;
+  /** Whether the windows' glass is open onto the drawn city (hall-glazing.ts). */
+  readonly glazing: HallGlazingUniforms;
   readonly materials: ReturnType<typeof createHallMaterials>;
   readonly chandelierMaterials: ReadonlyMap<string, Material>;
   /** How far the chandeliers' metal is lit by its own lamps (1 with the reflection map). */
@@ -163,13 +174,14 @@ export function reflectionsOutdated(signature: number, captured: number | null):
  */
 const CAPTURE_SUN_MAP_WAITS = 2;
 
-function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null): HallResources {
+function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null, multisampled: boolean): HallResources {
   const textures = paintHallTextures(quality);
   const photos = new HallPhotos();
   const mood = new HallMoodUniforms();
   mood.apply(initialMood, initialMood, 1);
   const section = new HallSectionUniforms();
-  const materials = createHallMaterials(textures, photos, mood, section, sun);
+  const glazing = new HallGlazingUniforms();
+  const materials = createHallMaterials(textures, photos, mood, section, sun, { glazing, alphaToCoverage: multisampled });
   const casters = sun === null ? null : createHallCasterMaterials(photos);
 
   // As scanned: pale silver-gilt fittings on dark bronze stems, and white
@@ -211,7 +223,7 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const bulb = new MeshBasicNodeMaterial();
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
   const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
-  return { textures, photos, mood, section, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(), casters };
+  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(), casters };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -224,7 +236,15 @@ function disposeResources(resources: HallResources): void {
   resources.casters?.solid.dispose();
 }
 
-export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false }: GrandHallModelProps): ReactElement {
+let paneGeometry: ReturnType<typeof buildGlazingPanes> | null = null;
+
+/** The windows' panes, built once and shared: they never change. */
+function glazingPanes(): ReturnType<typeof buildGlazingPanes> {
+  paneGeometry ??= buildGlazingPanes();
+  return paneGeometry;
+}
+
+export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false, multisampled = false }: GrandHallModelProps): ReactElement {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
@@ -235,7 +255,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const deviceFinish = useHallFinish();
   const { photoQuality: quality, liveLight } = finishOverride ?? deviceFinish;
   const sun = useMemo(() => (sunlit ? hallSun(hallSunMapSize(quality, liveLight)) : null), [liveLight, quality, sunlit]);
-  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun), [quality, sun]);
+  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun, multisampled), [multisampled, quality, sun]);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
@@ -267,6 +287,22 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   }, [gl, liveLight]);
 
   useEffect(() => () => { disposeResources(resources); }, [resources]);
+
+  // The windows: under the real sky their glass opens onto the drawn city and
+  // its panes reflect the room (hall-glazing.ts). The panes need the room's
+  // captured reflections, so they appear with the first capture.
+  const panes = useRef<Mesh | null>(null);
+  const [reflection, setReflection] = useState<Texture | null>(null);
+  const glassPreset = useMemo(() => GLASS_PRESETS[parseGlassPreset(typeof window === "undefined" ? null : window.location.search)], []);
+  const glass = useMemo(() => (sunlit && reflection !== null
+    ? createGlassMaterial({ environment: reflection, capturePoint: HALL_CAPTURE_POINT, photos: resources.photos, section: resources.section, preset: glassPreset })
+    : null), [glassPreset, reflection, resources, sunlit]);
+  useEffect(() => () => { glass?.material.dispose(); }, [glass]);
+  useEffect(() => {
+    resources.glazing.set(sunlit);
+    invalidate();
+  }, [invalidate, resources, sunlit]);
+  useEffect(() => { setReflection(null); }, [environment]);
 
   useEffect(() => {
     if (environment === null) return undefined;
@@ -386,8 +422,10 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
         if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
         resources.bulbScale.value = CAPTURED_BULBS;
         try {
-          state.scene.environment = withoutSunMapDraw(sun, () => environment.capture(roomGroup));
+          const captured = withGlazingClosed(resources.glazing, panes.current, () => withoutSunMapDraw(sun, () => environment.capture(roomGroup)));
+          state.scene.environment = captured;
           state.scene.environmentIntensity = resources.mood.reflections;
+          if (reflection !== captured) setReflection(captured);
           // The light it was captured in, so a later sky recaptures only once it differs.
           capturedSignature.current = sky === null ? null : moodSignature(sky.mood);
         } catch {
@@ -480,6 +518,16 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
           <mesh key={key} name={`chandelier-${key}`} geometry={part} material={resources.chandelierMaterials.get(key)} />
         ))}
       </group>
+      {glass !== null && (
+        <mesh
+          ref={panes}
+          name="grand-hall-glazing-panes"
+          geometry={glazingPanes()}
+          material={glass.material}
+          frustumCulled={false}
+          raycast={() => undefined}
+        />
+      )}
       <mesh name="grand-hall-plinth" geometry={resources.cutaway.plinth} material={resources.cutaway.materials.plinth} />
       {resources.cutaway.pieces.map((piece, index) => (
         <group key={piece.wall.id} name={`grand-hall-section-${piece.wall.id}`} position={[piece.centre[0], 0, piece.centre[1]]} rotation={[0, piece.rotationY, 0]}>

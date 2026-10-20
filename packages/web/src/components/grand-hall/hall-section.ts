@@ -9,6 +9,9 @@
 // on the room side, and the whole room stands in a plinth. The cap and skin
 // follow each wall's eased cut height every frame by scale alone.
 //
+// Each wall's body is as thick as the wall (HALL_WALL_THICKNESS: the window
+// wall 0.95 m, so the windows' outer reveals end flush with its skin).
+//
 // The plinth is a ring round the floor, never a slab under it. A slab a
 // millimetre under the oak lost the depth test to it at scattered pixels
 // (depth24 with near 0.1 and far 900 leaves only a few depth steps per
@@ -24,10 +27,45 @@ import { BoxGeometry, Color, PlaneGeometry, type BufferGeometry, type Material }
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { color, mix, positionWorld, smoothstep, vec3 } from "three/tsl";
 import { MeshBuilder, type V3 } from "./mesh-builder.js";
-import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_WALLS, type HallWall } from "./hall-spec.js";
+import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_WALLS, HALL_WALL_THICKNESS, type HallWall } from "./hall-spec.js";
 
-/** Thickness of the walls' bodies behind their scanned faces, metres. */
-export const SECTION_THICKNESS = 0.62;
+/** A wall's body: how far its outer face lies behind its scanned face, metres. */
+export function wallThickness(wall: HallWall): number {
+  return HALL_WALL_THICKNESS[wall.id].thickness;
+}
+
+/**
+ * The city model's cut-out for the hall (tools/grand-hall-survey/context/
+ * build_context.py, rect_half_x and rect_half_z): nothing is emitted inside
+ * it, and its caps at the floor's level start at its edge. The walls stand
+ * further out than it on every side (the window wall's street face at
+ * z -6.245, the city's facade line at -5.915), so the ring stops a centimetre
+ * inside it, never sharing the caps' plane; the walls' skins stand on the
+ * city's caps beyond.
+ */
+export const CITY_CUTOUT = { x: 11.2, z: 5.95 } as const;
+const CUTOUT_MARGIN = 0.01;
+
+function wallById(id: HallWall["id"]): HallWall {
+  const wall = HALL_WALLS.find((candidate) => candidate.id === id);
+  if (wall === undefined) throw new Error(`No hall wall ${id}`);
+  return wall;
+}
+
+/**
+ * How far the ring reaches on each side: to the wall's outer face, or a
+ * centimetre inside the city's cut-out where that is nearer.
+ */
+export function plinthExtents(): { readonly xMin: number; readonly xMax: number; readonly zMin: number; readonly zMax: number } {
+  const reach = (id: HallWall["id"], half: number, limit: number): number => Math.min(half + wallThickness(wallById(id)), limit - CUTOUT_MARGIN);
+  return {
+    xMin: -reach("fireplace", HALL_HALF_LENGTH, CITY_CUTOUT.x),
+    xMax: reach("end", HALL_HALF_LENGTH, CITY_CUTOUT.x),
+    zMin: -reach("window", HALL_HALF_WIDTH, CITY_CUTOUT.z),
+    zMax: reach("door", HALL_HALF_WIDTH, CITY_CUTOUT.z),
+  };
+}
+
 /** How far the cap reaches into the room over the scanned relief, metres. */
 const CAP_OVERHANG = 0.09;
 /** Height of the cap's slab and of the gilt edge, metres. */
@@ -114,17 +152,15 @@ function setAxis(points: readonly V3[], axis: 0 | 1 | 2, value: number): V3[] {
 
 /**
  * The plinth: a ring round the floor whose top lies at the floor's level only
- * outside it, from the room's planes out to the walls' outer faces (their
- * skins, SECTION_THICKNESS behind the planes), with outer faces down to
- * PLINTH_DEPTH and no bottom. Under the floor it has only the underlap, two
- * centimetres down. The walls' outer faces stay inside the city model's
- * cut-out for the hall (|x| <= 11.2, |z| <= 5.95), whose own caps lie at the
- * same level just beyond it, so the ring never meets them either.
+ * outside it, from the room's planes out to the walls' outer faces or the
+ * city model's cut-out for the hall, whichever is nearer (plinthExtents), with
+ * outer faces down to PLINTH_DEPTH and no bottom. Under the floor it has only
+ * the underlap, two centimetres down. It stays inside the cut-out, whose own
+ * caps lie at the same level just beyond it, so it never meets them.
  */
 export function buildPlinthRing(): BufferGeometry {
   const builder = new MeshBuilder();
-  const outerX = HALL_HALF_LENGTH + SECTION_THICKNESS;
-  const outerZ = HALL_HALF_WIDTH + SECTION_THICKNESS;
+  const { xMin, xMax, zMin, zMax } = plinthExtents();
 
   // The top, in four strips. The long sides run the ring's whole length and
   // take its corners; their inner edges repeat the floor's edge vertices.
@@ -132,13 +168,13 @@ export function buildPlinthRing(): BufferGeometry {
   const doorEdge = floorEdge("x", 1);
   const fireplaceEdge = floorEdge("z", 0);
   const endEdge = floorEdge("z", 1);
-  const longInner = (edge: readonly V3[], z: number): V3[] => [[-outerX, 0, z], ...edge, [outerX, 0, z]];
+  const longInner = (edge: readonly V3[], z: number): V3[] => [[xMin, 0, z], ...edge, [xMax, 0, z]];
   const windowInner = longInner(windowEdge, -HALL_HALF_WIDTH);
   const doorInner = longInner(doorEdge, HALL_HALF_WIDTH);
-  const windowOuter = setAxis(windowInner, 2, -outerZ);
-  const doorOuter = setAxis(doorInner, 2, outerZ);
-  const fireplaceOuter = setAxis(fireplaceEdge, 0, -outerX);
-  const endOuter = setAxis(endEdge, 0, outerX);
+  const windowOuter = setAxis(windowInner, 2, zMin);
+  const doorOuter = setAxis(doorInner, 2, zMax);
+  const fireplaceOuter = setAxis(fireplaceEdge, 0, xMin);
+  const endOuter = setAxis(endEdge, 0, xMax);
   stripBetween(builder, windowInner, windowOuter, UP);
   stripBetween(builder, doorInner, doorOuter, UP);
   stripBetween(builder, fireplaceEdge, fireplaceOuter, UP);
@@ -146,8 +182,8 @@ export function buildPlinthRing(): BufferGeometry {
 
   // The outer faces, from the top's own outer edges down, so the two share
   // every vertex along the ring's rim.
-  const fireplaceRim: V3[] = [[-outerX, 0, -outerZ], ...fireplaceOuter, [-outerX, 0, outerZ]];
-  const endRim: V3[] = [[outerX, 0, -outerZ], ...endOuter, [outerX, 0, outerZ]];
+  const fireplaceRim: V3[] = [[xMin, 0, zMin], ...fireplaceOuter, [xMin, 0, zMax]];
+  const endRim: V3[] = [[xMax, 0, zMin], ...endOuter, [xMax, 0, zMax]];
   const sides: readonly (readonly [readonly V3[], V3])[] = [
     [windowOuter, [0, 0, -1]],
     [doorOuter, [0, 0, 1]],
@@ -177,24 +213,33 @@ export function buildPlinthRing(): BufferGeometry {
 
 /** The walls' bodies, caps and the plinth, with their materials. */
 export function createHallSection(): HallSection {
-  const pieces = HALL_WALLS.map((wall) => {
-    // Long enough to meet the neighbouring walls' skins at the corners.
-    const length = wall.length + SECTION_THICKNESS * 2;
+  const pieces = HALL_WALLS.map((wall, index) => {
+    const thickness = wallThickness(wall);
+    // Long enough to meet the neighbouring walls' skins at the corners: the
+    // wall before it in HALL_WALLS meets its start (u = 0), the next its end.
+    const before = HALL_WALLS[(index + HALL_WALLS.length - 1) % HALL_WALLS.length];
+    const after = HALL_WALLS[(index + 1) % HALL_WALLS.length];
+    const startReach = before === undefined ? thickness : wallThickness(before);
+    const endReach = after === undefined ? thickness : wallThickness(after);
+    const length = wall.length + startReach + endReach;
+    // Local x runs along the wall from its middle; the body reaches further
+    // past one end than the other where its neighbours differ.
+    const shift = (endReach - startReach) / 2;
     // Only the outside face: a body's room side would cover the scanned wall
     // (whose window reveals lie behind the wall's plane). Unit high from the
     // floor, facing away from the room.
     const skin = new PlaneGeometry(length, 1);
     skin.rotateY(Math.PI);
-    skin.translate(0, 0.5, -SECTION_THICKNESS / 2);
-    const cap = new BoxGeometry(length, CAP_HEIGHT, SECTION_THICKNESS + CAP_OVERHANG);
+    skin.translate(shift, 0.5, -thickness / 2);
+    const cap = new BoxGeometry(length, CAP_HEIGHT, thickness + CAP_OVERHANG);
     // The cap's top sits at the cut; its room side overhangs the relief.
-    cap.translate(0, -CAP_HEIGHT / 2, CAP_OVERHANG / 2);
+    cap.translate(shift, -CAP_HEIGHT / 2, CAP_OVERHANG / 2);
     const edge = new BoxGeometry(wall.length, EDGE_SIZE, EDGE_SIZE);
-    edge.translate(0, -EDGE_SIZE / 2, SECTION_THICKNESS / 2 + CAP_OVERHANG - EDGE_SIZE / 2);
+    edge.translate(0, -EDGE_SIZE / 2, thickness / 2 + CAP_OVERHANG - EDGE_SIZE / 2);
     // Centre of the body: halfway along the wall, half its thickness behind it.
     const centre: [number, number] = [
-      wall.origin[0] + wall.tangent[0] * wall.length / 2 - wall.normal[0] * SECTION_THICKNESS / 2,
-      wall.origin[2] + wall.tangent[2] * wall.length / 2 - wall.normal[2] * SECTION_THICKNESS / 2,
+      wall.origin[0] + wall.tangent[0] * wall.length / 2 - wall.normal[0] * thickness / 2,
+      wall.origin[2] + wall.tangent[2] * wall.length / 2 - wall.normal[2] * thickness / 2,
     ];
     // Local x along the wall, local +z into the room.
     const rotationY = Math.atan2(-wall.tangent[2], wall.tangent[0]);

@@ -116,6 +116,16 @@ the build has filled (they read `data/`), after `mkdir analysis` and
 
 (`views-plan.json` draws the whole building from above, for orientation.)
 
+`measure/glazing-bars.py` measures the five windows' glazing for `HALL_GLAZING`: the glass plane from
+the relief, each window's glazing bars rectified at 2 mm from four public panoramas and triangulated
+(their plane lies within 1.5 cm of the relief's glass), the arched windows' fanlights in polar
+coordinates about the transom, and the paint's colour as photographed. It reads `data/` (each
+panorama checked against the manifest's hash), the published `walls-4096.webp` and
+`walls-relief.bin`, and writes `glazing-bars.json` (the run behind `hall-spec.ts` is kept beside the
+script) and the rectified views:
+
+    python3 $SURVEY/measure/glazing-bars.py --data data --atlas walls-4096.webp --relief walls-relief.bin --out analysis/glazing
+
 ## City context and window skylines
 
 The city drawn around the hall, and the sky each window sees, come from one public source: the

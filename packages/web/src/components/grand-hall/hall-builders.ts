@@ -25,6 +25,8 @@ export const HALL_MATERIAL_KEYS = [
   "mahoganyDark",
   "gilt",
   "brass",
+  // The windows' painted glazing bars and outer reveals (hall-glazing.ts).
+  "paint",
 ] as const;
 
 export type HallMaterialKey = (typeof HALL_MATERIAL_KEYS)[number];

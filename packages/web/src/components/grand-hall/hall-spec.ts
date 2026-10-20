@@ -155,6 +155,187 @@ export function isWindow(opening: HallOpening): boolean {
   return opening.kind === "arched-window" || opening.kind === "window";
 }
 
+/** How thick a wall is, from the room's plane to its outer face, and how that is known. */
+export interface HallWallThickness {
+  readonly thickness: number;
+  readonly source: string;
+}
+
+/**
+ * The walls' thickness, metres. The 2010 FIRST floor plan (E:/downloads/
+ * blueprints/irl blueprints/FIRST 2010.pdf) was read at 600 dpi and calibrated
+ * on the hall's own interior (10.59 m across, 0.0445 m a point; 21.135 m long,
+ * 0.0450 m a point); the door wall then reads 1.11 m, as the scan's 1.14 m.
+ * The plan is good to about 5 cm for thickness (2026-10-19 section
+ * investigation). The scan wins where it measured.
+ */
+export const HALL_WALL_THICKNESS: Readonly<Record<HallWallId, HallWallThickness>> = {
+  window: {
+    thickness: 0.95,
+    source: "2010 FIRST plan: plain piers 0.945 m, the openings' outer lines 0.92-0.98 m, the bays 1.00-1.05 m; scan: sash glazing 0.81-0.85 m back",
+  },
+  door: { thickness: 1.14, source: "scan: hall face z 5.29, Saloon face z 6.43-6.46 (plan 1.11 m)" },
+  end: { thickness: 1.21, source: "2010 FIRST plan only: 1.21 m (no opening, nothing scanned beyond it)" },
+  fireplace: { thickness: 1.21, source: "2010 FIRST plan only: 1.21-1.25 m (the firebox is set into it)" },
+};
+
+/**
+ * One window's glazing. Positions are wall-local: `u` along the window wall,
+ * `v` above the floor, depths behind the wall's plane are negative.
+ */
+export interface HallGlazing {
+  /** The HALL_OPENINGS id. */
+  readonly opening: string;
+  /** The glass plane, where the relief (walls-relief.bin) has it. */
+  readonly glassDepth: number;
+  /** The wall's outer face at the opening (2010 FIRST plan). */
+  readonly outerDepth: number;
+  /** Centre of the glazed light along the wall: midway between its two vertical bars. */
+  readonly centre: number;
+  /** Bottom of the glazed light, where the sash's bottom rail sits (the atlas's glass starts here). */
+  readonly sill: number;
+  /**
+   * Top of the sashes: an arched window's transom, where its fanlight springs,
+   * or a sash window's head (above its curtains' swag, not seen).
+   */
+  readonly top: number;
+  /** The two vertical glazing bars, u. */
+  readonly verticals: readonly number[];
+  /** Horizontal glazing bars, v. */
+  readonly bars: readonly number[];
+  /** The meeting rail between the sashes, v. */
+  readonly rail: number;
+  /** An arched window's fanlight over the transom; null for a sash window. */
+  readonly fanlight: HallFanlight | null;
+  /** How each figure was found. */
+  readonly source: string;
+}
+
+/**
+ * An arched window's head: the centre light's round head, and a fanlight of
+ * radial bars round a pierced ring, centred on the transom at the light's
+ * centre. Radii in metres, angles in degrees from the transom (0 toward the
+ * end wall, 90 straight up).
+ */
+export interface HallFanlight {
+  /** The centre light's round head (the bar's centreline). */
+  readonly roundHead: number;
+  /** Radials from the round head out to the ring. */
+  readonly lowerRadials: readonly number[];
+  /** The ring's inner and outer rims (centrelines). */
+  readonly ringInner: number;
+  readonly ringOuter: number;
+  /** Round piercings midway across the ring, every `step` degrees from `first`. */
+  readonly holes: { readonly first: number; readonly step: number; readonly radius: number };
+  /** Radials from the ring out to the centre petal. */
+  readonly upperRadials: readonly number[];
+  /** Where the upper radials end. */
+  readonly upperEnd: number;
+  /** The centre petal's round head: its centre's distance from the fanlight's centre, and its radius. */
+  readonly petal: { readonly at: number; readonly radius: number };
+  /** The fanlight's glass reaches this far from its centre (past the petal's head, inside the arch). */
+  readonly radius: number;
+}
+
+/** Glazing members' sections (face width across, depth out of the glass toward the room), metres. */
+export const HALL_GLAZING_SECTION = {
+  /** Glazing bars: about 2 cm faces (1.2-3 cm half-height widths in the panoramas). */
+  bar: { width: 0.022, depth: 0.035 },
+  /** The meeting rail, the transom and the round head: heavier members. */
+  rail: { width: 0.035, depth: 0.05 },
+  /** The sashes' stiles and bottom rail. */
+  frame: { width: 0.05, depth: 0.05 },
+  /** The fanlight's radials and rims. */
+  fanlight: { width: 0.03, depth: 0.035 },
+} as const;
+
+/** Half the glazed light's width: three panes of 0.37 m between the bars' centres. */
+export const HALL_LIGHT_HALF_WIDTH = 0.555;
+
+/**
+ * The glazing's paint as the scan photographed it (linear RGB): the median,
+ * over the five windows, of the colour along the vertical bars in each
+ * window's own station (sRGB 181, 172, 160), a warm off-white under the
+ * room's light.
+ */
+export const HALL_GLAZING_PAINT: readonly [number, number, number] = [0.462, 0.413, 0.352];
+
+/**
+ * The three arched windows share one fanlight design, read in each window's
+ * own station (scan_042, scan_039, scan_040) on the relief's glass plane, in
+ * polar coordinates about the centre light's middle on the transom: round
+ * head 0.17-0.19, lower radials at 57-60 and 121-122 degrees, the ring's rims
+ * at 0.53 and 0.746 (the centre arch's 0.486 and 0.709: its fanlight stands
+ * further back than its sashes; the end arch's, mostly behind its curtains,
+ * from its twin), piercings every 10 degrees from 5, upper radials at 77-81
+ * and 99-100 degrees, the centre petal's head at 1.248.
+ */
+function fanlight(ringInner: number, ringOuter: number): HallFanlight {
+  return {
+    roundHead: 0.18,
+    lowerRadials: [58, 122],
+    ringInner,
+    ringOuter,
+    holes: { first: 5, step: 10, radius: 0.038 },
+    upperRadials: [80.5, 99.5],
+    upperEnd: 1.06,
+    petal: { at: 1.06, radius: 0.19 },
+    radius: 1.275,
+  };
+}
+
+const GLAZING_METHOD = "tools/grand-hall-survey/measure/glazing-bars.py (its output beside it, glazing-bars.json): each window rectified at 2 mm from four public 8K panoramas; bars triangulated (their plane agrees with the relief's glass within 1.5 cm)";
+
+/**
+ * The five windows' glazing, measured in the public panoramas (GLAZING_METHOD).
+ * Each window is a pair of sashes three panes wide; an arched window's upper
+ * sash is three panes high and its centre light rises into a round head under
+ * the fanlight. Outer depths are the plan's lines at the arches' bays
+ * (0.966-0.987) and at the centre arch and the sashes (0.913-0.934).
+ */
+export const HALL_GLAZING: readonly HallGlazing[] = [
+  {
+    opening: "arch-fireplace", glassDepth: -0.899, outerDepth: -0.976,
+    centre: windowU(17.83) - 0.003, sill: 0.915, top: 3.762,
+    verticals: [windowU(17.83) - 0.188, windowU(17.83) + 0.182], bars: [1.544, 2.701, 3.275], rail: 2.151,
+    fanlight: fanlight(0.53, 0.746),
+    source: `${GLAZING_METHOD}; stations scan_042, scan_033, scan_032, scan_034`,
+  },
+  {
+    opening: "window-fireplace", glassDepth: -0.814, outerDepth: -0.924,
+    centre: windowU(13.71) - 0.006, sill: 0.935, top: 3.25,
+    verticals: [windowU(13.71) - 0.195, windowU(13.71) + 0.183], bars: [1.528, 2.64], rail: 2.126,
+    fanlight: null,
+    source: `${GLAZING_METHOD}; stations scan_041, scan_030, scan_031, scan_024; the head (above the swag, unseen) is the opening's less 5.5 cm`,
+  },
+  {
+    opening: "arch-centre", glassDepth: -0.569, outerDepth: -0.924,
+    centre: windowU(8.82) - 0.009, sill: 0.915, top: 3.815,
+    verticals: [windowU(8.82) - 0.193, windowU(8.82) + 0.175], bars: [1.568, 2.716, 3.283], rail: 2.177,
+    fanlight: fanlight(0.486, 0.709),
+    source: `${GLAZING_METHOD}; stations scan_039, scan_013, scan_022, scan_043`,
+  },
+  {
+    opening: "window-end", glassDepth: -0.817, outerDepth: -0.924,
+    centre: windowU(3.93) - 0.004, sill: 0.935, top: 3.25,
+    verticals: [windowU(3.93) - 0.189, windowU(3.93) + 0.181], bars: [1.541, 2.64], rail: 2.119,
+    fanlight: null,
+    source: `${GLAZING_METHOD}; stations scan_038, scan_005, scan_006, scan_012; the upper bar (behind the swag from three stations) from its twin, window-fireplace`,
+  },
+  {
+    opening: "arch-end", glassDepth: -0.9, outerDepth: -0.976,
+    centre: windowU(-0.19) - 0.017, sill: 0.915, top: 3.769,
+    verticals: [windowU(-0.19) - 0.2, windowU(-0.19) + 0.166], bars: [1.56, 2.714, 3.285], rail: 2.154,
+    fanlight: fanlight(0.53, 0.746),
+    source: `${GLAZING_METHOD}; stations scan_040, scan_004, scan_037, scan_044; glass depth from its twin (the mesh closed it; the bars' own plane triangulates at -0.884), its ring from its twin`,
+  },
+];
+
+/** A window's glazing, by its opening's id. */
+export function hallGlazing(opening: string): HallGlazing | undefined {
+  return HALL_GLAZING.find((glazing) => glazing.opening === opening);
+}
+
 /** Top of an opening: the crown of an arch, or the square head. */
 export function openingTop(opening: HallOpening): number {
   return opening.kind === "arched-window" ? opening.head + opening.width / 2 : opening.head;
