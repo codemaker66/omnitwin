@@ -336,8 +336,9 @@ function devFixtureRoutes(): readonly RouteObject[] {
   const PlannerLabPage = lazy(() =>
     cockpitImport(() => import("./pages/PlannerLabPage.js").then((m) => ({ default: m.PlannerLabPage }))),
   );
+  // Through cockpitImport, as the planner itself loads: its Inter comes with it.
   const PlannerChromeFixturePage = lazy(() =>
-    import("./pages/PlannerChromeFixturePage.js").then((m) => ({ default: m.PlannerChromeFixturePage })),
+    cockpitImport(() => import("./pages/PlannerChromeFixturePage.js").then((m) => ({ default: m.PlannerChromeFixturePage }))),
   );
 
   return [
