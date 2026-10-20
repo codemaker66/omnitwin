@@ -1,20 +1,37 @@
-import { useLayoutEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronDown, Pen, Plus, Redo2, Ruler, Search, Send, Undo2, Volume1 } from "lucide-react";
+import { ChevronDown, Pen, Plus, Redo2, Ruler, Search, Send, Undo2 } from "lucide-react";
 import { Field, Segmented, Stepper, Switch } from "../components/planner-chrome/Controls.js";
 import { LayOutGlyph } from "../components/planner-chrome/glyphs.js";
 import { Kbd } from "../components/planner-chrome/Kbd.js";
 import { CreamKey, Key, KeyRow, KeySeparator, QuietKey } from "../components/planner-chrome/Keys.js";
+import { SoundControl } from "../components/planner-chrome/SoundControl.js";
 import { Chip, Lacquer, MarkLabel, Notice, StatusDot } from "../components/planner-chrome/Surfaces.js";
 import { TooltipHost } from "../components/planner-chrome/Tooltip.js";
+import { PLANNER_SOUND_IDS, type PlannerSoundId } from "../lib/planner-sound-recipes.js";
+import { renderPlannerSoundOffline } from "../lib/sound-registry.js";
 import "./PlannerChromeFixturePage.css";
+
+declare global {
+  interface Window {
+    /**
+     * The planner's sounds rendered through the real chain in an offline
+     * context, for the recordings and the browser check of each one's peak,
+     * length and spectrum (slice 3). Makes no sound.
+     */
+    __plannerSound?: {
+      readonly ids: readonly PlannerSoundId[];
+      render: (id: PlannerSoundId) => Promise<number[]>;
+    };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // /dev/planner-chrome (development builds only): every shared primitive of the
-// planner's new chrome (T-671, slice 4) in context, over a room. `?bg=` names a
-// same-origin image to sit behind them, so the evidence capture can put the
-// real day and night frames of the production room underneath and run the
-// contrast audit on what a person would see.
+// planner's new chrome (T-671, slice 4) and the speaker (slice 3) in context,
+// over a room. `?bg=` names a same-origin image to sit behind them, so the
+// evidence capture can put the real day and night frames of the production
+// room underneath and run the contrast audit on what a person would see.
 // ---------------------------------------------------------------------------
 
 type View = "plan" | "room" | "walk";
@@ -49,6 +66,14 @@ export function PlannerChromeFixturePage(): ReactElement {
     else stage.style.setProperty("--pcf-backdrop", `url("${encodeURI(backdrop)}")`);
   }, [backdrop]);
 
+  useEffect(() => {
+    window.__plannerSound = {
+      ids: PLANNER_SOUND_IDS,
+      render: async (id) => Array.from(await renderPlannerSoundOffline(id)),
+    };
+    return () => { delete window.__plannerSound; };
+  }, []);
+
   const toggleTool = (next: Tool): void => { setTool(tool === next ? null : next); };
 
   return (
@@ -81,7 +106,7 @@ export function PlannerChromeFixturePage(): ReactElement {
 
       <Lacquer className="pcf-utilities" role="toolbar" aria-label="Present, find and sound" data-pc-chrome="utilities">
         <Key label="Find" icon={<Search className="pc-icon" />} iconOnly small shortcut={["Ctrl", "K"]} tooltipSide="below" />
-        <Key label="Sound: quiet" icon={<Volume1 className="pc-icon" />} iconOnly small shortcut={["Shift", "M"]} tooltipSide="below" />
+        <SoundControl />
       </Lacquer>
 
       <Lacquer raised className="pcf-panel" role="region" aria-label="Details" data-pc-chrome="panel">

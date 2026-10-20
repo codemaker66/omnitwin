@@ -87,6 +87,11 @@ export interface KeyProps extends NativeButtonProps {
   readonly trailing?: ReactNode;
   /** This key's id in its KeyRow, for the sliding underline. */
   readonly rowKey?: string;
+  /**
+   * A key that opens a popover: whether it is open. aria-expanded follows, and
+   * while it is open the key's tooltip stays away, so it covers nothing.
+   */
+  readonly expanded?: boolean;
   readonly className?: string;
   readonly onPress?: () => void;
 }
@@ -108,6 +113,7 @@ export const Key = forwardRef<HTMLButtonElement, KeyProps>(function Key(
     tooltipImmediate = false,
     trailing,
     rowKey,
+    expanded,
     className,
     onPress,
     ...rest
@@ -116,7 +122,8 @@ export const Key = forwardRef<HTMLButtonElement, KeyProps>(function Key(
 ): ReactElement {
   const disabled = disabledReason !== undefined;
   const name = keyAccessibleName({ label, tip, shortcut, disabledReason });
-  const showsTooltip = iconOnly || disabled || tip !== undefined || (shortcut !== undefined && shortcut.length > 0);
+  const showsTooltip =
+    expanded !== true && (iconOnly || disabled || tip !== undefined || (shortcut !== undefined && shortcut.length > 0));
   const tooltip = useTooltip({
     text: showsTooltip ? (disabled ? disabledReason : (tip ?? label)) : null,
     keys: disabled ? undefined : shortcut,
@@ -147,6 +154,7 @@ export const Key = forwardRef<HTMLButtonElement, KeyProps>(function Key(
       role={radio ? "radio" : rest.role}
       aria-checked={radio ? on : undefined}
       aria-pressed={toggle && !radio ? on : undefined}
+      aria-expanded={expanded}
       aria-disabled={disabled ? true : undefined}
       aria-label={iconOnly || name !== label ? name : undefined}
       aria-keyshortcuts={!disabled && shortcut !== undefined && shortcut.length > 0 ? ariaKeyShortcut(shortcut) : undefined}

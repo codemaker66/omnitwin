@@ -597,6 +597,152 @@
 .pc-mark--amber { color: var(--house-amber-lit); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house-amber-lit) 55%, transparent); }
 .pc-mark--brick { color: var(--house-brick-lit); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house-brick-lit) 55%, transparent); }
 
+/* -- Popovers: opened from their key's edge; Esc or a press elsewhere closes --
+ * them (spec 4.5, 8). Each sits at the top of the page, 8 px off the bar that
+ * holds its key (Popover.tsx places it), so no bar or panel paints over it.
+ * It often stands over another panel, so its lacquer lies on the canvas
+ * colour: the words beneath never show through. */
+.pc-popover {
+  position: fixed;
+  top: var(--pc-popover-top, auto);
+  bottom: var(--pc-popover-bottom, auto);
+  z-index: 50;
+  width: 288px;
+  max-width: calc(100vw - 16px);
+  background:
+    linear-gradient(180deg, var(--house-lacquer-top), var(--house-lacquer-bottom)),
+    var(--house-bg-0);
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--house-motion-reveal) var(--house-ease-out),
+    transform var(--house-motion-reveal) var(--house-ease-out);
+}
+
+.pc-popover--end {
+  right: var(--pc-popover-right, auto);
+  transform-origin: 100% 0;
+}
+
+.pc-popover--start {
+  left: var(--pc-popover-left, auto);
+  transform-origin: 0 0;
+}
+
+.pc-popover--above.pc-popover--end { transform-origin: 100% 100%; }
+.pc-popover--above.pc-popover--start { transform-origin: 0 100%; }
+
+.pc-popover.is-shown {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.pc-popover__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--house-hairline);
+}
+
+.pc-popover__section:first-child { border-top: 0; }
+
+.pc-popover__heading { color: var(--house-forest-ink-3); }
+
+.pc-popover__line {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-popover__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--house-hairline);
+  color: var(--house-forest-ink-3);
+}
+
+.pc-popover__keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* -- Level: a range on lacquer, cream up to the thumb ------------------------- */
+.pc-level {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.pc-level__figure {
+  color: var(--house-forest-ink-2);
+  font: 500 12px/1 var(--house-sans);
+}
+
+.pc-range {
+  /* How far along the level is, 0 to 1 (set by the control). */
+  --pc-range-f: 0.5;
+  --pc-range-rest: color-mix(in srgb, var(--house-forest-ink-1) 18%, transparent);
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  border-radius: var(--house-radius-key);
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.pc-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--house-cream) calc(8px + (100% - 16px) * var(--pc-range-f)),
+    var(--pc-range-rest) 0
+  );
+}
+
+.pc-range::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--house-cream);
+  box-shadow: var(--house-shadow-e1);
+  appearance: none;
+}
+
+.pc-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--pc-range-rest);
+}
+
+.pc-range::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--house-cream);
+}
+
+.pc-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--house-cream);
+  box-shadow: var(--house-shadow-e1);
+}
+
+.pc-range:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
 /* -- Reduced motion: no press-down, no scale; colour and opacity only -------- */
 @media (prefers-reduced-motion: reduce) {
   .pc-key,
@@ -617,5 +763,11 @@
   .pc-tooltip,
   .pc-tooltip.is-shown {
     transform: none;
+  }
+
+  .pc-popover,
+  .pc-popover.is-shown {
+    transform: none;
+    transition-duration: var(--house-motion-press);
   }
 }

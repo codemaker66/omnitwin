@@ -142,3 +142,23 @@
 .pcf-ink-2 { color: var(--house-forest-ink-2); }
 .pcf-ink-3 { color: var(--house-forest-ink-3); }
 .pcf-copper { color: var(--house-copper-text); }
+
+/* A phone gets its own chrome (the phone's dock, More and its sheets: slice 20).
+   Until then this gallery shows a phone only the utilities, so the speaker's
+   panel can be seen and used at a phone's width without the desktop pieces
+   standing over it. */
+@media (max-width: 767px) {
+  .pcf-dock,
+  .pcf-next,
+  .pcf-panel,
+  .pcf-states,
+  .pcf-marks,
+  .pcf-paper {
+    display: none;
+  }
+
+  .pcf-utilities {
+    top: 16px;
+    right: 16px;
+  }
+}
