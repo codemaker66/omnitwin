@@ -8,6 +8,7 @@ import { constants as zlibConstants } from "node:zlib";
 import { getImageDecoderRuntime } from "@omnitwin/reconstruction-foundry";
 import { validateEnv, type Env } from "./env.js";
 import { createDbConnection } from "./db/client.js";
+import { readBuildTimestamp } from "./lib/build-stamp.js";
 import { loadBundledJournal, readMigrationReadiness } from "./db/migration-readiness.js";
 import { setAuthDb } from "./middleware/auth.js";
 import { createRateLimitIdentity } from "./middleware/rate-limit-identity.js";
@@ -308,6 +309,10 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   //      variable, so it CAN go stale: production reported a six-week-old SHA
   //      on 2026-09-01 because an 18 Aug GitHub-triggered deploy shipped an
   //      image stamped by hand in July.
+  // builtAt is a third source, and the only one the image owns outright: the
+  // Dockerfile writes the build time into a file inside the image (see
+  // lib/build-stamp.ts), because the BUILD_TIMESTAMP service variable is set by
+  // hand and sat at 24 September beside current commits.
   // NOTHING injects these in CI — an earlier version of this comment claimed
   // that, which is why all three fields read "dev"/"0.0.0" in production for
   // months. `npm_package_version` is unset in production because the start
@@ -320,7 +325,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     return {
       version: process.env["APP_VERSION"] ?? process.env["npm_package_version"] ?? "0.0.0",
       gitSha: process.env["RAILWAY_GIT_COMMIT_SHA"] ?? process.env["GIT_SHA"] ?? "dev",
-      builtAt: process.env["BUILD_TIMESTAMP"] ?? "dev",
+      builtAt: readBuildTimestamp(),
       nodeEnv: env.NODE_ENV,
     };
   });
