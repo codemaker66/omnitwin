@@ -1,5 +1,6 @@
 import type { FastifyServerOptions } from "fastify";
 import { redactHealthFreeText, redactHealthFreeTextInString } from "@omnitwin/types";
+import { errorLogSerializer, requestLogSerializer } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Guests' allergy notes stay out of the server's logs and error reports
@@ -29,6 +30,18 @@ export const HEALTH_REDACTING_LOG_HOOKS: NonNullable<ApiLoggerConfig["hooks"]> =
   streamWrite: redactHealthFreeTextInString,
 };
 
+/**
+ * `req` replaces Fastify's default request serializer so the query string
+ * (a client's name, email or phone on the search routes) never reaches the
+ * log: the url is logged as "/people/search?[redacted]". `err` does the same
+ * for errors: no query parameters in the message or stack, no pg
+ * `detail`/`where`, down the cause chain (observability/redact.ts).
+ */
+export const API_LOG_SERIALIZERS = {
+  req: requestLogSerializer,
+  err: errorLogSerializer,
+} as const;
+
 export type ApiLoggerMode = "development" | "test" | "production";
 
 /** The API's logger options: the same redaction in every mode that logs. */
@@ -38,10 +51,11 @@ export function apiLoggerOptions(mode: ApiLoggerMode): false | ApiLoggerConfig {
     return {
       level: "info",
       hooks: HEALTH_REDACTING_LOG_HOOKS,
+      serializers: API_LOG_SERIALIZERS,
       transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } },
     };
   }
-  return { level: "info", hooks: HEALTH_REDACTING_LOG_HOOKS };
+  return { level: "info", hooks: HEALTH_REDACTING_LOG_HOOKS, serializers: API_LOG_SERIALIZERS };
 }
 
 /** The minimum of a Sentry event this boundary touches. */

@@ -111,15 +111,14 @@ describe("nav offers are reachable", () => {
     expect(canShowNavItem(pricingItem, "manager", "none")).toBe(true);
   });
 
-  it("offers the Clients desk only to the roles /clients admits", () => {
-    // routes/clients.ts gates its search and lists on canManageVenue, so
-    // sales and planner were being offered a tab that answers 403.
-    expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper"]);
+  it("offers the Clients desk to the roles /clients admits, sales included", () => {
+    // routes/clients.ts gates on canReadClients: the venue floor and the commercial team (People Book design §6.7).
+    expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper", "sales"]);
     for (const role of USER_ROLES) {
       expect(canOpenDashboardView("search", role, "none"), `search for ${role}`)
-        .toBe(hasRole(VENUE_FLOOR_ROLES, role));
+        .toBe(hasRole(VENUE_FLOOR_ROLES, role) || hasRole(COMMERCIAL_ROLES, role));
     }
-    expect(canOpenDashboardView("search", "sales", "none")).toBe(false);
+    expect(canOpenDashboardView("search", "sales", "none")).toBe(true);
     expect(canOpenDashboardView("search", "planner", "none")).toBe(false);
   });
 

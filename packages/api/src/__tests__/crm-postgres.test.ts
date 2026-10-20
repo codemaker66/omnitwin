@@ -4,8 +4,10 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { crmRoutes } from "../routes/crm.js";
+import { ensureEnquiryPerson } from "../services/people-link.js";
 
 // ---------------------------------------------------------------------------
 // CRM pipeline on isolated PostgreSQL.
@@ -76,14 +78,19 @@ interface PipelineBody {
 
 describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", () => {
   let pool: Pool;
+  let db: Database;
   let server: FastifyInstance;
   const fixtureSchema = `crm_pipeline_${randomUUID().replaceAll("-", "")}`;
   // Only the tables the routes under test read and write. `POST
   // /crm/from-enquiry` keeps its auth coverage in commercial-spine-routes.test.ts;
   // here it meets real concurrency.
+  // The People Book's points and memberships, and users (whether the actor is
+  // on the venue's commercial team decides who owns a new person), are what
+  // create-from-enquiry reads and writes since T-665.
   const tables: PgTable[] = [
     schema.opportunities, schema.followUpTasks, schema.activities,
     schema.opportunityStatusHistory, schema.enquiries, schema.clientAccounts, schema.contacts,
+    schema.contactPoints, schema.accountMemberships, schema.users,
   ];
 
   beforeAll(async () => {
@@ -104,7 +111,7 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
       });
       await pool.query(`CREATE TABLE "${config.name}" (${columns.join(", ")})`);
     }
-    const db = drizzle(pool, { schema });
+    db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(crmRoutes, { db, prefix: "/crm" });
     await server.ready();
@@ -113,7 +120,7 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, enquiries, client_accounts, contacts");
+    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, enquiries, client_accounts, contacts, contact_points, account_memberships, users");
     // Five opportunities created on five consecutive days, inserted
     // oldest-first so a route that forgets to sort returns them in exactly
     // the wrong order and the assertions below fail loudly.
@@ -174,6 +181,396 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     expect(again.statusCode).toBe(200);
     expect((JSON.parse(again.body) as { data: { created: boolean; opportunity: { id: string } } }).data).toMatchObject({ created: false, opportunity: { id: ids[0] } });
   });
+
+  // -------------------------------------------------------------------------
+  // The deal joins the person and household the venue already knows (T-665).
+  // People are written by SQL as the People Book holds them: the record, its
+  // email point and its primary membership, with the record's email and
+  // account mirroring them.
+  // -------------------------------------------------------------------------
+
+  interface FromEnquiryBody {
+    readonly data: {
+      readonly created: boolean;
+      readonly opportunity: { readonly id: string; readonly primaryContactId: string | null; readonly clientAccountId: string | null };
+      readonly clientAccount: { readonly id: string; readonly name: string; readonly kind: string } | null;
+      readonly contact: {
+        readonly id: string;
+        readonly email: string | null;
+        readonly clientAccountId: string | null;
+        readonly lastContactAt: string | null;
+      } | null;
+      readonly followUpTask: { readonly id: string } | null;
+    };
+  }
+
+  /** A person at the venue, holding their email as a primary point. */
+  async function person(input: { name: string; email: string; lastContactAt?: string }): Promise<string> {
+    const id = randomUUID();
+    await pool.query(
+      "INSERT INTO contacts (id, venue_id, name, email, last_contact_at) VALUES ($1, $2, $3, $4, $5)",
+      [id, VENUE, input.name, input.email, input.lastContactAt ?? null],
+    );
+    await pool.query(
+      `INSERT INTO contact_points (venue_id, contact_id, kind, value, display_value, label, is_primary, created_at, updated_at)
+       VALUES ($1, $2, 'email', lower($3), $3, 'other', true, now(), now())`,
+      [VENUE, id, input.email],
+    );
+    return id;
+  }
+
+  /** A household the person belongs to, as their primary organisation. */
+  async function household(name: string, member: string): Promise<string> {
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO client_accounts (id, venue_id, name, kind, account_type, primary_contact_id)
+       VALUES ($1, $2, $3, 'household', 'event_client', $4)`,
+      [id, VENUE, name, member],
+    );
+    await pool.query(
+      `INSERT INTO account_memberships (venue_id, contact_id, client_account_id, is_primary, created_at, updated_at)
+       VALUES ($1, $2, $3, true, now(), now())`,
+      [VENUE, member, id],
+    );
+    await pool.query("UPDATE contacts SET client_account_id = $2 WHERE id = $1", [member, id]);
+    return id;
+  }
+
+  /** An approved enquiry at the venue, linked to a person or not. */
+  async function enquiry(input: { name: string; email: string; contactId?: string }): Promise<string> {
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO enquiries (id, venue_id, space_id, name, email, state, event_type, room_chosen, contact_id)
+       VALUES ($1, $2, $3, $4, $5, 'approved', 'wedding', false, $6)`,
+      [id, VENUE, randomUUID(), input.name, input.email, input.contactId ?? null],
+    );
+    return id;
+  }
+
+  function createFrom(enquiryId: string): Promise<LightMyRequestResponse> {
+    return server.inject({ method: "POST", url: `/crm/from-enquiry/${enquiryId}`, headers: headers("staff") });
+  }
+
+  async function count(table: "contacts" | "client_accounts"): Promise<number> {
+    const { rows } = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM ${table}`);
+    return rows[0]?.count ?? -1;
+  }
+
+  async function dealFor(enquiryId: string): Promise<{ primary_contact_id: string | null; client_account_id: string | null }> {
+    const { rows } = await pool.query<{ primary_contact_id: string | null; client_account_id: string | null }>(
+      "SELECT primary_contact_id, client_account_id FROM opportunities WHERE source_enquiry_id = $1",
+      [enquiryId],
+    );
+    expect(rows).toHaveLength(1);
+    const [deal] = rows;
+    if (deal === undefined) throw new Error("no deal");
+    return deal;
+  }
+
+  async function enquiryContact(enquiryId: string): Promise<string | null> {
+    const { rows } = await pool.query<{ contact_id: string | null }>("SELECT contact_id FROM enquiries WHERE id = $1", [enquiryId]);
+    return rows[0]?.contact_id ?? null;
+  }
+
+  it("reuses the enquiry's person and their household", async () => {
+    const morag = await person({ name: "Morag Lindsay", email: "morag.lindsay@example.test" });
+    const home = await household("The Lindsay household", morag);
+    // She wrote from an address the book does not hold: the link finds her,
+    // where her email alone would have made somebody new.
+    const enquiryId = await enquiry({ name: "Morag Lindsay", email: "m.lindsay@work.example.test", contactId: morag });
+    const before = { contacts: await count("contacts"), accounts: await count("client_accounts") };
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    const body = JSON.parse(res.body) as FromEnquiryBody;
+
+    expect(await dealFor(enquiryId)).toEqual({ primary_contact_id: morag, client_account_id: home });
+    expect({ contacts: await count("contacts"), accounts: await count("client_accounts") }).toEqual(before);
+    // The response keeps its shape: the rows the deal used.
+    expect(body.data.created).toBe(true);
+    expect(body.data.opportunity).toMatchObject({ primaryContactId: morag, clientAccountId: home });
+    expect(body.data.contact).toMatchObject({ id: morag, email: "morag.lindsay@example.test", clientAccountId: home });
+    expect(body.data.clientAccount).toMatchObject({ id: home, name: "The Lindsay household", kind: "household" });
+    expect(body.data.followUpTask).not.toBeNull();
+    expect(await enquiryContact(enquiryId)).toBe(morag);
+  });
+
+  it("gives a person with no organisation a household named after them", async () => {
+    // The presser is on the venue's commercial team, so what is made is theirs.
+    await pool.query(
+      "INSERT INTO users (id, email, name, role, platform_role, venue_id) VALUES ($1, 'staff.fixture@example.test', 'Staff Fixture', 'staff', 'none', $2)",
+      [STAFF, VENUE],
+    );
+    const callum = await person({ name: "Callum Baird", email: "callum.baird@example.test" });
+    const enquiryId = await enquiry({ name: "Callum Baird", email: "callum.baird@example.test", contactId: callum });
+    const accountsBefore = await count("client_accounts");
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    const body = JSON.parse(res.body) as FromEnquiryBody;
+    const deal = await dealFor(enquiryId);
+    expect(deal.primary_contact_id).toBe(callum);
+    expect(await count("client_accounts")).toBe(accountsBefore + 1);
+
+    const { rows: accounts } = await pool.query(
+      `SELECT name, kind, account_type, primary_contact_id, owner_user_id, created_by, source_enquiry_id
+       FROM client_accounts WHERE id = $1`,
+      [deal.client_account_id],
+    );
+    expect(accounts).toEqual([{
+      name: "Callum Baird", kind: "household", account_type: "event_client", primary_contact_id: callum,
+      owner_user_id: STAFF, created_by: STAFF, source_enquiry_id: enquiryId,
+    }]);
+    const { rows: memberships } = await pool.query(
+      "SELECT client_account_id, is_primary FROM account_memberships WHERE contact_id = $1",
+      [callum],
+    );
+    expect(memberships).toEqual([{ client_account_id: deal.client_account_id, is_primary: true }]);
+    const { rows: mirror } = await pool.query("SELECT client_account_id, email, owner_user_id, role_label FROM contacts WHERE id = $1", [callum]);
+    // A person already known keeps the owner and the label they had.
+    expect(mirror).toEqual([{
+      client_account_id: deal.client_account_id, email: "callum.baird@example.test", owner_user_id: null, role_label: null,
+    }]);
+    expect(body.data.contact).toMatchObject({ id: callum, clientAccountId: deal.client_account_id });
+    expect(body.data.clientAccount).toMatchObject({ id: deal.client_account_id, name: "Callum Baird", kind: "household" });
+  });
+
+  it("finds the person by email when the enquiry has none", async () => {
+    const iona = await person({ name: "Iona McLeod", email: "iona.mcleod@example.test" });
+    const home = await household("The McLeod household", iona);
+    // Typed with other capitals, as guests do.
+    const enquiryId = await enquiry({ name: "Iona McLeod", email: "Iona.McLeod@Example.TEST" });
+    const before = { contacts: await count("contacts"), accounts: await count("client_accounts") };
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    expect(await enquiryContact(enquiryId)).toBe(iona);
+    expect(await dealFor(enquiryId)).toEqual({ primary_contact_id: iona, client_account_id: home });
+    expect({ contacts: await count("contacts"), accounts: await count("client_accounts") }).toEqual(before);
+    expect((JSON.parse(res.body) as FromEnquiryBody).data.contact?.id).toBe(iona);
+  });
+
+  // Review Focus 3: a couple sharing one email is the wedding norm. Choosing
+  // one of them would be a guess, so the deal gets a person of its own.
+  it("makes a new person for an email two people share", async () => {
+    const fiona = await person({ name: "Fiona Cameron", email: "the.camerons@example.test" });
+    const angus = await person({ name: "Angus Cameron", email: "the.camerons@example.test" });
+    const enquiryId = await enquiry({ name: "Fiona Cameron", email: "the.camerons@example.test" });
+    const before = await count("contacts");
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    expect(await count("contacts")).toBe(before + 1);
+    const deal = await dealFor(enquiryId);
+    const third = deal.primary_contact_id;
+    expect(third).not.toBeNull();
+    expect([fiona, angus]).not.toContain(third);
+    expect(await enquiryContact(enquiryId)).toBe(third);
+
+    const { rows: made } = await pool.query(
+      "SELECT name, email, client_account_id, source_enquiry_id, role_label FROM contacts WHERE id = $1",
+      [third],
+    );
+    // Labelled as Create opportunity has always labelled who it makes.
+    expect(made).toEqual([{
+      name: "Fiona Cameron", email: "the.camerons@example.test",
+      client_account_id: deal.client_account_id, source_enquiry_id: enquiryId, role_label: "Primary event contact",
+    }]);
+    // Neither of the two was chosen, or touched.
+    const { rows: couple } = await pool.query(
+      "SELECT client_account_id, last_contact_at, role_label FROM contacts WHERE id = ANY($1::uuid[])",
+      [[fiona, angus]],
+    );
+    expect(couple).toEqual([
+      { client_account_id: null, last_contact_at: null, role_label: null },
+      { client_account_id: null, last_contact_at: null, role_label: null },
+    ]);
+    expect((JSON.parse(res.body) as FromEnquiryBody).data.contact?.id).toBe(third);
+  });
+
+  it("brings the person's last contact forward", async () => {
+    const elspeth = await person({ name: "Elspeth Gray", email: "elspeth.gray@example.test", lastContactAt: "2026-01-05T10:00:00Z" });
+    await household("The Gray household", elspeth);
+    const enquiryId = await enquiry({ name: "Elspeth Gray", email: "elspeth.gray@example.test", contactId: elspeth });
+    // The database's own clock, compared in SQL to keep its microseconds.
+    const { rows: [clock] } = await pool.query<{ at: string }>("SELECT clock_timestamp()::text AS at");
+    if (clock === undefined) throw new Error("no clock");
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    const { rows } = await pool.query<{ forward: boolean }>(
+      "SELECT last_contact_at >= $2::timestamptz AS forward FROM contacts WHERE id = $1",
+      [elspeth, clock.at],
+    );
+    expect(rows).toEqual([{ forward: true }]);
+    const shown = (JSON.parse(res.body) as FromEnquiryBody).data.contact?.lastContactAt ?? "";
+    expect(new Date(shown).getTime()).toBeGreaterThan(new Date("2026-01-05T10:00:00Z").getTime());
+  });
+
+  it("joins the account an older deal gave someone, and brings their details into the book", async () => {
+    // As create-from-enquiry left people before T-665: the email, phone and
+    // account on the record alone, with no point and no membership.
+    const ruaridh = randomUUID();
+    const theirs = randomUUID();
+    await pool.query(
+      `INSERT INTO client_accounts (id, venue_id, name, kind, account_type, primary_contact_id)
+       VALUES ($1, $2, 'Ruaridh Munro', 'household', 'event_client', $3)`,
+      [theirs, VENUE, ruaridh],
+    );
+    await pool.query(
+      `INSERT INTO contacts (id, venue_id, name, email, phone, client_account_id, role_label)
+       VALUES ($1, $2, 'Ruaridh Munro', 'ruaridh.munro@example.test', '07700 900123', $3, 'Primary event contact')`,
+      [ruaridh, VENUE, theirs],
+    );
+    const enquiryId = await enquiry({ name: "Ruaridh Munro", email: "ruaridh.munro@example.test", contactId: ruaridh });
+    const before = { contacts: await count("contacts"), accounts: await count("client_accounts") };
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    expect(await dealFor(enquiryId)).toEqual({ primary_contact_id: ruaridh, client_account_id: theirs });
+    expect({ contacts: await count("contacts"), accounts: await count("client_accounts") }).toEqual(before);
+
+    const { rows: points } = await pool.query(
+      "SELECT kind, display_value, is_primary FROM contact_points WHERE contact_id = $1 ORDER BY kind",
+      [ruaridh],
+    );
+    expect(points).toEqual([
+      { kind: "email", display_value: "ruaridh.munro@example.test", is_primary: true },
+      { kind: "phone", display_value: "07700 900123", is_primary: true },
+    ]);
+    const { rows: memberships } = await pool.query(
+      "SELECT client_account_id, role_label, is_primary FROM account_memberships WHERE contact_id = $1",
+      [ruaridh],
+    );
+    expect(memberships).toEqual([{ client_account_id: theirs, role_label: "Primary event contact", is_primary: true }]);
+    const { rows: mirror } = await pool.query("SELECT email, phone, client_account_id FROM contacts WHERE id = $1", [ruaridh]);
+    expect(mirror).toEqual([{ email: "ruaridh.munro@example.test", phone: "07700 900123", client_account_id: theirs }]);
+  });
+
+  it("makes one person and one household when two enquiries from one new email are pressed at once", async () => {
+    const first = await enquiry({ name: "Kirsty Robertson", email: "kirsty.robertson@example.test" });
+    const second = await enquiry({ name: "Kirsty Robertson", email: "Kirsty.Robertson@example.test" });
+
+    const responses = await Promise.all([createFrom(first), createFrom(second)]);
+    expect(responses.map((res) => res.statusCode)).toEqual([201, 201]);
+    expect(await count("contacts")).toBe(1);
+    expect(await count("client_accounts")).toBe(1);
+    const deals = [await dealFor(first), await dealFor(second)];
+    expect(deals[0]).toEqual(deals[1]);
+    expect(await enquiryContact(first)).toBe(deals[0]?.primary_contact_id);
+    expect(await enquiryContact(second)).toBe(deals[0]?.primary_contact_id);
+  });
+
+  /** A tombstone: merged into the survivor, deleted with it, holding nothing. */
+  async function mergedAway(name: string, survivor: string): Promise<string> {
+    const id = randomUUID();
+    await pool.query(
+      "INSERT INTO contacts (id, venue_id, name, merged_into_id, deleted_at) VALUES ($1, $2, $3, $4, now())",
+      [id, VENUE, name, survivor],
+    );
+    return id;
+  }
+
+  /** Whether another connection could lock the person this moment: "held"
+   *  when someone holds their row. */
+  async function rowLockOn(personId: string): Promise<"free" | "held"> {
+    const probe = await pool.connect();
+    try {
+      await probe.query("BEGIN");
+      await probe.query("SELECT id FROM contacts WHERE id = $1 FOR UPDATE NOWAIT", [personId]);
+      return "free";
+    } catch (error) {
+      // lock_not_available
+      if (error instanceof Error && "code" in error && error.code === "55P03") return "held";
+      throw error;
+    } finally {
+      await probe.query("ROLLBACK");
+      probe.release();
+    }
+  }
+
+  it("deals with the email's holder when the enquiry's person was merged away", async () => {
+    const isla = await person({ name: "Isla Grant", email: "isla.grant@example.test" });
+    const home = await household("The Grant household", isla);
+    const tombstone = await mergedAway("Isla Grant", isla);
+    const enquiryId = await enquiry({ name: "Isla Grant", email: "isla.grant@example.test", contactId: tombstone });
+    const before = { contacts: await count("contacts"), accounts: await count("client_accounts") };
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    expect(await dealFor(enquiryId)).toEqual({ primary_contact_id: isla, client_account_id: home });
+    expect(await enquiryContact(enquiryId)).toBe(isla);
+    expect({ contacts: await count("contacts"), accounts: await count("client_accounts") }).toEqual(before);
+  });
+
+  it("deals with a new person when the enquiry's person was erased", async () => {
+    const erased = randomUUID();
+    await pool.query("INSERT INTO contacts (id, venue_id, name, erased_at) VALUES ($1, $2, 'Erased', now())", [erased, VENUE]);
+    const enquiryId = await enquiry({ name: "Eilidh Moffat", email: "eilidh.moffat@example.test", contactId: erased });
+
+    const res = await createFrom(enquiryId);
+    expect(res.statusCode, res.body).toBe(201);
+    const deal = await dealFor(enquiryId);
+    expect(deal.primary_contact_id).not.toBe(erased);
+    expect(await enquiryContact(enquiryId)).toBe(deal.primary_contact_id);
+    const { rows: made } = await pool.query(
+      "SELECT name, email, role_label, source_enquiry_id FROM contacts WHERE id = $1",
+      [deal.primary_contact_id],
+    );
+    expect(made).toEqual([{
+      name: "Eilidh Moffat", email: "eilidh.moffat@example.test", role_label: "Primary event contact", source_enquiry_id: enquiryId,
+    }]);
+    const { rows: untouched } = await pool.query("SELECT client_account_id, role_label FROM contacts WHERE id = $1", [erased]);
+    expect(untouched).toEqual([{ client_account_id: null, role_label: null }]);
+  });
+
+  it("keeps no lock on a linked person who is not live while it finds who the deal is with", async () => {
+    const isla = await person({ name: "Isla Grant", email: "isla.grant@example.test" });
+    const tombstone = await mergedAway("Isla Grant", isla);
+    const enquiryId = await enquiry({ name: "Isla Grant", email: "isla.grant@example.test", contactId: tombstone });
+
+    await db.transaction(async (tx) => {
+      const found = await ensureEnquiryPerson(tx, {
+        id: enquiryId, venueId: VENUE, contactId: tombstone, email: "isla.grant@example.test", name: "Isla Grant", phone: null,
+      }, null);
+      expect(found).toEqual({ contactId: isla, created: false });
+      // Still inside the transaction: the person it goes on with is held, the
+      // tombstone it looked at is not, so contacts are never held out of order.
+      expect(await rowLockOn(isla)).toBe("held");
+      expect(await rowLockOn(tombstone)).toBe("free");
+    });
+  });
+
+  it("writes the deal while another deal's foreign keys hold the household", async () => {
+    const una = await person({ name: "Una Kerr", email: "una.kerr@example.test" });
+    const home = await household("The Kerr household", una);
+    const enquiryId = await enquiry({ name: "Una Kerr", email: "una.kerr@example.test", contactId: una });
+
+    // Another deal being written against the household holds it FOR KEY
+    // SHARE, as its foreign key check does, and would ask for the person next.
+    const otherDeal = await pool.connect();
+    let answer: number | "waiting";
+    try {
+      await otherDeal.query("BEGIN");
+      await otherDeal.query("SELECT 1 FROM client_accounts WHERE id = $1 FOR KEY SHARE", [home]);
+      const pressing = createFrom(enquiryId);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const waited = new Promise<"waiting">((resolve) => { timer = setTimeout(() => { resolve("waiting"); }, 3000); });
+      const first = await Promise.race([pressing, waited]);
+      clearTimeout(timer);
+      answer = first === "waiting" ? first : first.statusCode;
+      await otherDeal.query("COMMIT");
+      // Settles either way once the other deal is done.
+      await pressing;
+    } catch (error) {
+      await otherDeal.query("ROLLBACK");
+      throw error;
+    } finally {
+      otherDeal.release();
+    }
+    expect(answer).toBe(201);
+    expect(await dealFor(enquiryId)).toEqual({ primary_contact_id: una, client_account_id: home });
+  }, 20_000);
 
   it("returns the pipeline newest first", async () => {
     const body = await pipeline();

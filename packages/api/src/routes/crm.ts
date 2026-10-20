@@ -8,7 +8,6 @@ import {
 } from "@omnitwin/types";
 import {
   activities,
-  clientAccounts,
   contacts,
   enquiries,
   followUpTasks,
@@ -19,6 +18,8 @@ import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canManageCommercial } from "../utils/query.js";
 import { OPEN_PIPELINE_STAGES, PIPELINE_VALUE_CURRENCY, loadPipelineValueMinor } from "../services/commercial-pipeline.js";
+import { ensureEnquiryPerson, ensurePrimaryAccount } from "../services/people-link.js";
+import { isCommercialMember } from "../services/people-records.js";
 
 const IdParam = {
   schema: {
@@ -125,29 +126,36 @@ export async function crmRoutes(
         .limit(1);
       if (existing !== undefined) return { existing };
 
-      const [account] = await tx.insert(clientAccounts).values({
+      // The person and household the venue already knows (T-665), rather
+      // than a new account and contact on every press. The locks after the
+      // one above, in order: the enquiry email's, the person, the enquiry,
+      // then the organisation (services/people-link.ts). Anyone new is owned
+      // by the presser when they are on the venue's commercial team.
+      const ownerUserId = await isCommercialMember(tx, enquiry.venueId, request.user.id) ? request.user.id : null;
+      const person = await ensureEnquiryPerson(tx, {
+        id: enquiry.id,
         venueId: enquiry.venueId,
-        name: clientName,
-        accountType: "event_client",
-        sourceEnquiryId: enquiry.id,
-        createdBy: request.user.id,
-      }).returning();
-      if (account === undefined) throw new Error("client account insert returned no row");
-
-      const [contact] = await tx.insert(contacts).values({
-        venueId: enquiry.venueId,
-        clientAccountId: account.id,
-        name: clientName,
+        contactId: enquiry.contactId,
         email: clientEmail,
+        name: clientName,
         phone: clientPhone,
-        roleLabel: "Primary event contact",
-        sourceEnquiryId: enquiry.id,
-      }).returning();
-      if (contact === undefined) throw new Error("contact insert returned no row");
-
-      await tx.update(clientAccounts)
-        .set({ primaryContactId: contact.id, updatedAt: new Date() })
-        .where(eq(clientAccounts.id, account.id));
+      }, ownerUserId);
+      const [named] = await tx.select({ name: contacts.name }).from(contacts)
+        .where(and(eq(contacts.id, person.contactId), eq(contacts.venueId, enquiry.venueId)))
+        .limit(1);
+      if (named === undefined) throw new Error("The enquiry's person could not be read back");
+      const { account } = await ensurePrimaryAccount(
+        tx,
+        { id: person.contactId, venueId: enquiry.venueId, name: named.name },
+        { sourceEnquiryId: enquiry.id, createdBy: request.user.id, ownerUserId },
+      );
+      // The person as the response shows them: after the mirror refresh,
+      // their last contact brought forward to this deal.
+      const [contact] = await tx.update(contacts)
+        .set({ lastContactAt: sql`GREATEST(${contacts.lastContactAt}, now())` })
+        .where(and(eq(contacts.id, person.contactId), eq(contacts.venueId, enquiry.venueId)))
+        .returning();
+      if (contact === undefined) throw new Error("The enquiry's person could not be updated");
 
       const [opportunity] = await tx.insert(opportunities).values({
         venueId: enquiry.venueId,
