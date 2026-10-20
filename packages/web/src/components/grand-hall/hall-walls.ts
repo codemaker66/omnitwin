@@ -11,24 +11,258 @@
 // and attic panelling are glossy; the plaster and the frieze between them are
 // matte.
 //
-// The main door stood open during the scan, so its leaves are modelled: a
-// closed pair of panelled mahogany leaves set in the relief's recess. Until
-// the relief arrives each wall is a flat photograph.
+// The doors' leaves are modelled (hall-doors.ts), so they can swing open in
+// the cutaway: the relief inside each doorway (the closed leaves the atlas
+// photographed, and the main door's recess, closed where the scan saw it
+// open) is never drawn (drawnRelief), only the reveals at its jambs. Until
+// the relief arrives each wall is a flat photograph, open at its doors.
 // ---------------------------------------------------------------------------
 
 import { vec, type MeshBuilder, type V3 } from "./mesh-builder.js";
 import type { HallBuilders, HallMaterialKey } from "./hall-builders.js";
 import type { WallRelief, WallReliefMesh } from "./hall-relief.js";
-import { HALL_ELEVATION, HALL_OPENINGS, HALL_WALLS, wallPoint, type HallOpening, type HallWall, type HallWallId } from "./hall-spec.js";
+import { doorRevealDepth } from "./hall-wall-body.js";
+import { HALL_DOORS, HALL_ELEVATION, HALL_OPENINGS, HALL_WALLS, wallPoint, type HallWall, type HallWallId } from "./hall-spec.js";
 
 const E = HALL_ELEVATION;
-const UP: V3 = [0, 1, 0];
 
-/** The opening whose leaves are modelled (open in the scan). */
-export const MODELLED_DOOR = "door-main";
-/** Depth of the main door's recess in the relief, and of its leaves. */
-const DOOR_RECESS = -0.3;
-const LEAF_PLANE = -0.27;
+/**
+ * The relief a door's modelled leaves replace, cut away along the doorway's
+ * own lines (drawnRelief) rather than by whole triangles, which left slots
+ * beside the jambs where a walk saw the night through the wall:
+ *
+ *   - The shut leaves: every triangle reaching into the leaves' column (the
+ *     doorway's clear outline up to LEAF_COLUMN_RISE over the leaves' top,
+ *     no more than LEAF_RELIEF_PROUD in front of their face) but the
+ *     reveal's sides (faces turned into the doorway, n.u over 0.7 from their
+ *     jamb, within REVEAL_SIDE of it) loses what it holds there; the
+ *     modelled leaves stand there. The leaves' hardware stands at most
+ *     5.3 cm proud of them (the end door's closers; knobs 3.4 cm, the fire
+ *     exit's bar 4.8 cm); the doorcases' heads hang 8 cm and more proud over
+ *     the leaves' tops, and the fire exit's sign 13 cm, and stay.
+ *   - Every triangle reaching into the doorway (between its jambs, under its
+ *     head) loses what lies there behind where its reveal stops
+ *     (doorRevealDepth, less REVEAL_SIDE_DEPTH): the joint between a shut
+ *     leaf's edge and its frame, which the scan saw 9.5 cm deep a centimetre
+ *     inside the jamb's line, and the main door's recess, so nothing stands
+ *     where an open leaf turns or the body's lining runs. Beyond the jambs
+ *     and over the head the relief stays whole: there the body has no face
+ *     of its own (the relief is its face), so a hole would see through it.
+ *
+ * What stays is the photograph in front of those lines: the architrave, the
+ * reveal's first centimetres and the doorcase's head, as the walk saw them.
+ */
+export const DOOR_RELIEF_HEAD = 0.01;
+export const REVEAL_SIDE = 0.02;
+export const REVEAL_SIDE_DEPTH = 0.005;
+export const LEAF_COLUMN_RISE = 0.002;
+export const LEAF_RELIEF_PROUD = 0.06;
+
+/** A doorway's clear outline on its wall, up to where its leaves' relief stops, and where its reveal stops. */
+export interface DoorOutline {
+  readonly opening: string;
+  readonly wall: HallWallId;
+  readonly u0: number;
+  readonly u1: number;
+  readonly sill: number;
+  readonly top: number;
+  readonly head: number;
+  readonly reveal: number;
+}
+
+export const DOOR_OUTLINES: readonly DoorOutline[] = HALL_DOORS.flatMap((door) => {
+  const opening = HALL_OPENINGS.find((candidate) => candidate.id === door.opening);
+  if (opening === undefined) return [];
+  return [{
+    opening: door.opening, wall: opening.wall, u0: opening.centre - opening.width / 2, u1: opening.centre + opening.width / 2,
+    sill: opening.sill, top: door.leafTop - DOOR_RELIEF_HEAD, head: opening.head, reveal: doorRevealDepth(door),
+  }];
+});
+
+/** A wall-local (u, v, depth) point. */
+type Corner = readonly [number, number, number];
+
+/** A half-space of wall-local space: sign x (p[axis] - at) > 0. */
+export interface ReliefHalfSpace {
+  readonly axis: 0 | 1 | 2;
+  readonly at: number;
+  readonly sign: 1 | -1;
+}
+
+/** A box of wall-local space (the intersection of its half-spaces) that the drawn relief keeps nothing of. */
+export type ReliefCut = readonly ReliefHalfSpace[];
+
+/** What a doorway takes from a relief triangle near it: the leaves' column (shut leaves only) and the doorway behind its reveal. */
+export interface DoorReliefFate {
+  readonly door: DoorOutline;
+  /** The triangle reaches into the leaves' column and is not a reveal's side: it loses what it holds there. */
+  readonly leaf: boolean;
+  readonly cuts: readonly ReliefCut[];
+}
+
+/** The leaves' column: their whole width and height, from behind them to LEAF_RELIEF_PROUD in front. */
+export function leafColumn(door: DoorOutline): ReliefCut {
+  return [
+    { axis: 0, at: door.u0, sign: 1 }, { axis: 0, at: door.u1, sign: -1 },
+    { axis: 1, at: door.top + DOOR_RELIEF_HEAD + LEAF_COLUMN_RISE, sign: -1 },
+    { axis: 2, at: door.reveal + LEAF_RELIEF_PROUD, sign: -1 },
+  ];
+}
+
+/** The doorway (between its jambs, under its head) behind where its reveal stops. */
+export function doorwayBehind(door: DoorOutline): ReliefCut {
+  return [
+    { axis: 0, at: door.u0, sign: 1 }, { axis: 0, at: door.u1, sign: -1 },
+    { axis: 1, at: door.head, sign: -1 }, { axis: 2, at: door.reveal - REVEAL_SIDE_DEPTH, sign: -1 },
+  ];
+}
+
+/** Whether a wall-local point lies inside a cut (strictly, by `slack`). */
+export function insideReliefCut(p: Corner, cut: ReliefCut, slack = 0): boolean {
+  return cut.every((h) => h.sign * (p[h.axis] - h.at) > slack);
+}
+
+/**
+ * What the doorway near a relief triangle (wall-local corners) takes from it,
+ * or null: none near it, or it misses both of the doorway's cuts.
+ */
+export function doorReliefFate(wall: HallWallId, corners: readonly Corner[]): DoorReliefFate | null {
+  const [a, b, c] = corners;
+  if (a === undefined || b === undefined || c === undefined) return null;
+  const door = DOOR_OUTLINES.find((outline) => outline.wall === wall
+    && corners.some((p) => p[0] > outline.u0 - REVEAL_SIDE && p[0] < outline.u1 + REVEAL_SIDE && p[1] < outline.head + REVEAL_SIDE));
+  if (door === undefined) return null;
+  const column = leafColumn(door);
+  let leaf = touchesCut(corners, column);
+  if (leaf) {
+    // A reveal's side faces into the doorway, away from its own jamb (a shut
+    // leaf's edge, turned to the frame, faces the other way); it keeps what
+    // it holds in the leaves' column. Whatever else reaches into the column
+    // (the leaves' faces, the architrave's edge) loses it there.
+    const u = (a[0] + b[0] + c[0]) / 3;
+    const n = vec.cross(vec.sub(b, a), vec.sub(c, a));
+    const length = Math.hypot(n[0], n[1], n[2]);
+    const fromLow = Math.abs(u - door.u0) < Math.abs(door.u1 - u);
+    const intoDoorway = length > 1e-12 && (fromLow ? n[0] : -n[0]) / length > 0.7;
+    const nearJamb = Math.min(Math.abs(u - door.u0), Math.abs(door.u1 - u)) < REVEAL_SIDE;
+    leaf = !(intoDoorway && nearJamb);
+  }
+  const cuts = [...(leaf ? [column] : []), doorwayBehind(door)].filter((cut) => touchesCut(corners, cut));
+  return cuts.length === 0 ? null : { door, leaf, cuts };
+}
+
+/** Whether a convex polygon reaches inside a cut: no one of its half-spaces has the polygon wholly outside. */
+function touchesCut(polygon: readonly Corner[], cut: ReliefCut): boolean {
+  return cut.every((h) => polygon.some((p) => h.sign * (p[h.axis] - h.at) > 1e-9));
+}
+
+/** A convex polygon split by a half-space: its part inside and its part outside (points on the plane go to both). */
+function splitPolygon(polygon: readonly Corner[], h: ReliefHalfSpace): { inside: Corner[]; outside: Corner[] } {
+  const inside: Corner[] = [];
+  const outside: Corner[] = [];
+  const side = (p: Corner): number => h.sign * (p[h.axis] - h.at);
+  polygon.forEach((p, i) => {
+    const q = polygon[(i + 1) % polygon.length] ?? p;
+    const fp = side(p);
+    const fq = side(q);
+    if (fp >= 0) inside.push(p);
+    if (fp <= 0) outside.push(p);
+    if ((fp > 0 && fq < 0) || (fp < 0 && fq > 0)) {
+      const t = fp / (fp - fq);
+      const x: Corner = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+      inside.push(x);
+      outside.push(x);
+    }
+  });
+  return { inside, outside };
+}
+
+/** Twice a polygon's area. */
+function doubleArea(polygon: readonly Corner[]): number {
+  const first = polygon[0];
+  if (first === undefined) return 0;
+  let sum: Corner = [0, 0, 0];
+  for (let i = 1; i + 1 < polygon.length; i++) {
+    const b = polygon[i] ?? first;
+    const c = polygon[i + 1] ?? first;
+    sum = vec.add(sum, vec.cross(vec.sub(b, first), vec.sub(c, first)));
+  }
+  return Math.hypot(sum[0], sum[1], sum[2]);
+}
+
+/** The pieces of a convex polygon outside a cut (each convex). */
+export function subtractReliefCut(polygon: readonly Corner[], cut: ReliefCut): Corner[][] {
+  const kept: Corner[][] = [];
+  let inside: Corner[] = [...polygon];
+  for (const h of cut) {
+    if (inside.length < 3) break;
+    const split = splitPolygon(inside, h);
+    if (split.outside.length >= 3 && doubleArea(split.outside) > 1e-10) kept.push(split.outside);
+    inside = split.inside;
+  }
+  return kept;
+}
+
+const drawnCache = new WeakMap<WallRelief, WallRelief>();
+const drawnReliefs = new WeakSet<WallRelief>();
+
+/**
+ * The relief as the hall draws it: without what the doors' modelled leaves
+ * replace and what an open leaf turns through (doorReliefFate), so a leaf
+ * never shares a surface with its photographed twin and an open doorway is
+ * clear. A triangle a doorway cuts is clipped along the cut's planes (its
+ * pieces keep their shared corners and add the points the planes make), so
+ * the photograph in front of them stays whole. The walls, the section's
+ * slicer and its cap all take this; built once per relief.
+ */
+export function drawnRelief(relief: WallRelief): WallRelief {
+  if (drawnReliefs.has(relief)) return relief;
+  const cached = drawnCache.get(relief);
+  if (cached !== undefined) return cached;
+  const out = new Map<HallWallId, WallReliefMesh>();
+  for (const [id, mesh] of relief) {
+    const { positions, indices } = mesh;
+    const corner = (i: number): Corner => [positions[i * 3] ?? 0, positions[i * 3 + 1] ?? 0, positions[i * 3 + 2] ?? 0];
+    const kept: number[] = [];
+    const added: number[] = [];
+    let next = positions.length / 3;
+    for (let t = 0; t < indices.length; t += 3) {
+      const ids = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0];
+      const corners = ids.map(corner);
+      const fate = doorReliefFate(id, corners);
+      if (fate === null) {
+        kept.push(...ids);
+        continue;
+      }
+      // The original corners keep their indices; the planes' new points are added.
+      const known = new Map<Corner, number>(corners.map((p, k) => [p, ids[k] ?? 0]));
+      let pieces: Corner[][] = [corners];
+      for (const cut of fate.cuts) pieces = pieces.flatMap((piece) => subtractReliefCut(piece, cut));
+      for (const piece of pieces) {
+        const index = piece.map((p) => {
+          const existing = known.get(p);
+          if (existing !== undefined) return existing;
+          added.push(p[0], p[1], p[2]);
+          known.set(p, next);
+          next += 1;
+          return next - 1;
+        });
+        for (let k = 1; k + 1 < piece.length; k++) {
+          // A fan over points the planes made on one line has empty triangles: they are left out.
+          if (doubleArea([piece[0] ?? corners[0] ?? [0, 0, 0], piece[k] ?? [0, 0, 0], piece[k + 1] ?? [0, 0, 0]]) <= 1e-12) continue;
+          kept.push(index[0] ?? 0, index[k] ?? 0, index[k + 1] ?? 0);
+        }
+      }
+    }
+    const all = new Float32Array(positions.length + added.length);
+    all.set(positions);
+    all.set(added, positions.length);
+    out.set(id, { wall: id, positions: added.length === 0 ? positions : all, indices: Uint32Array.from(kept) });
+  }
+  drawnCache.set(relief, out);
+  drawnReliefs.add(out);
+  return out;
+}
 
 /**
  * Relief that stands out from its wall in a corner, against the neighbouring
@@ -86,23 +320,19 @@ export function isPanelling(v: number): boolean {
   return v < E.dadoTop + 0.02 || v > E.corniceTop - 0.02;
 }
 
-/** The material for a wall face centred at height `v`. */
-function wallMaterial(v: number): HallMaterialKey {
+/** The material for a wall face centred at height `v` (the doors' photographed leaves take it too, hall-doors.ts). */
+export function wallMaterial(v: number): HallMaterialKey {
   return isPanelling(v) ? "wallPhotoGloss" : "wallPhoto";
 }
 
 export function buildHallWalls(hb: HallBuilders, relief: WallRelief | null): void {
+  const drawn = relief === null ? null : drawnRelief(relief);
   HALL_WALLS.forEach((wall, index) => {
     hb.onWall(index, () => {
       hb.withRole("wall", () => {
-        const mesh = relief?.get(wall.id);
+        const mesh = drawn?.get(wall.id);
         if (mesh === undefined) flatWall(hb, wall);
         else reliefWall(hb, wall, index, mesh);
-      });
-      hb.withRole("detail", () => {
-        HALL_OPENINGS.forEach((opening, openingIndex) => {
-          if (opening.wall === wall.id && opening.id === MODELLED_DOOR) hb.withOpening(openingIndex, () => { buildDoorLeaves(hb, wall, opening); });
-        });
       });
     });
   });
@@ -115,10 +345,25 @@ function wallRect(b: MeshBuilder, wall: HallWall, u0: number, u1: number, v0: nu
     [u0, v0], [u1, v0], [u1, v1], [u0, v1], wall.normal, cell);
 }
 
-/** The wall as a flat photograph, shown until its relief arrives. */
+/** The wall as a flat photograph, shown until its relief arrives, open where its doors' leaves stand. */
 function flatWall(hb: HallBuilders, wall: HallWall): void {
+  const doors = DOOR_OUTLINES.filter((door) => door.wall === wall.id);
   const bands: readonly (readonly [number, number])[] = [[0, E.dadoTop], [E.dadoTop, E.corniceTop], [E.corniceTop, E.ceiling]];
-  for (const [v0, v1] of bands) wallRect(hb.get(wallMaterial((v0 + v1) / 2)), wall, 0, wall.length, v0, v1, 0, 0.35);
+  for (const [v0, v1] of bands) {
+    const builder = hb.get(wallMaterial((v0 + v1) / 2));
+    // Each band split at the leaves' tops, with the doorways left open below them.
+    const splits = [v0, ...doors.map((door) => door.top).filter((top) => top > v0 && top < v1), v1].sort((p, q) => p - q);
+    for (let k = 0; k + 1 < splits.length; k++) {
+      const lo = splits[k] ?? v0;
+      const hi = splits[k + 1] ?? v1;
+      let u = 0;
+      for (const door of doors.filter((entry) => entry.top >= hi - 1e-9).sort((p, q) => p.u0 - q.u0)) {
+        wallRect(builder, wall, u, door.u0, lo, hi, 0, 0.35);
+        u = door.u1;
+      }
+      wallRect(builder, wall, u, wall.length, lo, hi, 0, 0.35);
+    }
+  }
 }
 
 /** The wall's measured relief, split between the glossy and matte photographs. */
@@ -183,49 +428,4 @@ function reliefWall(hb: HallBuilders, wall: HallWall, wallIndex: number, mesh: W
       builder.triangle(ids[0] ?? 0, ids[1] ?? 0, ids[2] ?? 0);
     }); });
   }
-}
-
-/** The main door's closed leaves: two panelled mahogany leaves and their knobs. */
-function buildDoorLeaves(hb: HallBuilders, wall: HallWall, opening: HallOpening): void {
-  const mahogany = hb.get("mahoganyDark");
-  const half = opening.width / 2;
-  // The back of the recess, behind the leaves' meeting gap.
-  wallRect(mahogany, wall, opening.centre - half, opening.centre + half, 0, opening.head, DOOR_RECESS + 0.005);
-  for (const leaf of [0, 1]) {
-    const lu0 = opening.centre - half + leaf * half + 0.004;
-    const lu1 = lu0 + half - 0.008;
-    wallRect(mahogany, wall, lu0, lu1, 0, opening.head, LEAF_PLANE, 0.5);
-    const stile = Math.min(0.11, half * 0.18);
-    for (const [r0, r1] of [[0.18, 0.95], [1.08, opening.head - 0.16]] as const) {
-      raisedPanel(mahogany, wall, lu0 + stile, lu1 - stile, r0, r1, LEAF_PLANE, 0.016, 0.04);
-    }
-  }
-  const brass = hb.get("brass");
-  for (const u of [opening.centre - 0.06, opening.centre + 0.06]) {
-    brass.lathe(wallPoint(wall, u, 1.02, LEAF_PLANE + 0.05), [[0, -0.025], [0.022, -0.022], [0.026, 0], [0.022, 0.022], [0, 0.025]], 10);
-  }
-}
-
-/** A raised and fielded panel: a bevelled border rising to a flat field. */
-function raisedPanel(b: MeshBuilder, wall: HallWall, u0: number, u1: number, v0: number, v1: number, base: number, raise: number, bevel: number): void {
-  const fu0 = u0 + bevel;
-  const fu1 = u1 - bevel;
-  const fv0 = v0 + bevel;
-  const fv1 = v1 - bevel;
-  const top = base + raise;
-  if (fu1 <= fu0 || fv1 <= fv0) {
-    wallRect(b, wall, u0, u1, v0, v1, top);
-    return;
-  }
-  wallRect(b, wall, fu0, fu1, fv0, fv1, top);
-  const P = (u: number, v: number, depth: number): V3 => wallPoint(wall, u, v, depth);
-  const lean = (direction: V3): V3 => vec.normalize(vec.add(vec.scale(wall.normal, bevel), vec.scale(direction, raise)));
-  b.quadFacing(P(u0, v0, base), P(u1, v0, base), P(fu1, fv0, top), P(fu0, fv0, top),
-    [u0, v0], [u1, v0], [fu1, fv0], [fu0, fv0], lean([0, -1, 0]));
-  b.quadFacing(P(fu0, fv1, top), P(fu1, fv1, top), P(u1, v1, base), P(u0, v1, base),
-    [fu0, fv1], [fu1, fv1], [u1, v1], [u0, v1], lean(UP));
-  b.quadFacing(P(u0, v0, base), P(fu0, fv0, top), P(fu0, fv1, top), P(u0, v1, base),
-    [u0, v0], [fu0, fv0], [fu0, fv1], [u0, v1], lean(vec.scale(wall.tangent, -1)));
-  b.quadFacing(P(fu1, fv0, top), P(u1, v0, base), P(u1, v1, base), P(fu1, fv1, top),
-    [fu1, fv0], [u1, v0], [u1, v1], [fu1, fv1], lean(wall.tangent));
 }

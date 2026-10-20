@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { DataUtils, Texture, type BufferGeometry } from "three";
 import { HALL_CUTS } from "../GrandHallModel.js";
 import { buildHallWallGeometry } from "../hall-geometry.js";
+import { buildHallDoorGeometry } from "../hall-doors.js";
 import { parseWallRelief, type WallRelief, type WallReliefMesh } from "../hall-relief.js";
 import {
   CAP_OVERLAP,
@@ -109,8 +110,11 @@ describe("the openings' tags on the scanned walls", () => {
   it("tags the relief in every window and door, and gives each triangle's vertices one tag", () => {
     expect(triangles.length).toBeGreaterThan(30000);
     expect(triangles.every((t) => t.uniform)).toBe(true);
+    // A doorway's own relief gives way to its modelled leaves (hall-doors.ts), which carry its tag.
+    const leaves = [...buildHallDoorGeometry().geometries.values()].flatMap((geometry) => taggedTriangles(geometry));
     HALL_OPENINGS.forEach((opening, index) => {
-      expect(triangles.filter((t) => t.opening === index).length, opening.id).toBeGreaterThan(10);
+      const tagged = triangles.filter((t) => t.opening === index).length + leaves.filter((t) => t.opening === index).length;
+      expect(tagged, opening.id).toBeGreaterThan(10);
     });
   });
 

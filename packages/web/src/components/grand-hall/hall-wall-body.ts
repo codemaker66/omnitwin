@@ -9,10 +9,15 @@
 // the attic panelling meets the ceiling). Every opening goes through it:
 //
 //   - In front, from the room's plane back to two centimetres behind the
-//     deepest relief inside the opening, the hole is the relief's own
-//     footprint there (OPENING_RELIEF, measured on walls-relief.bin): the
-//     scanned reveals, curtains and closed leaves line it, so the body puts no
-//     face there (two surfaces would fight for the same pixels).
+//     deepest relief inside a window, the hole is the relief's own footprint
+//     there (OPENING_RELIEF, measured on walls-relief.bin): the scanned
+//     reveals and curtains line it, so the body puts no face there (two
+//     surfaces would fight for the same pixels). In a doorway the hole goes
+//     back to just behind its leaves' face (doorRevealDepth less
+//     DOOR_LINING_SET: the leaves are modelled, hall-doors.ts, and the drawn
+//     relief stops there, hall-walls.ts), DOOR_FRAME wider than the doorway
+//     each side, so a face toward the room stands behind every chink the
+//     scanned reveal leaves at the jambs.
 //   - Behind, out to the outer face, the hole is the opening itself: a
 //     window's masonry opening, lined by its painted and stone outer reveal
 //     (hall-glazing.ts) and by the body only where that reveal stops short of
@@ -178,14 +183,14 @@ function doorBackHole(opening: HallOpening): Hole {
  * hole behind it. An arch's head is a half-ellipse sampled at the masonry
  * arch's own u stations, so the two holes share their pieces' sides.
  */
-function frontHole(opening: HallOpening, back: Hole): Hole {
+function frontHole(opening: HallOpening, back: Hole, margin = 0): Hole {
   const relief = openingRelief(opening.id);
   const half = opening.width / 2;
-  const u0 = Math.min(opening.centre - half - relief.left, back.u0);
-  const u1 = Math.max(opening.centre + half + relief.right, back.u1);
+  const u0 = Math.min(opening.centre - half - Math.max(relief.left, margin), back.u0);
+  const u1 = Math.max(opening.centre + half + Math.max(relief.right, margin), back.u1);
   const sill = Math.min(opening.sill - relief.sill, chainAt(back.lower, opening.centre));
   if (opening.kind !== "arched-window") {
-    const head = Math.max(opening.head + relief.head, ...back.upper.map((p) => p[1]));
+    const head = Math.max(opening.head + Math.max(relief.head, margin), ...back.upper.map((p) => p[1]));
     return { u0, u1, lower: [[u0, sill], [u1, sill]], upper: [[u0, head], [u1, head]] };
   }
   const rise = half + relief.head;
@@ -199,14 +204,47 @@ function frontHole(opening: HallOpening, back: Hole): Hole {
   return { u0, u1, lower: [[u0, sill], [u1, sill]], upper };
 }
 
+/**
+ * Where a doorway's lining starts: this far behind its leaves' face (the
+ * drawn relief's reveal stops 5 mm behind it, hall-walls.ts, so the two
+ * overlap and no slit opens between them while the doors stand open).
+ */
+export const DOOR_LINING_SET = 0.002;
+
+/**
+ * Beside a doorway's jambs and over its head the body stands back to its
+ * lining's start this far out (a face toward the room there, behind the
+ * doorcase): wherever the scanned relief leaves a chink, at the leaves'
+ * corners, where the reveal's edge turns and under the fire exit's sign, the
+ * walk sees that face and not into the wall. On the shipped relief the
+ * chinks reach up to 3.3 cm beyond a jamb.
+ */
+export const DOOR_FRAME = 0.04;
+
+/**
+ * Where a doorway's scanned reveal stops: at its leaves' hall face. The
+ * relief behind it (the shut leaves, and the main door's recess, closed where
+ * the scan saw it open) gives way to the modelled leaves (hall-doors.ts) and
+ * the body's lining.
+ */
+export function doorRevealDepth(door: HallDoor): number {
+  return door.leafFace;
+}
+
 /** An opening as the body cuts it. */
 export interface BodyOpening {
   readonly opening: HallOpening;
-  /** The relief's footprint, from the room's plane to `frontDepth`. */
+  /** The hole from the room's plane to `frontDepth`: the relief's footprint (a doorway's at least DOOR_FRAME beside its jambs). */
   readonly front: Hole;
+  /** The relief's own footprint at the plane (OPENING_RELIEF). */
+  readonly footprint: Hole;
   /** The opening through the rest of the wall. */
   readonly back: Hole;
-  /** Where the front hole gives way to the back one: just behind the deepest relief (negative). */
+  /**
+   * Where the front hole gives way to the back one (negative): a window's
+   * just behind its deepest relief; a doorway's DOOR_LINING_SET behind its
+   * leaves' face (doorRevealDepth), its lining overlapping the drawn reveal.
+   */
   readonly frontDepth: number;
   /** Behind this depth the body lines the opening itself (a window's reveal stops there). */
   readonly liningFrom: number;
@@ -216,13 +254,14 @@ export interface BodyOpening {
 /** The openings in `wall`, as the body cuts them. */
 export function bodyOpenings(wall: HallWall): BodyOpening[] {
   return HALL_OPENINGS.filter((opening) => opening.wall === wall.id).map((opening) => {
-    const isDoor = opening.kind === "door";
-    const back = isDoor ? doorBackHole(opening) : windowBackHole(opening);
-    const front = frontHole(opening, back);
-    const frontDepth = openingRelief(opening.id).deepest - RELIEF_CLEARANCE;
+    const door = opening.kind === "door" ? hallDoor(opening.id) ?? null : null;
+    const back = door !== null ? doorBackHole(opening) : windowBackHole(opening);
+    const footprint = frontHole(opening, back);
+    const front = door !== null ? frontHole(opening, back, DOOR_FRAME) : footprint;
+    const frontDepth = door !== null ? doorRevealDepth(door) - DOOR_LINING_SET : openingRelief(opening.id).deepest - RELIEF_CLEARANCE;
     const glazing = hallGlazing(opening.id);
-    const liningFrom = isDoor || glazing === undefined ? frontDepth : Math.min(frontDepth, revealOuterDepth(glazing));
-    return { opening, front, back, frontDepth, liningFrom, door: isDoor ? hallDoor(opening.id) ?? null : null };
+    const liningFrom = door !== null || glazing === undefined ? frontDepth : Math.min(frontDepth, revealOuterDepth(glazing));
+    return { opening, front, footprint, back, frontDepth, liningFrom, door };
   });
 }
 
@@ -256,9 +295,9 @@ export const DOOR_SLOTS: readonly DoorSlot[] = HALL_WALLS.flatMap((wall, index) 
     wall: index,
     origin: [wall.origin[0], wall.origin[2]],
     tangent: [wall.tangent[0], wall.tangent[2]],
-    u0: entry.front.u0,
-    u1: entry.front.u1,
-    head: Math.max(...entry.front.upper.map((p) => p[1])),
+    u0: entry.footprint.u0,
+    u1: entry.footprint.u1,
+    head: Math.max(...entry.footprint.upper.map((p) => p[1])),
   })));
 
 // ---------------------------------------------------------------------------
@@ -613,7 +652,8 @@ function buildWall(acc: Accumulator, wall: HallWall, wallIndex: number, plan: Wa
         }
       }
       // Where the relief's footprint gives way to the opening behind it, the
-      // walling round the smaller hole faces the room.
+      // walling round the smaller hole faces the room: in a doorway, a step
+      // of its lining, in front of the scanned reveal's last few millimetres.
       const next = column.layers[j + 1];
       if (next !== undefined && next.length > 0 && opening !== null && Math.abs(bottom - opening.frontDepth) < 1e-7) {
         const { front, back } = opening;
@@ -638,7 +678,7 @@ function buildWall(acc: Accumulator, wall: HallWall, wallIndex: number, plan: Wa
             vertex(ub, piece.lo[1], bottom, piece.base[1], thickness, wallLight(ub, piece.lo[1])),
             vertex(ub, piece.hi[1], bottom, piece.base[1], thickness, wallLight(ub, piece.hi[1])),
             vertex(ua, piece.hi[0], bottom, piece.base[0], thickness, wallLight(ua, piece.hi[0])),
-          ], inward, style(piece.lintel ? BODY_ROLE.lintel : BODY_ROLE.body, BODY_FINISH.section), true);
+          ], inward, style(piece.lintel ? BODY_ROLE.lintel : BODY_ROLE.body, door ? BODY_FINISH.doorLining : BODY_FINISH.section), true);
         }
       }
     });

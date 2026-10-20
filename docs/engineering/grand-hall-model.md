@@ -22,9 +22,41 @@ development builds only) shows the room alone, posed through a window bridge for
   (35,185 triangles) simplified to within 5 mm of the scan, coloured by the wall atlas projected
   along each wall's normal, as the orthophotos were made. Faces the orthophotos see edge-on (the
   sides of doorcases and boards) take a coarser mip, so a single row of texels never streaks. The
-  varnished dado and attic panelling are glossy; plaster and frieze are matte. The main door stood
-  open in the scan: its closed mahogany leaves are modelled in the relief's 0.3 m recess. Until
-  the relief arrives each wall is a flat photograph; the parser rejects a malformed file.
+  varnished dado and attic panelling are glossy; plaster and frieze are matte. What the modelled
+  doors replace is cut out of the relief along the doorway's own lines (`drawnRelief`, clipping
+  triangles, never dropping them whole: whole triangles left chinks beside the jambs through which
+  a walk saw the night through the wall): inside each doorway's clear outline, up to just over its
+  leaves' top and no more than 6 cm in front of them (`leafColumn`), the closed leaves the atlas
+  photographed and their hardware; and between the jambs, under the head, whatever lies more than
+  5 mm behind the leaves' face (`doorwayBehind`: the joint at a shut leaf's edge, the main door's
+  recess, closed where the scan saw it open). The reveal's sides at the jambs, the doorcases' heads
+  hanging 8 cm and more in front of the leaves' tops, and the fire exit's sign stay, so a walk sees
+  the photograph round each door as before. Until the relief arrives each wall is a flat
+  photograph, open at its doors; the parser rejects a malformed file.
+- **Doors** (`hall-doors.ts`): the four doorways' leaves, modelled so they can open: a pair of
+  45 mm leaves hung at the hall face in each (their face where the relief has the shut leaves, 1.3
+  to 2.9 cm back; the main door's at -0.03 like its twins, no longer -0.27), and the end door's
+  single leaf at the Saloon face, hinged on the end wall's side. Rails, stiles and raised and
+  fielded panels, the closers and the fire exit's panic bar are measured on the wall atlas at 1 cm
+  (the fire exit's leaves have two panels, not three); the Saloon leaf's two-by-two panels and
+  lock rail are read from panorama 048. The doors the atlas photographed shut (end, fireplace, fire
+  exit) wear that photograph on their hall faces at their closed texels, so a walk sees them as
+  photographed (glossy below the dado's top and matte above it, as the relief they replace); the
+  main door (open in the scan) and every edge and back are mahogany, its panels' sunk margins
+  shaded by a baked occlusion falling 40% at the bottom of the sink (`PANEL_GROOVE_OCCLUSION`; the
+  photographs hold their own). Each face plate laps 3 mm behind its jamb and the first leaf of a
+  pair over the second, so a shut door shows no slit. When a wall is cut (`cut < DOOR_OPEN_CUT`,
+  6.69 m: the near walls in the overview, every wall in Plan) its doors swing 90 degrees outward on
+  `SPRING_PRESETS.doorSwing`, into the opening's sides as the plan's swing arcs and panoramas 018
+  and 048 show, 6 mm clear of the lining; on a walk they shut. The lapping leaf trails its door by
+  12 degrees and catches up at 90 (`leafAngle`), as a pair with an astragal must open, so neither
+  leaf passes through the other. The swing is in the vertex shader about each leaf's hinge
+  (`aHinge`, `doorLeafPosition`), normals with it, with the last drawn frame's angle as the motion
+  vectors' previous position; nothing moves on the CPU, frames are requested only while a door
+  moves, and under reduced motion a door is at its target in the frame its target changes. A cut
+  below a leaf's top discards what stands above it and lays a section on the leaf at the cut. The
+  room's captured reflections and the sun's casters see the doors shut. Four draws (the photograph
+  matte and glossy, mahogany, brass; the walls lost the main door's two) and 1.26k triangles.
 - **Coffered ceiling and dome** (`hall-geometry.ts`, `hall-ceiling.ts`): the measured lattice
   and dome profile, each with its own photograph.
 - **Floor** (`hall-floor.ts`): drawn oak strips 73 mm wide, the width measured from the survey's
@@ -41,11 +73,18 @@ development builds only) shows the room alone, posed through a window bridge for
   corridor face 1.28 m out between the end and main doors, joinery the scan measured where the plan
   draws a recess, and 0.46 and 0.78 m either side of the fireplace door's lobby, from the plan), from
   the floor to the relief's own top (6.70 m), with every window and door open through it. In front,
-  back to 2 cm behind the deepest relief in an opening, the hole is the relief's own footprint
-  (`OPENING_RELIEF`, measured on `walls-relief.bin`), and the scanned reveals, curtains and closed
-  leaves line it; behind, a window's hole is its masonry opening, lined by its outer reveal
+  the hole is the relief's own footprint (`OPENING_RELIEF`, measured on `walls-relief.bin`), lined
+  by the scanned reveals and curtains: in a window back to 2 cm behind its deepest relief; in a
+  doorway back to 2 mm behind its leaves' face (`doorRevealDepth` less `DOOR_LINING_SET`; the drawn
+  relief stops 5 mm behind it, so the two overlap and an open door shows no slot at its jambs) and
+  4 cm wider than the doorway at each jamb and over its head (`DOOR_FRAME`), so a face toward the
+  room stands behind every chink the scanned reveal leaves (a walk at each door, straight on and
+  1.2 m to either side, meets a surface on every ray: `hall-wall-body.test.ts`; the earlier cut by
+  whole triangles let 400 to 2,700 rays a pose through); behind, a window's hole is its masonry
+  opening, lined by its outer reveal
   (`hall-glazing.ts`; the body carries it on the last 2.6 cm where the reveal stops short), and a
-  doorway is lined in mahogany with an oak threshold 8 mm above the floor's level. The four doors
+  doorway is lined in mahogany (the step round its smaller hole too) with an oak threshold 8 mm
+  above the floor's level. The four doors
   are `HALL_DOORS` (depth, leaves, what lies beyond); the fire exit in the fireplace wall (D4) is one
   of them. All four bodies and the four corner blocks are one mesh: the cutaway lowers them in the
   shader (`bodyVertexHeight`), so no object moves when a cut eases, and a top clamped to the cut
@@ -215,7 +254,7 @@ closing them steps back (`pinchStepMetres`: 6 m for a spread across the whole sc
 an event). The cutaway
 (`wallCutHeight`) lowers the walls between the camera and the room to the dado rail and, in plan,
 cuts every wall at 3.12 m, above the doors' heads, the walling over each door going with it so the
-doorways read (Cut walls, above). A wall the camera stands behind also stays 0.6 m below
+doorways read (Cut walls, above) and its doors swing open (Doors, above). A wall the camera stands behind also stays 0.6 m below
 the camera's eye (below the dado rail too for a camera lower than it). A phone opens at eye height
 inside the hall, about 6.8 m from the orbit's target, so one finger's orbit crosses the long walls
 1-2 m out. There the cut eased from the full height was still above the eye, and the cut wall's
@@ -251,8 +290,16 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   6.70 m, the cut full thickness in Plan and open over every door, the lintels' and corner blocks'
   rules, the jambs of every hole within 5 mm of the shipped relief's footprint (medians), no relief
   in another wall's body, the corners' shared relief, the 6k-triangle budget, and no two surfaces
-  (floor, ring, thresholds, bodies, outer reveals, relief) sharing a plane over more than 1 cm² at
-  the whole, Plan and opening view's cuts; `hall-relief-section.test.ts` holds every opening's tag
+  (floor, ring, thresholds, bodies, outer reveals, relief, the doors' leaves shut and swung open)
+  sharing a plane over more than 1 cm² at the whole, Plan and opening view's cuts;
+  `hall-doors.test.ts` holds each leaf's hinge at its jamb and its face where the relief has the
+  shut leaves (the main door's at -0.03), the closed photograph's texels, the laps, the modelled
+  panels' groove shading, the swing outward and every open leaf inside its doorway 5 mm clear of
+  lining, reveal, head and threshold, no leaf of a pair passing through the other at any angle,
+  the section a cut lays on a leaf, the spring (settled at 90 degrees within a degree, at once under
+  reduced motion), the relief cut only along each doorway's lines with the photograph round it
+  whole in front of them (5 mm grid), and the 2k-triangle budget; `hall-wall-body.test.ts` also
+  ray-casts a walk at each door (no ray through the wall); `hall-relief-section.test.ts` holds every opening's tag
   to its clear outline on the shipped relief, the relief's section to its surface (within 2 mm where
   smooth, never short of it where it steps), the corners' relief to the lower cut, the slicer's
   re-cutting, the cap's cover of every proud centimetre, and the gilt's and shadow's rules;

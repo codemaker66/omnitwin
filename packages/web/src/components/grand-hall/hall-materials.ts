@@ -19,10 +19,11 @@
 // moulding at the cut's height; not on what stands in a window (the curtains
 // are cloth, the glass is glass).
 //
-// The main door's painted mahogany multiplies its albedo by the vertex's baked
+// The doors' painted mahogany multiplies its albedo by the vertex's baked
 // light (emissive, so the renderer adds only reflections); gilt and brass are
 // metals lit by the environment with a share of the bake so they never fall
-// to black.
+// to black. The doors' leaves turn about their hinges in the vertex shader
+// (createDoorLeafMaterials, hall-doors.ts).
 // ---------------------------------------------------------------------------
 
 import { Color, DoubleSide, FrontSide, type Material, type Side, type Texture } from "three";
@@ -38,6 +39,7 @@ import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
 import type { HallTextures } from "./hall-textures.js";
 import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
 import { createOakFloorMaterial } from "./hall-floor.js";
+import { doorLeafMask, doorLeafPosition, type DoorSwingUniforms } from "./hall-doors.js";
 
 type Shading = "gloss" | "metal" | "photo" | "photoGloss" | "paint";
 
@@ -168,9 +170,12 @@ function scanDaylight() {
  * a window's glass and curtains would otherwise streak blue and white down
  * the reveal. They are never glazing.
  */
-function wallTexel(photos: HallPhotos) {
+function wallTexel(photos: HallPhotos, edgeOn = true) {
   const sample = photos.sample("walls", attribute("aAtlas", "vec2"));
   const face = positionWorld.dFdx().cross(positionWorld.dFdy()).normalize();
+  // A door's leaf (hall-doors.ts) shows its photograph however it turns: open,
+  // its face looks along the wall, and it is still the face the atlas saw.
+  if (!edgeOn) return { texel: sample, alpha: sample.a, level: smoothstep(0.55, 0.8, face.y.abs()) };
   const wall = attribute("aWall", "float");
   // Window and door walls face along z; the end walls along x.
   const alongZ = wall.lessThan(0.5).or(wall.greaterThan(1.5).and(wall.lessThan(2.5)));
@@ -395,6 +400,47 @@ export function createHallMaterials(
       material.maskNode = sectionMask(section);
     }
     material.name = `grand-hall-${key}`;
+    materials.set(key, material);
+  }
+  return materials;
+}
+
+/**
+ * The doors' leaves (hall-doors.ts): the walls' photograph on the faces the
+ * atlas photographed shut (varnished below the dado's top, matte above it,
+ * as the walls' relief), the room's mahogany and brass on the
+ * rest, lit by the bake at the closed position and, under the real sky, the
+ * sun or moon. Every vertex turns about its leaf's hinge in the shader
+ * (doorLeafPosition) and the leaf is cut where its wall is (doorLeafMask,
+ * with a section laid at the cut).
+ */
+export function createDoorLeafMaterials(
+  textures: HallTextures, photos: HallPhotos, mood: HallMoodUniforms, section: HallSectionUniforms, swing: DoorSwingUniforms, sun: HallSun | null = null,
+): HallMaterials {
+  const table = styles(textures);
+  const position = doorLeafPosition(section, swing);
+  const mask = doorLeafMask(section);
+  const materials = new Map<HallMaterialKey, Material>();
+  for (const key of ["wallPhoto", "wallPhotoGloss", "mahoganyDark", "brass"] as const) {
+    let material: Material;
+    if (key === "wallPhoto") {
+      // Above the dado the walls' photograph is matte, on the leaves as on the relief they replace.
+      const photo = new MeshBasicNodeMaterial({ fog: false });
+      photo.colorNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false));
+      material = photo;
+    } else if (key === "wallPhotoGloss") {
+      const photo = new MeshStandardNodeMaterial({ roughness: table.wallPhotoGloss.roughness ?? 0.42, metalness: 0, fog: false });
+      photo.colorNode = vec3(0);
+      photo.emissiveNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false));
+      material = photo;
+    } else {
+      material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section });
+    }
+    if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
+      material.positionNode = position;
+      material.maskNode = mask;
+    }
+    material.name = `grand-hall-door-${key}`;
     materials.set(key, material);
   }
   return materials;

@@ -245,6 +245,18 @@ export interface HallDoor {
   readonly leaves: { readonly count: 1 | 2; readonly hinge: "hall-face"; readonly swing: "outward" };
   /** A further leaf at the far face, hinged on the side named, opening away from the hall. */
   readonly farLeaf: { readonly hinge: "end-wall-side"; readonly into: string } | null;
+  /**
+   * The closed leaves' hall face: how far it lies behind the wall's plane
+   * (negative), where the scanned relief has it (the median of its faces
+   * inside the outline; the main door, open in the scan, by its twins).
+   */
+  readonly leafFace: number;
+  /** The leaves' top edge, where the wall atlas photographs it under the doorcase's head. */
+  readonly leafTop: number;
+  /** Where a pair's leaves meet (wall-local u): midway between their panels in the atlas. */
+  readonly meeting: number;
+  /** Whether the wall atlas photographs the closed leaves (the main door stood open in the scan). */
+  readonly photographed: boolean;
   /** What lies beyond. */
   readonly beyond: string;
   readonly source: string;
@@ -255,29 +267,33 @@ export const HALL_DOORS: readonly HallDoor[] = [
     opening: "door-end", depth: 1.14,
     leaves: { count: 2, hinge: "hall-face", swing: "outward" },
     farLeaf: { hinge: "end-wall-side", into: "F.01 Saloon" },
+    leafFace: -0.0285, leafTop: 2.31, meeting: 1.733, photographed: true,
     beyond: "F.01 Saloon, on the same floor level (its face at z 6.43)",
-    source: "scan: open, sides 1.14-1.20 m deep, a single leaf at the Saloon face (panorama 048)",
+    source: "scan: open, sides 1.14-1.20 m deep, a single leaf at the Saloon face (panorama 048); atlas: the pair closed, three panels a leaf, overhead closers; relief: their face 2.3-3.6 cm back, closers proud at 2.25 m, the doorcase's head from 2.30 m",
   },
   {
     opening: "door-main", depth: 1.09,
     leaves: { count: 2, hinge: "hall-face", swing: "outward" },
     farLeaf: null,
+    leafFace: -0.03, leafTop: 2.34, meeting: 10.5625, photographed: false,
     beyond: "F.16 Corridor at the head of Stair 5, the TRADES HALL inlay",
-    source: "scan: open, sides 1.09 m deep (z 5.276-6.371)",
+    source: "scan: open, sides 1.09 m deep (z 5.276-6.371), three-panel leaves folded back against the hall half of the opening (panoramas 018, 076); hung at the hall face as its twins are",
   },
   {
     opening: "door-fireplace", depth: 0.78,
     leaves: { count: 2, hinge: "hall-face", swing: "outward" },
     farLeaf: null,
+    leafFace: -0.0255, leafTop: 2.31, meeting: 19.421, photographed: true,
     beyond: "the east end of F.16, a lobby toward the Kitchen F.10 and Corridor F.08 (plan only)",
-    source: "2010 FIRST plan: the wall 0.46 m on one side of it and 0.78 m on the other; closed in the scan",
+    source: "2010 FIRST plan: the wall 0.46 m on one side of it and 0.78 m on the other; closed in the scan; atlas: as the end door; relief: their face 2.2-3.7 cm back",
   },
   {
     opening: "door-fire-exit", depth: 1.21,
     leaves: { count: 2, hinge: "hall-face", swing: "outward" },
     farLeaf: null,
+    leafFace: -0.0127, leafTop: 1.905, meeting: 8.52, photographed: true,
     beyond: "F.11 Stair 7 (plan only)",
-    source: "2010 FIRST plan: about 1.2 m through the fireplace wall; atlas: a flush pair with panic bars",
+    source: "2010 FIRST plan: about 1.2 m through the fireplace wall; atlas: a flush pair, two panels a leaf, a panic bar across both at 0.95 m; relief: their face 0.9-2.1 cm back, the bar 3 cm proud of it",
   },
 ];
 

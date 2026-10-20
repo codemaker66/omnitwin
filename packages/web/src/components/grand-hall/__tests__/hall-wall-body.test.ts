@@ -6,7 +6,8 @@ import { HALL_CUTS } from "../GrandHallModel.js";
 import { buildHallGeometry, buildHallThresholdGeometry, buildHallWallGeometry } from "../hall-geometry.js";
 import { parseWallRelief, type WallRelief } from "../hall-relief.js";
 import { buildPlinthRing } from "../hall-section.js";
-import { sharedNeighbour } from "../hall-walls.js";
+import { REVEAL_SIDE_DEPTH, drawnRelief, sharedNeighbour } from "../hall-walls.js";
+import { DOOR_WALLS, buildHallDoorGeometry, doorTarget, leafVertex, swingDirection } from "../hall-doors.js";
 import {
   BODY_FINISH,
   BODY_ROLE,
@@ -96,6 +97,33 @@ function shownBody(geometry: BufferGeometry, cuts: readonly number[]): Tri[] {
     if (Math.min(a[1], b[1], c[1]) > cut + 0.002) continue;
     if (len(cross(sub(b, a), sub(c, a))) < 1e-10) continue;
     out.push({ a, b, c, n: [normal.getX(i0), normal.getY(i0), normal.getZ(i0)], source: "body" });
+  }
+  return out;
+}
+
+/** The doors' leaves as the shader shows them for each wall's cut: swung to their doors' targets, cut. */
+function shownLeaves(geometry: BufferGeometry, cuts: readonly number[]): Tri[] {
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  const hingeAttribute = geometry.getAttribute("aHinge");
+  const index = geometry.getIndex();
+  if (index === null) throw new Error("the leaves are indexed");
+  const out: Tri[] = [];
+  for (let k = 0; k < index.count; k += 3) {
+    const ids = [index.getX(k), index.getX(k + 1), index.getX(k + 2)];
+    const i0 = ids[0] ?? 0;
+    const sense: 1 | -1 = hingeAttribute.getZ(i0) > 0 ? 1 : -1;
+    const hinge = { x: hingeAttribute.getX(i0), z: hingeAttribute.getY(i0), sense, code: hingeAttribute.getW(i0) };
+    const door = Math.round(hinge.code) % 4;
+    const cut = cuts[DOOR_WALLS[door] ?? -1] ?? 1000;
+    const angle = doorTarget(cut, false);
+    const [a, b, c] = ids.map((i) => leafVertex([position.getX(i), position.getY(i), position.getZ(i)], hinge, cut, angle));
+    if (a === null || b === null || c === null || a === undefined || b === undefined || c === undefined) continue;
+    // Above the cut, discarded (doorLeafMask).
+    if (Math.min(a[1], b[1], c[1]) > cut + 0.002) continue;
+    if (len(cross(sub(b, a), sub(c, a))) < 1e-10) continue;
+    const n = swingDirection([normal.getX(i0), normal.getY(i0), normal.getZ(i0)], hinge, angle);
+    out.push({ a, b, c, n, source: `leaf ${hinge.x.toFixed(3)},${hinge.z.toFixed(3)}` });
   }
   return out;
 }
@@ -363,6 +391,7 @@ describe("the walls' bodies", () => {
 
 describe("the walls' bodies against the scanned relief", () => {
   const relief = shippedRelief();
+  const drawn = drawnRelief(relief);
 
   /** The relief's depth on a 1 cm grid over a box of one wall (the frontmost surface), interpolated. */
   function depthGrid(wallId: HallWall["id"], u0: number, u1: number, v0: number, v1: number): (u: number, v: number) => number {
@@ -436,7 +465,8 @@ describe("the walls' bodies against the scanned relief", () => {
     const corners: string[] = [];
     for (const wall of HALL_WALLS) {
       for (const entry of bodyOpenings(wall)) {
-        const { front, opening } = entry;
+        // The relief's own footprint (a doorway's hole is wider, DOOR_FRAME).
+        const { footprint: front, opening } = entry;
         const head = Math.max(...front.upper.map((p) => p[1]));
         const sill = chainAt(front.lower, opening.centre);
         const depth = depthGrid(wall.id, front.u0 - 0.3, front.u1 + 0.3, Math.max(0, sill - 0.3), Math.min(6.7, head + 0.3));
@@ -468,7 +498,7 @@ describe("the walls' bodies against the scanned relief", () => {
   it("reaches past the deepest relief in every opening before the body begins", () => {
     for (const wall of HALL_WALLS) {
       for (const entry of bodyOpenings(wall)) {
-        const { front } = entry;
+        const front = entry.footprint;
         const head = Math.max(...front.upper.map((p) => p[1]));
         const sill = chainAt(front.lower, entry.opening.centre);
         const depth = depthGrid(wall.id, front.u0, front.u1, sill, head);
@@ -479,8 +509,29 @@ describe("the walls' bodies against the scanned relief", () => {
             if (!Number.isNaN(d)) deepest = Math.min(deepest, d);
           }
         }
-        expect(deepest).toBeGreaterThan(entry.frontDepth);
+        // The measure holds on the shipped relief.
         expect(Math.abs(deepest - (OPENING_RELIEF.find((item) => item.opening === entry.opening.id)?.deepest ?? 0))).toBeLessThan(0.005);
+        if (entry.door === null) {
+          expect(deepest).toBeGreaterThan(entry.frontDepth);
+          continue;
+        }
+        // A doorway: its leaves' relief is not drawn (hall-doors.ts replaces it), and nothing of the
+        // drawn relief inside it lies more than REVEAL_SIDE_DEPTH behind the leaves' face; the
+        // lining starts in front of that, so the two overlap.
+        const reveal = entry.door.leafFace - REVEAL_SIDE_DEPTH;
+        expect(entry.frontDepth).toBeGreaterThan(reveal);
+        const mesh = drawn.get(wall.id);
+        if (mesh === undefined) throw new Error(wall.id);
+        const { positions: p, indices } = mesh;
+        for (let t = 0; t < indices.length; t += 3) {
+          const c = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0].map((i): Vec3 => [p[i * 3] ?? 0, p[i * 3 + 1] ?? 0, p[i * 3 + 2] ?? 0]);
+          const [a, b, d] = c;
+          if (a === undefined || b === undefined || d === undefined) continue;
+          const u = (a[0] + b[0] + d[0]) / 3;
+          const v = (a[1] + b[1] + d[1]) / 3;
+          if (u <= entry.back.u0 || u >= entry.back.u1 || v >= entry.opening.head) continue;
+          for (const q of c) expect(q[2], `${entry.opening.id} at u ${u.toFixed(3)} v ${v.toFixed(2)}`).toBeGreaterThanOrEqual(reveal - 1e-6);
+        }
       }
     }
   });
@@ -538,8 +589,12 @@ describe("the walls' bodies against the scanned relief", () => {
     // The windows' outer reveals: the "paint" faces outside the glass (uv.x 1; the glazing bars are 0).
     const fixed: Tri[] = [...trianglesOf(floor, "floor"), ...trianglesOf(buildPlinthRing(), "ring"), ...trianglesOf(sills, "thresholds"), ...trianglesOf(paint, "reveals", (uv) => uv[0] > 0.5)];
     for (const [key, geometry] of walls.geometries) fixed.push(...trianglesOf(geometry, `relief-${key}`));
+    // The doors' leaves, shut on a walk and swung open wherever their wall is cut.
+    const doors = buildHallDoorGeometry();
     for (const cuts of [ALL_NONE, ALL_PLAN, OPENING_VIEW]) {
-      expect(coplanarOverlaps([...fixed, ...shownBody(body.geometry, cuts)]).slice(0, 5)).toEqual([]);
+      const leaves = [...doors.geometries.values()].flatMap((geometry) => shownLeaves(geometry, cuts));
+      expect(leaves.length).toBeGreaterThan(500);
+      expect(coplanarOverlaps([...fixed, ...shownBody(body.geometry, cuts), ...leaves]).slice(0, 5)).toEqual([]);
     }
   });
 
@@ -552,6 +607,105 @@ describe("the walls' bodies against the scanned relief", () => {
     for (const t of tops) for (const p of [t.a, t.b, t.c]) expect(p[1]).toBeCloseTo(THRESHOLD_HEIGHT, 9);
   });
 });
+
+describe("a walk at each door", () => {
+  const relief = shippedRelief();
+  const walls = buildHallWallGeometry(relief);
+  const body = shownBody(buildWallBody().geometry, ALL_NONE);
+  const sills = buildHallThresholdGeometry().geometries.get("floor");
+  const leaves = [...buildHallDoorGeometry().geometries.values()].flatMap((geometry) => shownLeaves(geometry, ALL_NONE));
+  const scene: Tri[] = [...body, ...leaves, ...(sills === undefined ? [] : trianglesOf(sills, "thresholds"))];
+  for (const [key, geometry] of walls.geometries) scene.push(...trianglesOf(geometry, `relief-${key}`));
+
+  /**
+   * Rays from an eye 2.8 m in front of a door (straight on, and 1.2 m to
+   * either side) through a 6 mm grid on the wall's plane over the doorway
+   * and 10 cm round it: each must meet a surface facing it (what the GPU
+   * draws: every hall material culls back faces) before it is through the
+   * wall's depth. A ray that gets through looks at the sky behind the wall.
+   */
+  it("sees the doorcase, the reveals and the shut leaves, never through the wall", () => {
+    const escapes: string[] = [];
+    for (const door of HALL_DOORS) {
+      const opening = HALL_OPENINGS.find((entry) => entry.id === door.opening);
+      const wall = opening === undefined ? undefined : hallWall(opening.wall);
+      if (opening === undefined || wall === undefined) throw new Error(door.opening);
+      const u0 = opening.centre - opening.width / 2 - 0.1;
+      const u1 = opening.centre + opening.width / 2 + 0.1;
+      const top = opening.head + 0.1;
+      // Only what lies near the doorway can be met first.
+      const near = scene.filter((t) => [t.a, t.b, t.c].some((p) => {
+        const { u, d } = local(wall, p);
+        return u > u0 - 1.2 && u < u1 + 1.2 && p[1] < top + 0.8 && d > -door.depth - 0.3 && d < 1.5;
+      }));
+      for (const side of [0, -1.2, 1.2]) {
+        const eyeU = opening.centre + side;
+        const eye = wallPoint(wall, eyeU, 1.6, 2.8);
+        // Each triangle binned by where the eye sees it on the wall's plane (2 cm cells).
+        const cell = 0.02;
+        const columns = Math.ceil((u1 - u0) / cell) + 1;
+        const bins = new Map<number, Tri[]>();
+        for (const t of near) {
+          const seen = [t.a, t.b, t.c].map((p) => {
+            const { u, d } = local(wall, p);
+            const s = 2.8 / (2.8 - d);
+            return [eyeU + (u - eyeU) * s, 1.6 + (p[1] - 1.6) * s] as const;
+          });
+          const iu0 = Math.max(0, Math.floor((Math.min(...seen.map((q) => q[0])) - u0) / cell));
+          const iu1 = Math.min(columns - 1, Math.floor((Math.max(...seen.map((q) => q[0])) - u0) / cell));
+          const iv0 = Math.max(0, Math.floor(Math.min(...seen.map((q) => q[1])) / cell));
+          const iv1 = Math.min(Math.ceil(top / cell), Math.floor(Math.max(...seen.map((q) => q[1])) / cell));
+          for (let iu = iu0; iu <= iu1; iu++) {
+            for (let iv = iv0; iv <= iv1; iv++) {
+              const key = iv * columns + iu;
+              const list = bins.get(key);
+              if (list === undefined) bins.set(key, [t]);
+              else list.push(t);
+            }
+          }
+        }
+        let lost = 0;
+        let worst = "";
+        for (let u = u0; u <= u1; u += 0.006) {
+          for (let v = 0.03; v <= top; v += 0.006) {
+            const aim = wallPoint(wall, u, v, 0);
+            const dir = unit(sub(aim, eye));
+            const hit = firstFrontHit(eye, dir, bins.get(Math.floor(v / cell) * columns + Math.floor((u - u0) / cell)) ?? []);
+            const through = hit === null || local(wall, [eye[0] + dir[0] * hit, eye[1] + dir[1] * hit, eye[2] + dir[2] * hit]).d < -door.depth + 0.01;
+            if (through) {
+              lost += 1;
+              worst = `u ${(u - opening.centre).toFixed(3)} from the centre, v ${v.toFixed(3)}`;
+            }
+          }
+        }
+        if (lost > 0) escapes.push(`${door.opening} from ${String(side)} m: ${String(lost)} rays, e.g. ${worst}`);
+      }
+    }
+    expect(escapes).toEqual([]);
+  });
+});
+
+/** Distance along a ray to the first triangle facing it (Moller-Trumbore, back faces culled), or null. */
+function firstFrontHit(origin: Vec3, dir: Vec3, triangles: readonly Tri[]): number | null {
+  let best: number | null = null;
+  for (const t of triangles) {
+    const e1 = sub(t.b, t.a);
+    const e2 = sub(t.c, t.a);
+    const p = cross(dir, e2);
+    const det = dot(e1, p);
+    // Counter-clockwise seen from the ray's origin, the face looks at it.
+    if (det <= 1e-12) continue;
+    const s = sub(origin, t.a);
+    const bu = dot(s, p) / det;
+    if (bu < -1e-7 || bu > 1 + 1e-7) continue;
+    const q = cross(s, e1);
+    const bv = dot(dir, q) / det;
+    if (bv < -1e-7 || bu + bv > 1 + 1e-7) continue;
+    const distance = dot(e2, q) / det;
+    if (distance > 1e-4 && (best === null || distance < best)) best = distance;
+  }
+  return best;
+}
 
 /** Pairs from different meshes (or within the body) in one plane (0.01 deg, 1 mm) sharing over 1 cm2. */
 function coplanarOverlaps(triangles: readonly Tri[]): string[] {

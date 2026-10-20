@@ -6,14 +6,16 @@
 // with baked light — with the scan's gilt and bronze chandeliers and their
 // flame bulbs, and the dollhouse cutaway (with the walls' cut bodies, whose
 // section follows the relief's mouldings) that lets the planner look in from
-// above. Under the real sky its windows open
+// above; where it cuts a wall, that wall's doors swing open on a spring
+// (hall-doors.ts). Under the real sky its windows open
 // onto the drawn city through panes of glass that reflect the room, behind
 // the measured glazing bars (hall-glazing.ts). Its real lights are HallLightRig,
 // mounted beside it; its reflections are its own, captured from the room
 // itself (hall-capture.ts).
 // The relief and the photographs stream in after the first frame (flat walls
 // in their average colour until then). Everything here renders on demand:
-// frames are requested only while a mood blends or the cutaway eases.
+// frames are requested only while a mood blends, the cutaway eases or a door
+// swings.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -28,7 +30,10 @@ import { paintHallTextures, disposeHallTextures, type HallTextures } from "./hal
 import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useHallFinish, type HallFinish } from "./hall-finish.js";
-import { createHallCasterMaterials, createHallMaterials, disposeHallMaterials, HallGlazingUniforms, HallSectionUniforms, type HallCasterMaterials } from "./hall-materials.js";
+import { createDoorLeafMaterials, createHallCasterMaterials, createHallMaterials, disposeHallMaterials, HallGlazingUniforms, HallSectionUniforms, type HallCasterMaterials, type HallMaterials } from "./hall-materials.js";
+import { DoorSwing, DoorSwingUniforms, hallDoorGeometry } from "./hall-doors.js";
+import { drawnRelief } from "./hall-walls.js";
+import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { buildGlazingPanes, createGlassMaterial, GLASS_PRESETS, parseGlassPreset, withGlazingClosed } from "./hall-glazing.js";
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
@@ -137,6 +142,9 @@ interface HallResources {
   readonly cutaway: HallSection;
   /** Stand-ins the sun's shadow camera draws for the room, where the sun lights it. */
   readonly casters: HallCasterMaterials | null;
+  /** The doors' angles, and their leaves' materials, which turn them in the shader (hall-doors.ts). */
+  readonly doorSwing: DoorSwingUniforms;
+  readonly doorMaterials: HallMaterials;
 }
 
 /** The chandeliers' own light on their metal where no reflection map gives it anything to mirror. */
@@ -186,6 +194,8 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const glazing = new HallGlazingUniforms();
   const materials = createHallMaterials(textures, photos, mood, section, sun, { glazing, alphaToCoverage: multisampled });
   const casters = sun === null ? null : createHallCasterMaterials(photos);
+  const doorSwing = new DoorSwingUniforms();
+  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun);
 
   // As scanned: pale silver-gilt fittings on dark bronze stems, and white
   // bulbs, which warm with the mood's chandelier light.
@@ -226,13 +236,14 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const bulb = new MeshBasicNodeMaterial();
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
   const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
-  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(section, mood, { preset: sectionPreset, sunlit: sun !== null, multisampled }), casters };
+  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(section, mood, { preset: sectionPreset, sunlit: sun !== null, multisampled }), casters, doorSwing, doorMaterials };
 }
 
 function disposeResources(resources: HallResources): void {
   disposeHallTextures(resources.textures);
   resources.photos.dispose();
   disposeHallMaterials(resources.materials);
+  disposeHallMaterials(resources.doorMaterials);
   for (const material of resources.chandelierMaterials.values()) material.dispose();
   resources.cutaway.dispose();
   resources.casters?.glazed.dispose();
@@ -262,6 +273,10 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const sectionPreset = useMemo(() => SECTION_PRESETS[parseSectionPreset(typeof window === "undefined" ? null : window.location.search)], []);
   const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun, multisampled, sectionPreset), [multisampled, quality, sectionPreset, sun]);
   const thresholds = useMemo(() => hallThresholdGeometry(), []);
+  // The doors' leaves (hall-doors.ts): built once, swung in the shader.
+  const doors = useMemo(() => hallDoorGeometry(), []);
+  const doorSwing = useRef(new DoorSwing());
+  const doorsMoving = useRef(false);
   // The relief's section, cut wherever the walls are cut (hall-relief-section.ts).
   const sectionCap = useMemo(() => (relief === null ? null : sectionCapGeometry(relief)), [relief]);
   // The mood resources were created with is applied directly; later moods blend.
@@ -350,7 +365,8 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     });
     loadWallRelief().then((loaded) => {
       if (!live) return;
-      setRelief(loaded);
+      // As drawn: without the relief inside the doorways, which the modelled leaves replace.
+      setRelief(drawnRelief(loaded));
       useHallViewStore.getState().settleSurface(true);
       captureNeeded.current = true;
       sun?.redraw();
@@ -433,6 +449,8 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
         const scaleBefore = fittings?.scale.x ?? 1;
         if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
         resources.bulbScale.value = CAPTURED_BULBS;
+        // The room's reflections see its doors shut, as photographed.
+        const doorAngles = resources.doorSwing.shut();
         try {
           const captured = withGlazingClosed(resources.glazing, panes.current, () => withoutSunMapDraw(sun, () => environment.capture(roomGroup)));
           state.scene.environment = captured;
@@ -443,6 +461,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
         } catch {
           // Without its own reflections the room keeps the previous environment.
         } finally {
+          resources.doorSwing.restore(doorAngles);
           resources.bulbScale.value = 1;
           if (fittings !== null) { fittings.visible = shownBefore; fittings.scale.setScalar(scaleBefore); }
         }
@@ -482,6 +501,13 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     });
     cutsEasing.current = easing;
     moving = moving || easing;
+    // Each wall's doors swing open while it is cut, and shut on a walk; under
+    // reduced motion they are there at once. A door that starts to move does
+    // not spend the demand loop's idle gap.
+    const swinging = doorSwing.current.step(cutState.current, effective === "walk", hallFrameStep(delta, !doorsMoving.current), prefersReducedMotion);
+    doorsMoving.current = swinging;
+    resources.doorSwing.set((door) => doorSwing.current.angle(door));
+    moving = moving || swinging;
     // The relief's section follows each wall's cut (cut again only when it moves).
     resources.cutaway.profile.update(cutState.current, WALL_BODY_TOP);
     // The walls' bodies follow the cuts in their shader (hall-wall-body.ts).
@@ -502,11 +528,15 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       })}
       {resources.casters !== null && (
         <group name="grand-hall-sun-casters">
-          {[...geometry.geometries, ...walls.geometries].filter(([key]) => key !== "floor").map(([key, part], index) => (
+          {[
+            ...[...geometry.geometries, ...walls.geometries].map(([key, part]) => ({ key, part, glazed: key === "wallPhoto" || key === "wallPhotoGloss" })),
+            // The doors cast shut: the cutaway is a way of looking, as everywhere else.
+            ...[...doors.geometries].map(([key, part]) => ({ key, part, glazed: false })),
+          ].filter(({ key }) => key !== "floor").map(({ key, part, glazed }, index) => (
             <mesh
               key={`caster-${String(index)}-${key}`}
               geometry={part}
-              material={key === "wallPhoto" || key === "wallPhotoGloss" ? resources.casters?.glazed : resources.casters?.solid}
+              material={glazed ? resources.casters?.glazed : resources.casters?.solid}
               layers={HALL_SUN_CASTER_LAYER}
               castShadow
               frustumCulled={false}
@@ -515,6 +545,11 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
           ))}
         </group>
       )}
+      {[...doors.geometries].map(([key, part]) => {
+        const material = resources.doorMaterials.get(key);
+        if (material === undefined) return null;
+        return <mesh key={`doors-${key}`} name={`grand-hall-doors-${key}`} geometry={part} material={material} frustumCulled={false} receiveShadow={sun !== null} />;
+      })}
       <group ref={chandelierGroup} name="grand-hall-chandeliers" visible={false}>
         {[...chandeliers.geometries].map(([key, part]) => (
           <mesh key={key} name={`chandelier-${key}`} geometry={part} material={resources.chandelierMaterials.get(key)} />
