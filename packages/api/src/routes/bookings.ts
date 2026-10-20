@@ -7,6 +7,7 @@ import {
   TransitionBookingSchema,
   UpdateBookingSchema,
   VIEWING_BOOKING_KIND,
+  isBookingEnquiry,
   occasionLabel,
   type DiaryCommand,
 } from "@omnitwin/types";
@@ -23,6 +24,7 @@ import {
   ownerWorksAtVenue,
   pgErrorCode,
   PG_CHECK_VIOLATION,
+  PG_UNIQUE_VIOLATION,
   serializeBooking,
   transitionBookingCore,
   updateBookingCore,
@@ -440,7 +442,9 @@ export async function bookingRoutes(
   // conversion is, by the Diary's write roles at the enquiry's venue. It
   // takes no event, carries no hold's hygiene and never blocks a date: the
   // conflict engine says when it overlaps a confirmed booking or another
-  // viewing. Show-rounds per booking, a funnel measure, counts these.
+  // viewing. Show-rounds per booking, a funnel measure, counts these. The same
+  // viewing asked for twice (a double press, a retry) is booked once: the
+  // second answer is the first viewing (bookings_viewing_once).
   server.post("/viewings", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = BookViewingSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
@@ -453,6 +457,8 @@ export async function bookingRoutes(
         spaceId: enquiries.spaceId,
         roomChosen: enquiries.roomChosen,
         name: enquiries.name,
+        state: enquiries.state,
+        eventType: enquiries.eventType,
       })
       .from(enquiries)
       .where(eq(enquiries.id, input.enquiryId))
@@ -462,6 +468,15 @@ export async function bookingRoutes(
     }
     if (!canWriteBookings(request.user, enquiry.venueId)) {
       return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
+    }
+    // A viewing is shown to someone asking to book a room: never for a draft
+    // nobody has sent, nor for a request that books nothing (workspace access,
+    // an enquiry about Venviewer itself).
+    if (enquiry.state === "draft" || !isBookingEnquiry(enquiry.eventType)) {
+      return reply.status(422).send({
+        error: "A viewing is booked for an enquiry asking to book a room.",
+        code: "NOT_A_BOOKING_ENQUIRY",
+      });
     }
     // The room the guest chose, or one someone chooses: never the room an
     // enquiry that named none is only filed under (roadmap N6).
@@ -513,7 +528,19 @@ export async function bookingRoutes(
       publishDiaryChanged(request, created.venueId, "booking.created", created.id);
       return await reply.status(201).send({ data: serializeBooking(created) });
     } catch (error) {
-      if (pgErrorCode(error) === PG_CHECK_VIOLATION) {
+      const code = pgErrorCode(error);
+      if (code === PG_UNIQUE_VIOLATION) {
+        const [booked] = await db.select().from(bookings).where(and(
+          eq(bookings.enquiryId, enquiry.id),
+          eq(bookings.spaceId, spaceId),
+          eq(bookings.startsAt, new Date(input.startsAt)),
+          eq(bookings.kind, VIEWING_BOOKING_KIND),
+          eq(bookings.status, "active"),
+          isNull(bookings.deletedAt),
+        )).limit(1);
+        if (booked !== undefined) return reply.status(200).send({ data: serializeBooking(booked) });
+      }
+      if (code === PG_CHECK_VIOLATION) {
         return reply.status(400).send({ error: "Booking violates a database integrity rule", code: "BOOKING_INTEGRITY_VIOLATION" });
       }
       throw error;

@@ -103,8 +103,10 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     otherManager: randomUUID(),
     otherStaff: randomUUID(),
     platformAdmin: randomUUID(),
+    client: randomUUID(),
   } as const;
   const savedTwinSlugs = process.env["TWIN_PUBLIC_VENUE_SLUGS"];
+  const savedSignals = process.env["ENQUIRY_FUNNEL_BROWSER_SIGNALS"];
 
   let pool: Pool;
   let db: Database;
@@ -128,14 +130,25 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     readonly roomChosen?: boolean;
     readonly state?: string;
     readonly createdAt?: Date;
+    readonly userId?: string;
+    readonly eventType?: string;
+    /** When it was sent, as its status history records it. */
+    readonly sentAt?: Date;
   } = {}): Promise<string> {
     const id = randomUUID();
     await pool.query(
-      `INSERT INTO enquiries (id, venue_id, space_id, state, name, email, created_at, updated_at, room_chosen, source)
-       VALUES ($1, $2, $3, $4, 'Fixture guest', 'guest@example.test', $5, $5, $6, 'website')`,
+      `INSERT INTO enquiries (id, venue_id, space_id, state, name, email, created_at, updated_at, room_chosen, source, user_id, event_type)
+       VALUES ($1, $2, $3, $4, 'Fixture guest', 'guest@example.test', $5, $5, $6, 'website', $7, $8)`,
       [id, options.venueId ?? venue, options.spaceId ?? hall, options.state ?? "submitted",
-        options.createdAt ?? new Date(Date.now() - 3 * 3_600_000), options.roomChosen ?? true],
+        options.createdAt ?? new Date(Date.now() - 3 * 3_600_000), options.roomChosen ?? true,
+        options.userId ?? null, options.eventType ?? null],
     );
+    if (options.sentAt !== undefined) {
+      await pool.query(
+        "INSERT INTO enquiry_status_history (enquiry_id, from_status, to_status, created_at) VALUES ($1, 'draft', 'submitted', $2)",
+        [id, options.sentAt],
+      );
+    }
     return id;
   }
 
@@ -200,6 +213,8 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     if (testUrl === undefined) throw new Error("Explicit test URL required");
     assertTestTarget(testUrl);
     process.env["TWIN_PUBLIC_VENUE_SLUGS"] = TRADES_HALL_ENQUIRY_VENUE_SLUG;
+    // The suite reads what a browser sends; one case turns it off again.
+    process.env["ENQUIRY_FUNNEL_BROWSER_SIGNALS"] = "on";
     pool = new Pool({ connectionString: testUrl, application_name: `enquiry_funnel_${run}`, max: 24 });
     const target = await pool.query<{ database: string }>("SELECT current_database() AS database");
     expect(target.rows[0]?.database).toBe("venviewer_enquiry_funnel_test");
@@ -235,6 +250,7 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
       person(people.otherManager, "manager", otherVenue),
       person(people.otherStaff, "staff", otherVenue),
       person(people.platformAdmin, "admin", null, "admin"),
+      person(people.client, "client", null),
     ]);
 
     server = Fastify();
@@ -249,6 +265,8 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
   afterAll(async () => {
     if (savedTwinSlugs === undefined) delete process.env["TWIN_PUBLIC_VENUE_SLUGS"];
     else process.env["TWIN_PUBLIC_VENUE_SLUGS"] = savedTwinSlugs;
+    if (savedSignals === undefined) delete process.env["ENQUIRY_FUNNEL_BROWSER_SIGNALS"];
+    else process.env["ENQUIRY_FUNNEL_BROWSER_SIGNALS"] = savedSignals;
     await server?.close();
     await pool?.end();
   }, 60_000);
@@ -318,6 +336,31 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     expect((await stampOf(draft)).first_response_at).toBeNull();
   });
 
+  it("measures from when the enquiry was sent, not when its draft was made", async () => {
+    const drafted = new Date(Date.now() - 48 * 3_600_000);
+    const sent = new Date(Date.now() - 24 * 3_600_000);
+    const enquiryId = await newEnquiry({ createdAt: drafted, sentAt: sent });
+    const between = await report(asStaff(), enquiryId, { channel: "email", respondedAt: new Date(sent.getTime() - 3_600_000).toISOString() });
+    expect(between).toMatchObject({ status: 422, body: { code: "FIRST_RESPONSE_BEFORE_ENQUIRY" } });
+    const after = await report(asStaff(), enquiryId, { channel: "email", respondedAt: new Date(sent.getTime() + 3_600_000).toISOString() });
+    expect(after.status).toBe(200);
+  });
+
+  it("leaves a reply more than a week old to the venue's admin or manager", async () => {
+    const arrived = new Date(Date.now() - 10 * 86_400_000);
+    const enquiryId = await newEnquiry({ createdAt: arrived, sentAt: arrived });
+    const nineDaysAgo = new Date(Date.now() - 9 * 86_400_000).toISOString();
+    for (const headers of [asStaff(), asSales()]) {
+      expect(await report(headers, enquiryId, { channel: "phone", respondedAt: nineDaysAgo }))
+        .toMatchObject({ status: 422, body: { code: "FIRST_RESPONSE_TOO_OLD" } });
+    }
+    expect((await stampOf(enquiryId)).first_response_at).toBeNull();
+    expect((await report(as("manager", venue, people.manager), enquiryId, { channel: "phone", respondedAt: nineDaysAgo })).status).toBe(200);
+    // Within the week anyone on the team may.
+    const recent = await newEnquiry({ createdAt: new Date(Date.now() - 5 * 86_400_000) });
+    expect((await report(asSales(), recent, { channel: "phone", respondedAt: new Date(Date.now() - 4 * 86_400_000).toISOString() })).status).toBe(200);
+  });
+
   it("records a colleague who replied, a time a little fast as now, and a reply made exactly as it arrived", async () => {
     const enquiryId = await newEnquiry();
     const colleague = await report(asStaff(), enquiryId, { channel: "phone", respondedBy: people.sales });
@@ -360,13 +403,17 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     // Reported after it happened: recorded later than made.
     expect(stamp.first_response_recorded_at?.getTime()).toBeGreaterThan(stamp.first_response_at?.getTime() ?? 0);
 
-    const audit = await pool.query<{ actor_user_id: string; changed: boolean }>(
-      `SELECT actor_user_id, (metadata->>'changed')::boolean AS changed
+    const audit = await pool.query<{ actor_user_id: string; changed: boolean; previous: { at: string; channel: string } | null; responded: string }>(
+      `SELECT actor_user_id, (metadata->>'changed')::boolean AS changed, metadata->'previous' AS previous, metadata->>'respondedAt' AS responded
        FROM general_audit_log WHERE target_type = 'enquiry' AND target_id = $1 AND action = 'enquiry.first_response_reported'`,
       [enquiryId],
     );
     expect(audit.rows.map((row) => row.changed).sort()).toEqual([false, true, true]);
     expect(audit.rows.filter((row) => row.actor_user_id === people.sales)).toHaveLength(2);
+    // The report that replaced the 2-hour reply says so: what it displaced is kept.
+    const replacing = audit.rows.find((row) => row.responded === at(1));
+    expect(replacing?.previous).toMatchObject({ at: at(2), channel: "email" });
+    expect(audit.rows.find((row) => row.responded === at(2))?.previous).toBeNull();
   });
 
   it("agrees on the earliest reply when many people report at once, with who and how kept from the same report", async () => {
@@ -515,6 +562,30 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     const res = await report(asSales(), enquiryId, { channel: "phone", respondedAt: earlier.toISOString() });
     expect(res.body["data"]).toMatchObject({ changed: true });
     expect((await stampOf(enquiryId)).first_response_channel).toBe("phone");
+  });
+
+  it("names nobody when a Venviewer operator, not the venue's team, makes the decision", async () => {
+    const enquiryId = await newEnquiry({ state: "under_review" });
+    const approve = await call("POST", `/enquiries/${enquiryId}/transition`, as("admin", null, people.platformAdmin, "admin"), { status: "approved" });
+    expect(approve.status).toBe(200);
+    expect(await stampOf(enquiryId)).toMatchObject({ first_response_channel: "decision", first_response_by: null });
+  });
+
+  it("shows the venue's funnel fields to its team and never to the enquiry's customer", async () => {
+    const enquiryId = await newEnquiry({ userId: people.client });
+    expect((await report(asStaff(), enquiryId, { channel: "email" })).status).toBe(200);
+    const asClient = as("client", null, people.client);
+    const own = await call("GET", `/enquiries/${enquiryId}`, asClient);
+    expect(own.status).toBe(200);
+    const data = own.body["data"] as Record<string, unknown>;
+    for (const field of ["firstResponseAt", "firstResponseBy", "firstResponseChannel", "firstResponseRecordedAt", "referrerHost", "utmSource", "acquisitionChannel"]) {
+      expect(data, field).not.toHaveProperty(field);
+    }
+    expect(data).toMatchObject({ id: enquiryId, state: "submitted" });
+    const listed = await call("GET", "/enquiries", asClient);
+    expect((listed.body["data"] as Record<string, unknown>[]).every((row) => !("firstResponseAt" in row))).toBe(true);
+    const staffView = await call("GET", `/enquiries/${enquiryId}`, asStaff());
+    expect(staffView.body["data"]).toMatchObject({ firstResponseChannel: "email", firstResponseBy: people.staff });
   });
 
   it("records a proposal sent as the first reply to its enquiry, or its deal's enquiry, never another venue's", async () => {
@@ -707,7 +778,7 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
 
   async function attributionOf(enquiryId: string): Promise<Record<string, string | null>> {
     const { rows } = await pool.query<Record<string, string | null>>(
-      `SELECT referrer_host, utm_source, utm_medium, utm_campaign, utm_term, utm_content, acquisition_channel
+      `SELECT referrer_host, utm_source, utm_medium, utm_campaign, acquisition_channel
        FROM enquiries WHERE id = $1`,
       [enquiryId],
     );
@@ -723,13 +794,12 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
         utm: { source: "Hitched", medium: "listing", campaign: "Autumn  2026!", content: "jo.bloggs@example.com" },
       },
     });
+    // utm_content is never read: email tools put per-recipient ids there.
     expect(await attributionOf(listing)).toEqual({
       referrer_host: "hitched.co.uk",
       utm_source: "hitched",
       utm_medium: "listing",
       utm_campaign: "autumn 2026",
-      utm_term: null,
-      utm_content: null,
       acquisition_channel: "listing",
     });
 
@@ -745,15 +815,38 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     // Nothing sent: nothing captured, which is not the same as direct.
     const none = await guestEnquiry({});
     expect(await attributionOf(none)).toEqual({
-      referrer_host: null, utm_source: null, utm_medium: null, utm_campaign: null, utm_term: null, utm_content: null, acquisition_channel: null,
+      referrer_host: null, utm_source: null, utm_medium: null, utm_campaign: null, acquisition_channel: null,
     });
 
-    // Malformed attribution is refused whole; the database refuses a tag without its channel.
-    const bad = await call("POST", "/public/enquiries", {}, {
-      venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG, email: "guest@example.test", attribution: { referrer: "x", fingerprint: "abc" },
-    });
-    expect(bad.status).toBe(400);
+    // Attribution never costs the guest the enquiry: what cannot be read is
+    // dropped, an unknown key is never stored, and a hostile referrer is kept
+    // as nothing.
+    const odd = await guestEnquiry({ attribution: { referrer: "android-app:<img src=x onerror=alert(1)>", fingerprint: "abc" } });
+    expect(await attributionOf(odd)).toMatchObject({ referrer_host: null, acquisition_channel: "direct" });
+    const unreadable = await guestEnquiry({ attribution: "https://hitched.co.uk" });
+    expect((await attributionOf(unreadable)).acquisition_channel).toBeNull();
+    // The database refuses a tag without its channel, and a referrer that is not a hostname.
     expect(await sqlState("UPDATE enquiries SET utm_source = 'hitched' WHERE id = $1", [none])).toBe("23514");
+    expect(await sqlState("UPDATE enquiries SET referrer_host = '<img src=x>', acquisition_channel = 'referral' WHERE id = $1", [none])).toBe("23514");
+    expect(await sqlState("UPDATE enquiries SET referrer_host = 'jo@example.com', acquisition_channel = 'referral' WHERE id = $1", [none])).toBe("23514");
+    expect(await sqlState("UPDATE enquiries SET referrer_host = 'com.google.android.gm', acquisition_channel = 'email' WHERE id = $1", [none])).toBeUndefined();
+  });
+
+  it("keeps nothing a browser sends while the switch is off, and answers 404 for a proposal page's engagement", async () => {
+    process.env["ENQUIRY_FUNNEL_BROWSER_SIGNALS"] = "off";
+    try {
+      const enquiryId = await guestEnquiry({
+        attribution: { referrer: "https://www.hitched.co.uk/", utm: { source: "hitched" } },
+        engagement: ["twin_walk_30s"],
+      });
+      expect((await attributionOf(enquiryId)).acquisition_channel).toBeNull();
+      const events = await pool.query("SELECT count(*)::int AS n FROM venue_engagement_events WHERE enquiry_id = $1", [enquiryId]);
+      expect(events.rows[0]).toEqual({ n: 0 });
+      const proposal = await newProposal();
+      expect((await call("POST", `/proposal-share/${proposal.token}/engagement`, {}, { kind: "twin_walk_30s" })).status).toBe(404);
+    } finally {
+      process.env["ENQUIRY_FUNNEL_BROWSER_SIGNALS"] = "on";
+    }
   });
 
   it("attaches what happened before an enquiry to that enquiry and its room, and refuses a repeated or unknown kind", async () => {
@@ -766,10 +859,14 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     const unroomedRows = await pool.query("SELECT space_id FROM venue_engagement_events WHERE enquiry_id = $1", [unroomed]);
     expect(unroomedRows.rows).toEqual([{ space_id: null }]);
 
-    for (const engagement of [["twin_walk_30s", "twin_walk_30s"], ["page_view"]]) {
-      const res = await call("POST", "/public/enquiries", {}, { venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG, email: "guest@example.test", engagement });
-      expect(res.status).toBe(400);
-    }
+    // A repeated kind counts once, a kind this release does not know is dropped,
+    // and neither costs the guest the enquiry.
+    const repeated = await guestEnquiry({ engagement: ["twin_walk_30s", "twin_walk_30s", "page_view"] });
+    const repeatedRows = await pool.query("SELECT kind FROM venue_engagement_events WHERE enquiry_id = $1", [repeated]);
+    expect(repeatedRows.rows).toEqual([{ kind: "twin_walk_30s" }]);
+    const unknown = await guestEnquiry({ engagement: ["page_view"] });
+    const unknownRows = await pool.query("SELECT count(*)::int AS n FROM venue_engagement_events WHERE enquiry_id = $1", [unknown]);
+    expect(unknownRows.rows[0]).toEqual({ n: 0 });
   });
 
   it("admits the listing and assistant touchpoints and nothing outside the seven", async () => {
@@ -800,8 +897,15 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
       kind: "viewing", status: "active", state: "viewing", enquiryId, spaceId: saloon, eventId: null,
       ownerUserId: people.staff, title: "Fixture guest", rank: null, lostReason: null,
     });
+    // Asked for again (a double press, a retry): the same viewing, not a second.
+    const first = res.body["data"] as { id: string; startsAt: string; endsAt: string };
+    const again = await call("POST", "/bookings/viewings", asStaff(), { enquiryId, startsAt: first.startsAt, endsAt: first.endsAt });
+    expect(again.status).toBe(200);
+    expect((again.body["data"] as { id: string }).id).toBe(first.id);
+    const count = await pool.query("SELECT count(*)::int AS n FROM bookings WHERE enquiry_id = $1 AND kind = 'viewing'", [enquiryId]);
+    expect(count.rows[0]).toEqual({ n: 1 });
     // Called off.
-    const id = (res.body["data"] as { id: string }).id;
+    const id = first.id;
     const cancelled = await call("POST", `/bookings/${id}/transition`, asStaff(), { toState: "cancelled" });
     expect(cancelled.status).toBe(200);
     expect(cancelled.body["data"]).toMatchObject({ kind: "viewing", status: "cancelled" });
@@ -822,6 +926,11 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
       .toMatchObject({ status: 400, body: { code: "ROOM_NOT_CHOSEN" } });
     expect((await call("POST", "/bookings/viewings", asStaff(), { enquiryId: unroomed, spaceId: hall, ...interval() })).status).toBe(201);
     expect((await call("POST", "/bookings/viewings", asStaff(), { enquiryId: randomUUID(), ...interval() })).status).toBe(404);
+    // Never for a draft nobody has sent, nor for a request that books nothing.
+    for (const other of [await newEnquiry({ state: "draft" }), await newEnquiry({ eventType: "venue-access" })]) {
+      expect(await call("POST", "/bookings/viewings", asStaff(), { enquiryId: other, ...interval() }))
+        .toMatchObject({ status: 422, body: { code: "NOT_A_BOOKING_ENQUIRY" } });
+    }
     const viewings = await pool.query("SELECT count(*)::int AS n FROM bookings WHERE enquiry_id = $1 AND kind = 'viewing'", [enquiryId]);
     expect(viewings.rows[0]).toEqual({ n: 0 });
   });
@@ -845,6 +954,13 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
       expect(await call("POST", `/bookings/${prospectId}/transition`, headers, { toState: "viewing" }))
         .toMatchObject({ status: 400, body: { code: "INVALID_TRANSITION" } });
     }
+    // Nor does a viewing become a commitment, even by the admin's override.
+    for (const toState of ["hold", "ink", "lost", "released"]) {
+      expect(await call("POST", `/bookings/${viewingId}/transition`, as("admin", venue, people.admin), { toState }))
+        .toMatchObject({ status: 400, body: { code: "INVALID_TRANSITION" } });
+    }
+    expect((await pool.query("SELECT kind, status, event_id FROM bookings WHERE id = $1", [viewingId])).rows[0])
+      .toEqual({ kind: "viewing", status: "active", event_id: null });
   });
 
   it("records why a booking was lost, only on a lost booking", async () => {

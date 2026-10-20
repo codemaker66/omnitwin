@@ -46,9 +46,10 @@ export type BookingKind = z.infer<typeof BookingKindSchema>;
  * shown a room, so the room is in use for that time and the conflict engine
  * says when it overlaps a confirmed booking or another viewing. It is never a
  * commitment of the date: it makes no room busy or held on any public read,
- * it is never promoted, and it belongs to the enquiry it was booked for, never
- * to an event (bookings_viewing_has_no_event). Show-rounds per booking, one of
- * the funnel's leading measures, count these rows.
+ * it is never promoted, and it belongs to the enquiry it was booked for (or to
+ * none, a walk-in booked from the Diary), never to an event
+ * (bookings_viewing_has_no_event). Show-rounds per booking, one of the
+ * funnel's leading measures, count the viewings booked for an enquiry.
  */
 export const VIEWING_BOOKING_KIND = "viewing" as const satisfies BookingKind;
 

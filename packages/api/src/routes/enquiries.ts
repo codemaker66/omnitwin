@@ -2,7 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, desc, inArray, isNull, sql } from "drizzle-orm";
 import {
+  ENQUIRY_FUNNEL_FIELDS,
+  FIRST_RESPONSE_BACKDATING_ROLES,
   FIRST_RESPONSE_FUTURE_SKEW_MS,
+  FIRST_RESPONSE_REPORT_WINDOW_DAYS,
   RecordFirstResponseSchema,
   type RecordFirstResponseResult,
 } from "@omnitwin/types";
@@ -10,12 +13,12 @@ import { enquiries, enquiryStatusHistory, configurations, generalAuditLog, prici
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource, canManageCommercial, canManageVenue } from "../utils/query.js";
+import { canAccessResource, canManageCommercial, canManageVenue, isVenueCommercialMember } from "../utils/query.js";
 import { canTransition, enquiryKind, ENQUIRY_STATES, isCustomerMove } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
-import { stampFirstResponse } from "../services/enquiry-funnel.js";
+import { lockFirstResponse, stampFirstResponse } from "../services/enquiry-funnel.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -95,17 +98,25 @@ function canWorkEnquiry(user: JwtUser, enquiry: { readonly userId: string | null
   return canAccessResource(user, enquiry.userId, enquiry.venueId) || canManageCommercial(user, enquiry.venueId);
 }
 
-/**
- * Who answers a venue's enquiries, so who may say a reply was made: the
- * venue's own commercial team, the roles canManageCommercial admits, without
- * its pass for a Venviewer platform admin, who answers no venue's guests. The
- * floor (a hallkeeper) reads the inbox but does not answer it.
- */
-const REPLYING_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
+type EnquiryRow = typeof enquiries.$inferSelect;
+type CustomerEnquiry = Omit<EnquiryRow, (typeof ENQUIRY_FUNNEL_FIELDS)[number]>;
 
-function answersFor(person: { readonly role: string; readonly venueId: string | null }, venueId: string): boolean {
-  return REPLYING_ROLES.has(person.role) && person.venueId === venueId;
+const FUNNEL_FIELDS: ReadonlySet<string> = new Set(ENQUIRY_FUNNEL_FIELDS);
+
+/**
+ * An enquiry as its reader may see it. When and how the venue first replied,
+ * and where the person was found, are the venue's own measurements (migration
+ * 0100): its team and Venviewer's admins read the whole row, and the
+ * enquiry's customer reads it without them.
+ */
+function asSeenBy(user: JwtUser, row: EnquiryRow): EnquiryRow | CustomerEnquiry {
+  if (isPlatformAdmin(user) || canManageVenue(user, row.venueId) || canManageCommercial(user, row.venueId)) return row;
+  return Object.fromEntries(Object.entries(row).filter(([field]) => !FUNNEL_FIELDS.has(field))) as CustomerEnquiry;
 }
+
+/** Who may date a reported reply further back than the report window. */
+const BACKDATING_ROLES: ReadonlySet<string> = new Set(FIRST_RESPONSE_BACKDATING_ROLES);
+const DAY_MS = 86_400_000;
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -169,7 +180,7 @@ export async function enquiryRoutes(
         ? [desc(enquiries.createdAt), desc(enquiries.id)]
         : [enquiries.updatedAt]));
 
-    const page = paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
+    const page = paginate(rows.map((row) => asSeenBy(user, row)), total, { limit: query.data.limit, offset: query.data.offset });
     return { ...page, meta: { ...page.meta, order: query.data.order } };
   });
 
@@ -192,7 +203,7 @@ export async function enquiryRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    return { data: enquiry };
+    return { data: asSeenBy(request.user, enquiry) };
   });
 
   // POST /enquiries — authenticated, create enquiry linked to configuration
@@ -235,7 +246,7 @@ export async function enquiryRoutes(
       state: "draft",
     }).returning();
 
-    return reply.status(201).send({ data: enquiry });
+    return reply.status(201).send({ data: enquiry === undefined ? enquiry : asSeenBy(request.user, enquiry) });
   });
 
   // PATCH /enquiries/:id — owner (if draft) or admin
@@ -281,7 +292,7 @@ export async function enquiryRoutes(
       .where(eq(enquiries.id, params.data.id))
       .returning();
 
-    return { data: updated };
+    return { data: updated === undefined ? updated : asSeenBy(request.user, updated) };
   });
 
   // POST /enquiries/:id/transition — state machine transition
@@ -367,7 +378,9 @@ export async function enquiryRoutes(
           enquiryId: row.id,
           venueId: row.venueId,
           at: "now",
-          byUserId: request.user.id,
+          // The venue's team replied; a Venviewer operator who decided for
+          // the venue is not one of them, so the reply names nobody.
+          byUserId: isVenueCommercialMember(request.user, row.venueId) ? request.user.id : null,
           channel: "decision",
         });
         const [stamped] = await tx.select().from(enquiries).where(eq(enquiries.id, row.id)).limit(1);
@@ -413,7 +426,7 @@ export async function enquiryRoutes(
       }
     }
 
-    return { data: updated };
+    return { data: asSeenBy(request.user, updated) };
   });
 
   // POST /enquiries/:id/first-response — someone on the venue's team reports
@@ -443,7 +456,7 @@ export async function enquiryRoutes(
     if (enquiry === undefined) {
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
-    if (!answersFor(request.user, enquiry.venueId)) {
+    if (!isVenueCommercialMember(request.user, enquiry.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (enquiry.state === "draft") {
@@ -453,11 +466,28 @@ export async function enquiryRoutes(
       });
     }
 
+    // The enquiry reached the venue when it was sent: a draft a customer kept
+    // before sending it was not yet the venue's to answer.
+    const [sent] = await db.select({ at: sql<string | null>`min(${enquiryStatusHistory.createdAt})` })
+      .from(enquiryStatusHistory)
+      .where(and(eq(enquiryStatusHistory.enquiryId, enquiry.id), eq(enquiryStatusHistory.toStatus, "submitted")));
+    const sentAt = sent?.at ?? null;
+    const arrivedAt = sentAt === null ? enquiry.createdAt : new Date(sentAt);
+
     const respondedAt = parsed.data.respondedAt === undefined ? null : new Date(parsed.data.respondedAt);
     if (respondedAt !== null && respondedAt.getTime() > Date.now() + FIRST_RESPONSE_FUTURE_SKEW_MS) {
       return reply.status(422).send({ error: "A reply cannot be later than now.", code: "FIRST_RESPONSE_IN_FUTURE" });
     }
-    if (respondedAt !== null && respondedAt.getTime() < enquiry.createdAt.getTime()) {
+    // Reply time is what the team is judged on, so a reply dated well into
+    // the past is the venue's admin's or manager's to record.
+    if (respondedAt !== null && Date.now() - respondedAt.getTime() > FIRST_RESPONSE_REPORT_WINDOW_DAYS * DAY_MS
+      && !BACKDATING_ROLES.has(request.user.role)) {
+      return reply.status(422).send({
+        error: `A reply more than ${String(FIRST_RESPONSE_REPORT_WINDOW_DAYS)} days ago is recorded by the venue's admin or manager.`,
+        code: "FIRST_RESPONSE_TOO_OLD",
+      });
+    }
+    if (respondedAt !== null && respondedAt.getTime() < arrivedAt.getTime()) {
       return reply.status(422).send({
         error: "A reply cannot be earlier than the enquiry it answers.",
         code: "FIRST_RESPONSE_BEFORE_ENQUIRY",
@@ -468,7 +498,7 @@ export async function enquiryRoutes(
     if (respondedBy !== request.user.id) {
       const [person] = await db.select({ role: users.role, venueId: users.venueId })
         .from(users).where(eq(users.id, respondedBy)).limit(1);
-      if (person === undefined || !answersFor(person, enquiry.venueId)) {
+      if (person === undefined || !isVenueCommercialMember(person, enquiry.venueId)) {
         return reply.status(422).send({
           error: "Name someone on this venue's team as the person who replied.",
           code: "RESPONDER_NOT_AT_VENUE",
@@ -477,6 +507,9 @@ export async function enquiryRoutes(
     }
 
     const stamped = await db.transaction(async (tx) => {
+      // The reply it may replace, read under the row's lock, so the audit
+      // says exactly what this report displaced.
+      const previous = await lockFirstResponse(tx, enquiry.id, enquiry.venueId);
       const result = await stampFirstResponse(tx, {
         enquiryId: enquiry.id,
         venueId: enquiry.venueId,
@@ -497,6 +530,12 @@ export async function enquiryRoutes(
           respondedAt: respondedAt?.toISOString() ?? null,
           respondedBy,
           changed: result.changed,
+          previous: previous === null ? null : {
+            at: previous.at.toISOString(),
+            byUserId: previous.byUserId,
+            channel: previous.channel,
+            recordedAt: previous.recordedAt.toISOString(),
+          },
         },
       });
       return result;

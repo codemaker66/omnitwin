@@ -58,21 +58,49 @@ describe("the referring host", () => {
     ["mailto:info@example.test"],
     ["file:///C:/secret.txt"],
     [`https://${"a".repeat(250)}.example/`],
+    // Never an address, markup or a spreadsheet formula, whatever the scheme carries.
+    ["android-app:jane.doe@example.com"],
+    ["android-app:<img src=x onerror=alert(1)>"],
+    ['android-app:=HYPERLINK("http://evil","x")'],
+    ['http://a"b.com/'],
+    // An address or a name with no dot is not a place a person found the venue.
+    ["https://[::1]/"],
+    ["https://192.168.0.1/"],
+    ["http://localhost:5173/fresh"],
+    ["https://www./"],
   ])("keeps nothing of %j", (referrer) => {
     expect(normaliseReferrerHost(referrer)).toBeNull();
+  });
+
+  it("keeps an international name in its punycode form and strips every trailing dot", () => {
+    expect(normaliseReferrerHost("https://Bücher.example/")).toBe("xn--bcher-kva.example");
+    expect(normaliseReferrerHost("https://example.com../x")).toBe("example.com");
   });
 });
 
 describe("a UTM tag", () => {
   it("is trimmed, lowercased, spaces collapsed, and only plain characters kept", () => {
     expect(normaliseUtmValue("  Autumn   2026!  ")).toBe("autumn 2026");
-    expect(normaliseUtmValue("Spring_Fair-25 / Hall:A")).toBe("spring_fair-25 / hall:a");
+    expect(normaliseUtmValue("Spring_Fair-25 + Hall.A")).toBe("spring_fair-25 + hall.a");
     expect(normaliseUtmValue("ＦＵＬＬ\u3000ＷＩＤＴＨ")).toBe("full width");
   });
 
-  it("is dropped whole when it holds an email address, and when nothing is left", () => {
+  it("is dropped whole when it holds an email address, however it is written, or a link", () => {
     expect(normaliseUtmValue("jo.bloggs@example.com")).toBeNull();
     expect(normaliseUtmValue("newsletter-jo@example")).toBeNull();
+    // Percent-encoded once, twice, and with a full-width percent or at sign.
+    expect(normaliseUtmValue("jane.doe%40example.com")).toBeNull();
+    expect(normaliseUtmValue("jo%2540example.com")).toBeNull();
+    expect(normaliseUtmValue("jo\uFF0540example.com")).toBeNull();
+    expect(normaliseUtmValue("jo\uFF20example.com")).toBeNull();
+    // A link made for the recipient.
+    expect(normaliseUtmValue("https://example.com/reset/9f8e7d6c5b4a")).toBeNull();
+    expect(normaliseUtmValue("www.example.com/offer")).toBeNull();
+  });
+
+  it("keeps a name in any script, drops path and colon characters, and keeps nothing of nothing", () => {
+    expect(normaliseUtmValue("日本 2026")).toBe("日本 2026");
+    expect(normaliseUtmValue("spring/fair:a")).toBe("springfaira");
     expect(normaliseUtmValue("!!!")).toBeNull();
     expect(normaliseUtmValue("")).toBeNull();
     expect(normaliseUtmValue(undefined)).toBeNull();
@@ -102,7 +130,8 @@ describe("the acquisition channel", () => {
     ["social", { referrerHost: "l.instagram.com" }, "social"],
     ["a short link", { referrerHost: "t.co" }, "social"],
     ["Google search, any country", { referrerHost: "google.co.uk" }, "search"],
-    ["Google search, a subdomain", { referrerHost: "www.google.com.au" }, "search"],
+    ["Google search, its www host", { referrerHost: "www.google.com.au" }, "search"],
+    ["another Google product", { referrerHost: "docs.google.com" }, "referral"],
     ["Bing", { referrerHost: "bing.com" }, "search"],
     ["the Google app", { referrerHost: "com.google.android.googlequicksearchbox" }, "search"],
     ["the venue's own website", { referrerHost: "tradeshallglasgow.co.uk" }, "venue_website"],
@@ -128,17 +157,15 @@ describe("the acquisition channel", () => {
 });
 
 describe("an enquiry's attribution as kept", () => {
-  it("keeps the host and cleaned tags and names the channel", () => {
+  it("keeps the host and three cleaned tags and names the channel", () => {
     expect(attributeEnquiry({
       referrer: "https://www.hitched.co.uk/x?ref=1",
-      utm: { source: "Hitched", medium: "listing", campaign: "Autumn 2026", content: "jo@example.com" },
+      utm: { source: "Hitched", medium: "listing", campaign: "Autumn 2026" },
     }, CONTEXT)).toEqual({
       referrerHost: "hitched.co.uk",
       utmSource: "hitched",
       utmMedium: "listing",
       utmCampaign: "autumn 2026",
-      utmTerm: null,
-      utmContent: null,
       acquisitionChannel: "listing",
     });
   });
@@ -149,25 +176,35 @@ describe("an enquiry's attribution as kept", () => {
     }
   });
 
-  it("reads an empty capture as direct and a dropped tag as untagged", () => {
+  it("reads an empty capture as direct, and a tag kept as nothing as tagged", () => {
     expect(attributeEnquiry({}, CONTEXT).acquisitionChannel).toBe("direct");
-    // The only tag held an email address and was dropped, so nothing was tagged.
-    expect(attributeEnquiry({ utm: { content: "jo@example.com" } }, CONTEXT).acquisitionChannel).toBe("direct");
+    // The only tag held an email address and was dropped, but the visit came
+    // tagged, so it is a campaign this cannot place: other, not direct.
+    expect(attributeEnquiry({ utm: { campaign: "jo@example.com" } }, CONTEXT)).toMatchObject({ utmCampaign: null, acquisitionChannel: "other" });
   });
 
-  it("refuses anything beyond the referrer and the five tags", () => {
-    expect(EnquiryAttributionSchema.safeParse({ referrer: "https://x.example", fingerprint: "abc" }).success).toBe(false);
-    expect(EnquiryAttributionSchema.safeParse({ utm: { source: "x", id: "123" } }).success).toBe(false);
-    expect(EnquiryAttributionSchema.safeParse({ referrer: "x".repeat(2049) }).success).toBe(false);
+  it("drops what it does not read and cuts what is too long, never refusing the enquiry", () => {
+    const parsed = EnquiryAttributionSchema.parse({
+      referrer: `https://hitched.co.uk/${"x".repeat(3000)}`,
+      fingerprint: "abc",
+      utm: { source: "x".repeat(900), term: "per-recipient-id", content: "variant-b", id: "123" },
+    });
+    expect(Object.keys(parsed).sort()).toEqual(["referrer", "utm"]);
+    expect(parsed.utm).toEqual({ source: "x".repeat(500) });
+    expect(parsed.referrer).toHaveLength(2048);
   });
 
-  it("rides the guest enquiry, optional, beside each engagement kind at most once", () => {
+  it("rides the guest enquiry, which keeps each known engagement kind once and drops what it cannot read", () => {
     const base = { venueSlug: "trades-hall-glasgow", email: "guest@example.test" };
     expect(GuestEnquirySchema.safeParse(base).success).toBe(true);
-    expect(GuestEnquirySchema.safeParse({ ...base, attribution: { referrer: "https://hitched.co.uk" }, engagement: ["twin_walk_30s"] }).success).toBe(true);
-    expect(GuestEnquirySchema.safeParse({ ...base, engagement: ["twin_walk_30s", "twin_walk_30s"] }).success).toBe(false);
-    expect(GuestEnquirySchema.safeParse({ ...base, engagement: ["page_view"] }).success).toBe(false);
-    expect(EnquiryEngagementSchema.safeParse([]).success).toBe(true);
+    expect(GuestEnquirySchema.parse({ ...base, attribution: { referrer: "https://hitched.co.uk" }, engagement: ["twin_walk_30s"] }))
+      .toMatchObject({ attribution: { referrer: "https://hitched.co.uk" }, engagement: ["twin_walk_30s"] });
+    expect(GuestEnquirySchema.parse({ ...base, engagement: ["twin_walk_30s", "twin_walk_30s", "page_view"] }).engagement).toEqual(["twin_walk_30s"]);
+    // Unreadable attribution or engagement is dropped; the enquiry stands.
+    const unreadable = GuestEnquirySchema.parse({ ...base, attribution: "https://hitched.co.uk", engagement: { kind: "twin_walk_30s" } });
+    expect(unreadable.attribution).toBeUndefined();
+    expect(unreadable.engagement).toBeUndefined();
+    expect(EnquiryEngagementSchema.parse([])).toEqual([]);
   });
 });
 

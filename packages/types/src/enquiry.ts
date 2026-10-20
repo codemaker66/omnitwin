@@ -124,8 +124,6 @@ export const EnquirySchema = z.object({
   utmSource: z.string().max(100).nullable().optional(),
   utmMedium: z.string().max(100).nullable().optional(),
   utmCampaign: z.string().max(100).nullable().optional(),
-  utmTerm: z.string().max(100).nullable().optional(),
-  utmContent: z.string().max(100).nullable().optional(),
   acquisitionChannel: AcquisitionChannelSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -192,11 +190,12 @@ export const GuestEnquirySchema = z
     source: z.enum(GUEST_ENQUIRY_SOURCES).optional(),
     roomSlug: z.string().trim().min(1).max(100).optional(),
     /** Where the person came from (migration 0100). No page sends it until
-     *  the privacy notice describes it; see enquiry-funnel.ts. */
-    attribution: EnquiryAttributionSchema.optional(),
+     *  the privacy notice describes it; see enquiry-funnel.ts. Never costs
+     *  the guest their enquiry: attribution that cannot be read is dropped. */
+    attribution: EnquiryAttributionSchema.optional().catch(undefined),
     /** What happened before they sent it, e.g. a 30-second walk of the twin
      *  (migration 0100), held under the same rule as `attribution`. */
-    engagement: EnquiryEngagementSchema.optional(),
+    engagement: EnquiryEngagementSchema.optional().catch(undefined),
   })
   .refine(
     (value) => (value.configurationId === undefined) !== (value.venueSlug === undefined),

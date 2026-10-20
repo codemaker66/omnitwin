@@ -16,7 +16,7 @@ import type { Database } from "../db/client.js";
 import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
-import { acquisitionContextFor, recordEnquiryEngagement } from "../services/enquiry-funnel.js";
+import { acquisitionContextFor, funnelBrowserSignalsEnabled, recordEnquiryEngagement } from "../services/enquiry-funnel.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -92,6 +92,8 @@ export async function publicEnquiryRoutes(
       configurationId: string | null;
       roomName: string | null;
       venuePath: boolean;
+      /** The venue's database slug when the path named it. */
+      venueSlug: string | null;
     };
 
     if (parsed.data.configurationId !== undefined) {
@@ -119,6 +121,7 @@ export async function publicEnquiryRoutes(
         configurationId: parsed.data.configurationId,
         roomName: space.name,
         venuePath: false,
+        venueSlug: null,
       };
     } else {
       // venueSlug path. A room the guest names (roomSlug) is filed as their
@@ -162,8 +165,8 @@ export async function publicEnquiryRoutes(
         request.log.warn({ event: "enquiry.room_unknown", venueId: venue.id, roomSlug }, "enquiry named a room the venue does not have");
       }
       anchor = named === undefined
-        ? { venueId: venue.id, spaceId: flagship.id, configurationId: null, roomName: null, venuePath: true }
-        : { venueId: venue.id, spaceId: named.id, configurationId: null, roomName: named.name, venuePath: true };
+        ? { venueId: venue.id, spaceId: flagship.id, configurationId: null, roomName: null, venuePath: true, venueSlug: slug }
+        : { venueId: venue.id, spaceId: named.id, configurationId: null, roomName: named.name, venuePath: true, venueSlug: slug };
     }
 
     // Two senders ride this route without booking this venue's rooms: the
@@ -186,14 +189,16 @@ export async function publicEnquiryRoutes(
         : parsed.data.source ?? "walkthrough";
 
     // Where the person found the venue (migration 0100), when the page sent
-    // it: only the referring site's host and the cleaned UTM tags are kept,
-    // with the channel they name. No page sends it until the privacy notice
-    // describes it (see @omnitwin/types enquiry-funnel.ts), so today this is
-    // null for every enquiry and the columns stay empty.
+    // it: only the referring site's host and three cleaned UTM tags are kept,
+    // with the channel they name. Read only once the privacy notice describes
+    // it (funnelBrowserSignalsEnabled); until then whatever a page sends is
+    // ignored and the columns stay empty.
+    const browserSignals = funnelBrowserSignalsEnabled();
     let attribution: EnquiryAttributionRecord | null = null;
-    if (parsed.data.attribution !== undefined) {
-      const [venueSlugRow] = await db.select({ slug: venues.slug }).from(venues).where(eq(venues.id, anchor.venueId)).limit(1);
-      attribution = attributeEnquiry(parsed.data.attribution, acquisitionContextFor(venueSlugRow?.slug ?? null));
+    if (browserSignals && parsed.data.attribution !== undefined) {
+      const venueSlug = anchor.venueSlug ?? (await db.select({ slug: venues.slug }).from(venues)
+        .where(eq(venues.id, anchor.venueId)).limit(1))[0]?.slug ?? null;
+      attribution = attributeEnquiry(parsed.data.attribution, acquisitionContextFor(venueSlug));
     }
 
     // Create enquiry with guest fields, status: submitted (skip draft).
@@ -220,8 +225,6 @@ export async function publicEnquiryRoutes(
         utmSource: attribution.utmSource,
         utmMedium: attribution.utmMedium,
         utmCampaign: attribution.utmCampaign,
-        utmTerm: attribution.utmTerm,
-        utmContent: attribution.utmContent,
         acquisitionChannel: attribution.acquisitionChannel,
       }),
     }).returning();
@@ -235,7 +238,7 @@ export async function publicEnquiryRoutes(
     // attribution. The enquiry is already stored and is the record of truth,
     // so a failure here is logged, never turned into a failed submission the
     // guest would send again.
-    const engagement = parsed.data.engagement ?? [];
+    const engagement = browserSignals ? parsed.data.engagement ?? [] : [];
     if (engagement.length > 0) {
       try {
         await recordEnquiryEngagement(db, {
@@ -245,8 +248,10 @@ export async function publicEnquiryRoutes(
           kinds: engagement,
         });
       } catch (err) {
+        // Ids and the outcome only; the error under `err`, for the logger's
+        // error serializer, never its message in a field of its own.
         request.log.error(
-          { event: "enquiry.engagement_failed", enquiryId: enquiry.id, venueId: anchor.venueId, error: err instanceof Error ? err.message : String(err) },
+          { event: "enquiry.engagement_failed", enquiryId: enquiry.id, venueId: anchor.venueId, err },
           "enquiry stored but its engagement could not be recorded",
         );
       }

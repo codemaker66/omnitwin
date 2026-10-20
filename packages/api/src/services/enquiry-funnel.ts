@@ -80,7 +80,11 @@ function toStamp(row: {
  * the moment it is recorded, and only for an enquiry of `venueId`.
  */
 export async function stampFirstResponse(conn: Conn, input: StampFirstResponseInput): Promise<StampFirstResponseResult> {
-  const at = input.at === "now" ? sql`now()` : sql`LEAST(${input.at.toISOString()}::timestamptz, now())`;
+  const given = input.at === "now" ? sql`now()` : sql`LEAST(${input.at.toISOString()}::timestamptz, now())`;
+  // A time is given to the millisecond and the arrival is kept to the
+  // microsecond: a reply made the moment the enquiry arrived counts as made
+  // then, recorded as the arrival itself rather than refused.
+  const at = sql`GREATEST(${given}, ${enquiries.createdAt})`;
   const [written] = await conn.update(enquiries)
     .set({
       firstResponseAt: at,
@@ -92,7 +96,7 @@ export async function stampFirstResponse(conn: Conn, input: StampFirstResponseIn
     .where(and(
       eq(enquiries.id, input.enquiryId),
       eq(enquiries.venueId, input.venueId),
-      sql`${at} >= ${enquiries.createdAt}`,
+      sql`${given} >= date_trunc('milliseconds', ${enquiries.createdAt})`,
       or(isNull(enquiries.firstResponseAt), sql`${enquiries.firstResponseAt} > ${at}`),
     ))
     .returning(stampColumns);
@@ -102,6 +106,20 @@ export async function stampFirstResponse(conn: Conn, input: StampFirstResponseIn
     .where(and(eq(enquiries.id, input.enquiryId), eq(enquiries.venueId, input.venueId)))
     .limit(1);
   return { changed: false, stamp: toStamp(current) };
+}
+
+/**
+ * Lock an enquiry's row and read the first reply it holds, so a report can
+ * record exactly which reply it replaced (the audit keeps every report, and
+ * the enquiry only the earliest). Inside the reporting transaction.
+ */
+export async function lockFirstResponse(conn: Conn, enquiryId: string, venueId: string): Promise<FirstResponseStamp | null> {
+  const [row] = await conn.select(stampColumns)
+    .from(enquiries)
+    .where(and(eq(enquiries.id, enquiryId), eq(enquiries.venueId, venueId)))
+    .limit(1)
+    .for("update");
+  return toStamp(row);
 }
 
 /**
@@ -140,7 +158,9 @@ export async function countProposalView(conn: Conn, shareTokenId: string): Promi
     .set({
       viewCount: sql`CASE WHEN ${uncounted} THEN NULL WHEN ${newVisit} THEN ${t.viewCount} + 1 ELSE ${t.viewCount} END`,
       firstViewedAt: sql`CASE WHEN ${uncounted} THEN NULL ELSE COALESCE(${t.firstViewedAt}, now()) END`,
-      lastViewedAt: sql`now()`,
+      // now() is when each opening's transaction began, so an opening that
+      // began earlier can commit later: the last view never moves back.
+      lastViewedAt: sql`GREATEST(${t.lastViewedAt}, now())`,
     })
     .where(eq(t.id, shareTokenId));
 }
@@ -195,6 +215,18 @@ export async function removeExpiredEngagementEvents(db: Database): Promise<numbe
     .where(sql`${venueEngagementEvents.recordedAt} < now() - make_interval(months => ${ENGAGEMENT_RETENTION_MONTHS})`)
     .returning({ id: venueEngagementEvents.id });
   return removed.length;
+}
+
+/**
+ * Whether the server reads what only a browser can send: an enquiry's
+ * attribution and engagement, and a proposal page's engagement. Off unless
+ * ENQUIRY_FUNNEL_BROWSER_SIGNALS is "on", which is set only once the privacy
+ * page describes both and visitors can object (PECR Schedule A1 paragraph 5;
+ * Blake, 19 October 2026). While off the server keeps none of it, whatever a
+ * page sends, so the privacy page stays true without trusting any page.
+ */
+export function funnelBrowserSignalsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env["ENQUIRY_FUNNEL_BROWSER_SIGNALS"] === "on";
 }
 
 function hostOf(url: string): string | null {

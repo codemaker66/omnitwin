@@ -55,6 +55,27 @@ export type FirstResponseChannel = z.infer<typeof FirstResponseChannelSchema>;
  *  the server's now, since a reply cannot be made after it is recorded. */
 export const FIRST_RESPONSE_FUTURE_SKEW_MS = 2 * 60_000;
 
+/** How far back someone may date a reply they report, unless they are the
+ *  venue's admin or manager: reply time is the measure the team is judged on,
+ *  so a reply dated well into the past is a manager's to record. */
+export const FIRST_RESPONSE_REPORT_WINDOW_DAYS = 7;
+export const FIRST_RESPONSE_BACKDATING_ROLES = ["admin", "manager"] as const;
+
+/** The enquiry fields that are the venue's own measurements, never shown to
+ *  the enquiry's customer: when and how the venue first replied, and where
+ *  the person was found. */
+export const ENQUIRY_FUNNEL_FIELDS = [
+  "firstResponseAt",
+  "firstResponseBy",
+  "firstResponseChannel",
+  "firstResponseRecordedAt",
+  "referrerHost",
+  "utmSource",
+  "utmMedium",
+  "utmCampaign",
+  "acquisitionChannel",
+] as const;
+
 /** A person reporting a reply made outside Venviewer. `respondedAt` defaults
  *  to now and `respondedBy` to the person reporting it. */
 export const RecordFirstResponseSchema = z
@@ -93,9 +114,10 @@ export type RecordFirstResponseResult = z.infer<typeof RecordFirstResponseResult
 // person found the venue before that: a listing site, an AI assistant, a
 // search engine, a campaign. They differ: a planner enquiry can come from a
 // listing. The channel is worked out on the server from the referring site's
-// host and the landing page's UTM tags, the only parts kept: never the
-// referring page's path or query, and never a tag that looks like an email
-// address. NULL means nothing was captured (an older enquiry, or one sent by a
+// host and three of the landing page's UTM tags (source, medium, campaign),
+// the only parts kept: never the referring page's path or query, never
+// utm_term or utm_content (email tools put per-recipient ids there), and never
+// a tag that looks like an email address or a link. NULL means nothing was captured (an older enquiry, or one sent by a
 // page that does not send attribution); "direct" means it was captured and
 // named no source.
 // ---------------------------------------------------------------------------
@@ -115,33 +137,39 @@ export const ACQUISITION_CHANNELS = [
 export const AcquisitionChannelSchema = z.enum(ACQUISITION_CHANNELS);
 export type AcquisitionChannel = z.infer<typeof AcquisitionChannelSchema>;
 
-export const UTM_FIELDS = ["source", "medium", "campaign", "term", "content"] as const;
+/** The UTM tags read and kept. utm_term and utm_content are neither. */
+export const UTM_FIELDS = ["source", "medium", "campaign"] as const;
 export type UtmField = (typeof UTM_FIELDS)[number];
 
 /** Longest UTM value or referring host the database keeps. */
 export const UTM_VALUE_MAX = 100;
 export const REFERRER_HOST_MAX = 253;
 
-const UtmInputSchema = z.string().max(500).optional();
+/** Longest raw input read; anything beyond is cut, never refused. */
+const REFERRER_INPUT_MAX = 2048;
+const UTM_INPUT_MAX = 500;
 
-/** What a page may send beside an enquiry: the page that sent the person
- *  (document.referrer) and the landing page's UTM tags. All optional; an
- *  empty object means "captured, nothing there". */
-export const EnquiryAttributionSchema = z
-  .object({
-    referrer: z.string().max(2048).optional(),
-    utm: z
-      .object({
-        source: UtmInputSchema,
-        medium: UtmInputSchema,
-        campaign: UtmInputSchema,
-        term: UtmInputSchema,
-        content: UtmInputSchema,
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
+const UtmInputSchema = z.string().transform((value) => value.slice(0, UTM_INPUT_MAX)).optional();
+
+/**
+ * What a page may send beside an enquiry: the page that sent the person
+ * (document.referrer) and the landing page's UTM tags. All optional; an
+ * empty object means "captured, nothing there". Forgiving by design, because
+ * attribution must never cost a guest their enquiry: a key it does not know
+ * (`utm_id`, `utm_term`, a fingerprint) is dropped and never stored, an
+ * over-long value is cut, and the guest enquiry drops attribution it cannot
+ * read at all.
+ */
+export const EnquiryAttributionSchema = z.object({
+  referrer: z.string().transform((value) => value.slice(0, REFERRER_INPUT_MAX)).optional(),
+  utm: z
+    .object({
+      source: UtmInputSchema,
+      medium: UtmInputSchema,
+      campaign: UtmInputSchema,
+    })
+    .optional(),
+});
 export type EnquiryAttribution = z.infer<typeof EnquiryAttributionSchema>;
 
 type HostChannel = "assistant" | "listing" | "email" | "social" | "search";
@@ -186,8 +214,10 @@ export const ACQUISITION_HOSTS: Readonly<Record<HostChannel, readonly string[]>>
   ],
 };
 
-/** Google's search domains: google.com, google.co.uk, google.com.au, google.de. */
-const GOOGLE_SEARCH_HOST = /^(?:[a-z0-9-]+\.)*google\.(?:com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2})$/u;
+/** Google's search hosts: google.com, www.google.co.uk, google.com.au,
+ *  google.de. Not its other products (docs., drive., sites.google.com): those
+ *  are referrals, and mail. and gemini. are read as email and assistant first. */
+const GOOGLE_SEARCH_HOST = /^(?:www\.)?google\.(?:com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2})$/u;
 
 /** utm_source values that name a channel without a host. */
 const ACQUISITION_SOURCE_TOKENS: Readonly<Record<HostChannel, readonly string[]>> = {
@@ -222,12 +252,25 @@ function withoutWww(host: string): string {
   return host.replace(/^www\./u, "");
 }
 
+/** An address rather than a name: an IPv4 dotted quad or an IPv6 literal. */
+function isIpLiteral(host: string): boolean {
+  return host.startsWith("[") || host.includes(":") || /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(host);
+}
+
+/** A hostname or an Android app id as the database keeps it, the same rule as
+ *  enquiries_referrer_host_shape: lowercase letters, digits, hyphens and
+ *  underscores in at least two dot-separated labels. International names
+ *  arrive in their punycode form (xn--…), which fits. */
+const REFERRER_HOST_SHAPE = /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)+$/u;
+
 /**
  * The referring page's host, lowercased, without a leading "www." and never
  * its path or query: "https://www.Hitched.co.uk/venues/x?q=1" gives
  * "hitched.co.uk". An Android app referrer ("android-app://com.google.android.gm/")
- * gives its app id. Anything else (not a URL, another scheme, too long) gives
- * null.
+ * gives its app id and nothing after it. Anything else gives null: not a URL,
+ * another scheme, too long, an IP address, a name with no dot (localhost, an
+ * intranet host), or anything that is not plainly a hostname, none of which
+ * is a place a person found the venue.
  */
 export function normaliseReferrerHost(referrer: string): string | null {
   const trimmed = referrer.trim();
@@ -242,26 +285,47 @@ export function normaliseReferrerHost(referrer: string): string | null {
   if (url.protocol === "http:" || url.protocol === "https:") {
     host = url.hostname;
   } else if (url.protocol === "android-app:") {
-    host = url.host !== "" ? url.host : (url.pathname.replace(/^\/+/u, "").split("/")[0] ?? "");
+    host = url.host;
   } else {
     return null;
   }
-  host = withoutWww(host.toLowerCase().replace(/\.$/u, ""));
-  if (host === "" || host.length > REFERRER_HOST_MAX) return null;
+  host = host.toLowerCase().replace(/\.+$/u, "");
+  if (isIpLiteral(host)) return null;
+  host = withoutWww(host);
+  if (host.length > REFERRER_HOST_MAX || !REFERRER_HOST_SHAPE.test(host)) return null;
   return host;
 }
 
+/** Undo percent-encoding, as many layers as a campaign tool applied (they
+ *  double-encode), so "jo%2540example.com" is read as the address it is. */
+function percentDecoded(value: string): string {
+  let current = value;
+  for (let layer = 0; layer < 3; layer += 1) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(current);
+    } catch {
+      return current;
+    }
+    if (decoded === current) return current;
+    current = decoded;
+  }
+  return current;
+}
+
 /**
- * A UTM tag as the database keeps it: trimmed, lowercased, inner spaces
- * collapsed, only letters, digits and . _ - + : / kept, and at most
- * UTM_VALUE_MAX characters. A value holding an "@" is dropped whole, since
- * campaign tools sometimes put the recipient's email address in a tag.
+ * A UTM tag as the database keeps it: percent-decoded, trimmed, lowercased,
+ * inner spaces collapsed, only letters and digits of any script and . _ - +
+ * kept, and at most UTM_VALUE_MAX characters. A value holding an "@" (written
+ * plainly, full-width or percent-encoded) or a link is dropped whole: a
+ * campaign label is neither, and campaign tools sometimes put the recipient's
+ * address, or a link made for them, in a tag.
  */
 export function normaliseUtmValue(value: string | undefined): string | null {
   if (value === undefined) return null;
-  const lowered = value.normalize("NFKC").trim().toLowerCase();
-  if (lowered.includes("@")) return null;
-  const kept = lowered.replace(/\s+/gu, " ").replace(/[^a-z0-9 ._\-+:/]/gu, "").trim();
+  const lowered = percentDecoded(value.normalize("NFKC")).normalize("NFKC").trim().toLowerCase();
+  if (lowered.includes("@") || lowered.includes("://") || lowered.startsWith("www.")) return null;
+  const kept = lowered.replace(/\s+/gu, " ").replace(/[^\p{L}\p{N} ._\-+]/gu, "").trim();
   if (kept === "") return null;
   return kept.slice(0, UTM_VALUE_MAX).trim();
 }
@@ -330,8 +394,6 @@ export interface EnquiryAttributionRecord {
   readonly utmSource: string | null;
   readonly utmMedium: string | null;
   readonly utmCampaign: string | null;
-  readonly utmTerm: string | null;
-  readonly utmContent: string | null;
   readonly acquisitionChannel: AcquisitionChannel;
 }
 
@@ -345,10 +407,11 @@ export function attributeEnquiry(attribution: EnquiryAttribution, context: Acqui
     utmSource: normaliseUtmValue(utm.source),
     utmMedium: normaliseUtmValue(utm.medium),
     utmCampaign: normaliseUtmValue(utm.campaign),
-    utmTerm: normaliseUtmValue(utm.term),
-    utmContent: normaliseUtmValue(utm.content),
   };
-  const tagged = Object.values(tags).some((value) => value !== null);
+  // Tagged is whether the page carried any tag, read before cleaning: a tag
+  // kept as nothing (an email address dropped, a value of only punctuation)
+  // still says the visit came from a campaign, so it is "other", not "direct".
+  const tagged = UTM_FIELDS.some((field) => (utm[field] ?? "").trim() !== "");
   return {
     referrerHost,
     ...tags,
@@ -399,12 +462,19 @@ export const ENGAGEMENT_RETENTION_MONTHS = 24;
 /** The same moment on the same proposal within this window is one moment. */
 export const ENGAGEMENT_REPEAT_WINDOW_MINUTES = 30;
 
-/** What an enquiry may carry of what happened before it was sent: each kind
- *  at most once. */
+const ENGAGEMENT_KIND_SET: ReadonlySet<string> = new Set(ENGAGEMENT_EVENT_KINDS);
+
+function isEngagementKind(value: unknown): value is EngagementEventKind {
+  return typeof value === "string" && ENGAGEMENT_KIND_SET.has(value);
+}
+
+/** What an enquiry may carry of what happened before it was sent: each known
+ *  kind once. Like attribution it never costs the guest their enquiry: a
+ *  repeated kind counts once and a kind this release does not know is dropped. */
 export const EnquiryEngagementSchema = z
-  .array(EngagementEventKindSchema)
-  .max(ENGAGEMENT_EVENT_KINDS.length)
-  .refine((kinds) => new Set(kinds).size === kinds.length, { message: "Each engagement kind at most once" });
+  .array(z.unknown())
+  .max(16)
+  .transform((items): EngagementEventKind[] => [...new Set(items.filter(isEngagementKind))]);
 export type EnquiryEngagement = z.infer<typeof EnquiryEngagementSchema>;
 
 /** What a proposal's page sends: the moment, and nothing about the reader. */

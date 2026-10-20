@@ -327,8 +327,10 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
     }
 
     // --- viewing overlap (migration 0100) ------------------------------------
-    // A show-round needs the room to be seen: one during a confirmed booking
-    // (its set-up and clearing included, as the occupancies merge them) or a
+    // A show-round needs the room to be seen: one during an occupancy (a
+    // confirmed booking or an event's timed phases in this room, set-up and
+    // clearing included, as the occupancies merge them; the turnaround
+    // check's entries, so a phase id where an event has no booking here) or a
     // venue closure is a warning; two at once in one room is worth knowing.
     const spaceViewings = viewings
       .filter((row) => row.spaceId === spaceId)
@@ -349,7 +351,7 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
           severity: "warning",
           spaceId,
           entryIds,
-          explanation: `The viewing "${viewing.title}" overlaps "${occupied.title}", which is confirmed in this room for that time, set-up and clearing included. Move the viewing, or let the guest know the room will be in use.`,
+          explanation: `The viewing "${viewing.title}" overlaps "${occupied.title}", which has this room at that time, set-up and clearing included. Move the viewing, or let the guest know the room will be in use.`,
         });
       }
       for (const block of spaceBlocks) {

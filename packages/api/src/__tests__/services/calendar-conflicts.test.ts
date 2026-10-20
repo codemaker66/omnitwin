@@ -490,6 +490,18 @@ describe("viewing overlap (migration 0100)", () => {
     expect(overlaps[0]?.explanation).toContain("set-up and clearing included");
   });
 
+  it("warns, in words that claim no confirmation, when a viewing falls in an event's phase alone", () => {
+    // An event whose set-up is timed in this room, with no confirmed booking here.
+    const setup = phase({ eventId: "event-hold-only", eventName: "Provisional dinner" });
+    const viewing = booking({ kind: "viewing", title: "Ahmed viewing", startsAt: at("2026-09-18T15:30:00.000Z"), endsAt: at("2026-09-18T16:00:00.000Z") });
+    const [conflict] = detect({ bookings: [viewing], phases: [setup] }).conflicts;
+    expect(conflict).toMatchObject({ type: "viewing_overlap", severity: "warning" });
+    // The occupancy's entry is the phase, as the turnaround check's are.
+    expect(conflict?.entryIds).toEqual([setup.id, viewing.id]);
+    expect(conflict?.explanation).toContain("has this room at that time");
+    expect(conflict?.explanation).not.toContain("confirmed");
+  });
+
   it("warns when a viewing falls during a house block", () => {
     const block = booking({ kind: "internal_block", title: "Floor varnish" });
     const viewing = booking({ kind: "viewing", title: "Ahmed viewing", startsAt: at("2026-09-18T19:00:00.000Z"), endsAt: at("2026-09-18T19:30:00.000Z") });

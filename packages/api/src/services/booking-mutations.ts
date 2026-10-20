@@ -574,6 +574,17 @@ export async function transitionBookingCore(
       error: "A booking cannot become a viewing. Book the viewing as its own booking.",
     };
   }
+  // Nor does a viewing become a commitment: its only move is to be called
+  // off (and, by the admin's override, a called-off one put back). A hold or
+  // confirmed booking for the same guest is booked as its own booking.
+  if (row.kind === VIEWING_BOOKING_KIND && toState !== "cancelled" && toState !== VIEWING_BOOKING_KIND) {
+    return {
+      ok: false,
+      status: 400,
+      code: "INVALID_TRANSITION",
+      error: "A viewing can only be called off. Book the hold or the confirmed booking as its own booking.",
+    };
+  }
 
   // Structure first (admin may override structure per the house rule),
   // then role policy.

@@ -12,7 +12,7 @@
 --   1. enquiries.first_response_at / _by / _channel / _recorded_at: the
 --      earliest reply Venviewer knows of, who made it, how, and when Venviewer
 --      learned of it. The four are set together or not at all; the reply is
---      never before the enquiry arrived nor after it was recorded. Filled here
+--      never before the enquiry was made nor after it was recorded. Filled here
 --      from the replies Venviewer itself sent before today: the enquiry's
 --      approval or decline (each emailed to the guest) and a proposal for it
 --      marked sent. A reply sent outside Venviewer is not in any row, so it
@@ -21,15 +21,18 @@
 --      visit and how many visits it has had. last_viewed_at was overwritten
 --      on every opening, so a link opened before today has neither known:
 --      both stay NULL for it, never a guess. A link never opened counts from 0.
---   3. bookings kind 'viewing': a show-round. It belongs to an enquiry, never
---      to an event (bookings_viewing_has_no_event), so every event-scoped read
---      (the client's schedule, the hallkeeper sheet, supplier passes) is
---      unchanged by it.
+--   3. bookings kind 'viewing': a show-round. It never belongs to an event
+--      (bookings_viewing_has_no_event), so every event-scoped read (the
+--      client's schedule, the hallkeeper sheet, supplier passes) is unchanged
+--      by it, and one enquiry cannot hold the same viewing twice
+--      (bookings_viewing_once), so a repeated request books it once.
 --   4. bookings.lost_reason: why a booking was lost, from a short fixed list,
 --      only ever on a lost booking.
---   5. enquiries.referrer_host, utm_source / _medium / _campaign / _term /
---      _content and acquisition_channel: where the person found the venue,
---      kept as the referring site's host and the cleaned UTM tags only. The
+--   5. enquiries.referrer_host, utm_source / _medium / _campaign and
+--      acquisition_channel: where the person found the venue, kept as the
+--      referring site's host (a lowercase hostname or Android app id, by
+--      enquiries_referrer_host_shape) and three cleaned UTM tags only. utm_term and utm_content are not kept: email
+--      tools put per-recipient ids in them, and the channel needs neither. The
 --      source check widens from five touchpoints to seven, adding a listing
 --      site's own enquiry form and an AI assistant.
 --   6. venue_engagement_events: a moment of interest (a 30-second walk of the
@@ -41,17 +44,25 @@
 --
 -- Additive for the release before it: that release writes none of the new
 -- columns, and every new constraint holds for what it writes (it never makes
--- a viewing or names a lost reason). A link it opens after this applies keeps
--- view_count 0 with last_viewed_at set; this release reads that as a visit
--- before counting began and leaves both NULL rather than calling the next
--- visit the first.
+-- a viewing or names a lost reason, and it sets last_viewed_at alone, which no
+-- new constraint orders against first_viewed_at). A link it opens after this
+-- applies keeps view_count 0 with last_viewed_at set; this release reads that
+-- as a visit before counting began and leaves both NULL rather than calling
+-- the next visit the first.
 --
--- Each constraint is looked for on its own table before it is added, so the
--- file runs again without changing anything. The whole file is one
--- transaction; a lock not had within ten seconds fails it and nothing changes.
+-- Every lock is taken at the start, in one statement, child tables before the
+-- tables they point at (the order a booking or proposal insert takes them), so
+-- the file holds nothing while it waits for the rest. Each constraint is looked
+-- for on its own table before it is added, so the file runs again without
+-- changing anything. The whole file is one transaction; a lock not had within
+-- five seconds fails it and nothing changes.
 -- ---------------------------------------------------------------------------
 
-SET LOCAL lock_timeout = '10s';
+SET LOCAL lock_timeout = '5s';
+--> statement-breakpoint
+LOCK TABLE "proposal_share_tokens", "proposals", "bookings", "enquiries" IN ACCESS EXCLUSIVE MODE;
+--> statement-breakpoint
+LOCK TABLE "users", "spaces", "venues" IN SHARE ROW EXCLUSIVE MODE;
 --> statement-breakpoint
 
 -- 1. The first substantive reply ---------------------------------------------
@@ -75,7 +86,8 @@ BEGIN
         ('email', 'phone', 'in_person', 'video_call', 'text_message', 'proposal', 'decision'));
   END IF;
   -- When, how and when it was recorded go together; who may be gone (the
-  -- person deleted) but never names a reply that is not there.
+  -- person deleted, or a Venviewer operator acted) but never names a reply
+  -- that is not there.
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'enquiries_first_response_whole' AND conrelid = 'enquiries'::regclass) THEN
     ALTER TABLE "enquiries" ADD CONSTRAINT "enquiries_first_response_whole"
       CHECK (("first_response_at" IS NULL) = ("first_response_channel" IS NULL)
@@ -92,7 +104,7 @@ END $$;
 -- The replies Venviewer sent itself before today. A decision is the approve
 -- or decline move (each emails the guest); a proposal is its first move to
 -- sent, for the enquiry it carries or its deal's enquiry, at the same venue.
--- The earliest at or after the enquiry's arrival is kept; Venviewer knew of
+-- The earliest at or after the enquiry was made is kept; Venviewer knew of
 -- each when it sent it, so it was recorded then.
 WITH "replies" AS (
   SELECT h."enquiry_id", h."created_at" AS "at", h."changed_by" AS "by", 'decision'::varchar(20) AS "channel"
@@ -120,10 +132,6 @@ UPDATE "enquiries" SET
 FROM "earliest"
 WHERE "enquiries"."id" = "earliest"."enquiry_id" AND "enquiries"."first_response_at" IS NULL;
 --> statement-breakpoint
--- The enquiries still waiting for a reply, oldest first: the reply-time alarm's read.
-CREATE INDEX IF NOT EXISTS "enquiries_venue_unanswered_idx"
-  ON "enquiries" ("venue_id", "created_at") WHERE "first_response_at" IS NULL;
---> statement-breakpoint
 
 -- 2. Proposal link visits ------------------------------------------------------
 ALTER TABLE "proposal_share_tokens" ADD COLUMN IF NOT EXISTS "first_viewed_at" timestamp with time zone;
@@ -141,11 +149,6 @@ BEGIN
       CHECK (("view_count" IS NULL AND "first_viewed_at" IS NULL)
         OR ("view_count" = 0 AND "first_viewed_at" IS NULL)
         OR ("view_count" > 0 AND "first_viewed_at" IS NOT NULL));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'proposal_share_tokens_first_view_order' AND conrelid = 'proposal_share_tokens'::regclass) THEN
-    ALTER TABLE "proposal_share_tokens" ADD CONSTRAINT "proposal_share_tokens_first_view_order"
-      CHECK ("first_viewed_at" IS NULL
-        OR ("last_viewed_at" IS NOT NULL AND "first_viewed_at" <= "last_viewed_at"));
   END IF;
 END $$;
 --> statement-breakpoint
@@ -174,6 +177,10 @@ BEGIN
   END IF;
 END $$;
 --> statement-breakpoint
+-- The same live viewing for the same enquiry, room and start exists once.
+CREATE UNIQUE INDEX IF NOT EXISTS "bookings_viewing_once" ON "bookings" ("enquiry_id", "space_id", "starts_at")
+  WHERE "kind" = 'viewing' AND "status" = 'active' AND "deleted_at" IS NULL AND "enquiry_id" IS NOT NULL;
+--> statement-breakpoint
 
 -- 5. Where an enquiry came from ------------------------------------------------
 ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "referrer_host" varchar(253);
@@ -183,10 +190,6 @@ ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "utm_source" varchar(100);
 ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "utm_medium" varchar(100);
 --> statement-breakpoint
 ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "utm_campaign" varchar(100);
---> statement-breakpoint
-ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "utm_term" varchar(100);
---> statement-breakpoint
-ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "utm_content" varchar(100);
 --> statement-breakpoint
 ALTER TABLE "enquiries" ADD COLUMN IF NOT EXISTS "acquisition_channel" varchar(20);
 --> statement-breakpoint
@@ -205,11 +208,16 @@ BEGIN
       CHECK ("acquisition_channel" IS NULL OR "acquisition_channel" IN
         ('assistant', 'listing', 'paid', 'email', 'social', 'search', 'venue_website', 'referral', 'other', 'direct'));
   END IF;
+  -- A hostname or an Android app id, lowercase: never a path, an address or markup.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'enquiries_referrer_host_shape' AND conrelid = 'enquiries'::regclass) THEN
+    ALTER TABLE "enquiries" ADD CONSTRAINT "enquiries_referrer_host_shape"
+      CHECK ("referrer_host" IS NULL OR "referrer_host" ~ '^[a-z0-9_-]+(\.[a-z0-9_-]+)+$');
+  END IF;
   -- A referrer or a tag is kept only with the channel worked out from them.
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'enquiries_attribution_whole' AND conrelid = 'enquiries'::regclass) THEN
     ALTER TABLE "enquiries" ADD CONSTRAINT "enquiries_attribution_whole"
-      CHECK ("acquisition_channel" IS NOT NULL OR ("referrer_host" IS NULL AND "utm_source" IS NULL
-        AND "utm_medium" IS NULL AND "utm_campaign" IS NULL AND "utm_term" IS NULL AND "utm_content" IS NULL));
+      CHECK ("acquisition_channel" IS NOT NULL
+        OR ("referrer_host" IS NULL AND "utm_source" IS NULL AND "utm_medium" IS NULL AND "utm_campaign" IS NULL));
   END IF;
   -- The keys an engagement event pins itself to its enquiry's or proposal's venue by.
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'enquiries_id_venue_unique' AND conrelid = 'enquiries'::regclass) THEN

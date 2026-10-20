@@ -787,21 +787,19 @@ export const enquiries = pgTable("enquiries", {
   firstResponseChannel: varchar("first_response_channel", { length: 20 }).$type<FirstResponseChannel>(),
   firstResponseRecordedAt: timestamp("first_response_recorded_at", { withTimezone: true }),
   // Migration 0100: where the person found the venue — the referring site's
-  // host and the cleaned UTM tags only, and the channel worked out from them
+  // host and three cleaned UTM tags only (never term or content, where email
+  // tools put per-recipient ids), and the channel worked out from them
   // (attributeEnquiry in @omnitwin/types). NULL channel: nothing captured.
   referrerHost: varchar("referrer_host", { length: 253 }),
   utmSource: varchar("utm_source", { length: 100 }),
   utmMedium: varchar("utm_medium", { length: 100 }),
   utmCampaign: varchar("utm_campaign", { length: 100 }),
-  utmTerm: varchar("utm_term", { length: 100 }),
-  utmContent: varchar("utm_content", { length: 100 }),
   acquisitionChannel: varchar("acquisition_channel", { length: 20 }).$type<AcquisitionChannel>(),
 }, (table) => [
   // Migration 0100: the key an engagement event pins itself to its venue by.
   unique("enquiries_id_venue_unique").on(table.id, table.venueId),
   foreignKey({ columns: [table.firstResponseBy], foreignColumns: [users.id], name: "enquiries_first_response_by_fk" })
     .onDelete("set null"),
-  index("enquiries_venue_unanswered_idx").on(table.venueId, table.createdAt).where(sql`${table.firstResponseAt} IS NULL`),
   check(
     "enquiries_first_response_channel_check",
     sql`${table.firstResponseChannel} IS NULL OR ${table.firstResponseChannel} IN ('email', 'phone', 'in_person', 'video_call', 'text_message', 'proposal', 'decision')`,
@@ -819,8 +817,13 @@ export const enquiries = pgTable("enquiries", {
     sql`${table.acquisitionChannel} IS NULL OR ${table.acquisitionChannel} IN ('assistant', 'listing', 'paid', 'email', 'social', 'search', 'venue_website', 'referral', 'other', 'direct')`,
   ),
   check(
+    "enquiries_referrer_host_shape",
+    // `\\.` here cooks to `\.` in the SQL: a literal dot, as in migration 0100.
+    sql`${table.referrerHost} IS NULL OR ${table.referrerHost} ~ '^[a-z0-9_-]+(\\.[a-z0-9_-]+)+$'`,
+  ),
+  check(
     "enquiries_attribution_whole",
-    sql`${table.acquisitionChannel} IS NOT NULL OR (${table.referrerHost} IS NULL AND ${table.utmSource} IS NULL AND ${table.utmMedium} IS NULL AND ${table.utmCampaign} IS NULL AND ${table.utmTerm} IS NULL AND ${table.utmContent} IS NULL)`,
+    sql`${table.acquisitionChannel} IS NOT NULL OR (${table.referrerHost} IS NULL AND ${table.utmSource} IS NULL AND ${table.utmMedium} IS NULL AND ${table.utmCampaign} IS NULL)`,
   ),
   index("enquiries_venue_state_idx").on(table.venueId, table.state),
   index("enquiries_user_id_idx").on(table.userId),
@@ -2386,10 +2389,6 @@ export const proposalShareTokens = pgTable("proposal_share_tokens", {
     "proposal_share_tokens_views_known",
     sql`(${table.viewCount} IS NULL AND ${table.firstViewedAt} IS NULL) OR (${table.viewCount} = 0 AND ${table.firstViewedAt} IS NULL) OR (${table.viewCount} > 0 AND ${table.firstViewedAt} IS NOT NULL)`,
   ),
-  check(
-    "proposal_share_tokens_first_view_order",
-    sql`${table.firstViewedAt} IS NULL OR (${table.lastViewedAt} IS NOT NULL AND ${table.firstViewedAt} <= ${table.lastViewedAt})`,
-  ),
 ]);
 
 export const proposalComments = pgTable("proposal_comments", {
@@ -3570,8 +3569,11 @@ export const bookings = pgTable("bookings", {
   lostReason: varchar("lost_reason", { length: 30 }).$type<BookingLostReason>(),
 }, (table) => [
   unique("bookings_id_venue_unique").on(table.id, table.venueId),
-  // Migration 0100: a show-round belongs to its enquiry, never to an event.
+  // Migration 0100: a show-round never belongs to an event, and one enquiry
+  // holds the same live viewing once, so a repeated request books it once.
   check("bookings_viewing_has_no_event", sql`${table.kind} <> 'viewing' OR ${table.eventId} IS NULL`),
+  uniqueIndex("bookings_viewing_once").on(table.enquiryId, table.spaceId, table.startsAt)
+    .where(sql`${table.kind} = 'viewing' AND ${table.status} = 'active' AND ${table.deletedAt} IS NULL AND ${table.enquiryId} IS NOT NULL`),
   check(
     "bookings_lost_reason_check",
     sql`${table.lostReason} IS NULL OR (${table.status} = 'lost' AND ${table.lostReason} IN ('price', 'date_taken', 'room_unsuitable', 'chose_elsewhere', 'plans_changed', 'no_reply', 'other'))`,

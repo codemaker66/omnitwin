@@ -41,7 +41,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canManageCommercial, roleReadsInternalEvents } from "../utils/query.js";
+import { canManageCommercial, isVenueCommercialMember, roleReadsInternalEvents } from "../utils/query.js";
 import {
   PROPOSAL_STATES,
   canTransitionProposal,
@@ -58,6 +58,7 @@ import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
 import {
   countProposalView,
   enquiryAnsweredByProposal,
+  funnelBrowserSignalsEnabled,
   recordProposalEngagement,
   stampFirstResponse,
 } from "../services/enquiry-funnel.js";
@@ -875,7 +876,8 @@ export async function proposalRoutes(
             enquiryId,
             venueId: row.venueId,
             at: "now",
-            byUserId: request.user.id,
+            // A Venviewer operator who sends it for the venue is not its team.
+            byUserId: isVenueCommercialMember(request.user, row.venueId) ? request.user.id : null,
             channel: "proposal",
           });
         }
@@ -1873,8 +1875,13 @@ export async function proposalShareRoutes(
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
 
-    // A visit, counted once per PROPOSAL_VIEW_VISIT_GAP_MINUTES (0100).
-    await countProposalView(db, resolved.shareToken.id);
+    // A visit, counted once per PROPOSAL_VIEW_VISIT_GAP_MINUTES (0100). A
+    // measure, never the page: if counting fails the client still reads it.
+    try {
+      await countProposalView(db, resolved.shareToken.id);
+    } catch (err) {
+      request.log.error({ event: "proposal.view_count_failed", proposalId: resolved.proposal.id, err }, "proposal view not counted");
+    }
 
     return { data: clientSafe };
   });
@@ -1883,11 +1890,16 @@ export async function proposalShareRoutes(
   // (a 30-second walk of the twin from it), attached to this proposal and
   // nothing about the reader (migration 0100). Only for a link that opens a
   // proposal shown to its client. The same moment within the repeat window is
-  // one, so a reload or a retry adds nothing. No page sends it yet: it waits
-  // for the privacy notice (see @omnitwin/types enquiry-funnel.ts).
+  // one, so a reload or a retry adds nothing. Answers 404 until
+  // ENQUIRY_FUNNEL_BROWSER_SIGNALS is "on", which waits for the privacy notice
+  // (see funnelBrowserSignalsEnabled).
   server.post("/:token/engagement", {
     config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
   }, async (request, reply) => {
+    // Off until the privacy page describes it: then there is nothing here.
+    if (!funnelBrowserSignalsEnabled()) {
+      return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
+    }
     const params = ShareTokenParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
