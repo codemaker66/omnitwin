@@ -178,6 +178,11 @@ export const HallkeeperFloorPlanSchema = z.object({
     widthM: z.number().finite().positive(),
     depthM: z.number().finite().positive(),
     collisionType: z.enum(["box", "cylinder"]),
+    /** The planner's name for this piece ("Table 5"), printed on the plan.
+     *  Absent in plans frozen before 18 Oct 2026. */
+    label: z.string().min(1).max(80).optional(),
+    /** The planner's note on this piece, marked on the printed plan. */
+    note: z.string().min(1).max(500).optional(),
   })),
 }).refine((plan) => {
   const xs = plan.outline.map((point) => point.x);

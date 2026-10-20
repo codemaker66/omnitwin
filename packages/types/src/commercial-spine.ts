@@ -3,6 +3,7 @@ import { VenueIdSchema } from "./venue.js";
 import { EnquiryIdSchema } from "./enquiry.js";
 import { UserIdSchema } from "./user.js";
 import { ProposalIdSchema, QuoteIdSchema, MinorUnitAmountSchema, findUnsupportedProposalClaim } from "./proposal.js";
+import { OpportunityLostToSchema } from "./competitor-watch.js";
 
 export const COMMERCIAL_SPINE_SCHEMA_VERSION = "venviewer.commercial-spine.v1";
 
@@ -261,6 +262,8 @@ export type CreateOpportunity = z.infer<typeof CreateOpportunitySchema>;
 export const UpdateOpportunitySchema = CreateOpportunitySchema.omit({ venueId: true }).partial().extend({
   stage: OpportunityStageSchema.optional(),
   note: SafeCommercialTextSchema.nullable().optional(),
+  /** Who won, given only when the deal is marked lost (the competitor watch). */
+  lostTo: OpportunityLostToSchema.optional(),
 });
 export type UpdateOpportunity = z.infer<typeof UpdateOpportunitySchema>;
 

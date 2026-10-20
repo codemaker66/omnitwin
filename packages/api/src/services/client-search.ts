@@ -44,14 +44,14 @@ export function containsPattern(query: string): string {
   return `%${query.replace(/[\\%_]/gu, (character) => `\\${character}`)}%`;
 }
 
-interface Matcher {
+export interface Matcher {
   /** True when any of the columns matches. */
   readonly where: (...columns: readonly (AnyPgColumn | SQL)[]) => SQL;
   /** How well the best of the columns matches, for ordering (1 for a substring). */
   readonly rank: (...columns: readonly (AnyPgColumn | SQL)[]) => SQL<number>;
 }
 
-function matcher(query: string): Matcher {
+export function matcher(query: string): Matcher {
   const pattern = containsPattern(query);
   const lowered = query.toLowerCase();
   const fuzzy = query.length >= FUZZY_MIN_LENGTH;
@@ -78,7 +78,7 @@ export interface ClientSearchResults {
     id: string; name: string; spaceName: string | null; userName: string | null; createdAt: Date;
   }[];
   readonly contacts: readonly {
-    id: string; name: string; email: string; phone: string | null; accountName: string | null;
+    id: string; name: string; email: string | null; phone: string | null; accountName: string | null;
   }[];
   readonly accounts: readonly { id: string; name: string; accountType: string; primaryContactId: string | null }[];
   readonly deals: readonly {
@@ -232,7 +232,7 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
 
 export interface ContactProfile {
   readonly contact: {
-    id: string; venueId: string; name: string; email: string; phone: string | null; roleLabel: string | null;
+    id: string; venueId: string; name: string; email: string | null; phone: string | null; roleLabel: string | null;
     sourceEnquiryId: string | null; createdAt: Date;
     account: { id: string; name: string } | null;
   };

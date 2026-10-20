@@ -13,6 +13,8 @@ import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
+import { runPageChecks } from "../services/competitor-watch-data.js";
+import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check.js";
 
 // ---------------------------------------------------------------------------
 // The hold-reminder workflow's identity (T-619).
@@ -40,9 +42,13 @@ function secretEquals(presented: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+/** The workflow tokens, one per unattended route, so one leaked secret
+ *  reaches one pass only. */
+type CronTokenVariable = "DIARY_CRON_TOKEN" | "COMPETITOR_WATCH_CRON_TOKEN";
+
 /** True when the request carries the configured workflow token. */
-function hasCronToken(request: FastifyRequest): boolean {
-  const configured = process.env["DIARY_CRON_TOKEN"];
+function hasCronToken(request: FastifyRequest, variable: CronTokenVariable = "DIARY_CRON_TOKEN"): boolean {
+  const configured = process.env[variable];
   // An unset — or implausibly short — token never authenticates anything.
   if (configured === undefined || configured.length < CRON_TOKEN_MIN_LENGTH) return false;
   const header = request.headers.authorization;
@@ -51,14 +57,32 @@ function hasCronToken(request: FastifyRequest): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Error-reporting check.
+//
+// Proves that a production failure reaches Sentry, through the same path a
+// real one takes: the handler throws, the error normaliser logs it and hands
+// the raw error to the Sentry capture hook, the event is scrubbed, and the
+// caller receives the ordinary 500 envelope. Run it after a deploy or a DSN
+// change; a 500 here plus a SentryVerificationError issue in the venviewer-api
+// project means errors are arriving. It reads and writes no data.
+// ---------------------------------------------------------------------------
+
+/** The deliberate error the check throws; its name keeps it grouped as one
+ *  Sentry issue, apart from any real failure. */
+export class SentryVerificationError extends Error {
+  override readonly name = "SentryVerificationError";
+}
+
+// ---------------------------------------------------------------------------
 // Plugin — admin-only endpoints
 // ---------------------------------------------------------------------------
 
 export async function adminRoutes(
   server: FastifyInstance,
-  opts: { db: Database },
+  opts: { db: Database; pageFetcher?: PageFetcher },
 ): Promise<void> {
   const { db } = opts;
+  const pageFetcher = opts.pageFetcher ?? createHttpsPageFetcher();
 
   // POST /admin/cleanup — trigger manual cleanup of stale preview configs,
   // orphaned uploads, guests' allergy notes past their retention, and
@@ -202,5 +226,61 @@ export async function adminRoutes(
     }
     const summary = await runHoldReminderPass({ db, dryRun, logger: request.log });
     return { data: { ...summary, emailDelivery } };
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/competitor-watch/page-checks — the competitor watch's
+  // page-change pass for every venue: each page a person has recorded as
+  // allowed (terms and robots.txt read), at most weekly, robots.txt obeyed,
+  // a hash and a date kept, never a price. The same pass a venue's own
+  // "Check the pages now" runs for its set (routes/competitor-watch.ts).
+  //
+  // Two identities, as for the hold reminders: a signed-in platform
+  // administrator, or the Competitor page check workflow presenting
+  // COMPETITOR_WATCH_CRON_TOKEN (its own secret, so the reminder token
+  // cannot run it). The workflow's schedule stays commented out until Blake
+  // approves it. The answer carries counts only: the workflow's summary is
+  // public, so it never names a venue or a competitor.
+  // -------------------------------------------------------------------------
+
+  const pageCheckCron = new WeakSet<FastifyRequest>();
+
+  const authenticateOrPageCheckCron = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (hasCronToken(request, "COMPETITOR_WATCH_CRON_TOKEN")) {
+      pageCheckCron.add(request);
+      request.log.info({ actor: "competitor-watch-cron" }, "page-check pass authorised by service token");
+      return;
+    }
+    await authenticate(request, reply);
+  };
+
+  const platformAdminOrPageCheckCron = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (pageCheckCron.has(request)) return;
+    await authorizePlatformAdmin()(request, reply);
+  };
+
+  server.post("/competitor-watch/page-checks", {
+    preHandler: [authenticateOrPageCheckCron, platformAdminOrPageCheckCron],
+  }, async (request) => {
+    const scheduled = pageCheckCron.has(request);
+    const run = await runPageChecks(db, {
+      venueId: null,
+      now: new Date(),
+      fetcher: pageFetcher,
+      runBy: scheduled ? "schedule" : "person",
+      triggeredBy: scheduled ? null : request.user.id,
+    });
+    const outcomes: Record<string, number> = {};
+    for (const result of run.results) outcomes[result.outcome] = (outcomes[result.outcome] ?? 0) + 1;
+    return { data: { checkedAt: run.checkedAt, pages: run.results.length, outcomes } };
+  });
+
+  // POST /admin/observability/sentry-check — see SentryVerificationError.
+  server.post("/observability/sentry-check", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async () => {
+    throw new SentryVerificationError(
+      "Deliberate error from POST /admin/observability/sentry-check, raised to prove production errors reach Sentry.",
+    );
   });
 }

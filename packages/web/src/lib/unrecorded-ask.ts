@@ -38,7 +38,19 @@ export interface QuoteQuestion {
   readonly chairs: number;
 }
 
-export type AskTopic = UnrecordedFact | HeadcountQuestion | QuoteQuestion;
+/** A guest count the planner cannot lay out at its own spacing: how the venue
+ *  would set the room for it. */
+export interface LayoutQuestion {
+  readonly kind: "layout";
+  readonly guests: number;
+  /** Seats on the plan's floor now, with no room for another table at the
+   *  planner's spacing. A count of chairs, never a capacity. */
+  readonly seatsPlaced: number;
+  /** The occasion in words: "a seated dinner". */
+  readonly occasion: string;
+}
+
+export type AskTopic = UnrecordedFact | HeadcountQuestion | QuoteQuestion | LayoutQuestion;
 
 export type AskAudience = "staff" | "guest";
 
@@ -94,6 +106,9 @@ function questionFor(topic: AskTopic, room: string): string {
         ? ` The plan has ${countLabel(topic.tables, "table")} and ${countLabel(topic.chairs, "chair")}.`
         : "";
       return `Could you quote for ${guests}, including VAT and any compulsory charges?${layout}`;
+    }
+    if (topic.kind === "layout") {
+      return `We are planning ${String(topic.guests)} guests for ${topic.occasion} in ${room}. The plan has ${String(topic.seatsPlaced)} seats, with no room for another table at the online planner's spacing. How would you lay the room out for ${String(topic.guests)}?`;
     }
     return `We are planning ${String(topic.guests)} guests for ${topic.formatLabel} in ${room}, more than the published ${String(topic.figure)}. Is that possible, and what would it need?`;
   }

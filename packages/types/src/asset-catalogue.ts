@@ -36,6 +36,13 @@ export interface CanonicalAsset {
   readonly slug: string;
   /** Human-readable name — shown in UI, stored in DB, used for hallkeeper sheet. */
   readonly name: string;
+  /**
+   * The words a guest reads, only where `name` is a maker's model reference
+   * ("Burgess Turini 18/3"). The planner shows it and the visitor's plan
+   * prints it; `name` stays the stock identity the database, inventory and
+   * hallkeeper sheet use. See `assetDisplayName`.
+   */
+  readonly plainName?: string;
   /** FurnitureCategory enum value. */
   readonly category: FurnitureCategory;
   /** Dimensions in real-world metres. */
@@ -167,6 +174,8 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     id: "7f1fb7a2-5210-57b1-9108-11255c059520",
     slug: "burgess-turini-18-3",
     name: "Burgess Turini 18/3",
+    // The velvet sibling of the Checked Banquet Chair (crafted-chairs.ts).
+    plainName: "Velvet Banquet Chair",
     category: "chair",
     // Manufacturer's standard 18/3 specifications, identified by Blake.
     // The supplied Rodin model is generated presentation geometry.
@@ -702,4 +711,14 @@ export function getCanonicalAssetById(id: string): CanonicalAsset | undefined {
 
 export function getCanonicalAssetBySlug(slug: string): CanonicalAsset | undefined {
   return bySlug.get(slug);
+}
+
+/**
+ * The name a guest reads for a catalogue item, as the planner shows it: its
+ * `plainName` where the catalogue name is a maker's model reference, else
+ * the stored name. An item outside the canonical catalogue keeps the name it
+ * was stored with.
+ */
+export function assetDisplayName(id: string, storedName: string): string {
+  return byId.get(id)?.plainName ?? storedName;
 }

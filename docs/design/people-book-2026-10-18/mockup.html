@@ -1,0 +1,321 @@
+<title>The People Book</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a proposal page (themed) framing a picture of the People Book desk, which always keeps the product's
+   light register: an ivory ledger on the sage ground beside the forest decision panel (house-tokens.css). */
+:root {
+  --bg: #efeada; --surface: #fbf8ee; --ink: #14302a; --ink-2: #42584e; --ink-3: #55655c;
+  --rule: #d9d4c2; --accent: #94491f; --accent-wash: #f3dcc9; --focus: #14302a;
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #152820; --surface: #1b3229; --ink: #f2eee1; --ink-2: #d0d9cd; --ink-3: #a9bdb0; --rule: #33503f; --accent: #f0b68f; --accent-wash: #3b2a1e; --focus: #f0b68f; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #152820; --surface: #1b3229; --ink: #f2eee1; --ink-2: #d0d9cd; --ink-3: #a9bdb0; --rule: #33503f; --accent: #f0b68f; --accent-wash: #3b2a1e; --focus: #f0b68f; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 3px; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 500; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.page { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 80px; display: grid; gap: 40px; }
+.intro { display: grid; gap: 10px; max-width: 72ch; }
+.eyebrow { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.intro h1 { font-size: clamp(2rem, 1.5rem + 2vw, 2.9rem); line-height: 1.08; }
+.intro p { color: var(--ink-2); font-size: 1.0625rem; }
+.badge { display: inline-flex; align-items: center; gap: 7px; font-size: 0.8125rem; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--accent-wash); color: var(--accent); justify-self: start; }
+.badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+/* ---------- The picture of the product (fixed light register) ---------- */
+.screen-wrap { overflow-x: auto; border-radius: 10px; box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 20px 50px -24px rgba(20,48,42,0.45); }
+.screen {
+  --s-bar: #f2edda; --s-ground: #819087; --s-plane: #97a597; --s-sheet: #f2eddd; --s-paper: #faf8f1; --s-selected: #e5dec9;
+  --s-ink: #14302a; --s-ink-2: #42584e; --s-ink-3: #55655c; --s-rule: #d9d4c2; --s-edge: #747f6f;
+  --s-copper-plane: #deb599; --s-plane-ink: #3e3528; --s-copper: #94491f; --s-copper-dot: #c1703f; --s-copper-wash: #f3dcc9;
+  --s-forest: #264337; --s-forest-deep: #1f3a2f; --s-cream: #efe7cf; --s-f1: #f2eee1; --s-f2: #d0d9cd; --s-f3: #a9bdb0; --s-frule: #4d6c5c; --s-fedge: #86a192; --s-lit: #f0b68f;
+  --s-sage: #2f5a3a; --s-sage-wash: #dbe5d3; --s-sage-dot: #5d8963; --s-sage-lit: #9fc7ae;
+  --s-amber: #6f500f; --s-amber-wash: #efe0b8; --s-amber-dot: #c3952b;
+  --s-slate: #545e59; --s-slate-wash: #e3e3db; --s-slate-dot: #8e9992;
+  color-scheme: light; background: var(--s-ground); color: var(--s-ink); min-width: 1080px; font-family: var(--sans);
+}
+.bar { display: flex; align-items: center; gap: 28px; padding: 0 28px; height: 72px; background: var(--s-bar); border-bottom: 1px solid #d6d0bd; }
+.wordmark { font-family: var(--serif); font-size: 1.5rem; letter-spacing: 0.06em; color: var(--s-ink); padding-right: 24px; border-right: 1px solid var(--s-rule); }
+.venue { font-weight: 600; font-size: 0.9375rem; }
+.nav { display: flex; gap: 26px; font-size: 0.9375rem; font-weight: 500; color: var(--s-ink); }
+.nav span { padding: 24px 0 22px; }
+.nav .on { border-bottom: 2px solid var(--s-ink); }
+.who { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 0.875rem; }
+.who .av { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--s-ink); display: grid; place-items: center; font-weight: 500; }
+.who small { display: block; color: var(--s-ink-3); font-size: 0.75rem; }
+
+.desk { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 24px; padding: 24px 24px 0; overflow: hidden; }
+.desk::before { content: ""; position: absolute; left: -60px; top: 120px; width: 70%; height: 1200px; background: var(--s-plane); transform: rotate(-9deg); transform-origin: top left; }
+.sheet { position: relative; background: var(--s-sheet); padding: 40px 48px 36px; min-width: 0; }
+.date-line { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--s-ink-2); }
+.sheet h2 { font-family: var(--serif); font-size: 3.6rem; line-height: 1; margin-top: 10px; }
+.owed { font-family: var(--serif); font-size: 1.3rem; line-height: 1.45; color: var(--s-ink-2); margin-top: 18px; max-width: 46ch; }
+.owed b { font-weight: 500; color: var(--s-copper); }
+.owed strong { font-weight: 500; color: var(--s-ink); }
+.plane { margin: 28px -60px 0; padding: 22px 60px 24px; background: var(--s-copper-plane); clip-path: polygon(0 10%, 100% 0, 99% 100%, 1% 92%); display: grid; grid-template-columns: repeat(5, 1fr); }
+.cell { padding: 6px 18px; border-left: 1px solid rgba(62,53,40,0.18); }
+.cell:first-child { border-left: 0; padding-left: 4px; }
+.cell .n { font-family: var(--serif); font-size: 2.4rem; line-height: 1.05; color: var(--s-plane-ink); font-variant-numeric: tabular-nums; }
+.cell .l { display: flex; align-items: center; gap: 7px; font-size: 0.875rem; color: var(--s-plane-ink); }
+.cell .l i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.cell.on .l { font-weight: 600; }
+.cell.on { box-shadow: inset 0 -3px 0 var(--s-forest); }
+.find { display: flex; align-items: center; gap: 12px; margin-top: 26px; padding: 12px 16px; background: var(--s-paper); border: 1px solid var(--s-edge); border-radius: 6px; color: var(--s-ink-3); font-size: 0.9375rem; }
+.find kbd { margin-left: auto; font-family: var(--mono); font-size: 0.75rem; padding: 2px 7px; border: 1px solid var(--s-rule); border-radius: 4px; color: var(--s-ink-2); }
+.showing { font-size: 0.8125rem; color: var(--s-ink-3); margin-top: 18px; }
+.group { display: flex; align-items: center; gap: 14px; margin-top: 22px; font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--s-ink-2); }
+.group::after { content: ""; flex: 1; height: 1px; background: var(--s-rule); order: 1; }
+.group .c { order: 2; font-weight: 500; letter-spacing: 0; }
+.row { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; gap: 16px; align-items: start; padding: 16px 14px; margin-top: 8px; border-left: 3px solid transparent; }
+.row.sel { background: var(--s-selected); border-left-color: var(--s-forest); }
+.tile { border: 1px solid var(--s-rule); background: var(--s-paper); text-align: center; padding: 5px 0 6px; line-height: 1.1; }
+.tile .d { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; color: var(--s-ink-2); }
+.tile .num { font-family: var(--serif); font-size: 1.6rem; color: var(--s-ink); }
+.tile .m { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; color: var(--s-ink-2); }
+.row h3 { font-family: var(--serif); font-size: 1.3rem; font-weight: 500; line-height: 1.2; }
+.row .meta { font-size: 0.9375rem; color: var(--s-ink-2); margin-top: 3px; }
+.row .note { font-family: var(--serif); font-style: italic; font-size: 0.9375rem; color: var(--s-ink-3); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .right { display: grid; justify-items: end; gap: 6px; font-size: 0.8125rem; color: var(--s-ink-3); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; font-weight: 500; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.chip i { width: 7px; height: 7px; border-radius: 50%; }
+.c-sage { background: var(--s-sage-wash); color: var(--s-sage); } .c-sage i { background: var(--s-sage-dot); }
+.c-amber { background: var(--s-amber-wash); color: var(--s-amber); } .c-amber i { background: var(--s-amber-dot); }
+.c-copper { background: var(--s-copper-wash); color: var(--s-copper); } .c-copper i { background: var(--s-copper-dot); }
+.c-slate { background: var(--s-slate-wash); color: var(--s-slate); } .c-slate i { background: var(--s-slate-dot); }
+
+.panel { position: relative; background: var(--s-forest); color: var(--s-f1); padding: 0 0 32px; min-width: 0; }
+.panel-top { display: flex; align-items: center; gap: 22px; padding: 18px 28px; border-bottom: 1px solid var(--s-frule); font-size: 0.9375rem; color: var(--s-f2); }
+.panel-top .x { margin-left: auto; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--s-fedge); display: grid; place-items: center; color: var(--s-f1); }
+.pbody { padding: 26px 28px 0; display: grid; gap: 22px; }
+.p-eyebrow { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--s-f3); }
+.panel h2 { font-family: var(--serif); font-size: 2.5rem; line-height: 1.05; color: var(--s-f1); margin-top: 8px; }
+.sub { color: var(--s-f2); font-size: 1rem; margin-top: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.f-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; font-weight: 500; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--s-fedge); color: var(--s-f2); }
+.f-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--s-sage-lit); }
+.f-chip.lit i { background: var(--s-lit); }
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--s-frule); border-bottom: 1px solid var(--s-frule); }
+.fact { padding: 14px 14px 14px 0; }
+.fact + .fact { border-left: 1px solid var(--s-frule); padding-left: 16px; }
+.fact .v { font-family: var(--serif); font-size: 1.55rem; line-height: 1.1; color: var(--s-f1); font-variant-numeric: tabular-nums; }
+.fact .k { font-size: 0.8125rem; color: var(--s-f3); margin-top: 2px; }
+.sec-h { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--s-f3); margin-bottom: 10px; }
+.again { border: 1px solid var(--s-fedge); border-radius: 6px; padding: 16px 18px; display: grid; gap: 12px; }
+.again p { color: var(--s-f2); }
+.again p strong { color: var(--s-f1); font-weight: 500; }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn-primary { background: var(--s-cream); color: var(--s-forest-deep); font-weight: 600; font-size: 0.9375rem; padding: 11px 18px; border-radius: 3px; }
+.btn-quiet { border: 1px solid var(--s-fedge); color: var(--s-f1); font-weight: 500; font-size: 0.9375rem; padding: 10px 16px; border-radius: 3px; }
+.consequence { font-size: 0.875rem; color: var(--s-f3); }
+.composer { background: var(--s-forest-deep); border-radius: 6px; padding: 14px 16px; display: grid; gap: 10px; }
+.kinds { display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.8125rem; }
+.kinds span { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--s-frule); color: var(--s-f2); }
+.kinds span.on { background: var(--s-cream); color: var(--s-forest-deep); border-color: var(--s-cream); font-weight: 600; }
+.kinds kbd, .composer kbd { font-family: var(--mono); font-size: 0.75rem; opacity: 0.85; margin-left: 4px; }
+.typed { font-size: 0.9375rem; color: var(--s-f1); line-height: 1.5; min-height: 46px; border-bottom: 1px solid var(--s-frule); padding-bottom: 8px; }
+.typed .caret { display: inline-block; width: 1px; height: 1.1em; background: var(--s-lit); vertical-align: -3px; margin-left: 1px; }
+.compose-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 0.8125rem; color: var(--s-f3); }
+.compose-foot .btn-primary { margin-left: auto; padding: 8px 14px; font-size: 0.875rem; }
+.tl { list-style: none; margin: 0; padding: 0; display: grid; }
+.tl li { display: grid; grid-template-columns: 16px 1fr; gap: 12px; padding: 10px 0; border-top: 1px solid var(--s-frule); }
+.tl li:first-child { border-top: 0; }
+.tl .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 7px; background: var(--s-f3); }
+.tl .dot.call { background: var(--s-lit); } .tl .dot.prop { background: var(--s-sage-lit); } .tl .dot.imp { background: var(--s-f2); } .tl .dot.merge { background: transparent; border: 1px solid var(--s-f2); }
+.tl .when { font-size: 0.8125rem; color: var(--s-f3); }
+.tl .what { font-size: 0.9375rem; color: var(--s-f1); }
+.tl .what em { font-family: var(--serif); color: var(--s-f2); }
+.tl .undo { color: var(--s-lit); text-decoration: underline; text-underline-offset: 3px; font-size: 0.8125rem; margin-left: 6px; }
+.contact { display: grid; gap: 4px; font-size: 0.9375rem; }
+.contact .k { color: var(--s-f3); font-size: 0.8125rem; }
+.keep { font-size: 0.8125rem; color: var(--s-f3); border-top: 1px solid var(--s-frule); padding-top: 14px; }
+
+/* ---------- The proposal below the picture ---------- */
+.illus { font-size: 0.8125rem; color: var(--ink-3); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px; }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 22px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card h3 { font-size: 1.3rem; line-height: 1.2; }
+.card ul, .card ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--ink-2); }
+footer { color: var(--ink-3); font-size: 0.8125rem; border-top: 1px solid var(--rule); padding-top: 16px; }
+
+@media (max-width: 760px) {
+  .screen { min-width: 0; }
+  .bar { height: auto; flex-wrap: wrap; padding: 12px 16px; gap: 10px 18px; }
+  .wordmark { border-right: 0; padding-right: 0; }
+  .nav { gap: 16px; flex-wrap: wrap; } .nav span { padding: 4px 0; }
+  .who .name { display: none; }
+  .desk { grid-template-columns: 1fr; padding: 12px 12px 0; gap: 12px; }
+  .sheet { padding: 26px 18px 22px; }
+  .sheet h2 { font-size: 2.6rem; }
+  .owed { font-size: 1.1rem; }
+  .plane { margin: 22px -30px 0; padding: 18px 30px; grid-template-columns: repeat(3, 1fr); row-gap: 8px; }
+  .cell { padding: 4px 10px; } .cell .n { font-size: 1.8rem; }
+  .cell:nth-child(4) { border-left: 0; padding-left: 4px; }
+  .row { grid-template-columns: 54px minmax(0, 1fr); padding: 14px 8px; }
+  .row .right { grid-column: 2; justify-items: start; }
+  .panel-top, .pbody { padding-left: 18px; padding-right: 18px; }
+  .panel h2 { font-size: 2rem; }
+  .fact .v { font-size: 1.2rem; }
+}
+</style>
+
+<div class="page">
+  <header class="intro">
+    <span class="badge">Draft for your approval</span>
+    <span class="eyebrow">Venviewer · the first build</span>
+    <h1>The People Book</h1>
+    <p>One record for every client person and organisation at Trades Hall, the whole story with them on one timeline, and Trades House's Salesforce brought across until it can be switched off. Below is how it would look on the desk.</p>
+  </header>
+
+  <div class="screen-wrap" role="img" aria-label="Mockup of the People Book desk: the ledger of people on the left, and Dr Aileen Murray's record on the right with her facts, a same-again suggestion, a call being logged and her timeline.">
+    <div class="screen">
+      <div class="bar" aria-hidden="true">
+        <span class="wordmark">VENVIEWER</span>
+        <span class="venue">Trades Hall Glasgow</span>
+        <span class="nav"><span>Plan</span><span>Diary</span><span>Hallkeeper</span><span class="on">People</span><span>More</span></span>
+        <span class="who"><span class="av">EM</span><span class="name">Elaine MacGregor<small>Venue team</small></span></span>
+      </div>
+      <div class="desk">
+        <section class="sheet">
+          <div class="date-line">Monday 19 October · Good morning, Elaine</div>
+          <h2>People</h2>
+          <p class="owed"><b>2 possible duplicates</b> are waiting for a look, and <b>5 follow-ups</b> are due this week. <strong>38 people</strong> came across from Salesforce on Saturday.</p>
+          <div class="plane">
+            <div class="cell on"><div class="n">1,204</div><div class="l">People</div></div>
+            <div class="cell"><div class="n">312</div><div class="l">Organisations</div></div>
+            <div class="cell"><div class="n">5</div><div class="l"><i style="background:#c1703f"></i>Follow-ups due</div></div>
+            <div class="cell"><div class="n">2</div><div class="l"><i style="background:#c3952b"></i>Possible duplicates</div></div>
+            <div class="cell"><div class="n">38</div><div class="l"><i style="background:#8e9992"></i>Brought in</div></div>
+          </div>
+          <div class="find">Find anyone by name, email, phone or organisation<kbd>/</kbd></div>
+          <p class="showing">Showing everyone you have been in touch with this week, most recent first.</p>
+
+          <div class="group">In touch this week<span class="c">4</span></div>
+          <div class="row sel">
+            <div class="tile"><div class="d">FRI</div><div class="num">12</div><div class="m">MAR '27</div></div>
+            <div><h3>Dr Aileen Murray</h3><div class="meta">Secretary · Westbourne Medical Dining Club</div><div class="note">“Same as last year please, the Grand Hall and the four courses.”</div></div>
+            <div class="right"><span class="chip c-copper"><i></i>Follow up Tue</span>Call today</div>
+          </div>
+          <div class="row">
+            <div class="tile"><div class="d">SAT</div><div class="num">5</div><div class="m">JUN '27</div></div>
+            <div><h3>Sarah Henderson and Tom Reid</h3><div class="meta">Household · wedding couple</div><div class="note">Opened version 2 of their proposal</div></div>
+            <div class="right"><span class="chip c-sage"><i></i>Proposal opened</span>Yesterday</div>
+          </div>
+          <div class="row">
+            <div class="tile"><div class="d">SAT</div><div class="num">23</div><div class="m">JAN '27</div></div>
+            <div><h3>Callum Fraser</h3><div class="meta">Captain · Clydeside Wanderers Rugby Club</div><div class="note">“Can we bring our own piper?”</div></div>
+            <div class="right"><span class="chip c-amber"><i></i>Possible duplicate</span>2 days ago</div>
+          </div>
+          <div class="row">
+            <div class="tile"><div class="d">THU</div><div class="num">3</div><div class="m">DEC</div></div>
+            <div><h3>Morven Lindsay</h3><div class="meta">Events manager · Lindsay Kerr LLP</div><div class="note">Emailed the Christmas lunch menu</div></div>
+            <div class="right"><span class="chip c-slate"><i></i>From Salesforce</span>Saturday</div>
+          </div>
+          <div class="group">Coming up<span class="c">2</span></div>
+          <div class="row">
+            <div class="tile"><div class="d">SAT</div><div class="num">7</div><div class="m">NOV</div></div>
+            <div><h3>Hamish Ure</h3><div class="meta">Clerk · Clydesdale Curling Society</div><div class="note">Annual dinner, 180 guests, Grand Hall</div></div>
+            <div class="right">In 19 days</div>
+          </div>
+        </section>
+
+        <aside class="panel">
+          <div class="panel-top"><span>↑ Previous</span><span>↓ Next</span><span class="x">✕</span></div>
+          <div class="pbody">
+            <div>
+              <div class="p-eyebrow">Organisation contact · client since 2019</div>
+              <h2>Dr Aileen Murray</h2>
+              <p class="sub">Secretary, Westbourne Medical Dining Club</p>
+              <div class="chips"><span class="f-chip"><i></i>Service messages only</span><span class="f-chip lit"><i></i>Brought in from Salesforce</span></div>
+            </div>
+            <div class="facts">
+              <div class="fact"><div class="v">13 Mar 2026</div><div class="k">last dinner, 216 guests</div></div>
+              <div class="fact"><div class="v">6</div><div class="k">events since 2019</div></div>
+              <div class="fact"><div class="v">March</div><div class="k">usually books</div></div>
+            </div>
+            <div>
+              <div class="sec-h">Same again</div>
+              <div class="again">
+                <p>Last year's annual dinner: <strong>216 guests in the Grand Hall, Friday 13 March 2026.</strong> Hold Friday 12 March 2027 for them?</p>
+                <div class="btns"><span class="btn-primary">Draft the hold</span><span class="btn-quiet">Not this year</span></div>
+                <p class="consequence">Nothing is sent to the club. The hold waits for your one tap to confirm.</p>
+              </div>
+            </div>
+            <div>
+              <div class="sec-h">Log what happened</div>
+              <div class="composer">
+                <div class="kinds"><span class="on">Call<kbd>C</kbd></span><span>Email<kbd>E</kbd></span><span>Meeting<kbd>M</kbd></span><span>Note<kbd>N</kbd></span></div>
+                <div class="typed">Wants the Grand Hall again, same menu, about 220. Sending the proposal Tuesday<span class="caret"></span></div>
+                <div class="compose-foot"><span>Follow up · Tue 20 Oct · Elaine</span><span class="btn-primary">Log call<kbd>↵</kbd></span></div>
+              </div>
+            </div>
+            <div>
+              <div class="sec-h">Everything with Aileen</div>
+              <ul class="tl">
+                <li><span class="dot call"></span><div><div class="when">Today, 11:20 · Elaine</div><div class="what">Call: the Grand Hall again for March</div></div></li>
+                <li><span class="dot prop"></span><div><div class="when">14 October · website</div><div class="what">Enquiry: <em>“Our annual dinner again next March…”</em></div></div></li>
+                <li><span class="dot merge"></span><div><div class="when">17 October · Elaine</div><div class="what">Merged with A. Murray (an older email)<span class="undo">Undo until 16 Nov</span></div></div></li>
+                <li><span class="dot imp"></span><div><div class="when">17 October · import</div><div class="what">Brought in from Salesforce: 41 activities since 2019</div></div></li>
+                <li><span class="dot"></span><div><div class="when">Friday 13 March 2026</div><div class="what">Annual dinner, 216 guests, Grand Hall</div></div></li>
+              </ul>
+            </div>
+            <div class="contact"><span class="k">Contact</span><span>aileen.murray@example.org</span><span>0141 000 0000</span></div>
+            <p class="keep">Kept until October 2028, two years after the last contact, unless she is in touch again. Marketing: not asked.</p>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <p class="illus">Every name, club, date and figure in the picture is illustrative. The layout follows the Enquiries desk you called "not a slog to the eyes, it is inviting".</p>
+
+  <section class="cols" aria-label="What this build is">
+    <div class="card">
+      <h3>What it replaces in Salesforce</h3>
+      <ul>
+        <li>Accounts, Contacts and Leads, as one record per person and per organisation or household</li>
+        <li>Tasks, Events and Notes, as one timeline built from the real records</li>
+        <li>Duplicate rules, as suggestions on both records and a merge you can undo for 30 days</li>
+        <li>The Data Export, as a repeatable import that never duplicates, until Salesforce can go</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Five pieces, in order</h3>
+      <ol>
+        <li>The record: people, organisations and households you can edit and merge; sales can finally use it</li>
+        <li>This desk and the timeline, with calls logged in under fifteen seconds</li>
+        <li>Consent, the two-year deletion the privacy policy promises, export and erasure</li>
+        <li>The Salesforce import: read in your browser, dry run, apply, roll back</li>
+        <li>Who's who on each event, and "same again"</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3>Calls I made, for you to check</h3>
+      <ul>
+        <li>The existing client and contact records are improved in place, so no history is lost</li>
+        <li>Records join by themselves only on an exact email; everything else is a suggestion</li>
+        <li>Deletion after two years runs by itself once an admin has confirmed its first run</li>
+        <li>Export and erasure are for admins and managers, with exactly what goes shown first</li>
+        <li>Hallkeepers see only the day-of contact for their own events</li>
+        <li>Guests never enter the book: they stay with their own event</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>What Trades House needs to send</h3>
+      <ul>
+        <li>A full Data Export from its Salesforce, plus the list of its custom objects, reports and email templates. Its Salesforce admin runs both from inside the org; I will write the steps.</li>
+        <li>Whether it sends marketing, and how consent was collected</li>
+        <li>Who owns which client relationships</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>Prepared for Blake by Claude, 18 October 2026. The design document is docs/superpowers/specs/2026-10-18-people-book-design.md on branch claude/people-book-20261018. Nothing is built until you approve it.</footer>
+</div>

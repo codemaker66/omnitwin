@@ -7,10 +7,9 @@ import { DashboardPage } from "../DashboardPage.js";
 
 // ---------------------------------------------------------------------------
 // The deal panel's way to the Clients desk (T-635). Sales works the pipeline
-// but cannot open Clients (its search gates on the venue floor; who may is
-// Blake's C2), so the page hands the pipeline no way there for sales, and the
-// panel offers the contact's own details instead of a refusal. The pipeline
-// is stubbed to say what it was handed.
+// and, since the approved People Book design (§6.7, 18 October 2026), opens
+// the Clients desk too, so the page hands the pipeline the way there for every
+// role that works it. The pipeline is stubbed to say what it was handed.
 // ---------------------------------------------------------------------------
 
 const CONTACT = "00000000-0000-4000-8000-000000009511";
@@ -56,13 +55,7 @@ afterEach(() => {
 });
 
 describe("the pipeline's way to the Clients desk", () => {
-  it("is not offered to sales, whom the Clients desk would refuse", () => {
-    openPipeline(person("sales"));
-    expect(screen.getByText("No way to Clients")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Open in Clients" })).toBeNull();
-  });
-
-  it.each(["staff", "manager", "admin"])("opens the contact on the Clients desk for %s", (role) => {
+  it.each(["sales", "staff", "manager", "admin"])("opens the contact on the Clients desk for %s", (role) => {
     openPipeline(person(role));
     fireEvent.click(screen.getByRole("button", { name: "Open in Clients" }));
     expect(screen.getByText("The Clients desk")).toBeDefined();

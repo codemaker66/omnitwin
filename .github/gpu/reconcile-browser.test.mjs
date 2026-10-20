@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 43);
+  assert.equal(baseline.inventoryAdmissions.length, 45);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -1150,3 +1150,36 @@ test('the live co-editing admission adds eight self-gated live cases as expected
   assert.equal(baseline.cases.filter((row) => row.expectedStatus === 'skipped').length, BROWSER_POLICY.skipped);
   assert.equal(baseline.cases.length, BROWSER_POLICY.total);
 });
+// The planner on a phone (PR #118) hides the event schedule card from
+// anonymous visitors, so two cases are restated one for one.
+const plannerPhoneRestatements = [
+  { index: 43, file: 'editor-mobile-shell.spec.ts', current: '0566ce7e918d6e1cf20c-15fe0152b3208f80750d',
+    retired: '0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c' },
+  { index: 44, file: 'public-config-flow.spec.ts', current: '098b539f18aead5c39f5-4002f671ea2c5386d172',
+    retired: '098b539f18aead5c39f5-f4847f7a36ef5d419a55' },
+];
+for (const { index, file, current, retired } of plannerPhoneRestatements) {
+  test(`the planner-on-a-phone admission restates ${file}'s case one for one`, () => {
+    const admission = baseline.inventoryAdmissions[index];
+    assert.equal(admission.date, '2026-10-18');
+    assert.equal(admission.sourceFile, `packages/web/e2e/${file}`);
+    assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+    assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+    assert.equal(admission.expectedStatus, 'passed');
+    assert.deepEqual(admission.caseIds, [current]);
+    assert.equal(baseline.cases.some((entry) => entry.id === retired), false);
+    const row = baseline.cases.find((entry) => entry.id === current);
+    assert.equal(row?.file, file);
+    assert.equal(row?.expectedStatus, 'passed');
+    assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+  });
+  rejected(`the restated ${file} case cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === current);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+  rejected(`the retired ${file} identity cannot come back`, (input) => {
+    specs(input.inventory).find((row) => row.id === current).id = retired;
+  }, /missing or extra/);
+}

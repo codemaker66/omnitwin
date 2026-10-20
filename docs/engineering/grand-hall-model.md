@@ -30,8 +30,22 @@ development builds only) shows the room alone, posed through a window bridge for
 - **Floor** (`hall-floor.ts`): drawn oak strips 73 mm wide, the width measured from the survey's
   floor photograph, in staggered lengths with a tiling grain, lit by the same baked channels.
   Board detail fades with distance so it never shimmers; the photograph is no longer fetched.
+  Each row's stagger and length and each board's tones come from three's `hash()`, which reads its
+  seed as an unsigned integer (WGSL `u32()`: a negative seed is 0, a fraction is dropped), so every
+  row and column index is raised by `FLOOR_SEED_OFFSET` first. Without it the window half (z < 0)
+  drew one stagger and one length for nearly every row: rendered on 19 October, 98% of its end
+  joints lined up with the next row's against 2% on the door side.
 - **Cut walls** (`hall-section.ts`): where the cutaway lowers a wall, its body stands as a solid
-  section with a dark cap and a gilt edge on the room side, over a plinth round the hall.
+  section with a dark cap and a gilt edge on the room side. The hall stands in a plinth that is a
+  ring round the floor, never a slab under it: its top lies at the floor's level only outside the
+  floor, from the room's planes to the walls' outer faces (it is also the floor of the door
+  recesses and the firebox), its outer faces drop 0.42 m, and under the floor's edge only a strip
+  2 cm down reaches 5 cm in, so a crack would show slab, not the void. Its inner edge repeats the
+  floor's own edge vertices. A slab 1 mm under the oak, as before, lost the depth test at scattered
+  pixels (depth24, near 0.1, far 900: a few depth steps per millimetre at 20-30 m), the black specks
+  Blake saw while the camera moved. No two surfaces of the hall may share a plane: keep any new one
+  centimetres clear of the floor and of the city's caps at y = 0 beyond the cut-out (|x| > 11.2,
+  |z| > 5.95).
 - **Chandeliers** (`hall-chandeliers.ts`): the five fittings as scanned, gilt scrollwork and
   acanthus on dark bronze stems with white flame bulbs, drawn to the lowest points, reaches and
   bulb heights measured in the panoramas (`HALL_CHANDELIERS`; method in the 10 October session log).
@@ -157,6 +171,12 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   it against the room: plaster flat beside the main door, glass deep in every window, the firebox
   behind and the mantel proud of the chimney breast, the door recess, the geometry envelope, and
   rejection of malformed files.
+- `src/components/grand-hall/__tests__/hall-section.test.ts` keeps the plinth off the floor:
+  nothing under it within 1.5 cm, the band out to the walls' outer faces covered at its level, the
+  floor's own edge vertices on its inner edge, everything inside the city's cut-out;
+  `hall-floor.test.ts` holds every hash seed above zero and the two halves' end joints alike. The
+  rendered proof (the plinth painted magenta never shows through the floor in any orbit, pose or
+  profile) is browser evidence, recorded in the [19 October session log](../sessions/2026-10-19.md).
 - `src/components/grand-hall/__tests__/hall-chandeliers.test.ts` checks each chandelier's lowest
   point and reach against the survey, its bulbs, that every triangle faces along its normals (the
   metal is single-sided) with none degenerate, that every bulb faces outward, and the triangle
