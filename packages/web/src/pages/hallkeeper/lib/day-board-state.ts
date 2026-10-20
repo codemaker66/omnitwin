@@ -532,7 +532,8 @@ function deriveTimedState(segments: SlotSegments, nowMs: number, timeZone: strin
 }
 
 /** A hallkeeper preps rooms for things that are happening: ink, live holds,
- *  house blocks. The sales pipeline (prospects) and departed bookings
+ *  house blocks, and viewings, for which the room must be presentable. The
+ *  sales pipeline (prospects) and departed bookings
  *  (released/expired/cancelled/lost) never reach the board.
  *
  *  Exported because the event-day board asks the same question of the same
@@ -657,8 +658,14 @@ export function deriveDayBoard(
         .filter((candidate) => candidate.eventId === entry.eventId && candidate.spaceId === entry.spaceId)
         .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
       const setupStartsAtMs = setupStarts[index] ?? startsAtMs;
-      const turnaroundMinutes = resolveTurnaroundMinutes(response.turnaroundRules, room.id, entry.eventType);
-      const nextSetup = setupStarts[index + 1];
+      // A viewing is a show-round (migration 0100): it leaves nothing to
+      // clear, so it has no clear-down of its own.
+      const turnaroundMinutes = entry.kind === "viewing"
+        ? null
+        : resolveTurnaroundMinutes(response.turnaroundRules, room.id, entry.eventType);
+      // A clear-down runs until the next function's setup: a viewing in
+      // between does not cut it short (the conflict check says if it clashes).
+      const nextSetup = setupStarts.find((_, later) => later > index && entries[later]?.kind !== "viewing");
       const clearDownEndsAtMs = Math.max(
         endsAtMs,
         Math.min(
@@ -674,7 +681,7 @@ export function deriveDayBoard(
       const attention = deriveSlotAttention(slotRequests, nowMs);
       const blocking = blockingByBooking.get(entry.id);
       const timeRange = `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
-      const bookingLabel = entry.kind === "hold"
+      const bookingLabel = entry.kind === "hold" || entry.kind === "viewing"
         ? bookingStateLabel(entry)
         : entry.kind === "internal_block" ? "House block" : "Confirmed booking";
 
@@ -685,13 +692,22 @@ export function deriveDayBoard(
         timeZone,
       );
 
-      const previous = entries[index - 1];
+      // What this slot follows. A function follows the last function, past any
+      // viewing in between, so a show-round never hides the changeover between
+      // two functions; a viewing follows whatever came just before it.
+      const previous = entry.kind === "viewing"
+        ? entries[index - 1]
+        : entries.slice(0, index).reverse().find((candidate) => candidate.kind !== "viewing");
       let gapBefore: LaneGap | null = null;
       let changeover: string | null = null;
       let changeoverFromMs: number | null = null;
       if (previous !== undefined) {
         const previousEnd = Date.parse(previous.endsAt);
-        const needed = resolveTurnaroundMinutes(response.turnaroundRules, room.id, previous.eventType);
+        // After a viewing there is nothing to clear; before one, the room
+        // still needs the previous function's changeover to be shown.
+        const needed = previous.kind === "viewing"
+          ? null
+          : resolveTurnaroundMinutes(response.turnaroundRules, room.id, previous.eventType);
         const minutes = Math.max(0, Math.round((setupStartsAtMs - previousEnd) / MIN_MS));
         gapBefore = { minutes, neededMinutes: needed, short: needed !== null && minutes < needed };
         // The room before this one was seen and has not been cleared: once

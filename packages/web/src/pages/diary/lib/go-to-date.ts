@@ -96,7 +96,8 @@ export interface RoomAnswer {
   readonly room: string;
   /** What holds the room that day, by start time: confirmed bookings, the
    *  holds no confirmed booking overlaps (each with its own place on its
-   *  ladder), and house blocks. None when the room is free. */
+   *  ladder), and house blocks. None when the room is free. Interest only
+   *  and viewings never hold a room, so they are never here. */
   readonly bookings: readonly CalendarBookingEntry[];
   /** Another event's timed phases in the room that day, when that event has
    *  no booking there (the board's occupancy footprint), by start time. A
@@ -159,8 +160,9 @@ export function roomsOnDay(
     if (bookings.length > 0 || phases.length > 0) {
       return { roomId: room.id, room: room.name, bookings, phases, interest: [], freeFromMs: null };
     }
-    // Interest only never holds the room, so it never makes it free later.
-    const ends = [...inRoom.filter((entry) => entry.kind !== "prospect"), ...phasesInRoom]
+    // Interest only never holds the room, and nor does a viewing (a
+    // show-round, migration 0100), so neither makes it free later.
+    const ends = [...inRoom.filter((entry) => entry.kind !== "prospect" && entry.kind !== "viewing"), ...phasesInRoom]
       .filter(lateNight).map((entry) => Date.parse(entry.endsAt));
     return {
       roomId: room.id,
