@@ -1184,4 +1184,40 @@ describe.skipIf(PLATFORM_TARGET === undefined)("merging two people on the migrat
     // The record as it was can be undone.
     expect(undone(await undo(made.mergeId)).skipped).toEqual([]);
   });
+
+  /** A person an older writer stored with exactly this name, by SQL. */
+  async function legacyNamed(name: string): Promise<string> {
+    return (await one<{ id: string }>("INSERT INTO contacts (venue_id, name) VALUES ($1, $2) RETURNING id", [f.venueId, name])).id;
+  }
+
+  /** The stored name's bytes, as hex, so a trimmed or re-encoded name cannot pass. */
+  async function nameBytes(personId: string): Promise<string> {
+    return (await one<{ hex: string }>("SELECT encode(convert_to(name, 'UTF8'), 'hex') AS hex FROM contacts WHERE id = $1", [personId])).hex;
+  }
+
+  it("merges and undoes a person whose stored name is padded", async () => {
+    const padded = " Aileen Murray ";
+    const legacy = await legacyNamed(padded);
+    const survivor = await f.addPerson({ name: "Aileen Murray" });
+    const stored = await nameBytes(legacy);
+    expect(stored).toBe(Buffer.from(padded, "utf8").toString("hex"));
+
+    const made = await mergeOf(legacy, survivor);
+    // The record keeps the name as it was stored, so the undo can put it back.
+    expect((await snapshotOf(made.mergeId)).person.name).toBe(padded);
+    undone(await undo(made.mergeId));
+    expect(await nameBytes(legacy)).toBe(stored);
+    expect(await personRow(legacy)).toMatchObject({ merged_into_id: null, deleted_at: null });
+  });
+
+  it("merges a legacy person with a blank name", async () => {
+    const legacy = await legacyNamed("");
+    const survivor = await f.addPerson({ name: "Aileen Murray" });
+    const res = await merge(legacy, survivor);
+    expect(res.statusCode, res.body).toBe(201);
+    const made = merged(res);
+    expect((await snapshotOf(made.mergeId)).person.name).toBe("");
+    undone(await undo(made.mergeId));
+    expect(await nameBytes(legacy)).toBe("");
+  });
 });

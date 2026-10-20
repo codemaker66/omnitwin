@@ -59,10 +59,10 @@ import {
 // - The UPDATE changes no column of a unique index on client_accounts (those
 //   are id; id, venue_id; venue_id, source_system, source_id), so it takes
 //   FOR NO KEY UPDATE, which does not conflict with FOR KEY SHARE. A deal
-//   written meanwhile (POST or PATCH /opportunities, Create opportunity)
-//   takes KEY SHARE on its organisation, then on its person, through its
-//   foreign keys: it never makes this UPDATE wait, and when it waits on L or
-//   S it holds nothing the merge goes on to need.
+//   written meanwhile by POST or PATCH /opportunities takes KEY SHARE on its
+//   person first (explicitly), then on its organisation (through the foreign
+//   key): it never makes this UPDATE wait, and when it waits on L or S it
+//   holds nothing the merge goes on to need.
 // - The one organisation lock this UPDATE does wait for is Create
 //   opportunity's FOR SHARE (people-link.ts holdOrganisation). That
 //   transaction takes it only after its own person, and locks no other
@@ -70,11 +70,13 @@ import {
 // - Locking the organisations before the people instead would put an
 //   organisation before a person, the reverse of Create opportunity's
 //   person-then-organisation order, which is the order that could cycle.
-// What can still cycle is a writer that locks a pointing row first and a
-// person second, which no People Book writer does but PATCH /opportunities
-// does: moving one of L's deals to S while L is merged into S holds the deal
-// and asks for S. PostgreSQL ends that as a deadlock and rolls one of the
-// two back whole, so nothing is left half-moved.
+// What could cycle is a writer that locks a pointing row first and a person
+// second. POST and PATCH /opportunities used to (a deal moved to S held the
+// deal, then asked for S); since Task 11b they take the person they name FOR
+// KEY SHARE before any deal row and look again (routes/opportunities.ts
+// holdContact), so a deal written during a merge waits for it and then sees
+// the tombstone. Any lock conflict PostgreSQL still ends (40P01, 40001)
+// rolls one side back whole and answers 409 RETRY.
 // ---------------------------------------------------------------------------
 
 export type MergeFailure =

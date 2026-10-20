@@ -16,6 +16,7 @@ import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 import { linkEnquiryToPerson, type LinkOutcome } from "../services/people-link.js";
+import { sqlStateOf } from "../utils/sql-state.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -54,13 +55,6 @@ const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
   email: "by email",
 };
 
-/** A SQLSTATE (five digits or capitals) on an error, or null. */
-function sqlStateOf(value: unknown): string | null {
-  if (typeof value !== "object" || value === null || !("code" in value)) return null;
-  const code = value.code;
-  return typeof code === "string" && /^[0-9A-Z]{5}$/u.test(code) ? code : null;
-}
-
 /**
  * What a failure to find an enquiry's person may say in a log: its class and
  * its SQLSTATE (drizzle wraps the driver's error as the cause). Never its
@@ -70,7 +64,7 @@ function sqlStateOf(value: unknown): string | null {
 function linkFailureOf(error: unknown): { errorName: string; pgCode: string | null } {
   return {
     errorName: error instanceof Error ? error.name : typeof error,
-    pgCode: sqlStateOf(error) ?? (error instanceof Error ? sqlStateOf(error.cause) : null),
+    pgCode: sqlStateOf(error),
   };
 }
 

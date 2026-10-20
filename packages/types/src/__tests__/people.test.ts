@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ContactPointInputSchema, CreatePersonSchema, PersonProfileSchema, SetMembershipsSchema, UpdatePersonSchema,
-  isUsablePhone, normaliseEmail, normalisePhone,
+  ContactPointInputSchema, CreateOrganisationSchema, CreatePersonSchema, OrganisationProfileSchema,
+  PeopleSearchResultsSchema, PersonProfileSchema, PersonRowSchema, PersonSchema, SetMembershipsSchema,
+  UpdateOrganisationSchema, UpdatePersonSchema, isUsablePhone, normaliseEmail, normalisePhone,
 } from "../people.js";
 import { PeopleOrganisationSchema } from "../index.js";
 
@@ -65,6 +66,53 @@ describe("the people contracts", () => {
       createdAt: "2026-10-18T09:00:00.000Z", updatedAt: "2026-10-18T09:00:00.000Z",
     });
     expect(household.kind).toBe("household");
+  });
+  it("reads names as stored, while writes still trim them and refuse a blank", () => {
+    const person = {
+      id: "00000000-0000-4000-8000-0000000000c1", venueId: VENUE, givenName: null, familyName: null, jobTitle: null,
+      postalAddress: null, notes: null, roleLabel: null, email: null, phone: null, clientAccountId: null,
+      ownerUserId: null, lastContactAt: null, sourceSystem: null, sourceId: null, sourceEnquiryId: null,
+      createdAt: "2026-10-18T09:00:00.000Z", updatedAt: "2026-10-18T09:00:00.000Z",
+    };
+    const organisation = {
+      id: ORG_A, venueId: VENUE, kind: "household", accountType: "household",
+      address: null, website: null, vatNumber: null, notes: null, ownerUserId: null, primaryContactId: null,
+      sourceSystem: null, sourceId: null, sourceEnquiryId: null,
+      createdAt: "2026-10-18T09:00:00.000Z", updatedAt: "2026-10-18T09:00:00.000Z",
+    };
+    const live = (name: string) => ({
+      status: "live", person: { ...person, name }, contactPoints: [],
+      memberships: [{ id: ORG_B, organisation: { id: ORG_A, name, kind: "household" }, roleLabel: null, isPrimary: true }],
+      owner: null, duplicateSuggestionCount: 0,
+    });
+    for (const name of [" padded ", ""]) {
+      expect(PersonSchema.parse({ ...person, name }).name).toBe(name);
+      expect(PersonRowSchema.parse({ ...person, name, mergedIntoId: null, erasedAt: null, deletedAt: null }).name).toBe(name);
+      expect(PeopleOrganisationSchema.parse({ ...organisation, name }).name).toBe(name);
+      expect(PersonProfileSchema.parse(live(name))).toMatchObject({ person: { name }, memberships: [{ organisation: { name } }] });
+      expect(OrganisationProfileSchema.parse({
+        organisation: { ...organisation, name },
+        members: [{ personId: person.id, name, roleLabel: null, isPrimary: true }],
+        owner: null,
+      })).toMatchObject({ organisation: { name }, members: [{ name }] });
+      expect(PeopleSearchResultsSchema.parse({
+        people: [{ id: person.id, name, organisationName: null, email: null, phone: null, matched: "name" }],
+        organisations: [{ id: ORG_A, name, kind: "household", memberCount: 1 }],
+      })).toMatchObject({ people: [{ name }], organisations: [{ name }] });
+    }
+    // The column is varchar(200): longer is not a stored name.
+    expect(PersonSchema.safeParse({ ...person, name: "x".repeat(201) }).success).toBe(false);
+
+    expect(CreatePersonSchema.parse({ venueId: VENUE, name: " padded " }).name).toBe("padded");
+    expect(UpdatePersonSchema.parse({ name: " padded " }).name).toBe("padded");
+    expect(CreateOrganisationSchema.parse({ venueId: VENUE, name: " padded ", kind: "household" }).name).toBe("padded");
+    expect(UpdateOrganisationSchema.parse({ name: " padded " }).name).toBe("padded");
+    for (const blank of ["", "   "]) {
+      expect(CreatePersonSchema.safeParse({ venueId: VENUE, name: blank }).success).toBe(false);
+      expect(UpdatePersonSchema.safeParse({ name: blank }).success).toBe(false);
+      expect(CreateOrganisationSchema.safeParse({ venueId: VENUE, name: blank, kind: "household" }).success).toBe(false);
+      expect(UpdateOrganisationSchema.safeParse({ name: blank }).success).toBe(false);
+    }
   });
   it("reads a merged person as where they went", () => {
     const merged = PersonProfileSchema.parse({ status: "merged", mergedInto: { id: ORG_A, name: "Aileen Murray" }, mergeId: ORG_B, mergedAt: "2026-10-18T09:00:00.000Z" });

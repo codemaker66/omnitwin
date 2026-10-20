@@ -106,7 +106,14 @@ function optionalText(max: number) {
   return z.string().trim().max(max).transform((value) => (value === "" ? null : value)).nullable().optional();
 }
 
+/** A name a write takes: trimmed, and never blank. */
 const NameSchema = z.string().trim().min(1).max(200);
+/**
+ * A name as read back: exactly as stored (the column is varchar(200) NOT
+ * NULL), never trimmed or refused, so a record an older writer left padded or
+ * blank can be read, kept in a merge's snapshot and restored byte for byte.
+ */
+const StoredNameSchema = z.string().max(200);
 const IdAndNameSchema = z.object({ id: z.string().uuid(), name: z.string() });
 const CountSchema = z.number().int().nonnegative();
 
@@ -157,7 +164,7 @@ export type ContactPointRow = z.infer<typeof ContactPointRowSchema>;
 export const PersonSchema = z.object({
   id: ContactIdSchema,
   venueId: VenueIdSchema,
-  name: NameSchema,
+  name: StoredNameSchema,
   givenName: z.string().nullable(),
   familyName: z.string().nullable(),
   jobTitle: z.string().nullable(),
@@ -188,7 +195,7 @@ export type PersonRow = z.infer<typeof PersonRowSchema>;
 export const PeopleOrganisationSchema = z.object({
   id: ClientAccountIdSchema,
   venueId: VenueIdSchema,
-  name: NameSchema,
+  name: StoredNameSchema,
   kind: ClientAccountKindSchema,
   accountType: z.string(),
   address: z.string().nullable(),
@@ -219,7 +226,7 @@ export type MembershipRow = z.infer<typeof MembershipRowSchema>;
 
 export const PersonMembershipSchema = z.object({
   id: z.string().uuid(),
-  organisation: z.object({ id: ClientAccountIdSchema, name: z.string(), kind: ClientAccountKindSchema }),
+  organisation: z.object({ id: ClientAccountIdSchema, name: StoredNameSchema, kind: ClientAccountKindSchema }),
   roleLabel: z.string().nullable(),
   isPrimary: z.boolean(),
 });
@@ -247,7 +254,7 @@ export const OrganisationProfileSchema = z.object({
   organisation: PeopleOrganisationSchema,
   members: z.array(z.object({
     personId: ContactIdSchema,
-    name: z.string(),
+    name: StoredNameSchema,
     roleLabel: z.string().nullable(),
     isPrimary: z.boolean(),
   })),
@@ -341,7 +348,7 @@ export type PeopleSearchQuery = z.infer<typeof PeopleSearchQuerySchema>;
 export const PeopleSearchResultsSchema = z.object({
   people: z.array(z.object({
     id: ContactIdSchema,
-    name: z.string(),
+    name: StoredNameSchema,
     organisationName: z.string().nullable(),
     email: z.string().nullable(),
     phone: z.string().nullable(),
@@ -349,7 +356,7 @@ export const PeopleSearchResultsSchema = z.object({
   })),
   organisations: z.array(z.object({
     id: ClientAccountIdSchema,
-    name: z.string(),
+    name: StoredNameSchema,
     kind: ClientAccountKindSchema,
     memberCount: CountSchema,
   })),

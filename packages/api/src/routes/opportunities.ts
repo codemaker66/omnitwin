@@ -28,7 +28,10 @@ import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canManageCommercial } from "../utils/query.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { nextActionForStage } from "../services/deal-next-action.js";
+import type { PeopleConn, PeopleTx } from "../services/people-records.js";
+import { mergedPerson } from "./people.js";
 
 const IdParam = z.object({ id: z.string().uuid() });
 const TaskParam = z.object({ id: z.string().uuid(), taskId: z.string().uuid() });
@@ -66,7 +69,7 @@ function isoToDate(value: string | null | undefined): Date | null {
 }
 
 async function linkedRecordVenue(
-  db: Database,
+  db: PeopleConn,
   kind: "clientAccount" | "contact" | "enquiry",
   id: string,
 ): Promise<string | null> {
@@ -92,7 +95,7 @@ async function linkedRecordVenue(
 }
 
 async function validateOptionalLink(
-  db: Database,
+  db: PeopleConn,
   value: string | null | undefined,
   venueId: string,
   kind: "clientAccount" | "contact" | "enquiry",
@@ -101,6 +104,70 @@ async function validateOptionalLink(
   const linkedVenue = await linkedRecordVenue(db, kind, value);
   if (linkedVenue === null) return "not_found";
   return linkedVenue === venueId ? "ok" : "venue_mismatch";
+}
+
+type ContactHold = "ok" | "not_found" | "venue_mismatch" | { mergedIntoId: string };
+
+/**
+ * The person a deal is about to name, taken FOR KEY SHARE at the deal's venue
+ * and then looked at again: live (deleted_at, merged_into_id and erased_at
+ * all null), a tombstone answering where they went, or not found.
+ *
+ * The global lock order is advisory locks, then people, then the rows that
+ * point at them. A merge or undo holds `people-merge:<venue>`, then both
+ * people FOR UPDATE (lower id first), then moves the deals that name them.
+ * A deal write takes its person here, before it writes or locks any deal
+ * row, so it never holds a deal while it waits for a person: it waits for a
+ * merge already holding the person, and once that merge commits this read
+ * sees the tombstone; a merge that comes after waits until the deal is
+ * written. KEY SHARE (what the deal's foreign key takes anyway) does not
+ * block another deal naming the same person.
+ */
+async function holdContact(tx: PeopleTx, contactId: string, venueId: string): Promise<ContactHold> {
+  const [held] = await tx.select({ deletedAt: contacts.deletedAt, mergedIntoId: contacts.mergedIntoId, erasedAt: contacts.erasedAt })
+    .from(contacts)
+    .where(and(eq(contacts.id, contactId), eq(contacts.venueId, venueId)))
+    .limit(1)
+    .for("key share");
+  // Not at this venue: another venue's live person is a mismatch, anyone else
+  // not found, as before.
+  if (held === undefined) return validateOptionalLink(tx, contactId, venueId, "contact");
+  if (held.erasedAt !== null) return "not_found";
+  // A tombstone is deleted too, so it is asked about before deleted.
+  if (held.mergedIntoId !== null) return { mergedIntoId: held.mergedIntoId };
+  if (held.deletedAt !== null) return "not_found";
+  return "ok";
+}
+
+/** Why a deal's links refuse a write, as the answer says it. */
+type LinkRefusal =
+  | { status: 404; body: { error: string; code: "NOT_FOUND" } }
+  | { status: 422; body: { error: string; code: "VENUE_MISMATCH" } }
+  | { status: 409; body: ReturnType<typeof mergedPerson> };
+
+/**
+ * The links a deal write names, checked in their order (organisation,
+ * person, enquiry) inside the write's own transaction, the person held as
+ * holdContact says. The first refusal, or null when every link may be made.
+ */
+async function refuseLinks(
+  tx: PeopleTx,
+  venueId: string,
+  links: { clientAccountId?: string | null; primaryContactId?: string | null; sourceEnquiryId?: string | null },
+): Promise<LinkRefusal | null> {
+  for (const [kind, value] of [
+    ["clientAccount", links.clientAccountId],
+    ["contact", links.primaryContactId],
+    ["enquiry", links.sourceEnquiryId],
+  ] as const) {
+    if (value === undefined || value === null) continue;
+    const link = kind === "contact" ? await holdContact(tx, value, venueId) : await validateOptionalLink(tx, value, venueId, kind);
+    if (link === "ok") continue;
+    if (link === "not_found") return { status: 404, body: { error: `${kind} not found`, code: "NOT_FOUND" } };
+    if (link === "venue_mismatch") return { status: 422, body: { error: `${kind} belongs to a different venue`, code: "VENUE_MISMATCH" } };
+    return { status: 409, body: mergedPerson(link.mergedIntoId) };
+  }
+  return null;
 }
 
 export async function opportunityRoutes(
@@ -146,21 +213,14 @@ export async function opportunityRoutes(
       return reply.status(403).send({ error: "Only the venue commercial team can create opportunities for this venue", code: "FORBIDDEN" });
     }
 
-    for (const [kind, value] of [
-      ["clientAccount", parsed.data.clientAccountId],
-      ["contact", parsed.data.primaryContactId],
-      ["enquiry", parsed.data.sourceEnquiryId],
-    ] as const) {
-      const linkStatus = await validateOptionalLink(db, value, parsed.data.venueId, kind);
-      if (linkStatus === "not_found") {
-        return reply.status(404).send({ error: `${kind} not found`, code: "NOT_FOUND" });
-      }
-      if (linkStatus === "venue_mismatch") {
-        return reply.status(422).send({ error: `${kind} belongs to a different venue`, code: "VENUE_MISMATCH" });
-      }
-    }
-
-    const created = await db.transaction(async (tx) => {
+    type Created =
+      | { kind: "refused"; refusal: LinkRefusal }
+      | { kind: "created"; opportunity: typeof opportunities.$inferSelect; task: typeof followUpTasks.$inferSelect | null };
+    const write = async (tx: PeopleTx): Promise<Created> => {
+      // The person first (refuseLinks → holdContact), then the deal: see
+      // holdContact for the lock order.
+      const refusal = await refuseLinks(tx, parsed.data.venueId, parsed.data);
+      if (refusal !== null) return { kind: "refused", refusal };
       const nextAction = parsed.data.nextAction ?? nextActionForStage("new");
       const [opportunity] = await tx.insert(opportunities).values({
         venueId: parsed.data.venueId,
@@ -196,10 +256,25 @@ export async function opportunityRoutes(
         status: "open",
       }).returning();
 
-      return { opportunity, task: task ?? null };
-    });
+      return { kind: "created", opportunity, task: task ?? null };
+    };
 
-    return reply.status(201).send({ data: created });
+    let created: Created;
+    try {
+      created = await db.transaction(write);
+    } catch (error) {
+      // A deadlock or serialisation failure rolled the whole write back.
+      const pgCode = lockConflictOf(error);
+      if (pgCode === null) throw error;
+      request.log.warn(
+        { event: "opportunities.create.retry", venueId: parsed.data.venueId, primaryContactId: parsed.data.primaryContactId ?? null, pgCode },
+        "deal write met a lock conflict",
+      );
+      return reply.status(409).send(RETRY_ANSWER);
+    }
+
+    if (created.kind === "refused") return reply.status(created.refusal.status).send(created.refusal.body);
+    return reply.status(201).send({ data: { opportunity: created.opportunity, task: created.task } });
   });
 
   server.get("/:id", { preHandler: [authenticate] }, async (request, reply) => {
@@ -329,24 +404,16 @@ export async function opportunityRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    for (const [kind, value] of [
-      ["clientAccount", parsed.data.clientAccountId],
-      ["contact", parsed.data.primaryContactId],
-      ["enquiry", parsed.data.sourceEnquiryId],
-    ] as const) {
-      const linkStatus = await validateOptionalLink(db, value, opportunity.venueId, kind);
-      if (linkStatus === "not_found") return reply.status(404).send({ error: `${kind} not found`, code: "NOT_FOUND" });
-      if (linkStatus === "venue_mismatch") return reply.status(422).send({ error: `${kind} belongs to a different venue`, code: "VENUE_MISMATCH" });
-    }
-
+    // Answered after the links, as before: a bad link is said first.
     const fromStage = opportunity.stage as OpportunityStage;
     const toStage = parsed.data.stage;
-    if (toStage !== undefined && toStage !== fromStage && !isPlatformAdmin(request.user) && !isValidOpportunityStageTransition(fromStage, toStage)) {
-      return reply.status(422).send({ error: `Cannot transition opportunity from ${fromStage} to ${toStage}`, code: "INVALID_TRANSITION" });
-    }
-    if (toStage !== undefined && toStage !== fromStage && CLOSING_STAGES.has(toStage) && (parsed.data.note ?? "").trim() === "") {
-      return reply.status(422).send({ error: "Say why the deal was won or lost.", code: "REASON_REQUIRED" });
-    }
+    type StageRefusal = { error: string; code: "INVALID_TRANSITION" | "REASON_REQUIRED" };
+    const stageRefusal: StageRefusal | null =
+      toStage !== undefined && toStage !== fromStage && !isPlatformAdmin(request.user) && !isValidOpportunityStageTransition(fromStage, toStage)
+        ? { error: `Cannot transition opportunity from ${fromStage} to ${toStage}`, code: "INVALID_TRANSITION" }
+        : toStage !== undefined && toStage !== fromStage && CLOSING_STAGES.has(toStage) && (parsed.data.note ?? "").trim() === ""
+          ? { error: "Say why the deal was won or lost.", code: "REASON_REQUIRED" }
+          : null;
 
     const updateData: Partial<typeof opportunities.$inferInsert> = { updatedAt: new Date() };
     if (parsed.data.title !== undefined) updateData.title = parsed.data.title;
@@ -366,23 +433,53 @@ export async function opportunityRoutes(
       if (parsed.data.nextAction === undefined) updateData.nextAction = nextActionForStage(toStage);
     }
 
-    const [updated] = await db.update(opportunities)
-      .set(updateData)
-      .where(eq(opportunities.id, opportunity.id))
-      .returning();
-    if (updated === undefined) return reply.status(404).send({ error: "Opportunity not found", code: "NOT_FOUND" });
+    type Updated =
+      | { kind: "refused"; refusal: LinkRefusal }
+      | { kind: "stage_refused"; refusal: StageRefusal }
+      | { kind: "not_found" }
+      | { kind: "updated"; opportunity: typeof opportunities.$inferSelect };
+    const write = async (tx: PeopleTx): Promise<Updated> => {
+      // The person a move names first (refuseLinks → holdContact), and only
+      // then the deal row, by this UPDATE: never the deal before the person,
+      // the reverse of a merge's order (see holdContact).
+      const refusal = await refuseLinks(tx, opportunity.venueId, parsed.data);
+      if (refusal !== null) return { kind: "refused", refusal };
+      if (stageRefusal !== null) return { kind: "stage_refused", refusal: stageRefusal };
+      const [updated] = await tx.update(opportunities)
+        .set(updateData)
+        .where(eq(opportunities.id, opportunity.id))
+        .returning();
+      if (updated === undefined) return { kind: "not_found" };
 
-    if (toStage !== undefined && toStage !== fromStage) {
-      await db.insert(opportunityStatusHistory).values({
-        opportunityId: opportunity.id,
-        fromStage,
-        toStage,
-        changedBy: request.user.id,
-        note: parsed.data.note ?? null,
-      });
+      if (toStage !== undefined && toStage !== fromStage) {
+        await tx.insert(opportunityStatusHistory).values({
+          opportunityId: opportunity.id,
+          fromStage,
+          toStage,
+          changedBy: request.user.id,
+          note: parsed.data.note ?? null,
+        });
+      }
+      return { kind: "updated", opportunity: updated };
+    };
+
+    let outcome: Updated;
+    try {
+      outcome = await db.transaction(write);
+    } catch (error) {
+      // A deadlock or serialisation failure rolled the whole write back.
+      const pgCode = lockConflictOf(error);
+      if (pgCode === null) throw error;
+      request.log.warn({ event: "opportunities.update.retry", opportunityId: opportunity.id, pgCode }, "deal write met a lock conflict");
+      return reply.status(409).send(RETRY_ANSWER);
     }
 
-    return { data: updated };
+    switch (outcome.kind) {
+      case "refused": return reply.status(outcome.refusal.status).send(outcome.refusal.body);
+      case "stage_refused": return reply.status(422).send(outcome.refusal);
+      case "not_found": return reply.status(404).send({ error: "Opportunity not found", code: "NOT_FOUND" });
+      case "updated": return { data: outcome.opportunity };
+    }
   });
 
   server.post("/:id/activities", { preHandler: [authenticate] }, async (request, reply) => {

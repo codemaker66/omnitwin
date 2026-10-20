@@ -18,6 +18,7 @@ import type { Database } from "../db/client.js";
 import { contacts } from "../db/schema.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canManageCommercial } from "../utils/query.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import {
   adoptLegacyMirror,
   insertPerson,
@@ -78,8 +79,9 @@ const OWNER_NOT_AT_VENUE = {
   code: "OWNER_NOT_AT_VENUE",
 } as const;
 
-/** A write to a person who has been merged into another record. */
-function mergedPerson(mergedIntoId: string): { error: string; code: "MERGED"; mergedIntoId: string } {
+/** A write to a person who has been merged into another record. Deal writes
+ *  (routes/opportunities.ts) answer with it too. */
+export function mergedPerson(mergedIntoId: string): { error: string; code: "MERGED"; mergedIntoId: string } {
   return { error: "This person has been merged into another record", code: "MERGED", mergedIntoId };
 }
 
@@ -497,7 +499,19 @@ export async function peopleRoutes(
     const body = MergeRequestSchema.safeParse(request.body);
     if (!body.success) return invalidBody(reply, body.error);
 
-    const answer = await applyPersonMerge(db, scope.venueId, params.data.personId, body.data.survivorId, request.user.id);
+    let answer: Awaited<ReturnType<typeof applyPersonMerge>>;
+    try {
+      answer = await applyPersonMerge(db, scope.venueId, params.data.personId, body.data.survivorId, request.user.id);
+    } catch (error) {
+      // A deadlock or serialisation failure rolled the whole merge back.
+      const pgCode = lockConflictOf(error);
+      if (pgCode === null) throw error;
+      request.log.warn(
+        { event: "people.merge.retry", personId: params.data.personId, survivorId: body.data.survivorId, pgCode },
+        "merge met a lock conflict",
+      );
+      return reply.status(409).send(RETRY_ANSWER);
+    }
     if (isMergeFailure(answer)) return refuseMerge(reply, answer);
     request.log.info(
       {
@@ -521,7 +535,16 @@ export async function peopleRoutes(
     const params = MergeParams.safeParse(request.params);
     if (!params.success) return reply.status(400).send(INVALID_ID);
 
-    const answer = await undoPersonMerge(db, scope.venueId, params.data.mergeId, request.user.id);
+    let answer: Awaited<ReturnType<typeof undoPersonMerge>>;
+    try {
+      answer = await undoPersonMerge(db, scope.venueId, params.data.mergeId, request.user.id);
+    } catch (error) {
+      // A deadlock or serialisation failure rolled the whole undo back.
+      const pgCode = lockConflictOf(error);
+      if (pgCode === null) throw error;
+      request.log.warn({ event: "people.merge_undo.retry", mergeId: params.data.mergeId, pgCode }, "merge undo met a lock conflict");
+      return reply.status(409).send(RETRY_ANSWER);
+    }
     if (isUndoFailure(answer)) return refuseUndo(reply, answer);
     request.log.info(
       {

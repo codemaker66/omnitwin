@@ -43,6 +43,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/people-enquiry-link-failure-postgres.test.ts",
   // Merging two people: the preview, the merge, its record and the tombstone.
   "src/__tests__/people-merge-postgres.test.ts",
+  // Deal writes during a merge or undo: never to the closed record, no deadlock, RETRY on a lock conflict.
+  "src/__tests__/opportunity-merge-race-postgres.test.ts",
   // POST /public/enquiries against real constraints, on its own database (below).
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
 ] as const;
