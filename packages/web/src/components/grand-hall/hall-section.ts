@@ -5,15 +5,19 @@
 // down (GrandHallModel's cutaway). Each wall has a body as thick as the wall
 // really is, with every window and door open through it (hall-wall-body.ts),
 // all four in one mesh that the shader lowers to each wall's cut: no object
-// moves from frame to frame, and the whole section draws in two calls (the
-// bodies and the plinth ring; the doorways' oak thresholds draw with the
-// floor's material in a third).
+// moves from frame to frame. In front of the wall's plane the section goes on
+// through the scanned relief, its room edge following every moulding the cut
+// meets (the cap, hall-relief-section.ts). The whole section draws in three
+// calls (the bodies, the relief's cap and the plinth ring; the doorways' oak
+// thresholds draw with the floor's material in a fourth).
 //
 // The section's finish is a preset (SECTION_PRESETS, `?section=`): Ashlar,
 // the building's own materials, by default. Its faces are unlit: the room's
 // light is baked into their colour from the same channels as every other
-// surface of the hall, so a phone pays a little arithmetic, not the five
-// chandeliers' lights.
+// surface of the hall, strongest at the room's side, with the sun or moon on
+// its tops under the real sky, so a phone pays a little arithmetic, not the
+// five chandeliers' lights. The room's faces under the cut carry a gilt band
+// and a soft shadow (hall-cut-lines.ts, hall-materials.ts).
 //
 // The plinth is a ring round the floor, never a slab under it. A slab a
 // millimetre under the oak lost the depth test to it at scattered pixels
@@ -26,14 +30,17 @@
 // two centimetres down reaches under the floor's edge in case one opens.
 // ---------------------------------------------------------------------------
 
-import { Color, ShapeUtils, Vector2, type BufferGeometry, type Material } from "three";
+import { Color, ShapeUtils, Vector2, type BufferGeometry, type Material, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
-import { attribute, float, fwidth, max, min, mix, positionLocal, positionWorld, smoothstep, vec3 } from "three/tsl";
+import { attribute, bool, exp, float, fwidth, max, min, mix, positionLocal, positionWorld, smoothstep, sqrt, texture, vec2, vec3 } from "three/tsl";
 import { MeshBuilder, type V3 } from "./mesh-builder.js";
-import { HALL_ELEVATION, HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_WALL_THICKNESS, type HallWall } from "./hall-spec.js";
-import { BODY_FINISH, BODY_ROLE, LINTEL_RELEASE, bodyOutline, buildWallBody } from "./hall-wall-body.js";
+import { HALL_ELEVATION, HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_OPENINGS, HALL_WALLS, HALL_WALL_THICKNESS, isWindow, type HallWall } from "./hall-spec.js";
+import { BODY_FINISH, BODY_ROLE, DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP, bodyOutline, buildWallBody } from "./hall-wall-body.js";
 import { bakedIrradiance, type HallSectionUniforms } from "./hall-materials.js";
 import type { HallMoodUniforms } from "./hall-mood.js";
+import { hallSkyUniforms } from "./hall-sky-runtime.js";
+import { GILT_BAND, GILT_COLOUR, GILT_MIN_PIXELS, lineCoverage } from "./hall-cut-lines.js";
+import { HallSectionProfile, NO_SECTION, SECTION_BIN, SECTION_PROFILE_SPANS, SECTION_PROFILE_WIDTH } from "./hall-relief-section.js";
 
 /** A wall's main thickness: how far its outer face lies behind its scanned face, metres. */
 export function wallThickness(wall: HallWall): number {
@@ -228,6 +235,8 @@ export interface SectionPreset {
   readonly attic: string;
   /** The cut's outer arris. */
   readonly arris: string;
+  /** The gilt line on the cut's room edge (the gilt band on the room's face is the coffers' gilt in every preset). */
+  readonly gilt: string;
   /** The doorways' linings. */
   readonly doorLining: string;
   /** The windows' outer reveals where the body carries them on. */
@@ -250,15 +259,15 @@ export interface SectionPreset {
 export const SECTION_PRESETS: Readonly<Record<SectionPresetName, SectionPreset>> = {
   ashlar: {
     outer: "#c9bca3", core: "#c4b496", plaster: "#ece4d6", dado: "#5c3132", attic: "#734c1c",
-    arris: "#fff3dc", doorLining: "#5c3132", windowLining: "#b4a58c", outerGlow: 0.04,
+    arris: "#fff3dc", gilt: GILT_COLOUR, doorLining: "#5c3132", windowLining: "#b4a58c", outerGlow: 0.04,
   },
   atelier: {
     outer: "#dbd1c2", core: "#c7b8a3", plaster: "#c7b8a3", dado: "#c7b8a3", attic: "#c7b8a3",
-    arris: "#a58350", doorLining: "#dbd1c2", windowLining: "#dbd1c2", outerGlow: 0.05,
+    arris: "#a58350", gilt: GILT_COLOUR, doorLining: "#dbd1c2", windowLining: "#dbd1c2", outerGlow: 0.05,
   },
   nocturne: {
     outer: "#1d1814", core: "#2a2420", plaster: "#a58350", dado: "#a58350", attic: "#a58350",
-    arris: "#a58350", doorLining: "#1d1814", windowLining: "#1d1814", outerGlow: 0.02,
+    arris: "#a58350", gilt: GILT_COLOUR, doorLining: "#1d1814", windowLining: "#1d1814", outerGlow: 0.02,
   },
 };
 
@@ -276,19 +285,28 @@ export function parseSectionPreset(search: string | null | undefined): SectionPr
 export const SECTION_LINE = 0.015;
 export const SECTION_ARRIS = 0.006;
 /**
- * A line is never drawn thinner than this many pixels: narrower, it would
- * fall between pixels and flicker as the camera moves (phones have no
- * temporal smoothing). Widened, it is dimmed in proportion, so a distant line
- * does not brighten.
+ * The cut's light: the room's ambient, its chandeliers' and the sky it sees
+ * once the ceiling is lifted, with the sun or moon under the real sky. The
+ * chandeliers light the cut most at the room's side, falling off into the
+ * wall from its plane over CAP_FALLOFF (exp(-d / 0.4 m)), from CAP_GLOW_FAR +
+ * CAP_GLOW_EDGE at the plane (and over the relief in front of it) toward
+ * CAP_GLOW_FAR, so the far walls' tops, whose room edges face away from the
+ * chandeliers' real positions, never fall dark (lit by their real positions
+ * they did, S3a). Measured from the plane, not from the relief's surface: a
+ * falloff from the surface stepped wherever a pilaster or a board stood out.
+ * The outer faces see the sky and a little of the room's glow.
  */
-const LINE_MIN_PIXELS = 0.75;
+export const CAP_GLOW_EDGE = 0.33;
+export const CAP_GLOW_FAR = 0.1;
+export const CAP_FALLOFF = 0.4;
 /**
- * The cut's light: the room's ambient, this share of the chandeliers' (the
- * cut is a presentation surface, lit like the model on a table under the
- * room's own light, wherever it stands), and the sky it sees once the
- * ceiling is lifted. The outer faces see the sky too.
+ * The gilt line on the cut's room edge, the top of the gilt band on the
+ * room's face (hall-cut-lines.ts): 8 mm of the coffers' gilt (GILT_BAND),
+ * never under 1.5 px (GILT_MIN_PIXELS), twice as bright as the gilt's
+ * average colour in the same light, as a gilded arris catches it: at the
+ * average alone the line read as the oak floor beyond it.
  */
-const CAP_GLOW = 0.35;
+const GILT_SHEEN = 2;
 const CAP_SKY = 0.35;
 const OUTER_SKY = 0.5;
 /** Upright faces of the cut (the walls' ends, steps in their outer faces) take this share of the cut's light. */
@@ -296,17 +314,118 @@ const UPRIGHT_SHARE = 0.7;
 /** A window reveal's share of the sky, as hall-materials.ts gives the reveals. */
 const REVEAL_SKY_VIEW = 0.5;
 
+/** The chandeliers' share of the cut's light `fromPlane` metres behind the wall's plane (the shader's rule, for tests). */
+export function capGlowShare(fromPlane: number): number {
+  return CAP_GLOW_FAR + CAP_GLOW_EDGE * Math.exp(-Math.max(0, fromPlane) / CAP_FALLOFF);
+}
+
 const linear = (hex: string) => {
   const c = new Color(hex);
   return vec3(c.r, c.g, c.b);
 };
 
-/** 1 within `width` of an edge (`distance` from it), anti-aliased and never under LINE_MIN_PIXELS wide. */
-function edgeLine(distance: Node<"float">, width: number): Node<"float"> {
-  const pixel = max(fwidth(distance), float(1e-5));
-  const drawn = max(float(width), pixel.mul(LINE_MIN_PIXELS));
-  const line = float(1).sub(smoothstep(drawn.sub(pixel.mul(0.5)), drawn.add(pixel.mul(0.5)), distance));
-  return line.mul(float(width).div(drawn));
+/**
+ * The cut's light on an up-facing top `fromPlane` metres behind the wall's
+ * plane: the room's ambient, the chandeliers falling off from it, the sky
+ * over the lifted ceiling, and, under the real sky, the sun or moon on a level
+ * face (its irradiance times the sine of its height, with no shadow, as on a
+ * model standing in the light). Unlit arithmetic.
+ */
+function cutTopLight(mood: HallMoodUniforms, sunlit: boolean, fromPlane: Node<"float">): Node<"vec3"> {
+  const sky = mood.skyHorizon.rgb.mul(mood.skyIntensity);
+  const glow = mood.chandelier.rgb.mul(mood.chandelierIntensity);
+  const share = exp(max(fromPlane, float(0)).div(-CAP_FALLOFF)).mul(CAP_GLOW_EDGE).add(CAP_GLOW_FAR);
+  const light = mood.ambient.rgb.mul(mood.ambientIntensity).add(glow.mul(share)).add(sky.mul(CAP_SKY));
+  if (!sunlit) return light;
+  return light.add(hallSkyUniforms.lightRadiance.mul(max(hallSkyUniforms.lightDirection.y, float(0))));
+}
+
+/** Wall-local u (along the wall from its origin) of a world point, for wall index `wall` (HALL_WALLS order). */
+function wallU(wall: Node<"float">, point: Node<"vec3">): Node<"float"> {
+  const along = (index: number): Node<"float"> => {
+    const w = HALL_WALLS[index];
+    if (w === undefined) return float(0);
+    return point.x.sub(w.origin[0]).mul(w.tangent[0]).add(point.z.sub(w.origin[2]).mul(w.tangent[2]));
+  };
+  return wall.lessThan(0.5).select(along(0), wall.lessThan(1.5).select(along(1), wall.lessThan(2.5).select(along(2), along(3))));
+}
+
+/** How far a world point lies behind wall `wall`'s plane (HALL_WALLS order), metres: positive outside the room. */
+function wallBehind(wall: Node<"float">, point: Node<"vec3">): Node<"float"> {
+  const behind = (index: number): Node<"float"> => {
+    const w = HALL_WALLS[index];
+    if (w === undefined) return float(0);
+    return point.x.sub(w.origin[0]).mul(w.normal[0]).add(point.z.sub(w.origin[2]).mul(w.normal[2])).negate();
+  };
+  return wall.lessThan(0.5).select(behind(0), wall.lessThan(1.5).select(behind(1), wall.lessThan(2.5).select(behind(2), behind(3))));
+}
+
+/** How far the relief stands proud at wall `wall`'s cut at wall-local `u` (hall-relief-section.ts), filtered between centimetres. */
+function proudAt(profile: Texture, wall: Node<"float">, u: Node<"float">): Node<"float"> {
+  const offset = (index: number): Node<"float"> => float(SECTION_PROFILE_SPANS[index]?.offset ?? 0);
+  const bins = (index: number): Node<"float"> => float(SECTION_PROFILE_SPANS[index]?.bins ?? 1);
+  const start = wall.lessThan(0.5).select(offset(0), wall.lessThan(1.5).select(offset(1), wall.lessThan(2.5).select(offset(2), offset(3))));
+  const count = wall.lessThan(0.5).select(bins(0), wall.lessThan(1.5).select(bins(1), wall.lessThan(2.5).select(bins(2), bins(3))));
+  // Texel i's centre lies (i + 0.5) bins along the wall; stay within the wall's own texels.
+  const texel = min(max(u.div(SECTION_BIN), float(0.5)), count.sub(0.5));
+  return texture(profile, vec2(start.add(texel).div(SECTION_PROFILE_WIDTH), 0.5)).r;
+}
+
+/**
+ * What turns a distance in from the relief's surface measured square to the
+ * wall into one measured square to the section's edge: where the profile turns
+ * (a pilaster's side, a board's end) the distance across the wall overstates
+ * it, and a line drawn by it thinned and faded there, leaving gaps. The slope
+ * is taken over 4 cm, so it changes smoothly.
+ */
+function edgeScale(profile: Texture, wall: Node<"float">, u: Node<"float">): Node<"float"> {
+  const reach = 2 * SECTION_BIN;
+  const slope = proudAt(profile, wall, u.add(reach)).sub(proudAt(profile, wall, u.sub(reach))).div(2 * reach);
+  return float(1).div(sqrt(slope.mul(slope).add(1)));
+}
+
+/** Each wall's cut, by its index (HALL_WALLS order; -1: none). */
+function cutOfWall(section: HallSectionUniforms, wall: Node<"float">): Node<"float"> {
+  const [c0, c1, c2, c3] = section.cuts;
+  return wall.lessThan(-0.5).select(float(1000),
+    wall.lessThan(0.5).select(c0, wall.lessThan(1.5).select(c1, wall.lessThan(2.5).select(c2, c3))));
+}
+
+/**
+ * The colour of the cut's room line at the cut's height: the dado's mahogany
+ * where the cut passes through the panelling (at or below its top), the
+ * attic's oak above the cornice, lime plaster between.
+ */
+function sectionLineColour(preset: SectionPreset, height: Node<"float">): Node<"vec3"> {
+  const dado = height.lessThan(HALL_ELEVATION.dadoTop + 0.02);
+  const attic = height.greaterThan(HALL_ELEVATION.corniceTop - 0.02);
+  return dado.select(linear(preset.dado), attic.select(linear(preset.attic), linear(preset.plaster)));
+}
+
+/**
+ * The cut's top, the same rule for the body's top and the relief's cap (so
+ * where the two overlap, a centimetre behind the wall's plane, they draw the
+ * same colour): from the room's side, the gilt line on the true room edge
+ * (`edge` metres in from the relief's surface at the cut, square to the wall;
+ * times `edgeScaled`, square to the section's edge), the room line
+ * (the panelling's or the plaster's own material, out over the relief and
+ * 15 mm into the wall: `line` metres behind the plane, or behind the relief's
+ * surface where that lies behind the plane, 0 in front), the stone core with
+ * its faint grain, and the outer arris (`toOuter`, the body only). Lit by
+ * cutTopLight, `fromPlane` metres behind the wall's plane.
+ */
+function cutTopColour(
+  preset: SectionPreset, mood: HallMoodUniforms, sunlit: boolean, height: Node<"float">,
+  fromPlane: Node<"float">, line: Node<"float">, edge: Node<"float">, edgeScaled: Node<"float">, toOuter: Node<"float"> | null,
+): Node<"vec3"> {
+  // A faint grain in the stone, in world space so it never swims as the cut moves.
+  const p = positionWorld;
+  const grain = p.x.mul(41).add(p.z.mul(7).sin().mul(3)).sin().mul(p.z.mul(37).add(p.x.mul(5).sin().mul(2)).sin()).mul(0.035);
+  const core = linear(preset.core).mul(grain.add(1));
+  const lined = mix(core, sectionLineColour(preset, height), lineCoverage(line, SECTION_LINE));
+  const finished = toOuter === null ? lined : mix(lined, linear(preset.arris), lineCoverage(toOuter, SECTION_ARRIS));
+  const light = cutTopLight(mood, sunlit, fromPlane);
+  return mix(finished.mul(light), linear(preset.gilt).mul(light).mul(GILT_SHEEN), lineCoverage(edge, GILT_BAND, edgeScaled, GILT_MIN_PIXELS));
 }
 
 /**
@@ -317,18 +436,17 @@ function edgeLine(distance: Node<"float">, width: number): Node<"float"> {
  * bodyVertexHeight); what still stands above the cut is discarded.
  *
  * Light, baked into the colour from the mood: the cut by the room's ambient,
- * its chandeliers and the sky above the lifted ceiling; the outer faces by
- * the sky and a little of the room's glow; the linings by the room's baked
- * channels.
+ * its chandeliers most at the room's side, the sky above the lifted ceiling
+ * and the sun or moon (cutTopLight); the outer faces by the sky and a little
+ * of the room's glow; the linings by the room's baked channels. The cut's
+ * room edge carries a gilt line, out at the relief's surface where the relief
+ * stands proud at the cut (hall-relief-section.ts).
  */
-export function createWallBodyMaterial(section: HallSectionUniforms, mood: HallMoodUniforms, preset: SectionPreset): MeshBasicNodeMaterial {
+export function createWallBodyMaterial(section: HallSectionUniforms, mood: HallMoodUniforms, preset: SectionPreset, profile: Texture, sunlit = false): MeshBasicNodeMaterial {
   const material = new MeshBasicNodeMaterial({ fog: false });
   const tag = attribute("aSection", "vec4");
   const shape = attribute("aShape", "vec3");
-  const [c0, c1, c2, c3] = section.cuts;
-  const cutOf = (wall: typeof tag.x) => wall.lessThan(-0.5).select(float(1000),
-    wall.lessThan(0.5).select(c0, wall.lessThan(1.5).select(c1, wall.lessThan(2.5).select(c2, c3))));
-  const cut = min(cutOf(tag.x), cutOf(tag.y));
+  const cut = min(cutOfWall(section, tag.x), cutOfWall(section, tag.y));
   const role = tag.z;
   const released = cut.lessThan(LINTEL_RELEASE);
   const y = positionLocal.y;
@@ -339,39 +457,46 @@ export function createWallBodyMaterial(section: HallSectionUniforms, mood: HallM
   const clamped = vec3(positionLocal.x, max(min(y, cut), shape.x), positionLocal.z);
   // A collapsed vertex goes to one point far below the floor, so its faces have no area.
   material.positionNode = hidden.select(vec3(0, -50, 0), clamped);
-  material.maskNode = positionWorld.y.lessThanEqual(cut.add(0.002));
+  const isTop = tag.w.greaterThan(BODY_FINISH.cap - 0.5).and(tag.w.lessThan(BODY_FINISH.cap + 0.5));
 
   const height = positionWorld.y;
   const sky = mood.skyHorizon.rgb.mul(mood.skyIntensity);
   const glow = mood.chandelier.rgb.mul(mood.chandelierIntensity);
-  const cutLight = mood.ambient.rgb.mul(mood.ambientIntensity).add(glow.mul(CAP_GLOW)).add(sky.mul(CAP_SKY));
   const outside = sky.mul(OUTER_SKY).add(glow.mul(preset.outerGlow));
   const room = bakedIrradiance(mood);
   const finish = tag.w;
   // The outer faces: a soft darkening at their foot, as a model's walls take it.
   const foot = mix(float(0.7), float(1), smoothstep(0, 1.6, height));
   const outer = linear(preset.outer).mul(outside).mul(foot);
-  // The cut, from the room edge: the room's line, the core, the outer arris.
+  // The cut (cutTopColour). Where the relief stands proud at the cut, the
+  // room's edge, and the gilt line on it, lie out at its surface on the cap
+  // (createSectionCapMaterial); a wall that is not cut ends at its plane.
   const fromRoom = shape.y;
   const toOuter = shape.z;
-  const roomLine = edgeLine(fromRoom, SECTION_LINE);
-  const arris = edgeLine(toOuter, SECTION_ARRIS);
-  const dado = height.lessThan(HALL_ELEVATION.dadoTop + 0.02);
-  const attic = height.greaterThan(HALL_ELEVATION.corniceTop - 0.02);
-  const edgeColour = dado.select(linear(preset.dado), attic.select(linear(preset.attic), linear(preset.plaster)));
-  // A faint grain in the stone, in world space so it never swims as the cut moves.
+  const sliced = proudAt(profile, tag.x, wallU(tag.x, positionWorld));
+  const proud = cut.lessThan(WALL_BODY_TOP).and(sliced.greaterThan(NO_SECTION + 0.5)).select(sliced, float(0));
+  // Where the relief lies behind the wall's plane at the cut (the frieze, the
+  // attic panelling, set back), the top in front of it is air: it goes, and
+  // the room line and the gilt start at the relief's surface.
+  const line = fromRoom.add(min(proud, float(0)));
+  const edgeScaled = cut.lessThan(WALL_BODY_TOP).select(edgeScale(profile, tag.x, wallU(tag.x, positionWorld)), float(1));
+  const cap = cutTopColour(preset, mood, sunlit, height, fromRoom, line, fromRoom.add(proud), edgeScaled, toOuter);
+  // A corner block's top: no room edge, an arris along both outer edges.
   const p = positionWorld;
   const grain = p.x.mul(41).add(p.z.mul(7).sin().mul(3)).sin().mul(p.z.mul(37).add(p.x.mul(5).sin().mul(2)).sin()).mul(0.035);
   const core = linear(preset.core).mul(grain.add(1));
-  const cap = mix(mix(core, edgeColour, roomLine), linear(preset.arris), arris).mul(cutLight);
-  // A corner block's top: no room edge, an arris along both outer edges.
-  const cornerArris = max(edgeLine(fromRoom, SECTION_ARRIS), edgeLine(toOuter, SECTION_ARRIS));
-  const cornerCap = mix(core, linear(preset.arris), cornerArris).mul(cutLight);
+  const cornerArris = max(lineCoverage(fromRoom, SECTION_ARRIS), lineCoverage(toOuter, SECTION_ARRIS));
+  // Its light by how far it lies behind the nearer of its two walls' planes,
+  // which is each wall's own measure where the block meets that wall's top.
+  const cornerFromRoom = max(wallBehind(tag.x, positionWorld), wallBehind(tag.y, positionWorld));
+  const cornerCap = mix(core, linear(preset.arris), cornerArris).mul(cutTopLight(mood, sunlit, cornerFromRoom));
   const doorLining = linear(preset.doorLining).mul(room);
   const windowLining = linear(preset.windowLining).mul(room.add(mood.daylight.rgb.mul(mood.daylightIntensity).mul(REVEAL_SKY_VIEW)));
-  // Upright faces of the cut take the core's colour without the grain (it would streak down them).
-  const upright = linear(preset.core).mul(cutLight).mul(UPRIGHT_SHARE);
+  // Upright faces of the cut take the core's colour without the grain (it
+  // would streak down them), and no sun (they face sideways).
+  const upright = linear(preset.core).mul(cutTopLight(mood, false, fromRoom)).mul(UPRIGHT_SHARE);
   const pick = (code: number) => finish.greaterThan(code - 0.5).and(finish.lessThan(code + 0.5));
+  material.maskNode = positionWorld.y.lessThanEqual(cut.add(0.002)).and(isTop.and(line.lessThan(-1e-4)).not());
   material.colorNode = pick(BODY_FINISH.outer).select(outer,
     pick(BODY_FINISH.cap).select(cap,
       pick(BODY_FINISH.doorLining).select(doorLining,
@@ -381,30 +506,115 @@ export function createWallBodyMaterial(section: HallSectionUniforms, mood: HallM
   return material;
 }
 
+/** The windows (all in the window wall), whose clear outlines the cap leaves open. */
+const WINDOW_OUTLINES = HALL_OPENINGS.filter((opening) => isWindow(opening));
+
+/**
+ * The relief's section (hall-relief-section.ts): the cap's quads laid in each
+ * wall's cut plane and clipped to how far the relief stands proud there, so
+ * the section meets the relief's surface over every moulding. It is the body's
+ * top carried on (cutTopColour): the room line's own material (the dado's
+ * mahogany, the plaster, the attic's oak, by the cut's height), lit as at the
+ * wall's plane, with the gilt line on its room edge. None
+ * in a window's clear outline (the curtains are cloth, with air behind them),
+ * none over a doorway once its lintel has gone, none on a wall that is not
+ * cut. It reaches a centimetre over the body's top, in the same plane and
+ * colour as the body's room line there, so no crack can open between them.
+ * Its edge is a hard test where the pass smooths edges itself (desktops'
+ * temporal resolve, tablets' FXAA), and alpha to coverage where the pass is
+ * multisampled (phones).
+ */
+export function createSectionCapMaterial(
+  section: HallSectionUniforms, mood: HallMoodUniforms, preset: SectionPreset, profile: Texture, sunlit = false, multisampled = false,
+): MeshBasicNodeMaterial {
+  const material = new MeshBasicNodeMaterial({ fog: false });
+  const cap = attribute("aCap", "vec3");
+  const wall = cap.x;
+  const u = cap.y;
+  const depth = cap.z;
+  const cut = cutOfWall(section, wall);
+  const live = cut.lessThan(WALL_BODY_TOP).and(cut.greaterThan(0.01));
+  // A wall that is not cut has no section: its quads collapse to one point far below the floor.
+  material.positionNode = live.select(vec3(positionLocal.x, cut, positionLocal.z), vec3(0, -50, 0));
+  const proud = proudAt(profile, wall, u);
+  let inWindow: Node<"bool"> = bool(false);
+  for (const opening of WINDOW_OUTLINES) {
+    const half = opening.width / 2;
+    const across = u.sub(opening.centre);
+    const rise = opening.kind === "arched-window" ? sqrt(max(float(half * half).sub(across.mul(across)), float(0))) : float(0);
+    inWindow = inWindow.or(wall.lessThan(0.5).and(across.abs().lessThanEqual(half))
+      .and(cut.greaterThanEqual(opening.sill)).and(cut.lessThanEqual(rise.add(opening.head))));
+  }
+  let overDoor: Node<"bool"> = bool(false);
+  for (const slot of DOOR_SLOTS) {
+    overDoor = overDoor.or(wall.greaterThan(slot.wall - 0.5).and(wall.lessThan(slot.wall + 0.5))
+      .and(u.greaterThan(slot.u0)).and(u.lessThan(slot.u1)).and(cut.greaterThan(slot.head)).and(cut.lessThan(LINTEL_RELEASE)));
+  }
+  // How far inside the section this point lies, from the relief's surface.
+  const inside = proud.sub(depth);
+  const solid = proud.greaterThan(NO_SECTION + 0.5).and(inWindow.not()).and(overDoor.not());
+  if (multisampled) {
+    // three's alpha to coverage ramps the alpha from the alpha test up over one
+    // pixel; a test at 0 keeps the ramp centred on the relief's surface (at 0.5
+    // it drew the edge half a pixel in, over the gilt line).
+    const coverage = inside.div(max(fwidth(inside), float(1e-5))).add(0.5).clamp(0, 1);
+    material.opacityNode = solid.select(coverage, float(0));
+    material.alphaTestNode = float(0);
+    material.alphaToCoverage = true;
+  } else {
+    material.maskNode = solid.and(inside.greaterThanEqual(0));
+  }
+  // The body's top carried on over the relief: behind the plane (its first
+  // centimetre, over the body) as the body draws it there; in front, the
+  // room line's material lit as at the plane, with the gilt line on its edge.
+  const fromPlane = max(depth.negate(), float(0));
+  const line = fromPlane.add(min(proud, float(0)));
+  material.colorNode = cutTopColour(preset, mood, sunlit, positionWorld.y, fromPlane, line, inside, edgeScale(profile, wall, u), null);
+  material.name = "grand-hall-section-cap";
+  return material;
+}
+
 export interface HallSection {
   /** Every wall's body, cut in the shader (hall-wall-body.ts). */
   readonly body: BufferGeometry;
   readonly plinth: BufferGeometry;
-  readonly materials: { readonly body: Material; readonly plinth: Material };
+  /** The relief's section at each wall's cut, read by the cap and the body's light (hall-relief-section.ts). */
+  readonly profile: HallSectionProfile;
+  readonly materials: { readonly body: Material; readonly plinth: Material; readonly cap: Material };
   dispose(): void;
 }
 
-/** The walls' bodies and the plinth, with their materials. */
-export function createHallSection(section: HallSectionUniforms, mood: HallMoodUniforms, preset: SectionPreset = SECTION_PRESETS.ashlar): HallSection {
+export interface HallSectionOptions {
+  readonly preset?: SectionPreset;
+  /** Lit by the real sun and moon (GrandHallModel's `sunlit`): the cut's tops take their light. */
+  readonly sunlit?: boolean;
+  /** The scene pass is multisampled (a phone's profile): the cap's edge uses alpha to coverage. */
+  readonly multisampled?: boolean;
+}
+
+/** The walls' bodies, the relief's section and the plinth, with their materials. */
+export function createHallSection(section: HallSectionUniforms, mood: HallMoodUniforms, options: HallSectionOptions = {}): HallSection {
+  const preset = options.preset ?? SECTION_PRESETS.ashlar;
+  const sunlit = options.sunlit ?? false;
   const { geometry: body } = buildWallBody();
   const plinth = buildPlinthRing();
-  const bodyMaterial = createWallBodyMaterial(section, mood, preset);
+  const profile = new HallSectionProfile();
+  const bodyMaterial = createWallBodyMaterial(section, mood, preset, profile.texture, sunlit);
+  const capMaterial = createSectionCapMaterial(section, mood, preset, profile.texture, sunlit, options.multisampled ?? false);
   const plinthMaterial = new MeshStandardNodeMaterial({ roughness: 0.85, metalness: 0 });
   plinthMaterial.colorNode = vec3(0.022, 0.016, 0.012);
   plinthMaterial.name = "grand-hall-plinth";
   return {
     body,
     plinth,
-    materials: { body: bodyMaterial, plinth: plinthMaterial },
+    profile,
+    materials: { body: bodyMaterial, plinth: plinthMaterial, cap: capMaterial },
     dispose: () => {
       body.dispose();
       plinth.dispose();
+      profile.dispose();
       bodyMaterial.dispose();
+      capMaterial.dispose();
       plinthMaterial.dispose();
     },
   };

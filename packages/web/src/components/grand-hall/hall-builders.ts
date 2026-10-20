@@ -7,8 +7,10 @@
 // role of the part being built (floor, wall, ceiling, dome, detail); the wall
 // it belongs to (`aWall`, for the cutaway) and, for relief that stands in a
 // corner against the neighbouring wall, that wall too (`aWallB`, -1 for none:
-// the cutaway cuts it at the lower of the two walls' cuts); and, on walls, its
-// texel in the scan's wall atlas (`aAtlas`).
+// the cutaway cuts it at the lower of the two walls' cuts); on walls, its
+// texel in the scan's wall atlas (`aAtlas`); and the window or door whose
+// clear outline it lies in (`aOpening`, its index in HALL_OPENINGS, -1 for
+// none), set as the walls are built.
 // ---------------------------------------------------------------------------
 
 import type { BufferGeometry } from "three";
@@ -47,19 +49,23 @@ export class HallBuilders {
   wall = -1;
   /** Index of a neighbouring wall whose cut the next vertices also take (-1: none). */
   wallB = -1;
+  /** Index in HALL_OPENINGS of the window or door the next vertices lie in (-1: none). */
+  opening = -1;
 
   get(key: HallMaterialKey): MeshBuilder {
     let builder = this.builders.get(key);
     if (builder === undefined) {
       builder = new MeshBuilder({
-        extraSize: 8,
-        extraLayout: [{ name: "aLight", size: 4 }, { name: "aWall", size: 1 }, { name: "aAtlas", size: 2 }, { name: "aWallB", size: 1 }],
+        extraSize: 9,
+        extraLayout: [
+          { name: "aLight", size: 4 }, { name: "aWall", size: 1 }, { name: "aAtlas", size: 2 }, { name: "aWallB", size: 1 }, { name: "aOpening", size: 1 },
+        ],
         extra: (position, normal) => {
           // Wall vertices find their texel in the wall atlas by projection
           // onto their wall; everything else carries no atlas coordinate.
           const [atlasU, atlasV] = this.wall >= 0 && this.wall < 4 ? atlasUvForPoint(this.wall, position) : [-1, -1];
           const sample = sampleHallLight(position, normal, this.role);
-          return [sample.ao, sample.chandelier, sample.daylight, sample.uplight, this.wall, atlasU, atlasV, this.wallB];
+          return [sample.ao, sample.chandelier, sample.daylight, sample.uplight, this.wall, atlasU, atlasV, this.wallB, this.opening];
         },
       });
       this.builders.set(key, builder);
@@ -79,6 +85,13 @@ export class HallBuilders {
     const previous = this.wallB;
     this.wallB = index;
     try { emit(); } finally { this.wallB = previous; }
+  }
+
+  /** Runs `emit` with every vertex it creates tagged as lying in opening `index` (HALL_OPENINGS). */
+  withOpening(index: number, emit: () => void): void {
+    const previous = this.opening;
+    this.opening = index;
+    try { emit(); } finally { this.opening = previous; }
   }
 
   /** Runs `emit` with a role set for every vertex it creates. */

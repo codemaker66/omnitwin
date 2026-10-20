@@ -14,6 +14,11 @@
 // photographs are cut where the atlas marks glazing, and hall-glazing.ts puts
 // panes, painted bars and outer reveals in the opening.
 //
+// Where the cutaway cuts a wall, the walls' photographs carry the cut's gilt
+// band and the soft shadow under it (hall-cut-lines.ts), following every
+// moulding at the cut's height; not on what stands in a window (the curtains
+// are cloth, the glass is glass).
+//
 // The main door's painted mahogany multiplies its albedo by the vertex's baked
 // light (emissive, so the renderer adds only reflections); gilt and brass are
 // metals lit by the environment with a share of the bake so they never fall
@@ -24,8 +29,9 @@ import { Color, DoubleSide, FrontSide, type Material, type Side, type Texture } 
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { attribute, bool, color, dot, float, luminance, max, min, mix, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import type { HallMaterialKey } from "./hall-builders.js";
-import { HALL_GLAZING_PAINT } from "./hall-spec.js";
-import { DOOR_SLOTS, LINTEL_RELEASE } from "./hall-wall-body.js";
+import { HALL_GLAZING_PAINT, HALL_OPENINGS, isWindow } from "./hall-spec.js";
+import { DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP } from "./hall-wall-body.js";
+import { cutEdge, GILT_COLOUR, type CutEdge } from "./hall-cut-lines.js";
 import type { HallSun } from "./hall-sun.js";
 import { hallSkyUniforms } from "./hall-sky-runtime.js";
 import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
@@ -75,7 +81,7 @@ export class HallSectionUniforms {
  * body drops the lintel (LINTEL_RELEASE), the relief over the door goes too,
  * so the doorway reads from above as a gap through the whole wall.
  */
-function sectionMask(section: HallSectionUniforms) {
+function sectionCut(section: HallSectionUniforms) {
   const [c0, c1, c2, c3, c4] = section.cuts;
   const wall = attribute("aWall", "float");
   const neighbour = attribute("aWallB", "float");
@@ -93,7 +99,32 @@ function sectionMask(section: HallSectionUniforms) {
     overDoor = overDoor.or(wall.greaterThan(slot.wall - 0.5).and(wall.lessThan(slot.wall + 0.5))
       .and(u.greaterThan(slot.u0)).and(u.lessThan(slot.u1)).and(p.y.greaterThan(slot.head)));
   }
-  return p.y.lessThan(cut).and(overDoor.and(own.lessThan(LINTEL_RELEASE)).not());
+  return { cut, mask: p.y.lessThan(cut).and(overDoor.and(own.lessThan(LINTEL_RELEASE)).not()) };
+}
+
+function sectionMask(section: HallSectionUniforms) {
+  return sectionCut(section).mask;
+}
+
+/** Indices in HALL_OPENINGS of the windows. */
+const WINDOW_OPENINGS = HALL_OPENINGS.flatMap((opening, index) => (isWindow(opening) ? [index] : []));
+
+/**
+ * The cut's gilt band and shadow on a wall photograph (hall-cut-lines.ts):
+ * under the cut its relief takes (the lower of two walls' for relief in a
+ * corner), only while that cut lies below the walls' top, on the room's
+ * upright faces (`level`, from wallTexel, fades it from faces turned up or
+ * down: on a ledge just under the cut an 8 mm band of height spreads into a
+ * wide smear, and from above it showed as a broken sliver beyond the cut's
+ * edge), and not on what stands in a window (`aOpening`).
+ */
+function wallCutEdge(section: HallSectionUniforms, level: Node<"float">): CutEdge {
+  const { cut } = sectionCut(section);
+  const opening = attribute("aOpening", "float");
+  let inWindow: Node<"bool"> = bool(false);
+  for (const index of WINDOW_OPENINGS) inWindow = inWindow.or(opening.greaterThan(index - 0.5).and(opening.lessThan(index + 0.5)));
+  const active = cut.lessThan(WALL_BODY_TOP).and(inWindow.not()).select(float(1).sub(level), float(0));
+  return cutEdge(cut.sub(positionWorld.y), positionWorld.y, active);
 }
 
 /** The baked irradiance at this vertex under the current mood. */
@@ -190,10 +221,18 @@ function sunIrradiance(sun: HallSun) {
   return sky.lightRadiance.mul(facing).mul(sun.factor);
 }
 
-/** A photographed surface's colour under the current mood. */
-function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUniforms, sun: HallSun | null, wall: WallTexel | null = null) {
+/** The gilt band's colour: the coffers' measured gilt, a photographed colour relit like the photographs. */
+const GILT = new Color(GILT_COLOUR);
+
+/**
+ * A photographed surface's colour under the current mood. On the walls, the
+ * cut's edge (when given) lays its gilt band into the photograph and its
+ * shadow over it before the relighting, so the band is lit as the room is.
+ */
+function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUniforms, sun: HallSun | null, wall: WallTexel | null = null, edge: CutEdge | null = null) {
   const sample = kind === "walls" ? (wall ?? wallTexel(photos)).texel : photos.sample(kind, uv());
-  const image = sample.rgb;
+  const photographed = sample.rgb;
+  const image = edge === null ? photographed : mix(photographed.mul(edge.shade), color(GILT).rgb, edge.gilt);
   // (baked + k) / (scan + k): exactly 1 under the scan's own light, so
   // Daylight is the photograph, and finite where the bake is nearly dark.
   // Direct sun is light the scan did not hold, so it adds to the bake.
@@ -208,7 +247,7 @@ function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUnifo
   // drawn city shows through; this photograph stays for the room's captured
   // reflections and for the moods without the sky.
   const glass = float(1).sub(sample.a).mul(2).clamp(0, 1);
-  const outside = image.mul(mood.daylight.rgb.mul(mood.daylightIntensity).div(scanDaylight()));
+  const outside = photographed.mul(mood.daylight.rgb.mul(mood.daylightIntensity).div(scanDaylight()));
   return mix(lit, outside, glass);
 }
 
@@ -275,6 +314,7 @@ function openGlazing(material: MeshBasicNodeMaterial | MeshStandardNodeMaterial,
 interface SurfaceOptions {
   readonly glazing: HallGlazingUniforms | null;
   readonly alphaToCoverage: boolean;
+  readonly section: HallSectionUniforms;
 }
 
 function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: HallPhotos, sun: HallSun | null, options: SurfaceOptions): Material {
@@ -282,7 +322,7 @@ function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: Hall
   if (style.shading === "photo" || style.shading === "photoGloss") {
     const kind = style.photo ?? "walls";
     const wall = kind === "walls" ? wallTexel(photos) : null;
-    const lit = relitPhoto(photos, kind, mood, sun, wall);
+    const lit = relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level));
     const material = style.shading === "photo"
       ? new MeshBasicNodeMaterial({ side, fog: false })
       : new MeshStandardNodeMaterial({ side, roughness: style.roughness ?? 0.45, metalness: 0, fog: false });
@@ -346,7 +386,7 @@ export function createHallMaterials(
 ): HallMaterials {
   const table = styles(textures);
   const materials = new Map<HallMaterialKey, Material>();
-  const surface: SurfaceOptions = { glazing: options.glazing ?? null, alphaToCoverage: options.alphaToCoverage ?? false };
+  const surface: SurfaceOptions = { glazing: options.glazing ?? null, alphaToCoverage: options.alphaToCoverage ?? false, section };
   for (const key of Object.keys(table) as HallMaterialKey[]) {
     // The floor is drawn (hall-floor.ts), lit by the same baked light.
     const floorLight = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));

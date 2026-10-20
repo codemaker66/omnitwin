@@ -19,7 +19,7 @@
 import { vec, type MeshBuilder, type V3 } from "./mesh-builder.js";
 import type { HallBuilders, HallMaterialKey } from "./hall-builders.js";
 import type { WallRelief, WallReliefMesh } from "./hall-relief.js";
-import { HALL_ELEVATION, HALL_OPENINGS, HALL_WALLS, wallPoint, type HallOpening, type HallWall } from "./hall-spec.js";
+import { HALL_ELEVATION, HALL_OPENINGS, HALL_WALLS, wallPoint, type HallOpening, type HallWall, type HallWallId } from "./hall-spec.js";
 
 const E = HALL_ELEVATION;
 const UP: V3 = [0, 1, 0];
@@ -62,6 +62,25 @@ export function sharedNeighbour(wallIndex: number, wallLength: number, corners: 
   return -1;
 }
 
+/**
+ * The window or door (its index in HALL_OPENINGS) whose clear outline holds
+ * wall-local (u, v) on `wall`, or -1: the rectangle from its sill to its head,
+ * with an arched window's semicircular head above (radius half its width).
+ * Each relief triangle is tagged by its centroid (`aOpening`), so the cutaway
+ * can treat what stands in an opening (curtains, glass, a door's leaves)
+ * differently from the walling round it.
+ */
+export function openingAt(wall: HallWallId, u: number, v: number): number {
+  return HALL_OPENINGS.findIndex((opening) => {
+    if (opening.wall !== wall) return false;
+    const half = opening.width / 2;
+    const across = u - opening.centre;
+    if (Math.abs(across) > half || v < opening.sill) return false;
+    const rise = opening.kind === "arched-window" ? Math.sqrt(Math.max(0, half * half - across * across)) : 0;
+    return v <= opening.head + rise;
+  });
+}
+
 /** Whether wall-local height `v` is in the varnished panelling (dado or attic). */
 export function isPanelling(v: number): boolean {
   return v < E.dadoTop + 0.02 || v > E.corniceTop - 0.02;
@@ -81,9 +100,9 @@ export function buildHallWalls(hb: HallBuilders, relief: WallRelief | null): voi
         else reliefWall(hb, wall, index, mesh);
       });
       hb.withRole("detail", () => {
-        for (const opening of HALL_OPENINGS) {
-          if (opening.wall === wall.id && opening.id === MODELLED_DOOR) buildDoorLeaves(hb, wall, opening);
-        }
+        HALL_OPENINGS.forEach((opening, openingIndex) => {
+          if (opening.wall === wall.id && opening.id === MODELLED_DOOR) hb.withOpening(openingIndex, () => { buildDoorLeaves(hb, wall, opening); });
+        });
       });
     });
   });
@@ -134,23 +153,25 @@ function reliefWall(hb: HallBuilders, wall: HallWall, wallIndex: number, mesh: W
     return Math.hypot(n[0], n[1], n[2]) > 1e-12 ? vec.normalize(n) : wall.normal;
   };
   // Each material's builder gets its own copy of the vertices it uses, and a
-  // triangle shared with a neighbouring wall its own copies again (they carry
-  // that wall's cut too).
+  // triangle shared with a neighbouring wall, or lying in an opening, its own
+  // copies again (they carry that wall's cut, or the opening, too).
   const remaps = new Map<string, Int32Array>();
   for (let t = 0; t < indices.length; t += 3) {
     const corners = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0] as const;
+    const centreU = (local(corners[0])[0] + local(corners[1])[0] + local(corners[2])[0]) / 3;
     const centreV = (local(corners[0])[1] + local(corners[1])[1] + local(corners[2])[1]) / 3;
     const key = wallMaterial(centreV);
     const neighbour = sharedNeighbour(wallIndex, wall.length, corners.map(local));
+    const opening = openingAt(wall.id, centreU, centreV);
     const builder = hb.get(key);
-    const remapKey = `${key}:${String(neighbour)}`;
+    const remapKey = `${key}:${String(neighbour)}:${String(opening)}`;
     let remap = remaps.get(remapKey);
     if (remap === undefined) {
       remap = new Int32Array(count).fill(-1);
       remaps.set(remapKey, remap);
     }
     const target = remap;
-    hb.withNeighbour(neighbour, () => {
+    hb.withNeighbour(neighbour, () => { hb.withOpening(opening, () => {
       const ids = corners.map((i) => {
         const existing = target[i] ?? -1;
         if (existing >= 0) return existing;
@@ -160,7 +181,7 @@ function reliefWall(hb: HallBuilders, wall: HallWall, wallIndex: number, mesh: W
         return created;
       });
       builder.triangle(ids[0] ?? 0, ids[1] ?? 0, ids[2] ?? 0);
-    });
+    }); });
   }
 }
 

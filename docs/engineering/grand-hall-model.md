@@ -55,14 +55,31 @@ development builds only) shows the room alone, posed through a window bridge for
   and at the fire exit, whose head is 5 cm under the dado cut; a wall cut higher keeps its lintels.
   Relief standing in a corner against the neighbouring wall (the doorcases' sides and the radiator
   cases, which each wall's depth map also saw) takes the lower of the two walls' cuts
-  (`sharedNeighbour`, `aWallB`). The finish is a preset (`SECTION_PRESETS`, `?section=`, nothing
+  (`sharedNeighbour`, `aWallB`). In front of the wall's plane the section goes on through the scanned
+  relief (`hall-relief-section.ts`): the relief is a height field, so its outline at a cut is a
+  profile (how far it stands proud, per centimetre of the wall), cut on the CPU from a bucket index of
+  the triangles crossing that height whenever a wall's cut moves a millimetre (0.04-0.16 ms a wall on the desktop CPU),
+  kept in one row of a half-float texture, and a strip of quads (the cap) laid in each wall's cut plane
+  is clipped to it, so the cut's room edge follows the dado rail, the doorcases, the pilasters, the
+  boards and the chimneypiece at any height and from any side; where the relief lies behind the plane
+  (the frieze, the attic panelling) the body's top in front of it goes. None in a window's clear outline
+  (curtains are cloth) or over a doorway once its lintel has gone. The relief's back faces, the usual
+  way to cap a cut, fill it only for a camera beyond the cut wall: from Plan 3-22% of the section's
+  pixels (S3b's ray march). Every relief triangle carries `aOpening`, the window or door whose clear
+  outline holds its centroid. The finish is a preset (`SECTION_PRESETS`, `?section=`, nothing
   remembered): Ashlar by default, pale sandstone outside with no joints (art direction: no
   photograph of the facade gives its coursing), the cut a warm stone core with a lime-plaster line at
-  the room edge (mahogany through the dado, oak through the attic) and a fine arris at the outer
-  edge, the lines never thinner than 0.75 px; Atelier and Nocturne carry their palettes only. The
-  faces are unlit, the mood's light baked into their colour (the cut: the room's ambient, a share of
-  its chandeliers and the sky over the lifted ceiling; the outer faces: the sky and a little of the
-  room's glow). The hall stands in a plinth that is a ring round the floor, never a slab under it:
+  the room edge (mahogany through the dado, oak through the attic; over the relief the whole cap is
+  that material) and a fine arris at the outer edge, the lines never thinner than 0.75 px. The room
+  edge carries an 8 mm gilt line (the coffers' gilt, `#a58350`, at twice its average brightness, never
+  under 1.5 px), and the room's face under every cut a gilt band 8 mm deep and a soft shadow below it
+  (35% at most, gone by 4 cm; `hall-cut-lines.ts`), on upright faces and not on what stands in a
+  window; every line box-filtered and, once widened past its width, dimmed to carry the same light.
+  Atelier and Nocturne carry their palettes only. The faces are unlit, the mood's light baked into
+  their colour: the cut by the room's ambient, its chandeliers falling off from the wall's plane
+  (`0.10 + 0.33 exp(-d / 0.4 m)` of their light; a corner block by its distance behind the nearer
+  wall), the sky over the lifted ceiling, and under the real sky the sun or moon on its level tops with
+  no shadow; the outer faces the sky and a little of the room's glow. The hall stands in a plinth that is a ring round the floor, never a slab under it:
   its top lies at the floor's level only outside the floor, out to the walls' outer faces (and a
   centimetre short of the city's cut-out where a wall is thinner than that), so it is the slab under
   the bodies and the floor of the firebox; its outer faces drop 0.42 m, and under the floor's edge
@@ -235,7 +252,11 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   rules, the jambs of every hole within 5 mm of the shipped relief's footprint (medians), no relief
   in another wall's body, the corners' shared relief, the 6k-triangle budget, and no two surfaces
   (floor, ring, thresholds, bodies, outer reveals, relief) sharing a plane over more than 1 cm² at
-  the whole, Plan and opening view's cuts; `hall-glazing.test.ts` holds the panes at the glass inside each
+  the whole, Plan and opening view's cuts; `hall-relief-section.test.ts` holds every opening's tag
+  to its clear outline on the shipped relief, the relief's section to its surface (within 2 mm where
+  smooth, never short of it where it steps), the corners' relief to the lower cut, the slicer's
+  re-cutting, the cap's cover of every proud centimetre, and the gilt's and shadow's rules;
+  `hall-glazing.test.ts` holds the panes at the glass inside each
   opening, every measured bar where it was measured (and the panes between them open), the budgets
   (panes 200, bars 2,500, reveals 1,500 triangles), the reveals from the glass to the outer face,
   the glass presets and the capture's closing and reopening, also when it throws;

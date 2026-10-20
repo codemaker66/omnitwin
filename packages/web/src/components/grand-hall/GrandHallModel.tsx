@@ -4,8 +4,9 @@
 // Draws the hall as surveyed — the walls' scanned relief, the drawn oak floor,
 // the coffered ceiling and the dome, each coloured by the scan's photographs
 // with baked light — with the scan's gilt and bronze chandeliers and their
-// flame bulbs, and the dollhouse cutaway (with the walls' cut bodies) that
-// lets the planner look in from above. Under the real sky its windows open
+// flame bulbs, and the dollhouse cutaway (with the walls' cut bodies, whose
+// section follows the relief's mouldings) that lets the planner look in from
+// above. Under the real sky its windows open
 // onto the drawn city through panes of glass that reflect the room, behind
 // the measured glazing bars (hall-glazing.ts). Its real lights are HallLightRig,
 // mounted beside it; its reflections are its own, captured from the room
@@ -36,6 +37,8 @@ import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
 import { createHallSection, parseSectionPreset, SECTION_PRESETS, type HallSection, type SectionPreset } from "./hall-section.js";
+import { sectionCapGeometry } from "./hall-relief-section.js";
+import { WALL_BODY_TOP } from "./hall-wall-body.js";
 import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 import { hallSkyState } from "./hall-sky-runtime.js";
 import { HALL_SUN_CASTER_LAYER, hallSun, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
@@ -130,7 +133,7 @@ interface HallResources {
   readonly selfLit: { value: number };
   /** The bulbs' brightness: 1 on screen, CAPTURED_BULBS in the room's reflections. */
   readonly bulbScale: { value: number };
-  /** The walls' bodies (cut in the shader) and the plinth. */
+  /** The walls' bodies (cut in the shader), the relief's section and the plinth. */
   readonly cutaway: HallSection;
   /** Stand-ins the sun's shadow camera draws for the room, where the sun lights it. */
   readonly casters: HallCasterMaterials | null;
@@ -223,7 +226,7 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const bulb = new MeshBasicNodeMaterial();
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
   const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
-  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(section, mood, sectionPreset), casters };
+  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(section, mood, { preset: sectionPreset, sunlit: sun !== null, multisampled }), casters };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -259,6 +262,8 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const sectionPreset = useMemo(() => SECTION_PRESETS[parseSectionPreset(typeof window === "undefined" ? null : window.location.search)], []);
   const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun, multisampled, sectionPreset), [multisampled, quality, sectionPreset, sun]);
   const thresholds = useMemo(() => hallThresholdGeometry(), []);
+  // The relief's section, cut wherever the walls are cut (hall-relief-section.ts).
+  const sectionCap = useMemo(() => (relief === null ? null : sectionCapGeometry(relief)), [relief]);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
@@ -288,6 +293,12 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   }, [gl, liveLight]);
 
   useEffect(() => () => { disposeResources(resources); }, [resources]);
+
+  // The section cuts the relief once it has arrived (the flat walls need none).
+  useEffect(() => {
+    resources.cutaway.profile.setRelief(relief);
+    invalidate();
+  }, [invalidate, relief, resources]);
 
   // The windows: under the real sky their glass opens onto the drawn city and
   // its panes reflect the room (hall-glazing.ts). The panes need the room's
@@ -471,6 +482,8 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     });
     cutsEasing.current = easing;
     moving = moving || easing;
+    // The relief's section follows each wall's cut (cut again only when it moves).
+    resources.cutaway.profile.update(cutState.current, WALL_BODY_TOP);
     // The walls' bodies follow the cuts in their shader (hall-wall-body.ts).
     if (moving) invalidate();
   });
@@ -519,6 +532,9 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       )}
       <mesh name="grand-hall-plinth" geometry={resources.cutaway.plinth} material={resources.cutaway.materials.plinth} />
       <mesh name="grand-hall-wall-body" geometry={resources.cutaway.body} material={resources.cutaway.materials.body} raycast={() => undefined} />
+      {sectionCap !== null && (
+        <mesh name="grand-hall-section-cap" geometry={sectionCap} material={resources.cutaway.materials.cap} frustumCulled={false} raycast={() => undefined} />
+      )}
       {[...thresholds.geometries].map(([key, part]) => {
         const material = resources.materials.get(key);
         if (material === undefined) return null;
