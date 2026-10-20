@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { SQL, is } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { PgDialect, getTableConfig, type PgColumn, type PgTable } from "drizzle-orm/pg-core";
 import { Pool, type QueryResultRow } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -13,6 +14,7 @@ import {
   normalisePhone,
 } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
+import { checkPeopleBook } from "../scripts/check-people-book.js";
 
 // ---------------------------------------------------------------------------
 // The People Book's migration on isolated PostgreSQL (T-665).
@@ -188,6 +190,8 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     d1: randomUUID(),
     // Fraser's only holder was deleted; the long address no column could hold.
     c6: randomUUID(), e11: randomUUID(), e12: randomUUID(),
+    // A contact whose account was deleted, and one whose account is another venue's.
+    accDead: randomUUID(), accOtherVenue: randomUUID(), c7: randomUUID(), c8: randomUUID(),
   };
   const longAddress = `${"a".repeat(250)}@example.test`;
   /** Contacts whose phone the API would refuse, and one it would take. */
@@ -314,6 +318,16 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     }
     await contact(ids.c6, { name: "Fraser Ross", email: "fraser@example.test", createdAt: at.others });
     await pool.query("UPDATE contacts SET deleted_at = $2 WHERE id = $1", [ids.c6, at.others]);
+    // Isla's organisation was deleted; Calum's account is venue B's, though he is venue A's.
+    await account(ids.accDead, "Dunbar Fictional Trust", ids.c7, null);
+    await pool.query("UPDATE client_accounts SET deleted_at = $2 WHERE id = $1", [ids.accDead, at.others]);
+    await pool.query(
+      `INSERT INTO client_accounts (id, venue_id, name, account_type, primary_contact_id, created_at, updated_at)
+       VALUES ($1, $2, 'Reid Fictional Ltd', 'event_client', $3, $4, $4)`,
+      [ids.accOtherVenue, venueB, ids.c8, at.c1],
+    );
+    await contact(ids.c7, { name: "Isla Dunbar", email: "isla.dunbar@example.test", account: ids.accDead, role: "Treasurer", createdAt: at.others });
+    await contact(ids.c8, { name: "Calum Reid", email: "calum.reid@example.test", account: ids.accOtherVenue, createdAt: at.others });
 
     await pool.query(
       `INSERT INTO opportunities (id, venue_id, client_account_id, primary_contact_id, source_enquiry_id, title, created_at, updated_at)
@@ -459,6 +473,32 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     );
     expect(memberships).toEqual([{ venue_id: venueA, client_account_id: ids.acc1, role_label: "Primary event contact", is_primary: true }]);
     expect((await one<{ count: number }>("SELECT count(*)::int AS count FROM account_memberships WHERE contact_id = $1", [ids.c5])).count).toBe(0);
+  });
+
+  it("gives no membership of an account that is deleted or another venue's, and clears the contact's account", async () => {
+    for (const id of [ids.c7, ids.c8]) {
+      expect((await one<{ count: number }>("SELECT count(*)::int AS count FROM account_memberships WHERE contact_id = $1", [id])).count, id).toBe(0);
+      // What refreshContactMirror would write on the person's next change.
+      expect((await one<{ client_account_id: string | null }>("SELECT client_account_id FROM contacts WHERE id = $1", [id])).client_account_id, id)
+        .toBeNull();
+    }
+    // The person keeps their details; the accounts keep their own rows and links.
+    expect(await contactRow(ids.c7)).toMatchObject({ name: "Isla Dunbar", email: "isla.dunbar@example.test", deleted_at: null });
+    expect(await query<{ id: string; primary_contact_id: string; deleted: boolean }>(
+      "SELECT id, primary_contact_id, deleted_at IS NOT NULL AS deleted FROM client_accounts WHERE id = ANY($1) ORDER BY name",
+      [[ids.accDead, ids.accOtherVenue]],
+    )).toEqual([
+      { id: ids.accDead, primary_contact_id: ids.c7, deleted: true },
+      { id: ids.accOtherVenue, primary_contact_id: ids.c8, deleted: false },
+    ]);
+    // A live account at the contact's venue is kept.
+    expect((await one<{ client_account_id: string | null }>("SELECT client_account_id FROM contacts WHERE id = $1", [ids.c1])).client_account_id)
+      .toBe(ids.acc1);
+  });
+
+  it("leaves nothing the operator's check counts as wrong", async () => {
+    const result = await checkPeopleBook(drizzle(pool), [venueA, venueB]);
+    expect(result.mustBeZero).toEqual({ mirrorMismatches: 0, primaryViolations: 0, crossVenueLinks: 0 });
   });
 
   it("calls an account named after its contact a household, and the rest organisations", async () => {

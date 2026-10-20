@@ -244,13 +244,18 @@ const HTTP_BREADCRUMB_CATEGORIES: readonly string[] = ["http", "fetch", "xhr"];
 
 /**
  * `beforeBreadcrumb`: strips the query from an http breadcrumb's
- * `data.url` and from its `message` (the SDK writes "GET <url>").
+ * `data.url` and from its `message` (the SDK writes "GET <url>"), and
+ * removes `data["http.query"]` and `data["http.fragment"]`, where
+ * @sentry/node-core (10.60) puts an outgoing request's query and fragment
+ * once it has cut them from the url.
  */
 export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   const data: Record<string, unknown> | undefined = breadcrumb.data;
   if (data !== undefined) {
     const url = data["url"];
     if (typeof url === "string") data["url"] = withoutQuery(url);
+    delete data["http.query"];
+    delete data["http.fragment"];
   }
   const isHttp =
     breadcrumb.type === "http" ||

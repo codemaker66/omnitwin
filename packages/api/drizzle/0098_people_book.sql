@@ -12,15 +12,26 @@
 -- In order, in one transaction (the migrator runs the file as one; a lock
 -- that cannot be had within five seconds fails it and nothing changes):
 --
---   1. Writers of client accounts, enquiries and contacts wait until it is
---      done. The three are locked up front, in the order the API's own
---      transactions take them, so the file never waits holding one of them.
+--   1. Every reader and writer of client accounts, enquiries and contacts
+--      waits until it is done: the three are locked up front in ACCESS
+--      EXCLUSIVE mode, in the order the API's own transactions take them.
+--      That shared order is what keeps the file and the API from waiting on
+--      each other for the three. The file can still wait while it holds
+--      them: the new tables' foreign keys take SHARE ROW EXCLUSIVE locks on
+--      users and venues after the upfront LOCK TABLE. Should one of those
+--      meet a transaction that holds users or venues and waits for the
+--      three, deadlock detection or the five-second lock limit ends the
+--      file: the deploy fails, nothing changes, and it can be run again.
 --   2. people_trim, people_normalise_email, people_normalise_phone,
 --      people_usable_phone and people_name_key: the normalisers and the
---      usable-phone rule of @omnitwin/types in SQL, for this backfill only.
---      Every live write normalises in TypeScript. A phone is usable when it
---      normalises and has 6 to 15 digits (isUsablePhone); the backfill makes
---      no point the API would refuse.
+--      usable-phone rule of @omnitwin/types in SQL. The backfill uses all
+--      five; every live write normalises in TypeScript. people_name_key, and
+--      people_trim, which it calls, are also read at runtime: the duplicate
+--      suggestions (services/people-duplicates.ts) compare names with
+--      people_name_key on every profile read. Those two are kept for that
+--      and must not be dropped. A phone is usable when it normalises and has
+--      6 to 15 digits (isUsablePhone); the backfill makes no point the API
+--      would refuse.
 --   3. contacts: email becomes optional; name parts, job title, address,
 --      notes, owner, last contact, source, merge and erasure columns; the key
 --      (id, venue_id) that the new tables point at, so nothing of one venue
@@ -36,8 +47,12 @@
 --         digits), so the mirror never holds a phone with no point. The
 --         enquiries keep the phone as it was typed.
 --      b. Each contact's email and usable phone become its primary points.
---      c. Each contact becomes the primary member of its account, in its own
---         venue only.
+--      c. A contact's client_account_id that names an account that is not
+--         live (deleted or merged) or not at the contact's venue is cleared,
+--         as refreshContactMirror would clear it on the person's next write;
+--         the account row and its deals keep their own links. Then each
+--         contact becomes the primary member of its account, which is live
+--         and in its own venue.
 --      d. An account named after its primary contact is a household; every
 --         other account is an organisation.
 --      e. A converted enquiry links to the contact made from it.
@@ -50,7 +65,8 @@
 --         fixtures, signed-in drafts never sent, the workspace gate's access
 --         requests ('venue-access') and Venviewer's own pricing leads
 --         ('venue-enquiry') are left out. So is an "email" longer than the
---         column holds (no real address is), so nothing is cut short.
+--         column holds (no real address is), so no email is cut short; a
+--         name longer than its 200 characters is still cut to them.
 --      g. Every other client enquiry links to the one live person who holds
 --         its email. Where two people share it (today's duplicates), nothing
 --         is linked; they are kept as two people, and no merge happens here.
@@ -71,9 +87,10 @@
 -- h rewrites none of them: rewriting a row this transaction wrote re-runs
 -- its foreign-key checks.
 -- On rehearsal data at twice Trades Hall's likely volume (10,820 enquiries,
--- 2,650 contacts), the file runs in about 2 s with no statement over half a
--- second, with or without fresh statistics, and with the planner forced to
--- other join methods.
+-- 2,650 contacts), the file runs in about 2 s, its longest statement about
+-- half a second (528 ms the most logged), with or without fresh statistics,
+-- and with the planner forced to other join methods. Those runs came before
+-- c's clearing statement, one more pass over contacts by primary key.
 --
 -- Re-running the file changes nothing: every step skips what is already in
 -- place. Nothing is deleted, and the backfill writes no kept-apart marks.
@@ -361,10 +378,22 @@ WHERE people_usable_phone(c.phone)
   AND NOT EXISTS (SELECT 1 FROM contact_points p WHERE p.contact_id = c.id AND p.kind = 'phone')
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
--- c. Memberships from contacts.client_account_id, same venue only.
+-- c. An account that is not live, or not at the contact's venue, is no longer the contact's:
+--    what refreshContactMirror does on the person's next write. The account row and its deals
+--    keep their own links. The live account at the venue is the one a contact keeps, so a
+--    second run finds nothing distinct from it and changes nothing.
+UPDATE contacts c SET client_account_id = NULL
+WHERE c.client_account_id IS DISTINCT FROM (
+  SELECT a.id FROM client_accounts a
+  WHERE a.id = c.client_account_id AND a.venue_id = c.venue_id
+    AND a.deleted_at IS NULL AND a.merged_into_id IS NULL
+);
+--> statement-breakpoint
+-- Memberships from contacts.client_account_id: live accounts at the contact's venue only.
 INSERT INTO account_memberships (venue_id, contact_id, client_account_id, role_label, is_primary)
 SELECT c.venue_id, c.id, c.client_account_id, c.role_label, true
 FROM contacts c JOIN client_accounts a ON a.id = c.client_account_id AND a.venue_id = c.venue_id
+  AND a.deleted_at IS NULL AND a.merged_into_id IS NULL
 WHERE NOT EXISTS (SELECT 1 FROM account_memberships m WHERE m.contact_id = c.id)
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint

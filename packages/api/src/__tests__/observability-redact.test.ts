@@ -419,6 +419,25 @@ describe("scrubBreadcrumb", () => {
     expect(out?.message).toBe("GET https://api.example.test/clients/search?[redacted]");
   });
 
+  it("removes the query and fragment @sentry/node-core moves out of an outgoing request's url", () => {
+    // @sentry/node-core 10.60 (utils/outgoingFetchRequest.js getBreadcrumbData)
+    // writes the url without its query, then the query and fragment as their own keys.
+    const crumb: Breadcrumb = {
+      type: "http",
+      category: "http",
+      data: {
+        url: "https://api.example.test/clients/search",
+        "http.method": "GET",
+        "http.query": "?q=Aileen",
+        "http.fragment": "#top",
+        status_code: 200,
+      },
+    };
+    const out = scrubBreadcrumb(crumb);
+    expect(JSON.stringify(out)).not.toContain("Aileen");
+    expect(out.data).toEqual({ url: "https://api.example.test/clients/search", "http.method": "GET", status_code: 200 });
+  });
+
   it("leaves a non-http breadcrumb's message alone", () => {
     const crumb: Breadcrumb = { category: "console", message: "what is this? a question" };
     expect(scrubBreadcrumb(crumb)).toEqual({ category: "console", message: "what is this? a question" });
