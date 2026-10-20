@@ -336,8 +336,17 @@ function devFixtureRoutes(): readonly RouteObject[] {
   const PlannerLabPage = lazy(() =>
     cockpitImport(() => import("./pages/PlannerLabPage.js").then((m) => ({ default: m.PlannerLabPage }))),
   );
+  const PlannerChromeFixturePage = lazy(() =>
+    import("./pages/PlannerChromeFixturePage.js").then((m) => ({ default: m.PlannerChromeFixturePage })),
+  );
 
   return [
+    {
+      // T-671 slice 4: every shared primitive of the planner's new chrome over
+      // a room (`?bg=` a same-origin frame), for review and the contrast audit.
+      path: "/dev/planner-chrome",
+      element: withSuspense(<PlannerChromeFixturePage />),
+    },
     {
       // Dev smoke route for T-087: proves the production renderer stack imports
       // the first-party Three.js r186 Gaussian addon and its native renderer.

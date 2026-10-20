@@ -1,0 +1,144 @@
+/* /dev/planner-chrome: places the planner chrome's primitives over a room so
+   they can be seen, used and measured. Layout only; the primitives carry
+   their own look (components/planner-chrome/chrome.css). */
+
+.pcf-stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background:
+    var(--pcf-backdrop, radial-gradient(ellipse at 50% 40%, var(--house-forest) 0%, var(--house-bg-0) 70%))
+    center / cover no-repeat,
+    var(--house-bg-0);
+}
+
+.pcf-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.pcf-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 56px;
+  padding: 0 8px;
+  transform: translateX(-50%);
+}
+
+.pcf-next {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 8px;
+}
+
+.pcf-utilities {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+}
+
+.pcf-panel {
+  position: fixed;
+  top: 76px;
+  right: 20px;
+  width: 344px;
+  overflow: hidden;
+}
+
+.pcf-panel__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px 12px;
+}
+
+.pcf-panel__sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--house-hairline);
+}
+
+.pcf-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pcf-states {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 380px;
+}
+
+.pcf-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  color: var(--house-forest-ink-2);
+  font: 400 12px/1 var(--house-sans);
+}
+
+.pcf-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pcf-state b {
+  color: var(--house-forest-ink-1);
+  font-weight: 500;
+}
+
+.pcf-marks {
+  position: fixed;
+  left: 20px;
+  bottom: 100px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pcf-marks .pc-mark {
+  position: relative;
+  transform: none;
+}
+
+.pcf-paper {
+  position: fixed;
+  top: 20px;
+  left: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 360px;
+  padding: 16px 20px;
+}
+
+.pcf-ink-2 { color: var(--house-forest-ink-2); }
+.pcf-ink-3 { color: var(--house-forest-ink-3); }
+.pcf-copper { color: var(--house-copper-text); }
