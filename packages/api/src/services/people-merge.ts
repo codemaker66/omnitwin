@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
-import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { alias, type AnyPgColumn, type PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   MERGE_FILLED_FIELDS,
@@ -296,8 +296,52 @@ async function idsWritten(tx: PeopleTx, statement: SQL): Promise<string[]> {
   return IdRowsSchema.parse(result.rows).map((row) => row.id);
 }
 
-function iso(value: Date | null): string | null {
-  return value === null ? null : value.toISOString();
+// ---------------------------------------------------------------------------
+// Times, to the microsecond.
+//
+// PostgreSQL keeps a timestamp to the microsecond; a JavaScript Date keeps
+// milliseconds. So no time a merge record keeps, and no time a merge or undo
+// writes from one, ever passes through a Date: each is read in SQL as UTC
+// text with six fractional digits (exactTime), kept as that text, and written
+// back by casting it (`::timestamptz`), which parses the text exactly, in any
+// session time zone. A merge undone puts every row back as it was, not a
+// fraction of a millisecond off.
+// ---------------------------------------------------------------------------
+
+/** A stored time as UTC text to the microsecond, "2026-10-01T09:00:00.123456Z";
+ *  NULL stays NULL. */
+function exactTime(column: AnyPgColumn): SQL<string | null> {
+  return sql<string | null>`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+}
+
+/** The time exactTime read, written back exactly. */
+function timeOf(text: string): SQL {
+  return sql`${text}::timestamptz`;
+}
+
+const survivorAlias = alias(contacts, "survivor");
+
+/** L's times as the record keeps them, and S's last contact, to the
+ *  microsecond; and whether L's last contact is the later of the two,
+ *  compared in SQL. */
+async function exactTimesOf(tx: PeopleTx, venueId: string, closingId: string, survivorId: string): Promise<{
+  createdAt: string | null; updatedAt: string | null; lastContactAt: string | null; erasedAt: string | null; deletedAt: string | null;
+  survivorLastContactAt: string | null; closingContactedLater: boolean;
+}> {
+  const [times] = await tx.select({
+    createdAt: exactTime(contacts.createdAt),
+    updatedAt: exactTime(contacts.updatedAt),
+    lastContactAt: exactTime(contacts.lastContactAt),
+    erasedAt: exactTime(contacts.erasedAt),
+    deletedAt: exactTime(contacts.deletedAt),
+    survivorLastContactAt: exactTime(survivorAlias.lastContactAt),
+    closingContactedLater: sql<boolean>`coalesce(${contacts.lastContactAt} > ${survivorAlias.lastContactAt}, ${contacts.lastContactAt} IS NOT NULL)`,
+  }).from(contacts)
+    .innerJoin(survivorAlias, and(eq(survivorAlias.id, survivorId), eq(survivorAlias.venueId, venueId)))
+    .where(and(eq(contacts.id, closingId), eq(contacts.venueId, venueId)))
+    .limit(1);
+  if (times === undefined) throw new Error("The two people of a merge could not be read again");
+  return times;
 }
 
 /** Steps 3 to 13: everything after the checks, on two locked, live people. */
@@ -306,16 +350,43 @@ async function mergeLocked(tx: PeopleTx, closing: ContactRow, survivor: ContactR
   const L = closing.id;
   const S = survivor.id;
 
+  // L's times, and S's last contact, exactly as stored (both are locked, so
+  // they are what lockPerson read).
+  const times = await exactTimesOf(tx, venueId, L, S);
+
   // So a person an older writer left without points keeps their email,
   // phone and organisation through the merge (and S its own).
   await adoptLegacyMirror(tx, closing);
   await adoptLegacyMirror(tx, survivor);
 
-  // 3. The snapshot: L as they are, and every point and membership they hold.
-  const points = await tx.select().from(contactPoints)
+  // 3. The snapshot: L as they are, and every point and membership they hold,
+  // each time to the microsecond.
+  const points = await tx.select({
+    id: contactPoints.id,
+    venueId: contactPoints.venueId,
+    contactId: contactPoints.contactId,
+    kind: contactPoints.kind,
+    value: contactPoints.value,
+    displayValue: contactPoints.displayValue,
+    label: contactPoints.label,
+    isPrimary: contactPoints.isPrimary,
+    sourceSystem: contactPoints.sourceSystem,
+    sourceId: contactPoints.sourceId,
+    createdAt: exactTime(contactPoints.createdAt),
+    updatedAt: exactTime(contactPoints.updatedAt),
+  }).from(contactPoints)
     .where(and(eq(contactPoints.contactId, L), eq(contactPoints.venueId, venueId)))
     .orderBy(asc(contactPoints.createdAt), asc(contactPoints.id));
-  const memberships = await tx.select().from(accountMemberships)
+  const memberships = await tx.select({
+    id: accountMemberships.id,
+    venueId: accountMemberships.venueId,
+    contactId: accountMemberships.contactId,
+    clientAccountId: accountMemberships.clientAccountId,
+    roleLabel: accountMemberships.roleLabel,
+    isPrimary: accountMemberships.isPrimary,
+    createdAt: exactTime(accountMemberships.createdAt),
+    updatedAt: exactTime(accountMemberships.updatedAt),
+  }).from(accountMemberships)
     .where(and(eq(accountMemberships.contactId, L), eq(accountMemberships.venueId, venueId)))
     .orderBy(asc(accountMemberships.createdAt), asc(accountMemberships.id));
 
@@ -377,16 +448,15 @@ async function mergeLocked(tx: PeopleTx, closing: ContactRow, survivor: ContactR
     .where(and(eq(contacts.mergedIntoId, L), eq(contacts.venueId, venueId)))
     .returning({ id: contacts.id })).map((row) => row.id);
 
-  // 10. S's empty fields, filled from L; the later last contact of the two.
+  // 10. S's empty fields, filled from L; the later last contact of the two,
+  // decided in SQL and copied exactly.
   const survivorFilled: RecordMergeSnapshot["survivorFilled"] = [];
   const filled: PgUpdateSetSource<typeof contacts> = {};
   for (const field of MERGE_FILLED_FIELDS) {
     if (field === "lastContactAt") {
-      const before = survivor.lastContactAt;
-      const after = closing.lastContactAt;
-      if (after !== null && (before === null || after.getTime() > before.getTime())) {
-        filled.lastContactAt = after;
-        survivorFilled.push({ field, before: iso(before), after: after.toISOString() });
+      if (times.closingContactedLater && times.lastContactAt !== null) {
+        filled.lastContactAt = timeOf(times.lastContactAt);
+        survivorFilled.push({ field, before: times.survivorLastContactAt, after: times.lastContactAt });
       }
       continue;
     }
@@ -422,32 +492,19 @@ async function mergeLocked(tx: PeopleTx, closing: ContactRow, survivor: ContactR
     "contacts.merged_into_id": movedTombstoneIds,
   };
   const moves: RecordMergeMove[] = MERGE_MOVE_TARGETS.map((target) => ({ target, ids: moved[target] }));
+  // Every time in it is exact text (exactTime); the schema checks each one.
   const snapshot = RecordMergeSnapshotSchema.parse({
-    person: { ...toPerson(closing), mergedIntoId: closing.mergedIntoId, erasedAt: iso(closing.erasedAt), deletedAt: iso(closing.deletedAt) },
-    contactPoints: points.map((point) => ({
-      id: point.id,
-      venueId: point.venueId,
-      contactId: point.contactId,
-      kind: point.kind,
-      value: point.value,
-      displayValue: point.displayValue,
-      label: point.label,
-      isPrimary: point.isPrimary,
-      sourceSystem: point.sourceSystem,
-      sourceId: point.sourceId,
-      createdAt: point.createdAt.toISOString(),
-      updatedAt: point.updatedAt.toISOString(),
-    })),
-    memberships: memberships.map((membership) => ({
-      id: membership.id,
-      venueId: membership.venueId,
-      contactId: membership.contactId,
-      clientAccountId: membership.clientAccountId,
-      roleLabel: membership.roleLabel,
-      isPrimary: membership.isPrimary,
-      createdAt: membership.createdAt.toISOString(),
-      updatedAt: membership.updatedAt.toISOString(),
-    })),
+    person: {
+      ...toPerson(closing),
+      lastContactAt: times.lastContactAt,
+      createdAt: times.createdAt,
+      updatedAt: times.updatedAt,
+      mergedIntoId: closing.mergedIntoId,
+      erasedAt: times.erasedAt,
+      deletedAt: times.deletedAt,
+    },
+    contactPoints: points,
+    memberships,
     removed: { contactPointIds: removedPointIds, membershipIds: removedMembershipIds },
     survivorFilled,
   });
@@ -697,8 +754,8 @@ async function remakeRemoved(tx: PeopleTx, merge: ReadableMerge): Promise<{ poin
     isPrimary: false,
     sourceSystem: point.sourceSystem,
     sourceId: point.sourceId,
-    createdAt: new Date(point.createdAt),
-    updatedAt: new Date(point.updatedAt),
+    createdAt: timeOf(point.createdAt),
+    updatedAt: timeOf(point.updatedAt),
   }))).onConflictDoNothing().returning({ id: contactPoints.id });
   const madeMemberships = memberships.length === 0 ? [] : await tx.insert(accountMemberships).values(memberships.map((membership) => ({
     id: membership.id,
@@ -707,21 +764,31 @@ async function remakeRemoved(tx: PeopleTx, merge: ReadableMerge): Promise<{ poin
     clientAccountId: membership.clientAccountId,
     roleLabel: membership.roleLabel,
     isPrimary: false,
-    createdAt: new Date(membership.createdAt),
-    updatedAt: new Date(membership.updatedAt),
+    createdAt: timeOf(membership.createdAt),
+    updatedAt: timeOf(membership.updatedAt),
   }))).onConflictDoNothing().returning({ id: accountMemberships.id });
   return { points: madePoints.map((row) => row.id), memberships: madeMemberships.map((row) => row.id) };
+}
+
+/** Rows back on L: those moved back (step 6) and those made again (step 7). */
+interface RowsBack {
+  readonly moved: ReadonlySet<string>;
+  readonly made: ReadonlySet<string>;
 }
 
 /**
  * Step 8: each point and membership the snapshot had primary, now back on L,
  * is L's primary again; any other primary of its kind on L stops being one
- * first, so the one-primary keys never see two.
+ * first, so the one-primary keys never see two. A row made again (step 7)
+ * is then exactly as the snapshot kept it, its updated_at included; a row
+ * moved back was written by the undo, and its updated_at moves on.
  */
-async function restorePrimaries(tx: PeopleTx, merge: ReadableMerge, back: { points: ReadonlySet<string>; memberships: ReadonlySet<string> }): Promise<void> {
+async function restorePrimaries(tx: PeopleTx, merge: ReadableMerge, back: { points: RowsBack; memberships: RowsBack }): Promise<void> {
   const { venueId, mergedId: L, snapshot } = merge;
+  const stampFor = (rows: RowsBack, row: { id: string; updatedAt: string }): SQL =>
+    rows.made.has(row.id) ? timeOf(row.updatedAt) : sql`clock_timestamp()`;
   for (const point of snapshot.contactPoints) {
-    if (!point.isPrimary || !back.points.has(point.id)) continue;
+    if (!point.isPrimary || !(back.points.moved.has(point.id) || back.points.made.has(point.id))) continue;
     await tx.update(contactPoints).set({ isPrimary: false, updatedAt: sql`clock_timestamp()` })
       .where(and(
         eq(contactPoints.contactId, L),
@@ -730,11 +797,11 @@ async function restorePrimaries(tx: PeopleTx, merge: ReadableMerge, back: { poin
         eq(contactPoints.isPrimary, true),
         ne(contactPoints.id, point.id),
       ));
-    await tx.update(contactPoints).set({ isPrimary: true, updatedAt: sql`clock_timestamp()` })
+    await tx.update(contactPoints).set({ isPrimary: true, updatedAt: stampFor(back.points, point) })
       .where(and(eq(contactPoints.id, point.id), eq(contactPoints.contactId, L), eq(contactPoints.venueId, venueId)));
   }
   for (const membership of snapshot.memberships) {
-    if (!membership.isPrimary || !back.memberships.has(membership.id)) continue;
+    if (!membership.isPrimary || !(back.memberships.moved.has(membership.id) || back.memberships.made.has(membership.id))) continue;
     await tx.update(accountMemberships).set({ isPrimary: false, updatedAt: sql`clock_timestamp()` })
       .where(and(
         eq(accountMemberships.contactId, L),
@@ -742,16 +809,16 @@ async function restorePrimaries(tx: PeopleTx, merge: ReadableMerge, back: { poin
         eq(accountMemberships.isPrimary, true),
         ne(accountMemberships.id, membership.id),
       ));
-    await tx.update(accountMemberships).set({ isPrimary: true, updatedAt: sql`clock_timestamp()` })
+    await tx.update(accountMemberships).set({ isPrimary: true, updatedAt: stampFor(back.memberships, membership) })
       .where(and(eq(accountMemberships.id, membership.id), eq(accountMemberships.contactId, L), eq(accountMemberships.venueId, venueId)));
   }
 }
 
 /**
  * Step 9: each of S's fields the merge filled goes back to what it was, only
- * while it still holds what the merge put there (a last contact compared to
- * the millisecond, the precision the record keeps). Answers the fields left
- * as someone has changed them since.
+ * while it still holds exactly what the merge put there (a last contact
+ * compared to the microsecond, as the record keeps it). Answers the fields
+ * left as someone has changed them since.
  */
 async function emptyFilled(tx: PeopleTx, merge: ReadableMerge): Promise<MergeSkip[]> {
   const skipped: MergeSkip[] = [];
@@ -760,8 +827,8 @@ async function emptyFilled(tx: PeopleTx, merge: ReadableMerge): Promise<MergeSki
     const set: PgUpdateSetSource<typeof contacts> = {};
     let unchanged: SQL;
     if (field === "lastContactAt") {
-      set.lastContactAt = before === null ? null : new Date(before);
-      unchanged = sql`date_trunc('milliseconds', ${column}) IS NOT DISTINCT FROM ${after}::timestamptz`;
+      set.lastContactAt = before === null ? null : timeOf(before);
+      unchanged = sql`${column} IS NOT DISTINCT FROM ${after}::timestamptz`;
     } else {
       set[field] = before;
       unchanged = sql`${column} IS NOT DISTINCT FROM ${after}`;
@@ -782,7 +849,7 @@ async function undoLocked(tx: PeopleTx, merge: ReadableMerge, actorId: string): 
   // 5. L is live again. updated_at moves on in step 10, by the book's own
   // stamp, which is always past the tombstone's (a bare now() might not be).
   const deletedAt = snapshot.person.deletedAt;
-  await tx.update(contacts).set({ mergedIntoId: null, deletedAt: deletedAt === null ? null : new Date(deletedAt) })
+  await tx.update(contacts).set({ mergedIntoId: null, deletedAt: deletedAt === null ? null : timeOf(deletedAt) })
     .where(and(eq(contacts.id, L), eq(contacts.venueId, venueId)));
 
   // 6. Every reference still on S moves back, in the reverse of the merge's
@@ -810,9 +877,14 @@ async function undoLocked(tx: PeopleTx, merge: ReadableMerge, actorId: string): 
   }
 
   // 8. L's primaries, as they were.
-  const pointsBack = [...(back.get("contact_points.contact_id") ?? []), ...made.points];
-  const membershipsBack = [...(back.get("account_memberships.contact_id") ?? []), ...made.memberships];
-  await restorePrimaries(tx, merge, { points: new Set(pointsBack), memberships: new Set(membershipsBack) });
+  const pointsMovedBack = back.get("contact_points.contact_id") ?? [];
+  const membershipsMovedBack = back.get("account_memberships.contact_id") ?? [];
+  const pointsBack = [...pointsMovedBack, ...made.points];
+  const membershipsBack = [...membershipsMovedBack, ...made.memberships];
+  await restorePrimaries(tx, merge, {
+    points: { moved: new Set(pointsMovedBack), made: madePoints },
+    memberships: { moved: new Set(membershipsMovedBack), made: madeMemberships },
+  });
 
   // 9. S's filled fields, emptied again where nobody has changed them.
   skipped.push(...await emptyFilled(tx, merge));

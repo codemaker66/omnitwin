@@ -77,6 +77,21 @@ describe(`migration ${TAG}`, () => {
     expect(sql).toContain(`BETWEEN ${String(PHONE_DIGITS_MIN)} AND ${String(PHONE_DIGITS_MAX)}`);
   });
 
+  it("holds every email to a real one from step a on, and leaves the phone unconstrained", async () => {
+    const source = await migration();
+    const sql = code(source);
+    const trim = sql.indexOf("UPDATE contacts SET email = NULLIF(people_trim(email), '')");
+    const drop = sql.indexOf(`ALTER TABLE "contacts" DROP CONSTRAINT IF EXISTS "contacts_email_not_blank";`);
+    const add = sql.indexOf(`ALTER TABLE "contacts" ADD CONSTRAINT "contacts_email_not_blank" CHECK ("email" IS NULL OR "email" ~ '[^[:space:]]');`);
+    expect(trim).toBeGreaterThan(-1);
+    expect(drop).toBeGreaterThan(trim);
+    expect(add).toBeGreaterThan(drop);
+    // Directly after step a: before step b writes the first point, so every later write in the file is checked too.
+    expect(add).toBeLessThan(sql.indexOf("INSERT INTO contact_points"));
+    // The phone's rule waits for the follow-up that heals pre-deploy residue.
+    expect(source).not.toContain("contacts_phone_not_blank");
+  });
+
   it("waits at most five seconds for a lock and creates every table idempotently", async () => {
     const sql = code(await migration());
     expect(sql).toContain("SET LOCAL lock_timeout = '5s';");
@@ -128,6 +143,11 @@ describe(`the Drizzle schema matches ${TAG}`, () => {
     expect(checkSql(contactPoints, "contact_points_label_check")).toContain(`IN (${quoted(CONTACT_POINT_LABELS)})`);
     expect(checkSql(clientAccounts, "client_accounts_kind_check")).toContain(`IN (${quoted(CLIENT_ACCOUNT_KINDS)})`);
     expect(checkSql(recordMerges, "record_merges_kind_check")).toContain(`IN (${quoted(MERGE_KINDS)})`);
+  });
+
+  it("holds the contact's email to a real one, as the migration does", () => {
+    const rule = checkSql(contacts, "contacts_email_not_blank");
+    expect(rule).toMatch(/"email" IS NULL OR .*"email" ~ '\[\^\[:space:\]\]'$/u);
   });
 
   it("keeps every point, membership and kept-apart mark in its person's venue, and goes with the person", () => {

@@ -68,7 +68,7 @@ const ADDED: Readonly<Record<string, readonly string[]>> = {
 /** The keys, rules and indexes the migration adds to tables that already exist. */
 const ADDED_RULES: Readonly<Record<string, readonly string[]>> = {
   contacts: [
-    "contacts_source_pair_check", "contacts_not_merged_into_self", "contacts_id_venue_unique",
+    "contacts_source_pair_check", "contacts_not_merged_into_self", "contacts_email_not_blank", "contacts_id_venue_unique",
     "contacts_venue_source_unique", "contacts_merged_into_idx", "contacts_owner_idx",
   ],
   client_accounts: [
@@ -201,6 +201,11 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     { id: randomUUID(), raw: "12345", kept: null, point: null },
     { id: randomUUID(), raw: "07700 900123", kept: "07700 900123", point: "07700900123" },
   ] as const;
+  /** Legacy emails of nothing but spaces, written before 0098 made email optional. */
+  const blankEmails = ["", "   ", "\t", "\n", "\r\n "].map((raw) => ({ id: randomUUID(), raw }));
+  /** A blank email on a record that was deleted: the rule holds over every row. */
+  const deletedBlank = { id: randomUUID(), raw: "  " };
+  const paddedEmail = { id: randomUUID(), raw: " a@b.example.test ", kept: "a@b.example.test" };
   const at = {
     e1: "2026-03-01T10:00:00.000Z", e3: "2026-03-10T10:00:00.000Z", e4: "2026-03-12T10:00:00.000Z",
     e5: "2026-03-20T10:00:00.000Z", e6: "2026-04-01T10:00:00.000Z", e7: "2026-05-01T10:00:00.000Z",
@@ -316,6 +321,12 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     for (const [index, entry] of phones.entries()) {
       await contact(entry.id, { name: `Phone Case ${String(index)}`, email: `phone.case.${String(index)}@example.test`, phone: entry.raw, createdAt: at.others });
     }
+    for (const [index, entry] of blankEmails.entries()) {
+      await contact(entry.id, { name: `Blank Email ${String(index)}`, email: entry.raw, createdAt: at.others });
+    }
+    await contact(deletedBlank.id, { name: "Deleted Blank Email", email: deletedBlank.raw, createdAt: at.others });
+    await pool.query("UPDATE contacts SET deleted_at = $2 WHERE id = $1", [deletedBlank.id, at.others]);
+    await contact(paddedEmail.id, { name: "Padded Email", email: paddedEmail.raw, createdAt: at.others });
     await contact(ids.c6, { name: "Fraser Ross", email: "fraser@example.test", createdAt: at.others });
     await pool.query("UPDATE contacts SET deleted_at = $2 WHERE id = $1", [ids.c6, at.others]);
     // Isla's organisation was deleted; Calum's account is venue B's, though he is venue A's.
@@ -440,6 +451,33 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
   it("turns a blank email into none and gives it no point", async () => {
     expect((await contactRow(ids.c5)).email).toBeNull();
     expect(await pointsOf(ids.c5)).toEqual([]);
+  });
+
+  it("leaves no email of spaces alone on any contact, deleted or not, and trims a padded one", async () => {
+    for (const entry of [...blankEmails, deletedBlank]) {
+      expect((await contactRow(entry.id)).email, JSON.stringify(entry.raw)).toBeNull();
+      expect(await pointsOf(entry.id), JSON.stringify(entry.raw)).toEqual([]);
+    }
+    expect((await contactRow(deletedBlank.id)).deleted_at).not.toBeNull();
+    expect((await contactRow(paddedEmail.id)).email).toBe(paddedEmail.kept);
+    expect(await pointsOf(paddedEmail.id)).toEqual([
+      { kind: "email", value: paddedEmail.kept, display_value: paddedEmail.kept, label: "other", is_primary: true },
+    ]);
+    expect(await query("SELECT id FROM contacts WHERE email IS NOT NULL AND email !~ '[^[:space:]]'")).toEqual([]);
+  });
+
+  /** contacts_email_not_blank as the catalogue holds it: one row per copy. */
+  const blankEmailRule = async (): Promise<{ convalidated: boolean; definition: string }[]> => query(
+    `SELECT convalidated, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conname = 'contacts_email_not_blank' AND conrelid = format('%I.%I', $1::text, 'contacts')::regclass`,
+    [fixtureSchema],
+  );
+
+  it("holds every email to a real one by one validated rule", async () => {
+    const rules = await blankEmailRule();
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.convalidated).toBe(true);
+    expect(rules[0]?.definition).toContain("'[^[:space:]]'");
   });
 
   it("keeps only a phone the API would take, as the mirror and as a point", async () => {
@@ -625,6 +663,42 @@ describe.skipIf(testUrl === undefined)(`migration ${TAG} on isolated PostgreSQL`
     const before = await read();
     await applyMigration(pool, migration);
     expect(await read()).toEqual(before);
+  });
+
+  it("keeps the blank-email rule exactly once when run again", async () => {
+    const rules = await blankEmailRule();
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.convalidated).toBe(true);
+  });
+
+  it("refuses a blank email written after it, and takes none or a real address", async () => {
+    const refused = { code: "23514", constraint: "contacts_email_not_blank" };
+    await expect(pool.query("INSERT INTO contacts (venue_id, name, email) VALUES ($1, 'Blank Insert', '  ')", [venueA]))
+      .rejects.toMatchObject(refused);
+    const real = await one<{ id: string; email: string | null }>(
+      "INSERT INTO contacts (venue_id, name, email) VALUES ($1, 'Real Address', 'real.address@example.test') RETURNING id, email",
+      [venueA],
+    );
+    expect(real.email).toBe("real.address@example.test");
+    await expect(pool.query("UPDATE contacts SET email = E'\\t' WHERE id = $1", [real.id])).rejects.toMatchObject(refused);
+    await pool.query("UPDATE contacts SET email = NULL WHERE id = $1", [real.id]);
+    expect((await contactRow(real.id)).email).toBeNull();
+    const none = await one<{ email: string | null }>(
+      "INSERT INTO contacts (venue_id, name, email) VALUES ($1, 'No Address', NULL) RETURNING email",
+      [venueA],
+    );
+    expect(none.email).toBeNull();
+  });
+
+  // The phone stays unconstrained, by ruling: the previous container serves a
+  // phone that trims to "" in the pre-deploy window. FLIP THIS TEST when the
+  // follow-up that heals pre-deploy residue adds the phone's rule.
+  it("still takes a blank phone (pre-deploy residue follow-up: flip to refused)", async () => {
+    const blank = await one<{ phone: string | null }>(
+      "INSERT INTO contacts (venue_id, name, email, phone) VALUES ($1, 'Blank Phone', NULL, '') RETURNING phone",
+      [venueA],
+    );
+    expect(blank.phone).toBe("");
   });
 
   it("lets the previous API keep writing, and holds the new rules", async () => {

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { FastifyBaseLogger, LightMyRequestResponse } from "fastify";
+import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   MERGE_MOVE_TARGETS,
@@ -18,10 +20,13 @@ import {
   type PersonProfile,
   type RecordMergeSnapshot,
 } from "@omnitwin/types";
+import type { Database } from "../db/client.js";
+import * as schema from "../db/schema.js";
 import { accountMemberships, contactPoints, contacts } from "../db/schema.js";
 import { registerErrorNormalizer } from "../middleware/error-normalizer.js";
 import { peopleRoutes } from "../routes/people.js";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
+import { applyPersonMerge, isMergeFailure, isUndoFailure, undoPersonMerge } from "../services/people-merge.js";
 import { toPerson } from "../services/people-records.js";
 import { openPeopleFixture, PLATFORM_TARGET, type PeopleFixture, type PeopleFixtureUser } from "./support/people-platform-fixture.js";
 
@@ -306,9 +311,22 @@ describe.skipIf(PLATFORM_TARGET === undefined)("merging two people on the migrat
   }
 
   /**
+   * The columns an undo is meant to move on, left out of an exact comparison:
+   * updated_at on contacts (the undo rewrites both people's mirrors), and on
+   * contact_points and account_memberships (the rows it moves back to L, and
+   * any other primary it unsets, are its own writes). The rows it makes again
+   * keep their own updated_at, which the microsecond test reads.
+   */
+  const MOVED_ON_BY_UNDO: Readonly<Record<string, readonly string[]>> = {
+    contacts: ["updated_at"],
+    contact_points: ["updated_at"],
+    account_memberships: ["updated_at"],
+  };
+
+  /**
    * The book at the venue as an undo should leave it: every row but the merge
-   * records, without updated_at (every write moves it on), and each time to
-   * the millisecond, the precision a merge record keeps.
+   * records, every column as PostgreSQL stores it (each time to the
+   * microsecond, as text), but for the columns in MOVED_ON_BY_UNDO.
    */
   async function bookState(): Promise<Record<string, unknown[]>> {
     const tables = [
@@ -317,15 +335,34 @@ describe.skipIf(PLATFORM_TARGET === undefined)("merging two people on the migrat
     ] as const;
     const state: Record<string, unknown[]> = {};
     for (const table of tables) {
-      const { rows } = await f.pool.query<{ row: Record<string, unknown> }>(
-        `SELECT to_jsonb(t) - 'updated_at' AS row FROM ${table} t WHERE venue_id = $1 ORDER BY id`, [f.venueId],
+      const movedOn = (MOVED_ON_BY_UNDO[table] ?? []).map((column) => ` - '${column}'`).join("");
+      const { rows } = await f.pool.query<{ row: unknown }>(
+        `SELECT to_jsonb(t)${movedOn} AS row FROM ${table} t WHERE venue_id = $1 ORDER BY id`, [f.venueId],
       );
-      state[table] = rows.map(({ row }) => Object.fromEntries(Object.entries(row).map(([key, value]) => [
-        key,
-        key.endsWith("_at") && typeof value === "string" ? new Date(value).toISOString() : value,
-      ])));
+      state[table] = rows.map(({ row }) => row);
     }
     return state;
+  }
+
+  /** A column's time as UTC text to the microsecond, read in SQL: a JavaScript
+   *  Date keeps milliseconds only. */
+  const exactText = (column: string): string => `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+  /** The named time columns of one row, each to the microsecond. */
+  async function exactTimes(
+    table: "contacts" | "contact_points" | "account_memberships", id: string, columns: readonly string[],
+  ): Promise<Record<string, string | null>> {
+    return one<Record<string, string | null>>(
+      `SELECT ${columns.map((column) => `${exactText(column)} AS ${column}`).join(", ")} FROM ${table} WHERE id = $1`, [id],
+    );
+  }
+
+  /** The created_at of each of a person's points or memberships, by id, to the microsecond. */
+  async function createdAtById(table: "contact_points" | "account_memberships", personId: string): Promise<Map<string, string>> {
+    const { rows } = await f.pool.query<{ id: string; created_at: string }>(
+      `SELECT id, ${exactText("created_at")} AS created_at FROM ${table} WHERE contact_id = $1`, [personId],
+    );
+    return new Map(rows.map((row) => [row.id, row.created_at]));
   }
 
   function withoutUpdatedAt(row: object): Record<string, unknown> {
@@ -347,21 +384,27 @@ describe.skipIf(PLATFORM_TARGET === undefined)("merging two people on the migrat
   }
 
   /** The person, their points and memberships as stored now, in the shape a
-   *  merge record keeps them, but for updated_at. */
+   *  merge record keeps them (every time to the microsecond), but for
+   *  updated_at (MOVED_ON_BY_UNDO). */
   async function asRecorded(personId: string): Promise<Record<string, unknown>> {
     const [row] = await f.db.select().from(contacts).where(eq(contacts.id, personId));
     if (row === undefined) throw new Error("No such person");
+    const times = await exactTimes("contacts", personId, ["created_at", "last_contact_at", "erased_at", "deleted_at"]);
     const points = await f.db.select().from(contactPoints).where(eq(contactPoints.contactId, personId));
     const memberships = await f.db.select().from(accountMemberships).where(eq(accountMemberships.contactId, personId));
+    const pointsCreated = await createdAtById("contact_points", personId);
+    const membershipsCreated = await createdAtById("account_memberships", personId);
     return {
       person: withoutUpdatedAt({
         ...toPerson(row),
+        createdAt: times["created_at"],
+        lastContactAt: times["last_contact_at"],
         mergedIntoId: row.mergedIntoId,
-        erasedAt: row.erasedAt?.toISOString() ?? null,
-        deletedAt: row.deletedAt?.toISOString() ?? null,
+        erasedAt: times["erased_at"],
+        deletedAt: times["deleted_at"],
       }),
-      contactPoints: points.sort(byId).map((point) => withoutUpdatedAt({ ...point, createdAt: point.createdAt.toISOString() })),
-      memberships: memberships.sort(byId).map((membership) => withoutUpdatedAt({ ...membership, createdAt: membership.createdAt.toISOString() })),
+      contactPoints: points.sort(byId).map((point) => withoutUpdatedAt({ ...point, createdAt: pointsCreated.get(point.id) })),
+      memberships: memberships.sort(byId).map((membership) => withoutUpdatedAt({ ...membership, createdAt: membershipsCreated.get(membership.id) })),
     };
   }
 
@@ -518,7 +561,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("merging two people on the migrat
     expect(snapshot.removed).toEqual({ contactPointIds: [heldPoint], membershipIds: [heldMembership] });
     expect(snapshot.survivorFilled).toEqual([
       { field: "jobTitle", before: null, after: "Secretary" },
-      { field: "lastContactAt", before: "2026-08-01T10:00:00.000Z", after: "2026-09-01T10:00:00.000Z" },
+      { field: "lastContactAt", before: "2026-08-01T10:00:00.000000Z", after: "2026-09-01T10:00:00.000000Z" },
     ]);
     const moves = RecordMergeMoveSchema.array().parse(kept.moves);
     expect(moves.map((move) => move.target)).toEqual([...MERGE_MOVE_TARGETS]);
@@ -911,26 +954,111 @@ describe.skipIf(PLATFORM_TARGET === undefined)("merging two people on the migrat
       expect((await snapshotOf(made.mergeId)).survivorFilled).toEqual([
         { field: "jobTitle", before: null, after: "Secretary" },
         { field: "notes", before: null, after: "Prefers email" },
-        { field: "lastContactAt", before: "2026-08-01T10:00:00.654Z", after: "2026-09-01T10:00:00.123Z" },
+        { field: "lastContactAt", before: "2026-08-01T10:00:00.654321Z", after: "2026-09-01T10:00:00.123456Z" },
       ]);
       return { p, made };
     };
 
-    // Untouched since: each goes back, the last contact to the millisecond the
-    // record keeps.
+    // Untouched since: each goes back, the last contact to the microsecond.
     const kept = await filledPair();
     expect(undone(await undo(kept.made.mergeId)).skipped).toEqual([]);
-    const restored = await personRow(kept.p.s);
-    expect(restored).toMatchObject({ job_title: null, notes: null });
-    expect(restored.last_contact_at?.toISOString()).toBe("2026-08-01T10:00:00.654Z");
+    expect(await personRow(kept.p.s)).toMatchObject({ job_title: null, notes: null });
+    expect(await exactTimes("contacts", kept.p.s, ["last_contact_at"])).toEqual({ last_contact_at: "2026-08-01T10:00:00.654321Z" });
 
     // A later enquiry moved S's last contact on since: it stays, named.
     const moved = await filledPair();
     await f.pool.query("UPDATE contacts SET last_contact_at = '2026-10-01T09:00:00Z' WHERE id = $1", [moved.p.s]);
     expect(undone(await undo(moved.made.mergeId)).skipped).toEqual([{ target: "survivor_field", ref: "lastContactAt" }]);
-    const left = await personRow(moved.p.s);
-    expect(left).toMatchObject({ job_title: null, notes: null });
-    expect(left.last_contact_at?.toISOString()).toBe("2026-10-01T09:00:00.000Z");
+    expect(await personRow(moved.p.s)).toMatchObject({ job_title: null, notes: null });
+    expect(await exactTimes("contacts", moved.p.s, ["last_contact_at"])).toEqual({ last_contact_at: "2026-10-01T09:00:00.000000Z" });
+
+    // Moved on by less than a millisecond is still moved on: it stays, named.
+    const nudged = await filledPair();
+    await f.pool.query("UPDATE contacts SET last_contact_at = '2026-09-01T10:00:00.123457Z' WHERE id = $1", [nudged.p.s]);
+    expect(undone(await undo(nudged.made.mergeId)).skipped).toEqual([{ target: "survivor_field", ref: "lastContactAt" }]);
+    expect(await exactTimes("contacts", nudged.p.s, ["last_contact_at"])).toEqual({ last_contact_at: "2026-09-01T10:00:00.123457Z" });
+  });
+
+  /**
+   * A pair whose L holds times with microseconds: the shared email's point
+   * and the membership of X, both of which S already holds (so the merge
+   * removes them and the undo makes them again), and L's last contact, which
+   * S has none of (so the merge fills it). With what each reads now, by SQL.
+   */
+  async function microsecondPair(): Promise<{ p: Pair; stamps: () => Promise<Record<string, Record<string, string | null>>> }> {
+    const p = await pair();
+    const pointId = (await one<{ id: string }>(
+      "SELECT id FROM contact_points WHERE contact_id = $1 AND value = $2", [p.l, p.sharedEmail],
+    )).id;
+    const membershipId = (await one<{ id: string }>(
+      "SELECT id FROM account_memberships WHERE contact_id = $1 AND client_account_id = $2", [p.l, p.x],
+    )).id;
+    await f.pool.query(
+      "UPDATE contact_points SET created_at = '2026-10-01 09:00:00.123456+00', updated_at = '2026-10-02 09:00:00.654321+00' WHERE id = $1",
+      [pointId],
+    );
+    await f.pool.query(
+      "UPDATE account_memberships SET created_at = '2026-10-01 09:00:00.234567+00', updated_at = '2026-10-02 09:00:00.765432+00' WHERE id = $1",
+      [membershipId],
+    );
+    await f.pool.query("UPDATE contacts SET last_contact_at = '2026-09-15 08:30:00.987654+00' WHERE id = $1", [p.l]);
+    const stamps = async (): Promise<Record<string, Record<string, string | null>>> => ({
+      point: await exactTimes("contact_points", pointId, ["created_at", "updated_at"]),
+      membership: await exactTimes("account_memberships", membershipId, ["created_at", "updated_at"]),
+      closing: await exactTimes("contacts", p.l, ["created_at", "last_contact_at", "deleted_at"]),
+      survivor: await exactTimes("contacts", p.s, ["created_at", "last_contact_at"]),
+    });
+    const before = await stamps();
+    expect(before).toMatchObject({
+      point: { created_at: "2026-10-01T09:00:00.123456Z", updated_at: "2026-10-02T09:00:00.654321Z" },
+      membership: { created_at: "2026-10-01T09:00:00.234567Z", updated_at: "2026-10-02T09:00:00.765432Z" },
+      closing: { last_contact_at: "2026-09-15T08:30:00.987654Z", deleted_at: null },
+      survivor: { last_contact_at: null },
+    });
+    return { p, stamps };
+  }
+
+  it("an undo restores every timestamp to the microsecond", async () => {
+    const { p, stamps } = await microsecondPair();
+    const before = await stamps();
+
+    const made = await mergeOf(p.l, p.s);
+    // S's last contact is L's, exactly.
+    expect(await exactTimes("contacts", p.s, ["last_contact_at"])).toEqual({ last_contact_at: "2026-09-15T08:30:00.987654Z" });
+    // The record keeps each time as the database held it.
+    const snapshot = await snapshotOf(made.mergeId);
+    expect(snapshot.contactPoints.find((point) => point.value === p.sharedEmail))
+      .toMatchObject({ createdAt: "2026-10-01T09:00:00.123456Z", updatedAt: "2026-10-02T09:00:00.654321Z" });
+    expect(snapshot.memberships.find((membership) => membership.clientAccountId === p.x))
+      .toMatchObject({ createdAt: "2026-10-01T09:00:00.234567Z", updatedAt: "2026-10-02T09:00:00.765432Z" });
+    expect(snapshot.survivorFilled).toContainEqual({ field: "lastContactAt", before: null, after: "2026-09-15T08:30:00.987654Z" });
+    expect(snapshot.person.lastContactAt).toBe("2026-09-15T08:30:00.987654Z");
+
+    expect(undone(await undo(made.mergeId)).skipped).toEqual([]);
+    expect(await stamps()).toEqual(before);
+  });
+
+  it("restores every timestamp to the microsecond in a session that is not on UTC", async () => {
+    const { p, stamps } = await microsecondPair();
+    const before = await stamps();
+    if (PLATFORM_TARGET === undefined) throw new Error("Explicit test database required");
+    // The service on a connection of its own whose session is on New York time.
+    const elsewhere = new Pool({ connectionString: PLATFORM_TARGET, max: 1, options: "-c TimeZone=America/New_York" });
+    try {
+      const { rows } = await elsewhere.query<{ zone: string }>("SELECT current_setting('TimeZone') AS zone");
+      expect(rows).toEqual([{ zone: "America/New_York" }]);
+      const db: Database = drizzle(elsewhere, { schema });
+
+      const made = await applyPersonMerge(db, f.venueId, p.l, p.s, f.users.staff);
+      if (isMergeFailure(made)) throw new Error(`The merge was refused: ${made.kind}`);
+      expect(await exactTimes("contacts", p.s, ["last_contact_at"])).toEqual({ last_contact_at: "2026-09-15T08:30:00.987654Z" });
+      const result = await undoPersonMerge(db, f.venueId, made.mergeId, f.users.staff);
+      if (isUndoFailure(result)) throw new Error(`The undo was refused: ${result.kind}`);
+      expect(result.skipped).toEqual([]);
+    } finally {
+      await elsewhere.end();
+    }
+    expect(await stamps()).toEqual(before);
   });
 
   it("puts back primaries that were not the oldest", async () => {

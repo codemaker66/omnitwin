@@ -45,7 +45,8 @@
 --      a. contacts.email and .phone lose surrounding spaces; a blank email is
 --         none, and so is a phone that is not usable ("+44", "TBC", five
 --         digits), so the mirror never holds a phone with no point. The
---         enquiries keep the phone as it was typed.
+--         enquiries keep the phone as it was typed. From then on a rule
+--         (contacts_email_not_blank) refuses any email of spaces alone.
 --      b. Each contact's email and usable phone become its primary points.
 --      c. A contact's client_account_id that names an account that is not
 --         live (deleted or merged) or not at the contact's venue is cleared,
@@ -364,6 +365,19 @@ UPDATE contacts SET email = NULLIF(people_trim(email), ''),
   phone = CASE WHEN people_usable_phone(phone) THEN people_trim(phone) END
 WHERE email IS DISTINCT FROM NULLIF(people_trim(email), '')
    OR phone IS DISTINCT FROM CASE WHEN people_usable_phone(phone) THEN people_trim(phone) END;
+--> statement-breakpoint
+-- A non-null email mirror is a real one, so every reader can trust it.
+-- Every existing row passes: a, just above, nulls each email people_trim leaves empty, over
+-- every contact row (deleted ones too). It uses the same [[:space:]] class in the same
+-- database, so no locale can make the two disagree. Placed here, the rule also checks every
+-- later write in this file.
+-- The phone has no such rule yet. The previous release's public enquiry takes a phone that
+-- trims to "", and its Create opportunity copies that phone into contacts.phone; it keeps
+-- serving for a minute or two after this pre-deploy migration, so a phone rule would turn
+-- that click into a 500 in that window. The follow-up that heals pre-deploy residue adds it.
+ALTER TABLE "contacts" DROP CONSTRAINT IF EXISTS "contacts_email_not_blank";
+--> statement-breakpoint
+ALTER TABLE "contacts" ADD CONSTRAINT "contacts_email_not_blank" CHECK ("email" IS NULL OR "email" ~ '[^[:space:]]');
 --> statement-breakpoint
 -- b. Points from each contact's email and phone, primary.
 INSERT INTO contact_points (venue_id, contact_id, kind, value, display_value, label, is_primary)

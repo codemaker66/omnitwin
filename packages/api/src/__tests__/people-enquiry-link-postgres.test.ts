@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger, LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { VENUE_ACCESS_ENQUIRY_TYPE, VENVIEWER_PRICING_ENQUIRY_TYPE } from "@omnitwin/types";
+import { crmRoutes } from "../routes/crm.js";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
 import { linkEnquiryToPerson, type LinkOutcome } from "../services/people-link.js";
 import { openPeopleFixture, PLATFORM_TARGET, type PeopleFixture } from "./support/people-platform-fixture.js";
@@ -55,6 +56,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("a public enquiry and the People 
     f = await openPeopleFixture(async (server, db) => {
       server.addHook("onRequest", (request, _reply, done) => { request.log = capturedLog; done(); });
       await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
+      // Create opportunity, which works an enquiry a colleague has chosen.
+      await server.register(crmRoutes, { db, prefix: "/crm" });
     });
     process.env["TWIN_PUBLIC_VENUE_SLUGS"] = `${f.venueId},${f.otherVenueId}`;
     await f.pool.query(
@@ -182,6 +185,46 @@ describe.skipIf(PLATFORM_TARGET === undefined)("a public enquiry and the People 
       { kind: "phone", value: "01414960001", display_value: "0141 496 0001", is_primary: true },
     ]);
     expect(await personOf(enquiryId)).toBe(person);
+  });
+
+  /** The person's phone mirror and phone points, as stored. */
+  async function phoneOf(personId: string): Promise<{ phone: string | null; points: number }> {
+    const { rows } = await f.pool.query<{ phone: string | null; points: number }>(
+      `SELECT phone, (SELECT count(*)::int FROM contact_points p WHERE p.contact_id = c.id AND p.kind = 'phone') AS points
+         FROM contacts c WHERE id = $1`,
+      [personId],
+    );
+    const row = rows[0];
+    if (row === undefined) throw new Error("No such person");
+    return row;
+  }
+
+  // The phone ruling in 0098 (no phone rule in the pre-deploy window) relies
+  // on these two: the People Book itself never writes a blank phone.
+  it("keeps no phone for a guest whose phone is only spaces", async () => {
+    const enquiryId = enquiryIdOf(await enquire(f.venueId, { email: `spaces.phone.${run}@example.test`, name: "Ishbel Grant", phone: "   " }));
+    const person = await personOf(enquiryId);
+    if (person === null) throw new Error("The enquiry made no person");
+    expect(await phoneOf(person)).toEqual({ phone: null, points: 0 });
+  });
+
+  it("keeps no phone when Create opportunity works an enquiry whose phone is blank", async () => {
+    const email = `blank.phone.${run}@example.test`;
+    // As an older writer may have stored it: the enquiry's phone is "".
+    const { rows } = await f.pool.query<{ id: string }>(
+      `INSERT INTO enquiries (venue_id, space_id, guest_email, guest_name, guest_phone, name, email, state, event_type)
+       SELECT $1, s.id, $2::text, 'Lachlan Reid', '', 'Lachlan Reid', $2::text, 'submitted', 'wedding' FROM spaces s WHERE s.venue_id = $1
+       LIMIT 1 RETURNING id`,
+      [f.venueId, email],
+    );
+    const enquiryId = rows[0]?.id;
+    if (enquiryId === undefined) throw new Error("No enquiry was stored");
+
+    const res = await f.server.inject({ method: "POST", url: `/crm/from-enquiry/${enquiryId}`, headers: f.bearer("staff") });
+    expect(res.statusCode, res.body).toBe(201);
+    const person = await personOf(enquiryId);
+    if (person === null) throw new Error("Create opportunity linked no person");
+    expect(await phoneOf(person)).toEqual({ phone: null, points: 0 });
   });
 
   // Review Focus 2.

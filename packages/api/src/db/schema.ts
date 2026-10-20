@@ -907,6 +907,8 @@ export const contacts = pgTable("contacts", {
   index("contacts_owner_idx").on(table.ownerUserId).where(sql`${table.ownerUserId} IS NOT NULL`),
   check("contacts_source_pair_check", sql`(${table.sourceSystem} IS NULL) = (${table.sourceId} IS NULL)`),
   check("contacts_not_merged_into_self", sql`${table.mergedIntoId} <> ${table.id}`),
+  // A non-null email is a real one (0098). The phone has no such rule yet.
+  check("contacts_email_not_blank", sql`${table.email} IS NULL OR ${table.email} ~ '[^[:space:]]'`),
 ]);
 
 // ---------------------------------------------------------------------------
