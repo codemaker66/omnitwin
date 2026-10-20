@@ -52,6 +52,14 @@ describe("askFor — a fact nobody recorded becomes a person to ask", () => {
     expect(ask.question).toBe("We are planning 200 guests for dinner in the Grand Hall, more than the published 180. Is that possible, and what would it need?");
   });
 
+  it("asks how the venue would lay out a count the plan has no room for, stating seats, not a capacity", () => {
+    const ask = askFor({ kind: "layout", guests: 170, seatsPlaced: 140, occasion: "a seated dinner" }, GUEST);
+    expect(ask.label).toBe("Ask the events team");
+    expect(ask.question).toBe("We are planning 170 guests for a seated dinner in the Grand Hall. The plan has 140 seats, with no room for another table at the online planner's spacing. How would you lay the room out for 170?");
+    expect(ask.question).not.toMatch(/\b(?:fits?|capacity)\b/);
+    expect(decodedHref(ask.href)).toContain("subject=170 guests in the Grand Hall");
+  });
+
   it("names who to ask when the venue publishes no address", () => {
     const ask = askFor("door-positions", { ...GUEST, venueEmail: null });
     expect(ask.href).toBeNull();

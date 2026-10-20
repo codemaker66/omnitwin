@@ -58,6 +58,18 @@ describe("security headers", () => {
     expect(res.headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
   });
 
+  it("keeps a view-only plan link's stricter no-referrer, no-store and noindex through the real server", async () => {
+    // A malformed token answers before any database read, so the mock
+    // database is never reached; the headers are the route's own.
+    const res = await server.inject({ method: "GET", url: "/public/plan-views/not-a-token" });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers["referrer-policy"]).toBe("no-referrer");
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(res.headers["x-robots-tag"]).toBe("noindex, nofollow");
+    // Everything else on the reply keeps the house policy.
+    expect(res.headers["x-frame-options"]).toBe("DENY");
+  });
+
   it("emits Permissions-Policy with camera/microphone/geolocation disabled", async () => {
     const res = await server.inject({ method: "GET", url: "/health" });
     const pp = res.headers["permissions-policy"];

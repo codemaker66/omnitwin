@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ANALYTICS_ROLES, awaitsVenue, canDraftWithAI, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
-  DIARY_WRITE_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
+  DIARY_WRITE_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PRICING_READ_ROLES, REVIEW_QUEUE_ROLES,
   ROTA_TAB_ROLES, WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
 import { DashboardLayout, NAV_ITEMS, type DashboardView } from "../components/dashboard/DashboardLayout.js";
@@ -19,6 +19,7 @@ import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyti
 import { ProposalsDesk } from "../components/dashboard/ProposalsDesk.js";
 import { PipelineDesk } from "../components/dashboard/PipelineDesk.js";
 import { OnboardingView } from "../components/dashboard/OnboardingView.js";
+import { PricingDesk } from "../components/dashboard/pricing/PricingDesk.js";
 import { RotaView } from "../components/dashboard/rota/RotaView.js";
 import { useAuthStore } from "../stores/auth-store.js";
 
@@ -46,6 +47,7 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "reviews",
   "analytics",
   "proposals",
+  "pricing",
   "search",
   "loadouts",
   "settings",
@@ -74,6 +76,10 @@ const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
 // week for the floor, their own shifts for everyone else in it). See
 // lib/role-capabilities.ts ROTA_TAB_ROLES.
 const ROTA_VIEWS = new Set<DashboardView>(["rota"]);
+// Pricing mirrors routes/pricing-desk.ts: the commercial team reads the
+// price list; the desk itself shows edit controls only to those who set
+// prices. See lib/role-capabilities.ts PRICING_READ_ROLES.
+const PRICING_VIEWS = new Set<DashboardView>(["pricing"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
 /** The views of one venue's work: all but the platform's own. */
 type VenueView = Exclude<DashboardView, "onboarding" | "admin">;
@@ -89,6 +95,7 @@ const NOT_CONNECTED: Readonly<Record<VenueView, string>> = {
   reviews: "there are no layouts to review",
   analytics: "there are no figures to show",
   proposals: "there are no proposals to show",
+  pricing: "there is no price list to show",
   search: "there are no clients to show",
   loadouts: "there are no reference loadouts to show",
   settings: "there are no venue settings to show",
@@ -96,7 +103,7 @@ const NOT_CONNECTED: Readonly<Record<VenueView, string>> = {
   rota: "there is no rota to show",
 };
 /** The views set as desks, full-bleed on the sage ground. */
-const DESK_VIEWS = new Set<DashboardView>(["enquiries", "reviews", "search", "pipeline", "proposals"]);
+const DESK_VIEWS = new Set<DashboardView>(["enquiries", "reviews", "search", "pipeline", "proposals", "pricing"]);
 type PlatformRole = "none" | "operator" | "admin";
 
 export function dashboardViewFromSearchValue(value: string | null): DashboardView | null {
@@ -137,6 +144,7 @@ export function canOpenDashboardView(view: DashboardView, role: string | null, p
   if (CLIENT_SEARCH_VIEWS.has(view)) return hasRole(CLIENT_SEARCH_ROLES, role);
   if (REVIEW_QUEUE_VIEWS.has(view)) return hasRole(REVIEW_QUEUE_ROLES, role);
   if (ROTA_VIEWS.has(view)) return hasRole(ROTA_TAB_ROLES, role);
+  if (PRICING_VIEWS.has(view)) return hasRole(PRICING_READ_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 
@@ -401,6 +409,8 @@ export function DashboardPage(): React.ReactElement {
         return <ExecutiveAnalyticsView />;
       case "proposals":
         return <ProposalsDesk proposalId={requestedProposalId} onProposalShown={handleProposalShown} onOpenDeal={handleOpenOpportunity} />;
+      case "pricing":
+        return <PricingDesk />;
       case "search":
         return (
           <ClientsDesk

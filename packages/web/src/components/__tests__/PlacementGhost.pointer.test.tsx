@@ -7,6 +7,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
+import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { PLANNER_INTERACTION_FLOOR_NAME } from "../../lib/planner-interaction-floor.js";
 
@@ -75,6 +76,23 @@ it.each(["cake-cutting-table", "ceremony-table"])("places %s directly from a can
   expect(usePlacementStore.getState().placedItems).toHaveLength(1);
   expect(usePlacementStore.getState().placedItems[0]).toMatchObject({ catalogueItemId: serviceTable.id, x: 0, z: 0 });
   expect(useChairDialogStore.getState().pending).toBeNull();
+});
+
+it("says why a tap placed nothing once every piece the venue has is on the floor", () => {
+  const platform = getCatalogueItemBySlug("platform-narrow");
+  if (platform === undefined) throw new Error("Missing the narrow platform");
+  usePlacementNoticeStore.getState().dismiss();
+  useCatalogueStore.setState({ selectedItemId: platform.id });
+  render(<PlacementGhost />);
+  act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+  expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+  expect(usePlacementNoticeStore.getState().notice).toBeNull();
+
+  act(() => { fireEvent.click(canvas, { clientX: 60, clientY: 60, button: 0 }); });
+  expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+  expect(usePlacementNoticeStore.getState().notice?.text)
+    .toBe("The venue has one of these, and it is already placed; move it to use it elsewhere.");
+  usePlacementNoticeStore.getState().dismiss();
 });
 
 it("keeps the seating dialog for an imported dining table", () => {

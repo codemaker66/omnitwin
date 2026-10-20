@@ -151,6 +151,9 @@ export type CreateSupplierCoordinationPackInput = z.infer<typeof CreateSupplierC
 
 export const GenerateSupplierCoordinationShareTokenInputSchema = z.object({
   expiresAt: z.string().datetime().nullable().optional(),
+  /** A fresh pass replaces this earlier one for the same supplier and event:
+   *  its links stop working once the new link exists. */
+  supersedesPackId: SupplierCoordinationPackIdSchema.optional(),
 }).strict();
 export type GenerateSupplierCoordinationShareTokenInput = z.infer<typeof GenerateSupplierCoordinationShareTokenInputSchema>;
 
@@ -204,6 +207,44 @@ export const SupplierSafeChangeSummarySchema = z.object({
 }).strict();
 export type SupplierSafeChangeSummary = z.infer<typeof SupplierSafeChangeSummarySchema>;
 
+/**
+ * What the supplier's page says in plain words (A Door for Everyone Outside,
+ * stage 1): the day and room, when the brief was last made, whether the
+ * venue's plan has moved on since, what changed in their own part, and the
+ * named person to call. Optional so a page served before the API carries it
+ * still renders.
+ */
+export const SupplierPassChangesSchema = z.object({
+  /** When the brief this one replaced was made. */
+  since: z.string().datetime(),
+  added: z.array(SupplierCoordinationTextSchema).max(40),
+  removed: z.array(SupplierCoordinationTextSchema).max(40),
+  changed: z.array(SupplierCoordinationTextSchema).max(40),
+}).strict();
+export type SupplierPassChanges = z.infer<typeof SupplierPassChangesSchema>;
+
+export const SupplierPassContactSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  phone: z.string().trim().min(1).max(40).nullable(),
+}).strict();
+export type SupplierPassContact = z.infer<typeof SupplierPassContactSchema>;
+
+export const SupplierPassDetailsSchema = z.object({
+  addressedTo: z.string().trim().min(1).max(160).nullable(),
+  eventStartsAt: z.string().datetime().nullable(),
+  eventEndsAt: z.string().datetime().nullable(),
+  rooms: z.array(z.string().trim().min(1).max(200)).max(12),
+  venueAddress: z.string().trim().min(1).max(500).nullable(),
+  venueTimeZone: z.string().trim().min(1).max(100),
+  /** When this brief was made from the venue's approved plan. */
+  updatedAt: z.string().datetime(),
+  /** When the venue's plan changed after this brief was made, if it has. */
+  planChangedAt: z.string().datetime().nullable(),
+  changesForYou: SupplierPassChangesSchema.nullable(),
+  venueContact: SupplierPassContactSchema.nullable(),
+}).strict();
+export type SupplierPassDetails = z.infer<typeof SupplierPassDetailsSchema>;
+
 export const SupplierSafePackViewSchema = z.object({
   title: SupplierCoordinationTextSchema,
   venueName: z.string().trim().min(1).max(200).nullable(),
@@ -226,8 +267,133 @@ export const SupplierSafePackViewSchema = z.object({
   items: z.array(SupplierSafePackItemSchema),
   acknowledgements: z.array(SupplierSafeAcknowledgementSchema),
   supplierNotice: SupplierCoordinationTextSchema,
+  passDetails: SupplierPassDetailsSchema.optional(),
 }).strict();
 export type SupplierSafePackView = z.infer<typeof SupplierSafePackViewSchema>;
+
+// ---------------------------------------------------------------------------
+// Supplier passes — the staff side (A Door for Everyone Outside, stage 1).
+//
+// A pass is a supplier coordination pack with one live link. Every pass stops
+// working on a date: by default seven days after the event, and never later
+// than thirty days after it, so a forwarded link does not outlive the job.
+// ---------------------------------------------------------------------------
+
+export const SUPPLIER_PASS_GRACE_DAYS = 7;
+export const SUPPLIER_PASS_MAX_DAYS_AFTER_EVENT = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The day a pass stops working unless someone chooses otherwise: seven days
+ *  after the event's last moment. Null when the event has no date yet. */
+export function defaultSupplierPassExpiry(eventLastMoment: Date | null): Date | null {
+  return eventLastMoment === null ? null : new Date(eventLastMoment.getTime() + SUPPLIER_PASS_GRACE_DAYS * DAY_MS);
+}
+
+/** The latest a pass may stay open: thirty days after the event, or thirty
+ *  days from now while the event has no date. */
+export function latestSupplierPassExpiry(eventLastMoment: Date | null, now: Date): Date {
+  const from = eventLastMoment ?? now;
+  return new Date(from.getTime() + SUPPLIER_PASS_MAX_DAYS_AFTER_EVENT * DAY_MS);
+}
+
+export type SupplierPassExpiryCheck = "ok" | "missing" | "past" | "too_late";
+
+/** Whether a chosen stop date is one a pass may carry. */
+export function checkSupplierPassExpiry(expiresAt: Date | null, eventLastMoment: Date | null, now: Date): SupplierPassExpiryCheck {
+  if (expiresAt === null || Number.isNaN(expiresAt.getTime())) return "missing";
+  if (expiresAt.getTime() <= now.getTime()) return "past";
+  if (expiresAt.getTime() > latestSupplierPassExpiry(eventLastMoment, now).getTime()) return "too_late";
+  return "ok";
+}
+
+export const SupplierPassLinkSchema = z.object({
+  tokenPrefix: z.string().trim().min(6).max(16),
+  createdAt: z.string().datetime(),
+  expiresAt: z.string().datetime().nullable(),
+  revokedAt: z.string().datetime().nullable(),
+  lastViewedAt: z.string().datetime().nullable(),
+}).strict();
+export type SupplierPassLink = z.infer<typeof SupplierPassLinkSchema>;
+
+export const SupplierPassSummarySchema = z.object({
+  id: SupplierCoordinationPackIdSchema,
+  title: SupplierCoordinationTextSchema,
+  supplierId: SupplierIdSchema.nullable(),
+  supplierName: z.string().trim().min(1).max(200).nullable(),
+  contactName: z.string().trim().min(1).max(160).nullable(),
+  contactEmail: z.string().email().max(255).nullable(),
+  contactPhone: z.string().trim().min(1).max(40).nullable(),
+  status: SupplierCoordinationPackStatusSchema,
+  /** Whether the supplier can open it at this moment. */
+  live: z.boolean(),
+  createdAt: z.string().datetime(),
+  issuedAt: z.string().datetime().nullable(),
+  /** The stop date that applies, including the default for a pass made
+   *  before every pass carried one. */
+  expiresAt: z.string().datetime().nullable(),
+  /** True when no stop date was stored and the default is applied. */
+  expiryAssumed: z.boolean(),
+  revokedAt: z.string().datetime().nullable(),
+  /** When the plan this pass was made from was compiled. */
+  builtFromCompiledAt: z.string().datetime(),
+  /** When the event's plan was compiled again after this pass was made. */
+  planChangedAt: z.string().datetime().nullable(),
+  /** Who made the pass: the contact its page names. */
+  madeBy: SupplierPassContactSchema.nullable(),
+  items: z.array(z.object({
+    title: SupplierCoordinationTextSchema,
+    arrivalWindow: SupplierCoordinationTextSchema.nullable(),
+  }).strict()),
+  link: SupplierPassLinkSchema.nullable(),
+  openedAt: z.string().datetime().nullable(),
+  acknowledgements: z.array(SupplierSafeAcknowledgementSchema),
+}).strict();
+export type SupplierPassSummary = z.infer<typeof SupplierPassSummarySchema>;
+
+export const SupplierPassScopeItemSchema = z.object({
+  instructionId: SupplierInstructionIdSchema,
+  supplierId: SupplierIdSchema.nullable(),
+  category: z.string().trim().min(1).max(80),
+  title: SupplierCoordinationTextSchema,
+  detail: SupplierCoordinationTextSchema,
+  arrivalWindow: SupplierCoordinationTextSchema.nullable(),
+}).strict();
+export type SupplierPassScopeItem = z.infer<typeof SupplierPassScopeItemSchema>;
+
+export const SupplierPassDirectoryEntrySchema = z.object({
+  id: SupplierIdSchema,
+  name: z.string().trim().min(1).max(200),
+  category: z.string().trim().min(1).max(80),
+  contactName: z.string().trim().min(1).max(160).nullable(),
+  email: z.string().trim().min(1).max(255).nullable(),
+  phone: z.string().trim().min(1).max(40).nullable(),
+}).strict();
+export type SupplierPassDirectoryEntry = z.infer<typeof SupplierPassDirectoryEntrySchema>;
+
+export const SupplierPassBoardSchema = z.object({
+  eventId: EventIdSchema,
+  venueName: z.string().trim().min(1).max(200).nullable(),
+  venueAddress: z.string().trim().min(1).max(500).nullable(),
+  venueTimeZone: z.string().trim().min(1).max(100),
+  eventStartsAt: z.string().datetime().nullable(),
+  eventLastMomentAt: z.string().datetime().nullable(),
+  rooms: z.array(z.string().trim().min(1).max(200)).max(12),
+  defaultExpiresAt: z.string().datetime().nullable(),
+  latestExpiresAt: z.string().datetime(),
+  /** Staff, managers and admins issue and withdraw; hallkeepers read. */
+  canIssue: z.boolean(),
+  /** The compiled plan new passes are made from; null until one exists. */
+  handoff: z.object({
+    id: HandoffPackIdSchema,
+    compiledAt: z.string().datetime(),
+  }).strict().nullable(),
+  /** Who a new pass names as the supplier's contact: the person issuing it. */
+  issuer: SupplierPassContactSchema.nullable(),
+  scope: z.array(SupplierPassScopeItemSchema),
+  suppliers: z.array(SupplierPassDirectoryEntrySchema),
+  passes: z.array(SupplierPassSummarySchema),
+}).strict();
+export type SupplierPassBoard = z.infer<typeof SupplierPassBoardSchema>;
 
 export function supplierCoordinationPayloadDigest(payload: {
   readonly handoffPackId: string;

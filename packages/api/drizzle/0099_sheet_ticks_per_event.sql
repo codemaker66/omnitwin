@@ -1,7 +1,7 @@
 -- A setup sheet's ticks belong to the event the room was set for
--- (18 October 2026). The number is provisional; the final one is assigned
--- at merge (open PRs hold 0091, 0095 and 0097; renumber the tag AND the
--- journal `when` so the migrator orders it after everything merged first).
+-- (18 October 2026). 0099, after the People Book's 0098; the chief of staff
+-- confirms the number at the merge slot (renumber the tag AND the journal
+-- `when` so the migrator orders it after everything merged first).
 --
 -- hallkeeper_progress keyed a tick on (config_id, row_key). A layout can be
 -- reused for more than one event, so a reused layout opened with the last
