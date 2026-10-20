@@ -11,6 +11,7 @@ import {
 import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
 import { venueStructuredDataPlugin } from "./src/lib/venue-structured-data-plugin";
 import { routeDocumentsPlugin } from "./src/lib/route-documents-plugin";
+import { homeRoutePreloadPlugin } from "./src/lib/home-route-preload-plugin";
 
 // ---------------------------------------------------------------------------
 // Vite config — punch list #16 bundle splitting
@@ -38,7 +39,8 @@ export default defineConfig(({ mode }) => {
   // shared venue truth (T-649), so it can never drift from the page's figures.
   // Each public page also gets a titled copy of index.html, so crawlers that
   // do not run JavaScript read its own title (src/lib/route-documents.ts).
-  const plugins: PluginOption[] = [react(), venueStructuredDataPlugin(), routeDocumentsPlugin()];
+  // The home route's chunks are preloaded from index.html (home-route-preload-plugin.ts).
+  const plugins: PluginOption[] = [react(), venueStructuredDataPlugin(), homeRoutePreloadPlugin(), routeDocumentsPlugin()];
 
   // Captured splat tiles are staged outside the repository (roughly a gigabyte
   // across the eight Trades Hall rooms), so `public/` cannot hold them. In
