@@ -8,18 +8,21 @@
 // Runs daily from .github/workflows/cleanup.yml:
 //   1. Stale preview configurations (unclaimed, >72h old, no enquiry)
 //   2. Orphaned file rows (loadout context, >24h old, no reference_photos link)
-//   3. Remembered allergy notes unused for the period the client agreed to
+//   3. Guests' allergy notes past their retention (removeLapsedDietaryNotes):
+//      from a layout and its event sheets DIETARY_NOTE_RETENTION.daysAfterEvent
+//      days after the event, as the privacy policy and the planner say.
+//   4. Remembered allergy notes unused for the period the client agreed to
 //      (DIETARY_MEMORY_RETENTION). The words beside the "remember" box promise
-//      this removal, so it runs on the schedule, not only when someone calls
-//      POST /admin/cleanup. Its errors carry a SQLSTATE only, never the note.
-//   4. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
+//      this removal.
+//   5. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
 //      0100): the enquiry funnel keeps them no longer than the privacy page
 //      keeps an enquiry, whether or not their enquiry or proposal remains.
 //
-// Not here: the layouts' own allergy-note removal 30 days after the event
-// (removeLapsedDietaryNotes). It also removes stored event-sheet PDFs, which
-// needs storage configuration this job does not have, and scheduling it is
-// still Blake's decision; it runs through POST /admin/cleanup.
+// Both note passes run on the schedule, not only when someone calls
+// POST /admin/cleanup, because the product promises them. Their errors carry
+// a SQLSTATE only, never the note: this job's log is public with the
+// repository. Neither touches object storage (PR #130 stopped storing sheet
+// PDFs), so the job needs only DATABASE_URL.
 //
 // Exit codes: 0 = success, 1 = error
 // ---------------------------------------------------------------------------
@@ -29,11 +32,15 @@ import { pathToFileURL } from "node:url";
 import { createDb, type Database } from "../db/client.js";
 import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/cleanup.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
+import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
 
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
   readonly deletedFiles: number;
+  /** Layouts and event sheets whose allergy note passed its retention. */
+  readonly lapsedNoteLayouts: number;
+  readonly lapsedNoteSheets: number;
   readonly rememberedNotesRemoved: number;
   readonly engagementEventsRemoved: number;
 }
@@ -49,13 +56,23 @@ export async function runScheduledCleanup(
   const deletedFiles = await cleanupOrphanedFiles(db);
   log(`[cleanup] Deleted ${String(deletedFiles)} orphaned file(s)`);
 
+  const lapsed = await removeLapsedDietaryNotes(db);
+  log(`[cleanup] Removed the allergy note from ${String(lapsed.layouts)} layout(s) and ${String(lapsed.sheets)} event sheet(s) past their retention`);
+
   const remembered = await removeUnusedRememberedNotes(db);
   log(`[cleanup] Removed ${String(remembered.removed)} remembered allergy note(s) unused for the agreed period`);
 
   const engagementEventsRemoved = await removeExpiredEngagementEvents(db);
   log(`[cleanup] Removed ${String(engagementEventsRemoved)} engagement event(s) past their retention period`);
 
-  return { deletedConfigs, deletedFiles, rememberedNotesRemoved: remembered.removed, engagementEventsRemoved };
+  return {
+    deletedConfigs,
+    deletedFiles,
+    lapsedNoteLayouts: lapsed.layouts,
+    lapsedNoteSheets: lapsed.sheets,
+    rememberedNotesRemoved: remembered.removed,
+    engagementEventsRemoved,
+  };
 }
 
 async function main(): Promise<void> {

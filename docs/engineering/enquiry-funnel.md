@@ -128,7 +128,7 @@ cookies, and that stays true:
   the enquiry without them (`ENQUIRY_FUNNEL_FIELDS`).
 - Engagement events go with their enquiry or proposal, and after 24 months
   (`ENGAGEMENT_RETENTION_MONTHS`, the privacy page's enquiry period) in any case:
-  the nightly cleanup (`scripts/run-cleanup.ts`, pass 4) removes them.
+  the nightly cleanup (`scripts/run-cleanup.ts`, pass 5) removes them.
 
 **Dark until the notice exists, enforced by the server.** Where a person came from,
 and a walk through the twin, can only come from the browser. PECR Schedule A1

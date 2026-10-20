@@ -8,6 +8,7 @@ import {
   events,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { sqlStateOf } from "./dietary-memory.js";
 
 // ---------------------------------------------------------------------------
 // Retention for guests' allergy notes (fix-first item 18).
@@ -36,10 +37,13 @@ import type { Database } from "../db/client.js";
 // that can still mention an allergy ("Table 5: nut allergy"), and whether such
 // notes count as health text is an open decision, not a rule this job applies.
 //
-// It runs through the house cleanup endpoint (POST /admin/cleanup), with a
-// dry run that changes nothing (POST /admin/retention/dietary-notes). It is
-// idempotent: a note already removed is not touched again, and the layout's
-// updated time is left alone because nobody edited it.
+// It runs every night in the scheduled cleanup (.github/workflows/cleanup.yml,
+// scripts/run-cleanup.ts), because the privacy policy and the planner promise
+// the removal, and on demand through POST /admin/cleanup, with a dry run that
+// changes nothing (POST /admin/retention/dietary-notes). It is idempotent: a
+// note already removed is not touched again, a sheet left by a failed night is
+// found again the next, and the layout's updated time is left alone because
+// nobody edited it.
 //
 // A sheet issued before PR #130 may still name the public PDF that was
 // pre-rendered for it; that URL is cleared with the note. The stored objects
@@ -115,10 +119,31 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
   return rows.map((row) => row.id);
 }
 
+/** The retention pass failed. Carries the SQLSTATE and nothing else: the
+ *  database's own error can quote the failing row ("Failing row contains …"),
+ *  note included, and the nightly job's log is public with the repository. */
+export class DietaryRetentionError extends Error {
+  readonly sqlState: string | null;
+  constructor(cause: unknown) {
+    const sqlState = sqlStateOf(cause);
+    super(`Allergy note retention pass failed${sqlState === null ? "" : ` (SQLSTATE ${sqlState})`}`);
+    this.name = "DietaryRetentionError";
+    this.sqlState = sqlState;
+  }
+}
+
 export async function removeLapsedDietaryNotes(
   db: Database,
   options: DietaryRetentionOptions = {},
 ): Promise<DietaryRetentionResult> {
+  try {
+    return await removeLapsed(db, options);
+  } catch (error) {
+    throw new DietaryRetentionError(error);
+  }
+}
+
+async function removeLapsed(db: Database, options: DietaryRetentionOptions): Promise<DietaryRetentionResult> {
   const now = options.now ?? new Date();
   const dryRun = options.dryRun ?? false;
   const ids = await lapsedLayoutIds(db, now);
