@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { isUnownedRequest, type VenueRequest } from "@omnitwin/types";
+import {
+  PLANNER_SOUND_MIN_GAP_MS,
+  PLANNER_SOUND_RECIPES,
+  varyRecipe,
+  type PlannerSoundId,
+  type PlannerSoundRecipe,
+  type PlannerSoundVariation,
+} from "./planner-sound-recipes.js";
+import { dbToGain, renderHallImpulse, renderPlannerSound } from "./planner-sound-render.js";
 
 // ---------------------------------------------------------------------------
 // The sound registry: every sound Venviewer can make, in one place.
 //
 // Callers: WhenRibbon.tsx (createSnapTick and the tick preference),
-// ChimeToggle.tsx and RequestsProvider.tsx (the arrival chime), and
-// pages/LandingPage.tsx with ContemplationAct.tsx (room tone). The toolbar
+// ChimeToggle.tsx and RequestsProvider.tsx (the arrival chime),
+// pages/LandingPage.tsx with ContemplationAct.tsx (room tone), and the
+// planner's chrome (components/planner-chrome/, the planner palette). The toolbar
 // tick and click players have no caller in the app today; they are kept as
 // they were in lib/toolbar-sounds.ts. No other source file may make sound
 // (sound-registry.test.ts scans the source for Web Audio and audio elements,
@@ -37,6 +47,9 @@ export interface SoundDefinition {
 
 export const CHIME_STORAGE_KEY = "venviewer.chime-on-arrivals";
 export const TICK_PREFERENCE_KEY = "venviewer.when-ribbon.tick";
+/** The planner's Off · Quiet · Full, kept on this device (T-671, spec section 9). */
+export const PLANNER_SOUND_STORAGE_KEY = "venviewer.planner-sound";
+export const PLANNER_SOUND_LEVEL_KEY = "venviewer.planner-sound-level";
 
 export const SOUND_REGISTRY = {
   "toolbar-tick": { label: "Toolbar arc tick", optIn: "session-toggle", storageKey: null },
@@ -44,6 +57,20 @@ export const SOUND_REGISTRY = {
   "arrival-chime": { label: "Arrival chime on the requests board", optIn: "device-toggle", storageKey: CHIME_STORAGE_KEY },
   "snap-tick": { label: "When ribbon quarter-hour tick", optIn: "device-toggle", storageKey: TICK_PREFERENCE_KEY },
   "room-tone": { label: "Room tone on the landing page", optIn: "session-toggle", storageKey: null },
+  // The planner's palette: every one chosen together, Off · Quiet · Full, on this device.
+  "planner-set-table": { label: "Planner: a table set down", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-set-chair": { label: "Planner: a chair set down", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-refuse": { label: "Planner: a placement refused", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-cue": { label: "Planner: the hour crossing an act", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-horizon": { label: "Planner: the sun crossing the horizon", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-send": { label: "Planner: sent, confirmed", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-present": { label: "Planner: the evening begins", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-act": { label: "Planner: a new act while the evening plays", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-lift": { label: "Planner: a piece picked up", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-snap": { label: "Planner: a piece locking to a guide", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-measure": { label: "Planner: a measurement pinned", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-hour": { label: "Planner: the dragged hour crossing a whole hour", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
+  "planner-brush": { label: "Planner: Lay out placing several pieces", optIn: "device-toggle", storageKey: PLANNER_SOUND_STORAGE_KEY },
 } as const satisfies Readonly<Record<string, SoundDefinition>>;
 
 export type SoundId = keyof typeof SOUND_REGISTRY;
@@ -552,4 +579,409 @@ export function useRoomTone(): RoomTone {
   }, []);
 
   return { supported, playing, toggle };
+}
+
+// --- The planner's palette (T-671, spec section 9; opt-in, per device) -------
+//
+// Thirteen short sounds for the planner, in two sets (lib/planner-sound-recipes.ts):
+// Quiet plays the set-downs, the refusal, the cue and the four rare moments
+// (the horizon, Send, Present, an act); Full adds the small sounds of the hand.
+// The speaker in the chrome's utilities chooses Off, Quiet or Full and a level,
+// kept on this device; Shift M mutes and unmutes, the master falling away over
+// 30 ms. Off until chosen, as every sound here is: Blake's decision D1 may make
+// Quiet the default, and it is PLANNER_SOUND_DEFAULT_MODE alone.
+//
+// Each sound is rendered from its recipe by lib/planner-sound-render.ts and
+// played as exactly those samples (the bus's 6 kHz low-pass is in the render):
+// one gain per sound, the master, and a limiter at −12 dB (ratio 12, attack
+// 3 ms, release 120 ms) with a trim after it that takes back the makeup gain a
+// DynamicsCompressorNode adds to everything (+6.6 dB here, measured in
+// Chromium), so the palette's levels are what plays and the limiter only
+// limits. The rare moments also pass through a synthesised hall,
+// 14 dB under the dry sound before their own send level. One context, made
+// inside the first deliberate gesture and suspended after 20 s of silence.
+// Nothing plays when Off, before a gesture or in a hidden tab; a sound waits at
+// least 45 ms after itself (longer where its recipe says), no more than eight
+// play in a second, and a burst keeps only its first three within 250 ms.
+
+export type PlannerSoundMode = "off" | "quiet" | "full";
+
+/** Decision D1 is Blake's. Until he answers, the planner is silent until someone chooses. */
+export const PLANNER_SOUND_DEFAULT_MODE: PlannerSoundMode = "off";
+export const PLANNER_SOUND_DEFAULT_LEVEL = 0.6;
+
+export const PLANNER_SOUND_MAX_PER_SECOND = 8;
+export const PLANNER_SOUND_BURST_WINDOW_MS = 250;
+export const PLANNER_SOUND_BURST_LIMIT = 3;
+export const PLANNER_SOUND_SILENCE_SUSPEND_MS = 20_000;
+export const PLANNER_SOUND_MUTE_FADE_SECONDS = 0.03;
+const PLANNER_HALL_WET_DB = -14;
+
+/** The limiter (spec 9): a hard knee at −12 dB, ratio 12, attack 3 ms, release 120 ms. */
+export const PLANNER_LIMITER = { thresholdDb: -12, ratio: 12, attackSeconds: 0.003, releaseSeconds: 0.12 } as const;
+
+/**
+ * The makeup gain a hard-knee DynamicsCompressorNode adds to every signal (Web
+ * Audio API, the compressor's processing: the inverse of the curve's gain at
+ * 0 dBFS, to the power 0.6). For the planner's limiter it is +6.6 dB, which
+ * Chromium 147 measures as 6.5999 dB under the threshold.
+ */
+export function limiterMakeupDb(thresholdDb: number, ratio: number): number {
+  const fullRangeDb = thresholdDb + (0 - thresholdDb) / ratio;
+  return -0.6 * fullRangeDb;
+}
+
+/**
+ * A new compressor's detector starts from nothing, so for its first 125 ms it
+ * holds a sound down (−6.8 dB at the start, measured). Offline renders start
+ * each sound this long after the context, as a live one would play.
+ */
+const PLANNER_LIMITER_WARMUP_SECONDS = 0.25;
+/** In Quiet, Lay out's brush is a cascade of at most three set-downs this far apart, each 4 dB down. */
+const PLANNER_CASCADE_GAP_SECONDS = 0.055;
+const PLANNER_CASCADE_LEVEL_DB = -4;
+
+export interface PlannerSoundSettings {
+  readonly mode: PlannerSoundMode;
+  /** The master, 0 to 1. */
+  readonly level: number;
+}
+
+function isPlannerSoundMode(value: string | null): value is PlannerSoundMode {
+  return value === "off" || value === "quiet" || value === "full";
+}
+
+function readPlannerSoundSettings(): PlannerSoundSettings {
+  const store = deviceStorage();
+  let mode: PlannerSoundMode = PLANNER_SOUND_DEFAULT_MODE;
+  let level = PLANNER_SOUND_DEFAULT_LEVEL;
+  try {
+    const keptMode = store?.getItem(PLANNER_SOUND_STORAGE_KEY) ?? null;
+    if (isPlannerSoundMode(keptMode)) mode = keptMode;
+    const keptLevel = Number(store?.getItem(PLANNER_SOUND_LEVEL_KEY) ?? Number.NaN);
+    if (Number.isFinite(keptLevel)) level = Math.min(1, Math.max(0, keptLevel));
+  } catch {
+    // A private window or a blocked store: the defaults, for this page.
+  }
+  return { mode, level };
+}
+
+let plannerSettings: PlannerSoundSettings | null = null;
+/** The last audible choice, so Shift M brings back what was muted. */
+let plannerLastAudible: Exclude<PlannerSoundMode, "off"> = "quiet";
+const plannerListeners = new Set<() => void>();
+
+export function getPlannerSoundSettings(): PlannerSoundSettings {
+  plannerSettings ??= readPlannerSoundSettings();
+  return plannerSettings;
+}
+
+export function subscribePlannerSound(listener: () => void): () => void {
+  plannerListeners.add(listener);
+  return () => { plannerListeners.delete(listener); };
+}
+
+function keepPlannerSoundSettings(next: PlannerSoundSettings): void {
+  plannerSettings = next;
+  try {
+    deviceStorage()?.setItem(PLANNER_SOUND_STORAGE_KEY, next.mode);
+    deviceStorage()?.setItem(PLANNER_SOUND_LEVEL_KEY, String(next.level));
+  } catch {
+    // Kept for this page only.
+  }
+  for (const listener of [...plannerListeners]) listener();
+}
+
+/** The planner's sound settings, for the speaker. */
+export function usePlannerSoundSettings(): PlannerSoundSettings {
+  return useSyncExternalStore(subscribePlannerSound, getPlannerSoundSettings, getPlannerSoundSettings);
+}
+
+// The rules a sound must pass, kept apart from the audio so they can be tested
+// against a clock of their own.
+
+export type PlannerSoundRefusal = "off" | "not-in-set" | "not-armed" | "hidden" | "too-soon" | "too-many" | "burst";
+
+export interface PlannerSoundGate {
+  readonly mode: PlannerSoundMode;
+  readonly armed: boolean;
+  readonly hidden: boolean;
+  readonly nowMs: number;
+}
+
+export class PlannerSoundPolicy {
+  private readonly lastPlayed = new Map<PlannerSoundId, number>();
+  private played: number[] = [];
+
+  decide(id: PlannerSoundId, gate: PlannerSoundGate): PlannerSoundRefusal | "play" {
+    const recipe = PLANNER_SOUND_RECIPES[id];
+    if (gate.mode === "off") return "off";
+    if (gate.mode === "quiet" && recipe.set === "full") return "not-in-set";
+    if (!gate.armed) return "not-armed";
+    if (gate.hidden) return "hidden";
+    const last = this.lastPlayed.get(id);
+    if (last !== undefined && gate.nowMs - last < Math.max(recipe.gapMs, PLANNER_SOUND_MIN_GAP_MS)) return "too-soon";
+    this.played = this.played.filter((at) => gate.nowMs - at < 1000);
+    if (this.played.length >= PLANNER_SOUND_MAX_PER_SECOND) return "too-many";
+    const inBurst = this.played.filter((at) => gate.nowMs - at < PLANNER_SOUND_BURST_WINDOW_MS).length;
+    if (inBurst >= PLANNER_SOUND_BURST_LIMIT) return "burst";
+    return "play";
+  }
+
+  record(id: PlannerSoundId, nowMs: number, count = 1): void {
+    this.lastPlayed.set(id, nowMs);
+    for (let i = 0; i < count; i += 1) this.played.push(nowMs);
+  }
+}
+
+// The audio itself. The context and its graph exist only once someone has
+// chosen sound and made a deliberate gesture.
+
+interface PlannerGraph {
+  readonly context: BaseAudioContext;
+  readonly master: GainNode;
+  readonly dry: GainNode;
+  readonly hall: GainNode;
+}
+
+type PlannerContextFactory = () => AudioContext | null;
+
+const defaultPlannerContextFactory: PlannerContextFactory = () => {
+  if (typeof AudioContext === "undefined") return null;
+  try {
+    return new AudioContext({ latencyHint: "interactive" });
+  } catch {
+    return null;
+  }
+};
+
+let plannerContextFactory: PlannerContextFactory = defaultPlannerContextFactory;
+let plannerLive: { readonly context: AudioContext; readonly graph: PlannerGraph } | null = null;
+let plannerPolicy = new PlannerSoundPolicy();
+let plannerSilenceTimer: number | null = null;
+const plannerBufferCache = new Map<string, AudioBuffer>();
+
+function buildPlannerGraph(context: BaseAudioContext, level: number): PlannerGraph {
+  const limiter = context.createDynamicsCompressor();
+  limiter.threshold.value = PLANNER_LIMITER.thresholdDb;
+  limiter.ratio.value = PLANNER_LIMITER.ratio;
+  limiter.attack.value = PLANNER_LIMITER.attackSeconds;
+  limiter.release.value = PLANNER_LIMITER.releaseSeconds;
+  limiter.knee.value = 0;
+  // The compressor's own makeup gain, taken back.
+  const trim = context.createGain();
+  trim.gain.value = dbToGain(-limiterMakeupDb(PLANNER_LIMITER.thresholdDb, PLANNER_LIMITER.ratio));
+  limiter.connect(trim);
+  trim.connect(context.destination);
+  const master = context.createGain();
+  master.gain.value = level;
+  master.connect(limiter);
+  const dry = context.createGain();
+  dry.connect(master);
+  const impulse = renderHallImpulse(context.sampleRate);
+  const impulseBuffer = context.createBuffer(1, impulse.length, context.sampleRate);
+  impulseBuffer.getChannelData(0).set(impulse);
+  const convolver = context.createConvolver();
+  convolver.normalize = false;
+  convolver.buffer = impulseBuffer;
+  const wet = context.createGain();
+  wet.gain.value = dbToGain(PLANNER_HALL_WET_DB);
+  convolver.connect(wet);
+  wet.connect(master);
+  const hall = context.createGain();
+  hall.connect(convolver);
+  return { context, master, dry, hall };
+}
+
+function plannerBuffer(context: BaseAudioContext, recipe: PlannerSoundRecipe, cacheKey: string | null, seed: number): AudioBuffer {
+  const key = cacheKey === null ? null : `${cacheKey}@${String(context.sampleRate)}`;
+  const kept = key === null ? undefined : plannerBufferCache.get(key);
+  if (kept !== undefined) return kept;
+  const samples = renderPlannerSound(recipe, { sampleRate: context.sampleRate, seed });
+  const buffer = context.createBuffer(1, samples.length, context.sampleRate);
+  buffer.getChannelData(0).set(samples);
+  if (key !== null) plannerBufferCache.set(key, buffer);
+  return buffer;
+}
+
+/** Starts one sound on the graph at `atSeconds`, `levelDb` above or below its recipe. */
+function startPlannerSound(graph: PlannerGraph, recipe: PlannerSoundRecipe, atSeconds: number, levelDb: number, cacheKey: string | null, seed: number): void {
+  const { context } = graph;
+  const source = context.createBufferSource();
+  source.buffer = plannerBuffer(context, recipe, cacheKey, seed);
+  const gain = context.createGain();
+  gain.gain.value = dbToGain(levelDb);
+  source.connect(gain);
+  gain.connect(graph.dry);
+  let send: GainNode | null = null;
+  if (recipe.hallSendDb !== null) {
+    send = context.createGain();
+    send.gain.value = dbToGain(recipe.hallSendDb);
+    gain.connect(send);
+    send.connect(graph.hall);
+  }
+  source.onended = () => {
+    source.disconnect();
+    gain.disconnect();
+    send?.disconnect();
+  };
+  source.start(atSeconds);
+}
+
+function restartPlannerSilenceTimer(): void {
+  if (plannerSilenceTimer !== null) window.clearTimeout(plannerSilenceTimer);
+  plannerSilenceTimer = window.setTimeout(() => {
+    plannerSilenceTimer = null;
+    if (plannerLive !== null && plannerLive.context.state === "running") void plannerLive.context.suspend();
+  }, PLANNER_SOUND_SILENCE_SUSPEND_MS);
+}
+
+/**
+ * Called inside a deliberate gesture (a press or a key): makes the context, so
+ * later sounds may play. Nothing is made while sound is Off.
+ */
+export function armPlannerSound(): boolean {
+  const { mode, level } = getPlannerSoundSettings();
+  if (mode === "off") return false;
+  if (plannerLive === null) {
+    const context = plannerContextFactory();
+    if (context === null) return false;
+    plannerLive = { context, graph: buildPlannerGraph(context, level) };
+  }
+  if (plannerLive.context.state === "suspended") void plannerLive.context.resume();
+  return true;
+}
+
+/** While mounted, the first press or key anywhere arms the planner's sound. */
+export function usePlannerSoundArming(): void {
+  useEffect(() => {
+    const arm = (): void => { armPlannerSound(); };
+    window.addEventListener("pointerdown", arm, { capture: true });
+    window.addEventListener("keydown", arm, { capture: true });
+    return () => {
+      window.removeEventListener("pointerdown", arm, { capture: true });
+      window.removeEventListener("keydown", arm, { capture: true });
+    };
+  }, []);
+}
+
+function fadeMasterTo(target: number): void {
+  if (plannerLive === null) return;
+  const { context, graph } = plannerLive;
+  const now = context.currentTime;
+  graph.master.gain.cancelScheduledValues(now);
+  graph.master.gain.setValueAtTime(graph.master.gain.value, now);
+  graph.master.gain.linearRampToValueAtTime(target, now + PLANNER_SOUND_MUTE_FADE_SECONDS);
+}
+
+export function setPlannerSoundMode(mode: PlannerSoundMode): void {
+  const current = getPlannerSoundSettings();
+  if (current.mode === mode) return;
+  if (mode !== "off") plannerLastAudible = mode;
+  keepPlannerSoundSettings({ ...current, mode });
+  fadeMasterTo(mode === "off" ? 0 : current.level);
+}
+
+export function setPlannerSoundLevel(level: number): void {
+  const current = getPlannerSoundSettings();
+  const clamped = Math.min(1, Math.max(0, level));
+  keepPlannerSoundSettings({ ...current, level: clamped });
+  if (current.mode !== "off") fadeMasterTo(clamped);
+}
+
+/** Shift M: mute, or bring back what was muted. Returns the mode now. */
+export function togglePlannerSoundMute(): PlannerSoundMode {
+  const { mode } = getPlannerSoundSettings();
+  if (mode === "off") {
+    setPlannerSoundMode(plannerLastAudible);
+  } else {
+    plannerLastAudible = mode;
+    setPlannerSoundMode("off");
+  }
+  return getPlannerSoundSettings().mode;
+}
+
+function plannerSoundHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+/**
+ * Play one of the planner's sounds. Returns whether it played: false when the
+ * id is not registered, sound is off or this sound is not in the chosen set,
+ * nothing has armed it, the tab is hidden, or a rate rule holds it back.
+ */
+export function playPlannerSound(id: PlannerSoundId, variation: PlannerSoundVariation = {}): boolean {
+  if (!admit(id)) return false;
+  const { mode } = getPlannerSoundSettings();
+  const graph = plannerLive?.graph ?? null;
+  const nowMs = performance.now();
+  // In Quiet, Lay out's brush is a cascade of at most three set-downs.
+  const cascade = id === "planner-brush" && mode === "quiet";
+  const deciding: PlannerSoundId = cascade ? "planner-set-table" : id;
+  const verdict = plannerPolicy.decide(deciding, { mode, armed: graph !== null, hidden: plannerSoundHidden(), nowMs });
+  if (verdict !== "play" || graph === null || plannerLive === null) return false;
+  const { context } = plannerLive;
+  if (context.state === "suspended") void context.resume();
+  const at = context.currentTime;
+  if (cascade) {
+    const setDown = PLANNER_SOUND_RECIPES["planner-set-table"];
+    for (let i = 0; i < PLANNER_SOUND_BURST_LIMIT; i += 1) {
+      startPlannerSound(graph, setDown, at + i * PLANNER_CASCADE_GAP_SECONDS, PLANNER_CASCADE_LEVEL_DB, "planner-set-table", 0x5eed);
+    }
+    plannerPolicy.record(deciding, nowMs, PLANNER_SOUND_BURST_LIMIT);
+  } else {
+    const recipe = PLANNER_SOUND_RECIPES[id];
+    let played = recipe;
+    let levelDb = 0;
+    let cacheKey: string | null = id;
+    if (recipe.vary !== null) {
+      // Each set-down is a little different: ±3 % in pitch, ±1 dB in level.
+      played = varyRecipe(recipe, { pitchScale: 1 + (Math.random() * 2 - 1) * recipe.vary.pitch });
+      levelDb = (Math.random() * 2 - 1) * recipe.vary.levelDb;
+      cacheKey = null;
+    }
+    if (variation.pitchScale !== undefined || variation.glide !== undefined) {
+      played = varyRecipe(played, variation);
+      cacheKey = null;
+    }
+    levelDb += variation.levelDb ?? 0;
+    startPlannerSound(graph, played, at, levelDb, cacheKey, Math.floor(Math.random() * 0xffffffff));
+    plannerPolicy.record(id, nowMs);
+  }
+  restartPlannerSilenceTimer();
+  return true;
+}
+
+/**
+ * Render one planner sound through the real chain (gain, hall, master at 1,
+ * limiter and trim) in an offline context, for the recordings and the browser
+ * check of its peak, length and spectrum. The sound starts once the limiter
+ * has settled, as a live one does, and the samples begin there. Development
+ * builds use it from /dev/planner-chrome; it makes no sound.
+ */
+export async function renderPlannerSoundOffline(id: PlannerSoundId, sampleRate = 48000): Promise<Float32Array> {
+  if (typeof OfflineAudioContext === "undefined") throw new Error("This browser cannot render sound offline");
+  const recipe = PLANNER_SOUND_RECIPES[id];
+  const tailSeconds = recipe.hallSendDb === null ? 0.05 : 1.3;
+  const seconds = PLANNER_LIMITER_WARMUP_SECONDS + recipe.lengthMs / 1000 + tailSeconds;
+  const context = new OfflineAudioContext(1, Math.ceil(seconds * sampleRate), sampleRate);
+  const graph = buildPlannerGraph(context, 1);
+  startPlannerSound(graph, recipe, PLANNER_LIMITER_WARMUP_SECONDS, 0, null, 0x5eed);
+  const rendered = await context.startRendering();
+  return rendered.getChannelData(0).slice(Math.round(PLANNER_LIMITER_WARMUP_SECONDS * sampleRate));
+}
+
+/** Test seams: a stand-in for the context, and a clean slate between cases. */
+export function __setPlannerContextFactoryForTests(factory: PlannerContextFactory | null): void {
+  plannerContextFactory = factory ?? defaultPlannerContextFactory;
+}
+
+export function __resetPlannerSoundForTests(): void {
+  if (plannerSilenceTimer !== null) window.clearTimeout(plannerSilenceTimer);
+  plannerSilenceTimer = null;
+  plannerLive = null;
+  plannerPolicy = new PlannerSoundPolicy();
+  plannerSettings = null;
+  plannerLastAudible = "quiet";
+  plannerBufferCache.clear();
 }
