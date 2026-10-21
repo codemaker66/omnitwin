@@ -1,6 +1,3 @@
-import { useEffect, useMemo } from "react";
-import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "./constants/scale.js";
-import type { SpaceDimensions } from "@omnitwin/types";
 import { SectionSlider } from "./components/SectionSlider.js";
 import { MeasurementOverlay } from "./components/MeasurementOverlay.js";
 import { PlacementHint } from "./components/PlacementHint.js";
@@ -13,67 +10,23 @@ import { PlannerSpatialHud } from "./components/editor/PlannerSpatialHud.js";
 import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
 import { PlannerScene } from "./components/editor/PlannerScene.js";
 import { GeneratedFurnitureProxyBadge } from "./components/editor/cockpit/FurnitureInspectionDock.js";
-import { useSectionStore } from "./stores/section-store.js";
-import { useBookmarkStore } from "./stores/bookmark-store.js";
 import { usePlacementStore } from "./stores/placement-store.js";
 import { useChairDialogStore } from "./stores/chair-dialog-store.js";
 import { useCatalogueStore } from "./stores/catalogue-store.js";
-import { useEditorStore } from "./stores/editor-store.js";
-import { useRoomDimensionsStore } from "./stores/room-dimensions-store.js";
 import { useLayoutTimelinePreviewStore } from "./stores/layout-timeline-preview-store.js";
-import { computeBoundingBox, resolveRoomGeometry } from "./data/room-geometries.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "./hooks/use-media-query.js";
+import { usePlannerRoomDimensions } from "./hooks/use-planner-room-dimensions.js";
 import "./App.css";
-
-// Initialize stores with Grand Hall dimensions (default).
-// Runs once at module load. The useEffect in App() re-initializes when
-// the actual space dimensions are known.
-useSectionStore.getState().setMaxHeight(GRAND_HALL_RENDER_DIMENSIONS.height);
-useBookmarkStore.getState().initialize(GRAND_HALL_RENDER_DIMENSIONS);
-
-/**
- * Computes render dimensions from room geometry polygon data.
- * Falls back to Grand Hall dimensions if no space is loaded.
- */
-function useRoomDimensions(): SpaceDimensions {
-  const space = useEditorStore((s) => s.space);
-  return useMemo(() => {
-    if (space === null) return GRAND_HALL_RENDER_DIMENSIONS;
-
-    const geom = resolveRoomGeometry(space);
-    if (geom !== null) {
-      const bbox = computeBoundingBox(geom.wallPolygon);
-      return scaleForRendering({
-        width: bbox.width,
-        length: bbox.depth,
-        height: geom.ceilingHeight,
-      });
-    }
-
-    // Defensive: no polygon available (shouldn't happen post Prompt 7,
-    // which makes floor-plan outlines required on every space write).
-    return scaleForRendering({
-      width: parseFloat(space.widthM),
-      length: parseFloat(space.lengthM),
-      height: parseFloat(space.heightM),
-    });
-  }, [space]);
-}
 
 export function App({ compactDesktop = false }: { readonly compactDesktop?: boolean }): React.ReactElement {
   const chairRequest = useChairDialogStore((s) => s.pending);
   const isNarrow = useIsNarrowViewport();
   const isTouch = useIsCoarsePointer();
   const mobileChrome = isNarrow || isTouch;
-  const dimensions = useRoomDimensions();
+  // The room's size, from the loaded space; the section, bookmark and
+  // room-size stores follow it (shared with the new chrome's room stage).
+  usePlannerRoomDimensions();
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
-
-  const { width: dimW, length: dimL, height: dimH } = dimensions;
-  useEffect(() => {
-    useSectionStore.getState().setMaxHeight(dimH);
-    useBookmarkStore.getState().initialize({ width: dimW, length: dimL, height: dimH });
-    useRoomDimensionsStore.getState().setDimensions({ width: dimW, length: dimL, height: dimH });
-  }, [dimW, dimL, dimH]);
 
   return (
     <div className="venviewer-planner-shell">

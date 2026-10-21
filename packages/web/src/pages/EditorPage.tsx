@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ActivityIndicator } from "../components/shared/Activity.js";
 import { handOffPublicConfiguration, prefetchPlannerSpace, useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -26,6 +26,7 @@ import { getPublicConfig, type Configuration } from "../api/configurations.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
 import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
@@ -413,9 +414,42 @@ export function EditorPage(): React.ReactElement {
   }
 
   return (
-    <PlannerCommsLayer />
+    <PlannerChrome />
   );
 }
+
+/**
+ * The planner in today's chrome or the new one (T-671), never both: the new
+ * chrome is behind `?chrome=v2`, remembered on this device, until slice 21.
+ * Either way the planner's keys (A, M, D, V, undo and redo, and the tools'
+ * Escapes) are the keymap's, on the one keyboard owner.
+ */
+function PlannerChrome(): React.ReactElement {
+  usePlannerToolKeys();
+  const location = useLocation();
+  const chrome = useMemo(() => plannerChromeRequested(location.search), [location.search]);
+  if (chrome === "v1") return <PlannerCommsLayer />;
+  return (
+    <Suspense
+      fallback={(
+        <div className="vv-route-state">
+          <section className="vv-state-panel" role="status" aria-live="polite">
+            <ActivityIndicator size={64} />
+            <h1>Opening the planner</h1>
+          </section>
+        </div>
+      )}
+    >
+      <PlannerChromeV2 />
+    </Suspense>
+  );
+}
+
+/** The new chrome (T-671), loaded only behind its flag. */
+const PlannerChromeV2 = lazy(async () => {
+  const module = await import("../components/planner-chrome/PlannerChromeV2.js");
+  return { default: module.PlannerChromeV2 };
+});
 
 /**
  * Groups the 3D editor with the planner-authored comms layer:
@@ -430,9 +464,6 @@ export function EditorPage(): React.ReactElement {
  * re-render on every UI state flip.
  */
 function PlannerCommsLayer(): React.ReactElement {
-  // The planner's tool keys and Escapes (A, M, D, V, undo and redo), in 3D
-  // and 2D alike: lib/planner-keymap.ts on the one keyboard owner.
-  usePlannerToolKeys();
   const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const [searchParams] = useSearchParams();
