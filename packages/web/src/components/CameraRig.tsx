@@ -771,11 +771,14 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       return;
     }
 
-    // Keep rendering while damping settles after orbit/pan
+    // Keep rendering while damping settles after orbit/pan. An update that
+    // still moves the camera fires "change", which re-arms these frames and
+    // asks for the next one; an update that moves nothing lets the loop rest
+    // (a pose set in code leaves nothing to damp, and on a software-rendered
+    // device each needless frame costs a quarter of a second).
     if (smoothControls && dampingFrames.current > 0) {
       dampingFrames.current--;
       controls.update();
-      invalidate();
     }
 
     // Inertial zoom — apply velocity then decay via friction
