@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 45);
+  assert.equal(baseline.inventoryAdmissions.length, 46);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -1183,3 +1183,36 @@ for (const { index, file, current, retired } of plannerPhoneRestatements) {
     specs(input.inventory).find((row) => row.id === current).id = retired;
   }, /missing or extra/);
 }
+// One keyboard owner for the planner (PR #159, T-671 slice 5): Escape no
+// longer leaves Walk, so the skipped walk-exit case is restated one for one
+// and stays an expected skip.
+const walkEscapeRestatement = {
+  current: '3f352fcb62a55bd2f17a-57d7982324e643088dc0',
+  retired: '3f352fcb62a55bd2f17a-0588accbacaa6669e855',
+};
+test('the keyboard-owner admission restates the walk Escape case one for one, still a skip', () => {
+  const admission = baseline.inventoryAdmissions[45];
+  assert.equal(admission.date, '2026-10-21');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/plan-room-resolve.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'skipped');
+  assert.deepEqual(admission.caseIds, [walkEscapeRestatement.current]);
+  assert.equal(baseline.cases.some((entry) => entry.id === walkEscapeRestatement.retired), false);
+  const row = baseline.cases.find((entry) => entry.id === walkEscapeRestatement.current);
+  assert.equal(row?.file, 'plan-room-resolve.spec.ts');
+  assert.equal(row?.title, 'walk stays on Escape (T-560 GL teleport wedge on the walk entry)');
+  assert.equal(row?.expectedStatus, 'skipped');
+  assert.equal(baseline.cases.filter((entry) => entry.expectedStatus === 'skipped').length, BROWSER_POLICY.skipped);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('the restated walk Escape case cannot quietly become a pass', (input) => {
+  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === walkEscapeRestatement.current);
+  spec.tests[0].expectedStatus = 'passed';
+  spec.tests[0].results[0].status = 'passed';
+  spec.tests[0].status = 'expected';
+}, /policy changed/);
+rejected('the retired walk Escape identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === walkEscapeRestatement.current).id = walkEscapeRestatement.retired;
+}, /missing or extra/);
