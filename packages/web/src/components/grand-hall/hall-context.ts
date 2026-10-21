@@ -172,7 +172,7 @@ function cityColor(sun: HallSun, maps: StreetLightMaps) {
     If(u.sunAltitude.lessThan(NIGHT_WORK_BELOW), () => {
       // After dusk some windows are lit, small, each its own brightness, mostly
       // warm and a few in the night look's accents; few near the hall, so the
-      // façades it looks onto stay calm, more toward the city (by the distance
+      // facades it looks onto stay calm, more toward the city (by the distance
       // from the hall, never from the camera, so nothing flickers in an orbit).
       // Where a window would be smaller than a pixel its light is averaged in.
       const wall = float(1).sub(cap).mul(float(1).sub(ground));

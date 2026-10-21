@@ -5,7 +5,7 @@
 // Columns layer, OGL v3.0), placed on the city model by
 // tools/grand-hall-survey/context/bake_street_light.py: wall brackets snapped
 // to the model's walls 8 m over the pavement, columns on its ground, Trades
-// Hall's two door lanterns from our façade survey. The bake also writes two
+// Hall's two door lanterns from our facade survey. The bake also writes two
 // small light maps over the city (street-light-v2.bin), so the city's shader
 // lights pools, wall scallops and the foot of each wall with one filtered and
 // one exact texel read and no loop over lamps:
@@ -598,7 +598,7 @@ export function drawnLamps(lamps: readonly StreetLamp[]): StreetLamp[] {
  * The fittings, modelled from our station-145 panorama of Glassford Street:
  * the council's flat paddle lantern (about 0.65 × 0.28 × 0.07 m) on a short
  * arm, either from a 0.5 m wall plate (rising about 12°) or from a pole. Trades
- * Hall's door lanterns are small boxes, 0.256 m wide (façade survey), under a
+ * Hall's door lanterns are small boxes, 0.256 m wide (facade survey), under a
  * cap, their panes glowing more softly than a street lantern.
  */
 export const FITTING = {
