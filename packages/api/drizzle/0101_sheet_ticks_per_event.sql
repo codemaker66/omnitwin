@@ -1,5 +1,5 @@
 -- A setup sheet's ticks belong to the event the room was set for
--- (18 October 2026). 0099, after the People Book's 0098; the chief of staff
+-- (18 October 2026). 0101, after the enquiry funnel's 0100; the release queue
 -- confirms the number at the merge slot (renumber the tag AND the journal
 -- `when` so the migrator orders it after everything merged first).
 --

@@ -194,6 +194,8 @@ describe("where an enquiry came from", () => {
   it("names every source the venue records, in the desk's words", () => {
     expect(ENQUIRY_SOURCES.map((source) => sourceWords(source))).toEqual([
       "From the website", "From the walkthrough", "From the planner", "By phone", "By email",
+      // Migration 0100: a listing site's own form, and an AI assistant.
+      "From a listing site", "By an AI assistant",
     ]);
   });
 

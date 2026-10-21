@@ -30,7 +30,11 @@ import type {
   AIUsageAttempt,
   AIUsageFeature,
   AIUsageOutcome,
+  AcquisitionChannel,
   AgentTrajectory,
+  BookingLostReason,
+  EngagementEventKind,
+  FirstResponseChannel,
   CaptureInclude,
   CaptureSourceKind,
   CompetitorTier,
@@ -489,7 +493,7 @@ export const assetAccessories = pgTable("asset_accessories", {
 //
 // A tick belongs to the event the room was set for: a layout can serve more
 // than one event, and ticks keyed on the layout alone opened a reused layout
-// with the last event's ticks (migration 0099). event_id is null only for
+// with the last event's ticks (migration 0101). event_id is null only for
 // ticks stored before that, and for a layout with no single event to hold
 // them (lib/hallkeeper-progress.ts progressEventFor); those are never counted
 // towards an event.
@@ -791,7 +795,52 @@ export const enquiries = pgTable("enquiries", {
   // Migration 0098: the People Book's person this enquiry came from. The
   // previous release wrote none; create-from-enquiry links one when worked.
   contactId: uuid("contact_id").references((): AnyPgColumn => contacts.id, { onDelete: "set null" }),
+  // Migration 0100 (the enquiry funnel): the earliest reply Venviewer knows
+  // of — when, who, how, and when Venviewer learned of it — written only by
+  // services/enquiry-funnel.ts, which only ever moves it earlier.
+  firstResponseAt: timestamp("first_response_at", { withTimezone: true }),
+  firstResponseBy: uuid("first_response_by"),
+  firstResponseChannel: varchar("first_response_channel", { length: 20 }).$type<FirstResponseChannel>(),
+  firstResponseRecordedAt: timestamp("first_response_recorded_at", { withTimezone: true }),
+  // Migration 0100: where the person found the venue — the referring site's
+  // host and three cleaned UTM tags only (never term or content, where email
+  // tools put per-recipient ids), and the channel worked out from them
+  // (attributeEnquiry in @omnitwin/types). NULL channel: nothing captured.
+  referrerHost: varchar("referrer_host", { length: 253 }),
+  utmSource: varchar("utm_source", { length: 100 }),
+  utmMedium: varchar("utm_medium", { length: 100 }),
+  utmCampaign: varchar("utm_campaign", { length: 100 }),
+  acquisitionChannel: varchar("acquisition_channel", { length: 20 }).$type<AcquisitionChannel>(),
 }, (table) => [
+  // Migration 0100: the key an engagement event pins itself to its venue by.
+  unique("enquiries_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({ columns: [table.firstResponseBy], foreignColumns: [users.id], name: "enquiries_first_response_by_fk" })
+    .onDelete("set null"),
+  check(
+    "enquiries_first_response_channel_check",
+    sql`${table.firstResponseChannel} IS NULL OR ${table.firstResponseChannel} IN ('email', 'phone', 'in_person', 'video_call', 'text_message', 'proposal', 'decision')`,
+  ),
+  check(
+    "enquiries_first_response_whole",
+    sql`(${table.firstResponseAt} IS NULL) = (${table.firstResponseChannel} IS NULL) AND (${table.firstResponseAt} IS NULL) = (${table.firstResponseRecordedAt} IS NULL) AND (${table.firstResponseBy} IS NULL OR ${table.firstResponseAt} IS NOT NULL)`,
+  ),
+  check(
+    "enquiries_first_response_order",
+    sql`${table.firstResponseAt} IS NULL OR (${table.firstResponseAt} >= ${table.createdAt} AND ${table.firstResponseAt} <= ${table.firstResponseRecordedAt})`,
+  ),
+  check(
+    "enquiries_acquisition_channel_check",
+    sql`${table.acquisitionChannel} IS NULL OR ${table.acquisitionChannel} IN ('assistant', 'listing', 'paid', 'email', 'social', 'search', 'venue_website', 'referral', 'other', 'direct')`,
+  ),
+  check(
+    "enquiries_referrer_host_shape",
+    // `\\.` here cooks to `\.` in the SQL: a literal dot, as in migration 0100.
+    sql`${table.referrerHost} IS NULL OR ${table.referrerHost} ~ '^[a-z0-9_-]+(\\.[a-z0-9_-]+)+$'`,
+  ),
+  check(
+    "enquiries_attribution_whole",
+    sql`${table.acquisitionChannel} IS NOT NULL OR (${table.referrerHost} IS NULL AND ${table.utmSource} IS NULL AND ${table.utmMedium} IS NULL AND ${table.utmCampaign} IS NULL)`,
+  ),
   index("enquiries_venue_state_idx").on(table.venueId, table.state),
   index("enquiries_user_id_idx").on(table.userId),
   // Migration 0071: latest enquiry per configuration, and the FK check when
@@ -804,7 +853,7 @@ export const enquiries = pgTable("enquiries", {
   // Migration 0073: seed fixtures and the state vocabulary.
   index("enquiries_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
   check("enquiries_state_check", sql`${table.state} IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')`),
-  check("enquiries_source_check", sql`${table.source} IS NULL OR ${table.source} IN ('website', 'walkthrough', 'planner', 'phone', 'email')`),
+  check("enquiries_source_check", sql`${table.source} IS NULL OR ${table.source} IN ('website', 'walkthrough', 'planner', 'phone', 'email', 'listing', 'assistant')`),
   index("enquiries_contact_idx").on(table.contactId).where(sql`${table.contactId} IS NOT NULL`),
 ]);
 
@@ -2445,6 +2494,8 @@ export const proposals = pgTable("proposals", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   unique("proposals_share_code_unique").on(table.shareCode),
+  // Migration 0100: the key an engagement event pins itself to its venue by.
+  unique("proposals_id_venue_unique").on(table.id, table.venueId),
   index("proposals_venue_status_idx").on(table.venueId, table.status),
   index("proposals_opportunity_idx").on(table.opportunityId),
   index("proposals_enquiry_idx").on(table.enquiryId),
@@ -2516,9 +2567,18 @@ export const proposalShareTokens = pgTable("proposal_share_tokens", {
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+  // Migration 0100: the first visit and the visits since (an opening at least
+  // PROPOSAL_VIEW_VISIT_GAP_MINUTES after the last). Both NULL for a link
+  // opened before counting began: its first visit is not known.
+  firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+  viewCount: integer("view_count").default(0),
 }, (table) => [
   index("proposal_share_tokens_proposal_idx").on(table.proposalId),
   index("proposal_share_tokens_hash_idx").on(table.tokenHash),
+  check(
+    "proposal_share_tokens_views_known",
+    sql`(${table.viewCount} IS NULL AND ${table.firstViewedAt} IS NULL) OR (${table.viewCount} = 0 AND ${table.firstViewedAt} IS NULL) OR (${table.viewCount} > 0 AND ${table.firstViewedAt} IS NOT NULL)`,
+  ),
 ]);
 
 export const proposalComments = pgTable("proposal_comments", {
@@ -3694,8 +3754,20 @@ export const bookings = pgTable("bookings", {
   // source, so a demo week can be found exactly instead of by matching a
   // title a real client could also have.
   fixtureSource: varchar("fixture_source", { length: 40 }),
+  // Migration 0100: why it was lost, when the person marking it said. Only
+  // ever on a lost booking (bookings_lost_reason_check); physically last.
+  lostReason: varchar("lost_reason", { length: 30 }).$type<BookingLostReason>(),
 }, (table) => [
   unique("bookings_id_venue_unique").on(table.id, table.venueId),
+  // Migration 0100: a show-round never belongs to an event, and one enquiry
+  // holds the same live viewing once, so a repeated request books it once.
+  check("bookings_viewing_has_no_event", sql`${table.kind} <> 'viewing' OR ${table.eventId} IS NULL`),
+  uniqueIndex("bookings_viewing_once").on(table.enquiryId, table.spaceId, table.startsAt)
+    .where(sql`${table.kind} = 'viewing' AND ${table.status} = 'active' AND ${table.deletedAt} IS NULL AND ${table.enquiryId} IS NOT NULL`),
+  check(
+    "bookings_lost_reason_check",
+    sql`${table.lostReason} IS NULL OR (${table.status} = 'lost' AND ${table.lostReason} IN ('price', 'date_taken', 'room_unsuitable', 'chose_elsewhere', 'plans_changed', 'no_reply', 'other'))`,
+  ),
   foreignKey({
     columns: [table.eventId, table.venueId],
     foreignColumns: [events.id, events.venueId],
@@ -6614,4 +6686,39 @@ export const competitorLosses = pgTable("competitor_losses", {
   check("competitor_losses_client_figure", sql`(${table.clientFigureMinor} IS NULL) = (${table.clientFigureBasis} IS NULL)`),
   index("competitor_losses_venue_competitor").on(table.venueId, table.competitorId, table.recordedAt),
   index("competitor_losses_opportunity").on(table.opportunityId),
+]);
+
+// ---------------------------------------------------------------------------
+// venue_engagement_events — a moment of interest on one enquiry or proposal
+// (migration 0100, the enquiry funnel).
+//
+// Attached to exactly one enquiry or proposal of the venue's, by composite
+// keys that pin it to that venue: never a visitor who sent and opened
+// nothing, and never a device, address, cookie or session. It goes with its
+// enquiry or proposal, and after ENGAGEMENT_RETENTION_MONTHS in any case
+// (removeExpiredEngagementEvents, run nightly). Written only through
+// services/enquiry-funnel.ts.
+// ---------------------------------------------------------------------------
+
+export const venueEngagementEvents = pgTable("venue_engagement_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  kind: varchar("kind", { length: 40 }).$type<EngagementEventKind>().notNull(),
+  enquiryId: uuid("enquiry_id"),
+  proposalId: uuid("proposal_id"),
+  spaceId: uuid("space_id"),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check("venue_engagement_events_kind_check", sql`${table.kind} IN ('twin_walk_30s')`),
+  check("venue_engagement_events_one_subject", sql`num_nonnulls(${table.enquiryId}, ${table.proposalId}) = 1`),
+  foreignKey({ columns: [table.enquiryId, table.venueId], foreignColumns: [enquiries.id, enquiries.venueId], name: "venue_engagement_events_enquiry_venue_fk" })
+    .onDelete("cascade"),
+  foreignKey({ columns: [table.proposalId, table.venueId], foreignColumns: [proposals.id, proposals.venueId], name: "venue_engagement_events_proposal_venue_fk" })
+    .onDelete("cascade"),
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "venue_engagement_events_space_venue_fk" })
+    .onDelete("cascade"),
+  index("venue_engagement_events_venue_recorded_idx").on(table.venueId, table.recordedAt),
+  index("venue_engagement_events_enquiry_idx").on(table.enquiryId).where(sql`${table.enquiryId} IS NOT NULL`),
+  index("venue_engagement_events_proposal_idx").on(table.proposalId, table.kind, table.recordedAt).where(sql`${table.proposalId} IS NOT NULL`),
+  index("venue_engagement_events_space_idx").on(table.spaceId).where(sql`${table.spaceId} IS NOT NULL`),
 ]);

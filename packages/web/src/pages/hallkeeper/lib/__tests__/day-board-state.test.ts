@@ -325,8 +325,53 @@ describe("deriveDayBoard — the house's words for each booking", () => {
     [{ kind: "hold", state: "hold", rank: null }, "Provisional"],
     [{ kind: "ink", state: "ink" }, "Confirmed booking"],
     [{ kind: "internal_block", state: "internal_block" }, "House block"],
+    [{ kind: "viewing", state: "viewing", eventId: null }, "Viewing"],
   ])("labels %o as %s", (overrides, expected) => {
     expect(labelFor(overrides)).toBe(expected);
+  });
+});
+
+describe("deriveDayBoard — a viewing is a show-round, not a set-up (migration 0100)", () => {
+  const viewing = { kind: "viewing", state: "viewing", eventId: null, eventType: null, title: "Fraser viewing" };
+
+  it("shows the viewing, so the room is presentable, with no clear-down after it", () => {
+    const response = baseResponse();
+    response.turnaroundRules = RULES;
+    response.entries = [booking(-60, -30, viewing)];
+    const slot = soleSlot(response);
+    expect(slot.bookingLabel).toBe("Viewing");
+    expect(slot.segments.turnaroundMinutes).toBeNull();
+    expect(slot.segments.clearDownEndsAtMs).toBe(slot.endsAtMs);
+    expect(slot.state).toBe("done");
+  });
+
+  it("keeps the changeover before a viewing, and measures the next function's from the last function", () => {
+    const response = baseResponse();
+    response.turnaroundRules = RULES;
+    response.entries = [
+      booking(-240, -120),
+      booking(-90, -60, { ...viewing, id: BOOKING_2 }),
+      booking(-30, 120, { id: "00000000-0000-4000-8000-0000000000b3" }),
+    ];
+    const [dinner, show, next] = deriveDayBoard(response, NOW).lanes[0]?.slots ?? [];
+    expect(dinner?.bookingId).toBe(BOOKING);
+    // The room must be cleared of the dinner before it is shown.
+    expect(show?.gapBefore).toEqual({ minutes: 30, neededMinutes: 90, short: true });
+    // The viewing leaves nothing to clear, and does not hide the dinner's
+    // changeover: the next function measures from the dinner, past it.
+    expect(next?.gapBefore).toEqual({ minutes: 90, neededMinutes: 90, short: false });
+  });
+
+  it("does not cut a function's clear-down short at a viewing", () => {
+    const response = baseResponse();
+    response.turnaroundRules = RULES;
+    response.entries = [
+      booking(-240, -120),
+      booking(-100, -70, { ...viewing, id: BOOKING_2 }),
+    ];
+    const [dinner] = deriveDayBoard(response, NOW).lanes[0]?.slots ?? [];
+    // Ninety minutes of clearing after a -120 end, not cut at the -100 viewing.
+    expect(dinner?.segments.clearDownEndsAtMs).toBe((dinner?.endsAtMs ?? 0) + 90 * 60_000);
   });
 });
 

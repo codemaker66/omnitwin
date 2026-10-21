@@ -10,7 +10,7 @@ import * as schema from "../db/schema.js";
 import { hallkeeperSheetRoutes } from "../routes/hallkeeper-sheet.js";
 
 // ---------------------------------------------------------------------------
-// A setup sheet's ticks against real PostgreSQL (migration 0099).
+// A setup sheet's ticks against real PostgreSQL (migration 0101).
 //
 // hallkeeper_progress keyed a tick on the layout alone, so a layout reused
 // for a second event opened with the first event's ticks and the Day Board

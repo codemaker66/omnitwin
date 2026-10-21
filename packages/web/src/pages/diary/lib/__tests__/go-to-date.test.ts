@@ -205,4 +205,20 @@ describe("roomsOnDay", () => {
     expect(roomsOnDay(entries, ROOMS, DAY)[3])
       .toMatchObject({ bookings: [], phases: [], freeFromMs: Date.parse("2027-06-05T00:30:00.000Z") });
   });
+
+  it("never lets a viewing hold a room or move when it is free from (migration 0100)", () => {
+    const viewing = { kind: "viewing" as const, state: "viewing" as const, rank: null };
+    const entries = [
+      entry({ ...viewing, spaceId: HALL, title: "Fraser viewing", startsAt: "2027-06-05T13:00:00.000Z", endsAt: "2027-06-05T14:00:00.000Z" }),
+      // A late show-round the evening before is not the night running on.
+      entry({ ...viewing, spaceId: SALOON, title: "Late viewing", startsAt: "2027-06-04T22:30:00.000Z", endsAt: "2027-06-05T00:30:00.000Z" }),
+      // Beside a confirmed booking it is not listed with what holds the room.
+      entry({ spaceId: ADAM, kind: "ink", state: "ink", rank: null, title: "Guild dinner" }),
+      entry({ ...viewing, spaceId: ADAM, title: "Viewing before dinner", startsAt: "2027-06-05T11:00:00.000Z", endsAt: "2027-06-05T12:00:00.000Z" }),
+    ];
+    const answers = roomsOnDay(entries, ROOMS, DAY);
+    expect(answers[0]).toMatchObject({ bookings: [], phases: [], interest: [], freeFromMs: null });
+    expect(answers[1]).toMatchObject({ bookings: [], interest: [], freeFromMs: null });
+    expect(titles(answers[2])).toEqual(["Guild dinner"]);
+  });
 });
