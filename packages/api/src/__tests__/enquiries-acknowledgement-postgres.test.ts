@@ -338,7 +338,10 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     });
     expect(res.statusCode, res.body).toBe(200);
     const sent = await waitForEmail(`enquiry-approved:${enquiryId}`);
-    expect(sent.subject).toBe("Your enquiry at Trades Hall Glasgow has been approved");
+    expect(sent.subject).toBe("Your enquiry at Trades Hall Glasgow: next steps");
+    // Saying yes to an enquiry holds no date, so what the route sends never
+    // says "approved", which a guest reads as booked.
+    expect(sent.subject).not.toMatch(/approv/iu);
   });
 
   it("acknowledges the organiser by email", async () => {

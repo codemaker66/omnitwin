@@ -42,7 +42,9 @@ export class DietaryMemoryWriteError extends Error {
   }
 }
 
-function sqlStateOf(error: unknown): string | null {
+/** The SQLSTATE of a database error, looking through up to three causes; the
+ *  only part of such an error that is safe to log beside an allergy note. */
+export function sqlStateOf(error: unknown): string | null {
   let current: unknown = error;
   for (let depth = 0; depth < 4 && current !== null && typeof current === "object"; depth += 1) {
     const code: unknown = (current as { code?: unknown }).code;

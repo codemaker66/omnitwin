@@ -549,7 +549,8 @@ const CONFIRM_WORDS: Readonly<Record<ConfirmTarget, ConfirmWords>> = {
     consequence: (enquiry, roomName) => {
       const date = eventDateLong(enquiry.preferredDate);
       const what = `the enquiry${roomName === null ? "" : ` for ${theRoom(roomName)}`}${date === null ? "" : ` on ${date}`}`;
-      return `Approving emails ${enquiry.guestEmail ?? enquiry.email} to say ${what} is approved${enquiry.configurationId === null ? "" : ", with a link to their layout"}.`;
+      // What the email says (enquiryApproved): taken further, never booked.
+      return `Approving emails ${enquiry.guestEmail ?? enquiry.email} to say you would like to take ${what} further${enquiry.configurationId === null ? "" : ", with a link to their layout"}. It does not book or hold a date.`;
     },
     noteLabel: "Note for the timeline (optional, not in the email)",
     confirm: "Approve and email",

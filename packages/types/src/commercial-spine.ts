@@ -203,6 +203,12 @@ export const ProposalShareTokenSchema = z.object({
   expiresAt: IsoDateTimeSchema.nullable(),
   revokedAt: IsoDateTimeSchema.nullable(),
   lastViewedAt: IsoDateTimeSchema.nullable(),
+  // Migration 0100: the link's first visit and how many visits it has had
+  // (PROPOSAL_VIEW_VISIT_GAP_MINUTES apart). Both null for a link opened
+  // before counting began, whose first visit is not known. Optional so a
+  // reader newer than the API still parses an older API's tokens.
+  firstViewedAt: IsoDateTimeSchema.nullable().optional(),
+  viewCount: z.number().int().nonnegative().nullable().optional(),
 });
 export type ProposalShareToken = z.infer<typeof ProposalShareTokenSchema>;
 
