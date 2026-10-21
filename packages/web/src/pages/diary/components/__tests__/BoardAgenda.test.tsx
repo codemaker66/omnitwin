@@ -73,6 +73,17 @@ describe("BoardAgenda", () => {
     expect(document.querySelector(".diary-agenda-day.is-today .diary-agenda-dayname small")?.textContent).toBe("Today");
   });
 
+  it("says a viewing as a viewing, edged in its own colour, with no option (migration 0100)", () => {
+    const viewing = booking("Fraser show-round", {
+      spaceId: SALOON, kind: "viewing", state: "viewing", startsAt: "2026-09-17T10:00:00.000Z", endsAt: "2026-09-17T11:00:00.000Z",
+    });
+    renderAgenda([viewing]);
+    expect(days()[3]?.rows).toEqual([["11:00–12:00", "Fraser show-round", "Saloon · Viewing"]]);
+    const row = document.getElementById(`diary-block-${viewing.id}`);
+    expect(row?.classList.contains("is-viewing")).toBe(true);
+    expect(row?.getAttribute("aria-label")).toMatch(/^Fraser show-round — Viewing, 11:00–12:00, Saloon, /u);
+  });
+
   it("says nothing of empty days while the week is on its way", () => {
     renderAgenda([], { pending: true });
     expect(screen.queryByText("Nothing booked.")).toBeNull();

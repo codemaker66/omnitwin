@@ -1279,6 +1279,7 @@ export function DiaryBoardPage(): ReactElement {
             <li className="diary-legend-item is-hold">{BOARD_COPY.legend.hold}</li>
             <li className="diary-legend-item is-prospect">{BOARD_COPY.legend.prospect}</li>
             <li className="diary-legend-item is-internal_block">{BOARD_COPY.legend.internal_block}</li>
+            <li className="diary-legend-item is-viewing">{BOARD_COPY.legend.viewing}</li>
             <li className="diary-legend-item is-phase">{BOARD_COPY.legend.phase}</li>
           </ul>
           {/* One fixed place for what the board is doing, so a refresh or a

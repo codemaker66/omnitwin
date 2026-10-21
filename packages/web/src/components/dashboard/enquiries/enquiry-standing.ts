@@ -1,6 +1,7 @@
 import { publishedRoomCapacity, TRADES_HALL_PUBLIC_PROFILE, type Booking, type RoomCapacity } from "@omnitwin/types";
 import type { Enquiry } from "../../../api/enquiries.js";
 import { BOARD_COPY } from "../../../pages/diary/board-copy.js";
+import { bookingTimeLabel } from "../../../pages/diary/lib/board-overview.js";
 import { formatInlineDay } from "../../../pages/diary/lib/board-time.js";
 import { freeRoomsSaid, type DayAnswerLine, type DayAnswerRoom } from "../../../pages/diary/lib/day-answer.js";
 import { HOLDABLE_ENQUIRY_STATES } from "../../../pages/diary/lib/enquiry-link.js";
@@ -126,21 +127,28 @@ export function enquiryStanding(input: StandingInput): EnquiryStanding {
     return publishedRoomCapacity(TRADES_HALL_PUBLIC_PROFILE, slug)?.[format] ?? null;
   };
 
-  // The enquiry's own bookings, in the Diary's hold words.
+  // The enquiry's own bookings, in the Diary's hold words. A viewing (a
+  // show-round, migration 0100) holds nothing, so it never stands for where
+  // the enquiry is in the Diary: it is listed with its room, day and time.
   const ownIds = new Set(input.own.map((booking) => booking.id));
   const own = [...input.own].sort(byStart);
+  const held = own.filter((booking) => booking.kind !== "viewing");
   const place = (booking: Booking): string => booking.kind === "ink" ? BOARD_COPY.goTo.places.confirmed
     : booking.kind === "prospect" ? "Interest only"
       : booking.kind === "internal_block" ? BOARD_COPY.goTo.places.block
-        : BOARD_COPY.decisions.option(booking.rank, booking.jointFlag);
+        : booking.kind === "viewing" ? BOARD_COPY.legend.viewing
+          : BOARD_COPY.decisions.option(booking.rank, booking.jointFlag);
   const decision = (booking: Booking): string => {
     if (booking.kind !== "hold" || booking.decisionAt === null) return "";
     const decisionMs = Date.parse(booking.decisionAt);
     return `, ${BOARD_COPY.goTo.decision(formatInlineDay(decisionMs, nowMs), decisionMs < nowMs)}`;
   };
   const dayOf = (booking: Booking): string => formatInlineDay(Date.parse(booking.startsAt), nowMs);
+  // A viewing is booked for a time, so its time is said with its day.
+  const whenOf = (booking: Booking): string =>
+    booking.kind === "viewing" ? `${dayOf(booking)}, ${bookingTimeLabel(booking)}` : dayOf(booking);
   const ownElsewhere = (booking: Booking): string =>
-    `${place(booking)} for this enquiry: ${nameOf(booking.spaceId) ?? BOARD_COPY.decisions.roomUnknown}, ${dayOf(booking)}${decision(booking)}`;
+    `${place(booking)} for this enquiry: ${nameOf(booking.spaceId) ?? BOARD_COPY.decisions.roomUnknown}, ${whenOf(booking)}${decision(booking)}`;
 
   const askedRoom = askedId === null ? undefined : day?.rooms.find((room) => room.id === askedId);
   const shownIn = (room: DayAnswerRoom | undefined, bookingId: string): boolean =>
@@ -150,10 +158,10 @@ export function enquiryStanding(input: StandingInput): EnquiryStanding {
     && Date.parse(booking.startsAt) >= day.startMs && Date.parse(booking.startsAt) < day.endMs;
   // In the room asked for, that day: shown among its lines, or behind what
   // holds it (a hold behind a confirmed booking, or interest only).
-  const here = askedId === null || day === null ? [] : own.filter((booking) => booking.spaceId === askedId
+  const here = askedId === null || day === null ? [] : held.filter((booking) => booking.spaceId === askedId
     && (shownIn(askedRoom, booking.id) || startsOnDay(booking)));
-  const upcoming = own.filter((booking) => Date.parse(booking.endsAt) > nowMs);
-  const lead = here.find((booking) => shownIn(askedRoom, booking.id)) ?? here[0] ?? upcoming[0] ?? own[own.length - 1];
+  const upcoming = held.filter((booking) => Date.parse(booking.endsAt) > nowMs);
+  const lead = here.find((booking) => shownIn(askedRoom, booking.id)) ?? here[0] ?? upcoming[0] ?? held[held.length - 1];
   const more = own.length > 1 ? ` · ${String(own.length - 1)} more below` : "";
 
   // The day, room by room: the room asked for, the rooms that hold the
