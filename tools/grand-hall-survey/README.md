@@ -30,7 +30,9 @@ Requirements: Python 3 with numpy and Pillow (with WebP); Node 22 with the works
 (`pnpm install`; the scripts borrow three, three-mesh-bvh, meshoptimizer, glTF-Transform and
 Playwright from `packages/web` and `packages/reconstruction-foundry`); Chromium for the headless
 measuring page (Playwright's own, or set `CHROMIUM_PATH`). The work directory needs about 3 GB.
-On four cores the whole build takes about two hours, almost all of it projection.
+On four cores the walls' labels take about 40 minutes and their photographs about 8, each step
+under 1.3 GB of memory; the ceiling, dome and floor's projection takes most of the rest of the
+build's two hours. Two runs of the walls give byte-identical labels, orthophotos and atlases.
 
     bash tools/grand-hall-survey/build.sh <work-dir> packages/web/public/rooms/grand-hall/survey-2026-07-11
 
@@ -46,10 +48,12 @@ later step skips the downloads.
 | Inputs | `fetch_inputs.py`, `dump-mesh.mjs` | `data/`: manifest, mesh, 49 panoramas, each checked against the manifest's hash; the mesh as world-space arrays |
 | Occlusion | `render-depth.mjs` | `data/depth1024/`: each station's distance cubemap (six 1024² faces) rendered from the mesh |
 | Surfaces | `render.mjs` with `views-walls.json`, `views-ceiling.json` | `out-walls/`: the world position of every texel of each wall's elevation (200 px/m, seen from 1.2 m inside the room) and of the ceiling (150 px/m) |
-| Projection | `project-walls.py`, `project-ceiling.py`, `project-dome.py`, `project-floor.py` | `proj/*.npz`: linear colour and weight per texel; `proj/floor-patches.json`: the stations with a strong tripod patch |
+| Corners | `fix-corners.py --positions-only` | each wall's corners without the neighbouring walls' fittings: their texels moved back onto the wall (`out-walls/*.fixed.f32`) |
+| Labels | `label-views.py` (with `bestview.py`) | `proj/labels-<wall>.npz`: each 40 mm block's station, its ranking of the others, and the depth where its best views agree (recorded, not applied); `labels-<wall>.json`: the counts behind them |
+| Walls' photographs | `project-walls.py --labels` | `proj/<view>.fine.npz`: the 2.5 mm orthophoto (sRGB); `proj/<view>.npz`: the 5 mm one (linear, as the blend wrote it); `proj/composite-<wall>.json`: seam steps and colour offsets |
+| Ceiling, dome, floor | `project-ceiling.py`, `project-dome.py`, `project-floor.py` | `proj/*.npz`: linear colour and weight per texel; `proj/floor-patches.json`: the stations with a strong tripod patch |
 | Windows | `window-relief.py` | the glass mask and a two-layer relief (curtains, then glazing) inside each window |
-| Corners | `fix-corners.py` | each wall's corners without the neighbouring walls' fittings |
-| Walls | `pack-atlas.py`, `wall-depth.py`, `relief-mesh.mjs` | `walls-4096.webp`, `walls-2048.webp` (alpha marks glass), `walls-relief.bin` |
+| Walls | `pack-atlas.py`, `check-atlas.py`, `wall-depth.py`, `relief-mesh.mjs` | `walls-4096.webp`, `walls-2048.webp` (alpha marks glass), `walls-relief.bin`; before publishing, `check-atlas.py` compares the atlas with the one it replaces (sizes, glass only in the window openings, glass area within 2%) |
 | Ceiling and dome | `pack-overhead.py` | `ceiling-3072.webp`, `ceiling-1536.webp`, `dome-4096.webp`, `dome-2048.webp` |
 | Floor | `flatten-floor.py`, `pack-floor.py` | `floor-2560.webp`, `floor-1280.webp` |
 
@@ -57,12 +61,84 @@ later step skips the downloads.
 
 ## How a texel gets its colour
 
-`project.py` gives every texel a world position and normal. Each station in front of the surface
-contributes when its distance cubemap shows nothing nearer along the ray (the nearest of a 3×3
-neighbourhood, so thin occluders are not missed) and the ray misses the five chandeliers, whose
-crystal is finer than any depth map. Colours are read from the panoramas bilinearly, corrected by
-each station's manifest exposure and averaged in linear light, weighted towards head-on and near
-views (cos⁴/d³ by default). A second pass down-weights any station that disagrees with the
+Every texel has a world position (the scanned relief's) and a normal. A station sees it when it
+stands in front of the surface, its distance cubemap shows nothing nearer along the ray (the
+nearest of a 3×3 neighbourhood, so thin occluders are not missed) and the ray misses the five
+chandeliers, whose crystal is finer than any depth map. Colours are read from the panoramas
+bilinearly and corrected by each station's manifest exposure.
+
+### The walls: the sharpest photograph
+
+The walls take each part's colour from the one panorama that photographed it most sharply, after
+Waechter, Moehrle and Goesele's texturing of reconstructions (ECCV 2014). Each wall's 5 mm
+orthophoto is cut into 40 mm blocks, and `label-views.py` gives every block one station, its
+label:
+
+- **Sharpness.** For each station that saw the whole block: the mean absolute Laplacian of its
+  luminance sampled at 2.5 mm, times 2 mm over the size of a panorama pixel on the wall there
+  (distance times the pixel's angle, divided by the cosine of incidence). The score is averaged
+  over the neighbouring blocks the station saw, since a view's sharpness belongs to a region, not to
+  one block's lettering.
+- **What is set aside.** An occluder the depth maps missed: a view darker than the block's darker
+  views, or of another hue, by more than `project.py`'s tolerance. Glare: a view brighter than the
+  median by 2.5 median absolute deviations (at least 15%). Glare is a smooth veil that the Laplacian
+  does not see, so a view also pays for each 10% it is brighter than the block's darker quarter of
+  views, beyond the first 10%.
+- **Labels.** The labels minimise those costs plus a cost for every seam between neighbouring
+  blocks (half as much where the relief steps, at a board's or frame's edge, where a seam hides),
+  by alpha-expansion (Boykov, Veksler and Zabih) on SciPy's max-flow. A texel the block's station
+  did not see takes the next station in the block's ranking that did.
+- **Depth, measured and not applied.** For every block with texture, the depth of projection is
+  swept from 1 cm behind to 5 cm in front of the scanned relief in 2 mm steps, sampling the block's
+  three best stations; the depth where their exposure-normalised luminances agree best (refined by a
+  parabola, then smoothed by a membrane) is recorded in `labels-<wall>.npz`. The walls are sampled at
+  the scanned relief all the same: with one station per block, the swept offsets bent the deacon
+  boards' lettering between blocks (26.6% of names read, against 31.6% at the relief, on the end
+  wall alone) and lifted the cornices' lit edges up to 25 mm onto the panelling above, where every
+  station looks up from the same angle and depth is barely constrained. The best stations disagree
+  by a median 1.6 mm vertically at the relief and 1.7 mm at the swept depth.
+  `project-walls.py --depth-offsets` applies them, for measuring.
+
+`project-walls.py --labels` then samples each texel 2 × 2 times (a 2.5 mm orthophoto) from its
+station at the scanned relief, and levels the seams in three steps:
+
+1. A colour offset for every station at every block corner, in sRGB levels, solved by least squares
+   so that stations meeting at a seam agree there, while each offset changes little within its patch
+   (Waechter et al.'s global adjustment). The stations are compared only over flat blocks that both
+   saw whole, and the comparisons are re-weighted, so that a few millimetres of parallax or a patch
+   of glare does not pull a whole patch. Offsets are bounded to 48 levels. Gains in linear light
+   (exposure multiplies light) were tried and dropped: what the seams disagree about is mostly
+   glare, which adds light, and on dark varnish it read as a doubled exposure (41% of gains met a
+   1.5× bound, and flat seams were left twice as far apart).
+2. What still differs along a seam is spread into both sides over three blocks: a membrane with half
+   the step at the seam and nothing at the band's edge (Poisson image editing; Pérez, Gangnet and
+   Blake 2003). It is solved in strips of 1,024 columns with 96 columns either side, which gives the
+   whole wall's solution to within one level and keeps the build under 1.5 GB.
+3. The seams are feathered over one block.
+
+`pack-atlas.py` reduces the 2.5 mm orthophoto to the atlas's 5.2 mm in one Lanczos step. Going
+through the 5 mm orthophoto first loses most of what the atlas can hold: from one station, the
+deacon boards' names read 12.5% that way and 33.6% in one step. With a published atlas
+(`build.sh`'s second argument) it keeps that atlas's alpha, the windows' glass, unchanged: the
+glazing and its measurements were made against it, and `window-relief.py`'s colour test, run on the
+sharper photograph, read 10,830 of its glass texels (a median 28 mm in from the edge) as opaque.
+
+What the rebuild measured against the blend it replaced (S4a, 21 October 2026; method and files in
+that day's session log): the end wall's deacon boards read 25.8% of 256 names, trades and years at
+the 4096 atlas (2.7% before; two encodings of the same build read 25.8% and 30.1%), and 15-24% in the
+planner's own frames at Blake's pose (0-3.5% before). The phone's 2048 atlas still reads none. The
+end wall's portrait is sharper (equivalent edge blur 3.6 mm against 4.2 at Blake's distance) and its
+dark lower canvas is no longer lifted by glare (10th percentile 33 against 86).
+
+Until revision 5 the walls were blended like the ceiling below. At a typical texel of the end wall's
+deacon boards six stations were averaged, which disagree there by up to a centimetre at the relief's
+depth (doubled lettering), and the averaging took in the varnish's glare (a haze over the
+portraits).
+
+### The ceiling, dome and floor: a weighted blend
+
+`project.py` averages every station that sees a texel in linear light, weighted towards head-on and
+near views (cos⁴/d³ by default). A second pass down-weights any station that disagrees with the
 consensus, an occluder the depth maps missed. On the floor, each panorama's view near its nadir
 counts only where it holds real detail: the patch that hides the tripod is smooth where real
 boards are not, and covers anything from nothing to 30 degrees around straight down. Some
@@ -125,29 +201,6 @@ panorama checked against the manifest's hash), the published `walls-4096.webp` a
 script) and the rectified views:
 
     python3 $SURVEY/measure/glazing-bars.py --data data --atlas walls-4096.webp --relief walls-relief.bin --out analysis/glazing
-
-## Beyond the doors
-
-Each open door in the planner shows a short stub of the space beyond it (`hall-beyond.ts`,
-`hall-neighbours.ts`). Three scripts make what it draws; run them in order in a work directory
-whose `data/` holds the manifest, the mesh and the panoramas named below (each checked against the
-manifest's hash).
-
-| Step | Script | Result |
-| --- | --- | --- |
-| The first floor | `measure/first-floor.py` | `first-floor-2010.json`: the 2010 FIRST plan's walls (its grey poche paths, read as vectors) and floor, registered to the scan (the hall's inner faces, then trimmed iterated closest points to the mesh's wall sections at 2.6 and 3.2 m; fitted residuals: hall median 4.6 cm, p90 16 cm; Saloon 8.2 / 26.5 cm; stair hall 13.6 / 40.6 cm), with the hall's own bodies and ring cut away; published |
-| The stubs | `measure/beyond-doors.py` | `measure/beyond-doors.json`: each doorway's floor beyond it within its reach (D1 the Saloon and D2 the landing at the head of Stair 5 from the scan's height map, their levels -4.3 and -4.6 cm; D3 the east end of F.16 and D4 Stair 7's landing from the plan), D2's stairwell, the landing's balustrade (rail top 0.811 m, newels, 13 balusters at 14.5 cm) and the Saloon's panelling on the door wall (its plaster within 2.5 cm of the modelled face); `hall-neighbours.ts` carries its figures |
-| The photographs | `project-beyond.py` | `beyond-832.webp`, `beyond-416.webp` and `beyond-atlas.json`: the Saloon's floor (stations 048-050), the landing with its inlaid TRADES HALL (018, 075, 076) and the end and main doors' linings (000, 048, 049; 016-019, 075, 076), projected as `project.py` does with occlusion from CPU depth maps of the mesh; two runs give identical files; published |
-
-    python3 $SURVEY/measure/first-floor.py --plan "FIRST 2010.pdf" --mesh data/mesh --out first-floor-2010.json
-    python3 $SURVEY/measure/beyond-doors.py --mesh data/mesh --first-floor first-floor-2010.json --out beyond-doors.json
-    python3 $SURVEY/project-beyond.py --beyond $SURVEY/measure/beyond-doors.json --out proj
-
-Edited rather than measured here: the Saloon's floor under the open leaf's pocket, which no
-station saw, is filled with its herringbone copied six teeth (0.692 m) along the floor from texels
-that were seen (`herringbone_fill`); scan_147, on the landing, is read but not used (its pose puts
-the inlay 15 cm from where the other three stations agree). D3 and D4 are the plan's alone (the
-scan did not reach them), drawn in the corridor's measured colours as art direction.
 
 ## Beyond the doors
 

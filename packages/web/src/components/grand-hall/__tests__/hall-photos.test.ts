@@ -22,7 +22,7 @@ vi.mock("three", async (importOriginal) => {
   return { ...actual, ImageBitmapLoader: FakeImageBitmapLoader };
 });
 
-const { HallPhotos } = await import("../hall-photos.js");
+const { HallPhotos, HALL_SURVEY_REVISION } = await import("../hall-photos.js");
 
 /** A decoded image, with its close() kept apart for assertions. */
 function bitmap(): { readonly image: ImageBitmap; readonly close: ReturnType<typeof vi.fn> } {
@@ -74,6 +74,20 @@ describe("HallPhotos", () => {
     const late = bitmap();
     loadFor("dome-2048").onLoad(late.image);
     expect(late.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches every photograph at the survey's revision, raised for the best-view walls", () => {
+    // Revision 5 published the walls' atlas rebuilt from each part's sharpest photograph: a browser
+    // holding revision 4's blended atlas must fetch the new one.
+    expect(HALL_SURVEY_REVISION).toBeGreaterThanOrEqual(5);
+    const desktop = new HallPhotos();
+    desktop.load(1, () => { /* settled */ });
+    const phone = new HallPhotos();
+    phone.load(0.5, () => { /* settled */ });
+    expect(recorded.loads).toHaveLength(6);
+    for (const load of recorded.loads) expect(load.url).toMatch(new RegExp(`\\.webp\\?r=${String(HALL_SURVEY_REVISION)}$`));
+    desktop.dispose();
+    phone.dispose();
   });
 
   it("leaves a surface in its average colour when its photograph fails", () => {

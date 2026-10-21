@@ -4,7 +4,18 @@ Fills the few texels no panorama saw, patches movable equipment (speakers,
 a lectern, an equipment rack) out with matching panelling copied from the
 same wall, and resamples every wall to the atlas scale. The window wall's glass
 mask (window-relief.py) goes into the alpha channel.
-Usage (in the work directory): python3 $SURVEY/pack-atlas.py
+
+Where project-walls.py --labels wrote a wall's 2.5 mm orthophoto
+(proj/<view>.fine.npz), its colour comes from that, so it reaches the atlas's
+5.2 mm through one Lanczos reduction: going through the 5 mm orthophoto first
+(two reductions) left a third as many of the deacon boards' names legible.
+The patches are the same in metres, and the glass mask is the 5 mm one.
+
+With --alpha-from <dir>, the alpha channel is the one of <dir>/walls-4096.webp (the published atlas)
+instead of window-relief.py's mask: a rebuild of the walls' colour keeps the glass that the windows'
+panes, and their measurements, were made against. (The best-view photograph moved window-relief's
+colour test: 10,830 texels of the published glass, a median 28 mm in from its edge, read as opaque.)
+Usage (in the work directory): python3 $SURVEY/pack-atlas.py [--alpha-from <dir>]
 Writes proj/walls-4096.webp and proj/walls-2048.webp."""
 import os, sys, json, numpy as np
 from PIL import Image
@@ -32,13 +43,43 @@ PATCHES = [
 ]
 
 def load(wall):
-    d = [np.load(f'proj/wall-{wall}-{t}.npz') for t in range(4 if LENGTH[wall] > 15 else 2)]
+    """The wall's orthophoto (sRGB floats), the texels that carry colour, and texels per 5 mm (1, or
+    2 for the best-view build's 2.5 mm orthophoto)."""
+    tiles = range(4 if LENGTH[wall] > 15 else 2)
+    if all(os.path.exists(f'proj/wall-{wall}-{t}.fine.npz') for t in tiles):
+        d = [np.load(f'proj/wall-{wall}-{t}.fine.npz') for t in tiles]
+        img = np.concatenate([x['rgb8'] for x in d], axis=1).astype(np.float32)
+        valid = np.concatenate([x['valid'] for x in d], axis=1)
+        return img, valid, 2
+    d = [np.load(f'proj/wall-{wall}-{t}.npz') for t in tiles]
     from project import linear_to_srgb
     rgb = np.concatenate([x['rgb'] for x in d], axis=1)
     weight = np.concatenate([x['weight'] for x in d], axis=1)
     valid = np.concatenate([x['valid'] for x in d], axis=1) & (weight > 0)
     img = linear_to_srgb(rgb).astype(np.float32)
-    return img, valid
+    return img, valid, 1
+
+def fill_sparse(img, valid, passes):
+    """fill(), visiting only the texels still empty (the fine orthophoto is too large to copy whole
+    each pass); edges do not wrap."""
+    H, W = valid.shape
+    img = img.copy(); valid = valid.copy()
+    for _ in range(passes):
+        ys, xs = np.nonzero(~valid)
+        if not len(ys): break
+        acc = np.zeros((len(ys), 3), np.float32); cnt = np.zeros(len(ys), np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ny, nx = ys - dy, xs - dx
+            ok = (ny >= 0) & (ny < H) & (nx >= 0) & (nx < W)
+            ny, nx = np.clip(ny, 0, H - 1), np.clip(nx, 0, W - 1)
+            sv = ok & valid[ny, nx]
+            acc += img[ny, nx] * sv[:, None]; cnt += sv
+        grow = cnt > 0
+        img[ys[grow], xs[grow]] = acc[grow] / cnt[grow][:, None]
+        valid[ys[grow], xs[grow]] = True
+    if not valid.all():
+        img[~valid] = img[valid].mean(axis=0)
+    return img
 
 def fill(img, valid, passes=40):
     """Grow valid colour into invalid texels (simple 4-neighbour dilation)."""
@@ -56,15 +97,15 @@ def fill(img, valid, passes=40):
         img[~valid] = img[valid].mean(axis=0)
     return img
 
-def px(u, v):
-    return int(round(u * SRC_PPM)), int(round((SRC_TOP - v) * SRC_PPM))
+def px(u, v, ppm=SRC_PPM):
+    return int(round(u * ppm)), int(round((SRC_TOP - v) * ppm))
 
-def patch(img, u0, u1, v0, v1, mode, arg, length, feather=10):
-    c0, r1 = px(u0, v0); c1, r0 = px(u1, v1)
+def patch(img, u0, u1, v0, v1, mode, arg, length, feather=10, ppm=SRC_PPM):
+    c0, r1 = px(u0, v0, ppm); c1, r0 = px(u1, v1, ppm)
     if mode == 'shift':
-        s0 = int(round((u0 + arg) * SRC_PPM)); src = img[r0:r1, s0:s0 + (c1 - c0)].copy()
+        s0 = int(round((u0 + arg) * ppm)); src = img[r0:r1, s0:s0 + (c1 - c0)].copy()
     else:
-        m0 = int(round((2 * arg - u1) * SRC_PPM)); src = img[r0:r1, m0:m0 + (c1 - c0)][:, ::-1].copy()
+        m0 = int(round((2 * arg - u1) * ppm)); src = img[r0:r1, m0:m0 + (c1 - c0)][:, ::-1].copy()
     h, w = src.shape[:2]
     # Feather the seams, except along the wall's own ends and the floor.
     ramp = lambda n: np.clip(np.arange(n) / feather, 0, 1)
@@ -83,23 +124,30 @@ atlas = np.zeros((SIZE, SIZE, 3), np.float32)
 alpha = np.full((SIZE, SIZE), 255.0, np.float32)
 glass = np.load('proj/window-glass.npy').astype(np.float32)
 for wall in ['window', 'door', 'end', 'fire']:
-    img, valid = load(wall)
-    img = fill(img, valid)
+    img, valid, scale = load(wall)
+    img = fill(img, valid) if scale == 1 else fill_sparse(img, valid, 40 * scale)
+    ppm = SRC_PPM * scale
     for p in PATCHES:
-        if p[0] == wall: img = patch(img, *p[1:], LENGTH[wall])
+        if p[0] == wall: img = patch(img, *p[1:], LENGTH[wall], feather=10 * scale, ppm=ppm)
     width_src = int(round(LENGTH[wall] * SRC_PPM))
     r_top = int(round((SRC_TOP - V_MAX) * SRC_PPM)); r_bot = int(round((SRC_TOP - V_MIN) * SRC_PPM))
-    crop = img[r_top:r_bot, :width_src]
+    crop = img[r_top * scale:r_bot * scale, :width_src * scale]
+    shape = crop.shape
     w_dst = int(np.ceil(LENGTH[wall] * PPM))
     im = Image.fromarray(np.clip(crop, 0, 255).astype(np.uint8)).resize((w_dst, ROW), Image.LANCZOS)
+    del img, crop
     x0, y0 = ORIGIN[wall]
     atlas[y0:y0 + ROW, x0:x0 + w_dst] = np.asarray(im, np.float32)
     if wall == 'window':
         g = Image.fromarray((glass[r_top:r_bot, :width_src] * 255).astype(np.uint8)).resize((w_dst, ROW), Image.BILINEAR)
         alpha[y0:y0 + ROW, x0:x0 + w_dst] = 255 - np.asarray(g, np.float32) / 255 * 127
-    print(wall, crop.shape, '->', (ROW, w_dst), 'at', (x0, y0))
+    print(wall, shape, '->', (ROW, w_dst), 'at', (x0, y0), flush=True)
 # the unused bottom strip repeats the last rows (keeps mipmaps clean)
 atlas[3 * ROW:] = atlas[3 * ROW - 1]
+if '--alpha-from' in sys.argv:
+    previous = os.path.join(sys.argv[sys.argv.index('--alpha-from') + 1], 'walls-4096.webp')
+    alpha = np.asarray(Image.open(previous).convert('RGBA'), np.float32)[..., 3]
+    print('alpha from', previous, 'glass texels', int((alpha < 192).sum()), flush=True)
 rgba = np.dstack([atlas, alpha]).astype(np.uint8)
 out = Image.fromarray(rgba, 'RGBA')
 out.save('proj/walls-4096.png')

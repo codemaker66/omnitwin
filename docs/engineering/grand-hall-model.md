@@ -20,7 +20,12 @@ development builds only) shows the room alone, posed through a window bridge for
 
 - **Walls** (`hall-walls.ts`, `hall-relief.ts`): `walls-relief.bin`, four height-field meshes
   (35,185 triangles) simplified to within 5 mm of the scan, coloured by the wall atlas projected
-  along each wall's normal, as the orthophotos were made. Faces the orthophotos see edge-on (the
+  along each wall's normal, as the orthophotos were made. Since survey revision 5 the atlas takes
+  each 40 mm block from the one panorama that photographed it most sharply, with glare and occluders
+  set aside, its seams levelled and feathered (`tools/grand-hall-survey/label-views.py`,
+  `project-walls.py --labels`; the survey README's "How a texel gets its colour"). The earlier blend
+  of every station doubled the deacon boards' lettering and hazed the portraits; the runtime and the
+  atlas's dimensions and glass alpha did not change. Faces the orthophotos see edge-on (the
   sides of doorcases and boards) take a coarser mip, so a single row of texels never streaks. The
   varnished dado and attic panelling are glossy; plaster and frieze are matte. What the modelled
   doors replace is cut out of the relief along the doorway's own lines (`drawnRelief`, clipping

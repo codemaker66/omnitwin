@@ -30,8 +30,9 @@ export const HALL_PHOTO_BASE = "/rooms/grand-hall/survey-2026-07-11";
  * Raised whenever the survey's files are rebuilt in place. The folder is
  * served with an hour's cache and a week's stale-while-revalidate, so a new
  * build must never meet an old atlas or relief kept by a browser.
+ * 5: the walls' atlas taken from each part's sharpest photograph, not a blend.
  */
-export const HALL_SURVEY_REVISION = 4;
+export const HALL_SURVEY_REVISION = 5;
 
 /** A survey file's URL, at this revision. */
 export function hallSurveyUrl(file: string): string {

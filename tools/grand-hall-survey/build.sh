@@ -30,21 +30,28 @@ step "Surfaces: the walls' and ceiling's measured positions"
 node "$SURVEY/render.mjs" "$SURVEY/views-walls.json" out-walls
 node "$SURVEY/render.mjs" "$SURVEY/views-ceiling.json" out-walls
 
-step "Projection: panoramas onto every surface"
-for wall in window door end fire; do python3 "$SURVEY/project-walls.py" "$wall"; done
+step "Walls: the corners' fins moved back onto their walls"
+python3 "$SURVEY/fix-corners.py" --positions-only
+
+step "Walls: each 40 mm block's sharpest station, and the depth where the best views agree"
+for wall in window door end fire; do python3 "$SURVEY/label-views.py" "$wall"; done
+
+step "Walls: coloured from those stations, seams levelled (2.5 mm and 5 mm orthophotos)"
+for wall in window door end fire; do python3 "$SURVEY/project-walls.py" "$wall" --labels; done
+
+step "Projection: ceiling, dome and floor"
 python3 "$SURVEY/project-ceiling.py"
 python3 "$SURVEY/project-dome.py"
 python3 "$SURVEY/project-floor.py"
 
-# The windows' glass mask and layered depth are read from the walls as
-# projected, before the corners are corrected (the order the shipped files
-# were made in; the end arch reaches into the corner zone).
-step "Windows, then corners"
+# The glass mask and the windows' layered depth are read from the window wall's
+# photograph and its rendered (uncorrected) positions.
+step "Windows: glass mask and layered depth"
 python3 "$SURVEY/window-relief.py"
-python3 "$SURVEY/fix-corners.py"
 
 step "Packing for the web"
-python3 "$SURVEY/pack-atlas.py"
+python3 "$SURVEY/pack-atlas.py" ${PUBLISH:+--alpha-from "$PUBLISH"}
+if [ -n "$PUBLISH" ]; then python3 "$SURVEY/check-atlas.py" proj "$PUBLISH" --json proj/check-atlas.json; fi
 python3 "$SURVEY/wall-depth.py" window door end fire
 node "$SURVEY/relief-mesh.mjs" proj/walls-relief.bin
 python3 "$SURVEY/pack-overhead.py" proj
