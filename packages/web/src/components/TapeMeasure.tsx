@@ -9,6 +9,7 @@ import {
   Vector2,
 } from "three";
 import { useGuidelineStore } from "../stores/guideline-store.js";
+import { letter, useEscapeLayer, usePlannerKeyBindings, type KeyBinding } from "../lib/planner-keys.js";
 import type { GuidelineData } from "../lib/guideline.js";
 import {
   detectWallHit,
@@ -131,6 +132,11 @@ function GuidelineLine({ guideline }: { readonly guideline: GuidelineData }): Re
 // Main component
 // ---------------------------------------------------------------------------
 
+const TAPE_KEYS: readonly KeyBinding[] = [{
+  keys: letter("t"),
+  run: () => { useGuidelineStore.getState().toggle(); },
+}];
+
 /**
  * Tape Measure tool — R3F component (must be inside Canvas).
  *
@@ -139,7 +145,8 @@ function GuidelineLine({ guideline }: { readonly guideline: GuidelineData }): Re
  * - Guideline runs perpendicular to the clicked wall, spanning the full room
  * - Distance label at the midpoint shows real-world metres
  * - Each guideline has an × dismiss button
- * - Escape clears all guidelines
+ * - Esc puts the tape away and keeps the guidelines (it used to delete them
+ *   all, unasked)
  *
  * Guidelines persist until individually dismissed or all cleared.
  */
@@ -191,23 +198,14 @@ export function TapeMeasure(): React.ReactElement {
     return () => { canvas.removeEventListener("click", handleClick); };
   }, [active, gl, handleClick]);
 
-  // Keyboard shortcuts: T to toggle, Escape to clear all
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-
-      if (event.code === "KeyT") {
-        useGuidelineStore.getState().toggle();
-        invalidate();
-      } else if (event.code === "Escape" && useGuidelineStore.getState().active) {
-        useGuidelineStore.getState().clearAll();
-        invalidate();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, [invalidate]);
+  // T takes up the tape and puts it away; Esc puts it away (the planner's one
+  // keyboard owner, lib/planner-keys.ts). The store subscription above asks
+  // for the frame.
+  usePlannerKeyBindings(TAPE_KEYS);
+  useEscapeLayer("operation", {
+    open: () => useGuidelineStore.getState().active,
+    onEscape: () => { useGuidelineStore.getState().deactivate(); },
+  });
 
   return (
     <group name="tape-measure-tool">

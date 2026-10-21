@@ -2,10 +2,12 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
-import { useUndoRedoShortcuts } from "../use-undo-redo-shortcuts.js";
+import { usePlannerToolKeys } from "../planner-keymap.js";
 
+// Undo and redo through the planner's keymap (T-671 slice 5); these cases
+// came over from the hook it replaced, use-undo-redo-shortcuts.
 function Harness(): null {
-  useUndoRedoShortcuts();
+  usePlannerToolKeys();
   return null;
 }
 
@@ -29,7 +31,7 @@ afterEach(() => {
   useEditorStore.getState().reset();
 });
 
-describe("useUndoRedoShortcuts", () => {
+describe("undo and redo keys", () => {
   it("undoes the last editor change on Ctrl+Z and consumes the event", () => {
     useEditorStore.getState().addObject("a1", 0, 0, 0);
     render(<Harness />);
@@ -119,7 +121,7 @@ describe("useUndoRedoShortcuts", () => {
     editable.remove();
   });
 
-  it("defers to the laser markup tool's own stroke undo while drawing", () => {
+  it("takes back the last stroke while drawing, and leaves the layout's history alone", () => {
     useEditorStore.getState().addObject("a1", 0, 0, 0);
     useMarkupStore.setState({ active: true });
     render(<Harness />);
@@ -127,7 +129,16 @@ describe("useUndoRedoShortcuts", () => {
     const event = pressKey({ key: "z", ctrlKey: true });
 
     expect(useEditorStore.getState().objects).toHaveLength(1);
-    expect(event.defaultPrevented).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("is undo with Caps Lock on, and never redo without Shift", () => {
+    useEditorStore.getState().addObject("a1", 0, 0, 0);
+    render(<Harness />);
+
+    pressKey({ key: "Z", ctrlKey: true });
+
+    expect(useEditorStore.getState().objects).toHaveLength(0);
   });
 
   it("stops listening once unmounted", () => {

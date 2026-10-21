@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { Minus, Plus } from "lucide-react";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { Key, keyAccessibleName } from "./Keys.js";
 import "./chrome.css";
 
@@ -276,11 +277,20 @@ export function Field({ label, value, unit, format = (n) => String(n), problemFo
     setProblem(null);
   };
 
+  // Esc puts back what was there, and only that: a typed value is an
+  // operation in progress, the first thing the planner's Escape order undoes.
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEscapeLayer("operation", {
+    open: () => document.activeElement === inputRef.current && (draft !== null || problem !== null),
+    onEscape: revert,
+  });
+
   return (
     <div className={["pc-field", className ?? ""].filter(Boolean).join(" ")}>
       <label className="pc-field__label" htmlFor={id}>{label}</label>
       <div className="pc-field__well" data-invalid={problem !== null ? "true" : undefined}>
         <input
+          ref={inputRef}
           id={id}
           className="pc-field__input"
           inputMode="decimal"
@@ -298,15 +308,9 @@ export function Field({ label, value, unit, format = (n) => String(n), problemFo
             commit();
           }}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commit();
-            } else if (event.key === "Escape" && (draft !== null || problem !== null)) {
-              // This Escape only puts the value back (spec 4.5: a typed value goes first).
-              event.preventDefault();
-              event.stopPropagation();
-              revert();
-            }
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            commit();
           }}
         />
         <span className="pc-field__unit" aria-hidden="true">{unit}</span>

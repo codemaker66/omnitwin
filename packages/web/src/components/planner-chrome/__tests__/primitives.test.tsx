@@ -6,6 +6,14 @@ import { Field, Segmented, Stepper, Switch, parseTypedNumber } from "../Controls
 import { Key, KeyRow, ariaKeyShortcut, keyAccessibleName } from "../Keys.js";
 import { Chip, MarkLabel, Notice, StatusDot } from "../Surfaces.js";
 import { TOOLTIP_FIRST_DELAY_MS, TooltipHost, placeTooltip, useTooltipStore } from "../Tooltip.js";
+import { registerEscapeLayer } from "../../../lib/planner-keys.js";
+
+/** A selection held under the chrome: an Escape that steps back only its own layer leaves it alone. */
+function holdSelection(): { readonly cleared: ReturnType<typeof vi.fn>; readonly release: () => void } {
+  const cleared = vi.fn();
+  const release = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: cleared });
+  return { cleared, release };
+}
 
 // ---------------------------------------------------------------------------
 // The planner chrome's shared primitives (T-671, slice 4). Roles and names,
@@ -120,15 +128,14 @@ describe("Tooltip", () => {
 
   it("goes on Escape, and that Escape does nothing else", () => {
     vi.useFakeTimers();
-    const beyond = vi.fn();
-    window.addEventListener("keydown", beyond);
+    const selection = holdSelection();
     render(<><Key label="Find" iconOnly tooltipImmediate /><TooltipHost /></>);
     mouseEnter(screen.getByRole("button", { name: "Find" }));
     expect(screen.queryByTestId("planner-chrome-tooltip")).not.toBeNull();
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(screen.queryByTestId("planner-chrome-tooltip")).toBeNull();
-    expect(beyond).not.toHaveBeenCalled();
-    window.removeEventListener("keydown", beyond);
+    expect(selection.cleared).not.toHaveBeenCalled();
+    selection.release();
   });
 
   it("sits on its side of the key, flips when there is no room, and stays on screen", () => {
@@ -280,15 +287,18 @@ describe("Field", () => {
   });
 
   it("puts the value back on Escape, and that Escape goes no further", () => {
-    const beyond = vi.fn();
-    window.addEventListener("keydown", beyond);
+    const selection = holdSelection();
     render(<Field label="Turned" value={0} unit="°" onCommit={() => undefined} />);
     const input = screen.getByLabelText<HTMLInputElement>("Turned");
+    input.focus();
     fireEvent.change(input, { target: { value: "45" } });
     fireEvent.keyDown(input, { key: "Escape" });
     expect(input.value).toBe("0");
-    expect(beyond).not.toHaveBeenCalled();
-    window.removeEventListener("keydown", beyond);
+    expect(selection.cleared).not.toHaveBeenCalled();
+    // With nothing typed, the next Escape steps back the next layer.
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(selection.cleared).toHaveBeenCalledTimes(1);
+    selection.release();
   });
 
   it("reads numbers the way people type them", () => {

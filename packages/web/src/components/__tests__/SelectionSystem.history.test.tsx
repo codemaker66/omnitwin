@@ -272,6 +272,26 @@ describe("SelectionSystem pointer history through EditorBridge", () => {
     expect(useEditorStore.getState().objects).toEqual(initial);
   });
 
+  // T-671 slice 5: arrows nudge the selection, and each nudge is its own undo
+  // step (spec 11), so holding an arrow and then undoing walks back one press
+  // at a time. The fixture's camera looks north, so Up moves the table north.
+  it("nudges with the arrows, one undo step a press, the table with its chairs", () => {
+    render(<><SelectionSystem /><EditorBridge /></>);
+    const initial = useEditorStore.getState().objects;
+    const tableZ = (): number => usePlacementStore.getState().placedItems[0]?.z ?? Number.NaN;
+    const startZ = tableZ();
+    act(() => { fireEvent.keyDown(window, { code: "ArrowUp", key: "ArrowUp" }); });
+    act(() => { fireEvent.keyDown(window, { code: "ArrowUp", key: "ArrowUp", repeat: true }); });
+    act(() => { fireEvent.keyDown(window, { code: "ArrowUp", key: "ArrowUp", shiftKey: true }); });
+    expect(tableZ()).toBeCloseTo(startZ - 1.2);
+    expect(useEditorStore.getState().history.past).toHaveLength(3);
+    act(() => { useEditorStore.getState().undo(); });
+    expect(tableZ()).toBeCloseTo(startZ - 0.2);
+    act(() => { useEditorStore.getState().undo(); });
+    act(() => { useEditorStore.getState().undo(); });
+    expect(useEditorStore.getState().objects).toEqual(initial);
+  });
+
   it("ignores another pointer release and closes on the owning pointer released outside canvas", () => {
     render(<><SelectionSystem /><EditorBridge /></>);
     pointer("pointerDown", 200, 200);

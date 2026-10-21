@@ -14,20 +14,26 @@
 
 import { snapRotation } from "./selection.js";
 
-export type PlannerTool = "select" | "move" | "rotate" | "scale" | "measure";
+/**
+ * Every tool the planner can hold; stores/tool-store.ts owns which. The dock's
+ * five are Select, Add, Lay out, Measure and Draw (spec 4.2). Move, Rotate and
+ * Scale are the pill's hands, and leave with the pill (T-671 slice 8, D10).
+ */
+export type PlannerTool = "select" | "add" | "layout" | "measure" | "draw" | "move" | "rotate" | "scale";
+
+/** The pill's five hands. */
+export type PillTool = "select" | "move" | "rotate" | "scale" | "measure";
 
 export interface PlannerToolMeta {
-  readonly id: PlannerTool;
+  readonly id: PillTool;
   readonly label: string;
   /** One-line tooltip. Mentions a key only where a real binding exists. */
   readonly hint: string;
 }
 
 /**
- * Pill order. No new letter shortcuts: digits jump to bookmarks, WASD pans
- * the camera, Q/E nudge rotation — the planner's keyboard is already spoken
- * for. M (measure) and Escape (back to Select) are the only bindings, both
- * pre-existing behaviours routed through the tool store.
+ * Pill order. The pill's keys are the planner keymap's (lib/planner-keymap.ts):
+ * M for Measure, Esc and V back to Select.
  */
 export const PLANNER_TOOLS: readonly PlannerToolMeta[] = [
   { id: "select", label: "Select", hint: "Select — click, shift-click, or drag a box" },

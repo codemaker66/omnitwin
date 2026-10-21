@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import "./chrome.css";
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,9 @@ import "./chrome.css";
 // It opens from its key's edge, 8 px off the bar that holds the key, scaling
 // in from that edge. It sits at the top of the page (a portal), so no panel
 // or bar beside it can paint over it. Focus goes into it on opening and back
-// to the key on Esc; a press anywhere else closes it. It never traps focus:
+// to the key on Esc, which is its layer in the planner's one Escape order
+// (after the operation in progress, before an open panel); a press anywhere
+// else closes it. It never traps focus:
 // Shift Tab from its first stop goes back to the key and Tab from its last
 // goes on to whatever follows the key, as if the panel sat beside it. It is a
 // non-modal dialog: Off · Quiet · Full is a choice, not a list of commands.
@@ -45,11 +48,10 @@ export interface PopoverState {
   readonly toggle: () => void;
   /** Closes it; with focus back on the key when it was the keyboard's doing. */
   readonly close: (returnFocus: boolean) => void;
-  /** For the key: what it opens, and Esc while it has focus. */
+  /** For the key: what it opens. */
   readonly triggerProps: {
     readonly "aria-haspopup": "dialog";
     readonly "aria-controls": string | undefined;
-    readonly onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
   };
 }
 
@@ -62,6 +64,8 @@ export function usePopoverState(): PopoverState {
     setOpen(false);
     if (returnFocus) triggerRef.current?.focus();
   }, []);
+  // Esc closes it, wherever focus is, and the key takes focus back.
+  useEscapeLayer("popover", { open, onEscape: () => { close(false); }, returnFocusTo: triggerRef });
   return useMemo(() => ({
     open,
     panelId,
@@ -71,12 +75,6 @@ export function usePopoverState(): PopoverState {
     triggerProps: {
       "aria-haspopup": "dialog",
       "aria-controls": open ? panelId : undefined,
-      onKeyDown: (event: KeyboardEvent<HTMLButtonElement>): void => {
-        if (event.key !== "Escape" || !open) return;
-        event.preventDefault();
-        event.stopPropagation();
-        close(true);
-      },
     },
   }), [close, open, panelId, toggle]);
 }
@@ -137,15 +135,7 @@ export function Popover({ state, label, align = "end", side = "below", chrome, c
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const panel = panelRef.current;
     const trigger = triggerRef.current;
-    if (panel === null) return;
-    if (event.key === "Escape") {
-      // This Escape closes the panel and nothing else.
-      event.preventDefault();
-      event.stopPropagation();
-      close(true);
-      return;
-    }
-    if (event.key !== "Tab") return;
+    if (panel === null || event.key !== "Tab") return;
     const stops = tabStops(panel);
     const first = stops[0];
     const last = stops[stops.length - 1];
