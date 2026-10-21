@@ -11,7 +11,7 @@ import { initBrowserSentry } from "./observability/sentry.js";
 import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
 import { registerPushWorker } from "./lib/push-worker.js";
 import { appendFontBuildStyle, fontBuildFor } from "./lib/self-hosted-fonts.js";
-import siteFontsFirefoxWindows from "./styles/fonts/site.firefox-windows.css?inline";
+import siteFontsFirefoxWindows from "./styles/fonts/site-slim.firefox-windows.css?inline";
 import "./global.css";
 
 // ---------------------------------------------------------------------------
