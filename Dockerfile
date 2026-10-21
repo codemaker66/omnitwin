@@ -107,15 +107,28 @@ RUN addgroup -S omnitwin && adduser -S -G omnitwin omnitwin
 
 COPY --from=build --chown=omnitwin:omnitwin /app/deploy ./
 
+# When this image was built, for /health/version. A file inside the image, not
+# a variable: Railway passes every service variable to the build and the
+# container, and the hand-set BUILD_TIMESTAMP stayed at 24 September beside
+# current commits. Declaring Railway's own deployment ids as ARGs and naming
+# them in the command makes a new deployment miss the layer cache, so the
+# stamp is taken when the image is built and not carried over from an earlier
+# build. Read by packages/api/src/lib/build-stamp.ts.
+ARG RAILWAY_GIT_COMMIT_SHA=
+ARG RAILWAY_DEPLOYMENT_ID=
+RUN date -u +%Y-%m-%dT%H:%M:%SZ > .build-timestamp \
+ && echo "stamped for '${RAILWAY_GIT_COMMIT_SHA}' '${RAILWAY_DEPLOYMENT_ID}'" >/dev/null
+
 USER omnitwin
 
 # Build provenance. Railway injects a *service variable* as a build arg only
 # when the Dockerfile declares a matching ARG — and `railway up` uploads a
 # tarball with .git/ excluded (.railwayignore), so the image cannot discover
-# its own commit. Set BUILD_GIT_SHA/BUILD_TIMESTAMP/BUILD_APP_VERSION as
-# service variables before deploying (see docs/operations/diary-deploy-checklist.md
-# §5) and the running container reports them at /health/version. Defaults keep
-# a plain `docker build` working unchanged.
+# its own commit. Set BUILD_GIT_SHA/BUILD_APP_VERSION as service variables
+# before deploying (see docs/operations/diary-deploy-checklist.md §5) and the
+# running container reports them at /health/version. BUILD_TIMESTAMP is no
+# longer needed there: the build time is written into the image above and wins
+# over the variable. Defaults keep a plain `docker build` working unchanged.
 ARG BUILD_GIT_SHA=dev
 ARG BUILD_TIMESTAMP=dev
 ARG BUILD_APP_VERSION=0.0.0
