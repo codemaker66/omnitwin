@@ -7,6 +7,7 @@ import {
   placingKeyBindings,
   selectionKeyBindings,
   turnForKey,
+  turnedAboutTheirTables,
   usePlannerToolKeys,
 } from "../planner-keymap.js";
 import { registerKeyBindings } from "../planner-keys.js";
@@ -96,6 +97,39 @@ describe("turning", () => {
     press("KeyE");
     expect(tableRotation()).toBeCloseTo(before - ROTATION_SNAP_RAD);
     expect(frames).toBeGreaterThan(0);
+  });
+});
+
+describe("turning a table with its chairs", () => {
+  it("carries the chairs round the table, each facing it as before, and snaps only the table's angle", () => {
+    const placed = usePlacementStore.getState().placedItems;
+    const table = placed.find((item) => item.id === tableId);
+    if (table === undefined) throw new Error("no table");
+    const chairs = placed.filter((item) => item.id !== tableId);
+    const turned = turnedAboutTheirTables(placed, new Set([tableId]), -Math.PI / 2);
+
+    expect(turned.get(tableId)?.x).toBe(table.x);
+    expect(turned.get(tableId)?.z).toBe(table.z);
+    expect(turned.get(tableId)?.rotationY).toBeCloseTo(-Math.PI / 2);
+    for (const chair of chairs) {
+      const next = turned.get(chair.id);
+      if (next === undefined) throw new Error("a chair stayed behind");
+      // Same distance from the table, a quarter turn clockwise seen from above.
+      expect(Math.hypot(next.x - table.x, next.z - table.z)).toBeCloseTo(Math.hypot(chair.x - table.x, chair.z - table.z));
+      expect(next.x - table.x).toBeCloseTo(-(chair.z - table.z));
+      expect(next.z - table.z).toBeCloseTo(chair.x - table.x);
+      // Unsnapped: a chair at 36° stays 36° off the table's own turn.
+      expect(next.rotationY).toBeCloseTo(chair.rotationY - Math.PI / 2);
+    }
+  });
+
+  it("turns a lone piece in place, to the 15° step", () => {
+    const first = usePlacementStore.getState().placedItems[0];
+    if (first === undefined) throw new Error("no piece");
+    const lone = { ...first, id: "lone", groupId: null, x: 3, z: 4, rotationY: 0.1 };
+    const turned = turnedAboutTheirTables([lone], new Set(["lone"]), ROTATION_SNAP_RAD);
+    expect(turned.get("lone")?.x).toBe(3);
+    expect(turned.get("lone")?.rotationY).toBeCloseTo(ROTATION_SNAP_RAD);
   });
 });
 

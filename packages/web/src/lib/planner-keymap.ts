@@ -10,7 +10,7 @@ import { useCockpitStore } from "../stores/cockpit-store.js";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
-import { expandIdsToGroupMembers } from "./placement.js";
+import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
 import { ROTATION_SNAP_RAD, snapRotation } from "./selection.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 import { tableGroupSeatCapacity } from "./table-group.js";
@@ -125,14 +125,66 @@ function placing(): boolean {
   return useCatalogueStore.getState().selectedItemId !== null;
 }
 
-/** Turns each selected piece in place. False when nothing turnable is selected. */
+export interface TurnedPiece {
+  readonly x: number;
+  readonly z: number;
+  readonly rotationY: number;
+}
+
+/**
+ * Where a turn leaves each piece. A table turns with its chairs: the group
+ * turns about the table, the table's angle comes to the 15° step and every
+ * chair moves round by the same amount, so each still faces the table. A lone
+ * piece turns in place. Angles follow three.js rotationY (anticlockwise seen
+ * from above is positive).
+ */
+export function turnedAboutTheirTables(
+  placed: readonly PlacedItem[],
+  ids: ReadonlySet<string>,
+  delta: number,
+): Map<string, TurnedPiece> {
+  const expanded = expandIdsToGroupMembers(ids, placed);
+  const units = new Map<string, PlacedItem[]>();
+  for (const item of placed) {
+    if (!expanded.has(item.id) || !isSceneFurniturePlacement(item)) continue;
+    const key = item.groupId ?? `piece:${item.id}`;
+    units.set(key, [...(units.get(key) ?? []), item]);
+  }
+  const turned = new Map<string, TurnedPiece>();
+  for (const members of units.values()) {
+    const pivot = members.find((item) => {
+      const catalogue = getCatalogueItem(item.catalogueItemId);
+      return catalogue !== undefined && isDiningTableItem(catalogue);
+    }) ?? members[0];
+    if (pivot === undefined) continue;
+    const step = snapRotation(pivot.rotationY + delta) - pivot.rotationY;
+    const cos = Math.cos(step);
+    const sin = Math.sin(step);
+    for (const item of members) {
+      const dx = item.x - pivot.x;
+      const dz = item.z - pivot.z;
+      turned.set(item.id, {
+        x: pivot.x + dx * cos + dz * sin,
+        z: pivot.z - dx * sin + dz * cos,
+        rotationY: item.rotationY + step,
+      });
+    }
+  }
+  return turned;
+}
+
+/** Turns the selection, each table with its chairs. False when nothing turnable is selected. */
 export function turnSelection(delta: number): boolean {
-  const ids = selectedIds();
-  const turning = usePlacementStore.getState().placedItems
-    .filter((item) => ids.has(item.id) && isSceneFurniturePlacement(item));
-  if (turning.length === 0) return false;
+  const placed = usePlacementStore.getState().placedItems;
+  const turned = turnedAboutTheirTables(placed, selectedIds(), delta);
+  if (turned.size === 0) return false;
   asOneUndoStep(() => {
-    usePlacementStore.getState().rotateItemsTo(new Map(turning.map((item) => [item.id, snapRotation(item.rotationY + delta)])));
+    usePlacementStore.setState({
+      placedItems: usePlacementStore.getState().placedItems.map((item) => {
+        const next = turned.get(item.id);
+        return next === undefined ? item : { ...item, ...next };
+      }),
+    });
   });
   return true;
 }

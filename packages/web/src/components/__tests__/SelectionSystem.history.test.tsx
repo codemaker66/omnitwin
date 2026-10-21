@@ -259,7 +259,7 @@ describe("SelectionSystem pointer history through EditorBridge", () => {
     now += 1_500;
     pointer("pointerMove", 240, 180);
     const beforeRotation = useEditorStore.getState().objects;
-    act(() => { fireEvent.keyDown(window, { code: "KeyR" }); });
+    act(() => { fireEvent.keyDown(window, { code: "KeyR", key: "r" }); });
     const final = useEditorStore.getState().objects;
     pointer("pointerMove", 250, 150);
     expect(useEditorStore.getState().objects).toBe(final);
