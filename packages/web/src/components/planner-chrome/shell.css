@@ -1,0 +1,149 @@
+/* ---------------------------------------------------------------------------
+ * THE NEW CHROME'S ZONES (T-671 slice 6; spec 1.1 law 4, 5.1–5.4).
+ *
+ * The room fills the screen. Over it, eight zones with fixed homes: the slate
+ * top left, the command line's place top centre, the utilities top right, the
+ * left zone (making: Add, History, Event details) from under the plane to the
+ * dock, the right zone (deciding: Details, Lay out, Send) bottom-anchored
+ * above the next step, a line above the dock (hints, receipts, the evening),
+ * the dock bottom centre and the next step bottom right. A zone takes no
+ * pointer itself, so an empty one never blocks the room; what sits in it does.
+ * ------------------------------------------------------------------------- */
+
+.pc-shell {
+  --pc-gutter: 20px;
+  --pc-dock-height: 56px;
+  --pc-zone-gap: 12px;
+  /* Hints, receipts and the right zone sit 12 px above the dock: bottom 88. */
+  --pc-above-dock: calc(var(--pc-gutter) + var(--pc-dock-height) + var(--pc-zone-gap));
+  /* The left zone starts under the slate and its plane (spec 5.1: 198 px). */
+  --pc-left-top: 198px;
+  --pc-slate-width: 340px;
+  --pc-left-width: 360px;
+  --pc-right-width: 344px;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.pc-room-stage {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.pc-shell__zones {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.pc-zone {
+  position: absolute;
+  display: flex;
+  pointer-events: none;
+}
+
+.pc-zone > * {
+  pointer-events: auto;
+}
+
+.pc-zone--slate {
+  top: var(--pc-gutter);
+  left: var(--pc-gutter);
+  width: var(--pc-slate-width);
+  flex-direction: column;
+}
+
+.pc-zone--top-centre {
+  top: var(--pc-gutter);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.pc-zone--utilities {
+  top: var(--pc-gutter);
+  right: var(--pc-gutter);
+  justify-content: flex-end;
+}
+
+.pc-zone--left {
+  top: var(--pc-left-top);
+  bottom: var(--pc-above-dock);
+  left: var(--pc-gutter);
+  width: var(--pc-left-width);
+  flex-direction: column;
+}
+
+.pc-zone--right {
+  top: var(--pc-left-top);
+  bottom: var(--pc-above-dock);
+  right: var(--pc-gutter);
+  width: var(--pc-right-width);
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.pc-zone--above-dock {
+  bottom: var(--pc-above-dock);
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: column;
+  align-items: center;
+}
+
+.pc-zone--dock {
+  bottom: var(--pc-gutter);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.pc-zone--next-step {
+  bottom: var(--pc-gutter);
+  right: var(--pc-gutter);
+}
+
+/* Laptops and compact desktops: the same composition, panels 320 wide (5.2). */
+@media (max-width: 1279px) {
+  .pc-shell {
+    --pc-left-width: 320px;
+    --pc-right-width: 320px;
+  }
+}
+
+/* Phones (5.4): one card at the top, the dock along the bottom, and sheets that
+   replace the dock one at a time; no side zones, so the room never moves aside. */
+@media (max-width: 767px) {
+  .pc-shell {
+    --pc-gutter: 12px;
+  }
+
+  .pc-zone--slate {
+    top: calc(var(--pc-gutter) + env(safe-area-inset-top));
+    right: var(--pc-gutter);
+    width: auto;
+  }
+
+  .pc-zone--utilities,
+  .pc-zone--top-centre,
+  .pc-zone--left,
+  .pc-zone--right,
+  .pc-zone--next-step {
+    display: none;
+  }
+
+  .pc-zone--dock {
+    right: var(--pc-gutter);
+    bottom: calc(var(--pc-gutter) + env(safe-area-inset-bottom));
+    left: var(--pc-gutter);
+    transform: none;
+  }
+
+  .pc-zone--above-dock {
+    right: var(--pc-gutter);
+    bottom: calc(var(--pc-above-dock) + env(safe-area-inset-bottom));
+    left: var(--pc-gutter);
+    transform: none;
+  }
+}
