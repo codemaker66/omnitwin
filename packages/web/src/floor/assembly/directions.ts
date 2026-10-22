@@ -152,8 +152,9 @@ function accioModel(): DirectionModel {
       const ranked = [...windows].sort((a, b) => Math.abs(a.x - piece.x) - Math.abs(b.x - piece.x));
       const pick = pieceRandom(seed, piece.id, 3) < 0.28 ? (ranked[1] ?? ranked[0]) : ranked[0];
       const window = pick ?? { x: 0, width: 2, sill: 1, head: 3.3, id: "none" };
-      const across = (pieceRandom(seed, piece.id, 4) - 0.5) * 0.6 * window.width;
-      const up = window.sill + (window.head - window.sill) * (0.4 + 0.3 * pieceRandom(seed, piece.id, 5));
+      // Spread over the whole opening, so a table's chairs do not crowd one point of it.
+      const across = (pieceRandom(seed, piece.id, 4) - 0.5) * 0.85 * window.width;
+      const up = window.sill + (window.head - window.sill) * (0.2 + 0.7 * pieceRandom(seed, piece.id, 5));
       const table = piece.role === "table";
       const sx = window.x + across;
       const sz = wallZ - 0.9;
