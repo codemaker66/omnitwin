@@ -22,15 +22,14 @@
 //     scan did not go there).
 //
 // Further out, the whole first floor's walls come from the 2010 FIRST plan,
-// read as vectors and registered to the scan (measure/first-floor.py), fetched
-// only for the Atelier section: every polygon carries the plan paths it came
+// read as vectors and registered to the scan (measure/first-floor.py), and
+// published beside the survey's photographs (first-floor-2010.json, fetched
+// only for the Atelier section): every polygon carries the plan paths it came
 // from, and the registration its residuals against the scanned walls. The
-// plan is the venue's drawing, so its vectors are not published until the
-// venue allows it (review F2, 22 October 2026): a machine that has built them
-// keeps them in the survey's gitignored local/ folder, and anywhere else
-// (production too) Atelier draws without the first floor, as it does when
-// the fetch fails. The doorways' own stubs (BEYOND_SPACES) keep the few
-// figures the plan gives near each door, as measurements.
+// plan is the venue's drawing, published with its permission (Blake, 22 Oct
+// 2026: Trades Hall has given permission to publish the 2010 first-floor plan
+// outline). The doorways' own stubs (BEYOND_SPACES) keep the few figures the
+// plan gives near each door, as measurements.
 //
 // Frame: the planner's (hall-spec.ts), metres; outlines are (x, z) in plan.
 // ---------------------------------------------------------------------------
@@ -119,9 +118,10 @@ export const BEYOND_SPACES: readonly BeyondSpace[] = [
 
 /**
  * The beyond floors' level: 1 cm above the hall's floor. The city model's caps
- * lie at the floor's level outside its cut-out for the hall (|x| > 11.2 or
- * |z| > 5.95), under these floors, and 1 cm is several depth steps at any
- * distance the planner allows (hall-section.ts CITY_CUTOUT). The doorways'
+ * lie at the floor's level outside its cut-out for the hall (|x| > 11.2, or
+ * z beyond 5.95 behind the door wall; hall-context.ts CITY_SITE_CUT), under
+ * these floors, and 1 cm is several depth steps at any distance the planner
+ * allows. The doorways'
  * thresholds lie at 8 mm (hall-wall-body.ts THRESHOLD_HEIGHT).
  */
 export const BEYOND_FLOOR_Y = 0.01;
@@ -216,10 +216,10 @@ export function insideOutline(outline: readonly PlanPoint[], p: PlanPoint): bool
 }
 
 // ---------------------------------------------------------------------------
-// The first floor from the 2010 plan (built locally, fetched for Atelier where it exists)
+// The first floor from the 2010 plan (published, fetched for Atelier)
 // ---------------------------------------------------------------------------
 
-export const FIRST_FLOOR_FILE = "local/first-floor-2010.json";
+export const FIRST_FLOOR_FILE = "first-floor-2010.json";
 
 /** The first floor's file, at the survey's revision. */
 export function firstFloorUrl(): string {

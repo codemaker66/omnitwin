@@ -15,7 +15,6 @@ import {
 import { bodyOutline } from "../hall-wall-body.js";
 import { plinthOutline } from "../hall-section.js";
 import { HALL_DOORS, HALL_WALL_THICKNESS } from "../hall-spec.js";
-import { HAS_LOCAL_FIRST_FLOOR, firstFloorJson as localOrSyntheticFirstFloor } from "./first-floor-fixture.js";
 
 const SURVEY = path.resolve("../../tools/grand-hall-survey");
 
@@ -40,8 +39,8 @@ interface Provenance {
 }
 
 const provenance = JSON.parse(readFileSync(path.join(SURVEY, "measure/beyond-doors.json"), "utf8")) as Provenance;
-// The venue's plan where this machine has built it (local/, never published: review F2), else a synthetic one.
-const firstFloorJson: unknown = localOrSyntheticFirstFloor();
+// The venue's plan as published (with Trades Hall's permission, 22 October 2026).
+const firstFloorJson: unknown = JSON.parse(readFileSync(path.resolve("public/rooms/grand-hall/survey-2026-07-11/first-floor-2010.json"), "utf8"));
 
 /** Whether two segments cross (not merely touch at a shared end). */
 function crosses(a: PlanPoint, b: PlanPoint, c: PlanPoint, d: PlanPoint): boolean {
@@ -175,7 +174,7 @@ describe("the spaces beyond the doors", () => {
 describe("the first floor from the 2010 plan", () => {
   const plan = parseFirstFloor(firstFloorJson);
 
-  it.skipIf(!HAS_LOCAL_FIRST_FLOOR)("reads the locally built plan, every polygon with the plan's paths it came from", () => {
+  it("reads the published plan, every polygon with the plan's paths it came from", () => {
     expect(plan.walls.length).toBeGreaterThan(10);
     expect(plan.floor.length).toBeGreaterThan(0);
     expect(plan.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
@@ -186,7 +185,7 @@ describe("the first floor from the 2010 plan", () => {
     for (const wall of plan.walls) expect(wall.source).toMatch(/drawing paths \d/);
   });
 
-  it.skipIf(!HAS_LOCAL_FIRST_FLOOR)("is registered to the scanned Saloon's walls within 0.3 m (the stair hall's p90 is 0.41 m: review F11)", () => {
+  it("is registered to the scanned Saloon's walls within 0.3 m (the stair hall's p90 is 0.41 m: review F11)", () => {
     const saloon = plan.residuals.saloon;
     expect(saloon).toBeDefined();
     expect(saloon?.metres ?? 0).toBeGreaterThan(20);

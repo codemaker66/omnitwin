@@ -238,13 +238,13 @@ manifest's hash).
 
 | Step | Script | Result |
 | --- | --- | --- |
-| The first floor | `measure/first-floor.py` | `first-floor-2010.json`: the 2010 FIRST plan's walls (its grey poche paths, read as vectors) and floor, registered to the scan (the hall's inner faces, then trimmed iterated closest points to the mesh's wall sections at 2.6 and 3.2 m; fitted residuals: hall median 4.6 cm, p90 16 cm; Saloon 8.2 / 26.5 cm; stair hall 13.6 / 40.6 cm), with the hall's own bodies and ring cut away (the door wall thinning to 0.46 m from x -6.0, where the scan's corridor face ends); built locally into the survey's gitignored `local/` folder and not published: it is the venue's drawing, and nothing on record lets it be republished (review F2, 22 October 2026). Atelier draws the first floor only where it is built |
+| The first floor | `measure/first-floor.py` | `first-floor-2010.json`: the 2010 FIRST plan's walls (its grey poche paths, read as vectors) and floor, registered to the scan (the hall's inner faces, then trimmed iterated closest points to the mesh's wall sections at 2.6 and 3.2 m; fitted residuals: hall median 4.6 cm, p90 16 cm; Saloon 8.2 / 26.5 cm; stair hall 13.6 / 40.6 cm), with the hall's own bodies and ring cut away (the door wall thinning to 0.46 m from x -6.0, where the scan's corridor face ends); published, with the venue's permission (Blake, 22 Oct 2026: Trades Hall has given permission to publish the 2010 first-floor plan outline) |
 | The stubs | `measure/beyond-doors.py` | `measure/beyond-doors.json`: each doorway's floor beyond it within its reach (D1 the Saloon and D2 the landing at the head of Stair 5 from the scan's height map, their levels -4.3 and -4.6 cm; D3 the east end of F.16 and D4 Stair 7's landing from the plan), D2's stairwell, the landing's balustrade (rail top 0.811 m, newels, 13 balusters at 14.5 cm) and the Saloon's panelling on the door wall (its plaster within 2.5 cm of the modelled face); `hall-neighbours.ts` carries its figures |
 | The photographs | `project-beyond.py` | `beyond-832.webp`, `beyond-416.webp` and `beyond-atlas.json`: the Saloon's floor (stations 048-050), the landing with its inlaid TRADES HALL (018, 075, 076) and the end and main doors' linings (000, 048, 049; 016-019, 075, 076), projected as `project.py` does with occlusion from CPU depth maps of the mesh; two runs give identical files; published |
 
-    # $PUBLIC: packages/web/public/rooms/grand-hall/survey-2026-07-11 (its local/ folder is gitignored)
-    python3 $SURVEY/measure/first-floor.py --plan "FIRST 2010.pdf" --mesh data/mesh --out $PUBLIC/local/first-floor-2010.json
-    python3 $SURVEY/measure/beyond-doors.py --mesh data/mesh --first-floor $PUBLIC/local/first-floor-2010.json --out beyond-doors.json
+    # $PUBLIC: packages/web/public/rooms/grand-hall/survey-2026-07-11
+    python3 $SURVEY/measure/first-floor.py --plan "FIRST 2010.pdf" --mesh data/mesh --out $PUBLIC/first-floor-2010.json
+    python3 $SURVEY/measure/beyond-doors.py --mesh data/mesh --first-floor $PUBLIC/first-floor-2010.json --out beyond-doors.json
     python3 $SURVEY/project-beyond.py --beyond $SURVEY/measure/beyond-doors.json --out proj
 
 Edited rather than measured here: the Saloon's floor under the open leaf's pocket, which no

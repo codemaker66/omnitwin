@@ -234,9 +234,9 @@ development builds only) shows the room alone, posed through a window bridge for
   the GPU; loaded the first time a door opens, cross-fading in over 200 ms, at once under reduced
   motion; their median colours until then or if they fail), Atelier the first floor's walls in card
   to 1.2 m (its plan fetched when Atelier is chosen, its floor drawn only without the real sky,
-  where the city's caps do not give one; the plan is the venue's drawing, so it is built locally into
-  the survey's gitignored `local/` folder by `measure/first-floor.py` and not published until the
-  venue allows it, review F2: without it Atelier draws no first floor), Nocturne pools of warm light 1.5-2 m across (additive,
+  where the city's caps do not give one; the plan is the venue's drawing, published as
+  `first-floor-2010.json` beside the survey's photographs with the venue's permission: Blake, 22 Oct
+  2026: Trades Hall has given permission to publish the 2010 first-floor plan outline), Nocturne pools of warm light 1.5-2 m across (additive,
   faded out as the sun climbs). Two draws each style: Ashlar 1,358 triangles, Atelier 1,106,
   Nocturne 468 with its top. Not drawn: the Saloon's case 0.4 m proud of its east panelling (its
   floor stops at it), the landing's globe lamps and side balustrades; the balustrade is straight, as

@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Texture, type BufferGeometry, type Material } from "three";
 import { uv } from "three/tsl";
 import { NodeMaterial } from "three/webgpu";
-import { HAS_LOCAL_FIRST_FLOOR, firstFloorJson } from "./first-floor-fixture.js";
 
 // The atlas decodes through createImageBitmap, off the main thread; a fake
 // loader stands in for it, as in hall-photos.test.ts.
@@ -80,8 +79,8 @@ function context() {
   return { mood: new HallMoodUniforms(), swing: new DoorSwingUniforms(), section: new HallSectionUniforms(), sun: null };
 }
 
-// The venue's plan where this machine has built it, else a synthetic one (first-floor-fixture.ts).
-const firstFloor = () => parseFirstFloor(firstFloorJson());
+// The venue's plan as published (with Trades Hall's permission, 22 October 2026).
+const firstFloor = () => parseFirstFloor(JSON.parse(readFileSync(path.join(PUBLIC, "first-floor-2010.json"), "utf8")));
 
 describe("the beyond's floors", () => {
   it("lie at +1 cm, above the city's caps at the floor's level: the four doors' and the stairwell", () => {
@@ -248,8 +247,8 @@ describe("the first floor in card (Atelier)", () => {
       expect(insideAny(cx - normal.getX(a) * 0.01, cz - normal.getZ(a) * 0.01)).toBe(true);
       checked += 1;
     }
-    // Every side of the venue's plan where it is built locally (24 walls), else the synthetic plan's 3 walls.
-    expect(checked).toBeGreaterThan(HAS_LOCAL_FIRST_FLOOR ? 100 : 20);
+    // Every side of the venue's plan's 24 walls.
+    expect(checked).toBeGreaterThan(100);
   });
 });
 

@@ -19,10 +19,10 @@ building's footprint less its walls and the hall) as polygons in the planner fra
 the plan paths it came from.
 
 Usage:
-    python3 $SURVEY/measure/first-floor.py --plan "FIRST 2010.pdf" --mesh data/mesh --out $PUBLIC/local/first-floor-2010.json
+    python3 $SURVEY/measure/first-floor.py --plan "FIRST 2010.pdf" --mesh data/mesh --out $PUBLIC/first-floor-2010.json
 
-The output is the venue's drawing as vectors: it is written to the survey's gitignored local/ folder for a
-local build of the Atelier section and is not published until the venue allows it (review F2, 22 Oct 2026).
+The output is the venue's drawing as vectors, published beside the survey's photographs for the Atelier section
+(Blake, 22 Oct 2026: Trades Hall has given permission to publish the 2010 first-floor plan outline).
 Requirements: PyMuPDF (fitz), numpy, shapely 2, trimesh (mesh sections).
 """
 import argparse
@@ -47,7 +47,10 @@ DOOR_WALL = [  # (x from, x to, thickness)
     (7.0, HL, 1.14), (3.0, 7.0, 1.28), (0.73, 3.0, 1.14), (-0.72, 0.73, 1.09), (-6.0, -0.72, 1.14),
     (-8.33, -6.0, 0.46), (-9.41, -8.33, 0.78), (-HL, -9.41, 0.78),
 ]
-CITY_CUTOUT = (11.2, 5.95)
+# The city model's cut-out for the hall (context/build_context.py; hall-context.ts CITY_SITE_CUT): |x| 11.2, the
+# street face at z -6.24, the back at z 5.95. The street side lies under the window wall's body (z to -6.245), so the
+# ring there is the body's whichever line it is cut at.
+CITY_CUTOUT = (11.2, 6.24, 5.95)  # half x, street (-z), back (+z)
 CUTOUT_MARGIN = 0.01
 
 
@@ -171,7 +174,7 @@ def hall_body_outline():
     parts.append(box(-HL - T_FIRE, HW, -HL, HW + 0.78))
     body = unary_union(parts)
     ring = unary_union([body, box(-CITY_CUTOUT[0] + CUTOUT_MARGIN, -CITY_CUTOUT[1] + CUTOUT_MARGIN,
-                                  CITY_CUTOUT[0] - CUTOUT_MARGIN, CITY_CUTOUT[1] - CUTOUT_MARGIN)])
+                                  CITY_CUTOUT[0] - CUTOUT_MARGIN, CITY_CUTOUT[2] - CUTOUT_MARGIN)])
     return body, ring
 
 
