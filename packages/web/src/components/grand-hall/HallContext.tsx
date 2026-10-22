@@ -12,6 +12,8 @@
 // the model. The city's shader is built against one-texel "no lamp" maps in
 // the same formats, and the real ones replace them when they arrive, so
 // nothing recompiles; if either file fails, the city shows without its lamps.
+// The lit openings across Glassford Street (hall-facade-lights.ts) load
+// beside them, and either can fail without the other.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -26,6 +28,8 @@ import {
   parseStreetLight, resetStreetLightField, type StreetLamp,
 } from "./hall-street-light.js";
 import { HallStreetLights } from "./HallStreetLights.js";
+import { FACADE_LIGHTS_URL, parseFacadeLights, type FacadeLight } from "./hall-facade-lights.js";
+import { HallFacadeLights } from "./HallFacadeLights.js";
 
 async function fetchOk(url: string): Promise<Response> {
   const response = await fetch(url);
@@ -61,6 +65,7 @@ export function HallContext(): ReactElement | null {
   const caster = useMemo(createContextCasterMaterial, []);
   const aimed = useRef<[number, number, number] | null>(null);
   const [lamps, setLamps] = useState<readonly StreetLamp[] | null>(null);
+  const [facades, setFacades] = useState<readonly FacadeLight[] | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -110,6 +115,23 @@ export function HallContext(): ReactElement | null {
     };
   }, [invalidate, lightMaps]);
 
+  // The lit openings across the street, beside the lamps and independent of them.
+  useEffect(() => {
+    let live = true;
+    fetchJson(FACADE_LIGHTS_URL)
+      .then((json) => {
+        if (!live) return;
+        setFacades(parseFacadeLights(json));
+        invalidate();
+      })
+      .catch(() => {
+        // Without them the windows look onto the city's own random windows.
+      });
+    return () => {
+      live = false;
+    };
+  }, [invalidate]);
+
   useEffect(() => {
     const placeholders: readonly Texture[] = [lightMaps.pool.value, lightMaps.head.value];
     return () => { for (const placeholder of placeholders) placeholder.dispose(); };
@@ -151,6 +173,7 @@ export function HallContext(): ReactElement | null {
       <mesh geometry={geometry} material={material} frustumCulled={false} raycast={() => undefined} />
       <mesh geometry={geometry} material={caster} layers={HALL_SUN_CASTER_LAYER} castShadow frustumCulled={false} raycast={() => undefined} />
       {lamps !== null && <HallStreetLights lamps={lamps} sun={sun} />}
+      {facades !== null && <HallFacadeLights lights={facades} />}
     </group>
   );
 }
