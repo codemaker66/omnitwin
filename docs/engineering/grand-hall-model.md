@@ -63,11 +63,27 @@ development builds only) shows the room alone, posed through a window bridge for
   each step of the fade shows as much change as the next; where a fragment's detail is drawn no
   larger than the device's atlas draws it (the detail's mip level 1.37 on a computer, 2.37 on a
   phone), it gives way to the atlas over three quarters of a level. Never on glass. A tile that fails
-  stays on the atlas and is retried after 2, 8 and 32 s. Nothing is shown while tiles arrive: the
+  stays on the atlas and is retried after 2, 8 and 32 s; a fetch whose tile has not been wanted for 8
+  drawn frames and 300 ms is abandoned, not counted as a failure; a decoder that cannot run (no module
+  workers or OffscreenCanvas, iOS Safari before 16.4) leaves the layer off, and one that stops (its
+  worker died, or it cannot decode at all) stops the layer rather than fetching every tile again. The
+  shader reads the slots' array only where a tile shows (a branch round an explicitly graded sample,
+  the gradients taken outside it): everywhere else a wall fragment pays one index texel. The layer
+  outlives a change of sky (`useHallDetail`: its worker, tiles and array stay while the materials are
+  rebuilt over them, as do the photographs and the beyond's photographs), its one wake timer keeps
+  the earliest deadline asked for (`DetailWake`), and it asks whether motion is reduced only when a
+  tile arrives or fades. Nothing is shown while tiles arrive: the
   walls simply sharpen, frames being requested only while a tile fades or waits to be copied. At
   Blake's deacon-board pose the boards read 95.7% of their 256 names, trades and years (S4a's atlas
   20%), and from a phone 1.9 m away 91.8% (0% on its half-size atlas); method and the other
   measurements in the [22 October session log](../sessions/2026-10-22.md).
+- **The relief's arrival** (`hall-arrival.ts`, `hall-slices.ts`): what the relief makes is built as
+  it arrives in slices of about 8 ms, each handing the thread back: the relief as drawn, the walls'
+  geometry (a material's typed arrays a step), the section's cap and the slicer's index, each cached
+  as it finishes, so the render and its effects find them built. At once that was one task of
+  150-250 ms on a desktop CPU and 220-300 ms (with this pass's leaner loops; twice that before) at 4x
+  CPU on the phone profile; sliced, no slice over 41 ms there (22 October, long-task trace and the
+  slices' own timings, which development builds keep in `window.__venHallArrivalSlices`).
 - **Doors** (`hall-doors.ts`): the four doorways' leaves, modelled so they can open: a pair of
   45 mm leaves hung at the hall face in each (their face where the relief has the shut leaves, 1.3
   to 2.9 cm back; the main door's at -0.03 like its twins, no longer -0.27), and the end door's
@@ -88,7 +104,9 @@ development builds only) shows the room alone, posed through a window bridge for
   leaf passes through the other. The swing is in the vertex shader about each leaf's hinge
   (`aHinge`, `doorLeafPosition`), normals with it, with the last drawn frame's angle as the motion
   vectors' previous position; nothing moves on the CPU, frames are requested only while a door
-  moves, and under reduced motion a door is at its target in the frame its target changes. A cut
+  moves, and under reduced motion a door is at its target in the frame its target changes. A raycast
+  (a tape measure, a pick) meets the leaves where they are drawn (`raycastDoorLeaves`: each triangle
+  turned as the shader turns it, what stands above the cut left out). A cut
   below a leaf's top discards what stands above it and lays a section on the leaf at the cut. The
   room's captured reflections and the sun's casters see the doors shut. Four draws (the photograph
   matte and glossy, mahogany, brass; the walls lost the main door's two) and 1.26k triangles.
@@ -101,7 +119,10 @@ development builds only) shows the room alone, posed through a window bridge for
   seed as an unsigned integer (WGSL `u32()`: a negative seed is 0, a fraction is dropped), so every
   row and column index is raised by `FLOOR_SEED_OFFSET` first. Without it the window half (z < 0)
   drew one stagger and one length for nearly every row: rendered on 19 October, 98% of its end
-  joints lined up with the next row's against 2% on the door side.
+  joints lined up with the next row's against 2% on the door side. While the chandeliers are put
+  away (in Plan, and in the overview from high up) the floor's reflections of them soften
+  (roughness to 0.62, eased): sharp, they read as five spotlights on the floor with nothing to cast
+  them.
 - **Cut walls** (`hall-wall-body.ts`, `hall-section.ts`): every wall has a body as thick as the wall
   (`HALL_WALL_THICKNESS`: the window wall 0.95 m from the 2010 plan, the door wall 1.14 m from the
   scan, the end and fireplace walls 1.21 m from the plan only; `HALL_WALL_STRETCHES`: the door wall's
@@ -142,27 +163,42 @@ development builds only) shows the room alone, posed through a window bridge for
   pixels (S3b's ray march). Every relief triangle carries `aOpening`, the window or door whose clear
   outline holds its centroid. The finish is a preset (`SECTION_PRESETS`, `?section=`, nothing
   remembered): Ashlar by default, pale sandstone outside with no joints (art direction: no
-  photograph of the facade gives its coursing), the cut a warm stone core with a lime-plaster line at
-  the room edge (mahogany through the dado, oak through the attic; over the relief the whole cap is
-  that material) and a fine arris at the outer edge, the lines never thinner than 0.75 px. The room
-  edge carries an 8 mm gilt line (the coffers' gilt, `#a58350`, at twice its average brightness, never
-  under 1.5 px), and the room's face under every cut a gilt band 8 mm deep and a soft shadow below it
-  (35% at most, gone by 4 cm; `hall-cut-lines.ts`), on upright faces and not on what stands in a
-  window; every line box-filtered and, once widened past its width, dimmed to carry the same light.
+  photograph of the facade gives its coursing), the cut drawn as the masonry a 1790s sandstone wall
+  is built of (`masonrySection`, `MASONRY`; art direction, since nothing surveyed the walls' insides):
+  the room's lime plaster (25 mm; mahogany through the dado, oak through the attic; over the relief
+  the whole cap is that material) as one band never under 1.5 px and widened whole, a coursed rubble
+  core (courses 0.2 m across the wall that wander every 1.3 m, stones 0.24-0.5 m, each its own shade),
+  an outer leaf of dressed blocks 0.26 m deep against the outer face, 9 mm mortar joints that fade
+  out where a pixel spans more than a joint and a half, and the outer arris catching the light, never
+  under 1.5 px. The room line runs straight along the wall's plane (along the relief's surface where
+  that lies behind it): S3b's gilt line followed the relief's profile and beaded along every diagonal
+  edge (0.29 gaps per 100 px on a phone; beaded in stills on a computer too), and a light arris a
+  pixel wide beside the dark plaster band beaded the same way. Atelier keeps a gilt line on the cut's
+  room edge, straight, never under 1.5 px. The near walls are cut through the dado rail
+  (`HALL_CUTS.near`, 1.92 m, 3 cm under its top, where the door wall's relief stands furthest proud:
+  5.0 cm median, every centimetre in section), so the cut's edge is the rail's own face; at 1.96 m its
+  top ledge stood a pixel beyond the cut. The room's face under every cut carries a gilt band 8 mm
+  deep and a soft shadow below it (35% at most, gone by 4 cm; `hall-cut-lines.ts`), on upright faces
+  and not on what stands in a window; every line box-filtered and, once widened past its width,
+  dimmed to carry the same light (a band of material, the plaster, is widened whole).
   Ashlar's outer faces other than the street front wear the spaces they look into, as photographed
-  (`INTERIOR_FACES`: the F.16 corridor's dado to 1.2 m under a gilt band and its wall above, the
-  Saloon's mahogany panelling; beyond the end and fireplace walls, which nobody surveyed, the
-  corridor's wall as art direction), and the end and main doors' linings are their photographs.
+  (`INTERIOR_FACES`: the F.16 corridor's dado to 1.2 m under a gilt band and its wall above, with its
+  skirting and the rail's lit edge and shadow; the Saloon's mahogany panelling; beyond the end and
+  fireplace walls, which nobody surveyed, the corridor's wall as art direction, in shade at 55%), and
+  the end and main doors' linings are their photographs (read once a fragment: the lining picks its
+  texel's place and the atlas is sampled there). Every outer face darkens toward its foot (to 55% at
+  the floor, gone by 0.6 m) and takes a faint breadth of tone (`faceShading`).
   Atelier is the city's card model: the city's card colours (`CARD`, copied from `hall-context.ts`),
   lit as the city is (`cardLit`) with the room's glow on the cut, card leaves with their panels
   scored. Nocturne is ebonised (linear 0.012/0.009/0.007) under a moulded top of dark polished stone,
   60 mm high and 30 mm proud of each face, gilt lines along both crests (`hall-coping.ts`, 460
   triangles; a real reflection on desktops, a drawn glint toward the dome fitting on phones); the
   top is a presentation device, not the building. The faces are unlit, the mood's light baked into
-  their colour: the cut by the room's ambient, its chandeliers falling off from the wall's plane
-  (`0.10 + 0.33 exp(-d / 0.4 m)` of their light; a corner block by its distance behind the nearer
-  wall), the sky over the lifted ceiling, and under the real sky the sun or moon on its level tops with
-  no shadow; the outer faces the sky and a little of the room's glow. The hall stands in a plinth that is a ring round the floor, never a slab under it:
+  their colour: the cut by 55% of the room's ambient (the inside of a wall, reached by the room's
+  light only over its edge; lit fully it read as lit card), its chandeliers falling off from the
+  wall's plane (`0.04 + 0.42 exp(-d / 0.4 m)` of their light; a corner block by its distance behind
+  the nearer wall), the sky over the lifted ceiling, and under the real sky the sun or moon on its
+  level tops with no shadow; the outer faces the sky and a little of the room's glow. The hall stands in a plinth that is a ring round the floor, never a slab under it:
   its top lies at the floor's level only outside the floor, out to the walls' outer faces (and a
   centimetre short of the city's cut-out where a wall is thinner than that), so it is the slab under
   the bodies and the floor of the firebox; its outer faces drop 0.42 m, and under the floor's edge
@@ -180,19 +216,27 @@ development builds only) shows the room alone, posed through a window bridge for
   (`bodyNormal`); check `?pipeline=ao` after touching their shaders.
 - **Beyond the doors** (`hall-beyond.ts`, `hall-neighbours.ts`; data in `tools/grand-hall-survey`,
   "Beyond the doors"): each open door shows a short stub of the space beyond it, its floor at
-  +1 cm (`BEYOND_FLOOR_Y`, clear of the city's caps) fading out from 30% to 96% of its reach from
-  the doorway's centre (2.4 m; the fire exit 1.2 m) into the city under the real sky or the dark
-  without it, and present only as its door opens. The four spaces: D1 the Saloon, D2 the landing at
-  the head of Stair 5 with its inlaid TRADES HALL, balustrade (1,276 triangles with the Saloon's dado)
-  and stairwell into the dark, both from the scan; D3 the east end of F.16 and D4 Stair 7's landing
-  from the 2010 FIRST plan (`first-floor-2010.json`, registered to the scan). Light falls out of each
-  open door (`spillLight`: strongest straight out, half of the chandeliers' light, 0.9 m), added to
-  the photographs relit like every photograph of the hall (`relitBeyond`). The section style draws
+  +1 cm (`BEYOND_FLOOR_Y`, clear of the city's caps) dissolving from 25% to 96% of its reach from
+  the doorway's centre (2.4 m; the fire exit 1.2 m), darkening as it thins, into the city under the
+  real sky or the dark without it, and present only as its door opens. The four spaces: D1 the
+  Saloon, D2 the landing at the head of Stair 5 with its inlaid TRADES HALL, balustrade (1,276
+  triangles with the Saloon's dado; its oak, sRGB 100/68/48 as panorama 076 shows it) and stairwell
+  into the dark, both from the scan; D3 the fireplace end of F.16 (its lobby in a square metre of the
+  landing's photographed stone, the same corridor) and D4 Stair 7's landing from the 2010 FIRST plan.
+  Light falls out of each open door as a lit doorway throws it on a floor at night (`spillLight`,
+  `spillShare`: a band as wide as the doorway at its threshold, widening 0.7 m a side for each metre
+  out, soft at its sides, dimming as 1 / (1 + (d / 1.1 m)^2), 45% of the chandeliers' light). The
+  photographs are relit by their own lamps (5% of the chandeliers' light at night, warm as they are)
+  and daylight, the mood's ambient only as a level of light (`relitBeyondPhoto`), and rolled off
+  toward 40% of the photograph (`BEYOND_MAX_LIFT`): lifted freely, the spill burned D3's floor to a
+  cream oval brighter than the hall's floor (review LOOK-2). The section style draws
   them: Ashlar the photographed floors (`beyond-832.webp`, `beyond-416.webp` on phones: 693 KB on
   the GPU; loaded the first time a door opens, cross-fading in over 200 ms, at once under reduced
   motion; their median colours until then or if they fail), Atelier the first floor's walls in card
   to 1.2 m (its plan fetched when Atelier is chosen, its floor drawn only without the real sky,
-  where the city's caps do not give one), Nocturne pools of warm light 1.5-2 m across (additive,
+  where the city's caps do not give one; the plan is the venue's drawing, so it is built locally into
+  the survey's gitignored `local/` folder by `measure/first-floor.py` and not published until the
+  venue allows it, review F2: without it Atelier draws no first floor), Nocturne pools of warm light 1.5-2 m across (additive,
   faded out as the sun climbs). Two draws each style: Ashlar 1,358 triangles, Atelier 1,106,
   Nocturne 468 with its top. Not drawn: the Saloon's case 0.4 m proud of its east panelling (its
   floor stops at it), the landing's globe lamps and side balustrades; the balustrade is straight, as
@@ -261,8 +305,12 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   sun in their own baked units (`sunIrradiance`).
 - **Windows** (`hall-site.ts`, `hall-skyline.ts`, `hall-sun-times.ts`): the window wall faces
   101.1° true (from the 2020 LiDAR). Each window's skyline, the elevation of what stands across
-  the street from 11° to 191°, was measured from the LiDAR; with the reveals' limits (77° for the
-  arches, 66° for the sashes) it decides when sun reaches the floor, the gold bars on the dial.
+  the street from 11° to 191°, was measured from the LiDAR; with the reveals' limits it decides when
+  sun reaches the floor, the gold bars on the dial. The limits are the reveals as drawn
+  (`windowRevealLimit`: the outer opening's width over its depth from the room's plane to the outer
+  face, about 71° for the arches and 52° for the sashes), so the dial's times and the sun the render
+  draws agree; with the 0.62 m reveal assumed before (77° and 66°) a morning ended 14-20 minutes later
+  on the dial than on the floor (NOAA check, 22 October).
 - **Glass** (`hall-glazing.ts`, `HallGlazingUniforms` in `hall-materials.ts`): under the real sky
   the walls' photographs are cut where the atlas marks glass (alpha below 0.75; the window boards
   stay; alpha to coverage on a multisampled phone pass), and the drawn city and sky show through

@@ -350,6 +350,8 @@ export const INTERIOR_FACES = {
   band: 0.06,
   /** The corridor's skirting (panoramas 075, 076: about a sixth of the dado). */
   skirting: 0.2,
+  /** The unsurveyed faces' share of the corridor wall's light (art direction). */
+  unsurveyedShade: 0.55,
   /** The Saloon begins at its face toward -x (planner x; its north-north-east face on the earth). */
   saloonFrom: 7.45,
 } as const;
@@ -695,7 +697,10 @@ function interiorFaceColour(mood: HallMoodUniforms, street: Node<"vec3">, textur
   const corridor = height.lessThan(f.dadoTop).select(dado, band.select(gilt, srgb255(f.corridorWall)));
   const grain = textures === null ? float(1) : mahoganyGrain(textures, vec2(p.x.add(p.z), p.y).mul(1.6));
   const panelling = srgb255(f.saloonPanelling).mul(grain);
-  const interior = doorSide.select(saloon.select(panelling, corridor), srgb255(f.corridorWall));
+  // Beyond the end and fireplace walls nobody surveyed: their faces are the
+  // corridor's wall as art direction, and lie in shade, so a face the full
+  // height of the hall reads as the dark side of a wall, not a lit block.
+  const interior = doorSide.select(saloon.select(panelling, corridor), srgb255(f.corridorWall).mul(f.unsurveyedShade));
   const mouldings = mouldingLight(height, [f.skirting, f.dadoTop + f.band]).mul(doorSide.and(saloon.not()).select(float(1), float(0)))
     .add(float(1)).mul(mouldingShadow(height, [f.dadoTop, f.dadoTop + f.band]).mul(doorSide.and(saloon.not()).select(float(1), float(0))).oneMinus());
   return n.z.lessThan(-0.5).select(street, relitBeyond(interior, mood, vec3(0, 0, 0)).mul(mouldings).mul(faceShading(height)));
