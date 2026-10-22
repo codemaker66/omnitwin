@@ -5,10 +5,11 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-10-22.
+Updated: 2026-10-23.
 
 ## Latest task notes
 
+- 2026-10-23 #140 merged and live (no task number): setup-sheet ticks belong to the event the room was set for (migration `0101_sheet_ticks_per_event`, `/health/ready` 99/99). Ticks stored before it keep no event and count towards none; a sheet open before 00:20 on 23 October needs a reload. [22 October log](../sessions/2026-10-22.md).
 - 2026-10-22 T-672 started: Blake set 31 October (a Saturday) for the whole project, "completely finished", and chose every goal as written on top of the invite-only pilot. The "Project status assessment" session leads; Session orchestration keeps the merge queue and the GPU; Codex keeps Goal 21. Baseline measured today: web live at master `7bc1bb82`, API stuck on `ced4a1bb` (Railway stopped deploying after #148 and its login expired, so #145's funnel endpoints, #139 and #149's API half are not live); pilot gates open (uptime, restore drill, branch protection, Clerk, key rotation, legal review, staff invitations, a real event, acceptance). [Plan 19](../plan/19-EVERYTHING-BY-31-OCTOBER-2026-10-22.md), [22 October log](../sessions/2026-10-22.md).
 
 - 2026-10-20 T-671 the planner's new chrome (Blake approved the design on 20 Oct: "Build this design"), built in 21 slices behind `?chrome=v2`. Slices 1 (tokens, #150), 2 (springs, #151) and 4 (shared primitives and `/dev/planner-chrome`, #155) wait for their merge slots; slice 3 adds the sound palette, the speaker and a shared Popover. Sound ships Off until Blake answers D1. Measured in Chromium, the palette's levels hold exactly once a trim takes back the limiter's +6.6 dB makeup gain, but the palette as specified breaks spec 9's own balance and 150 Hz rules; a balanced alternative goes to his ear test with D1. [20 October log](../sessions/2026-10-20.md).
