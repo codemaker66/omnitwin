@@ -28,8 +28,8 @@ vi.mock("three", async (importOriginal) => {
 });
 
 const {
-  BEYOND_ATLAS, BEYOND_DOORWAYS, BEYOND_FADE_END, BEYOND_FADE_START, BEYOND_PHOTO_FADE, BEYOND_REACH, BEYOND_SURFACE, CARD, CARD_PART, CARD_WALL_HEIGHT,
-  HallBeyondPhotos, POOL, SPILL, beyondAtlasUrl, beyondFade, beyondPresence, buildBeyondFloors, buildBeyondPools, buildBeyondSolids,
+  BEYOND_ATLAS, BEYOND_DOORWAYS, BEYOND_FADE_END, BEYOND_FADE_START, BEYOND_MAX_LIFT, BEYOND_PHOTO_FADE, BEYOND_REACH, BEYOND_SURFACE, CARD, CARD_PART, CARD_WALL_HEIGHT,
+  HallBeyondPhotos, POOL, SPILL, beyondAtlasUrl, beyondFade, beyondLift, beyondPresence, buildBeyondFloors, buildBeyondPools, buildBeyondSolids,
   buildFirstFloorCard, createBeyondFloorMaterial, createBeyondPoolMaterial, createBeyondSolidMaterial, createFirstFloorCardMaterial,
   spillShare, triangleCount,
 } = await import("../hall-beyond.js");
@@ -116,6 +116,23 @@ describe("the beyond's floors", () => {
     expect(beyondPresence(0)).toBe(0);
     expect(beyondPresence(Math.PI / 2)).toBe(1);
     expect(beyondPresence(Math.PI / 4)).toBeGreaterThan(0.2);
+  });
+
+  it("keep the warmth of the room's light falling on them, however strongly it lifts them (the skeptic's beyond-cool)", () => {
+    const luma = (c: readonly number[]): number => 0.2126 * (c[0] ?? 0) + 0.7152 * (c[1] ?? 0) + 0.0722 * (c[2] ?? 0);
+    // The chandeliers' warm spill near a doorway, many times the scan's light: rolled off channel by channel it came
+    // out grey (every channel at the ceiling), and the photographed stone's own cool cast showed.
+    for (const strength of [0.5, 2, 8, 30]) {
+      const ratio = [1.0 * strength, 0.72 * strength, 0.4 * strength] as const;
+      const lifted = beyondLift(ratio);
+      expect(lifted[0] / lifted[2]).toBeCloseTo(ratio[0] / ratio[2], 6);
+      expect(luma(lifted)).toBeLessThanOrEqual(BEYOND_MAX_LIFT + 1e-12);
+    }
+    // A grey light stays grey, lifted toward the ceiling and never past it.
+    const grey = beyondLift([1, 1, 1]);
+    expect(grey[0]).toBeCloseTo(grey[2], 9);
+    expect(grey[0]).toBeCloseTo(BEYOND_MAX_LIFT * (1 - Math.exp(-1 / BEYOND_MAX_LIFT)), 9);
+    expect(beyondLift([0, 0, 0])).toEqual([0, 0, 0]);
   });
 
   it("take the room's light falling out of each door as a lit doorway throws it: a widening band, dimming as it goes", () => {

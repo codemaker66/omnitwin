@@ -251,14 +251,28 @@ export const BEYOND_MAX_LIFT = 0.4;
  */
 export const BEYOND_OWN_LAMPS = 0.05;
 
-/** The light-over-scan ratio rolled off toward BEYOND_MAX_LIFT (the shader's rule, per channel). */
-export function beyondLift(ratio: number): number {
-  return BEYOND_MAX_LIFT * (1 - Math.exp(-Math.max(ratio, 0) / BEYOND_MAX_LIFT));
+/** Linear-light luminance weights (Rec. 709), as TSL's luminance. */
+const LUMA = [0.2126, 0.7152, 0.0722] as const;
+
+/**
+ * The light-over-scan ratio (per channel) rolled off toward BEYOND_MAX_LIFT
+ * by its luminance, keeping its colour: the shader's rule. Rolled off channel
+ * by channel, a strong warm spill reached the ceiling in every channel at
+ * once and came out grey, so the photographed stone's own cool cast showed
+ * and the lit floors past the doors read as cool blue-grey ovals (the
+ * skeptic's beyond-cool, 22 October).
+ */
+export function beyondLift(ratio: readonly [number, number, number]): [number, number, number] {
+  const r: [number, number, number] = [Math.max(ratio[0], 0), Math.max(ratio[1], 0), Math.max(ratio[2], 0)];
+  const level = Math.max(LUMA[0] * r[0] + LUMA[1] * r[1] + LUMA[2] * r[2], 1e-4);
+  const lifted = BEYOND_MAX_LIFT * (1 - Math.exp(-level / BEYOND_MAX_LIFT));
+  return [r[0] * lifted / level, r[1] * lifted / level, r[2] * lifted / level];
 }
 
 /**
  * relitBeyond for the photographed spaces beyond, rolled off toward
- * BEYOND_MAX_LIFT (beyondLift). The spaces are lit by their own lamps, warm
+ * BEYOND_MAX_LIFT by the light's luminance, keeping its colour (beyondLift).
+ * The spaces are lit by their own lamps, warm
  * as the hall's chandeliers, and by their windows' daylight; the mood's
  * ambient reaches them only as a level of light, not as the night sky's blue,
  * which (under the night's cool grade) turned the Saloon's oak a cold grey.
@@ -270,8 +284,10 @@ export function relitBeyondPhoto(colour: Node<"vec3">, mood: HallMoodUniforms, e
   const own = vec3(ambient, ambient, ambient)
     .add(mood.chandelier.rgb.mul(mood.chandelierIntensity).mul(BEYOND_OWN_LAMPS))
     .add(mood.daylight.rgb.mul(mood.daylightIntensity).mul(BEYOND_CHANNELS.daylight));
-  const ratio = own.add(extra).add(k).div(beyondScanLight().add(k));
-  return colour.mul(float(1).sub(exp(ratio.max(0).div(-BEYOND_MAX_LIFT))).mul(BEYOND_MAX_LIFT));
+  const ratio = own.add(extra).add(k).div(beyondScanLight().add(k)).max(0);
+  const level = luminance(ratio).max(1e-4);
+  const lifted = float(1).sub(exp(level.div(-BEYOND_MAX_LIFT))).mul(BEYOND_MAX_LIFT);
+  return colour.mul(ratio.mul(lifted.div(level)));
 }
 
 /** The painted mahogany's mean luminance (hsl(12, 55%, 17%), linear), against which its grain is read. */
