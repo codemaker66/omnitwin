@@ -74,7 +74,7 @@ describe("TapeMeasure store integration", () => {
     expect(wallHit).toBeNull();
   });
 
-  it("Escape clears all guidelines", () => {
+  it("clearAll removes every guideline", () => {
     useGuidelineStore.getState().activate();
 
     const hit1 = detectWallHit([-halfWidth, 3, 2], "wall-left");

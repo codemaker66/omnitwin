@@ -77,23 +77,20 @@ describe("CanvasLayerControls", () => {
     expect(walk.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("leaves walk mode on Escape", () => {
-    useEditorStore.setState({ space: spaceWith("reception-room") });
-    useCockpitStore.getState().setWalkMode(true);
-    render(<CanvasLayerControls />);
-    fireEvent.keyDown(window, { code: "Escape" });
-    expect(useCockpitStore.getState().walkMode).toBe(false);
-  });
-
-  it("keeps Interior active when Escape belongs to an input or modal", () => {
+  // Spec 4.5 (T-671 slice 5): Esc never leaves Walk; the Interior key does.
+  it("stays in walk mode on Escape, from the room, an input or a dialog", () => {
     useEditorStore.setState({ space: spaceWith("reception-room") });
     useCockpitStore.getState().setWalkMode(true);
     const view = render(<><CanvasLayerControls embedded /><input aria-label="Furniture name" /></>);
-    fireEvent.keyDown(screen.getByRole("textbox"), { code: "Escape" });
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape", code: "Escape" });
     expect(useCockpitStore.getState().walkMode).toBe(true);
     view.rerender(<><CanvasLayerControls embedded /><div role="dialog" aria-modal="true">Event details</div></>);
-    fireEvent.keyDown(window, { code: "Escape" });
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
     expect(useCockpitStore.getState().walkMode).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Interior" }));
+    expect(useCockpitStore.getState().walkMode).toBe(false);
   });
 
   it("drives the same capture and interior state from the embedded controls", () => {

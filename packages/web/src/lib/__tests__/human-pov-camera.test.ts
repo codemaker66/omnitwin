@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   HUMAN_POV_MAX_PITCH_RAD,
   computeHumanPovLookAngles,
-  isHumanPovExitKey,
   isHumanPovPointerButton,
 } from "../human-pov-camera.js";
 
@@ -35,10 +34,5 @@ describe("human POV camera controls", () => {
     expect(isHumanPovPointerButton(2)).toBe(true);
     expect(isHumanPovPointerButton(0)).toBe(false);
     expect(isHumanPovPointerButton(1)).toBe(false);
-  });
-
-  it("uses Escape as the explicit exit back to planner camera mode", () => {
-    expect(isHumanPovExitKey("Escape")).toBe(true);
-    expect(isHumanPovExitKey("KeyE")).toBe(false);
   });
 });

@@ -304,6 +304,91 @@ describe("house-tokens.css — dark-theme contrast audit (02 §3 color-blind law
   });
 });
 
+// ---------------------------------------------------------------------------
+// T-671 — the planner's chrome (the final direction, 20 Oct 2026). Its one
+// ground is forest lacquer at 95 %: opaque enough that its words never depend
+// on the room, but not quite opaque, so the audit composites each end of the
+// gradient over the brightest and the darkest room there can be (white by day,
+// black by night) and holds the inks there. Ink 1 and ink 2 carry every title,
+// figure and label, and must reach 7:1 on both grounds; ink 3 sets only the
+// 11px capitals of eyebrows and reaches 7:1 by night and AA by day (6.9:1 over
+// pure white, which no frame of the room actually shows). The status words
+// that sit on lacquer (copper for live text; sage, amber and brick with a
+// word beside them) and the cream focus ring are held on both grounds too.
+// ---------------------------------------------------------------------------
+
+const PLANNER_CHROME_CANON: Readonly<Record<string, string>> = {
+  "--house-lacquer-top": "rgba(24, 38, 31, 0.95)",
+  "--house-lacquer-bottom": "rgba(14, 23, 18, 0.95)",
+  "--house-scrim-room": "5 9 7",
+  "--house-radius-surface": "10px",
+  "--house-shadow-e1": "inset 0 1px 0 rgba(255, 250, 240, 0.05), 0 14px 34px -14px rgba(0, 0, 0, 0.62), 0 2px 6px rgba(0, 0, 0, 0.24)",
+  "--house-shadow-e2": "inset 0 1px 0 rgba(255, 250, 240, 0.06), 0 28px 64px -22px rgba(0, 0, 0, 0.74), 0 4px 14px rgba(0, 0, 0, 0.28)",
+};
+
+/** A lacquer stop composited over a room ground, as an opaque #rrggbb. */
+function lacquerOver(lacquer: string, ground: "#ffffff" | "#000000"): string {
+  const [r, g, b] = compositeOver(parseColor(lacquer), parseColor(ground).rgb);
+  const hex = (channel: number): string => Math.round(channel).toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+describe("house-tokens.css — the planner's chrome (T-671)", () => {
+  const stops = ["--house-lacquer-top", "--house-lacquer-bottom"] as const;
+  const grounds = [["a white day room", "#ffffff"], ["a black night room", "#000000"]] as const;
+
+  it("defines the lacquer, the scrim, the surface radius and the two elevations at the design's values", async () => {
+    const tokens = await readTokens(HOUSE_CSS, "--house-");
+    for (const [name, value] of Object.entries(PLANNER_CHROME_CANON)) {
+      expect(tokenValue(tokens, name), name).toBe(value);
+    }
+  });
+
+  it("holds ink 1 and ink 2 at 7:1 on both ends of the lacquer, by day and by night", async () => {
+    const tokens = await readTokens(HOUSE_CSS, "--house-");
+    for (const stop of stops) {
+      for (const [where, ground] of grounds) {
+        const surface = lacquerOver(tokenValue(tokens, stop), ground);
+        for (const ink of ["--house-forest-ink-1", "--house-forest-ink-2"] as const) {
+          const ratio = contrastRatio(tokenValue(tokens, ink), surface);
+          expect(ratio, `${ink} on ${stop} over ${where}`).toBeGreaterThanOrEqual(7);
+        }
+      }
+    }
+  });
+
+  it("holds ink 3 (eyebrows only) at 7:1 by night and AA by day", async () => {
+    const tokens = await readTokens(HOUSE_CSS, "--house-");
+    for (const stop of stops) {
+      const night = contrastRatio(tokenValue(tokens, "--house-forest-ink-3"), lacquerOver(tokenValue(tokens, stop), "#000000"));
+      const day = contrastRatio(tokenValue(tokens, "--house-forest-ink-3"), lacquerOver(tokenValue(tokens, stop), "#ffffff"));
+      expect(night, `ink 3 on ${stop} by night`).toBeGreaterThanOrEqual(7);
+      expect(day, `ink 3 on ${stop} by day`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("keeps live copper, the three status words and the cream focus ring legible on lacquer", async () => {
+    const tokens = await readTokens(HOUSE_CSS, "--house-");
+    for (const stop of stops) {
+      for (const [where, ground] of grounds) {
+        const surface = lacquerOver(tokenValue(tokens, stop), ground);
+        for (const word of ["--house-copper-lit", "--house-sage-lit", "--house-amber-lit", "--house-brick-lit"] as const) {
+          expect(contrastRatio(tokenValue(tokens, word), surface), `${word} on ${stop} over ${where}`).toBeGreaterThanOrEqual(4.5);
+        }
+        // Indicators, rings and the selection outline: non-text, so 3:1.
+        for (const mark of ["--house-cream", "--house-accent-copper-bright", "--house-forest-edge"] as const) {
+          expect(contrastRatio(tokenValue(tokens, mark), surface), `${mark} on ${stop} over ${where}`).toBeGreaterThanOrEqual(3);
+        }
+      }
+    }
+  });
+
+  it("keeps the room scrim an RGB triple, so every veil states its own alpha", async () => {
+    const tokens = await readTokens(HOUSE_CSS, "--house-");
+    expect(tokenValue(tokens, "--house-scrim-room")).toMatch(/^\d{1,3} \d{1,3} \d{1,3}$/);
+  });
+});
+
 describe("house-tokens.css — zero-visual-regression aliases", () => {
   it("keeps every high-delta legacy token at today's exact value", async () => {
     const tokens = await readTokens(HOUSE_CSS, "--vv-");
@@ -547,7 +632,7 @@ const REM_FLOOR_HANDOFF: Readonly<Record<string, string>> = {};
  * landing makes this list wrong and fails too.
  */
 const PX_FLOOR_HANDOFF: readonly string[] = [
-  "components/TapeMeasure.tsx:52 inline fontSize 10px",
+  "components/TapeMeasure.tsx:53 inline fontSize 10px",
   "components/WallTogglePanel.tsx:107 inline fontSize 10px",
 ];
 

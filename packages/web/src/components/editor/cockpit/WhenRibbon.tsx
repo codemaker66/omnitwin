@@ -25,6 +25,7 @@ import {
   widthPx,
 } from "../../../pages/diary/lib/board-time.js";
 import { prefersReducedMotion } from "../../../lib/reduced-motion.js";
+import { useEscapeLayer } from "../../../lib/planner-keys.js";
 import { stepSpring, isSpringSettled, type SpringConfig, type SpringState } from "../../../lib/springs.js";
 import {
   beginRibbonDrag,
@@ -709,14 +710,18 @@ function RibbonBody({
         }
         return;
       }
-      if (event.key === "Escape" && keyboardDrag !== null) {
-        event.preventDefault();
-        setKeyboardDrag(null);
-        setAnnouncement("");
-      }
     },
     [commitSpan, day, keyboardDrag, needsConfirm, override, pending, tick, timeZone, writable],
   );
+  // An hour held from the keyboard is an operation in progress: Escape puts
+  // it back where it was before it steps back anything else.
+  useEscapeLayer("operation", {
+    open: keyboardDrag !== null && writable && day !== null && pending === null,
+    onEscape: () => {
+      setKeyboardDrag(null);
+      setAnnouncement("");
+    },
+  });
   // Typed entry lands on the same drop path as a drag: exact, refused on a
   // wall, warned inside a guideline, questioned where a drag would be.
   const submitTyped = useCallback(
@@ -854,15 +859,18 @@ function RibbonBody({
           saveHandles(handleDraft);
           return;
         }
-        if (event.key === "Escape" && handleDraft !== null) {
-          event.preventDefault();
-          event.stopPropagation();
-          setHandleDraftBoth(null);
-          setAnnouncement("");
-        }
       },
     [handleDraft, handles, pending, saveHandles, setHandleDraftBoth, tick, timeZone, writable],
   );
+  // So is a phase handle moved from the keyboard and not yet saved. A handle
+  // held by the pointer is left to its pointer, which saves on release.
+  useEscapeLayer("operation", {
+    open: () => handleDraftRef.current !== null && handleSessionRef.current === null && writable && handles !== null && pending === null,
+    onEscape: () => {
+      setHandleDraftBoth(null);
+      setAnnouncement("");
+    },
+  });
   const shownStartMs = self === null
     ? 0
     : pending !== null
