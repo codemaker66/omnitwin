@@ -4,7 +4,13 @@ Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportion
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
-## Latest founder direction — 16 October 2026: launch shape, a Trades Hall invite-only pilot first
+## Latest founder direction — 22 October 2026: everything finished by Friday 31 October (T-672)
+
+Blake, verbatim: "Our goal is to complete this project by the 31st of october, that includes all final checks, iterations, and reviews, completely finished. Your role is to make that happen with all of our goals and ambitions achieved."
+
+After an assessment that named the done-when lines at risk (PSNR 50, the BG3 import, 60 fps on physical devices, a real event), he chose **every goal as written**, on top of the 16 October invite-only pilot. He also decided: the splats must reach the standard ("you should be able to work out a way"), alongside the Grand Hall room planner redesign; "do ultimate research so you don't need to do as many splat trains, ask me for money when you have found a winning formula" (no new paid training before then); hold-reminder emails, AI drafting and finger drag on phones are switched on for real use; Stripe deposits and e-signing are built in test mode; the "Project status assessment" session leads the programme, Session orchestration keeps the merge queue and the GPU, Codex keeps Goal 21. A done-when that measurement does not meet stays open with its number; it is never reworded to pass. Plan, lanes, calendar and Blake's inputs: [plan 19](docs/plan/19-EVERYTHING-BY-31-OCTOBER-2026-10-22.md). This supersedes the 16 October section's "AI drafting stays off".
+
+## Previous founder direction — 16 October 2026: launch shape, a Trades Hall invite-only pilot first
 
 Blake chose the completion audit's recommended launch shape: a limited pilot with Trades Hall. Accounts are by invitation only; the public front door and enquiries stay open. Outside users wait until the pilot's gates close: error tracking and an uptime monitor (T-060), a restore drill, branch protection, honest public claims (T-661), legal copy that matches the product, Clerk polish (T-660), venue admins inviting their own staff, one real event run end to end, and his acceptance. AI drafting stays off (T-650). The full plan 18 public gate is not re-issued. Status: [the task list](docs/state/tasks.md) and the [17 October log](docs/sessions/2026-10-17.md).
 
