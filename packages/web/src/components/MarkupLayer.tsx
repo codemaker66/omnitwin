@@ -185,26 +185,13 @@ export function MarkupLayer(): React.ReactElement {
       invalidateRef.current();
     }
 
-    function onKeyDown(event: KeyboardEvent): void {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      if (!useMarkupStore.getState().active) return;
-      if (event.code === "Escape") {
-        useMarkupStore.getState().cancelStroke();
-        invalidateRef.current();
-      }
-      if (event.code === "KeyZ" && (event.ctrlKey || event.metaKey) && !event.shiftKey) {
-        event.preventDefault();
-        useMarkupStore.getState().undoStroke();
-        invalidateRef.current();
-      }
-    }
-
+    // Esc (let go of the stroke, then put the pen down) and Ctrl Z (take back
+    // the last stroke) are the planner's tool keys (lib/planner-keymap.ts), so
+    // they hold while this layer is unmounted for a camera move.
     canvas.addEventListener("pointerdown", onPointerDown, { passive: false });
     window.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("pointerup", finishPointer, { passive: false });
     window.addEventListener("pointercancel", finishPointer, { passive: false });
-    window.addEventListener("keydown", onKeyDown);
 
     return () => {
       activePointerIdRef.current = null;
@@ -212,7 +199,6 @@ export function MarkupLayer(): React.ReactElement {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", finishPointer);
       window.removeEventListener("pointercancel", finishPointer);
-      window.removeEventListener("keydown", onKeyDown);
       useMarkupStore.getState().cancelStroke();
     };
   }, [active, gl, camera, raycaster]);

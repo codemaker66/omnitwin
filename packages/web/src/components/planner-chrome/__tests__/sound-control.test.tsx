@@ -9,8 +9,9 @@ import {
   setPlannerSoundMode,
 } from "../../../lib/sound-registry.js";
 import { Key } from "../Keys.js";
-import { SOUND_MODE_LINES, SoundControl, isSoundShortcut, soundKeyLabel } from "../SoundControl.js";
+import { SOUND_MODE_LINES, SoundControl, soundKeyLabel } from "../SoundControl.js";
 import { TOOLTIP_FIRST_DELAY_MS, useTooltipStore } from "../Tooltip.js";
+import { registerEscapeLayer } from "../../../lib/planner-keys.js";
 
 // ---------------------------------------------------------------------------
 // The speaker (T-671, slice 3; spec 9): it names the set in use, opens Off ·
@@ -86,17 +87,18 @@ describe("the speaker", () => {
   });
 
   it("closes on Escape, returns focus to the speaker, and lets that Escape do nothing else", () => {
-    const elsewhere = vi.fn();
-    window.addEventListener("keydown", elsewhere);
+    // A selection held under the panel: Esc steps back one layer, the panel's.
+    const clearSelection = vi.fn();
+    const stop = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: clearSelection });
     try {
       render(<SoundControl />);
       const panel = openPanel();
       fireEvent.keyDown(within(panel).getByRole("radio", { name: "Off" }), { key: "Escape" });
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(document.activeElement).toBe(speaker());
-      expect(elsewhere).not.toHaveBeenCalled();
+      expect(clearSelection).not.toHaveBeenCalled();
     } finally {
-      window.removeEventListener("keydown", elsewhere);
+      stop();
     }
   });
 
@@ -180,16 +182,15 @@ describe("Shift M", () => {
   });
 
   it("reads only Shift with M, outside text", () => {
-    const base = { key: "M", shiftKey: true, ctrlKey: false, altKey: false, metaKey: false, repeat: false, target: document.body };
-    expect(isSoundShortcut(base)).toBe(true);
-    expect(isSoundShortcut({ ...base, key: "m" }), "the layout's M, in either case").toBe(true);
-    expect(isSoundShortcut({ ...base, shiftKey: false })).toBe(false);
-    expect(isSoundShortcut({ ...base, altKey: true })).toBe(false);
-    expect(isSoundShortcut({ ...base, metaKey: true })).toBe(false);
-    expect(isSoundShortcut({ ...base, repeat: true })).toBe(false);
-    const range = document.createElement("input");
-    range.type = "range";
-    expect(isSoundShortcut({ ...base, target: range }), "a slider types nothing").toBe(true);
-    expect(isSoundShortcut({ ...base, target: document.createElement("textarea") })).toBe(false);
+    render(<><SoundControl /><input type="range" aria-label="Level" /><textarea aria-label="Note" /></>);
+    const mode = (): string => getPlannerSoundSettings().mode;
+    fireEvent.keyDown(document.body, { key: "M", shiftKey: true, altKey: true });
+    fireEvent.keyDown(document.body, { key: "M", shiftKey: true, metaKey: true });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Note" }), { key: "M", shiftKey: true });
+    expect(mode()).toBe("off");
+    fireEvent.keyDown(document.body, { key: "m", shiftKey: true });
+    expect(mode(), "the layout's M, in either case (Caps Lock)").toBe("quiet");
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Level" }), { key: "M", shiftKey: true });
+    expect(mode(), "a slider types nothing").toBe("off");
   });
 });

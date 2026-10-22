@@ -9,6 +9,7 @@ import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { captureOrthographic } from "../../lib/ortho-capture.js";
 import { updatePublicThumbnail } from "../../api/configurations.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { flushAutoSave } from "./EditorBridge.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import {
@@ -251,13 +252,16 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     return () => { cancelled = true; };
   }, [configId, isPublicPreview]);
 
-  if (
-    configId === null
-    || isPublicPreview
-    || !hasObjects
-    || loading
-    || reviewStatus === null
-  ) {
+  const shown = configId !== null && !isPublicPreview && hasObjects && !loading && reviewStatus !== null;
+
+  // Escape folds the open panel and hands focus back to its disclosure.
+  useEscapeLayer("panel", {
+    open: shown && expanded,
+    onEscape: () => { setExpanded(false); },
+    returnFocusTo: disclosureButton,
+  });
+
+  if (!shown) {
     return null;
   }
 
@@ -318,12 +322,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   // -------------------------------------------------------------------------
 
   return (
-    <section className="submit-review" data-testid="submit-for-review-panel" data-status={reviewStatus}
-      onKeyDown={event => {
-        if (event.key === "Escape" && expanded) {
-          event.stopPropagation(); setExpanded(false); disclosureButton.current?.focus();
-        }
-      }}>
+    <section className="submit-review" data-testid="submit-for-review-panel" data-status={reviewStatus}>
       <button type="button" ref={disclosureButton} className="submit-review__summary"
         id={`${disclosureId}-summary`} aria-controls={`${disclosureId}-body`} aria-expanded={expanded}
         aria-label={`Review saved plan: ${visual.label}${error === null ? "" : ", action failed"}`}

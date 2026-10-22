@@ -20,7 +20,6 @@ import { finishPlannerShowcaseTour, plannerShowcaseStillCurrent } from "../lib/p
 import {
   HUMAN_POV_TARGET_DISTANCE_M,
   computeHumanPovLookAngles,
-  isHumanPovExitKey,
   isHumanPovPointerButton,
   type HumanPovLookAngles,
 } from "../lib/human-pov-camera.js";
@@ -44,6 +43,7 @@ import {
   isCameraKeyboardPanSuspendedByPlannerState,
   type CameraKeyboardPlannerState,
 } from "../lib/camera-rig.js";
+import { useEscapeLayer, usePlannerKeyBindings } from "../lib/planner-keys.js";
 
 export {
   DAMPING_FACTOR,
@@ -91,14 +91,6 @@ function readCameraKeyboardPlannerState(): CameraKeyboardPlannerState {
 
 function isCameraKeyboardPanSuspended(): boolean {
   return isCameraKeyboardPanSuspendedByPlannerState(readCameraKeyboardPlannerState());
-}
-
-function onKeyUp(event: KeyboardEvent): void {
-  keyboardKeys.delete(event.code);
-}
-
-function onBlur(): void {
-  keyboardKeys.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -384,67 +376,49 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     });
   }, []);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      if (suspendedRef.current) return;
+  // Keys (T-671 slice 5), through the planner's one keyboard owner. The
+  // arrows pan the orbit camera while nothing is selected (with a selection
+  // they nudge it, and in Walk they walk); W A S D no longer pan.
+  usePlannerKeyBindings([{
+    keys: [...PAN_KEYS].map((code) => ({ code })),
+    repeat: true,
+    when: () => !suspendedRef.current && !useCockpitStore.getState().walkMode && !isCameraKeyboardPanSuspended(),
+    run: (event) => {
+      keyboardKeys.add(event.code);
+      invalidateRef.current();
+    },
+    release: (event) => {
+      if (event === null) keyboardKeys.clear();
+      else keyboardKeys.delete(event.code);
+    },
+  }]);
+  useEffect(() => () => { keyboardKeys.clear(); }, []);
+
+  // Esc on the camera's own moves, each before anything else steps back: it
+  // stops Present and hands control straight back; it stops a bookmark move
+  // where it is (a camera move must never lock input behind an animation);
+  // and it leaves the person's-eye view, restoring the planner's pose.
+  useEscapeLayer("operation", {
+    open: () => {
+      if (suspendedRef.current) return false;
       const store = useBookmarkStore.getState();
-
-      // Escape cancels a cinematic tour and hands control straight back.
-      if (event.code === "Escape" && store.tour !== null) {
-        event.preventDefault();
+      return store.tour !== null
+        || (store.transition !== null && store.activeReferenceId === null)
+        || humanPovActiveRef.current || humanPovRestorePoseRef.current !== null || store.activeReferenceId !== null;
+    },
+    onEscape: () => {
+      const store = useBookmarkStore.getState();
+      if (store.tour !== null) {
         finishPlannerShowcaseTour(store.tour);
-        invalidateRef.current();
-        return;
-      }
-
-      // Escape also cancels an in-flight bookmark transition: the camera
-      // stops at its current (presentation) pose and control returns
-      // instantly — a camera move must never lock input behind a
-      // non-interruptible animation. Reference (POV) transitions keep the
-      // exit-key path below, which also restores the saved planner pose.
-      if (event.code === "Escape" && store.transition !== null && store.activeReferenceId === null) {
-        event.preventDefault();
+      } else if (store.transition !== null && store.activeReferenceId === null) {
         useBookmarkStore.setState({ transition: null, pendingNavigationId: null });
-        invalidateRef.current();
-        return;
-      }
-
-      const canExitHumanPov =
-        humanPovActiveRef.current ||
-        humanPovRestorePoseRef.current !== null ||
-        store.activeReferenceId !== null;
-
-      if (isHumanPovExitKey(event.code) && canExitHumanPov) {
-        event.preventDefault();
-        event.stopPropagation();
-        useBookmarkStore.setState({
-          pendingNavigationId: null,
-          transition: null,
-        });
+      } else {
+        useBookmarkStore.setState({ pendingNavigationId: null, transition: null });
         leaveHumanPovMode(true);
-        return;
       }
-
-      if (PAN_KEYS.has(event.code)) {
-        if (isCameraKeyboardInputLocked(event.target) || isCameraKeyboardPanSuspended()) {
-          keyboardKeys.delete(event.code);
-          return;
-        }
-        keyboardKeys.add(event.code);
-        invalidateRef.current();
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-      keyboardKeys.clear();
-    };
-  }, [leaveHumanPovMode]);
+      invalidateRef.current();
+    },
+  });
 
   // Reusable vectors to avoid per-frame allocation
   const panDelta = useRef(new Vector3());
@@ -797,11 +771,14 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       return;
     }
 
-    // Keep rendering while damping settles after orbit/pan
+    // Keep rendering while damping settles after orbit/pan. An update that
+    // still moves the camera fires "change", which re-arms these frames and
+    // asks for the next one; an update that moves nothing lets the loop rest
+    // (a pose set in code leaves nothing to damp, and on a software-rendered
+    // device each needless frame costs a quarter of a second).
     if (smoothControls && dampingFrames.current > 0) {
       dampingFrames.current--;
       controls.update();
-      invalidate();
     }
 
     // Inertial zoom — apply velocity then decay via friction

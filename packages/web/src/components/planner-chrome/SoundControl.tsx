@@ -1,5 +1,6 @@
-import { useEffect, useId, useLayoutEffect, useRef, type ReactElement } from "react";
+import { useId, useLayoutEffect, useRef, type ReactElement } from "react";
 import { Volume1, Volume2, VolumeOff } from "lucide-react";
+import { shiftedLetter, usePlannerKeyBindings, type KeyBinding } from "../../lib/planner-keys.js";
 import {
   armPlannerSound,
   setPlannerSoundLevel,
@@ -54,41 +55,24 @@ export function soundKeyLabel(mode: PlannerSoundMode): string {
   return `Sound: ${mode}`;
 }
 
-const NOT_TYPED_INPUTS = new Set(["range", "checkbox", "radio", "button", "submit", "reset", "color", "file", "image"]);
-
-/** Whether keys pressed here type text, so a letter shortcut must leave them alone. */
-function typesText(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
-  return target instanceof HTMLInputElement && !NOT_TYPED_INPUTS.has(target.type);
-}
-
-/** Shift M: not while typing, not with Ctrl, Alt or Cmd, not a held key repeating. */
-export function isSoundShortcut(
-  event: Pick<globalThis.KeyboardEvent, "key" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey" | "repeat" | "target">,
-): boolean {
-  if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.repeat) return false;
-  if (event.key.toLowerCase() !== "m") return false;
-  return !typesText(event.target);
-}
-
 function chooseMode(mode: PlannerSoundMode): void {
   setPlannerSoundMode(mode);
   if (mode !== "off") armPlannerSound();
 }
 
+/**
+ * Shift M, through the planner's one keyboard owner: never while typing,
+ * never with Ctrl, Alt or Cmd, never a held key repeating; and M alone stays
+ * Measure's.
+ */
+const SOUND_KEYS: readonly KeyBinding[] = [{
+  keys: shiftedLetter("m"),
+  run: () => { chooseMode(togglePlannerSoundMute()); },
+}];
+
 /** While mounted, Shift M mutes the planner and brings back what was muted. */
 export function usePlannerSoundShortcut(): void {
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent): void => {
-      if (event.defaultPrevented || !isSoundShortcut(event)) return;
-      event.preventDefault();
-      chooseMode(togglePlannerSoundMute());
-    };
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("keydown", onKey); };
-  }, []);
+  usePlannerKeyBindings(SOUND_KEYS);
 }
 
 function SoundIcon({ mode }: { readonly mode: PlannerSoundMode }): ReactElement {

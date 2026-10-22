@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, type FocusEvent, type PointerEvent, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { Kbd } from "./Kbd.js";
 import "./chrome.css";
 
@@ -212,21 +213,16 @@ export function TooltipHost(): ReactElement | null {
     return () => { window.cancelAnimationFrame(frame); };
   }, [current]);
 
+  // Esc dismisses a tooltip on screen, and that is all the press does: the
+  // tooltip is the first layer of the planner's one Escape order.
+  useEscapeLayer("tooltip", { open: current !== null, onEscape: () => { useTooltipStore.getState().hide(); } });
+
   useEffect(() => {
     if (current === null) return;
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape") return;
-      // Dismissing the tooltip is all this Escape does.
-      event.preventDefault();
-      event.stopPropagation();
-      useTooltipStore.getState().hide();
-    };
     const onMove = (): void => { useTooltipStore.getState().hide(); };
-    document.addEventListener("keydown", onKey, true);
     window.addEventListener("resize", onMove);
     window.addEventListener("scroll", onMove, true);
     return () => {
-      document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("resize", onMove);
       window.removeEventListener("scroll", onMove, true);
     };

@@ -7,6 +7,15 @@ import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useBookmarkStore } from "../../../stores/bookmark-store.js";
+import { useToolStore } from "../../../stores/tool-store.js";
+import { useMarkupStore } from "../../../stores/markup-store.js";
+import { usePlannerToolKeys } from "../../../lib/planner-keymap.js";
+
+/** The editor page's tool keys (A, D, M, V and the tools' Escapes), which reach the toolbox through the tool store. */
+function ToolKeys(): null {
+  usePlannerToolKeys();
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // VerticalToolbox undo/redo — must drive the editor-store history timeline
@@ -19,6 +28,7 @@ beforeEach(() => {
   useEditorStore.getState().reset();
   usePlacementStore.setState({ placedItems: [] });
   useSelectionStore.getState().clearSelection();
+  useToolStore.getState().setTool("select");
   useBookmarkStore.setState({
     bookmarks: [],
     pendingNavigationId: null,
@@ -38,6 +48,7 @@ afterEach(() => {
 function renderToolbox(): void {
   render(
     <MemoryRouter>
+      <ToolKeys />
       <VerticalToolbox />
     </MemoryRouter>,
   );
@@ -242,13 +253,31 @@ describe("VerticalToolbox Delete and the V shortcut", () => {
 
   it("returns to Select on V, and leaves Ctrl+V and typing alone", () => {
     renderToolbox();
-    fireEvent.keyDown(window, { code: "KeyD" });
+    fireEvent.keyDown(window, { code: "KeyD", key: "d" });
     expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).not.toBe("true");
 
-    fireEvent.keyDown(window, { code: "KeyV", ctrlKey: true });
+    fireEvent.keyDown(window, { code: "KeyV", key: "v", ctrlKey: true });
     expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).not.toBe("true");
 
-    fireEvent.keyDown(window, { code: "KeyV" });
+    fireEvent.keyDown(window, { code: "KeyV", key: "v" });
     expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  // T-671 slice 5 (F-01, F-02): one tool store. The deck's Done puts the pen
+  // down through the markup store; the toolbox follows, and D takes it up again.
+  it("follows the one tool store: A opens the furniture panel, Esc closes it, D picks the pen back up after Done", () => {
+    renderToolbox();
+    fireEvent.keyDown(window, { code: "KeyA", key: "a" });
+    expect(screen.getByTestId("furniture-panel")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Add Furniture/u }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    expect(screen.getByRole("button", { name: /^Add Furniture/u }).getAttribute("aria-pressed")).not.toBe("true");
+
+    fireEvent.keyDown(window, { code: "KeyD", key: "d" });
+    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).toBe("true");
+    act(() => { useMarkupStore.getState().setActive(false); });
+    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).not.toBe("true");
+    fireEvent.keyDown(window, { code: "KeyD", key: "d" });
+    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).toBe("true");
   });
 });

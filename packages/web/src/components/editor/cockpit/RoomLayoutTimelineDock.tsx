@@ -41,6 +41,7 @@ import {
   placedItemsFromCanonicalSnapshot,
 } from "../../../lib/layout-timeline.js";
 import { frozenRoomEnvelopesMatch } from "../../../lib/frozen-layout-room.js";
+import { usePlannerKeyBindings, type KeyChord } from "../../../lib/planner-keys.js";
 import {
   activeTimelineFrameIndexAtTime,
   adjacentAvailableFrameIndex,
@@ -309,6 +310,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return target.isContentEditable
     || ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName)
     || target.closest("[role='button'], [role='link']") !== null;
+}
+
+/** The timeline's keys answer whatever modifiers are held, as they always have. */
+function timelineChords(chord: KeyChord): KeyChord[] {
+  const loose: KeyChord = { ...chord, shift: "any", alt: "any" };
+  return [loose, { ...loose, mod: true }];
 }
 
 function compactMessage(
@@ -1026,47 +1033,48 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     };
   }, []);
 
-  useEffect(() => {
-    const onKeyDown = (event: globalThis.KeyboardEvent): void => {
-      if (!canExpand || !shortcutContextRef.current || isTypingTarget(event.target)) return;
-      if (event.key === "[") {
-        if (event.repeat) return;
-        event.preventDefault();
+  // [ and ] step between keyframes and a tap of Space plays or pauses, while
+  // the planner's stage or this dock was the last thing pressed or focused,
+  // through the planner's one keyboard owner. A control keeps its own keys.
+  const inShortcutContext = (): boolean => canExpand && shortcutContextRef.current;
+  usePlannerKeyBindings([
+    {
+      keys: timelineChords({ key: "[" }),
+      run: (event) => {
+        if (isTypingTarget(event.target)) return false;
         moveKeyframe(-1);
-      } else if (event.key === "]") {
-        if (event.repeat) return;
-        event.preventDefault();
+      },
+      when: inShortcutContext,
+    },
+    {
+      keys: timelineChords({ key: "]" }),
+      run: (event) => {
+        if (isTypingTarget(event.target)) return false;
         moveKeyframe(1);
-      } else if (event.code === "Space") {
-        event.preventDefault();
+      },
+      when: inShortcutContext,
+    },
+    {
+      // A tap, not a hold: timed from the first keydown to the keyup. Held,
+      // its repeats are still claimed so the page does not scroll.
+      keys: timelineChords({ code: "Space" }),
+      run: (event) => {
+        if (isTypingTarget(event.target)) return false;
         if (!event.repeat && spaceDownAtRef.current === null) {
           spaceDownAtRef.current = performance.now();
         }
-      }
-    };
-    const onKeyUp = (event: globalThis.KeyboardEvent): void => {
-      if (event.code !== "Space") return;
-      const startedAt = spaceDownAtRef.current;
-      spaceDownAtRef.current = null;
-      if (
-        !canExpand
-        || !shortcutContextRef.current
-        || startedAt === null
-        || isTypingTarget(event.target)
-      ) return;
-      if (performance.now() - startedAt <= 240) {
-        event.preventDefault();
-        togglePlayback();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      spaceDownAtRef.current = null;
-    };
-  }, [canExpand, moveKeyframe, togglePlayback]);
+      },
+      when: inShortcutContext,
+      repeat: true,
+      release: (event) => {
+        const startedAt = spaceDownAtRef.current;
+        spaceDownAtRef.current = null;
+        // The window losing focus (no keyup: null) lets the key go without a tap.
+        if (event === null || startedAt === null || !inShortcutContext()) return;
+        if (performance.now() - startedAt <= 240) togglePlayback();
+      },
+    },
+  ]);
 
   const changeScope = useCallback((nextScope: TimelineScope): void => {
     if (nextScope === scope) return;
