@@ -41,7 +41,7 @@ import { attribute, bool, exp, float, floor, fract, fwidth, hash, max, min, mix,
 import { MeshBuilder, type V3 } from "./mesh-builder.js";
 import { HALL_ELEVATION, HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_OPENINGS, HALL_WALLS, HALL_WALL_THICKNESS, isWindow, type HallWall } from "./hall-spec.js";
 import { BODY_FINISH, BODY_ROLE, DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP, bodyOutline, buildWallBody } from "./hall-wall-body.js";
-import { bakedIrradiance, scanIrradiance, type HallSectionUniforms } from "./hall-materials.js";
+import { bakedIrradiance, scanIrradiance, type HallSectionUniforms, type SliverColour } from "./hall-materials.js";
 import type { HallMoodUniforms } from "./hall-mood.js";
 import { hallSkyUniforms } from "./hall-sky-runtime.js";
 import { GILT_BAND, GILT_COLOUR, GILT_MIN_PIXELS, lineCoverage } from "./hall-cut-lines.js";
@@ -396,6 +396,30 @@ export const MASONRY = {
   joint: 0.009,
   /** How far along the wall a course runs before it shifts. */
   wander: 1.3,
+  /** How far each joint along a row may move either way, as a share of the row's stone length. */
+  stagger: 0.3,
+  /**
+   * Each stone's shade about its kind's colour, from one side to the other
+   * of its range: the rubble's beds vary a good deal, the dressed blocks,
+   * chosen and tooled, less. At 0.2 and 0.2 (+-10%) the coursing read only
+   * from close to: from Blake's overview and on a phone, where a joint spans
+   * under a pixel and fades out, the cut read as large flat blocks (the
+   * skeptic's C3-aesthetic, 22 October).
+   */
+  shade: { rubble: 0.36, dressed: 0.18 },
+  /** How warm or cool a rubble stone may be: sandstone's beds run from buff and pink to grey. */
+  hue: 0.5,
+  /**
+   * Each stone's face falls away toward its joints over this much of its
+   * edge (a quarry face, or a dressed block's margin), metres: a soft band
+   * several pixels wide at Blake's distance, so the coursing reads where the
+   * joints themselves are finer than a pixel, and never shimmers.
+   */
+  pillow: { rubble: 0.05, dressed: 0.03 },
+  /** How dark a stone's face falls at its joint (pillow). */
+  pillowDepth: 0.17,
+  /** The light a stone catches on the side toward the room, and the shade on its far side (the cut's light comes over the room's edge). */
+  edgeLight: { lit: 0.12, shade: 0.1 },
 } as const;
 /**
  * The cut's light: the room's ambient, its chandeliers' and the sky it sees
@@ -517,13 +541,16 @@ function sectionLineColour(preset: SectionPreset, height: Node<"float">): Node<"
  * The cut's masonry (Ashlar), as an albedo: `u` along the wall, `across`
  * metres in from the room's plane, `toOuter` metres from the outer face (null
  * where unknown: the corner blocks, taken as core), at the cut's `height`.
- * Courses of rubble run along the wall, each stone its own shade; against the
- * outer face, a leaf of long dressed blocks; mortar between them, a joint the
- * width of MASONRY.joint drawn with its coverage over the pixel and fading out
- * where a pixel spans more than a joint and a half, so the joints never
- * shimmer and from afar the stone reads as its average. Each course (every
- * MASONRY.course of height) lays its joints over the one below's, so the cut
- * at another height cuts other stones.
+ * Courses of rubble run along the wall, each stone its own shade and warmth;
+ * against the outer face, a leaf of long dressed blocks, more even; mortar
+ * between them, a joint the width of MASONRY.joint drawn with its coverage
+ * over the pixel and fading out where a pixel spans more than a joint and a
+ * half, so the joints never shimmer. Each stone's face falls away softly
+ * toward its joints (MASONRY.pillow) and catches the light on its side toward
+ * the room, shaded on its far side (MASONRY.edgeLight), so the courses read
+ * as stones at Blake's distance and on a phone, where the joints have faded.
+ * Each course (every MASONRY.course of height) lays its joints over the one
+ * below's, so the cut at another height cuts other stones.
  */
 function masonrySection(preset: SectionPreset, u: Node<"float">, across: Node<"float">, toOuter: Node<"float"> | null, height: Node<"float">): Node<"vec3"> {
   const m = MASONRY;
@@ -537,26 +564,44 @@ function masonrySection(preset: SectionPreset, u: Node<"float">, across: Node<"f
   const rowAt = depth.add(hash(stretch.add(course.mul(37)).add(60001)).mul(m.row * 0.4)).div(m.row);
   const row = inLeaf.select(float(99), floor(rowAt));
   const rowJoint = inLeaf.select(toOuter === null ? float(1) : float(m.leaf).sub(toOuter), fract(rowAt).min(float(1).sub(fract(rowAt))).mul(m.row));
+  // Across each stone, 0 on its side toward the room to 1 on its far side.
+  const acrossStone = inLeaf.select(toOuter === null ? float(0.5) : float(1).sub(toOuter.div(m.leaf)), fract(rowAt));
   // Lengths along the wall, per row and course.
   const seed = (salt: number): Node<"float"> => row.mul(131).add(course.mul(1009)).add(salt);
   const length = inLeaf.select(float(m.block[0]).add(hash(seed(70001)).mul(m.block[1])), float(m.rubble[0]).add(hash(seed(80001)).mul(m.rubble[1])));
   const along = max(u, float(0)).add(hash(seed(90001)).mul(length)).div(length);
-  const block = floor(along);
-  const blockJoint = fract(along).min(float(1).sub(fract(along))).mul(length);
+  // Each joint along the row moved by up to MASONRY.stagger of a stone either way, so the stones in a row are of
+  // different lengths, as a mason lays them, not a grid: joint k stands at k + jitter(k).
+  const jitter = (k: Node<"float">): Node<"float"> => hash(k.add(seed(91001))).sub(0.5).mul(m.stagger * 2);
+  const nearest = floor(along);
+  const block = along.lessThan(nearest.add(jitter(nearest))).select(nearest.sub(1),
+    along.greaterThanEqual(nearest.add(1).add(jitter(nearest.add(1)))).select(nearest.add(1), nearest));
+  const start = block.add(jitter(block));
+  const end = block.add(1).add(jitter(block.add(1)));
+  const blockJoint = min(along.sub(start), end.sub(along)).mul(length);
   const joint = min(rowJoint, blockJoint);
   // A pixel's span in metres, from the continuous coordinates (never through fract's jumps).
   const pixel = max(fwidth(u), fwidth(depth)).max(float(1e-5));
   const half = m.joint / 2;
   const coverage = float(1).sub(smoothstep(pixel.mul(-0.5).add(half), pixel.mul(0.5).add(half), joint));
   const visible = float(1).sub(smoothstep(m.joint * 0.75, m.joint * 1.5, pixel));
-  // Each stone its own shade (sandstone varies from bed to bed), the leaf's dressed and a shade lighter.
-  const tone = hash(block.add(seed(1)).add(7));
-  const stone = inLeaf.select(linear(preset.dressed), linear(preset.core)).mul(tone.mul(0.2).add(0.9));
+  // Each stone its own shade and warmth (sandstone varies from bed to bed), the leaf's dressed, lighter and more even.
+  const tone = hash(block.add(seed(1)).add(7)).sub(0.5);
+  const warmth = hash(block.add(seed(2)).add(13));
+  const shade = inLeaf.select(float(m.shade.dressed), float(m.shade.rubble));
+  const tint = mix(vec3(0.94, 0.98, 1.05), vec3(1.07, 0.99, 0.9), warmth);
+  const hue = mix(vec3(1, 1, 1), tint, inLeaf.select(float(m.hue * 0.4), float(m.hue)).mul(2));
+  const stone = inLeaf.select(linear(preset.dressed), linear(preset.core)).mul(tone.mul(shade).add(1)).mul(hue);
+  // Its face falls away toward its joints and catches the room's light on its near side.
+  const pillowWidth = inLeaf.select(float(m.pillow.dressed), float(m.pillow.rubble));
+  const pillow = mix(float(1 - m.pillowDepth), float(1), smoothstep(0, 1, joint.div(pillowWidth)));
+  const edge = float(1).add(float(1).sub(smoothstep(0, 0.4, acrossStone)).mul(m.edgeLight.lit))
+    .sub(smoothstep(0.6, 1, acrossStone).mul(m.edgeLight.shade));
   // Fine grain within each stone, in world space so it never swims as the cut moves.
   const p = positionWorld;
   const grain = p.x.mul(53).add(p.z.mul(9).sin().mul(3)).sin().mul(p.z.mul(47).add(p.x.mul(7).sin().mul(2)).sin()).mul(0.03).add(1);
   const mortar = linear(preset.core).mul(0.74);
-  return mix(stone.mul(grain), mortar, coverage.mul(visible));
+  return mix(stone.mul(grain).mul(pillow).mul(edge), mortar, coverage.mul(visible));
 }
 
 /**
@@ -616,6 +661,17 @@ function topLighting(preset: SectionPreset, mood: HallMoodUniforms, sunlit: bool
   return (albedo, fromPlane) => albedo.mul(cutTopLight(mood, sunlit, fromPlane));
 }
 
+/**
+ * The cut's room line as the section draws it at the wall's plane, lit, at a
+ * cut `height` (the panelling's or the plaster's own material, cutTopColour's
+ * band): what a near wall's slivers of moulding past its cut are drawn as
+ * (hall-materials.ts outsideSliver), so the cut's edge reads as one band.
+ */
+export function sectionRoomLine(preset: SectionPreset, mood: HallMoodUniforms, sunlit: boolean, sun: HallSun | null): SliverColour {
+  const lighting = topLighting(preset, mood, sunlit, sun);
+  return (height) => lighting(sectionLineColour(preset, height), float(0));
+}
+
 /** What the body's faces may draw beyond the preset's own colours. */
 export interface WallBodyExtras {
   /** The real sun and moon (the card's light under the real sky), or null. */
@@ -643,15 +699,22 @@ function srgb255(rgb: readonly [number, number, number]): Node<"vec3"> {
 /**
  * The light and shade an outer face takes from its own form, as a model's
  * walls do under a soft light: darker at its foot, where it meets the
- * plinth (to 55% at the floor, gone by 0.6 m), and a faint breadth of tone
- * across it, so a face metres high reads as a surface rather than a fill.
+ * plinth (to 55% at the floor, gone by 0.6 m), a faint breadth of tone
+ * across it, so a face metres high reads as a surface rather than a fill,
+ * and the room's light catching its top, under the cut (`toTop` metres
+ * below it): FACE_TOP_GLOW brighter at the arris, gone in a few decimetres,
+ * so the wall's edge reads against the dark without a hairline to bead.
  */
-function faceShading(height: Node<"float">): Node<"float"> {
+function faceShading(height: Node<"float">, toTop: Node<"float">): Node<"float"> {
   const p = positionWorld;
   const foot = mix(float(0.55), float(1), smoothstep(0, 0.6, height));
   const breadth = p.x.add(p.z).mul(0.9).add(height.mul(0.6).sin().mul(2)).sin().mul(height.mul(0.7).add(p.x.sub(p.z).mul(0.35)).sin()).mul(0.045).add(1);
-  return foot.mul(breadth);
+  const top = exp(max(toTop, float(0)).div(-FACE_TOP_GLOW.reach)).mul(FACE_TOP_GLOW.lift).add(1);
+  return foot.mul(breadth).mul(top);
 }
+
+/** The room's light on an outer face's top, under the cut (faceShading): how much brighter at the arris, and over what depth (e-folding), metres. */
+export const FACE_TOP_GLOW = { lift: 0.22, reach: 0.18 } as const;
 
 /** A moulding's lit top edge at each height in `edges`: a fine highlight (a quarter brighter) a centimetre deep. */
 function mouldingLight(height: Node<"float">, edges: readonly number[]): Node<"float"> {
@@ -680,7 +743,7 @@ function mouldingShadow(height: Node<"float">, edges: readonly number[]): Node<"
  * (the room's painted grain carrying the photographed colour), beyond the end
  * and fireplace walls the corridor's wall.
  */
-function interiorFaceColour(mood: HallMoodUniforms, street: Node<"vec3">, textures: HallTextures | null): Node<"vec3"> {
+function interiorFaceColour(mood: HallMoodUniforms, street: Node<"vec3">, textures: HallTextures | null, toTop: Node<"float">): Node<"vec3"> {
   const n = bodyNormal();
   const p = positionWorld;
   const f = INTERIOR_FACES;
@@ -706,7 +769,7 @@ function interiorFaceColour(mood: HallMoodUniforms, street: Node<"vec3">, textur
   const interior = doorSide.select(saloon.select(panelling, corridor), srgb255(f.corridorWall).mul(f.unsurveyedShade));
   const mouldings = mouldingLight(height, [f.skirting, f.dadoTop + f.band]).mul(doorSide.and(saloon.not()).select(float(1), float(0)))
     .add(float(1)).mul(mouldingShadow(height, [f.dadoTop, f.dadoTop + f.band]).mul(doorSide.and(saloon.not()).select(float(1), float(0))).oneMinus());
-  return n.z.lessThan(-0.5).select(street, relitBeyond(interior, mood, vec3(0, 0, 0)).mul(mouldings).mul(faceShading(height)));
+  return n.z.lessThan(-0.5).select(street, relitBeyond(interior, mood, vec3(0, 0, 0)).mul(mouldings).mul(faceShading(height, toTop)));
 }
 
 /**
@@ -791,8 +854,10 @@ export function createWallBodyMaterial(
   const room = bakedIrradiance(mood);
   const finish = tag.w;
   // The outer faces: a soft darkening at their foot, as a model's walls take it.
-  const street = linear(preset.outer).mul(outside).mul(faceShading(height));
-  const outer = card ? cardOf(linear(preset.outer)) : preset.interiorFaces ? interiorFaceColour(mood, street, extras.textures ?? null) : street;
+  // How far under its wall's cut a face lies (the room's light catches the faces' tops: faceShading).
+  const toTop = cut.sub(height);
+  const street = linear(preset.outer).mul(outside).mul(faceShading(height, toTop));
+  const outer = card ? cardOf(linear(preset.outer)) : preset.interiorFaces ? interiorFaceColour(mood, street, extras.textures ?? null, toTop) : street;
   // The cut (cutTopColour). Where the relief stands proud at the cut, the
   // room's edge, and the gilt line on it, lie out at its surface on the cap
   // (createSectionCapMaterial); a wall that is not cut ends at its plane.

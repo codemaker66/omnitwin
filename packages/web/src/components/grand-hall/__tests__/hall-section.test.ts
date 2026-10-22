@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { BufferGeometry } from "three";
 import { buildHallGeometry } from "../hall-geometry.js";
-import { PLINTH_DEPTH, PLINTH_UNDERLAP, SECTION_PRESETS, buildPlinthRing, parseSectionPreset, plinthExtents, plinthOutline, wallThickness } from "../hall-section.js";
+import { FACE_TOP_GLOW, MASONRY, PLINTH_DEPTH, PLINTH_UNDERLAP, SECTION_PRESETS, buildPlinthRing, parseSectionPreset, plinthExtents, plinthOutline, wallThickness } from "../hall-section.js";
 import { bodyOutline } from "../hall-wall-body.js";
 import { CITY_SITE_CUT } from "../hall-context.js";
+import { SIDE_EASE, SLIVER_DEPTH, sideWeight } from "../hall-materials.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_WALL_THICKNESS, hallWall } from "../hall-spec.js";
 
 type Vec3 = readonly [number, number, number];
@@ -211,5 +212,35 @@ describe("the section's finish", () => {
     }
     // The dado's mahogany, as the brief measured it.
     expect(SECTION_PRESETS.ashlar.dado).toBe("#5c3132");
+  });
+
+  it("lays Ashlar's stones so they read from Blake's overview and on a phone, never as a grid or a shimmer", () => {
+    // The rubble varies more than the dressed leaf, and each enough to read where the joints have faded.
+    expect(MASONRY.shade.rubble).toBeGreaterThan(MASONRY.shade.dressed);
+    expect(MASONRY.shade.dressed).toBeGreaterThanOrEqual(0.15);
+    // A joint moves less than half a stone either way: every stone keeps a length (at least 40% of its row's).
+    expect(MASONRY.stagger).toBeGreaterThan(0);
+    expect(MASONRY.stagger).toBeLessThanOrEqual(0.3);
+    // The stones' soft edges are several pixels wide at Blake's distance (about 1.4 cm a pixel), wider than a joint.
+    expect(MASONRY.pillow.rubble).toBeGreaterThanOrEqual(3 * 0.014);
+    expect(MASONRY.pillow.dressed).toBeGreaterThan(MASONRY.joint * 3);
+    // The faces' top catches the light over decimetres, not as a hairline.
+    expect(FACE_TOP_GLOW.reach).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it("draws a near wall's slivers of moulding past its cut as the cut, and eases as an orbit crosses the wall's plane", () => {
+    // Outside the wall's plane (a near wall) fully, on the room's side not at all, and smoothly between.
+    expect(sideWeight(-5)).toBe(0);
+    expect(sideWeight(SIDE_EASE[0])).toBe(0);
+    expect(sideWeight(SIDE_EASE[1])).toBe(1);
+    expect(sideWeight(5)).toBe(1);
+    let last = 0;
+    for (let d = SIDE_EASE[0]; d <= SIDE_EASE[1]; d += 0.05) {
+      const w = sideWeight(d);
+      expect(w).toBeGreaterThanOrEqual(last - 1e-12);
+      last = w;
+    }
+    // The band under the cut covers the rail's swell (up to 3.5 cm beyond the cut's profile within 4 cm under it).
+    expect(SLIVER_DEPTH).toBeGreaterThanOrEqual(0.04);
   });
 });

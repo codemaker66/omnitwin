@@ -32,7 +32,7 @@
 
 import { Color, DoubleSide, FrontSide, type Material, type Side, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
-import { attribute, bool, color, dot, float, luminance, max, min, mix, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { attribute, bool, cameraPosition, color, dot, float, luminance, max, min, mix, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import type { HallMaterialKey } from "./hall-builders.js";
 import { HALL_GLAZING_PAINT, HALL_OPENINGS, HALL_WALLS, isWindow } from "./hall-spec.js";
 import { CARD, cardColour, cardLit } from "./hall-beyond.js";
@@ -158,6 +158,57 @@ function wallCutEdge(section: HallSectionUniforms, level: Node<"float">): CutEdg
   for (const index of WINDOW_OPENINGS) inWindow = inWindow.or(opening.greaterThan(index - 0.5).and(opening.lessThan(index + 0.5)));
   const active = cut.lessThan(WALL_BODY_TOP).and(inWindow.not()).select(float(1).sub(level), float(0));
   return cutEdge(cut.sub(positionWorld.y), positionWorld.y, active);
+}
+
+/**
+ * 1 on a cut wall's relief within SLIVER_DEPTH under its cut while the camera
+ * stands outside the wall's plane, easing to 0 below it and as the camera
+ * comes round to the room's side. A near wall is seen from above, its room
+ * face turned away; what shows of its relief is the moulding just under the
+ * cut where it stands further out than at the cut itself, past the section's
+ * edge (on the door wall the rail's swell stands up to 3.5 cm beyond the cut's
+ * profile within 4 cm under it). Those tops face up into the chandeliers'
+ * baked light: a pixel wide, pale and lit, they drew a beaded line of bright
+ * dots along the near walls' cut (the skeptic's C3-bead, 22 October: 33 dots
+ * in 170 x 90 px of Blake's opening view, every one of them these fragments).
+ * They take the section's own room line instead
+ * (HallMaterialOptions.sliverColour), without the varnish's highlight, so the
+ * cut's edge reads as one band.
+ */
+function outsideSliver(section: HallSectionUniforms): Node<"float"> {
+  const { cut } = sectionCut(section);
+  const below = cut.sub(positionWorld.y);
+  const near = float(1).sub(smoothstep(SLIVER_DEPTH * 0.5, SLIVER_DEPTH, below));
+  const outside = float(1).sub(cameraOnRoomSide(attribute("aWall", "float")));
+  return cut.lessThan(WALL_BODY_TOP).select(near.mul(outside), float(0));
+}
+
+/** How far under a near wall's cut its relief is drawn as the section's room line (outsideSliver), metres. */
+export const SLIVER_DEPTH = 0.04;
+
+/**
+ * How far the camera stands on the room's side of wall `wall`'s plane
+ * (HALL_WALLS order), eased from 0 a quarter of a metre outside it to 1 three
+ * quarters of a metre in (SIDE_EASE; sideWeight is the rule on the CPU), so
+ * an orbit crossing the plane, where the wall is seen on edge, never pops.
+ */
+function cameraOnRoomSide(wall: Node<"float">): Node<"float"> {
+  const inside = (index: number): Node<"float"> => {
+    const w = HALL_WALLS[index];
+    if (w === undefined) return float(1);
+    return cameraPosition.x.sub(w.origin[0]).mul(w.normal[0]).add(cameraPosition.z.sub(w.origin[2]).mul(w.normal[2]));
+  };
+  const distance = wall.lessThan(0.5).select(inside(0), wall.lessThan(1.5).select(inside(1), wall.lessThan(2.5).select(inside(2), inside(3))));
+  return smoothstep(SIDE_EASE[0], SIDE_EASE[1], distance);
+}
+
+/** The camera's distance from a wall's plane (into the room positive) over which cameraOnRoomSide eases, metres. */
+export const SIDE_EASE = [-0.25, 0.75] as const;
+
+/** cameraOnRoomSide's weight for a camera `distance` metres on the room's side of a wall's plane (negative outside). */
+export function sideWeight(distance: number): number {
+  const t = Math.min(1, Math.max(0, (distance - SIDE_EASE[0]) / (SIDE_EASE[1] - SIDE_EASE[0])));
+  return t * t * (3 - 2 * t);
 }
 
 /** The baked irradiance at this vertex under the current mood. */
@@ -375,20 +426,31 @@ interface SurfaceOptions {
   readonly alphaToCoverage: boolean;
   readonly section: HallSectionUniforms;
   readonly detail: HallDetailLayer | null;
+  readonly sliverColour: SliverColour | null;
 }
+
+/** The section's room line, lit, at a wall's cut `height` (hall-section.ts sectionRoomLine). */
+export type SliverColour = (height: Node<"float">) => Node<"vec3">;
 
 function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: HallPhotos, sun: HallSun | null, options: SurfaceOptions): Material {
   const side = style.side ?? FrontSide;
   if (style.shading === "photo" || style.shading === "photoGloss") {
     const kind = style.photo ?? "walls";
     const wall = kind === "walls" ? wallTexel(photos, true, options.detail) : null;
-    const lit = relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level));
+    const photographed = relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level));
+    // A near wall's slivers past the cut are drawn as the section's room line (outsideSliver).
+    const line = wall === null ? null : options.sliverColour;
+    const sliver = line === null ? null : outsideSliver(options.section);
+    const lit = line === null || sliver === null ? photographed : mix(photographed, line(sectionCut(options.section).cut), sliver);
     const material = style.shading === "photo"
       ? new MeshBasicNodeMaterial({ side, fog: false })
       : new MeshStandardNodeMaterial({ side, roughness: style.roughness ?? 0.45, metalness: 0, fog: false });
     if (material instanceof MeshStandardNodeMaterial) {
       material.colorNode = vec3(0);
       material.emissiveNode = lit;
+      // The varnish's highlight goes on the near walls' slivers past the cut (outsideSliver): a black
+      // metal has no specular colour, and its colour (black) leaves the emissive as it was.
+      if (sliver !== null) material.metalnessNode = sliver;
     } else {
       material.colorNode = lit;
     }
@@ -434,6 +496,8 @@ export interface HallMaterialOptions {
   readonly alphaToCoverage?: boolean;
   /** The walls' 2 mm detail, faded in over the atlas where a tile is resident (null: the atlas alone). */
   readonly detail?: HallDetailLayer | null;
+  /** The section's room line, which a near wall's slivers past its cut take (outsideSliver; null: none). */
+  readonly sliverColour?: SliverColour | null;
 }
 
 export type HallMaterials = ReadonlyMap<HallMaterialKey, Material>;
@@ -448,7 +512,10 @@ export function createHallMaterials(
 ): HallMaterials {
   const table = styles(textures);
   const materials = new Map<HallMaterialKey, Material>();
-  const surface: SurfaceOptions = { glazing: options.glazing ?? null, alphaToCoverage: options.alphaToCoverage ?? false, section, detail: options.detail ?? null };
+  const surface: SurfaceOptions = {
+    glazing: options.glazing ?? null, alphaToCoverage: options.alphaToCoverage ?? false, section, detail: options.detail ?? null,
+    sliverColour: options.sliverColour ?? null,
+  };
   for (const key of Object.keys(table) as HallMaterialKey[]) {
     // The floor is drawn (hall-floor.ts), lit by the same baked light.
     const floorLight = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
@@ -499,7 +566,7 @@ export function createDoorLeafMaterials(
       photo.emissiveNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
       material = photo;
     } else {
-      material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section, detail: null });
+      material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section, detail: null, sliverColour: null });
     }
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
       material.positionNode = position;

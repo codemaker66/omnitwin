@@ -55,7 +55,7 @@ import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
 import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
-import { createHallSection, parseSectionPreset, SECTION_PRESETS, type HallSection, type SectionPreset } from "./hall-section.js";
+import { createHallSection, parseSectionPreset, SECTION_PRESETS, sectionRoomLine, type HallSection, type SectionPreset } from "./hall-section.js";
 import { sectionCapGeometry } from "./hall-relief-section.js";
 import { SlicedBuildCancelled } from "./hall-slices.js";
 import { WALL_BODY_TOP } from "./hall-wall-body.js";
@@ -289,7 +289,11 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const glazing = new HallGlazingUniforms();
   // Without slots (a software rasteriser) the walls' shaders leave the detail out entirely.
   const fine = detail.enabled ? detail : null;
-  const materials = createHallMaterials(textures, photos, mood, section, sun, { glazing, alphaToCoverage: multisampled, detail: fine });
+  const materials = createHallMaterials(textures, photos, mood, section, sun, {
+    glazing, alphaToCoverage: multisampled, detail: fine,
+    // A near wall's slivers of moulding past its cut take the section's room line (hall-materials.ts outsideSliver).
+    sliverColour: sectionRoomLine(sectionPreset, mood, sun !== null, sun),
+  });
   const casters = sun === null ? null : createHallCasterMaterials(photos);
   const doorSwing = new DoorSwingUniforms();
   const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card", detail: fine });
