@@ -1,4 +1,8 @@
-# Plan 19 — everything finished by Friday 31 October 2026 (T-672)
+# Plan 19 — everything finished by Saturday 31 October 2026 (T-672)
+
+Dates rule. 22 October 2026 is a Thursday and 31 October a Saturday; the first version of this plan labelled
+every weekday one day early (caught by the planner session the same afternoon). UK clocks go back at 02:00 on
+Sunday 25 October: times before then are BST, after it GMT.
 
 Owner: the "Project status assessment" session (local_2cbfece6), programme lead by Blake's choice on 22 October.
 Session orchestration (local_04884754) keeps the one-at-a-time merge queue and the 4090. Codex keeps Goal 21.
@@ -81,15 +85,16 @@ Existing lanes continue under their owners: the pano splat floor (local_9cc748cb
 
 | Day | Work | Blake |
 |---|---|---|
-| Wed 22 | Assessment; this plan; Railway login; API redeploy and live check; wave 1 lanes (L1, L2, L6) and the planner briefed on L3 | Approve Railway; install the BG3 Toolkit |
-| Thu 23 | Wave 1 builds; the Grand Assembly direction as reviewable visuals | The 45-minute setup sitting; invite Elaine and a hallkeeper |
-| Fri 24 | Wave 2 (L5, L7, L8, L9); L2's formula report | Choose the Grand Assembly direction; read L2's formula and costing |
-| Sat 25–Sun 26 | Builds; training runs if approved | Acceptance walk 1 (planner, front door, tour) on Sunday |
-| Mon 27 | L4 and L5 with Trades Hall: timetable walk, a real enquiry, usability run | Elaine and the hallkeeper, 60–90 minutes |
-| Tue 28 | Device day: every surface measured on real iPhones, iPads and an office PC; splat candidate on a private preview | The devices; the splat look call |
-| Wed 29 | Feature freeze 18:00; the real event run; the wall's night | — |
-| Thu 30 | Final reviews on the frozen candidate; fixes only | Acceptance walk 2; go/no-go |
-| Fri 31 | Tag v1.0, deploy, verify live, report every goal | Read the report |
+| Thu 22 | Assessment; this plan; Railway login; API redeploy and live check; wave 1 lane cards (L1, L2, L3b) and the planner briefed on L3 | Approve Railway; start the lane cards; install the BG3 Toolkit |
+| Fri 23 | Wave 1 builds; L6 starts after the sitting; the Grand Assembly studies by 19:00 | The 45-minute setup sitting; invite Elaine and a hallkeeper |
+| Sat 24 | Wave 2 (L5, L7, L8, L9); L2's formula report | Choose the Grand Assembly direction; read L2's formula and costing |
+| Sun 25 | Builds; training runs if approved; clocks go back (the timetable's DST handling runs live) | — |
+| Mon 26 | Builds; the Assembly behind a flag | Acceptance walk 1 (planner, front door, tour) |
+| Tue 27 | L4 and L5 with Trades Hall: timetable walk, a real enquiry, usability run | Elaine and the hallkeeper, 60–90 minutes |
+| Wed 28 | Device day: every surface measured on real iPhones, iPads and an office PC; splat candidate on a private preview | The devices; the splat look call |
+| Thu 29 | Feature freeze 18:00; the real event run; the wall's night | — |
+| Fri 30 | Final reviews on the frozen candidate; fixes only | Acceptance walk 2; go/no-go |
+| Sat 31 | Tag v1.0, deploy, verify live, report every goal | Read the report |
 
 ## 5. What only Blake can do (and when it blocks)
 
@@ -97,10 +102,10 @@ Existing lanes continue under their owners: the pano splat floor (local_9cc748cb
 2. The setup sitting (D:/claude/completion-audit-20261016/SETUP-SITTING.md): rotate the Anthropic, ElevenLabs and
    R2 keys; Clerk name, logo, legal URLs, Verify, sign-up mode; GitHub branch protection and a production reviewer;
    uptime monitors; Railway and Vercel variable pass including VAPID and the AI variables; invite Elaine and a
-   hallkeeper (Thursday; blocks L1's checks, L4, L6, L9).
+   hallkeeper (Friday 23; blocks L1's checks, L4, L6, L9).
 3. The BG3 Toolkit from his Steam account (blocks Goal 11's import gate).
-4. Trades Hall time on Monday 27 and the real event (blocks 05, 06, 19).
-5. Physical devices on Tuesday 28 (blocks every 60 fps line).
+4. Trades Hall time on Tuesday 27 and the real event (blocks 05, 06, 19).
+5. Physical devices on Wednesday 28 (blocks every 60 fps line).
 6. A second-venue contact (blocks goal 10).
 7. Money for training once L2 has a formula; Stripe onboarding; a solicitor for the legal pages; ICO registration
    and a data-processing agreement with Trades Hall if not already in place.
@@ -116,7 +121,7 @@ Existing lanes continue under their owners: the pano splat floor (local_9cc748cb
 - RunPod: nothing new before Blake approves L2's budget; every pod registered with the reaper.
 - If the PC fails, lanes resume from their checkpoints; nobody types "continue" into many sessions at once.
 
-## 7. Final review (Thursday 30, frozen candidate)
+## 7. Final review (Friday 30, frozen candidate)
 
 - Full CI on the candidate: lint, typecheck, tests, build, audit, browser gate, GPU gate.
 - Independent reviews of everything merged since 1 October, at most ten agents at high effort: correctness,
@@ -132,7 +137,7 @@ Existing lanes continue under their owners: the pano splat floor (local_9cc748cb
 |---|---|---|
 | PC memory and crashes | under 4 GB free, or a lane dies | Pause the heaviest lane; Blender builds overnight; no mass "continue" |
 | Blake's time | a section 5 item slips a day | Re-plan that day; ask with buttons, never prose |
-| Trades Hall availability | Monday slips | Run with a stand-in identity, keep the real run as the open line |
+| Trades Hall availability | Tuesday 27 slips | Run with a stand-in identity, keep the real run as the open line |
 | API deploy path | Railway stays stuck after login | Redeploy by `railway up` from master's tree; record why it stopped |
 | Splat standard unreachable | L2 finds no formula that measures up | Report the measured ceiling and options; the goal stays open with its number |
 | Review-found defects | a critical finding after freeze | Fix and re-run the affected gates; the tag waits |

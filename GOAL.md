@@ -4,7 +4,7 @@ Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportion
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
-## Latest founder direction — 22 October 2026: everything finished by Friday 31 October (T-672)
+## Latest founder direction — 22 October 2026: everything finished by Saturday 31 October (T-672)
 
 Blake, verbatim: "Our goal is to complete this project by the 31st of october, that includes all final checks, iterations, and reviews, completely finished. Your role is to make that happen with all of our goals and ambitions achieved."
 
