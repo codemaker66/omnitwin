@@ -117,12 +117,12 @@ export interface AssemblyStudyApi {
   /** Rebuilds the post-processing pipeline (fresh temporal history) and waits for it. */
   resetPipeline(): Promise<void>;
   /**
-   * Puts the renderer's temporal effects in a known phase: sets its frame
-   * number (the ambient occlusion's noise and the motion vectors key on it) to
-   * a fixed value and restarts the temporal anti-aliasing, its jitter sequence
-   * and its history. Returns the frame number set and how many were restarted.
+   * Restarts the temporal anti-aliasing, its jitter sequence and its history,
+   * so a capture's temporal state starts from its own first frame. (The
+   * ambient occlusion's noise and the motion vectors key on the renderer's own
+   * frame number, which is left alone.) Returns that number and how many were restarted.
    */
-  alignTemporal(): { readonly frameId: number | null; readonly restarted: number };
+  alignTemporal(): Promise<{ readonly frameId: number | null; readonly restarted: number }>;
   /** A hash of every matrix and colour the study writes, and the camera, as drawn now. */
   transformHash(): string;
   /** Everything back to its saved transform, exactly; the study stays mounted. */
@@ -283,6 +283,8 @@ const candleStep = new Matrix4();
 /** The gold an Unfolding piece is born in (multiplies its colour). */
 const GILT = [1.32, 1.02, 0.56] as const;
 const HIDDEN_SCALE = 1e-5;
+/** Where a piece not yet in the room is kept, metres below the floor. */
+const HIDDEN_DEPTH = -60;
 /** Height the three flames scale about, metres above the table top. */
 const FLAME_CENTRE = 0.2;
 
@@ -306,11 +308,18 @@ function applyCandles(presenter: Presenter, candles: CandleSet): void {
   for (const [tableId, index] of candles.index) {
     if (!playback.dressing(tableId, dressingPose)) continue;
     const resting = dressingPose.wax >= 1 && dressingPose.flame >= 1 && dressingPose.glow >= 1;
+    const unstarted = dressingPose.wax <= 0 && dressingPose.flame <= 0 && dressingPose.glow <= 0;
     candles.meshes.forEach((mesh, meshIndex) => {
       const original = candles.originals[meshIndex];
       if (original === undefined) return;
       if (resting) {
         mesh.instanceMatrix.array.set(original.subarray(index * 16, index * 16 + 16), index * 16);
+        return;
+      }
+      if (unstarted) {
+        // Not there at all yet: vanishingly small and well below the floor.
+        candleMatrix.makeScale(HIDDEN_SCALE, HIDDEN_SCALE, HIDDEN_SCALE).setPosition(0, HIDDEN_DEPTH, 0);
+        candleMatrix.toArray(mesh.instanceMatrix.array, index * 16);
         return;
       }
       candleMatrix.fromArray(original, index * 16);
@@ -383,6 +392,7 @@ function applyPresenter(presenter: Presenter): void {
       pose.sy = HIDDEN_SCALE;
       pose.sz = HIDDEN_SCALE;
       pose.pivotY = 0;
+      pose.y = HIDDEN_DEPTH;
     }
     composePieceMatrix(pose, piece.scale, matrix);
     matrix.toArray(slot.matrices.array, slot.slot * 16);
@@ -482,21 +492,6 @@ function jitterNodes(renderer: object): Record<string, unknown>[] {
   return framedNodes(renderer, (node) => node["isTRAANode"] === true && typeof node["_jitterIndex"] === "number");
 }
 
-/** Sets the renderer's node frame number (its temporal effects key on it); false if it cannot. */
-function setRendererFrameId(renderer: object, value: number): boolean {
-  const frame = nodeManager(renderer)?.["nodeFrame"];
-  if (!isRecord(frame) || typeof frame["frameId"] !== "number") return false;
-  frame["frameId"] = value;
-  return true;
-}
-
-/**
- * The frame number the temporal effects restart from: far above any number
- * the renderer has reached, so no node's once-a-frame update is mistaken for
- * one already done, and the same in every run.
- */
-const ALIGNED_FRAME_ID = 1_000_000_000;
-
 /** The orbit controls' target, which the camera is aimed at. */
 function orbitTarget(controls: unknown): Vector3 | null {
   if (!isRecord(controls)) return null;
@@ -517,7 +512,7 @@ function isTimestampBackend(value: unknown): value is TimestampBackend {
 
 // --- The gold blueprint (the Unfolding) ---------------------------------------
 
-const LINE_WIDTH = 0.03;
+const LINE_WIDTH = 0.04;
 const FLOOR_LIFT = 0.006;
 /** The usable floor: the hall less a strip along every wall, metres. */
 const USABLE_INSET = 0.32;
@@ -577,7 +572,8 @@ function goldMaterial(name: string): MeshBasicNodeMaterial {
   return material;
 }
 
-const GOLD = [1.0, 0.68, 0.3] as const;
+/** Leaf gold, linear: additive over the warm floor, so deeper than it reads. */
+const GOLD = [0.95, 0.56, 0.16] as const;
 
 function lineMaterial(progress: FloatUniform, brightness: FloatUniform): MeshBasicNodeMaterial {
   const material = goldMaterial("assembly-blueprint-line");
@@ -744,6 +740,7 @@ export function AssemblyStudy(): ReactElement | null {
   const reportedRef = useRef(0);
   /** Draws the canvas's pacer held back (and that were drawn again) since the last report. */
   const skippedRef = useRef(0);
+
   const [blueprint, setBlueprint] = useState<Presenter | null>(null);
 
   useFrame((_state, delta) => {
@@ -962,10 +959,13 @@ export function AssemblyStudy(): ReactElement | null {
         useRenderGovernorStore.getState().setGiven(given);
         await wait(80);
       },
-      alignTemporal: () => {
+      alignTemporal: async () => {
         const native = getNativeRenderer(get().gl);
         if (native === null) return { frameId: null, restarted: 0 };
-        const set = setRendererFrameId(native, ALIGNED_FRAME_ID);
+        // A rebuilt pipeline's nodes are registered once its build has landed, a few frames in.
+        for (let frame = 0; frame < 60 && jitterNodes(native).length === 0; frame++) {
+          await drawFrame(presenterRef.current?.playback.time() ?? 0, 1, 0);
+        }
         const nodes = jitterNodes(native);
         for (const node of nodes) {
           node["_jitterIndex"] = 0;
@@ -973,7 +973,7 @@ export function AssemblyStudy(): ReactElement | null {
           const resize = node["setSize"];
           if (typeof resize === "function") resize.call(node, 1, 1);
         }
-        return { frameId: set ? ALIGNED_FRAME_ID : null, restarted: nodes.length };
+        return { frameId: rendererFrameId(native), restarted: nodes.length };
       },
       transformHash: () => {
         const presenter = presenterRef.current;
