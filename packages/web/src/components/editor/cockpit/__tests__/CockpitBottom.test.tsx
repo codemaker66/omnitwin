@@ -1683,6 +1683,34 @@ describe("CockpitBottom room layout timeline", () => {
     expect(screen.getByRole("button", { name: /pause timeline/i })).toBeTruthy();
   });
 
+  it("plays on a tap of Space, not on a hold, nor when the window lets the key go", async () => {
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
+    renderBottom();
+    await screen.findByRole("slider", { name: /scrub room layout/i });
+    fireEvent.pointerDown(screen.getByTestId("cockpit-bottom"));
+    const now = vi.spyOn(performance, "now").mockReturnValue(1_000);
+
+    const held = fireEvent.keyDown(window, { key: " ", code: "Space" });
+    expect(held).toBe(false);
+    expect(fireEvent.keyDown(window, { key: " ", code: "Space", repeat: true })).toBe(false);
+    now.mockReturnValue(1_500);
+    fireEvent.keyUp(window, { key: " ", code: "Space" });
+    expect(screen.queryByRole("button", { name: /pause timeline/i })).toBeNull();
+
+    now.mockReturnValue(2_000);
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    act(() => { window.dispatchEvent(new Event("blur")); });
+    focus.mockRestore();
+    fireEvent.keyUp(window, { key: " ", code: "Space" });
+    expect(screen.queryByRole("button", { name: /pause timeline/i })).toBeNull();
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    now.mockReturnValue(2_200);
+    fireEvent.keyUp(window, { key: " ", code: "Space" });
+    expect(screen.getByRole("button", { name: /pause timeline/i })).toBeTruthy();
+  });
+
   it("keeps playback honest across leading, invalid, and trailing intervals", async () => {
     const callbacks = new Map<number, FrameRequestCallback>();
     let nextRequest = 0;

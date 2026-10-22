@@ -6,7 +6,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canManageCommercial, canManageVenue } from "../utils/query.js";
+import { canManageCommercial, canReadClients } from "../utils/query.js";
 import { contactProfile, searchClients } from "../services/client-search.js";
 
 // ---------------------------------------------------------------------------
@@ -48,15 +48,15 @@ export async function clientRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  // GET /clients/search?q=... — the venue floor, or a platform admin. Typo
-  // tolerant; see services/client-search.ts.
+  // GET /clients/search?q=... — the venue floor and sales (canReadClients), or
+  // a platform admin. Typo tolerant; see services/client-search.ts.
   server.get("/search", { preHandler: [authenticate] }, async (request, reply) => {
     const query = SearchQuery.safeParse(request.query);
     if (!query.success) {
       return reply.status(400).send({ error: "Query must be at least 2 characters", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -95,7 +95,7 @@ export async function clientRoutes(
       return reply.status(400).send({ error: "Invalid user ID", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -184,7 +184,7 @@ export async function clientRoutes(
       return reply.status(400).send({ error: "Invalid lead ID", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -247,7 +247,7 @@ export async function clientRoutes(
 
   // GET /clients/recent — last 20 enquiries with contact info
   server.get("/recent", { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -267,7 +267,7 @@ export async function clientRoutes(
   // GET /clients/upcoming — the clients whose events come next: live
   // enquiries whose date is today or within the year ahead, soonest first.
   server.get("/upcoming", { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     const upcoming = await db.select(enquiryClientColumns)

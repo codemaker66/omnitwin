@@ -54,7 +54,7 @@ export type ConfigSearchResult = z.infer<typeof ConfigSearchResultSchema>;
 const ContactSearchResultSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
   phone: z.string().nullable(),
   accountName: z.string().nullable(),
 });
@@ -104,7 +104,7 @@ const ContactProfileSchema = z.object({
     id: z.string(),
     venueId: z.string(),
     name: z.string(),
-    email: z.string(),
+    email: z.string().nullable(),
     phone: z.string().nullable(),
     roleLabel: z.string().nullable(),
     sourceEnquiryId: z.string().nullable(),

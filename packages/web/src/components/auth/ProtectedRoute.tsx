@@ -1,60 +1,46 @@
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useState } from "react";
-import { useClerk } from "@clerk/react";
+import { Component, lazy, Suspense } from "react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { ReactNode } from "react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { authRouteWithReturnTo } from "../../lib/auth-return.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
-import { useAskBeforeSignOut, useInStaffShell, useShellFrame, type AskBeforeSignOut } from "../dashboard/staff-shell.js";
+import { useAskBeforeSignOut, useInStaffShell, useShellFrame } from "../dashboard/staff-shell.js";
+import type { ExitButtonProps } from "./ClerkExitButton.js";
 
-interface ExitButtonProps {
-  readonly onLocalSignOut: () => void;
-  /** Inside the staff shell, asks first about anything the page would lose. */
-  readonly askFirst: AskBeforeSignOut;
+// The router imports this guard, so whatever it imports statically ships to
+// every visitor. Clerk's sign-out is needed only on the refusal screen, so it
+// loads there (see ClerkExitButton.tsx) and the front door skips the chunk.
+const ClerkExitButton = lazy(() => import("./ClerkExitButton.js").then((module) => ({ default: module.ClerkExitButton })));
+
+/**
+ * The sign-out button's chunk can fail to load: its hashed file 404s after a
+ * deploy, or the visitor is offline. The refusal screen must survive that, so a
+ * failed load becomes a plain link to the sign-in page, which signs the wrong
+ * account out in its own way, instead of an error page that takes the screen's
+ * other exit with it.
+ */
+class ExitButtonBoundary extends Component<{ readonly children: ReactNode }, { readonly failed: boolean }> {
+  constructor(props: { readonly children: ReactNode }) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError(): { readonly failed: boolean } {
+    return { failed: true };
+  }
+
+  override render(): ReactNode {
+    if (this.state.failed) return <Link className="vv-button primary" to="/login">Use another account</Link>;
+    return this.props.children;
+  }
 }
 
 /**
  * A refusal is not a dead end. Whoever reads this screen is signed in as
  * somebody — usually the wrong somebody — so both ways out are offered: the
  * other account they meant to use, and the way back to the public site.
- *
- * Clerk's hook is reached through a child that only mounts when the provider
- * is really there. ClerkRouteProvider returns its children bare under the E2E
- * auth bypass, so calling useClerk() at this level would throw and take the
- * whole refusal screen with it — a guard that renders nothing is worse than
- * the dead end it was meant to fix.
  */
-function ClerkExitButton({ onLocalSignOut, askFirst }: ExitButtonProps): React.ReactElement {
-  const { signOut } = useClerk();
-  const [signingOut, setSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
-
-  const handleSignOut = async (): Promise<void> => {
-    setSigningOut(true);
-    setSignOutError(null);
-    try {
-      onLocalSignOut();
-      await signOut({ redirectUrl: "/login" });
-    } catch {
-      setSignOutError("Sign out did not finish. Please try again.");
-    } finally {
-      setSigningOut(false);
-    }
-  };
-
-  return (
-    <>
-      <button type="button" className="vv-button primary" disabled={signingOut} aria-busy={signingOut}
-        onClick={() => { askFirst(() => { void handleSignOut(); }); }}>
-        {signingOut && <ActivityIndicator size={18} />}
-        {signingOut ? "Signing out…" : "Use another account"}
-      </button>
-      {signOutError !== null && <p role="alert">{signOutError}</p>}
-    </>
-  );
-}
-
 function LocalExitButton({ onLocalSignOut, askFirst }: ExitButtonProps): React.ReactElement {
   const navigate = useNavigate();
   return (
@@ -72,7 +58,13 @@ function DenialActions(): React.ReactElement {
     <div className="vv-state-actions">
       {isE2EAuthBypassEnabled()
         ? <LocalExitButton onLocalSignOut={logout} askFirst={askFirst} />
-        : <ClerkExitButton onLocalSignOut={logout} askFirst={askFirst} />}
+        : (
+          <ExitButtonBoundary>
+            <Suspense fallback={<button type="button" className="vv-button primary" disabled aria-busy="true">Use another account</button>}>
+              <ClerkExitButton onLocalSignOut={logout} askFirst={askFirst} />
+            </Suspense>
+          </ExitButtonBoundary>
+        )}
       <Link className="vv-button" to="/">Back to Venviewer</Link>
     </div>
   );

@@ -720,6 +720,10 @@ const TERMS: LegalDocument = {
           text: "The city drawn round the Grand Hall in the planner, and the rooftop heights used to work out when the sun reaches its windows, are made from the Scottish Government's open LiDAR survey. Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0. That data is published under the Open Government Licence v3.0, and its reuse is governed by that licence, not by these terms.",
         },
         {
+          kind: "p",
+          text: "The street lamps drawn round the hall at night stand where Glasgow City Council's open street lighting data places them. Contains public sector information licensed under the Open Government Licence v3.0. Street lighting: Glasgow City Council. Contains OS data © Crown copyright and database right 2026.",
+        },
+        {
           kind: "links",
           items: [
             {

@@ -172,12 +172,40 @@ export function canManageCommercial(
 }
 
 /**
+ * Whether someone is on the venue's own commercial team: the roles
+ * canManageCommercial admits, at this venue, without its pass for a Venviewer
+ * platform admin. These are the people who answer a venue's guests, so the
+ * enquiry funnel records a first reply as theirs (migration 0100) and lets
+ * only them report one.
+ */
+export function isVenueCommercialMember(
+  person: Pick<JwtUser, "role" | "venueId">,
+  venueId: string,
+): boolean {
+  return COMMERCIAL_ROLES.has(person.role) && person.venueId === venueId;
+}
+
+/**
  * Reading the Diary: the venue floor, and sales, who pencils the holds. The
  * same people as DIARY_READ_ROLES on the live channel (ws/diary-live.ts), and
  * every role booking-mutations.ts lets write; a writer who could not read the
  * board would meet a 403 on opening it.
  */
 export function canReadDiary(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
+/**
+ * Reading the Clients desk (search, recent and upcoming lists, the client and
+ * guest-lead profiles): the venue floor, and sales, who works the clients
+ * (People Book design §6.7, approved 18 October 2026). Hallkeepers keep exactly
+ * the access they had. The commercial record inside the desk, and the contact
+ * profile, stay with `canManageCommercial` alone.
+ */
+export function canReadClients(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
 ): boolean {

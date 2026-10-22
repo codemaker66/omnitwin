@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { interiorInputBlocked, interiorLookButton, interiorMovementKey, type InteriorCameraInputPolicy } from "./interior-camera-input.js";
+import { interiorInputBlocked, interiorLookButton, type InteriorCameraInputPolicy } from "./interior-camera-input.js";
 import { DRAG_THRESHOLD_PX } from "../../lib/selection.js";
+import { KEY_PRIORITY, usePlannerKeyBindings, type KeyChord } from "../../lib/planner-keys.js";
 import {
   wheelStepMetres,
   pinchStepMetres,
@@ -53,6 +54,9 @@ const PINCH_SPAN_M = 6;
 const PINCH_MAX_STEP_M = 1;
 /** Metres per second on the keyboard. */
 const WALK_SPEED = 2.4;
+/** W A S D, with Shift or without, and the arrows, by the character typed. */
+const WALK_KEYS: readonly KeyChord[] = ["w", "a", "s", "d", "W", "A", "S", "D", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]
+  .map((key) => ({ key }));
 
 /**
  * Where the camera is, for tests and probes.
@@ -334,27 +338,7 @@ export function InteriorCamera({
       wake();
     };
 
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (blocked(event.target)) { keys.current.clear(); return; }
-      if (keyboardNavigationEnabled?.() === false) { keys.current.clear(); return; }
-      if (inputPolicy === "planner" && (event.ctrlKey || event.metaKey || event.altKey)) return;
-      if (event.key === "Home") {
-        if (inputPolicy === "planner") event.preventDefault();
-        target.current.position = [...start.position] as Vec3;
-        target.current.yaw = start.yaw;
-        target.current.pitch = start.pitch;
-        wake();
-        return;
-      }
-      if (inputPolicy === "planner" && !interiorMovementKey(event.key)) return;
-      if (inputPolicy === "planner") event.preventDefault();
-      keys.current.add(event.key.toLowerCase());
-      wake();
-    };
-    const onKeyUp = (event: KeyboardEvent): void => {
-      keys.current.delete(event.key.toLowerCase());
-      wake();
-    };
+    // The keys walk through the planner's one keyboard owner (WALK_KEYS below).
     const onBlur = (): void => { keys.current.clear(); dragging.current = false; pinch = null; wake(); };
     const onContextMenu = (event: MouseEvent): void => {
       if (inputPolicy === "planner" && !blocked(document.activeElement)) event.preventDefault();
@@ -367,8 +351,6 @@ export function InteriorCamera({
     canvas.addEventListener("pointercancel", onPointerUp, capturePlannerPointers);
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("contextmenu", onContextMenu);
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
 
     return () => {
@@ -378,11 +360,45 @@ export function InteriorCamera({
       canvas.removeEventListener("pointercancel", onPointerUp, capturePlannerPointers);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [gl, invalidate, bounds, camera, maxPitchUp, start, inputPolicy, ownsCamera, touchLookEnabled, keyboardNavigationEnabled]);
+  }, [gl, invalidate, bounds, camera, maxPitchUp, start, inputPolicy, ownsCamera, touchLookEnabled]);
+
+  const blockedAt = (eventTarget: EventTarget | null): boolean =>
+    ownsCamera?.() === false || interiorInputBlocked(inputPolicy, eventTarget);
+
+  // W A S D and the arrows walk, Home goes back to where you came in (T-671
+  // slice 5: through the planner's one keyboard owner, above every other use
+  // of those keys, so in Walk D walks and never draws). A held key is let go
+  // on its keyup or when the window loses focus.
+  usePlannerKeyBindings([
+    {
+      keys: WALK_KEYS,
+      priority: KEY_PRIORITY.walk,
+      repeat: true,
+      when: () => !blockedAt(document.activeElement) && keyboardNavigationEnabled?.() !== false,
+      run: (event) => {
+        keys.current.add(event.key.toLowerCase());
+        invalidate();
+      },
+      release: (event) => {
+        if (event === null) keys.current.clear();
+        else keys.current.delete(event.key.toLowerCase());
+        invalidate();
+      },
+    },
+    {
+      keys: [{ key: "Home" }],
+      priority: KEY_PRIORITY.walk,
+      when: () => !blockedAt(document.activeElement) && keyboardNavigationEnabled?.() !== false,
+      run: () => {
+        target.current.position = [...start.position] as Vec3;
+        target.current.yaw = start.yaw;
+        target.current.pitch = start.pitch;
+        invalidate();
+      },
+    },
+  ]);
 
   useFrame((_state, delta) => {
     if (ownsCamera?.() === false) { keys.current.clear(); dragging.current = false; return; }

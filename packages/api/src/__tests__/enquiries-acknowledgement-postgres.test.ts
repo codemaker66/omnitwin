@@ -182,6 +182,8 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     schema.venues, schema.spaces, schema.configurations, schema.enquiries,
     schema.enquiryStatusHistory, schema.guestLeads, schema.users,
     schema.eventPlanNotifications, schema.emailSends, schema.pricingRules,
+    // A booking enquiry finds or makes its person in the People Book (T-665).
+    schema.clientAccounts, schema.contacts, schema.contactPoints, schema.accountMemberships,
   ];
   const savedTwinSlugs = process.env["TWIN_PUBLIC_VENUE_SLUGS"];
 
@@ -214,7 +216,9 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE venues, spaces, configurations, enquiries, enquiry_status_history, guest_leads, users, event_plan_notifications, email_sends, pricing_rules");
+    await pool.query(
+      "TRUNCATE venues, spaces, configurations, enquiries, enquiry_status_history, guest_leads, users, event_plan_notifications, email_sends, pricing_rules, client_accounts, contacts, contact_points, account_memberships",
+    );
     await pool.query(
       "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', $2, '85 Glassford Street')",
       [VENUE, VENUE_SLUG],
@@ -334,7 +338,10 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     });
     expect(res.statusCode, res.body).toBe(200);
     const sent = await waitForEmail(`enquiry-approved:${enquiryId}`);
-    expect(sent.subject).toBe("Your enquiry at Trades Hall Glasgow has been approved");
+    expect(sent.subject).toBe("Your enquiry at Trades Hall Glasgow: next steps");
+    // Saying yes to an enquiry holds no date, so what the route sends never
+    // says "approved", which a guest reads as booked.
+    expect(sent.subject).not.toMatch(/approv/iu);
   });
 
   it("acknowledges the organiser by email", async () => {

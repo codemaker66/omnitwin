@@ -7,6 +7,7 @@ import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js
 import type { HallMoodName } from "../../grand-hall/hall-mood.js";
 import { hallSkyRequested } from "../../../lib/hall-sky-access.js";
 import { HallSunButton, HallSunDial } from "./HallSunDial.js";
+import { useEscapeLayer } from "../../../lib/planner-keys.js";
 
 // ---------------------------------------------------------------------------
 // HallViewControls — how to look at the Grand Hall, and in what light
@@ -194,26 +195,23 @@ function HallSunPopover(): ReactElement {
       if (event.target instanceof Node && anchor.current?.contains(event.target) === true) return;
       setOpen(false);
     };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      // This Escape is the panel's alone. The planner's own listen on window
-      // (back to Select, clear the selection, leave a saved viewpoint or the
-      // walk); stopped here at document, they never hear it.
-      event.preventDefault();
-      event.stopPropagation();
-      // Focus inside the panel would fall to the page as it unmounts: hand it
-      // back to the button that opened it.
-      const focused = document.activeElement;
-      if (focused !== null && anchor.current?.contains(focused) === true) trigger.current?.focus();
-      setOpen(false);
-    };
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+  // A popover in the planner's one Escape order: it closes before the
+  // planner steps back anything else (the placing, the selection, the walk).
+  // Focus inside the panel would fall to the page as it unmounts: hand it
+  // back to the button that opened it.
+  useEscapeLayer("popover", {
+    open,
+    onEscape: () => { setOpen(false); },
+    returnFocusTo: () => {
+      const focused = document.activeElement;
+      return focused !== null && anchor.current?.contains(focused) === true ? trigger.current : null;
+    },
+  });
   return (
     <div className="hall-sun-anchor" ref={anchor}>
       <HallSunButton ref={trigger} open={open} onToggle={() => { setOpen((value) => !value); }} />

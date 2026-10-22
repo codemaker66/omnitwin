@@ -51,8 +51,11 @@ export function describeParticipant(participant: LiveParticipant): string {
 }
 
 
-/** Opens and owns the live room for the open layout. Renders nothing. */
-function useLayoutLiveRoom(): void {
+/**
+ * Opens and owns the live room for the open layout. Renders nothing; the new
+ * chrome (T-671) uses it alone and shows who is here in its utilities.
+ */
+export function useLayoutLiveRoom(): void {
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);

@@ -322,7 +322,9 @@ export type PromotionDraftResult =
   | { readonly ok: false; readonly status: 403 | 404 | 409; readonly code: string; readonly error: string };
 
 /** The client contact of record for a hold: the event's client account's
- *  main contact, else the enquirer. */
+ *  main contact, else the enquirer. A main contact with no email (the People
+ *  Book, 0098, lets a person have none) cannot be written to, so the enquirer
+ *  is asked instead. */
 async function recipientFor(
   db: Database,
   hold: { readonly eventId: string | null; readonly enquiryId: string | null; readonly venueId: string },
@@ -335,7 +337,9 @@ async function recipientFor(
       .innerJoin(contacts, and(eq(contacts.id, clientAccounts.primaryContactId), isNull(contacts.deletedAt)))
       .where(and(eq(events.id, hold.eventId), eq(events.venueId, hold.venueId)))
       .limit(1);
-    if (contact !== undefined) return { ...contact, source: "client_contact" };
+    if (contact !== undefined && contact.email !== null) {
+      return { name: contact.name, email: contact.email, source: "client_contact" };
+    }
   }
   if (hold.enquiryId !== null) {
     const [enquiry] = await db

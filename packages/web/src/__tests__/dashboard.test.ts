@@ -410,9 +410,11 @@ describe("DashboardPage", () => {
     expect(canOpenDashboardView("analytics", "manager")).toBe(true);
     expect(canOpenDashboardView("analytics", "hallkeeper")).toBe(false);
     // Client Search and the review queue take their own API gates: /clients
-    // is canManageVenue, the pending queue is the review state machine's set.
-    expect(canOpenDashboardView("search", "sales")).toBe(false);
+    // is canReadClients (the venue floor and sales, People Book design §6.7),
+    // the pending queue is the review state machine's set.
+    expect(canOpenDashboardView("search", "sales")).toBe(true);
     expect(canOpenDashboardView("search", "hallkeeper")).toBe(true);
+    expect(canOpenDashboardView("search", "planner")).toBe(false);
     expect(canOpenDashboardView("reviews", "manager")).toBe(true);
     expect(canOpenDashboardView("reviews", "hallkeeper")).toBe(false);
     // A caterer is event-scoped: no venue dashboard surface at all.

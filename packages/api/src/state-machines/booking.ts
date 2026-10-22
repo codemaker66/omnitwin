@@ -48,6 +48,8 @@ const BOOKING_TRANSITION_ROLES: Record<string, readonly TransitionRole[]> = {
   "hold→lost": DIARY_TRANSITION_ROLES,
   "ink→cancelled": DIARY_TRANSITION_ROLES,
   "internal_block→released": DIARY_TRANSITION_ROLES,
+  // A show-round called off (migration 0100).
+  "viewing→cancelled": DIARY_TRANSITION_ROLES,
 };
 
 /** Every role-policy key must be a structurally legal transition. Exported so

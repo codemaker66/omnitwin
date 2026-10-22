@@ -2585,6 +2585,8 @@ export * from "./venue-sky.js";
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
 
+// T-665 slice 1: the People Book's records, matching and merges.
+export * from "./people.js";
 // The Pricing desk (17 Oct 2026): who sets a price, which rate stands on a
 // date beside a rate for particular dates, and the suggestions' contract.
 export * from "./pricing-desk.js";
@@ -2599,3 +2601,6 @@ export * from "./layout-live.js";
 // The competitor watch (17 Oct 2026): the comp set, dated price captures,
 // who a lost deal went to and the page-change check. Context, never a price input.
 export * from "./competitor-watch.js";
+// The enquiry funnel (migration 0100): first replies, where enquiries come from,
+// proposal link visits, and engagement attached to an enquiry or a proposal.
+export * from "./enquiry-funnel.js";
