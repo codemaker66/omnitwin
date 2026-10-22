@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
+import { useEscapeLayer, usePlannerKeyBindings, type KeyChord } from "../lib/planner-keys.js";
 import { seatCapacity, tableGroupSeatCapacity } from "../lib/table-group.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
@@ -24,6 +25,14 @@ interface ChairCountDialogProps {
   readonly request: ChairCountRequest | null;
   readonly onConfirm: (count: number) => void;
   readonly onCancel: () => void;
+}
+
+/** These keys with any modifier held, as the dialog has always taken them. */
+function anyModifier(codes: readonly string[]): KeyChord[] {
+  return codes.flatMap((code) => [
+    { code, shift: "any", alt: "any" } as const,
+    { code, mod: true, shift: "any", alt: "any" } as const,
+  ]);
 }
 
 const REPEAT_DELAY = 400;
@@ -180,25 +189,38 @@ export function ChairCountDialog({
   const minusRepeat = useRepeatButton(decrement);
   const plusRepeat = useRepeatButton(increment);
 
-  useEffect(() => {
-    if (request === null) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.target instanceof HTMLInputElement) {
-        if (e.code === "Enter" || e.code === "NumpadEnter") { e.preventDefault(); onConfirm(count); }
-        else if (e.code === "Escape") { e.preventDefault(); onCancel(); }
-        return;
-      }
-      // Enter on a focused button presses that button: Cancel, Table only
-      // or a stepper. It used to place the chairs whatever was focused.
-      if ((e.code === "Enter" || e.code === "NumpadEnter") && e.target instanceof HTMLButtonElement) return;
-      if (e.code === "Enter" || e.code === "NumpadEnter") { e.preventDefault(); onConfirm(count); }
-      else if (e.code === "Escape") { e.preventDefault(); onCancel(); }
-      else if (e.code === "ArrowUp" || e.code === "ArrowRight") { e.preventDefault(); setCount((c) => Math.min(c + 1, maxChairs)); setAnimKey((k) => k + 1); }
-      else if (e.code === "ArrowDown" || e.code === "ArrowLeft") { e.preventDefault(); setCount((c) => Math.max(c - 1, minChairs)); setAnimKey((k) => k + 1); }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("keydown", onKey); };
-  }, [request, count, minChairs, maxChairs, onConfirm, onCancel]);
+  // The dialog holds the keyboard while it is open: Escape cancels it, and
+  // only its own keys below answer (the planner's shortcuts wait).
+  const asking = request !== null;
+  useEscapeLayer("modal", { open: asking, onEscape: onCancel });
+  usePlannerKeyBindings([
+    // Enter places the chairs, from the count too. Enter on a focused button
+    // presses that button (Cancel, Table only or a stepper): the keyboard
+    // owner leaves it to the button.
+    {
+      keys: anyModifier(["Enter", "NumpadEnter"]),
+      run: () => { onConfirm(count); },
+      when: () => asking,
+      inFields: true,
+      duringModal: true,
+    },
+    // The arrows step the count. In the count itself they are the number
+    // field's own, which steps it natively.
+    {
+      keys: anyModifier(["ArrowUp", "ArrowRight"]),
+      run: () => { setCount((c) => Math.min(c + 1, maxChairs)); setAnimKey((k) => k + 1); },
+      when: () => asking,
+      repeat: true,
+      duringModal: true,
+    },
+    {
+      keys: anyModifier(["ArrowDown", "ArrowLeft"]),
+      run: () => { setCount((c) => Math.max(c - 1, minChairs)); setAnimKey((k) => k + 1); },
+      when: () => asking,
+      repeat: true,
+      duringModal: true,
+    },
+  ]);
 
   if (request === null) return null;
 

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactElement } from "react";
+import { useMemo, useRef, useState, type ReactElement } from "react";
 import { Armchair, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
@@ -9,14 +9,10 @@ import { normalizeFurnitureScale } from "../../../lib/furniture-scale.js";
 import { SCALE_MIN, SCALE_MAX } from "../../../lib/planner-tools.js";
 import { canApplyTableLinenToItem, effectiveTableLinenStyle, isDiningTableItem } from "../../../lib/furniture-semantics.js";
 import { dispatchPlannerToolbarCommand } from "../../../lib/planner-toolbar-events.js";
+import { useEscapeLayer } from "../../../lib/planner-keys.js";
+import { asOneUndoStep } from "../../../lib/planner-keymap.js";
 import { referenceSceneEntries, referenceSceneSummary, referenceSelection, type ReferenceSceneEntry } from "../../../lib/reference-scene-model.js";
 import "./ReferencePanels.css";
-
-function editWithHistory(action: () => void): void {
-  if (useLayoutTimelinePreviewStore.getState().mode !== "inactive") return;
-  useEditorStore.getState().bumpHistoryEpoch();
-  try { action(); } finally { useEditorStore.getState().bumpHistoryEpoch(); }
-}
 
 interface NumberControlProps {
   readonly label: string;
@@ -29,8 +25,24 @@ interface NumberControlProps {
 
 function NumberControl({ label, value, step, min, max, onCommit }: NumberControlProps): ReactElement {
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // A typed value not yet committed is an operation in progress: Escape puts
+  // the committed value back and leaves the field, before it steps back any
+  // further (the selection stays). With nothing typed, Escape passes on.
+  useEscapeLayer("operation", {
+    open: () => {
+      const input = inputRef.current;
+      return input !== null && document.activeElement === input && input.value !== String(value);
+    },
+    onEscape: () => {
+      const input = inputRef.current;
+      if (input === null) return;
+      input.value = String(value);
+      input.blur();
+    },
+  });
   return <label className="reference-number-control"><span>{label}</span>
-    <input key={value} aria-label={label} type="number" defaultValue={value} step={step} min={min} max={max} aria-invalid={error !== null}
+    <input ref={inputRef} key={value} aria-label={label} type="number" defaultValue={value} step={step} min={min} max={max} aria-invalid={error !== null}
       onBlur={(event) => {
         const next = event.currentTarget.valueAsNumber;
         if (!Number.isFinite(next) || (min !== undefined && next < min) || (max !== undefined && next > max)) {
@@ -41,11 +53,7 @@ function NumberControl({ label, value, step, min, max, onCommit }: NumberControl
         setError(null);
         if (Math.abs(next - value) > 1e-9) onCommit(next);
       }}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === "Escape") { event.currentTarget.value = String(value); event.currentTarget.blur(); }
-        else if (event.key === "Enter") event.currentTarget.blur();
-      }} />
+      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
     {error !== null && <small role="alert">{error}</small>}
   </label>;
 }
@@ -76,18 +84,18 @@ function InspectorTransforms({ primary, members, ids }: {
   const scale = normalizeFurnitureScale(item.scale);
   const group = members.length > 1;
   const move = (axis: "x" | "z", metres: number): void => {
-    editWithHistory(() => { usePlacementStore.getState().moveItemsByDelta(ids, axis === "x" ? toRenderSpace(metres) - item.x : 0, axis === "z" ? toRenderSpace(metres) - item.z : 0); });
+    asOneUndoStep(() => { usePlacementStore.getState().moveItemsByDelta(ids, axis === "x" ? toRenderSpace(metres) - item.x : 0, axis === "z" ? toRenderSpace(metres) - item.z : 0); });
   };
   const rotate = (degrees: number): void => {
     const delta = degrees * Math.PI / 180 - item.rotationY;
-    editWithHistory(() => { usePlacementStore.getState().rotateItemsTo(new Map(members.map((entry) => [entry.item.id, entry.item.rotationY + delta]))); });
+    asOneUndoStep(() => { usePlacementStore.getState().rotateItemsTo(new Map(members.map((entry) => [entry.item.id, entry.item.rotationY + delta]))); });
   };
   const scales = members.map((entry) => normalizeFurnitureScale(entry.item.scale));
   const minPercent = Math.ceil(SCALE_MIN / Math.min(...scales) * scale * 100);
   const maxPercent = Math.floor(SCALE_MAX / Math.max(...scales) * scale * 100);
   const resize = (percent: number): void => {
     const ratio = percent / 100 / scale;
-    editWithHistory(() => { usePlacementStore.getState().scaleItemsTo(new Map(members.map((entry) => [entry.item.id, normalizeFurnitureScale(entry.item.scale) * ratio]))); });
+    asOneUndoStep(() => { usePlacementStore.getState().scaleItemsTo(new Map(members.map((entry) => [entry.item.id, normalizeFurnitureScale(entry.item.scale) * ratio]))); });
   };
   return <section className="reference-inspector-section"><h3>Transform</h3>
     <div className="reference-position-controls">
@@ -106,7 +114,7 @@ function InspectorStyle({ primary }: { readonly primary: ReferenceSceneEntry }):
   if (catalogue === undefined || catalogue.category !== "table") return null;
   const item = primary.item;
   const linen = effectiveTableLinenStyle(catalogue, item);
-  const setLinen = (value: string): void => { editWithHistory(() => {
+  const setLinen = (value: string): void => { asOneUndoStep(() => {
     const placement = usePlacementStore.getState();
     if (value === "none") { if (item.clothed) placement.toggleCloth(item.id); }
     else if (value === "white" || value === "black") placement.applyTableCloth(new Set([item.id]), value);
@@ -115,7 +123,7 @@ function InspectorStyle({ primary }: { readonly primary: ReferenceSceneEntry }):
     {canApplyTableLinenToItem(catalogue) ? <label className="reference-select-control"><span>Linen</span><select aria-label="Table linen" value={linen ?? "none"} onChange={(event) => { setLinen(event.target.value); }}>
       <option value="none">Bare table</option><option value="white">Ivory</option><option value="black">Black</option>
     </select></label> : <dl><NumberFact label="Linen" value={`${linen === "white" ? "Ivory" : linen === "included" ? "Included cloth" : "Black"} · catalogue variant`} /></dl>}
-    {isDiningTableItem(catalogue) && <label className="reference-select-control"><span>Place settings</span><select aria-label="Table place settings" value={item.tableSetting ?? "none"} onChange={(event) => { const value = event.target.value; editWithHistory(() => {
+    {isDiningTableItem(catalogue) && <label className="reference-select-control"><span>Place settings</span><select aria-label="Table place settings" value={item.tableSetting ?? "none"} onChange={(event) => { const value = event.target.value; asOneUndoStep(() => {
       if (value === "dinner") usePlacementStore.getState().applyTableSetting(new Set([item.id]), "dinner");
       else usePlacementStore.getState().clearTableSetting(item.id);
     }); }}><option value="none">None</option><option value="dinner">Dinner</option></select></label>}
@@ -150,6 +158,6 @@ export function SelectedFurnitureInspector({ className = "" }: { readonly classN
         <InspectorStyle primary={primary} />
       </>}
     </div>
-    {!locked && primary !== undefined && <footer className="reference-panel-footer"><button type="button" className="reference-action reference-action-danger" onClick={() => { editWithHistory(() => { usePlacementStore.getState().removeItems(selection.ids); useSelectionStore.getState().clearSelection(); }); }}><Trash2 size={14} />Remove {selection.members.length > 1 ? `${String(selection.members.length)} objects` : "object"}</button></footer>}
+    {!locked && primary !== undefined && <footer className="reference-panel-footer"><button type="button" className="reference-action reference-action-danger" onClick={() => { asOneUndoStep(() => { usePlacementStore.getState().removeItems(selection.ids); useSelectionStore.getState().clearSelection(); }); }}><Trash2 size={14} />Remove {selection.members.length > 1 ? `${String(selection.members.length)} objects` : "object"}</button></footer>}
   </aside>;
 }

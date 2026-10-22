@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 import { Cuboid, Sparkles, Layers3, Footprints, type LucideIcon } from "lucide-react";
 import { COCKPIT_LAYER_MODES, type CockpitLayerMode } from "../../../lib/cockpit-modes.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -9,7 +9,6 @@ import { TRADES_HALL_RUNTIME_ROOMS } from "../../../lib/runtime-package-resoluti
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../../shared/FloatingWidgetFrame.js";
 import "./CanvasLayerControls.css";
 import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js";
-import { interiorInputBlocked } from "../../rooms/interior-camera-input.js";
 import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
 import { useModelledGrandHall } from "../../grand-hall/hall-space.js";
 import { HallViewControls } from "./HallViewControls.js";
@@ -95,20 +94,9 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
   const walkDisabled = !splatsAvailable || !walkAvailable || povActive;
   const modelledHall = useModelledGrandHall();
 
-  // Escape leaves the room. Listening only while walking keeps this from
-  // shadowing the rig's own Escape duties (tours, POV exit), none of which
-  // can be active at the same time as walk.
-  useEffect(() => {
-    if (!walkMode) return;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.code !== "Escape" || event.defaultPrevented || interiorInputBlocked("planner", event.target)) return;
-      event.preventDefault();
-      recordPlannerArrivalChoice();
-      useCockpitStore.getState().setWalkMode(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, [walkMode]);
+  // Esc never leaves Walk (spec 4.5; T-671 slice 5): a reflexive Esc steps
+  // back one layer in the planner's one Escape order and never ejects you
+  // from the room. The view switch here leaves it.
 
   const controls = (
     <div className="cockpit-layer-controls" role="group" aria-label="Room view">

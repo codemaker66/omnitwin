@@ -1,8 +1,17 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
-import type { BookingKind, BookingState, CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
+import {
+  BOOKING_LOST_REASONS,
+  BookingLostReasonSchema,
+  type BookingKind,
+  type BookingLostReason,
+  type BookingState,
+  type CalendarBookingEntry,
+  type CalendarRoom,
+} from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import {
+  bookViewing,
   convertEnquiry,
   createBooking,
   transitionBooking,
@@ -35,10 +44,13 @@ import {
   formToConvertPayload,
   formToCreatePayload,
   formToUpdatePayload,
+  formToViewingPayload,
   hiddenFieldError,
   initialDrawerForm,
   initialPromotionForm,
   promotionPayload,
+  withConvertKind,
+  type ConvertKind,
   type DrawerForm,
   type DrawerMode,
   type FieldErrors,
@@ -140,7 +152,16 @@ function endingConsequence(
   return sentences.join(" ");
 }
 
-const KIND_OPTIONS: readonly BookingKind[] = ["hold", "ink", "internal_block", "prospect"];
+const KIND_OPTIONS: readonly BookingKind[] = ["hold", "ink", "internal_block", "prospect", "viewing"];
+
+const CONVERT_KINDS: readonly ConvertKind[] = ["hold", "viewing"];
+
+/** A lifecycle move's words on its button. A viewing's one exit is being
+ *  called off, said as the viewing, never as "the booking". */
+function transitionLabel(target: BookingState, booking: CalendarBookingEntry | null): string {
+  if (target === "cancelled" && booking?.kind === "viewing") return BOARD_COPY.ending.cancelViewing;
+  return BOARD_COPY.transitions[target];
+}
 
 /** A detail is only worth a line when it carries a value: the calendar marks
  *  these optional AND nullable, and a blank string says no more than either. */
@@ -150,9 +171,9 @@ function detailOrNull(value: string | null | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function drawerTitle(mode: DrawerMode): string {
+function drawerTitle(mode: DrawerMode, kind: BookingKind): string {
   if (mode.kind === "edit") return BOARD_COPY.drawer.editTitle;
-  if (mode.kind === "convert") return BOARD_COPY.drawer.convertTitle;
+  if (mode.kind === "convert") return kind === "viewing" ? BOARD_COPY.drawer.viewingTitle : BOARD_COPY.drawer.convertTitle;
   return BOARD_COPY.drawer.createTitle;
 }
 
@@ -179,10 +200,14 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   // its failure is said beside it, not above the form's Save.
   const [ending, setEnding] = useState<EndingTransition | null>(null);
   const [endingNote, setEndingNote] = useState("");
+  // Why a booking marked lost was lost (migration 0100): optional, so a loss
+  // with no reason chosen is still marked lost.
+  const [lostReason, setLostReason] = useState<BookingLostReason | null>(null);
   const [endingError, setEndingError] = useState<string | null>(null);
   const endingQuestionId = useId();
   const endingQuestionRef = useRef<HTMLParagraphElement | null>(null);
   const endingNoteRef = useRef<HTMLTextAreaElement | null>(null);
+  const lostReasonRef = useRef<HTMLSelectElement | null>(null);
   const transitionsRef = useRef<HTMLDivElement | null>(null);
   /** The change whose button opened the confirmation "Keep it" closed. */
   const endingReturnRef = useRef<EndingTransition | null>(null);
@@ -218,10 +243,12 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       if (target !== null) transitionsRef.current?.querySelector<HTMLButtonElement>(`[data-transition="${target}"]`)?.focus();
       return;
     }
-    // A precise pointer goes straight to the reason; on touch the keyboard
-    // would cover the question, so focus lands on the question instead.
+    // A precise pointer goes straight to the reason (a loss's own, from its
+    // list, first); on touch the keyboard would cover the question, so focus
+    // lands on the question instead.
     const finePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: fine)").matches;
-    (finePointer ? endingNoteRef.current : endingQuestionRef.current)?.focus();
+    const reasonField = ending === "lost" ? lostReasonRef.current : endingNoteRef.current;
+    (finePointer ? reasonField : endingQuestionRef.current)?.focus();
   }, [ending]);
 
   // The same gate the API applies to diary writes (DIARY_WRITE_ROLES): the
@@ -247,10 +274,21 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   );
 
   const isHold = form.kind === "hold";
+  // A viewing (migration 0100) is a show-round: no hold's hygiene, no option
+  // and no event, so no event type either.
+  const isViewing = form.kind === "viewing";
   const place = followsLadder !== undefined && isHold ? formPlace(form, followsLadder) : null;
   // COUPLED to drawer-form.ts ERROR_SLOTTED_HOLD: the hygiene fieldset is
   // exactly the set of hold-only inline error slots.
   const showHygiene = isHold;
+
+  /** The enquiry's drawer books a hold or a viewing. The form keeps what was
+   *  typed; a field the other choice hides no longer says it is wrong. */
+  function chooseConvertKind(kind: ConvertKind): void {
+    setForm((previous) => withConvertKind(previous, kind));
+    setFieldErrors({});
+    setSubmitError(null);
+  }
 
   function set<Key extends keyof DrawerForm>(key: Key, value: DrawerForm[Key]): void {
     setForm((previous) => {
@@ -303,6 +341,24 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       createBooking(result.payload)
         .then((booking) => {
           onSaved(BOARD_COPY.drawer.created(booking.title));
+        })
+        .catch(failure)
+        .finally(() => {
+          setBusy(false);
+        });
+      return;
+    }
+    if (mode.kind === "convert" && isViewing) {
+      const result = formToViewingPayload(form, mode.enquiry.id);
+      if (!result.ok) {
+        rejectWithVisibleErrors(result.fieldErrors);
+        return;
+      }
+      setFieldErrors({});
+      setBusy(true);
+      bookViewing(result.payload)
+        .then((booking) => {
+          onSaved(BOARD_COPY.drawer.viewingBooked(booking.title));
         })
         .catch(failure)
         .finally(() => {
@@ -368,9 +424,10 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     }
     setStepError(null);
     setBusy(true);
-    transitionBooking(mode.booking.id, toState)
+    const moved = mode.booking;
+    transitionBooking(moved.id, toState)
       .then(({ booking }) => {
-        onSaved(BOARD_COPY.drawer.transitioned(booking.title, BOARD_COPY.transitions[toState]));
+        onSaved(BOARD_COPY.drawer.transitioned(booking.title, transitionLabel(toState, moved)));
       })
       .catch(stepFailure)
       .finally(() => {
@@ -424,10 +481,15 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   function confirmEnding(): void {
     if (mode.kind !== "edit" || ending === null) return;
     const toState = ending;
-    const note = endingNote.trim();
+    const trimmed = endingNote.trim();
+    const note = trimmed.length === 0 ? undefined : trimmed;
+    // Only a loss carries its reason, and only when one was chosen.
+    const reason = toState === "lost" ? lostReason : null;
     setEndingError(null);
     setBusy(true);
-    transitionBooking(mode.booking.id, toState, note.length === 0 ? undefined : note)
+    (reason === null
+      ? transitionBooking(mode.booking.id, toState, note)
+      : transitionBooking(mode.booking.id, toState, note, undefined, reason))
       .then(({ booking, promotedToFirst }) => {
         // The closing line says who now stands first: from the API's own
         // resequence when a hold left. A confirmed booking leaving moves no
@@ -474,12 +536,12 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     <aside
       className="diary-drawer"
       role="dialog"
-      aria-label={drawerTitle(mode)}
+      aria-label={drawerTitle(mode, form.kind)}
       aria-busy={busy}
       onKeyDown={onKeyDown}
     >
       <header className="diary-drawer-header">
-        <h2 className="diary-drawer-title">{drawerTitle(mode)}</h2>
+        <h2 className="diary-drawer-title">{drawerTitle(mode, form.kind)}</h2>
         <button ref={closeRef} type="button" className="diary-button" onClick={onClose} disabled={busy}>
           {BOARD_COPY.drawer.close}
         </button>
@@ -488,7 +550,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       {busy ? <ActivityStatus>Updating this booking…</ActivityStatus> : null}
 
       {mode.kind === "convert" ? (
-        <p className="diary-drawer-note">{BOARD_COPY.drawer.convertNote(mode.enquiry.name)}</p>
+        <p className="diary-drawer-note">
+          {isViewing ? BOARD_COPY.drawer.viewingNote(mode.enquiry.name) : BOARD_COPY.drawer.convertNote(mode.enquiry.name)}
+        </p>
       ) : null}
 
       {/* "Booking summary", not "Booking details": the drawer itself answers
@@ -612,11 +676,33 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       ) : transitions.length > 0 && ending !== null && mode.kind === "edit" ? (
         <div className="diary-drawer-transitions">
           <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
-          <div className="diary-consequence" role="group" aria-labelledby={endingQuestionId} data-tone={ending === "cancelled" ? "brick" : "amber"}>
+          {/* Brick for cancelling a confirmed booking; a viewing called off
+              is the lighter copper, as a hold's end is. */}
+          <div className="diary-consequence" role="group" aria-labelledby={endingQuestionId}
+            data-tone={ending === "cancelled" && mode.booking.kind !== "viewing" ? "brick" : "amber"}>
             <p className="diary-consequence-question" id={endingQuestionId} ref={endingQuestionRef} tabIndex={-1}>
               {BOARD_COPY.ending.question[ending](mode.booking.title)}
             </p>
             <p className="diary-consequence-line">{endingConsequence(mode.booking, rooms, contested, ladderRead)}</p>
+            {ending === "lost" ? (
+              <label className="diary-field">
+                {BOARD_COPY.ending.lostReason.label}
+                <select
+                  ref={lostReasonRef}
+                  value={lostReason ?? ""}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const parsed = BookingLostReasonSchema.safeParse(event.target.value);
+                    setLostReason(parsed.success ? parsed.data : null);
+                  }}
+                >
+                  <option value="">{BOARD_COPY.ending.lostReason.none}</option>
+                  {BOOKING_LOST_REASONS.map((reason) => (
+                    <option key={reason} value={reason}>{BOARD_COPY.ending.lostReason.words[reason]}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="diary-field">
               {BOARD_COPY.ending.noteLabel}
               <textarea
@@ -630,7 +716,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
             </label>
             <div className="diary-drawer-actions">
               <button type="button" className="diary-button is-primary" onClick={confirmEnding} disabled={busy} aria-busy={busy}>
-                {busy ? BOARD_COPY.ending.saving[ending] : BOARD_COPY.ending.confirm[ending]}
+                {busy ? BOARD_COPY.ending.saving[ending]
+                  : ending === "cancelled" && mode.booking.kind === "viewing" ? BOARD_COPY.ending.cancelViewing
+                    : BOARD_COPY.ending.confirm[ending]}
               </button>
               <button type="button" className="diary-button" onClick={keepBooking} disabled={busy}>
                 {BOARD_COPY.ending.keep}
@@ -655,7 +743,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
                   disabled={busy}
                 >
                   {/* "…": this one asks first. */}
-                  {BOARD_COPY.transitions[target]}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
+                  {transitionLabel(target, mode.kind === "edit" ? mode.booking : null)}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
                 </button>
                 {/* Confirm, Extend, Release: the day it moves to is on the
                     button, so it needs no question of its own. */}
@@ -679,6 +767,28 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         }}
       >
         <fieldset className="diary-form-fields" disabled={!canWriteDiary}>
+        {/* From an enquiry: hold its date, as always, or book it a viewing
+            (migration 0100). One choice, above everything it changes. */}
+        {mode.kind === "convert" ? (
+          <fieldset className="diary-choice">
+            <legend>{BOARD_COPY.drawer.convertChoice.legend}</legend>
+            <div className="diary-choice-options">
+              {CONVERT_KINDS.map((kind) => (
+                <label key={kind} className="diary-choice-option">
+                  <input
+                    type="radio"
+                    name="diary-convert-kind"
+                    value={kind}
+                    checked={form.kind === kind}
+                    onChange={() => { chooseConvertKind(kind); }}
+                  />
+                  <span>{BOARD_COPY.drawer.convertChoice[kind]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ) : null}
+
         {mode.kind === "create" ? (
           <label className="diary-field">
             {BOARD_COPY.drawer.fields.kind}
@@ -725,10 +835,12 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           {fieldError("title")}
         </label>
 
-        <label className="diary-field">
-          {BOARD_COPY.drawer.fields.eventType}
-          <input type="text" value={form.eventType} onChange={onText("eventType")} />
-        </label>
+        {isViewing ? null : (
+          <label className="diary-field">
+            {BOARD_COPY.drawer.fields.eventType}
+            <input type="text" value={form.eventType} onChange={onText("eventType")} />
+          </label>
+        )}
 
         <div className="diary-field-row is-times">
           <label className="diary-field">
@@ -752,6 +864,12 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
             {fieldError("endsAt")}
           </label>
         </div>
+
+        {/* Whoever books a viewing hosts it; an existing one names its
+            owner in the summary above. */}
+        {isViewing && mode.kind !== "edit" ? (
+          <p className="diary-drawer-note">{BOARD_COPY.drawer.viewingOwnerNote}</p>
+        ) : null}
 
         {showHygiene ? (
           <fieldset className="diary-hygiene">
@@ -847,7 +965,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
 
         <div className="diary-drawer-actions">
           {canWriteDiary ? <button type="submit" className="diary-button is-primary" disabled={busy}>
-            {BOARD_COPY.drawer.submit[mode.kind]}
+            {mode.kind === "convert" && isViewing ? BOARD_COPY.drawer.submit.viewing : BOARD_COPY.drawer.submit[mode.kind]}
           </button> : null}
           <button type="button" className="diary-button" onClick={onClose} disabled={busy}>
             {BOARD_COPY.drawer.cancel}

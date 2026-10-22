@@ -19,6 +19,7 @@ import {
   formatScale,
   scrubRotation,
   scrubScale,
+  type PillTool,
   type PlannerTool,
 } from "../../../lib/planner-tools.js";
 import { isSceneFurniturePlacement } from "../../../lib/table-dressing.js";
@@ -28,10 +29,9 @@ import "./ToolPill.css";
 // ---------------------------------------------------------------------------
 // ToolPill — the five hands, top-centre over the stage.
 //
-// Pointer-first by design: the planner's keyboard is already spoken for
-// (digits jump bookmarks, WASD pans, Q/E nudge rotation), so the pill adds
-// no new letter bindings — M and Escape both route through the tool store
-// from where they already lived.
+// Pointer-first by design: the pill adds no letter bindings of its own. M
+// and Esc are the planner keymap's (lib/planner-keymap.ts) and reach the pill
+// through the tool store, the planner's one tool state.
 //
 // The value chip is the tabular readout ("135°", "×1.25", "3.20 m") and the
 // fine instrument: a horizontal scrub on the number adjusts the selection in
@@ -40,7 +40,7 @@ import "./ToolPill.css";
 // undo entry.
 // ---------------------------------------------------------------------------
 
-const TOOL_ICONS: Readonly<Record<PlannerTool, LucideIcon>> = {
+const TOOL_ICONS: Readonly<Record<PillTool, LucideIcon>> = {
   select: MousePointer2,
   move: Move,
   rotate: RotateCw,

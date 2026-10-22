@@ -41,6 +41,19 @@ export const SPRING_PRESETS = {
   furnitureSquash: { stiffness: 520, damping: 17 },
   /** A new piece coming down onto the floor: critically damped, no bounce through it. */
   furnitureDrop: { stiffness: 160, damping: 25 },
+  // The planner chrome's three (T-671, spec section 8). Settle times are to
+  // within 2 % and under 5 %/s on a unit step, measured on this integrator.
+  /** The copper underline sliding to a view, tool or workspace key, and the
+   *  caption docking to an edge: a detent clicking home. ζ ≈ 0.94, settles in
+   *  0.30 s, no visible overshoot. */
+  detent: { stiffness: 700, damping: 50 },
+  /** The hour released near a stop, a jump to an act or to Now, and the room
+   *  making room for a panel: critically damped (ζ ≈ 1.0), settles in 0.59 s
+   *  and never overshoots, because it happens many times a day. */
+  dialGlide: { stiffness: 170, damping: 26 },
+  /** A phone sheet let go of: firm, ζ ≈ 0.87, settles in 0.35 s with a 0.18 %
+   *  overshoot, so it lands rather than stops. */
+  sheetSettle: { stiffness: 300, damping: 30 },
 } as const satisfies Record<string, SpringConfig>;
 
 /**

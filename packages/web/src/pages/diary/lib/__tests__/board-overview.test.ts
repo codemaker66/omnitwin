@@ -152,6 +152,9 @@ describe("overview exact labels", () => {
     { kind: "hold", rank: null, jointFlag: false, label: "Provisional" },
     { kind: "hold", rank: 1, jointFlag: true, label: "Provisional · Joint 1st" },
     { kind: "hold", rank: 2, jointFlag: false, label: "Provisional · 2nd option" },
+    // A show-round (migration 0100) is never a hold, whatever its row says.
+    { kind: "viewing", rank: null, jointFlag: false, label: "Viewing" },
+    { kind: "viewing", rank: 1, jointFlag: true, label: "Viewing" },
   ] as const)("keeps the commitment distinction: $label", ({ kind, rank, jointFlag, label }) => {
     expect(bookingStateLabel(booking("state", { kind, state: kind, rank, jointFlag }))).toBe(label);
   });

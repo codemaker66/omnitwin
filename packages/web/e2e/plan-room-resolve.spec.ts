@@ -359,19 +359,20 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
   });
 
   // Quarantined under T-560: on this dev GPU class, ANY large camera teleport
-  // across the full splat (walk entry by click, walk exit by Escape) can wedge
-  // the GL thread natively and non-deterministically — empty JS stack, starved
-  // evaluates, minutes-long. Production hardware performs the same teleports
-  // fine (the live /room spawns are the standing proof). The exit's store
-  // mechanics are unit-covered; this case re-arms when T-560 resolves.
-  test.fixme("walk exit: Escape returns to plan view (T-560 GL teleport wedge)", async ({ page }) => {
+  // across the full splat (walk entry by click) can wedge the GL thread
+  // natively and non-deterministically — empty JS stack, starved evaluates,
+  // minutes-long. Production hardware performs the same teleports fine (the
+  // live /room spawns are the standing proof). Esc never leaves Walk (spec
+  // 4.5, T-671 slice 5; unit-covered in CanvasLayerControls and the keymap);
+  // this case re-arms when T-560 resolves.
+  test.fixme("walk stays on Escape (T-560 GL teleport wedge on the walk entry)", async ({ page }) => {
     await stubPlannerBootstrap(page);
     await page.goto("/plan");
     await page.evaluate(() => { window.__setWalkMode?.(true); });
     await page.keyboard.press("Escape");
     await expect
       .poll(() => page.evaluate(() => window.__walkDebug?.walkMode ?? null), { timeout: 15_000 })
-      .toBe(false);
+      .toBe(true);
   });
 
 });

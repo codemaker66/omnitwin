@@ -31,6 +31,19 @@ describe("BoardOverview", () => {
     expect(document.querySelector("[data-diary-lane]")).toBeNull();
     expect(document.querySelector("img")).toBeNull();
   });
+  it("says a viewing as a viewing on its own quiet card, with no option or decision (migration 0100)", () => {
+    const viewing = { ...entry, id: "show", kind: "viewing" as const, state: "viewing" as const, title: "Fraser show-round",
+      eventType: null, decisionAt: "2026-09-08T11:00:00Z", startsAt: "2026-09-08T10:00:00Z", endsAt: "2026-09-08T11:00:00Z" };
+    render(<BoardOverview rooms={rooms} entries={[viewing]} range={range} nowMs={Date.parse("2026-09-07T08:00:00Z")}
+      conflictSeverity={new Map([["show", "warning"]])} onOpenBooking={vi.fn()} onOpenDay={vi.fn()} />);
+    const card = document.querySelector("[data-booking-id='show']");
+    expect(card?.classList.contains("is-viewing")).toBe(true);
+    expect(card?.querySelector(".diary-overview-status")?.textContent).toBe("Viewing");
+    expect(card?.querySelector(".diary-option")).toBeNull();
+    expect(card?.querySelector(".diary-overview-age")).toBeNull();
+    // A viewing's warning (a confirmed booking in the room then) is a review, never a block.
+    expect(card?.querySelector(".diary-overview-warning")?.textContent).toBe("Review");
+  });
   it("keeps overnight cards individually addressable, with one stable focus anchor", () => {
     const overnight = { ...entry, startsAt: "2026-09-07T22:00Z", endsAt: "2026-09-09T02:00Z" };
     render(<BoardOverview rooms={rooms} entries={[overnight]} range={range} nowMs={range.fromMs}
