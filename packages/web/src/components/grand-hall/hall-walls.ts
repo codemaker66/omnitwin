@@ -425,10 +425,14 @@ function* reliefWall(hb: HallBuilders, wall: HallWall, wallIndex: number, mesh: 
   const { positions, indices } = mesh;
   const count = positions.length / 3;
   const world: V3[] = [];
-  for (let i = 0; i < count; i++) world.push(wallPoint(wall, positions[i * 3] ?? 0, positions[i * 3 + 1] ?? 0, positions[i * 3 + 2] ?? 0));
+  for (let i = 0; i < count; i++) {
+    if (i > 0 && i % 4096 === 0) yield;
+    world.push(wallPoint(wall, positions[i * 3] ?? 0, positions[i * 3 + 1] ?? 0, positions[i * 3 + 2] ?? 0));
+  }
   // Area-weighted vertex normals: every face of the relief looks into the room.
   const sums = new Float64Array(count * 3);
   for (let t = 0; t < indices.length; t += 3) {
+    if (t > 0 && t % (4096 * 3) === 0) yield;
     const a = indices[t] ?? 0;
     const b = indices[t + 1] ?? 0;
     const c = indices[t + 2] ?? 0;

@@ -18,6 +18,7 @@ import type { BufferGeometry } from "three";
 import { MeshBuilder, type V3 } from "./mesh-builder.js";
 import { sampleHallLight, type HallSurfaceRole } from "./hall-lighting-model.js";
 import { atlasUvForPoint } from "./hall-atlas.js";
+import { drain, type Steps } from "./hall-slices.js";
 
 export const HALL_MATERIAL_KEYS = [
   "floor",
@@ -148,6 +149,11 @@ export class HallBuilders {
   }
 
   build(): { geometries: Map<HallMaterialKey, BufferGeometry>; stats: HallGeometryStats } {
+    return drain(this.buildSteps());
+  }
+
+  /** build as a sliced build (hall-slices.ts): one material's geometry a step. */
+  *buildSteps(): Steps<{ geometries: Map<HallMaterialKey, BufferGeometry>; stats: HallGeometryStats }> {
     const geometries = new Map<HallMaterialKey, BufferGeometry>();
     let vertices = 0;
     let triangles = 0;
@@ -157,6 +163,7 @@ export class HallBuilders {
       vertices += builder.vertices;
       triangles += builder.triangles;
       geometries.set(key, builder.build());
+      yield;
     }
     return { geometries, stats: { vertices, triangles, parts: geometries.size } };
   }

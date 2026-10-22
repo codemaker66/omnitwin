@@ -216,8 +216,8 @@ export const HALL_WALL_STRETCHES: Readonly<Record<HallWallId, readonly HallWallS
       source: "scan: the corridor face at z 6.54-6.65 from x 3 to 7, at every height sectioned (0.6-3.2 m); the 2010 plan draws a 0.5 m recess here, so the face is joinery filling it",
     },
     {
-      from: doorWallU(-7.0), to: doorWallU(-8.33), thickness: 0.46,
-      source: "2010 FIRST plan: 0.44-0.46 m where the corridor widens into the lobby before the fireplace door; the plan starts it at x -6.2, moved to x -7.0 where the scan last saw the 1.1 m face",
+      from: doorWallU(-6.0), to: doorWallU(-8.33), thickness: 0.46,
+      source: "2010 FIRST plan: 0.44-0.49 m where the corridor widens into the lobby before the fireplace door (the plan from x -6.15); from x -6.0, where the scan's corridor face of the 1.1 m wall ends at every height sectioned (mesh sections, min x -6.00 at 0.6-2.0 m)",
     },
     {
       from: doorWallU(-9.41), to: HALL_LENGTH, thickness: 0.78,

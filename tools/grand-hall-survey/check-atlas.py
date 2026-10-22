@@ -7,11 +7,18 @@
   walls-2048 the Lanczos reduction rings at those edges, so there it is only checked that nothing
   outside the openings is translucent;
 - the glass area (alpha below 192) is within 2% of the previous build at both sizes;
-- every wall strip carries colour (no empty strip).
-Usage: python3 $SURVEY/check-atlas.py <new-dir> <previous-dir> [--json out.json]
+- every wall strip carries colour (no empty strip);
+- with --alpha-pinned (build.sh against the published survey): the 4096 atlas's alpha is the previous build's,
+  texel for texel (pack-atlas.py --alpha-from), so the glass, and every measure read from it
+  (measure/glazing-bars.py's glass plane), is unchanged;
+- the wall relief (walls-relief.bin), where both builds have one, is the previous build's byte for byte, unless
+  --relief-changed says a new relief is meant (build.sh RELIEF=rebuild).
+Usage: python3 $SURVEY/check-atlas.py <new-dir> <previous-dir> [--json out.json] [--alpha-pinned] [--relief-changed]
 Exits non-zero if any check fails."""
 import argparse
+import hashlib
 import json
+import os
 import sys
 
 import numpy as np
@@ -63,6 +70,8 @@ def main():
     a.add_argument('new')
     a.add_argument('previous')
     a.add_argument('--json')
+    a.add_argument('--alpha-pinned', action='store_true')
+    a.add_argument('--relief-changed', action='store_true')
     args = a.parse_args()
     report, failures = {}, []
 
@@ -83,6 +92,9 @@ def main():
         inside = openings_mask(size, margin_px=2 if size == 4096 else 4)
         stray = int(((alpha < 255) & ~inside).sum())
         check(f'{size}.alpha_only_in_openings', stray == 0, dict(translucent_outside=stray))
+        if size == 4096 and args.alpha_pinned:
+            differing = int((alpha != prev[..., 3]).sum())
+            check('4096.alpha_pinned', differing == 0, dict(differing_texels=differing))
         if size == 4096:
             translucent = alpha < 255
             exact = int((alpha == 128).sum())
@@ -92,6 +104,11 @@ def main():
         strips = {'window': (0, 0, size), 'door': (row, 0, size), 'end': (2 * row, 0, size // 2), 'fire': (2 * row, size // 2, size)}
         empty = [k for k, (y, x0, x1) in strips.items() if new[y:y + row, x0:x1, :3].std() < 2]
         check(f'{size}.strips_coloured', not empty, dict(empty=empty))
+    relief_new, relief_prev = f'{args.new}/walls-relief.bin', f'{args.previous}/walls-relief.bin'
+    if os.path.exists(relief_new) and os.path.exists(relief_prev):
+        digest = lambda path: hashlib.sha256(open(path, 'rb').read()).hexdigest()
+        same = digest(relief_new) == digest(relief_prev)
+        check('relief.unchanged', same or args.relief_changed, dict(identical=same, change_intended=args.relief_changed))
     report['ok'] = not failures
     if args.json:
         with open(args.json, 'w') as f:

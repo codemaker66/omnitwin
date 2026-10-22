@@ -67,6 +67,8 @@ declare global {
   interface Window {
     /** DEV-only: the walls' detail layer (hall-detail.ts: its accounting, held fades), for the capture harnesses; absent in production. */
     __venHallDetail?: HallDetailLayer;
+    /** DEV-only: each slice of the relief's arrival build, milliseconds (hall-arrival.ts), for the capture harnesses. */
+    __venHallArrivalSlices?: number[];
   }
 }
 
@@ -507,7 +509,10 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       // glazing (its alpha) decides where the sun comes through.
       if (loaded) { captureNeeded.current = true; sunRef.current?.redraw(); invalidate(); }
     });
-    loadWallRelief().then((loaded) => prepareWallRelief(loaded, { live: () => live })).then((drawn) => {
+    const slices: number[] = [];
+    if (import.meta.env.DEV) window.__venHallArrivalSlices = slices;
+    const onSlice = import.meta.env.DEV ? (ms: number): void => { slices.push(ms); } : undefined;
+    loadWallRelief().then((loaded) => prepareWallRelief(loaded, { live: () => live, ...(onSlice === undefined ? {} : { onSlice }) })).then((drawn) => {
       if (!live) return;
       // As drawn: without the relief inside the doorways, which the modelled leaves replace.
       setRelief(drawn);

@@ -69,3 +69,7 @@ packages/web/public/twin/
 # artifacts on disk, which is how ~6k files / 3.6 GB once surfaced as "uncommitted
 # changes" on master. Only a root-level rule survives every branch switch.
 tools/**/target/
+
+# The venue's 2010 FIRST plan as vectors (tools/grand-hall-survey/measure/first-floor.py): built locally
+# for the Atelier section, never published until the venue allows its drawings to be (review F2, 22 Oct 2026).
+packages/web/public/rooms/grand-hall/survey-2026-07-11/local/

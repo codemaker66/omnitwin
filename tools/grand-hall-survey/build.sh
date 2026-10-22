@@ -2,11 +2,20 @@
 # Rebuilds the Grand Hall's survey images and wall relief from the public scan.
 #
 #   bash tools/grand-hall-survey/build.sh <work-dir> [<publish-dir>]
+#   RELIEF=rebuild bash tools/grand-hall-survey/build.sh <work-dir> [<publish-dir>]
 #
 # Every step runs in <work-dir>; downloads and per-station depth maps already
 # there are kept. With <publish-dir> (normally
 # packages/web/public/rooms/grand-hall/survey-2026-07-11) the finished files
 # are copied there. See README.md for what each step measures.
+#
+# Run against the published survey, the build reproduces what is published:
+# the atlas's alpha (the window glass) is carried over from the published
+# atlas (pack-atlas.py --alpha-from; the best-view photograph's own glass mask
+# lost 2.1% of the glass, S4a) and the published walls-relief.bin stands, since
+# its glass mask is that same alpha (window-relief.py would remake it from the
+# new photograph's). check-atlas.py checks both. RELIEF=rebuild remakes the
+# relief from this build's photograph instead, a change to publish on purpose.
 set -euo pipefail
 
 SURVEY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,14 +55,25 @@ python3 "$SURVEY/project-floor.py"
 
 # The glass mask and the windows' layered depth are read from the window wall's
 # photograph and its rendered (uncorrected) positions.
-step "Windows: glass mask and layered depth"
-python3 "$SURVEY/window-relief.py"
+RELIEF="${RELIEF:-keep}"
+if [ "$RELIEF" = rebuild ] || [ -z "$PUBLISH" ]; then
+  step "Windows: glass mask and layered depth"
+  python3 "$SURVEY/window-relief.py"
+fi
 
 step "Packing for the web"
 python3 "$SURVEY/pack-atlas.py" ${PUBLISH:+--alpha-from "$PUBLISH"}
-if [ -n "$PUBLISH" ]; then python3 "$SURVEY/check-atlas.py" proj "$PUBLISH" --json proj/check-atlas.json; fi
-python3 "$SURVEY/wall-depth.py" window door end fire
-node "$SURVEY/relief-mesh.mjs" proj/walls-relief.bin
+if [ "$RELIEF" = rebuild ] || [ -z "$PUBLISH" ]; then
+  python3 "$SURVEY/wall-depth.py" window door end fire
+  node "$SURVEY/relief-mesh.mjs" proj/walls-relief.bin
+else
+  cp "$PUBLISH/walls-relief.bin" proj/walls-relief.bin
+fi
+if [ -n "$PUBLISH" ]; then
+  RELIEF_FLAG=()
+  if [ "$RELIEF" = rebuild ]; then RELIEF_FLAG=(--relief-changed); fi
+  python3 "$SURVEY/check-atlas.py" proj "$PUBLISH" --json proj/check-atlas.json --alpha-pinned "${RELIEF_FLAG[@]}"
+fi
 python3 "$SURVEY/pack-overhead.py" proj
 python3 "$SURVEY/flatten-floor.py" proj/floor.npz proj/floor-flat.npz 120
 python3 "$SURVEY/pack-floor.py" proj/floor-flat.npz proj

@@ -10,7 +10,9 @@
 //     reflects the room it looks into: the room's own captured environment
 //     (hall-capture.ts), box-projected onto the room so the chandeliers and
 //     curtains stay where they hang as the camera moves, weighted by the
-//     Fresnel reflectance of single glazing (two faces of crown glass). It
+//     Fresnel reflectance of single glazing (two faces of soda-lime glass;
+//     single glazing assumed, no source rules secondary glazing out; the
+//     strength is checked against panorama scan_042, S2's measure 3). It
 //     writes no depth and leaves the normal and velocity targets alone, so
 //     ambient occlusion and temporal anti-aliasing see the street behind it.
 //   - Bars: the sashes' stiles, rails and glazing bars, and the arched
@@ -461,7 +463,7 @@ export function sheetReflectance(single: number): number {
 /** The room's box, onto which the panes' reflections are projected. */
 const ROOM_MIN = vec3(-HALL_HALF_LENGTH, 0, -HALL_HALF_WIDTH);
 const ROOM_MAX = vec3(HALL_HALF_LENGTH, HALL_HEIGHT, HALL_HALF_WIDTH);
-/** The glass's own transmission, apart from its reflection: old crown glass. */
+/** The glass's own transmission, apart from its reflection (single glazing assumed; its type is not sourced). */
 export const GLASS_TRANSMISSION = 0.97;
 /** A faint green in what the glass reflects, as old glass gives. */
 const REFLECTION_TINT = vec3(0.96, 0.985, 0.975);

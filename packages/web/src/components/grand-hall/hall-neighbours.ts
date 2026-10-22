@@ -22,10 +22,15 @@
 //     scan did not go there).
 //
 // Further out, the whole first floor's walls come from the 2010 FIRST plan,
-// read as vectors and registered to the scan (measure/first-floor.py), and
-// published beside the survey's photographs (first-floor-2010.json, fetched
-// only for the Atelier section): every polygon carries the plan paths it came
-// from, and the registration its residuals against the scanned walls.
+// read as vectors and registered to the scan (measure/first-floor.py), fetched
+// only for the Atelier section: every polygon carries the plan paths it came
+// from, and the registration its residuals against the scanned walls. The
+// plan is the venue's drawing, so its vectors are not published until the
+// venue allows it (review F2, 22 October 2026): a machine that has built them
+// keeps them in the survey's gitignored local/ folder, and anywhere else
+// (production too) Atelier draws without the first floor, as it does when
+// the fetch fails. The doorways' own stubs (BEYOND_SPACES) keep the few
+// figures the plan gives near each door, as measurements.
 //
 // Frame: the planner's (hall-spec.ts), metres; outlines are (x, z) in plan.
 // ---------------------------------------------------------------------------
@@ -97,8 +102,8 @@ export const BEYOND_SPACES: readonly BeyondSpace[] = [
     opening: "door-fireplace", label: "D3", room: "F.16, its lobby at the fireplace end", reach: 2.4, scanLevel: null, finish: "corridor", well: null,
     floor: [
       [-10.443, 6.075], [-10.444, 6.218], [-11.207, 6.221], [-11.207, 6.621], [-11.087, 6.993], [-10.898, 7.359], [-10.58, 7.759],
-      [-10.455, 7.758], [-10.455, 7.877], [-10.346, 7.968], [-7.38, 7.956], [-7.053, 7.643], [-6.782, 7.258], [-6.61, 6.884],
-      [-6.498, 6.437], [-7.0, 6.435], [-7.002, 5.755], [-8.33, 5.755], [-8.33, 6.075],
+      [-10.455, 7.758], [-10.455, 7.877], [-10.346, 7.968], [-7.38, 7.956], [-6.978, 7.552], [-6.7, 7.101], [-6.528, 6.601],
+      [-6.47, 6.075], [-6.492, 5.755], [-8.33, 5.755], [-8.33, 6.075],
     ],
     source: PLAN_SOURCE,
   },
@@ -211,10 +216,10 @@ export function insideOutline(outline: readonly PlanPoint[], p: PlanPoint): bool
 }
 
 // ---------------------------------------------------------------------------
-// The first floor from the 2010 plan (published, fetched for Atelier)
+// The first floor from the 2010 plan (built locally, fetched for Atelier where it exists)
 // ---------------------------------------------------------------------------
 
-export const FIRST_FLOOR_FILE = "first-floor-2010.json";
+export const FIRST_FLOOR_FILE = "local/first-floor-2010.json";
 
 /** The first floor's file, at the survey's revision. */
 export function firstFloorUrl(): string {

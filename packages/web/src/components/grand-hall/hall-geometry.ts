@@ -95,6 +95,18 @@ export function hallThresholdGeometry(): HallGeometry {
   return cachedThresholds;
 }
 
+/** Runs a sliced build's steps through, adding the time spent in them (not between them) to `timer`. */
+function* timedSteps<T>(steps: Steps<T>, timer: { spent: number }): Steps<T> {
+  const now = (): number => (typeof performance !== "undefined" ? performance.now() : Date.now());
+  for (;;) {
+    const started = now();
+    const next = steps.next();
+    timer.spent += now() - started;
+    if (next.done === true) return next.value;
+    yield;
+  }
+}
+
 /** The walls for a relief (or flat without one), built once each. */
 export function hallWallGeometry(relief: WallRelief | null): HallGeometry {
   if (relief === null) {
@@ -113,20 +125,12 @@ export function hallWallGeometry(relief: WallRelief | null): HallGeometry {
 export function* hallWallGeometrySteps(relief: WallRelief): Steps<HallGeometry> {
   const cached = cachedWalls.get(relief);
   if (cached !== undefined) return cached;
-  const now = (): number => (typeof performance !== "undefined" ? performance.now() : Date.now());
-  let spent = 0;
-  let started = now();
+  const timer = { spent: 0 };
   const hb = new HallBuilders();
-  const steps = buildHallWallsSteps(hb, relief);
-  for (;;) {
-    const next = steps.next();
-    if (next.done === true) break;
-    spent += now() - started;
-    yield;
-    started = now();
-  }
-  const { geometries, stats } = hb.build();
-  const walls: HallGeometry = { geometries, stats, buildMs: spent + now() - started };
+  yield* timedSteps(buildHallWallsSteps(hb, relief), timer);
+  // The geometries a material at a time: building each one's typed arrays is a step of its own.
+  const { geometries, stats } = yield* timedSteps(hb.buildSteps(), timer);
+  const walls: HallGeometry = { geometries, stats, buildMs: timer.spent };
   cachedWalls.set(relief, walls);
   return walls;
 }

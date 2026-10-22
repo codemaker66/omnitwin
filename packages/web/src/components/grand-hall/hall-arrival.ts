@@ -21,6 +21,7 @@ import { runSliced, type SliceOptions } from "./hall-slices.js";
 
 /** Builds everything the walls take from a newly arrived relief in slices; resolves with the relief as drawn. */
 export async function prepareWallRelief(relief: WallRelief, options: SliceOptions = {}): Promise<WallRelief> {
+  mark(ARRIVAL_MARKS.start);
   const drawn = await runSliced(drawnReliefSteps(relief), options);
   await runSliced(hallWallGeometrySteps(drawn), options);
   // The cap is a few milliseconds: one step of its own.
@@ -29,5 +30,13 @@ export async function prepareWallRelief(relief: WallRelief, options: SliceOption
     sectionCapGeometry(drawn);
   })(), options);
   await runSliced(reliefSlicerSteps(drawn), options);
+  mark(ARRIVAL_MARKS.end);
   return drawn;
+}
+
+/** User-timing marks around the build, for a page's long-task trace (the room lane's arrival measure). */
+export const ARRIVAL_MARKS = { start: "grand-hall:relief-build-start", end: "grand-hall:relief-build-end" } as const;
+
+function mark(name: string): void {
+  if (typeof performance !== "undefined" && typeof performance.mark === "function") performance.mark(name);
 }
