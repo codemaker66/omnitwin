@@ -38,6 +38,36 @@ development builds only) shows the room alone, posed through a window bridge for
   hanging 8 cm and more in front of the leaves' tops, and the fire exit's sign stay, so a walk sees
   the photograph round each door as before. Until the relief arrives each wall is a flat
   photograph, open at its doors; the parser rejects a malformed file.
+- **Wall detail** (`hall-detail.ts`, `hall-detail-decode.ts`, `hall-detail.worker.ts`): where the
+  camera comes close, the walls sharpen to 2 mm a texel, the same best-view photograph as the atlas
+  (`project-detail.py`, `pack-detail.py`; within 0.3 mm of the atlas's registration). It is published
+  as 462 tiles of 512 x 512 texels, 0.992 m of wall each inside an 8-texel gutter that repeats the
+  neighbours' texels, so bilinear filtering and mip levels up to 3 never read past a tile (8.8 MB in
+  all, `detail/index.json` with each tile's bytes and SHA-256; a tile all of window glass would be
+  left out, and at this pitch none is). Each frame the layer picks the tiles worth having: in view,
+  on a wall the camera stands in front of, starting below that wall's cut, and drawn at 0.19 screen
+  pixels a millimetre or more at their nearest point (where a pixel holds less than one of the 4096
+  atlas's texels), most magnified first, at most the device's slots. While the camera is still or
+  slow (under 1.5 m/s and 45 degrees/s) it fetches the missing ones, four at a time; a worker decodes
+  each WebP and builds its four mip levels in linear light, and the main thread copies at most two a
+  frame (one once 4 ms of the frame has gone on copies) into one array texture through a staging
+  tile; the buffers go back to the worker for its next tiles. The array is made when the first tile
+  arrives (until then the shader reads a one-texel stand-in), with a slot a tile: 64 on a computer
+  (90.5 MB on the GPU with the staging tile and index), 32 on a tablet (46 MB), 16 on a phone
+  (23.7 MB), none on a software rasteriser (`hall-finish.ts`); the least recently wanted tile gives up
+  its slot, fading out first if it is in view. The walls' shader (`wallTexel`) finds a fragment's tile
+  from its atlas coordinate, reads an index texture (slot and fade per wall, column and row) and
+  samples the slot with gradients from the wall's continuous coordinates, so a tile's edge keeps its
+  level: two texture reads a fragment, no draw calls. A new tile cross-fades over the atlas in about
+  200 ms (a thirteenth a frame at most, at once under reduced motion), mixed in a square-root space so
+  each step of the fade shows as much change as the next; where a fragment's detail is drawn no
+  larger than the device's atlas draws it (the detail's mip level 1.37 on a computer, 2.37 on a
+  phone), it gives way to the atlas over three quarters of a level. Never on glass. A tile that fails
+  stays on the atlas and is retried after 2, 8 and 32 s. Nothing is shown while tiles arrive: the
+  walls simply sharpen, frames being requested only while a tile fades or waits to be copied. At
+  Blake's deacon-board pose the boards read 95.7% of their 256 names, trades and years (S4a's atlas
+  20%), and from a phone 1.9 m away 91.8% (0% on its half-size atlas); method and the other
+  measurements in the [22 October session log](../sessions/2026-10-22.md).
 - **Doors** (`hall-doors.ts`): the four doorways' leaves, modelled so they can open: a pair of
   45 mm leaves hung at the hall face in each (their face where the relief has the shut leaves, 1.3
   to 2.9 cm back; the main door's at -0.03 like its twins, no longer -0.27), and the end door's
@@ -364,8 +394,9 @@ RTX 4090's production-build load the main thread's decoding fell from 345 ms to 
 from about 120 ms to 57 ms.
 
 How much of the finish a device carries is `hall-finish.ts`: phones load the half-size photographs
-(0.67 MB instead of 2.06 MB); a software rasteriser, read from the canvas's own WebGL context with
-no probe context, also leaves out the reflection map and the chandeliers' lights for a soft fill.
+(0.67 MB instead of 2.06 MB) and keep 16 of the walls' detail tiles (tablets 32, computers 64); a
+software rasteriser, read from the canvas's own WebGL context with no probe context, also leaves
+out the reflection map, the chandeliers' lights (for a soft fill) and the walls' detail.
 
 ## Checks
 
@@ -420,6 +451,15 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
 - `grand-hall/__tests__/hall-photos.test.ts` covers the off-thread decode and every bitmap's
   release; `hall-lighting-model.test.ts` holds the allocation-free bake to the original to 12
   decimals over 4000 samples.
+- `grand-hall/__tests__/hall-detail.test.ts` holds the detail tiles' grid, the atlas-to-wall round
+  trip on all four walls, the index parser's refusals, the selection (Blake's board pose wants the
+  boards' tiles first; the opening and far views none; nothing above a wall's cut, behind a wall or
+  left out of the index), the slots and their eviction, the per-frame copy budget, the fade (a
+  thirteenth a frame at most, at once under reduced motion, held for measuring), the array made only
+  with the first tile, the handover levels, the buffers' return to the decoder, retries and disposal,
+  the linear-light mip chain, and the published tiles against their index (every file present at its
+  bytes and SHA-256, nothing unlisted, 28 MB at most). The rendered proof (legibility, seams, the
+  fade, frame times, network) is browser evidence in the 22 October session log.
 - The real sky: `lib/sky/__tests__/ephemeris.test.ts` (Meeus, SPA and Glasgow's 2026 tables) and
   `sky-palette.test.ts`; `grand-hall/__tests__/hall-sky.test.ts` (the light and mood for the
   sun), `hall-sun-times.test.ts` (sun on the floor at the solstices and equinox) and

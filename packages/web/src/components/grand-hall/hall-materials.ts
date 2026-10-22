@@ -14,6 +14,10 @@
 // photographs are cut where the atlas marks glazing, and hall-glazing.ts puts
 // panes, painted bars and outer reveals in the opening.
 //
+// Where the planner looks at a wall closely, its 2 mm detail (hall-detail.ts)
+// fades in over the atlas, wherever a tile of it is resident; the relighting
+// and everything after treat it as the photograph.
+//
 // Where the cutaway cuts a wall, the walls' photographs carry the cut's gilt
 // band and the soft shadow under it (hall-cut-lines.ts), following every
 // moulding at the cut's height; not on what stands in a window (the curtains
@@ -39,6 +43,7 @@ import { hallSkyUniforms } from "./hall-sky-runtime.js";
 import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
 import type { HallTextures } from "./hall-textures.js";
 import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
+import type { HallDetailLayer } from "./hall-detail.js";
 import { createOakFloorMaterial } from "./hall-floor.js";
 import { doorLeafMask, doorLeafPosition, doorLeafTurn, type DoorSwingUniforms } from "./hall-doors.js";
 
@@ -163,30 +168,42 @@ function scanDaylight() {
 }
 
 /**
- * A wall photograph's texel for this fragment. The orthophotos look straight
- * at each wall, so faces they see edge-on — the sides of doorcases, boards
- * and reveals — would stretch a single row of texels into streaks; those
- * faces take the photograph's local average (six mip levels coarser, about
- * 30 cm a texel), muted and shaded as the recess it is, since the average of
- * a window's glass and curtains would otherwise streak blue and white down
- * the reveal. They are never glazing.
+ * A wall photograph's texel for this fragment: the atlas, sharpened by the
+ * 2 mm detail where a tile is resident (`detail`, hall-detail.ts). The
+ * orthophotos look straight at each wall, so faces they see edge-on — the
+ * sides of doorcases, boards and reveals — would stretch a single row of
+ * texels into streaks; those faces take the photograph's local average (six
+ * mip levels coarser, about 30 cm a texel), muted and shaded as the recess it
+ * is, since the average of a window's glass and curtains would otherwise
+ * streak blue and white down the reveal. They are never glazing.
  */
-function wallTexel(photos: HallPhotos, edgeOn = true) {
-  const sample = photos.sample("walls", attribute("aAtlas", "vec2"));
+function wallTexel(photos: HallPhotos, edgeOn = true, detail: HallDetailLayer | null = null) {
+  const atlas = attribute("aAtlas", "vec2");
+  const wall = attribute("aWall", "float");
+  const photo = photos.sample("walls", atlas);
+  // Where the walls' 2 mm detail has a tile in (hall-detail.ts), it fades in
+  // over the atlas; never on glass, which the atlas's alpha marks (128/255).
+  // Mixed in a square-root space, near the screen's own response, so each
+  // step of a fade changes what is seen by about as much as the next (mixed in
+  // linear light, a gilt letter brightening over dark wood made most of its
+  // change in the first steps).
+  const fine = detail === null ? null : detail.sample(atlas, wall);
+  const sample = fine === null ? photo : vec4(
+    mix(photo.rgb.max(0).sqrt(), fine.color.rgb.max(0).sqrt(), fine.weight.mul(smoothstep(0.85, 0.98, photo.a))).pow2(), photo.a,
+  );
   const face = positionWorld.dFdx().cross(positionWorld.dFdy()).normalize();
   // A door's leaf (hall-doors.ts) shows its photograph however it turns: open,
   // its face looks along the wall, and it is still the face the atlas saw.
-  if (!edgeOn) return { texel: sample, alpha: sample.a, level: smoothstep(0.55, 0.8, face.y.abs()) };
-  const wall = attribute("aWall", "float");
+  if (!edgeOn) return { texel: sample, alpha: photo.a, level: smoothstep(0.55, 0.8, face.y.abs()) };
   // Window and door walls face along z; the end walls along x.
   const alongZ = wall.lessThan(0.5).or(wall.greaterThan(1.5).and(wall.lessThan(2.5)));
   const facing = smoothstep(0.18, 0.42, alongZ.select(face.z.abs(), face.x.abs()));
-  const coarse = sample.bias(float(6)).rgb;
+  const coarse = photo.bias(float(6)).rgb;
   const reveal = vec4(mix(vec3(luminance(coarse)), coarse, 0.3).mul(0.62), 1);
   // The unbiased sample's alpha marks glazing; the window boards and heads
   // (faces turned up or down) are never glass, whatever texel they project to.
   const level = smoothstep(0.55, 0.8, face.y.abs());
-  return { texel: mix(reveal, sample, facing), alpha: sample.a, level };
+  return { texel: mix(reveal, sample, facing), alpha: photo.a, level };
 }
 
 type WallTexel = ReturnType<typeof wallTexel>;
@@ -321,13 +338,14 @@ interface SurfaceOptions {
   readonly glazing: HallGlazingUniforms | null;
   readonly alphaToCoverage: boolean;
   readonly section: HallSectionUniforms;
+  readonly detail: HallDetailLayer | null;
 }
 
 function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: HallPhotos, sun: HallSun | null, options: SurfaceOptions): Material {
   const side = style.side ?? FrontSide;
   if (style.shading === "photo" || style.shading === "photoGloss") {
     const kind = style.photo ?? "walls";
-    const wall = kind === "walls" ? wallTexel(photos) : null;
+    const wall = kind === "walls" ? wallTexel(photos, true, options.detail) : null;
     const lit = relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level));
     const material = style.shading === "photo"
       ? new MeshBasicNodeMaterial({ side, fog: false })
@@ -378,6 +396,8 @@ export interface HallMaterialOptions {
   readonly glazing?: HallGlazingUniforms | null;
   /** The scene pass is multisampled (phones): the glass's cut edge uses alpha to coverage. */
   readonly alphaToCoverage?: boolean;
+  /** The walls' 2 mm detail, faded in over the atlas where a tile is resident (null: the atlas alone). */
+  readonly detail?: HallDetailLayer | null;
 }
 
 export type HallMaterials = ReadonlyMap<HallMaterialKey, Material>;
@@ -392,7 +412,7 @@ export function createHallMaterials(
 ): HallMaterials {
   const table = styles(textures);
   const materials = new Map<HallMaterialKey, Material>();
-  const surface: SurfaceOptions = { glazing: options.glazing ?? null, alphaToCoverage: options.alphaToCoverage ?? false, section };
+  const surface: SurfaceOptions = { glazing: options.glazing ?? null, alphaToCoverage: options.alphaToCoverage ?? false, section, detail: options.detail ?? null };
   for (const key of Object.keys(table) as HallMaterialKey[]) {
     // The floor is drawn (hall-floor.ts), lit by the same baked light.
     const floorLight = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
@@ -417,13 +437,14 @@ export function createHallMaterials(
  */
 export function createDoorLeafMaterials(
   textures: HallTextures, photos: HallPhotos, mood: HallMoodUniforms, section: HallSectionUniforms, swing: DoorSwingUniforms, sun: HallSun | null = null,
-  options: { readonly card?: boolean } = {},
+  options: { readonly card?: boolean; readonly detail?: HallDetailLayer | null } = {},
 ): HallMaterials {
   const table = styles(textures);
   const position = doorLeafPosition(section, swing);
   const mask = doorLeafMask(section);
   const materials = new Map<HallMaterialKey, Material>();
   const card = options.card === true ? cardLeafColour(mood, swing, sun) : null;
+  const detail = options.detail ?? null;
   for (const key of ["wallPhoto", "wallPhotoGloss", "mahoganyDark", "brass"] as const) {
     let material: Material;
     if (card !== null) {
@@ -434,15 +455,15 @@ export function createDoorLeafMaterials(
     } else if (key === "wallPhoto") {
       // Above the dado the walls' photograph is matte, on the leaves as on the relief they replace.
       const photo = new MeshBasicNodeMaterial({ fog: false });
-      photo.colorNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false));
+      photo.colorNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
       material = photo;
     } else if (key === "wallPhotoGloss") {
       const photo = new MeshStandardNodeMaterial({ roughness: table.wallPhotoGloss.roughness ?? 0.42, metalness: 0, fog: false });
       photo.colorNode = vec3(0);
-      photo.emissiveNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false));
+      photo.emissiveNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
       material = photo;
     } else {
-      material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section });
+      material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section, detail: null });
     }
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
       material.positionNode = position;

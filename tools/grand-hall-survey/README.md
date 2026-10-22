@@ -32,7 +32,9 @@ Playwright from `packages/web` and `packages/reconstruction-foundry`); Chromium 
 measuring page (Playwright's own, or set `CHROMIUM_PATH`). The work directory needs about 3 GB.
 On four cores the walls' labels take about 40 minutes and their photographs about 8, each step
 under 1.3 GB of memory; the ceiling, dome and floor's projection takes most of the rest of the
-build's two hours. Two runs of the walls give byte-identical labels, orthophotos and atlases.
+build's two hours. Two runs of the walls give byte-identical labels, orthophotos and atlases. The
+walls' 2 mm detail takes about 15 minutes more (2.5 to 5.3 a wall, at most 1.25 GB), and two runs give
+byte-identical tiles.
 
     bash tools/grand-hall-survey/build.sh <work-dir> packages/web/public/rooms/grand-hall/survey-2026-07-11
 
@@ -54,6 +56,7 @@ later step skips the downloads.
 | Ceiling, dome, floor | `project-ceiling.py`, `project-dome.py`, `project-floor.py` | `proj/*.npz`: linear colour and weight per texel; `proj/floor-patches.json`: the stations with a strong tripod patch |
 | Windows | `window-relief.py` | the glass mask and a two-layer relief (curtains, then glazing) inside each window |
 | Walls | `pack-atlas.py`, `check-atlas.py`, `wall-depth.py`, `relief-mesh.mjs` | `walls-4096.webp`, `walls-2048.webp` (alpha marks glass), `walls-relief.bin`; before publishing, `check-atlas.py` compares the atlas with the one it replaces (sizes, glass only in the window openings, glass area within 2%) |
+| Walls at 2 mm | `project-detail.py`, `pack-detail.py` | `proj/detail-<wall>.npy`: each wall's photograph at 2 mm; `detail/<wall>/<column>_<row>.webp` and `detail/index.json`: the tiles the planner streams where it looks closely (below) |
 | Ceiling and dome | `pack-overhead.py` | `ceiling-3072.webp`, `ceiling-1536.webp`, `dome-4096.webp`, `dome-2048.webp` |
 | Floor | `flatten-floor.py`, `pack-floor.py` | `floor-2560.webp`, `floor-1280.webp` |
 
@@ -129,6 +132,30 @@ the 4096 atlas (2.7% before; two encodings of the same build read 25.8% and 30.1
 planner's own frames at Blake's pose (0-3.5% before). The phone's 2048 atlas still reads none. The
 end wall's portrait is sharper (equivalent edge blur 3.6 mm against 4.2 at Blake's distance) and its
 dark lower canvas is no longer lifted by glare (10th percentile 33 against 86).
+
+### The walls at 2 mm: the detail tiles
+
+The atlas holds a wall at 5.2 mm a texel (10.3 mm on phones), too coarse for the deacon boards' names
+from a couple of metres. `project-detail.py` samples the same labels, stations, colour offsets and
+seam membrane at 2 mm instead of 2.5 mm, laid out in the planner's own frame (u along the wall from
+its left end, down from 6.72 m), so each detail texel shows what the atlas texel under it shows, only
+sharper: reduced to the atlas's 5.2 mm, the detail matches the published atlas to a mean of 2.0-2.9
+sRGB levels with no shift (0.0-0.3 mm). The seam corrections live on the 5 mm grid and are
+recomputed exactly as `project-walls.py` computes them; pack-atlas.py's patches (the movable
+equipment, the end door's leaves) and its fill are repeated at 2 mm. Work goes in chunks of eight
+tile columns, so the window wall's accumulator stays near 170 MB.
+
+`pack-detail.py` cuts each wall into tiles of 512 x 512 texels: 496 of their own (0.992 m) inside an
+8-texel gutter repeating the neighbouring tiles' texels (or the wall's edge), so the planner's
+bilinear filtering and mip levels up to 3 never read past a tile's edge. WebP at quality 86 without
+alpha; a tile whose own area is all window glass in the atlas's alpha would be left out (none is at
+this pitch: every tile holding glass also holds frame or curtain). 462 tiles, 8.8 MB (the window wall
+3.22 MB, the door wall 2.61, the end and fireplace walls 1.48 each); `index.json` gives the grid
+(texel, tile, gutter, pitch, origin), each wall's columns and rows, and every tile's bytes and SHA-256,
+and the planner refuses an index whose grid is not its own. A tile's gutter differs from the
+neighbour's texels it repeats by a median 0.25% of their luminance (p90 1.1%), WebP's own seams. The
+read of the boards that S4a's atlas cannot give, the detail gives: 95.7% of the 256 names, trades
+and years in the planner at Blake's pose (S4a 20%), 91.8% on a phone 1.9 m away (0%).
 
 Until revision 5 the walls were blended like the ceiling below. At a typical texel of the end wall's
 deacon boards six stations were averaged, which disagree there by up to a centimetre at the relief's

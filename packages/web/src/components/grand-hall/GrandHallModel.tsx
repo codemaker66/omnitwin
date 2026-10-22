@@ -18,9 +18,11 @@
 // mounted beside it; its reflections are its own, captured from the room
 // itself (hall-capture.ts).
 // The relief and the photographs stream in after the first frame (flat walls
-// in their average colour until then). Everything here renders on demand:
-// frames are requested only while a mood blends, the cutaway eases, a door
-// swings or the beyond's photographs fade in.
+// in their average colour until then); where the camera looks closely at a
+// wall, its 2 mm detail streams in over the atlas, tile by tile (hall-detail.ts).
+// Everything here renders on demand: frames are requested only while a mood
+// blends, the cutaway eases, a door swings, the beyond's photographs or a wall's
+// detail fade in, or a detail tile waits to be copied to the GPU.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -38,6 +40,7 @@ import {
 } from "./hall-beyond.js";
 import { loadFirstFloor, type FirstFloorPlan } from "./hall-neighbours.js";
 import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
+import { DETAIL_ATLAS_TEXEL_MM, HallDetailLayer } from "./hall-detail.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useHallFinish, type HallFinish } from "./hall-finish.js";
 import { createDoorLeafMaterials, createHallCasterMaterials, createHallMaterials, disposeHallMaterials, HallGlazingUniforms, HallSectionUniforms, type HallCasterMaterials, type HallMaterials } from "./hall-materials.js";
@@ -57,6 +60,13 @@ import { WALL_BODY_TOP } from "./hall-wall-body.js";
 import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 import { hallSkyState } from "./hall-sky-runtime.js";
 import { HALL_SUN_CASTER_LAYER, hallSun, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
+
+declare global {
+  interface Window {
+    /** DEV-only: the walls' detail layer (hall-detail.ts: its accounting, held fades), for the capture harnesses; absent in production. */
+    __venHallDetail?: HallDetailLayer;
+  }
+}
 
 /** The dark the drawn hall stands in (the planner's background around it). */
 export const HALL_VOID = "#120e0b";
@@ -157,6 +167,8 @@ interface HallResources {
   readonly doorMaterials: HallMaterials;
   /** What shows past the open doors for the section's preset (hall-beyond.ts). */
   readonly beyond: BeyondResources;
+  /** The walls' 2 mm detail, streamed where the camera looks closely (hall-detail.ts). */
+  readonly detail: HallDetailLayer;
 }
 
 /** The beyond's materials for one preset; the photographs only for Ashlar. */
@@ -240,17 +252,20 @@ export function reflectionsOutdated(signature: number, captured: number | null):
  */
 const CAPTURE_SUN_MAP_WAITS = 2;
 
-function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null, multisampled: boolean, sectionPreset: SectionPreset): HallResources {
+function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null, multisampled: boolean, sectionPreset: SectionPreset, detailSlots: number): HallResources {
   const textures = paintHallTextures(quality);
   const photos = new HallPhotos();
   const mood = new HallMoodUniforms();
   mood.apply(initialMood, initialMood, 1);
   const section = new HallSectionUniforms();
   const glazing = new HallGlazingUniforms();
-  const materials = createHallMaterials(textures, photos, mood, section, sun, { glazing, alphaToCoverage: multisampled });
+  // Without slots (a software rasteriser) the walls' shaders leave the detail out entirely.
+  const detail = new HallDetailLayer({ slots: detailSlots, atlasTexelMm: DETAIL_ATLAS_TEXEL_MM / Math.max(quality, 0.125) });
+  const fine = detail.enabled ? detail : null;
+  const materials = createHallMaterials(textures, photos, mood, section, sun, { glazing, alphaToCoverage: multisampled, detail: fine });
   const casters = sun === null ? null : createHallCasterMaterials(photos);
   const doorSwing = new DoorSwingUniforms();
-  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card" });
+  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card", detail: fine });
   const beyond = createBeyondResources(sectionPreset, { mood, swing: doorSwing, section, sun }, textures);
 
   // As scanned: pale silver-gilt fittings on dark bronze stems, and white
@@ -293,7 +308,7 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
   const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
   const cutaway = createHallSection(section, mood, { preset: sectionPreset, sunlit: sun !== null, multisampled, sun, textures, beyond: beyond.photos });
-  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway, casters, doorSwing, doorMaterials, beyond };
+  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway, casters, doorSwing, doorMaterials, beyond, detail };
 }
 
 function disposeResources(resources: HallResources): void {
@@ -306,6 +321,7 @@ function disposeResources(resources: HallResources): void {
   resources.beyond.dispose();
   resources.casters?.glazed.dispose();
   resources.casters?.solid.dispose();
+  resources.detail.dispose();
 }
 
 let paneGeometry: ReturnType<typeof buildGlazingPanes> | null = null;
@@ -325,11 +341,12 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const walls = useMemo(() => hallWallGeometry(relief), [relief]);
   const chandeliers = useMemo(() => hallChandeliers(), []);
   const deviceFinish = useHallFinish();
-  const { photoQuality: quality, liveLight } = finishOverride ?? deviceFinish;
+  const { photoQuality: quality, liveLight, detailSlots: slots } = finishOverride ?? deviceFinish;
+  const detailSlots = Number.isFinite(slots) ? slots : 0;
   const sun = useMemo(() => (sunlit ? hallSun(hallSunMapSize(quality, liveLight)) : null), [liveLight, quality, sunlit]);
   // The section's finish: `?section=` (Ashlar by default; nothing is remembered).
   const sectionPreset = useMemo(() => SECTION_PRESETS[parseSectionPreset(typeof window === "undefined" ? null : window.location.search)], []);
-  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun, multisampled, sectionPreset), [multisampled, quality, sectionPreset, sun]);
+  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun, multisampled, sectionPreset, detailSlots), [detailSlots, multisampled, quality, sectionPreset, sun]);
   const thresholds = useMemo(() => hallThresholdGeometry(), []);
   // The doors' leaves (hall-doors.ts): built once, swung in the shader.
   const doors = useMemo(() => hallDoorGeometry(), []);
@@ -384,6 +401,24 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   }, [gl, liveLight]);
 
   useEffect(() => () => { disposeResources(resources); }, [resources]);
+
+  // The walls' 2 mm detail: its index loads now; tiles follow the camera
+  // (useFrame below). A tile arriving asks for a frame; a camera too quick to
+  // fetch for is looked at again shortly after it stops.
+  const detailRenderer = useMemo(() => getNativeRenderer(gl), [gl]);
+  const detailActive = useRef(false);
+  const detailWake = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const detail = resources.detail;
+    detail.onChange = () => { invalidate(); };
+    detail.start();
+    if (import.meta.env.DEV) window.__venHallDetail = detail;
+    return () => {
+      detail.onChange = null;
+      if (detailWake.current !== null) { clearTimeout(detailWake.current); detailWake.current = null; }
+      if (import.meta.env.DEV) delete window.__venHallDetail;
+    };
+  }, [invalidate, resources]);
 
   // The section cuts the relief once it has arrived (the flat walls need none).
   useEffect(() => {
@@ -594,6 +629,19 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       const fading = beyondPhotos.step(hallFrameStep(delta, !beyondFading.current), prefersReducedMotion);
       beyondFading.current = fading;
       moving = moving || fading;
+    }
+    // The walls' detail follows the camera and this frame's cuts.
+    const detail = resources.detail;
+    if (detail.enabled) {
+      const result = detail.update({
+        camera: state.camera, heightPx: state.gl.domElement.height, cuts: cutState.current,
+        delta: hallFrameStep(delta, !detailActive.current), reducedMotion: prefersReducedMotion(), renderer: detailRenderer,
+      });
+      detailActive.current = result.active;
+      moving = moving || result.active;
+      if (result.wakeMs !== null && detailWake.current === null) {
+        detailWake.current = setTimeout(() => { detailWake.current = null; invalidate(); }, Math.max(16, result.wakeMs));
+      }
     }
     // The relief's section follows each wall's cut (cut again only when it moves).
     resources.cutaway.profile.update(cutState.current, WALL_BODY_TOP);

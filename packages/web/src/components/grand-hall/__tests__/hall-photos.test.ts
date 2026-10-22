@@ -76,10 +76,10 @@ describe("HallPhotos", () => {
     expect(late.close).toHaveBeenCalledTimes(1);
   });
 
-  it("fetches every photograph at the survey's revision, raised for the best-view walls", () => {
-    // Revision 5 published the walls' atlas rebuilt from each part's sharpest photograph: a browser
-    // holding revision 4's blended atlas must fetch the new one.
-    expect(HALL_SURVEY_REVISION).toBeGreaterThanOrEqual(5);
+  it("fetches every photograph at the survey's revision, raised for the walls' detail tiles", () => {
+    // Revision 5 published the walls' atlas rebuilt from each part's sharpest photograph (a browser
+    // holding revision 4's blended atlas must fetch the new one); 6 the 2 mm detail tiles beside it.
+    expect(HALL_SURVEY_REVISION).toBeGreaterThanOrEqual(6);
     const desktop = new HallPhotos();
     desktop.load(1, () => { /* settled */ });
     const phone = new HallPhotos();

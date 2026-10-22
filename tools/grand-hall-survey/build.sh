@@ -58,11 +58,19 @@ python3 "$SURVEY/pack-overhead.py" proj
 python3 "$SURVEY/flatten-floor.py" proj/floor.npz proj/floor-flat.npz 120
 python3 "$SURVEY/pack-floor.py" proj/floor-flat.npz proj
 
+# The same best-view photographs at 2 mm, cut into the tiles the planner
+# streams where it looks closely at a wall (hall-detail.ts); the atlas's alpha
+# marks the window glass, which the tiles leave out.
+step "Walls at 2 mm: the detail tiles"
+for wall in window door end fire; do python3 "$SURVEY/project-detail.py" "$wall"; done
+python3 "$SURVEY/pack-detail.py" --atlas proj
+
 OUTPUTS=(walls-4096.webp walls-2048.webp walls-relief.bin ceiling-3072.webp ceiling-1536.webp
   dome-4096.webp dome-2048.webp floor-2560.webp floor-1280.webp)
 if [ -n "$PUBLISH" ]; then
   step "Publishing to $PUBLISH"
   for file in "${OUTPUTS[@]}"; do cp "proj/$file" "$PUBLISH/$file"; done
+  rm -rf "$PUBLISH/detail" && cp -r proj/detail "$PUBLISH/detail"
 fi
 step "Done"
-for file in "${OUTPUTS[@]}"; do printf '%s  %s\n' "$(sha256sum "proj/$file" | cut -c1-16)" "$file"; done
+for file in "${OUTPUTS[@]}" detail/index.json; do printf '%s  %s\n' "$(sha256sum "proj/$file" | cut -c1-16)" "$file"; done
