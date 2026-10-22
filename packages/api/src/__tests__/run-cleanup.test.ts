@@ -8,12 +8,15 @@ import type { Database } from "../db/client.js";
 // a remembered note unused for the agreed period is removed. Both passes must
 // run on the schedule, report counts only, and fail the job (rather than pass
 // silently) when they cannot run. The job's log is public with the repository.
+// The enquiry funnel's engagement events (migration 0100) are kept no longer
+// than the privacy page keeps an enquiry, so their retention pass runs here too.
 
-const { previewMock, orphanMock, lapsedMock, rememberedMock } = vi.hoisted(() => ({
+const { previewMock, orphanMock, lapsedMock, rememberedMock, engagementMock } = vi.hoisted(() => ({
   previewMock: vi.fn(),
   orphanMock: vi.fn(),
   lapsedMock: vi.fn(),
   rememberedMock: vi.fn(),
+  engagementMock: vi.fn(),
 }));
 
 vi.mock("../services/cleanup.js", () => ({
@@ -28,6 +31,9 @@ vi.mock("../services/dietary-retention.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../services/dietary-retention.js")>(),
   removeLapsedDietaryNotes: lapsedMock,
 }));
+vi.mock("../services/enquiry-funnel.js", () => ({
+  removeExpiredEngagementEvents: engagementMock,
+}));
 
 const { runScheduledCleanup } = await import("../scripts/run-cleanup.js");
 const { DietaryMemoryWriteError } = await import("../services/dietary-memory.js");
@@ -41,6 +47,7 @@ beforeEach(() => {
   orphanMock.mockResolvedValue(1);
   lapsedMock.mockResolvedValue({ dryRun: false, layouts: 4, sheets: 5 });
   rememberedMock.mockResolvedValue({ dryRun: false, removed: 3 });
+  engagementMock.mockResolvedValue(4);
 });
 
 describe("runScheduledCleanup", () => {
@@ -60,6 +67,7 @@ describe("runScheduledCleanup", () => {
       lapsedNoteLayouts: 4,
       lapsedNoteSheets: 5,
       rememberedNotesRemoved: 3,
+      engagementEventsRemoved: 4,
     });
     // Called with the database alone: no dry run, so the notes really go.
     expect(lapsedMock).toHaveBeenCalledTimes(1);
@@ -74,7 +82,19 @@ describe("runScheduledCleanup", () => {
       "[cleanup] Deleted 1 orphaned file(s)",
       "[cleanup] Removed the allergy note from 4 layout(s) and 5 event sheet(s) past their retention",
       "[cleanup] Removed 3 remembered allergy note(s) unused for the agreed period",
+      "[cleanup] Removed 4 engagement event(s) past their retention period",
     ]);
+  });
+
+  it("runs the engagement retention pass once, last, and fails the job when it cannot run", async () => {
+    await runScheduledCleanup(db, () => undefined);
+    expect(engagementMock).toHaveBeenCalledTimes(1);
+    expect(engagementMock).toHaveBeenCalledWith(db);
+    expect(rememberedMock.mock.invocationCallOrder[0]).toBeLessThan(engagementMock.mock.invocationCallOrder[0] ?? 0);
+
+    const failure = new Error("connection terminated");
+    engagementMock.mockRejectedValue(failure);
+    await expect(runScheduledCleanup(db, () => undefined)).rejects.toBe(failure);
   });
 
   it("fails the job when the retention pass fails, with nothing from the note in the error", async () => {

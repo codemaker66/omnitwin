@@ -4,7 +4,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
 } from "react";
@@ -255,12 +254,9 @@ function LensSheetSurface({
     animate();
   };
 
-  // The sheet is modal: the planner's single-key shortcuts (F, D, V, undo)
-  // must not act on the scene behind it. Escape and Tab are handled by the
-  // document-level listeners above, which run first.
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-    event.stopPropagation();
-  };
+  // The sheet is modal: its Escape layer (useEscapeToClose, a "modal" layer
+  // in the planner's one Escape order) also holds back the planner's
+  // shortcuts (A, D, V, undo), so nothing acts on the scene behind it.
 
   return (
     <div className="lens-sheet-layer" data-testid="lens-sheet-layer" data-state={open ? "open" : "closing"}>
@@ -284,7 +280,6 @@ function LensSheetSurface({
         onPointerMove={onPointerMove}
         onPointerUp={(event) => { finishDrag(event, false); }}
         onPointerCancel={(event) => { finishDrag(event, true); }}
-        onKeyDown={onKeyDown}
       >
         <div className="lens-sheet__grab" data-testid="lens-sheet-grab">
           <span className="lens-sheet__handle" aria-hidden="true" />

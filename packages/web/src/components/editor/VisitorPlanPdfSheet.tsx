@@ -1,5 +1,6 @@
-import { useEffect, useId, type ReactElement } from "react";
+import { useId, type ReactElement } from "react";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { useVisitorPlanPdf } from "../../hooks/use-visitor-plan-pdf.js";
 import { useVisitorPlanLinks } from "../../hooks/use-visitor-plan-links.js";
 import { VisitorPlanPdfActions } from "./VisitorPlanPdfActions.js";
@@ -29,13 +30,9 @@ export function VisitorPlanPdfSheet({ configId, roomName, onClose }: VisitorPlan
   const links = useVisitorPlanLinks(configId);
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, [onClose]);
+  // The sheet traps focus, so it holds the keyboard as a dialog: Escape
+  // closes it first, and the planner's shortcuts wait until it has gone.
+  useEscapeLayer("modal", { open: true, onEscape: onClose });
 
   return (
     <div

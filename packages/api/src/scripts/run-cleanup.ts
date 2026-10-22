@@ -14,6 +14,9 @@
 //   4. Remembered allergy notes unused for the period the client agreed to
 //      (DIETARY_MEMORY_RETENTION). The words beside the "remember" box promise
 //      this removal.
+//   5. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
+//      0100): the enquiry funnel keeps them no longer than the privacy page
+//      keeps an enquiry, whether or not their enquiry or proposal remains.
 //
 // Both note passes run on the schedule, not only when someone calls
 // POST /admin/cleanup, because the product promises them. Their errors carry
@@ -30,6 +33,7 @@ import { createDb, type Database } from "../db/client.js";
 import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/cleanup.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
+import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
 
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
@@ -38,6 +42,7 @@ export interface ScheduledCleanupResult {
   readonly lapsedNoteLayouts: number;
   readonly lapsedNoteSheets: number;
   readonly rememberedNotesRemoved: number;
+  readonly engagementEventsRemoved: number;
 }
 
 /** Every scheduled pass, in order. Each log line carries counts only. */
@@ -57,12 +62,16 @@ export async function runScheduledCleanup(
   const remembered = await removeUnusedRememberedNotes(db);
   log(`[cleanup] Removed ${String(remembered.removed)} remembered allergy note(s) unused for the agreed period`);
 
+  const engagementEventsRemoved = await removeExpiredEngagementEvents(db);
+  log(`[cleanup] Removed ${String(engagementEventsRemoved)} engagement event(s) past their retention period`);
+
   return {
     deletedConfigs,
     deletedFiles,
     lapsedNoteLayouts: lapsed.layouts,
     lapsedNoteSheets: lapsed.sheets,
     rememberedNotesRemoved: remembered.removed,
+    engagementEventsRemoved,
   };
 }
 

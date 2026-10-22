@@ -587,6 +587,97 @@ describe("HallkeeperPage Martyn's Law readiness", () => {
   });
 });
 
+describe("HallkeeperPage reloading checks keeps the sheet in hand", () => {
+  it("reloads only the checks, shows the work on the button, and a failed reload leaves the sheet and says so", async () => {
+    let sheetRequests = 0;
+    let progressRequests = 0;
+    let nextProgress: Promise<Response> | null = null;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/v2")) {
+        sheetRequests += 1;
+        // Only the first read of the sheet succeeds: a second one would fail
+        // and, before this fix, take the sheet off the screen with it.
+        return Promise.resolve(sheetRequests === 1
+          ? jsonResponse(sheet(CONFIG_A, "First dinner"))
+          : new Response(null, { status: 502 }));
+      }
+      if (url.endsWith("/progress")) {
+        progressRequests += 1;
+        return nextProgress ?? Promise.resolve(new Response(null, { status: 503 }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    mount();
+    await screen.findByText(/Shared checks could not be loaded/u);
+
+    const pending = deferred<Response>();
+    nextProgress = pending.promise;
+    const reload = screen.getByRole("button", { name: "Reload checks" });
+    fireEvent.click(reload);
+    // The button stays where the focus is, busy, with the shared indicator.
+    const busy = await screen.findByRole("button", { name: "Reloading checks…" });
+    expect(busy).toBe(reload);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect(busy.querySelector("[data-activity-indicator]")).not.toBeNull();
+
+    await act(async () => {
+      pending.resolve(new Response(null, { status: 503 }));
+      await pending.promise;
+    });
+    expect(await screen.findByRole("button", { name: "Reload checks" })).toBe(reload);
+    expect(screen.getByText(/Shared checks still could not be loaded/u)).toBeTruthy();
+    expect(screen.getByText("First dinner", { exact: true, selector: "p" })).toBeTruthy();
+    expect(sheetRequests).toBe(1);
+
+    nextProgress = Promise.resolve(jsonResponse({ checked: { [ROW_KEY]: checkedAt } }));
+    fireEvent.click(screen.getByRole("button", { name: "Reload checks" }));
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    expect(screen.queryByText(/could not be loaded/u)).toBeNull();
+    expect(screen.getByText("First dinner", { exact: true, selector: "p" })).toBeTruthy();
+    expect(sheetRequests).toBe(1);
+    expect(progressRequests).toBe(3);
+  });
+
+  it("never puts a reload's checks on a sheet opened since", async () => {
+    const pending = deferred<Response>();
+    let firstSheetProgress = 0;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.endsWith(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "First dinner")));
+      if (url.endsWith(`/${CONFIG_B}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_B, "Second dinner")));
+      if (url.endsWith(`/${CONFIG_A}/progress`)) {
+        firstSheetProgress += 1;
+        return firstSheetProgress === 2 ? pending.promise : Promise.resolve(new Response(null, { status: 503 }));
+      }
+      if (url.endsWith(`/${CONFIG_B}/progress`)) return Promise.resolve(new Response(null, { status: 503 }));
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    mount();
+    await screen.findByText(/Shared checks could not be loaded/u);
+    fireEvent.click(screen.getByRole("button", { name: "Reload checks" }));
+    await waitFor(() => { expect(firstSheetProgress).toBe(2); });
+
+    // Away and back while the reload is still out: a fresh open of the first
+    // sheet, whose own read of the checks fails again.
+    fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
+    await screen.findByText("Second dinner", { exact: true, selector: "p" });
+    fireEvent.click(screen.getByRole("link", { name: "Open first sheet" }));
+    await screen.findByText("First dinner", { exact: true, selector: "p" });
+    await screen.findByText(/Shared checks could not be loaded/u);
+    expect(firstSheetProgress).toBe(3);
+
+    await act(async () => {
+      pending.resolve(jsonResponse({ checked: { [ROW_KEY]: checkedAt } }));
+      await pending.promise;
+    });
+
+    expect(screen.getByText(/Shared checks could not be loaded/u)).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: /Round table/u }).getAttribute("aria-checked")).toBe("false");
+  });
+});
+
 describe("HallkeeperPage paper that knows its version", () => {
   function serve(data: HallkeeperSheetV2): void {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {

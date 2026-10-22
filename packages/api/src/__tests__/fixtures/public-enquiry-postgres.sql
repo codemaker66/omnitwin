@@ -79,8 +79,18 @@ CREATE TABLE enquiries (
   room_chosen boolean NOT NULL DEFAULT true,
   -- 0098: the person the enquiry came from; its key is added once contacts exists.
   contact_id uuid,
+  -- 0100: the first reply, and where the person found the venue.
+  first_response_at timestamptz,
+  first_response_by uuid,
+  first_response_channel varchar(20),
+  first_response_recorded_at timestamptz,
+  referrer_host varchar(253),
+  utm_source varchar(100),
+  utm_medium varchar(100),
+  utm_campaign varchar(100),
+  acquisition_channel varchar(20),
   CONSTRAINT enquiries_state_check CHECK (state IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')),
-  CONSTRAINT enquiries_source_check CHECK (source IS NULL OR source IN ('website', 'walkthrough', 'planner', 'phone', 'email'))
+  CONSTRAINT enquiries_source_check CHECK (source IS NULL OR source IN ('website', 'walkthrough', 'planner', 'phone', 'email', 'listing', 'assistant'))
 );
 
 CREATE TABLE enquiry_status_history (

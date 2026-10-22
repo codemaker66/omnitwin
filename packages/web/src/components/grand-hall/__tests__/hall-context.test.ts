@@ -71,8 +71,9 @@ describe("the city's lit windows", () => {
     const blocks = Math.ceil((2 * limit) / blockWidth) + 1;
     const spread = cell + level * across + blocks * block;
     expect(offset - spread).toBeGreaterThan(0);
-    // Three values a window: the seed and the two after it.
+    // Four values a window (lit, brightness, tint, the night look's accent):
+    // the seed and the three after it, all within its stride.
     expect((offset + spread) * stride + stride - 1).toBeLessThan(2 ** 24);
-    expect(stride).toBeGreaterThanOrEqual(3);
+    expect(stride).toBeGreaterThanOrEqual(4);
   });
 });

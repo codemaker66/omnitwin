@@ -56,8 +56,8 @@ function validHoldInput(): Record<string, unknown> {
 }
 
 describe("booking vocabulary", () => {
-  it("locks the four commitment kinds (Canon §2.1)", () => {
-    expect(BOOKING_KINDS).toEqual(["prospect", "hold", "ink", "internal_block"]);
+  it("locks the four commitment kinds (Canon §2.1) and the viewing (Canon §17 gap 3, migration 0100)", () => {
+    expect(BOOKING_KINDS).toEqual(["prospect", "hold", "ink", "internal_block", "viewing"]);
   });
 
   it("locks liveness: active plus the four exits (Canon §1)", () => {
@@ -123,6 +123,7 @@ describe("structural transition matrix (Canon §1/§3)", () => {
     ["hold", "lost"],
     ["ink", "cancelled"],
     ["internal_block", "released"],
+    ["viewing", "cancelled"],
   ];
 
   it("permits exactly the Canon lifecycle and nothing else (exhaustive)", () => {
@@ -148,10 +149,11 @@ describe("structural transition matrix (Canon §1/§3)", () => {
     expect(isValidBookingTransition("ink", "released")).toBe(false);
   });
 
-  it("nothing transitions into prospect or internal_block", () => {
+  it("nothing transitions into prospect, internal_block or viewing", () => {
     for (const from of BOOKING_STATES) {
       expect(isValidBookingTransition(from, "prospect")).toBe(false);
       expect(isValidBookingTransition(from, "internal_block")).toBe(false);
+      expect(isValidBookingTransition(from, "viewing")).toBe(false);
     }
   });
 });

@@ -1,10 +1,12 @@
 import {
+  BookViewingSchema,
   ConvertEnquirySchema,
   CreateBookingSchema,
   TransitionHoldSchema,
   UpdateBookingSchema,
   VALID_BOOKING_TRANSITIONS,
   occasionLabel,
+  type BookViewingInput,
   type BookingKind,
   type BookingState,
   type CalendarBookingEntry,
@@ -275,20 +277,24 @@ export function formToCreatePayload(
   // hold defaults (rank "1", the signed-in owner); switching kind hides the
   // hygiene fieldset, so its values must leave the payload too — otherwise
   // the schema rejects on fields the user cannot see (found live, T-518).
+  // A viewing hides the event type too: it is a show-round, never part of an
+  // event. Its host is the signed-in coordinator, as POST /bookings/viewings
+  // defaults it.
   const isHold = form.kind === "hold";
+  const isViewing = form.kind === "viewing";
   const rank = isHold ? emptyToUndefined(form.rank) : undefined;
   const candidate = {
     venueId,
     spaceId: form.spaceId,
     kind: form.kind,
     title: form.title,
-    eventType: emptyToUndefined(form.eventType),
+    eventType: isViewing ? undefined : emptyToUndefined(form.eventType),
     startsAt: times.values["startsAt"],
     endsAt: times.values["endsAt"],
     rank: rank === undefined ? undefined : Number(rank),
     jointFlag: (isHold && form.jointFlag) || undefined,
     decisionAt: isHold ? times.values["decisionAt"] : undefined,
-    ownerUserId: isHold ? emptyToUndefined(form.ownerUserId) : undefined,
+    ownerUserId: isHold || isViewing ? emptyToUndefined(form.ownerUserId) : undefined,
     nextAction: isHold ? emptyToUndefined(form.nextAction) : undefined,
     nextActionDueAt: isHold ? times.values["nextActionDueAt"] : undefined,
     notes: emptyToUndefined(form.notes),
@@ -380,6 +386,58 @@ export function formToConvertPayload(
   const parsed = ConvertEnquirySchema.safeParse(candidate);
   if (!parsed.success) return { ok: false, fieldErrors: issuesToFieldErrors(parsed.error.issues) };
   return { ok: true, payload: parsed.data, changed: true };
+}
+
+/** A viewing booked for the enquiry (migration 0100): the room, title,
+ *  times, host and note the visible form carries, and nothing of a hold's.
+ *  The room is the form's own, so an enquiry whose guest named none asks for
+ *  one, exactly as its hold does (ConvertSource.roomChosen). */
+export function formToViewingPayload(
+  form: DrawerForm,
+  enquiryId: string,
+): FormResult<BookViewingInput> {
+  const times = mapTimes(form, ["startsAt", "endsAt"]);
+  if (Object.keys(times.errors).length > 0) return { ok: false, fieldErrors: times.errors };
+
+  const candidate = {
+    enquiryId,
+    spaceId: form.spaceId,
+    title: emptyToUndefined(form.title),
+    startsAt: times.values["startsAt"],
+    endsAt: times.values["endsAt"],
+    ownerUserId: emptyToUndefined(form.ownerUserId),
+    notes: emptyToUndefined(form.notes),
+  };
+  const parsed = BookViewingSchema.safeParse(candidate);
+  if (!parsed.success) return { ok: false, fieldErrors: issuesToFieldErrors(parsed.error.issues) };
+  return { ok: true, payload: parsed.data, changed: true };
+}
+
+/** What the drawer opened from an enquiry books. */
+export type ConvertKind = "hold" | "viewing";
+
+/** How long each opens for: a hold the evening's function, a viewing an
+ *  hour's show-round. Both are only where the form starts; the booker sets
+ *  the times. */
+const CONVERT_DEFAULT_MS: Readonly<Record<ConvertKind, number>> = {
+  hold: (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS,
+  viewing: HOUR_MS,
+};
+
+/** The convert form as the other choice: the kind changes, and so does the
+ *  end while the times are still the other choice's default length. Times
+ *  the booker set are left as they are. */
+export function withConvertKind(form: DrawerForm, kind: ConvertKind): DrawerForm {
+  if (form.kind === kind) return form;
+  const startMs = wallInputToMs(form.startsAt);
+  const endMs = wallInputToMs(form.endsAt);
+  const other: ConvertKind = kind === "hold" ? "viewing" : "hold";
+  const untouched = startMs !== null && endMs !== null && endMs - startMs === CONVERT_DEFAULT_MS[other];
+  return {
+    ...form,
+    kind,
+    endsAt: untouched ? msToWallInput(startMs + CONVERT_DEFAULT_MS[kind]) : form.endsAt,
+  };
 }
 
 /** What making an interest-only booking provisional asks for (roadmap N3):

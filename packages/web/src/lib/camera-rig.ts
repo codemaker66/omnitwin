@@ -1,4 +1,5 @@
 import type { SpaceDimensions } from "@omnitwin/types";
+import { focusOwnsArrows } from "./planner-keys.js";
 
 /**
  * Computes default camera position for a cinematic planning perspective.
@@ -121,28 +122,26 @@ export function computeZoomFrameScale(deltaSeconds: number): number {
   return Math.min(deltaSeconds, MAX_ZOOM_FRAME_DELTA_SECONDS) * 60;
 }
 
+/**
+ * The orbit camera pans on the arrows alone. W A S D walk in Walk and nowhere
+ * else, so D is Draw and never also a pan (F-22; T-671 slice 5).
+ */
 export const PAN_KEYS: ReadonlySet<string> = new Set([
-  "KeyW",
-  "KeyA",
-  "KeyS",
-  "KeyD",
   "ArrowUp",
   "ArrowLeft",
   "ArrowDown",
   "ArrowRight",
 ]);
 
+/**
+ * Whether keys pressed at this element belong to it rather than the camera:
+ * text fields, widgets that move with the arrows (unless pressed with the
+ * pointer: a click on a key gives the arrows back to the room, F-21), dialogs
+ * and anything marked to keep the keyboard.
+ */
 export function isCameraKeyboardInputLocked(target: EventTarget | null): boolean {
   if (typeof Element === "undefined" || !(target instanceof Element)) return false;
-
-  if (
-    target.closest(
-      "input, textarea, select, button, [role='button'], [role='textbox'], [role='toolbar'], [role='menu'], [role='listbox'], [role='option'], [contenteditable]:not([contenteditable='false'])",
-    ) !== null
-  ) {
-    return true;
-  }
-
+  if (focusOwnsArrows(target)) return true;
   return target.closest("[role='dialog'], [data-camera-keyboard-lock='true']") !== null;
 }
 
@@ -178,10 +177,10 @@ export function computeKeyboardPanDirection(
   let dx = 0;
   let dz = 0;
 
-  if (pressedKeys.has("KeyW") || pressedKeys.has("ArrowUp")) dz -= 1;
-  if (pressedKeys.has("KeyS") || pressedKeys.has("ArrowDown")) dz += 1;
-  if (pressedKeys.has("KeyA") || pressedKeys.has("ArrowLeft")) dx -= 1;
-  if (pressedKeys.has("KeyD") || pressedKeys.has("ArrowRight")) dx += 1;
+  if (pressedKeys.has("ArrowUp")) dz -= 1;
+  if (pressedKeys.has("ArrowDown")) dz += 1;
+  if (pressedKeys.has("ArrowLeft")) dx -= 1;
+  if (pressedKeys.has("ArrowRight")) dx += 1;
 
   if (dx === 0 && dz === 0) return [0, 0];
 

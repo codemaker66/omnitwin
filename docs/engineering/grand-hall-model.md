@@ -115,6 +115,39 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   shadow. Built from the Scottish LiDAR Phase 5 DSM (OGL v3, attributed in the model's JSON) by
   `tools/grand-hall-survey/context`, which rebuilds it byte for byte. `?setting=none` leaves the
   hall under the sky alone, for measuring.
+- **The street at night** (`lib/sky/night-looks.ts`, `hall-street-light.ts`, `HallStreetLights.tsx`):
+  after dusk the card turns a dark violet with its skyline brighter than its blocks, so every
+  building stands as a silhouette and no lit window floats; Glasgow City Council's street lamps
+  lay amber pools on the ground each stands on, a warm scallop where each lantern's full cut-off
+  cone meets its wall, a halo on each lantern and, on screens larger than a phone, a cone of light
+  under it. Positions only from the council's open Lighting Columns layer (OGL v3,
+  `tools/grand-hall-survey/context/street-lamps-ogl-2026-10-18.json`, `fetch_street_lamps.py`);
+  nothing from its unlicensed `Pub_Lighting_Columns` layer is shipped. `bake_street_light.py`
+  derives the rest from our own model: wall bracket or column (in or within 2.5 m of a drawn
+  building wall), snapped to the drawn wall and 0.85 m out, 8 m over the pavement (Trades Hall's
+  own lamp sits level with its first-floor arches in our façade photograph), columns at the LiDAR
+  spike height where the DSM resolves one within an arm's reach (1.5 m) of the council's point;
+  Trades Hall's two door lanterns from the façade survey. A fitting the model cannot carry is not
+  drawn and keeps its light: the five the hall's section cuts away, and one bracket (8463) whose
+  wall the 3 m bands drew too low to hang a lantern 4 m up. It writes `street-lamps-v2.json` and
+  two 512² RGBA8 light maps (`street-light-v2.bin`, asinh-warped, about 0.5 m a texel at the
+  hall): a pool map read filtered (pool distance, that pool's lamp's switching altitude and foot,
+  its strength) and a head map read texel by texel (the nearest visible head and its switching
+  altitude), so the city's shader reads one filtered and one exact texel and loops over no lamps;
+  pools light only their own lamp's ground, never a roof. `--check` rebuilds it byte for byte and
+  checks the bake. Each lamp lights at its own sun altitude between −3.6° and −2.4°, its pool,
+  scallop, lens, halo and cone together; the city's night (ambient, windows, haze, the sky's glow)
+  follows the hall's Dusk-to-Night span, −3° to −10°, and after sunset the air clears (the golden
+  hour's thick haze thins by 4° down). Before the night's light comes, dusk darkens the card
+  against the still-bright sky from −1.5° to −4.5° (Evocative: walls to 0.36 of the day's sky
+  light, roofs and ground 0.52, the air between the blocks 0.62), so at 18:30 the blocks stand as
+  silhouettes and the hall stays brighter than the street. Over a lit city the night sky levels off
+  after nautical twilight, so each look's −12° keyframe is about 15% lighter than its −18° night,
+  never darker. A street lantern's lens dims seen side-on (its optic is full cut-off), so a far
+  lantern is a warm line under its halo, not a one-pixel dash the anti-aliasing cannot hold. Four looks (Subtle, Evocative shown, Noir, True to street at
+  3000 K) are uniforms only; a development build takes `?street=` (and `off`, close to the night
+  before the lamps; at dusk its glow follows today's span, so compare dusk against the commit
+  itself). Credited on the dial and the legal page.
 - **The dial** (`editor/cockpit/HallSunDial.tsx`): in the hall's Light controls, a popover on a
   desktop and inline in a phone's View sheet. The day is a band of its own sky with the sun's
   real path, ticks at sunrise, noon and sunset (a dragged sun settles on them), the gold floor
@@ -129,6 +162,26 @@ Measured on the RTX 4090 on 16 October: an orbit drew 159 frames a second with t
 against 167 without, and 35 against 38 with the CPU slowed 4x as a phone stand-in (within noise
 over three interleaved pairs); dragging the time held 123, and 68-112 slowed. A real phone's GPU
 is unmeasured, and one 1 s stall was seen once in a profiled run.
+
+The street at night, measured on the same RTX 4090 on 20 October against the commit before it
+(`b2d657f0`), at 21:30 on 18 October 2026 with the wedding layout (`perf-ab.mjs`: GPU timestamps
+round every render pass over 90 frames, three interleaved rounds, the same three poses; the city
+only draws under `?sky=1`). By night the frame's GPU time rose 12-33% on the phone profile (a
+phone's viewport and user agent, so no cones: wide orbit 0.276 against 0.228 ms, the view across
+Glassford Street 0.149 against 0.112, the street side 0.273 against 0.243) and 13-17% on desktop
+(1.17 against 1.03 ms; 1.17 against 1.00; 1.13 against 1.00). `?street=off`, the same shader with
+the lamps at zero, costs the same as the lamps on, so the cost is the city's shader, not the
+fittings or halos. In separate runs on the phone profile, the shader without the lamps' light cost
+2-13% (most at the view across the street, which the city fills), and with the pool map at
+anisotropy 1 rather than 8, 7-27%. By day the shader skips the windows and lamps
+(a branch on the sun's altitude, uniform for every fragment), and at noon the frame is level with
+the commit before it (-2% to +2%). On the 4090 these frames take a tenth to a quarter of a
+millisecond, so the shares say more than the times; a real phone's GPU is unmeasured, and on a
+slow phone the planner's adaptive resolution is what the night would spend. Earlier (19 October,
+`perf-night.mjs`, an orbit against `?street=off`): 155, 173 and 161 draws a second against 184, 163
+and 180 on desktop. It adds three draws (about 8,500 fitting and 3,700 cone triangles; no cones on
+a phone), two 1 MB light maps and one filtered plus one exact texel read in the city's shader, no
+lights and no work at rest.
 
 ## Views and loading
 
@@ -195,8 +248,22 @@ no probe context, also leaves out the reflection map and the chandeliers' lights
   sun), `hall-sun-times.test.ts` (sun on the floor at the solstices and equinox) and
   `hall-context.test.ts` (the city model's parser, and the published model against its own
   counts); `stores/__tests__/hall-time-store.test.ts` (the opening hour) and
-  `cockpit/__tests__/HallSunDial.test.tsx` (keys, drag, snapping, named moments, the moon);
-  `lib/__tests__/furniture-motion.test.ts` (the lean, squash and drop-in).
+  `cockpit/__tests__/HallSunDial.test.tsx` (keys, drag, snapping, named moments, the moon, the
+  credits); `lib/__tests__/furniture-motion.test.ts` (the lean, squash and drop-in).
+- The street at night: `python tools/grand-hall-survey/context/bake_street_light.py <out> --work
+  <_work.npz> --dsm-dir <dsm> --facade facade.json --check` (byte-for-byte rebuild, a test lamp's
+  pool offset and stretch, no light behind a wall, the switching lattice, brackets on the model's
+  walls, columns on its ground, every drawn lantern at least 4 m up, the cut set {24094, 24096,
+  45116, 45117, 45127} and the low-wall set {8463}, 8-bit pool edges within 0.1 m of the float
+  bake, every pool and head texel carrying its own lamp's switch and foot; with `--pub <local Pub
+  layer copy>`, bracket or column against the council's own types, at least 95 %, and a printed
+  note of how near the column heights come to the council's); `grand-hall/__tests__/hall-street-light.test.ts`
+  (both parsers' refusals, the warp and the shader's texel-centre estimate, per-lamp switching, the
+  published pair against itself as the shader reads it, the fittings the model cannot carry, the
+  fittings' faces, budget and lens frames, the cones' fold point, the halos' own instanced quad),
+  `lib/sky/__tests__/night-looks.test.ts` (lens above and halo below the bloom's threshold), the
+  night span and violet horizon in `sky-palette.test.ts`, and the lamps arriving (or not, and no
+  cones on a phone) in `hall-sun-redraw.test.tsx`.
 - The rendered room needs browser evidence: `/dev/grand-hall`, `/dev/planner-lab` (with
   `scripts/planner-lab.mjs`) or the planner itself (`scripts/planner-tour.mjs`).
 

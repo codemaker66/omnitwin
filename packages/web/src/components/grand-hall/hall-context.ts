@@ -14,18 +14,24 @@
 // a shade darker walls, a little darker still at the foot of each wall,
 // lit by the real sun or moon with its own shadow map (the hall casts into it
 // too), and dissolving into the sky's haze with distance so the model's edge
-// is never seen. After dusk its windows light up, warm and a few cool, at
-// random and steady.
+// is never seen. After dusk the card turns the night look's dark violet
+// (lib/sky/night-looks.ts), its skyline brighter than its blocks so every
+// building stands as a silhouette, its windows light up at random and steady,
+// and the council's street lamps (hall-street-light.ts) lay amber pools on
+// the pavements and a warm scallop on the wall under each lantern.
 // ---------------------------------------------------------------------------
 
 import { BufferAttribute, BufferGeometry, FrontSide, Sphere, Vector3 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import {
-  Fn, cameraPosition, clamp, cross, dFdx, dFdy, dot, exp, float, floor, fract, fwidth, hash, length, max, mix, normalize,
-  positionWorld, pow, sign, smoothstep, step, vec2, vec3, vec4,
+  Fn, If, abs, cameraPosition, cross, dFdx, dFdy, dot, float, floor, fract, fwidth, hash, length, max, mix, normalize,
+  positionWorld, sign, smoothstep, step, vec2, vec3, vec4,
 } from "three/tsl";
 import { hallSkyUniforms as u } from "./hall-sky-runtime.js";
 import { HALL_PAVEMENT_Y } from "./hall-site.js";
+import {
+  LAMP_SWITCH, cardHaze, cardLight, lampOn, nightDither, poolLight, streetLightAt, streetLookUniforms, type StreetLightMaps,
+} from "./hall-street-light.js";
 import type { HallSun } from "./hall-sun.js";
 
 export const CONTEXT_MODEL_URL = "/rooms/grand-hall/context-2020-lidar/merchant-city-v2.bin?r=1";
@@ -110,12 +116,37 @@ const CARD = {
 /** The sectioned site's reach (the builder's clamp), metres. */
 const SITE_RADIUS = 45.5;
 
+/** Lit windows: the night look's near share within this distance of the hall's centre, its full share beyond the far one, metres. */
+const WINDOW_NEAR = 30;
+const WINDOW_FAR = 110;
+
+/**
+ * The sun's true altitude, degrees, below which the city's windows and street
+ * lamps can add light: the first lamp's switching begins here, and the
+ * windows only from −3° (the city's night).
+ */
+export const NIGHT_WORK_BELOW = LAMP_SWITCH.highest + LAMP_SWITCH.ramp;
+
+/** The night's own light on the pavement, which a pool's light already includes. */
+const POOL_AMBIENT = 0.03;
+/** A pool's light seen from 24 m or more above it, against from the street. */
+const POOL_OVERVIEW = 0.5;
+/** A full cut-off lantern's cone: 60° each side of straight down. */
+const SCALLOP_HALF_ANGLE = Math.PI / 3;
+/** A pool lies on its lamp's own ground: within this of its foot, metres (the model's levels are 3 m apart). */
+const POOL_LEVEL = 0.5;
+/** The height a pool's light climbs the walls beside it, metres. */
+const SPILL_HEIGHT = 2;
+/** The share of a pool's light on the foot of the walls beside it. */
+const SPILL = 0.35;
+
 const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 const card = (rgb: readonly [number, number, number]) => vec3(linear(rgb[0]), linear(rgb[1]), linear(rgb[2]));
 
-/** The city's colour: lit card under the real sky, windows at night, haze with distance. */
-function cityColor(sun: HallSun) {
+/** The city's colour: lit card under the real sky, windows and street lamps at night, haze with distance. */
+function cityColor(sun: HallSun, maps: StreetLightMaps) {
   return Fn(() => {
+    const look = streetLookUniforms;
     const p = positionWorld;
     // Flat faces: the normal from the surface's own slope, turned to the camera.
     const toCamera = normalize(cameraPosition.sub(p));
@@ -126,71 +157,97 @@ function cityColor(sun: HallSun) {
     const radial = length(vec2(p.x, p.z));
     // Caps cut at the hall's floor across the site read as the cut they are.
     const section = cap.mul(step(p.y.abs(), 0.06)).mul(step(radial, SITE_RADIUS));
-    const albedo = mix(mix(mix(card(CARD.wall), card(CARD.cap), cap), card(CARD.ground), ground), card(CARD.section), section);
+    const albedo = mix(mix(mix(card(CARD.wall), card(CARD.cap), cap), card(CARD.ground), ground), card(CARD.section), section).toVar();
     // The foot of each wall a little darker, as a model's corners are.
     const heightAbove = p.y.sub(HALL_PAVEMENT_Y);
     const foot = mix(smoothstep(0.0, 9.0, heightAbove).mul(0.28).add(0.72), float(1), cap);
+    // The sun by day and the moon by night through the city's own shadow map,
+    // the sky's light, and after dusk the night look's (cardLight).
+    const lit = albedo.mul(cardLight(n, sun.factor, ground)).mul(foot).toVar();
 
-    // Direct light, the sun by day and the moon by night, through the city's
-    // own shadow map, each at its own strength.
-    const facing = max(dot(n, u.lightDirection), 0);
-    const daylight = u.sunColor.mul(u.sunStrength).mul(1.1);
-    const moonlight = u.moonColor.mul(u.moonStrength).mul(1.6);
-    const direct = daylight.add(moonlight).mul(facing).mul(sun.factor);
-    // The sky's light, brightest from above, and the sun's warmth bounced
-    // up from the streets onto the walls.
-    const sky = mix(u.horizonAway, u.zenith, 0.45);
-    const bounce = vec3(0.6, 0.46, 0.33).mul(u.sunStrength).mul(0.5);
-    const ambient = mix(bounce.add(sky.mul(0.5)), sky.mul(0.95), n.y.mul(0.5).add(0.5));
-    const lit = albedo.mul(direct.add(ambient)).mul(foot).toVar();
+    // Windows and street lamps add light only after dusk (no window is lit
+    // above 3° of sun below the horizon, no lamp above 2.25°), so by day the
+    // city skips them: a branch on a uniform, which every fragment takes
+    // alike, so the light maps and derivatives inside it stay legal.
+    If(u.sunAltitude.lessThan(NIGHT_WORK_BELOW), () => {
+      // After dusk some windows are lit, small, each its own brightness, mostly
+      // warm and a few in the night look's accents; few near the hall, so the
+      // facades it looks onto stay calm, more toward the city (by the distance
+      // from the hall, never from the camera, so nothing flickers in an orbit).
+      // Where a window would be smaller than a pixel its light is averaged in.
+      const wall = float(1).sub(cap).mul(float(1).sub(ground));
+      const along = normalize(vec3(n.z.negate(), 0, n.x).add(vec3(1e-4, 0, 0)));
+      const windows = CITY_WINDOWS;
+      const cellU = dot(vec2(p.x, p.z), vec2(along.x, along.z)).div(windows.width);
+      const cellV = heightAbove.sub(windows.firstStorey).div(windows.storey);
+      const cell = floor(vec2(cellU, cellV));
+      const local = fract(vec2(cellU, cellV));
+      // Whether it is lit, how brightly, its tint and its accent: four whole-number seeds.
+      const seed = cell.x.add(cell.y.mul(windows.across)).add(floor(p.x.add(p.z).div(windows.blockWidth)).mul(windows.block))
+        .add(windows.offset).mul(windows.stride);
+      const bounds = look.windowPane;
+      const pane = smoothstep(bounds.x.sub(0.02), bounds.x.add(0.02), local.x).mul(smoothstep(bounds.y.add(0.02), bounds.y.sub(0.02), local.x))
+        .mul(smoothstep(bounds.z.sub(0.03), bounds.z.add(0.03), local.y)).mul(smoothstep(bounds.w.add(0.03), bounds.w.sub(0.03), local.y));
+      const share = mix(look.windowNearShare, look.windowShare, smoothstep(WINDOW_NEAR, WINDOW_FAR, radial));
+      const brightness = look.windowBrightness;
+      const on = step(hash(seed), share).mul(hash(seed.add(1)).mul(brightness.y).add(brightness.x));
+      const accent = hash(seed.add(3));
+      const magenta = float(1).sub(step(look.windowMagentaShare, accent));
+      const cyan = step(look.windowMagentaShare, accent).mul(float(1).sub(step(look.windowMagentaShare.add(look.windowCyanShare), accent)));
+      const base = mix(look.windowWarm, look.windowCool, step(float(1).sub(look.windowCoolShare), hash(seed.add(2))));
+      const tint = mix(mix(base, look.windowMagenta, magenta), look.windowCyan, cyan);
+      const resolved = float(1).sub(smoothstep(0.2, 0.55, fwidth(cellU)));
+      const paneArea = bounds.y.sub(bounds.x).mul(bounds.w.sub(bounds.z));
+      const average = mix(share.mul(paneArea).mul(brightness.x.add(brightness.y.mul(0.5))), look.windowAverage, step(0, look.windowAverage));
+      const glow = mix(average, pane.mul(on), resolved);
+      lit.addAssign(tint.mul(glow).mul(wall).mul(step(0, cellV)).mul(u.night));
 
-    // After dusk about one window in seven is lit, small, mostly warm and each
-    // its own brightness;
-    // where a window would be smaller than a pixel its light is averaged in.
-    const wall = float(1).sub(cap).mul(float(1).sub(ground));
-    const along = normalize(vec3(n.z.negate(), 0, n.x).add(vec3(1e-4, 0, 0)));
-    const windows = CITY_WINDOWS;
-    const cellU = dot(vec2(p.x, p.z), vec2(along.x, along.z)).div(windows.width);
-    const cellV = heightAbove.sub(windows.firstStorey).div(windows.storey);
-    const cell = floor(vec2(cellU, cellV));
-    const local = fract(vec2(cellU, cellV));
-    // Whether it is lit, how brightly and its tint: three whole-number seeds.
-    const seed = cell.x.add(cell.y.mul(windows.across)).add(floor(p.x.add(p.z).div(windows.blockWidth)).mul(windows.block))
-      .add(windows.offset).mul(windows.stride);
-    const pane = smoothstep(0.38, 0.42, local.x).mul(smoothstep(0.62, 0.58, local.x))
-      .mul(smoothstep(0.34, 0.4, local.y)).mul(smoothstep(0.68, 0.62, local.y));
-    const on = step(hash(seed), 0.14).mul(hash(seed.add(1)).mul(0.65).add(0.35));
-    const tint = mix(vec3(1.0, 0.66, 0.36), vec3(0.8, 0.86, 1.0), step(0.86, hash(seed.add(2))));
-    const resolved = float(1).sub(smoothstep(0.2, 0.55, fwidth(cellU)));
-    const glow = mix(float(0.012), pane.mul(on), resolved);
-    lit.addAssign(tint.mul(glow).mul(wall).mul(step(0, cellV)).mul(u.cityGlow).mul(0.6));
+      // The street lamps, each lit at its own sun altitude: pools on the ground
+      // each lamp stands on (never a roof or the site's cut), a scallop on the
+      // wall under each lantern (where its full cut-off cone, 60° each side of
+      // straight down, meets the wall), and a little of each pool's light up
+      // the foot of the walls beside it.
+      const light = streetLightAt(maps, p);
+      const aboveFoot = p.y.sub(light.poolFoot);
+      const street = cap.mul(float(1).sub(section)).mul(smoothstep(POOL_LEVEL, POOL_LEVEL * 0.6, abs(aboveFoot)));
+      const pool = poolLight(light.rho);
+      // Seen from high over the city the pools calm, as the lanterns' halos do,
+      // so the hall stays the brightest thing in an overview.
+      const overview = mix(float(1), float(POOL_OVERVIEW), smoothstep(8, 24, cameraPosition.y.sub(p.y)));
+      const poolLit = max(pool.color.sub(POOL_AMBIENT), 0).mul(pool.mask).mul(overview).mul(light.poolStrength).mul(lampOn(light.poolSwitch));
+      const below = light.head.y.sub(p.y);
+      const toHead = light.head.sub(p);
+      const across = length(vec2(toHead.x, toHead.z));
+      const coneEdge = below.mul(Math.tan(SCALLOP_HALF_ANGLE)).sub(across);
+      const coneWidth = fwidth(coneEdge).mul(0.75).add(0.03);
+      const cone = smoothstep(coneWidth.negate(), coneWidth, coneEdge);
+      const reach = length(toHead).div(look.scallopReach);
+      const facing = smoothstep(0.0, 0.35, dot(vec2(n.x, n.z), vec2(toHead.x, toHead.z).div(max(across, 1e-3))));
+      const wallSide = float(1).sub(cap);
+      const scallop = look.scallop.mul(cone).mul(float(1).div(reach.mul(reach).add(1))).mul(facing).mul(light.hasHead).mul(lampOn(light.headSwitch));
+      // The pool's light up the foot of the walls beside it, from its own ground.
+      const spill = poolLit.mul(smoothstep(SPILL_HEIGHT, 0, aboveFoot)).mul(smoothstep(-0.3, 0, aboveFoot)).mul(SPILL);
+      lit.addAssign(albedo.mul(poolLit.mul(street).add(scallop.add(spill).mul(wallSide))));
+    });
 
     // The air between the eye and each block: it fills with the sky's
     // horizon colour with distance, more thickly when the sun is low, and
     // glows toward the sun, so a backlit city at golden hour stands in
-    // layers of warm haze. The model's far edge always dissolves.
-    const view = toCamera.negate();
-    const distance = length(p.sub(cameraPosition));
-    const lowSun = smoothstep(0.42, 0.0, u.sunDirection.y);
-    const reach = mix(float(230), float(100), lowSun);
-    const air = float(1).sub(exp(max(distance.sub(16), 0).div(reach.negate())));
-    const edge = smoothstep(170, 255, radial);
-    const haze = max(air.mul(0.88), edge);
-    const flatSun = normalize(vec3(u.sunDirection.x, 0, u.sunDirection.z).add(vec3(1e-4, 0, 0)));
-    const flatView = normalize(vec3(view.x, 0, view.z).add(vec3(1e-4, 0, 0)));
-    // Clamped: rounding can take the dot of opposed unit vectors just past
-    // -1, and pow of a negative base is undefined on the GPU (NaN).
-    const horizon = mix(u.horizonAway, u.horizonSun, pow(clamp(dot(flatSun, flatView).mul(0.5).add(0.5), 0, 1), 2.2));
-    const toward = pow(max(dot(view, u.sunDirection), 0), 6);
-    const hazeColor = horizon.mul(0.94).add(u.glow.mul(u.glowStrength).mul(toward).mul(0.6));
-    return vec4(mix(lit, hazeColor, haze), 1);
+    // layers of warm haze; at night it is the skyline's violet. The model's
+    // far edge always dissolves.
+    const haze = cardHaze(p);
+    return vec4(mix(lit, haze.color, haze.amount).mul(nightDither()), 1);
   })();
 }
 
-/** The city's visible material: lit in its own shader, never a shadow caster itself. */
-export function createContextMaterial(sun: HallSun): MeshBasicNodeMaterial {
+/**
+ * The city's visible material: lit in its own shader, never a shadow caster
+ * itself. `maps` are the street lamps' light maps (createStreetLightMaps), "no
+ * lamp" until the bake arrives.
+ */
+export function createContextMaterial(sun: HallSun, maps: StreetLightMaps): MeshBasicNodeMaterial {
   const material = new MeshBasicNodeMaterial({ side: FrontSide, fog: false });
-  material.colorNode = cityColor(sun);
+  material.colorNode = cityColor(sun, maps);
   material.name = "grand-hall-city";
   return material;
 }

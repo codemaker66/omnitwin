@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { TruthModeIndicator } from "../TruthModeIndicator.js";
 import {
   buildProceduralTruthSummary,
@@ -91,13 +91,16 @@ describe("TruthModeIndicator", () => {
     expect(screen.queryByRole("dialog", { name: /Truth Mode summary/i })).toBeNull();
   });
 
-  it("closes the L2 summary with Escape", () => {
+  it("closes the L2 summary with Escape and hands focus back to its toggle", () => {
     renderProceduralIndicator();
     fireEvent.click(screen.getByTestId("truth-mode-toggle"));
-    expect(screen.getByRole("dialog", { name: /Truth Mode summary/i })).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: /Truth Mode summary/i });
+    const close = within(dialog).getByRole("button", { name: /Close Truth Mode summary/i });
+    close.focus();
 
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.keyDown(close, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: /Truth Mode summary/i })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByTestId("truth-mode-toggle"));
   });
 
   it("labels generated/procedural scenes honestly", () => {

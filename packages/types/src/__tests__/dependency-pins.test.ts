@@ -103,8 +103,11 @@ describe("direct dependency reproducibility", () => {
     expect(api.dependencies?.["@clerk/fastify"]).toBe("3.1.19");
     // 6.11.0 audited with the OAuth consent route work (9fcfe339, 2026-06-25).
     expect(web.dependencies?.["@clerk/react"]).toBe("6.11.0");
-    expect(web.devDependencies?.["vite"]).toBe("6.4.3");
-    expect(web.devDependencies?.["vitest"]).toBe("4.1.11");
-    expect(api.devDependencies?.["vitest"]).toBe("4.1.11");
+    // 6.4.4 is the first 6.x past GHSA-698v-4r3x-3vcv (launch-editor, 2026-10-20).
+    expect(web.devDependencies?.["vite"]).toBe("6.4.4");
+    // 4.1.12 is the first release past GHSA-qxg6-89mg-rqv8 and the @vitest/mocker
+    // backslash-traversal advisory (2026-10-22).
+    expect(web.devDependencies?.["vitest"]).toBe("4.1.12");
+    expect(api.devDependencies?.["vitest"]).toBe("4.1.12");
   });
 });
