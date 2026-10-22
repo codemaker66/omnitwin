@@ -50,7 +50,7 @@ import {
 } from "three";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import {
-  attribute, cameraPosition, clamp, dot, exp, float, length, luminance, max, mix, normalize, positionLocal, positionWorld, pow,
+  attribute, cameraPosition, clamp, dot, exp, float, fract, length, luminance, max, mix, normalize, positionLocal, positionWorld, pow,
   smoothstep, texture as textureNode, uniform, uv, vec2, vec3,
 } from "three/tsl";
 import { MeshBuilder, type V2, type V3 } from "./mesh-builder.js";
@@ -805,6 +805,9 @@ const PLAIN = {
 /** The landing balustrade's oak as photographed (scan_076), sRGB 0-255. */
 export const BEYOND_JOINERY_OAK = [100, 68, 48] as const;
 
+/** The landing photograph's plain stone the corridor's lobby takes (a 1 m square from here, planner x and z, clear of the inlay). */
+const CORRIDOR_STONE = { x: -2.3, z: 6.6 } as const;
+
 /** Where the stairwell's edge lies (the landing's, at its balustrade), planner z. */
 const WELL_EDGE_Z = LANDING_BALUSTRADE.railZ[0];
 
@@ -831,8 +834,16 @@ export function createBeyondFloorMaterial(context: BeyondMaterialContext, photos
   );
   const intoWell = max(positionWorld.z.sub(WELL_EDGE_Z), float(0));
   const well = mix(srgb255(PLAIN.wellEdge), vec3(0, 0, 0), smoothstep(0.0, 0.55, intoWell));
+  // The F.16 corridor's lobby (plan only) in the landing's own photographed
+  // stone, the same corridor's floor 8 m along: a 1 m square of its plain
+  // stone, clear of the inlay, laid over and over. A flat colour there read as
+  // a pale disc on the dark, not as a floor.
+  const lobbyStone = photos.sample(floorCoordinates(BEYOND_ATLAS.landingFloor, vec2(
+    fract(p.x).add(CORRIDOR_STONE.x), fract(p.y).add(CORRIDOR_STONE.z),
+  ))).rgb;
+  const corridor = mix(srgb255(PLAIN.corridor), lobbyStone, photos.mix);
   const colour = code.lessThan(1.5).select(photographed,
-    isCode(BEYOND_SURFACE.corridor).select(srgb255(PLAIN.corridor),
+    isCode(BEYOND_SURFACE.corridor).select(corridor,
       isCode(BEYOND_SURFACE["stair-landing"]).select(srgb255(PLAIN.stairLanding), well)));
   // The stairwell takes none of the room's spill below its edge: the light falls past it.
   const spill = spillLight(mood, door, p, open).mul(isCode(BEYOND_SURFACE.well).select(float(0.25), float(1)));
