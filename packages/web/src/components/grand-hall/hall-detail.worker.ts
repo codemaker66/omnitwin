@@ -20,20 +20,25 @@ type DetailWorkerScope = typeof self & {
 };
 
 const scope = self as DetailWorkerScope;
+
+/** A failure of the worker itself (it cannot decode on this browser), not of one tile. */
+class DecoderUnavailable extends Error {}
 let canvas: OffscreenCanvas | null = null;
 let context: OffscreenCanvasRenderingContext2D | null = null;
 /** Level buffers handed back by the main thread, whole sets only. */
 const pool: ArrayBuffer[][] = [];
 
 async function decode(bytes: ArrayBuffer): Promise<Uint8Array<ArrayBuffer>[]> {
+  if (typeof createImageBitmap !== "function") throw new DecoderUnavailable("No createImageBitmap in the detail worker");
   const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/webp" }), { colorSpaceConversion: "none", premultiplyAlpha: "none" });
   try {
     if (bitmap.width !== DETAIL_TILE_TEXELS || bitmap.height !== DETAIL_TILE_TEXELS) {
       throw new Error(`A detail tile is ${String(bitmap.width)} x ${String(bitmap.height)}, not ${String(DETAIL_TILE_TEXELS)}`);
     }
+    if (typeof OffscreenCanvas === "undefined") throw new DecoderUnavailable("No OffscreenCanvas in the detail worker");
     canvas ??= new OffscreenCanvas(DETAIL_TILE_TEXELS, DETAIL_TILE_TEXELS);
     context ??= canvas.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
-    if (context === null) throw new Error("No 2D context in the detail worker");
+    if (context === null) throw new DecoderUnavailable("No 2D context in the detail worker");
     context.clearRect(0, 0, DETAIL_TILE_TEXELS, DETAIL_TILE_TEXELS);
     context.drawImage(bitmap, 0, 0);
     const reused = pool.pop()?.map((buffer) => new Uint8Array(buffer)) ?? [];
@@ -56,6 +61,6 @@ scope.onmessage = (event: MessageEvent<DetailWorkerMessage>) => {
     const buffers = levels.map((level) => level.buffer);
     scope.postMessage({ id, ok: true, levels: buffers }, buffers);
   }, (reason: unknown) => {
-    scope.postMessage({ id, ok: false, error: reason instanceof Error ? reason.message : String(reason) }, []);
+    scope.postMessage({ id, ok: false, error: reason instanceof Error ? reason.message : String(reason), fatal: reason instanceof DecoderUnavailable }, []);
   });
 };

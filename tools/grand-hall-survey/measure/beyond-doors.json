@@ -293,7 +293,7 @@
    "wall": "door",
    "outer": 6.075,
    "reach": 2.4,
-   "beyond": "the east end of F.16, a lobby toward the Kitchen F.10 and Corridor F.08",
+   "beyond": "the fireplace end of F.16 (its north-north-east end), a lobby toward the Kitchen F.10 and Corridor F.08",
    "from": "plan",
    "floorLevel": null,
    "source": "2010 FIRST plan (first-floor-2010.json, registered to the scan): its floor joined to the doorway, within the reach",

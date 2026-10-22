@@ -40,7 +40,7 @@ DOORS = [
     {"opening": "door-main", "label": "D2", "wall": "door", "x0": -0.72, "x1": 0.73, "outer": HW + 1.09, "reach": 2.4,
      "beyond": "F.16 Corridor at the head of Stair 5 (F.17)", "from": "scan"},
     {"opening": "door-fireplace", "label": "D3", "wall": "door", "x0": -9.41, "x1": -8.33, "outer": HW + 0.78, "reach": 2.4,
-     "beyond": "the east end of F.16, a lobby toward the Kitchen F.10 and Corridor F.08", "from": "plan"},
+     "beyond": "the fireplace end of F.16 (its north-north-east end), a lobby toward the Kitchen F.10 and Corridor F.08", "from": "plan"},
     {"opening": "door-fire-exit", "label": "D4", "wall": "fireplace", "z0": -3.765, "z1": -2.705, "outer": -HL - 1.21, "reach": 1.2,
      "beyond": "F.11 Stair 7's landing", "from": "plan"},
 ]
@@ -249,6 +249,7 @@ def saloon_panelling(mesh):
     surface jumps more than 30 cm out."""
     face0 = HW + 1.14
     out = {}
+    # "west" and "east" here are the planner's -x and +x, not the compass (planner +x bears 191 degrees, SSW).
     for side, xs in (("west", np.arange(7.75, 8.15, 0.1)), ("east", np.arange(9.9, 11.55, 0.1))):
         tops, prouds, cases, plasters = [], [], [], []
         for x in xs:

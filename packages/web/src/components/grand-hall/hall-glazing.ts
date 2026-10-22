@@ -41,6 +41,7 @@ import {
   HALL_HEIGHT,
   HALL_LIGHT_HALF_WIDTH,
   HALL_OPENINGS,
+  HALL_SASH_OPENING_HALF_WIDTH,
   HALL_WALL_THICKNESS,
   hallWall,
   wallPoint,
@@ -264,12 +265,8 @@ export function buildGlazingBars(hb: HallBuilders): void {
   });
 }
 
-/**
- * A sash window's masonry opening beyond its glass: half its width. The 2010
- * plan's straight outer opening is about 1.21 m (its jambs splay only on the
- * room side), the light and its stiles 1.13 m.
- */
-export const SASH_OPENING_HALF_WIDTH = 0.6;
+/** A sash window's masonry opening beyond its glass: half its width (hall-spec.ts HALL_SASH_OPENING_HALF_WIDTH). */
+export const SASH_OPENING_HALF_WIDTH = HALL_SASH_OPENING_HALF_WIDTH;
 
 /**
  * A window's outline beyond its glass on the wall, counter-clockwise seen

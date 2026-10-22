@@ -65,6 +65,29 @@ interface Disposable { dispose(): void }
 export type PipelineDebugView = "ao" | null;
 
 /**
+ * The scene pass's targets for a profile, or null for colour alone: the
+ * colour, the normal target where occlusion is drawn or kept (its alpha the
+ * occlusion weight: 1 here for every surface; a material's own MRT may write
+ * 0, see the header) and the velocity target under temporal anti-aliasing.
+ * The normal and velocity targets blend by their own alpha. Every surface
+ * writes alpha 1 there, which replaces what lies behind as before; a surface
+ * that writes alpha 0 (the Grand Hall's window panes, hall-glazing.ts) leaves
+ * the street behind it to occlusion and the temporal resolve. Lost, that
+ * blend would leave the panes' own normal and a zero motion behind them.
+ */
+export function plannerSceneOutputs(profile: RenderProfile, sceneNormals = profile.ambientOcclusion !== null): ReturnType<typeof mrt> | null {
+  const targets: Parameters<typeof mrt>[0] = { output };
+  if (sceneNormals || profile.ambientOcclusion !== null) targets["normal"] = vec4(packNormalToRGB(normalView), float(1));
+  if (profile.antiAlias === "temporal") targets["velocity"] = velocity;
+  if (Object.keys(targets).length === 1) return null;
+  const outputs = mrt(targets);
+  for (const name of ["normal", "velocity"] as const) {
+    if (name in targets) outputs.setBlendMode(name, new BlendMode(NormalBlending));
+  }
+  return outputs;
+}
+
+/**
  * Builds the node pipeline for one renderer, scene, camera and profile.
  * `sceneNormals` keeps the scene pass writing normals once ambient occlusion
  * is given up (lib/render-governor.ts): the scene's every material compiles
@@ -86,23 +109,8 @@ export function buildPlannerPipeline(
   // mobile GPU resolves on chip for little cost.
   const scenePass = pass(scene, camera, { samples: profile.sceneSamples });
   owned.push(scenePass);
-  const targets: Parameters<typeof mrt>[0] = { output };
-  // The normal target's alpha carries the occlusion weight: 1 here for every
-  // surface; a material's own MRT may write 0 (see the header).
-  if (normals) targets["normal"] = vec4(packNormalToRGB(normalView), float(1));
-  if (temporal) targets["velocity"] = velocity;
-  if (Object.keys(targets).length > 1) {
-    const outputs = mrt(targets);
-    // The normal and velocity targets blend by their own alpha. Every surface
-    // writes alpha 1 there, which replaces what lies behind as before; a
-    // surface that writes alpha 0 (the Grand Hall's window panes,
-    // hall-glazing.ts) leaves the street behind it to occlusion and the
-    // temporal resolve.
-    for (const name of ["normal", "velocity"] as const) {
-      if (name in targets) outputs.setBlendMode(name, new BlendMode(NormalBlending));
-    }
-    scenePass.setMRT(outputs);
-  }
+  const outputs = plannerSceneOutputs(profile, sceneNormals);
+  if (outputs !== null) scenePass.setMRT(outputs);
   if (normals) scenePass.getTexture("normal").type = UnsignedByteType;
 
   const color = scenePass.getTextureNode("output");

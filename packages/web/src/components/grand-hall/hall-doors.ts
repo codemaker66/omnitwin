@@ -32,7 +32,7 @@
 // stands 6 mm clear of its lining.
 // ---------------------------------------------------------------------------
 
-import type { BufferGeometry } from "three";
+import { BackSide, DoubleSide, Matrix4, Ray, Vector3, type BufferGeometry, type Intersection, type Mesh, type Raycaster } from "three";
 import type { Node } from "three/webgpu";
 import { Fn, attribute, cos, max, min, normalLocal, positionLocal, positionPrevious, positionWorld, sin, uniform, vec3 } from "three/tsl";
 import { HallBuilders, type HallGeometryStats, type HallHinge, type HallMaterialKey } from "./hall-builders.js";
@@ -138,12 +138,17 @@ export interface HallDoorLeaf {
 
 /** Rows of panels on the end door's leaves, measured on the atlas (v from, to). */
 const THREE_PANEL_ROWS: readonly (readonly [number, number])[] = [[0.195, 0.705], [0.94, 1.705], [1.88, 2.158]];
+// (Measured where the atlas has the end door's leaves, which are the fireplace
+// door's copied there by the survey build: HALL_DOORS door-end photographOf.)
 
 /**
  * Joinery per doorway, measured on the 4096 wall atlas at 1 cm (u along the
  * wall): each leaf's panel column (first leaf, second leaf), the rows, and
- * the hardware. The end and fireplace doors: three panels a leaf, overhead
- * closers on the top rail (v 2.16-2.24, 4 cm proud in the relief). The fire
+ * the hardware. The fireplace door: three panels a leaf, overhead closers on
+ * the top rail (v 2.16-2.24, 4 cm proud in the relief). The end door's are
+ * the same leaves: the end door stood open in the scan, and the atlas gives
+ * its doorway the fireplace door's closed pair (pack-atlas.py PATCHES), so its
+ * columns are the fireplace door's 17.688 m along the wall. The fire
  * exit: two panels a leaf (the atlas shows two, not the three first noted)
  * and a panic bar across both at 0.915-0.985 m, 3 cm proud. The main door,
  * open in the scan: its twins' stiles and rows, a knob and a finger plate on
@@ -708,5 +713,69 @@ export function doorLeafTurn(swing: DoorSwingUniforms): Node<"float"> {
 
 /** The leaves' fragments stand at or below their wall's cut (a cap lies on it). */
 export function doorLeafMask(section: HallSectionUniforms): Node<"bool"> {
-  return positionWorld.y.lessThanEqual(doorLeafCut(section).add(0.0015));
+  return positionWorld.y.lessThanEqual(doorLeafCut(section).add(DOOR_LEAF_MASK_SLACK));
+}
+
+/** How far over its wall's cut a leaf's fragment may stand and be drawn (doorLeafMask), metres. */
+const DOOR_LEAF_MASK_SLACK = 0.0015;
+
+const rayLocal = new Ray();
+const toLocal = new Matrix4();
+const cornerA = new Vector3();
+const cornerB = new Vector3();
+const cornerC = new Vector3();
+const hitLocal = new Vector3();
+const faceNormal = new Vector3();
+
+/**
+ * Three's raycast for the leaves as they are drawn. The shader turns each
+ * leaf about its hinge (doorLeafPosition) and drops what stands above its
+ * wall's cut (doorLeafMask), so the mesh's own raycast would meet the leaves
+ * shut: a tape measure across an open doorway struck a leaf that is not
+ * there and missed the one drawn swung open. Here every triangle is turned
+ * as leafVertex turns its corners, at `angleOf` its door (DoorSwing.angle)
+ * and `cutOf` its wall, and a hit above the cut is left out. Assign it as the
+ * leaves' meshes' `raycast` (GrandHallModel).
+ */
+export function raycastDoorLeaves(
+  mesh: Mesh, raycaster: Raycaster, intersects: Intersection[], angleOf: (door: number) => number, cutOf: (wall: number) => number,
+): void {
+  const geometry = mesh.geometry;
+  const position = geometry.attributes["position"];
+  const hinge = geometry.attributes["aHinge"];
+  const wall = geometry.attributes["aWall"];
+  if (position === undefined || hinge === undefined || wall === undefined) return;
+  const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+  const side = material?.side;
+  toLocal.copy(mesh.matrixWorld).invert();
+  rayLocal.copy(raycaster.ray).applyMatrix4(toLocal);
+  const corner = (index: number, into: Vector3): Vector3 | null => {
+    const code = hinge.getW(index);
+    const door = decodeHinge(code).door;
+    const sense = hinge.getZ(index) < 0 ? -1 : 1;
+    const turned = leafVertex([position.getX(index), position.getY(index), position.getZ(index)], { x: hinge.getX(index), z: hinge.getY(index), sense, code }, cutOf(Math.round(wall.getX(index))), angleOf(door));
+    return turned === null ? null : into.set(turned[0], turned[1], turned[2]);
+  };
+  const index = geometry.index;
+  const count = index === null ? position.count : index.count;
+  for (let t = 0; t + 2 < count; t += 3) {
+    const ia = index === null ? t : index.getX(t);
+    const ib = index === null ? t + 1 : index.getX(t + 1);
+    const ic = index === null ? t + 2 : index.getX(t + 2);
+    const a = corner(ia, cornerA);
+    const b = corner(ib, cornerB);
+    const c = corner(ic, cornerC);
+    if (a === null || b === null || c === null) continue;
+    const hit = side === BackSide
+      ? rayLocal.intersectTriangle(c, b, a, true, hitLocal)
+      : rayLocal.intersectTriangle(a, b, c, side !== DoubleSide, hitLocal);
+    if (hit === null) continue;
+    const point = hit.clone().applyMatrix4(mesh.matrixWorld);
+    const distance = raycaster.ray.origin.distanceTo(point);
+    if (distance < raycaster.near || distance > raycaster.far) continue;
+    // Above its wall's cut the leaf is not drawn (doorLeafMask).
+    if (point.y > cutOf(Math.round(wall.getX(ia))) + DOOR_LEAF_MASK_SLACK) continue;
+    faceNormal.subVectors(c, b).cross(cornerA.copy(a).sub(b)).normalize();
+    intersects.push({ distance, point, object: mesh, face: { a: ia, b: ib, c: ic, normal: faceNormal.clone(), materialIndex: 0 }, faceIndex: t / 3 });
+  }
 }

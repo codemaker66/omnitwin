@@ -117,10 +117,23 @@ describe("the beyond's floors", () => {
     expect(beyondPresence(Math.PI / 4)).toBeGreaterThan(0.2);
   });
 
-  it("take the room's light falling out of each door, strongest straight out of it", () => {
-    expect(spillShare(0, 1)).toBe(1);
-    expect(spillShare(0, 0)).toBeLessThan(1);
-    expect(spillShare(SPILL.reach, 1)).toBeCloseTo(Math.exp(-1), 6);
+  it("take the room's light falling out of each door as a lit doorway throws it: a widening band, dimming as it goes", () => {
+    const half = 0.55;
+    expect(spillShare(0, 0, half)).toBe(1);
+    // As wide as the doorway at its threshold (soft at its sides), wider further out.
+    expect(spillShare(0, half - SPILL.soft, half)).toBe(1);
+    expect(spillShare(0, half + SPILL.soft, half)).toBe(0);
+    expect(spillShare(2, half + SPILL.soft, half)).toBeGreaterThan(0);
+    // Dimming as the doorway's opening shrinks seen from further out.
+    expect(spillShare(SPILL.reach, 0, half)).toBeCloseTo(0.5, 6);
+    let last = 1;
+    for (let along = 0; along <= 2.4; along += 0.1) {
+      const share = spillShare(along, 0, half);
+      expect(share).toBeLessThanOrEqual(last + 1e-12);
+      last = share;
+    }
+    // Never on a point beside the doorway, behind the wall's outer face.
+    expect(spillShare(-0.5, 3, half)).toBe(0);
     // Each doorway's face is outside the room and its outward points away from the hall.
     for (const face of BEYOND_DOORWAYS) {
       expect(Math.abs(face.centre[0]) > 10.5 || Math.abs(face.centre[1]) > 5.29).toBe(true);

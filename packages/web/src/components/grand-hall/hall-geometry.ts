@@ -11,7 +11,8 @@
 import type { BufferGeometry } from "three";
 import { HallBuilders, type HallGeometryStats, type HallMaterialKey } from "./hall-builders.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH } from "./hall-spec.js";
-import { buildHallWalls } from "./hall-walls.js";
+import { buildHallWalls, buildHallWallsSteps } from "./hall-walls.js";
+import { drain, type Steps } from "./hall-slices.js";
 import { buildHallCeiling } from "./hall-ceiling.js";
 import { buildGlazingBars, buildGlazingReveals } from "./hall-glazing.js";
 import { buildThresholds } from "./hall-wall-body.js";
@@ -100,10 +101,32 @@ export function hallWallGeometry(relief: WallRelief | null): HallGeometry {
     cachedFlatWalls ??= buildHallWallGeometry(null);
     return cachedFlatWalls;
   }
-  let walls = cachedWalls.get(relief);
-  if (walls === undefined) {
-    walls = buildHallWallGeometry(relief);
-    cachedWalls.set(relief, walls);
+  return drain(hallWallGeometrySteps(relief));
+}
+
+/**
+ * hallWallGeometry for a relief as a sliced build (hall-slices.ts), cached
+ * as it is: the planner builds the walls this way when the relief arrives
+ * (hall-arrival.ts), so the page never freezes for the whole build, and
+ * hallWallGeometry then finds them built.
+ */
+export function* hallWallGeometrySteps(relief: WallRelief): Steps<HallGeometry> {
+  const cached = cachedWalls.get(relief);
+  if (cached !== undefined) return cached;
+  const now = (): number => (typeof performance !== "undefined" ? performance.now() : Date.now());
+  let spent = 0;
+  let started = now();
+  const hb = new HallBuilders();
+  const steps = buildHallWallsSteps(hb, relief);
+  for (;;) {
+    const next = steps.next();
+    if (next.done === true) break;
+    spent += now() - started;
+    yield;
+    started = now();
   }
+  const { geometries, stats } = hb.build();
+  const walls: HallGeometry = { geometries, stats, buildMs: spent + now() - started };
+  cachedWalls.set(relief, walls);
   return walls;
 }

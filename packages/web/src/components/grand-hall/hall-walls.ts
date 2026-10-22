@@ -21,6 +21,7 @@
 import { vec, type MeshBuilder, type V3 } from "./mesh-builder.js";
 import type { HallBuilders, HallMaterialKey } from "./hall-builders.js";
 import type { WallRelief, WallReliefMesh } from "./hall-relief.js";
+import { drain, type Steps } from "./hall-slices.js";
 import { doorRevealDepth } from "./hall-wall-body.js";
 import { HALL_DOORS, HALL_ELEVATION, HALL_OPENINGS, HALL_WALLS, wallPoint, type HallWall, type HallWallId } from "./hall-spec.js";
 
@@ -216,6 +217,14 @@ const drawnReliefs = new WeakSet<WallRelief>();
  * slicer and its cap all take this; built once per relief.
  */
 export function drawnRelief(relief: WallRelief): WallRelief {
+  return drain(drawnReliefSteps(relief));
+}
+
+/** Triangles drawnRelief looks at between yields (hall-slices.ts). */
+const DRAWN_STEP_TRIANGLES = 1024;
+
+/** drawnRelief as a sliced build (hall-slices.ts): it yields every DRAWN_STEP_TRIANGLES triangles. */
+export function* drawnReliefSteps(relief: WallRelief): Steps<WallRelief> {
   if (drawnReliefs.has(relief)) return relief;
   const cached = drawnCache.get(relief);
   if (cached !== undefined) return cached;
@@ -223,15 +232,32 @@ export function drawnRelief(relief: WallRelief): WallRelief {
   for (const [id, mesh] of relief) {
     const { positions, indices } = mesh;
     const corner = (i: number): Corner => [positions[i * 3] ?? 0, positions[i * 3 + 1] ?? 0, positions[i * 3 + 2] ?? 0];
+    // doorReliefFate's first test, without building the corners: most of a
+    // wall's triangles are nowhere near a doorway and are kept as they are.
+    const doors = DOOR_OUTLINES.filter((outline) => outline.wall === id);
+    const nearDoor = (i: number): boolean => {
+      const u = positions[i * 3] ?? 0;
+      const v = positions[i * 3 + 1] ?? 0;
+      for (const door of doors) if (u > door.u0 - REVEAL_SIDE && u < door.u1 + REVEAL_SIDE && v < door.head + REVEAL_SIDE) return true;
+      return false;
+    };
     const kept: number[] = [];
     const added: number[] = [];
     let next = positions.length / 3;
     for (let t = 0; t < indices.length; t += 3) {
-      const ids = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0];
+      if (t > 0 && t % (DRAWN_STEP_TRIANGLES * 3) === 0) yield;
+      const i0 = indices[t] ?? 0;
+      const i1 = indices[t + 1] ?? 0;
+      const i2 = indices[t + 2] ?? 0;
+      if (!nearDoor(i0) && !nearDoor(i1) && !nearDoor(i2)) {
+        kept.push(i0, i1, i2);
+        continue;
+      }
+      const ids = [i0, i1, i2];
       const corners = ids.map(corner);
       const fate = doorReliefFate(id, corners);
       if (fate === null) {
-        kept.push(...ids);
+        kept.push(i0, i1, i2);
         continue;
       }
       // The original corners keep their indices; the planes' new points are added.
@@ -258,6 +284,7 @@ export function drawnRelief(relief: WallRelief): WallRelief {
     all.set(positions);
     all.set(added, positions.length);
     out.set(id, { wall: id, positions: added.length === 0 ? positions : all, indices: Uint32Array.from(kept) });
+    yield;
   }
   drawnCache.set(relief, out);
   drawnReliefs.add(out);
@@ -285,11 +312,23 @@ export const SHARED_REACH_MARGIN = 0.05;
  * -1. `corners` are its wall-local (u, v, depth) points.
  */
 export function sharedNeighbour(wallIndex: number, wallLength: number, corners: readonly (readonly [number, number, number])[]): number {
-  const proud = Math.max(...corners.map((c) => c[2]));
+  let proud = -Infinity;
+  let low = Infinity;
+  let high = -Infinity;
+  for (const c of corners) {
+    proud = Math.max(proud, c[2]);
+    low = Math.min(low, c[0]);
+    high = Math.max(high, c[0]);
+  }
+  return sharedNeighbourOf(wallIndex, wallLength, proud, low, high);
+}
+
+/** sharedNeighbour from a triangle's furthest proud and its u extent. */
+function sharedNeighbourOf(wallIndex: number, wallLength: number, proud: number, low: number, high: number): number {
   if (proud <= SHARED_MIN_PROUD) return -1;
   // The wall before this one meets its start (u = 0), the next its end.
-  const fromStart = Math.min(...corners.map((c) => c[0]));
-  const fromEnd = Math.min(...corners.map((c) => wallLength - c[0]));
+  const fromStart = low;
+  const fromEnd = wallLength - high;
   const count = HALL_WALLS.length;
   if (fromStart <= fromEnd && proud > fromStart + SHARED_REACH_MARGIN) return (wallIndex + count - 1) % count;
   if (fromEnd < fromStart && proud > fromEnd + SHARED_REACH_MARGIN) return (wallIndex + 1) % count;
@@ -326,16 +365,28 @@ export function wallMaterial(v: number): HallMaterialKey {
 }
 
 export function buildHallWalls(hb: HallBuilders, relief: WallRelief | null): void {
-  const drawn = relief === null ? null : drawnRelief(relief);
-  HALL_WALLS.forEach((wall, index) => {
-    hb.onWall(index, () => {
-      hb.withRole("wall", () => {
-        const mesh = drawn?.get(wall.id);
-        if (mesh === undefined) flatWall(hb, wall);
-        else reliefWall(hb, wall, index, mesh);
-      });
-    });
-  });
+  drain(buildHallWallsSteps(hb, relief));
+}
+
+/** buildHallWalls as a sliced build (hall-slices.ts): it yields every few hundred triangles of relief. */
+export function* buildHallWallsSteps(hb: HallBuilders, relief: WallRelief | null): Steps<void> {
+  const drawn = relief === null ? null : yield* drawnReliefSteps(relief);
+  for (let index = 0; index < HALL_WALLS.length; index++) {
+    const wall = HALL_WALLS[index];
+    if (wall === undefined) continue;
+    const mesh = drawn?.get(wall.id);
+    const previousWall = hb.wall;
+    const previousRole = hb.role;
+    hb.wall = index;
+    hb.role = "wall";
+    try {
+      if (mesh === undefined) flatWall(hb, wall);
+      else yield* reliefWall(hb, wall, index, mesh);
+    } finally {
+      hb.wall = previousWall;
+      hb.role = previousRole;
+    }
+  }
 }
 
 /** A rectangle on the wall at `depth`, facing into the room. */
@@ -366,16 +417,15 @@ function flatWall(hb: HallBuilders, wall: HallWall): void {
   }
 }
 
+/** Triangles reliefWall builds between yields (hall-slices.ts): each vertex bakes its light, a few microseconds. */
+const WALL_STEP_TRIANGLES = 256;
+
 /** The wall's measured relief, split between the glossy and matte photographs. */
-function reliefWall(hb: HallBuilders, wall: HallWall, wallIndex: number, mesh: WallReliefMesh): void {
+function* reliefWall(hb: HallBuilders, wall: HallWall, wallIndex: number, mesh: WallReliefMesh): Steps<void> {
   const { positions, indices } = mesh;
   const count = positions.length / 3;
-  const local = (i: number): readonly [number, number, number] => [positions[i * 3] ?? 0, positions[i * 3 + 1] ?? 0, positions[i * 3 + 2] ?? 0];
   const world: V3[] = [];
-  for (let i = 0; i < count; i++) {
-    const [u, v, depth] = local(i);
-    world.push(wallPoint(wall, u, v, depth));
-  }
+  for (let i = 0; i < count; i++) world.push(wallPoint(wall, positions[i * 3] ?? 0, positions[i * 3 + 1] ?? 0, positions[i * 3 + 2] ?? 0));
   // Area-weighted vertex normals: every face of the relief looks into the room.
   const sums = new Float64Array(count * 3);
   for (let t = 0; t < indices.length; t += 3) {
@@ -393,39 +443,61 @@ function reliefWall(hb: HallBuilders, wall: HallWall, wallIndex: number, mesh: W
       sums[k * 3 + 2] = (sums[k * 3 + 2] ?? 0) + n[2];
     }
   }
+  yield;
   const normalOf = (i: number): V3 => {
     const n: V3 = [sums[i * 3] ?? 0, sums[i * 3 + 1] ?? 0, sums[i * 3 + 2] ?? 0];
     return Math.hypot(n[0], n[1], n[2]) > 1e-12 ? vec.normalize(n) : wall.normal;
   };
   // Each material's builder gets its own copy of the vertices it uses, and a
   // triangle shared with a neighbouring wall, or lying in an opening, its own
-  // copies again (they carry that wall's cut, or the opening, too).
-  const remaps = new Map<string, Int32Array>();
-  for (let t = 0; t < indices.length; t += 3) {
-    const corners = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0] as const;
-    const centreU = (local(corners[0])[0] + local(corners[1])[0] + local(corners[2])[0]) / 3;
-    const centreV = (local(corners[0])[1] + local(corners[1])[1] + local(corners[2])[1]) / 3;
-    const key = wallMaterial(centreV);
-    const neighbour = sharedNeighbour(wallIndex, wall.length, corners.map(local));
-    const opening = openingAt(wall.id, centreU, centreV);
-    const builder = hb.get(key);
-    const remapKey = `${key}:${String(neighbour)}:${String(opening)}`;
-    let remap = remaps.get(remapKey);
-    if (remap === undefined) {
-      remap = new Int32Array(count).fill(-1);
-      remaps.set(remapKey, remap);
-    }
-    const target = remap;
-    hb.withNeighbour(neighbour, () => { hb.withOpening(opening, () => {
-      const ids = corners.map((i) => {
+  // copies again (they carry that wall's cut, or the opening, too). The
+  // copies are keyed by material, neighbour and opening as one number.
+  const remaps = new Map<number, Int32Array>();
+  const openings = HALL_OPENINGS.length + 1;
+  const neighbours = HALL_WALLS.length + 1;
+  const previousNeighbour = hb.wallB;
+  const previousOpening = hb.opening;
+  try {
+    for (let t = 0; t < indices.length; t += 3) {
+      if (t > 0 && t % (WALL_STEP_TRIANGLES * 3) === 0) yield;
+      const i0 = indices[t] ?? 0;
+      const i1 = indices[t + 1] ?? 0;
+      const i2 = indices[t + 2] ?? 0;
+      const u0 = positions[i0 * 3] ?? 0;
+      const u1 = positions[i1 * 3] ?? 0;
+      const u2 = positions[i2 * 3] ?? 0;
+      const v0 = positions[i0 * 3 + 1] ?? 0;
+      const v1 = positions[i1 * 3 + 1] ?? 0;
+      const v2 = positions[i2 * 3 + 1] ?? 0;
+      const proud = Math.max(positions[i0 * 3 + 2] ?? 0, positions[i1 * 3 + 2] ?? 0, positions[i2 * 3 + 2] ?? 0);
+      const centreU = (u0 + u1 + u2) / 3;
+      const centreV = (v0 + v1 + v2) / 3;
+      const key = wallMaterial(centreV);
+      const neighbour = sharedNeighbourOf(wallIndex, wall.length, proud, Math.min(u0, u1, u2), Math.max(u0, u1, u2));
+      const opening = openingAt(wall.id, centreU, centreV);
+      const builder = hb.get(key);
+      const remapKey = ((key === "wallPhotoGloss" ? 1 : 0) * neighbours + neighbour + 1) * openings + opening + 1;
+      let remap = remaps.get(remapKey);
+      if (remap === undefined) {
+        remap = new Int32Array(count).fill(-1);
+        remaps.set(remapKey, remap);
+      }
+      const target = remap;
+      hb.wallB = neighbour;
+      hb.opening = opening;
+      const vertexOf = (i: number): number => {
         const existing = target[i] ?? -1;
         if (existing >= 0) return existing;
-        const [u, v] = local(i);
+        const u = positions[i * 3] ?? 0;
+        const v = positions[i * 3 + 1] ?? 0;
         const created = builder.vertex(world[i] ?? wallPoint(wall, u, v), normalOf(i), [u, v]);
         target[i] = created;
         return created;
-      });
-      builder.triangle(ids[0] ?? 0, ids[1] ?? 0, ids[2] ?? 0);
-    }); });
+      };
+      builder.triangle(vertexOf(i0), vertexOf(i1), vertexOf(i2));
+    }
+  } finally {
+    hb.wallB = previousNeighbour;
+    hb.opening = previousOpening;
   }
 }

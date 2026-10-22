@@ -76,12 +76,15 @@ export const GILT_MIN_PIXELS = 2 * LINE_MIN_PIXELS;
  * proportion. The distance from the edge, metres, is `across` times `scale`
  * (1 unless given): the pixel's size is scaled with it, never differentiated
  * through `scale`, so a scale that steps from texel to texel does not bead
- * the line.
+ * the line. With `dim` false it is widened without dimming: a band of
+ * material, not a line of light.
  */
-export function lineCoverage(across: Node<"float">, width: number, scale: Node<"float"> = float(1), minPixels = LINE_MIN_PIXELS): Node<"float"> {
+export function lineCoverage(across: Node<"float">, width: number, scale: Node<"float"> = float(1), minPixels = LINE_MIN_PIXELS, dim = true): Node<"float"> {
   const pixel = max(fwidth(across).mul(scale), float(1e-5));
   const drawn = max(float(width), pixel.mul(minPixels));
-  return boxCoverage(across.mul(scale), drawn, pixel).mul(float(width).div(drawn));
+  const coverage = boxCoverage(across.mul(scale), drawn, pixel);
+  // A band of material (the cut's plaster) is widened whole; a line of light is dimmed as it widens.
+  return dim ? coverage.mul(float(width).div(drawn)) : coverage;
 }
 
 export interface CutEdge {

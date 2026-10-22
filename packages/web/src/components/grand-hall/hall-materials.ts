@@ -70,6 +70,12 @@ interface SurfaceStyle {
  */
 export class HallSectionUniforms {
   readonly cuts = [uniform(100), uniform(100), uniform(100), uniform(100), uniform(100)] as const;
+  /**
+   * How far the chandeliers are put away (0 drawn, 1 hidden: in Plan and in
+   * the overview from high up; eased by GrandHallModel): the floor's sharp
+   * reflections of them soften with them (hall-floor.ts).
+   */
+  readonly chandeliersAway = uniform(0);
 
   set(index: number, height: number): void {
     const cut = this.cuts[index];
@@ -89,7 +95,26 @@ export class HallSectionUniforms {
  * body drops the lintel (LINTEL_RELEASE), the relief over the door goes too,
  * so the doorway reads from above as a gap through the whole wall.
  */
-function sectionCut(section: HallSectionUniforms) {
+function sectionCut(section: HallSectionUniforms): SectionCut {
+  // Built once per set of cuts: the walls' mask and their cut's gilt edge
+  // share these nodes, so a wall fragment works its cut out once, not twice.
+  const cached = sectionCuts.get(section);
+  if (cached !== undefined) return cached;
+  const built = buildSectionCut(section);
+  sectionCuts.set(section, built);
+  return built;
+}
+
+interface SectionCut {
+  /** The cut this fragment's relief takes (the lower of two walls' in a corner). */
+  readonly cut: Node<"float">;
+  /** Whether the fragment is drawn: under its cut, and not over a doorway whose lintel has gone. */
+  readonly mask: Node<"bool">;
+}
+
+const sectionCuts = new WeakMap<HallSectionUniforms, SectionCut>();
+
+function buildSectionCut(section: HallSectionUniforms): SectionCut {
   const [c0, c1, c2, c3, c4] = section.cuts;
   const wall = attribute("aWall", "float");
   const neighbour = attribute("aWallB", "float");
@@ -172,10 +197,11 @@ function scanDaylight() {
  * 2 mm detail where a tile is resident (`detail`, hall-detail.ts). The
  * orthophotos look straight at each wall, so faces they see edge-on — the
  * sides of doorcases, boards and reveals — would stretch a single row of
- * texels into streaks; those faces take the photograph's local average (six
- * mip levels coarser, about 30 cm a texel), muted and shaded as the recess it
- * is, since the average of a window's glass and curtains would otherwise
- * streak blue and white down the reveal. They are never glazing.
+ * texels into streaks; those faces take the photograph's local average: by a
+ * window, six mip levels coarser (about 30 cm a texel), muted and shaded as
+ * the recess it is, since the average of a window's glass and curtains would
+ * otherwise streak blue and white down the reveal; elsewhere 2.5 levels
+ * coarser, in its own colour. They are never glazing.
  */
 function wallTexel(photos: HallPhotos, edgeOn = true, detail: HallDetailLayer | null = null) {
   const atlas = attribute("aAtlas", "vec2");
@@ -198,8 +224,18 @@ function wallTexel(photos: HallPhotos, edgeOn = true, detail: HallDetailLayer | 
   // Window and door walls face along z; the end walls along x.
   const alongZ = wall.lessThan(0.5).or(wall.greaterThan(1.5).and(wall.lessThan(2.5)));
   const facing = smoothstep(0.18, 0.42, alongZ.select(face.z.abs(), face.x.abs()));
-  const coarse = photo.bias(float(6)).rgb;
-  const reveal = vec4(mix(vec3(luminance(coarse)), coarse, 0.3).mul(0.62), 1);
+  // Near glazing (the photograph's alpha below opaque) a face seen edge-on is
+  // a window's reveal: it takes the coarse, muted, shaded average, since the
+  // average of glass and curtains would otherwise streak blue and white down
+  // it. Elsewhere it is joinery or plaster seen on edge (a board's shelf, a
+  // doorcase's side): it keeps the colour of what the photograph shows at its
+  // edge, averaged over a few centimetres (2.5 levels coarser) so a single row
+  // of texels does not streak, and only a little shaded. The muted 30 cm
+  // average everywhere laid a flat grey slab along the deacon boards' shelf
+  // (review LOOK-7, 22 October). One sample either way: the level follows.
+  const glassy = float(1).sub(smoothstep(0.9, 0.99, photo.a));
+  const coarse = photo.bias(mix(float(2.5), float(6), glassy)).rgb;
+  const reveal = vec4(mix(coarse.mul(0.86), mix(vec3(luminance(coarse)), coarse, 0.3).mul(0.62), glassy), 1);
   // The unbiased sample's alpha marks glazing; the window boards and heads
   // (faces turned up or down) are never glass, whatever texel they project to.
   const level = smoothstep(0.55, 0.8, face.y.abs());
@@ -416,7 +452,7 @@ export function createHallMaterials(
   for (const key of Object.keys(table) as HallMaterialKey[]) {
     // The floor is drawn (hall-floor.ts), lit by the same baked light.
     const floorLight = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
-    const material = key === "floor" ? createOakFloorMaterial(floorLight) : createSurface(table[key], mood, photos, sun, surface);
+    const material = key === "floor" ? createOakFloorMaterial(floorLight, section.chandeliersAway) : createSurface(table[key], mood, photos, sun, surface);
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
       material.maskNode = sectionMask(section);
     }

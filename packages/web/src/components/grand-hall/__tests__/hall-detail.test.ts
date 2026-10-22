@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera } from "three";
 import {
-  DETAIL_ATLAS_TEXEL_MM, DETAIL_DENSITY, DETAIL_FADE_STEP, DETAIL_GUTTER, DETAIL_INDEX_HEIGHT, DETAIL_INDEX_WIDTH, DETAIL_MAX_REQUESTS, DETAIL_PITCH,
-  DETAIL_ROWS, DETAIL_SLOT_BYTES, DETAIL_TILE_COUNT, DETAIL_UPLOAD_BUDGET_MS, DETAIL_WAKE_MS, DETAIL_WALLS, HallDetailLayer, detailHandoverLevel, detailKey, detailTile,
+  DETAIL_ABANDON_FRAMES, DETAIL_ATLAS_TEXEL_MM, DETAIL_DENSITY, DETAIL_FADE_STEP, DETAIL_GUTTER, DETAIL_INDEX_HEIGHT, DETAIL_INDEX_WIDTH, DETAIL_MAX_REQUESTS, DETAIL_PITCH,
+  DETAIL_ROWS, DETAIL_SLOT_BYTES, DETAIL_TILE_COUNT, DETAIL_UPLOAD_BUDGET_MS, DETAIL_WAKE_MS, DETAIL_WALLS, DetailWake, HallDetailLayer, detailHandoverLevel, detailKey, detailTile,
   detailTileAt, detailTilePath, parseDetailIndex,
-  selectDetailTiles, wallLocalFromAtlas, type DetailDecoder, type DetailRenderer, type HallDetailIndex,
+  selectDetailTiles, wallLocalFromAtlas, type DetailDecoder, type DetailRenderer, type HallDetailIndex, type WakeClock,
 } from "../hall-detail.js";
 import { DETAIL_LEVELS, DETAIL_TILE_TEXELS, detailMipChain } from "../hall-detail-decode.js";
 import { wallAtlasUv, WALL_ATLAS_V_MAX, WALL_ATLAS_V_MIN } from "../hall-atlas.js";
@@ -452,6 +452,142 @@ describe("a tile's mip levels", () => {
     expect([...(chain[1] ?? [])].slice(0, 4)).toEqual([188, 188, 188, 255]);
     expect([...(chain[2] ?? [])]).toEqual([188, 188, 188, 255]);
     expect(() => detailMipChain(new Uint8Array(10), 4, 2)).toThrow();
+  });
+});
+
+describe("the detail layer's housekeeping (review, 22 October)", () => {
+  const full = parseDetailIndex(indexJson());
+  /** A pose behind the end wall: it wants no tile. */
+  const AWAY: Pose = { position: [12, 2.7, -3.23], target: [14, 2.78, -3.23] };
+  const deferred = () => {
+    let resolve: (bytes: ArrayBuffer) => void = () => undefined;
+    const promise = new Promise<ArrayBuffer>((done) => { resolve = done; });
+    return { promise, resolve };
+  };
+
+  it("abandons a fetch whose tile has not been wanted for a while, without counting it as a failure", async () => {
+    const pending: { readonly signal: AbortSignal; readonly resolve: (bytes: ArrayBuffer) => void }[] = [];
+    let clock = 0;
+    let decoded = 0;
+    const decoder: DetailDecoder = { decode: () => { decoded += 1; return Promise.resolve(levels()); }, recycle: () => undefined, dispose: () => undefined };
+    const layer = new HallDetailLayer({
+      slots: 64, decoder, now: () => clock,
+      fetchBytes: (_url, signal) => { const waiting = deferred(); pending.push({ signal, resolve: waiting.resolve }); return waiting.promise; },
+    });
+    layer.setIndex(full);
+    const frame = (pose: Pose): void => {
+      clock += 1000 / 60;
+      layer.update({ camera: camera(pose.position, pose.target), heightPx: 1166, cuts: NONE, delta: 1 / 60, reducedMotion: false, renderer: null });
+    };
+    frame(BOARDS);
+    expect(pending).toHaveLength(DETAIL_MAX_REQUESTS);
+    // A few frames away is not yet a while: the fetches stand.
+    for (let i = 0; i < DETAIL_ABANDON_FRAMES - 2; i++) frame(AWAY);
+    expect(pending.every((entry) => !entry.signal.aborted)).toBe(true);
+    for (let i = 0; i < 20; i++) frame(AWAY);
+    expect(pending.every((entry) => entry.signal.aborted)).toBe(true);
+    expect(layer.stats()).toMatchObject({ inFlight: 0, abandoned: DETAIL_MAX_REQUESTS, failures: 0 });
+    // A fetch that lands anyway is thrown away: nothing decodes, nothing fails.
+    for (const entry of pending) entry.resolve(new ArrayBuffer(16));
+    await settle();
+    expect(decoded).toBe(0);
+    expect(layer.stats()).toMatchObject({ waiting: 0, failures: 0 });
+    // Back at the boards (and still there, so no longer moving fast), the
+    // tiles are fetched again at once, not held back as failures.
+    frame(BOARDS);
+    frame(BOARDS);
+    expect(pending).toHaveLength(2 * DETAIL_MAX_REQUESTS);
+    layer.dispose();
+  });
+
+  it("stops for good when its decoder stops, rather than fetching every tile again", async () => {
+    const h = harness(64, full);
+    let broken = false;
+    let decodes = 0;
+    const decoder: DetailDecoder = {
+      get broken() { return broken; },
+      decode: () => { decodes += 1; broken = true; return Promise.reject(new Error("The detail decoder stopped")); },
+      recycle: () => undefined, dispose: () => undefined,
+    };
+    const fetched: string[] = [];
+    const layer = new HallDetailLayer({ slots: 64, decoder, now: () => h.clock, fetchBytes: (url) => { fetched.push(url); return Promise.resolve(new ArrayBuffer(16)); } });
+    layer.setIndex(full);
+    const frame = (advance: number): void => {
+      h.clock += advance;
+      layer.update({ camera: camera(BOARDS.position, BOARDS.target), heightPx: 1166, cuts: NONE, delta: 1 / 60, reducedMotion: false, renderer: h.renderer });
+    };
+    frame(16);
+    await settle();
+    expect(layer.enabled).toBe(false);
+    const before = fetched.length;
+    for (const wait of [16, 2001, 8001, 32001]) {
+      frame(wait);
+      await settle();
+    }
+    expect(fetched).toHaveLength(before);
+    expect(layer.stats().failures).toBe(0);
+    expect(decodes).toBeGreaterThanOrEqual(1);
+    layer.dispose();
+  });
+
+  it("asks whether motion is reduced only when a tile arrives or fades", async () => {
+    const h = harness(64, full);
+    let asked = 0;
+    const reducedMotion = (): boolean => { asked += 1; return false; };
+    const frame = (): void => {
+      h.clock += 1000 / 60;
+      h.layer.update({ camera: camera(BOARDS.position, BOARDS.target), heightPx: 1166, cuts: NONE, delta: 1 / 60, reducedMotion, renderer: h.renderer });
+    };
+    frame();
+    expect(asked).toBe(0);
+    await settle();
+    frame();
+    expect(asked).toBe(1);
+    // Fading in, once a frame at most.
+    for (let i = 0; i < 60; i++) { frame(); await settle(); }
+    const settled = asked;
+    for (let i = 0; i < 10; i++) frame();
+    expect(asked).toBe(settled);
+  });
+});
+
+describe("the detail layer's wake", () => {
+  interface Timer { readonly fire: () => void; readonly at: number; cleared: boolean }
+  const fakeClock = () => {
+    const timers: Timer[] = [];
+    let time = 0;
+    const clock: WakeClock = {
+      now: () => time,
+      set: (fire, ms) => { timers.push({ fire, at: time + ms, cleared: false }); return setTimeout(() => undefined, 0); },
+      clear: () => { const live = timers.filter((timer) => !timer.cleared); const last = live[live.length - 1]; if (last !== undefined) last.cleared = true; },
+    };
+    return { clock, timers, advance: (ms: number) => { time += ms; } };
+  };
+
+  it("keeps the earliest deadline asked for: a pan's look replaces a retry's, a later retry waits behind it", () => {
+    const { clock, timers } = fakeClock();
+    let fired = 0;
+    const wake = new DetailWake(() => { fired += 1; }, clock);
+    wake.request(32000);
+    wake.request(DETAIL_WAKE_MS);
+    expect(timers.map((timer) => [timer.at, timer.cleared])).toEqual([[32000, true], [DETAIL_WAKE_MS, false]]);
+    wake.request(8000);
+    expect(timers).toHaveLength(2);
+    timers[1]?.fire();
+    expect(fired).toBe(1);
+    expect(wake.pending).toBe(false);
+    // Asked again after it fired, it sets a new timer; cancelled, it clears it.
+    wake.request(2000);
+    expect(wake.pending).toBe(true);
+    wake.cancel();
+    expect(wake.pending).toBe(false);
+    expect(timers[2]?.cleared).toBe(true);
+  });
+
+  it("never asks sooner than a frame", () => {
+    const { clock, timers } = fakeClock();
+    new DetailWake(() => undefined, clock).request(0);
+    expect(timers[0]?.at).toBe(16);
   });
 });
 

@@ -155,7 +155,7 @@ export const HALL_OPENINGS: readonly HallOpening[] = [
   { id: "door-main", kind: "door", wall: "door", centre: doorU(8.79), width: 1.45, sill: 0, head: 2.35 },
   { id: "door-fireplace", kind: "door", wall: "door", centre: doorU(17.665), width: 1.08, sill: 0, head: 2.35 },
   // The fire exit in the fireplace wall, beside the chimney breast: a pair of
-  // three-panel leaves set flush in the dado with brass panic bars, measured in
+  // two-panel leaves set flush in the dado with brass panic bars, measured in
   // the wall atlas (u 8.00-9.06, its head 1.91 m under the exit sign).
   { id: "door-fire-exit", kind: "door", wall: "fireplace", centre: 8.53, width: 1.06, sill: 0, head: 1.91 },
 ];
@@ -255,8 +255,16 @@ export interface HallDoor {
   readonly leafTop: number;
   /** Where a pair's leaves meet (wall-local u): midway between their panels in the atlas. */
   readonly meeting: number;
-  /** Whether the wall atlas photographs the closed leaves (the main door stood open in the scan). */
+  /** Whether the wall atlas shows closed leaves at this doorway (the main door stood open in the scan). */
   readonly photographed: boolean;
+  /**
+   * Whose leaves that photograph is: this door's own ("own"), or another
+   * door's copied into its doorway by the survey build (the end door stood
+   * open in the scan; tools/grand-hall-survey/pack-atlas.py PATCHES gives it
+   * the fireplace door's closed leaves, 17.69 m along the wall). Null where
+   * none is photographed.
+   */
+  readonly photographOf: "own" | "door-fireplace" | null;
   /** What lies beyond. */
   readonly beyond: string;
   readonly source: string;
@@ -267,15 +275,15 @@ export const HALL_DOORS: readonly HallDoor[] = [
     opening: "door-end", depth: 1.14,
     leaves: { count: 2, hinge: "hall-face", swing: "outward" },
     farLeaf: { hinge: "end-wall-side", into: "F.01 Saloon" },
-    leafFace: -0.0285, leafTop: 2.31, meeting: 1.733, photographed: true,
+    leafFace: -0.0285, leafTop: 2.31, meeting: 1.733, photographed: true, photographOf: "door-fireplace",
     beyond: "F.01 Saloon, on the same floor level (its face at z 6.43)",
-    source: "scan: open, sides 1.14-1.20 m deep, a single leaf at the Saloon face (panorama 048); atlas: the pair closed, three panels a leaf, overhead closers; relief: their face 2.3-3.6 cm back, closers proud at 2.25 m, the doorcase's head from 2.30 m",
+    source: "scan: open, sides 1.14-1.20 m deep, a single leaf at the Saloon face (panorama 048); atlas: the fireplace door's closed pair copied into this doorway by the survey build (pack-atlas.py PATCHES; the scan saw this pair open, folded back in panoramas 048 and 000), so its three panels a leaf and overhead closers are its twin's; relief: their face 2.3-3.6 cm back, closers proud at 2.25 m, the doorcase's head from 2.30 m",
   },
   {
     opening: "door-main", depth: 1.09,
     leaves: { count: 2, hinge: "hall-face", swing: "outward" },
     farLeaf: null,
-    leafFace: -0.03, leafTop: 2.34, meeting: 10.5625, photographed: false,
+    leafFace: -0.03, leafTop: 2.34, meeting: 10.5625, photographed: false, photographOf: null,
     beyond: "F.16 Corridor at the head of Stair 5, the TRADES HALL inlay",
     source: "scan: open, sides 1.09 m deep (z 5.276-6.371), three-panel leaves folded back against the hall half of the opening (panoramas 018, 076); hung at the hall face as its twins are",
   },
@@ -283,15 +291,15 @@ export const HALL_DOORS: readonly HallDoor[] = [
     opening: "door-fireplace", depth: 0.78,
     leaves: { count: 2, hinge: "hall-face", swing: "outward" },
     farLeaf: null,
-    leafFace: -0.0255, leafTop: 2.31, meeting: 19.421, photographed: true,
-    beyond: "the east end of F.16, a lobby toward the Kitchen F.10 and Corridor F.08 (plan only)",
+    leafFace: -0.0255, leafTop: 2.31, meeting: 19.421, photographed: true, photographOf: "own",
+    beyond: "the fireplace end of F.16 (its north-north-east end on the earth), a lobby toward the Kitchen F.10 and Corridor F.08 (plan only)",
     source: "2010 FIRST plan: the wall 0.46 m on one side of it and 0.78 m on the other; closed in the scan; atlas: as the end door; relief: their face 2.2-3.7 cm back",
   },
   {
     opening: "door-fire-exit", depth: 1.21,
     leaves: { count: 2, hinge: "hall-face", swing: "outward" },
     farLeaf: null,
-    leafFace: -0.0127, leafTop: 1.905, meeting: 8.52, photographed: true,
+    leafFace: -0.0127, leafTop: 1.905, meeting: 8.52, photographed: true, photographOf: "own",
     beyond: "F.11 Stair 7 (plan only)",
     source: "2010 FIRST plan: about 1.2 m through the fireplace wall; atlas: a flush pair, two panels a leaf, a panic bar across both at 0.95 m; relief: their face 0.9-2.1 cm back, the bar 3 cm proud of it",
   },
@@ -453,6 +461,14 @@ export const HALL_GLAZING: readonly HallGlazing[] = [
     source: `${GLAZING_METHOD}; stations scan_040, scan_004, scan_037, scan_044; glass depth from its twin (the mesh closed it; the bars' own plane triangulates at -0.884), its ring from its twin`,
   },
 ];
+
+/**
+ * A sash window's masonry opening beyond its glass: half its width. The 2010
+ * plan's straight outer opening is about 1.21 m (its jambs splay only on the
+ * room side), the light and its stiles 1.13 m. (The arches' outer reveal
+ * follows the whole arch, its opening's own width: hall-glazing.ts.)
+ */
+export const HALL_SASH_OPENING_HALF_WIDTH = 0.6;
 
 /** A window's glazing, by its opening's id. */
 export function hallGlazing(opening: string): HallGlazing | undefined {

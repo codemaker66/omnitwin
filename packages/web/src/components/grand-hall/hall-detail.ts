@@ -49,7 +49,7 @@ import {
   type Camera, type Texture,
 } from "three";
 import type { Node, TextureNode } from "three/webgpu";
-import { float, int, ivec2, length, log2, max, min, smoothstep, texture as textureNode, textureLoad, vec2 } from "three/tsl";
+import { Fn, If, float, int, ivec2, length, log2, max, min, smoothstep, texture as textureNode, textureLoad, vec2, vec4 } from "three/tsl";
 import { HALL_WALLS, type HallWallId } from "./hall-spec.js";
 import { WALL_ATLAS_ORIGIN, WALL_ATLAS_PPM, WALL_ATLAS_SIZE, WALL_ATLAS_V_MAX, WALL_ATLAS_V_MIN } from "./hall-atlas.js";
 import { hallSurveyUrl } from "./hall-photos.js";
@@ -93,6 +93,69 @@ export const DETAIL_SLOW_SPEED = 1.5;
 export const DETAIL_SLOW_TURN = Math.PI / 4;
 /** How long after the camera stops the layer looks again for what it now wants, in milliseconds. */
 export const DETAIL_WAKE_MS = 150;
+/**
+ * A tile still being fetched or decoded that has not been wanted for this many
+ * drawn frames (and DETAIL_ABANDON_MS) is abandoned: its fetch is aborted and
+ * it goes back to idle, not counted as a failure, so a slow walk past a wall
+ * does not keep spending a phone's bandwidth and worker on tiles left behind.
+ */
+export const DETAIL_ABANDON_FRAMES = 8;
+export const DETAIL_ABANDON_MS = 300;
+
+/** The timers DetailWake sets (the page's own by default; a test's fake). */
+export interface WakeClock {
+  now(): number;
+  set(fire: () => void, ms: number): ReturnType<typeof setTimeout>;
+  clear(handle: ReturnType<typeof setTimeout>): void;
+}
+
+const PAGE_CLOCK: WakeClock = {
+  now: () => (typeof performance !== "undefined" ? performance.now() : Date.now()),
+  set: (fire, ms) => setTimeout(fire, ms),
+  clear: (handle) => { clearTimeout(handle); },
+};
+
+/**
+ * The one timer that asks for a frame when the detail layer wants to look
+ * again (DetailFrameResult.wakeMs): a tile's retry, seconds away, or 150 ms
+ * after the camera stops. The earliest deadline asked for wins: a sooner one
+ * replaces the timer that is waiting, a later one waits behind it. (Keeping
+ * whichever came first dropped the look after a pan whenever a retry was
+ * already waiting, and a phone, which draws no frames once the camera stops,
+ * then waited up to 32 s for tiles at its new pose.)
+ */
+export class DetailWake {
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private due = Number.POSITIVE_INFINITY;
+
+  constructor(private readonly fire: () => void, private readonly clock: WakeClock = PAGE_CLOCK) {}
+
+  /** Asks for a frame in `ms` milliseconds (16 at least), unless one is already due sooner. */
+  request(ms: number): void {
+    const now = this.clock.now();
+    const due = now + Math.max(16, ms);
+    if (this.timer !== null && this.due <= due) return;
+    if (this.timer !== null) this.clock.clear(this.timer);
+    this.due = due;
+    this.timer = this.clock.set(() => {
+      this.timer = null;
+      this.due = Number.POSITIVE_INFINITY;
+      this.fire();
+    }, due - now);
+  }
+
+  /** Whether a frame is waiting to be asked for. */
+  get pending(): boolean {
+    return this.timer !== null;
+  }
+
+  /** Drops the waiting timer, if any (the layer is going away). */
+  cancel(): void {
+    if (this.timer !== null) this.clock.clear(this.timer);
+    this.timer = null;
+    this.due = Number.POSITIVE_INFINITY;
+  }
+}
 /** GPU bytes one slot holds: its four RGBA8 levels. */
 export const DETAIL_SLOT_BYTES = Array.from({ length: DETAIL_LEVELS }, (_, level) => (DETAIL_TILE_TEXELS >> level) ** 2 * 4).reduce((a, b) => a + b, 0);
 /** Mip levels over which the detail gives way to the atlas, from the handover level (detailHandoverLevel). */
@@ -422,6 +485,12 @@ export interface DetailDecoder {
   decode(bytes: ArrayBuffer): Promise<readonly Uint8Array<ArrayBuffer>[]>;
   /** Takes back a tile's levels once they are on the GPU (or no longer wanted), to decode the next tiles into. */
   recycle(levels: readonly Uint8Array<ArrayBuffer>[]): void;
+  /**
+   * The decoder itself has stopped (its worker died, or cannot decode on this
+   * browser): no tile will ever decode, so the layer stops asking rather than
+   * fetching every tile again for its retries. Absent: never.
+   */
+  readonly broken?: boolean;
   dispose(): void;
 }
 
@@ -430,31 +499,77 @@ export interface DetailRenderer {
   copyTextureToTexture(srcTexture: Texture, dstTexture: Texture, srcRegion?: Box2 | null, dstPosition?: Vector3 | null, srcLevel?: number, dstLevel?: number): void;
 }
 
-/** The decoding worker (hall-detail.worker.ts), started on the first tile. */
+/**
+ * Whether `new Worker(url, { type: "module" })` is understood: a browser that
+ * reads the option reads its `type` (the usual test; the throwaway worker is
+ * terminated at once, or its URL refused, either way harmlessly).
+ */
+function moduleWorkers(): boolean {
+  let read = false;
+  const probe: WorkerOptions = { get type(): WorkerType { read = true; return "module"; } };
+  try {
+    new Worker("blob://", probe).terminate();
+  } catch {
+    // The URL is refused; the option was still read where module workers exist.
+  }
+  return read;
+}
+
+/**
+ * Whether this browser can run the decoding worker: module workers, and in
+ * them an OffscreenCanvas with a 2D context and createImageBitmap (iOS Safari
+ * before 16.4 and some WebViews have no OffscreenCanvas). Without them the
+ * walls stay on the atlas rather than fetching tiles nothing can decode.
+ */
+export function detailWorkerSupported(): boolean {
+  return typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined"
+    && typeof OffscreenCanvasRenderingContext2D !== "undefined" && typeof createImageBitmap === "function" && moduleWorkers();
+}
+
+/**
+ * The decoding worker (hall-detail.worker.ts), started on the first tile; null
+ * where it cannot run. If the worker dies, or answers that it cannot decode at
+ * all, every waiting decode is rejected, the worker is let go and the decoder
+ * reports itself `broken`, so no later decode waits for an answer that will
+ * never come.
+ */
 export function workerDecoder(): DetailDecoder | null {
-  if (typeof Worker === "undefined") return null;
+  if (!detailWorkerSupported()) return null;
   let worker: Worker | null = null;
+  let broken = false;
   let next = 1;
   const waiting = new Map<number, { resolve: (levels: Uint8Array<ArrayBuffer>[]) => void; reject: (reason: Error) => void }>();
   const failAll = (reason: Error): void => {
     for (const entry of waiting.values()) entry.reject(reason);
     waiting.clear();
   };
+  const stop = (reason: Error): void => {
+    broken = true;
+    worker?.terminate();
+    worker = null;
+    failAll(reason);
+  };
   const start = (): Worker => {
     const created = new Worker(new URL("./hall-detail.worker.ts", import.meta.url), { type: "module" });
     created.onmessage = (event: MessageEvent<DetailDecodeResponse>) => {
       const answer = event.data;
+      if (!answer.ok && answer.fatal === true) { stop(new Error(answer.error)); return; }
       const entry = waiting.get(answer.id);
       if (entry === undefined) return;
       waiting.delete(answer.id);
       if (answer.ok) entry.resolve(answer.levels.map((buffer) => new Uint8Array(buffer)));
       else entry.reject(new Error(answer.error));
     };
-    created.onerror = () => { failAll(new Error("The detail decoder stopped")); };
+    created.onerror = () => { stop(new Error("The detail decoder stopped")); };
+    created.onmessageerror = () => { stop(new Error("The detail decoder could not read a message")); };
     return created;
   };
   return {
+    get broken(): boolean {
+      return broken;
+    },
     decode(bytes: ArrayBuffer): Promise<readonly Uint8Array<ArrayBuffer>[]> {
+      if (broken) return Promise.reject(new Error("The detail decoder has stopped"));
       worker ??= start();
       const id = next;
       next += 1;
@@ -510,7 +625,8 @@ export interface HallDetailOptions {
 export interface DetailFrame extends DetailView {
   /** Seconds since the last drawn frame (hall-mood.ts hallFrameStep). */
   readonly delta: number;
-  readonly reducedMotion: boolean;
+  /** Under reduced motion a tile shows at once; asked only when a tile arrives or fades (a function: asked then). */
+  readonly reducedMotion: boolean | (() => boolean);
   /** Where tiles are copied to the GPU; null leaves decoded tiles waiting. */
   readonly renderer: DetailRenderer | null;
 }
@@ -544,6 +660,8 @@ export interface HallDetailStats {
   readonly fetched: number;
   readonly bytesFetched: number;
   readonly failures: number;
+  /** Fetches given up because their tile was no longer wanted (not failures). */
+  readonly abandoned: number;
   readonly uploads: number;
   readonly evictions: number;
   readonly lastUploadMs: number;
@@ -636,6 +754,8 @@ export class HallDetailLayer {
   private readonly fade = new Float32Array(DETAIL_TILE_COUNT);
   private readonly target = new Uint8Array(DETAIL_TILE_COUNT);
   private readonly lastWanted = new Float64Array(DETAIL_TILE_COUNT);
+  /** When each tile was last wanted, milliseconds (for abandoning a fetch, with the frame). */
+  private readonly lastWantedMs = new Float64Array(DETAIL_TILE_COUNT);
   private readonly attempts = new Uint8Array(DETAIL_TILE_COUNT);
   private readonly retryAt = new Float64Array(DETAIL_TILE_COUNT);
   private readonly slotTile: Int32Array;
@@ -646,8 +766,10 @@ export class HallDetailLayer {
   private readonly lastDirection = new Vector3();
   private lastTime: number | null = null;
   private frame = 0;
-  private readonly counters = { requested: 0, fetched: 0, bytesFetched: 0, failures: 0, uploads: 0, evictions: 0, lastUploadMs: 0, maxUploadMs: 0, maxUpdateMs: 0 };
+  private readonly counters = { requested: 0, fetched: 0, bytesFetched: 0, failures: 0, abandoned: 0, uploads: 0, evictions: 0, lastUploadMs: 0, maxUploadMs: 0, maxUpdateMs: 0 };
   private disposed = false;
+  /** The decoder stopped for good (DetailDecoder.broken): the walls stay as they are, nothing more is fetched. */
+  private stopped = false;
 
   constructor(options: HallDetailOptions) {
     this.options = options;
@@ -675,9 +797,9 @@ export class HallDetailLayer {
     this.index = index;
   }
 
-  /** Whether the layer can ever show detail (slots and a decoder). */
+  /** Whether the layer can ever show detail (slots and a decoder that has not stopped). */
   get enabled(): boolean {
-    return this.slots > 0 && this.decoder !== null && !this.disposed;
+    return this.slots > 0 && this.decoder !== null && !this.disposed && !this.stopped;
   }
 
   /** Fetches the published index; tiles are chosen once it is in. */
@@ -714,12 +836,14 @@ export class HallDetailLayer {
     const slot = entry.r.mul(255).add(0.5).floor().sub(1);
     const local = vec2(u.sub(column.mul(DETAIL_PITCH)), t.sub(row.mul(DETAIL_PITCH))).div(DETAIL_TEXEL).add(DETAIL_GUTTER).div(DETAIL_TILE_TEXELS);
     // Gradients from the wall's own coordinates, continuous across tiles, so
-    // a tile's edge samples its proper level rather than the coarsest.
+    // a tile's edge samples its proper level rather than the coarsest. Held in
+    // variables: taken here, in the fragment's uniform flow (as a derivative
+    // must be), and handed to the sample inside its branch below.
     const metric = vec2(u, t).div(DETAIL_TEXEL * DETAIL_TILE_TEXELS);
-    const dx = metric.dFdx();
-    const dy = metric.dFdy();
-    const color = textureNode(this.array ?? this.standIn, local).depth(int(slot.max(0))).grad(dx, dy);
-    this.arrayNodes.push(color);
+    const dx = metric.dFdx().toVar();
+    const dy = metric.dFdy().toVar();
+    const slotTexel = textureNode(this.array ?? this.standIn, local).depth(int(slot.max(0))).grad(dx, dy);
+    this.arrayNodes.push(slotTexel);
     // The level the sampler reads (anisotropic up to 8:1, as the array is
     // filtered): from the handover level on, the atlas shows as much.
     const along = length(dx.mul(DETAIL_TILE_TEXELS));
@@ -727,7 +851,15 @@ export class HallDetailLayer {
     const level = log2(max(min(along, across), max(along, across).div(8), float(1e-6)));
     const sharp = float(1).sub(smoothstep(float(this.handoverLevel), float(this.handoverLevel + DETAIL_HANDOVER_LEVELS), level));
     // Only on the walls themselves (a vertex off every wall has aWall -1).
-    const weight = slot.greaterThanEqual(0).and(wall.greaterThan(-0.5)).select(entry.g.mul(sharp), float(0));
+    const weight = slot.greaterThanEqual(0).and(wall.greaterThan(-0.5)).select(entry.g.mul(sharp), float(0)).toVar();
+    // The array is read only where a tile shows: everywhere else (most of
+    // every wall, and all of it until a tile arrives) a fragment pays for the
+    // index's one texel and no more. Explicit gradients make the branch legal.
+    const color = Fn(() => {
+      const texel = vec4(0, 0, 0, 0).toVar();
+      If(weight.greaterThan(0), () => { texel.assign(slotTexel); });
+      return texel;
+    })();
     return { color, weight };
   }
 
@@ -760,7 +892,24 @@ export class HallDetailLayer {
     const selection = selectDetailTiles(index, frame, this.slots, this.selection);
     const held = this.heldFade;
     const { wants, visible, density } = selection;
-    for (const key of selection.wanted) this.lastWanted[key] = this.frame;
+    for (const key of selection.wanted) {
+      this.lastWanted[key] = this.frame;
+      this.lastWantedMs[key] = now;
+    }
+    let reduced: boolean | null = null;
+    const reducedMotion = (): boolean => {
+      reduced ??= typeof frame.reducedMotion === "function" ? frame.reducedMotion() : frame.reducedMotion;
+      return reduced;
+    };
+    // A fetch whose tile has not been wanted for a while is abandoned (not a failure).
+    for (const [key, controller] of [...this.controllers]) {
+      if (wants[key] === 1) continue;
+      if (this.frame - (this.lastWanted[key] ?? 0) < DETAIL_ABANDON_FRAMES || now - (this.lastWantedMs[key] ?? 0) < DETAIL_ABANDON_MS) continue;
+      controller.abort();
+      this.controllers.delete(key);
+      this.status[key] = IDLE;
+      this.counters.abandoned += 1;
+    }
     let changed = false;
     // A wanted tile shows; one out of sight drops out at once; one in sight
     // and no longer wanted stays until its slot is needed.
@@ -816,7 +965,7 @@ export class HallDetailLayer {
         this.slot[key] = free;
         this.status[key] = RESIDENT;
         this.target[key] = 1;
-        this.fade[key] = frame.reducedMotion ? 1 : 0;
+        this.fade[key] = reducedMotion() ? 1 : 0;
         this.writeIndex(key);
         uploads += 1;
         changed = true;
@@ -838,7 +987,7 @@ export class HallDetailLayer {
       this.request(key);
     }
     // Step the fades: in by at most DETAIL_FADE_STEP a frame, out the same.
-    const step = frame.reducedMotion ? 1 : Math.min(Math.max(frame.delta, 0) / DETAIL_FADE_SECONDS, DETAIL_FADE_STEP);
+    let step: number | null = null;
     let fading = 0;
     for (let s = 0; s < this.slots; s++) {
       const key = this.slotTile[s] ?? -1;
@@ -847,6 +996,7 @@ export class HallDetailLayer {
       const goal = held !== null && this.target[key] === 1 ? held : this.target[key] ?? 0;
       const current = this.fade[key] ?? 0;
       if (current === goal) continue;
+      step ??= reducedMotion() ? 1 : Math.min(Math.max(frame.delta, 0) / DETAIL_FADE_SECONDS, DETAIL_FADE_STEP);
       const stepped = held !== null ? goal : goal > current ? Math.min(goal, current + step) : Math.max(goal, current - step);
       const next = Math.abs(goal - stepped) < 1e-6 ? goal : stepped;
       this.fade[key] = next;
@@ -910,6 +1060,8 @@ export class HallDetailLayer {
     if (decoder === null) return;
     const controller = new AbortController();
     this.controllers.set(key, controller);
+    // Still this tile's own fetch: not abandoned (update) nor superseded by a later request.
+    const current = (): boolean => this.controllers.get(key) === controller;
     this.status[key] = FETCHING;
     this.counters.requested += 1;
     const load = this.options.fetchBytes ?? fetchBytes;
@@ -919,16 +1071,29 @@ export class HallDetailLayer {
       this.counters.bytesFetched += bytes.byteLength;
       return decoder.decode(bytes);
     }).then((levels) => {
+      if (this.disposed || !current()) {
+        // Abandoned while it decoded: its buffers go back for the next tile.
+        if (!this.disposed) decoder.recycle(levels);
+        return;
+      }
       this.controllers.delete(key);
-      if (this.disposed) return;
       if (levels.length !== DETAIL_LEVELS || levels[0]?.length !== DETAIL_TILE_TEXELS * DETAIL_TILE_TEXELS * 4) throw new Error("A detail tile decoded to the wrong size");
       this.decoded.set(key, levels);
       this.status[key] = DECODED;
       this.attempts[key] = 0;
       this.onChange?.();
     }).catch(() => {
+      if (this.disposed || !current()) return;
       this.controllers.delete(key);
-      if (this.disposed) return;
+      if (decoder.broken === true) {
+        // The decoder itself has stopped: no tile will decode, so none is fetched again.
+        this.stopped = true;
+        this.status[key] = IDLE;
+        for (const other of this.controllers.values()) other.abort();
+        this.controllers.clear();
+        this.onChange?.();
+        return;
+      }
       // It stays on the atlas; retried after 2, 8 and 32 seconds.
       this.counters.failures += 1;
       const attempt = (this.attempts[key] ?? 0) + 1;

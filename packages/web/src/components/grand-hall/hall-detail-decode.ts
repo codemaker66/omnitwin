@@ -34,10 +34,14 @@ export interface DetailRecycle {
 
 export type DetailWorkerMessage = DetailDecodeRequest | DetailRecycle;
 
-/** The worker's answer: the tile's RGBA levels, largest first (transferred), or why it failed. */
+/**
+ * The worker's answer: the tile's RGBA levels, largest first (transferred), or
+ * why it failed; `fatal` when the worker cannot decode any tile on this
+ * browser (no OffscreenCanvas or 2D context), not just this one.
+ */
 export type DetailDecodeResponse =
   | { readonly id: number; readonly ok: true; readonly levels: readonly ArrayBuffer[] }
-  | { readonly id: number; readonly ok: false; readonly error: string };
+  | { readonly id: number; readonly ok: false; readonly error: string; readonly fatal?: boolean };
 
 /** Bytes of a tile's level `level`. */
 export function detailLevelBytes(level: number): number {

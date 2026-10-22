@@ -15,7 +15,9 @@
 //     balustrade over the stairwell (straight in the scan, not curved: its rail
 //     runs at z 8.015-8.12 between newels at x -1.15 and 1.14), the stairwell
 //     falling away beyond it to the half landing at y -1.8;
-//   - D3, the fireplace door: the east end of the F.16 corridor, and D4, the
+//   - D3, the fireplace door: the fireplace end of the F.16 corridor (its
+//     north-north-east end on the earth: planner +x bears 191 degrees,
+//     hall-site.ts), and D4, the
 //     fire exit: Stair 7's landing (F.11), from the 2010 FIRST plan only (the
 //     scan did not go there).
 //
@@ -92,7 +94,7 @@ export const BEYOND_SPACES: readonly BeyondSpace[] = [
     source: `${SCAN_SOURCE}; the stairwell, the cells more than 15 cm below the landing`,
   },
   {
-    opening: "door-fireplace", label: "D3", room: "F.16, its east lobby", reach: 2.4, scanLevel: null, finish: "corridor", well: null,
+    opening: "door-fireplace", label: "D3", room: "F.16, its lobby at the fireplace end", reach: 2.4, scanLevel: null, finish: "corridor", well: null,
     floor: [
       [-10.443, 6.075], [-10.444, 6.218], [-11.207, 6.221], [-11.207, 6.621], [-11.087, 6.993], [-10.898, 7.359], [-10.58, 7.759],
       [-10.455, 7.758], [-10.455, 7.877], [-10.346, 7.968], [-7.38, 7.956], [-7.053, 7.643], [-6.782, 7.258], [-6.61, 6.884],
@@ -139,7 +141,7 @@ export const LANDING_BALUSTRADE = {
 } as const;
 
 /**
- * The Saloon's face of the door wall east of the end door, from the scan
+ * The Saloon's face of the door wall beyond the end door (toward +x, south-south-west on the earth), from the scan
  * (beyond-doors.json saloonPanelling): Spanish mahogany panelling, its dado
  * standing 3.9 cm proud of the wall's face to 1.2 m. West of the doorway the
  * doorcase stands flush.
@@ -147,7 +149,7 @@ export const LANDING_BALUSTRADE = {
 export const SALOON_DADO = {
   top: 1.2,
   proud: 0.039,
-  /** Along the door wall's outer face, planner x: from the doorcase east, out past the reach. */
+  /** Along the door wall's outer face, planner x: from the doorcase toward +x, out past the reach. */
   from: 9.5,
   to: 11.2,
   source: "scan: vertical sections every 10 cm through the Saloon's face of the door wall, x 9.9-11.5 (measure/beyond-doors.py)",

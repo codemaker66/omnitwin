@@ -32,6 +32,7 @@ import { BufferAttribute, BufferGeometry, ClampToEdgeWrapping, DataTexture, Data
 import type { WallRelief, WallReliefMesh } from "./hall-relief.js";
 import { HALL_WALLS, wallPoint } from "./hall-spec.js";
 import { sharedNeighbour } from "./hall-walls.js";
+import { drain, type Steps } from "./hall-slices.js";
 
 /** Metres of u per texel of the profile. */
 export const SECTION_BIN = 0.01;
@@ -80,7 +81,10 @@ interface WallSlices {
   readonly items: Uint32Array;
 }
 
-function indexWall(wallIndex: number, mesh: WallReliefMesh): WallSlices {
+/** Triangles indexWall looks at between yields (hall-slices.ts). */
+const INDEX_STEP_TRIANGLES = 2048;
+
+function* indexWall(wallIndex: number, mesh: WallReliefMesh): Steps<WallSlices> {
   const wall = HALL_WALLS[wallIndex];
   if (wall === undefined) throw new Error(`No wall ${String(wallIndex)}`);
   const { positions, indices } = mesh;
@@ -90,6 +94,7 @@ function indexWall(wallIndex: number, mesh: WallReliefMesh): WallSlices {
   const highs = new Int32Array(triangles);
   let buckets = 1;
   for (let t = 0; t < triangles; t++) {
+    if (t > 0 && t % INDEX_STEP_TRIANGLES === 0) yield;
     const corners: [number, number, number][] = [];
     let lo = Infinity;
     let hi = -Infinity;
@@ -156,11 +161,9 @@ function rasterise(out: Float32Array, ua: number, da: number, ub: number, db: nu
 export class ReliefSlicer {
   private readonly walls: (WallSlices | null)[];
 
-  constructor(relief: WallRelief) {
-    this.walls = HALL_WALLS.map((wall, index) => {
-      const mesh = relief.get(wall.id);
-      return mesh === undefined ? null : indexWall(index, mesh);
-    });
+  /** A slicer for `relief`, indexed now (reliefSlicer shares one per relief; reliefSlicerSteps builds it in slices). */
+  constructor(relief: WallRelief, walls?: readonly (WallSlices | null)[]) {
+    this.walls = walls === undefined ? drain(indexWalls(relief)) : [...walls];
   }
 
   /** Whether wall `wallIndex` has relief to cut. */
@@ -206,6 +209,33 @@ export class ReliefSlicer {
   }
 }
 
+/** Every wall's index, wall by wall, yielding as indexWall does. */
+function* indexWalls(relief: WallRelief): Steps<(WallSlices | null)[]> {
+  const walls: (WallSlices | null)[] = [];
+  for (const [index, wall] of HALL_WALLS.entries()) {
+    const mesh = relief.get(wall.id);
+    walls.push(mesh === undefined ? null : yield* indexWall(index, mesh));
+    yield;
+  }
+  return walls;
+}
+
+const slicerCache = new WeakMap<WallRelief, ReliefSlicer>();
+
+/** The slicer for a relief, indexed once and shared (HallSectionProfile.setRelief takes it). */
+export function reliefSlicer(relief: WallRelief): ReliefSlicer {
+  return drain(reliefSlicerSteps(relief));
+}
+
+/** reliefSlicer as a sliced build (hall-slices.ts), cached as it is (hall-arrival.ts builds it so on the relief's arrival). */
+export function* reliefSlicerSteps(relief: WallRelief): Steps<ReliefSlicer> {
+  const cached = slicerCache.get(relief);
+  if (cached !== undefined) return cached;
+  const slicer = new ReliefSlicer(relief, yield* indexWalls(relief));
+  slicerCache.set(relief, slicer);
+  return slicer;
+}
+
 /** A profile's depth at wall-local `u`, filtered between bins as the shader's texture sample is. */
 export function profileDepthAt(profile: Float32Array, u: number): number {
   const x = u / SECTION_BIN - 0.5;
@@ -244,7 +274,7 @@ export class HallSectionProfile {
 
   /** The relief to cut (null: the walls are flat photographs, and the body is the whole section). */
   setRelief(relief: WallRelief | null): void {
-    this.slicer = relief === null ? null : new ReliefSlicer(relief);
+    this.slicer = relief === null ? null : reliefSlicer(relief);
     for (const entry of this.sliced) { entry.height = Number.NaN; entry.lower = -1; }
     for (const profile of this.profiles) profile.fill(NO_SECTION);
     this.data.fill(DataUtils.toHalfFloat(NO_SECTION));

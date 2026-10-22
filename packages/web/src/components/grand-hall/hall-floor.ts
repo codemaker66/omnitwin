@@ -274,12 +274,19 @@ export function oakFloorNodes(): OakFloorNodes {
  * current mood), glossy enough to reflect the room's environment and the
  * chandeliers' highlights.
  */
-export function createOakFloorMaterial(irradiance: Node<"vec3">): MeshStandardNodeMaterial {
+export function createOakFloorMaterial(irradiance: Node<"vec3">, chandeliersAway: Node<"float"> | null = null): MeshStandardNodeMaterial {
   const { albedo, roughness } = oakFloorNodes();
   const material = new MeshStandardNodeMaterial({ metalness: 0, fog: false });
   // Diffuse light is baked: the floor's real-time lights add only reflections.
   material.colorNode = vec3(0);
   material.emissiveNode = albedo.mul(irradiance);
-  material.roughnessNode = roughness;
+  // Where the chandeliers are not drawn (`chandeliersAway` 1: in Plan, and in
+  // the overview from high up), their sharp reflections straight below them
+  // read as five spotlights on the floor with nothing to cast them: there the
+  // varnish's reflections soften into the floor's sheen.
+  material.roughnessNode = chandeliersAway === null ? roughness : mix(roughness, float(PLAN_FLOOR_ROUGHNESS), chandeliersAway);
   return material;
 }
+
+/** The floor's roughness where the chandeliers whose reflections it carries are not drawn. */
+export const PLAN_FLOOR_ROUGHNESS = 0.62;

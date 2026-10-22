@@ -63,7 +63,7 @@ export const WALL_BODY_TOP = 6.7;
 
 /**
  * A wall cut at or below this height loses the walling over its doors, so
- * every doorway reads from above: Plan (3.12 m) and the dado cut (1.96 m)
+ * every doorway reads from above: Plan (3.12 m) and the dado cut (1.92 m)
  * both lie below it. A wall cut higher, while the cutaway eases or for a
  * camera standing high outside it, keeps its real lintels rather than
  * opening slots over the doors.
@@ -537,7 +537,7 @@ function roomPoint(wall: HallWall, u: number, v: number): V3 {
 }
 
 /** The height the section's light is sampled at: the dado cut, where the near walls rest. */
-const CAP_LIGHT_HEIGHT = HALL_ELEVATION.dadoTop + 0.01;
+const CAP_LIGHT_HEIGHT = HALL_ELEVATION.dadoTop - 0.03;
 
 /** One wall's columns and the depths of the layers they share. */
 interface WallPlan {

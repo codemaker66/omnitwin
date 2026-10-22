@@ -92,7 +92,7 @@ export const BEYOND_REACH: readonly number[] = HALL_DOORS.map((door) => BEYOND_S
  * the floor ends at its reach it has already dissolved, and only real walls
  * give it an edge.
  */
-export const BEYOND_FADE_START = 0.3;
+export const BEYOND_FADE_START = 0.25;
 export const BEYOND_FADE_END = 0.96;
 
 /** The fade the shader draws `distance` metres from a doorway's middle whose beyond reaches `reach`: 1 near, 0 by the reach. */
@@ -115,23 +115,6 @@ function select4(index: Node<"float">, values: readonly Node<"float">[]): Node<"
 
 function perDoor(index: Node<"float">, values: readonly number[]): Node<"float"> {
   return select4(index, values.map((value) => float(value)));
-}
-
-/** A fragment's distance in plan from door `index`'s outer face, and the cosine of its bearing from straight out of it. */
-function doorwayGeometry(index: Node<"float">, p: Node<"vec2">): { distance: Node<"float">; facing: Node<"float"> } {
-  const ax = perDoor(index, BEYOND_DOORWAYS.map((face) => face.a[0]));
-  const az = perDoor(index, BEYOND_DOORWAYS.map((face) => face.a[1]));
-  const bx = perDoor(index, BEYOND_DOORWAYS.map((face) => face.b[0]));
-  const bz = perDoor(index, BEYOND_DOORWAYS.map((face) => face.b[1]));
-  const ox = perDoor(index, BEYOND_DOORWAYS.map((face) => face.outward[0]));
-  const oz = perDoor(index, BEYOND_DOORWAYS.map((face) => face.outward[1]));
-  const ab = vec2(bx.sub(ax), bz.sub(az));
-  const ap = vec2(p.x.sub(ax), p.y.sub(az));
-  const t = clamp(dot(ap, ab).div(dot(ab, ab)), 0, 1);
-  const distance = length(ap.sub(ab.mul(t)));
-  const centre = vec2(ax.add(bx).mul(0.5), az.add(bz).mul(0.5));
-  const facing = dot(normalize(p.sub(centre).add(vec2(1e-5, 0))), vec2(ox, oz));
-  return { distance, facing };
 }
 
 /** A fragment's place relative to door `index`'s outer face: along its outward normal from its middle, and across it. */
@@ -175,16 +158,23 @@ function fadeNode(distance: Node<"float">, reach: Node<"float">): Node<"float"> 
 export const BEYOND_CHANNELS = { chandelier: 0.15, daylight: 0.35 } as const;
 
 /**
- * The light falling out through an open door: the room's chandelier colour at
- * the mood's strength times SPILL.strength at the doorway, falling off over
- * SPILL.reach metres, and from straight out of the door to its sides by
- * SPILL.side.
+ * The light falling out through an open door, as a lit doorway throws it on
+ * a floor at night: a band as wide as the doorway at its threshold, widening
+ * as it goes (the room's light comes from high and wide, SPILL.spread metres
+ * of width each side for each metre out), soft at its sides (SPILL.soft) and
+ * dimming as the doorway's opening shrinks seen from further out (1 / (1 +
+ * (d / SPILL.reach)^2)); the room's chandelier colour at the mood's strength
+ * times SPILL.strength. (A falloff by distance alone, as S3d drew it, threw
+ * a bright oval on the floor beyond, lit where no doorway could light it.)
  */
-export const SPILL = { strength: 0.5, reach: 0.9, side: 0.45 } as const;
+export const SPILL = { strength: 0.45, reach: 1.1, spread: 0.7, soft: 0.3 } as const;
 
-/** The spill's share at `distance` metres from a doorway, `facing` the cosine from straight out (the shader's rule). */
-export function spillShare(distance: number, facing: number): number {
-  return Math.exp(-distance / SPILL.reach) * ((1 - SPILL.side) + SPILL.side * Math.max(0, facing));
+/** The spill's share `along` metres out of a doorway `halfWidth` wide each side, `across` from its middle line (the shader's rule). */
+export function spillShare(along: number, across: number, halfWidth: number): number {
+  const out = Math.max(0, along);
+  const spread = halfWidth + out * SPILL.spread;
+  const t = Math.max(0, Math.min(1, (Math.abs(across) - (spread - SPILL.soft)) / (2 * SPILL.soft)));
+  return (1 - t * t * (3 - 2 * t)) / (1 + (out / SPILL.reach) ** 2);
 }
 
 const linear = (hex: string): Node<"vec3"> => {
@@ -214,11 +204,17 @@ export function beyondScanLight(): Node<"vec3"> {
     .add(linear(scan.daylight).mul(scan.daylightIntensity * BEYOND_CHANNELS.daylight));
 }
 
-/** The spill's irradiance at `distance` from a doorway, `facing` the cosine from straight out, for a door `open`. */
-function spillLight(mood: HallMoodUniforms, distance: Node<"float">, facing: Node<"float">, open: Node<"float">): Node<"vec3"> {
-  const fall = exp(distance.div(-SPILL.reach));
-  const lobe = mix(float(1 - SPILL.side), float(1), max(facing, float(0)));
-  return mood.chandelier.rgb.mul(mood.chandelierIntensity).mul(SPILL.strength).mul(fall).mul(lobe).mul(open);
+/** Each doorway's half-width at its outer face, metres (spillShare). */
+const DOORWAY_HALF_WIDTH: readonly number[] = BEYOND_DOORWAYS.map((face) => Math.hypot(face.b[0] - face.a[0], face.b[1] - face.a[1]) / 2);
+
+/** The spill's irradiance at plan point `p` beyond door `index`, for a door `open` (spillShare, in the shader). */
+function spillLight(mood: HallMoodUniforms, index: Node<"float">, p: Node<"vec2">, open: Node<"float">): Node<"vec3"> {
+  const { along, across } = doorwayLocal(index, p);
+  const out = max(along, float(0));
+  const spread = perDoor(index, DOORWAY_HALF_WIDTH).add(out.mul(SPILL.spread));
+  const lateral = float(1).sub(smoothstep(spread.sub(SPILL.soft), spread.add(SPILL.soft), across));
+  const fall = float(1).div(out.div(SPILL.reach).pow2().add(1));
+  return mood.chandelier.rgb.mul(mood.chandelierIntensity).mul(SPILL.strength).mul(fall).mul(lateral).mul(open);
 }
 
 /**
@@ -229,6 +225,52 @@ function spillLight(mood: HallMoodUniforms, distance: Node<"float">, facing: Nod
 export function relitBeyond(colour: Node<"vec3">, mood: HallMoodUniforms, extra: Node<"vec3">): Node<"vec3"> {
   const k = float(0.06);
   return colour.mul(beyondLight(mood).add(extra).add(k).div(beyondScanLight().add(k)));
+}
+
+/**
+ * How bright a photographed space beyond may come, as a share of its
+ * photograph (linear): the spaces past the doors are seen past the hall, a
+ * step down in light from it, as rooms beyond an open door are: at most 0.4
+ * of the photograph, below the hall's own oak at its threshold in the opening
+ * view at 20:41Z. Lifted freely, the room's
+ * spill burned the Saloon's herringbone to a featureless cream (review
+ * LOOK-2: sRGB 169/149/119, brighter than the hall's floor) and faded the
+ * landing's inlay with it. The light rolls off toward the share rather than
+ * stopping at it, so the doorway's spill keeps its shape on the floor.
+ */
+export const BEYOND_MAX_LIFT = 0.4;
+
+/**
+ * The photographed spaces' own lamps at night, as a share of the hall's
+ * chandelier light: a corridor's and a landing's lamps, and the Saloon's
+ * unlit when the hall is in use, so past each door the light falling out of
+ * the hall is what shows, and the rest of the space lies in shadow. At the
+ * scan's own 0.15 of it (BEYOND_CHANNELS) every stub was a lit disc on the
+ * dark (review LOOK-2).
+ */
+export const BEYOND_OWN_LAMPS = 0.05;
+
+/** The light-over-scan ratio rolled off toward BEYOND_MAX_LIFT (the shader's rule, per channel). */
+export function beyondLift(ratio: number): number {
+  return BEYOND_MAX_LIFT * (1 - Math.exp(-Math.max(ratio, 0) / BEYOND_MAX_LIFT));
+}
+
+/**
+ * relitBeyond for the photographed spaces beyond, rolled off toward
+ * BEYOND_MAX_LIFT (beyondLift). The spaces are lit by their own lamps, warm
+ * as the hall's chandeliers, and by their windows' daylight; the mood's
+ * ambient reaches them only as a level of light, not as the night sky's blue,
+ * which (under the night's cool grade) turned the Saloon's oak a cold grey.
+ * The room's light falling out of the door (`extra`) brings its own colour.
+ */
+export function relitBeyondPhoto(colour: Node<"vec3">, mood: HallMoodUniforms, extra: Node<"vec3">): Node<"vec3"> {
+  const k = float(0.06);
+  const ambient = luminance(mood.ambient.rgb).mul(mood.ambientIntensity);
+  const own = vec3(ambient, ambient, ambient)
+    .add(mood.chandelier.rgb.mul(mood.chandelierIntensity).mul(BEYOND_OWN_LAMPS))
+    .add(mood.daylight.rgb.mul(mood.daylightIntensity).mul(BEYOND_CHANNELS.daylight));
+  const ratio = own.add(extra).add(k).div(beyondScanLight().add(k));
+  return colour.mul(float(1).sub(exp(ratio.max(0).div(-BEYOND_MAX_LIFT))).mul(BEYOND_MAX_LIFT));
 }
 
 /** The painted mahogany's mean luminance (hsl(12, 55%, 17%), linear), against which its grain is read. */
@@ -750,7 +792,7 @@ function floorCoordinates(map: BeyondFloorMap, p: Node<"vec2">): Node<"vec2"> {
 
 /**
  * Plain floors where the plan is the only evidence (art direction, said so):
- * the F.16 corridor's east lobby in the landing's photographed stone (the same
+ * the F.16 corridor's lobby at its fireplace end in the landing's photographed stone (the same
  * corridor, 8 m along); Stair 7's landing a dark stone; the stairwell's edge
  * the landing's mahogany shadow, going to black.
  */
@@ -759,6 +801,9 @@ const PLAIN = {
   stairLanding: [62, 57, 52],
   wellEdge: [34, 22, 16],
 } as const satisfies Readonly<Record<string, readonly [number, number, number]>>;
+
+/** The landing balustrade's oak as photographed (scan_076), sRGB 0-255. */
+export const BEYOND_JOINERY_OAK = [100, 68, 48] as const;
 
 /** Where the stairwell's edge lies (the landing's, at its balustrade), planner z. */
 const WELL_EDGE_Z = LANDING_BALUSTRADE.railZ[0];
@@ -775,7 +820,6 @@ export function createBeyondFloorMaterial(context: BeyondMaterialContext, photos
   const door = tag.x;
   const code = tag.y;
   const p = vec2(positionWorld.x, positionWorld.z);
-  const { distance, facing } = doorwayGeometry(door, p);
   const open = doorOpen(door, swing);
   const reach = perDoor(door, BEYOND_REACH);
   const isCode = (value: number): Node<"bool"> => code.greaterThan(value - 0.5).and(code.lessThan(value + 0.5));
@@ -791,10 +835,14 @@ export function createBeyondFloorMaterial(context: BeyondMaterialContext, photos
     isCode(BEYOND_SURFACE.corridor).select(srgb255(PLAIN.corridor),
       isCode(BEYOND_SURFACE["stair-landing"]).select(srgb255(PLAIN.stairLanding), well)));
   // The stairwell takes none of the room's spill below its edge: the light falls past it.
-  const spill = spillLight(mood, distance, facing, open).mul(isCode(BEYOND_SURFACE.well).select(float(0.25), float(1)));
-  material.colorNode = relitBeyond(colour, mood, spill);
+  const spill = spillLight(mood, door, p, open).mul(isCode(BEYOND_SURFACE.well).select(float(0.25), float(1)));
+  // The space dissolves into the dark by distance and by darkness: its light
+  // falls away as it goes (the fade darkens it as well as thinning it), so no
+  // edge of it is ever a lit rim on the void.
   const { along, across } = doorwayLocal(door, p);
-  material.opacityNode = fadeNode(length(vec2(along, across)), reach).mul(presenceNode(open));
+  const fade = fadeNode(length(vec2(along, across)), reach);
+  material.colorNode = relitBeyondPhoto(colour, mood, spill).mul(fade.mul(0.6).add(0.4));
+  material.opacityNode = fade.mul(presenceNode(open));
   material.positionNode = onWalk(section).select(COLLAPSED, positionLocal);
   material.name = "grand-hall-beyond-floors";
   return material;
@@ -811,13 +859,16 @@ export function createBeyondSolidMaterial(context: BeyondMaterialContext, textur
   const tag = attribute("aBeyond", "vec2");
   const door = tag.x;
   const p = vec2(positionWorld.x, positionWorld.z);
-  const { distance, facing } = doorwayGeometry(door, p);
   const open = doorOpen(door, swing);
-  // The hall's dado mahogany as photographed (#5c3132, hall-section.ts) carried by the painted
-  // grain's light and dark (its luminance against the paint's own, hall-textures.ts paintWood).
-  const albedo = linear("#5c3132").mul(mahoganyGrain(textures, uv().mul(2)));
-  const shade = mix(float(0.62), float(1), geometryNormal().y.mul(0.5).add(0.5));
-  material.colorNode = relitBeyond(albedo.mul(shade), mood, spillLight(mood, distance, facing, open));
+  // The landing's balustrade is oak (panorama 076: its rail, newels and
+  // balusters, median sRGB 100/68/48), not the hall's mahogany it was first
+  // given, carried by the painted grain's light and dark (its luminance
+  // against the paint's own, hall-textures.ts paintWood). Under the spill's
+  // full strength the turned work glowed red: it stands a little back from the
+  // light, which reaches it at three fifths.
+  const albedo = srgb255(BEYOND_JOINERY_OAK).mul(mahoganyGrain(textures, uv().mul(2)));
+  const shade = mix(float(0.55), float(1), geometryNormal().y.mul(0.5).add(0.5));
+  material.colorNode = relitBeyondPhoto(albedo.mul(shade), mood, spillLight(mood, door, p, open).mul(0.6));
   material.opacityNode = presenceNode(open);
   material.positionNode = onWalk(section).select(COLLAPSED, positionLocal);
   material.name = "grand-hall-beyond-solids";
@@ -869,8 +920,7 @@ export function createFirstFloorCardMaterial(context: BeyondMaterialContext): Me
   const p = vec2(positionWorld.x, positionWorld.z);
   let spill: Node<"vec3"> = vec3(0, 0, 0);
   for (let index = 0; index < BEYOND_DOORWAYS.length; index++) {
-    const { distance, facing } = doorwayGeometry(float(index), p);
-    spill = spill.add(spillLight(mood, distance, facing, doorOpen(float(index), swing)));
+    spill = spill.add(spillLight(mood, float(index), p, doorOpen(float(index), swing)));
   }
   material.colorNode = lit.add(albedo.mul(spill).mul(top.select(float(0.5), float(1))));
   material.positionNode = onWalk(section).select(COLLAPSED, positionLocal);

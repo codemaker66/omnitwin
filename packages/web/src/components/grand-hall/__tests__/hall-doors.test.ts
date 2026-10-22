@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { Texture, type BufferGeometry } from "three";
+import { Mesh, MeshBasicMaterial, Raycaster, Texture, Vector3, type BufferGeometry, type Intersection } from "three";
 import { HALL_CUTS, wallCutHeight } from "../GrandHallModel.js";
 import { parseWallRelief, type WallRelief } from "../hall-relief.js";
 import { DOOR_OUTLINES, LEAF_RELIEF_PROUD, REVEAL_SIDE_DEPTH as REVEAL_STOP, doorReliefFate, doorwayBehind, drawnRelief, insideReliefCut, leafColumn } from "../hall-walls.js";
@@ -30,6 +30,7 @@ import {
   doorTarget,
   leafHinge,
   leafVertex,
+  raycastDoorLeaves,
   swingDirection,
   swingPoint,
   type HallDoorLeaf,
@@ -433,6 +434,56 @@ describe("the doors' swing", () => {
     uniforms.restore(was);
     expect(uniforms.values()).toEqual([0.7, 0.7, 0.7, 0.7]);
     expect(uniforms.previous.map((node) => node.value)).toEqual([0.7, 0.7, 0.7, 0.7]);
+  });
+});
+
+describe("the leaves under a raycast (a tape measure, a pick)", () => {
+  const meshes = [...geometry.geometries.values()].map((part) => {
+    const mesh = new Mesh(part, new MeshBasicMaterial());
+    mesh.updateMatrixWorld(true);
+    return mesh;
+  });
+  const cast = (from: Vec3, to: Vec3, angle: number, cut: number): Intersection[] => {
+    const origin = new Vector3(...from);
+    const raycaster = new Raycaster(origin, new Vector3(...to).sub(origin).normalize());
+    const hits: Intersection[] = [];
+    for (const mesh of meshes) raycastDoorLeaves(mesh, raycaster, hits, () => angle, () => cut);
+    return hits.sort((a, b) => a.distance - b.distance);
+  };
+  const main = HALL_DOOR_LEAVES.filter((leaf) => HALL_DOORS[leaf.door]?.opening === "door-main");
+  const leaf = main[0];
+  if (leaf === undefined) throw new Error("No main door leaf");
+  const wall = HALL_WALLS[leaf.wall];
+  if (wall === undefined) throw new Error("No door wall");
+  const middle = (leaf.hingeU + leaf.freeU) / 2;
+
+  it("meets a shut leaf where it stands, and passes through the doorway once the door is open", () => {
+    const from = wallPoint(wall, middle, 1.0, 2.0);
+    const to = wallPoint(wall, middle, 1.0, -2.0);
+    const shut = cast(from, to, 0, HALL_CUTS.none);
+    expect(shut.length).toBeGreaterThan(0);
+    expect(Math.abs(local(wall, [shut[0]?.point.x ?? 0, 1, shut[0]?.point.z ?? 0]).d - leaf.face)).toBeLessThan(0.01);
+    // Open (the wall cut to the dado, as in the overview), the leaf has swung out of the way.
+    expect(cast(from, to, DOOR_OPEN_ANGLE, HALL_CUTS.near)).toEqual([]);
+  });
+
+  it("meets an open leaf where the shader has swung it", () => {
+    const hinge = leafHinge(leaf);
+    const shutPoint = wallPoint(wall, leaf.hingeU + leaf.sense * 0.3, 1.0, (leaf.face + leaf.back) / 2);
+    const swung = swingPoint(shutPoint, hinge, leafAngle(DOOR_OPEN_ANGLE, decodeHinge(hinge.code).lag));
+    // Along the wall, through the swung leaf.
+    const along: Vec3 = [wall.tangent[0] * 0.6, 0, wall.tangent[2] * 0.6];
+    const hits = cast([swung[0] - along[0], 1.0, swung[2] - along[2]], [swung[0] + along[0], 1.0, swung[2] + along[2]], DOOR_OPEN_ANGLE, HALL_CUTS.near);
+    expect(hits.length).toBeGreaterThan(0);
+    const first = hits[0]?.point;
+    expect(Math.hypot((first?.x ?? 0) - swung[0], (first?.z ?? 0) - swung[2])).toBeLessThan(LEAF_THICKNESS);
+  });
+
+  it("leaves out what stands above its wall's cut, as the shader discards it", () => {
+    const from = wallPoint(wall, middle, 1.5, 2.0);
+    const to = wallPoint(wall, middle, 1.5, -2.0);
+    expect(cast(from, to, 0, HALL_CUTS.none).length).toBeGreaterThan(0);
+    expect(cast(from, to, 0, 1.0)).toEqual([]);
   });
 });
 
