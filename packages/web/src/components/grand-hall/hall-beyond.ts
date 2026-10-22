@@ -57,6 +57,7 @@ import { MeshBuilder, type V2, type V3 } from "./mesh-builder.js";
 import { HALL_MOODS, type HallMoodUniforms } from "./hall-mood.js";
 import { hallSkyUniforms as sky } from "./hall-sky-runtime.js";
 import { HALL_PAVEMENT_Y } from "./hall-site.js";
+import { CARD } from "./hall-context.js";
 import type { HallSun } from "./hall-sun.js";
 import type { DoorSwingUniforms } from "./hall-doors.js";
 import type { HallSectionUniforms } from "./hall-materials.js";
@@ -281,16 +282,8 @@ export function mahoganyGrain(textures: HallTextures, coordinates: Node<"vec2">)
   return luminance(textureNode(textures.mahoganyDark, coordinates).rgb).div(MAHOGANY_LUMINANCE).clamp(0.6, 1.5);
 }
 
-/**
- * The city model's white card (hall-context.ts CARD, private to that file and
- * not to be edited from this lane; copied here, sRGB, for the Atelier section,
- * so the card it adds is the city's card).
- */
-export const CARD = {
-  cap: [0.93, 0.9, 0.85],
-  wall: [0.86, 0.82, 0.76],
-  section: [0.78, 0.72, 0.64],
-} as const satisfies Readonly<Record<string, readonly [number, number, number]>>;
+/** The city model's white card (hall-context.ts CARD, sRGB), so the card the Atelier section adds is the city's own. */
+export { CARD };
 
 /** A card colour (sRGB 0-1, as the city states it) in linear light. */
 export function cardColour(rgb: readonly [number, number, number]): Node<"vec3"> {

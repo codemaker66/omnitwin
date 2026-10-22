@@ -34,10 +34,19 @@ import {
 } from "./hall-street-light.js";
 import type { HallSun } from "./hall-sun.js";
 
-export const CONTEXT_MODEL_URL = "/rooms/grand-hall/context-2020-lidar/merchant-city-v2.bin?r=1";
+export const CONTEXT_MODEL_URL = "/rooms/grand-hall/context-2020-lidar/merchant-city-v2.bin?r=2";
 
 /** The model's reach from the hall's centre, metres. */
 export const CONTEXT_RADIUS = 260;
+
+/**
+ * The model's cut-out for the hall (build_context.py rect_half_x, rect_front_z,
+ * rect_half_z): nothing is emitted for |x| <= halfX between the street face and
+ * the back, and the site's caps at the floor's level start at its edge. The
+ * street face is the window wall's outer face (z -6.245, its 0.95 m from the
+ * room's plane), on the model's centimetre grid 5 mm under the wall's foot.
+ */
+export const CITY_SITE_CUT = { halfX: 11.2, front: -6.24, back: 5.95 } as const;
 
 const MAGIC = [0x56, 0x56, 0x43, 0x58] as const; // "VVCX"
 const HEADER_BYTES = 16;
@@ -105,8 +114,9 @@ export function parseContextModel(buffer: ArrayBuffer): BufferGeometry {
 /**
  * White card: caps, walls, the ground between them, and the warmer, deeper
  * face of the site where it is cut at the hall's floor (sRGB, linearised below).
+ * The hall's Atelier section (hall-beyond.ts) cuts its own card from these.
  */
-const CARD = {
+export const CARD = {
   cap: [0.93, 0.9, 0.85],
   wall: [0.86, 0.82, 0.76],
   ground: [0.76, 0.73, 0.68],
