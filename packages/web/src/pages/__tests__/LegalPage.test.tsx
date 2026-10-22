@@ -236,6 +236,15 @@ describe("the terms of service", () => {
     expect(licence.getAttribute("target")).toBe("_blank");
     expect(licence.getAttribute("rel")?.split(" ")).toContain("noopener");
   });
+
+  it("credits the council's street lighting data the night street is drawn from", () => {
+    render(<LegalPage type="terms" />);
+    const section = document.getElementById("intellectual-property");
+    expect(section?.textContent).toContain(
+      "Contains public sector information licensed under the Open Government Licence v3.0. Street lighting: Glasgow City Council. "
+        + "Contains OS data © Crown copyright and database right 2026.",
+    );
+  });
 });
 
 describe("the accessibility statement", () => {

@@ -5,6 +5,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { createPlacedItem } from "../../lib/placement.js";
 import { rearrangeTableGroup } from "../../lib/table-group.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
+import { registerEscapeLayer, registerKeyBindings } from "../../lib/planner-keys.js";
 import {
   ChairCountDialog,
   initialChairCountForCapacity,
@@ -66,6 +67,56 @@ describe("ChairCountDialog scaled capacity", () => {
     // Enter from the count still places the chairs.
     fireEvent.keyDown(screen.getByLabelText("Chair count"), { code: "Enter", key: "Enter" });
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds the keyboard while open: Escape cancels before anything behind it, arrows step, Enter places", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("Round table fixture missing");
+    const onConfirm = vi.fn<(count: number) => void>();
+    const onCancel = vi.fn<() => void>();
+    const behindEscape = vi.fn();
+    const behindShortcut = vi.fn();
+    const stopBehind = [
+      registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: behindEscape }),
+      registerKeyBindings([{ keys: [{ code: "KeyF" }], run: behindShortcut }]),
+    ];
+    try {
+      const request: ChairCountRequest = { catalogueItemId: table.id, x: 0, z: 0, rotationY: 0, tableShape: "round" };
+      const { rerender } = render(<ChairCountDialog request={request} onConfirm={onConfirm} onCancel={onCancel} />);
+      // The count is redrawn (a new element) on every step.
+      const count = (): HTMLInputElement => screen.getByLabelText<HTMLInputElement>("Chair count");
+      const start = Number(count().value);
+
+      fireEvent.keyDown(window, { code: "KeyF", key: "f" });
+      expect(behindShortcut).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(window, { code: "ArrowDown", key: "ArrowDown" });
+      fireEvent.keyDown(window, { code: "ArrowDown", key: "ArrowDown", repeat: true });
+      expect(count().value).toBe(String(start - 2));
+
+      // In the count, the arrows are the number field's own.
+      const input = count();
+      const inField = fireEvent.keyDown(input, { code: "ArrowDown", key: "ArrowDown" });
+      expect(inField).toBe(true);
+      expect(count()).toBe(input);
+
+      fireEvent.keyDown(input, { code: "NumpadEnter", key: "Enter" });
+      expect(onConfirm).toHaveBeenCalledExactlyOnceWith(start - 2);
+
+      fireEvent.keyDown(input, { code: "Escape", key: "Escape" });
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(behindEscape).not.toHaveBeenCalled();
+
+      // Closed, it neither holds Escape nor answers Enter.
+      rerender(<ChairCountDialog request={null} onConfirm={onConfirm} onCancel={onCancel} />);
+      fireEvent.keyDown(window, { code: "Enter", key: "Enter" });
+      fireEvent.keyDown(window, { code: "Escape", key: "Escape" });
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(behindEscape).toHaveBeenCalledTimes(1);
+    } finally {
+      for (const stop of stopBehind) stop();
+    }
   });
 
   it("submits table-only instead of inventing a seat for a tiny scaled table", () => {

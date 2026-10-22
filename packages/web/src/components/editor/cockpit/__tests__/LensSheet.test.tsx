@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
+import { letter, registerKeyBindings } from "../../../../lib/planner-keys.js";
 
 const motionPreference = vi.hoisted(() => ({ reduced: true }));
 vi.mock("../../../../lib/reduced-motion.js", () => ({
@@ -144,8 +145,10 @@ describe("LensSheet", () => {
   });
 
   it("keeps the planner's single-key shortcuts off the scene behind it", () => {
+    // A planner shortcut, as the keymap registers it; the open sheet is a
+    // modal layer, so the one keyboard owner holds it back.
     const behind = vi.fn();
-    window.addEventListener("keydown", behind);
+    const stop = registerKeyBindings([{ keys: letter("f"), run: behind }]);
     try {
       render(<LensSheet />);
       chooseLens("guests");
@@ -153,7 +156,7 @@ describe("LensSheet", () => {
       expect(behind).not.toHaveBeenCalled();
       expect(useCockpitStore.getState().activeMode).toBe("guests");
     } finally {
-      window.removeEventListener("keydown", behind);
+      stop();
     }
   });
 

@@ -25,7 +25,7 @@ import {
 import { getPublicConfig, type Configuration } from "../api/configurations.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
-import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
+import { usePlannerToolKeys } from "../lib/planner-keymap.js";
 import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
@@ -430,7 +430,9 @@ export function EditorPage(): React.ReactElement {
  * re-render on every UI state flip.
  */
 function PlannerCommsLayer(): React.ReactElement {
-  useUndoRedoShortcuts();
+  // The planner's tool keys and Escapes (A, M, D, V, undo and redo), in 3D
+  // and 2D alike: lib/planner-keymap.ts on the one keyboard owner.
+  usePlannerToolKeys();
   const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const [searchParams] = useSearchParams();

@@ -16,7 +16,7 @@ import { useMarkupStore } from "../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
-import { dragMovingIds, expandIdsToGroupMembers, getGroupMemberIds, snapPositionToGrid } from "../lib/placement.js";
+import { dragMovingIds, getGroupMemberIds, snapPositionToGrid } from "../lib/placement.js";
 import { computeFluidFurnitureDragFrame } from "../lib/furniture-drag.js";
 import { isSceneFurniturePlacement } from "../lib/table-dressing.js";
 import { useToolStore } from "../stores/tool-store.js";
@@ -38,9 +38,9 @@ import {
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
+import { useEscapeLayer, usePlannerKeyBindings } from "../lib/planner-keys.js";
+import { selectionKeyBindings, type FloorDirection } from "../lib/planner-keymap.js";
 import {
-  snapRotation,
-  ROTATION_SNAP_RAD,
   DRAG_THRESHOLD_PX,
   screenDistance,
   computeMarqueeRect,
@@ -77,6 +77,20 @@ function screenToFloor(
   return { x: hit.x, z: hit.z };
 }
 
+const _screenForward = new Vector3();
+const _screenUp = new Vector3();
+
+/**
+ * The floor direction that runs up the screen: the camera's view and its own
+ * up, laid flat. Their sum never vanishes, looking straight down (Plan) or
+ * straight ahead (Walk), so an arrow always has a way to go.
+ */
+function screenUpOnFloor(cam: Camera): FloorDirection {
+  cam.getWorldDirection(_screenForward);
+  _screenUp.setFromMatrixColumn(cam.matrixWorld, 1);
+  return { x: _screenForward.x + _screenUp.x, z: _screenForward.z + _screenUp.z };
+}
+
 // ---------------------------------------------------------------------------
 // SelectionSystem — handles click, drag-move, marquee, rotation, delete
 // ---------------------------------------------------------------------------
@@ -87,12 +101,10 @@ function screenToFloor(
  * - Left-click on furniture: select (Shift+click: toggle additive)
  * - Left-click on empty + drag: marquee box select
  * - Drag selected furniture: move on floor plane
- * - Q / E: rotate selected items by ±15°
- * - R key: rotate selected 15° clockwise (legacy, kept for compat)
- * - Ctrl/Cmd+G: group or ungroup selected items
- * - G key: toggle grid snap
- * - Delete/Backspace: remove selected items
- * - Escape: clear selection
+ * - Keys (lib/planner-keymap.ts): Q / E turn 15° either way, R a quarter
+ *   turn; arrows nudge 10 cm (Shift 1 m, Alt 1 cm); + / − seats; C cloth;
+ *   Ctrl G groups, Ctrl Shift G ungroups; G grid snap; Delete removes
+ * - Escape: stops a drag or box in progress
  *
  * Must be inside the R3F Canvas.
  */
@@ -116,16 +128,6 @@ function isPlacedItemId(id: string): boolean {
 }
 
 const WALL_KEYS_SET = new Set<string>(["wall-front", "wall-back", "wall-left", "wall-right"]);
-
-function selectedItemsAreOneWholeGroup(ids: ReadonlySet<string>): boolean {
-  if (ids.size < 2) return false;
-  const placedItems = usePlacementStore.getState().placedItems;
-  const expandedIds = expandIdsToGroupMembers(ids, placedItems);
-  const expandedItems = placedItems.filter((item) => expandedIds.has(item.id));
-  if (expandedItems.length < 2) return false;
-  const groupIds = new Set(expandedItems.map((item) => item.groupId));
-  return groupIds.size === 1 && !groupIds.has(null);
-}
 
 /** Walk the parent chain looking for a wall name or click-plane name. */
 function findWallKey(obj: Object3D): WallKey | null {
@@ -211,108 +213,22 @@ export function SelectionSystem(): null {
     });
   }, []);
 
-  // Keyboard handlers
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      if (useMarkupStore.getState().active) return;
-
-      const selectedIds = useSelectionStore.getState().selectedIds;
-
-      // Undo/redo shortcuts live in useUndoRedoShortcuts (EditorPage shell),
-      // driving the editor-store history shared by the 3D and 2D views.
-
-      // Delete / Backspace — remove selected items
-      if (event.code === "Delete" || event.code === "Backspace") {
-        if (selectedIds.size === 0) return;
-        cancelPointerGesture.current();
-        usePlacementStore.getState().removeItems(selectedIds);
-        useSelectionStore.getState().clearSelection();
-        invalidateRef.current();
-        return;
-      }
-
-      // Escape — back out one layer at a time: a non-Select hand returns to
-      // Select first; a second press clears the selection. The measure hand
-      // defers to MeasurementTool's pending-point cancel, then puts the tape
-      // away.
-      if (event.code === "Escape") {
-        cancelPointerGesture.current();
-        const toolStore = useToolStore.getState();
-        if (toolStore.activeTool === "measure") {
-          if (useMeasurementStore.getState().pendingPoint === null) {
-            toolStore.setTool("select");
-          }
-          return;
-        }
-        if (toolStore.activeTool !== "select") {
-          toolStore.setTool("select");
-          return;
-        }
-        if (selectedIds.size > 0) {
-          useSelectionStore.getState().clearSelection();
-          invalidateRef.current();
-        }
-        return;
-      }
-
-      // Q — rotate selected counter-clockwise | E — same | R — clockwise (legacy)
-      // Batch rotation: update all items in a single set() call to avoid
-      // N separate React batches for N selected items.
-      if ((event.code === "KeyQ" || event.code === "KeyE" || event.code === "KeyR") && !event.ctrlKey && !event.metaKey) {
-        if (selectedIds.size === 0) return;
-        cancelPointerGesture.current();
-        const delta = event.code === "KeyR" ? ROTATION_SNAP_RAD : -ROTATION_SNAP_RAD;
-        const store = usePlacementStore.getState();
-        usePlacementStore.setState({
-          placedItems: store.placedItems.map((item) => {
-            if (!selectedIds.has(item.id) || !isSceneFurniturePlacement(item)) return item;
-            return { ...item, rotationY: snapRotation(item.rotationY + delta) };
-          }),
-        });
-        invalidateRef.current();
-        return;
-      }
-
-      // Ctrl/Cmd+G — group selected items, or ungroup a complete selected group.
-      if (event.code === "KeyG" && (event.ctrlKey || event.metaKey)) {
-        if (selectedIds.size < 2) return;
-        cancelPointerGesture.current();
-        event.preventDefault();
-        const placement = usePlacementStore.getState();
-        const expandedIds = expandIdsToGroupMembers(selectedIds, placement.placedItems);
-        if (selectedItemsAreOneWholeGroup(selectedIds)) {
-          placement.ungroupItems(expandedIds);
-        } else {
-          placement.groupItems(expandedIds);
-        }
-        useSelectionStore.getState().selectMultiple([...expandedIds]);
-        invalidateRef.current();
-        return;
-      }
-
-      // G — toggle grid snap
-      if (event.code === "KeyG" && !event.ctrlKey && !event.metaKey) {
-        usePlacementStore.getState().toggleSnap();
-        return;
-      }
-
-      // C — toggle cloth on selected tables
-      if (event.code === "KeyC" && !event.ctrlKey && !event.metaKey) {
-        if (selectedIds.size === 0) return;
-        cancelPointerGesture.current();
-        for (const id of selectedIds) {
-          usePlacementStore.getState().toggleCloth(id);
-        }
-        invalidateRef.current();
-        return;
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, []);
+  // Keys (T-671 slice 5): the keymap's selection keys through the planner's one
+  // keyboard owner, and Esc for a drag or a box in progress. Esc stops a drag
+  // where it is (one undo step, as a cancelled pointer always has); the next
+  // press clears the selection (lib/planner-keymap.ts).
+  usePlannerKeyBindings(selectionKeyBindings({
+    invalidate: () => { invalidateRef.current(); },
+    cancelGesture: () => { cancelPointerGesture.current(); },
+    screenUp: () => screenUpOnFloor(camera),
+  }));
+  useEscapeLayer("operation", {
+    open: () => isDragging.current || isMarquee.current,
+    onEscape: () => {
+      cancelPointerGesture.current();
+      invalidateRef.current();
+    },
+  });
 
   // Pointer handlers for click-select, drag-move, and marquee
   useEffect(() => {

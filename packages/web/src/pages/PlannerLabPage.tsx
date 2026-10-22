@@ -10,15 +10,59 @@ import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { nativeFrameComposer } from "../lib/native-frame-composer.js";
 import { getNativeRenderer } from "../lib/native-renderer.js";
-import { getCatalogueItemBySlug } from "../lib/catalogue.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
+import { usePlannerToolKeys } from "../lib/planner-keymap.js";
+import { useSelectionStore } from "../stores/selection-store.js";
+import { useCatalogueStore } from "../stores/catalogue-store.js";
+import { useToolStore } from "../stores/tool-store.js";
 import type { HallMoodName } from "../components/grand-hall/hall-mood.js";
 import "../App.css";
 
 // ---------------------------------------------------------------------------
 // Development fixture: the planner's own scene in the Grand Hall with a
 // furnished layout and no backend, for looking at the room and measuring its
-// frames. Compiled out of production builds with the other fixtures.
+// frames. It answers the keys as the planner does (its tool keys and Escape
+// order), so a keyboard walk can be recorded over the real room. Compiled out
+// of production builds with the other fixtures.
 // ---------------------------------------------------------------------------
+
+const RAD_TO_DEG = 180 / Math.PI;
+
+function isTable(catalogueItemId: string): boolean {
+  return getCatalogueItem(catalogueItemId)?.category === "table";
+}
+
+function selectTable(index = 0): string | null {
+  const placed = usePlacementStore.getState().placedItems;
+  const table = placed.filter((item) => isTable(item.catalogueItemId))[index];
+  if (table === undefined) return null;
+  const group = table.groupId === null ? [table.id] : placed.filter((item) => item.groupId === table.groupId).map((item) => item.id);
+  useSelectionStore.getState().selectMultiple(group);
+  return table.id;
+}
+
+function keyState(): LabKeyState {
+  const placed = usePlacementStore.getState();
+  const selected = useSelectionStore.getState().selectedIds;
+  const table = placed.placedItems.find((item) => selected.has(item.id) && isTable(item.catalogueItemId));
+  const seats = table === undefined || table.groupId === null ? 0 : placed.placedItems
+    .filter((item) => item.groupId === table.groupId && item.id !== table.id).length;
+  const tool = useToolStore.getState().activeTool;
+  return {
+    tool,
+    selected: selected.size,
+    placing: useCatalogueStore.getState().selectedItemId,
+    ghostTurnDeg: Math.round(placed.ghostRotation * RAD_TO_DEG),
+    table: table === undefined ? null : {
+      x: Math.round(table.x * 1000) / 1000,
+      z: Math.round(table.z * 1000) / 1000,
+      turnDeg: Math.round(table.rotationY * RAD_TO_DEG),
+      seats,
+    },
+    measuring: tool === "measure",
+    drawing: tool === "draw",
+  };
+}
 
 const LAB_SPACE: Space = {
   id: "00000000-0000-4000-8000-00000000a11b",
@@ -73,8 +117,24 @@ declare global {
        * queries around every render pass (milliseconds; null where unsupported).
        */
       measureGpu: (frames?: number) => Promise<{ readonly frames: number; readonly meanMs: number; readonly p95Ms: number } | null>;
+      /** Selects the nth table and its chairs, as a click on it would (keyboard walks start here). */
+      selectTable: (index?: number) => string | null;
+      /** Takes a catalogue piece in hand, as a click on its tile would. */
+      pick: (catalogueSlug: string) => void;
+      /** What the keys have done: the tool, the selection, the piece in hand and the selected table. */
+      keyState: () => LabKeyState;
     };
   }
+}
+
+interface LabKeyState {
+  readonly tool: string;
+  readonly selected: number;
+  readonly placing: string | null;
+  readonly ghostTurnDeg: number;
+  readonly table: { readonly x: number; readonly z: number; readonly turnDeg: number; readonly seats: number } | null;
+  readonly measuring: boolean;
+  readonly drawing: boolean;
 }
 
 interface GpuQueue { readonly queue: { onSubmittedWorkDone(): Promise<void> } }
@@ -192,6 +252,7 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
 
 export function PlannerLabPage(): ReactElement {
   const [ready, setReady] = useState(false);
+  usePlannerToolKeys();
 
   useEffect(() => {
     const requested = Number(new URLSearchParams(window.location.search).get("guests") ?? "160");
@@ -242,6 +303,12 @@ export function PlannerLabPage(): ReactElement {
       },
       measure,
       measureGpu,
+      selectTable,
+      pick: (catalogueSlug) => {
+        const item = getCatalogueItemBySlug(catalogueSlug);
+        if (item !== undefined) useCatalogueStore.getState().selectItem(item.id);
+      },
+      keyState,
     };
     const timer = window.setTimeout(() => { if (guests > 0) furnish(guests); }, 500);
     return () => {
