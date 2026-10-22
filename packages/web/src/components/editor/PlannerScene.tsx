@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
@@ -83,6 +83,10 @@ import { HallContext } from "../grand-hall/HallContext.js";
 import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
+
+// Development only: the Grand Assembly direction studies (`?assembly=`). The
+// literal DEV flag removes the import from production builds.
+const AssemblyStudy = import.meta.env.DEV ? lazy(() => import("../../floor/assembly/AssemblyStudy.js")) : null;
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -663,6 +667,9 @@ export function PlannerScene(): ReactElement {
             />
           )}
           <FrozenLayoutPreviewCamera active={timelinePreviewActive} room={frozenRoom} />
+          {AssemblyStudy !== null && new URLSearchParams(window.location.search).has("assembly") && (
+            <Suspense fallback={null}><AssemblyStudy /></Suspense>
+          )}
           {import.meta.env.DEV && <PerfMonitor />}
           {!timelinePreviewActive && <PlannerWarmup />}
           {/* Re-register last when a camera owner mounts or the room shell changes. */}
