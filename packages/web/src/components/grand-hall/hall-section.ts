@@ -49,6 +49,7 @@ import { BEYOND_ATLAS, cardLit, mahoganyGrain, relitBeyond, type HallBeyondPhoto
 import { buildCoping, createCopingMaterial } from "./hall-coping.js";
 import type { HallSun } from "./hall-sun.js";
 import type { HallTextures } from "./hall-textures.js";
+import { CITY_SITE_CUT } from "./hall-context.js";
 import { HallSectionProfile, NO_SECTION, SECTION_BIN, SECTION_PROFILE_SPANS, SECTION_PROFILE_WIDTH } from "./hall-relief-section.js";
 
 /** A wall's main thickness: how far its outer face lies behind its scanned face, metres. */
@@ -57,16 +58,17 @@ export function wallThickness(wall: HallWall): number {
 }
 
 /**
- * The city model's cut-out for the hall (tools/grand-hall-survey/context/
- * build_context.py, rect_half_x and rect_half_z): nothing is emitted inside
- * it, and its caps at the floor's level start at its edge. The walls stand
- * further out than it almost everywhere (the window wall's street face at
- * z -6.245, the city's facade line at -5.915), so the ring's top reaches
- * past the cut-out only under the walls' bodies, where nothing sees it; where
- * a wall is thinner (the lobby beside the fireplace door) the ring still
- * reaches a centimetre short of the cut-out, so no hole opens beside it.
+ * The city model's cut-out for the hall is hall-context.ts CITY_SITE_CUT
+ * (build_context.py): nothing is emitted inside it, and its caps at the
+ * floor's level start at its edge, at |x| 11.2, at the window wall's street
+ * face on the street side (z -6.24) and at z 5.95 behind the door wall. The
+ * walls stand further out than it almost everywhere (the window wall's street
+ * face at z -6.245 lies 5 mm past the street cut, under its own body), so the
+ * ring's top reaches past the cut-out only under the walls' bodies, where
+ * nothing sees it; where a wall is thinner (the lobby beside the fireplace
+ * door) the ring still reaches a centimetre short of the cut-out, so no hole
+ * opens beside it.
  */
-export const CITY_CUTOUT = { x: 11.2, z: 5.95 } as const;
 const CUTOUT_MARGIN = 0.01;
 
 /** How far the plinth's outer faces reach below the floor, metres. */
@@ -92,14 +94,15 @@ const UP: V3 = [0, 1, 0];
  * city's cut-out wherever a wall is thinner than that.
  */
 export function plinthOutline(): [number, number][] {
-  const limitX = CITY_CUTOUT.x - CUTOUT_MARGIN;
-  const limitZ = CITY_CUTOUT.z - CUTOUT_MARGIN;
+  const limitX = CITY_SITE_CUT.halfX - CUTOUT_MARGIN;
+  // The street side (-z) and the back (+z) are cut at their own lines.
+  const limitZ = (z: number): number => (z < 0 ? -CITY_SITE_CUT.front : CITY_SITE_CUT.back) - CUTOUT_MARGIN;
   return bodyOutline().map(([x, z]): [number, number] => {
     // Points on the long sides lie beyond |z| = the room's half width; on the
     // short sides beyond |x| = its half length.
     const onLongSide = Math.abs(z) > HALL_HALF_WIDTH + 1e-6 && Math.abs(x) <= HALL_HALF_LENGTH + 1e-6;
     const onShortSide = Math.abs(x) > HALL_HALF_LENGTH + 1e-6 && Math.abs(z) <= HALL_HALF_WIDTH + 1e-6;
-    if (onLongSide && Math.abs(z) < limitZ) return [x, Math.sign(z) * limitZ];
+    if (onLongSide && Math.abs(z) < limitZ(z)) return [x, Math.sign(z) * limitZ(z)];
     if (onShortSide && Math.abs(x) < limitX) return [Math.sign(x) * limitX, z];
     return [x, z];
   });

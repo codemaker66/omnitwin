@@ -31,7 +31,9 @@ describe("the Grand Hall's day", () => {
   });
 
   it("reads the measured skylines: the blocks across Glassford Street and the Garth Street gap", () => {
-    expect(windowSkyline("arch-centre", 100)).toBeCloseTo(10.2, 1);
+    // Cast from the window wall's true street face (z -6.245, 0.95 m from the room's plane; it was -5.915, the
+    // city's old facade line, until 22 October 2026): the blocks opposite stand 0.33 m nearer, a tenth of a degree higher.
+    expect(windowSkyline("arch-centre", 100)).toBeCloseTo(10.3, 1);
     expect(windowSkyline("arch-centre", 70)).toBeGreaterThan(17);
     expect(windowSkyline("arch-centre", 5)).toBeNull();
     // The sun low in the gap comes in; the same sun behind the blocks does not.

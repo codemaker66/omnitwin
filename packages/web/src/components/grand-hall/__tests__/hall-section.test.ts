@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { BufferGeometry } from "three";
 import { buildHallGeometry } from "../hall-geometry.js";
-import { CITY_CUTOUT as SECTION_CUTOUT, PLINTH_DEPTH, PLINTH_UNDERLAP, SECTION_PRESETS, buildPlinthRing, parseSectionPreset, plinthExtents, plinthOutline, wallThickness } from "../hall-section.js";
+import { PLINTH_DEPTH, PLINTH_UNDERLAP, SECTION_PRESETS, buildPlinthRing, parseSectionPreset, plinthExtents, plinthOutline, wallThickness } from "../hall-section.js";
 import { bodyOutline } from "../hall-wall-body.js";
+import { CITY_SITE_CUT } from "../hall-context.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_WALL_THICKNESS, hallWall } from "../hall-spec.js";
 
 type Vec3 = readonly [number, number, number];
@@ -18,9 +19,11 @@ interface Triangle {
 /**
  * The city model's cut-out for the hall: nothing is emitted inside it, and its
  * caps at the floor's level start just beyond it
- * (tools/grand-hall-survey/context/build_context.py, rect_half_x and rect_half_z).
+ * (tools/grand-hall-survey/context/build_context.py, rect_half_x, rect_front_z
+ * and rect_half_z): |x| 11.2, the street face at z -6.24, the back at z 5.95.
  */
-const CITY_CUTOUT = [11.2, 5.95] as const;
+const CUTOUT_X = 11.2;
+const cutoutZ = (z: number): number => (z < 0 ? 6.24 : 5.95);
 
 const L = HALL_HALF_LENGTH;
 const W = HALL_HALF_WIDTH;
@@ -135,14 +138,14 @@ describe("the plinth round the Grand Hall's floor", () => {
     OUTLINE.forEach((point, i) => {
       const face = body[i];
       if (face === undefined) return;
-      const beyond = Math.abs(face[0]) >= CITY_CUTOUT[0] - 0.01 - 1e-9 || Math.abs(face[1]) >= CITY_CUTOUT[1] - 0.01 - 1e-9;
+      const beyond = Math.abs(face[0]) >= CUTOUT_X - 0.01 - 1e-9 || Math.abs(face[1]) >= cutoutZ(face[1]) - 0.01 - 1e-9;
       if (beyond) expect(point).toEqual(face);
-      else expect(Math.max(Math.abs(point[0]) - (CITY_CUTOUT[0] - 0.01), Math.abs(point[1]) - (CITY_CUTOUT[1] - 0.01))).toBeCloseTo(0, 9);
+      else expect(Math.max(Math.abs(point[0]) - (CUTOUT_X - 0.01), Math.abs(point[1]) - (cutoutZ(face[1]) - 0.01))).toBeCloseTo(0, 9);
     });
     // The window wall stands at its true street face, 0.95 m out.
     expect(EXTENTS.zMin).toBeCloseTo(-W - HALL_WALL_THICKNESS.window.thickness, 6);
-    expect(SECTION_CUTOUT.x).toBe(CITY_CUTOUT[0]);
-    expect(SECTION_CUTOUT.z).toBe(CITY_CUTOUT[1]);
+    // The section reads the city's own cut (hall-context.ts), which build_context.py's numbers fix.
+    expect(CITY_SITE_CUT).toEqual({ halfX: CUTOUT_X, front: -cutoutZ(-1), back: cutoutZ(1) });
     expect(wallThickness(hallWall("window"))).toBe(0.95);
   });
 
