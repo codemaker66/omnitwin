@@ -440,6 +440,8 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   // A finish without live light (a software rasteriser) has no reflection map:
   // six cube faces and their blur passes would run on the CPU at every settle.
   const captureNeeded = useRef(true);
+  /** The capture whose environment texture is installed (prepare, in the frame loop). */
+  const prepared = useRef<HallEnvironmentCapture | null>(null);
   const environment = useMemo(() => {
     const renderer = getNativeRenderer(gl);
     return renderer === null || !liveLight ? null : new HallEnvironmentCapture(renderer, new Color(HALL_VOID));
@@ -558,6 +560,18 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
 
   useFrame((state, delta) => {
     let moving = false;
+    // The room's environment is installed before its first frame, the void
+    // until the first capture fills the same texture (HallEnvironmentCapture
+    // .prepare): the materials compile once against it, not again after it.
+    if (environment !== null && prepared.current !== environment) {
+      prepared.current = environment;
+      try {
+        state.scene.environment = environment.prepare();
+        state.scene.environmentIntensity = resources.mood.reflections;
+      } catch {
+        // The first capture installs it instead.
+      }
+    }
     // The real sky, where it drives the hall, replaces the moods: its light is
     // applied as published; reflections are recaptured once the sun is at rest
     // and only if the light has changed enough to show.
