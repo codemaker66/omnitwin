@@ -632,7 +632,7 @@ const REM_FLOOR_HANDOFF: Readonly<Record<string, string>> = {};
  * landing makes this list wrong and fails too.
  */
 const PX_FLOOR_HANDOFF: readonly string[] = [
-  "components/TapeMeasure.tsx:52 inline fontSize 10px",
+  "components/TapeMeasure.tsx:53 inline fontSize 10px",
   "components/WallTogglePanel.tsx:107 inline fontSize 10px",
 ];
 
