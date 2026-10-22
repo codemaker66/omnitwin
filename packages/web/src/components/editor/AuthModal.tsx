@@ -6,6 +6,7 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../../stores/editor-store.js";
 import { claimConfig } from "../../api/configurations.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import "./AuthModal.css";
 
@@ -63,9 +64,9 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
     return () => { cancelled = true; };
   }, [isAuthenticated, userId, configId, isPublicPreview, claimAttempt]);
 
-  const handleKeyDown = (e: React.KeyboardEvent): void => {
-    if (e.key === "Escape") onClose();
-  };
+  // Escape closes it wherever focus is, through the planner's one keyboard
+  // owner, and while it is open the planner's shortcuts leave the room alone.
+  useEscapeLayer("modal", { open: true, onEscape: onClose });
 
   // Portal to <body>: the planner shell declares `isolation: isolate`, which
   // traps any descendant z-index inside its stacking context — the overlay's
@@ -73,7 +74,7 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
   // status header at z46 and the 3D/2D view-mode pill at z31), leaving that
   // chrome clickable on top of an open modal.
   return createPortal(
-    <div className={modalClassName} onClick={onClose} onKeyDown={handleKeyDown} role="dialog" aria-modal="true" aria-labelledby="auth-modal-title" tabIndex={-1}>
+    <div className={modalClassName} onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="auth-modal-title" tabIndex={-1}>
       <div ref={trapRef} className="auth-modal__panel" onClick={(e) => { e.stopPropagation(); }}>
         <h2 id="auth-modal-title" className="auth-modal__title">
           Sign In to Save

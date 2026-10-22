@@ -726,6 +726,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 098b539f18aead5c39f5-f4847f7a36ef5d419a55 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-21",
+      "reason": "One keyboard owner for the planner (PR #159, T-671 slice 5): the skipped walk case 3f352fcb62a55bd2f17a-0588accbacaa6669e855 ('walk exit: Escape returns to plan view (T-560 GL teleport wedge)') is restated as 'walk stays on Escape (T-560 GL teleport wedge on the walk entry)', because Escape no longer leaves Walk (the approved design's one Escape order steps back the operation, popover, panel and selection, never the view); the case stays test.fixme for the same T-560 wedge on the walk entry.",
+      "sourceCommit": "3acc3b9b8460aac1b89bb6e78812ab4cbbd790ae",
+      "sourceFile": "packages/web/e2e/plan-room-resolve.spec.ts",
+      "sourceFileGitBlobSha256": "608647c124a73544a45c3a79a45400837c9e5d675946e90f9cf9543a5a368903",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "95dd204d46eb6b0d92bab72329a1408f52dab74ee90ab1a8ce1d624bb8f88b06",
+      "caseIds": [
+        "3f352fcb62a55bd2f17a-57d7982324e643088dc0"
+      ],
+      "expectedStatus": "skipped",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 3f352fcb62a55bd2f17a-0588accbacaa6669e855 one for one and keeps its expected skip, so the totals (401 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -2185,9 +2199,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "3f352fcb62a55bd2f17a-0588accbacaa6669e855",
+      "id": "3f352fcb62a55bd2f17a-57d7982324e643088dc0",
       "file": "plan-room-resolve.spec.ts",
-      "title": "walk exit: Escape returns to plan view (T-560 GL teleport wedge)",
+      "title": "walk stays on Escape (T-560 GL teleport wedge on the walk entry)",
       "suitePath": [
         "plan-room-resolve.spec.ts",
         "CARD A2: the room resolves over the blueprint"

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useEscapeLayer, type EscapeLayerKind } from "./planner-keys.js";
 
 // ---------------------------------------------------------------------------
 // useFocusTrap — traps Tab/Shift+Tab within a container element
@@ -144,26 +145,15 @@ export function useFocusTrap<T extends HTMLElement>(
 // T-615: five aria-modal dialogs shipped without either a focus trap or an
 // Escape key, and several more handled Escape with a React onKeyDown on the
 // overlay — which only fires while focus is already inside, so Escape did
-// nothing whenever the opener still held focus. This listens on the document
-// in the capture phase, alongside the trap, so the two always agree.
+// nothing whenever the opener still held focus. The press now goes through
+// the planner's one keyboard owner (T-671 slice 5), which answers it wherever
+// focus is and steps back only the top layer, so a dialog's Escape no longer
+// also closes the panel or clears the selection behind it. While an input
+// method is composing, Escape belongs to the composition; the owner leaves it.
 //
 // Pass `active: false` (not "omit the hook") while an irreversible write is in
 // flight: the dialog keeps its trap and simply refuses to dismiss.
 // ---------------------------------------------------------------------------
-export function useEscapeToClose(onClose: () => void, active = true): void {
-  const handlerRef = useRef(onClose);
-  handlerRef.current = onClose;
-
-  useEffect(() => {
-    if (!active) return;
-    function handleKeyDown(e: KeyboardEvent): void {
-      // While an input method is composing, Escape belongs to it (it cancels
-      // the composition), never to the dialog around the field.
-      if (e.key !== "Escape" || e.isComposing) return;
-      e.stopPropagation();
-      handlerRef.current();
-    }
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => { document.removeEventListener("keydown", handleKeyDown, true); };
-  }, [active]);
+export function useEscapeToClose(onClose: () => void, active = true, kind: EscapeLayerKind = "modal"): void {
+  useEscapeLayer(kind, { open: active, onEscape: onClose });
 }

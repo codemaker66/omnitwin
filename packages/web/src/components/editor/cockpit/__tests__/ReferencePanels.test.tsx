@@ -12,6 +12,7 @@ import { useSelectionStore } from "../../../../stores/selection-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { PLANNER_TOOLBAR_COMMAND_EVENT, readPlannerToolbarCommand } from "../../../../lib/planner-toolbar-events.js";
+import { registerEscapeLayer } from "../../../../lib/planner-keys.js";
 import { EditorBridge, placedItemToEditor } from "../../EditorBridge.js";
 
 function catalogueId(slug: string): string {
@@ -198,6 +199,33 @@ describe("SelectedFurnitureInspector", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove 9 objects" }));
     expect(usePlacementStore.getState().placedItems).toEqual([other]);
     expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+  });
+
+  it("puts a typed value back on Escape, one step before the selection, and commits nothing", () => {
+    const { items, table } = fixture();
+    useSelectionStore.getState().select(table.id);
+    const clearSelection = vi.fn();
+    const stopSelectionLayer = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: clearSelection });
+    try {
+      render(<SelectedFurnitureInspector />);
+      const control = screen.getByRole<HTMLInputElement>("spinbutton", { name: "X (m)" });
+      const committed = control.value;
+      control.focus();
+      fireEvent.change(control, { target: { value: "3.5" } });
+
+      fireEvent.keyDown(control, { key: "Escape", code: "Escape" });
+      expect(control.value).toBe(committed);
+      expect(document.activeElement).not.toBe(control);
+      expect(clearSelection).not.toHaveBeenCalled();
+      expect(usePlacementStore.getState().placedItems).toEqual(items);
+
+      // With nothing typed, the field has nothing to step back from.
+      control.focus();
+      fireEvent.keyDown(control, { key: "Escape", code: "Escape" });
+      expect(clearSelection).toHaveBeenCalledOnce();
+    } finally {
+      stopSelectionLayer();
+    }
   });
 
   it("replaces all editing controls with the preview lock", () => {
