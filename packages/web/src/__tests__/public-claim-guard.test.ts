@@ -282,3 +282,142 @@ describe("public claim guard", () => {
     expect(violations).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Banned verdicts (redteam fix-first 2). A structural, electrical, egress or
+// occupancy question is never answered "within", "fits", "pass", "valid" or
+// "compliant": no named person checked the point's WLL, the room's supply, its
+// doors or its maximum, so the planner states arithmetic, the venue's
+// published figure with who stated it, or "Not recorded" with a person to ask.
+// England's Approved Document B, the US NFPA 101 and an unverified BS 9999
+// table are not evidence for a Glasgow building and are not quoted at all.
+// The rendered side of this guard (every safety lens, every viewer) lives in
+// components/editor/cockpit/__tests__/banned-verdicts.test.tsx.
+// ---------------------------------------------------------------------------
+
+/** Planner surfaces that answer those questions, and the libraries that write their words. */
+const PLANNER_VERDICT_ROOTS: readonly string[] = [
+  "src/components/editor",
+  "src/hooks/use-planner-truth.ts",
+  "src/lib/circulation.ts",
+  "src/lib/cockpit-cost-model.ts",
+  "src/lib/cockpit-evidence-model.ts",
+  "src/lib/cockpit-flow-panel-model.ts",
+  "src/lib/cockpit-guests-model.ts",
+  "src/lib/cockpit-share-model.ts",
+  "src/lib/dmx.ts",
+  "src/lib/layout-capacity.ts",
+  "src/lib/layout-intelligence.ts",
+  "src/lib/planner-truth.ts",
+  "src/lib/power.ts",
+  "src/lib/proposal-capacity-note.ts",
+  "src/lib/rigging.ts",
+  "src/lib/room-capacity.ts",
+  "src/lib/unrecorded-ask.ts",
+  "../types/src/solver/compliance.ts",
+];
+
+const VERDICT_WORD = String.raw`(?:within|fits?|pass(?:es|ed)?|valid|compliant)`;
+const SAFETY_SUBJECT = String.raw`(?:WLL|working load(?: limit)?|load limit|breakers?|(?:power )?supply|circuits?|phases?|egress|exits?|escape(?: routes?)?|fire|travel distance|occupan(?:cy|ts?)|capacity|headcount|(?:planning )?guidance|rigging|structur\w*|evacuation|aisles?)`;
+
+const BANNED_VERDICT_PATTERNS: readonly ClaimPattern[] = [
+  {
+    id: "verdict-on-safety-subject",
+    pattern: new RegExp(String.raw`\b${VERDICT_WORD}\b(?:[ \t]+[\w'’-]+){0,4}?[ \t]+${SAFETY_SUBJECT}\b`, "giu"),
+    guidance: "Never answer a structural, electrical, egress or occupancy question with within/fits/pass/valid/compliant: state the arithmetic, the published figure and its source, or \"Not recorded\" with a person to ask.",
+  },
+  {
+    id: "safety-subject-verdict",
+    pattern: new RegExp(String.raw`\b${SAFETY_SUBJECT}\b(?:[ \t]+[\w'’-]+){0,3}?[ \t]+${VERDICT_WORD}\b`, "giu"),
+    guidance: "A capacity, supply, WLL or exit is never said to be within or passing anything nobody checked.",
+  },
+  {
+    id: "verdict-label",
+    pattern: /["'`>]\s*(?:Pass(?:ed)?|Fits?|Valid|Compliant|Within(?: [A-Z][\w ]{0,30})?)\s*["'`<]/gu,
+    guidance: "No Pass / Within / Fits / Valid / Compliant chip on a planner surface: a tick is only honest for something a named person checked.",
+  },
+  {
+    id: "wrong-jurisdiction-code",
+    pattern: /\b(?:Approved Document B|ADB|NFPA(?: 101)?|BS 9999)\b/gu,
+    guidance: "England's ADB, the US NFPA 101 and an unverified BS 9999 table are not evidence for a Glasgow building; the venue's fire risk assessment is.",
+  },
+];
+
+function bannedVerdictPattern(id: string): RegExp {
+  const pattern = BANNED_VERDICT_PATTERNS.find((entry) => entry.id === id)?.pattern;
+  if (pattern === undefined) throw new Error(`${id} pattern missing`);
+  return pattern;
+}
+
+function hits(pattern: RegExp, text: string): boolean {
+  pattern.lastIndex = 0;
+  return pattern.test(text);
+}
+
+async function readPlannerVerdictFiles(): Promise<readonly { readonly file: string; readonly text: string }[]> {
+  const files = await Promise.all(PLANNER_VERDICT_ROOTS.map((root) => collectTextFiles(path.resolve(root))));
+  return Promise.all(
+    Array.from(new Set(files.flat())).map(async (file) => ({
+      file: path.relative(process.cwd(), file),
+      text: normaliseScannedText(file, await readFile(file, "utf-8")),
+    })),
+  );
+}
+
+describe("banned safety verdicts on planner surfaces (redteam fix-first 2)", () => {
+  it("recognises the verdicts the planner used to show, and passes what it says now", () => {
+    const verdicts: readonly (readonly [string, string])[] = [
+      ["verdict-label", `<span>{"Within WLL"}</span>`],
+      ["verdict-label", `pass: "Pass",`],
+      ["verdict-label", `<span className="chip">Fits</span>`],
+      ["verdict-on-safety-subject", "Comfortable — within planning guidance"],
+      ["verdict-on-safety-subject", "The load is within the point's working load limit"],
+      ["verdict-on-safety-subject", "160 guests fits the room's capacity"],
+      ["verdict-on-safety-subject", "Layout passes egress"],
+      ["safety-subject-verdict", "capacity within guidance"],
+      ["safety-subject-verdict", "Phase L1 within the breaker"],
+      ["safety-subject-verdict", "Exits compliant"],
+      ["wrong-jurisdiction-code", "ADB guidance indicates ≥ 2 escape routes"],
+      ["wrong-jurisdiction-code", "(BS 9999:2017 Table 12)"],
+      ["wrong-jurisdiction-code", "NFPA 101 occupant load factor"],
+    ];
+    for (const [id, text] of verdicts) expect(hits(bannedVerdictPattern(id), text), `${id}: ${text}`).toBe(true);
+
+    const honest = [
+      "Not recorded",
+      "Ask the hallkeeper",
+      "Over the WLL entered",
+      "Entered here in this plan; not a check of the point.",
+      "Published 180 for dinner.",
+      "200 guests is more than the published 180 for dinner.",
+      "Published guide · Trades Hall · 9 Jul 2026",
+      "At or above generic space per guest",
+      "Escape routes and maximum",
+      "is beyond the 18m planning distance setting",
+      "Ask us for a quote",
+    ];
+    for (const text of honest) {
+      for (const entry of BANNED_VERDICT_PATTERNS) expect(hits(entry.pattern, text), `${entry.id}: ${text}`).toBe(false);
+    }
+  });
+
+  it("finds no verdict on a structural, electrical, egress or occupancy question in planner source", async () => {
+    const files = await readPlannerVerdictFiles();
+    expect(files.length).toBeGreaterThan(50);
+    const violations = files.flatMap(({ file, text }) =>
+      BANNED_VERDICT_PATTERNS.flatMap((entry) =>
+        Array.from(text.matchAll(entry.pattern)).flatMap((match) =>
+          match[0] === undefined ? [] : [`${file}: ${entry.id}: ${match[0]} — ${entry.guidance}`]),
+      ),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("keeps the England and US egress arithmetic out of every planner surface", async () => {
+    const files = await readPlannerVerdictFiles();
+    const importers = files
+      .filter(({ text }) => /from\s+["'][^"']*\/egress\.js["']/u.test(text))
+      .map(({ file }) => file);
+    expect(importers).toEqual([]);
+  });
+});

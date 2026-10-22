@@ -3,6 +3,7 @@ import { VenueIdSchema } from "./venue.js";
 import { EnquiryIdSchema } from "./enquiry.js";
 import { UserIdSchema } from "./user.js";
 import { ProposalIdSchema, QuoteIdSchema, MinorUnitAmountSchema, findUnsupportedProposalClaim } from "./proposal.js";
+import { OpportunityLostToSchema } from "./competitor-watch.js";
 
 export const COMMERCIAL_SPINE_SCHEMA_VERSION = "venviewer.commercial-spine.v1";
 
@@ -202,6 +203,12 @@ export const ProposalShareTokenSchema = z.object({
   expiresAt: IsoDateTimeSchema.nullable(),
   revokedAt: IsoDateTimeSchema.nullable(),
   lastViewedAt: IsoDateTimeSchema.nullable(),
+  // Migration 0100: the link's first visit and how many visits it has had
+  // (PROPOSAL_VIEW_VISIT_GAP_MINUTES apart). Both null for a link opened
+  // before counting began, whose first visit is not known. Optional so a
+  // reader newer than the API still parses an older API's tokens.
+  firstViewedAt: IsoDateTimeSchema.nullable().optional(),
+  viewCount: z.number().int().nonnegative().nullable().optional(),
 });
 export type ProposalShareToken = z.infer<typeof ProposalShareTokenSchema>;
 
@@ -261,6 +268,8 @@ export type CreateOpportunity = z.infer<typeof CreateOpportunitySchema>;
 export const UpdateOpportunitySchema = CreateOpportunitySchema.omit({ venueId: true }).partial().extend({
   stage: OpportunityStageSchema.optional(),
   note: SafeCommercialTextSchema.nullable().optional(),
+  /** Who won, given only when the deal is marked lost (the competitor watch). */
+  lostTo: OpportunityLostToSchema.optional(),
 });
 export type UpdateOpportunity = z.infer<typeof UpdateOpportunitySchema>;
 

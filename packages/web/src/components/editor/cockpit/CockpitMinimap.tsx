@@ -13,6 +13,8 @@ import {
   minimapToWorld,
 } from "../../../lib/cockpit-minimap-model.js";
 import { projectReplayPointToFloor } from "../../../lib/cockpit-overlay-projection.js";
+import { flowFiguresAllowed } from "../../../lib/cockpit-flow-panel-model.js";
+import { countLabel } from "../../../lib/count-label.js";
 import {
   retainFrozenLayoutRoomModel,
   type FrozenLayoutRoomModel,
@@ -206,6 +208,8 @@ export function CockpitMinimap({ embedded = false }: { readonly embedded?: boole
 
   const conflictMarkers = useMemo<readonly MinimapConflictMarker[]>(() => {
     if (timelinePreviewActive || !layers.routeConflicts || artifact === null || bounds === null) return [];
+    // No review marker from doors placed mid-wall by assumption (redteam fix-first 2).
+    if (!flowFiguresAllowed(artifact)) return [];
     return selectRouteConflicts(artifact.routeConflicts, MAX_MINIMAP_CONFLICTS).map((conflict) => {
       const [x, , z] = projectReplayPointToFloor(conflict.point, bounds, dimensions, 0);
       const pixel = minimapProject(x, z, layout);
@@ -238,7 +242,7 @@ export function CockpitMinimap({ embedded = false }: { readonly embedded?: boole
   const note = timelinePreviewActive
     ? "Phase preview · saved plan unchanged · click to recentre"
     : conflictMarkers.length > 0
-    ? `${String(conflictMarkers.length)} simulated review marker${conflictMarkers.length === 1 ? "" : "s"} · click to recentre`
+    ? `${countLabel(conflictMarkers.length, "simulated review marker")} · click to recentre`
     : "Planning overview · click to recentre";
 
   if (timelinePreviewActive && frozenRoom === null) {

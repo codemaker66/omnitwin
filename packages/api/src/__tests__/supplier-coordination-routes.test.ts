@@ -14,6 +14,7 @@ const VENUE_ID = "00000000-0000-4000-8000-00000000000a";
 const HANDOFF_PACK_ID = "00000000-0000-4000-8000-000000000601";
 const SUPPLIER_PACK_ID = "00000000-0000-4000-8000-000000000602";
 const INSTRUCTION_ID = "00000000-0000-4000-8000-000000000603";
+const EVENT_ID = "00000000-0000-4000-8000-000000000604";
 const SHARE_TOKEN = "abcdefghijklmnopqrstuvwxyzABCDEF1234567890_-";
 
 function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
@@ -36,6 +37,8 @@ describe("supplier coordination routes", () => {
       ["POST", "/supplier-coordination/packs"],
       ["GET", `/supplier-coordination/packs/${SUPPLIER_PACK_ID}`],
       ["POST", `/supplier-coordination/packs/${SUPPLIER_PACK_ID}/share-token`],
+      ["POST", `/supplier-coordination/packs/${SUPPLIER_PACK_ID}/revoke`],
+      ["GET", `/supplier-coordination/events/${EVENT_ID}/passes`],
     ] as const) {
       const res = await server.inject({ method, url, payload: method !== "GET" ? {} : undefined });
       expect(res.statusCode).toBe(401);
@@ -75,6 +78,32 @@ describe("supplier coordination routes", () => {
       payload: { expiresAt: "not-a-date" },
     });
     expect(invalid.statusCode).toBe(400);
+
+    // The pass a fresh one replaces is named by its id, and nothing else.
+    const badReplacement = await server.inject({
+      method: "POST",
+      url: `/supplier-coordination/packs/${SUPPLIER_PACK_ID}/share-token`,
+      headers: { authorization: `Bearer ${staffToken()}` },
+      payload: { supersedesPackId: "not-a-pass" },
+    });
+    expect(badReplacement.statusCode).toBe(400);
+  });
+
+  it("validates pass ids and event ids before database work", async () => {
+    const badPass = await server.inject({
+      method: "POST",
+      url: "/supplier-coordination/packs/not-a-pass/revoke",
+      headers: { authorization: `Bearer ${staffToken()}` },
+      payload: {},
+    });
+    expect(badPass.statusCode).toBe(400);
+
+    const badEvent = await server.inject({
+      method: "GET",
+      url: "/supplier-coordination/events/not-an-event/passes",
+      headers: { authorization: `Bearer ${staffToken()}` },
+    });
+    expect(badEvent.statusCode).toBe(400);
   });
 
   it("validates supplier share routes without auth", async () => {

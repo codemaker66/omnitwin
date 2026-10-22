@@ -1,6 +1,8 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   BookingSchema,
+  VIEWING_BOOKING_KIND,
+  VIEWING_HAS_NO_EVENT_MESSAGE,
   bookingKindNeedsEvent,
   bookingStateToColumns,
   deriveBookingState,
@@ -22,6 +24,7 @@ import {
   resequenceLaddersAfterExit,
   type ResequenceResult,
 } from "./hold-hygiene.js";
+import { jointlyPromoted, writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
 import { bindBookingToEvent, syncEventStatus, syncEventStatuses, type BindTarget } from "./event-binding.js";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +68,9 @@ export interface BookingMutationOk {
   readonly booking: BookingRow;
   readonly changeKind: "booking.created" | "booking.updated" | "booking.transitioned";
   readonly resequence?: ResequenceResult | null;
+  /** Notices written in the transition's transaction for holds that became
+   *  1st option; the transport announces them after commit. */
+  readonly promotionNotices?: readonly PromotionNotice[];
 }
 
 export type BookingMutationResult = BookingMutationOk | BookingMutationDeny;
@@ -240,6 +246,7 @@ export function serializeBooking(row: BookingRow): Booking {
     notes: row.notes,
     createdBy: row.createdBy,
     enquiryId: row.enquiryId,
+    lostReason: row.lostReason,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
   });
@@ -445,6 +452,11 @@ async function updateBookingLocked(
   if (patch.rank !== undefined && row.kind !== "hold") {
     return validationDeny([{ path: ["rank"], message: "Only a provisional hold has an option number." }]);
   }
+  // A viewing is a show-round for its enquiry, never part of an event
+  // (bookings_viewing_has_no_event backs this at the database).
+  if (row.kind === VIEWING_BOOKING_KIND && patch.eventId !== undefined && patch.eventId !== null) {
+    return validationDeny([{ path: ["eventId"], message: VIEWING_HAS_NO_EVENT_MESSAGE }]);
+  }
 
   // The bind: a hold or ink may move to another event of its venue, never to
   // none. Interest only and venue blocks may still be detached.
@@ -550,6 +562,30 @@ export async function transitionBookingCore(
   const currentState = deriveBookingState(row.kind, row.status);
   const toState: BookingState = body.toState;
 
+  // A viewing is a different thing from a commitment, not a stage of one: no
+  // booking becomes one (a hold or ink would carry its event into a viewing,
+  // which takes none). This is the booking's kind, not its lifecycle, so the
+  // admin's structural override does not reach it. Book a viewing instead.
+  if (toState === VIEWING_BOOKING_KIND && row.kind !== VIEWING_BOOKING_KIND) {
+    return {
+      ok: false,
+      status: 400,
+      code: "INVALID_TRANSITION",
+      error: "A booking cannot become a viewing. Book the viewing as its own booking.",
+    };
+  }
+  // Nor does a viewing become a commitment: its only move is to be called
+  // off (and, by the admin's override, a called-off one put back). A hold or
+  // confirmed booking for the same guest is booked as its own booking.
+  if (row.kind === VIEWING_BOOKING_KIND && toState !== "cancelled" && toState !== VIEWING_BOOKING_KIND) {
+    return {
+      ok: false,
+      status: 400,
+      code: "INVALID_TRANSITION",
+      error: "A viewing can only be called off. Book the hold or the confirmed booking as its own booking.",
+    };
+  }
+
   // Structure first (admin may override structure per the house rule),
   // then role policy.
   if (actor.role !== "admin" && !isValidBookingTransition(currentState, toState)) {
@@ -605,10 +641,12 @@ export async function transitionBookingCore(
     }
   }
 
-  const holdExited =
-    row.kind === "hold" &&
-    row.status === "active" &&
-    (toState === "released" || toState === "expired" || toState === "lost");
+  const holdExit: HoldExit | null =
+    row.kind === "hold" && row.status === "active"
+      && (toState === "released" || toState === "expired" || toState === "lost")
+      ? toState
+      : null;
+  const holdExited = holdExit !== null;
 
   try {
     const outcome = await conn.transaction(async (tx) => {
@@ -690,6 +728,10 @@ export async function transitionBookingCore(
           // Promotion to ink resolves the ladder; the rank is cleared
           // (bookings_rank_hold_only backs this at the DB).
           rank: toState === "ink" ? null : hygiene?.rank ?? current.rank,
+          // The lost reason (migration 0100) is written with the loss and
+          // cleared by any other move, so it only ever sits on a lost booking
+          // (bookings_lost_reason_check).
+          lostReason: toState === "lost" ? body.lostReason ?? null : null,
           ...(hygiene === null ? {} : {
             decisionAt: hygiene.decisionAt,
             ownerUserId: hygiene.ownerUserId,
@@ -743,12 +785,39 @@ export async function transitionBookingCore(
         }
       }
 
+      // Blake's 26 September decision: the new 1st option's owner is told in
+      // the app, in THIS transaction, so a promotion is never silent and a
+      // notice never outlives a rolled-back exit. Nothing is emailed here.
+      let promotionNotices: readonly PromotionNotice[] = [];
+      if (holdExit !== null && resequence !== null && resequence.promotedToFirst.length > 0) {
+        const survivorById = new Map(ladderRows.map((survivor) => [survivor.id, survivor]));
+        const promoted = resequence.promotedToFirst.flatMap((hold) => {
+          const survivor = survivorById.get(hold.id);
+          return survivor === undefined ? [] : [survivor];
+        });
+        const joint = jointlyPromoted(promoted);
+        promotionNotices = await writePromotionNotices(tx, {
+          venueId: row.venueId,
+          spaceId: row.spaceId,
+          exit: holdExit,
+          actorUserId: actor.id,
+          promoted: promoted.map((survivor) => ({
+            id: survivor.id,
+            title: survivor.title,
+            ownerUserId: survivor.ownerUserId,
+            jointFlag: joint.has(survivor.id),
+            startsAt: survivor.startsAt,
+          })),
+          roles: { diaryWriteRoles: DIARY_WRITE_ROLES, holdOwnerRoles: HOLD_OWNER_ROLES },
+        });
+      }
+
       // The event follows its bookings: confirmed once inked, lost when its
       // last option goes, cancelled when its confirmed booking does. Last,
       // after every booking lock this transaction takes (the lock order).
       if (updated.eventId !== null) await syncEventStatus(tx, updated.eventId);
 
-      return { updated, resequence };
+      return { updated, resequence, promotionNotices };
     });
 
     if (outcome === "stale") return BOOKING_STATE_CHANGED;
@@ -758,6 +827,7 @@ export async function transitionBookingCore(
       booking: outcome.updated,
       changeKind: "booking.transitioned",
       resequence: outcome.resequence,
+      promotionNotices: outcome.promotionNotices,
     };
   } catch (error) {
     if (error instanceof StaleTransition) return BOOKING_STATE_CHANGED;

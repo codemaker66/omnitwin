@@ -352,6 +352,30 @@ describe("calculatePrice — windows", () => {
     expect(result.total).toBe(1500);
   });
 
+  it("a rate for particular dates is charged instead of the everyday rate on those dates, not as well", () => {
+    const special = makeRule({
+      name: "Grand Hall — Evening Event (24 Oct)", type: "flat_rate", amount: 1800, spaceId: SPACE_ID,
+      appliesFrom: "19:00", appliesUntil: "00:30", validFrom: "2026-10-24", validTo: "2026-10-24",
+    });
+    const onTheDay = estimate("19:00", "23:00", [...grandHall, special]);
+    expect(onTheDay.lineItems.map((item) => item.ruleName)).toEqual(["Grand Hall — Evening Event (24 Oct)"]);
+    expect(onTheDay.total).toBe(1800);
+    // The next day is the everyday rate again.
+    const nextDay = calculatePrice({ rules: [...grandHall, special], spaceId: SPACE_ID, eventDate: "2026-10-25", startTime: "19:00", endTime: "23:00", guestCount: 80 });
+    expect(nextDay.total).toBe(1500);
+    // Postgres's "19:00:00" is the same time as the form's "19:00".
+    const fromDatabase = makeRule({ ...special, appliesFrom: "19:00:00", appliesUntil: "00:30:00" });
+    expect(estimate("19:00", "23:00", [...grandHall, fromDatabase]).total).toBe(1800);
+  });
+
+  it("a dated rate charged another way (a price a head) is added, not swapped", () => {
+    const catering = makeRule({
+      name: "Grand Hall — Evening catering (24 Oct)", type: "per_head", amount: 10, spaceId: SPACE_ID,
+      appliesFrom: "19:00", appliesUntil: "00:30", validFrom: "2026-10-24", validTo: "2026-10-24",
+    });
+    expect(estimate("19:00", "23:00", [...grandHall, catering]).total).toBe(1500 + 800);
+  });
+
   it("the window helpers read a past-midnight window as its second day", () => {
     const evening = ruleWindow({ appliesFrom: "19:00", appliesUntil: "00:30" });
     expect(evening).toEqual({ fromMinute: 19 * 60, untilMinute: 24 * 60 + 30 });

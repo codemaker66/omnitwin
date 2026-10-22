@@ -21,9 +21,11 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js";
 import { useMarkupStore, MARKUP_COLOR_VALUES, type MarkupColor } from "../../stores/markup-store.js";
-import { useMeasurementStore } from "../../stores/measurement-store.js";
-import { useGuidelineStore } from "../../stores/guideline-store.js";
+import { useToolStore } from "../../stores/tool-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import type { PlannerTool } from "../../lib/planner-tools.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
+import { putDownPieceInHand } from "../../lib/planner-keymap.js";
 import { COCKPIT_MODES } from "../../lib/cockpit-modes.js";
 import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
 import { HallViewSheetControls } from "./cockpit/CanvasLayerControls.js";
@@ -49,6 +51,7 @@ import type { CatalogueItem } from "../../lib/catalogue.js";
 import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
+import { countLabel } from "../../lib/count-label.js";
 
 const LazyAuthModal = lazy(() =>
   import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
@@ -1138,8 +1141,6 @@ function OnboardingHint({ onDismiss, onOpenFurniture }: OnboardingHintProps): Re
 // Mobile interaction dock
 // ---------------------------------------------------------------------------
 
-type ActiveTool = "select" | "add" | "rotate" | "delete" | "markup";
-
 type MobileShellMode = "idle" | "placing" | "selected";
 
 interface MobileDockAction {
@@ -1157,7 +1158,7 @@ interface MobileDockAction {
 
 interface MobilePlannerDockProps {
   readonly mode: MobileShellMode;
-  readonly activeTool: ActiveTool;
+  readonly activeTool: PlannerTool;
   readonly panelOpen: boolean;
   readonly cameraOpen: boolean;
   readonly moreOpen: boolean;
@@ -1340,10 +1341,12 @@ function MobilePlannerDock({
     onDismissMore();
     moreButtonRef.current?.focus();
   };
+  // Esc closes the More sheet and gives focus back to More (the planner's one Escape order).
+  useEscapeLayer("panel", { open: moreOpen, onEscape: onDismissMore, returnFocusTo: moreButtonRef });
   const idleActions: readonly MobileDockAction[] = [
     { label: "Select", active: activeTool === "select", onClick: onSelect, icon: <MousePointer2 size={20} /> },
     { label: "Add", active: panelOpen, onClick: onAdd, icon: <Armchair size={20} /> },
-    { label: "Draw", active: activeTool === "markup", onClick: onMarkup, icon: <PenLine size={20} /> },
+    { label: "Draw", active: activeTool === "draw", onClick: onMarkup, icon: <PenLine size={20} /> },
     { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
     { label: "More", active: moreOpen, expanded: moreOpen, controls: moreOpen ? moreSheetId : undefined, buttonRef: moreButtonRef, onClick: onMore, icon: <MoreHorizontal size={20} /> },
   ];
@@ -1354,7 +1357,7 @@ function MobilePlannerDock({
   ];
   const selectedActions: readonly MobileDockAction[] = [
     { label: "Done", tone: "primary", onClick: onDoneSelected, icon: <Check size={20} /> },
-    { label: "Rotate", active: activeTool === "rotate", onClick: onRotateSelected, icon: <RotateCw size={20} /> },
+    { label: "Rotate", onClick: onRotateSelected, icon: <RotateCw size={20} /> },
     { label: "Delete", tone: "danger", onClick: onDeleteSelected, icon: <Trash2 size={20} /> },
     { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
   ];
@@ -1384,11 +1387,7 @@ function MobilePlannerDock({
 
       {moreOpen ? (
         <div id={moreSheetId} data-testid="mobile-more-sheet" role="region" aria-label="More planner tools"
-          style={{ ...mobileSheetStyle, display: "grid", gap: 8 }}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape") return;
-            event.preventDefault(); event.stopPropagation(); dismissMore();
-          }}>
+          style={{ ...mobileSheetStyle, display: "grid", gap: 8 }}>
           <div style={mobileSheetTitleStyle}>Planner lenses</div>
           <div className="mobile-planner-lenses" role="group" aria-label="Planner lenses">
             {COCKPIT_MODES.map((lens) => (
@@ -1461,21 +1460,26 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
     };
   }, [mobileChrome]);
 
-  const [activeTool, setActiveTool] = useState<ActiveTool>("select");
-  const [panelOpen, setPanelOpen] = useState(false);
+  // The tool is the tool store's (T-671 slice 5): the furniture panel is open
+  // exactly while Add is held, so A, the deck and this toolbox always agree.
+  const activeTool = useToolStore((s) => s.activeTool);
+  const setTool = useToolStore((s) => s.setTool);
+  const panelOpen = activeTool === "add";
   const cataloguePanelRef = useRef<HTMLDivElement>(null);
+  const catalogueOpenerRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (!mobileChrome || !panelOpen) return;
+    if (!panelOpen) return;
     const opener = document.activeElement;
+    catalogueOpenerRef.current = opener instanceof HTMLElement ? opener : null;
+    if (!mobileChrome) return;
     return () => {
       if (opener instanceof HTMLElement && document.contains(opener)
         && cataloguePanelRef.current?.contains(document.activeElement) === true) opener.focus();
     };
   }, [mobileChrome, panelOpen]);
-  const closeCatalogue = (): void => {
-    setPanelOpen(false);
-    setActiveTool("select");
-  };
+  const closeCatalogue = (): void => { setTool("select"); };
+  // Esc closes the furniture panel and gives focus back to what opened it.
+  useEscapeLayer("panel", { open: panelOpen, onEscape: closeCatalogue, returnFocusTo: () => catalogueOpenerRef.current });
   const [cameraOpen, setCameraOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -1533,7 +1537,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
     : undefined;
   const selectedName = selectedTables.length > 1 ? `${String(selectedTables.length)} tables selected` : selectedCatalogueItem?.name ?? null;
   const selectedDetail = selectedFurniture.length > 1
-    ? `${String(selectedChairs.length)} chairs placed · ${String(selectedFurniture.length)} objects selected`
+    ? `${countLabel(selectedChairs.length, "chair")} placed · ${countLabel(selectedFurniture.length, "object")} selected`
     : selectedCatalogueItem !== undefined
     ? `${selectedCatalogueItem.subtitle} · ${selectedCatalogueItem.width.toFixed(1)}m × ${selectedCatalogueItem.depth.toFixed(1)}m`
     : null;
@@ -1551,38 +1555,31 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
 
   const openFurniturePanel = useCallback(() => {
     if (isLayoutTimelineMutationLocked()) return;
-    setPanelOpen(true);
-    setActiveTool("add");
+    setTool("add");
+  }, [setTool]);
+
+  // However Add was taken up (this toolbox, A, the deck), the panel shows alone
+  // and the first-visit hint has done its job.
+  useEffect(() => {
+    if (!panelOpen) return;
     setCameraOpen(false);
     setMobileMoreOpen(false);
     setOnboardingDismissed(true);
     try { window.localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* storage unavailable */ }
-  }, []);
+  }, [panelOpen]);
 
-  const handleToolClick = useCallback((tool: ActiveTool) => {
+  const handleToolClick = useCallback((tool: "select" | "add" | "rotate" | "draw") => {
     if (isLayoutTimelineMutationLocked()) return;
     if (tool === "add") {
-      if (activeTool === "add" && panelOpen) {
-        setPanelOpen(false);
-        setActiveTool("select");
-      } else {
-        openFurniturePanel();
-      }
-    } else if (tool === "markup") {
-      setPanelOpen(false);
-      setActiveTool("markup");
-      useCatalogueStore.getState().clearSelection();
-      usePlacementStore.getState().clearGhost();
-      useSelectionStore.getState().clearSelection();
-      useMeasurementStore.getState().deactivate();
-      useGuidelineStore.getState().deactivate();
+      if (panelOpen) setTool("select");
+      else openFurniturePanel();
     } else {
-      setPanelOpen(false);
-      setActiveTool(tool);
+      // The store puts down the piece in hand, the selection and the tapes for Draw.
+      setTool(tool);
     }
     setCameraOpen(false);
     setMobileMoreOpen(false);
-  }, [activeTool, openFurniturePanel, panelOpen]);
+  }, [openFurniturePanel, panelOpen, setTool]);
 
   useEffect(() => {
     function onPlannerToolbarCommand(event: Event): void {
@@ -1590,7 +1587,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
       if (command === "open-furniture") {
         openFurniturePanel();
       } else if (command === "open-markup") {
-        handleToolClick("markup");
+        handleToolClick("draw");
       } else if (command === "select") {
         handleToolClick("select");
       }
@@ -1602,14 +1599,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
     };
   }, [handleToolClick, openFurniturePanel]);
 
-  useEffect(() => {
-    useMarkupStore.getState().setActive(activeTool === "markup");
-  }, [activeTool]);
-
-  useEffect(() => {
-    return () => {
-      useMarkupStore.getState().setActive(false);
-    };
+  // Leaving the toolbox (a phase preview, another view) puts the pen down.
+  useEffect(() => () => {
+    if (useToolStore.getState().activeTool === "draw") useToolStore.getState().setTool("select");
   }, []);
 
   // Undo/redo restore the selection the history captured (the store re-selects
@@ -1626,16 +1618,15 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
 
   const handleCameraToggle = useCallback(() => {
     setCameraOpen((p) => !p);
-    setActiveTool("select");
-    setPanelOpen(false);
+    setTool("select");
     setMobileMoreOpen(false);
-  }, []);
+  }, [setTool]);
 
   const handleMobileMoreToggle = useCallback(() => {
     setMobileMoreOpen((p) => !p);
-    setPanelOpen(false);
+    if (useToolStore.getState().activeTool === "add") setTool("select");
     setCameraOpen(false);
-  }, []);
+  }, [setTool]);
 
   const handleSnapToggle = useCallback(() => {
     usePlacementStore.getState().toggleSnap();
@@ -1677,11 +1668,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
   }, [navigate]);
 
   const handleCancelPlacement = useCallback(() => {
-    useCatalogueStore.getState().clearSelection();
-    usePlacementStore.getState().clearGhost();
-    setActiveTool("select");
-    setPanelOpen(false);
-  }, []);
+    putDownPieceInHand();
+    setTool("select");
+  }, [setTool]);
 
   const handleRotatePlacement = useCallback(() => {
     usePlacementStore.getState().rotateGhost(Math.PI / 12);
@@ -1689,9 +1678,10 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
 
   const handleDoneSelected = useCallback(() => {
     useSelectionStore.getState().clearSelection();
-    setActiveTool("select");
-  }, []);
+    setTool("select");
+  }, [setTool]);
 
+  // A turn of 15°, as Q gives; it is an action, not a tool to hold.
   const handleRotateSelected = useCallback(() => {
     const ids = Array.from(useSelectionStore.getState().selectedIds);
     const state = usePlacementStore.getState();
@@ -1701,15 +1691,14 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
         state.rotateItem(id, item.rotationY + Math.PI / 12);
       }
     }
-    setActiveTool("rotate");
   }, []);
 
   const handleDeleteSelected = useCallback(() => {
     const ids = useSelectionStore.getState().selectedIds;
     usePlacementStore.getState().removeItems(ids);
     useSelectionStore.getState().clearSelection();
-    setActiveTool("select");
-  }, []);
+    setTool("select");
+  }, [setTool]);
 
   const handleSave = useCallback(() => {
     // Punch list #10: previously called saveToServer(true) unconditionally,
@@ -1832,10 +1821,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
       return;
     }
     useCatalogueStore.getState().selectItem(item.id);
-    setPanelOpen(false);
-    setActiveTool("select");
+    setTool("select");
     setMobileMoreOpen(false);
-  }, []);
+  }, [setTool]);
 
   const toggleCategory = useCallback((cat: string) => {
     setCollapsedCategories((prev) => {
@@ -1887,31 +1875,11 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
   // Delayed unmount for exit animations
   const panelMounted = useDelayedUnmount(panelOpen, 300);
   const cameraMounted = useDelayedUnmount(cameraOpen, 250);
-  const markupMounted = useDelayedUnmount(activeTool === "markup", 220);
+  const markupMounted = useDelayedUnmount(activeTool === "draw", 220);
 
-  // F opens the furniture panel, D the drawing tools, and V returns to
-  // Select, as the Select button's hint says.
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent): void {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (isLayoutTimelineMutationLocked()) {
-        if (e.code === "KeyF" || e.code === "KeyD") e.preventDefault();
-        return;
-      }
-      if (e.code === "KeyF" && !e.ctrlKey && !e.metaKey) {
-        // Don't conflict with placement rotation (handled by PlacementGhost)
-        if (useCatalogueStore.getState().selectedItemId !== null) return;
-        handleToolClick("add");
-      } else if (e.code === "KeyD" && !e.ctrlKey && !e.metaKey) {
-        if (useCatalogueStore.getState().selectedItemId !== null) return;
-        handleToolClick("markup");
-      } else if (e.code === "KeyV" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        handleToolClick("select");
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, [handleToolClick]);
+  // A (F for one release) opens the furniture panel, D the drawing tools, and
+  // V returns to Select: the planner's tool keys (lib/planner-keymap.ts), which
+  // reach this toolbox through the tool store.
 
   useEffect(() => {
     return () => {
@@ -1968,7 +1936,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           placingName={placingCatalogueItem?.name ?? null}
           onSelect={() => { handleToolClick("select"); }}
           onAdd={() => { handleToolClick("add"); }}
-          onMarkup={() => { handleToolClick("markup"); }}
+          onMarkup={() => { handleToolClick("draw"); }}
           onCamera={handleCameraToggle}
           onMore={handleMobileMoreToggle}
           onDismissMore={() => { setMobileMoreOpen(false); }}
@@ -2013,7 +1981,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <MousePointer2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "add"} pressed={activeTool === "add"} compact={isNarrow} subLabel={isNarrow ? "Place" : "Furniture"} label="Add Furniture" description={addDescription} shortcut="F" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("add"); }}>
+        <ToolBtn active={activeTool === "add"} pressed={activeTool === "add"} compact={isNarrow} subLabel={isNarrow ? "Place" : "Furniture"} label="Add Furniture" description={addDescription} shortcut="A" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("add"); }}>
           <Armchair size={ICON_SIZE} />
         </ToolBtn>
 
@@ -2047,7 +2015,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <Camera size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "markup"} pressed={activeTool === "markup"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("markup"); }}>
+        <ToolBtn active={activeTool === "draw"} pressed={activeTool === "draw"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("draw"); }}>
           <PenLine size={ICON_SIZE} />
         </ToolBtn>
 
@@ -2073,7 +2041,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
       )}
 
       {markupMounted ? (
-        <MarkupToolPanel open={activeTool === "markup"} mobileChrome={mobileChrome} />
+        <MarkupToolPanel open={activeTool === "draw"} mobileChrome={mobileChrome} />
       ) : null}
 
       {/* === Slide-out asset panel === */}
@@ -2083,12 +2051,6 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           ref={cataloguePanelRef}
           role="region"
           aria-label="Furniture catalogue"
-          onKeyDown={(event) => {
-            if (!mobileChrome || event.key !== "Escape") return;
-            event.preventDefault();
-            event.stopPropagation();
-            closeCatalogue();
-          }}
           data-testid="furniture-panel"
           style={{
             ...panelStyle,

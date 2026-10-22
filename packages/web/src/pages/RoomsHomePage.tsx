@@ -2,11 +2,10 @@ import { roomPosterSources } from "../lib/room-posters.js";
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import {
-  roomSplatBundle,
-  roomsWithSplatBundles,
-  type GeneratedRoomSplatBundle,
-} from "../data/room-splat-bundles.js";
-import { TRADES_HALL_RUNTIME_ROOMS } from "../lib/runtime-package-resolution.js";
+  roomCardFacts,
+  roomsWithCardFacts,
+  type RoomCardFacts,
+} from "../data/room-card-facts.js";
 import { isRoomWalkable } from "../data/room-walk-exposure.js";
 import { footprint, stateLine } from "../lib/room-card-copy.js";
 import { gaussianSplatsAvailable } from "../lib/splat-access.js";
@@ -49,6 +48,7 @@ import {
   HOME_RATES_TITLE,
   HOME_ROOMS_TITLE,
   HOME_ROOM_NAMES,
+  HOME_SKIP_LABEL,
   HOME_VENUE,
   HOME_WORDMARK,
   capacityEnvelopes,
@@ -82,7 +82,7 @@ export const ROOM_CARD_SIZES = "(min-width: 1800px) 19rem, 15rem";
 const HERO_ROOM = "grand-hall";
 
 function displayName(slug: string): string {
-  return TRADES_HALL_RUNTIME_ROOMS.find((room) => room.slug === slug)?.label ?? slug;
+  return roomCardFacts(slug)?.displayName ?? slug;
 }
 
 // Poster resolution lives in lib/room-posters.ts (shared with the
@@ -90,7 +90,7 @@ function displayName(slug: string): string {
 
 interface CardProps {
   readonly slug: string;
-  readonly bundle: GeneratedRoomSplatBundle;
+  readonly bundle: RoomCardFacts;
 }
 
 /**
@@ -213,8 +213,8 @@ function CapacityTable(): ReactElement {
 }
 
 export function RoomsHomePage(): ReactElement {
-  const slugs = useMemo(() => roomsWithSplatBundles(), []);
-  const heroBundle = roomSplatBundle(HERO_ROOM);
+  const slugs = useMemo(() => roomsWithCardFacts(), []);
+  const heroBundle = roomCardFacts(HERO_ROOM);
   const heroStill = roomPosterSources(HERO_ROOM);
   const rest = useMemo(() => slugs.filter((slug) => slug !== HERO_ROOM), [slugs]);
   const heroWalkable = isRoomWalkable(HERO_ROOM);
@@ -250,6 +250,9 @@ export function RoomsHomePage(): ReactElement {
       data-theme="light"
       data-testid="rooms-home"
     >
+      {/* The skip link the accessibility statement promises: first in the tab
+          order, hidden until focused (global.css .vv-skip-link). */}
+      <a className="vv-skip-link" href="#main-content">{HOME_SKIP_LABEL}</a>
       <header className="rooms__masthead">
         <div className="rooms__identity">
           <span className="rooms__wordmark">{HOME_WORDMARK}</span>
@@ -266,7 +269,9 @@ export function RoomsHomePage(): ReactElement {
         </nav>
       </header>
 
-      <main>
+      {/* tabIndex -1 so the skip link moves focus here, not only the scroll:
+          the next Tab then lands on the hero's first action. */}
+      <main id="main-content" className="rooms__main" tabIndex={-1}>
         <div className="rooms__stage">
           <section className="rooms__hero" aria-labelledby="rooms-hero-name">
             <img
@@ -303,7 +308,7 @@ export function RoomsHomePage(): ReactElement {
             </div>
             <div className="rooms__track">
               {rest.map((slug) => {
-                const bundle = roomSplatBundle(slug);
+                const bundle = roomCardFacts(slug);
                 return bundle === null ? null : <RoomCard key={slug} slug={slug} bundle={bundle} />;
               })}
             </div>

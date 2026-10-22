@@ -141,6 +141,132 @@ export function dietaryTotal(d: DietarySummary): number {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Health free text stays out of logs and error reports (fix-first item 18).
+//
+// `otherAllergies` is free text about guests' health. It belongs on the
+// layout, the event sheets and the screens of the people preparing the day,
+// and nowhere else: not a server log line, not an error report. The counts
+// per diet are not about anyone in particular and are left alone.
+//
+// Two shapes reach a log or an error report: an object carrying the key
+// (a request body, a metadata column), and a string with the JSON inside it
+// (a database error repeating the row or the query's parameters, sometimes
+// with its quotes escaped once more). Both are handled here, once, for the
+// API's logger and both error reporters.
+// ---------------------------------------------------------------------------
+
+/**
+ * How long the free-text allergy note is kept (fix-first item 18). One
+ * definition for the API's retention pass, the privacy policy and the words
+ * beside the field, so none of them can promise a different period.
+ *   - daysAfterEvent: after the latest event the layout is linked to ends;
+ *   - daysWithoutEvent: after a layout with no dated event last changed (the
+ *     24 months the privacy policy gives an enquiry that did not become a
+ *     booking).
+ */
+export const DIETARY_NOTE_RETENTION = { daysAfterEvent: 30, daysWithoutEvent: 730 } as const;
+
+/** Keys whose values are free text about someone's health. */
+export const HEALTH_FREE_TEXT_KEYS: readonly string[] = ["otherAllergies"];
+
+/** What a redacted value reads as. */
+export const REDACTED_HEALTH_TEXT = "[redacted]";
+
+const HEALTH_KEY_SET: ReadonlySet<string> = new Set(HEALTH_FREE_TEXT_KEYS);
+
+function escapeForPattern(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+const KEY_ALTERNATION = HEALTH_FREE_TEXT_KEYS.map(escapeForPattern).join("|");
+// "otherAllergies": "sesame, \"shellfish\""
+const PLAIN_JSON_VALUE = new RegExp(`("(?:${KEY_ALTERNATION})"\\s*:\\s*")((?:[^"\\\\]|\\\\.)*)(")`, "gu");
+// \"otherAllergies\":\"sesame\" — the same JSON inside another JSON string.
+// Read token by token: a plain character, an escaped backslash followed by
+// whatever it escapes (an inner escaped quote is \\\"), or any other escape
+// except \" — which is where the inner string ends.
+const ESCAPED_JSON_VALUE = new RegExp(
+  `(\\\\"(?:${KEY_ALTERNATION})\\\\"\\s*:\\s*\\\\")((?:[^\\\\]|\\\\\\\\(?:\\\\.|[^\\\\])|\\\\[^"\\\\])*)(\\\\")`,
+  "gu",
+);
+// otherAllergies=sesame or otherAllergies: sesame, up to the end of the line
+// or the next field separator, for messages that are not JSON at all; and
+// otherAllergies: 'sesame, nuts' as Node's inspect prints an object. The
+// value never runs over a double quote or a backslash, so text that sits
+// inside a JSON string (a finished log line) keeps its closing quote and
+// stays valid JSON. No word boundary before the key: inside a log line a
+// newline is the two characters \n, and "\notherAllergies" has none.
+const LOOSE_VALUE = new RegExp(
+  `((?:${KEY_ALTERNATION})\\b\\s*[:=]\\s*)(?!["\\\\])('[^'"\\\\\\n]*'|[^,;\\n}"\\\\]*)`,
+  "gu",
+);
+
+/** The same text with every health free-text value replaced. */
+export function redactHealthFreeTextInString(text: string): string {
+  if (!HEALTH_FREE_TEXT_KEYS.some((key) => text.includes(key))) return text;
+  return text
+    .replace(PLAIN_JSON_VALUE, `$1${REDACTED_HEALTH_TEXT}$3`)
+    .replace(ESCAPED_JSON_VALUE, `$1${REDACTED_HEALTH_TEXT}$3`)
+    .replace(LOOSE_VALUE, `$1${REDACTED_HEALTH_TEXT}`);
+}
+
+function isPlainRecord(value: object): value is Record<string, unknown> {
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function redactValue(value: unknown, seen: WeakMap<object, unknown>): unknown {
+  if (typeof value === "string") return redactHealthFreeTextInString(value);
+  if (typeof value !== "object" || value === null) return value;
+  const known = seen.get(value);
+  if (known !== undefined) return known;
+
+  if (Array.isArray(value)) {
+    const copy: unknown[] = [];
+    seen.set(value, copy);
+    for (const item of value) copy.push(redactValue(item, seen));
+    return copy;
+  }
+
+  if (value instanceof Error) {
+    const copy: Record<string, unknown> = {};
+    seen.set(value, copy);
+    copy["type"] = value.name;
+    copy["message"] = redactHealthFreeTextInString(value.message);
+    if (value.stack !== undefined) copy["stack"] = redactHealthFreeTextInString(value.stack);
+    for (const [key, item] of Object.entries(value)) {
+      copy[key] = HEALTH_KEY_SET.has(key) ? REDACTED_HEALTH_TEXT : redactValue(item, seen);
+    }
+    const cause: unknown = (value as { cause?: unknown }).cause;
+    if (cause !== undefined) copy["cause"] = redactValue(cause, seen);
+    return copy;
+  }
+
+  // Class instances (a request, a stream, a date) are left to their own
+  // serialisers; only plain data is walked.
+  if (!isPlainRecord(value)) return value;
+
+  const copy: Record<string, unknown> = {};
+  seen.set(value, copy);
+  for (const [key, item] of Object.entries(value)) {
+    copy[key] = HEALTH_KEY_SET.has(key) && item !== null && item !== undefined && item !== ""
+      ? REDACTED_HEALTH_TEXT
+      : redactValue(item, seen);
+  }
+  return copy;
+}
+
+/**
+ * A copy of `value` with every health free-text value replaced: object keys
+ * at any depth, JSON inside strings, and an Error's message, stack, own
+ * fields and cause (an Error comes back as a plain object). Never mutates
+ * its input. Safe on cycles.
+ */
+export function redactHealthFreeText(value: unknown): unknown {
+  return redactValue(value, new WeakMap());
+}
+
 export function hasDietaryContent(d: DietarySummary): boolean {
   if (dietaryTotal(d) > 0) return true;
   if (d.otherAllergies.trim().length > 0) return true;

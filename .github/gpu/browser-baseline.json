@@ -677,6 +677,69 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; they intercept the API before transport, so the live Diary path is not proved here; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-18",
+      "reason": "Live co-editing v1 for layouts (T-664): two signed-in venue staff on one layout against the real stack. Each sees the other in the presence row with the room they are viewing; a move, a placement and a delete reach the other browser's scene within the budget, measured by timestamps, and each then commits; when both touch one table the later write wins and the person it overrode is told; a dropped connection shows reconnecting and resyncs from the server; the saved layout holds exactly the last writes; and a client on their own layout sees nothing new. The eight cases self-gate on E2E_LAYOUT_LIVE=1 and are inventoried as expected skips, as diary-live.spec.ts and living-timetable-three-identities.spec.ts are.",
+      "sourceCommit": "40563f159090eaba907e41676b059330ed5dad9a",
+      "sourceFile": "packages/web/e2e/layout-live-coediting.spec.ts",
+      "sourceFileGitBlobSha256": "94abff946828beaf4d5cdcd16d09cbd9e76c450fb80202013c0f9e0c99c4d695",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "36ddce091171fc299fc69b3baa99d07b75758efb288879d02c1b21988458e037",
+      "caseIds": [
+        "d49c9bb26209fd5aba1e-1a13636c3035a4725ef3",
+        "d49c9bb26209fd5aba1e-30572d5653683c0224ea",
+        "d49c9bb26209fd5aba1e-41270c02eebe4e99243c",
+        "d49c9bb26209fd5aba1e-43927289fc4f3028e31c",
+        "d49c9bb26209fd5aba1e-89c416b8b98eee1dccb8",
+        "d49c9bb26209fd5aba1e-a7eda5b3f4ae00427290",
+        "d49c9bb26209fd5aba1e-aef40d126e3579145bbd",
+        "d49c9bb26209fd5aba1e-bb4bc7f902068a6cab52"
+      ],
+      "expectedStatus": "skipped",
+      "limits": "This is reviewed inventory admission, not execution evidence. These eight cases were absent from sourceRunId, sourceReports and the earlier admissions; they self-gate (skipped) unless E2E_LAYOUT_LIVE=1 provides the live stack, exactly as diary-live.spec.ts does, so the hosted CPU shards record them as skips and every executed case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-18",
+      "reason": "The planner on a phone (PR #118, T-661): the touch-placement case 0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c ('a table chosen above the expanded schedule is placed and saved through touch') is restated as 'a signed-out visitor places and saves a table through touch', because the event schedule card is no longer shown to anonymous visitors, so there is no expanded schedule to place above; the case still places a table by touch and proves it saved.",
+      "sourceCommit": "db84dad2cd972b257ce6e8a0095ff91d7c7b1f6a",
+      "sourceFile": "packages/web/e2e/editor-mobile-shell.spec.ts",
+      "sourceFileGitBlobSha256": "c62a7abbc56a9398f67f561f2633a50a2357ce789371f726c40b93aafa816f04",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f07d342940edf52a7c6e09df5b4b1eca1d3ea986b8877321ca8684d69c13ade9",
+      "caseIds": [
+        "0566ce7e918d6e1cf20c-15fe0152b3208f80750d"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-18",
+      "reason": "The planner on a phone (PR #118, T-661): the layout case 098b539f18aead5c39f5-f4847f7a36ef5d419a55 ('Plan navigation and capacity controls clear the event schedule and command deck') is restated as 'Plan navigation and capacity controls clear the view mode and command deck', because a visitor no longer has the event schedule card; the case still proves the plan navigation and capacity controls clear the controls they sit beside.",
+      "sourceCommit": "db84dad2cd972b257ce6e8a0095ff91d7c7b1f6a",
+      "sourceFile": "packages/web/e2e/public-config-flow.spec.ts",
+      "sourceFileGitBlobSha256": "82ffc67fc936292809da2491eef32b6bc7070e62c590e4c9e72ba1566cae57c2",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f07d342940edf52a7c6e09df5b4b1eca1d3ea986b8877321ca8684d69c13ade9",
+      "caseIds": [
+        "098b539f18aead5c39f5-4002f671ea2c5386d172"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 098b539f18aead5c39f5-f4847f7a36ef5d419a55 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-21",
+      "reason": "One keyboard owner for the planner (PR #159, T-671 slice 5): the skipped walk case 3f352fcb62a55bd2f17a-0588accbacaa6669e855 ('walk exit: Escape returns to plan view (T-560 GL teleport wedge)') is restated as 'walk stays on Escape (T-560 GL teleport wedge on the walk entry)', because Escape no longer leaves Walk (the approved design's one Escape order steps back the operation, popover, panel and selection, never the view); the case stays test.fixme for the same T-560 wedge on the walk entry.",
+      "sourceCommit": "3acc3b9b8460aac1b89bb6e78812ab4cbbd790ae",
+      "sourceFile": "packages/web/e2e/plan-room-resolve.spec.ts",
+      "sourceFileGitBlobSha256": "608647c124a73544a45c3a79a45400837c9e5d675946e90f9cf9543a5a368903",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "95dd204d46eb6b0d92bab72329a1408f52dab74ee90ab1a8ce1d624bb8f88b06",
+      "caseIds": [
+        "3f352fcb62a55bd2f17a-57d7982324e643088dc0"
+      ],
+      "expectedStatus": "skipped",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 3f352fcb62a55bd2f17a-0588accbacaa6669e855 one for one and keeps its expected skip, so the totals (401 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -756,9 +819,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c",
+      "id": "0566ce7e918d6e1cf20c-15fe0152b3208f80750d",
       "file": "editor-mobile-shell.spec.ts",
-      "title": "a table chosen above the expanded schedule is placed and saved through touch",
+      "title": "a signed-out visitor places and saves a table through touch",
       "suitePath": [
         "editor-mobile-shell.spec.ts",
         "Small phone canvas placement"
@@ -932,9 +995,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "098b539f18aead5c39f5-f4847f7a36ef5d419a55",
+      "id": "098b539f18aead5c39f5-4002f671ea2c5386d172",
       "file": "public-config-flow.spec.ts",
-      "title": "Plan navigation and capacity controls clear the event schedule and command deck",
+      "title": "Plan navigation and capacity controls clear the view mode and command deck",
       "suitePath": [
         "public-config-flow.spec.ts",
         "Editor with placed objects"
@@ -2136,9 +2199,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "3f352fcb62a55bd2f17a-0588accbacaa6669e855",
+      "id": "3f352fcb62a55bd2f17a-57d7982324e643088dc0",
       "file": "plan-room-resolve.spec.ts",
-      "title": "walk exit: Escape returns to plan view (T-560 GL teleport wedge)",
+      "title": "walk stays on Escape (T-560 GL teleport wedge on the walk entry)",
       "suitePath": [
         "plan-room-resolve.spec.ts",
         "CARD A2: the room resolves over the blueprint"
@@ -4873,6 +4936,94 @@
       ],
       "project": "chromium",
       "expectedStatus": "passed"
+    },
+    {
+      "id": "d49c9bb26209fd5aba1e-43927289fc4f3028e31c",
+      "file": "layout-live-coediting.spec.ts",
+      "title": "each sees the other, with the room they are viewing",
+      "suitePath": [
+        "layout-live-coediting.spec.ts",
+        "live co-editing — two staff, one layout"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "d49c9bb26209fd5aba1e-41270c02eebe4e99243c",
+      "file": "layout-live-coediting.spec.ts",
+      "title": "a move appears in the other scene within the budget, then commits",
+      "suitePath": [
+        "layout-live-coediting.spec.ts",
+        "live co-editing — two staff, one layout"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "d49c9bb26209fd5aba1e-a7eda5b3f4ae00427290",
+      "file": "layout-live-coediting.spec.ts",
+      "title": "a placement appears at once and becomes one real table, not two",
+      "suitePath": [
+        "layout-live-coediting.spec.ts",
+        "live co-editing — two staff, one layout"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "d49c9bb26209fd5aba1e-30572d5653683c0224ea",
+      "file": "layout-live-coediting.spec.ts",
+      "title": "a delete disappears from the other scene within the budget",
+      "suitePath": [
+        "layout-live-coediting.spec.ts",
+        "live co-editing — two staff, one layout"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "d49c9bb26209fd5aba1e-89c416b8b98eee1dccb8",
+      "file": "layout-live-coediting.spec.ts",
+      "title": "the later write on one table wins, and the person it overrode is told",
+      "suitePath": [
+        "layout-live-coediting.spec.ts",
+        "live co-editing — two staff, one layout"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "d49c9bb26209fd5aba1e-1a13636c3035a4725ef3",
+      "file": "layout-live-coediting.spec.ts",
+      "title": "a dropped connection shows reconnecting and resyncs what it missed",
+      "suitePath": [
+        "layout-live-coediting.spec.ts",
+        "live co-editing — two staff, one layout"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "d49c9bb26209fd5aba1e-bb4bc7f902068a6cab52",
+      "file": "layout-live-coediting.spec.ts",
+      "title": "the saved layout holds exactly the last writes",
+      "suitePath": [
+        "layout-live-coediting.spec.ts",
+        "live co-editing — two staff, one layout"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "d49c9bb26209fd5aba1e-aef40d126e3579145bbd",
+      "file": "layout-live-coediting.spec.ts",
+      "title": "a client's own layout gains no presence and no live changes",
+      "suitePath": [
+        "layout-live-coediting.spec.ts",
+        "a client sees nothing new"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
     }
   ]
 }

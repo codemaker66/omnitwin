@@ -60,12 +60,12 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full393 union requires388 CPU and all5 GPU with original46 skips and4 executed expected failures', () => {
+test('full401 union requires396 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 393, cpu: 388, gpu: 5, ordinaryPasses: 343,
-    expectedFailures: 4, originalSkips: 46, failed: 0, flaky: 0, retries: 0,
+  assert.deepEqual(result.totals, { inventory: 401, cpu: 396, gpu: 5, ordinaryPasses: 343,
+    expectedFailures: 4, originalSkips: 54, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
 
@@ -74,7 +74,7 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 388);
+  assert.equal(result.totals.cpu, 396);
   assert.equal(result.totals.gpu, 0);
   assert.equal(result.totals.ordinaryPasses, 338);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 42);
+  assert.equal(baseline.inventoryAdmissions.length, 46);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -1123,3 +1123,96 @@ test('self-consistent request runtime must still match the committed worker prof
   assert.throws(() => finalGpuExpectations({ ...input, trusted: { ...input.trusted,
     runtime: { ...input.trusted.runtime, unknown: 'extra' } } }), /profile fields differ/);
 });
+const liveCoeditingCases = [
+  'd49c9bb26209fd5aba1e-1a13636c3035a4725ef3',
+  'd49c9bb26209fd5aba1e-30572d5653683c0224ea',
+  'd49c9bb26209fd5aba1e-41270c02eebe4e99243c',
+  'd49c9bb26209fd5aba1e-43927289fc4f3028e31c',
+  'd49c9bb26209fd5aba1e-89c416b8b98eee1dccb8',
+  'd49c9bb26209fd5aba1e-a7eda5b3f4ae00427290',
+  'd49c9bb26209fd5aba1e-aef40d126e3579145bbd',
+  'd49c9bb26209fd5aba1e-bb4bc7f902068a6cab52',
+];
+test('the live co-editing admission adds eight self-gated live cases as expected skips', () => {
+  const admission = baseline.inventoryAdmissions[42];
+  assert.equal(admission.date, '2026-10-18');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/layout-live-coediting.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'skipped');
+  assert.deepEqual(admission.caseIds, liveCoeditingCases);
+  for (const id of liveCoeditingCases) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'layout-live-coediting.spec.ts');
+    assert.equal(row?.expectedStatus, 'skipped');
+  }
+  assert.equal(baseline.cases.filter((row) => row.file === 'layout-live-coediting.spec.ts').length, 8);
+  assert.equal(baseline.cases.filter((row) => row.expectedStatus === 'skipped').length, BROWSER_POLICY.skipped);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+// The planner on a phone (PR #118) hides the event schedule card from
+// anonymous visitors, so two cases are restated one for one.
+const plannerPhoneRestatements = [
+  { index: 43, file: 'editor-mobile-shell.spec.ts', current: '0566ce7e918d6e1cf20c-15fe0152b3208f80750d',
+    retired: '0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c' },
+  { index: 44, file: 'public-config-flow.spec.ts', current: '098b539f18aead5c39f5-4002f671ea2c5386d172',
+    retired: '098b539f18aead5c39f5-f4847f7a36ef5d419a55' },
+];
+for (const { index, file, current, retired } of plannerPhoneRestatements) {
+  test(`the planner-on-a-phone admission restates ${file}'s case one for one`, () => {
+    const admission = baseline.inventoryAdmissions[index];
+    assert.equal(admission.date, '2026-10-18');
+    assert.equal(admission.sourceFile, `packages/web/e2e/${file}`);
+    assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+    assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+    assert.equal(admission.expectedStatus, 'passed');
+    assert.deepEqual(admission.caseIds, [current]);
+    assert.equal(baseline.cases.some((entry) => entry.id === retired), false);
+    const row = baseline.cases.find((entry) => entry.id === current);
+    assert.equal(row?.file, file);
+    assert.equal(row?.expectedStatus, 'passed');
+    assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+  });
+  rejected(`the restated ${file} case cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === current);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+  rejected(`the retired ${file} identity cannot come back`, (input) => {
+    specs(input.inventory).find((row) => row.id === current).id = retired;
+  }, /missing or extra/);
+}
+// One keyboard owner for the planner (PR #159, T-671 slice 5): Escape no
+// longer leaves Walk, so the skipped walk-exit case is restated one for one
+// and stays an expected skip.
+const walkEscapeRestatement = {
+  current: '3f352fcb62a55bd2f17a-57d7982324e643088dc0',
+  retired: '3f352fcb62a55bd2f17a-0588accbacaa6669e855',
+};
+test('the keyboard-owner admission restates the walk Escape case one for one, still a skip', () => {
+  const admission = baseline.inventoryAdmissions[45];
+  assert.equal(admission.date, '2026-10-21');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/plan-room-resolve.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'skipped');
+  assert.deepEqual(admission.caseIds, [walkEscapeRestatement.current]);
+  assert.equal(baseline.cases.some((entry) => entry.id === walkEscapeRestatement.retired), false);
+  const row = baseline.cases.find((entry) => entry.id === walkEscapeRestatement.current);
+  assert.equal(row?.file, 'plan-room-resolve.spec.ts');
+  assert.equal(row?.title, 'walk stays on Escape (T-560 GL teleport wedge on the walk entry)');
+  assert.equal(row?.expectedStatus, 'skipped');
+  assert.equal(baseline.cases.filter((entry) => entry.expectedStatus === 'skipped').length, BROWSER_POLICY.skipped);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('the restated walk Escape case cannot quietly become a pass', (input) => {
+  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === walkEscapeRestatement.current);
+  spec.tests[0].expectedStatus = 'passed';
+  spec.tests[0].results[0].status = 'passed';
+  spec.tests[0].status = 'expected';
+}, /policy changed/);
+rejected('the retired walk Escape identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === walkEscapeRestatement.current).id = walkEscapeRestatement.retired;
+}, /missing or extra/);

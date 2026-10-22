@@ -1,4 +1,4 @@
-import { FORWARD_BOOK_RECORD_ROLES } from "@omnitwin/types";
+import { FORWARD_BOOK_RECORD_ROLES, PRICING_WRITE_ROLES as PRICE_SETTER_ROLES } from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -104,8 +104,17 @@ export function canWriteEvents(
 // precedent already set by canManageVenue above).
 // ---------------------------------------------------------------------------
 
-/** Editing the venue record, its spaces and its pricing rules. */
+/** Editing the venue record and its spaces. Prices are narrower: see
+ *  PRICING_WRITE_ROLES. */
 const VENUE_ADMINISTRATION_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff"]);
+
+/**
+ * Who may set a price: create, change, delete or restore a pricing rule.
+ * people-matrix.md records "A price change: admin; manager if Blake says so".
+ * Whether manager stays is Blake's call, so it is one line, in
+ * @omnitwin/types (pricing-desk.ts), which the web's controls read too.
+ */
+export const PRICING_WRITE_ROLES: ReadonlySet<string> = new Set(PRICE_SETTER_ROLES);
 
 /** Enquiries, opportunities, CRM, proposals, quotes and revenue. */
 const COMMERCIAL_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
@@ -129,7 +138,7 @@ function holdsVenueRole(
 }
 
 /**
- * Venue administration: the venue record, its spaces, its pricing rules.
+ * Venue administration: the venue record and its spaces.
  * Hallkeepers run the room; they do not edit the venue's commercial record
  * (goal 18 §6 decision 6b), so they are deliberately absent here while
  * canManageVenue still admits them for read and room-state surfaces.
@@ -139,6 +148,15 @@ export function canAdministerVenue(
   venueId: string,
 ): boolean {
   return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLES);
+}
+
+/** Setting a price at this venue (PRICING_WRITE_ROLES). Reading one is the
+ *  wider commercial team's (canManageCommercial), never the public's. */
+export function canWritePricing(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, PRICING_WRITE_ROLES);
 }
 
 /**
@@ -154,12 +172,40 @@ export function canManageCommercial(
 }
 
 /**
+ * Whether someone is on the venue's own commercial team: the roles
+ * canManageCommercial admits, at this venue, without its pass for a Venviewer
+ * platform admin. These are the people who answer a venue's guests, so the
+ * enquiry funnel records a first reply as theirs (migration 0100) and lets
+ * only them report one.
+ */
+export function isVenueCommercialMember(
+  person: Pick<JwtUser, "role" | "venueId">,
+  venueId: string,
+): boolean {
+  return COMMERCIAL_ROLES.has(person.role) && person.venueId === venueId;
+}
+
+/**
  * Reading the Diary: the venue floor, and sales, who pencils the holds. The
  * same people as DIARY_READ_ROLES on the live channel (ws/diary-live.ts), and
  * every role booking-mutations.ts lets write; a writer who could not read the
  * board would meet a 403 on opening it.
  */
 export function canReadDiary(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
+/**
+ * Reading the Clients desk (search, recent and upcoming lists, the client and
+ * guest-lead profiles): the venue floor, and sales, who works the clients
+ * (People Book design §6.7, approved 18 October 2026). Hallkeepers keep exactly
+ * the access they had. The commercial record inside the desk, and the contact
+ * profile, stay with `canManageCommercial` alone.
+ */
+export function canReadClients(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
 ): boolean {

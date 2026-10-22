@@ -3,8 +3,12 @@ import {
   BookingSchema,
   CalendarResponseSchema,
   DiaryAckResequenceSchema,
+  PromotionDraftSchema,
   type Booking,
+  type PromotionDraft,
+  type BookingLostReason,
   type BookingState,
+  type BookViewingInput,
   type CalendarResponse,
   type ConvertEnquiryInput,
   type CreateBookingInput,
@@ -37,6 +41,12 @@ const EnquiryBookingsSchema = z.array(BookingSchema);
 export async function listEnquiryBookings(enquiryId: string, signal?: AbortSignal): Promise<readonly Booking[]> {
   const params = new URLSearchParams({ enquiryId });
   return api.get(`/bookings?${params.toString()}`, EnquiryBookingsSchema, signal);
+}
+
+/** The drafted email for a hold that has become 1st option. Composed by the
+ *  server for the person reading it; nothing is sent by asking for it. */
+export async function getPromotionDraft(bookingId: string, signal?: AbortSignal): Promise<PromotionDraft> {
+  return api.get(`/bookings/${encodeURIComponent(bookingId)}/promotion-draft`, PromotionDraftSchema, signal);
 }
 
 export interface MoveBookingPatch {
@@ -121,11 +131,14 @@ export async function transitionBooking(
   note?: string,
   /** A booking made provisional carries the hold's details (roadmap N3). */
   hold?: TransitionHoldInput,
+  /** Why a booking marked lost was lost, when the person said (migration
+   *  0100). Only a move to "lost" takes one; the API refuses it otherwise. */
+  lostReason?: BookingLostReason,
 ): Promise<TransitionOutcome> {
   return sendCommandViaChannelOrRest(
-    (commandId) => ({ kind: "booking.transition", commandId, bookingId, payload: { toState, note, hold } }),
+    (commandId) => ({ kind: "booking.transition", commandId, bookingId, payload: { toState, note, hold, lostReason } }),
     (commandId) =>
-      api.post(`/bookings/${bookingId}/transition`, { toState, note, hold }, undefined, TransitionReplySchema, {
+      api.post(`/bookings/${bookingId}/transition`, { toState, note, hold, lostReason }, undefined, TransitionReplySchema, {
         idempotencyKey: commandId,
         keepEnvelope: true,
       }).then((reply) => ({ booking: reply.data, promotedToFirst: promotions(reply.resequence) })),
@@ -135,4 +148,12 @@ export async function transitionBooking(
 
 export async function convertEnquiry(input: ConvertEnquiryInput): Promise<Booking> {
   return api.post("/bookings/from-enquiry", input, undefined, BookingSchema);
+}
+
+/** A viewing booked for an enquiry (migration 0100): a show-round of a room,
+ *  never a hold. The API defaults its owner to the caller and its title to
+ *  the enquiry's name, and refuses ROOM_NOT_CHOSEN when neither the enquiry
+ *  nor the input names a room. */
+export async function bookViewing(input: BookViewingInput): Promise<Booking> {
+  return api.post("/bookings/viewings", input, undefined, BookingSchema);
 }

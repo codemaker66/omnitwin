@@ -1,5 +1,6 @@
 import type { ErrorInfo } from "react";
-import type { ErrorEvent, Event } from "@sentry/react";
+import type { Breadcrumb, ErrorEvent, Event } from "@sentry/react";
+import { redactHealthFreeText } from "@omnitwin/types";
 
 type SentryReactModule = typeof import("./sentry-sdk.js");
 
@@ -84,11 +85,56 @@ export function scrubSentryEvent(event: Event): Event {
   delete scrubbed.user;
   delete scrubbed.extra;
 
-  return scrubbed;
+  // A guest's allergy note typed into the planner can surface in an error
+  // message or a breadcrumb; it never leaves the browser (fix-first item 18).
+  // The event is plain data, so the scrubbed copy keeps its shape.
+  return redactHealthFreeText(scrubbed) as Event;
 }
 
 export function scrubSentryErrorEvent(event: ErrorEvent): ErrorEvent {
   return { ...scrubSentryEvent(event), type: undefined };
+}
+
+/** What replaces a query string, as the API's `withoutQuery` writes it, so a
+ *  reader can tell one existed. */
+export const REDACTED_QUERY_MARKER = "?[redacted]";
+/** What replaces a fragment that had no query before it. */
+export const REDACTED_FRAGMENT_MARKER = "#[redacted]";
+
+/**
+ * Cut a url's query and fragment and leave a marker in their place. Works for
+ * relative and absolute urls; a url with neither is returned unchanged. The
+ * search routes carry a client's name, email or phone in `?q=`, and a
+ * fragment can carry a sign-in token.
+ */
+export function withoutQuery(url: string): string {
+  const queryStart = url.indexOf("?");
+  const fragmentStart = url.indexOf("#");
+  if (queryStart !== -1 && (fragmentStart === -1 || queryStart < fragmentStart)) {
+    return `${url.slice(0, queryStart)}${REDACTED_QUERY_MARKER}`;
+  }
+  if (fragmentStart !== -1) return `${url.slice(0, fragmentStart)}${REDACTED_FRAGMENT_MARKER}`;
+  return url;
+}
+
+/** The breadcrumb data keys that hold a url: fetch and xhr write `url`,
+ *  navigation writes `from` and `to`. */
+const BREADCRUMB_URL_KEYS: readonly string[] = ["url", "from", "to"];
+
+/**
+ * `beforeBreadcrumb`: the browser SDK's fetch and xhr breadcrumbs keep the
+ * whole request url in `data.url`, and navigation breadcrumbs the page urls
+ * in `data.from` and `data.to`. Each loses its query and fragment.
+ */
+export function scrubSentryBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
+  const data: Record<string, unknown> | undefined = breadcrumb.data;
+  if (data === undefined) return breadcrumb;
+  const scrubbed: Record<string, unknown> = { ...data };
+  for (const key of BREADCRUMB_URL_KEYS) {
+    const value = scrubbed[key];
+    if (typeof value === "string") scrubbed[key] = withoutQuery(value);
+  }
+  return { ...breadcrumb, data: scrubbed };
 }
 
 async function startBrowserSentry(config: BrowserSentryConfig): Promise<void> {
@@ -100,6 +146,7 @@ async function startBrowserSentry(config: BrowserSentryConfig): Promise<void> {
     tracesSampleRate: config.tracesSampleRate,
     sendDefaultPii: false,
     beforeSend: scrubSentryErrorEvent,
+    beforeBreadcrumb: scrubSentryBreadcrumb,
   });
   initialized = true;
 }

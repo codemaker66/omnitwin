@@ -645,6 +645,48 @@
       "when": 1791990000000,
       "tag": "0093_forward_book_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792076400000,
+      "tag": "0094_remembered_dietary_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792162800000,
+      "tag": "0095_supplier_records_kept",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1792249200000,
+      "tag": "0096_configuration_view_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1792335600000,
+      "tag": "0097_competitor_watch",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1792422000000,
+      "tag": "0098_people_book",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1792454400000,
+      "tag": "0100_enquiry_funnel",
+      "breakpoints": true
     }
   ]
 }

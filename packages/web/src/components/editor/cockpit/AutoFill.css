@@ -1,0 +1,88 @@
+/* Auto-fill's "How many guests?" and the one-tap seat shortfall fix, inside a
+   lens panel (Guests, Share). The lens's dark register: ivory words, a
+   Newsreader question, Inter for everything else. Copper only as a structural
+   rule beside a line that matters; no hue carries meaning on its own. Every
+   control is at least 44 px tall. */
+
+.auto-fill { display: grid; gap: 10px; }
+
+.auto-fill__style {
+  margin: 0;
+  color: var(--house-text-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auto-fill__field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px;
+  align-items: center;
+  gap: 12px;
+}
+
+.auto-fill__question {
+  color: var(--house-text-0);
+  font-family: var(--house-serif);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.auto-fill__input {
+  min-height: 44px;
+  font-size: 18px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-fill__hint { display: grid; gap: 2px; margin: 0; color: var(--house-text-1); font-size: 13.5px; line-height: 1.45; }
+.auto-fill__stated { color: var(--house-text-2); font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; }
+.auto-fill__basis { margin: 0; color: var(--house-text-2); font-size: 13px; line-height: 1.45; }
+.auto-fill__note { margin: 0; color: var(--house-text-1); font-size: 13.5px; line-height: 1.45; }
+
+/* The line that says the room cannot take the request at this spacing. */
+.auto-fill__short {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--house-hairline-hover);
+  border-left: 3px solid var(--house-accent-copper);
+  border-radius: 10px;
+  color: var(--house-text-1);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.auto-fill__actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.auto-fill__actions .lens-panel__button { min-height: 44px; }
+.auto-fill__back { width: auto; padding-inline: 18px; }
+
+/* The style choices: full 44 px targets. */
+.auto-fill__choice { min-height: 44px; padding: 0 18px; font-size: 14px; }
+
+.auto-fill__result { display: grid; gap: 8px; border-radius: 8px; }
+.auto-fill__result:focus { outline: none; }
+.auto-fill__result:focus-visible { outline: var(--vv-focus-ring); outline-offset: 4px; }
+.auto-fill__placed { margin: 0; color: var(--house-text-1); font-size: 14.5px; font-weight: 600; line-height: 1.4; }
+
+/* Seat shortfall: one action, what it will do, then what it did. */
+.seat-fix { display: grid; gap: 8px; }
+.seat-fix__statement { margin: 0; color: var(--house-text-1); font-size: 14.5px; font-weight: 600; line-height: 1.4; }
+.seat-fix__action { min-height: 44px; }
+.seat-fix__detail { margin: 0; color: var(--house-text-2); font-size: 13px; line-height: 1.45; }
+.seat-fix__done { margin: 0; color: var(--house-text-1); font-size: 14px; font-weight: 600; line-height: 1.4; }
+
+@container lens-panel (max-width: 300px) {
+  .auto-fill__field { grid-template-columns: minmax(0, 1fr); }
+  .auto-fill__actions { grid-template-columns: minmax(0, 1fr); }
+  .auto-fill__back { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auto-fill .lens-panel__button,
+  .seat-fix .lens-panel__button { transition: none; }
+  .auto-fill .lens-panel__button:active,
+  .seat-fix .lens-panel__button:active { transform: none; }
+}

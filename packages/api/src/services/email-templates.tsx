@@ -9,7 +9,6 @@ import {
   Html,
   Link,
   Preview,
-  Row,
   Section,
   Text,
 } from "@react-email/components";
@@ -48,136 +47,188 @@ import {
 // Brand + shared styles
 // ---------------------------------------------------------------------------
 
-const BRAND_NAVY = "#1a1a2e";
-const BRAND_BLUE = "#3b82f6";
-const BRAND_BG = "#f5f5f0";
-const INK = "#333";
-const INK_MUTED = "#999";
-const INK_SOFT = "#555";
+// The House register (WORKSPACE_COLOURS, the values the web declares as
+// --house-*): an ivory sheet on the pale sage plane, forest ink, a forest
+// button with its own light ink, and the Newsreader serif for what is said
+// (Georgia where a mail client has no web fonts). These replaced a navy, blue
+// and grey palette whose muted ink (#999) measured 2.6:1 on its own ground.
+//
+// Client email text holds 7:1 (goals/01). Every text colour below is chosen
+// from EMAIL_TEXT_PAIRS, which the email tests audit pair by pair; the
+// tests also refuse any colour in the rendered HTML that is not a House
+// value. Status never rides on colour alone: each callout carries its word.
+const HOUSE = WORKSPACE_COLOURS;
+
+/** Where each email text colour sits, and the contrast it must hold. The
+ *  shared letterheads (Layout, VenueLayout) are read by clients, so they hold
+ *  7:1. The hold reminder goes only to the member of staff who owns the hold
+ *  and keeps the workspace's own AA inks. */
+export const EMAIL_TEXT_PAIRS: readonly {
+  readonly use: string;
+  readonly text: string;
+  readonly ground: string;
+  readonly floor: 7 | 4.5;
+}[] = [
+  { use: "wordmark and headings", text: HOUSE["ink-1"], ground: HOUSE.overlay, floor: 7 },
+  { use: "letterhead caption", text: HOUSE.forest, ground: HOUSE.overlay, floor: 7 },
+  { use: "headings and body text", text: HOUSE["ink-1"], ground: HOUSE.sheet, floor: 7 },
+  { use: "fact labels, footer and links", text: HOUSE.forest, ground: HOUSE.sheet, floor: 7 },
+  { use: "quoted message", text: HOUSE["ink-1"], ground: HOUSE.paper, floor: 7 },
+  { use: "button", text: HOUSE["forest-ink-1"], ground: HOUSE.forest, floor: 7 },
+  { use: "secondary button", text: HOUSE["ink-1"], ground: HOUSE.sheet, floor: 7 },
+  { use: "refusal callout label", text: HOUSE["brick-strong"], ground: HOUSE["brick-wash"], floor: 7 },
+  { use: "refusal callout body", text: HOUSE["ink-1"], ground: HOUSE["brick-wash"], floor: 7 },
+  { use: "changes callout", text: HOUSE["ink-1"], ground: HOUSE["amber-wash"], floor: 7 },
+  { use: "settled callout", text: HOUSE["ink-1"], ground: HOUSE["sage-wash"], floor: 7 },
+  { use: "neutral callout", text: HOUSE["ink-1"], ground: HOUSE.paper, floor: 7 },
+  { use: "hold reminder body (staff only)", text: HOUSE["ink-2"], ground: HOUSE.sheet, floor: 4.5 },
+  { use: "hold reminder labels and footer (staff only)", text: HOUSE["ink-3"], ground: HOUSE.sheet, floor: 4.5 },
+  { use: "hold reminder caption (staff only)", text: HOUSE["ink-3"], ground: HOUSE.overlay, floor: 4.5 },
+  { use: "hold reminder status chip (staff only)", text: HOUSE["amber-chip"], ground: HOUSE["amber-wash"], floor: 4.5 },
+];
 
 const cardStyle: CSSProperties = {
   maxWidth: 600,
   width: "100%",
-  background: "#fff",
-  borderRadius: 8,
+  margin: "0 auto",
+  background: HOUSE.sheet,
+  border: `1px solid ${HOUSE.rule}`,
+  borderRadius: 10,
   overflow: "hidden",
-  margin: "20px auto",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
 };
 
 const bodyStyle: CSSProperties = {
   margin: 0,
-  padding: 0,
-  background: BRAND_BG,
-  fontFamily: "'Helvetica Neue', Arial, sans-serif",
+  padding: "24px 12px",
+  background: HOUSE["ground-plane"],
+  fontFamily: WORKSPACE_FONTS.sans,
 };
 
 const headerBarStyle: CSSProperties = {
-  background: BRAND_NAVY,
-  padding: "20px 24px",
+  background: HOUSE.overlay,
+  borderBottom: `1px solid ${HOUSE.rule}`,
+  padding: "16px 24px",
 };
 
 const brandWordmarkStyle: CSSProperties = {
-  color: "#fff",
-  fontSize: 20,
-  fontWeight: 700,
-  letterSpacing: "-0.5px",
   margin: 0,
   display: "inline",
+  fontFamily: WORKSPACE_FONTS.serif,
+  fontSize: 18,
+  letterSpacing: "0.08em",
+  color: HOUSE["ink-1"],
 };
 
 const brandCaptionStyle: CSSProperties = {
-  color: "rgba(255,255,255,0.6)",
-  fontSize: 13,
   margin: "0 0 0 12px",
   display: "inline",
+  fontSize: 13,
+  color: HOUSE.forest,
 };
 
 const mainSectionStyle: CSSProperties = {
-  padding: 24,
+  padding: "24px 24px 8px",
 };
 
 const footerStyle: CSSProperties = {
-  padding: "16px 24px",
-  borderTop: "1px solid #eee",
-  fontSize: 11,
-  color: INK_MUTED,
+  padding: "14px 24px",
+  borderTop: `1px solid ${HOUSE.rule}`,
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: HOUSE.forest,
 };
 
-const h2Style = (color: string = BRAND_NAVY): CSSProperties => ({
-  margin: "0 0 16px",
-  fontSize: 18,
-  fontWeight: 700,
-  color,
+/** Headings say what happened in words; none is coloured to say it instead. */
+const h2Style = (): CSSProperties => ({
+  margin: "0 0 14px",
+  fontFamily: WORKSPACE_FONTS.serif,
+  fontSize: 24,
+  fontWeight: 500,
+  lineHeight: 1.25,
+  color: HOUSE["ink-1"],
 });
 
 const paragraphStyle: CSSProperties = {
-  fontSize: 14,
-  color: INK,
-  lineHeight: 1.5,
+  fontSize: 15,
+  color: HOUSE["ink-1"],
+  lineHeight: 1.55,
   margin: "0 0 12px",
 };
 
+const linkStyle: CSSProperties = {
+  color: HOUSE.forest,
+  textDecoration: "underline",
+};
+
 const buttonStyle: CSSProperties = {
-  padding: "10px 20px",
-  background: BRAND_BLUE,
-  color: "#fff",
+  padding: "12px 20px",
+  background: HOUSE.forest,
+  color: HOUSE["forest-ink-1"],
   textDecoration: "none",
-  borderRadius: 6,
+  borderRadius: 8,
   fontSize: 14,
   fontWeight: 600,
 };
 
 const buttonSecondaryStyle: CSSProperties = {
-  padding: "10px 20px",
-  background: "#fff",
-  color: BRAND_NAVY,
+  padding: "11px 20px",
+  background: HOUSE.sheet,
+  color: HOUSE["ink-1"],
   textDecoration: "none",
-  borderRadius: 6,
+  borderRadius: 8,
   fontSize: 14,
   fontWeight: 600,
-  border: "1px solid #e5e7eb",
+  border: `1px solid ${HOUSE.edge}`,
   marginLeft: 8,
 };
 
 const metaTableStyle: CSSProperties = {
   width: "100%",
-  marginTop: 12,
+  margin: "8px 0 12px",
 };
 
 const metaLabelStyle: CSSProperties = {
-  padding: "4px 0",
-  color: INK_MUTED,
+  padding: "6px 12px 6px 0",
+  color: HOUSE.forest,
   fontSize: 13,
   width: 120,
   verticalAlign: "top",
 };
 
 const metaValueStyle: CSSProperties = {
-  padding: "4px 0",
-  fontSize: 13,
-  color: INK,
+  padding: "6px 0",
+  fontSize: 14,
+  color: HOUSE["ink-1"],
+};
+
+/** react-email's Hr draws its own grey (#eaeaea) unless the edge is named. */
+const ruleStyle: CSSProperties = {
+  marginTop: 24,
+  borderTop: `1px solid ${HOUSE.rule}`,
+  borderColor: HOUSE.rule,
 };
 
 type CalloutTone = "critical" | "warning" | "success" | "neutral";
 
+/** A note from a person, on its tone's wash. The label is the meaning; the
+ *  wash and the edge only repeat it. Brick is kept for a refusal. */
 function noteCallout(
   tone: CalloutTone,
   label: string,
   body: string,
 ): ReactElement {
   const palette: Record<CalloutTone, { background: string; border: string; heading: string }> = {
-    critical: { background: "#fef2f2", border: "#ef4444", heading: "#a02020" },
-    warning:  { background: "#fffbeb", border: "#d97706", heading: "#8c5a00" },
-    success:  { background: "#f0fdf4", border: "#059669", heading: "#065f2b" },
-    neutral:  { background: "#f9f9f6", border: "#d0c8b0", heading: INK_SOFT },
+    critical: { background: HOUSE["brick-wash"], border: HOUSE["brick-dot"], heading: HOUSE["brick-strong"] },
+    warning:  { background: HOUSE["amber-wash"], border: HOUSE["amber-mark"], heading: HOUSE["ink-1"] },
+    success:  { background: HOUSE["sage-wash"], border: HOUSE["sage-dot"], heading: HOUSE["ink-1"] },
+    neutral:  { background: HOUSE.paper, border: HOUSE["rule-strong"], heading: HOUSE["ink-1"] },
   };
   const p = palette[tone];
   return (
     <Section
       style={{
         margin: "16px 0",
-        padding: 12,
+        padding: "12px 14px",
         background: p.background,
         borderRadius: 6,
         borderLeft: `3px solid ${p.border}`,
@@ -186,7 +237,7 @@ function noteCallout(
       <Text style={{ margin: 0, fontSize: 13, color: p.heading, fontWeight: 700 }}>
         {label}
       </Text>
-      <Text style={{ margin: "4px 0 0", fontSize: 13, color: INK }}>{body}</Text>
+      <Text style={{ margin: "4px 0 0", fontSize: 14, lineHeight: 1.5, color: HOUSE["ink-1"] }}>{body}</Text>
     </Section>
   );
 }
@@ -223,7 +274,12 @@ function Layout({ label, preview, children }: LayoutProps): ReactElement {
 }
 
 // ---------------------------------------------------------------------------
-// Meta row — skips falsy values so conditional fields don't render empty
+// Meta row — skips falsy values so conditional fields don't render empty.
+//
+// A bare <tr>, as HouseFact is: react-email's <Row> renders a whole <table>,
+// and a table inside the facts table's <tbody> is invalid HTML that a browser
+// repairs by closing the surrounding tables early. That pushed every
+// paragraph after the facts, and the footer, out of the sheet.
 // ---------------------------------------------------------------------------
 
 function MetaRow({
@@ -235,10 +291,10 @@ function MetaRow({
 }): ReactElement | null {
   if (value === null || value === undefined || value === "") return null;
   return (
-    <Row>
+    <tr>
       <td style={metaLabelStyle}>{label}</td>
       <td style={metaValueStyle}>{value}</td>
-    </Row>
+    </tr>
   );
 }
 
@@ -253,6 +309,8 @@ const ENQUIRY_SOURCE_WORDS: Readonly<Record<EnquirySource, string>> = {
   planner: "The planner",
   phone: "A telephone call",
   email: "An email",
+  listing: "A listing site's enquiry form",
+  assistant: "An AI assistant",
 };
 
 export interface NewEnquiryData {
@@ -297,11 +355,12 @@ export function NewEnquiryEmail(props: NewEnquiryData): ReactElement {
           style={{
             marginTop: 16,
             padding: 12,
-            background: "#f9f9f6",
+            background: HOUSE.paper,
             borderRadius: 6,
+            borderLeft: `3px solid ${HOUSE["rule-strong"]}`,
           }}
         >
-          <Text style={{ fontSize: 13, color: INK_SOFT, margin: 0 }}>{props.message}</Text>
+          <Text style={{ fontSize: 14, lineHeight: 1.5, color: HOUSE["ink-1"], margin: 0 }}>{props.message}</Text>
         </Section>
       )}
       <Section style={{ marginTop: 20 }}>
@@ -379,9 +438,8 @@ function VenueLayout({
             <Text style={brandCaptionStyle}>{label}</Text>
           </Section>
           <Section style={mainSectionStyle}>{children}</Section>
-          <Section style={footerStyle}>
-            Sent by the events team at {venueName}.
-          </Section>
+          {/* One string, so the sentence is one text node in the HTML. */}
+          <Section style={footerStyle}>{`Sent by the events team at ${venueName}.`}</Section>
         </Container>
       </Body>
     </Html>
@@ -440,7 +498,7 @@ export function EnquiryAcknowledgementEmail(props: EnquiryAcknowledgementData): 
         {replyTo !== null && replyTo !== "" ? (
           <>
             {" — it reaches us at "}
-            <Link href={`mailto:${replyTo}`}>{replyTo}</Link>
+            <Link href={`mailto:${replyTo}`} style={linkStyle}>{replyTo}</Link>
           </>
         ) : null}
         .
@@ -512,29 +570,40 @@ export interface EnquiryApprovedData {
   readonly configUrl: string | null;
 }
 
-/** "Your enquiry for the Grand Hall at Trades Hall Glasgow on Friday 14 May
- *  2027 has been approved." The room only when the guest chose one, the date
- *  only when there is a real one. */
+/** "Thank you for your enquiry for the Grand Hall at Trades Hall Glasgow on
+ *  Friday 14 May 2027. We have reviewed it and would like to take it further
+ *  with you." The room only when the guest chose one, the date only when
+ *  there is a real one. */
 function approvalSentence(data: EnquiryApprovedData): string {
   const place = data.roomName === null
     ? `at ${data.venueName}`
     : `for ${theRoom(data.roomName)} at ${data.venueName}`;
   const day = formatCalendarDay(data.eventDate);
-  return `Your enquiry ${place}${day === null ? "" : ` on ${day}`} has been approved.`;
+  return `Thank you for your enquiry ${place}${day === null ? "" : ` on ${day}`}. We have reviewed it and would like to take it further with you.`;
 }
 
+/** The venue saying yes to an enquiry checks no availability and holds no
+ *  date: only the Diary holds or confirms one. So this email never says
+ *  "approved", which a guest reads as booked, nor anything that reads as a
+ *  promise of the room on the day, and it says plainly that it books nothing —
+ *  a sentence true whether the Diary holds nothing, a provisional hold or a
+ *  confirmed booking made for this enquiry. */
 export function EnquiryApprovedEmail(props: EnquiryApprovedData): ReactElement {
   return (
-    <Layout
-      label="Approved"
-      preview={`Your enquiry ${enquiryPlace(props)} has been approved`}
+    <VenueLayout
+      venueName={props.venueName}
+      label="Your enquiry"
+      preview={`We have reviewed your enquiry ${enquiryPlace(props)}`}
     >
-      <Heading style={h2Style("#059669")}>Enquiry approved</Heading>
+      <Heading style={h2Style()}>Your enquiry</Heading>
       {/* The sentence as a single string, so the HTML carries it as one text
           node rather than fragments separated by React's comment markers. */}
       <Text style={paragraphStyle}>{approvalSentence(props)}</Text>
       <Text style={paragraphStyle}>
-        The events team will be in touch shortly to confirm final details and arrangements.
+        This email does not book or hold a date. A date is booked only when we confirm it to you in writing.
+      </Text>
+      <Text style={paragraphStyle}>
+        The events team will be in touch shortly to talk through dates, numbers and what happens next.
       </Text>
       {props.configUrl !== null && (
         <Section style={{ marginTop: 16 }}>
@@ -543,14 +612,14 @@ export function EnquiryApprovedEmail(props: EnquiryApprovedData): ReactElement {
           </Button>
         </Section>
       )}
-    </Layout>
+    </VenueLayout>
   );
 }
 
 export async function enquiryApproved(
   data: EnquiryApprovedData,
 ): Promise<{ subject: string; html: string }> {
-  const subject = `Your enquiry ${enquiryPlace(data)} has been approved`;
+  const subject = `Your enquiry ${enquiryPlace(data)}: next steps`;
   const html = await render(<EnquiryApprovedEmail {...data} />);
   return { subject, html };
 }
@@ -568,27 +637,34 @@ export interface EnquiryRejectedData {
 }
 
 export function EnquiryRejectedEmail(props: EnquiryRejectedData): ReactElement {
+  // Said as a person says it, like the approval; a value that is not a real
+  // calendar date is left out rather than printed raw.
+  const day = formatCalendarDay(props.eventDate);
   return (
-    <Layout label="Update" preview={`Update on your enquiry ${enquiryPlace(props)}`}>
-      <Heading style={h2Style()}>Enquiry Update</Heading>
+    <VenueLayout
+      venueName={props.venueName}
+      label="Your enquiry"
+      preview={`Update on your enquiry ${enquiryPlace(props)}`}
+    >
+      <Heading style={h2Style()}>About your enquiry</Heading>
       <Text style={paragraphStyle}>
         Thank you for your interest in{" "}
         {props.roomName === null ? null : <><strong>{props.roomName}</strong> at </>}
         <strong>{props.venueName}</strong>
-        {props.eventDate !== null ? (
+        {day !== null ? (
           <>
-            {" "}on <strong>{props.eventDate}</strong>
+            {" "}on <strong>{day}</strong>
           </>
         ) : null}
-        . Unfortunately, we&apos;re unable to accommodate this particular request at this time.
+        . We are not able to take this booking as requested.
       </Text>
       {props.note !== null && props.note !== "" &&
         noteCallout("critical", "Note from the events team", props.note)}
       <Text style={paragraphStyle}>
-        We&apos;d love to help you find an alternative — please don&apos;t hesitate to try
-        different dates or explore our other spaces.
+        If another date or another of our rooms would suit, reply to this message
+        and the events team will look at the alternatives with you.
       </Text>
-    </Layout>
+    </VenueLayout>
   );
 }
 
@@ -662,8 +738,8 @@ export function ConfigSubmittedEmail(props: ConfigSubmittedData): ReactElement {
           Open Review
         </Button>
       </Section>
-      <Text style={{ fontSize: 12, color: INK_MUTED, marginTop: 24 }}>
-        Approving will freeze the layout snapshot and notify the hallkeeper.
+      <Text style={{ fontSize: 13, color: HOUSE.forest, marginTop: 24 }}>
+        Approving locks this version of the layout and tells the hallkeeper.
       </Text>
     </Layout>
   );
@@ -693,7 +769,7 @@ export function ConfigApprovedEmail(props: ConfigApprovedData): ReactElement {
       label="Approved"
       preview={`Your layout for ${props.eventName} has been approved`}
     >
-      <Heading style={h2Style("#059669")}>Layout Approved</Heading>
+      <Heading style={h2Style()}>Layout Approved</Heading>
       <Text style={paragraphStyle}>
         <strong>{props.approvedByName}</strong> has approved your layout for{" "}
         <strong>{props.eventName}</strong>.
@@ -840,7 +916,7 @@ export function HallkeeperNotifiedEmail(props: HallkeeperNotifiedData): ReactEle
           Open Hallkeeper Sheet
         </Button>
       </Section>
-      <Hr style={{ marginTop: 24, borderColor: "#eee" }} />
+      <Hr style={ruleStyle} />
     </Layout>
   );
 }
@@ -918,8 +994,6 @@ export function decisionWhen(daysUntilDecision: number): string {
   if (daysUntilDecision === 1) return "tomorrow";
   return `in ${String(daysUntilDecision)} days`;
 }
-
-const HOUSE = WORKSPACE_COLOURS;
 
 const houseBodyStyle: CSSProperties = {
   margin: 0,
@@ -1133,7 +1207,7 @@ export function RequestEscalationEmail(props: RequestEscalationData): ReactEleme
     >
       <Heading style={h2Style()}>A request is still waiting</Heading>
       {props.adminName !== null && props.adminName !== "" && (
-        <Text style={{ fontSize: 13, color: INK_SOFT, margin: "0 0 8px" }}>
+        <Text style={{ ...paragraphStyle, margin: "0 0 8px" }}>
           Hi {props.adminName},
         </Text>
       )}
@@ -1156,7 +1230,7 @@ export function RequestEscalationEmail(props: RequestEscalationData): ReactEleme
           Open the Day Board
         </Button>
       </Section>
-      <Hr style={{ marginTop: 24, borderColor: "#eee" }} />
+      <Hr style={ruleStyle} />
     </Layout>
   );
 }

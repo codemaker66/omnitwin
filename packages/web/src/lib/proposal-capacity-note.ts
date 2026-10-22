@@ -4,6 +4,7 @@ import {
   computeCapacityIntelligence,
   type CapacityIntelligence,
 } from "./layout-capacity.js";
+import { countLabel } from "./count-label.js";
 
 /**
  * Standing SAFE disclosure for every public/client capacity surface. It pairs
@@ -42,41 +43,10 @@ export function buildProposalCapacityGuidance(
   return computeCapacityIntelligence(floorAreaM2, guestCount, layoutStyle);
 }
 
-/** Structured SAFE capacity guidance for public/client surfaces (landing,
- *  enquiry). The proposal payload uses {@link buildProposalCapacityNote}; this
- *  is the lighter, room-name-free shape those surfaces render directly. */
-export interface CapacityGuidance {
-  readonly intel: CapacityIntelligence;
-  readonly styleLabel: string;
-  /** Short comfortable-capacity summary, e.g. "around 140 guests as seated dinner on round tables". */
-  readonly summary: string;
-  /** Comfort-band fit phrase keyed to the requested guest count, or null when none was given. */
-  readonly fit: string | null;
-  /** Standing SAFE disclosure ({@link CAPACITY_GUIDANCE_DISCLOSURE}). */
-  readonly disclosure: string;
-}
-
-/**
- * SAFE capacity guidance for a room area + requested guests + style. Reuses
- * the planner's capacity engine and the proposal style labels so every
- * surface speaks the same planning-grade language and keeps venue confirmation
- * visible.
- */
-export function buildCapacityGuidance(
-  floorAreaM2: number,
-  guestCount: number,
-  layoutStyle: LayoutStyle,
-): CapacityGuidance {
-  const intel = computeCapacityIntelligence(floorAreaM2, guestCount, layoutStyle);
-  const styleLabel = CAPACITY_STYLE_LABELS[layoutStyle];
-  return {
-    intel,
-    styleLabel,
-    summary: `around ${String(intel.comfortableCapacity)} guests as ${styleLabel}`,
-    fit: intel.plannedSeats > 0 ? comfortBandLabel(intel.band) : null,
-    disclosure: CAPACITY_GUIDANCE_DISCLOSURE,
-  };
-}
+// Public and client surfaces (the planner's enquiry form, the Share lens) no
+// longer show floor area ÷ generic spacing: they state the venue's published
+// figure through planner-truth.ts (redteam fix-first 1). What remains here is
+// the staff dashboard's proposal-composer aid.
 
 /**
  * SAFE capacity note for the proposal payload. Always ends with the
@@ -88,9 +58,9 @@ export function buildProposalCapacityNote(
   intel: CapacityIntelligence,
 ): string {
   const style = CAPACITY_STYLE_LABELS[intel.layoutStyle];
-  const base = `${spaceName}: comfortable for around ${String(intel.comfortableCapacity)} guests as ${style}`;
+  const base = `${spaceName}: comfortable for around ${countLabel(intel.comfortableCapacity, "guest")} as ${style}`;
   const fit = intel.plannedSeats > 0
-    ? ` — for ${String(intel.plannedSeats)} guests: ${comfortBandLabel(intel.band)}`
+    ? ` — for ${countLabel(intel.plannedSeats, "guest")}: ${comfortBandLabel(intel.band)}`
     : "";
   return `${base}${fit}. Planning estimate only; human review required; final capacity confirmed by the venue team.`;
 }

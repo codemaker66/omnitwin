@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
-import { createPlacedItem, computeRotatedFootprint, isWithinRoomBounds, snapToWallEdge } from "../placement.js";
+import { createPlacedItem, isWithinRoomBounds, snapToWallEdge } from "../placement.js";
 import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint, tableGroupSeatCapacity, tableGroupPlanningFootprint } from "../table-group.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
-import { toRenderSpace } from "../../constants/scale.js";
+import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
+import { convexPolygonDistance, footprintCorners } from "../circulation.js";
+import { BANQUET_CHAIR_CLEARANCE_M } from "../auto-fill.js";
 
 function catalogue(slug: string): NonNullable<ReturnType<typeof getCatalogueItemBySlug>> {
   const item = getCatalogueItemBySlug(slug);
@@ -80,7 +82,7 @@ describe("complete imported seating footprints", () => {
     expect(snapped.x + toRenderSpace(Math.hypot(asset.width / 2 + footprint.depth + 0.05, footprint.width / 2))).toBeCloseTo(room.width / 2);
   });
 
-  it("auto-arranges complete chair groups inside the room with clear space between them", () => {
+  it("auto-arranges complete chair groups inside the room with the banquet clearance between chair backs", () => {
     const table = catalogue("round-table-6ft-white");
     const room = { width: toRenderSpace(20), length: toRenderSpace(10), height: 7 };
     useRoomDimensionsStore.setState({ dimensions: room });
@@ -90,19 +92,24 @@ describe("complete imported seating footprints", () => {
     expect(tables.length).toBeGreaterThan(1);
     const footprint = tableGroupPlanningFootprint(table, 8);
     expect(footprint.width).toBeGreaterThan(table.width + 1.2);
+    // The real outline of each piece (Three's rotation about Y is the
+    // footprint's negative), so diagonal neighbours in staggered rows are
+    // measured exactly, not by padded axis boxes.
+    const outline = (item: (typeof items)[number]): ReturnType<typeof footprintCorners> => {
+      const asset = getCatalogueItem(item.catalogueItemId);
+      if (asset === undefined) throw new Error("Missing placed catalogue item");
+      return footprintCorners({
+        id: item.id, label: asset.name, cx: toRealWorld(item.x), cz: toRealWorld(item.z),
+        width: asset.width, depth: asset.depth, rotation: -item.rotationY,
+      });
+    };
     for (const item of items) {
       const asset = getCatalogueItem(item.catalogueItemId);
       if (asset === undefined) throw new Error("Missing placed catalogue item");
       expect(isWithinRoomBounds(item.x, item.z, asset, item.rotationY, room)).toBe(true);
-      const a = computeRotatedFootprint(asset, item.rotationY);
       for (const other of items) {
         if (other.groupId === item.groupId) continue;
-        const otherAsset = getCatalogueItem(other.catalogueItemId);
-        if (otherAsset === undefined) throw new Error("Missing placed catalogue item");
-        const b = computeRotatedFootprint(otherAsset, other.rotationY);
-        const gapX = Math.abs(item.x - other.x) - a.halfW - b.halfW;
-        const gapZ = Math.abs(item.z - other.z) - a.halfD - b.halfD;
-        expect(Math.max(gapX, gapZ)).toBeGreaterThanOrEqual(toRenderSpace(1.2) - 1e-8);
+        expect(convexPolygonDistance(outline(item), outline(other))).toBeGreaterThanOrEqual(BANQUET_CHAIR_CLEARANCE_M - 1e-6);
       }
     }
   });

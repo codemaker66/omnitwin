@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Booking, DiaryCommand, DiaryCommandAck } from "@omnitwin/types";
-import { transitionBooking } from "../diary.js";
+import { bookViewing, transitionBooking } from "../diary.js";
 import { _resetTokenGetterForTests } from "../auth-bridge.js";
 import { setDiaryCommandChannel } from "../../pages/diary/lib/diary-command-channel.js";
 
@@ -71,5 +71,48 @@ describe("transitionBooking", () => {
     expect(outcome.promotedToFirst).toEqual([{ id: ROBERTSON, title: "Robertson ceilidh" }]);
     expect(sender.mock.calls[0]?.[0]).toMatchObject({ kind: "booking.transition", bookingId: BOOKING_ID, payload: { toState: "released" } });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends why a booking was lost with the loss, and nothing of it when none was chosen (migration 0100)", async () => {
+    const lostRow = { ...releasedRow(), status: "lost" as const, state: "lost" as const, lostReason: "price" as const };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: lostRow, resequence: null })));
+    const outcome = await transitionBooking(BOOKING_ID, "lost", "Quoted too high.", undefined, "price");
+    expect(outcome.booking.lostReason).toBe("price");
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(typeof init?.body === "string" ? JSON.parse(init.body) as unknown : null)
+      .toEqual({ toState: "lost", note: "Quoted too high.", lostReason: "price" });
+
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: { ...lostRow, lostReason: null }, resequence: null })));
+    await transitionBooking(BOOKING_ID, "lost");
+    const [, unsaid] = fetchMock.mock.calls[1] ?? [];
+    expect(typeof unsaid?.body === "string" ? JSON.parse(unsaid.body) as unknown : null).toEqual({ toState: "lost" });
+  });
+
+  it("carries the lost reason over the live channel too", async () => {
+    const sender = vi.fn((command: DiaryCommand): Promise<DiaryCommandAck> => Promise.resolve({
+      type: "diary.ack", commandId: command.commandId, outcome: "applied", replay: false, status: 200,
+      booking: { ...releasedRow(), status: "lost", state: "lost", lostReason: "no_reply" },
+    }));
+    setDiaryCommandChannel(sender);
+    await transitionBooking(BOOKING_ID, "lost", undefined, undefined, "no_reply");
+    expect(sender.mock.calls[0]?.[0]).toMatchObject({ kind: "booking.transition", payload: { toState: "lost", lostReason: "no_reply" } });
+  });
+});
+
+describe("bookViewing", () => {
+  it("posts the viewing to POST /bookings/viewings and reads the booking back (migration 0100)", async () => {
+    const viewing: Booking = { ...releasedRow(), kind: "viewing", status: "active", state: "viewing", decisionAt: null,
+      title: "Elaine Fraser", enquiryId: "00000000-0000-4000-8000-0000000000e9", lostReason: null };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: viewing }), { status: 201 }));
+    const input = {
+      enquiryId: "00000000-0000-4000-8000-0000000000e9", spaceId: "00000000-0000-4000-8000-0000000000a1",
+      startsAt: "2026-10-24T10:00:00.000Z", endsAt: "2026-10-24T11:00:00.000Z",
+    };
+    const booked = await bookViewing(input);
+    expect(booked.kind).toBe("viewing");
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toEqual(expect.stringMatching(/\/bookings\/viewings$/u));
+    expect(init?.method).toBe("POST");
+    expect(typeof init?.body === "string" ? JSON.parse(init.body) as unknown : null).toEqual(input);
   });
 });

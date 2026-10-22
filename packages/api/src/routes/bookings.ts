@@ -1,10 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import {
+  BookViewingSchema,
   ConvertEnquirySchema,
   CreateBookingSchema,
   TransitionBookingSchema,
   UpdateBookingSchema,
+  VIEWING_BOOKING_KIND,
+  isBookingEnquiry,
   occasionLabel,
   type DiaryCommand,
 } from "@omnitwin/types";
@@ -21,6 +24,7 @@ import {
   ownerWorksAtVenue,
   pgErrorCode,
   PG_CHECK_VIOLATION,
+  PG_UNIQUE_VIOLATION,
   serializeBooking,
   transitionBookingCore,
   updateBookingCore,
@@ -32,6 +36,7 @@ import {
   executeDiaryCommand,
   realDiaryCommandDeps,
 } from "../services/diary-commands.js";
+import { announcePromotionNotices, loadPromotionDraft } from "../services/hold-promotion.js";
 import { bindBookingToEvent, syncEventStatus } from "../services/event-binding.js";
 import { canReadDiary } from "../utils/query.js";
 
@@ -156,6 +161,7 @@ async function runKeyedCommand(
       execution.changed.kind,
       execution.changed.bookingId,
     );
+    announcePromotionNotices(request.log, execution.changed.notices);
   }
   const http = ackToHttpReply(command.kind, execution.ack);
   return reply
@@ -243,6 +249,18 @@ export async function bookingRoutes(
     return { data: serializeBooking(row) };
   });
 
+  // The drafted email for a hold that has become 1st option (Blake, 26 Sep):
+  // composed for the person reading it, addressed to the client of record,
+  // and never sent from here. A person reads it and sends it themselves.
+  server.get("/:id/promotion-draft", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const result = await loadPromotionDraft(db, request.user, params.data.id);
+    if (!result.ok) return reply.status(result.status).send({ error: result.error, code: result.code });
+    return { data: result.draft };
+  });
+
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
@@ -286,6 +304,7 @@ export async function bookingRoutes(
     const result = await transitionBookingCore(db, request.user, params.data.id, parsed.data);
     if (!result.ok) return sendDeny(reply, result);
     publishDiaryChanged(request, result.booking.venueId, result.changeKind, result.booking.id);
+    announcePromotionNotices(request.log, result.promotionNotices);
     return {
       data: serializeBooking(result.booking),
       // The Canon §3 human ping: promotions ride the response so the caller
@@ -413,6 +432,116 @@ export async function bookingRoutes(
           error: "Booking violates a database integrity rule",
           code: "BOOKING_INTEGRITY_VIOLATION",
         });
+      }
+      throw error;
+    }
+  });
+
+  // A viewing booked for an enquiry (migration 0100): a show-round of a room,
+  // hosted by its owner (by default whoever books it). Gated as the hold
+  // conversion is, by the Diary's write roles at the enquiry's venue. It
+  // takes no event, carries no hold's hygiene and never blocks a date: the
+  // conflict engine says when it overlaps a confirmed booking or another
+  // viewing. Show-rounds per booking, a funnel measure, counts these. The same
+  // viewing asked for twice (a double press, a retry) is booked once: the
+  // second answer is the first viewing (bookings_viewing_once).
+  server.post("/viewings", { preHandler: [authenticate] }, async (request, reply) => {
+    const parsed = BookViewingSchema.safeParse(request.body);
+    if (!parsed.success) return validationError(reply, parsed.error.issues);
+    const input = parsed.data;
+
+    const [enquiry] = await db
+      .select({
+        id: enquiries.id,
+        venueId: enquiries.venueId,
+        spaceId: enquiries.spaceId,
+        roomChosen: enquiries.roomChosen,
+        name: enquiries.name,
+        state: enquiries.state,
+        eventType: enquiries.eventType,
+      })
+      .from(enquiries)
+      .where(eq(enquiries.id, input.enquiryId))
+      .limit(1);
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "ENQUIRY_NOT_FOUND" });
+    }
+    if (!canWriteBookings(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
+    }
+    // A viewing is shown to someone asking to book a room: never for a draft
+    // nobody has sent, nor for a request that books nothing (workspace access,
+    // an enquiry about Venviewer itself).
+    if (enquiry.state === "draft" || !isBookingEnquiry(enquiry.eventType)) {
+      return reply.status(422).send({
+        error: "A viewing is booked for an enquiry asking to book a room.",
+        code: "NOT_A_BOOKING_ENQUIRY",
+      });
+    }
+    // The room the guest chose, or one someone chooses: never the room an
+    // enquiry that named none is only filed under (roadmap N6).
+    if (input.spaceId === undefined && !enquiry.roomChosen) {
+      return reply.status(400).send({
+        error: "Choose a room for this viewing. The guest did not choose one.",
+        code: "ROOM_NOT_CHOSEN",
+      });
+    }
+    const spaceId = input.spaceId ?? enquiry.spaceId;
+    const [space] = await db
+      .select({ id: spaces.id, venueId: spaces.venueId })
+      .from(spaces)
+      .where(and(eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
+      .limit(1);
+    if (space === undefined || space.venueId !== enquiry.venueId) {
+      return reply.status(400).send({ error: "The space does not belong to this venue", code: "SPACE_VENUE_MISMATCH" });
+    }
+    const ownerUserId = input.ownerUserId ?? request.user.id;
+    if (!(await ownerWorksAtVenue(db, ownerUserId, enquiry.venueId))) {
+      return reply.status(OWNER_VENUE_MISMATCH.status).send({ error: OWNER_VENUE_MISMATCH.error, code: OWNER_VENUE_MISMATCH.code });
+    }
+
+    try {
+      const [created] = await db
+        .insert(bookings)
+        .values({
+          // No event, ever: the column's default, and
+          // bookings_viewing_has_no_event refuses any other.
+          venueId: enquiry.venueId,
+          spaceId,
+          kind: VIEWING_BOOKING_KIND,
+          status: "active",
+          title: input.title ?? enquiry.name.slice(0, 200),
+          eventType: null,
+          startsAt: new Date(input.startsAt),
+          endsAt: new Date(input.endsAt),
+          rank: null,
+          jointFlag: false,
+          ownerUserId,
+          notes: input.notes ?? null,
+          createdBy: request.user.id,
+          enquiryId: enquiry.id,
+        })
+        .returning();
+      if (created === undefined) {
+        return await reply.status(500).send({ error: "Failed to book the viewing", code: "BOOKING_CREATE_FAILED" });
+      }
+      publishDiaryChanged(request, created.venueId, "booking.created", created.id);
+      return await reply.status(201).send({ data: serializeBooking(created) });
+    } catch (error) {
+      const code = pgErrorCode(error);
+      if (code === PG_UNIQUE_VIOLATION) {
+        const [booked] = await db.select().from(bookings).where(and(
+          eq(bookings.enquiryId, enquiry.id),
+          eq(bookings.spaceId, spaceId),
+          eq(bookings.startsAt, new Date(input.startsAt)),
+          eq(bookings.kind, VIEWING_BOOKING_KIND),
+          eq(bookings.status, "active"),
+          isNull(bookings.deletedAt),
+        )).limit(1);
+        if (booked !== undefined) return reply.status(200).send({ data: serializeBooking(booked) });
+      }
+      if (code === PG_CHECK_VIOLATION) {
+        return reply.status(400).send({ error: "Booking violates a database integrity rule", code: "BOOKING_INTEGRITY_VIOLATION" });
       }
       throw error;
     }

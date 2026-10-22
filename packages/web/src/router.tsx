@@ -76,6 +76,9 @@ const EditorPage = lazyWithPreload(() =>
 const ClientEventPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ClientEventPage.js").then((m) => ({ default: m.ClientEventPage }))),
 );
+const RememberedNotesPage = lazyWithPreload(() =>
+  cockpitImport(() => import("./pages/RememberedNotesPage.js").then((m) => ({ default: m.RememberedNotesPage }))),
+);
 const ClientHomePage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ClientHomePage.js").then((m) => ({ default: m.ClientHomePage }))),
 );
@@ -145,6 +148,9 @@ const ProposalPreviewPage = lazyWithPreload(() =>
 );
 const SupplierPortalPage = lazy(() =>
   cockpitImport(() => import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage }))),
+);
+const PlanViewPage = lazy(() =>
+  cockpitImport(() => import("./pages/PlanViewPage.js").then((m) => ({ default: m.PlanViewPage }))),
 );
 const SheetCheckPage = lazy(() =>
   cockpitImport(() => import("./pages/SheetCheckPage.js").then((m) => ({ default: m.SheetCheckPage }))),
@@ -330,8 +336,18 @@ function devFixtureRoutes(): readonly RouteObject[] {
   const PlannerLabPage = lazy(() =>
     cockpitImport(() => import("./pages/PlannerLabPage.js").then((m) => ({ default: m.PlannerLabPage }))),
   );
+  // Through cockpitImport, as the planner itself loads: its Inter comes with it.
+  const PlannerChromeFixturePage = lazy(() =>
+    cockpitImport(() => import("./pages/PlannerChromeFixturePage.js").then((m) => ({ default: m.PlannerChromeFixturePage }))),
+  );
 
   return [
+    {
+      // T-671 slice 4: every shared primitive of the planner's new chrome over
+      // a room (`?bg=` a same-origin frame), for review and the contrast audit.
+      path: "/dev/planner-chrome",
+      element: withSuspense(<PlannerChromeFixturePage />),
+    },
     {
       // Dev smoke route for T-087: proves the production renderer stack imports
       // the first-party Three.js r186 Gaussian addon and its native renderer.
@@ -573,6 +589,18 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    // A client's remembered allergy notes ("ask once, then remember"): see
+    // and remove them at any time. The API answers for the signed-in account
+    // only, so any signed-in role may open it; staff simply have none.
+    path: "/account/allergy-notes",
+    element: withClerk(
+      <ProtectedRoute>
+        <RememberedNotesPage />
+      </ProtectedRoute>,
+      RememberedNotesPage,
+    ),
+  },
+  {
     // The Venviewer subscription page. Admin-only until billing exists
     // (Blake, 26 September 2026): it sells a tier nothing can yet bill, so it
     // is off the sitemap and the crawl (robots.txt). Everyone else reads a
@@ -695,6 +723,13 @@ export const router = createBrowserRouter([
     // by the API through a stored hash and returns only supplier-scoped data.
     path: "/supplier-share/:token",
     element: withSuspense(<SupplierPortalPage />),
+  },
+  {
+    // A visitor's plan through a view-only link (fix-first item 11). Public —
+    // the token is resolved by the API through a stored hash, reads only, and
+    // never reveals the plan's id or planner address.
+    path: "/plan-view/:token",
+    element: withSuspense(<PlanViewPage />),
   },
   {
     // The page a printed hallkeeper sheet's QR code opens. Public — it answers

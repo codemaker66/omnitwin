@@ -185,6 +185,25 @@ describe("generateManifestV2 — empty accessory map produces no accessories", (
   });
 });
 
+describe("generateManifestV2 — a chair not grouped with a table", () => {
+  const placed: readonly ManifestObjectV2[] = [
+    obj({ id: "h1", assetName: "Banquet Chair", assetCategory: "chair", positionX: 0, positionZ: 0 }),
+  ];
+  const out = generateManifestV2(placed, ROOM, ACC);
+  const rows = out.phases.flatMap((p) => p.zones.flatMap((z) => z.rows));
+
+  it("is listed once, as one chair", () => {
+    const chairRows = rows.filter((r) => r.name === "Banquet Chair");
+    expect(chairRows).toHaveLength(1);
+    expect(chairRows[0]?.qty).toBe(1);
+  });
+
+  it("brings its accessories once", () => {
+    expect(rows.find((r) => r.name === "Gold Chair Sash")?.qty).toBe(1);
+    expect(out.totals.totalItems).toBe(2);
+  });
+});
+
 describe("generateManifestV2 — totals", () => {
   const placed: readonly ManifestObjectV2[] = [
     obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: 0 }),

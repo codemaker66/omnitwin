@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { ContactProfile } from "../../../../api/clients.js";
 import {
-  clientRefFromSearchValue, clientRefToSearchValue, contactFacts, dealStageWords, initials, proposalStatusWords, sameClient,
+  clientRefFromSearchValue, clientRefToSearchValue, contactFacts, dealStageWords, groupResults, initials, proposalStatusWords, sameClient,
 } from "../clients-desk-format.js";
 
 const ID = "00000000-0000-4000-8000-00000000A001";
+
+describe("a person with no email", () => {
+  it("lists a person with no email under their organisation alone", () => {
+    const groups = groupResults({
+      users: [], guestLeads: [], configurations: [], accounts: [], deals: [], proposals: [],
+      contacts: [{ id: ID, name: "Ailsa Henderson", email: null, phone: null, accountName: "Henderson Family" }],
+    });
+    expect(groups[0]?.rows[0]).toMatchObject({ kind: "contact", title: "Ailsa Henderson", detail: "Henderson Family" });
+  });
+});
 
 describe("the client in the address", () => {
   it("reads ?client=kind:uuid, and nothing else", () => {

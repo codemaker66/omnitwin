@@ -1,9 +1,15 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Children, isValidElement, type ReactNode } from "react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PanoStageProps } from "../PanoStage.js";
 import { TWIN_FIXTURE_MANIFEST_NO_MESH } from "../__fixtures__/twin-fixture.js";
+import { lookUpRoom } from "../shell/twin-rooms.js";
+import {
+  TWIN_DETAIL_LOADING_LINE,
+  TWIN_VIEW_RETRY_LOADING_LINE,
+  twinOpeningViewLine,
+} from "../twin-copy.js";
 
 const bridge = vi.hoisted(() => ({ stages: new Map<string, PanoStageProps>() }));
 
@@ -52,26 +58,49 @@ function stage(nodeId = initialNode): PanoStageProps {
   return props;
 }
 
+/** What the stage says while nothing is on screen yet. */
+const OPENING = twinOpeningViewLine(lookUpRoom(initialNode)?.name ?? null);
+
 beforeEach(() => { bridge.stages.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("TwinViewer terminal panorama feedback", () => {
   it.each([false, true])("replaces activity with an honest failure and retry, preview=%s", (hasPreview) => {
     mount();
-    expect(screen.getByText("Opening view…")).toBeTruthy();
+    expect(screen.getByText(OPENING)).toBeTruthy();
     act(() => { stage().onFailure?.(initialNode, hasPreview); });
-    expect(screen.queryByText("Opening view…")).toBeNull();
+    expect(screen.queryByText(OPENING)).toBeNull();
+    expect(screen.queryByTestId("twin-load-shimmer")).toBeNull();
     expect(screen.getByText(hasPreview
       ? "Preview available. Full detail could not load."
       : "This view could not load.")).toBeTruthy();
     expect(screen.queryByTestId("twin-first-light")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry view" }));
     expect(stage().retryKey).toBe(1);
-    expect(screen.getByText("Opening view…")).toBeTruthy();
+    // With a preview on screen the retry is named in the pill; with nothing
+    // on screen the stage says again what it is waiting for.
+    expect(screen.getByTestId("twin-load-shimmer").textContent)
+      .toContain(hasPreview ? TWIN_VIEW_RETRY_LOADING_LINE : OPENING);
     expect(screen.queryByRole("button", { name: "Retry view" })).toBeNull();
     act(() => { stage().onFailure?.(initialNode, hasPreview); });
-    expect(screen.queryByText("Opening view…")).toBeNull();
+    expect(screen.queryByTestId("twin-load-shimmer")).toBeNull();
     expect(screen.getByRole("button", { name: "Retry view" })).toBeTruthy();
+  });
+
+  it("names the opening wait on the stage, then hands the rest to the pill once the preview is up", async () => {
+    mount();
+    const opening = screen.getByTestId("twin-load-shimmer");
+    expect(opening.className).toContain("vv-twin-opening");
+    expect(opening.querySelector("[role='status']")?.textContent).toBe(OPENING);
+    expect(opening.querySelector("[data-activity-indicator]")).not.toBeNull();
+    // The node label carries no second live status while the stage speaks.
+    expect(screen.getByTestId("twin-node-label").querySelector("[role='status']")).toBeNull();
+    act(() => { stage().onTier?.(initialNode, "preview"); });
+    expect(screen.queryByText(OPENING)).toBeNull();
+    const pill = within(screen.getByTestId("twin-node-label")).getByRole("status");
+    expect(pill.textContent).toContain(TWIN_DETAIL_LOADING_LINE);
+    act(() => { stage().onTier?.(initialNode, "base"); });
+    await waitFor(() => { expect(screen.queryByTestId("twin-load-shimmer")).toBeNull(); });
   });
 
   it("ignores late failure from the abandoned viewpoint", async () => {
@@ -92,11 +121,11 @@ describe("TwinViewer terminal panorama feedback", () => {
     act(() => { stage(nextNode).onFailure?.(nextNode, true); });
     fireEvent.click(screen.getByRole("button", { name: "Retry view" }));
     expect(stage(nextNode).retryKey).toBe(1);
-    expect(screen.getByText("Opening view…")).toBeTruthy();
+    expect(screen.getByText(TWIN_VIEW_RETRY_LOADING_LINE, { exact: false })).toBeTruthy();
     act(() => { stage(nextNode).onTier?.(nextNode, "preview"); });
     expect(screen.getByTestId("twin-load-shimmer").className).not.toContain("--out");
     act(() => { stage(nextNode).onTier?.(nextNode, "base"); });
-    await waitFor(() => { expect(screen.queryByText("Opening view…")).toBeNull(); });
+    await waitFor(() => { expect(screen.queryByTestId("twin-load-shimmer")).toBeNull(); });
     expect(screen.queryByRole("button", { name: "Retry view" })).toBeNull();
   });
 });

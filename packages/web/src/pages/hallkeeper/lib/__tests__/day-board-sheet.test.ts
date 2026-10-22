@@ -27,6 +27,12 @@ describe("describeSlotSheet", () => {
     expect(state.nextAction).toBe("See the block in the Diary.");
   });
 
+  it("says a viewing has no sheet, in its own words: a show-round is never part of an event (migration 0100)", () => {
+    const state = describeSlotSheet({ eventId: null, bookingKind: "viewing", roomName: "Grand Hall", layouts: [], unavailableCount: 0 });
+    if (state.kind !== "no-event") throw new Error("expected no-event");
+    expect([state.message, state.nextAction]).toEqual(["A viewing has no setup sheet.", "See the viewing in the Diary."]);
+  });
+
   it("never asks anyone to link an event: a booking is born with one (the bind)", () => {
     for (const bookingKind of ["hold", "ink", "prospect", undefined] as const) {
       const state = describeSlotSheet({ eventId: null, bookingKind, roomName: "Grand Hall", layouts: [], unavailableCount: 0 });

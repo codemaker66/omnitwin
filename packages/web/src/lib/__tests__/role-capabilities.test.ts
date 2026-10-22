@@ -11,6 +11,8 @@ import {
   EVENT_WRITE_ROLES,
   INVENTORY_WRITE_ROLES,
   PLANNER_ROLES,
+  PRICING_READ_ROLES,
+  PRICING_WRITE_ROLES,
   REVIEW_QUEUE_ROLES,
   VENUE_DAY_ROLES,
   VENUE_FLOOR_ROLES,
@@ -90,15 +92,33 @@ describe("nav offers are reachable", () => {
     expect(canOpenDashboardView("analytics", "sales", "none")).toBe(true);
   });
 
-  it("offers the Clients desk only to the roles /clients admits", () => {
-    // routes/clients.ts gates its search and lists on canManageVenue, so
-    // sales and planner were being offered a tab that answers 403.
-    expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper"]);
+  it("offers the Pricing desk to the commercial team that /pricing-desk admits, and never the hallkeeper", () => {
+    // routes/pricing-desk.ts reads the list with canManageCommercial; the
+    // hallkeeper does not see prices (decision 6b). Who may change a price
+    // is the one list the API's canWritePricing reads.
+    expect([...PRICING_READ_ROLES]).toEqual([...COMMERCIAL_ROLES]);
+    expect([...PRICING_WRITE_ROLES]).toEqual(["admin", "manager"]);
+    for (const role of USER_ROLES) {
+      expect(canOpenDashboardView("pricing", role, "none"), `pricing for ${role}`)
+        .toBe(hasRole(COMMERCIAL_ROLES, role));
+    }
+    expect(canOpenDashboardView("pricing", "hallkeeper", "none")).toBe(false);
+    expect(canOpenDashboardView("pricing", "sales", "none")).toBe(true);
+    const pricingItem = NAV_ITEMS.find((item) => item.view === "pricing");
+    expect(pricingItem?.label).toBe("Pricing");
+    if (pricingItem === undefined) throw new Error("Pricing tab missing");
+    expect(canShowNavItem(pricingItem, "hallkeeper", "none")).toBe(false);
+    expect(canShowNavItem(pricingItem, "manager", "none")).toBe(true);
+  });
+
+  it("offers the Clients desk to the roles /clients admits, sales included", () => {
+    // routes/clients.ts gates on canReadClients: the venue floor and the commercial team (People Book design §6.7).
+    expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper", "sales"]);
     for (const role of USER_ROLES) {
       expect(canOpenDashboardView("search", role, "none"), `search for ${role}`)
-        .toBe(hasRole(VENUE_FLOOR_ROLES, role));
+        .toBe(hasRole(VENUE_FLOOR_ROLES, role) || hasRole(COMMERCIAL_ROLES, role));
     }
-    expect(canOpenDashboardView("search", "sales", "none")).toBe(false);
+    expect(canOpenDashboardView("search", "sales", "none")).toBe(true);
     expect(canOpenDashboardView("search", "planner", "none")).toBe(false);
   });
 

@@ -13,6 +13,7 @@ import {
   integer,
   bigint,
   bigserial,
+  smallint,
   boolean,
   date,
   time,
@@ -29,7 +30,17 @@ import type {
   AIUsageAttempt,
   AIUsageFeature,
   AIUsageOutcome,
+  AcquisitionChannel,
   AgentTrajectory,
+  BookingLostReason,
+  EngagementEventKind,
+  FirstResponseChannel,
+  CaptureInclude,
+  CaptureSourceKind,
+  CompetitorTier,
+  PageCheckOutcome,
+  PriceBasis,
+  VatStatement,
   AnalyticsSnapshotPayload,
   BookingKind,
   BookingLiveness,
@@ -72,9 +83,12 @@ import type {
   EventArchitectRun,
   EventArchitectStrategy,
   LayoutValidatorRun,
+  MergeUndoReport,
   PricingAssumptionInput,
   ProposalCommentAuthorType,
   ProposalVersionPayload,
+  RecordMergeMove,
+  RecordMergeSnapshot,
   ReconstructionQaReport,
   ReconstructionReleaseArtifactRef,
   ReconstructionReleaseManifest,
@@ -672,6 +686,42 @@ export const configurationSheetSnapshots = pgTable("configuration_sheet_snapshot
 ]);
 
 // ---------------------------------------------------------------------------
+// 5e. remembered_dietary_notes — "ask once, then remember" (migration 0094)
+//
+// A client who ticks "Remember these for our next event?" beside a layout's
+// allergy note keeps that note with their own account, one per venue, and
+// their next layout there is filled in from it. Each row is also the consent
+// record: who (user_id), when (consented_at) and the exact words beside the
+// box (consent_wording). Removing the note — by the client, by the unused
+// period, or because the wording changed and the client agreed again —
+// clears the note and keeps the record, so the venue can show what was
+// agreed and when it ended without still holding the health information.
+// Only the owner reads or removes it (routes/dietary-memory.ts).
+// ---------------------------------------------------------------------------
+
+export const rememberedDietaryNotes = pgTable("remembered_dietary_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  /** The note, exactly as the layout carried it. Null once removed. */
+  note: text("note"),
+  consentWording: text("consent_wording").notNull(),
+  consentedAt: timestamp("consented_at", { withTimezone: true }).defaultNow().notNull(),
+  /** The layout the note was last saved from. */
+  sourceConfigurationId: uuid("source_configuration_id").references(() => configurations.id, { onDelete: "set null" }),
+  /** When the note was last saved with a layout: the unused period runs from here. */
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+  removedBy: varchar("removed_by", { length: 20 }),
+}, (table) => [
+  uniqueIndex("remembered_dietary_notes_one_per_venue").on(table.userId, table.venueId).where(sql`${table.removedAt} IS NULL`),
+  index("remembered_dietary_notes_source_configuration_idx").on(table.sourceConfigurationId),
+  check("remembered_dietary_notes_note_length", sql`${table.note} IS NULL OR char_length(${table.note}) BETWEEN 1 AND 1000`),
+  check("remembered_dietary_notes_removal", sql`(${table.removedAt} IS NULL AND ${table.note} IS NOT NULL AND ${table.removedBy} IS NULL)
+    OR (${table.removedAt} IS NOT NULL AND ${table.note} IS NULL AND ${table.removedBy} IN ('client', 'retention', 'reworded'))`),
+]);
+
+// ---------------------------------------------------------------------------
 // 6. placed_objects
 // ---------------------------------------------------------------------------
 
@@ -732,7 +782,55 @@ export const enquiries = pgTable("enquiries", {
   // is filed against the venue's first room with roomChosen false.
   source: varchar("source", { length: 20 }),
   roomChosen: boolean("room_chosen").notNull().default(true),
+  // Migration 0098: the People Book's person this enquiry came from. The
+  // previous release wrote none; create-from-enquiry links one when worked.
+  contactId: uuid("contact_id").references((): AnyPgColumn => contacts.id, { onDelete: "set null" }),
+  // Migration 0100 (the enquiry funnel): the earliest reply Venviewer knows
+  // of — when, who, how, and when Venviewer learned of it — written only by
+  // services/enquiry-funnel.ts, which only ever moves it earlier.
+  firstResponseAt: timestamp("first_response_at", { withTimezone: true }),
+  firstResponseBy: uuid("first_response_by"),
+  firstResponseChannel: varchar("first_response_channel", { length: 20 }).$type<FirstResponseChannel>(),
+  firstResponseRecordedAt: timestamp("first_response_recorded_at", { withTimezone: true }),
+  // Migration 0100: where the person found the venue — the referring site's
+  // host and three cleaned UTM tags only (never term or content, where email
+  // tools put per-recipient ids), and the channel worked out from them
+  // (attributeEnquiry in @omnitwin/types). NULL channel: nothing captured.
+  referrerHost: varchar("referrer_host", { length: 253 }),
+  utmSource: varchar("utm_source", { length: 100 }),
+  utmMedium: varchar("utm_medium", { length: 100 }),
+  utmCampaign: varchar("utm_campaign", { length: 100 }),
+  acquisitionChannel: varchar("acquisition_channel", { length: 20 }).$type<AcquisitionChannel>(),
 }, (table) => [
+  // Migration 0100: the key an engagement event pins itself to its venue by.
+  unique("enquiries_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({ columns: [table.firstResponseBy], foreignColumns: [users.id], name: "enquiries_first_response_by_fk" })
+    .onDelete("set null"),
+  check(
+    "enquiries_first_response_channel_check",
+    sql`${table.firstResponseChannel} IS NULL OR ${table.firstResponseChannel} IN ('email', 'phone', 'in_person', 'video_call', 'text_message', 'proposal', 'decision')`,
+  ),
+  check(
+    "enquiries_first_response_whole",
+    sql`(${table.firstResponseAt} IS NULL) = (${table.firstResponseChannel} IS NULL) AND (${table.firstResponseAt} IS NULL) = (${table.firstResponseRecordedAt} IS NULL) AND (${table.firstResponseBy} IS NULL OR ${table.firstResponseAt} IS NOT NULL)`,
+  ),
+  check(
+    "enquiries_first_response_order",
+    sql`${table.firstResponseAt} IS NULL OR (${table.firstResponseAt} >= ${table.createdAt} AND ${table.firstResponseAt} <= ${table.firstResponseRecordedAt})`,
+  ),
+  check(
+    "enquiries_acquisition_channel_check",
+    sql`${table.acquisitionChannel} IS NULL OR ${table.acquisitionChannel} IN ('assistant', 'listing', 'paid', 'email', 'social', 'search', 'venue_website', 'referral', 'other', 'direct')`,
+  ),
+  check(
+    "enquiries_referrer_host_shape",
+    // `\\.` here cooks to `\.` in the SQL: a literal dot, as in migration 0100.
+    sql`${table.referrerHost} IS NULL OR ${table.referrerHost} ~ '^[a-z0-9_-]+(\\.[a-z0-9_-]+)+$'`,
+  ),
+  check(
+    "enquiries_attribution_whole",
+    sql`${table.acquisitionChannel} IS NOT NULL OR (${table.referrerHost} IS NULL AND ${table.utmSource} IS NULL AND ${table.utmMedium} IS NULL AND ${table.utmCampaign} IS NULL)`,
+  ),
   index("enquiries_venue_state_idx").on(table.venueId, table.state),
   index("enquiries_user_id_idx").on(table.userId),
   // Migration 0071: latest enquiry per configuration, and the FK check when
@@ -745,7 +843,8 @@ export const enquiries = pgTable("enquiries", {
   // Migration 0073: seed fixtures and the state vocabulary.
   index("enquiries_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
   check("enquiries_state_check", sql`${table.state} IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')`),
-  check("enquiries_source_check", sql`${table.source} IS NULL OR ${table.source} IN ('website', 'walkthrough', 'planner', 'phone', 'email')`),
+  check("enquiries_source_check", sql`${table.source} IS NULL OR ${table.source} IN ('website', 'walkthrough', 'planner', 'phone', 'email', 'listing', 'assistant')`),
+  index("enquiries_contact_idx").on(table.contactId).where(sql`${table.contactId} IS NOT NULL`),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -784,9 +883,33 @@ export const clientAccounts = pgTable("client_accounts", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Migration 0098, the People Book: an organisation or a household
+  // (CLIENT_ACCOUNT_KINDS in @omnitwin/types). The previous release writes no
+  // kind, so a new account it makes is a household by default.
+  kind: varchar("kind", { length: 20 }).notNull().default("household"),
+  address: text("address"),
+  website: varchar("website", { length: 255 }),
+  vatNumber: varchar("vat_number", { length: 40 }),
+  notes: text("notes"),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  // Where an imported record came from; both or neither.
+  sourceSystem: varchar("source_system", { length: 40 }),
+  sourceId: varchar("source_id", { length: 255 }),
+  // Set when merged into another account, which then speaks for it.
+  mergedIntoId: uuid("merged_into_id").references((): AnyPgColumn => clientAccounts.id, { onDelete: "restrict" }),
 }, (table) => [
   index("client_accounts_venue_name_idx").on(table.venueId, table.name),
   index("client_accounts_source_enquiry_idx").on(table.sourceEnquiryId),
+  // Composite identity for the People Book's tenant-integrity keys
+  // (account_memberships_account_venue_fk), as events_id_venue_unique.
+  unique("client_accounts_id_venue_unique").on(table.id, table.venueId),
+  uniqueIndex("client_accounts_venue_source_unique").on(table.venueId, table.sourceSystem, table.sourceId)
+    .where(sql`${table.sourceId} IS NOT NULL`),
+  index("client_accounts_merged_into_idx").on(table.mergedIntoId).where(sql`${table.mergedIntoId} IS NOT NULL`),
+  index("client_accounts_owner_idx").on(table.ownerUserId).where(sql`${table.ownerUserId} IS NOT NULL`),
+  check("client_accounts_source_pair_check", sql`(${table.sourceSystem} IS NULL) = (${table.sourceId} IS NULL)`),
+  check("client_accounts_not_merged_into_self", sql`${table.mergedIntoId} <> ${table.id}`),
+  check("client_accounts_kind_check", sql`${table.kind} IN ('organisation', 'household')`),
 ]);
 
 export const contacts = pgTable("contacts", {
@@ -794,17 +917,137 @@ export const contacts = pgTable("contacts", {
   venueId: uuid("venue_id").notNull().references(() => venues.id),
   clientAccountId: uuid("client_account_id").references(() => clientAccounts.id, { onDelete: "set null" }),
   name: varchar("name", { length: 200 }).notNull(),
-  email: varchar("email", { length: 255 }).notNull(),
+  // email, phone and clientAccountId mirror the primary email point, the
+  // primary phone point and the primary membership (0098). A person may
+  // have no email.
+  email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 50 }),
   roleLabel: varchar("role_label", { length: 120 }),
   sourceEnquiryId: uuid("source_enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Migration 0098, the People Book.
+  givenName: varchar("given_name", { length: 100 }),
+  familyName: varchar("family_name", { length: 100 }),
+  jobTitle: varchar("job_title", { length: 120 }),
+  postalAddress: text("postal_address"),
+  notes: text("notes"),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  // The latest enquiry, deal, activity or sent proposal with this person.
+  lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
+  // Where an imported record came from; both or neither.
+  sourceSystem: varchar("source_system", { length: 40 }),
+  sourceId: varchar("source_id", { length: 255 }),
+  // A merged person is a tombstone: merged_into_id and deleted_at set together.
+  mergedIntoId: uuid("merged_into_id").references((): AnyPgColumn => contacts.id, { onDelete: "restrict" }),
+  erasedAt: timestamp("erased_at", { withTimezone: true }),
 }, (table) => [
   index("contacts_venue_email_idx").on(table.venueId, table.email),
   index("contacts_account_idx").on(table.clientAccountId),
   index("contacts_source_enquiry_idx").on(table.sourceEnquiryId),
+  // Composite identity for the People Book's tenant-integrity keys
+  // (contact_points, account_memberships, contact_kept_apart), as
+  // events_id_venue_unique.
+  unique("contacts_id_venue_unique").on(table.id, table.venueId),
+  uniqueIndex("contacts_venue_source_unique").on(table.venueId, table.sourceSystem, table.sourceId)
+    .where(sql`${table.sourceId} IS NOT NULL`),
+  index("contacts_merged_into_idx").on(table.mergedIntoId).where(sql`${table.mergedIntoId} IS NOT NULL`),
+  index("contacts_owner_idx").on(table.ownerUserId).where(sql`${table.ownerUserId} IS NOT NULL`),
+  check("contacts_source_pair_check", sql`(${table.sourceSystem} IS NULL) = (${table.sourceId} IS NULL)`),
+  check("contacts_not_merged_into_self", sql`${table.mergedIntoId} <> ${table.id}`),
+  // A non-null email is a real one (0098). The phone has no such rule yet.
+  check("contacts_email_not_blank", sql`${table.email} IS NULL OR ${table.email} ~ '[^[:space:]]'`),
+]);
+
+// ---------------------------------------------------------------------------
+// 7d. The People Book (0098): a person's emails and phones, their
+// organisations, and the pairs a person has decided are two people. Each row
+// is in its person's venue, held by a composite key onto contacts(id,
+// venue_id), and goes with the person.
+// ---------------------------------------------------------------------------
+
+export const contactPoints = pgTable("contact_points", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  contactId: uuid("contact_id").notNull(),
+  // CONTACT_POINT_KINDS. value is the normalised key (normaliseEmail,
+  // normalisePhone); displayValue is what was written.
+  kind: varchar("kind", { length: 10 }).notNull(),
+  value: varchar("value", { length: 255 }).notNull(),
+  displayValue: varchar("display_value", { length: 255 }).notNull(),
+  label: varchar("label", { length: 20 }).notNull().default("other"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  sourceSystem: varchar("source_system", { length: 40 }),
+  sourceId: varchar("source_id", { length: 255 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.contactId, table.venueId],
+    foreignColumns: [contacts.id, contacts.venueId],
+    name: "contact_points_contact_venue_fk",
+  }).onDelete("cascade"),
+  unique("contact_points_contact_kind_value_unique").on(table.contactId, table.kind, table.value),
+  uniqueIndex("contact_points_one_primary_unique").on(table.contactId, table.kind).where(sql`${table.isPrimary}`),
+  index("contact_points_venue_kind_value_idx").on(table.venueId, table.kind, table.value),
+  check("contact_points_kind_check", sql`${table.kind} IN ('email', 'phone')`),
+  check("contact_points_label_check", sql`${table.label} IN ('work', 'personal', 'mobile', 'other')`),
+  check("contact_points_value_check", sql`${table.value} <> '' AND ${table.displayValue} <> ''`),
+  check("contact_points_source_pair_check", sql`(${table.sourceSystem} IS NULL) = (${table.sourceId} IS NULL)`),
+]);
+
+export const accountMemberships = pgTable("account_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  contactId: uuid("contact_id").notNull(),
+  clientAccountId: uuid("client_account_id").notNull(),
+  roleLabel: varchar("role_label", { length: 120 }),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.contactId, table.venueId],
+    foreignColumns: [contacts.id, contacts.venueId],
+    name: "account_memberships_contact_venue_fk",
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.clientAccountId, table.venueId],
+    foreignColumns: [clientAccounts.id, clientAccounts.venueId],
+    name: "account_memberships_account_venue_fk",
+  }).onDelete("cascade"),
+  unique("account_memberships_pair_unique").on(table.contactId, table.clientAccountId),
+  uniqueIndex("account_memberships_one_primary_unique").on(table.contactId).where(sql`${table.isPrimary}`),
+  index("account_memberships_account_idx").on(table.clientAccountId),
+]);
+
+export const contactKeptApart = pgTable("contact_kept_apart", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  // The lower id first, so one pair has one key.
+  lowContactId: uuid("low_contact_id").notNull(),
+  highContactId: uuid("high_contact_id").notNull(),
+  decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
+  // A withdrawn mark stays as history.
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  withdrawnBy: uuid("withdrawn_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [
+  foreignKey({
+    columns: [table.lowContactId, table.venueId],
+    foreignColumns: [contacts.id, contacts.venueId],
+    name: "contact_kept_apart_low_venue_fk",
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.highContactId, table.venueId],
+    foreignColumns: [contacts.id, contacts.venueId],
+    name: "contact_kept_apart_high_venue_fk",
+  }).onDelete("cascade"),
+  check("contact_kept_apart_order_check", sql`${table.lowContactId} < ${table.highContactId}`),
+  uniqueIndex("contact_kept_apart_live_pair_unique").on(table.lowContactId, table.highContactId)
+    .where(sql`${table.withdrawnAt} IS NULL`),
+  index("contact_kept_apart_high_idx").on(table.highContactId),
 ]);
 
 export const opportunities = pgTable("opportunities", {
@@ -871,6 +1114,35 @@ export const followUpTasks = pgTable("follow_up_tasks", {
   index("follow_up_tasks_opportunity_idx").on(table.opportunityId),
   index("follow_up_tasks_assigned_status_idx").on(table.assignedTo, table.status),
   index("follow_up_tasks_status_due_idx").on(table.status, table.dueAt),
+]);
+
+// ---------------------------------------------------------------------------
+// 7e. record_merges (0098) — every merge of two people or two organisations,
+// with what it moved, so that it can be undone. survivorId and mergedId name
+// contacts or client accounts, by kind (MERGE_KINDS). Never deleted.
+// ---------------------------------------------------------------------------
+
+export const recordMerges = pgTable("record_merges", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  kind: varchar("kind", { length: 20 }).notNull(),
+  survivorId: uuid("survivor_id").notNull(),
+  mergedId: uuid("merged_id").notNull(),
+  snapshot: jsonb("snapshot").$type<RecordMergeSnapshot>().notNull(),
+  moves: jsonb("moves").$type<RecordMergeMove[]>().notNull(),
+  mergedBy: uuid("merged_by").references(() => users.id, { onDelete: "set null" }),
+  mergedAt: timestamp("merged_at", { withTimezone: true }).defaultNow().notNull(),
+  // Undone and its report, both or neither.
+  undoneAt: timestamp("undone_at", { withTimezone: true }),
+  undoneBy: uuid("undone_by").references(() => users.id, { onDelete: "set null" }),
+  undoReport: jsonb("undo_report").$type<MergeUndoReport>(),
+}, (table) => [
+  check("record_merges_kind_check", sql`${table.kind} IN ('person', 'organisation')`),
+  check("record_merges_distinct_check", sql`${table.survivorId} <> ${table.mergedId}`),
+  check("record_merges_shape_check", sql`jsonb_typeof(${table.moves}) = 'array' AND jsonb_typeof(${table.snapshot}) = 'object'`),
+  check("record_merges_undo_pair_check", sql`(${table.undoneAt} IS NULL) = (${table.undoReport} IS NULL)`),
+  index("record_merges_merged_idx").on(table.venueId, table.kind, table.mergedId, table.mergedAt.desc()),
+  index("record_merges_survivor_idx").on(table.venueId, table.kind, table.survivorId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1057,6 +1329,31 @@ export const layoutAliases = pgTable("layout_aliases", {
 }, (table) => [
   unique("layout_aliases_path_unique").on(table.pathKey),
   index("layout_aliases_config_idx").on(table.configurationId),
+]);
+
+// ---------------------------------------------------------------------------
+// configuration_view_tokens — view-only links to a visitor's plan (migration
+// configuration_view_tokens, fix-first item 11 of the 16 Oct 2026 brief).
+//
+// The token is shown to the organiser once and stored only as its SHA-256;
+// the configuration id (an anonymous plan's edit capability) never leaves in
+// a link. Every link expires, and a working link keeps its plan out of the
+// 72-hour sweep (services/cleanup.ts). services/plan-view-links.ts owns it.
+// ---------------------------------------------------------------------------
+
+export const configurationViewTokens = pgTable("configuration_view_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  tokenPrefix: varchar("token_prefix", { length: 16 }).notNull(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => [
+  unique("configuration_view_tokens_token_hash_unique").on(table.tokenHash),
+  check("configuration_view_tokens_token_hash_shape", sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
+  check("configuration_view_tokens_expires_after_created", sql`${table.expiresAt} > ${table.createdAt}`),
+  index("configuration_view_tokens_configuration_idx").on(table.configurationId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1789,12 +2086,17 @@ export const supplierInstructions = pgTable("supplier_instructions", {
 // These rows are capability-shareable extracts from frozen ops handoff packs.
 // Public supplier views resolve through hashed bearer tokens and expose only
 // supplier-scoped instructions, contact fields, and source provenance.
+//
+// What a supplier was told and what they confirmed is kept by the database
+// (0095): a pass RESTRICTs deleting its handoff pack, and an acknowledgement
+// RESTRICTs deleting its pass, so no cascade from a configuration, snapshot
+// or handoff pack can erase them. Passes are withdrawn, never deleted.
 // ---------------------------------------------------------------------------
 
 export const supplierCoordinationPacks = pgTable("supplier_coordination_packs", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
-  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id, { onDelete: "cascade" }),
+  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id, { onDelete: "restrict" }),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
   supplierId: uuid("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
   title: varchar("title", { length: 200 }).notNull(),
@@ -1852,7 +2154,7 @@ export const supplierCoordinationShareTokens = pgTable("supplier_coordination_sh
 
 export const supplierAcknowledgements = pgTable("supplier_acknowledgements", {
   id: uuid("id").primaryKey().defaultRandom(),
-  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "cascade" }),
+  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "restrict" }),
   shareTokenId: uuid("share_token_id").references(() => supplierCoordinationShareTokens.id, { onDelete: "set null" }),
   status: varchar("status", { length: 30 }).notNull().default("acknowledged"),
   acknowledgedByName: varchar("acknowledged_by_name", { length: 160 }),
@@ -2182,6 +2484,8 @@ export const proposals = pgTable("proposals", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   unique("proposals_share_code_unique").on(table.shareCode),
+  // Migration 0100: the key an engagement event pins itself to its venue by.
+  unique("proposals_id_venue_unique").on(table.id, table.venueId),
   index("proposals_venue_status_idx").on(table.venueId, table.status),
   index("proposals_opportunity_idx").on(table.opportunityId),
   index("proposals_enquiry_idx").on(table.enquiryId),
@@ -2253,9 +2557,18 @@ export const proposalShareTokens = pgTable("proposal_share_tokens", {
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+  // Migration 0100: the first visit and the visits since (an opening at least
+  // PROPOSAL_VIEW_VISIT_GAP_MINUTES after the last). Both NULL for a link
+  // opened before counting began: its first visit is not known.
+  firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+  viewCount: integer("view_count").default(0),
 }, (table) => [
   index("proposal_share_tokens_proposal_idx").on(table.proposalId),
   index("proposal_share_tokens_hash_idx").on(table.tokenHash),
+  check(
+    "proposal_share_tokens_views_known",
+    sql`(${table.viewCount} IS NULL AND ${table.firstViewedAt} IS NULL) OR (${table.viewCount} = 0 AND ${table.firstViewedAt} IS NULL) OR (${table.viewCount} > 0 AND ${table.firstViewedAt} IS NOT NULL)`,
+  ),
 ]);
 
 export const proposalComments = pgTable("proposal_comments", {
@@ -3431,8 +3744,20 @@ export const bookings = pgTable("bookings", {
   // source, so a demo week can be found exactly instead of by matching a
   // title a real client could also have.
   fixtureSource: varchar("fixture_source", { length: 40 }),
+  // Migration 0100: why it was lost, when the person marking it said. Only
+  // ever on a lost booking (bookings_lost_reason_check); physically last.
+  lostReason: varchar("lost_reason", { length: 30 }).$type<BookingLostReason>(),
 }, (table) => [
   unique("bookings_id_venue_unique").on(table.id, table.venueId),
+  // Migration 0100: a show-round never belongs to an event, and one enquiry
+  // holds the same live viewing once, so a repeated request books it once.
+  check("bookings_viewing_has_no_event", sql`${table.kind} <> 'viewing' OR ${table.eventId} IS NULL`),
+  uniqueIndex("bookings_viewing_once").on(table.enquiryId, table.spaceId, table.startsAt)
+    .where(sql`${table.kind} = 'viewing' AND ${table.status} = 'active' AND ${table.deletedAt} IS NULL AND ${table.enquiryId} IS NOT NULL`),
+  check(
+    "bookings_lost_reason_check",
+    sql`${table.lostReason} IS NULL OR (${table.status} = 'lost' AND ${table.lostReason} IN ('price', 'date_taken', 'room_unsuitable', 'chose_elsewhere', 'plans_changed', 'no_reply', 'other'))`,
+  ),
   foreignKey({
     columns: [table.eventId, table.venueId],
     foreignColumns: [events.id, events.venueId],
@@ -6214,4 +6539,176 @@ export const forwardBookChecks = pgTable("forward_book_checks", {
   check("forward_book_checks_cleared_after_recorded", sql`${table.clearedAt} IS NULL OR ${table.clearedAt} >= ${table.recordedAt}`),
   uniqueIndex("forward_book_checks_one_standing").on(table.spaceId).where(sql`${table.clearedAt} IS NULL`),
   index("forward_book_checks_venue_recorded_idx").on(table.venueId, table.recordedAt),
+]);
+
+// ---------------------------------------------------------------------------
+// The competitor watch (migration 0097; Blake approved the proposal on
+// 17 October 2026). A dated notebook beside the Pricing desk: the comp set,
+// one dated and sourced figure per capture (append-only, enforced by a
+// trigger in the migration), the page-change check's log and who won a lost
+// deal. Every child is bound to its venue by a composite key. Nothing that
+// sets or suggests a price reads these tables (see @omnitwin/types
+// competitor-watch.ts for the rules, and the tests that hold them).
+// ---------------------------------------------------------------------------
+
+export const competitorVenues = pgTable("competitor_venues", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  name: varchar("name", { length: 160 }).notNull(),
+  website: text("website"),
+  /** The page the change check reads, on the venue's own website. */
+  pricePageUrl: text("price_page_url"),
+  tier: varchar("tier", { length: 10 }).$type<CompetitorTier>().notNull(),
+  reason: text("reason").notNull(),
+  reviewDueOn: date("review_due_on", { mode: "string" }).notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  /** Who recorded that the site's terms and robots.txt allow the check, and
+   *  when; both null while the check is off. */
+  checksAllowedAt: timestamp("checks_allowed_at", { withTimezone: true }),
+  checksAllowedBy: uuid("checks_allowed_by").references(() => users.id, { onDelete: "set null" }),
+  /** SHA-256 of the page's text at the last check that read it. */
+  pageHash: char("page_hash", { length: 64 }),
+  pageCheckedAt: timestamp("page_checked_at", { withTimezone: true }),
+  pageCheckOutcome: varchar("page_check_outcome", { length: 20 }).$type<PageCheckOutcome>(),
+  pageCheckStatus: integer("page_check_status"),
+  pageChangedAt: timestamp("page_changed_at", { withTimezone: true }),
+  pageChangeDismissedAt: timestamp("page_change_dismissed_at", { withTimezone: true }),
+  pageChangeDismissedBy: uuid("page_change_dismissed_by").references(() => users.id, { onDelete: "set null" }),
+  nextCheckAfter: timestamp("next_check_after", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  removedBy: uuid("removed_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+}, (table) => [
+  unique("competitor_venues_id_venue").on(table.id, table.venueId),
+  check("competitor_venues_tier", sql`${table.tier} IN ('primary', 'secondary')`),
+  check("competitor_venues_name_shape", sql`${table.name} = btrim(${table.name}) AND ${table.name} <> ''`),
+  check("competitor_venues_reason_shape", sql`btrim(${table.reason}) <> '' AND char_length(${table.reason}) <= 400`),
+  check("competitor_venues_check_permission", sql`${table.checksAllowedBy} IS NULL OR ${table.checksAllowedAt} IS NOT NULL`),
+  check("competitor_venues_page_hash_shape", sql`${table.pageHash} IS NULL OR ${table.pageHash} ~ '^[0-9a-f]{64}$'`),
+  check("competitor_venues_removal", sql`${table.removedBy} IS NULL OR ${table.removedAt} IS NOT NULL`),
+  uniqueIndex("competitor_venues_live_name").on(table.venueId, sql`lower(${table.name})`).where(sql`${table.removedAt} IS NULL`),
+  index("competitor_venues_due_check").on(table.nextCheckAfter).where(sql`${table.removedAt} IS NULL AND ${table.checksAllowedAt} IS NOT NULL`),
+]);
+
+export const competitorPriceCaptures = pgTable("competitor_price_captures", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  competitorId: uuid("competitor_id").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  sourceKind: varchar("source_kind", { length: 12 }).$type<CaptureSourceKind>().notNull(),
+  seenOn: date("seen_on", { mode: "string" }).notNull(),
+  capturedBy: uuid("captured_by").notNull().references(() => users.id),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+  packageName: varchar("package_name", { length: 160 }).notNull(),
+  amountMinor: integer("amount_minor").notNull(),
+  currency: char("currency", { length: 3 }).notNull().default("GBP"),
+  priceBasis: varchar("price_basis", { length: 10 }).$type<PriceBasis>().notNull(),
+  guests: integer("guests"),
+  priceYear: smallint("price_year"),
+  includes: text("includes").array().$type<CaptureInclude[]>().notNull().default(sql`'{}'::text[]`),
+  includesNote: text("includes_note"),
+  vat: varchar("vat", { length: 12 }).$type<VatStatement>().notNull(),
+  evidenceFileId: uuid("evidence_file_id").references(() => files.id),
+  note: text("note"),
+  supersedesId: uuid("supersedes_id"),
+  sourceGoneAt: timestamp("source_gone_at", { withTimezone: true }),
+  sourceGoneBy: uuid("source_gone_by").references(() => users.id),
+}, (table) => [
+  foreignKey({ columns: [table.competitorId, table.venueId], foreignColumns: [competitorVenues.id, competitorVenues.venueId], name: "competitor_price_captures_competitor_venue" }),
+  unique("competitor_price_captures_identity").on(table.id, table.competitorId, table.venueId),
+  foreignKey({
+    columns: [table.supersedesId, table.competitorId, table.venueId],
+    foreignColumns: [table.id, table.competitorId, table.venueId],
+    name: "competitor_price_captures_supersedes",
+  }),
+  check("competitor_price_captures_not_self", sql`${table.supersedesId} IS NULL OR ${table.supersedesId} <> ${table.id}`),
+  check("competitor_price_captures_source_kind", sql`${table.sourceKind} IN ('own_page', 'brochure')`),
+  check("competitor_price_captures_basis", sql`${table.priceBasis} IN ('per_head', 'fixed')`),
+  check("competitor_price_captures_vat", sql`${table.vat} IN ('included', 'excluded', 'not_stated')`),
+  check("competitor_price_captures_source_gone", sql`${table.sourceGoneBy} IS NULL OR ${table.sourceGoneAt} IS NOT NULL`),
+  uniqueIndex("competitor_price_captures_replaced_once").on(table.supersedesId).where(sql`${table.supersedesId} IS NOT NULL`),
+  index("competitor_price_captures_venue_competitor").on(table.venueId, table.competitorId, table.capturedAt),
+]);
+
+export const competitorPageChecks = pgTable("competitor_page_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  competitorId: uuid("competitor_id").notNull(),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+  url: text("url").notNull(),
+  /** What robots.txt said: allowed, disallowed, or unreadable. */
+  robots: varchar("robots", { length: 12 }).notNull(),
+  outcome: varchar("outcome", { length: 20 }).$type<PageCheckOutcome>().notNull(),
+  httpStatus: integer("http_status"),
+  contentHash: char("content_hash", { length: 64 }),
+  /** "person" for the office's button, "schedule" for the unattended pass. */
+  runBy: varchar("run_by", { length: 10 }).notNull(),
+  triggeredBy: uuid("triggered_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [
+  foreignKey({ columns: [table.competitorId, table.venueId], foreignColumns: [competitorVenues.id, competitorVenues.venueId], name: "competitor_page_checks_competitor_venue" }),
+  check("competitor_page_checks_robots", sql`${table.robots} IN ('allowed', 'disallowed', 'unreadable')`),
+  check("competitor_page_checks_run_by", sql`${table.runBy} IN ('person', 'schedule')`),
+  index("competitor_page_checks_competitor").on(table.competitorId, table.checkedAt),
+]);
+
+export const competitorLosses = pgTable("competitor_losses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id, { onDelete: "cascade" }),
+  /** The stage move to lost, whose note is the reason. */
+  statusHistoryId: uuid("status_history_id").notNull().references(() => opportunityStatusHistory.id, { onDelete: "cascade" }),
+  competitorId: uuid("competitor_id"),
+  otherName: varchar("other_name", { length: 160 }),
+  /** A figure the client volunteered: the client's report, unverified. */
+  clientFigureMinor: integer("client_figure_minor"),
+  clientFigureBasis: varchar("client_figure_basis", { length: 10 }).$type<PriceBasis>(),
+  currency: char("currency", { length: 3 }).notNull().default("GBP"),
+  recordedBy: uuid("recorded_by").references(() => users.id, { onDelete: "set null" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.competitorId, table.venueId], foreignColumns: [competitorVenues.id, competitorVenues.venueId], name: "competitor_losses_competitor_venue" }),
+  unique("competitor_losses_one_move").on(table.statusHistoryId),
+  check("competitor_losses_one_winner", sql`(${table.competitorId} IS NULL) <> (${table.otherName} IS NULL)`),
+  check("competitor_losses_client_figure", sql`(${table.clientFigureMinor} IS NULL) = (${table.clientFigureBasis} IS NULL)`),
+  index("competitor_losses_venue_competitor").on(table.venueId, table.competitorId, table.recordedAt),
+  index("competitor_losses_opportunity").on(table.opportunityId),
+]);
+
+// ---------------------------------------------------------------------------
+// venue_engagement_events — a moment of interest on one enquiry or proposal
+// (migration 0100, the enquiry funnel).
+//
+// Attached to exactly one enquiry or proposal of the venue's, by composite
+// keys that pin it to that venue: never a visitor who sent and opened
+// nothing, and never a device, address, cookie or session. It goes with its
+// enquiry or proposal, and after ENGAGEMENT_RETENTION_MONTHS in any case
+// (removeExpiredEngagementEvents, run nightly). Written only through
+// services/enquiry-funnel.ts.
+// ---------------------------------------------------------------------------
+
+export const venueEngagementEvents = pgTable("venue_engagement_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  kind: varchar("kind", { length: 40 }).$type<EngagementEventKind>().notNull(),
+  enquiryId: uuid("enquiry_id"),
+  proposalId: uuid("proposal_id"),
+  spaceId: uuid("space_id"),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check("venue_engagement_events_kind_check", sql`${table.kind} IN ('twin_walk_30s')`),
+  check("venue_engagement_events_one_subject", sql`num_nonnulls(${table.enquiryId}, ${table.proposalId}) = 1`),
+  foreignKey({ columns: [table.enquiryId, table.venueId], foreignColumns: [enquiries.id, enquiries.venueId], name: "venue_engagement_events_enquiry_venue_fk" })
+    .onDelete("cascade"),
+  foreignKey({ columns: [table.proposalId, table.venueId], foreignColumns: [proposals.id, proposals.venueId], name: "venue_engagement_events_proposal_venue_fk" })
+    .onDelete("cascade"),
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "venue_engagement_events_space_venue_fk" })
+    .onDelete("cascade"),
+  index("venue_engagement_events_venue_recorded_idx").on(table.venueId, table.recordedAt),
+  index("venue_engagement_events_enquiry_idx").on(table.enquiryId).where(sql`${table.enquiryId} IS NOT NULL`),
+  index("venue_engagement_events_proposal_idx").on(table.proposalId, table.kind, table.recordedAt).where(sql`${table.proposalId} IS NOT NULL`),
+  index("venue_engagement_events_space_idx").on(table.spaceId).where(sql`${table.spaceId} IS NOT NULL`),
 ]);
