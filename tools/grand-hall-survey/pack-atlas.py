@@ -11,6 +11,9 @@ Where project-walls.py --labels wrote a wall's 2.5 mm orthophoto
 (two reductions) left a third as many of the deacon boards' names legible.
 The patches are the same in metres, and the glass mask is the 5 mm one.
 
+Where canvas-veil.py wrote a wall's canvas fields (proj/canvas-<wall>.npz), the portraits' canvases in its 2.5 mm
+orthophoto lose their varnish veil (canvasveil.py), after the fill; nothing outside them changes.
+
 With --alpha-from <dir>, the alpha channel is the one of <dir>/walls-4096.webp (the published atlas)
 instead of window-relief.py's mask: a rebuild of the walls' colour keeps the glass that the windows'
 panes, and their measurements, were made against. (The best-view photograph moved window-relief's
@@ -20,6 +23,7 @@ Writes proj/walls-4096.webp and proj/walls-2048.webp."""
 import os, sys, json, numpy as np
 from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import canvasveil  # noqa: E402
 SRC_PPM = 200.0
 SRC_TOP = 7.0          # v at the top edge of the orthophotos
 L, W = 21.135, 10.59
@@ -126,6 +130,19 @@ glass = np.load('proj/window-glass.npy').astype(np.float32)
 for wall in ['window', 'door', 'end', 'fire']:
     img, valid, scale = load(wall)
     img = fill(img, valid) if scale == 1 else fill_sparse(img, valid, 40 * scale)
+    if scale == 2:
+        # the portraits' canvases lose their varnish veil, after the fill (whose last resort, the wall's mean colour,
+        # they would otherwise move); the fine texel (2r + i, 2c + j) lies a quarter of a 5 mm texel either side of the
+        # texel's centre
+        for f in canvasveil.load('proj', wall):
+            r0, r1, c0, c1 = f['box']
+            # one 5 mm texel round the field's own: its extent reaches past their centres
+            y0, y1, x0, x1 = 2 * max(r0 - 1, 0), 2 * (r1 + 1), 2 * max(c0 - 1, 0), 2 * (c1 + 1)
+            rr, cc = np.meshgrid(np.arange(y0, y1), np.arange(x0, x1), indexing='ij')
+            block = img[y0:y1, x0:x1]
+            new = canvasveil.apply([f], (rr / 2.0 - 0.25).ravel(), (cc / 2.0 - 0.25).ravel(), block.reshape(-1, 3)).reshape(block.shape)
+            img[y0:y1, x0:x1] = new
+            print(wall, 'canvas', f['name'], 'veil taken off', flush=True)
     ppm = SRC_PPM * scale
     for p in PATCHES:
         if p[0] == wall: img = patch(img, *p[1:], LENGTH[wall], feather=10 * scale, ppm=ppm)

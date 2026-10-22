@@ -34,7 +34,8 @@ On four cores the walls' labels take about 40 minutes and their photographs abou
 under 1.3 GB of memory; the ceiling, dome and floor's projection takes most of the rest of the
 build's two hours. Two runs of the walls give byte-identical labels, orthophotos and atlases. The
 walls' 2 mm detail takes about 15 minutes more (2.5 to 5.3 a wall, at most 1.25 GB), and two runs give
-byte-identical tiles.
+byte-identical tiles. The portraits' varnish veil takes about a minute and a quarter a canvas (each
+panorama that saw it read once, under 0.8 GB); two runs give byte-identical corrections.
 
     bash tools/grand-hall-survey/build.sh <work-dir> packages/web/public/rooms/grand-hall/survey-2026-07-11
 
@@ -53,6 +54,7 @@ later step skips the downloads.
 | Corners | `fix-corners.py --positions-only` | each wall's corners without the neighbouring walls' fittings: their texels moved back onto the wall (`out-walls/*.fixed.f32`) |
 | Labels | `label-views.py` (with `bestview.py`) | `proj/labels-<wall>.npz`: each 40 mm block's station, its ranking of the others, and the depth where its best views agree (recorded, not applied); `labels-<wall>.json`: the counts behind them |
 | Walls' photographs | `project-walls.py --labels` | `proj/<view>.fine.npz`: the 2.5 mm orthophoto (sRGB); `proj/<view>.npz`: the 5 mm one (linear, as the blend wrote it); `proj/composite-<wall>.json`: seam steps and colour offsets |
+| Portraits' canvases | `canvas-veil.py` (with `canvasveil.py`) | `proj/canvas-<wall>.npz`: for each canvas in `canvasveil.CANVASES`, the correction of its varnish veil on the 5 mm grid, which `pack-atlas.py` and `project-detail.py` apply (below); `proj/canvas-<wall>.json`: the views, their registration, the veil and the canvas before and after |
 | Ceiling, dome, floor | `project-ceiling.py`, `project-dome.py`, `project-floor.py` | `proj/*.npz`: linear colour and weight per texel; `proj/floor-patches.json`: the stations with a strong tripod patch |
 | Windows | `window-relief.py` | the glass mask and a two-layer relief (curtains, then glazing) inside each window |
 | Walls | `pack-atlas.py`, `check-atlas.py`, `wall-depth.py`, `relief-mesh.mjs` | `walls-4096.webp`, `walls-2048.webp` (alpha marks glass), `walls-relief.bin`; before publishing, `check-atlas.py` compares the atlas with the one it replaces (sizes, glass only in the window openings, glass area within 2%) |
@@ -161,6 +163,76 @@ Until revision 5 the walls were blended like the ceiling below. At a typical tex
 deacon boards six stations were averaged, which disagree there by up to a centimetre at the relief's
 depth (doubled lettering), and the averaging took in the varnish's glare (a haze over the
 portraits).
+
+### The portraits' canvases: the varnish veil
+
+A varnished canvas mirrors the room. The near view `label-views.py` finds sharpest can carry that
+reflection as a broad veil over the paint, which no Laplacian sees, and the views that saw the paint
+without it saw it three to five times less sharply. Over the fireplace, scan_034 labels 77% of the
+portrait's canvas at 2.2 mm a panorama pixel; its photograph of the lower canvas is lifted to a median
+of 91 sRGB levels by white lobes of reflected light, where the eight views that photographed that
+canvas darkest (scan_039, 022, 036, 023, 012, 019, 013, 017, at 7-11 mm a pixel) show a median of 57.
+Labelling those views instead would trade the veil for their blur. So `canvas-veil.py` measures the
+veil against every view of the canvas and writes a correction that `pack-atlas.py` (on the 2.5 mm
+orthophoto, after its fill) and `project-detail.py` (at 2 mm, after its fill) apply; `canvasveil.py`
+holds the method and the list of canvases, in linear light:
+
+- **Where.** The canvases are located on the orthophoto by `measure/locate-canvases.py`: the
+  strongest step down from each frame's gilt slip to the paint. The correction stays 2.5 mm inside
+  those edges; the frame and everything outside the canvas are untouched.
+- **The views.** The reference is the station that labels most of the canvas. Every station that saw
+  all of it (label-views' visibility) is sampled at 5 mm and registered to the reference by phase
+  correlation (the scanned depth leaves the far views a median 15 mm off, at most 40).
+- **The veil.** Glare only adds light. Per texel, low-passed over 20 mm, the other views' lower
+  quartile (label-views' reference for glare) is the canvas as the views saw it without glare. The
+  reference is veiled where its light over 60 mm passes that quartile by 40% in all three channels
+  (glare lifts every channel; another white balance lifts some and lowers others), and the veil
+  reaches out from there as far as the lift stays over 10%, as hysteresis finds edges (Canny). The
+  far views see the canvas's own bright paint (a face, a collar) with less contrast, so paint they
+  themselves see as a local bright feature does not carry the veil outward. A veil every view shows
+  is the varnish's own (a bloom) and stays: at the fireplace sitter's knees scan_034 is the second
+  darkest of the 33 views, and the haze there stays.
+- **The target.** The reference's photograph as photographed (before the seam levelling's offsets),
+  less its veil; its colour is the reference's own, and where the veil is most of the reference's
+  light, the other views' (their lower quartile per channel, in the reference's white balance). The
+  composite's detail is kept in the share of its light the target leaves: where the veil was strong,
+  its high frequencies hold the varnish's sparkle as well as the paint.
+- **The edge.** The return to the photograph's level, a smooth field, fades in over 4 cm from the
+  canvas's edge, so it makes no step at the slip; the veil comes off up to 2.5 mm from the slip, as
+  the veil reaches it (a band of veil left along the slip read as a pale line).
+
+What it did (survey revision 7; 5 mm, sRGB levels, the canvas's lower and upper halves):
+
+| Canvas | Reference | Lower half: published, now, photograph | Upper half: published, now, photograph |
+| --- | --- | --- | --- |
+| Fireplace portrait | scan_034 (77%), 32 views | median 79.8, 50.4, 91.2; p10 43.1, 39.2, 45.6 | median 41.5, 43.3, 43.8 |
+| End wall portrait | scan_044 (79%), 36 views | median 47.8, 56.9, 57.8; p10 33.1, 42.7, 43.8 | median 38.3, 43.7, 53.5 |
+
+The fireplace portrait's lower canvas loses its veil (60% of it was veiled, the veil a median 53% of
+the photograph's light there) and keeps scan_034's detail: its edges measure 2.3 mm of equivalent blur
+in scan_034's photograph and 3.6-4.4 mm in the eight glare-free views'. Against those eight views' own
+photographs (low-passed over 20 mm) the lower canvas's colour difference falls from a median dE00 15.8
+to 9.5; its median, 50 in the atlas, sits under theirs (57) as scan_034's upper canvas (42) sits under
+theirs (60): the far views see the whole canvas through a sheen of their own.
+
+The end wall's portrait returns to its photograph's level on its lower canvas, where scan_044 is the
+darkest of the 37 views that saw it (the seam levelling had taken 9.5 levels off it at the 10th
+percentile); on its upper canvas the other views put a veil of 9% of scan_044's light over half of it,
+which comes off. Against S4a's reference composite at Blake's density its SSIM rises from 0.766 to
+0.789 in the atlas (0.767 to 0.790 in the detail tiles), and against the eight darkest views' own
+photographs its colour difference falls from dE00 13.0 to 8.7 (upper canvas) and 16.5 to 11.8 (lower).
+Its colours are less saturated than revision 6's: subtracting the levelling's offsets in sRGB had
+deepened them. The deacon boards' tiles are unchanged byte for byte (94.5% of the 256 names, trades and
+years read from them). Outside the two canvases the lossless atlas is the previous build's texel for
+texel; encoded, WebP moves the rest of the end and fireplace strips of the 4096 atlas by a mean 0.8-1.0
+levels (the window and door strips decode unchanged) and the whole 2048 atlas by 1.7-2.1, and the boards
+read 26.6% in the 4096 atlas (revision 6: 25.8%).
+
+The other ten portraits, on the door and window walls, were measured the same way and are not
+changed: four carry a strong veil in the published atlas (door wall at u 4.1 and 15.2, window wall at
+u 4.0 and 17.1: the lower canvas at a median 79-83 where the other views' quartile is 36-59), three a
+moderate one. Adding them to `CANVASES` rebuilds those walls' atlas strips and tiles; their canvases
+are smaller and their references label only 35-62% of them, so each wants its own look first.
 
 ### The ceiling, dome and floor: a weighted blend
 

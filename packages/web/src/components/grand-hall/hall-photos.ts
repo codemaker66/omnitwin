@@ -32,8 +32,10 @@ export const HALL_PHOTO_BASE = "/rooms/grand-hall/survey-2026-07-11";
  * build must never meet an old atlas or relief kept by a browser.
  * 5: the walls' atlas taken from each part's sharpest photograph, not a blend.
  * 6: the walls' 2 mm detail tiles and their index (detail/, hall-detail.ts).
+ * 7: the portraits over the fireplace and on the end wall without their
+ *    varnish veil (canvasveil.py), in the atlas and in their detail tiles.
  */
-export const HALL_SURVEY_REVISION = 6;
+export const HALL_SURVEY_REVISION = 7;
 
 /** A survey file's URL, at this revision. */
 export function hallSurveyUrl(file: string): string {

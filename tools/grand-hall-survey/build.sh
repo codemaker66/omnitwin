@@ -48,6 +48,12 @@ for wall in window door end fire; do python3 "$SURVEY/label-views.py" "$wall"; d
 step "Walls: coloured from those stations, seams levelled (2.5 mm and 5 mm orthophotos)"
 for wall in window door end fire; do python3 "$SURVEY/project-walls.py" "$wall" --labels; done
 
+# Where the sharpest view of a varnished portrait reflected the room over its
+# paint, the other views measure that veil; pack-atlas.py and project-detail.py
+# take it off (canvasveil.py lists the canvases).
+step "Walls: the portraits' canvases without their varnish veil"
+for wall in window door end fire; do python3 "$SURVEY/canvas-veil.py" "$wall"; done
+
 step "Projection: ceiling, dome and floor"
 python3 "$SURVEY/project-ceiling.py"
 python3 "$SURVEY/project-dome.py"

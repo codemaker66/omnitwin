@@ -78,8 +78,9 @@ describe("HallPhotos", () => {
 
   it("fetches every photograph at the survey's revision, raised for the walls' detail tiles", () => {
     // Revision 5 published the walls' atlas rebuilt from each part's sharpest photograph (a browser
-    // holding revision 4's blended atlas must fetch the new one); 6 the 2 mm detail tiles beside it.
-    expect(HALL_SURVEY_REVISION).toBeGreaterThanOrEqual(6);
+    // holding revision 4's blended atlas must fetch the new one); 6 the 2 mm detail tiles beside it; 7 the
+    // two portraits' canvases without their varnish veil, in the atlas and in their tiles.
+    expect(HALL_SURVEY_REVISION).toBeGreaterThanOrEqual(7);
     const desktop = new HallPhotos();
     desktop.load(1, () => { /* settled */ });
     const phone = new HallPhotos();

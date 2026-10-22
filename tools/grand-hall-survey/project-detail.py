@@ -7,7 +7,8 @@ the seams, with the same global colour adjustment and the same local Poisson ble
 as project-walls.py computes them (the seams' colours from the same 2.5 mm sub-samples) and each 2 mm sample takes
 those of the 5 mm texel it falls in, as each of the fine orthophoto's four sub-samples does. Only where a texel is
 sampled changes. Sampled at the scanned relief, as the atlas is (the depths label-views.py records are for
-measuring).
+measuring). After the fill, the portraits' canvases lose their varnish veil as the atlas's do (canvas-veil.py's
+fields, read from the labels' directory, each 2 mm texel at its fractional place on the 5 mm grid).
 
 The detail is laid out in the planner's own frame, the atlas's (hall-atlas.ts wallAtlasUv): u along the wall from
 its left end, t = 6.72 m (WALL_ATLAS_V_MAX) less the height, both in metres, mapped onto the orthophoto as
@@ -36,6 +37,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bestview as B  # noqa: E402
+import canvasveil  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location('project_walls', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'project-walls.py'))
 PW = importlib.util.module_from_spec(_spec)
@@ -198,6 +200,8 @@ class Fields:
         self.corr = corr
         self.Wt = Wt
         self.covered = (Wt > 0) & grid.valid
+        # the portraits' canvases lose their varnish veil (canvas-veil.py's fields, as pack-atlas.py applies them)
+        self.canvas = canvasveil.load(labels_dir, wall)
         self.seconds = round(time.time() - t0, 1)
         self.seam_samples = sampled
 
@@ -268,6 +272,23 @@ def sample_detail(wall, F, rows, cols):
         del acc, val, cov
         print(f'  columns {j0}-{j1}: {samples} samples, {decodes} panoramas decoded, peak {B.peak_mb()} MB', flush=True)
     return out, have, samples, decodes
+
+
+def apply_canvas(wall, F, img, f):
+    """A portrait canvas's veil field (canvasveil.py) on the detail image, each texel at its fractional place on the
+    5 mm grid as detail_to_grid maps it (the fine orthophoto's sub-samples sit a quarter texel either side)."""
+    r_all, fr_all, c_all, fc_all = detail_to_grid(wall, np.arange(img.shape[0]), np.arange(img.shape[1]), F.H, F.Wd)
+    rp, cp = r_all + fr_all, c_all + fc_all
+    r0, r1, c0, c1 = f['box']
+    ri = np.nonzero((rp >= r0 - 1) & (rp <= r1))[0]
+    ci = np.nonzero((cp >= c0 - 1) & (cp <= c1))[0]
+    if not len(ri) or not len(ci):
+        return
+    ys, xs = slice(ri[0], ri[-1] + 1), slice(ci[0], ci[-1] + 1)
+    sub = img[ys, xs].astype(np.float32)
+    RP, CP = np.meshgrid(rp[ys], cp[xs], indexing='ij')
+    new = canvasveil.apply([f], RP.ravel(), CP.ravel(), sub.reshape(-1, 3)).reshape(sub.shape)
+    img[ys, xs] = np.round(np.clip(new, 0, 255)).astype(np.uint8)
 
 
 def fill_sparse(img, valid, passes):
@@ -350,6 +371,9 @@ def main():
     t2 = time.time()
     uncovered = int((~have).sum())
     img = fill_sparse(img, have, int(round(FILL_REACH / TEXEL)))
+    # the canvases' fields after the fill, whose last resort (the wall's mean colour) they would otherwise move
+    for f in F.canvas:
+        apply_canvas(wall, F, img, f)
     for p in PATCHES:
         if p[0] == wall:
             patch(img, *p[1:], LENGTH[wall])
