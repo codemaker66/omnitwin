@@ -188,7 +188,7 @@ development builds only) shows the room alone, posed through a window bridge for
   the end and main doors' linings are their photographs (read once a fragment: the lining picks its
   texel's place and the atlas is sampled there). Every outer face darkens toward its foot (to 55% at
   the floor, gone by 0.6 m) and takes a faint breadth of tone (`faceShading`).
-  Atelier is the city's card model: the city's card colours (`CARD`, copied from `hall-context.ts`),
+  Atelier is the city's card model: the city's card colours (`CARD`, imported from `hall-context.ts`),
   lit as the city is (`cardLit`) with the room's glow on the cut, card leaves with their panels
   scored. Nocturne is ebonised (linear 0.012/0.009/0.007) under a moulded top of dark polished stone,
   60 mm high and 30 mm proud of each face, gilt lines along both crests (`hall-coping.ts`, 460
@@ -207,7 +207,7 @@ development builds only) shows the room alone, posed through a window bridge for
   scattered pixels (depth24, near 0.1, far 900: a few depth steps per millimetre at 20-30 m), the
   black specks Blake saw while the camera moved. No two surfaces of the hall may share a plane where
   either shows: keep any new one centimetres clear of the floor and of the city's caps at y = 0
-  beyond the cut-out (|x| > 11.2, |z| > 5.95); the ring's top lies on those caps only under the
+  beyond the cut-out (|x| > 11.2, z < -6.24 or z > 5.95); the ring's top lies on those caps only under the
   bodies, where neither is seen.
   None of the section's materials reads `normalWorld` or the sun's shadow map (whose normal offset
   reads it): in these unlit materials either put the pass's normal target out of step, and the
@@ -339,8 +339,11 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   `public/rooms/grand-hall/context-2020-lidar/merchant-city-v2.bin`), lit by the same sky with its
   own coarse shadow, aerial haze and a few lit windows at night; it also stands in the hall's sun
   shadow. Built from the Scottish LiDAR Phase 5 DSM (OGL v3, attributed in the model's JSON) by
-  `tools/grand-hall-survey/context`, which rebuilds it byte for byte. `?setting=none` leaves the
-  hall under the sky alone, for measuring.
+  `tools/grand-hall-survey/context`, which rebuilds it byte for byte. Its cut-out for the hall
+  (`CITY_SITE_CUT`) runs from the window wall's street face (z -6.24 on the model's centimetre grid,
+  5 mm under the wall's foot at -6.245) to z 5.95 behind, |x| 11.2; until 22 October it stopped at
+  |z| 5.95, 0.3 m inside the street wall. `?setting=none` leaves the hall under the sky alone, for
+  measuring.
 - **The street at night** (`lib/sky/night-looks.ts`, `hall-street-light.ts`, `HallStreetLights.tsx`):
   after dusk the card turns a dark violet with its skyline brighter than its blocks, so every
   building stands as a silhouette and no lit window floats; Glasgow City Council's street lamps
@@ -373,8 +376,36 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   lantern is a warm line under its halo, not a one-pixel dash the anti-aliasing cannot hold. Four looks (Subtle, Evocative shown, Noir, True to street at
   3000 K) are uniforms only; a development build takes `?street=` (and `off`, close to the night
   before the lamps; at dusk its glow follows today's span, so compare dusk against the commit
-  itself). Credited on the dial and the legal page.
-- **The dial** (`editor/cockpit/HallSunDial.tsx`): in the hall's Light controls, a popover on a
+  itself). Credited on the dial and the legal page. A pool's light also washes up the walls beside
+  it, fading out by 7 m (16% of it at the wall's foot), so a lit street reads as a lit corridor.
+- **What the windows look onto** (`hall-facade-lights.ts`, `HallFacadeLights.tsx`): from the room
+  the five windows face the frontage across Glassford Street (76 Glassford Street, the Blane Valley
+  bar under it, the Bacchus building, the houses south of them, 18-20 m off) and the length of Garth
+  Street (its north side 30-60 m off, at a glance, and the building that closes it on Hutcheson
+  Street, 77 m). The city model has their massing and no openings, so at night they filled the glass
+  as dark violet. `tools/grand-hall-survey/context/facade-survey.json` reads 78 openings, shopfronts
+  and signs off those walls from our own 8K panoramas, each rectified onto its wall (the front door's
+  station, scan_145, by day for the outlines; the window stations at blue hour, 11 July, for what is
+  lit: the bar's arches warm under a teal fascia, the Bacchus's letters violet and its green glass,
+  the offices dark). The Bacchus's upper windows are blind (rendered over) and never light.
+  `bake_facade_lights.py` places them on the model (`facade-lights-v1.json`): each on its wall's own
+  depth by rays against the model, a long sign or shopfront in 1.1 m pieces that follow the wall's
+  jogs, clipped at a band edge where the model's wall steps back above it; anything the model cannot
+  carry (the top floors, where the 3 m bands set the wall back) is listed with its reason and left
+  out. Each opening carries two seeds from a hash of its id (an office's from its floor's: offices
+  light a floor at a time): the look's share for its use lights it, the second seed draws a home's
+  curtains, an office's blinds or a dark room on a lit floor. A dark window shows the night sky in
+  its glass by Schlick's Fresnel (4% head on, most at a glance), so a street's unlit windows read
+  as windows seen along it; lit shopfronts light the pavement before them. One additive draw (97
+  quads), hidden by day, lit as dusk falls; every colour and share is the night look's
+  (`facades`: Evocative lights half the office floors and most homes, True to street few offices,
+  the look before the lamps none). On the surveyed walls the city's random windows give way to
+  these (`surveyedWall`). Measured through the glass (`lib/glass-structure.ts`, `GLASS_MARKS`): the
+  edge energy over the panes (R, against a plain pane with the city hidden, and Eo, the outside's
+  structure alone), at 20:41Z on 18 October, desktop: from Blake's room pose R 1.44 and Eo 0.48
+  before, 1.65 and 0.75 after; from the opening view 1.31 and 0.35 before, 1.51 and 0.56 after (two
+  runs each within 1%; the old mark, panes at luma 6 or more, read 99% in all of them). On the phone
+  profile the room went from 1.31 and 0.28 to 1.94 and 0.80. By day nothing changes. (`editor/cockpit/HallSunDial.tsx`): in the hall's Light controls, a popover on a
   desktop and inline in a phone's View sheet. The day is a band of its own sky with the sun's
   real path, ticks at sunrise, noon and sunset (a dragged sun settles on them), the gold floor
   bars, six named moments, a date and Now. To assistive technology it is a slider: arrows move
@@ -408,6 +439,14 @@ slow phone the planner's adaptive resolution is what the night would spend. Earl
 and 180 on desktop. It adds three draws (about 8,500 fitting and 3,700 cone triangles; no cones on
 a phone), two 1 MB light maps and one filtered plus one exact texel read in the city's shader, no
 lights and no work at rest.
+
+The lit openings across the street (22 October, `nf-perf.mjs`, the same lab and GPU timestamps, at
+20:41Z and noon, against the branch's base c20bba0d): at these frame times the page-to-page spread is
+the signal's size. Two pages of the same base at noon differed by 2-14%; the base against the new
+code by -11% to +19% at night and -7% to +12% at noon, with no pose consistently dearer. Drawn and
+left out in turns in one page (10 rounds of 150 frames), the openings' draw cost +0.003 to +0.007 ms
+on the phone profile (2.8-3.7%, the same sign at all four poses) and was within ±0.06 ms (±5%) on
+desktop. It adds one draw (97 quads), only after dusk, and no texture.
 
 ## Views and loading
 
@@ -515,6 +554,16 @@ out the reflection map, the chandeliers' lights (for a soft fill) and the walls'
   counts); `stores/__tests__/hall-time-store.test.ts` (the opening hour) and
   `cockpit/__tests__/HallSunDial.test.tsx` (keys, drag, snapping, named moments, the moon, the
   credits); `lib/__tests__/furniture-motion.test.ts` (the lean, squash and drop-in).
+- What the windows look onto: `hall-facade-lights.test.ts` (the parser's refusals, the published file
+  against the survey (every opening placed, dropped with a reason or blind, pieces tiling their
+  wholes, clipped pieces on a band edge), the seeds from SHA-256 of each id or floor, every quad on
+  the published model's wall or pavement by ray casts, the licence, the geometry's corners and
+  attributes, dusk, and the look's uniforms); `lib/__tests__/glass-structure.test.ts` (the measure
+  against scipy's numbers on a synthetic pane, plain panes, bars, dither, light without structure,
+  and the packed glass of the room and opening frames before and after, which must miss and meet
+  `GLASS_MARKS`); `hall-context.test.ts` (the site cut against the model's provenance and its
+  vertices, the shared card). `python tools/grand-hall-survey/context/bake_facade_lights.py
+  packages/web/public/rooms/grand-hall/context-2020-lidar --check` rebakes byte for byte.
 - The street at night: `python tools/grand-hall-survey/context/bake_street_light.py <out> --work
   <_work.npz> --dsm-dir <dsm> --facade facade.json --check` (byte-for-byte rebuild, a test lamp's
   pool offset and stretch, no light behind a wall, the switching lattice, brackets on the model's

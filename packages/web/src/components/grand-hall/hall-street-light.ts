@@ -117,6 +117,14 @@ function lookValues(look: StreetNightLook) {
       windowCool: color(look.windows.cool),
       windowMagenta: color(look.windows.magenta),
       windowCyan: color(look.windows.cyan),
+      facadeOffice: color(look.facades.office),
+      facadeHome: color(look.facades.home),
+      facadePub: color(look.facades.pub),
+      facadeBar: color(look.facades.bar),
+      facadeGlassGreen: color(look.facades.glassGreen),
+      facadeSignTeal: color(look.facades.signTeal),
+      facadeSignViolet: color(look.facades.signViolet),
+      facadeSignGreen: color(look.facades.signGreen),
     },
     numbers: {
       hazeReach: look.hazeReach,
@@ -137,6 +145,11 @@ function lookValues(look: StreetNightLook) {
       windowCyanShare: look.windows.cyanShare,
       /** A fixed light for windows too small to see, or −1 to take it from the share, pane and brightness. */
       windowAverage: look.windows.average ?? -1,
+      facadeOfficeShare: look.facades.officeShare,
+      facadeHomeShare: look.facades.homeShare,
+      facadeCurtainShare: look.facades.curtainShare,
+      facadeCurtain: look.facades.curtain,
+      facadeSpill: look.facades.spill,
     },
     pane: new Vector4(...look.windows.pane),
     brightness: new Vector2(...look.windows.brightness),
@@ -154,12 +167,17 @@ function lookUniforms(values: LookValues) {
     scallop: uniform(c.scallop), beam: uniform(c.beam), lens: uniform(c.lens), halo: uniform(c.halo),
     windowWarm: uniform(c.windowWarm), windowCool: uniform(c.windowCool), windowMagenta: uniform(c.windowMagenta),
     windowCyan: uniform(c.windowCyan),
+    facadeOffice: uniform(c.facadeOffice), facadeHome: uniform(c.facadeHome), facadePub: uniform(c.facadePub), facadeBar: uniform(c.facadeBar),
+    facadeGlassGreen: uniform(c.facadeGlassGreen), facadeSignTeal: uniform(c.facadeSignTeal), facadeSignViolet: uniform(c.facadeSignViolet),
+    facadeSignGreen: uniform(c.facadeSignGreen),
     hazeReach: uniform(n.hazeReach), duskWall: uniform(n.duskWall), duskRoof: uniform(n.duskRoof), duskAir: uniform(n.duskAir),
     ambientWeight: uniform(n.ambientWeight), lampsOn: uniform(n.lampsOn),
     poolRadius: uniform(n.poolRadius), poolSoftness: uniform(n.poolSoftness), scallopReach: uniform(n.scallopReach), beamReach: uniform(n.beamReach),
     windowShare: uniform(n.windowShare), windowNearShare: uniform(n.windowNearShare), windowCoolShare: uniform(n.windowCoolShare),
     windowMagentaShare: uniform(n.windowMagentaShare), windowCyanShare: uniform(n.windowCyanShare),
     windowAverage: uniform(n.windowAverage),
+    facadeOfficeShare: uniform(n.facadeOfficeShare), facadeHomeShare: uniform(n.facadeHomeShare),
+    facadeCurtainShare: uniform(n.facadeCurtainShare), facadeCurtain: uniform(n.facadeCurtain), facadeSpill: uniform(n.facadeSpill),
     windowPane: uniform(values.pane),
     windowBrightness: uniform(values.brightness),
   };
@@ -390,7 +408,7 @@ export function streetLightAt(maps: StreetLightMaps, p: Node<"vec3">) {
 // ---------------------------------------------------------------- card light
 
 /** Dusk's share now, 0–1 (duskShareAt's twin): one node, so a material works it out once. */
-const duskShare: Node<"float"> = smoothstep(DUSK_SPAN.from, DUSK_SPAN.to, sky.sunAltitude);
+export const duskShare: Node<"float"> = smoothstep(DUSK_SPAN.from, DUSK_SPAN.to, sky.sunAltitude);
 
 /**
  * The light on the white card model at a point with normal `n`: the sun by
@@ -436,7 +454,7 @@ function airReach(): Node<"float"> {
 }
 
 /** The air's share between the camera and a point `distance` metres away, with the reach scaled by `reachScale`. */
-function airAt(distance: Node<"float">, reachScale: number): Node<"float"> {
+export function airAt(distance: Node<"float">, reachScale: number): Node<"float"> {
   return float(1).sub(exp(max(distance.sub(16), 0).div(airReach().mul(reachScale).negate())));
 }
 
@@ -870,7 +888,7 @@ export function createFittingMaterial(sun: HallSun): MeshBasicNodeMaterial {
  * is the light's own. Both discard the pixels they add nothing to, so they
  * overwrite the other targets only where they shine.
  */
-function lightOnlyOutput() {
+export function lightOnlyOutput() {
   return mrt({ output, normal: vec4(0.5, 0.5, 1, 0) });
 }
 

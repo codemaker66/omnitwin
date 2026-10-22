@@ -345,7 +345,7 @@ take 1.65 GB and the grid 144 MB. Building the model takes about 15 s and the sk
 7 s.
 
     python3 tools/grand-hall-survey/context/fetch_dsm.py <work>/lidar <work>/dsm
-    python3 tools/grand-hall-survey/context/build_context.py <work>/dsm <work>/context --date 2026-10-16
+    python3 tools/grand-hall-survey/context/build_context.py <work>/dsm <work>/context --date 2026-10-22
     python3 tools/grand-hall-survey/skyline/final.py <work>/dsm <work>/skyline
 
 `build_context.py` writes `merchant-city-v2.bin` and `.json` (the published pair) and
@@ -381,8 +381,8 @@ regenerated and published. The current published files are:
 | Output | SHA-256 | Result |
 | --- | --- | --- |
 | `heights_50cm.f32` | `45c2977086bec5705cf177a6969472826bf0db328e5a2f9d4bf04853b5b4a5e4` | identical to the grid the published model was built from |
-| `merchant-city-v2.bin` | `5cdb593af128e7a2537e5a0488ecd326ff5ff116e517534abda4278650a3f59e` | unchanged since the first rebuild, identical in every build since |
-| `merchant-city-v2.json` | `a1b9444967bd4c3fb10237c81e6d980ed556ac0619d71a70b509b77e0d4cceb4` | rebuilt with `--date 2026-10-16` |
+| `merchant-city-v2.bin` | `3a0461aee8925d08ef8a27e6e437171c81022c2ea302488771ae64adc5d78a84` | the site cut moved to the street face, 22 October (below) |
+| `merchant-city-v2.json` | `2a0d6374b83470b50d8c216f5c4d0d3a00a0d0787295da0e627c3216206d8dd2` (LF) | rebuilt with `--date 2026-10-22` |
 | `hall-skyline.ts` | `dda0ff9d8bcbe45db72a1b3e226c65bfe599cc24b917884b0c1e31ac9dcbe1dd` | rebuilt with the frontage-bounded mask |
 
 The module's values are the 0.5° centre profiles rounded to 0.1°: the largest difference from the
@@ -391,3 +391,64 @@ ran once with `SOURCE_DATE_EPOCH` instead of `--date`. The libraries were Python
 scipy 1.17.0, scikit-image 0.26.0, shapely 2.1.2, tifffile 2026.8.23 and OpenCV 5.0.0. The JSON's
 `bytes_gzip` is the length of a zlib level-9 stream and may differ by a few bytes under another zlib
 (1.3.1 here). The web's `hall-sun-times` and `hall-sky` tests pass with the new module.
+
+On 22 October 2026 the site cut was moved from |z| <= 5.95 on both sides to the window wall's street face
+(`rect_front_z`, z -6.24: the wall's outer face is -6.245, and on the model's centimetre grid the cut lies 5 mm
+under the wall's foot rather than leaving a crack in front of it); the back stays at 5.95 (`rect_half_z`). First
+the published model was rebuilt from the same grid (`heights_50cm.f32` above, with `meta.json`
+`a40207f78244984e6c692f76ba8da98976dfff0a345beb2c00e74ab4ef98cb83`) with `--date 2026-10-16`: the `.bin` was
+identical byte for byte (`5cdb593a…`) and the `.json` identical in content. With the cut moved, the model has the
+same 69,451 vertices and triangles and the same topology; only the cut's two street corners move, (±11.2, 0,
+-5.95) to (±11.2, 0, -6.24). `check_render.py` on it: all caps up, no zero-area triangles, no cracks, open edges
+only on the rim (454) and the site cut (5), 2 edges shared by more than two triangles, as before. The street light
+was baked again against it (`bake_street_light.py --check`, the council's lamp file as Git stores it, LF): the
+light maps are byte-identical (`street-light-v2.bin`, `99e46b68…`), and the lamp table differs only in the
+model's and the work file's hashes. `CONTEXT_MODEL_URL` is at `?r=2`.
+
+The skyline's window face (`skyline.py` `Z_OUT`, -5.915) is not moved yet. Rays from the true face, -6.245,
+shift the five profiles by about 1° on average and by tens of degrees at a few grazing azimuths, move the
+sun-on-floor times by minutes (21 December, the end arch: none before, 12:05-12:10 after), and change a value the
+room lane's `hall-sun-times.test.ts` pins (the centre arch at 100°, 10.2° to 10.3°). The regenerated module and
+the tool change are ready as a patch (`D:/claude/night-facades-20261022/skyline-patch/facade-line-6.245.patch`) for
+whoever owns the sun times to apply with that test.
+
+## What the windows look onto: the facade survey
+
+The city model has the massing across Glassford Street and along Garth Street but no openings, so at night the
+hall's windows filled with dark violet. `context/facade-survey.json` reads the openings, shopfronts and signs off
+those walls from our own public 8K panoramas (twin.venviewer.com/trades-hall, 11 July 2026, each checked against
+the manifest's SHA-256), and `context/bake_facade_lights.py` places them on the published model:
+
+    python3 tools/grand-hall-survey/context/bake_facade_lights.py packages/web/public/rooms/grand-hall/context-2020-lidar --check
+
+It writes `facade-lights-v1.json` there (its method, parameters and inputs' hashes inside; `--check` bakes it
+twice and asserts the bytes agree), which `HallContext.tsx` loads beside the lamps.
+
+**What each window sees** (rays through each window's glass against the model: `context/window_sight.py`). From Blake's room pose, (1.5, 1.6, 4.2): the fireplace arch, the Bacchus building's north part 26-30 m
+off, 4-12 m above the pavement; the fireplace sash, the Bacchus's rendered-over windows 22 m off; the centre arch,
+the north side of Garth Street at a glance, 31-58 m off and 3-20 m up, with the sky above it (16%); the end sash,
+76 Glassford Street's first two floors, 20 m off, between its windows; the end arch, the houses south of No 74, 23
+m off. From the opening view the five see down onto Glassford Street's road and pavements (67-100%) and the foot of
+the frontage opposite. Straight out of each window: the Bacchus (fireplace arch), the end of Garth Street (the two
+middle windows, 77 m) and 76 Glassford Street (end arch), 18-19 m off.
+
+**The survey.** Each wall's photograph is rectified onto a plane through the model's wall by `context/rectify_facades.py`
+(the front door's station,
+scan_145, by day, for the outlines, at 2.5 cm; the window stations scan_038-042 at blue hour for what is lit; the
+room's stations through the end arch for the houses south of No 74), with a metre grid, and each opening's
+rectangle is read off it by eye. Where two stations see a feature they agree within 0.7 m; along Garth Street,
+seen at a glance, positions are good to about a metre. 78 features: 76 Glassford Street's office windows (one
+blind), No 74's and the next house's windows (homes), the Blane Valley bar's arches, door and teal fascia, the
+Bacchus's violet letters, glass doors and green glass (its upper windows are blind, rendered over, and never
+light), the stone block on Garth Street's north side (four floors of offices, its teal sign and lit shop) and the
+building closing Garth Street on Hutcheson Street. What lights at night is art direction: the panoramas show the
+bars and shops lit at blue hour and the offices dark.
+
+**The placement.** Rays from 4 m in front of each wall at most 0.4 m apart find the model's own wall; a feature
+stands 3 cm clear of its frontmost hit, a long sign or shopfront in 1.1 m pieces that follow the wall's jogs, and
+one whose top crosses a 3 m band edge (above which the model's wall steps back) keeps the part below it. What the
+model cannot carry is listed with its reason: the top floors of 76 Glassford Street, No 74 and the house south of
+it (the model's band there is set back 1.7-6.7 m), the Bacchus's corner sign (1.7 m off the model's chamfer) and
+one block window above the Bacchus's lower roof. Each feature has two seeds from SHA-256 of its id (an office's
+from its floor's, so offices light a floor at a time); the night look's shares light them.
+

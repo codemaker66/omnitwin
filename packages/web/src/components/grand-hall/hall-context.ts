@@ -18,7 +18,9 @@
 // (lib/sky/night-looks.ts), its skyline brighter than its blocks so every
 // building stands as a silhouette, its windows light up at random and steady,
 // and the council's street lamps (hall-street-light.ts) lay amber pools on
-// the pavements and a warm scallop on the wall under each lantern.
+// the pavements and a warm scallop on the wall under each lantern. On the
+// walls the hall's windows look onto, the surveyed openings
+// (hall-facade-lights.ts) take the random windows' place.
 // ---------------------------------------------------------------------------
 
 import { BufferAttribute, BufferGeometry, FrontSide, Sphere, Vector3 } from "three";
@@ -33,6 +35,7 @@ import {
   LAMP_SWITCH, cardHaze, cardLight, lampOn, nightDither, poolLight, streetLightAt, streetLookUniforms, type StreetLightMaps,
 } from "./hall-street-light.js";
 import type { HallSun } from "./hall-sun.js";
+import { surveyedWall } from "./hall-facade-lights.js";
 
 export const CONTEXT_MODEL_URL = "/rooms/grand-hall/context-2020-lidar/merchant-city-v2.bin?r=2";
 
@@ -149,6 +152,14 @@ const POOL_LEVEL = 0.5;
 const SPILL_HEIGHT = 2;
 /** The share of a pool's light on the foot of the walls beside it. */
 const SPILL = 0.35;
+/**
+ * The pavement's light washing on up the walls beside a pool: a share of the
+ * pool's light at the wall's foot, fading out by WASH_HEIGHT metres, so a lit
+ * street reads as a lit corridor and the facades across from the hall's
+ * windows carry its light up past their shopfronts.
+ */
+const WASH = 0.16;
+const WASH_HEIGHT = 7;
 
 const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 const card = (rgb: readonly [number, number, number]) => vec3(linear(rgb[0]), linear(rgb[1]), linear(rgb[2]));
@@ -210,7 +221,9 @@ function cityColor(sun: HallSun, maps: StreetLightMaps) {
       const paneArea = bounds.y.sub(bounds.x).mul(bounds.w.sub(bounds.z));
       const average = mix(share.mul(paneArea).mul(brightness.x.add(brightness.y.mul(0.5))), look.windowAverage, step(0, look.windowAverage));
       const glow = mix(average, pane.mul(on), resolved);
-      lit.addAssign(tint.mul(glow).mul(wall).mul(step(0, cellV)).mul(u.night));
+      // On the walls the survey reads, the openings it found light instead (hall-facade-lights.ts).
+      const surveyed = float(1).sub(surveyedWall(p));
+      lit.addAssign(tint.mul(glow).mul(wall).mul(step(0, cellV)).mul(u.night).mul(surveyed));
 
       // The street lamps, each lit at its own sun altitude: pools on the ground
       // each lamp stands on (never a roof or the site's cut), a scallop on the
@@ -236,7 +249,9 @@ function cityColor(sun: HallSun, maps: StreetLightMaps) {
       const wallSide = float(1).sub(cap);
       const scallop = look.scallop.mul(cone).mul(float(1).div(reach.mul(reach).add(1))).mul(facing).mul(light.hasHead).mul(lampOn(light.headSwitch));
       // The pool's light up the foot of the walls beside it, from its own ground.
-      const spill = poolLit.mul(smoothstep(SPILL_HEIGHT, 0, aboveFoot)).mul(smoothstep(-0.3, 0, aboveFoot)).mul(SPILL);
+      const washFade = max(float(1).sub(aboveFoot.div(WASH_HEIGHT)), 0);
+      const spill = poolLit.mul(smoothstep(SPILL_HEIGHT, 0, aboveFoot).mul(SPILL).add(washFade.mul(washFade).mul(WASH)))
+        .mul(smoothstep(-0.3, 0, aboveFoot));
       lit.addAssign(albedo.mul(poolLit.mul(street).add(scallop.add(spill).mul(wallSide))));
     });
 
