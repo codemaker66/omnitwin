@@ -59,7 +59,7 @@ import { sectionCapGeometry } from "./hall-relief-section.js";
 import { WALL_BODY_TOP } from "./hall-wall-body.js";
 import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 import { hallSkyState } from "./hall-sky-runtime.js";
-import { HALL_SUN_CASTER_LAYER, hallSun, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
+import { HALL_SUN_CASTER_LAYER, hallSun, hallSunCasterParts, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
 
 declare global {
   interface Window {
@@ -663,11 +663,9 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       })}
       {resources.casters !== null && (
         <group name="grand-hall-sun-casters">
-          {[
-            ...[...geometry.geometries, ...walls.geometries].map(([key, part]) => ({ key, part, glazed: key === "wallPhoto" || key === "wallPhotoGloss" })),
-            // The doors cast shut: the cutaway is a way of looking, as everywhere else.
-            ...[...doors.geometries].map(([key, part]) => ({ key, part, glazed: false })),
-          ].filter(({ key }) => key !== "floor").map(({ key, part, glazed }, index) => (
+          {hallSunCasterParts({
+            room: geometry.geometries, walls: walls.geometries, doors: doors.geometries, body: resources.cutaway.body,
+          }).map(({ key, geometry: part, glazed }, index) => (
             <mesh
               key={`caster-${String(index)}-${key}`}
               geometry={part}
