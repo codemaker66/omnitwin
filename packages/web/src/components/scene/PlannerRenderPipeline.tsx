@@ -3,16 +3,20 @@
 //
 // Draws the main view through a node pipeline instead of a plain render:
 //
-//   scene pass ──► ambient occlusion (weighted per material) ──► temporal
-//   anti-aliasing ──► bloom ──► vignette ──► tone mapping and output
+//   scene pass ──► ambient occlusion ──► temporal anti-aliasing ──► bloom
+//   ──► white balance and saturation ──► vignette ──► tone mapping and output
 //
-// Surfaces whose colour already holds the room's own shadows (the hall's
-// photographs) write a lower occlusion weight into the normal target's alpha,
-// so screen-space occlusion grounds furniture without darkening the scan's
-// corners twice. Temporal anti-aliasing jitters the camera every frame; under
-// the planner's on-demand frame loop the view keeps drawing for a few frames
-// after the last change, so a still image converges to a supersampled one and
-// then the loop goes idle again. Profiles per device class live in
+// Every surface writes an occlusion weight of 1 into the normal target's
+// alpha, so screen-space occlusion darkens the photographed room as it does
+// the furniture. The window panes (hall-glazing.ts) write alpha 0 into the
+// normal and velocity targets, and the street's light (hall-street-light.ts)
+// into the normal target; both targets blend by alpha, so what lies behind
+// keeps its own normal and occlusion (and, behind the panes, its motion).
+//
+// Temporal anti-aliasing jitters the camera every frame; under the planner's
+// on-demand frame loop the view keeps drawing for a few frames after the last
+// change, so a still image converges to a supersampled one and then the loop
+// goes idle again. Profiles per device class live in
 // lib/render-quality.ts. The pipeline stands aside while a captured room is
 // shown (captures carry their own camera response), and a software
 // rasteriser draws the scene plainly.
@@ -83,7 +87,8 @@ export function buildPlannerPipeline(
   const scenePass = pass(scene, camera, { samples: profile.sceneSamples });
   owned.push(scenePass);
   const targets: Parameters<typeof mrt>[0] = { output };
-  // The normal target's alpha carries each surface's occlusion weight.
+  // The normal target's alpha carries the occlusion weight: 1 here for every
+  // surface; a material's own MRT may write 0 (see the header).
   if (normals) targets["normal"] = vec4(packNormalToRGB(normalView), float(1));
   if (temporal) targets["velocity"] = velocity;
   if (Object.keys(targets).length > 1) {
