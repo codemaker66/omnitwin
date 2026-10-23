@@ -128,6 +128,34 @@ export interface StreetNightLook {
     /** Average light of windows too small to see, or null to work it out from the share and the pane. */
     readonly average: number | null;
   };
+  /**
+   * The openings our panoramas show across Glassford Street and along Garth
+   * Street, which fill the hall's windows (hall-facade-lights.ts): windows lit
+   * by each one's own seed, the bars' and shops' glazing and signs, and their
+   * light on the pavement. Emitted light, as the windows'. Where the survey
+   * reaches, these replace the city's random windows.
+   */
+  readonly facades: {
+    /** The share of offices and of homes lit (a window lights when its seed is under its use's share). */
+    readonly officeShare: number;
+    readonly homeShare: number;
+    /** A lit office (ceiling lights behind blinds) and a lit home (lamplight). */
+    readonly office: Rgb;
+    readonly home: Rgb;
+    /** The share of lit homes with their curtains drawn, and the light through a curtain, as a share of the room's. */
+    readonly curtainShare: number;
+    readonly curtain: number;
+    /** Glazing lit from inside: the pub, the bar's doors and its green glass. */
+    readonly pub: Rgb;
+    readonly bar: Rgb;
+    readonly glassGreen: Rgb;
+    /** Lit signs: the teal fascia, the violet letters, the green sign. */
+    readonly signTeal: Rgb;
+    readonly signViolet: Rgb;
+    readonly signGreen: Rgb;
+    /** A lit shopfront's light on the pavement before it, at the shopfront, as a share of its glazing's. */
+    readonly spill: number;
+  };
 }
 
 const WIDE_PANE = [0.3, 0.7, 0.28, 0.72] as const;
@@ -148,6 +176,23 @@ const EVOCATIVE_AMBIENT = {
   roof: [0.0381, 0.0248, 0.0546],
   ground: [0.0329, 0.023, 0.0436],
 } as const;
+// What lies across the street, from the panoramas at blue hour (11 July): the
+// pub's arches lit warm white under a teal fascia, the bar's letters violet and
+// its corner sign green, the offices dark. Which offices and homes light is
+// the look's choice: Evocative lights about half the office floors and most
+// homes, as its references light their streets; "True to street" leaves the
+// offices mostly dark. The signs keep the hues the photographs show (teal
+// about 180 degrees, violet 255, green 145) at the neon accents' brightness,
+// the glazing at a lit window's.
+const EVOCATIVE_FACADES = {
+  officeShare: 0.5, homeShare: 0.6,
+  office: [0.24, 0.16, 0.07], home: [0.28, 0.14, 0.04], curtainShare: 0.5, curtain: 0.4,
+  pub: [0.24, 0.13, 0.04], bar: [0.16, 0.09, 0.2], glassGreen: [0.04, 0.16, 0.1],
+  signTeal: [0.04, 0.24, 0.22], signViolet: [0.15, 0.05, 0.34], signGreen: [0.04, 0.26, 0.08],
+  // A lit bar's windows light the pavement before them about as brightly as a lamp's pool (its core about 0.3).
+  spill: 0.9,
+} as const;
+const scaled = (rgb: Rgb, k: number): Rgb => [rgb[0] * k, rgb[1] * k, rgb[2] * k];
 
 export const STREET_NIGHT_LOOKS: Readonly<Record<StreetNightLookName, StreetNightLook>> = {
   subtle: {
@@ -169,6 +214,12 @@ export const STREET_NIGHT_LOOKS: Readonly<Record<StreetNightLookName, StreetNigh
     windows: {
       warm: [0.13, 0.075, 0.035], share: 0.14, nearShare: 0.04, cool: NONE, coolShare: 0,
       magenta: NONE, magentaShare: 0, cyan: NONE, cyanShare: 0, pane: WIDE_PANE, brightness: [0.55, 0.9], average: null,
+    },
+    facades: {
+      ...EVOCATIVE_FACADES, officeShare: 0.18, homeShare: 0.4, spill: 0.6,
+      office: scaled(EVOCATIVE_FACADES.office, 0.75), home: scaled(EVOCATIVE_FACADES.home, 0.75), pub: scaled(EVOCATIVE_FACADES.pub, 0.75),
+      bar: scaled(EVOCATIVE_FACADES.bar, 0.6), glassGreen: scaled(EVOCATIVE_FACADES.glassGreen, 0.6),
+      signTeal: scaled(EVOCATIVE_FACADES.signTeal, 0.6), signViolet: scaled(EVOCATIVE_FACADES.signViolet, 0.6), signGreen: scaled(EVOCATIVE_FACADES.signGreen, 0.6),
     },
   },
   evocative: {
@@ -202,6 +253,7 @@ export const STREET_NIGHT_LOOKS: Readonly<Record<StreetNightLookName, StreetNigh
       magenta: [0.1436, 0.0395, 0.1248], magentaShare: 0.04, cyan: [0.0582, 0.2981, 0.2844], cyanShare: 0.02,
       pane: WIDE_PANE, brightness: [0.55, 0.9], average: null,
     },
+    facades: EVOCATIVE_FACADES,
   },
   noir: {
     name: "noir",
@@ -223,6 +275,12 @@ export const STREET_NIGHT_LOOKS: Readonly<Record<StreetNightLookName, StreetNigh
       warm: [0.3, 0.13, 0.04], share: 0.3, nearShare: 0.04, cool: NONE, coolShare: 0,
       magenta: [0.261, 0.051, 0.221], magentaShare: 0.04, cyan: [0.065, 0.621, 0.584], cyanShare: 0.02,
       pane: WIDE_PANE, brightness: [0.55, 0.9], average: null,
+    },
+    facades: {
+      ...EVOCATIVE_FACADES, officeShare: 0.6, homeShare: 0.7, spill: 1,
+      office: scaled(EVOCATIVE_FACADES.office, 1.3), home: scaled(EVOCATIVE_FACADES.home, 1.3), pub: scaled(EVOCATIVE_FACADES.pub, 1.3),
+      bar: scaled(EVOCATIVE_FACADES.bar, 1.4), glassGreen: scaled(EVOCATIVE_FACADES.glassGreen, 1.4),
+      signTeal: scaled(EVOCATIVE_FACADES.signTeal, 1.4), signViolet: scaled(EVOCATIVE_FACADES.signViolet, 1.4), signGreen: scaled(EVOCATIVE_FACADES.signGreen, 1.4),
     },
   },
   true: {
@@ -246,6 +304,8 @@ export const STREET_NIGHT_LOOKS: Readonly<Record<StreetNightLookName, StreetNigh
       warm: [0.22, 0.115, 0.035], share: 0.22, nearShare: 0.04, cool: NONE, coolShare: 0,
       magenta: NONE, magentaShare: 0, cyan: NONE, cyanShare: 0, pane: WIDE_PANE, brightness: [0.55, 0.9], average: null,
     },
+    // The signs and the pub as photographed; offices mostly dark, as the panoramas show them at blue hour.
+    facades: { ...EVOCATIVE_FACADES, officeShare: 0.15, homeShare: 0.5 },
   },
   off: {
     name: "off",
@@ -266,6 +326,11 @@ export const STREET_NIGHT_LOOKS: Readonly<Record<StreetNightLookName, StreetNigh
       warm: [0.6, 0.396, 0.216], share: 0.14, nearShare: 0.14, cool: [0.48, 0.516, 0.6], coolShare: 0.14,
       magenta: NONE, magentaShare: 0, cyan: NONE, cyanShare: 0, pane: [0.4, 0.6, 0.37, 0.65], brightness: [0.35, 0.65],
       average: 0.012,
+    },
+    // Before the lamps there were no surveyed openings either: the city's random windows only.
+    facades: {
+      officeShare: 0, homeShare: 0, office: NONE, home: NONE, curtainShare: 0, curtain: 0,
+      pub: NONE, bar: NONE, glassGreen: NONE, signTeal: NONE, signViolet: NONE, signGreen: NONE, spill: 0,
     },
   },
 };

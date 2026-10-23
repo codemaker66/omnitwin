@@ -33,6 +33,29 @@ describe("the street's night looks", () => {
     expect(look.pool.softness).toBeLessThan(1);
     expect(look.beam.reach).toBeGreaterThan(0);
     expect(look.beam.reach).toBeLessThanOrEqual(1);
+    const f = look.facades;
+    for (const share of [f.officeShare, f.homeShare, f.curtainShare, f.curtain, f.spill]) expect(share).toBeLessThanOrEqual(1);
+  });
+
+  it("lights the surveyed openings across the street in every look with lamps, and none in the look before them", () => {
+    for (const name of STREET_NIGHT_LOOK_NAMES) {
+      const { facades, lamps } = STREET_NIGHT_LOOKS[name];
+      const lights = [facades.office, facades.home, facades.pub, facades.bar, facades.glassGreen, facades.signTeal, facades.signViolet, facades.signGreen];
+      if (!lamps) {
+        expect([facades.officeShare, facades.homeShare, facades.spill], name).toEqual([0, 0, 0]);
+        for (const rgb of lights) expect(rgb, name).toEqual([0, 0, 0]);
+        continue;
+      }
+      expect(facades.officeShare, name).toBeGreaterThan(0);
+      expect(facades.homeShare, name).toBeGreaterThan(0);
+      // Below the bloom's threshold, as the city's windows are: lit glass, not lamps.
+      for (const rgb of lights) expect(Math.max(...rgb), name).toBeLessThan(0.92);
+      // A home's lamplight warm, the signs in the hues the panoramas show: teal, violet, green.
+      expect(facades.home[0], name).toBeGreaterThan(facades.home[2]);
+      expect(facades.signTeal[1] > facades.signTeal[0] && facades.signTeal[2] > facades.signTeal[0], name).toBe(true);
+      expect(facades.signViolet[2] > facades.signViolet[0] && facades.signViolet[0] > facades.signViolet[1], name).toBe(true);
+      expect(facades.signGreen[1] > facades.signGreen[0] && facades.signGreen[1] > facades.signGreen[2], name).toBe(true);
+    }
   });
 
   it("keeps every lit lens above the bloom's threshold and every halo below it, warm", () => {
