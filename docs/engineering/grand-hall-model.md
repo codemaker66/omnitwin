@@ -26,7 +26,13 @@ development builds only) shows the room alone, posed through a window bridge for
   `project-walls.py --labels`; the survey README's "How a texel gets its colour"). The earlier blend
   of every station doubled the deacon boards' lettering and hazed the portraits; the runtime and the
   atlas's dimensions and glass alpha did not change. Faces the orthophotos see edge-on (the
-  sides of doorcases and boards) take a coarser mip, so a single row of texels never streaks. The
+  sides of doorcases and boards) take a coarser mip, so a single row of texels never streaks; faces
+  turned up or down (a shelf's top) a coarser one still (4 levels, about 8 cm), since every point
+  across them takes the photograph of their front edge: that softens the streaks across the boards'
+  shelf without removing them (no photograph is projected onto the walls' upward faces). Since
+  revision 7 the two portraits whose sharpest view carried a varnish veil (over the fireplace, and
+  Blake's on the end wall) have it taken off by a field the other views measure
+  (`canvasveil.py`; the survey README's "The portraits' canvases"). The
   varnished dado and attic panelling are glossy; plaster and frieze are matte. What the modelled
   doors replace is cut out of the relief along the doorway's own lines (`drawnRelief`, clipping
   triangles, never dropping them whole: whole triangles left chinks beside the jambs through which
@@ -167,17 +173,31 @@ development builds only) shows the room alone, posed through a window bridge for
   is built of (`masonrySection`, `MASONRY`; art direction, since nothing surveyed the walls' insides):
   the room's lime plaster (25 mm; mahogany through the dado, oak through the attic; over the relief
   the whole cap is that material) as one band never under 1.5 px and widened whole, a coursed rubble
-  core (courses 0.2 m across the wall that wander every 1.3 m, stones 0.24-0.5 m, each its own shade),
-  an outer leaf of dressed blocks 0.26 m deep against the outer face, 9 mm mortar joints that fade
-  out where a pixel spans more than a joint and a half, and the outer arris catching the light, never
-  under 1.5 px. The room line runs straight along the wall's plane (along the relief's surface where
+  core (courses 0.2 m across the wall that wander every 1.3 m, stones 0.24-0.5 m with their joints
+  staggered up to 30% either way, each its own shade, +-18%, and warmth), an outer leaf of dressed
+  blocks 0.26 m deep against the outer face (+-9%), 9 mm mortar joints that fade out where a pixel
+  spans more than a joint and a half, and the outer arris catching the light, never under 1.5 px.
+  Each stone's face falls away softly toward its joints (`MASONRY.pillow`, 3-5 cm, 17% darker at the
+  joint) and catches the room's light on its side toward the room, shaded on its far side
+  (`MASONRY.edgeLight`): at Blake's distance (about 1.4 cm a pixel) and on a phone the joints have
+  faded, and with +-10% shade alone the cut read as large flat blocks (the skeptic's C3-aesthetic,
+  22 October). All of it smooth in position, so nothing shimmers. The outer faces take the room's
+  light at their top, under the cut (`FACE_TOP_GLOW`, 22% brighter at the arris, e-folding over
+  18 cm). The room line runs straight along the wall's plane (along the relief's surface where
   that lies behind it): S3b's gilt line followed the relief's profile and beaded along every diagonal
   edge (0.29 gaps per 100 px on a phone; beaded in stills on a computer too), and a light arris a
   pixel wide beside the dark plaster band beaded the same way. Atelier keeps a gilt line on the cut's
   room edge, straight, never under 1.5 px. The near walls are cut through the dado rail
   (`HALL_CUTS.near`, 1.92 m, 3 cm under its top, where the door wall's relief stands furthest proud:
   5.0 cm median, every centimetre in section), so the cut's edge is the rail's own face; at 1.96 m its
-  top ledge stood a pixel beyond the cut. The room's face under every cut carries a gilt band 8 mm
+  top ledge stood a pixel beyond the cut. Below the cut the rail swells up to 3.5 cm further out
+  within 4 cm on the door wall, so from above a near wall still showed the swell's top past the
+  section's edge: a pixel wide, facing up into the chandeliers' baked light, it drew a beaded line
+  of bright dots (C3-bead: 33 in 170 x 90 px of the opening view, all of them those fragments). On
+  a wall the camera stands outside, its relief within 4 cm under the cut takes the section's own
+  room line (`outsideSliver`, `sectionRoomLine`, `HallMaterialOptions.sliverColour`) without the
+  varnish's highlight, easing in over the metre either side of the wall's plane; 33 dots fell to
+  1-3, and along the near walls' cut in a moving orbit from 34-50 a frame to 7-14. The room's face under every cut carries a gilt band 8 mm
   deep and a soft shadow below it (35% at most, gone by 4 cm; `hall-cut-lines.ts`), on upright faces
   and not on what stands in a window; every line box-filtered and, once widened past its width,
   dimmed to carry the same light (a band of material, the plaster, is widened whole).
@@ -228,8 +248,11 @@ development builds only) shows the room alone, posed through a window bridge for
   out, soft at its sides, dimming as 1 / (1 + (d / 1.1 m)^2), 45% of the chandeliers' light). The
   photographs are relit by their own lamps (5% of the chandeliers' light at night, warm as they are)
   and daylight, the mood's ambient only as a level of light (`relitBeyondPhoto`), and rolled off
-  toward 40% of the photograph (`BEYOND_MAX_LIFT`): lifted freely, the spill burned D3's floor to a
-  cream oval brighter than the hall's floor (review LOOK-2). The section style draws
+  toward 40% of the photograph by the light's luminance, keeping its colour (`BEYOND_MAX_LIFT`,
+  `beyondLift`): lifted freely, the spill burned D3's floor to a cream oval brighter than the hall's
+  floor (review LOOK-2); rolled off channel by channel, the warm spill came out grey and the
+  photographed stone's cool cast showed (the skeptic's beyond-cool: the landing's Lab b* 0.5, now
+  9.5). The section style draws
   them: Ashlar the photographed floors (`beyond-832.webp`, `beyond-416.webp` on phones: 693 KB on
   the GPU; loaded the first time a door opens, cross-fading in over 200 ms, at once under reduced
   motion; their median colours until then or if they fail), Atelier the first floor's walls in card
@@ -268,7 +291,11 @@ the room's own captured reflections; under the real sky it opens onto the drawn 
 cannot: real lights for the furniture and highlights in varnish and gilt. The drawn room's
 reflections are its own (`hall-capture.ts`): it is captured whole, uncut and with its fittings
 lit, whenever a surface or a mood settles, with the bulbs at half brightness so they glint
-without filling the reflections' sky beneath the dome fitting. `HallEnvironment` stands in only
+without filling the reflections' sky beneath the dome fitting. Its texture is allocated (the void,
+filtered) and installed as the scene's environment before the room's first frame
+(`HallEnvironmentCapture.prepare`), and every capture refills it: installing a new texture with the
+first capture made three rebuild every material of the scene pass once more, a 2.2-3.0 s
+main-thread task at 4x CPU on the phone profile, on master as on the branch (review R2). `HallEnvironment` stands in only
 while the room is not drawn. The canvas uses Khronos PBR Neutral tone mapping for the
 photographed room (`lib/capture-display.ts`), which keeps the photographs' mid-tones, after the
 planner's pipeline grades each mood ([planner rendering](planner-rendering.md)).
@@ -294,7 +321,12 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   carries the shown time on a spring, so a chosen hour arrives as the sun sweeping across the
   sky; a jump of more than 36 hours arrives at once.
 - **Light and shadow** (`hall-sun.ts`, `HallSunLight.tsx`): one shadow-casting directional light,
-  the sun by day and the moon by night. Its map covers the room and 90 m of street toward the sun,
+  the sun by day and the moon by night. The moon in the room is a faint wash (Blake, 22 October
+  2026): `MOON_INTENSITY` 0.24 and `MOON_ROOM_RADIANCE` 0.11, a tenth of what they were, about +0.03
+  on the floor's luma where the full moon of 26 October falls at 21:30 GMT (+0.25 before, when a
+  moonlit patch read white); the sky's moon is unchanged. The room casts with its walls' bodies as
+  well as their relief (`hallSunCasterParts`), and the ceiling closes its corners, so the moon no
+  longer draws lines through the slits between them (moon-streaks, merged 22 October). Its map covers the room and 90 m of street toward the sun,
   so the blocks across Glassford Street shade the windows, and is refitted only when the light
   has turned or the furniture has changed (coarsely while the time is dragged). On WebGPU a
   material that samples the shadow map cannot also cast into it, so the hall casts through plain
@@ -479,6 +511,20 @@ photographs decode off the main thread (`ImageBitmapLoader`, flipped in the deco
 closed with its texture), and the window-light bake samples flat buffers without allocating: on the
 RTX 4090's production-build load the main thread's decoding fell from 345 ms to 37 ms and the bake
 from about 120 ms to 57 ms.
+
+The load's long tasks are shader compiles. On the phone profile at 4x CPU (dev server, RTX 4090,
+23 October; CPU profiles and a count of three's node builds by render context,
+`D:/claude/planner-polish-20261018/room/finish/perf/`): the room's first frame compiles every
+material for the scene pass in one task, 2.4-2.6 s with the room fixes (master 1.2-1.4 s); the
+first reflection capture compiles them for its own target, 1.0-1.3 s; master then rebuilt every
+material once more when the capture's texture became the environment, 2.1-2.4 s, which
+`HallEnvironmentCapture.prepare` removes here. Each material of the scene pass is built once (42
+builds, 66 before). Splitting the first compile needs a precompile into the pass's own target
+(`compileAsync` with its render target and MRT held across awaits, the room hidden until it is
+done), not yet built. Frame cost on the phone profile, 780 x 1688 with 4x MSAA, on the 4090
+(240 forced frames, three runs each): at the opening view GPU p95 5.0-5.5 ms (master 5.0-5.1) and
+CPU p95 1.5-1.6 ms (1.2-1.3); on a walk GPU 5.3-5.7 (5.1-5.2), CPU 1.7-2.0 (1.3-1.4). No real
+phone was measured.
 
 How much of the finish a device carries is `hall-finish.ts`: phones load the half-size photographs
 (0.67 MB instead of 2.06 MB) and keep 16 of the walls' detail tiles (tablets 32, computers 64); a
