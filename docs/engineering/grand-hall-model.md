@@ -519,9 +519,10 @@ material for the scene pass in one task, 2.4-2.6 s with the room fixes (master 1
 first reflection capture compiles them for its own target, 1.0-1.3 s; master then rebuilt every
 material once more when the capture's texture became the environment, 2.1-2.4 s, which
 `HallEnvironmentCapture.prepare` removes here. Each material of the scene pass is built once (42
-builds, 66 before). Splitting the first compile needs a precompile into the pass's own target
-(`compileAsync` with its render target and MRT held across awaits, the room hidden until it is
-done), not yet built. Frame cost on the phone profile, 780 x 1688 with 4x MSAA, on the 4090
+builds, 66 before). Splitting the first compile needs a precompile into the pass's own render
+context, and three r186 keys a context by its call depth as well as its target and MRT
+(`RenderContexts.get`): `compileAsync` always builds at depth 0, while the planner's pipeline draws
+the scene pass at depth 1, inside its output quad's render. Not built: it needs three's internals. Frame cost on the phone profile, 780 x 1688 with 4x MSAA, on the 4090
 (240 forced frames, three runs each): at the opening view GPU p95 5.0-5.5 ms (master 5.0-5.1) and
 CPU p95 1.5-1.6 ms (1.2-1.3); on a walk GPU 5.3-5.7 (5.1-5.2), CPU 1.7-2.0 (1.3-1.4). No real
 phone was measured.
