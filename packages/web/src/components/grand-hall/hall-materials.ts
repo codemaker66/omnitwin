@@ -284,12 +284,17 @@ function wallTexel(photos: HallPhotos, edgeOn = true, detail: HallDetailLayer | 
   // of texels does not streak, and only a little shaded. The muted 30 cm
   // average everywhere laid a flat grey slab along the deacon boards' shelf
   // (review LOOK-7, 22 October). One sample either way: the level follows.
-  const glassy = float(1).sub(smoothstep(0.9, 0.99, photo.a));
-  const coarse = photo.bias(mix(float(2.5), float(6), glassy)).rgb;
-  const reveal = vec4(mix(coarse.mul(0.86), mix(vec3(luminance(coarse)), coarse, 0.3).mul(0.62), glassy), 1);
   // The unbiased sample's alpha marks glazing; the window boards and heads
   // (faces turned up or down) are never glass, whatever texel they project to.
   const level = smoothstep(0.55, 0.8, face.y.abs());
+  // A face turned up or down (a shelf's top, a board's ledge) lies along the
+  // photograph's line of sight: every point across its depth takes the same
+  // row of texels, the photograph of its front edge, so its colour along the
+  // wall ran across it as streaks (the skeptic's shelf, 22 October). It takes
+  // a wider average (4 levels, about 8 cm), a soft tone in its own colour.
+  const glassy = float(1).sub(smoothstep(0.9, 0.99, photo.a));
+  const coarse = photo.bias(mix(mix(float(2.5), float(4), level), float(6), glassy)).rgb;
+  const reveal = vec4(mix(coarse.mul(0.86), mix(vec3(luminance(coarse)), coarse, 0.3).mul(0.62), glassy), 1);
   return { texel: mix(reveal, sample, facing), alpha: photo.a, level };
 }
 
