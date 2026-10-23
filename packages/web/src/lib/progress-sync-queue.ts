@@ -25,6 +25,12 @@ import { openCache, type CacheHandle } from "./idb-cache.js";
 
 export interface QueuedProgressOp {
   readonly configId: string;
+  /**
+   * The event the sheet was opened for (its ?eventId=), so the tick replays
+   * into that event's ticks and no other's. Null or absent when the sheet
+   * named none — including every op queued before ticks belonged to events.
+   */
+  readonly eventId?: string | null;
   readonly rowKey: string;
   /**
    * The user's INTENT: `true` = should be checked, `false` = should
@@ -38,9 +44,13 @@ export interface QueuedProgressOp {
 const DB_NAME = "omnitwin-hallkeeper";
 const STORE_NAME = "progress-queue";
 
-function keyFor(configId: string, rowKey: string): string {
-  return `${configId}:${rowKey}`;
+/** The IndexedDB key of a queued tick. A tick with no event keeps the key ops
+ *  were stored under before ticks belonged to events, so an op already queued
+ *  on a device still acks: this format is load-bearing, change it never. */
+export function progressQueueKey(configId: string, rowKey: string, eventId: string | null | undefined): string {
+  return eventId === null || eventId === undefined ? `${configId}:${rowKey}` : `${configId}:${eventId}:${rowKey}`;
 }
+const keyFor = progressQueueKey;
 
 /**
  * Open the progress-queue cache. Lazy-instantiated once per module
@@ -58,9 +68,11 @@ export async function enqueueProgress(
   configId: string,
   rowKey: string,
   desiredChecked: boolean,
+  eventId: string | null = null,
 ): Promise<void> {
-  await queueCache().put(keyFor(configId, rowKey), {
+  await queueCache().put(keyFor(configId, rowKey, eventId), {
     configId,
+    eventId,
     rowKey,
     desiredChecked,
     queuedAt: new Date().toISOString(),
@@ -74,8 +86,8 @@ export async function listPendingProgress(): Promise<readonly QueuedProgressOp[]
 }
 
 /** Remove a queued entry after a successful replay. */
-export async function ackProgress(configId: string, rowKey: string): Promise<void> {
-  await queueCache().delete(keyFor(configId, rowKey));
+export async function ackProgress(configId: string, rowKey: string, eventId: string | null = null): Promise<void> {
+  await queueCache().delete(keyFor(configId, rowKey, eventId));
 }
 
 /**

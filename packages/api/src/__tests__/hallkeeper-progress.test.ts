@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveProgressMutation,
   checkedStateAfter,
+  progressEventFor,
   type ProgressMutation,
 } from "../lib/hallkeeper-progress.js";
 
@@ -73,13 +74,53 @@ describe("checkedStateAfter", () => {
   });
 });
 
+// A layout can serve more than one event. Ticks keyed on the layout alone
+// meant a reused layout opened with the last event's ticks, and the Day Board
+// could say "84 of 84" for a room nobody had set tonight.
+describe("progressEventFor: which event a sheet's ticks belong to", () => {
+  const A = "00000000-0000-4000-8000-00000000000a";
+  const B = "00000000-0000-4000-8000-00000000000b";
+  const C = "00000000-0000-4000-8000-00000000000c";
+  const scope = (linkedEventIds: readonly string[], requestedEventId: string | null, requestedIsVenueEvent = false): string | null =>
+    progressEventFor({ linkedEventIds, requestedEventId, requestedIsVenueEvent });
+
+  it("is the event the hallkeeper arrived from, when the layout is linked to it", () => {
+    expect(scope([A, B], B)).toBe(B);
+    expect(scope([A], A)).toBe(A);
+  });
+
+  // The Day Board can offer a layout for an event that reaches it only through
+  // a frozen phase plan, with no link row. Its ticks must be that event's own,
+  // never another event's that happens to be linked.
+  it("is the event the hallkeeper arrived from when it is the venue's event, linked or not", () => {
+    expect(scope([A], B, true)).toBe(B);
+    expect(scope([A, B], C, true)).toBe(C);
+    expect(scope([], C, true)).toBe(C);
+  });
+
+  it("is the layout's only event when the sheet was opened without one", () => {
+    expect(scope([A], null)).toBe(A);
+  });
+
+  it("ignores an event that is not the venue's, as the sheet's own times do", () => {
+    expect(scope([A], B)).toBe(A);
+    expect(scope([A, B], C)).toBeNull();
+  });
+
+  it("is no event when the layout has none, or several and none was named", () => {
+    expect(scope([], null)).toBeNull();
+    expect(scope([], A)).toBeNull();
+    expect(scope([A, B], null)).toBeNull();
+  });
+});
+
 describe("progress route implementation", () => {
-  it("uses conflict-safe insert for idempotent checked=true replay", async () => {
+  it("uses conflict-safe insert for idempotent checked=true replay, within the event's own ticks", async () => {
     const source = await readFile(resolve("src/routes/hallkeeper-sheet.ts"), "utf-8");
 
     expect(source).toContain("if (desired !== undefined)");
     expect(source).toContain(".onConflictDoNothing({");
-    expect(source).toContain("target: [hallkeeperProgress.configId, hallkeeperProgress.rowKey]");
-    expect(source).toContain("return { data: { configId, rowKey, checked: desired } }");
+    expect(source).toContain("target: [hallkeeperProgress.configId, hallkeeperProgress.eventId, hallkeeperProgress.rowKey]");
+    expect(source).toContain("return { data: { configId, eventId, rowKey, checked: desired } }");
   });
 });
