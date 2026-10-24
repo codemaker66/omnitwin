@@ -345,7 +345,7 @@ function describePieces(pieces: readonly ChangedPiece[]): string {
       case "numbered":
         return phrase.numbers.length === 1
           ? `${phrase.word} ${phrase.numbers[0] ?? ""}`
-          : `${plural(phrase.word)} ${joinedWithAnd(phrase.numbers)}`;
+          : `${plural(phrase.word)} ${joinedWithAnd([...phrase.numbers].sort((x, y) => Number.parseInt(x, 10) - Number.parseInt(y, 10)))}`;
       case "counted":
         return phrase.count === 1 ? withArticle(phrase.noun) : `${String(phrase.count)} ${plural(phrase.noun)}`;
     }

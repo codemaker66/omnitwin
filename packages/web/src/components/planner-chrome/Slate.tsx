@@ -161,7 +161,7 @@ export function SlateCard({
   const { notice, lineAction } = save;
   const urgent = save.kind === "not-saved" || save.kind === "changed-elsewhere";
   return (
-    <section className="pc-slate" aria-label={title} data-save={save.kind} data-plane={plane === null ? "none" : "joined"}>
+    <section className="pc-slate" aria-label={title} data-save={save.kind} data-plane={plane === null ? "none" : "joined"} data-pc-popover-anchor>
       <div className="pc-lacquer pc-slate__plate">
         {crest !== null ? <span className="pc-slate__crest" aria-hidden="true">{crest}</span> : null}
         <div className="pc-slate__words">

@@ -147,6 +147,7 @@ describe("describing someone else's change", () => {
     expect(describeLayoutChange({ ...nothing, moved: [{ noun: "table", label: null }, { noun: "table", label: null }, { noun: "chair", label: null }] })).toBe("moved 2 tables and a chair");
     expect(describeLayoutChange({ ...nothing, added: [{ noun: "lectern", label: null }], removed: [{ noun: "table", label: "Table 8" }], restyled: [{ noun: "table", label: null }] }))
       .toBe("added a lectern, removed Table 8 and changed a table");
+    expect(describeLayoutChange({ ...nothing, moved: [{ noun: "table", label: "Table 10" }, { noun: "table", label: "Table 4" }, { noun: "table", label: "Table 3" }] })).toBe("moved Tables 3, 4 and 10");
     expect(describeLayoutChange(nothing)).toBeNull();
   });
 });
