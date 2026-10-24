@@ -11,6 +11,7 @@ import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/reques
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
 import { useSignOutWords } from "./proposals/sign-out-words.js";
+import { useSignOutLayouts } from "../auth/sign-out-layouts.js";
 import { SignOutAskContext, StaffShellContext, useInStaffShell, useShellFrame, type AskBeforeSignOut, type ShellFrame, type StaffShell } from "./staff-shell.js";
 import { FindPalette } from "./find/FindPalette.js";
 import type { FindPlace, FindSource, FindTarget } from "./find/find-model.js";
@@ -359,7 +360,12 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
   const requestExit = useInventoryExit();
   const signOutWords = useSignOutWords(user?.id ?? null, () => { accountButtonRef.current?.focus(); });
   const askWords = signOutWords.askFirst;
-  const askBeforeSignOut = useCallback<AskBeforeSignOut>((signOut) => { requestExit(() => { askWords(signOut); }); }, [requestExit, askWords]);
+  // Then about layout changes kept on this device, which signing out removes.
+  const signOutLayouts = useSignOutLayouts(user?.id ?? null, () => { accountButtonRef.current?.focus(); });
+  const askLayouts = signOutLayouts.askFirst;
+  const askBeforeSignOut = useCallback<AskBeforeSignOut>((signOut) => {
+    requestExit(() => { askWords(() => { askLayouts(signOut); }); });
+  }, [requestExit, askWords, askLayouts]);
   const handleLocalSignOut = (): void => {
     setOpenMenu(null);
     // Whoever signs in next on this browser reads their own venue afresh.
@@ -619,6 +625,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
 
       <ToastContainer />
       {signOutWords.question}
+      {signOutLayouts.question}
     </>
   );
 }
