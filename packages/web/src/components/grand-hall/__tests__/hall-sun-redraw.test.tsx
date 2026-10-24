@@ -13,7 +13,9 @@ import { FurnitureMotion } from "../../editor/FurnitureMotion.js";
 import { HallContext } from "../HallContext.js";
 import { CONTEXT_MODEL_URL } from "../hall-context.js";
 import { STREET_LAMPS_URL, STREET_LIGHT_URL } from "../hall-street-light.js";
-import { HallSunLight, MOTION_REDRAW_MS } from "../HallSunLight.js";
+import { HallSunLight, MOON_INTENSITY, MOTION_REDRAW_MS } from "../HallSunLight.js";
+import { hallSkyAt } from "../hall-sky.js";
+import { hallSkyState, hallSkyUniforms, publishHallSky } from "../hall-sky-runtime.js";
 import { createSunCaster, requestHallSunRedraw, withoutSunMapDraw } from "../hall-sun.js";
 import { FULL_HALL_FINISH, type HallFinish } from "../hall-finish.js";
 
@@ -288,5 +290,26 @@ describe("the city arriving round the hall", () => {
     await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
     expect(mounted.scene.getObjectByName("grand-hall-city")).toBeDefined();
     expect(mounted.scene.getObjectByName("grand-hall-street-lamps")).toBeUndefined();
+  });
+});
+
+describe("the moon in the room (Blake, 22 October 2026: a faint wash)", () => {
+  it("adds under 0.05 of the baked light to a level floor at the full moon of 26 October, a tenth of what it did", () => {
+    mounted = mountInStubRoot(<HallSunLight />);
+    // 20:30 GMT, the moon nearly full and well up over Glassford Street.
+    const sky = hallSkyAt(Date.parse("2026-10-26T20:30:00Z"));
+    expect(sky.moon.strength).toBeGreaterThan(0.05);
+    try {
+      act(() => { publishHallSky(sky, false); advance(1, true); });
+      const radiance = hallSkyUniforms.lightRadiance.value;
+      const onFloor = (0.2126 * radiance.r + 0.7152 * radiance.g + 0.0722 * radiance.b) * Math.max(sky.moon.direction[1], 0);
+      // As it was (1.1 on the room), 0.42: more than the floor's whole night light (median 0.38), and it read white.
+      expect(onFloor).toBeLessThan(0.05);
+      expect(onFloor).toBeGreaterThan(0.02);
+      expect(hallSunLight(mounted.scene).intensity).toBeCloseTo(sky.moon.strength * MOON_INTENSITY / 0.07, 6);
+    } finally {
+      hallSkyState.sky = null;
+      hallSkyUniforms.lightRadiance.value.setRGB(0, 0, 0);
+    }
   });
 });

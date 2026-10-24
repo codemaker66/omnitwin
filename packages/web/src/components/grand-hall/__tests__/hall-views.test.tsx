@@ -59,7 +59,8 @@ describe("the hall's framing and cutaway", () => {
   it("lowers the walls the camera stands behind to the dado and keeps the far walls whole", () => {
     const camera = [0, 12, HALL_HALF_WIDTH + 8] as const;
     expect(wallCutHeight("overview", hallWall("door"), camera)).toBeCloseTo(HALL_CUTS.near, 6);
-    expect(HALL_CUTS.near).toBeCloseTo(HALL_ELEVATION.dadoTop + 0.01, 6);
+    // Through the dado rail, where it stands furthest proud (GrandHallModel HALL_CUTS).
+    expect(HALL_CUTS.near).toBeCloseTo(HALL_ELEVATION.dadoTop - 0.03, 6);
     expect(wallCutHeight("overview", hallWall("window"), camera)).toBeGreaterThan(HALL_HEIGHT);
     expect(wallCutHeight("plan", hallWall("window"), camera)).toBe(HALL_CUTS.plan);
     expect(wallCutHeight("walk", hallWall("door"), camera)).toBe(HALL_CUTS.none);

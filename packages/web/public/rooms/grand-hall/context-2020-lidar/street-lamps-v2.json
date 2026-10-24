@@ -94,11 +94,11 @@
   },
   "model": {
    "file": "merchant-city-v2.bin",
-   "sha256": "5cdb593af128e7a2537e5a0488ecd326ff5ff116e517534abda4278650a3f59e"
+   "sha256": "3a0461aee8925d08ef8a27e6e437171c81022c2ea302488771ae64adc5d78a84"
   },
   "work": {
    "file": "_work.npz",
-   "sha256": "5184d7bc63f8fc38444ea4e3fffccbe7fe5bc93d4abe0f2a90da1716ac074e44"
+   "sha256": "7177f34d912b1b1d12d6704edae7c1e8a402fef0a754de308cbd5410351891bd"
   },
   "dsm": {
    "file": "heights_50cm.f32",

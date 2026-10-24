@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildHallGeometry, buildHallWallGeometry, floorUv } from "../hall-geometry.js";
 import { parseWallRelief, type WallRelief, type WallReliefMesh } from "../hall-relief.js";
-import { MODELLED_DOOR, isPanelling } from "../hall-walls.js";
+import { isPanelling } from "../hall-walls.js";
 import {
   HALL_CHANDELIERS,
   HALL_COFFERS,
@@ -269,7 +269,7 @@ describe("Grand Hall wall relief", () => {
 
   it("finds the plaster on its plane and the glazing deep in every window", () => {
     // Plain plaster between the dado and the ledge, beside the main door.
-    const main = HALL_OPENINGS.find((opening) => opening.id === MODELLED_DOOR);
+    const main = HALL_OPENINGS.find((opening) => opening.id === "door-main");
     expect(main).toBeDefined();
     if (main === undefined) return;
     expect(Math.abs(reliefDepthAt(wallMesh("door"), main.centre + 2.6, 3.0))).toBeLessThan(0.08);
@@ -286,8 +286,8 @@ describe("Grand Hall wall relief", () => {
     expect(reliefDepthAt(fireplace, 5.33, 1.65)).toBeGreaterThan(0.04);
   });
 
-  it("leaves the main door's recess for its modelled leaves", () => {
-    const main = HALL_OPENINGS.find((opening) => opening.id === MODELLED_DOOR);
+  it("keeps the main door's recess, closed where the scan saw it open (its modelled leaves replace it)", () => {
+    const main = HALL_OPENINGS.find((opening) => opening.id === "door-main");
     expect(main).toBeDefined();
     if (main === undefined) return;
     expect(reliefDepthAt(wallMesh("door"), main.centre, 1.2)).toBeCloseTo(-0.3, 2);

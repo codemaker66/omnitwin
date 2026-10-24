@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FULL_HALL_FINISH, hallFinish, isSoftwareRenderer } from "../hall-finish.js";
+import { FULL_HALL_FINISH, HALL_DETAIL_SLOTS, hallFinish, isSoftwareRenderer } from "../hall-finish.js";
 import { nativeRendererGpuString } from "../../../lib/native-renderer.js";
 
 const SWIFTSHADER = "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)";
@@ -17,17 +17,19 @@ function webglBackend(renderer: string) {
 }
 
 describe("the Grand Hall's finish per device", () => {
-  it("gives computers and tablets everything", () => {
+  it("gives computers and tablets everything, tablets half the computers' detail slots", () => {
     expect(hallFinish("desktop", false)).toEqual(FULL_HALL_FINISH);
-    expect(hallFinish("tablet", false)).toEqual({ photoQuality: 1, liveLight: true });
+    expect(FULL_HALL_FINISH.detailSlots).toBe(64);
+    expect(hallFinish("tablet", false)).toEqual({ photoQuality: 1, liveLight: true, detailSlots: 32 });
   });
 
-  it("gives phones the half-size photographs under the same light", () => {
-    expect(hallFinish("phone", false)).toEqual({ photoQuality: 0.5, liveLight: true });
+  it("gives phones the half-size photographs under the same light, and 16 detail slots", () => {
+    expect(hallFinish("phone", false)).toEqual({ photoQuality: 0.5, liveLight: true, detailSlots: HALL_DETAIL_SLOTS.phone });
+    expect(HALL_DETAIL_SLOTS.phone).toBe(16);
   });
 
-  it("spares a software rasteriser the reflection map and the chandeliers' lights", () => {
-    expect(hallFinish("desktop", true)).toEqual({ photoQuality: 0.5, liveLight: false });
+  it("spares a software rasteriser the reflection map, the chandeliers' lights and the walls' detail", () => {
+    expect(hallFinish("desktop", true)).toEqual({ photoQuality: 0.5, liveLight: false, detailSlots: 0 });
   });
 
   it("knows a software rasteriser by its renderer string", () => {

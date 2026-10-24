@@ -3,16 +3,20 @@
 //
 // Draws the main view through a node pipeline instead of a plain render:
 //
-//   scene pass ──► ambient occlusion (weighted per material) ──► temporal
-//   anti-aliasing ──► bloom ──► vignette ──► tone mapping and output
+//   scene pass ──► ambient occlusion ──► temporal anti-aliasing ──► bloom
+//   ──► white balance and saturation ──► vignette ──► tone mapping and output
 //
-// Surfaces whose colour already holds the room's own shadows (the hall's
-// photographs) write a lower occlusion weight into the normal target's alpha,
-// so screen-space occlusion grounds furniture without darkening the scan's
-// corners twice. Temporal anti-aliasing jitters the camera every frame; under
-// the planner's on-demand frame loop the view keeps drawing for a few frames
-// after the last change, so a still image converges to a supersampled one and
-// then the loop goes idle again. Profiles per device class live in
+// Every surface writes an occlusion weight of 1 into the normal target's
+// alpha, so screen-space occlusion darkens the photographed room as it does
+// the furniture. The window panes (hall-glazing.ts) write alpha 0 into the
+// normal and velocity targets, and the street's light (hall-street-light.ts)
+// into the normal target; both targets blend by alpha, so what lies behind
+// keeps its own normal and occlusion (and, behind the panes, its motion).
+//
+// Temporal anti-aliasing jitters the camera every frame; under the planner's
+// on-demand frame loop the view keeps drawing for a few frames after the last
+// change, so a still image converges to a supersampled one and then the loop
+// goes idle again. Profiles per device class live in
 // lib/render-quality.ts. The pipeline stands aside while a captured room is
 // shown (captures carry their own camera response), and a software
 // rasteriser draws the scene plainly.
@@ -20,8 +24,8 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { UnsignedByteType, type Camera, type Scene } from "three";
-import { RenderPipeline, type Node, type WebGPURenderer } from "three/webgpu";
+import { NormalBlending, UnsignedByteType, type Camera, type Scene } from "three";
+import { BlendMode, RenderPipeline, type Node, type WebGPURenderer } from "three/webgpu";
 import {
   float,
   luminance,
@@ -61,6 +65,29 @@ interface Disposable { dispose(): void }
 export type PipelineDebugView = "ao" | null;
 
 /**
+ * The scene pass's targets for a profile, or null for colour alone: the
+ * colour, the normal target where occlusion is drawn or kept (its alpha the
+ * occlusion weight: 1 here for every surface; a material's own MRT may write
+ * 0, see the header) and the velocity target under temporal anti-aliasing.
+ * The normal and velocity targets blend by their own alpha. Every surface
+ * writes alpha 1 there, which replaces what lies behind as before; a surface
+ * that writes alpha 0 (the Grand Hall's window panes, hall-glazing.ts) leaves
+ * the street behind it to occlusion and the temporal resolve. Lost, that
+ * blend would leave the panes' own normal and a zero motion behind them.
+ */
+export function plannerSceneOutputs(profile: RenderProfile, sceneNormals = profile.ambientOcclusion !== null): ReturnType<typeof mrt> | null {
+  const targets: Parameters<typeof mrt>[0] = { output };
+  if (sceneNormals || profile.ambientOcclusion !== null) targets["normal"] = vec4(packNormalToRGB(normalView), float(1));
+  if (profile.antiAlias === "temporal") targets["velocity"] = velocity;
+  if (Object.keys(targets).length === 1) return null;
+  const outputs = mrt(targets);
+  for (const name of ["normal", "velocity"] as const) {
+    if (name in targets) outputs.setBlendMode(name, new BlendMode(NormalBlending));
+  }
+  return outputs;
+}
+
+/**
  * Builds the node pipeline for one renderer, scene, camera and profile.
  * `sceneNormals` keeps the scene pass writing normals once ambient occlusion
  * is given up (lib/render-governor.ts): the scene's every material compiles
@@ -82,11 +109,8 @@ export function buildPlannerPipeline(
   // mobile GPU resolves on chip for little cost.
   const scenePass = pass(scene, camera, { samples: profile.sceneSamples });
   owned.push(scenePass);
-  const targets: Parameters<typeof mrt>[0] = { output };
-  // The normal target's alpha carries each surface's occlusion weight.
-  if (normals) targets["normal"] = vec4(packNormalToRGB(normalView), float(1));
-  if (temporal) targets["velocity"] = velocity;
-  if (Object.keys(targets).length > 1) scenePass.setMRT(mrt(targets));
+  const outputs = plannerSceneOutputs(profile, sceneNormals);
+  if (outputs !== null) scenePass.setMRT(outputs);
   if (normals) scenePass.getTexture("normal").type = UnsignedByteType;
 
   const color = scenePass.getTextureNode("output");

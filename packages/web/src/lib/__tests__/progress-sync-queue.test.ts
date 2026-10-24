@@ -1,11 +1,52 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import {
+  ackProgress,
+  enqueueProgress,
   isReplayStatusTerminal,
+  listPendingProgress,
   opsStillNeedingReplay,
   partitionReplay,
+  progressQueueKey,
   resolveReplayDisposition,
   type QueuedProgressOp,
 } from "../progress-sync-queue.js";
+
+// Ticks belong to an event. A tick queued offline keeps its event, and a
+// tick queued before ticks carried one (no event, the old key) still clears.
+describe("queued ticks keep their event", () => {
+  const CONFIG = "cfg-queue-keys";
+  const ROW = "furniture|Centre|Round table|0";
+  const EVENT = "00000000-0000-4000-8000-0000000000e1";
+
+  afterEach(async () => {
+    for (const queued of await listPendingProgress()) await ackProgress(queued.configId, queued.rowKey, queued.eventId ?? null);
+  });
+
+  it("keys a tick with no event exactly as ops were keyed before events, and one with an event apart", () => {
+    expect(progressQueueKey(CONFIG, ROW, null)).toBe(`${CONFIG}:${ROW}`);
+    expect(progressQueueKey(CONFIG, ROW, undefined)).toBe(`${CONFIG}:${ROW}`);
+    expect(progressQueueKey(CONFIG, ROW, EVENT)).toBe(`${CONFIG}:${EVENT}:${ROW}`);
+  });
+
+  it("clears a tick queued with no event with a plain ack", async () => {
+    await enqueueProgress(CONFIG, ROW, true);
+    expect(await listPendingProgress()).toEqual([expect.objectContaining({ configId: CONFIG, rowKey: ROW, eventId: null, desiredChecked: true })]);
+    await ackProgress(CONFIG, ROW);
+    expect(await listPendingProgress()).toEqual([]);
+  });
+
+  it("keeps an event's tick apart from the eventless one for the same row, and clears it only with its event", async () => {
+    await enqueueProgress(CONFIG, ROW, true, EVENT);
+    await enqueueProgress(CONFIG, ROW, false);
+    expect((await listPendingProgress()).map((queued) => [queued.eventId, queued.desiredChecked]))
+      .toEqual(expect.arrayContaining([[EVENT, true], [null, false]]));
+
+    await ackProgress(CONFIG, ROW);
+    expect((await listPendingProgress()).map((queued) => queued.eventId)).toEqual([EVENT]);
+    await ackProgress(CONFIG, ROW, EVENT);
+    expect(await listPendingProgress()).toEqual([]);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // progress-sync-queue — pure replay-decision logic

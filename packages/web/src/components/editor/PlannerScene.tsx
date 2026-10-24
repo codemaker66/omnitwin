@@ -576,7 +576,7 @@ export function PlannerScene(): ReactElement {
             <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
           )}
           {meshVisible && (realHall ? (
-            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} />
+            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} multisampled={governed.profile.sceneSamples > 0} />
           ) : roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (
