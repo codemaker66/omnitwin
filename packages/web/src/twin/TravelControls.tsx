@@ -230,7 +230,9 @@ export function TravelControls({
     // click on the stage is taken as travel from it. The HUD is React DOM and
     // paints in the viewer's first commit; this scene mounts later (R3F renders
     // its children only once it has measured the canvas), and a click before
-    // then reaches no listener. Withdrawn mid-hop, when clicks are ignored.
+    // then reaches no listener. Withdrawn mid-hop, when clicks are ignored, by
+    // the effect after the render that starts the hop (the click guard reads a
+    // ref set in that render), so wait on it at rest, never to detect a hop.
     if (hopping) {
       element.removeAttribute(WALK_READY_ATTRIBUTE);
     } else {
