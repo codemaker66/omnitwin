@@ -83,10 +83,13 @@ import { HallContext } from "../grand-hall/HallContext.js";
 import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
+import { assemblyRequested } from "../../floor/assembly/flag.js";
+import { useAssemblyRecall } from "../../floor/assembly/recall.js";
+import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
 
-// Development only: the Grand Assembly direction studies (`?assembly=`). The
-// literal DEV flag removes the import from production builds.
-const AssemblyStudy = import.meta.env.DEV ? lazy(() => import("../../floor/assembly/AssemblyStudy.js")) : null;
+// The Grand Assembly (goal 03, S6), behind `?assembly=accio` (floor/assembly/flag.ts):
+// loaded only where a device asks for it.
+const GrandAssembly = lazy(() => import("../../floor/assembly/GrandAssembly.js"));
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -453,6 +456,14 @@ export function PlannerScene(): ReactElement {
   // The real sun, moon and sky over the drawn hall, where this device asks for them.
   const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
   const skyLit = hallSkyAsked && hallDrawn && !timelinePreviewActive;
+  // The Grand Assembly: a saved layout that opens assembles itself in the drawn
+  // hall where this device asks for it (`?assembly=accio`). While it plays it
+  // holds the camera through CameraRig's `suspended`.
+  const assemblyAsked = useMemo(() => typeof window !== "undefined" && assemblyRequested(window.location.search) !== null, []);
+  // (The drawn hall is never shown under the timeline's frozen preview.)
+  const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
+  const [assemblyCamera, setAssemblyCamera] = useState(false);
+  useAssemblyRecall(assemblyAsked, assemblyStage, space !== null && !assemblyStage);
   const hallSetting = useMemo(() => (typeof window === "undefined" ? "none" : hallSettingRequested(window.location.search)), []);
   // A capture that fails behind the drawn hall changes nothing on screen: the
   // camera and a walk of the drawn hall carry on.
@@ -645,8 +656,8 @@ export function PlannerScene(): ReactElement {
             <PlacedFurniture />
           </group>
           {realHall && !timelinePreviewActive && <HallViewDirector />}
-          <CockpitPlanningCamera suspended={timelinePreviewActive} />
-          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive}
+          <CockpitPlanningCamera suspended={timelinePreviewActive || assemblyCamera} />
+          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
             defaultPose={realHall ? HALL_VIEW_POSES.room : null}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
@@ -667,14 +678,15 @@ export function PlannerScene(): ReactElement {
             />
           )}
           <FrozenLayoutPreviewCamera active={timelinePreviewActive} room={frozenRoom} />
-          {AssemblyStudy !== null && new URLSearchParams(window.location.search).has("assembly") && (
-            <Suspense fallback={null}><AssemblyStudy /></Suspense>
+          {assemblyStage && (
+            <Suspense fallback={null}><GrandAssembly onCamera={setAssemblyCamera} /></Suspense>
           )}
           {import.meta.env.DEV && <PerfMonitor />}
           {!timelinePreviewActive && <PlannerWarmup />}
           {/* Re-register last when a camera owner mounts or the room shell changes. */}
           <PlannerScenePrecompiler key={`${sceneWarmupSignature}:${String(walkMode)}`} signature={sceneWarmupSignature} />
         </Canvas>
+        {assemblyStage && <AssemblyReplay />}
       </div>
       {showArrival && <PlannerArrival onEnter={enterRoom} />}
     </PlannerCanvasBoundary>

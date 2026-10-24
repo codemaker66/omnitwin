@@ -8,7 +8,9 @@
 //   2. a choreography graph over the arriving pieces: the anchor (the top
 //      table) first, the other tables in waves outward from it, each table's
 //      chairs after their table, then the dressing (candles) after the last
-//      chair has started.
+//      chair has started. A direction may refine it (accio.ts times each
+//      table's chairs from its landing and spaces the pieces through each
+//      window).
 //
 // Times come from the graph, never from the frame clock. Small offsets come
 // from a seeded hash of each piece's id, so the same layout and seed always
@@ -16,13 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import type { PlacedItem } from "../../lib/placement.js";
-
-export type AssemblyDirection = "accio" | "procession" | "unfolding";
-export const ASSEMBLY_DIRECTIONS: readonly AssemblyDirection[] = ["accio", "procession", "unfolding"];
-
-export function isAssemblyDirection(value: string | null | undefined): value is AssemblyDirection {
-  return value === "accio" || value === "procession" || value === "unfolding";
-}
+import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
 
 export type PieceRole = "table" | "chair" | "piece";
 
@@ -127,7 +123,8 @@ export function diffLayouts(from: readonly PlacedItem[], to: readonly PlacedItem
       y: item.y,
       z: item.z,
       rotationY: item.rotationY,
-      scale: item.scale ?? 1,
+      // As the planner draws it: a missing or unusable scale is 1.
+      scale: normalizeFurnitureScale(item.scale),
       height: description.height,
       radius: description.radius,
       tableId: seat?.tableId ?? null,
@@ -215,13 +212,6 @@ export interface WaveTiming {
   readonly dressingSpeed: number;
 }
 
-/**
- * A direction may order its tables itself (the Procession works door by door,
- * far side first, so no piece crosses one already placed): return each
- * table's start, or null to use the waves.
- */
-export type TableSchedule = (tables: readonly AssemblyPiece[], anchor: AssemblyPiece | null, timing: WaveTiming) => ReadonlyMap<string, number> | null;
-
 /** Chair order round a table, ascending: by default the seats nearest the anchor first, alternating either way. */
 export type SeatOrder = (chair: AssemblyPiece, table: AssemblyPiece, anchor: AssemblyPiece | null) => number;
 
@@ -249,7 +239,6 @@ export const seatsFromAnchor: SeatOrder = (chair, table, anchor) => {
 
 export interface GraphOptions {
   readonly timing: WaveTiming;
-  readonly schedule?: TableSchedule;
   readonly seatOrder?: SeatOrder;
 }
 
@@ -259,7 +248,6 @@ export function buildChoreography(pieces: readonly AssemblyPiece[], seed: number
   const anchor = chooseAnchor(pieces);
   const tables = pieces.filter((piece) => piece.role === "table");
   const distance = (piece: AssemblyPiece): number => (anchor === null ? 0 : Math.hypot(piece.x - anchor.x, piece.z - anchor.z));
-  const scheduled = options.schedule?.(tables, anchor, timing) ?? null;
 
   const tableStart = new Map<string, number>();
   const waveOf = new Map<string, number>();
@@ -268,10 +256,7 @@ export function buildChoreography(pieces: readonly AssemblyPiece[], seed: number
     const d = distance(table);
     const wave = table.id === anchor?.id ? 0 : 1 + Math.floor(d / timing.waveRing);
     waveOf.set(table.id, wave);
-    const fromSchedule = scheduled?.get(table.id);
-    if (fromSchedule !== undefined) {
-      tableStart.set(table.id, fromSchedule);
-    } else if (table.id === anchor?.id) {
+    if (table.id === anchor?.id) {
       tableStart.set(table.id, timing.anchorStart);
     } else {
       const scatter = (pieceRandom(seed, table.id, 1) * 2 - 1) * timing.jitter;

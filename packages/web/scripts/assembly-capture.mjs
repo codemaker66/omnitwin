@@ -1,15 +1,16 @@
-// Grand Assembly direction studies: deterministic capture and frame cost.
+// The Grand Assembly (Accio): deterministic capture and frame cost.
 //
 // Opens the planner lab (/dev/planner-lab: the planner's own scene in the
-// drawn Grand Hall, no backend, no chrome) with `?assembly=`, loads the
-// 180-seat dinner (src/floor/assembly/fixture.ts) and drives the playback
-// through window.__assembly with the frame loop frozen: time moves only in
-// fixed steps this script chooses, never by the wall clock, and the
-// post-processing pipeline is rebuilt first so its temporal history starts
-// from nothing. Needs the dev server and a WebGPU adapter (the RTX 4090):
-// run it under the shared GPU lock.
+// drawn Grand Hall, no backend, no chrome) with the production flag
+// `?assembly=accio`, loads the 180-seat dinner (src/floor/assembly/fixture.ts)
+// and drives the production Assembly through its development handle
+// (window.__assembly, capture-bridge.ts) with the frame loop frozen: time
+// moves only in fixed steps this script chooses, never by the wall clock, and
+// the post-processing pipeline is rebuilt first so its temporal history starts
+// from nothing. Needs the dev server and a WebGPU adapter (the RTX 4090): run
+// it under the shared GPU lock.
 //
-//   node scripts/assembly-capture.mjs --direction accio --mode clip --out D:/claude/x
+//   node scripts/assembly-capture.mjs --mode clip --out D:/claude/x
 //     modes:  look     stills at --times (seconds)
 //             clip     every 1/30 s frame to <out>/frames, then the static layout at the
 //                      last camera pose (<out>/static.png) unless --no-static
@@ -26,10 +27,9 @@ function option(name, fallback) {
 }
 
 const BASE = option("base", "http://127.0.0.1:5277");
-const DIRECTION = option("direction", "accio");
 const MODE = option("mode", "look");
 const SEED = Number(option("seed", "7"));
-const OUT = option("out", `D:/claude/grand-assembly-20261022/runs/${DIRECTION}-${MODE}`);
+const OUT = option("out", `D:/claude/grand-assembly-20261022/runs/accio-${MODE}`);
 const PROFILE = option("profile", "desktop");
 const MOOD = option("mood", "candlelight");
 // A moonless evening: on 23 Oct the near-full moon shines in through the windows as white streaks.
@@ -59,7 +59,7 @@ const browser = await chromium.launch({
   args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"],
 });
 const record = {
-  base: BASE, direction: DIRECTION, mode: MODE, seed: SEED, profile: PROFILE, renderProfile, mood: MOOD, at: AT,
+  base: BASE, mode: MODE, seed: SEED, profile: PROFILE, renderProfile, mood: MOOD, at: AT,
   device, started: new Date().toISOString(), adapter: null, errors: [],
 };
 
@@ -78,7 +78,7 @@ async function openStudyOnce(context, reducedMotion) {
   const page = await context.newPage();
   page.on("pageerror", (error) => { record.errors.push(error.message); console.error(`page error: ${error.message}`); });
   page.on("console", (message) => { if (message.type() === "error") record.errors.push(message.text()); });
-  const url = `${BASE}/dev/planner-lab?render=${renderProfile}&governor=off&sky=1&guests=0&assembly=${DIRECTION}&seed=${SEED}`;
+  const url = `${BASE}/dev/planner-lab?render=${renderProfile}&governor=off&sky=1&guests=0&assembly=accio`;
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 180000 });
   record.adapter ??= await page.evaluate(async () => {
     const adapter = await navigator.gpu?.requestAdapter();
@@ -87,16 +87,9 @@ async function openStudyOnce(context, reducedMotion) {
   await page.waitForFunction(() => window.__plannerLab?.ready() === true && window.__assembly !== undefined, undefined, { timeout: 75000, polling: 250 });
   await page.evaluate(({ mood, at }) => { window.__assembly.scene(mood, at); window.__assembly.load(); }, { mood: MOOD, at: AT });
   // Let the layout draw (the instanced batches harvest their models) and the mood settle.
-  let state = null;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    await page.evaluate(() => window.__plannerLab.advance(20));
-    state = await page.evaluate(({ direction, seed, reducedMotion }) => window.__assembly.prepare(direction, seed, { reducedMotion }),
-      { direction: DIRECTION, seed: SEED, reducedMotion });
-    if (state.matched === state.pieces && state.pieces > 0) break;
-    await page.evaluate(() => window.__assembly.release());
-    await page.waitForTimeout(500);
-  }
-  if (state === null || state.matched !== state.pieces) throw new Error(`Only ${state?.matched} of ${state?.pieces} pieces matched`);
+  for (let attempt = 0; attempt < 6; attempt++) await page.evaluate(() => window.__plannerLab.advance(20));
+  const state = await page.evaluate(({ seed, reducedMotion }) => window.__assembly.prepare(seed, { reducedMotion }), { seed: SEED, reducedMotion });
+  if (state.placed === 0 || (!reducedMotion && state.pieces === 0)) throw new Error(`Nothing to assemble: ${JSON.stringify(state)}`);
   await page.evaluate(() => window.__assembly.freeze(true));
   await page.evaluate(() => window.__assembly.resetPipeline());
   // A known phase for the temporal effects: a fixed frame number, the anti-aliasing restarted.
@@ -197,7 +190,7 @@ try {
     console.log(`playback: ${JSON.stringify(record.playback)}`);
     record.after = await page.evaluate(() => window.__assembly.state());
     // The same frames with the layout at rest: the room and the furniture alone.
-    await page.evaluate(() => window.__assembly.finish());
+    await page.evaluate(() => window.__assembly.skip());
     await warm(page, 0, 10);
     record.static = await page.evaluate((seconds) => window.__assembly.measure({ gpu: true, seconds }), state.clipSeconds);
     console.log(`static: ${JSON.stringify(record.static)}`);
