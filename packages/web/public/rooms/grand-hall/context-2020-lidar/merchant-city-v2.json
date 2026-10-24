@@ -1,7 +1,7 @@
 {
  "schema": "venviewer.context-model.v1",
  "title": "Architect's contour model of the city around Trades Hall, Glasgow",
- "generated": "2026-10-16",
+ "generated": "2026-10-22",
  "licence": {
   "attribution": "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0",
   "licence": "Open Government Licence v3.0",
@@ -66,6 +66,7 @@
   "clamp_y": 0.0,
   "rect_half_x": 11.2,
   "rect_half_z": 5.95,
+  "rect_front_z": -6.24,
   "tol_near": 0.5,
   "tol_far": 2.0,
   "area_near": 6.0,
@@ -117,7 +118,7 @@
   ],
   "rule": "band b>=1 is where the smoothed DSM (planner y) >= first_level_y + (b-1)*spacing; caps sit at that level; band 0 is the ground disc at the hall pavement level (terrain below it is flattened onto it)"
  },
- "site_cut": "nothing emitted inside |x|<=11.2, |z|<=5.95; the solids cut by it are left open there (the hall model fills it)",
+ "site_cut": "nothing emitted inside |x|<=11.2, -6.24<=z<=5.95 (the street face: the hall's window wall's outer face); the solids cut by it are left open there (the hall model fills it)",
  "clamp": "within 26.0 m of the origin, and within 45.0 m where planner z > -24.0 (all but the blocks across Glassford Street), y = min(y, 0) before banding",
  "rim": "solids crossing the 260 m circle are closed with section walls on the circle; the ground disc rim is open",
  "bbox_m": {
@@ -139,7 +140,7 @@
   "wall_triangles": 42235,
   "vertices": 69451,
   "bytes_raw": 1250134,
-  "bytes_gzip": 571623
+  "bytes_gzip": 571624
  },
  "terrain": "cells not in a raised blob are replaced by a normalised-convolution Gaussian (sigma terrain_sigma) of ground cells only, so street-level contours follow the terrain, not LiDAR noise; low walls/railings narrower than ~1 m vanish",
  "generator": "tools/grand-hall-survey/context/build_context.py, run on the grid cut by tools/grand-hall-survey/context/fetch_dsm.py",

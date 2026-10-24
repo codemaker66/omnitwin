@@ -12,6 +12,8 @@ import { nativeFrameComposer } from "../lib/native-frame-composer.js";
 import { getNativeRenderer } from "../lib/native-renderer.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { ChromeShell } from "../components/planner-chrome/ChromeShell.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useToolStore } from "../stores/tool-store.js";
@@ -252,6 +254,7 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
 
 export function PlannerLabPage(): ReactElement {
   const [ready, setReady] = useState(false);
+  const [chrome] = useState(() => plannerChromeRequested(window.location.search));
   usePlannerToolKeys();
 
   useEffect(() => {
@@ -316,6 +319,9 @@ export function PlannerLabPage(): ReactElement {
       delete window.__plannerLab;
     };
   }, []);
+
+  // `?chrome=v2`: the scene under the new chrome's zones, as the planner shows it (T-671).
+  if (chrome === "v2") return <ChromeShell room={ready ? <PlannerScene /> : null} />;
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#0d0b09", display: "flex" }}>

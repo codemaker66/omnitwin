@@ -41,6 +41,11 @@ export const SPRING_PRESETS = {
   furnitureSquash: { stiffness: 520, damping: 17 },
   /** A new piece coming down onto the floor: critically damped, no bounce through it. */
   furnitureDrop: { stiffness: 160, damping: 25 },
+  /**
+   * A heavy door swinging open or shut on its closer: gentle, no slam and no
+   * rebound (ζ ≈ 0.95), most of the way in under a second.
+   */
+  doorSwing: { stiffness: 36, damping: 11.4 },
   // The planner chrome's three (T-671, spec section 8). Settle times are to
   // within 2 % and under 5 %/s on a unit step, measured on this integrator.
   /** The copper underline sliding to a view, tool or workspace key, and the

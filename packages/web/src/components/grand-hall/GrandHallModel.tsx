@@ -4,38 +4,73 @@
 // Draws the hall as surveyed — the walls' scanned relief, the drawn oak floor,
 // the coffered ceiling and the dome, each coloured by the scan's photographs
 // with baked light — with the scan's gilt and bronze chandeliers and their
-// flame bulbs, and the dollhouse cutaway (with the walls' cut bodies) that
-// lets the planner look in from above. Its real lights are HallLightRig,
+// flame bulbs, and the dollhouse cutaway (with the walls' cut bodies, whose
+// section follows the relief's mouldings) that lets the planner look in from
+// above; where it cuts a wall, that wall's doors swing open on a spring
+// (hall-doors.ts), and each open door shows a short stub of the space beyond
+// it, dissolving into the city or the dark, as the section style (`?section=`)
+// draws it: the photographed floors (Ashlar), the first floor in card
+// (Atelier, its plan loaded when chosen) or pools of light (Nocturne)
+// (hall-beyond.ts, hall-neighbours.ts; the photographs load the first time a
+// door opens and cross-fade in). Under the real sky its windows open
+// onto the drawn city through panes of glass that reflect the room, behind
+// the measured glazing bars (hall-glazing.ts). Its real lights are HallLightRig,
 // mounted beside it; its reflections are its own, captured from the room
 // itself (hall-capture.ts).
 // The relief and the photographs stream in after the first frame (flat walls
-// in their average colour until then). Everything here renders on demand:
-// frames are requested only while a mood blends or the cutaway eases.
+// in their average colour until then); where the camera looks closely at a
+// wall, its 2 mm detail streams in over the atlas, tile by tile (hall-detail.ts).
+// Everything here renders on demand: frames are requested only while a mood
+// blends, the cutaway eases, a door swings, the beyond's photographs or a wall's
+// detail fade in, or a detail tile waits to be copied to the GPU.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Color, Vector3, type Material } from "three";
+import { Color, Vector3, type BufferGeometry, type Intersection, type Material, type Mesh, type Raycaster, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { color, lights, mix, normalWorld, uniform, vec3 } from "three/tsl";
-import { hallGeometry, hallWallGeometry } from "./hall-geometry.js";
+import { hallGeometry, hallThresholdGeometry, hallWallGeometry } from "./hall-geometry.js";
 import { loadWallRelief, type WallRelief } from "./hall-relief.js";
 import { hallChandeliers } from "./hall-chandeliers.js";
 import { paintHallTextures, disposeHallTextures, type HallTextures } from "./hall-textures.js";
+import {
+  HallBeyondPhotos, buildBeyondFloors, buildBeyondPools, buildBeyondSolids, buildFirstFloorCard, createBeyondFloorMaterial,
+  createBeyondPoolMaterial, createBeyondSolidMaterial, createFirstFloorCardMaterial, type BeyondMaterialContext,
+} from "./hall-beyond.js";
+import { loadFirstFloor, type FirstFloorPlan } from "./hall-neighbours.js";
 import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
+import type { HallDetailLayer } from "./hall-detail.js";
+import { useHallDetail } from "./use-hall-detail.js";
+import { prepareWallRelief } from "./hall-arrival.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useHallFinish, type HallFinish } from "./hall-finish.js";
-import { createHallCasterMaterials, createHallMaterials, disposeHallMaterials, HallSectionUniforms, type HallCasterMaterials } from "./hall-materials.js";
+import { createDoorLeafMaterials, createHallCasterMaterials, createHallMaterials, disposeHallMaterials, HallGlazingUniforms, HallSectionUniforms, type HallCasterMaterials, type HallMaterials } from "./hall-materials.js";
+import { DoorSwing, DoorSwingUniforms, hallDoorGeometry, raycastDoorLeaves } from "./hall-doors.js";
+import { prefersReducedMotion } from "../../lib/reduced-motion.js";
+import { buildGlazingPanes, createGlassMaterial, GLASS_PRESETS, parseGlassPreset, withGlazingClosed } from "./hall-glazing.js";
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
 import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
 import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
-import { HallEnvironmentCapture } from "./hall-capture.js";
-import { createHallSection, type HallSection } from "./hall-section.js";
+import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
+import { createHallSection, parseSectionPreset, SECTION_PRESETS, sectionRoomLine, type HallSection, type SectionPreset } from "./hall-section.js";
+import { sectionCapGeometry } from "./hall-relief-section.js";
+import { SlicedBuildCancelled } from "./hall-slices.js";
+import { WALL_BODY_TOP } from "./hall-wall-body.js";
 import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 import { hallSkyState } from "./hall-sky-runtime.js";
-import { HALL_SUN_CASTER_LAYER, hallSun, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
+import { HALL_SUN_CASTER_LAYER, hallSun, hallSunCasterParts, hallSunMapSize, withoutSunMapDraw, type HallSun } from "./hall-sun.js";
+
+declare global {
+  interface Window {
+    /** DEV-only: the walls' detail layer (hall-detail.ts: its accounting, held fades), for the capture harnesses; absent in production. */
+    __venHallDetail?: HallDetailLayer;
+    /** DEV-only: each slice of the relief's arrival build, milliseconds (hall-arrival.ts), for the capture harnesses. */
+    __venHallArrivalSlices?: number[];
+  }
+}
 
 /** The dark the drawn hall stands in (the planner's background around it). */
 export const HALL_VOID = "#120e0b";
@@ -71,12 +106,25 @@ export interface GrandHallModelProps {
    * their direct, shadowed light, and the room casts its shadows.
    */
   readonly sunlit?: boolean;
+  /**
+   * The scene pass is multisampled (a phone's profile): the windows' glass,
+   * cut from the walls under the real sky, gets a smooth edge from alpha to
+   * coverage.
+   */
+  readonly multisampled?: boolean;
 }
 
 /** Heights the cutaway uses. */
 export const HALL_CUTS = {
-  /** Walls nearest the camera stop at the dado rail. */
-  near: HALL_ELEVATION.dadoTop + 0.01,
+  /**
+   * Walls nearest the camera are cut through the dado rail, 3 cm under its
+   * top, where it stands furthest proud (the door wall's relief: 5.0 cm median,
+   * every centimetre of the wall in section): the cut's edge is the rail's own
+   * face. A centimetre over its top (1.96 m, to 22 October) the rail's top
+   * ledge stood out a pixel or two beyond the cut, and shaded, gilt-edged and
+   * a pixel wide it beaded the cut's edge along every near wall.
+   */
+  near: HALL_ELEVATION.dadoTop - 0.03,
   /** Plan view: above the doors, through the windows' heads, below the frieze. */
   plan: 3.12,
   /** Nothing cut. */
@@ -108,22 +156,84 @@ export function wallCutHeight(view: Exclude<HallView, "auto">, wall: HallWall, c
   return Math.max(0.05, Math.min(cut, camera[1] - EYE_CLEARANCE));
 }
 
+/**
+ * What the hall's materials are built from for one sky, finish and preset.
+ * The photographs, the walls' detail and the beyond's photographs are not
+ * among them: they belong to the device and the preset, not the light, so
+ * turning the real sky or the timeline's preview on or off rebuilds the
+ * materials over the same textures, tiles and worker (R9, 22 October).
+ */
 interface HallResources {
   readonly textures: HallTextures;
   readonly photos: HallPhotos;
   readonly mood: HallMoodUniforms;
   readonly section: HallSectionUniforms;
+  /** Whether the windows' glass is open onto the drawn city (hall-glazing.ts). */
+  readonly glazing: HallGlazingUniforms;
   readonly materials: ReturnType<typeof createHallMaterials>;
   readonly chandelierMaterials: ReadonlyMap<string, Material>;
   /** How far the chandeliers' metal is lit by its own lamps (1 with the reflection map). */
   readonly selfLit: { value: number };
   /** The bulbs' brightness: 1 on screen, CAPTURED_BULBS in the room's reflections. */
   readonly bulbScale: { value: number };
-  /** The cut walls' bodies, caps and the plinth. */
+  /** The walls' bodies (cut in the shader), the relief's section and the plinth. */
   readonly cutaway: HallSection;
   /** Stand-ins the sun's shadow camera draws for the room, where the sun lights it. */
   readonly casters: HallCasterMaterials | null;
+  /** The doors' angles, and their leaves' materials, which turn them in the shader (hall-doors.ts). */
+  readonly doorSwing: DoorSwingUniforms;
+  readonly doorMaterials: HallMaterials;
+  /** What shows past the open doors for the section's preset (hall-beyond.ts). */
+  readonly beyond: BeyondResources;
+  /** The walls' 2 mm detail, streamed where the camera looks closely (hall-detail.ts; owned by useHallDetail). */
+  readonly detail: HallDetailLayer;
 }
+
+/** The beyond's materials for one preset; the photographs (shared, not owned) only for Ashlar. */
+interface BeyondResources {
+  readonly photos: HallBeyondPhotos | null;
+  readonly floors: Material | null;
+  readonly solids: Material | null;
+  readonly pools: Material | null;
+  readonly card: Material | null;
+  dispose(): void;
+}
+
+/** How bright the pools past the doors are, of the room's chandelier light: Nocturne's are all there is beyond; Atelier's warm the card. */
+const POOL_STRENGTH = { "first-floor": 0.9, pools: 1.6 } as const;
+
+/** Whether a preset shows the beyond's photographs (its floors, or its doorways' linings). */
+function wantsBeyondPhotos(preset: SectionPreset): boolean {
+  return preset.beyond === "photographs" || preset.liningPhotos;
+}
+
+function createBeyondResources(preset: SectionPreset, context: BeyondMaterialContext, textures: HallTextures, photos: HallBeyondPhotos | null): BeyondResources {
+  const floors = preset.beyond === "photographs" && photos !== null ? createBeyondFloorMaterial(context, photos) : null;
+  const solids = preset.beyond === "photographs" ? createBeyondSolidMaterial(context, textures) : null;
+  const pools = preset.beyond === "photographs" ? null : createBeyondPoolMaterial(context, POOL_STRENGTH[preset.beyond]);
+  const card = preset.beyond === "first-floor" ? createFirstFloorCardMaterial(context) : null;
+  return {
+    photos, floors, solids, pools, card,
+    dispose: () => {
+      for (const material of [floors, solids, pools, card]) material?.dispose();
+    },
+  };
+}
+
+let beyondFloors: BufferGeometry | null = null;
+let beyondSolids: BufferGeometry | null = null;
+let beyondPools: BufferGeometry | null = null;
+
+/** The beyond's geometry, built on first use and shared: it never changes (the shader follows the doors). */
+function beyondGeometry(): { readonly floors: BufferGeometry; readonly solids: BufferGeometry; readonly pools: BufferGeometry } {
+  beyondFloors ??= buildBeyondFloors();
+  beyondSolids ??= buildBeyondSolids();
+  beyondPools ??= buildBeyondPools();
+  return { floors: beyondFloors, solids: beyondSolids, pools: beyondPools };
+}
+
+/** Draw order of the beyond's blended meshes, after the opaque room: the floors, then the joinery, then the light on them. */
+const BEYOND_ORDER = { floors: 1, solids: 2, pools: 3 } as const;
 
 /** The chandeliers' own light on their metal where no reflection map gives it anything to mirror. */
 const SELF_LIT_WITHOUT_REFLECTIONS = 2.5;
@@ -163,14 +273,31 @@ export function reflectionsOutdated(signature: number, captured: number | null):
  */
 const CAPTURE_SUN_MAP_WAITS = 2;
 
-function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null): HallResources {
+/** What the resources share with every rebuild: the photographs, the walls' detail and the beyond's photographs. */
+interface HallShared {
+  readonly photos: HallPhotos;
+  readonly detail: HallDetailLayer;
+  readonly beyondPhotos: HallBeyondPhotos | null;
+}
+
+function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSun | null, multisampled: boolean, sectionPreset: SectionPreset, shared: HallShared): HallResources {
   const textures = paintHallTextures(quality);
-  const photos = new HallPhotos();
+  const { photos, detail } = shared;
   const mood = new HallMoodUniforms();
   mood.apply(initialMood, initialMood, 1);
   const section = new HallSectionUniforms();
-  const materials = createHallMaterials(textures, photos, mood, section, sun);
+  const glazing = new HallGlazingUniforms();
+  // Without slots (a software rasteriser) the walls' shaders leave the detail out entirely.
+  const fine = detail.enabled ? detail : null;
+  const materials = createHallMaterials(textures, photos, mood, section, sun, {
+    glazing, alphaToCoverage: multisampled, detail: fine,
+    // A near wall's slivers of moulding past its cut take the section's room line (hall-materials.ts outsideSliver).
+    sliverColour: sectionRoomLine(sectionPreset, mood, sun !== null, sun),
+  });
   const casters = sun === null ? null : createHallCasterMaterials(photos);
+  const doorSwing = new DoorSwingUniforms();
+  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card", detail: fine });
+  const beyond = createBeyondResources(sectionPreset, { mood, swing: doorSwing, section, sun }, textures, shared.beyondPhotos);
 
   // As scanned: pale silver-gilt fittings on dark bronze stems, and white
   // bulbs, which warm with the mood's chandelier light.
@@ -211,20 +338,31 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const bulb = new MeshBasicNodeMaterial();
   bulb.colorNode = bulbWhite.mul(mood.glow.mul(4).add(0.6)).mul(bulbScale);
   const chandelierMaterials = new Map<string, Material>([["gilt", giltMetal], ["bronze", bronze], ["bulb", bulb]]);
-  return { textures, photos, mood, section, materials, chandelierMaterials, selfLit, bulbScale, cutaway: createHallSection(), casters };
+  const cutaway = createHallSection(section, mood, { preset: sectionPreset, sunlit: sun !== null, multisampled, sun, textures, beyond: beyond.photos });
+  return { textures, photos, mood, section, glazing, materials, chandelierMaterials, selfLit, bulbScale, cutaway, casters, doorSwing, doorMaterials, beyond, detail };
 }
 
+/** Disposes what createResources made (the shared photographs and detail are disposed with their owners). */
 function disposeResources(resources: HallResources): void {
   disposeHallTextures(resources.textures);
-  resources.photos.dispose();
   disposeHallMaterials(resources.materials);
+  disposeHallMaterials(resources.doorMaterials);
   for (const material of resources.chandelierMaterials.values()) material.dispose();
   resources.cutaway.dispose();
+  resources.beyond.dispose();
   resources.casters?.glazed.dispose();
   resources.casters?.solid.dispose();
 }
 
-export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false }: GrandHallModelProps): ReactElement {
+let paneGeometry: ReturnType<typeof buildGlazingPanes> | null = null;
+
+/** The windows' panes, built once and shared: they never change. */
+function glazingPanes(): ReturnType<typeof buildGlazingPanes> {
+  paneGeometry ??= buildGlazingPanes();
+  return paneGeometry;
+}
+
+export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false, multisampled = false }: GrandHallModelProps): ReactElement {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
@@ -233,9 +371,47 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   const walls = useMemo(() => hallWallGeometry(relief), [relief]);
   const chandeliers = useMemo(() => hallChandeliers(), []);
   const deviceFinish = useHallFinish();
-  const { photoQuality: quality, liveLight } = finishOverride ?? deviceFinish;
+  const { photoQuality: quality, liveLight, detailSlots: slots } = finishOverride ?? deviceFinish;
+  const detailSlots = Number.isFinite(slots) ? slots : 0;
   const sun = useMemo(() => (sunlit ? hallSun(hallSunMapSize(quality, liveLight)) : null), [liveLight, quality, sunlit]);
-  const resources = useMemo(() => createResources(quality, HALL_MOODS[mood], sun), [quality, sun]);
+  // The section's finish: `?section=` (Ashlar by default; nothing is remembered).
+  const sectionPreset = useMemo(() => SECTION_PRESETS[parseSectionPreset(typeof window === "undefined" ? null : window.location.search)], []);
+  // What outlives a rebuild of the materials (a change of sky): the
+  // photographs, the walls' detail (useHallDetail) and the beyond's photographs.
+  const photos = useMemo(() => new HallPhotos(), [quality]);
+  useEffect(() => () => { photos.dispose(); }, [photos]);
+  const { layer: detail, wake: detailWake } = useHallDetail(detailSlots, quality, invalidate);
+  const beyondPhotos = useMemo(() => (wantsBeyondPhotos(sectionPreset) ? new HallBeyondPhotos() : null), [sectionPreset]);
+  useEffect(() => () => { beyondPhotos?.dispose(); }, [beyondPhotos]);
+  const resources = useMemo(
+    () => createResources(quality, HALL_MOODS[mood], sun, multisampled, sectionPreset, { photos, detail, beyondPhotos }),
+    [beyondPhotos, detail, multisampled, photos, quality, sectionPreset, sun],
+  );
+  const thresholds = useMemo(() => hallThresholdGeometry(), []);
+  // The doors' leaves (hall-doors.ts): built once, swung in the shader.
+  const doors = useMemo(() => hallDoorGeometry(), []);
+  const doorSwing = useRef(new DoorSwing());
+  const doorsMoving = useRef(false);
+  // The relief's section, cut wherever the walls are cut (hall-relief-section.ts).
+  const sectionCap = useMemo(() => (relief === null ? null : sectionCapGeometry(relief)), [relief]);
+  // Past the open doors (hall-beyond.ts): Ashlar's floors and joinery, the
+  // pools of light, and for Atelier the first floor in card, its plan fetched
+  // only then (without it the card is simply not drawn). The card's own floor
+  // is drawn only without the real sky, whose city gives the floor otherwise.
+  const beyondFading = useRef(false);
+  const [firstFloor, setFirstFloor] = useState<FirstFloorPlan | null>(null);
+  useEffect(() => {
+    if (sectionPreset.beyond !== "first-floor") return undefined;
+    const controller = new AbortController();
+    loadFirstFloor(controller.signal).then((plan) => {
+      if (controller.signal.aborted) return;
+      setFirstFloor(plan);
+      invalidate();
+    }, () => { /* Without the plan the first floor is not drawn; the doors' light still falls. */ });
+    return () => { controller.abort(); };
+  }, [invalidate, sectionPreset]);
+  const cardGeometry = useMemo(() => (firstFloor === null ? null : buildFirstFloorCard(firstFloor, !sunlit)), [firstFloor, sunlit]);
+  useEffect(() => () => { cardGeometry?.dispose(); }, [cardGeometry]);
   // The mood resources were created with is applied directly; later moods blend.
   const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
@@ -245,9 +421,12 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   /** Frames the waiting capture has given the sun's pending map. */
   const captureWaits = useRef(0);
   const cutState = useRef<number[]>([HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none]);
+  // A raycast (a tape measure, a pick) meets the leaves where they are drawn,
+  // swung and cut, not where the shut geometry lies (raycastDoorLeaves).
+  const doorRaycast = useMemo(() => function raycast(this: Mesh, raycaster: Raycaster, intersects: Intersection[]): void {
+    raycastDoorLeaves(this, raycaster, intersects, (door) => doorSwing.current.angle(door), (wall) => cutState.current[wall] ?? HALL_CUTS.none);
+  }, []);
   const cutsEasing = useRef(false);
-  const skinRefs = useRef<(import("three").Mesh | null)[]>([]);
-  const capRefs = useRef<(import("three").Group | null)[]>([]);
   const resolvedView = useRef<Exclude<HallView, "auto">>(view === "auto" ? "overview" : view);
   const chandelierGroup = useRef<import("three").Group | null>(null);
   const chandeliersShown = useRef(false);
@@ -261,12 +440,42 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   // A finish without live light (a software rasteriser) has no reflection map:
   // six cube faces and their blur passes would run on the CPU at every settle.
   const captureNeeded = useRef(true);
+  /** The capture whose environment texture is installed (prepare, in the frame loop). */
+  const prepared = useRef<HallEnvironmentCapture | null>(null);
   const environment = useMemo(() => {
     const renderer = getNativeRenderer(gl);
     return renderer === null || !liveLight ? null : new HallEnvironmentCapture(renderer, new Color(HALL_VOID));
   }, [gl, liveLight]);
 
   useEffect(() => () => { disposeResources(resources); }, [resources]);
+
+  // The walls' 2 mm detail (useHallDetail): its index loads at once; tiles
+  // follow the camera (useFrame below). A tile arriving asks for a frame; a
+  // camera too quick to fetch for is looked at again shortly after it stops.
+  const detailRenderer = useMemo(() => getNativeRenderer(gl), [gl]);
+  const detailActive = useRef(false);
+
+  // The section cuts the relief once it has arrived (the flat walls need none).
+  useEffect(() => {
+    resources.cutaway.profile.setRelief(relief);
+    invalidate();
+  }, [invalidate, relief, resources]);
+
+  // The windows: under the real sky their glass opens onto the drawn city and
+  // its panes reflect the room (hall-glazing.ts). The panes need the room's
+  // captured reflections, so they appear with the first capture.
+  const panes = useRef<Mesh | null>(null);
+  const [reflection, setReflection] = useState<Texture | null>(null);
+  const glassPreset = useMemo(() => GLASS_PRESETS[parseGlassPreset(typeof window === "undefined" ? null : window.location.search)], []);
+  const glass = useMemo(() => (sunlit && reflection !== null
+    ? createGlassMaterial({ environment: reflection, capturePoint: HALL_CAPTURE_POINT, photos: resources.photos, section: resources.section, preset: glassPreset })
+    : null), [glassPreset, reflection, resources, sunlit]);
+  useEffect(() => () => { glass?.material.dispose(); }, [glass]);
+  useEffect(() => {
+    resources.glazing.set(sunlit);
+    invalidate();
+  }, [invalidate, resources, sunlit]);
+  useEffect(() => { setReflection(null); }, [environment]);
 
   useEffect(() => {
     if (environment === null) return undefined;
@@ -288,34 +497,44 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   }, [invalidate, liveLight, resources]);
 
   // The scan's photographs and the walls' relief stream in after the first
-  // frame; the planner's caption counts them in.
+  // frame; the planner's caption counts them in. They are the device's, not
+  // the light's: a change of sky does not fetch them again. What the relief
+  // makes (the walls as drawn, their geometry, the section's cap and slicer)
+  // is built in slices as it arrives (hall-arrival.ts), so the page never
+  // stops for the whole of it.
+  const sunRef = useRef(sun);
+  useEffect(() => { sunRef.current = sun; }, [sun]);
   useEffect(() => {
     let live = true;
     const surfaces = useHallViewStore.getState();
     surfaces.startSurfaces(HALL_PHOTO_COUNT + 1);
-    resources.photos.load(quality, (_kind, loaded) => {
+    photos.load(quality, (_kind, loaded) => {
       if (!live) return;
       useHallViewStore.getState().settleSurface(loaded);
       // A photograph arriving changes what the light falls on, and the walls'
       // glazing (its alpha) decides where the sun comes through.
-      if (loaded) { captureNeeded.current = true; sun?.redraw(); invalidate(); }
+      if (loaded) { captureNeeded.current = true; sunRef.current?.redraw(); invalidate(); }
     });
-    loadWallRelief().then((loaded) => {
+    const slices: number[] = [];
+    if (import.meta.env.DEV) window.__venHallArrivalSlices = slices;
+    const onSlice = import.meta.env.DEV ? (ms: number): void => { slices.push(ms); } : undefined;
+    loadWallRelief().then((loaded) => prepareWallRelief(loaded, { live: () => live, ...(onSlice === undefined ? {} : { onSlice }) })).then((drawn) => {
       if (!live) return;
-      setRelief(loaded);
+      // As drawn: without the relief inside the doorways, which the modelled leaves replace.
+      setRelief(drawn);
       useHallViewStore.getState().settleSurface(true);
       captureNeeded.current = true;
-      sun?.redraw();
+      sunRef.current?.redraw();
       invalidate();
-    }, () => {
-      // Without the relief the walls stay flat photographs.
-      if (live) useHallViewStore.getState().settleSurface(false);
+    }, (error: unknown) => {
+      // Without the relief the walls stay flat photographs (a build stopped by unmounting says nothing).
+      if (live && !(error instanceof SlicedBuildCancelled)) useHallViewStore.getState().settleSurface(false);
     });
     return () => {
       live = false;
       useHallViewStore.getState().endSurfaces();
     };
-  }, [invalidate, quality, resources, sun]);
+  }, [invalidate, photos, quality]);
 
   // The mood's exposure and grade apply from the first frame and are restored on exit.
   useEffect(() => {
@@ -341,6 +560,18 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
 
   useFrame((state, delta) => {
     let moving = false;
+    // The room's environment is installed before its first frame, the void
+    // until the first capture fills the same texture (HallEnvironmentCapture
+    // .prepare): the materials compile once against it, not again after it.
+    if (environment !== null && prepared.current !== environment) {
+      prepared.current = environment;
+      try {
+        state.scene.environment = environment.prepare();
+        state.scene.environmentIntensity = resources.mood.reflections;
+      } catch {
+        // The first capture installs it instead.
+      }
+    }
     // The real sky, where it drives the hall, replaces the moods: its light is
     // applied as published; reflections are recaptured once the sun is at rest
     // and only if the light has changed enough to show.
@@ -385,14 +616,19 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
         const scaleBefore = fittings?.scale.x ?? 1;
         if (fittings !== null) { fittings.visible = true; fittings.scale.setScalar(1); }
         resources.bulbScale.value = CAPTURED_BULBS;
+        // The room's reflections see its doors shut, as photographed.
+        const doorAngles = resources.doorSwing.shut();
         try {
-          state.scene.environment = withoutSunMapDraw(sun, () => environment.capture(roomGroup));
+          const captured = withGlazingClosed(resources.glazing, panes.current, () => withoutSunMapDraw(sun, () => environment.capture(roomGroup)));
+          state.scene.environment = captured;
           state.scene.environmentIntensity = resources.mood.reflections;
+          if (reflection !== captured) setReflection(captured);
           // The light it was captured in, so a later sky recaptures only once it differs.
           capturedSignature.current = sky === null ? null : moodSignature(sky.mood);
         } catch {
           // Without its own reflections the room keeps the previous environment.
         } finally {
+          resources.doorSwing.restore(doorAngles);
           resources.bulbScale.value = 1;
           if (fittings !== null) { fittings.visible = shownBefore; fittings.scale.setScalar(scaleBefore); }
         }
@@ -430,21 +666,48 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       cutState.current[index] = next;
       resources.section.set(index, next);
     });
+    // The floor's reflections of the chandeliers soften while they are put
+    // away (Plan, the overview from high up), easing as the cuts do.
+    const awayTarget = chandeliersShown.current ? 0 : 1;
+    const awayNow = resources.section.chandeliersAway.value;
+    const awayNext = Math.abs(awayTarget - awayNow) < 0.002 ? awayTarget : awayNow + (awayTarget - awayNow) * damping;
+    resources.section.chandeliersAway.value = awayNext;
+    if (awayNext !== awayTarget) easing = true;
     cutsEasing.current = easing;
     moving = moving || easing;
-    resources.cutaway.pieces.forEach((_piece, index) => {
-      const height = cutState.current[index] ?? HALL_CUTS.none;
-      const cut = height < HALL_HEIGHT - 0.01;
-      // Uncut walls keep their full body; cut ones stop at the cut.
-      const top = cut ? Math.max(0.05, height) : HALL_HEIGHT + 0.3;
-      const skin = skinRefs.current[index];
-      if (skin !== null && skin !== undefined) skin.scale.y = top;
-      const cap = capRefs.current[index];
-      if (cap !== null && cap !== undefined) {
-        cap.visible = cut;
-        cap.position.y = top;
+    // Each wall's doors swing open while it is cut, and shut on a walk; under
+    // reduced motion they are there at once. A door that starts to move does
+    // not spend the demand loop's idle gap.
+    const swinging = doorSwing.current.step(cutState.current, effective === "walk", hallFrameStep(delta, !doorsMoving.current), prefersReducedMotion);
+    doorsMoving.current = swinging;
+    resources.doorSwing.set((door) => doorSwing.current.angle(door));
+    moving = moving || swinging;
+    // The photographs beyond the doors load the first time a door opens, and
+    // cross-fade in once they arrive (at once under reduced motion).
+    const beyondPhotos = resources.beyond.photos;
+    if (beyondPhotos !== null) {
+      if (beyondPhotos.status === "idle" && resources.doorSwing.values().some((angle) => angle > 0.01)) {
+        beyondPhotos.load(quality, () => { invalidate(); });
       }
-    });
+      const fading = beyondPhotos.step(hallFrameStep(delta, !beyondFading.current), prefersReducedMotion);
+      beyondFading.current = fading;
+      moving = moving || fading;
+    }
+    // The walls' detail follows the camera and this frame's cuts. The
+    // reduced-motion query is asked only when a tile arrives or fades.
+    if (detail.enabled) {
+      const result = detail.update({
+        camera: state.camera, heightPx: state.gl.domElement.height, cuts: cutState.current,
+        delta: hallFrameStep(delta, !detailActive.current), reducedMotion: prefersReducedMotion, renderer: detailRenderer,
+      });
+      detailActive.current = result.active;
+      moving = moving || result.active;
+      // The earliest look wanted wins (a pan's 150 ms over a retry's seconds).
+      if (result.wakeMs !== null) detailWake.request(result.wakeMs);
+    }
+    // The relief's section follows each wall's cut (cut again only when it moves).
+    resources.cutaway.profile.update(cutState.current, WALL_BODY_TOP);
+    // The walls' bodies follow the cuts in their shader (hall-wall-body.ts).
     if (moving) invalidate();
   });
 
@@ -462,11 +725,13 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       })}
       {resources.casters !== null && (
         <group name="grand-hall-sun-casters">
-          {[...geometry.geometries, ...walls.geometries].filter(([key]) => key !== "floor").map(([key, part], index) => (
+          {hallSunCasterParts({
+            room: geometry.geometries, walls: walls.geometries, doors: doors.geometries, body: resources.cutaway.body,
+          }).map(({ key, geometry: part, glazed }, index) => (
             <mesh
               key={`caster-${String(index)}-${key}`}
               geometry={part}
-              material={key === "wallPhoto" || key === "wallPhotoGloss" ? resources.casters?.glazed : resources.casters?.solid}
+              material={glazed ? resources.casters?.glazed : resources.casters?.solid}
               layers={HALL_SUN_CASTER_LAYER}
               castShadow
               frustumCulled={false}
@@ -475,27 +740,51 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
           ))}
         </group>
       )}
+      {[...doors.geometries].map(([key, part]) => {
+        const material = resources.doorMaterials.get(key);
+        if (material === undefined) return null;
+        return <mesh key={`doors-${key}`} name={`grand-hall-doors-${key}`} geometry={part} material={material} frustumCulled={false} receiveShadow={sun !== null} raycast={doorRaycast} />;
+      })}
       <group ref={chandelierGroup} name="grand-hall-chandeliers" visible={false}>
         {[...chandeliers.geometries].map(([key, part]) => (
           <mesh key={key} name={`chandelier-${key}`} geometry={part} material={resources.chandelierMaterials.get(key)} />
         ))}
       </group>
+      {glass !== null && (
+        <mesh
+          ref={panes}
+          name="grand-hall-glazing-panes"
+          geometry={glazingPanes()}
+          material={glass.material}
+          frustumCulled={false}
+          raycast={() => undefined}
+        />
+      )}
       <mesh name="grand-hall-plinth" geometry={resources.cutaway.plinth} material={resources.cutaway.materials.plinth} />
-      {resources.cutaway.pieces.map((piece, index) => (
-        <group key={piece.wall.id} name={`grand-hall-section-${piece.wall.id}`} position={[piece.centre[0], 0, piece.centre[1]]} rotation={[0, piece.rotationY, 0]}>
-          <mesh
-            ref={(mesh) => { skinRefs.current[index] = mesh; }}
-            name={`grand-hall-section-skin-${piece.wall.id}`}
-            geometry={piece.skin}
-            material={resources.cutaway.materials.skin}
-            scale={[1, HALL_HEIGHT + 0.3, 1]}
-          />
-          <group ref={(group) => { capRefs.current[index] = group; }} visible={false}>
-            <mesh name={`grand-hall-section-cap-${piece.wall.id}`} geometry={piece.cap} material={resources.cutaway.materials.cap} />
-            <mesh name={`grand-hall-section-edge-${piece.wall.id}`} geometry={piece.edge} material={resources.cutaway.materials.edge} />
-          </group>
-        </group>
-      ))}
+      <mesh name="grand-hall-wall-body" geometry={resources.cutaway.body} material={resources.cutaway.materials.body} raycast={() => undefined} />
+      {sectionCap !== null && (
+        <mesh name="grand-hall-section-cap" geometry={sectionCap} material={resources.cutaway.materials.cap} frustumCulled={false} raycast={() => undefined} />
+      )}
+      {resources.cutaway.coping !== null && (
+        <mesh name="grand-hall-coping" geometry={resources.cutaway.coping.geometry} material={resources.cutaway.coping.material} raycast={() => undefined} />
+      )}
+      {resources.beyond.floors !== null && (
+        <mesh name="grand-hall-beyond-floors" geometry={beyondGeometry().floors} material={resources.beyond.floors} renderOrder={BEYOND_ORDER.floors} raycast={() => undefined} />
+      )}
+      {resources.beyond.solids !== null && (
+        <mesh name="grand-hall-beyond-solids" geometry={beyondGeometry().solids} material={resources.beyond.solids} renderOrder={BEYOND_ORDER.solids} raycast={() => undefined} />
+      )}
+      {resources.beyond.pools !== null && (
+        <mesh name="grand-hall-beyond-pools" geometry={beyondGeometry().pools} material={resources.beyond.pools} renderOrder={BEYOND_ORDER.pools} raycast={() => undefined} />
+      )}
+      {resources.beyond.card !== null && cardGeometry !== null && (
+        <mesh name="grand-hall-first-floor-card" geometry={cardGeometry} material={resources.beyond.card} raycast={() => undefined} />
+      )}
+      {[...thresholds.geometries].map(([key, part]) => {
+        const material = resources.materials.get(key);
+        if (material === undefined) return null;
+        return <mesh key={`thresholds-${key}`} name="grand-hall-thresholds" geometry={part} material={material} frustumCulled={false} receiveShadow={sun !== null} />;
+      })}
     </group>
   );
 }
