@@ -147,7 +147,7 @@ export function actsInRoom(graph: ActsGraph, spaceId: string, configurationId: s
     });
 }
 
-type LinkedBooking = Pick<CalendarBookingEntry, "entryType" | "eventId" | "status" | "kind" | "rank" | "jointFlag">;
+type LinkedBooking = Pick<CalendarBookingEntry, "eventId" | "status" | "kind" | "rank" | "jointFlag">;
 
 /** How strong a booking's claim is: a confirmation, then holds by rank (an unranked provisional last). */
 function claimStrength(entry: LinkedBooking): number {
@@ -163,7 +163,7 @@ function claimStrength(entry: LinkedBooking): number {
 export function eventHoldWords(entries: readonly LinkedBooking[], eventId: string): string | null {
   let best: LinkedBooking | null = null;
   for (const entry of entries) {
-    if (entry.entryType !== "booking" || entry.eventId !== eventId || holdChipWords(entry) === null) continue;
+    if (entry.eventId !== eventId || holdChipWords(entry) === null) continue;
     if (best === null || claimStrength(entry) < claimStrength(best)) best = entry;
   }
   return best === null ? null : holdChipWords(best);
