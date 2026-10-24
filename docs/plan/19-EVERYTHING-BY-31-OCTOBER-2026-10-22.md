@@ -81,20 +81,32 @@ Each lane owns its files; two writers never share files. New lanes start as sess
 Existing lanes continue under their owners: the pano splat floor (local_9cc748cb), the T-639 relight
 (local_140d1839) and the AA question (local_4c29ce0e). L2 reads their evidence first and does not duplicate them.
 
-## 4. Calendar (BST)
+## 4. Calendar (BST to Sun 25 02:00, GMT after)
+
+**Revision, Saturday 24 October 13:40.** Nothing ran from Thursday night to Saturday midday: the weekly usage limit
+stopped the sessions (the chrome builder died mid-slice-7), the Assembly study runner died before its Friday window,
+no lane card was started and the setup sitting did not happen. Done before the stop: the API redeploy (Thu 21:05),
+#140, #154, #163, #165 (the room fixes, live a day early) and chrome slice 6. The fixed points stand (freeze Thu 29
+18:00, final review Fri 30, tag Sat 31); everything in between is compressed. Lanes run in waves under the four-writer
+cap; L2 (research) is light and runs beside them.
 
 | Day | Work | Blake |
 |---|---|---|
-| Thu 22 | Assessment; this plan; Railway login; API redeploy and live check; wave 1 lane cards (L1, L2, L3b) and the planner briefed on L3 | Approve Railway; start the lane cards; install the BG3 Toolkit |
-| Fri 23 | Wave 1 builds; L6 starts after the sitting; the Grand Assembly studies by 19:00 | The 45-minute setup sitting; invite Elaine and a hallkeeper |
-| Sat 24 | Wave 2 (L5, L7, L8, L9); L2's formula report | Choose the Grand Assembly direction; read L2's formula and costing |
-| Sun 25 | Builds; training runs if approved; clocks go back (the timetable's DST handling runs live) | — |
-| Mon 26 | Builds; the Assembly behind a flag | Acceptance walk 1 (planner, front door, tour) |
-| Tue 27 | L4 and L5 with Trades Hall: timetable walk, a real enquiry, usability run | Elaine and the hallkeeper, 60–90 minutes |
-| Wed 28 | Device day: every surface measured on real iPhones, iPads and an office PC; splat candidate on a private preview | The devices; the splat look call |
+| Thu 22 | Done: assessment; this plan; API redeployed and verified; lane cards proposed | Done: Railway login |
+| Fri 23 | Lost to the usage stop | — |
+| Sat 24 | Wave A now: Assembly studies re-rendered on the 4090; chrome builder resumes slice 7; L1 starts (sitting first); flaky-test lane starts. Wave B after the 17:00 usage reset: L2 research | The setup sitting (time with orchestration); choose the Assembly direction when the studies land; start the cards |
+| Sun 25 | Clocks go back. Assembly build begins on his choice; L3c (finger drag, graphics-reset recovery) takes the flaky lane's slot once file ownership is agreed with the chrome builder; L6 (AI drafting) can start once the sitting has rotated the key | Invite Elaine and a hallkeeper if not done in the sitting |
+| Mon 26 | L1 lands staff invitations; L2's formula and costing to Blake; Assembly behind a flag | Acceptance walk 1, evening (room fixes, front door, tour, chrome so far, the Assembly's first form); the training budget |
+| Tue 27 | L4 and L5 with Trades Hall: timetable walk, a real enquiry, usability run; L9 starts if a slot is free | Elaine and the hallkeeper, 60–90 minutes |
+| Wed 28 | Device day: every surface on real iPhones, iPads and an office PC; splat candidate only if training ran Mon–Tue | The devices; the splat look call |
 | Thu 29 | Feature freeze 18:00; the real event run; the wall's night | — |
 | Fri 30 | Final reviews on the frozen candidate; fixes only | Acceptance walk 2; go/no-go |
 | Sat 31 | Tag v1.0, deploy, verify live, report every goal | Read the report |
+
+At risk after the slip, reported now rather than on the 31st: a retrained splat reaching the product before the freeze
+(it needs L2's formula Monday, his budget and paid runs Tuesday); L5's Stripe test-mode deposits and e-signing, L7,
+L8's second venue and L9 do not all fit four PC lanes in three working days. Running L5 and L8 as cloud sessions
+(code and tests only, no GPU or local data) would take them off this PC's memory; that needs Blake's word.
 
 ## 5. What only Blake can do (and when it blocks)
 
