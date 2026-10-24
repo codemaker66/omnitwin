@@ -61,7 +61,8 @@ beforeEach(() => {
 describe("configuration request ownership", () => {
   it("clears the previous configuration's save error and busy flag only after a new configuration commits", async () => {
     await open("A");
-    useEditorStore.setState({ isSaving: true, saveError: "A failed", saveConflict: { expectedRevision: 1, currentRevision: 2, message: "A changed" } });
+    useEditorStore.setState({ isSaving: true, saveError: "A failed", saveConflict: { expectedRevision: 1, currentRevision: 2, message: "A changed",
+      changedBy: null, changedAt: null, byYou: false, theirChange: null } });
     const next = deferred<Configuration>();
     configApi.getPublicConfig.mockReturnValueOnce(next.promise);
     const opening = store().loadConfiguration("B");
@@ -162,7 +163,7 @@ describe("configuration request ownership", () => {
       const log = useActionLogStore.getState();
       if (outcome === "success") pending.resolve({ objects: [placed("A")], revision: 2 });
       else {
-        if (outcome === "conflict") configApi.parseRevisionConflict.mockReturnValueOnce({ expectedRevision: 1, currentRevision: 3, message: "Old A conflict" });
+        if (outcome === "conflict") configApi.parseRevisionConflict.mockReturnValueOnce({ expectedRevision: 1, currentRevision: 3, message: "Old A conflict", changedBy: null, changedAt: null });
         pending.reject(new Error(`Old A ${outcome}`));
       }
       expect(await saving).toBe(false);

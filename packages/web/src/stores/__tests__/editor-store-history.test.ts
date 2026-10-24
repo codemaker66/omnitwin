@@ -41,8 +41,10 @@ vi.mock("../../api/spaces.js", () => ({
 }));
 
 vi.mock("../../lib/anonymous-planner-draft.js", () => ({
-  persistAnonymousPlannerDraft: vi.fn(),
+  persistAnonymousPlannerDraft: vi.fn(() => false),
   readAnonymousPlannerDraft: vi.fn(() => null),
+  plannerDraftBaseObjects: vi.fn(() => null),
+  discardPlannerDraft: vi.fn(),
 }));
 
 const TABLE_ID = "round-table-6ft";

@@ -10,6 +10,7 @@ import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
 import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
 import { registerPushWorker } from "./lib/push-worker.js";
+import { sweepExpiredPlannerDrafts } from "./lib/planner-draft-storage.js";
 import { appendFontBuildStyle, fontBuildFor } from "./lib/self-hosted-fonts.js";
 import siteFontsFirefoxWindows from "./styles/fonts/site-slim.firefox-windows.css?inline";
 import "./global.css";
@@ -92,3 +93,7 @@ void initBrowserSentry();
 // The push worker (goal 19 S7): registered after the root is up, harmless
 // where the browser has no push. It caches nothing and answers no fetch.
 registerPushWorker();
+
+// Planner work kept on this device past its age goes, for everyone who uses
+// this browser, including drafts whose layouts are never opened again.
+sweepExpiredPlannerDrafts();

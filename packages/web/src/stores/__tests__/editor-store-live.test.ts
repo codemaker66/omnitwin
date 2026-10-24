@@ -212,7 +212,7 @@ describe("yieldObjectsToRemote", () => {
 });
 
 describe("a revision conflict while live", () => {
-  const conflict = { expectedRevision: 2, currentRevision: 3, message: "changed" };
+  const conflict = { expectedRevision: 2, currentRevision: 3, message: "changed", changedBy: null, changedAt: null };
 
   it("refetches, rebases and saves again, keeping both people's work", async () => {
     setEditorLiveHooks(hooks());
@@ -248,14 +248,29 @@ describe("a revision conflict while live", () => {
     expect(useEditorStore.getState().saveConflict).not.toBeNull();
   });
 
-  it("keeps today's behaviour when not live: report the conflict, fetch nothing", async () => {
+  it("when not live, reports the conflict with what they changed and adopts nothing", async () => {
     open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
     const conflictError = new Error("409");
     vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
     vi.mocked(configApi.authBatchSave).mockRejectedValueOnce(conflictError);
+    vi.mocked(configApi.getConfig).mockResolvedValueOnce(serverConfig(3, [wire(T1, 1), wire(T2, 20), wire(T4, 4)]));
     expect(await useEditorStore.getState().saveToServer(true)).toBe(false);
-    expect(vi.mocked(configApi.getConfig)).not.toHaveBeenCalled();
-    expect(useEditorStore.getState().saveConflict).toEqual(conflict);
+    expect(vi.mocked(configApi.getConfig)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(configApi.authBatchSave)).toHaveBeenCalledTimes(1);
+    const state = useEditorStore.getState();
+    // Their version is read, never taken: this person's document is untouched.
+    expect(positions(state.objects)).toEqual(["1@10", "2@2", "3@3"]);
+    expect(state.configRevision).toBe(2);
+    expect(state.saveConflict).toEqual({
+      ...conflict,
+      byYou: false,
+      theirChange: {
+        moved: [{ noun: "item", label: null }],
+        added: [{ noun: "item", label: null }],
+        removed: [{ noun: "item", label: null }],
+        restyled: [],
+      },
+    });
   });
 });
 
@@ -265,7 +280,7 @@ describe("review findings", () => {
     open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
     const conflictError = new Error("409");
     vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError
-      ? { expectedRevision: 2, currentRevision: 3, message: "changed" } : null);
+      ? { expectedRevision: 2, currentRevision: 3, message: "changed", changedBy: null, changedAt: null } : null);
     let releaseFetch: (value: configApi.Configuration) => void = () => undefined;
     vi.mocked(configApi.getConfig).mockReturnValueOnce(new Promise((resolve) => { releaseFetch = resolve; }));
     vi.mocked(configApi.authBatchSave)

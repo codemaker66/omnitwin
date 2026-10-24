@@ -12,30 +12,11 @@ import { VisitorPlanPdfSheet } from "./VisitorPlanPdfSheet.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
+import { useOnlineStatus } from "../../hooks/use-online-status.js";
 
 interface MobilePlannerTopBarProps {
   readonly mode: "3d" | "2d";
   readonly onModeChange: (mode: "3d" | "2d") => void;
-}
-
-function useOnlineStatus(): boolean {
-  const [online, setOnline] = useState<boolean>(() => {
-    if (typeof navigator === "undefined") return true;
-    return navigator.onLine;
-  });
-
-  useEffect(() => {
-    const onOnline = (): void => { setOnline(true); };
-    const onOffline = (): void => { setOnline(false); };
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
-    return () => {
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
-    };
-  }, []);
-
-  return online;
 }
 
 const topBarStyle: React.CSSProperties = {

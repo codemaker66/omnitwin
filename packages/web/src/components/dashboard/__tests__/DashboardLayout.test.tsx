@@ -309,6 +309,35 @@ describe("DashboardLayout navigation", () => {
     expect(proposalsWithWords("admin-1")).toBe(0);
   });
 
+  it("asks before signing out with layout changes kept on this device, and takes them off it on Discard", async () => {
+    const mine = "venviewer:planner-draft:admin-1:cfg-1";
+    const theirs = "venviewer:planner-draft:someone-else:cfg-9";
+    localStorage.setItem(mine, JSON.stringify({ version: 1, updatedAtMs: Date.now(), hasUnsavedLocalChanges: true }));
+    localStorage.setItem(theirs, JSON.stringify({ version: 1, updatedAtMs: Date.now(), hasUnsavedLocalChanges: true }));
+    try {
+      renderShell();
+      await screen.findByText("Trades Hall");
+      fireEvent.click(screen.getByRole("button", { name: "Account: Elaine Campbell" }));
+      fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+      const question = await screen.findByRole("dialog", { name: "Sign out with layout changes not saved?" });
+      expect(question.textContent).toContain("Your changes to one layout are not saved yet. They are kept on this device; signing out removes them.");
+      fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+      expect(localStorage.getItem(mine)).not.toBeNull();
+      expect(mocks.signOut).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Account: Elaine Campbell" }));
+      fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Discard and sign out" }));
+      await waitFor(() => { expect(mocks.signOut).toHaveBeenCalledOnce(); });
+      expect(localStorage.getItem(mine)).toBeNull();
+      // Only this person's: whoever else uses this browser keeps theirs.
+      expect(localStorage.getItem(theirs)).not.toBeNull();
+    } finally {
+      localStorage.removeItem(mine);
+      localStorage.removeItem(theirs);
+    }
+  });
+
   it("returns to the account button on Cancel when the click left focus on the page, as Safari's does", async () => {
     rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
     renderShell();

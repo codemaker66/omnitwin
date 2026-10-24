@@ -21,6 +21,7 @@ import {
 } from "../lib/placement-validation.js";
 import {
   configurationRevisionEtag,
+  loadRevisionChange,
   revisionConflictBody,
 } from "../lib/configuration-revision.js";
 import {
@@ -188,8 +189,11 @@ export async function publicConfigRoutes(
     }
 
     if (config.revision !== parsed.data.expectedRevision) {
+      // When, never who: an anonymous caller is not told who edited.
+      const change = await loadRevisionChange(db, params.data.configId, config.revision,
+        { discloseActor: false, callerUserId: null, log: request.log });
       reply.header("ETag", configurationRevisionEtag(config.revision));
-      return reply.status(409).send(revisionConflictBody(parsed.data.expectedRevision, config.revision));
+      return reply.status(409).send(revisionConflictBody(parsed.data.expectedRevision, config.revision, change));
     }
 
     // Verify all referenced assetDefinitionIds exist before touching the DB.
@@ -283,9 +287,11 @@ export async function publicConfigRoutes(
     });
 
     if (saveResult.status === "conflict") {
+      const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
+        { discloseActor: false, callerUserId: null, log: request.log });
       reply.header("ETag", configurationRevisionEtag(saveResult.currentRevision));
       return reply.status(409).send(
-        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision),
+        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision, change),
       );
     }
 
