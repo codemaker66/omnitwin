@@ -31,6 +31,8 @@
 .pc-room-stage {
   position: absolute;
   inset: 0;
+  /* The room is its own stacking context: the scene's HTML tags (drei sets z-index up to 16777271) never rise over the chrome. */
+  isolation: isolate;
   touch-action: none;
 }
 
