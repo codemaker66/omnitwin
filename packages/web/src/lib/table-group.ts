@@ -1,4 +1,4 @@
-import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
+import { seatsFor } from "@omnitwin/types";
 import { toRenderSpace, toRealWorld } from "../constants/scale.js";
 import type { CatalogueItem } from "./catalogue.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
@@ -245,6 +245,8 @@ export function createTableGroup(
   tableRotationY: number,
   chairCount: number,
   y: number = 0,
+  newId: () => string = generatePlacedId,
+  chairSide: "around" | "back" = "around",
 ): readonly PlacedItem[] {
   const tableItem = getCatalogueItem(catalogueItemId);
   if (
@@ -255,16 +257,53 @@ export function createTableGroup(
   const chairItem = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
   if (chairItem === undefined) return [];
 
-  const groupId = generatePlacedId(); // Reuse ID generator for group IDs
+  const groupId = newId(); // Reuse ID generator for group IDs
 
-  const table = createPlacedItem(catalogueItemId, tableX, tableZ, tableRotationY, groupId, y);
+  const table = createPlacedItem(catalogueItemId, tableX, tableZ, tableRotationY, groupId, y, newId());
 
-  const chairPositions = computeChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount);
+  const chairPositions = chairSide === "back"
+    ? computeSideChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount)
+    : computeChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount);
   const chairs = chairPositions.map((pos) =>
-    createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, y),
+    createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, y, newId()),
   );
 
   return [table, ...chairs];
+}
+
+/**
+ * Chairs along one long side of a rectangular table only: the back (+Z
+ * before turning), facing the table, as a top table seats its guests to look
+ * out over the room. Centred, pitch-spaced, never more than the side holds.
+ */
+export function computeSideChairPositions(
+  tableX: number,
+  tableZ: number,
+  tableItem: CatalogueItem,
+  tableRotY: number,
+  chairCount: number,
+  tableScale?: number,
+): readonly ChairPlacement[] {
+  if (!isDiningTableItem(tableItem) || tableItem.tableShape !== "rectangular" || chairCount <= 0) return [];
+  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  if (chair === undefined) return [];
+  const scale = normalizeFurnitureScale(tableScale);
+  const perSide = Math.max(0, Math.floor((tableItem.width * scale) / seatPitch(chair)));
+  const count = Math.min(Math.floor(chairCount), perSide);
+  const pitch = toRenderSpace(seatPitch(chair));
+  const offset = (toRenderSpace(tableItem.depth) * scale) / 2 + toRenderSpace(chair.depth) / 2 + toRenderSpace(CHAIR_GAP_M);
+  const cos = Math.cos(tableRotY);
+  const sin = Math.sin(tableRotY);
+  const chairs: ChairPlacement[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const localX = (i - (count - 1) / 2) * pitch;
+    chairs.push({
+      x: tableX + localX * cos + offset * sin,
+      z: tableZ - localX * sin + offset * cos,
+      rotationY: tableRotY,
+    });
+  }
+  return chairs;
 }
 
 /**
@@ -305,16 +344,19 @@ export function rearrangeTableGroup(
 
   const footprint = tableGroupChairFootprint(table, placedItems, newChairCount > existingChairs.length);
 
-  // Compute new chair positions without creating a fresh groupId
-  const chairPositions = computeChairPositions(
-    table.x,
-    table.z,
-    tableItem,
-    table.rotationY,
-    newChairCount,
-    table.scale,
-    footprint,
-  );
+  // Compute new chair positions without creating a fresh groupId; a top
+  // table's trestle keeps its chairs along its back.
+  const chairPositions = tableChairSide(table, placedItems) === "back"
+    ? computeSideChairPositions(table.x, table.z, tableItem, table.rotationY, newChairCount, table.scale)
+    : computeChairPositions(
+      table.x,
+      table.z,
+      tableItem,
+      table.rotationY,
+      newChairCount,
+      table.scale,
+      footprint,
+    );
 
   const newChairs: PlacedItem[] = chairPositions.map((pos, i) => ({
     ...(existingChairs[i] ?? createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, table.y)),
@@ -350,10 +392,34 @@ export function tableGroupChairFootprint(
   return footprint;
 }
 
+/**
+ * Where a placed table's chairs sit: all along its back (a top table's
+ * trestle, computeSideChairPositions), or round it. Read from the chairs
+ * themselves, so a saved layout needs no field for it.
+ */
+export function tableChairSide(table: PlacedItem, placedItems: readonly PlacedItem[]): "around" | "back" {
+  const item = getCatalogueItem(table.catalogueItemId);
+  if (item?.tableShape !== "rectangular" || table.groupId === null) return "around";
+  const sin = Math.sin(table.rotationY);
+  const cos = Math.cos(table.rotationY);
+  let chairs = 0;
+  for (const placed of placedItems) {
+    if (placed.groupId !== table.groupId || placed.id === table.id || !isSceneFurniturePlacement(placed)) continue;
+    if (getCatalogueItem(placed.catalogueItemId)?.category !== "chair") continue;
+    // The chair's offset from the table in the table's own frame (+Z is its back).
+    if ((placed.x - table.x) * sin + (placed.z - table.z) * cos <= 0) return "around";
+    chairs += 1;
+  }
+  return chairs > 0 ? "back" : "around";
+}
+
 /** Editing retains existing assets; an increased count must also fit new Turini chairs. */
 export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
   const catalogue = getCatalogueItem(table.catalogueItemId);
   if (catalogue === undefined) return 0;
+  if (tableChairSide(table, placedItems) === "back") {
+    return computeSideChairPositions(0, 0, catalogue, 0, Number.MAX_SAFE_INTEGER, table.scale).length;
+  }
   const existingCount = table.groupId === null ? 0 : placedItems.filter((item) => (
     item.groupId === table.groupId && isSceneFurniturePlacement(item)
     && getCatalogueItem(item.catalogueItemId)?.category === "chair"
@@ -393,22 +459,27 @@ export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: numbe
 }
 
 /**
- * The seats a dining table is set for at a banquet, by the catalogue's own
- * record: its recorded seat count, or that of a catalogue table of the same
- * shape and size (the cloth-dressed 6 ft rounds take the 6ft Round Table's
- * 10), never more than fit around it. With nothing recorded, as many as fit.
+ * The seats a dining table is set for at a banquet: `seatsFor`'s default
+ * (seat truth, card-dock spec §17.2), never more than fit around it. A table
+ * seat truth does not know is set for as many as fit.
  */
 export function banquetSeatsPerTable(table: CatalogueItem): number {
   const fit = seatCapacity(table);
   if (fit === 0) return 0;
-  const sameSize = (asset: CanonicalAsset): boolean => (
-    asset.category === "table"
-    && asset.tableShape === table.tableShape
-    && Math.abs(asset.widthM - table.width) < 0.005
-    && Math.abs(asset.depthM - table.depth) < 0.005
-  );
-  const recorded = CANONICAL_ASSETS.find((asset) => asset.id === table.id && asset.seatCount !== null && asset.seatCount > 1)
-    ?? CANONICAL_ASSETS.find((asset) => sameSize(asset) && asset.seatCount !== null && asset.seatCount > 1);
-  const seats = recorded?.seatCount ?? fit;
-  return Math.max(1, Math.min(fit, seats));
+  return Math.max(1, Math.min(fit, seatsFor(table)?.default ?? fit));
+}
+
+/**
+ * The stepper's range at a table: seat truth's range, held to what
+ * physically fits (`physicalMax`, from seatCapacity or tableGroupSeatCapacity),
+ * and the count it starts at. A table seat truth does not know runs 1 to fit.
+ */
+export function chairCountRange(table: CatalogueItem, physicalMax: number): { readonly min: number; readonly max: number; readonly initial: number } {
+  const fit = Math.max(0, Math.floor(physicalMax));
+  if (fit === 0) return { min: 0, max: 0, initial: 0 };
+  const seats = seatsFor(table);
+  if (seats === null) return { min: 1, max: fit, initial: fit };
+  const max = Math.min(seats.max, fit);
+  const min = Math.min(seats.min, max);
+  return { min, max, initial: Math.min(max, Math.max(min, seats.default)) };
 }
