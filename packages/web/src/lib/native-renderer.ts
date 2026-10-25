@@ -174,10 +174,45 @@ export function isNativeWebGLBackend(backend: object): boolean {
  * backend's own loss listener so the canvas no longer holds it. Its GPU objects
  * belonged to the context that was lost.
  */
-export function detachNativeWebGLBackend(renderer: Pick<WebGPURenderer, "backend" | "domElement">): void {
+interface CanvasBackendOwner { readonly backend: object; readonly domElement: EventTarget }
+
+export function detachNativeWebGLBackend(renderer: CanvasBackendOwner): void {
   const backend: object = renderer.backend;
   if (!("_onContextLost" in backend) || !isEventListener(backend._onContextLost)) return;
   renderer.domElement.removeEventListener("webglcontextlost", backend._onContextLost);
+}
+
+/** r186 WebGLExtensions caches each lookup in `extensions[name]`, a cached null included. */
+function webglExtensionCache(backend: object): object | null {
+  if (!("extensions" in backend) || typeof backend.extensions !== "object" || backend.extensions === null) return null;
+  const helper = backend.extensions;
+  return "extensions" in helper && typeof helper.extensions === "object" && helper.extensions !== null ? helper.extensions : null;
+}
+
+/**
+ * Release a WebGL renderer whose context is lost and whose canvas a
+ * replacement will draw on once the browser hands the context back.
+ *
+ * r186's full dispose() makes the renderer forget every object it uploaded,
+ * so the dispose listeners it left on the scene's geometries and textures
+ * never reach GL again (after a restore they would delete objects from the
+ * lost context, and Chrome reports each as INVALID_OPERATION). While the
+ * context is lost every GL call it makes is a silent no-op, so this must run
+ * then. Its WebGLBackend.dispose() ends with WEBGL_lose_context.loseContext(),
+ * which would take the context from the replacement; a cached null lookup
+ * skips it. Where that cache is not the shape it knows, it only lets go of the
+ * canvas (detachNativeWebGLBackend) and never disposes.
+ */
+export async function releaseLostWebGLRenderer(
+  renderer: CanvasBackendOwner & { dispose(): Promise<void> | void },
+): Promise<void> {
+  const cache = webglExtensionCache(renderer.backend);
+  if (cache === null) {
+    detachNativeWebGLBackend(renderer);
+    return;
+  }
+  Reflect.set(cache, "WEBGL_lose_context", null);
+  await renderer.dispose();
 }
 
 export function isNativeRenderer(renderer: object): renderer is WebGPURenderer {

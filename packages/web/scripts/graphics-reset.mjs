@@ -17,6 +17,7 @@
 //   node scripts/graphics-reset.mjs --base http://127.0.0.1:5231 --out D:/claude/l3c-graphics-reset/run \
 //     [--surface planner|planner-walk|room-walk|tour] [--backend webgpu|webgl2]
 //     [--loss destroy|lose-restore|lose-never|gpu-crash] [--device desktop|phone] [--entry saved|fresh]
+//     [--layer as|capture|model]   (the planner's view: as it opens, the captured room's splats, or the drawn hall)
 import { chromium } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,8 +33,9 @@ const BACKEND = option("backend", "webgpu");
 const LOSS = option("loss", BACKEND === "webgpu" ? "destroy" : "lose-restore");
 const DEVICE = option("device", "desktop");
 const ENTRY = option("entry", "saved");
+const LAYER = option("layer", "as");
 const OUT = option("out", "D:/claude/l3c-graphics-reset/run");
-const RUN = `${SURFACE}-${BACKEND}-${LOSS}-${DEVICE}${SURFACE.startsWith("planner") && ENTRY === "fresh" ? "-fresh" : ""}`;
+const RUN = `${SURFACE}-${BACKEND}-${LOSS}-${DEVICE}${SURFACE.startsWith("planner") && ENTRY === "fresh" ? "-fresh" : ""}${LAYER === "as" ? "" : `-${LAYER}`}`;
 const API = "http://localhost:3001";
 const CONFIG_ID = "reset-config-0001";
 const VENUE = { id: "reset-venue-trades", name: "Trades Hall", slug: "trades-hall-glasgow", address: "85 Glassford Street", logoUrl: null, brandColour: null };
@@ -121,13 +123,19 @@ async function snapshot(page) {
     const perf = window.__venPerf;
     const canvas = document.querySelector("canvas");
     const ids = [];
-    perf?.scene.traverse((object) => { ids.push(object.uuid); });
+    let splatDraws = 0;
+    // A splat draw is derived from its sources and is rebuilt for a new device by design.
+    perf?.scene.traverse((object) => {
+      if (typeof object.splatCount === "number") splatDraws++;
+      else ids.push(object.uuid);
+    });
     let hash = 0;
     for (const id of ids.join("")) hash = (hash * 31 + id.charCodeAt(0)) >>> 0;
     return {
       sceneUuid: perf?.scene.uuid ?? null,
       sceneObjects: ids.length,
       sceneHash: hash,
+      splatDraws,
       cameraUuid: perf?.camera.uuid ?? null,
       position: perf?.camera.position.toArray().map((value) => Math.round(value * 1e4) / 1e4) ?? null,
       quaternion: perf?.camera.quaternion.toArray().map((value) => Math.round(value * 1e4) / 1e4) ?? null,
@@ -252,9 +260,15 @@ async function awaitRecovery(page, startedAt) {
   }
 }
 
-/** Waits until a captured room is actually drawing splats (or says it could not load), and records which. */
+/**
+ * Waits until a captured room has finished streaming (its drawn splat count
+ * unchanged for six seconds) or says it could not load, and records which: a
+ * baseline taken while the sharp level is still arriving measures the arrival.
+ */
 async function awaitCapture(page) {
-  const deadline = Date.now() + 120_000;
+  const deadline = Date.now() + 180_000;
+  let last = -1;
+  let steadySince = Date.now();
   for (;;) {
     const capture = await page.evaluate(() => {
       let splats = 0;
@@ -263,9 +277,11 @@ async function awaitCapture(page) {
       });
       return { splats, failed: document.body.innerText.includes("Room capture could not load") };
     });
-    if (capture.splats > 0 || capture.failed || Date.now() > deadline) {
-      report.capture = capture;
-      if (capture.splats > 0) await page.waitForTimeout(5_000);
+    if (capture.splats !== last) { last = capture.splats; steadySince = Date.now(); }
+    // A view with no capture at all settles too, after longer.
+    const steady = Date.now() - steadySince >= (capture.splats > 0 ? 8_000 : 20_000);
+    if (steady || capture.failed || Date.now() > deadline) {
+      report.capture = { ...capture, steady };
       return;
     }
     await page.waitForTimeout(500);
@@ -297,6 +313,22 @@ async function openSurface(page) {
   // Let the hall's photographs and relief arrive and the opening glide finish.
   await page.waitForTimeout(16_000);
   await awaitCapture(page);
+  // A ready capture opens with the arrival over the hall; step in as a person does.
+  const enter = page.getByRole("button", { name: /^Open planner/ });
+  if (await enter.count() > 0 && await enter.first().isVisible()) {
+    await enter.first().click();
+    await page.waitForTimeout(3_000);
+  }
+  report.arrivalDismissed = await page.locator("dialog.planner-arrival[open]").count() === 0;
+  const toggle = page.getByTestId("hall-capture-toggle");
+  if (LAYER !== "as" && await toggle.count() > 0) {
+    const showing = await toggle.first().getAttribute("aria-pressed") === "true";
+    if (showing !== (LAYER === "capture")) {
+      await toggle.first().click();
+      await page.waitForTimeout(4_000);
+    }
+  }
+  report.captureShowing = await toggle.count() > 0 ? await toggle.first().getAttribute("aria-pressed") === "true" : null;
   if (SURFACE === "planner-walk") {
     await page.getByRole("button", { name: /^Walk/ }).first().click();
     await page.waitForTimeout(4_000);
@@ -343,6 +375,8 @@ try {
   report.before = await snapshot(page);
   report.framesBefore = await gesture(page, box);
   await page.waitForTimeout(3_000);
+  // The detail a view streams depends on where it rests: settle at this pose before the baseline.
+  if (SURFACE !== "tour") await awaitCapture(page);
   report.atPose = await snapshot(page);
   const shotBefore = await page.screenshot({ clip: box });
   writeFileSync(join(OUT, `${RUN}-before.png`), shotBefore);
@@ -389,7 +423,10 @@ try {
 console.log(JSON.stringify({
   run: RUN, outcome: report.recovery?.outcome, totalMs: report.recovery?.totalMs, phases: report.recovery?.phases,
   settled: report.settled, replaced: { canvas: report.recovery?.canvasReplaced, renderer: report.recovery?.rendererReplaced },
-  capture: { before: report.capture, after: report.captureAfter },
+  capture: { before: report.capture, after: report.captureAfter, showing: report.captureShowing, arrivalDismissed: report.arrivalDismissed },
   preserved: report.preserved, pixels: report.pixels, framesBefore: report.framesBefore, framesAfter: report.framesAfter,
-  consoleAfterLoss: report.console.afterLoss.length, pageErrors: report.pageErrors.length, error: report.error,
+  consoleAfterLoss: report.console.afterLoss.length,
+  // Console lines of a kind the page had not already logged before the loss.
+  newConsoleKinds: [...new Set(report.console.afterLoss)].filter((line) => !report.console.beforeLoss.includes(line)),
+  pageErrors: report.pageErrors.length, error: report.error,
 }, null, 2));

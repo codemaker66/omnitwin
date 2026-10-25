@@ -77,6 +77,8 @@ const native = vi.hoisted(() => {
       isWebGLBackend?: true;
       parameters: { canvas: HTMLCanvasElement; device?: object };
       device?: object;
+      /** r186 WebGLExtensions' lookup cache. */
+      extensions?: { extensions: Record<string, unknown> };
       dispose: ReturnType<typeof vi.fn>;
     };
     // The renderer settings a replacement must inherit (r186 Renderer fields).
@@ -122,7 +124,9 @@ const native = vi.hoisted(() => {
       this.domElement = options.canvas;
       // Match r186 Backend: it copies the options before async initialization.
       this.backend = {
-        ...(negotiation.backend === "webgpu" ? { isWebGPUBackend: true as const } : { isWebGLBackend: true as const }),
+        ...(negotiation.backend === "webgpu"
+          ? { isWebGPUBackend: true as const }
+          : { isWebGLBackend: true as const, extensions: { extensions: {} } }),
         parameters: { ...options }, dispose: vi.fn(() => Promise.resolve()),
       };
       this.pending = new Promise<void>((resolve, reject) => { this.resolve = resolve; this.reject = reject; });
@@ -661,13 +665,17 @@ describe("NativeCanvas", () => {
       await flush();
       expect(native.instances).toHaveLength(1);
       expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+      // Released while the context is lost, when its GL calls are silent no-ops, so its
+      // listeners never delete lost objects on the restored context; and without the
+      // loseContext() r186 WebGLBackend.dispose() ends with.
+      expect(lost.dispose).toHaveBeenCalledOnce();
+      expect(lost.backend.extensions?.extensions["WEBGL_lose_context"]).toBeNull();
 
       act(() => { lost.domElement.dispatchEvent(new Event("webglcontextrestored")); });
       await flush();
       const fresh = renderer(1);
       expect(fresh.domElement).toBe(lost.domElement);
-      // r186 WebGLBackend.dispose() calls loseContext() on the context the replacement draws with.
-      expect(lost.dispose).not.toHaveBeenCalled();
+      expect(lost.dispose).toHaveBeenCalledOnce();
       expect(lost.backend.dispose).not.toHaveBeenCalled();
       await start(1);
       await flush();

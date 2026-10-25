@@ -9,7 +9,8 @@ import { ActivityStatus } from "../shared/Activity.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import {
   applyNativeRendererSettings, detachNativeWebGLBackend, isNativeWebGLBackend, readNativeRendererSettings,
-  registerNativeSceneRenderer, replaceStoreRenderer, withNativeRenderScope, type NativeRendererSettings,
+  registerNativeSceneRenderer, releaseLostWebGLRenderer, replaceStoreRenderer, withNativeRenderScope,
+  type NativeRendererSettings,
 } from "../../lib/native-renderer.js";
 import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-frame-pacer.js";
 import { noteMainDraw } from "../../lib/main-draw-clock.js";
@@ -262,10 +263,16 @@ export function NativeCanvas({
     framePacer.current = null;
     failedRenderer.current = native;
     running.current = false;
-    lost.current = {
-      native, settings, pixelRatio: native.getPixelRatio(),
-      backend: isNativeWebGLBackend(native.backend) ? "webgl2" : "webgpu",
-    };
+    const backend = isNativeWebGLBackend(native.backend) ? "webgl2" : "webgpu";
+    lost.current = { native, settings, pixelRatio: native.getPixelRatio(), backend };
+    if (backend === "webgl2") {
+      // Now, while its GL calls are silent no-ops (see releaseLostWebGLRenderer);
+      // its later lifecycle disposal must then leave the shared canvas alone.
+      sharedCanvas.current.add(native);
+      void releaseLostWebGLRenderer(native).catch(() => {
+        // A lost context may refuse its own clean-up; nothing on screen depends on it.
+      });
+    }
     recovery.current?.lost(api);
   }, [fail]);
 
@@ -508,7 +515,6 @@ export function NativeCanvas({
     const retired = lost.current;
     const state = root.current;
     if (retired === null || state === null) throw new Error("There is no lost view to restore");
-    if (retired.backend === "webgl2") sharedCanvas.current.add(retired.native);
     // The canvas's previous renderer (the lost one, or a replacement that could
     // not start) releases its device and registrations before another draws there.
     const previous = lifecycle.current;
