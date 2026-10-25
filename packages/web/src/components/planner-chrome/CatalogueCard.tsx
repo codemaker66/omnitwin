@@ -2,6 +2,7 @@ import { forwardRef, useRef, type FocusEvent, type ReactElement } from "react";
 import { Armchair } from "lucide-react";
 import type { CatalogueCard, VariantColour } from "../../lib/card-defaults.js";
 import type { CatalogueItem } from "../../lib/catalogue.js";
+import { setupCardPreviewUrl } from "../../lib/crafted-furniture.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import {
   CARD_COLOURWAYS,
@@ -9,6 +10,7 @@ import {
   cardMainSlug,
   cardParamsFor,
   describeCard,
+  isSetupCardId,
   pieceCardId,
   pieceCardSlug,
   type CardId,
@@ -281,7 +283,10 @@ export const FullCard = forwardRef<HTMLButtonElement, FullCardProps>(function Fu
         }}
       >
         <span className="pc-ccard__mat" aria-hidden="true">
-          {face.item !== undefined ? <FurnitureCataloguePreview item={face.item} size={ART_PX} /> : null}
+          {isSetupCardId(card.id)
+            // A setup card shows its whole set (Q-21); a piece card shows its piece.
+            ? <img className="pc-ccard__set" src={setupCardPreviewUrl(card.id)} alt="" width={ART_PX} height={ART_PX} loading="lazy" decoding="async" draggable={false} />
+            : face.item !== undefined ? <FurnitureCataloguePreview item={face.item} size={ART_PX} /> : null}
         </span>
         {face.seats > 0 ? (
           <span className="pc-ccard__seats pc-num" aria-hidden="true">

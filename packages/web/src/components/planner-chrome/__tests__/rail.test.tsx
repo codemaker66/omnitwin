@@ -149,3 +149,13 @@ describe("the store (staff; Blake's B2, hard)", () => {
     expect(useCatalogueStore.getState().armedCardId).toBeNull();
   });
 });
+
+describe("the cards' pictures (Q-21)", () => {
+  it("shows a setup card as its whole set, and a piece as itself", () => {
+    render(<Rail />);
+    const art = (name: RegExp): string => within(rail()).getByRole("button", { name }).querySelector("img")?.getAttribute("src") ?? "";
+    expect(art(/^Round of 10/u)).toBe("/models/furniture/setup/round/setup-v1/preview.webp");
+    expect(art(/^Dance floor/u)).toBe("/models/furniture/setup/dance-floor/setup-v1/preview.webp");
+    expect(art(/^Stage/u)).not.toContain("/setup/");
+  });
+});

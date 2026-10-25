@@ -312,3 +312,13 @@ describe("the store (staff; Blake's B2, hard)", () => {
     expect(catalogue().textContent).not.toContain("in store");
   });
 });
+
+describe("the cards' pictures (Q-21)", () => {
+  it("shows a setup card as its whole set, and a piece card as its piece", () => {
+    openCatalogue();
+    render(<Catalogue />);
+    const art = (prefix: string): string => cardButtons().find((face) => face.getAttribute("aria-label")?.startsWith(prefix) === true)?.querySelector("img")?.getAttribute("src") ?? "";
+    expect(art("Round of 10,")).toBe("/models/furniture/setup/round/setup-v1/preview.webp");
+    expect(art("Round 6 ft,")).not.toContain("/setup/");
+  });
+});
