@@ -42,6 +42,22 @@ describe("ChairCountDialog seat truth", () => {
     render(<ChairCountDialog request={request} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByLabelText<HTMLInputElement>("Chair count").value).toBe("9");
   });
+
+  it("lets a placed round keep fewer chairs than seat truth's eight", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("Round table fixture missing");
+    const group = createTableGroup(table.id, 0, 0, 0, 6);
+    const placed = group[0];
+    if (placed === undefined) throw new Error("No table placed");
+    usePlacementStore.setState({ placedItems: group });
+    const request: ChairCountRequest = { catalogueItemId: table.id, x: 0, z: 0, rotationY: 0, tableShape: "round" };
+    useChairDialogStore.getState().showDialog(request, placed.id);
+    render(<ChairCountDialog request={request} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const input = screen.getByLabelText<HTMLInputElement>("Chair count");
+    expect(input.value).toBe("6");
+    expect(input.min).toBe("6");
+    expect(input.max).toBe("12");
+  });
 });
 
 describe("ChairCountDialog scaled capacity", () => {

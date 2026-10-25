@@ -344,16 +344,19 @@ export function rearrangeTableGroup(
 
   const footprint = tableGroupChairFootprint(table, placedItems, newChairCount > existingChairs.length);
 
-  // Compute new chair positions without creating a fresh groupId
-  const chairPositions = computeChairPositions(
-    table.x,
-    table.z,
-    tableItem,
-    table.rotationY,
-    newChairCount,
-    table.scale,
-    footprint,
-  );
+  // Compute new chair positions without creating a fresh groupId; a top
+  // table's trestle keeps its chairs along its back.
+  const chairPositions = tableChairSide(table, placedItems) === "back"
+    ? computeSideChairPositions(table.x, table.z, tableItem, table.rotationY, newChairCount, table.scale)
+    : computeChairPositions(
+      table.x,
+      table.z,
+      tableItem,
+      table.rotationY,
+      newChairCount,
+      table.scale,
+      footprint,
+    );
 
   const newChairs: PlacedItem[] = chairPositions.map((pos, i) => ({
     ...(existingChairs[i] ?? createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, table.y)),
@@ -389,10 +392,34 @@ export function tableGroupChairFootprint(
   return footprint;
 }
 
+/**
+ * Where a placed table's chairs sit: all along its back (a top table's
+ * trestle, computeSideChairPositions), or round it. Read from the chairs
+ * themselves, so a saved layout needs no field for it.
+ */
+export function tableChairSide(table: PlacedItem, placedItems: readonly PlacedItem[]): "around" | "back" {
+  const item = getCatalogueItem(table.catalogueItemId);
+  if (item?.tableShape !== "rectangular" || table.groupId === null) return "around";
+  const sin = Math.sin(table.rotationY);
+  const cos = Math.cos(table.rotationY);
+  let chairs = 0;
+  for (const placed of placedItems) {
+    if (placed.groupId !== table.groupId || placed.id === table.id || !isSceneFurniturePlacement(placed)) continue;
+    if (getCatalogueItem(placed.catalogueItemId)?.category !== "chair") continue;
+    // The chair's offset from the table in the table's own frame (+Z is its back).
+    if ((placed.x - table.x) * sin + (placed.z - table.z) * cos <= 0) return "around";
+    chairs += 1;
+  }
+  return chairs > 0 ? "back" : "around";
+}
+
 /** Editing retains existing assets; an increased count must also fit new Turini chairs. */
 export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
   const catalogue = getCatalogueItem(table.catalogueItemId);
   if (catalogue === undefined) return 0;
+  if (tableChairSide(table, placedItems) === "back") {
+    return computeSideChairPositions(0, 0, catalogue, 0, Number.MAX_SAFE_INTEGER, table.scale).length;
+  }
   const existingCount = table.groupId === null ? 0 : placedItems.filter((item) => (
     item.groupId === table.groupId && isSceneFurniturePlacement(item)
     && getCatalogueItem(item.catalogueItemId)?.category === "chair"
