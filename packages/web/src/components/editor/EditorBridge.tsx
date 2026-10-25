@@ -5,6 +5,7 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
+import { seededNote } from "../../lib/note-seeds.js";
 import { useLayoutLiveStore } from "../../stores/layout-live-store.js";
 import { composeWithOverlay, isRemotePlacementKey, type RemoteOverlay } from "../../lib/layout-live/live-document.js";
 
@@ -113,7 +114,8 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     chairStyle: item.chairStyle ?? null,
     centerpiece: item.centerpiece ?? null,
     groupId: item.groupId,
-    notes: existing?.notes ?? "",
+    // A note an edit hands the piece in this write (Replace, lib/note-seeds), so piece and note are one undo step.
+    notes: seededNote(item.id) ?? existing?.notes ?? "",
   };
   const label = (item.label ?? "").trim();
   return label.length > 0 ? { ...base, label } : base;

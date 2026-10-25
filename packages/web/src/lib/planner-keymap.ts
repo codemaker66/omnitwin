@@ -28,7 +28,8 @@ import {
   type PlannerClipboard,
 } from "./placement-edit.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
-import { planReplace, type ReplaceOptions, type ReplaceResult } from "./replace.js";
+import { withNoteSeeds } from "./note-seeds.js";
+import { planReplace, type ReplaceOptions, type ReplacePlan, type ReplaceResult } from "./replace.js";
 import type { CardParams } from "./setup-cards.js";
 import { ROTATION_SNAP_RAD, snapRotation } from "./selection.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
@@ -398,19 +399,41 @@ export function moveSelectionTo(at: { readonly x: number; readonly z: number }):
   return landMove(planMove(ids, at, editWorld()));
 }
 
+/** A placed piece's note as the editor holds it, trimmed; "" for none. */
+function noteOf(pieceId: string): string {
+  return (useEditorStore.getState().objects.find((object) => object.id === pieceId)?.notes ?? "").trim();
+}
+
+/**
+ * The whole note each table a Replace carries notes to will hold: its own
+ * first, then each moved note under its old table's name ("Table 3: …").
+ */
+function carriedNotes(plan: ReplacePlan): ReadonlyMap<string, string> {
+  const notes = new Map<string, string>();
+  for (const { fromId, toId, prefix } of plan.notes) {
+    const moved = noteOf(fromId);
+    if (moved === "" || fromId === toId) continue;
+    const before = notes.get(toId) ?? noteOf(toId);
+    notes.set(toId, before === "" ? `${prefix}${moved}` : `${before}\n${prefix}${moved}`);
+  }
+  return notes;
+}
+
 /**
  * Replace: the selection with what `params` describes (lib/replace), as one
- * undo step. The plan comes back either way, so the caller can show its
- * receipt and carry `plan.notes` to the new tables (the notes are the
- * editor store's); refused, nothing changes.
+ * undo step, each old table's note carried to the new table nearest it in
+ * that same step (lib/note-seeds). The plan comes back either way, for its
+ * receipt; refused, nothing changes. `hasNote` defaults to the editor's notes.
  */
 export function replaceSelection(params: CardParams, options: Pick<ReplaceOptions, "hasNote" | "store"> = {}): ReplaceResult {
-  const result = planReplace(selectedIds(), params, editWorld(), options);
+  const hasNote = options.hasNote ?? ((pieceId: string) => noteOf(pieceId) !== "");
+  const result = planReplace(selectedIds(), params, editWorld(), { ...options, hasNote });
   if (!result.ok) {
     postPlacementNotice(result.reason);
     return result;
   }
-  landChange(result.plan.removeIds, result.plan.add);
+  const { plan } = result;
+  withNoteSeeds(carriedNotes(plan), () => { landChange(plan.removeIds, plan.add); });
   return result;
 }
 
