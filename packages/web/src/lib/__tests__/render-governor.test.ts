@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RENDER_PROFILES } from "../render-quality.js";
 import { FrameGovernor, REBUILD_WAIT_MS, SETTLE_MS, STILL_MS, SWAP_SETTLE_MAX_MS, SwapSettle, displayRateFrom, governorWarmWindows, rebuildDue, windowPace, type StepKind } from "../render-governor.js";
 
 /** A ladder with `rungs` to give up, recording every step asked of it. */
@@ -36,7 +37,7 @@ describe("FrameGovernor", () => {
   });
 
   it("judges a phone from its first window: 40 ms frames at 60 Hz give up a rung within two windows", () => {
-    const governor = new FrameGovernor({ warmWindows: governorWarmWindows("phone") });
+    const governor = new FrameGovernor({ warmWindows: governorWarmWindows(RENDER_PROFILES.phone) });
     governor.setDisplayRate(60);
     const { asked, giveUp } = ladder();
     windows(governor, giveUp, 25, 1, 30);
@@ -60,10 +61,12 @@ describe("FrameGovernor", () => {
     expect(asked).toEqual([]);
   });
 
-  it("leaves tablets and desktops their three warm-up windows", () => {
-    expect(governorWarmWindows("phone")).toBe(0);
-    expect(governorWarmWindows("tablet")).toBe(3);
-    expect(governorWarmWindows("desktop")).toBe(3);
+  it("leaves tablets, desktops and a phone without the lean motion pipeline their three warm-up windows", () => {
+    expect(governorWarmWindows(RENDER_PROFILES.phone)).toBe(0);
+    // The switch off: the phone keeps bloom in motion and the governor it had.
+    expect(governorWarmWindows({ ...RENDER_PROFILES.phone, bloomInMotion: true })).toBe(3);
+    expect(governorWarmWindows(RENDER_PROFILES.tablet)).toBe(3);
+    expect(governorWarmWindows(RENDER_PROFILES.desktop)).toBe(3);
   });
 
   it("leaves a device that holds its rate alone", () => {
