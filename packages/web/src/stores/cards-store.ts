@@ -47,6 +47,9 @@ interface CardsState {
   /** The card dragged off the rail, until it is released. */
   readonly inFlight: CardId | null;
   readonly arms: Readonly<Record<string, number>>;
+  /** The card whose first-arms hint is showing, or null. */
+  readonly hintFor: CardId | null;
+  readonly setHintFor: (card: CardId | null) => void;
   readonly setStyle: (style: RailStyle) => void;
   readonly openCatalogue: () => void;
   readonly closeCatalogue: () => void;
@@ -68,6 +71,8 @@ export const useCardsStore = create<CardsState>()((set, get) => ({
   query: "",
   inFlight: null,
   arms: readArms(),
+  hintFor: null,
+  setHintFor: (hintFor) => { set({ hintFor }); },
   setStyle: (style) => { set({ style }); },
   openCatalogue: () => { set({ catalogueOpen: true }); },
   closeCatalogue: () => { set({ catalogueOpen: false }); },
@@ -82,5 +87,5 @@ export const useCardsStore = create<CardsState>()((set, get) => ({
     keepArms(arms);
     return before < HINT_ARMS;
   },
-  reset: () => { set({ style: "dinner", catalogueOpen: false, tab: FIRST_TAB, query: "", inFlight: null, arms: readArms() }); },
+  reset: () => { set({ style: "dinner", catalogueOpen: false, tab: FIRST_TAB, query: "", inFlight: null, arms: readArms(), hintFor: null }); },
 }));
