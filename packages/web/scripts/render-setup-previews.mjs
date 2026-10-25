@@ -7,7 +7,7 @@
 // setupCardLooks and setupCardPreviewUrl), so this script holds no copy of
 // either.
 //
-// Files go to public/models/furniture/setup/<card>/<SETUP_PREVIEW_VERSION>/
+// Files go to public/models/furniture/setup-<card>/<SETUP_PREVIEW_VERSION>/
 // <look>.webp (src/lib/crafted-furniture.ts). That folder is served
 // immutable, so a change to how a look reads needs a new version, not new
 // bytes in the old folder; the script refuses to replace a picture that
@@ -105,5 +105,5 @@ try {
 } finally {
   await browser.close();
 }
-console.log(`\n${selected.length - failures}/${selected.length} pictures written under public/models/furniture/setup/`);
+console.log(`\n${selected.length - failures}/${selected.length} pictures written under public/models/furniture/setup-<card>/`);
 if (failures > 0 || selected.length === 0) process.exitCode = 1;
