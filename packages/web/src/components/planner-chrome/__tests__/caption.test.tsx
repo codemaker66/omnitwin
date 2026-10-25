@@ -6,6 +6,7 @@ import type { PlacedItem } from "../../../lib/placement.js";
 import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 import { stampSetup } from "../../../lib/setup-cards.js";
 import { projectScreenAnchors, screenAnchorCount, setScreenFloorPicker } from "../../../lib/screen-anchors.js";
+import { useCardsStore } from "../../../stores/cards-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { usePlannerChromeStore } from "../../../stores/planner-chrome-store.js";
@@ -215,5 +216,17 @@ describe("Move, then tap where it goes (law 11), behind its switch", () => {
     expect(screen.queryByTestId("planner-caption-catcher")).toBeNull();
     expect(usePlacementStore.getState().placedItems.find((item) => item.id === "t8")?.x).toBe(3);
     expect(useSelectionStore.getState().selectedIds.has("t8")).toBe(true);
+  });
+});
+
+describe("Replace…, behind its switch", () => {
+  it("puts the cards in replace mode and opens the catalogue", () => {
+    setPlannerFeaturesForTesting({ replace: true });
+    useCardsStore.getState().reset();
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    fireEvent.click(within(caption()).getByRole("button", { name: /^Replace/u }));
+    expect(useCardsStore.getState().replacing).toBe("Replace Table 8 with…");
+    expect(useCardsStore.getState().catalogueOpen).toBe(true);
   });
 });
