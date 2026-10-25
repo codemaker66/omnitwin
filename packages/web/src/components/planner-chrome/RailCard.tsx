@@ -1,7 +1,8 @@
 import { type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
 import { catalogueIcon } from "../../lib/catalogue.js";
+import { setupCardPreviewUrl } from "../../lib/crafted-furniture.js";
 import { railName } from "../../lib/card-defaults.js";
-import { cardMainItem, cardParamsFor, describeCard, type CardId } from "../../lib/setup-cards.js";
+import { cardMainItem, cardParamsFor, describeCard, isSetupCardId, type CardId } from "../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import type { StoreFace } from "./store-figures.js";
 import { useTooltip } from "./Tooltip.js";
@@ -40,7 +41,8 @@ export function RailCard({ card, slot, armed, inFlight, placed, store, onPress, 
   const name = card === "round" && face !== null ? face.name : railName(card);
   const meta = face === null ? "Not in the catalogue" : face.seats > 0 ? `${String(face.seats)} seats` : face.size;
   const tooltip = useTooltip({ text: [name, face?.size ?? meta, String(slot)].filter((part) => part !== "").join(" · "), side: "above" });
-  const art = item === undefined ? null : item.thumbnailUrl ?? iconSource(catalogueIcon(item));
+  // A setup card shows its whole set (Q-21); a piece card shows its piece.
+  const art = isSetupCardId(card) ? setupCardPreviewUrl(card) : item === undefined ? null : item.thumbnailUrl ?? iconSource(catalogueIcon(item));
   if (face === null) {
     // A card that names nothing the catalogue holds stays in its slot, dimmed, and says why.
     return (

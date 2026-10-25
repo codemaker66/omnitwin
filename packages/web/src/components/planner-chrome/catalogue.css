@@ -177,6 +177,9 @@
 /* The render lies on the mat, not on a white box of its own. */
 .pc-ccard__mat img { mix-blend-mode: multiply; }
 
+/* A setup card's whole-set picture, sized as a piece's preview. */
+.pc-ccard__set { width: 84px; height: 84px; object-fit: contain; pointer-events: none; user-select: none; }
+
 .pc-ccard__name {
   margin: 4px 8px 0;
   overflow: hidden;
