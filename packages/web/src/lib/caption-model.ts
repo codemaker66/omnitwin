@@ -18,7 +18,7 @@ import { cardParamsFor, describeCard, pieceCardId } from "./setup-cards.js";
 // Line up wait behind lane E's switches.
 // ---------------------------------------------------------------------------
 
-export type CaptionVerb = "seats" | "turn" | "duplicate" | "cloth" | "lineUp" | "move" | "remove" | "details";
+export type CaptionVerb = "seats" | "turn" | "duplicate" | "cloth" | "lineUp" | "move" | "remove";
 
 export interface CaptionModel {
   /** Pieces selected, a table with its chairs counting once. */
@@ -114,10 +114,13 @@ export function captionModel(
     const label = first.main.label?.trim() ?? "";
     const verbs: CaptionVerb[] = [];
     if (seats !== null) verbs.push("seats");
-    verbs.push("turn", "duplicate");
+    verbs.push("turn");
+    // Duplicate is lane E's Ctrl D, behind the same switch.
+    if (enabled("editingKeys")) verbs.push("duplicate");
     if (allTables) verbs.push("cloth");
     if (enabled("moveVerb")) verbs.push("move");
-    verbs.push("remove", "details");
+    // Details is P1 (Q-31): the caption offers it once the right zone can show it.
+    verbs.push("remove");
     return {
       count: 1,
       eyebrow: label === "" ? null : label.toUpperCase(),
@@ -131,7 +134,8 @@ export function captionModel(
   }
 
   const names = new Set(units.map((unit) => cardName(unit.item)));
-  const verbs: CaptionVerb[] = ["duplicate"];
+  const verbs: CaptionVerb[] = [];
+  if (enabled("editingKeys")) verbs.push("duplicate");
   if (allTables) verbs.push("cloth");
   if (enabled("lineUp")) verbs.push("lineUp");
   if (enabled("moveVerb")) verbs.push("move");

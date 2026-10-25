@@ -50,10 +50,11 @@ describe("one piece", () => {
     expect(captionModel(new Set(["t8-c3"]), room, none)).toMatchObject({ count: 1, eyebrow: "TABLE 8", primaryId: "t8" });
   });
 
-  it("offers Turn, Duplicate, Cloth, Remove and Details, and Move only behind its switch", () => {
+  it("offers Turn, Cloth and Remove, Duplicate and Move behind their switches (Details is P1)", () => {
     const verbs = (on: (feature: PlannerFeature) => boolean): readonly CaptionVerb[] => captionModel(new Set(["t8"]), room, on)?.verbs ?? [];
-    expect(verbs(none)).toEqual(["seats", "turn", "duplicate", "cloth", "remove", "details"]);
-    expect(verbs(only("moveVerb"))).toEqual(["seats", "turn", "duplicate", "cloth", "move", "remove", "details"]);
+    expect(verbs(none)).toEqual(["seats", "turn", "cloth", "remove"]);
+    expect(verbs(only("moveVerb"))).toEqual(["seats", "turn", "cloth", "move", "remove"]);
+    expect(verbs(only("editingKeys"))).toEqual(["seats", "turn", "duplicate", "cloth", "remove"]);
     expect(verbs(all)).not.toContain("lineUp"); // Line up needs several
   });
 
@@ -68,7 +69,7 @@ describe("one piece", () => {
     const stage = [piece("s1", "platform", 0, 0)];
     const model = captionModel(new Set(["s1"]), stage, none);
     expect(model).toMatchObject({ eyebrow: null, name: "Stage deck", seats: null });
-    expect(model?.verbs).toEqual(["turn", "duplicate", "remove", "details"]);
+    expect(model?.verbs).toEqual(["turn", "remove"]);
   });
 });
 
@@ -82,12 +83,12 @@ describe("several pieces", () => {
   it("reads \"N pieces\" when they differ, and offers Line up behind its switch", () => {
     const room = [...round("t8", 2, 10), piece("p1", "poseur-table", 5, 3)];
     expect(captionModel(new Set(["t8", "p1"]), room, none)).toMatchObject({ count: 2, name: "2 pieces" });
-    expect(captionModel(new Set(["t8", "p1"]), room, only("lineUp"))?.verbs).toEqual(["duplicate", "lineUp", "remove"]);
+    expect(captionModel(new Set(["t8", "p1"]), room, only("lineUp"))?.verbs).toEqual(["lineUp", "remove"]);
   });
 
   it("offers Cloth when every piece is a table", () => {
     const room = [...round("t8", 2, 10), ...round("t4", 6, 10)];
-    expect(captionModel(new Set(["t8", "t4"]), room, none)?.verbs).toEqual(["duplicate", "cloth", "remove"]);
+    expect(captionModel(new Set(["t8", "t4"]), room, none)?.verbs).toEqual(["cloth", "remove"]);
   });
 });
 
