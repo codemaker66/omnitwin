@@ -3,6 +3,7 @@ import { catalogueIcon } from "../../lib/catalogue.js";
 import { railName } from "../../lib/card-defaults.js";
 import { cardMainItem, cardParamsFor, describeCard, type CardId } from "../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import type { StoreFace } from "./store-figures.js";
 import { useTooltip } from "./Tooltip.js";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,8 @@ export interface RailCardProps {
   readonly inFlight: boolean;
   /** How many of it the room holds now. */
   readonly placed: number;
+  /** What the store says, for staff; null for everyone else. */
+  readonly store: StoreFace | null;
   readonly onPress: (card: CardId) => void;
   readonly onPointerDown: (card: CardId, event: ReactPointerEvent<HTMLButtonElement>) => void;
 }
@@ -29,7 +32,7 @@ function iconSource(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-export function RailCard({ card, slot, armed, inFlight, placed, onPress, onPointerDown }: RailCardProps): ReactElement {
+export function RailCard({ card, slot, armed, inFlight, placed, store, onPress, onPointerDown }: RailCardProps): ReactElement {
   const remembered = useCatalogueStore((state) => state.rememberedSeats);
   const params = cardParamsFor(card, {}, remembered);
   const face = params === null ? null : describeCard(params);
@@ -54,9 +57,10 @@ export function RailCard({ card, slot, armed, inFlight, placed, onPress, onPoint
     <button
       {...tooltip}
       type="button"
-      className={["pc-railcard", armed ? "is-armed" : "", inFlight ? "is-in-flight" : ""].filter(Boolean).join(" ")}
+      className={["pc-railcard", armed ? "is-armed" : "", inFlight ? "is-in-flight" : "", store?.refused === true ? "is-empty" : ""].filter(Boolean).join(" ")}
       aria-pressed={armed}
-      aria-label={`${name}, ${meta}${placed > 0 ? `, ${String(placed)} in the room` : ""}`}
+      aria-disabled={store?.refused === true ? true : undefined}
+      aria-label={[name, meta, placed > 0 ? `${String(placed)} in the room` : "", store?.spoken ?? ""].filter((part) => part !== "").join(", ")}
       aria-keyshortcuts={String(slot)}
       data-card={card}
       onClick={() => { onPress(card); }}
@@ -74,6 +78,7 @@ export function RailCard({ card, slot, armed, inFlight, placed, onPress, onPoint
       <span className="pc-railcard__words">
         <span className="pc-railcard__name">{name}</span>
         <span className="pc-railcard__meta">{meta}</span>
+        {store !== null ? <span className="pc-railcard__store">{store.line}</span> : null}
       </span>
     </button>
   );

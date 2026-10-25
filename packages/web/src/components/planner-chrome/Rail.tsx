@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
 import { LayoutGrid } from "lucide-react";
+import { placedCounts } from "../../lib/card-stock.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
-import { CATALOGUE_CARDS, RAIL_SLOTS } from "../../lib/card-defaults.js";
+import { CATALOGUE_CARDS, RAIL_SLOTS, railName } from "../../lib/card-defaults.js";
 import { cardMainSlug, cardParamsFor, pieceCardSlug, type CardId } from "../../lib/setup-cards.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
@@ -12,6 +13,7 @@ import { useRailDropStore } from "../../stores/rail-drop-store.js";
 import { armOrCancel, useCardKeys } from "./card-keys.js";
 import { Key } from "./Keys.js";
 import { RailCard } from "./RailCard.js";
+import { storeFace, storeRefusalFor } from "./store-figures.js";
 import "./chrome.css";
 import "./cards.css";
 
@@ -28,6 +30,8 @@ import "./cards.css";
 // on hover.
 // ---------------------------------------------------------------------------
 
+/** How long a refusal stays in the hint's place. */
+const REFUSAL_MS = 4000;
 const HINT_WORDS = ["Click", " the floor to set it down · ", "R", " turns · ", "Esc", " cancels"] as const;
 
 interface PendingDrag {
@@ -64,6 +68,9 @@ export function Rail(): ReactElement | null {
   const catalogueOpen = useCardsStore((state) => state.catalogueOpen);
   const inFlight = useCardsStore((state) => state.inFlight);
   const hintFor = useCardsStore((state) => state.hintFor);
+  const stock = useCardsStore((state) => state.stock);
+  const refusal = useCardsStore((state) => state.refusal);
+  const remembered = useCatalogueStore((state) => state.rememberedSeats);
   const armed = useCatalogueStore((state) => state.armedCardId);
   const walking = useCockpitStore((state) => state.walkMode);
   const viewOnly = useEditorStore((state) => state.lockReason !== null);
@@ -83,6 +90,18 @@ export function Rail(): ReactElement | null {
     }
     return new Map(slots.map((card) => [card, slugsOf(card).reduce((sum, slug) => sum + (bySlug.get(slug) ?? 0), 0)] as const));
   }, [placedItems, slots]);
+
+  const store = useMemo(() => {
+    const counts = placedCounts(placedItems);
+    return new Map(slots.map((card) => [card, storeFace(cardParamsFor(card, {}, remembered), stock, counts)] as const));
+  }, [placedItems, slots, stock, remembered]);
+
+  // A refusal says why for a few seconds, then the rail is quiet again.
+  useEffect(() => {
+    if (refusal === null) return undefined;
+    const timer = window.setTimeout(() => { useCardsStore.getState().setRefusal(null); }, REFUSAL_MS);
+    return () => { window.clearTimeout(timer); };
+  }, [refusal]);
 
   // Where the rail stands, for putting a piece back (C0).
   useLayoutEffect(() => {
@@ -110,6 +129,13 @@ export function Rail(): ReactElement | null {
       if (pending === null || event.pointerId !== pending.pointerId) return;
       if (!pending.started) {
         if (!liftsCard(pending, event.clientX, event.clientY)) return;
+        const refused = storeRefusalFor(pending.card);
+        if (refused !== null) {
+          // None left in store: nothing lifts, and the hint says why.
+          useCardsStore.getState().setRefusal({ card: pending.card, text: refused });
+          drag.current = null;
+          return;
+        }
         pending.started = true;
         useCatalogueStore.getState().startCardDrag(pending.card);
         useCardsStore.getState().setInFlight(pending.card);
@@ -157,7 +183,11 @@ export function Rail(): ReactElement | null {
 
   return (
     <div className="pc-rail-wrap">
-      {armed !== null && hintFor === armed ? (
+      {refusal !== null ? (
+        <p className="pc-rail__hint is-refusal" role="status">
+          <b>{refusal.text}</b><span> · {railName(refusal.card)}</span>
+        </p>
+      ) : armed !== null && hintFor === armed ? (
         <p className="pc-rail__hint" role="status">
           {HINT_WORDS.map((words, index) => (index % 2 === 0 ? <b key={words}>{words}</b> : <span key={words}>{words}</span>))}
         </p>
@@ -182,6 +212,7 @@ export function Rail(): ReactElement | null {
               armed={armed === card}
               inFlight={inFlight === card}
               placed={placed.get(card) ?? 0}
+              store={store.get(card) ?? null}
               onPress={onCardPress}
               onPointerDown={onCardPointerDown}
             />

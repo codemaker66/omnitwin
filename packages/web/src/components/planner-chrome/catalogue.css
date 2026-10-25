@@ -195,6 +195,17 @@
   text-overflow: ellipsis;
 }
 
+/* Staff only: the store's figure (spec §4.1), Inter 12; amber when none is left (B2 hard). */
+.pc-ccard__store {
+  padding: 0 8px;
+  color: var(--house-ink-2);
+  font: 400 12px/1.2 var(--house-sans);
+  white-space: nowrap;
+}
+
+.pc-ccard__store.is-empty { color: var(--house-amber-mark); }
+.pc-ccard.is-disabled .pc-ccard__store { opacity: 1; }
+
 /* Seat chip, top left, on dining pieces: Inter 12/600 on a forest pill. */
 .pc-ccard__seats {
   position: absolute;

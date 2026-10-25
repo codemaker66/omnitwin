@@ -19,6 +19,7 @@ import { SPRING_PRESETS } from "../../lib/springs.js";
 import { useSpringCssVariable } from "../../lib/use-spring-value.js";
 import { FurnitureCataloguePreview } from "../shared/FurnitureCataloguePreview.js";
 import { keyAccessibleName } from "./Keys.js";
+import type { StoreFace } from "./store-figures.js";
 import { useTooltip } from "./Tooltip.js";
 import "./chrome.css";
 import "./catalogue.css";
@@ -150,23 +151,25 @@ export interface CardFaceNow {
   readonly item: CatalogueItem | undefined;
   /** The swatch or size that is in hand, by option key. */
   readonly currentChoice: string | null;
+  /** What the card sets down now, for the store's figure; null when the catalogue holds none of it. */
+  readonly params: CardParams | null;
 }
 
 export function cardFaceNow(card: CatalogueCard, armedCardId: CardId | null, cardParams: CardParams | null): CardFaceNow {
   const armed = isCardArmed(card, armedCardId) && cardParams !== null;
   if (card.variants.length === 0) {
     const params = armed ? cardParams : cardParamsFor(card.id, {}, {});
-    if (params === null) return { name: card.name, size: "", seats: 0, item: undefined, currentChoice: null };
+    if (params === null) return { name: card.name, size: "", seats: 0, item: undefined, currentChoice: null, params: null };
     const face = describeCard(params);
     const colourway = armed && "colourway" in params ? params.colourway : null;
-    return { name: face.name, size: face.size, seats: face.seats, item: cardMainItem(params), currentChoice: colourway };
+    return { name: face.name, size: face.size, seats: face.seats, item: cardMainItem(params), currentChoice: colourway, params };
   }
   const armedSlug = armed ? armedVariantSlug(card, armedCardId) : null;
   const slug = armedSlug ?? card.variants[0]?.slug ?? "";
   const params = armedSlug !== null ? cardParams : cardParamsFor(pieceCardId(slug), {}, {});
-  if (params === null) return { name: card.name, size: "", seats: 0, item: undefined, currentChoice: null };
+  if (params === null) return { name: card.name, size: "", seats: 0, item: undefined, currentChoice: null, params: null };
   const face = describeCard(params);
-  return { name: card.name, size: face.size, seats: face.seats, item: cardMainItem(params), currentChoice: armedSlug };
+  return { name: card.name, size: face.size, seats: face.seats, item: cardMainItem(params), currentChoice: armedSlug, params };
 }
 
 /** Sizes as a person hears them: "1.83 m round" is "1.83 metres round"; "2 × 1 m" is "2 by 1 metres". */
@@ -175,11 +178,13 @@ export function spokenSize(size: string): string {
 }
 
 /** The card's full accessible name (spec §15): "Round of 10, 1.83 metres round, 10 seats, 8 in this room". */
-export function cardAccessibleName(face: Pick<CardFaceNow, "name" | "size" | "seats">, placed: number, disabledReason?: string): string {
+export function cardAccessibleName(face: Pick<CardFaceNow, "name" | "size" | "seats">, placed: number, disabledReason?: string, store?: StoreFace | null): string {
   const parts = [face.name];
   if (face.size !== "") parts.push(spokenSize(face.size));
   if (face.seats > 0) parts.push(`${String(face.seats)} seats`);
   if (placed > 0) parts.push(`${String(placed)} in this room`);
+  // Staff also hear the store (spec §15): "22 in store". A refusal already says it as the reason.
+  if (store !== undefined && store !== null && !store.refused) parts.push(store.spoken);
   return keyAccessibleName({ label: face.name, tip: parts.join(", "), disabledReason });
 }
 
@@ -229,6 +234,8 @@ export interface FullCardProps {
   readonly tabIndex: 0 | -1;
   /** The card cannot go down here now; this says why. */
   readonly disabledReason?: string;
+  /** What the store says, for staff only. */
+  readonly store?: StoreFace | null;
   /** The card itself: arms it, or puts it down when it is in hand. */
   readonly onPress: () => void;
   /** A swatch or a size: arms that piece. */
@@ -238,7 +245,7 @@ export interface FullCardProps {
 
 /** The catalogue's full card. The ref is the card's own button, for the row's roving focus. */
 export const FullCard = forwardRef<HTMLButtonElement, FullCardProps>(function FullCard(
-  { card, face, armed, placed, tabIndex, disabledReason, onPress, onChoose, onFocusCard },
+  { card, face, armed, placed, tabIndex, disabledReason, store = null, onPress, onChoose, onFocusCard },
   ref,
 ): ReactElement {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -261,7 +268,7 @@ export const FullCard = forwardRef<HTMLButtonElement, FullCardProps>(function Fu
         className="pc-ccard__face"
         aria-pressed={armed}
         aria-disabled={disabled ? true : undefined}
-        aria-label={cardAccessibleName(face, placed, disabledReason)}
+        aria-label={cardAccessibleName(face, placed, disabledReason, store)}
         tabIndex={tabIndex}
         onClick={() => {
           if (disabled) return;
@@ -285,6 +292,7 @@ export const FullCard = forwardRef<HTMLButtonElement, FullCardProps>(function Fu
         {placed > 0 ? <span className="pc-ccard__pip pc-num" aria-hidden="true">×{placed}</span> : null}
         <span className="pc-ccard__name">{face.name}</span>
         {sizes ? null : <span className="pc-ccard__size pc-num">{face.size}</span>}
+        {store !== null ? <span className={`pc-ccard__store pc-num${store.refused ? " is-empty" : ""}`}>{store.line}</span> : null}
       </button>
       {choices.length > 0 ? (
         <div

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Catalogue, nothingFoundLine } from "../Catalogue.js";
 import { cardChoices, placedCount } from "../CatalogueCard.js";
 import { CARD_TABS, CATALOGUE_CARDS, searchCatalogue } from "../../../lib/card-defaults.js";
+import { cardNeeds } from "../../../lib/card-stock.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { useEscapeLayer } from "../../../lib/planner-keys.js";
 import { cardMainItem, cardParamsFor, pieceCardId } from "../../../lib/setup-cards.js";
@@ -274,5 +275,39 @@ describe("keys", () => {
     expect(useCardsStore.getState().catalogueOpen).toBe(true);
     fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
     expect(useCardsStore.getState().catalogueOpen).toBe(false);
+  });
+});
+
+describe("the store (staff; Blake's B2, hard)", () => {
+  function roundStock(whole: number): Map<string, number> {
+    const params = cardParamsFor("round", {});
+    if (params === null) throw new Error("no round card");
+    return new Map([...cardNeeds(params)].map(([id, need]) => [id, need * whole]));
+  }
+
+  it("shows a card's store figure under its size, and says it", () => {
+    useCardsStore.getState().setStock(roundStock(22));
+    openCatalogue();
+    render(<Catalogue />);
+    const round = cardButtons().find((face) => face.getAttribute("aria-label")?.startsWith("Round of 10,") === true) as HTMLElement;
+    expect(round.querySelector(".pc-ccard__store")?.textContent).toBe("×22 in store");
+    expect(round.getAttribute("aria-label")).toContain("22 in store");
+  });
+
+  it("will not arm a card the store has none left of, and says why", () => {
+    useCardsStore.getState().setStock(roundStock(0));
+    openCatalogue();
+    render(<Catalogue />);
+    const round = cardButtons().find((face) => face.getAttribute("aria-label")?.startsWith("Round of 10,") === true) as HTMLElement;
+    expect(round.querySelector(".pc-ccard__store")?.textContent).toBe("None left in store");
+    expect(round.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(round);
+    expect(useCatalogueStore.getState().armedCardId).toBeNull();
+  });
+
+  it("shows no figure to anyone without stock", () => {
+    openCatalogue();
+    render(<Catalogue />);
+    expect(catalogue().textContent).not.toContain("in store");
   });
 });
