@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { setupCardLook, setupCardPreviewUrl } from "../crafted-furniture.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
 import {
+  CARD_COLOURWAYS,
   SETUP_CARD_IDS,
   cardIdOf,
   cardMainItem,
@@ -12,6 +16,7 @@ import {
   pieceCardId,
   pieceCardSlug,
   seatsInHand,
+  setupCardLooks,
   stepCardParams,
   type CardParams,
 } from "../setup-cards.js";
@@ -48,7 +53,7 @@ describe("Round of N", () => {
     const params = paramsFor("round");
     expect(params).toEqual({ card: "round", seats: 10, colourway: "white" });
     expect(cardMainSlug(params)).toBe("round-table-6ft-white");
-    expect(describeCard(params)).toEqual({ name: "Round of 10", size: "1.83 m round", seats: 10 });
+    expect(describeCard(params)).toEqual({ name: "Round of 10", size: "1.8 m round", seats: 10 });
   });
 
   it("keeps its seats between eight and twelve", () => {
@@ -152,5 +157,53 @@ describe("every card", () => {
       const params = paramsFor(id);
       expect(paramsFor(id, cardParamsRequest(params))).toEqual(params);
     }
+  });
+
+  it("sizes the round as its piece card does", () => {
+    const round = describeCard(paramsFor("round")).size;
+    expect(round).toBe("1.8 m round");
+    expect(describeCard(paramsFor(pieceCardId("round-table-6ft-white"))).size).toBe(round);
+  });
+});
+
+describe("setup card pictures", () => {
+  const pictures = setupCardLooks().map((look) => ({ look: `${look.card}/${setupCardLook(look) ?? ""}`, url: setupCardPreviewUrl(look) }));
+
+  it("has one picture per look, and none for a piece card", () => {
+    expect(new Set(pictures.map(({ url }) => url)).size).toBe(pictures.length);
+    expect(pictures).toHaveLength(20);
+    expect(setupCardPreviewUrl(paramsFor(pieceCardId("trestle-6ft")))).toBeNull();
+  });
+
+  it.each(pictures)("ships $look as an 800 × 800 WebP", ({ url }) => {
+    expect(url).toMatch(/^\/models\/furniture\/setup-[a-z-]+\/setup-v1\/[a-z-]+\.webp$/u);
+    const bytes = readFileSync(resolve(import.meta.dirname, "../../../public", `.${url ?? ""}`));
+    expect(bytes.toString("ascii", 0, 4)).toBe("RIFF");
+    expect(bytes.toString("ascii", 8, 16)).toBe("WEBPVP8X");
+    expect(bytes.readUIntLE(24, 3) + 1).toBe(800);
+    expect(bytes.readUIntLE(27, 3) + 1).toBe(800);
+  });
+
+  it("pictures what every card sets down, whatever its parameters, with or without table sets", () => {
+    const shipped = new Set(pictures.map(({ url }) => url));
+    for (const tableSets of [false, true]) {
+      setPlannerFeaturesForTesting({ tableSets });
+      for (const card of SETUP_CARD_IDS) {
+        const colourways = card === "dance-floor" ? [undefined] : CARD_COLOURWAYS[card];
+        for (const colourway of colourways) {
+          for (let count = 1; count <= 12; count += 1) {
+            const params = paramsFor(card, { colourway, seats: count + 4, trestles: count, cols: count, rows: count });
+            expect(shipped.has(setupCardPreviewUrl(params)), `${card} ${JSON.stringify(params)}`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it("shows a set only when the card sets one down", () => {
+    expect(setupCardLook(paramsFor("long-table", { colourway: "wood" }))).toBe("wood-one");
+    setPlannerFeaturesForTesting({ tableSets: true });
+    expect(setupCardLook(paramsFor("long-table", { colourway: "wood", trestles: 2 }))).toBe("wood-set");
+    expect(setupCardLook(paramsFor("top-table"))).toBe("white-set");
   });
 });

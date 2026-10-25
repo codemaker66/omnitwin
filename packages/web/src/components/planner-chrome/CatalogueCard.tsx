@@ -2,6 +2,7 @@ import { forwardRef, useRef, type FocusEvent, type ReactElement } from "react";
 import { Armchair } from "lucide-react";
 import type { CatalogueCard, VariantColour } from "../../lib/card-defaults.js";
 import type { CatalogueItem } from "../../lib/catalogue.js";
+import { setupCardPreviewUrl } from "../../lib/crafted-furniture.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import {
   CARD_COLOURWAYS,
@@ -250,6 +251,7 @@ export const FullCard = forwardRef<HTMLButtonElement, FullCardProps>(function Fu
 ): ReactElement {
   const rootRef = useRef<HTMLDivElement>(null);
   const disabled = disabledReason !== undefined;
+  const setArt = face.params === null ? null : setupCardPreviewUrl(face.params);
   const choices = cardChoices(card);
   const sizes = choices.length > 0 && choices.every((option) => option.text !== null);
   const tooltip = useTooltip({
@@ -281,7 +283,10 @@ export const FullCard = forwardRef<HTMLButtonElement, FullCardProps>(function Fu
         }}
       >
         <span className="pc-ccard__mat" aria-hidden="true">
-          {face.item !== undefined ? <FurnitureCataloguePreview item={face.item} size={ART_PX} /> : null}
+          {setArt !== null
+            // A setup card shows its look (Q-21), following the params in hand; a piece card shows its piece.
+            ? <img className="pc-ccard__set" src={setArt} alt="" width={ART_PX} height={ART_PX} loading="lazy" decoding="async" draggable={false} />
+            : face.item !== undefined ? <FurnitureCataloguePreview item={face.item} size={ART_PX} /> : null}
         </span>
         {face.seats > 0 ? (
           <span className="pc-ccard__seats pc-num" aria-hidden="true">
