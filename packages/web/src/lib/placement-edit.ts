@@ -16,6 +16,7 @@ import {
   expandIdsToGroupMembers,
   generatePlacedId,
   nextTableLabels,
+  settleMovedOnSurfaces,
   tableLabelNumber,
   type PlacedItem,
 } from "./placement.js";
@@ -197,9 +198,19 @@ export function duplicateOffsets(
   return last === null ? standard : [last, ...standard.filter((o) => o.dx !== last.dx || o.dz !== last.dz)];
 }
 
+/**
+ * Pieces where they would stand once moved: each settled on what is under
+ * it there (lib/placement settleMovedOnSurfaces), so they are judged, and
+ * set down, on a dance floor or a stage rather than in it.
+ */
+function standing(moved: readonly PlacedItem[], world: GhostWorld): readonly PlacedItem[] {
+  const moving = new Set(moved.map((piece) => piece.id));
+  return settleMovedOnSurfaces(moved, world.placedItems.filter((piece) => !moving.has(piece.id)));
+}
+
 /** Judges the shifted pieces where they would land; a push of up to 0.15 m is taken, as for any ghost. */
 function landing(source: readonly PlacedItem[], offset: FloorOffset, world: GhostWorld): { readonly offset: FloorOffset; readonly obstacle: GhostObstacle | null } | { readonly offset: null; readonly obstacle: GhostObstacle | null } {
-  const moved = source.map((piece) => ({ ...piece, x: piece.x + offset.dx, z: piece.z + offset.dz }));
+  const moved = standing(source.map((piece) => ({ ...piece, x: piece.x + offset.dx, z: piece.z + offset.dz })), world);
   const verdict = judgeGhost(moved, world);
   if (verdict.state === "refused") return { offset: null, obstacle: verdict.obstacle };
   const landed = atVerdict(moved, verdict);
@@ -230,7 +241,7 @@ export function planDuplicate(
       continue;
     }
     const clone = clonePieces(source, landed.offset, world.placedItems, options);
-    return { ok: true, items: clone.items, idMap: clone.idMap, offset: landed.offset };
+    return { ok: true, items: settleMovedOnSurfaces(clone.items, world.placedItems), idMap: clone.idMap, offset: landed.offset };
   }
   return refused(firstRefusal);
 }
@@ -261,7 +272,7 @@ export function planPaste(
   const landed = landing(clipboard.items, asked, world);
   if (landed.offset === null) return refused(landed.obstacle);
   const clone = clonePieces(clipboard.items, landed.offset, world.placedItems, options);
-  return { ok: true, items: clone.items, idMap: clone.idMap, offset: landed.offset };
+  return { ok: true, items: settleMovedOnSurfaces(clone.items, world.placedItems), idMap: clone.idMap, offset: landed.offset };
 }
 
 /** Ctrl A: every piece in the room. */
@@ -336,10 +347,13 @@ export function planLineUp(selectedIds: ReadonlySet<string>, world: GhostWorld):
   const line = alongX
     ? points.reduce((sum, p) => sum + p.z, 0) / points.length
     : points.reduce((sum, p) => sum + p.x, 0) / points.length;
-  const moved = moving.map((unit, i) => {
+  const lined = moving.map((unit, i) => {
     const anchor = points[i] ?? { x: 0, z: 0 };
     return alongX ? shifted(unit, 0, line - anchor.z) : shifted(unit, line - anchor.x, 0);
   });
+  // Every piece at the height it would stand at on the line.
+  const stood = new Map(standing(lined.flat(), world).map((piece) => [piece.id, piece]));
+  const moved = lined.map((unit) => unit.map((piece) => stood.get(piece.id) ?? piece));
 
   // Judged against everything else, the other moved pieces included.
   const movingIds = new Set(moving.flat().map((piece) => piece.id));
@@ -361,8 +375,9 @@ export function planMove(selectedIds: ReadonlySet<string>, to: { readonly x: num
   const source = wholeSelection(selectedIds, world.placedItems);
   const bounds = footprintBounds(source);
   if (source.length === 0 || bounds === null) return moveRefused(null);
-  const moved = shifted(source, to.x - (bounds.minX + bounds.maxX) / 2, to.z - (bounds.minZ + bounds.maxZ) / 2);
+  const moved = standing(shifted(source, to.x - (bounds.minX + bounds.maxX) / 2, to.z - (bounds.minZ + bounds.maxZ) / 2), world);
   const verdict = judgeGhost(moved, world, { excludeIds: new Set(source.map((piece) => piece.id)) });
   if (verdict.state === "refused") return moveRefused(verdict.obstacle);
-  return { ok: true, items: atVerdict(moved, verdict) };
+  // The push can carry a piece onto or off a surface: settled again where it leaves them.
+  return { ok: true, items: standing(atVerdict(moved, verdict), world) };
 }

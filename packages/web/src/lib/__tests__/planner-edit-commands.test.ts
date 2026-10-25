@@ -90,6 +90,17 @@ describe("Move", () => {
     expect(useSelectionStore.getState().selectedIds).toEqual(new Set(round));
   });
 
+  it("moves a round onto a dance floor, judged and set down standing on it", () => {
+    usePlacementStore.getState().placeSetup(stampSetup(params("dance-floor"), { x: 4, z: 0 }, 0));
+    const round = placeRound(-4, 0);
+    useSelectionStore.getState().select(round[0] ?? "");
+    expect(moveSelectionTo({ x: 4, z: 0 })).toBe(true);
+    const moved = placed().filter((piece) => round.includes(piece.id));
+    const floor = placed().filter((piece) => getCatalogueItem(piece.catalogueItemId)?.slug === "dancefloor-panel");
+    for (const piece of moved) expect(piece.y).toBe(settleOnSurfaces([piece], floor)[0]?.y);
+    expect(moved.every((piece) => piece.y > 0)).toBe(true);
+  });
+
   it("is refused onto another set, with the reason, and changes nothing", () => {
     placeRound(-5, 0);
     const second = placeRound(5, 0);
@@ -116,6 +127,21 @@ describe("Replace", () => {
     expect(placed().every((piece) => replaced.plan.add.some((added) => added.id === piece.id))).toBe(true);
     expect(useSelectionStore.getState().selectedIds).toEqual(new Set(placed().map((piece) => piece.id)));
     expect(replaced.plan.receipt).toMatch(/^Replaced 2 rounds with/u);
+  });
+
+  it("replaces two rounds standing on a dance floor with a long table standing on it", () => {
+    setPlannerFeaturesForTesting({ tableSets: true });
+    usePlacementStore.getState().placeSetup(stampSetup(params("dance-floor", { cols: 12, rows: 6 }), { x: 0, z: 0 }, 0));
+    placeRound(-2.2, 0);
+    placeRound(2.2, 0);
+    const floor = placed().filter((piece) => getCatalogueItem(piece.catalogueItemId)?.slug === "dancefloor-panel");
+    useSelectionStore.getState().selectMultiple(tables().map((table) => table.id));
+    const result = replaceSelection(params("long-table"));
+    if (!result.ok) throw new Error(result.reason);
+    const added = placed().filter((piece) => result.plan.add.some((added) => added.id === piece.id));
+    expect(added.length).toBeGreaterThan(0);
+    for (const piece of added) expect(piece.y).toBe(settleOnSurfaces([piece], floor)[0]?.y);
+    expect(added.every((piece) => piece.y > 0)).toBe(true);
   });
 
   it("is refused past the store's stock, with the store's words, and changes nothing (B2)", () => {
