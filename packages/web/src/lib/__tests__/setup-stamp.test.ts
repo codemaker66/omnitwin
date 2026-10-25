@@ -11,8 +11,15 @@ import {
   type CardId,
   type CardParams,
 } from "../setup-cards.js";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
+import {
+  createGroupMemberIdsLookup,
+  createPlacementOverlapIndex,
+  getGroupMemberIds,
+  hasPlacementViolation,
+} from "../placement.js";
 import { tableGroupedChairCounts } from "../table-dressing.js";
-import { rearrangeTableGroup } from "../table-group.js";
+import { rearrangeTableGroup, tableChairSide, tableGroupSeatCapacity } from "../table-group.js";
 
 let next = 0;
 function ids(): string {
@@ -162,6 +169,33 @@ describe("Top table and Long table", () => {
     expect(top[0]?.setId).toBeDefined();
     const long = stampSetup(params("long-table"), { x: 0, z: 0 }, Math.PI / 2, ids);
     expect(chairs(long)).toHaveLength(24);
+  });
+
+  it("is one body to the planner's own sweep, turned or not", () => {
+    setPlannerFeaturesForTesting({ tableSets: true });
+    for (const turn of [0, Math.PI / 12, Math.PI / 4, (3 * Math.PI) / 2]) {
+      const run = stampSetup(params("top-table", { trestles: 4 }), { x: 0, z: 0 }, turn, ids);
+      const index = createPlacementOverlapIndex(run);
+      const members = createGroupMemberIdsLookup(run);
+      for (const piece of run) {
+        const item = getCatalogueItem(piece.catalogueItemId);
+        if (item === undefined) throw new Error("unknown piece");
+        expect(members(piece.id)).toEqual(getGroupMemberIds(piece.id, run));
+        expect(hasPlacementViolation(piece.x, piece.z, item, piece.rotationY, index, members(piece.id), piece.y, GRAND_HALL_RENDER_DIMENSIONS, piece.scale)).toBe(false);
+      }
+    }
+  });
+
+  it("keeps a top table's chairs along its back when its seats change", () => {
+    const top = stampSetup(params("top-table"), { x: 0, z: 0 }, Math.PI / 6, ids);
+    const trestle = top[0] as PlacedItem;
+    expect(tableChairSide(trestle, top)).toBe("back");
+    expect(tableGroupSeatCapacity(trestle, top)).toBe(3);
+    const reseated = rearrangeTableGroup(trestle.id, 2, top);
+    expect(chairs(reseated)).toHaveLength(2);
+    expect(tableChairSide(trestle, reseated)).toBe("back");
+    const long = stampSetup(params("long-table"), { x: 0, z: 0 }, 0, ids);
+    expect(tableChairSide(long[0] as PlacedItem, long)).toBe("around");
   });
 
   it("lays its trestles end to end along the run", () => {

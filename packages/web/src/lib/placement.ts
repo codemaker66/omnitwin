@@ -842,7 +842,10 @@ export function createPlacedItem(
 
 /**
  * Collects the IDs of all items in the same group as the given item,
- * including the item itself. Returns a Set for O(1) lookup.
+ * including the item itself. A set (a Top table's trestles, each with its
+ * own chairs' group) counts as one group: its pieces select, move and are
+ * removed together and are never in each other's way. Returns a Set for
+ * O(1) lookup.
  */
 export function getGroupMemberIds(
   itemId: string,
@@ -851,10 +854,12 @@ export function getGroupMemberIds(
   const item = placedItems.find((p) => p.id === itemId);
   if (item === undefined) return new Set([itemId]);
   if (!isSceneFurniturePlacement(item)) return new Set();
-  if (item.groupId === null) return new Set([itemId]);
+  if (item.groupId === null && item.setId === undefined) return new Set([itemId]);
   const ids = new Set<string>();
   for (const p of placedItems) {
-    if (p.groupId === item.groupId && isSceneFurniturePlacement(p)) ids.add(p.id);
+    const together = (item.groupId !== null && p.groupId === item.groupId)
+      || (item.setId !== undefined && p.setId === item.setId);
+    if (together && isSceneFurniturePlacement(p)) ids.add(p.id);
   }
   return ids;
 }
@@ -862,7 +867,8 @@ export function getGroupMemberIds(
 /**
  * getGroupMemberIds for any id of one layout, from a single O(n) pass rather
  * than an O(n) scan per call. Returns the same sets (same members, same
- * order); members of one group share one set, so treat results as read-only.
+ * order); members of one group or set share one set, so treat results as
+ * read-only.
  */
 export function createGroupMemberIdsLookup(
   placedItems: readonly PlacedItem[],
@@ -870,19 +876,40 @@ export function createGroupMemberIdsLookup(
   // getGroupMemberIds resolves an id to its FIRST matching row.
   const firstById = new Map<string, PlacedItem>();
   const membersByGroup = new Map<string, Set<string>>();
+  const membersBySet = new Map<string, Set<string>>();
   for (const placed of placedItems) {
     if (!firstById.has(placed.id)) firstById.set(placed.id, placed);
-    if (placed.groupId === null || !isSceneFurniturePlacement(placed)) continue;
-    const members = membersByGroup.get(placed.groupId);
-    if (members === undefined) membersByGroup.set(placed.groupId, new Set([placed.id]));
-    else members.add(placed.id);
+    if (!isSceneFurniturePlacement(placed)) continue;
+    // In layout order, so a set's members come out as getGroupMemberIds lists them.
+    const keys: readonly [Map<string, Set<string>>, string | null | undefined][] = [
+      [membersByGroup, placed.groupId],
+      [membersBySet, placed.setId],
+    ];
+    for (const [byKey, key] of keys) {
+      if (key === null || key === undefined) continue;
+      const members = byKey.get(key);
+      if (members === undefined) byKey.set(key, new Set([placed.id]));
+      else members.add(placed.id);
+    }
   }
+  // A piece in a set answers with its group's and its set's pieces, in layout order.
+  const together = new Map<string, ReadonlySet<string>>();
   return (itemId) => {
     const item = firstById.get(itemId);
     if (item === undefined) return new Set([itemId]);
     if (!isSceneFurniturePlacement(item)) return new Set();
-    if (item.groupId === null) return new Set([itemId]);
-    return membersByGroup.get(item.groupId) ?? new Set();
+    if (item.setId === undefined) {
+      if (item.groupId === null) return new Set([itemId]);
+      return membersByGroup.get(item.groupId) ?? new Set();
+    }
+    const key = `${item.setId}\u0000${item.groupId ?? ""}`;
+    const cached = together.get(key);
+    if (cached !== undefined) return cached;
+    const group = item.groupId === null ? new Set<string>() : membersByGroup.get(item.groupId) ?? new Set<string>();
+    const set = membersBySet.get(item.setId) ?? new Set<string>();
+    const members = new Set(placedItems.filter((placed) => group.has(placed.id) || set.has(placed.id)).map((placed) => placed.id));
+    together.set(key, members);
+    return members;
   };
 }
 
@@ -900,17 +927,6 @@ export function expandIdsToGroupMembers(
     for (const memberId of getGroupMemberIds(id, placedItems)) {
       expanded.add(memberId);
     }
-  }
-  // A set (a Top table's trestles) moves, duplicates and is removed whole:
-  // every group bound into a set an expanded piece belongs to comes too.
-  const setIds = new Set<string>();
-  for (const placed of placedItems) {
-    if (placed.setId !== undefined && expanded.has(placed.id)) setIds.add(placed.setId);
-  }
-  if (setIds.size === 0) return expanded;
-  for (const placed of placedItems) {
-    if (placed.setId === undefined || !setIds.has(placed.setId) || expanded.has(placed.id)) continue;
-    for (const memberId of getGroupMemberIds(placed.id, placedItems)) expanded.add(memberId);
   }
   return expanded;
 }

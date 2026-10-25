@@ -3,9 +3,11 @@ import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import { createGhostWorld } from "../ghost-truth.js";
 import {
+  createGroupMemberIdsLookup,
   createPlacedItem,
   createPlacementOverlapIndex,
   expandIdsToGroupMembers,
+  getGroupMemberIds,
   nextTableLabel,
   nextTableLabels,
   placementBody,
@@ -21,6 +23,7 @@ import {
   planDuplicate,
   planPaste,
 } from "../placement-edit.js";
+import { setPlannerFeaturesForTesting } from "../planner-features.js";
 import { cardParamsFor, stampSetup } from "../setup-cards.js";
 
 let counter = 0;
@@ -61,12 +64,16 @@ describe("table numbers", () => {
 });
 
 describe("sets", () => {
-  it("expand to every group bound into the set", () => {
+  it("expand to every group bound into the set, by the scan and by the lookup alike", () => {
     const a = { ...createPlacedItem("x", 0, 0, 0, "g1", 0, "a1"), setId: "s" };
     const b = { ...createPlacedItem("x", 1, 0, 0, "g1", 0, "a2"), setId: "s" };
     const c = { ...createPlacedItem("x", 2, 0, 0, "g2", 0, "b1"), setId: "s" };
     const d = createPlacedItem("x", 3, 0, 0, "g3", 0, "c1");
-    expect([...expandIdsToGroupMembers(new Set(["a1"]), [a, b, c, d])].sort()).toEqual(["a1", "a2", "b1"]);
+    const room = [a, b, c, d];
+    expect([...expandIdsToGroupMembers(new Set(["a1"]), room)].sort()).toEqual(["a1", "a2", "b1"]);
+    const lookup = createGroupMemberIdsLookup(room);
+    for (const id of ["a1", "a2", "b1", "c1"]) expect(lookup(id)).toEqual(getGroupMemberIds(id, room));
+    expect([...lookup("c1")]).toEqual(["c1"]);
   });
 });
 
@@ -87,7 +94,7 @@ describe("Ctrl D", () => {
   it("duplicates a round of 10 one pitch away: 11 new ids, a new group and the next table number", () => {
     const original = round(0, 0, "Table 1");
     const dressed = original.map((piece, i) => (i === 0 ? { ...piece, tableSetting: "dinner" as const } : piece));
-    const plan = planDuplicate(new Set([table(dressed).id]), createGhostWorld(dressed, GRAND_HALL_RENDER_DIMENSIONS), null, { newId: ids });
+    const plan = planDuplicate(new Set([table(dressed).id]), createGhostWorld(dressed, GRAND_HALL_RENDER_DIMENSIONS), null, { numberTables: true, newId: ids });
     if (!plan.ok) throw new Error(plan.reason);
     expect(plan.items).toHaveLength(11);
     const before = new Set(dressed.map((piece) => piece.id));
@@ -106,10 +113,10 @@ describe("Ctrl D", () => {
 
   it("repeats the last offset", () => {
     const first = round(0, 0, "Table 1");
-    const plan = planDuplicate(new Set([table(first).id]), createGhostWorld(first, GRAND_HALL_RENDER_DIMENSIONS), null, { newId: ids });
+    const plan = planDuplicate(new Set([table(first).id]), createGhostWorld(first, GRAND_HALL_RENDER_DIMENSIONS), null, { numberTables: true, newId: ids });
     if (!plan.ok) throw new Error(plan.reason);
     const room = [...first, ...plan.items];
-    const again = planDuplicate(new Set([table(plan.items).id]), createGhostWorld(room, GRAND_HALL_RENDER_DIMENSIONS), plan.offset, { newId: ids });
+    const again = planDuplicate(new Set([table(plan.items).id]), createGhostWorld(room, GRAND_HALL_RENDER_DIMENSIONS), plan.offset, { numberTables: true, newId: ids });
     if (!again.ok) throw new Error(again.reason);
     expect(again.offset.dx).toBeCloseTo(plan.offset.dx, 9);
     expect(again.offset.dz).toBeCloseTo(plan.offset.dz, 9);
@@ -124,11 +131,31 @@ describe("Ctrl D", () => {
     expect(plan.reason).toMatch(/^Won't fit/u);
   });
 
-  it("keeps the label as it is when tables are not numbered", () => {
+  it("never repeats a table's number on an unnumbered copy, and keeps any other name", () => {
     const original = round(0, 0, "Table 1");
     const plan = planDuplicate(new Set([table(original).id]), createGhostWorld(original, GRAND_HALL_RENDER_DIMENSIONS), null, { numberTables: false, newId: ids });
     if (!plan.ok) throw new Error(plan.reason);
-    expect(table(plan.items).label).toBe("Table 1");
+    expect(table(plan.items).label).toBe("");
+    const named = round(0, 0, "Head table");
+    const copy = planDuplicate(new Set([table(named).id]), createGhostWorld(named, GRAND_HALL_RENDER_DIMENSIONS), null, { numberTables: false, newId: ids });
+    if (!copy.ok) throw new Error(copy.reason);
+    expect(table(copy.items).label).toBe("Head table");
+  });
+
+  it("numbers copies as the tableNumbers switch says when not told", () => {
+    const original = round(0, 0, "Table 1");
+    const world = createGhostWorld(original, GRAND_HALL_RENDER_DIMENSIONS);
+    const off = planDuplicate(new Set([table(original).id]), world, null, { newId: ids });
+    if (!off.ok) throw new Error(off.reason);
+    expect(table(off.items).label).toBe("");
+    setPlannerFeaturesForTesting({ tableNumbers: true });
+    try {
+      const on = planDuplicate(new Set([table(original).id]), world, null, { newId: ids });
+      if (!on.ok) throw new Error(on.reason);
+      expect(table(on.items).label).toBe("Table 2");
+    } finally {
+      setPlannerFeaturesForTesting(null);
+    }
   });
 });
 
@@ -138,7 +165,7 @@ describe("Ctrl C and Ctrl V", () => {
     const clipboard = copyPieces(new Set([table(original).id]), original);
     if (clipboard === null) throw new Error("nothing copied");
     expect(clipboard.items).toHaveLength(11);
-    const plan = planPaste(clipboard, { x: 6, z: 1 }, createGhostWorld(original, GRAND_HALL_RENDER_DIMENSIONS), { newId: ids });
+    const plan = planPaste(clipboard, { x: 6, z: 1 }, createGhostWorld(original, GRAND_HALL_RENDER_DIMENSIONS), { numberTables: true, newId: ids });
     if (!plan.ok) throw new Error(plan.reason);
     expect(table(plan.items).x).toBeCloseTo(6, 9);
     expect(table(plan.items).z).toBeCloseTo(1, 9);

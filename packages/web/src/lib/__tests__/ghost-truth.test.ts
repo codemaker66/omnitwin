@@ -84,12 +84,37 @@ describe("the forgiving push", () => {
 });
 
 describe("hysteresis", () => {
-  it("asks a refused ghost to clear by 0.02 m before it fits again", () => {
+  it("asks a refused ghost to clear by 0.02 m before it fits again, and never pushes one that fits", () => {
     const room = world([lectern(0, 0)]);
     const nearlyClear = [lectern(0.61, 0, "ghost")];
     expect(judgeGhost(nearlyClear, room, { previous: "fits" }).state).toBe("fits");
-    expect(judgeGhost(nearlyClear, room, { previous: "refused" }).state).not.toBe("fits");
+    const held = judgeGhost(nearlyClear, room, { previous: "refused" });
+    expect(held).toMatchObject({ state: "refused", dx: 0, dz: 0 });
+    expect(held.obstacle?.obstacleLabel).toBe("the lectern");
     expect(judgeGhost([lectern(0.63, 0, "ghost")], room, { previous: "refused" }).state).toBe("fits");
+  });
+
+  it("lets a refused ghost be pushed again only 0.02 m inside the limit", () => {
+    const room = world([lectern(0, 0)]);
+    const deep = [lectern(0.46, 0, "ghost")];
+    expect(judgeGhost(deep, room, { previous: "fits" }).state).toBe("pushed");
+    expect(judgeGhost(deep, room, { previous: "refused" }).state).toBe("refused");
+    const shallow = judgeGhost([lectern(0.48, 0, "ghost")], room, { previous: "refused" });
+    expect(shallow.state).toBe("pushed");
+    expect(shallow.dx).toBeCloseTo(0.12, 5);
+  });
+});
+
+describe("a push that meets a second piece", () => {
+  it("finds the shift past both, though neither escape alone clears", () => {
+    // Lecterns are 0.6 × 0.5 m: one on the left overlaps the ghost by 0.05 m;
+    // a step right runs into a second, up and to the right.
+    const room = world([lectern(-0.55, 0, "left"), lectern(0.63, 0.45, "diagonal")]);
+    const verdict = judgeGhost([lectern(0, 0, "ghost")], room);
+    expect(verdict.state).toBe("pushed");
+    expect(verdict.pushedM).toBeLessThanOrEqual(0.15);
+    const landed = atVerdict([lectern(0, 0, "ghost")], verdict);
+    expect(judgeGhost(landed, room).state).toBe("fits");
   });
 });
 

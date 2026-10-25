@@ -277,37 +277,91 @@ function deepest(violations: readonly Violation[]): Violation | undefined {
 
 const FITS: GhostVerdict = { state: "fits", dx: 0, dz: 0, pushedM: 0, obstacle: null, blockingIds: [] };
 
-/**
- * The verdict on setting `stamp` down where it stands. Each frame passes
- * last frame's state, so a refused set must clear by 0.02 m to fit again.
- */
-export function judgeGhost(stamp: readonly PlacedItem[], world: GhostWorld, options: GhostJudgeOptions = {}): GhostVerdict {
-  const excludeIds = options.excludeIds ?? NO_EXCLUSIONS;
-  const margin = options.previous === "refused" ? toRenderSpace(GHOST_HYSTERESIS_M) : 0;
-  const bodies = ghostBodies(stamp, margin);
-  if (bodies.length === 0) return FITS;
-  if (isClear(bodies, world, excludeIds, 0, 0)) return FITS;
+/** How many of the shortest failed shifts the second round starts from. */
+const SECOND_ROUND_SEEDS = 8;
 
-  const violations = violationsAt(bodies, world, excludeIds, 0, 0);
-  for (const candidate of escapeCandidates(violations, toRenderSpace(GHOST_PUSH_LIMIT_M))) {
-    if (isClear(bodies, world, excludeIds, candidate.dx, candidate.dz)) {
-      return { state: "pushed", dx: candidate.dx, dz: candidate.dz, pushedM: toRealWorld(candidate.length), obstacle: null, blockingIds: [] };
+function shiftKey(dx: number, dz: number): string {
+  return `${dx.toFixed(9)},${dz.toFixed(9)}`;
+}
+
+/**
+ * The shortest push of 0.15 m or less that clears the set, or null. A shift
+ * can run into something the set did not touch where it stood (a diagonal
+ * neighbour), so the shortest failed shifts are tried again with that new
+ * obstacle's own escapes added: one bounded second round.
+ */
+function shortestPush(bodies: readonly GhostBody[], world: GhostWorld, excludeIds: ReadonlySet<string>, violations: readonly Violation[]): { readonly dx: number; readonly dz: number; readonly length: number } | null {
+  const limit = toRenderSpace(GHOST_PUSH_LIMIT_M);
+  const first = escapeCandidates(violations, limit);
+  for (const candidate of first) {
+    if (isClear(bodies, world, excludeIds, candidate.dx, candidate.dz)) return candidate;
+  }
+  const seen = new Set(first.map((candidate) => shiftKey(candidate.dx, candidate.dz)));
+  const second: { dx: number; dz: number; length: number }[] = [];
+  for (const seed of first.slice(0, SECOND_ROUND_SEEDS)) {
+    for (const more of escapeCandidates(violationsAt(bodies, world, excludeIds, seed.dx, seed.dz), limit)) {
+      const dx = seed.dx + more.dx;
+      const dz = seed.dz + more.dz;
+      const length = Math.hypot(dx, dz);
+      const key = shiftKey(dx, dz);
+      if (length > limit || seen.has(key)) continue;
+      seen.add(key);
+      second.push({ dx, dz, length });
     }
   }
+  second.sort((a, b) => a.length - b.length);
+  for (const candidate of second) {
+    if (isClear(bodies, world, excludeIds, candidate.dx, candidate.dz)) return candidate;
+  }
+  return null;
+}
 
-  // Name what is truly in the way: the real bodies first, the margin's only if nothing real is.
-  const real = margin === 0 ? violations : violationsAt(ghostBodies(stamp, 0), world, excludeIds, 0, 0);
-  const named = real.length > 0 ? real : violations;
-  const worst = deepest(named);
-  const blockingIds = [...new Set(named.flatMap((violation) => (violation.obstacleId === null ? [] : [violation.obstacleId])))];
+/** A refusal naming the deepest of these violations, and every placed piece among them. */
+function refusal(violations: readonly Violation[], world: GhostWorld, depthAllowance = 0): GhostVerdict {
+  const worst = deepest(violations);
+  const blockingIds = [...new Set(violations.flatMap((violation) => (violation.obstacleId === null ? [] : [violation.obstacleId])))];
+  const named = worst === undefined ? undefined : { ...worst, depth: Math.max(0, worst.depth - depthAllowance) };
   return {
     state: "refused",
     dx: 0,
     dz: 0,
     pushedM: 0,
-    obstacle: worst === undefined ? null : describeObstacle(worst, world),
+    obstacle: named === undefined ? null : describeObstacle(named, world),
     blockingIds,
   };
+}
+
+/** The verdict where the set stands, by its real bodies. */
+function judgeAt(bodies: readonly GhostBody[], world: GhostWorld, excludeIds: ReadonlySet<string>): GhostVerdict {
+  if (isClear(bodies, world, excludeIds, 0, 0)) return FITS;
+  const violations = violationsAt(bodies, world, excludeIds, 0, 0);
+  const push = shortestPush(bodies, world, excludeIds, violations);
+  if (push !== null) return { state: "pushed", dx: push.dx, dz: push.dz, pushedM: toRealWorld(push.length), obstacle: null, blockingIds: [] };
+  return refusal(violations, world);
+}
+
+/**
+ * The verdict on setting `stamp` down where it stands. Each frame passes
+ * last frame's state: once refused, a set comes back only when it clears
+ * by 0.02 m, or when its push is 0.02 m inside the 0.15 m limit, so an edge
+ * swept along does not flicker. The push itself is always the real one.
+ */
+export function judgeGhost(stamp: readonly PlacedItem[], world: GhostWorld, options: GhostJudgeOptions = {}): GhostVerdict {
+  const excludeIds = options.excludeIds ?? NO_EXCLUSIONS;
+  const bodies = ghostBodies(stamp, 0);
+  if (bodies.length === 0) return FITS;
+  const verdict = judgeAt(bodies, world, excludeIds);
+  if (options.previous !== "refused" || verdict.state === "refused") return verdict;
+
+  const margin = toRenderSpace(GHOST_HYSTERESIS_M);
+  if (verdict.state === "pushed") {
+    if (verdict.pushedM <= GHOST_PUSH_LIMIT_M - GHOST_HYSTERESIS_M) return verdict;
+    return refusal(violationsAt(bodies, world, excludeIds, 0, 0), world);
+  }
+  const widened = ghostBodies(stamp, margin);
+  if (isClear(widened, world, excludeIds, 0, 0)) return verdict;
+  // Clear, but not yet by the margin: still refused, naming what it is beside.
+  return refusal(violationsAt(widened, world, excludeIds, 0, 0), world, margin);
 }
 
 /** The pieces where the verdict sets them down: pushed clear, or where they stand. */

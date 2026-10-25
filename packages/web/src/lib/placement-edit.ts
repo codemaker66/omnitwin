@@ -8,8 +8,10 @@ import {
   expandIdsToGroupMembers,
   generatePlacedId,
   nextTableLabels,
+  tableLabelNumber,
   type PlacedItem,
 } from "./placement.js";
+import { plannerFeatureEnabled } from "./planner-features.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +34,7 @@ export interface FloorOffset {
 }
 
 export interface EditOptions {
-  /** Number the copies' dining tables "Table N" (the tableNumbers switch). */
+  /** Number the copies' dining tables "Table N"; by default, as the tableNumbers switch says. */
   readonly numberTables?: boolean;
   readonly newId?: () => string;
 }
@@ -90,7 +92,8 @@ export function footprintBounds(items: readonly PlacedItem[]): { readonly minX: 
 /**
  * Copies of these pieces shifted by an offset: new ids, a new group id for
  * each group and a new set id for each set, and (when numbering) the next
- * free table numbers at dining tables, lowest first.
+ * free table numbers at dining tables, lowest first. Unnumbered, a copied
+ * table never repeats its original's "Table N".
  */
 export function clonePieces(
   items: readonly PlacedItem[],
@@ -102,8 +105,8 @@ export function clonePieces(
   const source = pieces(items);
   const groups = new Map<string, string>();
   const sets = new Map<string, string>();
-  const tables = options.numberTables === false ? 0 : source.filter(isDiningTable).length;
-  const labels = [...nextTableLabels(placedItems, tables)];
+  const numbering = options.numberTables ?? plannerFeatureEnabled("tableNumbers");
+  const labels = [...nextTableLabels(placedItems, numbering ? source.filter(isDiningTable).length : 0)];
   const idMap = new Map<string, string>();
   const copies = source.map((piece) => {
     const id = newId();
@@ -118,7 +121,8 @@ export function clonePieces(
       setId = sets.get(piece.setId) ?? newId();
       sets.set(piece.setId, setId);
     }
-    const label = tables > 0 && isDiningTable(piece) ? labels.shift() ?? piece.label : piece.label;
+    let label = piece.label;
+    if (isDiningTable(piece)) label = numbering ? labels.shift() ?? "" : tableLabelNumber(piece.label) === null ? piece.label : "";
     const copy: PlacedItem = { ...piece, id, x: piece.x + offset.dx, z: piece.z + offset.dz, groupId, label };
     return setId === undefined ? copy : { ...copy, setId };
   });

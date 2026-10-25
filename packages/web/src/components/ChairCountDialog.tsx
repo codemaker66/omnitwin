@@ -173,11 +173,11 @@ export function ChairCountDialog({
   const range = tableItem === undefined
     ? { min: 0, max: 0, initial: 0 }
     : chairCountRange(tableItem, physicalMax);
-  const minChairs = range.min;
-  const maxChairs = range.max;
-  const startCount = existingTable === undefined
-    ? range.initial
-    : Math.min(maxChairs, Math.max(minChairs, chairsAtTable(existingTable, placedItems)));
+  // A placed table keeps the count it already has, even outside seat truth's range.
+  const current = existingTable === undefined ? 0 : Math.min(physicalMax, chairsAtTable(existingTable, placedItems));
+  const minChairs = current > 0 ? Math.min(range.min, current) : range.min;
+  const maxChairs = Math.max(range.max, current);
+  const startCount = current > 0 ? current : range.initial;
 
   useEffect(() => {
     if (request !== null) {
