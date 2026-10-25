@@ -558,7 +558,7 @@ describe("register-runtime-qa-record script", () => {
 
     expect(inspection.status).toBe("invalid_report");
     expect(inspection.liveQaRegistrationReady).toBe(false);
-    expect(inspection.blockers).toContain("generatedAt: Required");
+    expect(inspection.blockers).toContain("generatedAt: Invalid input: expected string, received undefined");
     expect(inspection.messages).toEqual([
       "Report failed RuntimeQaRecordRegistrationReportSchema validation.",
     ]);
