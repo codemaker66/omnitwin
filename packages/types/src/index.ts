@@ -2607,3 +2607,5 @@ export * from "./competitor-watch.js";
 // The enquiry funnel (migration 0100): first replies, where enquiries come from,
 // proposal link visits, and engagement attached to an enquiry or a proposal.
 export * from "./enquiry-funnel.js";
+// The gangway review (25 Oct 2026): pinches under the 1.1 m guidance, for the venue to decide.
+export * from "./gangway-review.js";

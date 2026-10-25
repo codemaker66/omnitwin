@@ -1,4 +1,12 @@
-import { seatBaseSlug } from "@omnitwin/types";
+import {
+  gangwayReviewId,
+  seatBaseSlug,
+  type FloorPoint,
+  type GangwayReviewItem,
+  type GangwaySide,
+  type SpaceDimensions,
+} from "@omnitwin/types";
+import { createGhostWorld, obstacleName } from "./ghost-truth.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "./catalogue.js";
 import { computeRotatedFootprint, generatePlacedId, tableLabelNumber, type PlacedItem } from "./placement.js";
@@ -204,6 +212,23 @@ export function planAutoFill(
 // gangways is tried and the one that seats the most is used; the figure it
 // reaches is the figure Fill states, beside the venue's published one.
 // ---------------------------------------------------------------------------
+
+/**
+ * The aisle rule Fill keeps, chosen by Blake on 25 Oct 2026 ("use guidance
+ * of 1.1 but allow them to place it smaller, hallkeeper or venue staff will
+ * approve or deny or send adjustment"). Trades Hall is in Scotland, so the
+ * Scottish guidance applies, not England's: an escape route of 1100 mm
+ * where more than 100 people use it (para 244), gangways that allow ease of
+ * escape for the numbers present (para 250). Between other tables, the
+ * planner's banquet spacing (BANQUET_CHAIR_CLEARANCE_M). One set of
+ * figures: the hall's own fire risk assessment replaces it.
+ */
+export const FILL_AISLE_RULE: AisleRule = {
+  gangwayM: 1.1,
+  betweenTablesM: BANQUET_CHAIR_CLEARANCE_M,
+  wallBandM: BANQUET_CHAIR_CLEARANCE_M,
+  source: "Scottish Government, Practical fire safety guidance for existing non-residential premises, chapter 7, paragraphs 244 and 250",
+};
 
 /** The aisle rule Fill keeps. One set of figures with its source, so the hall's own fire risk assessment can replace it. */
 export interface AisleRule {
@@ -450,6 +475,224 @@ export function planGangwayFill(input: GangwayFillInput): GangwayFillPlan | null
     gangways: gangwayRects(best.layout, roomWidthM, roomLengthM, rule.gangwayM, longAxis),
     rule,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Gangways a hand-made layout narrows (Blake, 25 Oct 2026): placing is never
+// refused for gangway width; a gangway under the guidance is measured and
+// listed for the venue's staff to approve, deny or adjust. The gangways are
+// the room's designated ones, as Fill's own design sets them from its doors,
+// so the review, the ghost's flag and Fill's figures always agree.
+// ---------------------------------------------------------------------------
+
+/** The room's designated gangways: Fill's design for the room with the planner's own rounds. */
+export interface DesignatedGangways {
+  readonly layout: GangwayLayout;
+  /** Each gangway's floor, metres, room-centred, with the wall it runs along (null for a spine). */
+  readonly bands: readonly { readonly side: RoomSide | null; readonly rect: LayoutRect }[];
+}
+
+const designatedCache = new Map<string, DesignatedGangways | null>();
+
+/** The designated gangways of a room (metres), or null when no layout of the planner's rounds fits it. */
+export function designatedGangways(roomWidthM: number, roomLengthM: number, exits: readonly RoomExit[] | null, rule: AisleRule = FILL_AISLE_RULE): DesignatedGangways | null {
+  const key = [roomWidthM, roomLengthM, rule.gangwayM, rule.betweenTablesM, rule.wallBandM, exits?.map((exit) => exit.side).sort().join(",") ?? "unknown"].join("|");
+  const cached = designatedCache.get(key);
+  if (cached !== undefined || designatedCache.has(key)) return cached ?? null;
+  const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
+  const plan = table === undefined
+    ? null
+    : planGangwayFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests: 0, roomWidthM, roomLengthM, exits, rule });
+  const longAxis = roomWidthM >= roomLengthM ? "x" : "z";
+  const result = plan === null ? null : {
+    layout: plan.layout,
+    bands: [
+      ...ROOM_SIDES.filter((side) => plan.layout.sides[side]).map((side) => ({
+        side,
+        rect: gangwayRects({ sides: { xMin: side === "xMin", xMax: side === "xMax", zMin: side === "zMin", zMax: side === "zMax" }, spine: false }, roomWidthM, roomLengthM, rule.gangwayM, longAxis)[0] ?? { cx: 0, cz: 0, width: 0, depth: 0 },
+      })),
+      ...(plan.layout.spine ? [{ side: null, rect: gangwayRects({ sides: { xMin: false, xMax: false, zMin: false, zMax: false }, spine: true }, roomWidthM, roomLengthM, rule.gangwayM, longAxis)[0] ?? { cx: 0, cz: 0, width: 0, depth: 0 } }] : []),
+    ],
+  };
+  designatedCache.set(key, result);
+  return result;
+}
+
+/** The Grand Hall's walls as its staff name them. */
+export const GRAND_HALL_WALL_NAMES: Readonly<Record<RoomSide, string>> = {
+  xMin: "the fireplace wall",
+  xMax: "the end wall",
+  zMin: "the window wall",
+  zMax: "the door wall",
+};
+
+const PLAIN_WALL_NAMES: Readonly<Record<RoomSide, string>> = { xMin: "the wall", xMax: "the wall", zMin: "the wall", zMax: "the wall" };
+
+/** A placed piece's floor shape, metres: a disc for a round table, else its turned rectangle's corners. */
+function floorShape(placed: PlacedItem, item: CatalogueItem): { readonly disc: { readonly x: number; readonly z: number; readonly r: number } | null; readonly corners: readonly { readonly x: number; readonly z: number }[] } {
+  const scale = placed.scale ?? 1;
+  const x = toRealWorld(placed.x);
+  const z = toRealWorld(placed.z);
+  if (item.tableShape === "round") return { disc: { x, z, r: (item.width * scale) / 2 }, corners: [] };
+  const hw = (item.width * scale) / 2;
+  const hd = (item.depth * scale) / 2;
+  const cos = Math.cos(placed.rotationY);
+  const sin = Math.sin(placed.rotationY);
+  const corners = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([lx = 0, lz = 0]) => ({ x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos }));
+  return { disc: null, corners };
+}
+
+/** A shape's nearest reach toward a wall: its least distance from that wall, the point, and where along the wall it is. */
+function reachTowards(shape: ReturnType<typeof floorShape>, side: RoomSide, roomWidthM: number, roomLengthM: number): { readonly distance: number; readonly along: number; readonly point: FloorPoint; readonly wallPoint: FloorPoint } {
+  const points = shape.disc === null
+    ? shape.corners
+    : [{ x: shape.disc.x - shape.disc.r, z: shape.disc.z }, { x: shape.disc.x + shape.disc.r, z: shape.disc.z }, { x: shape.disc.x, z: shape.disc.z - shape.disc.r }, { x: shape.disc.x, z: shape.disc.z + shape.disc.r }];
+  let best: { distance: number; point: FloorPoint } = { distance: Number.POSITIVE_INFINITY, point: { x: 0, z: 0 } };
+  for (const point of points) {
+    const distance = side === "xMin" ? point.x + roomWidthM / 2
+      : side === "xMax" ? roomWidthM / 2 - point.x
+      : side === "zMin" ? point.z + roomLengthM / 2
+      : roomLengthM / 2 - point.z;
+    if (distance < best.distance) best = { distance, point: { x: point.x, z: point.z } };
+  }
+  const { point } = best;
+  const wallPoint = side === "xMin" ? { x: -roomWidthM / 2, z: point.z }
+    : side === "xMax" ? { x: roomWidthM / 2, z: point.z }
+    : side === "zMin" ? { x: point.x, z: -roomLengthM / 2 }
+    : { x: point.x, z: roomLengthM / 2 };
+  // Where along the wall: the piece's centre, which moves smoothly, not a corner a tie might swap.
+  const centre = shape.disc ?? {
+    x: shape.corners.reduce((sum, corner) => sum + corner.x, 0) / Math.max(1, shape.corners.length),
+    z: shape.corners.reduce((sum, corner) => sum + corner.z, 0) / Math.max(1, shape.corners.length),
+  };
+  const along = side === "xMin" || side === "xMax" ? centre.z + roomLengthM / 2 : centre.x + roomWidthM / 2;
+  return { distance: Math.max(0, best.distance), along, point, wallPoint };
+}
+
+/** One pinch as measured, before it is named and given its id. */
+interface Pinch {
+  readonly gangway: RoomSide | "spine";
+  readonly gangwayName: string;
+  readonly sides: readonly GangwaySide[];
+  readonly sideNames: readonly string[];
+  readonly widthM: number;
+  readonly atM: number;
+  readonly from: FloorPoint;
+  readonly to: FloorPoint;
+  readonly pieceIds: readonly string[];
+}
+
+/**
+ * Every pinch where a layout narrows one of the room's designated gangways
+ * under the guidance, narrowest first, as open review items: one per
+ * gangway and table group (or set, or lone piece), measured exactly to its
+ * nearest point, with the id the shared rule gives it
+ * (`@omnitwin/types` gangway-review). Room dimensions are render-space, as
+ * the planner's room store holds them; locations are real metres.
+ */
+export function gangwayReview(
+  placedItems: readonly PlacedItem[],
+  room: SpaceDimensions,
+  exits: readonly RoomExit[] | null,
+  options: { readonly rule?: AisleRule; readonly wallNames?: Readonly<Record<RoomSide, string>> } = {},
+): readonly GangwayReviewItem[] {
+  const rule = options.rule ?? FILL_AISLE_RULE;
+  const names = options.wallNames ?? PLAIN_WALL_NAMES;
+  const widthM = toRealWorld(room.width);
+  const lengthM = toRealWorld(room.length);
+  const designated = designatedGangways(widthM, lengthM, exits, rule);
+  if (designated === null) return [];
+  const world = createGhostWorld(placedItems, room);
+  const shapes = placedItems.flatMap((placed) => {
+    if (!isSceneFurniturePlacement(placed)) return [];
+    const item = getCatalogueItem(placed.catalogueItemId);
+    return item === undefined ? [] : [{ placed, shape: floorShape(placed, item) }];
+  });
+  const unitOf = (placed: PlacedItem): string => placed.setId ?? placed.groupId ?? placed.id;
+  const pinches = new Map<string, Pinch>();
+  // The narrowest point of each gangway's pinch by one unit, with every piece of that unit narrowing it.
+  const note = (key: string, pinch: Pinch): void => {
+    const known = pinches.get(key);
+    const pieceIds = [...new Set([...(known?.pieceIds ?? []), ...pinch.pieceIds])];
+    pinches.set(key, known === undefined || pinch.widthM < known.widthM ? { ...pinch, pieceIds } : { ...known, pieceIds });
+  };
+
+  for (const band of designated.bands) {
+    if (band.side !== null) {
+      const side = band.side;
+      for (const { placed, shape } of shapes) {
+        const reach = reachTowards(shape, side, widthM, lengthM);
+        if (reach.distance >= rule.gangwayM - 1e-9) continue;
+        note(`${side}|${unitOf(placed)}`, {
+          gangway: side,
+          gangwayName: names[side],
+          sides: [{ wall: side }, { unit: unitOf(placed) }],
+          sideNames: [names[side], obstacleName(placed.id, world).label],
+          widthM: reach.distance,
+          atM: reach.along,
+          from: reach.wallPoint,
+          to: reach.point,
+          pieceIds: [placed.id],
+        });
+      }
+      continue;
+    }
+    // A spine: the gap across it, between pieces either side of its centre line.
+    const alongX = band.rect.width >= band.rect.depth;
+    const across = (point: FloorPoint): number => (alongX ? point.z - band.rect.cz : point.x - band.rect.cx);
+    const extent = (shape: ReturnType<typeof floorShape>): { readonly lo: number; readonly hi: number; readonly from: number; readonly to: number } => {
+      const points = shape.disc === null ? shape.corners : [
+        { x: shape.disc.x - shape.disc.r, z: shape.disc.z - shape.disc.r }, { x: shape.disc.x + shape.disc.r, z: shape.disc.z + shape.disc.r },
+      ];
+      const acrossValues = points.map(across);
+      const alongValues = points.map((point) => (alongX ? point.x : point.z));
+      return { lo: Math.min(...acrossValues), hi: Math.max(...acrossValues), from: Math.min(...alongValues), to: Math.max(...alongValues) };
+    };
+    const measured = shapes.map(({ placed, shape }) => ({ placed, box: extent(shape) }));
+    const at = (alongM: number, acrossM: number): FloorPoint => (alongX
+      ? { x: alongM, z: band.rect.cz + acrossM }
+      : { x: band.rect.cx + acrossM, z: alongM });
+    for (const low of measured) {
+      if (low.box.hi > rule.gangwayM / 2 || low.box.hi < -rule.gangwayM) continue;
+      for (const high of measured) {
+        if (unitOf(high.placed) === unitOf(low.placed)) continue;
+        if (high.box.lo < -rule.gangwayM / 2 || high.box.lo > rule.gangwayM) continue;
+        if (high.box.lo < low.box.hi || high.box.to < low.box.from || high.box.from > low.box.to) continue;
+        const gap = high.box.lo - low.box.hi;
+        if (gap >= rule.gangwayM - 1e-9) continue;
+        const middle = (Math.max(low.box.from, high.box.from) + Math.min(low.box.to, high.box.to)) / 2;
+        note(`spine|${unitOf(low.placed)}|${unitOf(high.placed)}`, {
+          gangway: "spine",
+          gangwayName: "the middle",
+          sides: [{ unit: unitOf(low.placed) }, { unit: unitOf(high.placed) }],
+          sideNames: [obstacleName(low.placed.id, world).label, obstacleName(high.placed.id, world).label],
+          widthM: gap,
+          atM: middle + (alongX ? widthM : lengthM) / 2,
+          from: at(middle, low.box.hi),
+          to: at(middle, high.box.lo),
+          pieceIds: [low.placed.id, high.placed.id],
+        });
+      }
+    }
+  }
+  const guidance = { thresholdM: rule.gangwayM, source: rule.source };
+  return [...pinches.values()]
+    .sort((a, b) => a.widthM - b.widthM)
+    .map((pinch) => ({
+      id: gangwayReviewId(pinch.gangway, pinch.atM, pinch.sides),
+      widthM: pinch.widthM,
+      guidance,
+      gangway: pinch.gangwayName,
+      location: { kind: "segment" as const, from: pinch.from, to: pinch.to },
+      pieceIds: pinch.pieceIds,
+      sides: [...pinch.sideNames],
+      status: "open" as const,
+    }));
+}
+
+/** The flag the ghost and the caption show: "Gangway 0.95 m · under the 1.1 m guidance · the venue will review". */
+export function gangwayFlag(widthM: number, rule: AisleRule = FILL_AISLE_RULE): string {
+  return `Gangway ${(Math.round(widthM * 100) / 100).toFixed(2)} m · under the ${String(rule.gangwayM)} m guidance · the venue will review`;
 }
 
 // ---------------------------------------------------------------------------
