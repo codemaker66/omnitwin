@@ -89,6 +89,64 @@ The baseline SOG SHA-256 values were
 `ad9ee1a5edb4cdb07773bfca8bafc211bda2c470820fff310948ee1fa266f41d`
 (`0_0.sog`).
 
+## Losing and restoring the graphics device (L3c, 25 October 2026)
+
+A browser takes a view's graphics away after it has drawn: a backgrounded
+phone, memory pressure, a driver reset, a GPU process crash. `NativeCanvas`
+brings the view back without losing anything. It puts a fresh `WebGPURenderer`
+on the same canvas and hands it to R3F's store (`replaceStoreRenderer`), so the
+React tree, scene graph, camera, walk, selection and decoded splats stay exactly
+as they were. Every effect keyed on `useThree((s) => s.gl)` (the pipeline, the
+hall's environment, tone mapping, the governor, the splat host) runs again
+against the new device, and the new renderer re-uploads from the CPU copies the
+scene already holds. It starts from the renderer's base settings, captured at
+activation before any scene effect layered its own, and the current resolution.
+`onCreated` does not fire again: a swap is not a new canvas, and the planner
+resets its splat arrival counts on `onCreated`. While it restores, the canvas
+is covered by "Restoring the 3D view" (`ActivityStatus`), and frames stop.
+
+The policy is `lib/native-renderer-recovery.ts`. It waits for a hidden page to
+be shown. A WebGL canvas waits up to 4 s for `webglcontextrestored`; a context
+that never returns gets a new canvas (a remount, which re-streams the capture
+and keeps only what lives outside the canvas: layout, selection, the planner's
+pose). Attempts back off 0/1/3 s, the third is a remount, each times out after
+15 s, and three losses in a minute stop. Then the existing stopped card offers
+"Try 3D again"; `surface="walk"` (the room walk) promises no layout and offers
+no 2D planner. The tour (`/tour`, a classic `WebGLRenderer`) restores in place
+on the same policy through `twin/TwinContextLossWatch.tsx`.
+
+Three r186 facts this depends on, each pinned by a test:
+
+- `WebGPUBackend` ignores `device.lost` with reason `"destroyed"`: a device
+  destroyed by anything but its owner's disposal would leave a frozen canvas.
+  `NativeCanvas` watches whichever device the backend ended up with.
+- `WebGLBackend.dispose()` calls `WEBGL_lose_context.loseContext()`, which
+  would take the context from a replacement on the same canvas. A lost WebGL
+  renderer is disposed at the loss, while its GL calls are silent no-ops, with
+  that call skipped through `WebGLExtensions`' cached lookup
+  (`releaseLostWebGLRenderer`). Disposed this way it forgets what it uploaded,
+  so its dispose listeners never delete lost objects on the restored context
+  (128 Chrome INVALID_OPERATION warnings in one run before this).
+- PMREM caches its result per source texture, not per renderer; the swap marks
+  the scene's environment and background for rebuild.
+
+`NativeSplatScene.attach()` accepts the replacement renderer a swap hands it in
+the commit that detached the lost one, and rebuilds its snapshots for the new
+device from the retained sources; it still refuses a second renderer while one
+is attached. `components/grand-hall/hall-detail.ts` fills its tile array only
+by GPU copies and recycles the decoded bytes, so after a swap its resident
+tiles are empty until re-streamed (named to the planner lane, 25 October).
+
+Measured in Chromium on the RTX 4090 with `scripts/graphics-reset.mjs` (the
+furnished Grand Hall planner and 6,030,980 splats, the room walk, the tour on
+real imagery): every case restored, 1.0–1.6 s for a swap and 4.2–4.4 s for a
+context never returned, with the scene graph, camera, layout and selection
+preserved, before/after frames at the same pose within 0.04–1.65 mean levels,
+frame intervals back to baseline and no page errors. The report:
+[graphics reset recovery](../reports/graphics-reset-recovery-2026-10-25.md).
+`?graphicsReset=<s>[:never]` takes a view's graphics away once for checking on
+real phones ([the device-day script](../plan/device-day-2026-10-28-graphics-reset.md)).
+
 ## Delivery and limits
 
 Canonical staged SOG URLs replace the optional Spark RAD-tree path. RAD metadata

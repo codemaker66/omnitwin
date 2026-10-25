@@ -141,7 +141,8 @@ async function snapshot(page) {
       quaternion: perf?.camera.quaternion.toArray().map((value) => Math.round(value * 1e4) / 1e4) ?? null,
       backend: canvas?.dataset.backend ?? null,
       restorations: canvas?.dataset.restorations ?? null,
-      walkReady: canvas?.dataset.walkReady ?? null,
+      // The tour's node: data-walk-ready where the build sets it, else the viewpoint it names.
+      walkReady: canvas?.dataset.walkReady ?? /Viewpoint \d+/.exec(document.body.innerText)?.[0] ?? null,
       cockpit: document.querySelector('[data-testid="cockpit-shell"]')?.innerText ?? null,
     };
   });
@@ -225,7 +226,8 @@ async function triggerLoss(page, browser) {
     const canvas = window.__resetOldCanvas;
     if (canvas === null) throw new Error("No canvas to take the graphics from");
     if (loss === "destroy") {
-      const device = window.__venPerf?.gl?.backend?.device;
+      // Any WebGPU canvas names its device in its context's configuration; no dev bridge needed.
+      const device = window.__venPerf?.gl?.backend?.device ?? canvas.getContext("webgpu")?.getConfiguration?.()?.device;
       if (device === undefined || device === null) throw new Error("No WebGPU device on this view");
       device.destroy();
       return;
@@ -292,7 +294,9 @@ async function openSurface(page) {
   if (SURFACE === "tour") {
     await routeTour(page);
     await page.goto(`${BASE}/tour`, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => document.querySelector("canvas")?.dataset.walkReady !== undefined, undefined, { timeout: 120_000, polling: 250 });
+    await page.waitForFunction(() => document.querySelector("canvas") !== null
+      && document.querySelector('[data-testid="twin-load-shimmer"]') === null
+      && /Viewpoint \d+/.test(document.body.innerText), undefined, { timeout: 120_000, polling: 250 });
     await page.waitForTimeout(8_000);
     return;
   }
@@ -329,10 +333,18 @@ async function openSurface(page) {
     }
   }
   report.captureShowing = await toggle.count() > 0 ? await toggle.first().getAttribute("aria-pressed") === "true" : null;
-  if (SURFACE === "planner-walk") {
-    await page.getByRole("button", { name: /^Walk/ }).first().click();
-    await page.waitForTimeout(4_000);
-  } else {
+  // The planner opens the Grand Hall in its walk (eye level); "planner" measures
+  // the overview, "planner-walk" the walk, whichever it opened in.
+  const walk = page.getByTestId("planner-walk-toggle");
+  if (await walk.count() > 0) {
+    const walking = await walk.first().getAttribute("aria-pressed") === "true";
+    if (walking !== (SURFACE === "planner-walk")) {
+      await walk.first().click();
+      await page.waitForTimeout(4_000);
+    }
+  }
+  report.walking = await walk.count() > 0 ? await walk.first().getAttribute("aria-pressed") === "true" : null;
+  if (SURFACE !== "planner-walk") {
     // Select a table, so the selection is part of what must survive.
     const box = await page.locator("canvas").first().boundingBox();
     const point = await page.evaluate(() => {
@@ -424,6 +436,7 @@ console.log(JSON.stringify({
   run: RUN, outcome: report.recovery?.outcome, totalMs: report.recovery?.totalMs, phases: report.recovery?.phases,
   settled: report.settled, replaced: { canvas: report.recovery?.canvasReplaced, renderer: report.recovery?.rendererReplaced },
   capture: { before: report.capture, after: report.captureAfter, showing: report.captureShowing, arrivalDismissed: report.arrivalDismissed },
+  walking: report.walking,
   preserved: report.preserved, pixels: report.pixels, framesBefore: report.framesBefore, framesAfter: report.framesAfter,
   consoleAfterLoss: report.console.afterLoss.length,
   // Console lines of a kind the page had not already logged before the loss.

@@ -17,6 +17,8 @@ const recorded = vi.hoisted(() => ({
   /** The layers mounted right now, by url, with their latest props. */
   mounted: new Map<string, Record<string, unknown>>(),
   onCreated: undefined as unknown,
+  /** What the walk's canvas may promise a visitor when its graphics go (NativeCanvas `surface`). */
+  surface: undefined as unknown,
   capture: vi.fn(),
   clip: vi.fn(() => null),
   /** The stage floor's latest props, or null before it has ever rendered. */
@@ -24,8 +26,9 @@ const recorded = vi.hoisted(() => ({
 }));
 
 vi.mock("@react-three/fiber", () => ({
-  Canvas: ({ children, onCreated }: { readonly children?: ReactNode; readonly onCreated?: unknown }) => {
+  Canvas: ({ children, onCreated, surface }: { readonly children?: ReactNode; readonly onCreated?: unknown; readonly surface?: unknown }) => {
     recorded.onCreated = onCreated;
+    recorded.surface = surface;
     return <div data-testid="canvas">{children}</div>;
   },
 }));
@@ -163,6 +166,11 @@ describe("RoomSplatScene runtime wiring", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("speaks to a visitor, not a planner, if the walk's graphics are taken away", () => {
+    render(<RoomSplatScene room={ROOM} />);
+    expect(recorded.surface).toBe("walk");
   });
 
   it("gives every mounted layer the device's runtime profile", () => {
