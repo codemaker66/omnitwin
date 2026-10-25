@@ -19,12 +19,12 @@ import { RENDER_SCALE } from "../constants/scale.js";
 import {
   computeCirculation,
   bandForGap,
+  footprintOfPlacement,
   type CirculationBand,
   type CirculationGap,
   type CirculationReport,
   type FurnitureFootprint,
 } from "./circulation.js";
-import { normalizeFurnitureScale } from "./furniture-scale.js";
 import { isFreestandingFloorEquipmentItem, isPassiveFreestandingAvFloorItem } from "./furniture-semantics.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 
@@ -48,16 +48,7 @@ export function placedCirculationFootprints(
       item === undefined
       || (item.category !== "table" && !isPassiveFreestandingAvFloorItem(item) && !isFreestandingFloorEquipmentItem(item))
     ) continue;
-    const scale = normalizeFurnitureScale(placed.scale);
-    footprints.push({
-      id: placed.id,
-      label: item.name,
-      cx: placed.x / RENDER_SCALE,
-      cz: placed.z / RENDER_SCALE,
-      width: item.width * scale,
-      depth: item.depth * scale,
-      rotation: placed.rotationY,
-    });
+    footprints.push(footprintOfPlacement(placed, item, RENDER_SCALE));
   }
   return footprints;
 }
