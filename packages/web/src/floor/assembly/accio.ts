@@ -158,8 +158,8 @@ export const ACCIO_BIRTH_DEPTH = 0.18;
 export const ACCIO_BIRTH_SIZE = 0.06;
 /** Margin a piece keeps from the sides of a reveal while it is still inside it, metres. */
 export const ACCIO_REVEAL_MARGIN = 0.08;
-/** A round is tipped toward the viewer this far as it is drawn in, radians (about 32°). */
-const TABLE_TIP = 0.56;
+/** A round is tipped toward the viewer this far while it is aloft, radians (about 35°). */
+const TABLE_TIP = 0.62;
 /** The leaf's swing starts at this speed, metres a second... */
 const SWING_KICK = 1.15;
 /** ...and the round banks into its swing by this much per metre a second, radians. */
@@ -169,7 +169,13 @@ const LANDED = 0.01;
 /** ...and this much of its way across is done (a couple of centimetres left). */
 const LANDED_PROGRESS = 0.997;
 /** Out of the reveal square to the wall: the route's turn lies this far in front of it, metres. */
-const EXIT_DEPTH = 1.6;
+const EXIT_DEPTH = 2.2;
+/** A chair comes down into its seat from outside its round: from this far out, metres. */
+const SEAT_APPROACH = 1.1;
+/** A piece whose place is this near the camera (along the floor)... */
+const NEAR_LENS = 3;
+/** ...crosses the hall at least this far below it, metres. */
+const UNDER_LENS = 1.6;
 /** Choosing a window, a metre further along the hall weighs as much as this long a wait, seconds. */
 const WINDOW_DISTANCE_COST = 0.04;
 /** Consecutive rounds in the waves' order leave at least this far apart, seconds. */
@@ -178,15 +184,17 @@ const WAVE_STEP = 0.03;
 // --- The camera ------------------------------------------------------------------
 
 /**
- * Landscape: from the fireplace end's corner by the door wall, a little above
- * head height, looking down the hall past the top table. It frames every
- * round and four of the five windows with no chandelier in the middle of the
- * frame (phase2/pose_search2.py), and lies inside the orbit's limits so the
- * planner takes over from it without a jump.
+ * Landscape: from the fireplace end, 1.3 m off the door wall and a little
+ * above head height, facing the windows the pieces come out of. It opens on
+ * all five windows and the empty floor and turns gently down to the set
+ * room: the top table near, seventeen of the eighteen rounds, four windows
+ * and every chandelier in the top band (phase2/pose_search4.py,
+ * pose_eval.py). Both poses lie inside the orbit's limits, so the planner
+ * takes over without a jump.
  */
 export const ACCIO_CAMERA_LANDSCAPE: readonly CameraKey[] = [
-  { at: 0, position: [-10.0, 3.75, 4.45], target: [-4.0, 0.7, -0.9] },
-  { at: 0.6, position: [-10.3, 3.2, 4.8], target: [-4.5, 0.0, 0.0] },
+  { at: 0, position: [-9.85, 3.2, 3.9], target: [-4.0, 1.0, -3.0] },
+  { at: 0.6, position: [-9.9, 3.3, 4.0], target: [-3.0, 0.0, -1.5] },
 ];
 
 /** Portrait: down the hall's length from above the east end. */
@@ -213,6 +221,9 @@ export interface AccioFlight {
   /** The route's turn in front of the window: it leaves the reveal square to the wall. */
   readonly turnX: number;
   readonly turnZ: number;
+  /** Where a chair's route comes in from, outside its round (its place for other pieces). */
+  readonly approachX: number;
+  readonly approachZ: number;
   /** Across the camera's view of its place (unit, horizontal), and the way its swing first goes (±1). */
   readonly acrossX: number;
   readonly acrossZ: number;
@@ -260,6 +271,8 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
   const viewer: Vec3 = keys[keys.length - 1]?.position ?? [0, 3, 5];
   /** The window each piece comes through, set by the plan. */
   const sources = new Map<string, AccioWindow>();
+  /** Each table's place, for its chairs' approach. */
+  const tablePlaces = new Map<string, { readonly x: number; readonly z: number }>();
   const flights = new Map<string, AccioFlight>();
 
   const flightFor = (piece: AssemblyPiece, seed: number): AccioFlight => {
@@ -279,6 +292,16 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
     const viewZ = viewer[2] - piece.z;
     const view = Math.hypot(viewX, viewZ) || 1;
     const tip = tiltToward(viewX, viewZ, TABLE_TIP);
+    // A chair is set down into its seat from outside its round, never across it.
+    const table = piece.tableId === null ? undefined : tablePlaces.get(piece.tableId);
+    const outX = table === undefined ? 0 : piece.x - table.x;
+    const outZ = table === undefined ? 0 : piece.z - table.z;
+    const out = Math.hypot(outX, outZ);
+    const seated = !round && out > 1e-6;
+    // Near the camera a piece crosses the hall lower, so it never passes across the lens.
+    const nearLens = Math.hypot(viewer[0] - piece.x, viewer[2] - piece.z) < NEAR_LENS;
+    const crossing = round ? 2.3 + 0.45 * pieceRandom(seed, piece.id, 6) : 1.35 + 0.35 * pieceRandom(seed, piece.id, 6);
+    const cruise = nearLens ? Math.min(crossing, Math.max(piece.y + piece.height + 0.4, viewer[1] - UNDER_LENS - pivotOf(piece))) : crossing;
     return {
       window,
       sx,
@@ -286,7 +309,9 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
       sz,
       turnX: sx,
       turnZ: window.faceZ + EXIT_DEPTH,
-      cruise: round ? 2.3 + 0.45 * pieceRandom(seed, piece.id, 6) : 1.35 + 0.35 * pieceRandom(seed, piece.id, 6),
+      approachX: seated ? piece.x + (outX / out) * SEAT_APPROACH : piece.x,
+      approachZ: seated ? piece.z + (outZ / out) * SEAT_APPROACH : piece.z,
+      cruise,
       reach,
       acrossX: -viewZ / view,
       acrossZ: viewX / view,
@@ -314,6 +339,7 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
     light: ACCIO_SPRINGS.windowLight,
     flight: (id) => flights.get(id) ?? null,
     plan(base, pieces) {
+      for (const piece of pieces) if (piece.role === "table") tablePlaces.set(piece.id, { x: piece.x, z: piece.z });
       return planAccio(base, pieces, windows, sources, model);
     },
     init(motion, graph) {
@@ -361,13 +387,17 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
       } else if (p > 0.15) {
         tick(motion.yaw, piece.rotationY, ACCIO_SPRINGS.pirouette, dt);
       }
-      // A quadratic route through the turn in front of the window: it leaves
-      // the reveal square to the wall, then curves toward its place.
-      const a = (1 - p) * (1 - p);
-      const b = 2 * p * (1 - p);
-      const c = p * p;
-      const x = a * flight.sx + b * flight.turnX + c * piece.x + flight.acrossX * motion.sway.value;
-      const z = a * flight.sz + b * flight.turnZ + c * piece.z + flight.acrossZ * motion.sway.value;
+      // A route through the turn in front of the window, so it leaves the
+      // reveal square to the wall, then on to its place: a round's curves
+      // straight there (quadratic); a chair's comes in from outside its round
+      // (cubic through its approach), so it is never set down across the table.
+      const q = 1 - p;
+      const x = round
+        ? q * q * flight.sx + 2 * p * q * flight.turnX + p * p * piece.x + flight.acrossX * motion.sway.value
+        : q * q * q * flight.sx + 3 * p * q * q * flight.turnX + 3 * p * p * q * flight.approachX + p * p * p * piece.x;
+      const z = round
+        ? q * q * flight.sz + 2 * p * q * flight.turnZ + p * p * piece.z + flight.acrossZ * motion.sway.value
+        : q * q * q * flight.sz + 3 * p * q * q * flight.turnZ + 3 * p * p * q * flight.approachZ + p * p * p * piece.z;
       const y = motion.alt.value;
       const limit = accioGrowthLimit(flight, x, z);
       tick(motion.grow, limit, ACCIO_SPRINGS.emerge, dt);

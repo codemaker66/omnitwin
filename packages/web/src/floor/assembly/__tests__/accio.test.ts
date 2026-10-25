@@ -55,8 +55,14 @@ interface Trace {
   readonly peakAt: number;
   /** How squarely the worst-turned round's top faces the camera while it is more than 1.4 m up (cosine). */
   readonly leastFacing: number;
+  readonly worstFacing: string;
   /** Breaches of the glass or of a reveal, described. */
   readonly breaches: string[];
+  /** Chairs below a table top's height over their own round, described. */
+  readonly acrossTable: string[];
+  /** The nearest any grown piece came to the camera, metres, and which. */
+  readonly nearestLens: number;
+  readonly nearestLensPiece: string;
 }
 
 /** Flies the whole show at the tick rate and records what a viewer would see. */
@@ -65,17 +71,30 @@ function trace(seed: number): Trace {
   const start = new Map<string, number>();
   const landed = new Map<string, number>();
   const breaches: string[] = [];
+  const acrossTable: string[] = [];
+  const places = new Map(pieces.map((piece) => [piece.id, piece]));
   const pose = emptyPose();
   let peak = 0;
   let peakAt = 0;
   let leastFacing = Number.POSITIVE_INFINITY;
-  const viewer = new Vector3(...(run.finalCamera()?.position ?? [0, 0, 0]));
+  let worstFacing = "";
+  let nearestLens = Number.POSITIVE_INFINITY;
+  let nearestLensPiece = "";
+  const viewer = new PerspectiveCamera(55, 16 / 9, 0.1, 200);
   const normal = new Vector3();
   const axis = new Vector3();
   const toViewer = new Vector3();
+  const seen = new Vector3();
   for (let tick = 1; tick <= 10 * ASSEMBLY_TICK_RATE; tick++) {
     const seconds = tick / ASSEMBLY_TICK_RATE;
     run.advanceTo(seconds);
+    // The camera at this moment, to judge what the viewer actually sees.
+    const shot = run.camera() ?? run.finalCamera();
+    if (shot !== null) {
+      viewer.position.set(...shot.position);
+      viewer.lookAt(...shot.target);
+      viewer.updateMatrixWorld();
+    }
     let aloft = 0;
     for (const piece of pieces) {
       run.pose(piece.id, pose);
@@ -84,13 +103,33 @@ function trace(seed: number): Trace {
       const down = pose.y - piece.y < 0.01 && Math.hypot(pose.x - piece.x, pose.z - piece.z) < 0.05;
       if (down && !landed.has(piece.id)) landed.set(piece.id, seconds);
       if (!down) aloft += 1;
-      if (piece.role === "table" && pose.y - piece.y > 1.4) {
+      const lens = viewer.position.distanceTo(seen.set(pose.x, pose.y + pose.pivot, pose.z));
+      seen.project(viewer);
+      // Only what is in (or at the edge of) the frame can cross the lens.
+      const nearFrame = Math.abs(seen.x) < 1.2 && Math.abs(seen.y) < 1.2 && seen.z < 1;
+      if (pose.grow > 0.3 && nearFrame && lens < nearestLens) {
+        nearestLens = lens;
+        nearestLensPiece = `${piece.id} at ${seconds.toFixed(3)} s`;
+      }
+      const inFrame = Math.abs(seen.x) < 1 && Math.abs(seen.y) < 1 && seen.z < 1;
+      // A round grown to at least half its size (a point of light is neither a table nor a drum).
+      if (piece.role === "table" && pose.y - piece.y > 1.4 && inFrame && pose.grow > 0.5) {
         // Its top, tipped by its tilt, against the way to the camera.
         const angle = Math.hypot(pose.tiltX, pose.tiltZ);
         normal.set(0, 1, 0);
         if (angle > 1e-9) normal.applyAxisAngle(axis.set(pose.tiltX / angle, 0, pose.tiltZ / angle), angle);
-        toViewer.set(viewer.x - pose.x, viewer.y - (pose.y + pose.pivot), viewer.z - pose.z).normalize();
-        leastFacing = Math.min(leastFacing, normal.dot(toViewer));
+        toViewer.set(viewer.position.x - pose.x, viewer.position.y - (pose.y + pose.pivot), viewer.position.z - pose.z).normalize();
+        const facing = normal.dot(toViewer);
+        if (facing < leastFacing) {
+          leastFacing = facing;
+          worstFacing = `${piece.id} at ${seconds.toFixed(3)} s: (${pose.x.toFixed(2)}, ${pose.y.toFixed(2)}, ${pose.z.toFixed(2)}) tilt (${pose.tiltX.toFixed(3)}, ${pose.tiltZ.toFixed(3)}) grow ${pose.grow.toFixed(2)} ndc (${seen.x.toFixed(2)}, ${seen.y.toFixed(2)})`;
+        }
+      }
+      const table = piece.tableId === null ? undefined : places.get(piece.tableId);
+      // A chair low enough to meet a table top is clear of its own round.
+      if (piece.role === "chair" && table !== undefined && pose.y - piece.y < 0.85 && !down) {
+        const fromTable = Math.hypot(pose.x - table.x, pose.z - table.z);
+        if (fromTable < 1.1) acrossTable.push(`${piece.id} ${fromTable.toFixed(2)} m from its table at ${pose.y.toFixed(2)} m, ${seconds.toFixed(3)} s`);
       }
       const flight = model.flight(piece.id);
       if (flight === null || run.isDone(piece.id)) continue;
@@ -105,7 +144,7 @@ function trace(seed: number): Trace {
     if (aloft > peak) { peak = aloft; peakAt = seconds; }
     if (run.done()) break;
   }
-  return { start, landed, peak, peakAt, leastFacing, breaches };
+  return { start, landed, peak, peakAt, leastFacing, worstFacing, breaches, acrossTable, nearestLens, nearestLensPiece };
 }
 
 const SEED = 20261026;
@@ -174,6 +213,9 @@ describe("Accio, second pass", () => {
       lastStart: Math.max(...flown.start.values()),
       lastLanding: Math.max(...flown.landed.values()),
       leastFacing: flown.leastFacing,
+      worstFacing: flown.worstFacing,
+      nearestLens: flown.nearestLens,
+      nearestLensPiece: flown.nearestLensPiece,
       tableFlights: pieces.filter((piece) => piece.role === "table").map((piece) => Number(flightOf(piece).toFixed(2))),
       chairFlightMax: Math.max(...pieces.filter((piece) => piece.role === "chair").map(flightOf)),
       streams,
@@ -253,7 +295,15 @@ describe("Accio, second pass", () => {
     }
   });
 
-  it("shows the camera every round's top while it is aloft, so it reads as a table and never as a drum", () => {
+  it("keeps every piece in frame clear of the lens", () => {
+    expect(flown.nearestLens, flown.nearestLensPiece).toBeGreaterThan(1.6);
+  });
+
+  it("sets every chair down into its seat from outside its round, never across the table", () => {
+    expect(flown.acrossTable).toEqual([]);
+  });
+
+  it("shows the camera every round's top while it is aloft in frame, so it reads as a table and never as a drum", () => {
     // The top faces the camera within 70 degrees throughout: never its skirt edge on.
     expect(flown.leastFacing).toBeGreaterThan(Math.cos((70 * Math.PI) / 180));
   });
@@ -367,7 +417,7 @@ describe("Accio, second pass", () => {
     expect(run.time() * ASSEMBLY_TICK_RATE).toBe(4);
   });
 
-  it("ends on a framing of the whole room inside the orbit's limits, no chandelier in the middle of it", () => {
+  it("ends on a framing of the set room inside the orbit's limits, no chandelier in the middle of it", () => {
     const limits = computeDistanceLimits({ width: 21.135, length: 10.59, height: 6.7 });
     for (const [keys, aspect] of [[ACCIO_CAMERA_LANDSCAPE, 16 / 9], [ACCIO_CAMERA_PORTRAIT, 393 / 852]] as const) {
       const last = keys[keys.length - 1];
@@ -390,12 +440,14 @@ describe("Accio, second pass", () => {
         expect(Math.abs(middle.x) > 0.5 || Math.abs(middle.y) > 0.4, chandelier.id).toBe(true);
       }
       if (aspect > 1) {
-        // Every round's place is in frame.
-        for (const piece of pieces) {
-          if (piece.role !== "table") continue;
+        // The top table and all but the two rounds at the camera's own end are in frame.
+        const framed = pieces.filter((piece) => {
+          if (piece.role !== "table") return false;
           const seen = new Vector3(piece.x, 0.76, piece.z).project(camera);
-          expect(Math.abs(seen.x) < 1 && Math.abs(seen.y) < 1, piece.id).toBe(true);
-        }
+          return Math.abs(seen.x) < 1 && Math.abs(seen.y) < 1;
+        }).map((piece) => piece.id);
+        expect(framed).toContain(dinnerTableId(1));
+        expect(framed.length).toBeGreaterThanOrEqual(16);
       }
     }
   });

@@ -27,6 +27,7 @@ import { useEditorStore } from "../../stores/editor-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
+import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { publishFurnitureSettleFrame } from "../../lib/furniture-motion.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
@@ -79,6 +80,14 @@ function orbitTarget(controls: unknown): Vector3 | null {
   return target instanceof Vector3 ? target : null;
 }
 
+/** No planner glide may move the camera the Assembly holds, or carry it off when it hands back. */
+function dropQueuedGlides(): void {
+  const bookmarks = useBookmarkStore.getState();
+  if (bookmarks.transition !== null || bookmarks.pendingNavigationId !== null) {
+    useBookmarkStore.setState({ transition: null, pendingNavigationId: null });
+  }
+}
+
 function restGroup(group: Object3D): void {
   group.matrixAutoUpdate = true;
   group.position.set(0, 0, 0);
@@ -100,11 +109,11 @@ interface WindowLight {
   readonly meshes: readonly Mesh[];
 }
 
-/** Warm white: the light the pieces come out of. */
-const WINDOW_LIGHT = [1.0, 0.83, 0.6] as const;
+/** Warm gold: the light the pieces are summoned out of. */
+const WINDOW_LIGHT = [1.0, 0.7, 0.34] as const;
 /** The pane's brightness at full light, and the glow it throws into the reveal. */
-const PANE_LEVEL = 2.4;
-const HALO_LEVEL = 0.32;
+const PANE_LEVEL = 2.0;
+const HALO_LEVEL = 0.55;
 
 function createWindowLights(windows: readonly AccioWindow[]): WindowLight[] {
   return windows.map((window) => {
@@ -159,6 +168,8 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   const touched = useRef(new Set<string>());
   const applyMs = useRef(0);
   const framesDrawn = useRef(0);
+  /** The framing to hold until CameraRig has taken the camera back. */
+  const handback = useRef<CameraPose | null>(null);
   const onCameraRef = useRef(onCamera);
   onCameraRef.current = onCamera;
   const request = useAssemblyRecallStore((state) => state.request);
@@ -232,18 +243,31 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   const finish = useCallback((cameraTo: CameraPose | null): void => {
     const wasActive = stage.current.kind !== "idle";
     stage.current = { kind: "idle" };
+    // A glide queued while the Assembly held the camera would carry it off its final framing.
+    if (wasActive) dropQueuedGlides();
     publishFurniturePresentation(null);
     moveGroups(null);
     setLights(null);
     publishFurnitureSettleFrame([]);
     if (cameraTo !== null) placeCamera(cameraTo);
     if (wasActive) {
+      // Hand the camera back where it is. CameraRig resumes in a React commit
+      // between frames that re-aims its orbit at the planner's opening target
+      // (and, while suspended, it drops any glide queued for it); the frames
+      // until that commit has landed (its controls enabled again) keep this
+      // framing, so the planner carries on from it without a jump.
+      const state = get();
+      const target = orbitTarget(state.controls);
+      handback.current = {
+        position: [state.camera.position.x, state.camera.position.y, state.camera.position.z],
+        target: target === null ? cameraTo?.target ?? [0, 0, 0] : [target.x, target.y, target.z],
+      };
       onCameraRef.current(false);
       useCockpitStore.getState().setCameraInteractionActive(false);
       useAssemblyRecallStore.setState({ active: false });
     }
     invalidate();
-  }, [invalidate, moveGroups, placeCamera, setLights]);
+  }, [get, invalidate, moveGroups, placeCamera, setLights]);
 
   const finalFraming = useCallback((portrait: boolean): CameraPose | null => {
     const keys = portrait ? ACCIO_CAMERA_PORTRAIT : ACCIO_CAMERA_LANDSCAPE;
@@ -270,6 +294,9 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   }, [finish]);
 
   const begin = useCallback((): void => {
+    // The Assembly owns the camera now: a glide under way or queued is dropped.
+    handback.current = null;
+    dropQueuedGlides();
     useSelectionStore.getState().clearSelection();
     // The planner's working overlays and chrome step back, as for a camera move.
     useCockpitStore.getState().setCameraInteractionActive(true);
@@ -389,6 +416,15 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   useFrame((_state, delta) => {
     framesDrawn.current += 1;
     const current = stage.current;
+    const held = handback.current;
+    if (current.kind === "idle" && held !== null) {
+      // Runs after the orbit's own update: this frame draws the held framing.
+      placeCamera(held);
+      const { controls } = get();
+      const resumed = typeof controls === "object" && controls !== null && "enabled" in controls && controls.enabled === true;
+      if (resumed) handback.current = null;
+      else invalidate();
+    }
     if (current.kind === "idle") return;
     const started = performance.now();
     const cockpit = useCockpitStore.getState();
