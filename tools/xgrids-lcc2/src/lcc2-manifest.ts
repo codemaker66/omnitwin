@@ -51,11 +51,11 @@ export interface Lcc2Node {
 // The node schema is recursive, so it is declared against the hand-written
 // `Lcc2Node` interface above and tied together with z.lazy.
 //
-// The third generic argument (input = unknown) is load-bearing: `child` carries
-// a .default({}) on a .passthrough() object, so the schema's INPUT type differs
-// from its output. A two-argument `ZodType<Lcc2Node>` demands they match and
-// rejects this. See .claude/gotchas/zod-passthrough-inference.md.
-export const Lcc2NodeSchema: z.ZodType<Lcc2Node, z.ZodTypeDef, unknown> = z.lazy(() =>
+// The input type is load-bearing: `child` carries a .default({}) on a
+// .passthrough() object, so the schema's INPUT type differs from its output.
+// zod 4's one-argument `ZodType<Lcc2Node>` takes `unknown` input, which accepts
+// that. See .claude/gotchas/zod-passthrough-inference.md.
+export const Lcc2NodeSchema: z.ZodType<Lcc2Node> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
     boundingBox: Lcc2BoundingBoxSchema,

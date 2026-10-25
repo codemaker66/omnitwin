@@ -40,7 +40,8 @@ const SnapshotEnvelopeSchema = z.object({
   id: z.string().uuid(),
   configurationId: z.string().uuid(),
   version: z.number().int().positive(),
-  payload: z.unknown(),
+  // Optional as under zod 3, which let an object omit an unknown-typed key.
+  payload: z.unknown().optional(),
   diagramUrl: z.string().url().nullable(),
   pdfUrl: z.string().url().nullable(),
   sourceHash: z.string().regex(/^[0-9a-f]{64}$/),
