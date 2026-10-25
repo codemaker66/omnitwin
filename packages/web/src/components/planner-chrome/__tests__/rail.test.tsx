@@ -9,6 +9,8 @@ import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRailDropStore } from "../../../stores/rail-drop-store.js";
+import { useSelectionStore } from "../../../stores/selection-store.js";
+import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 
 // ---------------------------------------------------------------------------
 // The rail (T-671 slice 12′; card-dock spec §3, §4, §7.1, §12; Q-13): eight
@@ -147,5 +149,25 @@ describe("the store (staff; Blake's B2, hard)", () => {
     expect(screen.getByRole("status").textContent).toContain("None left in store");
     expect(armOrCancel("round")).toBe(false);
     expect(useCatalogueStore.getState().armedCardId).toBeNull();
+  });
+});
+
+describe("replace mode (the caption's Replace…)", () => {
+  function selectARound(): void {
+    const id = getCatalogueItemBySlug("round-table-6ft")?.id ?? "";
+    usePlacementStore.setState({ placedItems: [{ id: "t8", catalogueItemId: id, x: 0, y: 0, z: 0, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, groupId: "g8", label: "Table 8" }] });
+    useSelectionStore.getState().select("t8");
+  }
+
+  it("says what it is doing, says what a pointed card would do, and Esc leaves it", () => {
+    selectARound();
+    render(<Rail />);
+    act(() => { useCardsStore.getState().startReplacing("Replace Table 8 with…"); });
+    expect(screen.getByRole("status").textContent).toContain("Replace Table 8 with…");
+    fireEvent.pointerOver(within(rail()).getByRole("button", { name: /^Long table/u }));
+    expect(useCardsStore.getState().pointedCard).toBe("long-table");
+    expect(screen.getByRole("status").textContent).toMatch(/^Replace /u);
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    expect(useCardsStore.getState().replacing).toBeNull();
   });
 });

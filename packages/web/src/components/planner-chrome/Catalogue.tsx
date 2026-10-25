@@ -23,6 +23,7 @@ import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { cardFaceNow, FullCard, isCardArmed, placedCount, type CardChoice } from "./CatalogueCard.js";
+import { replaceWith } from "./replace-with.js";
 import { NONE_LEFT_IN_STORE, storeFace } from "./store-figures.js";
 import { Kbd } from "./Kbd.js";
 import { Key } from "./Keys.js";
@@ -79,8 +80,21 @@ function countBySlug(placed: readonly { readonly catalogueItemId: string }[]): R
   return counts;
 }
 
+/** While replacing, notes which catalogue card the pointer or focus is on. */
+function pointAtCatalogueCard(target: EventTarget): void {
+  if (useCardsStore.getState().replacing === null || !(target instanceof Element)) return;
+  const named = target.closest<HTMLElement>("[data-card-id]")?.dataset["cardId"];
+  const card = CATALOGUE_CARDS.find((entry) => entry.id === named)?.id;
+  if (card !== undefined && card !== useCardsStore.getState().pointedCard) useCardsStore.getState().setPointedCard(card);
+}
+
 /** Puts a card in hand, or down again; counts the arm for the rail's first-arms hint. */
 function pressCard(card: CatalogueCard): void {
+  // Replace mode (the caption's Replace…): the card replaces the selection instead of arming.
+  if (useCardsStore.getState().replacing !== null) {
+    replaceWith(card.id);
+    return;
+  }
   const store = useCatalogueStore.getState();
   // The card in hand again puts it down, whichever of its pieces is in hand.
   const target = isCardArmed(card, store.armedCardId) && store.armedCardId !== null ? store.armedCardId : card.id;
@@ -89,6 +103,11 @@ function pressCard(card: CatalogueCard): void {
 
 /** A swatch or a size: that piece in hand. A setup in hand keeps its seats and changes only its cloth. */
 function chooseOnCard(card: CatalogueCard, choice: CardChoice): void {
+  if (useCardsStore.getState().replacing !== null) {
+    if (choice.kind === "colourway") replaceWith(card.id, { colourway: choice.colourway });
+    else replaceWith(pieceCardId(choice.slug));
+    return;
+  }
   const store = useCatalogueStore.getState();
   if (choice.kind === "colourway") {
     if (store.armedCardId === card.id && store.setCardParams({ colourway: choice.colourway })) return;
@@ -391,6 +410,9 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
             aria-orientation="horizontal"
             onKeyDown={onCardsKeyDown}
             onWheel={onCardsWheel}
+            // Replace mode: the card under the pointer or focus is the one the rail's hint speaks of.
+            onPointerOver={(event) => { pointAtCatalogueCard(event.target); }}
+            onFocus={(event) => { pointAtCatalogueCard(event.target); }}
           >
             {cards.map((card) => {
               const armed = isCardArmed(card, armedCardId);

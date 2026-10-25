@@ -57,6 +57,13 @@ interface CardsState {
   /** Why the last card asked for would not arm, said in the hint's place. */
   readonly refusal: { readonly card: CardId; readonly text: string } | null;
   readonly setRefusal: (refusal: { readonly card: CardId; readonly text: string } | null) => void;
+  /** Replace mode (the caption's Replace…): a card pressed replaces the selection. Its words: "Replace 2 Round 6 ft with…". */
+  readonly replacing: string | null;
+  readonly startReplacing: (words: string) => void;
+  readonly stopReplacing: () => void;
+  /** The card the pointer or focus is on while replacing, for the hint's "what would happen". */
+  readonly pointedCard: CardId | null;
+  readonly setPointedCard: (card: CardId | null) => void;
   readonly setStyle: (style: RailStyle) => void;
   readonly openCatalogue: () => void;
   readonly closeCatalogue: () => void;
@@ -84,6 +91,11 @@ export const useCardsStore = create<CardsState>()((set, get) => ({
   setStock: (stock) => { set({ stock }); },
   refusal: null,
   setRefusal: (refusal) => { set({ refusal }); },
+  replacing: null,
+  startReplacing: (words) => { set({ replacing: words, pointedCard: null }); },
+  stopReplacing: () => { set({ replacing: null, pointedCard: null }); },
+  pointedCard: null,
+  setPointedCard: (pointedCard) => { set({ pointedCard }); },
   setStyle: (style) => { set({ style }); },
   openCatalogue: () => { set({ catalogueOpen: true }); },
   closeCatalogue: () => { set({ catalogueOpen: false }); },
@@ -98,5 +110,5 @@ export const useCardsStore = create<CardsState>()((set, get) => ({
     keepArms(arms);
     return before < HINT_ARMS;
   },
-  reset: () => { set({ style: "dinner", catalogueOpen: false, tab: FIRST_TAB, query: "", inFlight: null, arms: readArms(), hintFor: null, stock: null, refusal: null }); },
+  reset: () => { set({ style: "dinner", catalogueOpen: false, tab: FIRST_TAB, query: "", inFlight: null, arms: readArms(), hintFor: null, stock: null, refusal: null, replacing: null, pointedCard: null }); },
 }));

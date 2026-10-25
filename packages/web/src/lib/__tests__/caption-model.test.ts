@@ -79,6 +79,18 @@ describe("one piece", () => {
   });
 });
 
+describe("Replace…", () => {
+  it("is offered for dining tables behind its switch, after Move", () => {
+    const room = [...round("t8", 2, 10), ...round("t4", 6, 10)];
+    expect(captionModel(new Set(["t8"]), room, only("replace"))?.verbs).toEqual(["seats", "turn", "cloth", "replace", "remove"]);
+    expect(captionModel(new Set(["t8", "t4"]), room, only("replace", "moveVerb"))?.verbs).toEqual(["cloth", "move", "replace", "remove"]);
+  });
+
+  it("is not offered for a piece that is not a dining table", () => {
+    expect(captionModel(new Set(["s1"]), [piece("s1", "platform", 0, 0)], all)?.verbs).not.toContain("replace");
+  });
+});
+
 describe("several pieces", () => {
   it("counts a table with its chairs as one, and names alike pieces together", () => {
     const room = [...round("t8", 2, 10), ...round("t4", 6, 10)];

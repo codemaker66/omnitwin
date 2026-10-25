@@ -1,4 +1,4 @@
-import { AlignCenterHorizontal, Copy, Move, PackageMinus, RotateCw } from "lucide-react";
+import { AlignCenterHorizontal, Copy, Move, PackageMinus, Replace, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { captionAisles, captionModel, type CaptionModel, type CaptionVerb } from "../../lib/caption-model.js";
 import { placeCaption } from "../../lib/caption-placement.js";
@@ -16,6 +16,7 @@ import {
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { pickFloorAt, registerScreenAnchor, requestScreenAnchorFrame, type ScreenPoint } from "../../lib/screen-anchors.js";
 import { DANCE_FLOOR_PANELS } from "../../lib/setup-cards.js";
+import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -26,6 +27,7 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { Stepper } from "./Controls.js";
 import { ClothGlyph } from "./glyphs.js";
 import { Key } from "./Keys.js";
+import { selectionHasNote } from "./replace-with.js";
 import "./chrome.css";
 import "./caption.css";
 
@@ -195,7 +197,9 @@ export function Caption(): ReactElement | null {
     setMoving(false);
   };
   const name = nameOf(model);
-  const verbs = model.verbs.filter((verb) => verb === "move" || VERB_KEYS[verb] !== undefined);
+  // Replace waits while a selected table carries a note, until lane E's in-step hook carries notes across.
+  const replaceOffered = model.verbs.includes("replace") && !selectionHasNote();
+  const verbs = model.verbs.filter((verb) => verb === "move" || (verb === "replace" && replaceOffered) || VERB_KEYS[verb] !== undefined);
   const panels = model.panels;
   const resize = (cols: number, rows: number): void => {
     if (panels !== null) act(() => usePlacementStore.getState().resizeArea(panels.groupId, cols, rows));
@@ -248,7 +252,20 @@ export function Caption(): ReactElement | null {
               <Stepper label="Panels deep" value={panels.rows} min={DANCE_FLOOR_PANELS.min} max={DANCE_FLOOR_PANELS.max} unit="deep" onChange={(rows) => { resize(panels.cols, rows); }} />
             </>
           ) : null}
-          {verbs.map((verb) => (verb === "move" ? (
+          {verbs.map((verb) => (verb === "replace" ? (
+            <Key
+              key={verb}
+              label="Replace…"
+              tip="Replace with another card"
+              icon={<Replace className="pc-icon" aria-hidden="true" />}
+              iconOnly
+              small
+              onPress={() => {
+                useCardsStore.getState().startReplacing(`Replace ${model.label ?? model.name} with…`);
+                useCardsStore.getState().openCatalogue();
+              }}
+            />
+          ) : verb === "move" ? (
             <Key
               key={verb}
               ref={moveKeyRef}

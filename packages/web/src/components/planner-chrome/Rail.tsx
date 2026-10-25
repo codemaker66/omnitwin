@@ -10,9 +10,11 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRailDropStore } from "../../stores/rail-drop-store.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { armOrCancel, useCardKeys } from "./card-keys.js";
 import { Key } from "./Keys.js";
 import { RailCard } from "./RailCard.js";
+import { replacePreview } from "./replace-with.js";
 import { storeFace, storeRefusalFor } from "./store-figures.js";
 import "./chrome.css";
 import "./cards.css";
@@ -62,6 +64,15 @@ function slugsOf(card: CardId): readonly string[] {
   return group === undefined ? [slug] : group.variants.map((variant) => variant.slug);
 }
 
+/** While replacing, notes which rail card the pointer or focus is on. */
+function pointAt(target: EventTarget): void {
+  if (useCardsStore.getState().replacing === null || !(target instanceof Element)) return;
+  const named = target.closest<HTMLElement>("[data-card]")?.dataset["card"];
+  // The rail's own slot, so only a card it holds is ever pointed at.
+  const card = RAIL_SLOTS[useCardsStore.getState().style].find((slot) => slot === named);
+  if (card !== undefined && card !== useCardsStore.getState().pointedCard) useCardsStore.getState().setPointedCard(card);
+}
+
 export function Rail(): ReactElement | null {
   useCardKeys();
   const style = useCardsStore((state) => state.style);
@@ -70,6 +81,8 @@ export function Rail(): ReactElement | null {
   const hintFor = useCardsStore((state) => state.hintFor);
   const stock = useCardsStore((state) => state.stock);
   const refusal = useCardsStore((state) => state.refusal);
+  const replacing = useCardsStore((state) => state.replacing);
+  const pointedCard = useCardsStore((state) => state.pointedCard);
   const remembered = useCatalogueStore((state) => state.rememberedSeats);
   const armed = useCatalogueStore((state) => state.armedCardId);
   const walking = useCockpitStore((state) => state.walkMode);
@@ -95,6 +108,14 @@ export function Rail(): ReactElement | null {
     const counts = placedCounts(placedItems);
     return new Map(slots.map((card) => [card, storeFace(cardParamsFor(card, {}, remembered), stock, counts)] as const));
   }, [placedItems, slots, stock, remembered]);
+
+  // Replace mode: Esc steps out of it before anything else it would close.
+  useEscapeLayer("operation", { open: replacing !== null, onEscape: () => { useCardsStore.getState().stopReplacing(); } });
+  // What the pointed card would do, said before it does it (lane E's sentence, or why not).
+  const preview = useMemo(
+    () => (replacing !== null && pointedCard !== null ? replacePreview(pointedCard) : null),
+    [replacing, pointedCard, placedItems],
+  );
 
   // A refusal says why for a few seconds, then the rail is quiet again.
   useEffect(() => {
@@ -187,6 +208,11 @@ export function Rail(): ReactElement | null {
         <p className="pc-rail__hint is-refusal" role="status">
           <b>{refusal.text}</b><span> · {railName(refusal.card)}</span>
         </p>
+      ) : replacing !== null ? (
+        <p className={`pc-rail__hint${preview?.ok === false ? " is-refusal" : ""}`} role="status">
+          {preview === null ? <b>{replacing}</b> : preview.ok ? <span>{preview.text}</span> : <b>{preview.text}</b>}
+          <span> · </span><b>Esc</b><span> cancels</span>
+        </p>
       ) : armed !== null && hintFor === armed ? (
         <p className="pc-rail__hint" role="status">
           {HINT_WORDS.map((words, index) => (index % 2 === 0 ? <b key={words}>{words}</b> : <span key={words}>{words}</span>))}
@@ -203,7 +229,13 @@ export function Rail(): ReactElement | null {
           if (drag.current?.started === true) useCatalogueStore.getState().endCardDrag();
         }}
       >
-        <div className="pc-rail__cards">
+        <div
+          className="pc-rail__cards"
+          // Replace mode: the card under the pointer or focus is the one the hint speaks of.
+          onPointerOver={(event) => { pointAt(event.target); }}
+          onFocus={(event) => { pointAt(event.target); }}
+          onPointerLeave={() => { if (useCardsStore.getState().replacing !== null) useCardsStore.getState().setPointedCard(null); }}
+        >
           {slots.map((card, index) => (
             <RailCard
               key={card}

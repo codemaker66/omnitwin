@@ -21,7 +21,7 @@ import { cardParamsFor, danceFloorGrid, describeCard, pieceCardId } from "./setu
 // Line up wait behind lane E's switches.
 // ---------------------------------------------------------------------------
 
-export type CaptionVerb = "seats" | "panels" | "turn" | "duplicate" | "cloth" | "lineUp" | "move" | "remove";
+export type CaptionVerb = "seats" | "panels" | "turn" | "duplicate" | "cloth" | "lineUp" | "move" | "replace" | "remove";
 
 export interface CaptionModel {
   /** Pieces selected, a table with its chairs counting once. */
@@ -116,6 +116,8 @@ export function captionModel(
   // Cloth is dining dressing: offered when every piece is a dining table that can take one
   // (not a poseur or a servery, and not a table whose model already wears its linen).
   const allTables = units.every((unit) => isDiningTableItem(unit.item) && canApplyTableLinenToItem(unit.item));
+  // Replace… swaps dining tables for another card's tables (lane E's planReplace).
+  const replaceable = enabled("replace") && units.every((unit) => isDiningTableItem(unit.item));
 
   if (units.length === 1) {
     const grid = first.main.groupId === null ? null : danceFloorGrid(first.members);
@@ -146,6 +148,7 @@ export function captionModel(
     if (enabled("editingKeys")) verbs.push("duplicate");
     if (allTables) verbs.push("cloth");
     if (enabled("moveVerb")) verbs.push("move");
+    if (replaceable) verbs.push("replace");
     // Details is P1 (Q-31): the caption offers it once the right zone can show it.
     verbs.push("remove");
     return {
@@ -168,6 +171,7 @@ export function captionModel(
   if (allTables) verbs.push("cloth");
   if (enabled("lineUp")) verbs.push("lineUp");
   if (enabled("moveVerb")) verbs.push("move");
+  if (replaceable) verbs.push("replace");
   verbs.push("remove");
   return {
     count: units.length,
