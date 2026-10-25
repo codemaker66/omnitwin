@@ -6,6 +6,7 @@ import {
   type GangwaySide,
   type SpaceDimensions,
 } from "@omnitwin/types";
+import { convexPolygonClosestPoints } from "./circulation.js";
 import { createGhostWorld, obstacleName } from "./ghost-truth.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "./catalogue.js";
@@ -528,67 +529,102 @@ export const GRAND_HALL_WALL_NAMES: Readonly<Record<RoomSide, string>> = {
 
 const PLAIN_WALL_NAMES: Readonly<Record<RoomSide, string>> = { xMin: "the wall", xMax: "the wall", zMin: "the wall", zMax: "the wall" };
 
-/** A placed piece's floor shape, metres: a disc for a round table, else its turned rectangle's corners. */
-function floorShape(placed: PlacedItem, item: CatalogueItem): { readonly disc: { readonly x: number; readonly z: number; readonly r: number } | null; readonly corners: readonly { readonly x: number; readonly z: number }[] } {
+/** Sides of the outline drawn round a round table: exact against the walls, at most 5 mm wide of the disc anywhere else. */
+const ROUND_OUTLINE_SIDES = 32;
+
+/**
+ * A placed piece's floor outline, metres, room-centred: its turned
+ * rectangle, or round a round table a polygon whose edges touch the disc
+ * where it faces each wall (so it never reads a gap wider than it is). The
+ * one outline the review and the ghost's live aisles both measure, so they
+ * never measure one gap two ways.
+ */
+export function floorOutline(placed: PlacedItem, item: CatalogueItem): readonly FloorPoint[] {
   const scale = placed.scale ?? 1;
   const x = toRealWorld(placed.x);
   const z = toRealWorld(placed.z);
-  if (item.tableShape === "round") return { disc: { x, z, r: (item.width * scale) / 2 }, corners: [] };
+  if (item.tableShape === "round") {
+    const r = (item.width * scale) / 2 / Math.cos(Math.PI / ROUND_OUTLINE_SIDES);
+    return Array.from({ length: ROUND_OUTLINE_SIDES }, (_, i) => {
+      const angle = ((i + 0.5) * 2 * Math.PI) / ROUND_OUTLINE_SIDES;
+      return { x: x + r * Math.cos(angle), z: z + r * Math.sin(angle) };
+    });
+  }
   const hw = (item.width * scale) / 2;
   const hd = (item.depth * scale) / 2;
   const cos = Math.cos(placed.rotationY);
   const sin = Math.sin(placed.rotationY);
-  const corners = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([lx = 0, lz = 0]) => ({ x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos }));
-  return { disc: null, corners };
+  return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([lx = 0, lz = 0]) => ({ x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos }));
 }
 
-/** A shape's nearest reach toward a wall: its least distance from that wall, the point, and where along the wall it is. */
-function reachTowards(shape: ReturnType<typeof floorShape>, side: RoomSide, roomWidthM: number, roomLengthM: number): { readonly distance: number; readonly along: number; readonly point: FloorPoint; readonly wallPoint: FloorPoint } {
-  const points = shape.disc === null
-    ? shape.corners
-    : [{ x: shape.disc.x - shape.disc.r, z: shape.disc.z }, { x: shape.disc.x + shape.disc.r, z: shape.disc.z }, { x: shape.disc.x, z: shape.disc.z - shape.disc.r }, { x: shape.disc.x, z: shape.disc.z + shape.disc.r }];
-  let best: { distance: number; point: FloorPoint } = { distance: Number.POSITIVE_INFINITY, point: { x: 0, z: 0 } };
-  for (const point of points) {
-    const distance = side === "xMin" ? point.x + roomWidthM / 2
-      : side === "xMax" ? roomWidthM / 2 - point.x
-      : side === "zMin" ? point.z + roomLengthM / 2
-      : roomLengthM / 2 - point.z;
-    if (distance < best.distance) best = { distance, point: { x: point.x, z: point.z } };
+/** Whether a gangway this wide is under the guidance: the one test the review, the flag and the live aisles share. */
+export function underGuidance(widthM: number, rule: AisleRule = FILL_AISLE_RULE): boolean {
+  return widthM < rule.gangwayM - 1e-9;
+}
+
+/**
+ * Which side of a middle gangway's centre line a unit (a table with its
+ * chairs, a set, a lone piece) stands on: the side the middle of all its
+ * outlines, across the gangway, is on. Decided for the whole unit, never
+ * piece by piece, so a chair reaching past the line still counts as its
+ * table's side.
+ */
+export function spineSide(points: readonly FloorPoint[], spine: LayoutRect): "low" | "high" {
+  const alongX = spine.width >= spine.depth;
+  const across = points.map((point) => (alongX ? point.z - spine.cz : point.x - spine.cx));
+  return (Math.min(...across) + Math.max(...across)) / 2 < 0 ? "low" : "high";
+}
+
+/** A point's distance from a wall of the room, metres. */
+function wallDistance(side: RoomSide, point: FloorPoint, roomWidthM: number, roomLengthM: number): number {
+  switch (side) {
+    case "xMin": return point.x + roomWidthM / 2;
+    case "xMax": return roomWidthM / 2 - point.x;
+    case "zMin": return point.z + roomLengthM / 2;
+    case "zMax": return roomLengthM / 2 - point.z;
   }
-  const { point } = best;
-  const wallPoint = side === "xMin" ? { x: -roomWidthM / 2, z: point.z }
-    : side === "xMax" ? { x: roomWidthM / 2, z: point.z }
-    : side === "zMin" ? { x: point.x, z: -roomLengthM / 2 }
-    : { x: point.x, z: roomLengthM / 2 };
-  // Where along the wall: the piece's centre, which moves smoothly, not a corner a tie might swap.
-  const centre = shape.disc ?? {
-    x: shape.corners.reduce((sum, corner) => sum + corner.x, 0) / Math.max(1, shape.corners.length),
-    z: shape.corners.reduce((sum, corner) => sum + corner.z, 0) / Math.max(1, shape.corners.length),
-  };
-  const along = side === "xMin" || side === "xMax" ? centre.z + roomLengthM / 2 : centre.x + roomWidthM / 2;
-  return { distance: Math.max(0, best.distance), along, point, wallPoint };
+}
+
+/** The floor of a gangway between two places along its run. */
+function gangwayStretch(band: LayoutRect, from: number, to: number): readonly FloorPoint[] {
+  if (band.width >= band.depth) {
+    const lo = Math.max(from, band.cx - band.width / 2);
+    const hi = Math.max(lo, Math.min(to, band.cx + band.width / 2));
+    const near = band.cz - band.depth / 2;
+    const far = band.cz + band.depth / 2;
+    return [{ x: lo, z: near }, { x: hi, z: near }, { x: hi, z: far }, { x: lo, z: far }];
+  }
+  const lo = Math.max(from, band.cz - band.depth / 2);
+  const hi = Math.max(lo, Math.min(to, band.cz + band.depth / 2));
+  const near = band.cx - band.width / 2;
+  const far = band.cx + band.width / 2;
+  return [{ x: near, z: lo }, { x: near, z: hi }, { x: far, z: hi }, { x: far, z: lo }];
 }
 
 /** One pinch as measured, before it is named and given its id. */
 interface Pinch {
   readonly gangway: RoomSide | "spine";
+  readonly band: LayoutRect;
   readonly gangwayName: string;
   readonly sides: readonly GangwaySide[];
   readonly sideNames: readonly string[];
   readonly widthM: number;
-  readonly atM: number;
-  readonly from: FloorPoint;
-  readonly to: FloorPoint;
+  /** The stretch it narrows, along the gangway's run (x or z), metres room-centred. */
+  readonly from: number;
+  readonly to: number;
   readonly pieceIds: readonly string[];
 }
 
 /**
  * Every pinch where a layout narrows one of the room's designated gangways
  * under the guidance, narrowest first, as open review items: one per
- * gangway and table group (or set, or lone piece), measured exactly to its
- * nearest point, with the id the shared rule gives it
- * (`@omnitwin/types` gangway-review). Room dimensions are render-space, as
- * the planner's room store holds them; locations are real metres.
+ * gangway and pair either side (a wall and a table group, set or lone
+ * piece; or two such units across a middle gangway), measured exactly from
+ * outline to outline, located as the stretch of gangway it narrows, with the
+ * id the shared rule gives it (`@omnitwin/types` gangway-review). The
+ * stretch, not a single nearest point, is the location, so a tie between a
+ * trestle's chairs never moves it. Room dimensions are render-space, as the
+ * planner's room store holds them; locations are real metres.
  */
 export function gangwayReview(
   placedItems: readonly PlacedItem[],
@@ -603,73 +639,83 @@ export function gangwayReview(
   const designated = designatedGangways(widthM, lengthM, exits, rule);
   if (designated === null) return [];
   const world = createGhostWorld(placedItems, room);
-  const shapes = placedItems.flatMap((placed) => {
+  const unitOf = (placed: PlacedItem): string => placed.setId ?? placed.groupId ?? placed.id;
+  const outlines = placedItems.flatMap((placed) => {
     if (!isSceneFurniturePlacement(placed)) return [];
     const item = getCatalogueItem(placed.catalogueItemId);
-    return item === undefined ? [] : [{ placed, shape: floorShape(placed, item) }];
+    return item === undefined ? [] : [{ placed, unit: unitOf(placed), points: floorOutline(placed, item) }];
   });
-  const unitOf = (placed: PlacedItem): string => placed.setId ?? placed.groupId ?? placed.id;
   const pinches = new Map<string, Pinch>();
-  // The narrowest point of each gangway's pinch by one unit, with every piece of that unit narrowing it.
+  // One pinch per gangway and pair either side: its narrowest width, the whole stretch it narrows, every piece narrowing it.
   const note = (key: string, pinch: Pinch): void => {
     const known = pinches.get(key);
-    const pieceIds = [...new Set([...(known?.pieceIds ?? []), ...pinch.pieceIds])];
-    pinches.set(key, known === undefined || pinch.widthM < known.widthM ? { ...pinch, pieceIds } : { ...known, pieceIds });
+    if (known === undefined) {
+      pinches.set(key, pinch);
+      return;
+    }
+    pinches.set(key, {
+      ...(pinch.widthM < known.widthM ? pinch : known),
+      from: Math.min(known.from, pinch.from),
+      to: Math.max(known.to, pinch.to),
+      pieceIds: [...new Set([...known.pieceIds, ...pinch.pieceIds])],
+    });
   };
 
   for (const band of designated.bands) {
-    if (band.side !== null) {
-      const side = band.side;
-      for (const { placed, shape } of shapes) {
-        const reach = reachTowards(shape, side, widthM, lengthM);
-        if (reach.distance >= rule.gangwayM - 1e-9) continue;
-        note(`${side}|${unitOf(placed)}`, {
+    const alongX = band.rect.width >= band.rect.depth;
+    const along = (point: FloorPoint): number => (alongX ? point.x : point.z);
+    const side = band.side;
+    if (side !== null) {
+      for (const { placed, unit, points } of outlines) {
+        const distance = Math.max(0, Math.min(...points.map((point) => wallDistance(side, point, widthM, lengthM))));
+        if (!underGuidance(distance, rule)) continue;
+        const alongs = points.map(along);
+        note(`${side}|${unit}`, {
           gangway: side,
+          band: band.rect,
           gangwayName: names[side],
-          sides: [{ wall: side }, { unit: unitOf(placed) }],
+          sides: [{ wall: side }, { unit }],
           sideNames: [names[side], obstacleName(placed.id, world).label],
-          widthM: reach.distance,
-          atM: reach.along,
-          from: reach.wallPoint,
-          to: reach.point,
+          widthM: distance,
+          from: Math.min(...alongs),
+          to: Math.max(...alongs),
           pieceIds: [placed.id],
         });
       }
       continue;
     }
-    // A spine: the gap across it, between pieces either side of its centre line.
-    const alongX = band.rect.width >= band.rect.depth;
-    const across = (point: FloorPoint): number => (alongX ? point.z - band.rect.cz : point.x - band.rect.cx);
-    const extent = (shape: ReturnType<typeof floorShape>): { readonly lo: number; readonly hi: number; readonly from: number; readonly to: number } => {
-      const points = shape.disc === null ? shape.corners : [
-        { x: shape.disc.x - shape.disc.r, z: shape.disc.z - shape.disc.r }, { x: shape.disc.x + shape.disc.r, z: shape.disc.z + shape.disc.r },
-      ];
-      const acrossValues = points.map(across);
-      const alongValues = points.map((point) => (alongX ? point.x : point.z));
-      return { lo: Math.min(...acrossValues), hi: Math.max(...acrossValues), from: Math.min(...alongValues), to: Math.max(...alongValues) };
-    };
-    const measured = shapes.map(({ placed, shape }) => ({ placed, box: extent(shape) }));
-    const at = (alongM: number, acrossM: number): FloorPoint => (alongX
-      ? { x: alongM, z: band.rect.cz + acrossM }
-      : { x: band.rect.cx + acrossM, z: alongM });
+    // A middle gangway: each unit stands on one side of it, and a pinch is any two pieces of units on
+    // opposite sides closer than the guidance, outline to outline, straight across or on the slant.
+    const unitPoints = new Map<string, FloorPoint[]>();
+    for (const { unit, points } of outlines) {
+      const known = unitPoints.get(unit);
+      if (known === undefined) unitPoints.set(unit, [...points]);
+      else known.push(...points);
+    }
+    const measured = outlines.map((outline) => {
+      const alongs = outline.points.map(along);
+      return { ...outline, side: spineSide(unitPoints.get(outline.unit) ?? outline.points, band.rect), from: Math.min(...alongs), to: Math.max(...alongs) };
+    });
     for (const low of measured) {
-      if (low.box.hi > rule.gangwayM / 2 || low.box.hi < -rule.gangwayM) continue;
+      if (low.side !== "low") continue;
       for (const high of measured) {
-        if (unitOf(high.placed) === unitOf(low.placed)) continue;
-        if (high.box.lo < -rule.gangwayM / 2 || high.box.lo > rule.gangwayM) continue;
-        if (high.box.lo < low.box.hi || high.box.to < low.box.from || high.box.from > low.box.to) continue;
-        const gap = high.box.lo - low.box.hi;
-        if (gap >= rule.gangwayM - 1e-9) continue;
-        const middle = (Math.max(low.box.from, high.box.from) + Math.min(low.box.to, high.box.to)) / 2;
-        note(`spine|${unitOf(low.placed)}|${unitOf(high.placed)}`, {
+        if (high.side !== "high" || high.unit === low.unit) continue;
+        if (high.from - low.to >= rule.gangwayM || low.from - high.to >= rule.gangwayM) continue;
+        const width = convexPolygonClosestPoints(low.points, high.points).distance;
+        if (!underGuidance(width, rule)) continue;
+        const overlapFrom = Math.max(low.from, high.from);
+        const overlapTo = Math.min(low.to, high.to);
+        // Side by side, the stretch they share; on the slant, the stretch between them.
+        const [from, to] = overlapFrom <= overlapTo ? [overlapFrom, overlapTo] : [overlapTo, overlapFrom];
+        note(`spine|${[low.unit, high.unit].sort().join("|")}`, {
           gangway: "spine",
+          band: band.rect,
           gangwayName: "the middle",
-          sides: [{ unit: unitOf(low.placed) }, { unit: unitOf(high.placed) }],
+          sides: [{ unit: low.unit }, { unit: high.unit }],
           sideNames: [obstacleName(low.placed.id, world).label, obstacleName(high.placed.id, world).label],
-          widthM: gap,
-          atM: middle + (alongX ? widthM : lengthM) / 2,
-          from: at(middle, low.box.hi),
-          to: at(middle, high.box.lo),
+          widthM: width,
+          from,
+          to,
           pieceIds: [low.placed.id, high.placed.id],
         });
       }
@@ -677,22 +723,26 @@ export function gangwayReview(
   }
   const guidance = { thresholdM: rule.gangwayM, source: rule.source };
   return [...pinches.values()]
-    .sort((a, b) => a.widthM - b.widthM)
+    .sort((a, b) => a.widthM - b.widthM || a.from - b.from)
     .map((pinch) => ({
-      id: gangwayReviewId(pinch.gangway, pinch.atM, pinch.sides),
+      id: gangwayReviewId(pinch.gangway, pinch.sides),
       widthM: pinch.widthM,
       guidance,
       gangway: pinch.gangwayName,
-      location: { kind: "segment" as const, from: pinch.from, to: pinch.to },
+      location: { kind: "polygon" as const, points: gangwayStretch(pinch.band, pinch.from, pinch.to).map((point) => ({ ...point })) },
       pieceIds: [...pinch.pieceIds],
       sides: [...pinch.sideNames],
       status: "open" as const,
     }));
 }
 
-/** The flag the ghost and the caption show: "Gangway 0.95 m · under the 1.1 m guidance · the venue will review". */
+/**
+ * The flag the ghost and the caption show: "Gangway 0.95 m · under the 1.1 m
+ * guidance · the venue will review". The width is cut, never rounded, to the
+ * centimetre, so a gangway under the guidance never reads as meeting it.
+ */
 export function gangwayFlag(widthM: number, rule: AisleRule = FILL_AISLE_RULE): string {
-  return `Gangway ${(Math.round(widthM * 100) / 100).toFixed(2)} m · under the ${String(rule.gangwayM)} m guidance · the venue will review`;
+  return `Gangway ${(Math.floor(widthM * 100 + 1e-6) / 100).toFixed(2)} m · under the ${String(rule.gangwayM)} m guidance · the venue will review`;
 }
 
 // ---------------------------------------------------------------------------
@@ -703,16 +753,36 @@ export function gangwayFlag(widthM: number, rule: AisleRule = FILL_AISLE_RULE): 
 // first.
 // ---------------------------------------------------------------------------
 
-/** The pieces Fill sets anew: every group whose table is a round of the fill table's kind, with its chairs. */
+/**
+ * The pieces Fill sets anew: every round group of the fill table's kind,
+ * meaning a group of exactly one such round and its chairs, nothing else.
+ * A group someone made by hand (two rounds, a round with a lectern, a
+ * stray chair) is not Fill's to break up: it stays, as a keep-out.
+ */
 export function fillRefillIds(placedItems: readonly PlacedItem[], fillTable: CatalogueItem): ReadonlySet<string> {
   const kind = seatBaseSlug(fillTable.slug);
-  const groups = new Set<string>();
+  const groups = new Map<string, PlacedItem[]>();
   for (const placed of placedItems) {
-    const item = getCatalogueItem(placed.catalogueItemId);
-    if (item === undefined || placed.groupId === null || placed.setId !== undefined || !isDiningTableItem(item)) continue;
-    if (item.tableShape === "round" && seatBaseSlug(item.slug) === kind) groups.add(placed.groupId);
+    if (placed.groupId === null) continue;
+    const group = groups.get(placed.groupId);
+    if (group === undefined) groups.set(placed.groupId, [placed]);
+    else group.push(placed);
   }
-  return new Set(placedItems.filter((placed) => placed.groupId !== null && groups.has(placed.groupId)).map((placed) => placed.id));
+  const ids = new Set<string>();
+  for (const group of groups.values()) {
+    const tables = group.filter((placed) => {
+      const item = getCatalogueItem(placed.catalogueItemId);
+      return item !== undefined && isDiningTableItem(item);
+    });
+    const [table] = tables;
+    const tableItem = table === undefined ? undefined : getCatalogueItem(table.catalogueItemId);
+    if (tables.length !== 1 || table === undefined || tableItem === undefined) continue;
+    if (tableItem.tableShape !== "round" || seatBaseSlug(tableItem.slug) !== kind) continue;
+    if (group.some((placed) => placed.setId !== undefined)) continue;
+    if (!group.every((placed) => placed === table || getCatalogueItem(placed.catalogueItemId)?.category === "chair")) continue;
+    for (const placed of group) ids.add(placed.id);
+  }
+  return ids;
 }
 
 /** Every kept piece as a keep-out, metres, room-centred: its footprint and the aisle round it. */
