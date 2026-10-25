@@ -5,7 +5,7 @@ import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 import { stampSetup } from "../../../lib/setup-cards.js";
-import { projectScreenAnchors, screenAnchorCount } from "../../../lib/screen-anchors.js";
+import { projectScreenAnchors, screenAnchorCount, setScreenFloorPicker } from "../../../lib/screen-anchors.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -185,5 +185,33 @@ describe("its aisles, behind the live aisles switch", () => {
     render(<Caption />);
     act(() => { useSelectionStore.getState().select("t8"); });
     expect(within(caption()).getByText(/^to Table 4/u)).toBeTruthy();
+  });
+});
+
+describe("Move, then tap where it goes (law 11), behind its switch", () => {
+  it("asks for the tap, and lands the table with its chairs there", () => {
+    setPlannerFeaturesForTesting({ moveVerb: true });
+    const unset = setScreenFloorPicker(() => ({ x: -4, z: 1 }));
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    fireEvent.click(within(caption()).getByRole("button", { name: /^Move/u }));
+    expect(screen.getByRole("status").textContent).toContain("Tap where it goes");
+    fireEvent.click(screen.getByTestId("planner-caption-catcher"), { clientX: 200, clientY: 200 });
+    const table = usePlacementStore.getState().placedItems.find((item) => item.id === "t8");
+    expect(table?.x).toBeCloseTo(-4, 0);
+    expect(table?.z).toBeCloseTo(1, 0);
+    expect(screen.queryByTestId("planner-caption-catcher")).toBeNull();
+    unset();
+  });
+
+  it("Esc steps out of Move and leaves the table where it was, still selected", () => {
+    setPlannerFeaturesForTesting({ moveVerb: true });
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    fireEvent.click(within(caption()).getByRole("button", { name: /^Move/u }));
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    expect(screen.queryByTestId("planner-caption-catcher")).toBeNull();
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === "t8")?.x).toBe(3);
+    expect(useSelectionStore.getState().selectedIds.has("t8")).toBe(true);
   });
 });

@@ -121,3 +121,19 @@
 
 /* Unseen until the first frame has placed it: never a caption in the corner. */
 .pc-caption:not([data-placed]) { visibility: hidden; }
+
+/* Move: the next tap on the room is the destination. The catcher takes it before the room would deselect. */
+.pc-caption__catcher {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  pointer-events: auto;
+}
+
+.pc-caption__hint {
+  margin: 0 0 8px;
+  color: var(--house-forest-ink-2);
+  font: 400 12px/16px var(--house-sans);
+}
+
+.pc-caption__hint b { color: var(--house-forest-ink-1); font-weight: 600; }

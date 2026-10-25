@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { projectScreenAnchors, registerScreenAnchor, requestScreenAnchorFrame, screenAnchorCount, setScreenAnchorFrame, type ScreenPoint, type WorldPoint } from "../screen-anchors.js";
+import { pickFloorAt, projectScreenAnchors, registerScreenAnchor, requestScreenAnchorFrame, screenAnchorCount, setScreenAnchorFrame, setScreenFloorPicker, type ScreenPoint, type WorldPoint } from "../screen-anchors.js";
 
 // ---------------------------------------------------------------------------
 // Points in the room that the chrome follows on screen (T-671 slice 11′; the
@@ -67,5 +67,15 @@ describe("frames on demand", () => {
     unset();
     requestScreenAnchorFrame();
     expect(frames).toBe(2);
+  });
+});
+
+describe("the floor under a point", () => {
+  it("is the canvas's to say, and nothing once the canvas has gone", () => {
+    expect(pickFloorAt(10, 20)).toBeNull();
+    const unset = setScreenFloorPicker((x, y) => ({ x: x / 10, z: y / 10 }));
+    expect(pickFloorAt(10, 20)).toEqual({ x: 1, z: 2 });
+    unset();
+    expect(pickFloorAt(10, 20)).toBeNull();
   });
 });
