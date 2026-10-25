@@ -68,3 +68,18 @@ export function projectScreenAnchors(project: (world: WorldPoint) => ScreenPoint
     anchor.write(world === null ? HIDDEN : project(world));
   }
 }
+
+/** The floor point under a canvas pixel (set by ScreenAnchors, which holds the camera). */
+let floorPicker: ((x: number, y: number) => { readonly x: number; readonly z: number } | null) | null = null;
+
+export function setScreenFloorPicker(next: (x: number, y: number) => { readonly x: number; readonly z: number } | null): () => void {
+  floorPicker = next;
+  return () => {
+    if (floorPicker === next) floorPicker = null;
+  };
+}
+
+/** The floor (render space) under canvas pixel x, y: the caption's Move takes its tap here. Null with no canvas, or off the floor. */
+export function pickFloorAt(x: number, y: number): { readonly x: number; readonly z: number } | null {
+  return floorPicker === null ? null : floorPicker(x, y);
+}

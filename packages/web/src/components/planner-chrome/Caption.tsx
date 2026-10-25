@@ -1,5 +1,5 @@
-import { AlignCenterHorizontal, Copy, PackageMinus, RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import { AlignCenterHorizontal, Copy, Move, PackageMinus, RotateCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { captionAisles, captionModel, type CaptionModel, type CaptionVerb } from "../../lib/caption-model.js";
 import { placeCaption } from "../../lib/caption-placement.js";
 import { plannerFeatureEnabled } from "../../lib/planner-features.js";
@@ -8,11 +8,13 @@ import {
   changeSeatsAtSelectedTables,
   duplicateSelection,
   lineUpSelection,
+  moveSelectionTo,
   removeSelection,
   toggleClothOnSelection,
   turnSelection,
 } from "../../lib/planner-keymap.js";
-import { registerScreenAnchor, requestScreenAnchorFrame, type ScreenPoint } from "../../lib/screen-anchors.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
+import { pickFloorAt, registerScreenAnchor, requestScreenAnchorFrame, type ScreenPoint } from "../../lib/screen-anchors.js";
 import { DANCE_FLOOR_PANELS } from "../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
@@ -88,6 +90,23 @@ const VERB_KEYS: Partial<Record<CaptionVerb, VerbKey>> = {
   },
 };
 
+/** One verb's key, running its command. */
+function VerbButton({ verb }: { readonly verb: CaptionVerb }): ReactElement | null {
+  const key = VERB_KEYS[verb];
+  if (key === undefined) return null;
+  return (
+    <Key
+      label={key.label}
+      tip={key.tip}
+      icon={key.icon}
+      iconOnly
+      small
+      shortcut={key.shortcut}
+      onPress={() => { act(key.run); }}
+    />
+  );
+}
+
 function act(run: () => boolean): void {
   if (run()) requestScreenAnchorFrame();
 }
@@ -111,6 +130,11 @@ export function Caption(): ReactElement | null {
   const viewOnly = useEditorStore((state) => state.lockReason !== null);
   const model = useMemo(() => captionModel(selectedIds, placedItems, plannerFeatureEnabled), [selectedIds, placedItems]);
   const shown = model !== null && armed === null && !walking && !viewOnly;
+  // Move, then tap where it goes (law 11): the next tap on the room is the destination.
+  const [moving, setMoving] = useState(false);
+  const moveKeyRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setMoving(false); }, [selectedIds, shown]);
+  useEscapeLayer("operation", { open: moving, onEscape: () => { setMoving(false); }, returnFocusTo: moveKeyRef });
   const room = useRoomDimensionsStore((state) => state.dimensions);
   const grandHall = useEditorStore((state) => state.space?.slug === "grand-hall");
   const aisles = useMemo(
@@ -159,8 +183,16 @@ export function Caption(): ReactElement | null {
   }, [shown]);
 
   if (!shown) return null;
+
+  const landHere = (event: MouseEvent<HTMLDivElement>): void => {
+    const box = event.currentTarget.getBoundingClientRect();
+    const at = pickFloorAt(event.clientX - box.left, event.clientY - box.top);
+    if (at === null) return; // off the floor: still waiting for a tap on it
+    act(() => moveSelectionTo(at));
+    setMoving(false);
+  };
   const name = nameOf(model);
-  const verbs = model.verbs.filter((verb) => VERB_KEYS[verb] !== undefined);
+  const verbs = model.verbs.filter((verb) => verb === "move" || VERB_KEYS[verb] !== undefined);
   const panels = model.panels;
   const resize = (cols: number, rows: number): void => {
     if (panels !== null) act(() => usePlacementStore.getState().resizeArea(panels.groupId, cols, rows));
@@ -168,12 +200,16 @@ export function Caption(): ReactElement | null {
 
   return (
     <div ref={layerRef} className="pc-caption-layer" data-testid="planner-caption-layer">
+      {moving ? <div className="pc-caption__catcher" data-testid="planner-caption-catcher" onClick={landHere} /> : null}
       <svg className="pc-caption__wire" aria-hidden="true">
         <line ref={lineRef} />
         <circle ref={pinRef} r="3" />
       </svg>
       <div ref={rootRef} className="pc-lacquer pc-caption" role="group" aria-label={name} data-side="right">
         <span className="pc-caption__arrow" aria-hidden="true" />
+        {moving ? (
+          <p className="pc-caption__hint" role="status"><b>Tap where it goes</b> · <b>Esc</b> cancels</p>
+        ) : null}
         {model.eyebrow !== null ? <p className="pc-caps pc-caption__eyebrow">{model.eyebrow}</p> : null}
         <p className="pc-title pc-caption__name">{model.name}</p>
         {model.size !== null || aisles.length > 0 ? (
@@ -209,22 +245,20 @@ export function Caption(): ReactElement | null {
               <Stepper label="Panels deep" value={panels.rows} min={DANCE_FLOOR_PANELS.min} max={DANCE_FLOOR_PANELS.max} unit="deep" onChange={(rows) => { resize(panels.cols, rows); }} />
             </>
           ) : null}
-          {verbs.map((verb) => {
-            const key = VERB_KEYS[verb];
-            if (key === undefined) return null;
-            return (
-              <Key
-                key={verb}
-                label={key.label}
-                tip={key.tip}
-                icon={key.icon}
-                iconOnly
-                small
-                shortcut={key.shortcut}
-                onPress={() => { act(key.run); }}
-              />
-            );
-          })}
+          {verbs.map((verb) => (verb === "move" ? (
+            <Key
+              key={verb}
+              ref={moveKeyRef}
+              label="Move"
+              tip="Move, then tap where it goes"
+              icon={<Move className="pc-icon" aria-hidden="true" />}
+              iconOnly
+              small
+              toggle
+              on={moving}
+              onPress={() => { setMoving((now) => !now); }}
+            />
+          ) : <VerbButton key={verb} verb={verb} />))}
         </div>
       </div>
     </div>
