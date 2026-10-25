@@ -77,15 +77,18 @@ describe("rounds to long tables", () => {
     }
   });
 
-  it("keeps the most common cloth", () => {
+  it("keeps the most common cloth, and says so when the cloths were mixed", () => {
     setPlannerFeaturesForTesting({ tableSets: true });
     const probe = footprintBounds(round(0, 0, "probe"));
     if (probe === null) throw new Error("no footprint");
-    const x = 3.75 - (probe.maxX - probe.minX) / 2;
-    const room = [...round(-x, 0, "Table 1", "black"), ...round(x, 0, "Table 2", "black")];
+    const width = probe.maxX - probe.minX;
+    // Three rounds in one row, white first: two black of three must win over the first seen.
+    const room = [...round(-width - 0.2, 0, "Table 1", "white"), ...round(0, 0, "Table 2", "black"), ...round(width + 0.2, 0, "Table 3", "black")];
     const result = planReplace(tableIds(room), params("long-table"), world(room), { newId: ids });
     if (!result.ok) throw new Error(result.reason);
-    expect(result.plan.add.filter((piece) => slugOf(piece) === "trestle-6ft-black")).toHaveLength(4);
+    expect(result.plan.add.some((piece) => slugOf(piece) === "trestle-6ft-black")).toBe(true);
+    expect(result.plan.add.some((piece) => slugOf(piece) === "trestle-6ft-white")).toBe(false);
+    expect(result.plan.sentence).toContain("black cloths, the most common");
   });
 
   it("is refused, with the reason, when a run would overlap what stays", () => {
@@ -124,6 +127,74 @@ describe("a table to another table", () => {
     expect(tables.map(slugOf).sort()).toEqual(["round-table-6ft-black", "round-table-6ft-white"]);
     expect(result.plan.seatsAfter).toBe(24);
     expect(result.plan.sentence).toBe("Replace 2 rounds with 2 rounds · 20 seats become 24 · cloth kept");
+  });
+});
+
+describe("a set as a table", () => {
+  function set(card: "top-table" | "long-table", label: string): readonly PlacedItem[] {
+    setPlannerFeaturesForTesting({ tableSets: true });
+    return stampSetup(params(card, { trestles: 4 }), { x: 0, z: 0 }, 0, ids).map((piece, i) => (i === 0 ? { ...piece, label } : piece));
+  }
+
+  it("re-clothes every trestle of a Top table in place, each keeping its chairs on the back", () => {
+    const top = set("top-table", "Top table");
+    const result = planReplace(new Set([top[0]?.id ?? ""]), params(pieceCardId("trestle-6ft-black")), world(top), { newId: ids });
+    if (!result.ok) throw new Error(result.reason);
+    const trestles = result.plan.add.filter((piece) => getCatalogueItem(piece.catalogueItemId)?.category === "table");
+    expect(trestles).toHaveLength(4);
+    expect(trestles.every((piece) => slugOf(piece) === "trestle-6ft-black")).toBe(true);
+    expect(result.plan.removeIds.size).toBe(0);
+    expect(result.plan.add.map((piece) => piece.id).sort()).toEqual(top.map((piece) => piece.id).sort());
+    expect(result.plan.sentence).toBe("Replace 1 table with 1 table · 12 seats become 12");
+  });
+
+  it("turns a Long table into one round at its centre, keeping its first trestle's name and moving the others' notes", () => {
+    const long = set("long-table", "Table 9");
+    const first = long[0];
+    if (first === undefined) throw new Error("no trestle");
+    const result = planReplace(new Set([first.id]), params("round"), world(long), { newId: ids, hasNote: () => true });
+    if (!result.ok) throw new Error(result.reason);
+    const tables = result.plan.add.filter((piece) => getCatalogueItem(piece.catalogueItemId)?.category === "table");
+    expect(tables).toHaveLength(1);
+    expect(tables[0]).toMatchObject({ id: first.id, label: "Table 9", x: 0, z: 0 });
+    expect(tables[0] === undefined ? undefined : slugOf(tables[0])).toBe("round-table-6ft-white");
+    expect(result.plan.seatsBefore).toBe(24);
+    expect(result.plan.seatsAfter).toBe(10);
+    expect(result.plan.removeIds.size).toBe(long.length - 1);
+    expect(result.plan.notes.map((note) => note.toId)).toEqual([first.id, first.id, first.id]);
+  });
+});
+
+describe("the spec's limits", () => {
+  it("sets a table of another footprint as one piece at the selection's centre, not in place", () => {
+    const room = round(2, 1, "Table 1");
+    const result = planReplace(new Set([room[0]?.id ?? ""]), params(pieceCardId("trestle-6ft-white")), world(room), { newId: ids });
+    if (!result.ok) throw new Error(result.reason);
+    const tables = result.plan.add.filter((piece) => getCatalogueItem(piece.catalogueItemId)?.category === "table");
+    expect(tables.map(slugOf)).toEqual(["trestle-6ft-white"]);
+    expect(result.plan.removeIds.has(room[0]?.id ?? "")).toBe(true);
+    const bounds = footprintBounds(room);
+    if (bounds === null) throw new Error("no footprint");
+    expect(tables[0]?.x).toBeCloseTo((bounds.minX + bounds.maxX) / 2, 9);
+  });
+
+  it("names every new piece from the plan's own ids, so the preview is the commit", () => {
+    const room = [...round(-3, 0, "Table 1"), ...round(3, 0, "Table 2")];
+    const before = new Set(room.map((piece) => piece.id));
+    const result = planReplace(tableIds(room), params("round", { seats: 12 }), world(room), { newId: ids });
+    if (!result.ok) throw new Error(result.reason);
+    const fresh = result.plan.add.filter((piece) => !before.has(piece.id));
+    expect(fresh).toHaveLength(4);
+    for (const piece of fresh) expect(piece.id).toMatch(/^r-\d+$/u);
+  });
+
+  it("asks the store first, and refuses with its words (B2)", () => {
+    const room = [...round(-3, 0, "Table 1"), ...round(3, 0, "Table 2")];
+    const chairsIn = (pieces: readonly PlacedItem[]): number => pieces.filter((piece) => getCatalogueItem(piece.catalogueItemId)?.category === "chair").length;
+    const store = (change: { readonly add: readonly PlacedItem[] }): string | null => (chairsIn(change.add) > 20 ? "Velvet Banquet Chair: 20 in store, this needs 24" : null);
+    const twelves = planReplace(tableIds(room), params("round", { seats: 12 }), world(room), { newId: ids, store });
+    expect(twelves).toEqual({ ok: false, obstacle: null, reason: "Velvet Banquet Chair: 20 in store, this needs 24" });
+    expect(planReplace(tableIds(room), params("round", { seats: 8 }), world(room), { newId: ids, store }).ok).toBe(true);
   });
 });
 
