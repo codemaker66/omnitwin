@@ -39,8 +39,8 @@ export const useAssemblyRecallStore = create<RecallState>()(() => ({ request: nu
 /** The empty room: every piece hidden while the room is readied. */
 export const EMPTY_ROOM: PresentationFrame = { pieces: new Map(), others: "hidden" };
 
-/** The longest a hold waits for the Assembly to take it over, ms. */
-export const HOLD_LIMIT_MS = 5000;
+/** The longest a hold waits for the Assembly to take it over, ms (a slow first load fetches its code too). */
+export const HOLD_LIMIT_MS = 8000;
 
 let holdTimer: ReturnType<typeof setTimeout> | null = null;
 let nonce = 0;
@@ -122,8 +122,12 @@ export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: bo
   useEffect(() => {
     if (!wanted) return undefined;
     asked = true;
-    // A layout that finished loading before the planner was told.
-    if (unannounced !== null && unannounced === useEditorStore.getState().configId) announce(unannounced);
+    // A layout that finished loading before the planner was told, or before
+    // this module was even loaded (the planner's code arrives after the layout).
+    const open = useEditorStore.getState();
+    const loaded = open.configId !== null && !open.isLoading && open.error === null && open.objects.length > 0;
+    if (loaded && open.configId !== announced) announce(open.configId);
+    else if (unannounced !== null && unannounced === open.configId) announce(unannounced);
     return () => {
       asked = false;
       // Leaving the planner: the next time it opens a layout, that is an opening again.

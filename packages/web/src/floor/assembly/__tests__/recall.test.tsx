@@ -60,6 +60,15 @@ describe("Layout Recall: a saved layout that opens assembles itself", () => {
     expect(request()).toMatchObject({ configId: "config-b", reason: "open" });
   });
 
+  it("plays a layout that was open before the planner's code had even loaded", () => {
+    // The load finished while nothing was listening.
+    useEditorStore.setState({ configId: "config-early", objects, isLoading: false, error: null });
+    resetAssemblyRecallForTests();
+    renderHook(() => { useAssemblyRecall(true, true, false); });
+    expect(request()).toMatchObject({ configId: "config-early", reason: "open" });
+    expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+  });
+
   it("does not replay a reload of the same layout (a save conflict)", () => {
     renderHook(() => { useAssemblyRecall(true, true, false); });
     openLayout("config-a");

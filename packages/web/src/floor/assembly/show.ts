@@ -45,6 +45,18 @@ export function assemblyPieces(items: readonly PlacedItem[]): readonly AssemblyP
   return diffLayouts([], items, describePiece).arriving;
 }
 
+/** The same pieces in the same places: what the show was made for still stands. */
+export function sameLayout(a: readonly PlacedItem[], b: readonly PlacedItem[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => {
+    const other = b[index];
+    return other !== undefined && item.id === other.id && item.catalogueItemId === other.catalogueItemId
+      && item.x === other.x && item.y === other.y && item.z === other.z
+      && item.rotationY === other.rotationY && item.scale === other.scale;
+  });
+}
+
 /** The seed a layout always assembles with: the same layout plays the same way every time. */
 export function assemblySeed(configId: string | null): number {
   return hashString(configId ?? "venviewer-layout");

@@ -23,6 +23,7 @@ import { AdditiveBlending, Mesh, PlaneGeometry, Vector3, type Object3D } from "t
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { float, min, smoothstep, uniform, uv, vec3 } from "three/tsl";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import type { PlacedItem } from "../../lib/placement.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
@@ -33,9 +34,9 @@ import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { presentedPiece, publishFurniturePresentation, type PresentationFrame } from "../presentation-channel.js";
 import { ACCIO_CAMERA_LANDSCAPE, ACCIO_CAMERA_PORTRAIT, accioWindows, type AccioWindow } from "./accio.js";
-import { assemblySeed, createAssemblyShow, type AssemblyShow } from "./show.js";
+import { assemblySeed, createAssemblyShow, sameLayout, type AssemblyShow } from "./show.js";
 import type { CameraPose } from "./engine.js";
-import { EMPTY_ROOM, consumeAssemblyRequest, releaseHold, takeHold, useAssemblyRecallStore } from "./recall.js";
+import { EMPTY_ROOM, consumeAssemblyRequest, releaseHold, takeHold, useAssemblyRecallStore, type AssemblyRequest } from "./recall.js";
 
 /** A beat of the empty hall before the first piece comes, ms. */
 const EMPTY_BEAT_MS = 450;
@@ -50,8 +51,8 @@ const HELD_ENDING = 1.2;
 
 type Stage =
   | { readonly kind: "idle" }
-  | { readonly kind: "holding"; readonly since: number; readonly configId: string | null; readonly portrait: boolean }
-  | { readonly kind: "playing"; readonly show: AssemblyShow; time: number; readonly manual: boolean; fresh: boolean };
+  | { readonly kind: "holding"; readonly since: number; readonly configId: string | null; readonly portrait: boolean; readonly request: AssemblyRequest }
+  | { readonly kind: "playing"; readonly show: AssemblyShow; time: number; readonly manual: boolean; fresh: boolean; items: readonly PlacedItem[] };
 
 export interface AssemblyPlayOptions {
   readonly seed: number;
@@ -303,6 +304,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
       return;
     }
     if (current.kind === "holding") {
+      consumeAssemblyRequest(current.request);
       finish(finalFraming(current.portrait));
       return;
     }
@@ -310,9 +312,11 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     finish(current.show.camera());
   }, [finalFraming, finish, returnPlanner]);
 
-  const cancel = useCallback((): void => {
+  /** The true state at once. `leaving`: the Assembly is unmounting, and its request outlives a remount. */
+  const cancel = useCallback((leaving = false): void => {
     const current = stage.current;
     if (current.kind === "idle") return;
+    if (current.kind === "holding" && !leaving) consumeAssemblyRequest(current.request);
     if (current.kind === "playing") current.show.cancel();
     finish(null);
   }, [finish]);
@@ -334,7 +338,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     const portrait = options.portrait ?? isPortrait();
     const show = createAssemblyShow(items, { seed: options.seed, reducedMotion: options.reducedMotion, portrait });
     if (stage.current.kind === "idle") begin();
-    stage.current = { kind: "playing", show, time: 0, manual: options.manual, fresh: true };
+    stage.current = { kind: "playing", show, time: 0, manual: options.manual, fresh: true, items };
     if (show.done()) {
       finish(null);
       return show;
@@ -344,19 +348,25 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   }, [begin, finish, invalidate, isPortrait]);
 
   // A layout opened, or a replay asked for: hold the room empty at the opening view.
+  // The request is taken up only when the show starts (or is skipped), so a
+  // remount (React's development double mount) finds it and holds again.
   useEffect(() => {
     if (request === null) return;
-    consumeAssemblyRequest(request);
     takeHold();
     if (prefersReducedMotion()) {
       // Reduced motion: the layout is simply there.
+      consumeAssemblyRequest(request);
       releaseHold();
       return;
     }
-    if (stage.current.kind === "playing") stage.current.show.cancel();
+    const current = stage.current;
+    if (current.kind === "holding" && current.request.nonce === request.nonce) return;
+    if (current.kind === "playing") current.show.cancel();
     const portrait = isPortrait();
-    if (stage.current.kind === "idle") begin();
-    stage.current = { kind: "holding", since: performance.now(), configId: request.configId ?? useEditorStore.getState().configId, portrait };
+    if (current.kind === "idle") begin();
+    stage.current = {
+      kind: "holding", since: performance.now(), configId: request.configId ?? useEditorStore.getState().configId, portrait, request,
+    };
     publishFurniturePresentation(EMPTY_ROOM);
     moveGroups(EMPTY_ROOM);
     const opening = (portrait ? ACCIO_CAMERA_PORTRAIT : ACCIO_CAMERA_LANDSCAPE)[0];
@@ -414,10 +424,18 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   cancelOnLeave.current = cancel;
   const returnOnLeave = useRef(returnPlanner);
   returnOnLeave.current = returnPlanner;
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   useEffect(() => () => {
-    cancelOnLeave.current();
+    const pending = useAssemblyRecallStore.getState().request;
+    cancelOnLeave.current(true);
     // A held ending still under way: its layers come back with the planner.
     if (ending.current !== null) returnOnLeave.current();
+    // Really leaving drops the request; React's development remount keeps it.
+    if (pending !== null) window.setTimeout(() => { if (!mounted.current) consumeAssemblyRequest(pending); }, 0);
   }, []);
 
   // Development: the capture harness's handle (window.__assembly).
@@ -437,7 +455,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
         invalidate();
       },
       skip,
-      cancel,
+      cancel: () => { cancel(); },
       show: () => (stage.current.kind === "playing" ? stage.current.show : null),
       lastApplyMs: () => applyMs.current,
       frames: () => framesDrawn.current,
@@ -500,15 +518,23 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
       const waited = started - current.since;
       const ready = usePlacementStore.getState().placedItems.length > 0
         && ((surfacesIn && waited >= EMPTY_BEAT_MS) || waited >= SURFACES_WAIT_MS);
-      if (ready) play({ seed: assemblySeed(current.configId), manual: false, portrait: current.portrait });
+      if (ready) {
+        consumeAssemblyRequest(current.request);
+        play({ seed: assemblySeed(current.configId), manual: false, portrait: current.portrait });
+      }
       invalidate();
       return;
     }
     const { show } = current;
     // The layout changed under the show (an edit, a co-editor, another layout): its true state at once.
-    if (usePlacementStore.getState().placedItems !== show.items) {
-      cancel();
-      return;
+    // The same layout handed over again (a store re-sync) is not a change.
+    const placed = usePlacementStore.getState().placedItems;
+    if (placed !== current.items) {
+      if (!sameLayout(placed, show.items)) {
+        cancel();
+        return;
+      }
+      current.items = placed;
     }
     if (!current.manual) {
       // The waking frame's delta is the idle gap before it, not time the show has played.

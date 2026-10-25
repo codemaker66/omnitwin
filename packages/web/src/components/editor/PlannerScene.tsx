@@ -258,6 +258,9 @@ export function PlannerScene(): ReactElement {
   const dimensions = useRoomDimensions();
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
+  // Where this device asks for the Grand Assembly (`?assembly=accio`), a saved
+  // layout's arrival is the Assembly in the drawn hall, not a walk in the capture.
+  const assemblyAsked = useMemo(() => typeof window !== "undefined" && assemblyRequested(window.location.search) !== null, []);
   const viewportWidth = usePlannerViewportWidth();
   const nativeDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
   // One render profile per page (phone, tablet or desktop); phones and tablets
@@ -362,9 +365,9 @@ export function PlannerScene(): ReactElement {
 
   useEffect(() => {
     if (timelinePreviewActive) return;
-    if (!plannerArrivalPolicy.claim(arrivalKey, roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
+    if (!plannerArrivalPolicy.claim(arrivalKey, !assemblyAsked && roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
     useCockpitStore.setState({ layerMode: "splat", walkMode: true });
-  }, [arrivalKey, hasAsset, roomSlug, timelinePreviewActive, walkData]);
+  }, [arrivalKey, assemblyAsked, hasAsset, roomSlug, timelinePreviewActive, walkData]);
   // If the room changes to one with no walk data, the mode cannot stand.
   useEffect(() => {
     if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
@@ -459,11 +462,12 @@ export function PlannerScene(): ReactElement {
   // The Grand Assembly: a saved layout that opens assembles itself in the drawn
   // hall where this device asks for it (`?assembly=accio`). While it plays it
   // holds the camera through CameraRig's `suspended`.
-  const assemblyAsked = useMemo(() => typeof window !== "undefined" && assemblyRequested(window.location.search) !== null, []);
   // (The drawn hall is never shown under the timeline's frozen preview.)
   const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
   const [assemblyCamera, setAssemblyCamera] = useState(false);
-  useAssemblyRecall(assemblyAsked, assemblyStage, space !== null && !assemblyStage);
+  // A room known not to be the drawn Grand Hall lets a held layout go at once;
+  // the hall itself may take a moment to be drawn (its capture resolving first).
+  useAssemblyRecall(assemblyAsked, assemblyStage, space !== null && !realHall);
   const hallSetting = useMemo(() => (typeof window === "undefined" ? "none" : hallSettingRequested(window.location.search)), []);
   // A capture that fails behind the drawn hall changes nothing on screen: the
   // camera and a walk of the drawn hall carry on.

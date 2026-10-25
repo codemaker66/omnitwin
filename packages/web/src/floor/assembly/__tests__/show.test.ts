@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Matrix4 } from "three";
 import { usePlacementStore } from "../../../stores/placement-store.js";
-import { createAssemblyShow, assemblyPieces, assemblySeed } from "../show.js";
+import { createAssemblyShow, assemblyPieces, assemblySeed, sameLayout } from "../show.js";
 import { emptyPose } from "../engine.js";
 import { composePieceMatrix, savedPieceMatrix } from "../pose-matrix.js";
 import { grandHallDinner180 } from "../fixture.js";
@@ -132,6 +132,14 @@ describe("the Grand Assembly show", () => {
     const wide = createAssemblyShow(layout, { seed });
     const tall = createAssemblyShow(layout, { seed, portrait: true });
     expect(tall.playback.finalCamera()).not.toEqual(wide.playback.finalCamera());
+  });
+
+  it("tells a store re-sync of the same layout from a real change", () => {
+    const again = layout.map((item) => ({ ...item }));
+    expect(sameLayout(again, layout)).toBe(true);
+    expect(sameLayout(layout.slice(1), layout)).toBe(false);
+    expect(sameLayout(layout.map((item, index) => (index === 5 ? { ...item, x: item.x + 0.01 } : item)), layout)).toBe(false);
+    expect(sameLayout(layout.map((item, index) => (index === 5 ? { ...item, id: "another" } : item)), layout)).toBe(false);
   });
 
   it("knows the hall's five windows", () => {
