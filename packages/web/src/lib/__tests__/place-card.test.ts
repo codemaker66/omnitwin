@@ -153,9 +153,8 @@ describe("one stamp for the ghost and the commit", () => {
     const world = createGhostWorld(placed(), GRAND_HALL_RENDER_DIMENSIONS);
     const judged = judgeCardAt(params("round"), origin, 0.3, world, undefined);
     expect(judged.verdict.state).toBe("pushed");
-    // The judged set carries the turn: every chair stands elsewhere than in the unturned set.
-    const unturned = judgeCardAt(params("round"), origin, 0, world, undefined).pieces;
-    expect(judged.pieces.filter((piece, i) => pose(piece) === pose(unturned[i] ?? piece))).toHaveLength(0);
+    // The judged set carries the turn on its table (a round's ring of chairs stands as it does at any turn).
+    expect(judged.pieces.find((piece) => getCatalogueItem(piece.catalogueItemId)?.category === "table")?.rotationY).toBeCloseTo(0.3, 9);
     const ids = placeCardAt(params("round"), origin, 0.3);
     const set = placed().filter((piece) => ids.includes(piece.id));
     expect(set.map(pose).sort()).toEqual(judged.pieces.map(pose).sort());
