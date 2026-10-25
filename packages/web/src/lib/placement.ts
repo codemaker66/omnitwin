@@ -814,6 +814,27 @@ export function nextTableLabel(placedItems: readonly PlacedItem[]): string {
 }
 
 /**
+ * The pieces with every unlabelled dining table among them numbered, in
+ * order, with the lowest numbers free among `placedItems` and the pieces
+ * themselves. A table someone named keeps its name; the same array comes
+ * back when there is nothing to number.
+ */
+export function withTableNumbers(placedItems: readonly PlacedItem[], pieces: readonly PlacedItem[]): readonly PlacedItem[] {
+  const unlabelled = pieces.filter((piece) => {
+    if ((piece.label ?? "").trim() !== "") return false;
+    const item = getCatalogueItem(piece.catalogueItemId);
+    return item !== undefined && isDiningTableItem(item);
+  });
+  if (unlabelled.length === 0) return pieces;
+  const labels = nextTableLabels([...placedItems, ...pieces], unlabelled.length);
+  const byId = new Map(unlabelled.map((piece, i) => [piece.id, labels[i]]));
+  return pieces.map((piece) => {
+    const label = byId.get(piece.id);
+    return label === undefined ? piece : { ...piece, label };
+  });
+}
+
+/**
  * Creates a PlacedItem from a catalogue item and render-space position.
  */
 export function createPlacedItem(

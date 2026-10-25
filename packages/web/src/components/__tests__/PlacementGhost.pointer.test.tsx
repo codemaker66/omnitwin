@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
-import { DoubleSide, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Raycaster, Scene } from "three";
+import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Raycaster, Scene } from "three";
 import { PlacementGhost } from "../PlacementGhost.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
@@ -11,6 +11,8 @@ import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js"
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { PLANNER_INTERACTION_FLOOR_NAME } from "../../lib/planner-interaction-floor.js";
 import { ghostRaisePx } from "../../lib/touch-arbiter.js";
+import { createPlacedItem } from "../../lib/placement.js";
+import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
 import { useTouchGestureStore } from "../../stores/touch-gesture-store.js";
 
 const graphics = vi.hoisted(() => ({ get: vi.fn<() => {
@@ -244,4 +246,29 @@ it("ignores touch moves the arbiter holds, and the click its tap sends afterward
   act(() => { useTouchGestureStore.getState().end(performance.now()); });
   act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
   expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+});
+
+it("picks a placed piece a click lands on with a card in hand, and puts the card down instead of placing (truthfulGhost)", () => {
+  setPlannerFeaturesForTesting({ truthfulGhost: true });
+  try {
+    usePlacementStore.setState({ placedItems: [createPlacedItem(itemId, 0, 0, 0, null, 0, "placed-poseur")] });
+    const furniture = new Group();
+    furniture.name = "placed-furniture";
+    const box = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    box.name = "furniture-placed-poseur";
+    box.position.y = 0.5;
+    furniture.add(box);
+    scene.add(furniture);
+    scene.updateMatrixWorld(true);
+    render(<PlacementGhost />);
+    act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+    expect(useSelectionStore.getState().selectedIds).toEqual(new Set(["placed-poseur"]));
+    expect(useCatalogueStore.getState().selectedItemId).toBeNull();
+    expect(usePlacementStore.getState().ghostPosition).toBeNull();
+    box.geometry.dispose();
+    box.material.dispose();
+  } finally {
+    setPlannerFeaturesForTesting(null);
+  }
 });

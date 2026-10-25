@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Object3D, Vector3, type Group } from "three";
+import { Object3D, Vector2, Vector3, type Group } from "three";
 
 /** Reusable vector for the warm-up copy's place ahead of the camera. */
 const _ahead = new Vector3();
+/** Reusable pointer for asking what placed piece a click lands on. */
+const _ndc = new Vector2();
 
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
@@ -37,7 +39,10 @@ import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-bru
 import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
+import { plannerFeatureEnabled } from "../lib/planner-features.js";
+import { intersectSelectable } from "../lib/raycast-gate.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
+import { findFurnitureItemId } from "./SelectionSystem.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -260,6 +265,16 @@ export function PlacementGhost(): React.ReactElement | null {
       placePieceInHand(() => { invalidateRef.current(); });
     }
 
+    /** The placed piece a click lands on, if any: only placed furniture answers, never the ghost. */
+    function placedPieceAt(clientX: number, clientY: number): string | null {
+      raycaster.setFromCamera(_ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), camera);
+      for (const hit of intersectSelectable(raycaster, scene.children)) {
+        const id = findFurnitureItemId(hit.object);
+        if (id !== null) return id;
+      }
+      return null;
+    }
+
     function finishPlacementRelease(clientX: number, clientY: number, button: number): void {
       if (button !== 0) return;
       const itemId = useCatalogueStore.getState().selectedItemId;
@@ -326,6 +341,16 @@ export function PlacementGhost(): React.ReactElement | null {
       if (useCatalogueStore.getState().dragActive) return;
       const itemId = useCatalogueStore.getState().selectedItemId;
       pendingPointer.current = null;
+      // A click on a placed piece while a card is in hand picks the piece and puts the card down, with no refusal (Q-05).
+      const picked = plannerFeatureEnabled("truthfulGhost") ? placedPieceAt(event.clientX, event.clientY) : null;
+      if (picked !== null) {
+        useCatalogueStore.getState().disarm();
+        usePlacementStore.getState().clearGhost();
+        useSelectionStore.getState().setActiveGuides([]);
+        useSelectionStore.getState().select(picked);
+        invalidateRef.current();
+        return;
+      }
       const hit = raycastToFloor(event.clientX, event.clientY);
       if (itemId === null || hit === null) {
         usePlacementStore.getState().clearGhost();

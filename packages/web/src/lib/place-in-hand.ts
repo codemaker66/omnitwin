@@ -10,9 +10,11 @@
 import { getCatalogueItem } from "./catalogue.js";
 import { CLOTH_SNAP_DISTANCE_RENDER, findNearestDiningTable, findNearestTable } from "./cloth-snap.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
+import { atVerdict, createGhostWorld, judgeGhost, refusalChip } from "./ghost-truth.js";
 import { capReachedFor } from "./placement-cap.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
-import { seatsInHand } from "./setup-cards.js";
+import { seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
+import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { tableClothStyleForCatalogueItem, tableDressingTargetIds, tableSettingForCatalogueItem } from "./table-dressing.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
@@ -73,6 +75,13 @@ export function placePieceInHand(invalidate: () => void): void {
     return;
   }
 
+  // A card in hand sets its whole set down as one step (setupCards).
+  if (plannerFeatureEnabled("setupCards") && catState.cardParams !== null) {
+    placeCardAt(catState.cardParams, { x, z, y: placeState.ghostPosition[1] }, placeState.ghostRotation);
+    invalidate();
+    return;
+  }
+
   if (item.tableShape !== null && isDiningTableItem(item)) {
     const seats = catState.cardParams === null ? null : seatsInHand(catState.cardParams);
     if (plannerFeatureEnabled("seatsOnTheCard") && seats !== null) {
@@ -97,4 +106,24 @@ export function placePieceInHand(invalidate: () => void): void {
 
   placeState.placeItem(catState.selectedItemId, x, z, placeState.ghostRotation);
   invalidate();
+}
+
+/**
+ * Sets a card's set down where its ghost stands (Q-05, Q-08a). Behind
+ * truthfulGhost it is judged again here, at the commit, with every body of
+ * the set: refused with the ghost's own reason (no change), or set down at
+ * the pose the judge resolves, pushed clear by up to 0.15 m, never
+ * re-snapped. The ids placed.
+ */
+export function placeCardAt(params: CardParams, origin: { readonly x: number; readonly z: number; readonly y?: number }, rotationY: number): readonly string[] {
+  const placeState = usePlacementStore.getState();
+  const stamp = stampSetup(params, origin, rotationY);
+  if (stamp.length === 0) return [];
+  if (!plannerFeatureEnabled("truthfulGhost")) return placeState.placeSetup(stamp);
+  const verdict = judgeGhost(stamp, createGhostWorld(placeState.placedItems, useRoomDimensionsStore.getState().dimensions));
+  if (verdict.state === "refused") {
+    postPlacementNotice(refusalChip(verdict.obstacle));
+    return [];
+  }
+  return placeState.placeSetup(atVerdict(stamp, verdict));
 }

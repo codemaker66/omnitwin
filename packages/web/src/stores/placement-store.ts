@@ -10,7 +10,9 @@ import {
   computeSurfaceHeight,
   snapToWallEdge,
   getPlacementViolations,
+  withTableNumbers,
 } from "../lib/placement.js";
+import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
 import { planBanquetFill, planTheatreFill, type BanquetFillPlan, type TheatreFillPlan } from "../lib/auto-fill.js";
@@ -108,6 +110,13 @@ export interface PlacementState {
   readonly clearAll: () => void;
   /** Place a table with auto-arranged chairs as a group. */
   readonly placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => void;
+  /**
+   * Sets a card's stamped set down exactly as it stands (the ghost's
+   * resolved pose; no snapping), as one undo step: every piece settled on
+   * the surface under it, new tables numbered (tableNumbers). Refused, with
+   * a notice, when any piece is at the venue's cap. The ids placed.
+   */
+  readonly placeSetup: (pieces: readonly PlacedItem[]) => readonly string[];
   /** Re-arrange chairs for an existing table group. */
   readonly rearrangeGroup: (tableId: string, newChairCount: number) => void;
   /**
@@ -162,6 +171,21 @@ function announcePlaced(ids: readonly string[]): void {
   for (const listener of furniturePlacedListeners) listener(ids);
 }
 
+/** New tables take the lowest free numbers (Q-46), behind tableNumbers. */
+function numberNew(placedItems: readonly PlacedItem[], pieces: readonly PlacedItem[]): readonly PlacedItem[] {
+  return plannerFeatureEnabled("tableNumbers") ? withTableNumbers(placedItems, pieces) : pieces;
+}
+
+/** A table placed before numbering is numbered the first time it is moved or its seats change (Q-46). */
+function numberEdited(items: readonly PlacedItem[], editedIds: ReadonlySet<string>): readonly PlacedItem[] {
+  if (!plannerFeatureEnabled("tableNumbers")) return items;
+  const edited = items.filter((item) => editedIds.has(item.id));
+  const numbered = withTableNumbers(items.filter((item) => !editedIds.has(item.id)), edited);
+  if (numbered === edited) return items;
+  const byId = new Map(numbered.map((item) => [item.id, item]));
+  return items.map((item) => byId.get(item.id) ?? item);
+}
+
 export const usePlacementStore = create<PlacementState>()((set, get) => ({
   placedItems: [],
   ghostPosition: null,
@@ -207,7 +231,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       state.placedItems,
       new Set(),
     );
-    const item = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
+    const [item] = numberNew(state.placedItems, [createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY)]);
+    if (item === undefined) return;
     set({ placedItems: [...state.placedItems, item] });
     announcePlaced([item.id]);
   },
@@ -314,9 +339,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
           new Set([id]),
         );
     set({
-      placedItems: state.placedItems.map((item) =>
+      placedItems: numberEdited(state.placedItems.map((item) =>
         item.id === id ? { ...item, x: finalX, z: finalZ, y: surfaceY } : item,
-      ),
+      ), new Set([id])),
     });
   },
 
@@ -556,8 +581,32 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return chairY !== item.y ? { ...item, y: chairY } : item;
     });
-    set({ placedItems: [...state.placedItems, ...adjusted] });
-    announcePlaced(adjusted.map((item) => item.id));
+    const numbered = numberNew(state.placedItems, adjusted);
+    set({ placedItems: [...state.placedItems, ...numbered] });
+    announcePlaced(numbered.map((item) => item.id));
+  },
+
+  placeSetup: (pieces: readonly PlacedItem[]) => {
+    if (isLayoutTimelineMutationLocked() || pieces.length === 0) return [];
+    const state = get();
+    // The venue's caps, for every kind of piece the set holds.
+    const counted = state.placedItems.map((p) => p.catalogueItemId);
+    for (const piece of pieces) {
+      const atCap = capReachedFor(piece.catalogueItemId, counted);
+      if (atCap !== null) {
+        postPlacementNotice(atCap);
+        return [];
+      }
+      counted.push(piece.catalogueItemId);
+    }
+    const settled = numberNew(state.placedItems, pieces).map((piece) => {
+      const y = candidateSurfaceHeight(piece.catalogueItemId, piece.x, piece.z, state.placedItems, new Set());
+      return y === piece.y ? piece : { ...piece, y };
+    });
+    set({ placedItems: [...state.placedItems, ...settled] });
+    const ids = settled.map((piece) => piece.id);
+    announcePlaced(ids);
+    return ids;
   },
 
   rearrangeGroup: (tableId: string, newChairCount: number) => {
@@ -576,7 +625,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
     });
-    set({ placedItems: adjusted });
+    set({ placedItems: numberEdited(adjusted, new Set([tableId])) });
   },
 
   autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => {
@@ -668,7 +717,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const state = get();
     const memberIds = getGroupMemberIds(itemId, state.placedItems);
     set({
-      placedItems: state.placedItems.map((item) => {
+      placedItems: numberEdited(state.placedItems.map((item) => {
         if (!memberIds.has(item.id)) return item;
         const newX = item.x + dx;
         const newZ = item.z + dz;
@@ -680,7 +729,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
           memberIds,
         );
         return { ...item, x: newX, z: newZ, y: surfaceY };
-      }),
+      }), memberIds),
     });
   },
 
@@ -693,7 +742,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // layout for every moving item (30 ms per pointer move at 1,287 items).
     const stationary = state.placedItems.filter((item) => !ids.has(item.id));
     set({
-      placedItems: state.placedItems.map((item) => {
+      placedItems: numberEdited(state.placedItems.map((item) => {
         if (!ids.has(item.id)) return item;
         const newX = item.x + dx;
         const newZ = item.z + dz;
@@ -705,7 +754,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
           ids,
         );
         return { ...item, x: newX, z: newZ, y: surfaceY };
-      }),
+      }), ids),
     });
   },
 

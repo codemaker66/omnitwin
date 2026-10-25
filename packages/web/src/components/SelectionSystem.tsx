@@ -576,7 +576,13 @@ export function SelectionSystem(): null {
     /** What a finished touch comes to. */
     function settleTouch(outcome: TouchOutcome, ended: TouchMode): void {
       if (outcome.kind === "tap") {
-        if (outcome.armed) {
+        // A tap on a placed piece with a card in hand picks the piece and puts the card down (Q-05).
+        const picked = outcome.armed && plannerFeatureEnabled("truthfulGhost") ? interactionTargetAt(outcome.x, outcome.y).itemId : null;
+        if (picked !== null) {
+          useCatalogueStore.getState().disarm();
+          usePlacementStore.getState().clearGhost();
+          useSelectionStore.getState().select(picked);
+        } else if (outcome.armed) {
           placeInHandAt(outcome.x, outcome.y);
         } else {
           const found = interactionTargetAt(outcome.x, outcome.y);
