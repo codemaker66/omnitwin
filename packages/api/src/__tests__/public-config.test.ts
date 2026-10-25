@@ -105,6 +105,24 @@ describe("POST /public/configurations/:configId/objects/batch", () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  // GHSA-mrhx-c7xc-m3w5, replayed: an anonymous 1 MiB body of 349,521 bad
+  // objects. Without a bound zod reports one issue per object (+100 MB of
+  // heap and a reply tens of megabytes long); the .max(500) stops it at one.
+  it("refuses a 1 MiB list of bad objects with one issue, not one per object", async () => {
+    const payload = `{"expectedRevision":1,"objects":[${"{},".repeat(349_520)}{}]}`;
+    expect(payload.length).toBeGreaterThan(1_048_576);
+    const res = await server.inject({
+      method: "POST", url: `/public/configurations/${CONFIG_ID}/objects/batch`,
+      headers: { "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ details: readonly { code: string; path: readonly string[]; maximum: number }[] }>();
+    expect(body.details).toHaveLength(1);
+    expect(body.details[0]).toMatchObject({ code: "too_big", path: ["objects"], maximum: 500 });
+    expect(res.payload.length).toBeLessThan(1_000);
+  });
 });
 
 describe("public-configs.ts revision conflict guardrails", () => {

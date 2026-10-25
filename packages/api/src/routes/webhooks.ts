@@ -13,13 +13,17 @@ const ClerkEmailAddressSchema = z.object({
   verification: z.object({ status: z.string().optional() }).nullable().optional(),
 });
 
+// A bound lets zod stop at an over-long list instead of reporting every bad
+// entry in it (GHSA-mrhx-c7xc-m3w5); no Clerk account comes near it.
+const CLERK_LIST_MAX = 100;
+
 const ClerkUserDataSchema = z.object({
   id: z.string().min(1),
-  email_addresses: z.array(ClerkEmailAddressSchema),
+  email_addresses: z.array(ClerkEmailAddressSchema).max(CLERK_LIST_MAX),
   primary_email_address_id: z.string().nullable(),
   first_name: z.string().nullable(),
   last_name: z.string().nullable(),
-  phone_numbers: z.array(z.object({ phone_number: z.string() })),
+  phone_numbers: z.array(z.object({ phone_number: z.string() })).max(CLERK_LIST_MAX),
   public_metadata: z.record(z.string(), z.unknown()),
   username: z.string().nullable().optional(),
 });
