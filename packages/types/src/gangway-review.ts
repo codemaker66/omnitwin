@@ -53,17 +53,27 @@ const IsoInstantSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(
  * One gangway narrowed under the guidance.
  *
  * The id rule (stable and deterministic, so a stored decision re-attaches
- * to the same pinch after a reload or a small edit, and a materially changed
- * pinch reopens; `gangwayReviewId` writes it):
- *   `gangway:<gangway>:<bucket>:<either side>`
+ * to the same pinch after a reload or a small edit; `gangwayReviewId`
+ * writes it):
+ *   `gangway:<gangway>:<either side>`
  * where `<gangway>` is the side of the room the gangway runs along (`xMin`,
- * `xMax`, `zMin`, `zMax`) or `spine`; `<bucket>` is the pinch's position
- * along the gangway in metres from its low end, rounded to the nearest whole
- * metre; and `<either side>` is what stands either side, sorted and joined
- * with `+`: a wall as `wall:<side>`, a table and its chairs by the group's
- * `groupId`, a set (a Top table's trestles) by its `setId`, a lone piece by
- * its own id. Group and set ids are used because they survive saving; a new
- * piece's own id changes when it is first saved.
+ * `xMax`, `zMin`, `zMax`) or `spine`, and `<either side>` is what stands
+ * either side, sorted and joined with `+`: a wall as `wall:<side>`, a table
+ * and its chairs by the group's `groupId`, a set (a Top table's trestles) by
+ * its `setId`, a lone piece by its own id. The planner derives at most one
+ * pinch per gangway for each pair, so the id is unique.
+ *
+ * The id holds no position, because any rounding of one has edges and the
+ * planner's 1 m snap puts pieces on them (along a Grand Hall wall every
+ * snapped piece sits at a half metre). The place is held by the decision
+ * instead: it lapses, and the item reopens, when the pinch has moved more
+ * than GANGWAY_DECISION_MOVE_M or its width has changed by more than
+ * GANGWAY_DECISION_TOLERANCE_M (withGangwayDecisions).
+ *
+ * Group ids survive saving. Set ids do not yet (saving them is card-dock
+ * slice E8), so until then a set's items reopen after a reload: a decision
+ * is dropped, never carried to the wrong pinch. A new piece's own id changes
+ * when it is first saved, with the same effect.
  */
 export const GangwayReviewItemSchema = z.object({
   id: z.string().min(1),
@@ -95,25 +105,51 @@ export type GangwayReview = z.infer<typeof GangwayReviewSchema>;
 export type GangwaySide = { readonly wall: "xMin" | "xMax" | "zMin" | "zMax" } | { readonly unit: string };
 
 /** The id rule written out (see GangwayReviewItemSchema). */
-export function gangwayReviewId(gangway: "xMin" | "xMax" | "zMin" | "zMax" | "spine", atM: number, sides: readonly GangwaySide[]): string {
+export function gangwayReviewId(gangway: "xMin" | "xMax" | "zMin" | "zMax" | "spine", sides: readonly GangwaySide[]): string {
   const names = sides.map((side) => ("wall" in side ? `wall:${side.wall}` : side.unit)).sort();
-  return `gangway:${gangway}:${String(Math.round(atM))}:${names.join("+")}`;
+  return `gangway:${gangway}:${names.join("+")}`;
 }
 
-/** How far a pinch may narrow after a decision before the decision lapses and the item reopens, metres. */
+/**
+ * How far a pinch's width may change after a decision, either way, before
+ * the decision lapses and the item reopens, metres. Wider counts too: an
+ * adjustment the venue asked for is reviewed again once it is made.
+ */
 export const GANGWAY_DECISION_TOLERANCE_M = 0.05;
+
+/** How far a pinch may move along the floor after a decision before the decision lapses, metres. */
+export const GANGWAY_DECISION_MOVE_M = 1;
+
+/** The middle of where a pinch is. */
+export function gangwayLocationCentre(location: GangwayLocation): FloorPoint {
+  if (location.kind === "segment") return { x: (location.from.x + location.to.x) / 2, z: (location.from.z + location.to.z) / 2 };
+  const count = location.points.length;
+  return {
+    x: location.points.reduce((sum, point) => sum + point.x, 0) / count,
+    z: location.points.reduce((sum, point) => sum + point.z, 0) / count,
+  };
+}
+
+/** Whether a stored decision still speaks for this pinch: the same width, within tolerance, in the same place. */
+function decisionHolds(item: GangwayReviewItem, decision: GangwayReviewItem): boolean {
+  const here = gangwayLocationCentre(item.location);
+  const there = gangwayLocationCentre(decision.location);
+  return Math.abs(item.widthM - decision.widthM) <= GANGWAY_DECISION_TOLERANCE_M
+    && Math.hypot(here.x - there.x, here.z - there.z) <= GANGWAY_DECISION_MOVE_M;
+}
 
 /**
  * The derived items with the stored decisions laid back over them, by id. A
- * decision lapses, and its item reopens, when the pinch has since narrowed by
- * more than GANGWAY_DECISION_TOLERANCE_M. A decision whose pinch has gone is
- * dropped: the gangway is no longer narrowed.
+ * decision lapses, and its item reopens, when the pinch's width has changed
+ * by more than GANGWAY_DECISION_TOLERANCE_M or it has moved more than
+ * GANGWAY_DECISION_MOVE_M. A decision whose pinch has gone is dropped: the
+ * gangway is no longer narrowed.
  */
 export function withGangwayDecisions(derived: readonly GangwayReviewItem[], decided: readonly GangwayReviewItem[]): readonly GangwayReviewItem[] {
   const byId = new Map(decided.filter((item) => item.status !== "open").map((item) => [item.id, item]));
   return derived.map((item) => {
     const decision = byId.get(item.id);
-    if (decision === undefined || item.widthM < decision.widthM - GANGWAY_DECISION_TOLERANCE_M) return item;
+    if (decision === undefined || !decisionHolds(item, decision)) return item;
     return {
       ...item,
       status: decision.status,
