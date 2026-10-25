@@ -5,6 +5,7 @@ import {
   clientAccounts,
   configurations,
   contacts,
+  enquiries,
   guestLeads,
   opportunities,
   proposals,
@@ -106,12 +107,13 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     organizationName: users.organizationName,
     email: users.email,
     phone: users.phone,
-    configurationCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND deleted_at IS NULL)`
-      : sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)`,
-    enquiryCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id})`
-      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})`,
+    // Counts are builders, never `${users.id}` in a sql string: this select
+    // has no joins, so drizzle would send a bare "id", which binds to the
+    // counted table's own id and every count reads 0 (VENVIEWER-API-1).
+    configurationCount: db.$count(configurations, and(
+      eq(configurations.userId, users.id), isNull(configurations.deletedAt), inVenue(configurations.venueId),
+    )),
+    enquiryCount: db.$count(enquiries, and(eq(enquiries.userId, users.id), inVenue(enquiries.venueId))),
   })
     .from(users)
     .where(and(match.where(userName, users.organizationName, users.email), venueUsers))
@@ -128,9 +130,9 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     email: guestLeads.email,
     phone: guestLeads.phone,
     name: guestLeads.name,
-    enquiryCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email})`
-      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`,
+    // enquiries has an email column of its own, so a bare "email" counted
+    // enquiries whose guest email matched their own email, not this lead's.
+    enquiryCount: db.$count(enquiries, and(eq(enquiries.guestEmail, guestLeads.email), inVenue(enquiries.venueId))),
     convertedToUserId: guestLeads.convertedToUserId,
   })
     .from(guestLeads)

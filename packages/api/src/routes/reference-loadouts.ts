@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { asc, eq, and, isNull, sql } from "drizzle-orm";
 import { referenceLoadouts, referencePhotos, files, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
@@ -54,13 +54,23 @@ export async function referenceLoadoutRoutes(
       return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
     }
 
+    // Both subqueries are drizzle builders, never `${referenceLoadouts.id}`
+    // written into a sql string: in a select without joins drizzle strips the
+    // table name from columns in a sql field, and the bare "id" then bound to
+    // the subquery's own tables (VENVIEWER-API-1). A builder's filter keeps it.
+    const firstPhoto = db.select({ fileKey: files.fileKey })
+      .from(referencePhotos)
+      .innerJoin(files, eq(files.id, referencePhotos.fileId))
+      .where(eq(referencePhotos.loadoutId, referenceLoadouts.id))
+      .orderBy(asc(referencePhotos.sortOrder))
+      .limit(1);
     const rows = await db.select({
       id: referenceLoadouts.id,
       name: referenceLoadouts.name,
       description: referenceLoadouts.description,
       createdAt: referenceLoadouts.createdAt,
-      photoCount: sql<number>`(SELECT count(*)::int FROM reference_photos WHERE loadout_id = ${referenceLoadouts.id})`,
-      coverFileKey: sql<string | null>`(SELECT f.file_key FROM reference_photos rp JOIN files f ON f.id = rp.file_id WHERE rp.loadout_id = ${referenceLoadouts.id} ORDER BY rp.sort_order LIMIT 1)`,
+      photoCount: db.$count(referencePhotos, eq(referencePhotos.loadoutId, referenceLoadouts.id)),
+      coverFileKey: sql<string | null>`${firstPhoto}`,
     })
       .from(referenceLoadouts)
       .where(and(

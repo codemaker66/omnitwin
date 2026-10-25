@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, asc, inArray, isNull, sql } from "drizzle-orm";
 import {
-  users, configurations, enquiries, guestLeads,
+  users, configurations, enquiries, guestLeads, placedObjects,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
@@ -142,7 +142,9 @@ export async function clientRoutes(
       id: configurations.id,
       name: configurations.name,
       spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${configurations.spaceId})`,
-      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects WHERE configuration_id = ${configurations.id})`,
+      // A builder, so configurations.id keeps its table name; in a sql string
+      // this select (no joins) sent a bare "id", which bound to placed_objects.id.
+      objectCount: db.$count(placedObjects, eq(placedObjects.configurationId, configurations.id)),
       createdAt: configurations.createdAt,
     })
       .from(configurations)
