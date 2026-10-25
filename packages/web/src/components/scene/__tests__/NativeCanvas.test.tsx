@@ -1,18 +1,21 @@
 import { StrictMode, type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PerspectiveCamera, RenderTarget, Scene, type Camera, type Object3D } from "three";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { useEffect } from "react";
+import { Color, PerspectiveCamera, RenderTarget, Scene, type Camera, type Object3D } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { NativeGpuWorkResult } from "../../../lib/native-gpu-completion.js";
 import type { GpuProfileToken } from "../../../lib/perf-runtime.js";
 import type { RenderedFrameSample } from "../../../lib/perf-profiler.js";
 
 interface FiberState {
-  readonly gl: object;
+  gl: object;
   readonly scene: Scene;
   camera: Camera;
+  readonly size: { readonly width: number; readonly height: number };
   invalidate(): void;
   get(): FiberState;
+  set(partial: { readonly gl?: object }): void;
 }
 
 const fiber = vi.hoisted(() => ({
@@ -64,14 +67,36 @@ vi.mock("../../../lib/native-gpu-completion.js", async (importOriginal) => ({
 
 const native = vi.hoisted(() => {
   const instances: Renderer[] = [];
+  /** Which backend the next renderer negotiates, as Three would. */
+  const negotiation = { backend: "webgpu" as "webgpu" | "webgl2" };
   class Renderer {
     readonly domElement: HTMLCanvasElement;
-    readonly info = { render: { drawCalls: 3, triangles: 8 }, memory: { total: 4096 } };
+    readonly info = { render: { drawCalls: 3, triangles: 8 }, memory: { total: 4096 }, autoReset: true };
     readonly backend: {
-      isWebGPUBackend: boolean;
+      isWebGPUBackend?: true;
+      isWebGLBackend?: true;
       parameters: { canvas: HTMLCanvasElement; device?: object };
       dispose: ReturnType<typeof vi.fn>;
     };
+    // The renderer settings a replacement must inherit (r186 Renderer fields).
+    pixelRatio = 1;
+    readonly getPixelRatio = vi.fn(() => this.pixelRatio);
+    readonly setPixelRatio = vi.fn((ratio: number) => { this.pixelRatio = ratio; });
+    readonly setSize = vi.fn();
+    toneMapping = 0;
+    toneMappingExposure = 1;
+    outputColorSpace = "srgb";
+    sortObjects = true;
+    autoClear = true;
+    autoClearColor = true;
+    autoClearDepth = true;
+    autoClearStencil = true;
+    readonly shadowMap = { enabled: false, type: 1 };
+    readonly clearColor = new Color(0x000000);
+    clearAlpha = 0;
+    readonly getClearColor = vi.fn((target: Color) => target.copy(this.clearColor));
+    readonly getClearAlpha = vi.fn(() => this.clearAlpha);
+    readonly setClearColor = vi.fn((color: Color, alpha: number) => { this.clearColor.copy(color); this.clearAlpha = alpha; });
     readonly dispose = vi.fn(() => Promise.resolve());
     readonly setRenderObjectFunction = vi.fn();
     readonly renderObject = vi.fn();
@@ -88,19 +113,20 @@ const native = vi.hoisted(() => {
     readonly pending: Promise<void>;
     resolve = (): void => { throw new Error("Not initialized"); };
     reject = (_cause: Error): void => { throw new Error("Not initialized"); };
-    onDeviceLost = (_event: { message: string }): void => undefined;
+    onDeviceLost = (_event: { api?: "WebGL" | "WebGPU"; message: string }): void => undefined;
     onError = (_event: { message: string }): void => undefined;
     constructor(options: { canvas: HTMLCanvasElement }) {
       this.domElement = options.canvas;
       // Match r186 Backend: it copies the options before async initialization.
       this.backend = {
-        isWebGPUBackend: true, parameters: { ...options }, dispose: vi.fn(() => Promise.resolve()),
+        ...(negotiation.backend === "webgpu" ? { isWebGPUBackend: true as const } : { isWebGLBackend: true as const }),
+        parameters: { ...options }, dispose: vi.fn(() => Promise.resolve()),
       };
       this.pending = new Promise<void>((resolve, reject) => { this.resolve = resolve; this.reject = reject; });
       instances.push(this);
     }
   }
-  return { instances, Renderer };
+  return { instances, Renderer, negotiation };
 });
 
 vi.mock("three/webgpu", async (importOriginal) => ({
@@ -132,9 +158,13 @@ vi.mock("@react-three/fiber", async () => {
         renderer.current ??= gl(document.createElement("canvas"));
         state.current ??= {
           gl: renderer.current, scene: new Scene(), camera: new PerspectiveCamera(), invalidate: fiber.invalidate,
+          size: { width: 800, height: 600 },
           get: () => {
             if (state.current === null) throw new Error("Missing current R3F state");
             return state.current;
+          },
+          set: (partial) => {
+            if (state.current !== null && partial.gl !== undefined) state.current.gl = partial.gl;
           },
         };
         fiber.state = state.current;
@@ -150,6 +180,7 @@ import { isNativeCanvasRender } from "../../../lib/native-renderer.js";
 
 beforeEach(() => {
   native.instances.length = 0;
+  native.negotiation.backend = "webgpu";
   fiber.frames.clear();
   fiber.state = null;
   fiber.invalidate.mockReset();
@@ -163,6 +194,48 @@ beforeEach(() => {
   profiling.register.mockReset().mockReturnValue(profiling.release);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+type FakeRenderer = (typeof native.instances)[number];
+
+function renderer(index: number): FakeRenderer {
+  const instance = native.instances[index];
+  if (instance === undefined) throw new Error(`Renderer ${String(index)} was never created`);
+  return instance;
+}
+
+async function start(index: number): Promise<FakeRenderer> {
+  const instance = renderer(index);
+  await act(() => { instance.resolve(); return Promise.resolve(); });
+  return instance;
+}
+
+/** Let promise chains (negotiation, disposal, recovery attempts) run to rest. */
+async function flush(): Promise<void> {
+  await act(async () => { for (let turn = 0; turn < 12; turn++) await Promise.resolve(); });
+}
+
+function MountProbe({ mounts }: { readonly mounts: { count: number } }): ReactNode {
+  useEffect(() => { mounts.count += 1; }, [mounts]);
+  return <span>Room geometry</span>;
+}
+
+interface FakeDevice { readonly destroy: Mock<() => void>; readonly lost: Promise<{ reason: string; message: string }> }
+
+/** A WebGPU device per request, whose `lost` resolves "destroyed" when destroyed, as a real one does. */
+function stubWebGpuDevices(): FakeDevice[] {
+  const devices: FakeDevice[] = [];
+  const requestDevice = vi.fn(() => {
+    let lose = (_reason: string): void => undefined;
+    const lost = new Promise<{ reason: string; message: string }>((resolve) => { lose = (reason) => { resolve({ reason, message: "" }); }; });
+    const device: FakeDevice = { destroy: vi.fn(() => { lose("destroyed"); }), lost };
+    devices.push(device);
+    return Promise.resolve(device);
+  });
+  vi.stubGlobal("navigator", { gpu: { requestAdapter: vi.fn(() => Promise.resolve({
+    features: new Set<string>(), limits: { maxStorageBufferBindingSize: 134_217_728, maxBufferSize: 268_435_456 }, requestDevice,
+  })) } });
+  return devices;
+}
 
 function automaticFrame(): void {
   const state = fiber.state;
@@ -248,7 +321,7 @@ describe("NativeCanvas", () => {
     [134_217_728, 268_435_456, 134_217_728, 268_435_456],
     [536_870_912, 1_073_741_824, 268_435_456, 536_870_912],
   ])("initializes with the negotiated device at supported limits %i/%i", async (storage, buffer, requestedStorage, requestedBuffer) => {
-    const device = { destroy: vi.fn() };
+    const device = { destroy: vi.fn(), lost: new Promise<never>(() => undefined) };
     const requestDevice = vi.fn(() => Promise.resolve(device));
     const requestAdapter = vi.fn(() => Promise.resolve({
       features: new Set(["float32-filterable"]),
@@ -437,30 +510,230 @@ describe("NativeCanvas", () => {
     internalTarget.dispose();
   });
 
-  it("releases an initialized device when the backend is lost", async () => {
-    render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
-    const instance = native.instances[0];
-    await act(() => { instance?.resolve(); return Promise.resolve(); });
-    act(() => { instance?.onDeviceLost({ message: "Device lost" }); });
-    expect(screen.getByRole("alert")).toBeDefined();
-    expect(instance?.dispose).toHaveBeenCalledOnce();
-    instance?.render(new Scene(), new PerspectiveCamera());
-    expect(instance?.rawRender).not.toHaveBeenCalled();
-  });
+  describe("when the browser takes the graphics device away", () => {
+    it("puts a fresh renderer on the same canvas and keeps the scene, its state and onCreated untouched", async () => {
+      const onCreated = vi.fn();
+      const mounts = { count: 0 };
+      render(<NativeCanvas frameloop="demand" onCreated={onCreated}><MountProbe mounts={mounts} /></NativeCanvas>);
+      const lost = await start(0);
+      automaticFrame();
+      expect(lost.rawRender).toHaveBeenCalledOnce();
 
-  it("tells someone whose running view stopped that their layout is safe, not that 3D couldn't start", async () => {
-    render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
-    const running = native.instances[0];
-    await act(() => { running?.resolve(); return Promise.resolve(); });
-    act(() => { running?.onDeviceLost({ message: "Device lost" }); });
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("The 3D view stopped. Your layout is safe");
-    expect(alert.textContent).not.toContain("couldn’t start");
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("Room geometry")).toBeDefined();
+      expect(screen.getByTestId("fiber-canvas").getAttribute("data-frameloop")).toBe("never");
+      automaticFrame();
+      expect(lost.rawRender).toHaveBeenCalledOnce();
 
-    // A retry that then fails to start speaks about starting again.
-    fireEvent.click(screen.getByRole("button", { name: "Try 3D again" }));
-    await act(() => { native.instances[1]?.reject(new Error("No graphics adapter")); return Promise.resolve(); });
-    expect(screen.getByRole("alert").textContent).toContain("The 3D view couldn’t start.");
+      await flush();
+      const fresh = renderer(1);
+      expect(fresh.domElement).toBe(lost.domElement);
+      expect(lost.dispose).toHaveBeenCalledOnce();
+      await start(1);
+      await flush();
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(fiber.state?.gl).toBe(fresh);
+      expect(screen.getByTestId("fiber-canvas").getAttribute("data-frameloop")).toBe("demand");
+      expect(mounts.count).toBe(1);
+      expect(onCreated).toHaveBeenCalledOnce();
+      expect(fiber.invalidate).toHaveBeenCalled();
+      automaticFrame();
+      expect(fresh.rawRender).toHaveBeenCalledOnce();
+      expect(lost.rawRender).toHaveBeenCalledOnce();
+    });
+
+    it("gives the replacement the renderer's own settings and the current resolution, not values a scene effect layered on", async () => {
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = renderer(0);
+      // As R3F configures the renderer before NativeCanvas activates it.
+      lost.toneMapping = 4;
+      lost.outputColorSpace = "srgb-linear";
+      lost.shadowMap.enabled = true;
+      lost.shadowMap.type = 2;
+      lost.clearColor.set(0x123456);
+      lost.clearAlpha = 1;
+      await start(0);
+      // Scene effects keyed on the renderer set these, and set them again on the replacement.
+      lost.toneMapping = 0;
+      lost.toneMappingExposure = 0.6;
+      // The render governor writes resolution straight onto the renderer.
+      lost.pixelRatio = 1.5;
+
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      await flush();
+      const fresh = await start(1);
+      await flush();
+      expect(fresh.toneMapping).toBe(4);
+      expect(fresh.toneMappingExposure).toBe(1);
+      expect(fresh.outputColorSpace).toBe("srgb-linear");
+      expect(fresh.shadowMap).toEqual({ enabled: true, type: 2 });
+      expect(fresh.clearColor.getHex()).toBe(0x123456);
+      expect(fresh.clearAlpha).toBe(1);
+      expect(fresh.setPixelRatio).toHaveBeenLastCalledWith(1.5);
+      expect(fresh.setSize).toHaveBeenLastCalledWith(800, 600, false);
+    });
+
+    it("treats a device destroyed by anything but its own release as lost, a reason Three ignores", async () => {
+      const devices = stubWebGpuDevices();
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      await flush();
+      await start(0);
+      devices[0]?.destroy();
+      await flush();
+      expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+      await flush();
+      const fresh = await start(1);
+      await flush();
+      expect(fiber.state?.gl).toBe(fresh);
+      expect(fresh.initializedDevice).toBe(devices[1]);
+      expect(native.instances).toHaveLength(2);
+      expect(screen.queryByRole("status")).toBeNull();
+    });
+
+    it("does not mistake releasing its own device for a loss", async () => {
+      const devices = stubWebGpuDevices();
+      const view = render(<NativeCanvas />);
+      await flush();
+      await start(0);
+      view.unmount();
+      await flush();
+      expect(devices[0]?.destroy).toHaveBeenCalledOnce();
+      expect(native.instances).toHaveLength(1);
+    });
+
+    it("swaps onto a WebGL2 canvas only once the browser hands the context back, and never loses that shared context", async () => {
+      native.negotiation.backend = "webgl2";
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = await start(0);
+      act(() => { lost.onDeviceLost({ api: "WebGL", message: "Context lost" }); });
+      await flush();
+      expect(native.instances).toHaveLength(1);
+      expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+
+      act(() => { lost.domElement.dispatchEvent(new Event("webglcontextrestored")); });
+      await flush();
+      const fresh = renderer(1);
+      expect(fresh.domElement).toBe(lost.domElement);
+      // r186 WebGLBackend.dispose() calls loseContext() on the context the replacement draws with.
+      expect(lost.dispose).not.toHaveBeenCalled();
+      expect(lost.backend.dispose).not.toHaveBeenCalled();
+      await start(1);
+      await flush();
+      expect(fiber.state?.gl).toBe(fresh);
+      expect(screen.queryByRole("status")).toBeNull();
+    });
+
+    it("remounts a new canvas when a WebGL context never comes back, and the new canvas counts as created", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        native.negotiation.backend = "webgl2";
+        const onCreated = vi.fn();
+        render(<NativeCanvas onCreated={onCreated}><span>Room geometry</span></NativeCanvas>);
+        const lost = await start(0);
+        act(() => { lost.onDeviceLost({ api: "WebGL", message: "Context lost" }); });
+        await flush();
+        await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+        await flush();
+        const remounted = renderer(1);
+        expect(remounted.domElement).not.toBe(lost.domElement);
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        await start(1);
+        await flush();
+        expect(screen.queryByRole("status")).toBeNull();
+        expect(screen.getByText("Room geometry")).toBeDefined();
+        expect(onCreated).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("waits until a backgrounded page is shown again before asking for a device", async () => {
+      let visibility: DocumentVisibilityState = "hidden";
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+      try {
+        render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+        const lost = await start(0);
+        act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+        await flush();
+        expect(native.instances).toHaveLength(1);
+        visibility = "visible";
+        act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+        await flush();
+        expect(renderer(1).domElement).toBe(lost.domElement);
+      } finally {
+        Reflect.deleteProperty(document, "visibilityState");
+      }
+    });
+
+    it("ignores late errors and losses reported by the renderer it already gave up on", async () => {
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = await start(0);
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      await flush();
+      act(() => {
+        lost.onError({ message: "A late error from the lost device" });
+        lost.onDeviceLost({ api: "WebGPU", message: "Reported again" });
+      });
+      expect(screen.queryByRole("alert")).toBeNull();
+      await start(1);
+      await flush();
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Reported after the swap" }); });
+      await flush();
+      expect(native.instances).toHaveLength(2);
+      expect(screen.queryByRole("status")).toBeNull();
+    });
+
+    it("tells someone whose view stopped for good that their layout is safe, then speaks about starting on a failed retry", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+        const lost = await start(0);
+        act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+        await flush();
+        await act(() => { renderer(1).reject(new Error("No adapter yet")); return Promise.resolve(); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+        await flush();
+        expect(renderer(2).domElement).toBe(lost.domElement);
+        await act(() => { renderer(2).reject(new Error("No adapter yet")); return Promise.resolve(); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+        await flush();
+        const remounted = renderer(3);
+        expect(remounted.domElement).not.toBe(lost.domElement);
+        await act(() => { remounted.reject(new Error("Still no adapter")); return Promise.resolve(); });
+        await flush();
+        const alert = screen.getByRole("alert");
+        expect(alert.textContent).toContain("The 3D view stopped. Your layout is safe");
+        expect(alert.textContent).not.toContain("couldn’t start");
+        expect(screen.queryByRole("status")).toBeNull();
+
+        fireEvent.click(screen.getByRole("button", { name: "Try 3D again" }));
+        await act(() => { renderer(4).reject(new Error("No graphics adapter")); return Promise.resolve(); });
+        expect(screen.getByRole("alert").textContent).toContain("The 3D view couldn’t start.");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stops after repeated resets and tells a visitor on a walk only what is true for them", async () => {
+      render(<NativeCanvas surface="walk"><span>Room geometry</span></NativeCanvas>);
+      for (let loss = 0; loss < 2; loss++) {
+        const current = await start(loss);
+        act(() => { current.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+        await flush();
+      }
+      const third = await start(2);
+      await flush();
+      act(() => { third.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      await flush();
+      expect(native.instances).toHaveLength(3);
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toContain("The 3D view stopped.");
+      expect(alert.textContent).not.toContain("layout");
+      expect(screen.queryByRole("link", { name: "Open the 2D planner" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Try 3D again" })).toBeDefined();
+    });
   });
 
   it("says a view that never started couldn't start", async () => {
