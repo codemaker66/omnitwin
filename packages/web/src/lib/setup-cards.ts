@@ -94,14 +94,19 @@ export const DANCE_FLOOR_PANELS = { default: 5, min: 2, max: 12 } as const;
 /** Chairs a 6 ft trestle takes in a run: Top table seats one side, Long table both (spec §6). */
 export const SEATS_PER_TRESTLE = { "top-table": 3, "long-table": 6 } as const;
 
+/** Trestles in a Top or Long table set once they are built as sets (`tableSets`, Q-08b). */
+export const TRESTLE_SETS = {
+  "top-table": { default: 4, min: 2, max: 6 },
+  "long-table": { default: 4, min: 2, max: 10 },
+} as const;
+
 /**
  * Trestles in a run. Until Top table and Long table are built as sets
  * (`tableSets`, Q-08b), each card sets down one trestle through
  * `placeTableGroup` (spec §5).
  */
 export function trestleRange(card: "top-table" | "long-table"): { readonly default: number; readonly min: number; readonly max: number } {
-  if (!plannerFeatureEnabled("tableSets")) return { default: 1, min: 1, max: 1 };
-  return card === "top-table" ? { default: 4, min: 2, max: 6 } : { default: 4, min: 2, max: 10 };
+  return plannerFeatureEnabled("tableSets") ? TRESTLE_SETS[card] : { default: 1, min: 1, max: 1 };
 }
 
 export function isSetupCardId(id: string): id is SetupCardId {
@@ -242,9 +247,11 @@ function pieceSize(item: CatalogueItem): string {
 export function describeCard(params: CardParams): CardFace {
   const seats = seatsInHand(params);
   switch (params.card) {
-    case "round":
-      // The 6 ft round is known by its 1.83 m, so it keeps two places.
-      return { name: `Round of ${String(params.seats)}`, size: "1.83 m round", seats };
+    case "round": {
+      // Sized as its piece card is ("1.8 m round"), so the two never disagree on the rail.
+      const item = cardMainItem(params);
+      return { name: `Round of ${String(params.seats)}`, size: item === undefined ? "" : pieceSize(item), seats };
+    }
     case "dance-floor": {
       const panel = getCatalogueItemBySlug(DANCE_FLOOR_PANEL_SLUG)?.width ?? 0.91;
       const width = cardMetres(params.cols * panel);
@@ -261,6 +268,21 @@ export function describeCard(params: CardParams): CardFace {
       return { name: item?.name ?? params.slug, size: item === undefined ? "" : pieceSize(item), seats };
     }
   }
+}
+
+/**
+ * Every look a setup card can show, one picture each (Q-21): a round in each
+ * colourway; Top and Long table in each colourway as one trestle and as a set;
+ * the dance floor. The counts (seats, trestles in a set, panels) are the
+ * card's text, never its picture.
+ */
+export function setupCardLooks(): readonly CardParams[] {
+  const seats = seatsFor({ slug: "round-table-6ft" })?.default ?? 10;
+  const rounds = CARD_COLOURWAYS.round.map((colourway): CardParams => ({ card: "round", seats, colourway }));
+  const runs = (["top-table", "long-table"] as const).flatMap((card) => CARD_COLOURWAYS[card].flatMap((colourway) =>
+    [1, TRESTLE_SETS[card].default].map((trestles): CardParams => ({ card, trestles, colourway }))));
+  const floor: CardParams = { card: "dance-floor", cols: DANCE_FLOOR_PANELS.default, rows: DANCE_FLOOR_PANELS.default };
+  return [...rounds, ...runs, floor];
 }
 
 // ---------------------------------------------------------------------------

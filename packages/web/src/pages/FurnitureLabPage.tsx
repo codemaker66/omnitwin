@@ -11,21 +11,23 @@ import { HallLightRig } from "../components/grand-hall/HallLightRig.js";
 import { GrandHallModel } from "../components/grand-hall/GrandHallModel.js";
 import { FULL_HALL_FINISH } from "../components/grand-hall/hall-finish.js";
 import { CaptureToneMapping } from "../components/scene/CaptureToneMapping.js";
-import { FurnitureProxy } from "../components/FurnitureProxy.js";
+import { FurnitureProxy, standaloneFurnitureMeshUrl } from "../components/FurnitureProxy.js";
 import { GltfFurniture } from "../components/meshes/GltfFurniture.js";
 import { MeshErrorBoundary } from "../components/MeshErrorBoundary.js";
-import { isCraftedFurnitureSlug } from "../lib/crafted-furniture.js";
+import { isCraftedFurnitureSlug, setupCardLook, setupCardPreviewUrl } from "../lib/crafted-furniture.js";
 import { CATALOGUE_ITEMS, getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../lib/catalogue.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { footprintBounds } from "../lib/placement-edit.js";
-import { cardParamsFor, isSetupCardId, stampSetup } from "../lib/setup-cards.js";
+import { setupCardLooks, stampSetup, type CardParams } from "../lib/setup-cards.js";
 
 // Development fixture for the crafted furniture: every crafted piece beside
 // the supplied model it replaces (and any supplied model not yet crafted),
 // in the Grand Hall's own light, with a window bridge so headless captures
 // can frame any piece exactly. `?preview=<slug>` instead shows one piece in a
-// neutral studio, framed as the catalogue previews are, for rendering them.
-// Compiled out of production builds with the other fixtures.
+// neutral studio, framed as the catalogue previews are, for rendering them;
+// `?setup=<card>/<look>` shows a setup card's look the same way, and
+// `?setup-looks` lists the looks. Compiled out of production builds with the
+// other fixtures.
 
 interface LabPose {
   readonly position: readonly [number, number, number];
@@ -37,8 +39,10 @@ type Backdrop = "studio" | "hall";
 
 declare global {
   interface Window {
-    /** Set once a preview has drawn with its studio light and reflections. */
-    __furniturePreview?: { readonly ready: boolean };
+    /** Set once a preview has drawn with its studio light and reflections; `error` when it never will. */
+    __furniturePreview?: { readonly ready: boolean; readonly error?: string };
+    /** Every setup look (`?setup-looks`): its lab address and where its picture goes. */
+    __setupLooks?: readonly { readonly key: string; readonly url: string }[];
     __furnitureLab?: {
       readonly slugs: readonly string[];
       readonly cells: readonly { slug: string; x: number; gap: number; height: number }[];
@@ -107,12 +111,9 @@ function PoseController({ pose }: { readonly pose: LabPose }): null {
 
 export function FurnitureLabPage(): ReactElement {
   const search = new URLSearchParams(window.location.search);
+  if (search.has("setup-looks")) return <SetupLookList />;
   const setup = search.get("setup");
-  if (setup !== null && isSetupCardId(setup)) {
-    const params = cardParamsFor(setup);
-    let next = 0;
-    if (params !== null) return <SetupPreviewStudio pieces={stampSetup(params, { x: 0, z: 0 }, 0, () => `setup-${String((next += 1))}`)} />;
-  }
+  if (setup !== null) return <SetupLookStudio lookKey={setup} />;
   const previewSlug = search.get("preview");
   const previewItem = previewSlug === null ? undefined : getCatalogueItemBySlug(previewSlug);
   return previewItem === undefined ? <FurnitureGallery /> : <FurniturePreviewStudio item={previewItem} />;
@@ -283,11 +284,69 @@ function FurniturePreviewStudio({ item }: { readonly item: CatalogueItem }): Rea
   );
 }
 
+/** A setup look's lab address, `<card>/<look>`: its picture's card folder and file name. */
+function setupLookKey(params: CardParams): string {
+  return `${params.card}/${setupCardLook(params) ?? ""}`;
+}
+
+/** Every setup look and where its picture goes (`?setup-looks`), for the render script. */
+function SetupLookList(): ReactElement {
+  const looks = useMemo(() => setupCardLooks().flatMap((params) => {
+    const url = setupCardPreviewUrl(params);
+    return url === null ? [] : [{ key: setupLookKey(params), url }];
+  }), []);
+  useEffect(() => {
+    window.__setupLooks = looks;
+    return () => { delete window.__setupLooks; };
+  }, [looks]);
+  return (
+    <ul>
+      {looks.map(({ key, url }) => (
+        <li key={key}><a href={`?setup=${encodeURIComponent(key)}`}>{key}</a> {url}</li>
+      ))}
+    </ul>
+  );
+}
+
 /**
- * A setup card's whole set (`?setup=<card>`; card-dock Q-21) in the same
- * studio and framing as the crafted previews: the pieces stampSetup puts
- * down, framed by their joint box. `?pf=tableSets` shows Top and Long table
- * as their four-trestle sets.
+ * Why a look cannot be pictured truthfully, or null. A piece drawn from a
+ * model file shows a stand-in while it loads, which the studio's frame count
+ * would photograph, so a set holds only pieces drawn in code.
+ */
+function setupLookProblem(lookKey: string, params: CardParams | null, pieces: readonly PlacedItem[]): string | null {
+  if (params === null) return `Not a setup look: ${lookKey}`;
+  if (pieces.length === 0) return `${lookKey} sets down nothing`;
+  for (const piece of pieces) {
+    const item = getCatalogueItem(piece.catalogueItemId);
+    if (item === undefined) return `${lookKey}: ${piece.catalogueItemId} is not in the catalogue`;
+    if (standaloneFurnitureMeshUrl(item) !== null) return `${lookKey}: ${item.slug} loads a model file, so the picture could catch its stand-in`;
+  }
+  return null;
+}
+
+/** A setup card's look (`?setup=<card>/<look>`; card-dock Q-21), or why it cannot be pictured. */
+function SetupLookStudio({ lookKey }: { readonly lookKey: string }): ReactElement {
+  const params = useMemo(() => setupCardLooks().find((look) => setupLookKey(look) === lookKey) ?? null, [lookKey]);
+  const pieces = useMemo(() => {
+    if (params === null) return [];
+    let next = 0;
+    return stampSetup(params, { x: 0, z: 0 }, 0, () => {
+      next += 1;
+      return `setup-${String(next)}`;
+    });
+  }, [params]);
+  const problem = useMemo(() => setupLookProblem(lookKey, params, pieces), [lookKey, params, pieces]);
+  useEffect(() => {
+    if (problem === null) return undefined;
+    window.__furniturePreview = { ready: false, error: problem };
+    return () => { delete window.__furniturePreview; };
+  }, [problem]);
+  return problem === null ? <SetupPreviewStudio pieces={pieces} /> : <p role="alert">{problem}</p>;
+}
+
+/**
+ * A setup look's whole set in the same studio and framing as the crafted
+ * previews: the pieces stampSetup puts down, framed by their joint box.
  */
 function SetupPreviewStudio({ pieces }: { readonly pieces: readonly PlacedItem[] }): ReactElement {
   const drawn = useMemo(() => pieces.flatMap((piece) => {
