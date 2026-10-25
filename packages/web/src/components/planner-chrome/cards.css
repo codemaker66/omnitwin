@@ -109,12 +109,25 @@
   white-space: nowrap;
 }
 
+/* The "×N" sits on the picture's corner, clear of the name however long. */
+.pc-railcard__art {
+  position: relative;
+  flex: none;
+}
+
 .pc-railcard__pip {
   position: absolute;
-  top: 2px;
-  right: 4px;
+  bottom: 1px;
+  right: 1px;
+  min-width: 18px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: var(--house-forest-deep);
+  box-shadow: 0 0 0 1.5px var(--house-forest-edge);
   color: var(--house-copper-lit);
   font: 600 11px/1 var(--house-sans);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Armed: raised, a copper notch on top, the mat outlined in copper. */
