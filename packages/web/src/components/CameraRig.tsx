@@ -13,6 +13,7 @@ import { useMarkupStore } from "../stores/markup-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { touchOwnsFinger, useTouchGestureStore } from "../stores/touch-gesture-store.js";
 import { sampleTransition } from "../lib/camera-animation.js";
 import { sampleCameraTour } from "../lib/camera-tour.js";
 import { applyCameraTourPose } from "../lib/camera-tour-controls.js";
@@ -442,9 +443,22 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
 
   const markCameraInteractionActive = useCallback((): void => {
     if (suspendedRef.current) return;
+    // A finger the touch arbiter holds may yet place, lift or tap: it is the
+    // camera's only once the arbiter says orbit or pinch (below).
+    if (touchOwnsFinger(useTouchGestureStore.getState().mode)) return;
     clearCameraInteractionTimer();
     useCockpitStore.getState().setCameraInteractionActive(true);
   }, [clearCameraInteractionTimer]);
+
+  // The touch arbiter (SelectionSystem.tsx) holds the orbit while a finger may
+  // yet place, lift or tap, and hands it over when the finger turns out to be
+  // looking round. The orbit took the touch's start as usual, so once it may
+  // rotate again it catches up from where the finger landed.
+  useEffect(() => useTouchGestureStore.subscribe((state, previous) => {
+    const controls = controlsRef.current;
+    if (controls !== null && state.cameraHeld !== previous.cameraHeld) controls.enableRotate = !state.cameraHeld;
+    if ((state.mode === "orbit" || state.mode === "two") && state.mode !== previous.mode) markCameraInteractionActive();
+  }), [markCameraInteractionActive]);
 
   const markCameraInteractionSettling = useCallback((): void => {
     if (suspendedRef.current) return;

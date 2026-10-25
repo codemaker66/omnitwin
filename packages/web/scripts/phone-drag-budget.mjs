@@ -22,6 +22,10 @@
 //   node scripts/phone-drag-budget.mjs --base http://127.0.0.1:4173 \
 //     [--floor empty|rounds] [--throttle 1|4] [--gestures orbit,place] [--out DIR] \
 //     [--query pf=leanMotionPipeline] [--label NAME]
+// Gestures: orbit (one finger, no hold); place (a round in hand, held 200 ms,
+// then slid); lift (nothing in hand, a still finger on the round nearest the
+// middle of the view, held 380 ms, then slid). With the touch arbiter on
+// (`pf=touchArbiter`), place and lift also fail if the camera moves.
 // The build needs no Clerk key in a mode other than production:
 //   pnpm exec vite build --mode budget && pnpm exec vite preview --mode budget
 // ---------------------------------------------------------------------------
@@ -48,6 +52,8 @@ const QUERY = option("query", "");
 const BUDGET_MS = THROTTLE >= 4 ? 33 : 4.2;
 const MAX_PASSES = 3;
 const QUIET_CPU = 15;
+/** With the touch arbiter on, a placing or lifting finger must leave the camera exactly where it was. */
+const ARBITER = /(^|[=,])touchArbiter(,|&|$)/u.test(QUERY);
 
 const API = "http://localhost:3001";
 const CONFIG_ID = "tour-config-0001";
@@ -109,6 +115,12 @@ async function stub(page) {
 function instrument() {
   const tr = { draws: [], raf: [], input: [], frames: [], longtasks: [] };
   window.__budget = tr;
+  // A React DevTools hook stub: R3F's reconciler reports its root, and an R3F root's container is its
+  // store, which holds the scene and the camera. Read access for a production build (perf study, 25 Oct).
+  window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = { isDisabled: false, supportsFiber: true, renderers: new Map(),
+    inject(renderer) { const id = this.renderers.size + 1; this.renderers.set(id, renderer); return id; },
+    onCommitFiberRoot(_id, root) { const container = root?.containerInfo; if (container && typeof container.getState === "function" && container.getState().scene) window.__r3fStore = container; },
+    onCommitFiberUnmount() {}, onPostCommitFiberRoot() {}, checkDCE() {} };
   const nativeRaf = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = (callback) => nativeRaf((stamp) => {
     const t = performance.now();
@@ -228,14 +240,40 @@ try {
   if (box === null) throw new Error("No canvas");
   const touch = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }] });
   const pageNow = () => page.evaluate(() => performance.now());
+  const cameraAt = () => page.evaluate(() => window.__r3fStore?.getState().camera.position.toArray() ?? null);
+  const pieces = () => page.evaluate(() => window.__r3fStore?.getState().scene.getObjectByName("placed-furniture")?.children
+    .filter((child) => child.name.startsWith("furniture-")).length ?? null);
+  /** The placed piece drawn nearest the middle of the view: its name, place on screen and in the room. */
+  const pieceNearMiddle = () => page.evaluate(() => {
+    const state = window.__r3fStore?.getState();
+    const root = state?.scene.getObjectByName("placed-furniture");
+    const rect = document.querySelector("canvas")?.getBoundingClientRect();
+    if (state === undefined || root === undefined || rect === undefined) return null;
+    let best = null;
+    for (const child of root.children) {
+      if (!child.name.startsWith("furniture-")) continue;
+      const world = child.getWorldPosition(child.position.clone());
+      const point = world.clone().setY(world.y + 0.4).project(state.camera);
+      const x = rect.left + (point.x * 0.5 + 0.5) * rect.width;
+      const y = rect.top + (-point.y * 0.5 + 0.5) * rect.height;
+      const off = Math.hypot(x - (rect.left + rect.width / 2), y - (rect.top + rect.height * 0.5));
+      if (point.z < 1 && (best === null || off < best.off)) best = { name: child.name, x, y, off, world: world.toArray() };
+    }
+    return best;
+  });
+  const piecePlace = (name) => page.evaluate((pieceName) => {
+    const piece = window.__r3fStore?.getState().scene.getObjectByName(pieceName);
+    return piece === undefined ? null : piece.getWorldPosition(piece.position.clone()).toArray();
+  }, name);
 
-  /** One finger: down, held `holdMs`, then MOVES moves on a 60 Hz clock across the room, then up. */
-  async function drag(name, holdMs) {
+  /** One finger: down at (x0, y0), held `holdMs`, then MOVES moves on a 60 Hz clock to (x1, y1), then up. */
+  async function drag(name, holdMs, from = null) {
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
-    const x0 = box.x + box.width * 0.42;
-    const y0 = box.y + box.height * 0.5;
-    const x1 = box.x + box.width * 0.62;
-    const y1 = box.y + box.height * 0.58;
+    const x0 = from?.x ?? box.x + box.width * 0.42;
+    const y0 = from?.y ?? box.y + box.height * 0.5;
+    const x1 = x0 + box.width * 0.2;
+    const y1 = y0 + box.height * 0.08;
+    const cameraBefore = await cameraAt();
     const downAt = await pageNow();
     await touch("touchStart", x0, y0);
     if (holdMs > 0) await page.waitForTimeout(holdMs);
@@ -251,6 +289,7 @@ try {
     }
     while (inFlight > 0) await new Promise((resolve) => { setTimeout(resolve, 5); });
     const upAt = await pageNow();
+    const cameraAtLift = await cameraAt();
     await touch("touchEnd", 0, 0);
     await page.waitForTimeout(300);
     const releaseEnd = await pageNow();
@@ -274,15 +313,19 @@ try {
       drawsPerFrame: { p50: quantile(motion.drawCalls, 0.5) },
       compiled,
       longtasks: { n: motion.longtasks.length, max: quantile(motion.longtasks, 1) },
+      cameraMovedM: cameraBefore === null || cameraAtLift === null ? null
+        : Math.hypot(cameraAtLift[0] - cameraBefore[0], cameraAtLift[1] - cameraBefore[1], cameraAtLift[2] - cameraBefore[2]),
     };
     record.checks = {
       work: record.workPerFrame.p95 !== null && record.workPerFrame.p95 <= BUDGET_MS,
       passes: record.passesPerFrame.p95 !== null && record.passesPerFrame.p95 <= MAX_PASSES,
       compiles: compiled !== null && compiled.shaderModules === 0 && compiled.pipelines === 0,
+      ...(ARBITER && name !== "orbit" ? { cameraStill: record.cameraMovedM !== null && record.cameraMovedM < 1e-6 } : {}),
     };
     result.gestures[name] = record;
-    console.log(`${name.padEnd(8)} frames ${String(motion.draws).padStart(4)}  work p50/p95/max ${String(record.workPerFrame.p50)}/${String(record.workPerFrame.p95)}/${String(record.workPerFrame.max)} ms (budget ${String(BUDGET_MS)})  passes p50/p95 ${String(record.passesPerFrame.p50)}/${String(record.passesPerFrame.p95)}  compiled ${JSON.stringify(compiled)}  interval p50 ${String(record.intervalMs.p50)} ms`);
+    console.log(`${name.padEnd(8)} frames ${String(motion.draws).padStart(4)}  work p50/p95/max ${String(record.workPerFrame.p50)}/${String(record.workPerFrame.p95)}/${String(record.workPerFrame.max)} ms (budget ${String(BUDGET_MS)})  passes p50/p95 ${String(record.passesPerFrame.p50)}/${String(record.passesPerFrame.p95)}  compiled ${JSON.stringify(compiled)}  interval p50 ${String(record.intervalMs.p50)} ms  camera moved ${record.cameraMovedM === null ? "?" : record.cameraMovedM.toExponential(1)} m`);
     if (!Object.values(record.checks).every(Boolean)) failed = true;
+    return record;
   }
 
   if (GESTURES.includes("orbit")) await drag("orbit", 0);
@@ -292,7 +335,23 @@ try {
     await page.waitForTimeout(800);
     await page.locator("[data-testid=catalogue-item-round-table-6ft-white]").first().tap({ timeout: 10_000 });
     await page.waitForTimeout(1200);
-    await drag("place", 200);
+    const before = await pieces();
+    const record = await drag("place", 200);
+    record.piecesAdded = before === null ? null : (await pieces()) - before;
+    console.log(`place    pieces added ${String(record.piecesAdded)}`);
+    // The round stays in hand: put it down before the next gesture.
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(600);
+  }
+  if (GESTURES.includes("lift")) {
+    const piece = await pieceNearMiddle();
+    if (piece === null) throw new Error("No placed piece to lift");
+    const record = await drag("lift", 380, piece);
+    const after = await piecePlace(piece.name);
+    record.liftedM = after === null ? null : Math.hypot(after[0] - piece.world[0], after[2] - piece.world[2]);
+    record.checks.lifted = record.liftedM !== null && record.liftedM > 0.2;
+    if (!record.checks.lifted) failed = true;
+    console.log(`lift     ${piece.name} moved ${String(record.liftedM?.toFixed(2))} m`);
   }
 } catch (error) {
   result.errors.push(String(error).slice(0, 300));

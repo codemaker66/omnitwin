@@ -394,6 +394,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         reason = violations[0]?.message ?? "Constraint warning";
       }
     }
+    // A pointer moving within a grid cell snaps to the ghost's own spot: no write, no frame of work for its readers.
+    const current = state.ghostPosition;
+    if (current !== null && current[0] === pos[0] && current[1] === pos[1] && current[2] === pos[2]
+      && state.ghostValid === valid && state.ghostInvalidReason === reason) return;
     set({ ghostPosition: pos, ghostValid: valid, ghostInvalidReason: reason });
   },
 
