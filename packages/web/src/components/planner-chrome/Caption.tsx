@@ -19,6 +19,7 @@ import { DANCE_FLOOR_PANELS } from "../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
@@ -90,8 +91,8 @@ const VERB_KEYS: Partial<Record<CaptionVerb, VerbKey>> = {
   },
 };
 
-/** One verb's key, running its command. */
-function VerbButton({ verb }: { readonly verb: CaptionVerb }): ReactElement | null {
+/** One verb's key, running its command, then `after` when it did something. */
+function VerbButton({ verb, after }: { readonly verb: CaptionVerb; readonly after?: () => void }): ReactElement | null {
   const key = VERB_KEYS[verb];
   if (key === undefined) return null;
   return (
@@ -102,13 +103,15 @@ function VerbButton({ verb }: { readonly verb: CaptionVerb }): ReactElement | nu
       iconOnly
       small
       shortcut={key.shortcut}
-      onPress={() => { act(key.run); }}
+      onPress={() => { if (act(key.run)) after?.(); }}
     />
   );
 }
 
-function act(run: () => boolean): void {
-  if (run()) requestScreenAnchorFrame();
+function act(run: () => boolean): boolean {
+  const done = run();
+  if (done) requestScreenAnchorFrame();
+  return done;
 }
 
 /** The dock's top, in the layer's pixels: the caption stays above it. */
@@ -258,7 +261,14 @@ export function Caption(): ReactElement | null {
               on={moving}
               onPress={() => { setMoving((now) => !now); }}
             />
-          ) : <VerbButton key={verb} verb={verb} />))}
+          ) : (
+            <VerbButton
+              key={verb}
+              verb={verb}
+              // Remove puts the piece back in store (card-dock spec §8): the receipt says so, with Undo.
+              after={verb === "remove" ? () => { usePlannerChromeStore.getState().postReceipt(`${model.label ?? model.name} put back in store`, { undo: true }); } : undefined}
+            />
+          )))}
         </div>
       </div>
     </div>

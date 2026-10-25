@@ -16,6 +16,8 @@
   --pc-zone-gap: 12px;
   /* Hints, receipts and the right zone sit 12 px above the dock: bottom 88. */
   --pc-above-dock: calc(var(--pc-gutter) + var(--pc-dock-height) + var(--pc-zone-gap));
+  /* Receipts and hints stand above the whole stack (rail, catalogue, dock), as DockStack measures it. */
+  --pc-above-stack: calc(var(--pc-gutter) + var(--pc-dockstack-height, var(--pc-dock-height)) + var(--pc-zone-gap));
   /* The left zone starts under the slate and its plane (spec 5.1: 198 px). */
   --pc-left-top: 198px;
   --pc-slate-width: 340px;
@@ -86,7 +88,7 @@
 }
 
 .pc-zone--above-dock {
-  bottom: var(--pc-above-dock);
+  bottom: var(--pc-above-stack);
   left: 50%;
   transform: translateX(-50%);
   flex-direction: column;
@@ -142,7 +144,7 @@
 
   .pc-zone--above-dock {
     right: var(--pc-gutter);
-    bottom: calc(var(--pc-above-dock) + env(safe-area-inset-bottom));
+    bottom: calc(var(--pc-above-stack) + env(safe-area-inset-bottom));
     left: var(--pc-gutter);
     transform: none;
   }
