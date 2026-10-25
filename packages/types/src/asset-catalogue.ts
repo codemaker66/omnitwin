@@ -98,7 +98,7 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     category: "table",
     widthM: 1.83, depthM: 1.83, heightM: 0.76,
     seatCount: 10, collisionType: "cylinder", tableShape: "round",
-    maxCount: null, subtitle: "1.8m round \u00B7 seats up to 12", color: "#c4a882",
+    maxCount: null, subtitle: "1.8m round \u00B7 seats 10", color: "#c4a882",
     equipmentTags: [],
   },
   {
@@ -110,7 +110,7 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     category: "table",
     widthM: 1.83, depthM: 0.76, heightM: 0.74,
     seatCount: null, collisionType: "box", tableShape: "rectangular",
-    maxCount: null, subtitle: "1.8m \u00D7 0.76m \u00B7 seats up to 20", color: "#b89b72",
+    maxCount: null, subtitle: "1.8m \u00D7 0.76m \u00B7 seats 6", color: "#b89b72",
     equipmentTags: [],
   },
   {
@@ -120,7 +120,7 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     category: "table",
     widthM: 1.22, depthM: 0.76, heightM: 0.74,
     seatCount: null, collisionType: "box", tableShape: "rectangular",
-    maxCount: null, subtitle: "1.2m \u00D7 0.76m \u00B7 seats up to 12", color: "#b89b72",
+    maxCount: null, subtitle: "1.2m \u00D7 0.76m \u00B7 seats 4", color: "#b89b72",
     equipmentTags: [],
   },
   {
