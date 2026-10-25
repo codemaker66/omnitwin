@@ -1,6 +1,6 @@
 import { AlignCenterHorizontal, Copy, PackageMinus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
-import { captionModel, type CaptionModel, type CaptionVerb } from "../../lib/caption-model.js";
+import { captionAisles, captionModel, type CaptionModel, type CaptionVerb } from "../../lib/caption-model.js";
 import { placeCaption } from "../../lib/caption-placement.js";
 import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import {
@@ -18,6 +18,7 @@ import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { Stepper } from "./Controls.js";
 import { ClothGlyph } from "./glyphs.js";
@@ -110,6 +111,12 @@ export function Caption(): ReactElement | null {
   const viewOnly = useEditorStore((state) => state.lockReason !== null);
   const model = useMemo(() => captionModel(selectedIds, placedItems, plannerFeatureEnabled), [selectedIds, placedItems]);
   const shown = model !== null && armed === null && !walking && !viewOnly;
+  const room = useRoomDimensionsStore((state) => state.dimensions);
+  const grandHall = useEditorStore((state) => state.space?.slug === "grand-hall");
+  const aisles = useMemo(
+    () => (shown && plannerFeatureEnabled("liveAisles") ? captionAisles(selectedIds, placedItems, room, grandHall) : []),
+    [shown, selectedIds, placedItems, room, grandHall],
+  );
 
   const layerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -169,12 +176,20 @@ export function Caption(): ReactElement | null {
         <span className="pc-caption__arrow" aria-hidden="true" />
         {model.eyebrow !== null ? <p className="pc-caps pc-caption__eyebrow">{model.eyebrow}</p> : null}
         <p className="pc-title pc-caption__name">{model.name}</p>
-        {model.size !== null ? (
+        {model.size !== null || aisles.length > 0 ? (
           <dl className="pc-caption__facts">
-            <div className="pc-caption__fact">
-              <dt>Size</dt>
-              <dd>{model.size}</dd>
-            </div>
+            {model.size !== null ? (
+              <div className="pc-caption__fact">
+                <dt>Size</dt>
+                <dd>{model.size}</dd>
+              </div>
+            ) : null}
+            {aisles.map((aisle) => (
+              <div key={aisle.label} className={`pc-caption__fact pc-caption__fact--${aisle.tone}`}>
+                <dt><span className="pc-caption__dash" aria-hidden="true" />{aisle.label}</dt>
+                <dd>{aisle.value}</dd>
+              </div>
+            ))}
           </dl>
         ) : null}
         <div className="pc-caption__verbs" role="group" aria-label={`What to do with ${model.label ?? model.name}`}>
