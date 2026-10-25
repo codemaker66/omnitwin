@@ -1,4 +1,5 @@
 import { type ReactElement, type ReactNode } from "react";
+import { Catalogue } from "./Catalogue.js";
 import { Dock } from "./Dock.js";
 import { Rail } from "./Rail.js";
 import { SeatsMeter } from "./SeatsMeter.js";
@@ -11,10 +12,12 @@ import "./dock.css";
 // The rail and the dock share one width, the dock's keys centred in it.
 // ---------------------------------------------------------------------------
 
+const moreKey = (): HTMLElement | null => document.querySelector<HTMLElement>(".pc-rail__more");
+
 export function DockStack({ catalogue }: { readonly catalogue?: ReactNode }): ReactElement {
   return (
     <div className="pc-dockstack" data-testid="planner-dock-stack">
-      {catalogue}
+      {catalogue ?? <Catalogue returnFocusTo={moreKey} />}
       <Rail />
       <SeatsMeter />
       <Dock />
