@@ -53,7 +53,7 @@
 
 .pc-dockstack > .pc-dock { justify-content: center; }
 
-.pc-dockstack > .pc-rail-wrap + .pc-dock {
+.pc-dockstack > .pc-rail-wrap ~ .pc-dock {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }

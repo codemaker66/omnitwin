@@ -4,7 +4,7 @@ import { getCatalogueItemBySlug } from "../catalogue.js";
 import { createTableGroup } from "../table-group.js";
 import { DEFAULT_PLANNER_CHAIR_SLUG } from "../furniture-defaults.js";
 import type { PlacedItem } from "../placement.js";
-import { actsInRoom, eventHoldWords, holdChipWords, planeFacts, slateEyebrow, venueDay } from "../slate-facts.js";
+import { actsInRoom, eventHoldWords, holdChipWords, meterShape, planeFacts, slateEyebrow, venueDay } from "../slate-facts.js";
 
 // ---------------------------------------------------------------------------
 // The slate's facts (T-671 slice 7; spec 6.1): what this is, in the venue's
@@ -91,6 +91,28 @@ describe("the event's acts in this room", () => {
       phaseLayoutSnapshots: [snapshot("p1", "mine", "frozen", "2026-11-19T10:00:00Z"), snapshot("p1", "theirs", "frozen", "2026-11-20T10:00:00Z")],
     }, "hall", "mine");
     expect(acts[0]?.state).toBe("other");
+  });
+});
+
+describe("the seats meter", () => {
+  it("fills in proportion to seats over guests, with a tick when everyone has a seat", () => {
+    expect(meterShape({ guests: 100, seats: 80, limit: 180, inHand: 0 })).toEqual({ fill: 0.8, handTo: 0.8, overFrom: null, full: false });
+    expect(meterShape({ guests: 80, seats: 80, limit: 180, inHand: 0 })).toMatchObject({ fill: 1, full: true });
+  });
+
+  it("shows the seats in hand as their own segment", () => {
+    expect(meterShape({ guests: 100, seats: 80, limit: 180, inHand: 10 })).toMatchObject({ fill: 0.8, handTo: 0.9 });
+    // In hand past the guests: the bar scales to what would stand.
+    expect(meterShape({ guests: 100, seats: 95, limit: 180, inHand: 10 })).toMatchObject({ fill: 95 / 105, handTo: 1 });
+  });
+
+  it("marks the part past the room's published seats", () => {
+    expect(meterShape({ guests: 60, seats: 70, limit: 60, inHand: 0 })).toMatchObject({ fill: 1, overFrom: 60 / 70, full: true });
+  });
+
+  it("reads the room's published seats as the guests when there is no event", () => {
+    expect(meterShape({ guests: null, seats: 90, limit: 180, inHand: 0 })).toMatchObject({ fill: 0.5, full: false });
+    expect(meterShape({ guests: null, seats: 0, limit: null, inHand: 0 })).toEqual({ fill: 0, handTo: 0, overFrom: null, full: false });
   });
 });
 
