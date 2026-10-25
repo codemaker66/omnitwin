@@ -68,10 +68,49 @@ function pieces(items: readonly PlacedItem[]): readonly PlacedItem[] {
   return items.filter((piece) => isSceneFurniturePlacement(piece));
 }
 
-/** The selected pieces made whole: a table brings its chairs, a trestle its set. */
+/**
+ * The selected pieces made whole: a table brings its chairs, a trestle its
+ * set, and so on until nothing more joins (a chair added to a set's trestle
+ * may carry the trestle's group and not the set).
+ */
 export function wholeSelection(selectedIds: ReadonlySet<string>, placedItems: readonly PlacedItem[]): readonly PlacedItem[] {
-  const ids = expandIdsToGroupMembers(selectedIds, placedItems);
+  let ids = new Set(selectedIds);
+  for (let size = -1; size !== ids.size;) {
+    size = ids.size;
+    ids = new Set([...ids, ...expandIdsToGroupMembers(ids, placedItems)]);
+  }
   return pieces(placedItems.filter((piece) => ids.has(piece.id)));
+}
+
+/**
+ * Pieces split into what moves and changes as one: pieces sharing a set or a
+ * group, and every piece they share one with in turn, so a set's chairs stay
+ * with it whichever of its ids they carry.
+ */
+export function selectionUnits(selection: readonly PlacedItem[]): readonly (readonly PlacedItem[])[] {
+  const parent = new Map<string, string>();
+  const find = (key: string): string => {
+    let root = key;
+    for (let next = parent.get(root); next !== undefined && next !== root; next = parent.get(root)) root = next;
+    return root;
+  };
+  const join = (a: string, b: string): void => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootA, rootB);
+  };
+  for (const piece of selection) {
+    if (piece.setId !== undefined) join(`piece:${piece.id}`, `set:${piece.setId}`);
+    if (piece.groupId !== null) join(`piece:${piece.id}`, `group:${piece.groupId}`);
+  }
+  const byRoot = new Map<string, PlacedItem[]>();
+  for (const piece of selection) {
+    const root = find(`piece:${piece.id}`);
+    const unit = byRoot.get(root);
+    if (unit === undefined) byRoot.set(root, [piece]);
+    else unit.push(piece);
+  }
+  return [...byRoot.values()];
 }
 
 function isDiningTable(piece: PlacedItem): boolean {
@@ -264,15 +303,11 @@ function shifted(items: readonly PlacedItem[], dx: number, dz: number): readonly
 
 /** The selection made whole, split into what moves as one: each set, each group, each lone piece. */
 function units(selectedIds: ReadonlySet<string>, placedItems: readonly PlacedItem[]): readonly (readonly PlacedItem[])[] {
-  const byKey = new Map<string, PlacedItem[]>();
-  for (const piece of wholeSelection(selectedIds, placedItems)) {
-    const key = piece.setId !== undefined ? `set:${piece.setId}` : piece.groupId !== null ? `group:${piece.groupId}` : `piece:${piece.id}`;
-    const unit = byKey.get(key);
-    if (unit === undefined) byKey.set(key, [piece]);
-    else unit.push(piece);
-  }
-  return [...byKey.values()];
+  return selectionUnits(wholeSelection(selectedIds, placedItems));
 }
+
+/** Line up's refusal when there is nothing to line up against. */
+export const LINE_UP_NEEDS_TWO = "Line up needs two or more";
 
 /** Where a unit stands: its dining table's centre when it has one, else the centre of its footprint. */
 function anchorOf(unit: readonly PlacedItem[]): { readonly x: number; readonly z: number } | null {
@@ -293,7 +328,8 @@ function anchorOf(unit: readonly PlacedItem[]): { readonly x: number; readonly z
 export function planLineUp(selectedIds: ReadonlySet<string>, world: GhostWorld): MovePlan {
   const moving = units(selectedIds, world.placedItems);
   const anchors = moving.map(anchorOf);
-  if (moving.length < 2 || anchors.some((anchor) => anchor === null)) return moveRefused(null);
+  if (moving.length < 2) return { ok: false, obstacle: null, reason: LINE_UP_NEEDS_TWO };
+  if (anchors.some((anchor) => anchor === null)) return moveRefused(null);
   const points = anchors.filter((anchor): anchor is { readonly x: number; readonly z: number } => anchor !== null);
   const spread = (values: readonly number[]): number => Math.max(...values) - Math.min(...values);
   const alongX = spread(points.map((p) => p.x)) >= spread(points.map((p) => p.z));

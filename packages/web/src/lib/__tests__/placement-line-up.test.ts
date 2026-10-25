@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { getCatalogueItem } from "../catalogue.js";
 import { createGhostWorld } from "../ghost-truth.js";
-import { planLineUp, planMove } from "../placement-edit.js";
+import { LINE_UP_NEEDS_TWO, planLineUp, planMove, selectionUnits, wholeSelection } from "../placement-edit.js";
 import type { PlacedItem } from "../placement.js";
-import { cardParamsFor, stampSetup } from "../setup-cards.js";
+import { setPlannerFeaturesForTesting } from "../planner-features.js";
+import { cardParamsFor, stampSetup, type CardId } from "../setup-cards.js";
+import { rearrangeTableGroup } from "../table-group.js";
+
+afterEach(() => {
+  setPlannerFeaturesForTesting(null);
+});
 
 let counter = 0;
 function ids(): string {
@@ -16,6 +22,28 @@ function round(x: number, z: number): readonly PlacedItem[] {
   const params = cardParamsFor("round");
   if (params === null) throw new Error("no round");
   return stampSetup(params, { x, z }, 0, ids);
+}
+
+/** A Top or Long table set (table sets on), `trestles` long. */
+function set(card: CardId, trestles: number, x: number, z: number): readonly PlacedItem[] {
+  setPlannerFeaturesForTesting({ tableSets: true });
+  const params = cardParamsFor(card, { trestles });
+  if (params === null) throw new Error(`no ${card}`);
+  return stampSetup(params, { x, z }, 0, ids);
+}
+
+function trestlesOf(pieces: readonly PlacedItem[]): readonly PlacedItem[] {
+  return pieces.filter((piece) => getCatalogueItem(piece.catalogueItemId)?.category === "table");
+}
+
+/** A set whose first trestle's chairs have lost the set (a layout saved before sets were): only their group ties them in. */
+function withLooseChairs(pieces: readonly PlacedItem[]): readonly PlacedItem[] {
+  const first = trestlesOf(pieces)[0];
+  return pieces.map((piece) => {
+    if (piece === first || piece.groupId !== first?.groupId) return piece;
+    const { setId: _setId, ...loose } = piece;
+    return loose;
+  });
 }
 
 function tableOf(pieces: readonly PlacedItem[], groupId: string | null): PlacedItem {
@@ -64,9 +92,49 @@ describe("Line up", () => {
     expect(plan.reason).toMatch(/^Won't fit · would overlap the round/u);
   });
 
-  it("needs two or more", () => {
+  it("needs two or more, and says so", () => {
     const one = round(0, 0);
-    expect(planLineUp(new Set([one[0]?.id ?? ""]), world(one)).ok).toBe(false);
+    expect(planLineUp(new Set([one[0]?.id ?? ""]), world(one))).toEqual({ ok: false, obstacle: null, reason: LINE_UP_NEEDS_TWO });
+  });
+
+  it("moves a Top table set whole, with a round, as two", () => {
+    const top = set("top-table", 4, -5, 2.2);
+    const other = round(4, -0.4);
+    const room = [...top, ...other];
+    const plan = planLineUp(new Set([top[0]?.id ?? "", other[0]?.id ?? ""]), world(room));
+    if (!plan.ok) throw new Error(plan.reason);
+    const shifts = top.map((piece) => {
+      const after = plan.items.find((moved) => moved.id === piece.id);
+      if (after === undefined) throw new Error("set piece left behind");
+      return [after.x - piece.x, after.z - piece.z];
+    });
+    for (const [dx, dz] of shifts) {
+      expect(dx).toBeCloseTo(shifts[0]?.[0] ?? Number.NaN, 9);
+      expect(dz).toBeCloseTo(shifts[0]?.[1] ?? Number.NaN, 9);
+    }
+  });
+
+  it("keeps a set whole when some of its chairs carry only their trestle's group", () => {
+    const long = withLooseChairs(set("long-table", 2, 0, 0));
+    expect(selectionUnits(long)).toHaveLength(1);
+    const anyLooseChair = long.find((piece) => piece.setId === undefined && getCatalogueItem(piece.catalogueItemId)?.category === "chair");
+    expect(wholeSelection(new Set([anyLooseChair?.id ?? ""]), long)).toHaveLength(long.length);
+    expect(planLineUp(new Set([long[0]?.id ?? ""]), world(long))).toMatchObject({ ok: false, reason: LINE_UP_NEEDS_TWO });
+  });
+});
+
+describe("a trestle's chairs set again", () => {
+  it("stay in its set, with ids from the plan's own source", () => {
+    const long = set("long-table", 2, 0, 0);
+    const first = trestlesOf(long)[0];
+    if (first === undefined) throw new Error("no trestle");
+    let next = 0;
+    const fewer = rearrangeTableGroup(first.id, 4, long);
+    const more = rearrangeTableGroup(first.id, 6, fewer, () => `fresh-${String((next += 1))}`);
+    const chairs = more.filter((piece) => piece.groupId === first.groupId && piece.id !== first.id);
+    expect(chairs).toHaveLength(6);
+    for (const chair of chairs) expect(chair.setId).toBe(first.setId);
+    expect(chairs.filter((chair) => chair.id.startsWith("fresh-")).map((chair) => chair.id).sort()).toEqual(["fresh-1", "fresh-2"]);
   });
 });
 
@@ -86,9 +154,18 @@ describe("Move", () => {
     const room = [...first, ...second];
     const onto = planMove(new Set([first[0]?.id ?? ""]), { x: 5, z: 0.5 }, world(room));
     expect(onto.ok).toBe(false);
+    if (!onto.ok) expect(onto.reason).toMatch(/^Won't fit · would overlap the round/u);
     const nearWall = GRAND_HALL_RENDER_DIMENSIONS.length / 2 - 1.5;
     const plan = planMove(new Set([first[0]?.id ?? ""]), { x: -5, z: nearWall }, world(room));
     if (!plan.ok) throw new Error(plan.reason);
     expect(tableOf(plan.items, first[0]?.groupId ?? null).z).toBeLessThan(nearWall);
+  });
+
+  it("carries the whole set from a tap on a chair that holds only its trestle's group", () => {
+    const long = withLooseChairs(set("long-table", 2, 0, 0));
+    const looseChair = long.find((piece) => piece.setId === undefined && getCatalogueItem(piece.catalogueItemId)?.category === "chair");
+    const plan = planMove(new Set([looseChair?.id ?? ""]), { x: 0, z: 2.5 }, world(long));
+    if (!plan.ok) throw new Error(plan.reason);
+    expect(plan.items).toHaveLength(long.length);
   });
 });
