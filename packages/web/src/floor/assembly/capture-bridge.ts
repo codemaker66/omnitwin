@@ -43,6 +43,8 @@ export interface AssemblyMeasure {
   readonly applyMaxMs: number;
   readonly gpuP95Ms: number | null;
   readonly gpuMeanMs: number | null;
+  /** The three slowest frames: when in the show, and how long. */
+  readonly worst: readonly { readonly seconds: number; readonly ms: number }[];
 }
 
 export interface AssemblyStateReport {
@@ -299,6 +301,7 @@ export function installAssemblyBridge(director: AssemblyDirector, get: () => Roo
         applyMaxMs: round(Math.max(0, ...apply)),
         gpuP95Ms: gpu.length > 0 ? round(percentile(gpu, 95)) : null,
         gpuMeanMs: gpu.length > 0 ? round(gpu.reduce((sum, value) => sum + value, 0) / gpu.length) : null,
+        worst: times.map((ms, frame) => ({ seconds: round(frame / 60), ms: round(ms) })).sort((a, b) => b.ms - a.ms).slice(0, 3),
       };
     },
     resetPipeline: async () => {

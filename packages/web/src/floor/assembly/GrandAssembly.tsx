@@ -45,6 +45,8 @@ const SURFACES_WAIT_MS = 4500;
 const LONGEST_STEP = 0.1;
 /** Below this landscape aspect the Assembly frames the hall down its length, as the planner does. */
 const PORTRAIT_BELOW = 1.2;
+/** A show that plays to its end holds its last frame this long before the planner's working layers return, seconds of show time. */
+const HELD_ENDING = 1.2;
 
 type Stage =
   | { readonly kind: "idle" }
@@ -168,8 +170,19 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   const touched = useRef(new Set<string>());
   const applyMs = useRef(0);
   const framesDrawn = useRef(0);
+  /** The windows' light is drawn, at nothing, for its first frames, so its shaders compile before any show. */
+  const warmFrames = useRef(4);
   /** The framing to hold until CameraRig has taken the camera back. */
   const handback = useRef<CameraPose | null>(null);
+  /** The held ending, on the show's clock: the planner's working layers return at `until`. */
+  const ending = useRef<{ time: number; readonly until: number; readonly manual: boolean } | null>(null);
+
+  /** The planner's chrome, working overlays and the replay control come back. */
+  const returnPlanner = useCallback((): void => {
+    ending.current = null;
+    useCockpitStore.getState().setCameraInteractionActive(false);
+    useAssemblyRecallStore.setState({ active: false });
+  }, []);
   const onCameraRef = useRef(onCamera);
   onCameraRef.current = onCamera;
   const request = useAssemblyRecallStore((state) => state.request);
@@ -230,7 +243,9 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     for (const light of lights) {
       const level = show?.light(light.window.id) ?? 0;
       light.level.value = level;
-      for (const mesh of light.meshes) mesh.visible = level > 0.003;
+      // Drawn whenever a show is on, even at nothing (it is additive), so its
+      // shaders are ready before the light first rises.
+      for (const mesh of light.meshes) mesh.visible = show !== null;
     }
   }, [lights]);
 
@@ -239,8 +254,13 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     return size.width / Math.max(1, size.height) < PORTRAIT_BELOW;
   }, [get]);
 
-  /** Everything to its saved transform now; the camera to `cameraTo`, or left where it is. */
-  const finish = useCallback((cameraTo: CameraPose | null): void => {
+  /**
+   * Everything to its saved transform now; the camera to `cameraTo`, or left
+   * where it is. A show that played to its end (`held`) keeps the room clear
+   * of the planner's working layers for a beat; skip and cancel return them
+   * at once, since the person wants to work.
+   */
+  const finish = useCallback((cameraTo: CameraPose | null, held: { readonly time: number; readonly manual: boolean } | null = null): void => {
     const wasActive = stage.current.kind !== "idle";
     stage.current = { kind: "idle" };
     // A glide queued while the Assembly held the camera would carry it off its final framing.
@@ -263,11 +283,11 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
         target: target === null ? cameraTo?.target ?? [0, 0, 0] : [target.x, target.y, target.z],
       };
       onCameraRef.current(false);
-      useCockpitStore.getState().setCameraInteractionActive(false);
-      useAssemblyRecallStore.setState({ active: false });
+      if (held === null) returnPlanner();
+      else ending.current = { time: held.time, until: held.time + HELD_ENDING, manual: held.manual };
     }
     invalidate();
-  }, [get, invalidate, moveGroups, placeCamera, setLights]);
+  }, [get, invalidate, moveGroups, placeCamera, returnPlanner, setLights]);
 
   const finalFraming = useCallback((portrait: boolean): CameraPose | null => {
     const keys = portrait ? ACCIO_CAMERA_PORTRAIT : ACCIO_CAMERA_LANDSCAPE;
@@ -277,14 +297,18 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
 
   const skip = useCallback((): void => {
     const current = stage.current;
-    if (current.kind === "idle") return;
+    if (current.kind === "idle") {
+      // During the held ending: the planner, at once.
+      if (ending.current !== null) returnPlanner();
+      return;
+    }
     if (current.kind === "holding") {
       finish(finalFraming(current.portrait));
       return;
     }
     current.show.skip();
     finish(current.show.camera());
-  }, [finalFraming, finish]);
+  }, [finalFraming, finish, returnPlanner]);
 
   const cancel = useCallback((): void => {
     const current = stage.current;
@@ -296,6 +320,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   const begin = useCallback((): void => {
     // The Assembly owns the camera now: a glide under way or queued is dropped.
     handback.current = null;
+    ending.current = null;
     dropQueuedGlides();
     useSelectionStore.getState().clearSelection();
     // The planner's working overlays and chrome step back, as for a camera move.
@@ -340,7 +365,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   }, [begin, invalidate, isPortrait, moveGroups, placeCamera, request]);
 
   // Skip: Escape (as an operation in the planner's Escape order), a click or a tap.
-  useEscapeLayer("operation", { open: () => stage.current.kind !== "idle", onEscape: skip });
+  useEscapeLayer("operation", { open: () => stage.current.kind !== "idle" || ending.current !== null, onEscape: skip });
   useEffect(() => {
     const canvasHost = (): HTMLElement | null => get().gl.domElement.parentElement;
     let swallowing: number | null = null;
@@ -350,7 +375,11 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
       event.preventDefault();
     };
     const down = (event: PointerEvent): void => {
-      if (stage.current.kind === "idle") return;
+      if (stage.current.kind === "idle") {
+        // A press during the held ending brings the planner back and is the planner's own.
+        if (ending.current !== null) returnPlanner();
+        return;
+      }
       skip();
       // A press on the room only skips: it does not also select or start a drag.
       const host = canvasHost();
@@ -378,12 +407,18 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
       window.removeEventListener("pointerup", up, true);
       window.removeEventListener("click", click, true);
     };
-  }, [get, skip]);
+  }, [get, returnPlanner, skip]);
 
   // Leaving (another room, walking, the timeline, a route change): the true state at once.
   const cancelOnLeave = useRef(cancel);
   cancelOnLeave.current = cancel;
-  useEffect(() => () => { cancelOnLeave.current(); }, []);
+  const returnOnLeave = useRef(returnPlanner);
+  returnOnLeave.current = returnPlanner;
+  useEffect(() => () => {
+    cancelOnLeave.current();
+    // A held ending still under way: its layers come back with the planner.
+    if (ending.current !== null) returnOnLeave.current();
+  }, []);
 
   // Development: the capture harness's handle (window.__assembly).
   useEffect(() => {
@@ -392,6 +427,11 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
       play,
       setTime: (seconds) => {
         const current = stage.current;
+        if (current.kind === "idle" && ending.current !== null) {
+          ending.current.time = seconds;
+          invalidate();
+          return;
+        }
         if (current.kind !== "playing") return;
         current.time = seconds;
         invalidate();
@@ -415,6 +455,12 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
 
   useFrame((_state, delta) => {
     framesDrawn.current += 1;
+    if (warmFrames.current > 0) {
+      warmFrames.current -= 1;
+      // Additive light at level 0 adds nothing to the picture.
+      for (const light of lights) for (const mesh of light.meshes) mesh.visible = warmFrames.current > 0 || stage.current.kind !== "idle";
+      invalidate();
+    }
     const current = stage.current;
     const held = handback.current;
     if (current.kind === "idle" && held !== null) {
@@ -425,11 +471,28 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
       if (resumed) handback.current = null;
       else invalidate();
     }
+    const closing = ending.current;
+    if (current.kind === "idle" && closing !== null) {
+      if (!closing.manual) closing.time += Math.min(delta, LONGEST_STEP);
+      if (closing.time >= closing.until) {
+        returnPlanner();
+      } else {
+        // The room holds still, clear of the planner's working layers.
+        const cockpit = useCockpitStore.getState();
+        if (!cockpit.cameraInteractionActive) cockpit.setCameraInteractionActive(true);
+        if (!closing.manual) invalidate();
+      }
+    }
     if (current.kind === "idle") return;
     const started = performance.now();
     const cockpit = useCockpitStore.getState();
     if (!cockpit.cameraInteractionActive) cockpit.setCameraInteractionActive(true);
     if (current.kind === "holding") {
+      // The windows' light is drawn, at nothing, while the room is held: its shaders compile now.
+      for (const light of lights) {
+        light.level.value = 0;
+        for (const mesh of light.meshes) mesh.visible = true;
+      }
       // Pieces arriving in the store while the room is held are held too.
       moveGroups(EMPTY_ROOM);
       const surfaces = useHallViewStore.getState().surfaces;
@@ -455,7 +518,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
     show.advanceTo(current.time);
     const frame = show.frame();
     if (frame === null) {
-      finish(show.camera());
+      finish(show.camera(), { time: current.time, manual: current.manual });
       applyMs.current = performance.now() - started;
       return;
     }
