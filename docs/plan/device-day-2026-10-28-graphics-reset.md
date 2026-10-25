@@ -22,11 +22,16 @@ keeps the context away, which is the case where the view needs a new canvas.
 
 | # | Open | Before the reset | Expect | Pass if back within |
 |---|---|---|---|---|
-| 1 | `/plan?space=grand-hall&graphicsReset=30` | Place two tables, select one, turn the view to an unusual angle | The same angle, both tables, the same table selected | 3 s |
-| 2 | `/plan?space=grand-hall&graphicsReset=30:never` | The same | Layout and selection kept; the room may redraw from the start and stream in again | 10 s |
-| 3 | `/tour?graphicsReset=20` | Walk two viewpoints in, look at a portrait | The same viewpoint and portrait | 3 s |
-| 4 | `/tour?graphicsReset=20:never` | The same | The same viewpoint; the look may turn back to the viewpoint's opening | 8 s |
-| 5 | `/room/grand-hall?graphicsReset=30` (preview build only) | Walk to the far wall | The same place and view | 3 s |
+| 1 | `/plan?space=grand-hall&graphicsReset=30` | Place two tables, select one, turn the view to an unusual angle | The same angle, both tables, the same table selected | 10 s |
+| 2 | `/plan?space=grand-hall&graphicsReset=30:never` | The same | Layout and selection kept; the room may redraw from the start and stream in again | 20 s |
+| 3 | `/tour?graphicsReset=20` | Walk two viewpoints in, look at a portrait | The same viewpoint and portrait | 5 s |
+| 4 | `/tour?graphicsReset=20:never` | The same | The same viewpoint; the look may turn back to the viewpoint's opening | 10 s |
+| 5 | `/room/grand-hall?graphicsReset=30` (preview build only) | Walk to the far wall | The same place and view | 10 s |
+
+The cover stays until the room has actually drawn again, and that first frame
+recompiles every shader on the device. On the RTX 4090 that took 0.9–2.4 s, so
+expect several seconds on a phone. Write down the seconds either way: they are
+the number this check exists to find.
 
 For 1 and 2, start counting when the hall first appears, not when the page
 starts loading. Without the extra 30 seconds the reset can land during the

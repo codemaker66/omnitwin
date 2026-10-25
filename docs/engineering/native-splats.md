@@ -102,8 +102,10 @@ against the new device, and the new renderer re-uploads from the CPU copies the
 scene already holds. It starts from the renderer's base settings, captured at
 activation before any scene effect layered its own, and the current resolution.
 `onCreated` does not fire again: a swap is not a new canvas, and the planner
-resets its splat arrival counts on `onCreated`. While it restores, the canvas
-is covered by "Restoring the 3D view" (`ActivityStatus`), and frames stop.
+resets its splat arrival counts on `onCreated`. While it restores, frames stop
+and the canvas is covered by "Restoring the 3D view" (`ActivityStatus`). The
+cover stays until the new device has drawn its first frame, because that frame
+compiles every pipeline again.
 
 The policy is `lib/native-renderer-recovery.ts`. It waits for a hidden page to
 be shown. A WebGL canvas waits up to 4 s for `webglcontextrestored`; a context
@@ -149,10 +151,12 @@ tiles are empty until re-streamed (named to the planner lane, 25 October).
 
 Measured in Chromium on the RTX 4090 with `scripts/graphics-reset.mjs` (the
 furnished Grand Hall planner and 6,030,980 splats, the room walk, the tour on
-real imagery, DPR 2 and DPR 1): every case restored, 1.0–1.6 s for a swap and
-4.2–4.4 s for a context never returned, with the scene graph, camera, layout
-and selection preserved, before/after frames at the same pose within 0.04–1.65
-mean levels, frame intervals back to baseline and no page errors. The report:
+real imagery, DPR 2 and DPR 1, timed on the page's own clock): every case
+restored. The swap itself takes about 150 ms. The cover lifts at the new
+device's first frame: 0.9–2.4 s after a WebGPU loss, 5.1 s on WebGL2, and
+4.3–7.8 s via a new canvas. The scene graph, camera, layout and selection are
+preserved, before/after frames at the same pose are within 0.04–2.4 mean levels,
+frame intervals return to baseline, and there were no page errors. The report:
 [graphics reset recovery](../reports/graphics-reset-recovery-2026-10-25.md).
 `?graphicsReset=<s>[:never]` takes a view's graphics away once for checking on
 real phones ([the device-day script](../plan/device-day-2026-10-28-graphics-reset.md)).
