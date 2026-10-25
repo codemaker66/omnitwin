@@ -785,6 +785,29 @@ export function fillRefillIds(placedItems: readonly PlacedItem[], fillTable: Cat
   return ids;
 }
 
+/** A room's ways out by its slug: the Grand Hall's surveyed doors; for any other room, not recorded (null), so every wall carries a gangway. */
+export function roomExits(roomSlug: string | null): readonly RoomExit[] | null {
+  return roomSlug === "grand-hall" ? grandHallExits() : null;
+}
+
+/** Fill over what is placed: the plan, and the round groups it sets anew. */
+export interface RoomFill {
+  readonly plan: GangwayFillPlan;
+  readonly refillIds: ReadonlySet<string>;
+}
+
+/**
+ * Fill over a layout (Q-10), the one function the prompt's preview and the
+ * store's commit both call, so what the button says is what it places:
+ * only round groups of the fill table's kind are set anew; every other
+ * piece stays and keeps the aisle rule round it as a keep-out.
+ */
+export function planRoomFill(input: Omit<GangwayFillInput, "keepOuts">, placedItems: readonly PlacedItem[]): RoomFill | null {
+  const refillIds = fillRefillIds(placedItems, input.table);
+  const plan = planGangwayFill({ ...input, keepOuts: fillKeepOuts(placedItems, refillIds, input.rule.betweenTablesM) });
+  return plan === null ? null : { plan, refillIds };
+}
+
 /** Every kept piece as a keep-out, metres, room-centred: its footprint and the aisle round it. */
 export function fillKeepOuts(placedItems: readonly PlacedItem[], refillIds: ReadonlySet<string>, aisleM: number): readonly LayoutRect[] {
   const rects: LayoutRect[] = [];
@@ -894,7 +917,15 @@ export function autoFillBasis(plan: AutoFillPlan): string {
     return `Rows ${metres(THEATRE_SPACING.rowPitchM)} apart, a ${metres(THEATRE_SPACING.aisleM)} centre aisle and ${metres(THEATRE_SPACING.stageDepthM)} clear at the front.`;
   }
   const kind = plan.round ? "Rounds" : "Tables";
+  if (isGangwayFillPlan(plan)) {
+    return `${kind} of ${String(plan.seatsPerTable)}, with ${metres(plan.rule.gangwayM)} gangways to the doors and ${metres(plan.rule.betweenTablesM)} clear behind every other chair, after Scottish fire safety guidance.`;
+  }
   return `${kind} of ${String(plan.seatsPerTable)}, with ${metres(BANQUET_CHAIR_CLEARANCE_M)} clear behind every chair.`;
+}
+
+/** A fill laid out with designated gangways (planGangwayFill). */
+export function isGangwayFillPlan(plan: AutoFillPlan): plan is GangwayFillPlan {
+  return plan.style === "dinner-rounds" && "rule" in plan;
 }
 
 /**

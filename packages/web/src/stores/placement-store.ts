@@ -13,7 +13,17 @@ import {
 } from "../lib/placement.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
-import { planBanquetFill, planTheatreFill, type BanquetFillPlan, type TheatreFillPlan } from "../lib/auto-fill.js";
+import {
+  FILL_AISLE_RULE,
+  planBanquetFill,
+  planRoomFill,
+  planTheatreFill,
+  refillPieces,
+  type BanquetFillPlan,
+  type RoomExit,
+  type TheatreFillPlan,
+} from "../lib/auto-fill.js";
+import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { applySeatShortfallFix, type SeatShortfallFixResult } from "../lib/seat-shortfall.js";
 import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
 import { postPlacementNotice } from "./placement-notice-store.js";
@@ -117,7 +127,13 @@ export interface PlacementState {
    * what it placed, including the seats the room takes at this spacing, or
    * null when it placed nothing.
    */
-  readonly autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => BanquetFillPlan | null;
+  readonly autoArrangeBanquet: (
+    catalogueItemId: string,
+    targetGuests: number,
+    chairsPerTable: number,
+    /** The room's ways out (lib/auto-fill roomExits), for Fill's gangways behind fillKeepOuts; null when not recorded. */
+    exits?: readonly RoomExit[] | null,
+  ) => BanquetFillPlan | null;
   /**
    * Auto-fill the room with theatre-style rows of chairs facing a stage at one
    * end. A target of 0 fills the room. Replaces the current layout. Returns
@@ -579,13 +595,32 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     set({ placedItems: adjusted });
   },
 
-  autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => {
+  autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number, exits: readonly RoomExit[] | null = null) => {
     if (isLayoutTimelineMutationLocked()) return null;
     const tableItem = getCatalogueItem(catalogueItemId);
     if (tableItem === undefined || !isDiningTableItem(tableItem)) return null;
     const state = get();
 
     const dims = useRoomDimensionsStore.getState().dimensions;
+    // Fill over the layout (Q-10): only round groups of this kind are set anew, at the gangways' design;
+    // every other piece stays exactly where it is, ids and all, and keeps the aisle rule round it.
+    if (plannerFeatureEnabled("fillKeepOuts")) {
+      const fill = planRoomFill({
+        table: tableItem,
+        seatsPerTable: chairsPerTable,
+        guests: targetGuests,
+        roomWidthM: toRealWorld(dims.width),
+        roomLengthM: toRealWorld(dims.length),
+        exits,
+        rule: FILL_AISLE_RULE,
+      }, state.placedItems);
+      if (fill === null) return null;
+      const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan);
+      if (refilled.length === 0) return null;
+      set({ placedItems: [...state.placedItems.filter((item) => !fill.refillIds.has(item.id)), ...refilled] });
+      announcePlaced(refilled.map((item) => item.id));
+      return fill.plan;
+    }
     // Room dimensions are render-space; the plan works in metres. Spacing runs
     // between the backs of the chairs (lib/auto-fill).
     const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length));
