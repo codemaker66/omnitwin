@@ -41,8 +41,9 @@ import "./catalogue.css";
 // in hand: Esc puts the card down first, then closes the catalogue.
 // ---------------------------------------------------------------------------
 
-/** How far the sheet sits below its place before it rises: its own height. */
+/** How far the sheet sits below its place before it rises: its own height (16 px more with the staff store row). */
 const CLOSED_OFFSET_PX = 192;
+const CLOSED_OFFSET_STORE_PX = 208;
 /** If no frame ever comes (a hidden tab), the sinking sheet still goes. */
 const LEAVE_FALLBACK_MS = 600;
 
@@ -217,9 +218,10 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
   latestOpen.current = open;
   const latestLeft = useRef(onLeft);
   latestLeft.current = onLeft;
-  useSpringValue(open && risen ? 0 : CLOSED_OFFSET_PX, SPRING_PRESETS.sheetSettle, (value) => {
+  const closedOffset = stock === null ? CLOSED_OFFSET_PX : CLOSED_OFFSET_STORE_PX;
+  useSpringValue(open && risen ? 0 : closedOffset, SPRING_PRESETS.sheetSettle, (value) => {
     sheetRef.current?.style.setProperty("--pc-catalogue-rise", `${String(Math.round(value * 100) / 100)}px`);
-    if (!latestOpen.current && value >= CLOSED_OFFSET_PX) latestLeft.current();
+    if (!latestOpen.current && value >= closedOffset) latestLeft.current();
   });
   useLayoutEffect(() => {
     sheetRef.current?.style.setProperty("--pc-catalogue-cards", String(WIDEST_TAB_CARDS));
@@ -321,7 +323,7 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
   return (
     <section
       ref={sheetRef}
-      className={["pc-lacquer", "pc-lacquer--raised", "pc-catalogue", className ?? ""].filter(Boolean).join(" ")}
+      className={["pc-lacquer", "pc-lacquer--raised", "pc-catalogue", stock === null ? "" : "has-store", className ?? ""].filter(Boolean).join(" ")}
       role="region"
       aria-label="Catalogue"
       aria-hidden={open ? undefined : true}

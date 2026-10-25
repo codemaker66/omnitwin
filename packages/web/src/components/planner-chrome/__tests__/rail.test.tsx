@@ -139,7 +139,8 @@ describe("the store (staff; Blake's B2, hard)", () => {
     render(<Rail />);
     const round = within(rail()).getByRole("button", { name: /^Round of 10/u });
     expect(round.classList.contains("is-empty")).toBe(true);
-    expect(round.querySelector(".pc-railcard__store")?.textContent).toBe("None left in store");
+    expect(round.querySelector(".pc-railcard__store")?.textContent).toBe("None left");
+    expect(round.getAttribute("aria-label")).toContain("none left in store");
     expect(round.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(round);
     expect(useCatalogueStore.getState().armedCardId).toBeNull();
