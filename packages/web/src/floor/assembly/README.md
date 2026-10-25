@@ -109,14 +109,18 @@ shown only with the flag on. It steps aside while the Assembly plays.
   `scripts/assembly-capture.mjs` (clip, look, measure) with the frame loop
   frozen. Production builds never import it.
 
-Measured on the RTX 4090, 180 seats (198 pieces), 25 October 2026, with
-`assembly-capture.mjs --mode measure` (wall time per stepped frame, p95 / max).
-The phone row is the planner's phone render profile at a phone viewport on the
-same GPU, not a handset:
+Measured on the RTX 4090, 180 seats (198 pieces), 25 October 2026 11:45 GMT
+(the clear-air build), with `assembly-capture.mjs --mode measure`. Figures are
+wall time per stepped frame, p95 / max. The phone row is the planner's phone
+render profile at a phone viewport on the same GPU, not a handset:
 
 | Profile | Show | Same layout at rest |
 | --- | --- | --- |
-| Desktop 1600×900 @2 | 13.9 / 16.3 ms | 12.5 / 18.7 ms |
-| Phone 393×852 @3 | 12.0 / 14.5 ms | 10.3 / 13.8 ms |
+| Desktop 1600×900 @2 | 10.8 / 12.9 ms | 9.6 / 25.2 ms |
+| Phone 393×852 @3 | 9.3 / 11.2 ms | 9.2 / 12.8 ms |
 
-The show's own work (publishing, followers, groups) is ≤ 1.1 ms p95 of that.
+The 25.2 ms is one frame of the layout at rest with no Assembly. The PC is
+shared: an earlier run that morning measured the show at 13.9 / 16.3 ms
+(desktop) and 12.0 / 14.5 ms (phone). The show's own work (publishing,
+followers, groups) is at most 0.7 ms p95 of a frame. Its plan, made once at
+the start, takes about 0.1 s on this desktop.
