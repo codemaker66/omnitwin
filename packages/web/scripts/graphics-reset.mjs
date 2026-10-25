@@ -18,6 +18,7 @@
 //     [--surface planner|planner-walk|room-walk|tour] [--backend webgpu|webgl2]
 //     [--loss destroy|lose-restore|lose-never|gpu-crash] [--device desktop|phone] [--entry saved|fresh]
 //     [--layer as|capture|model]   (the planner's view: as it opens, the captured room's splats, or the drawn hall)
+//     [--dpr 1]   (the display's device pixel ratio, default the device's)
 import { chromium } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -35,7 +36,7 @@ const DEVICE = option("device", "desktop");
 const ENTRY = option("entry", "saved");
 const LAYER = option("layer", "as");
 const OUT = option("out", "D:/claude/l3c-graphics-reset/run");
-const RUN = `${SURFACE}-${BACKEND}-${LOSS}-${DEVICE}${SURFACE.startsWith("planner") && ENTRY === "fresh" ? "-fresh" : ""}${LAYER === "as" ? "" : `-${LAYER}`}`;
+const RUN = `${SURFACE}-${BACKEND}-${LOSS}-${DEVICE}${SURFACE.startsWith("planner") && ENTRY === "fresh" ? "-fresh" : ""}${LAYER === "as" ? "" : `-${LAYER}`}${process.argv.includes("--dpr") ? `-dpr${option("dpr", "")}` : ""}`;
 const API = "http://localhost:3001";
 const CONFIG_ID = "reset-config-0001";
 const VENUE = { id: "reset-venue-trades", name: "Trades Hall", slug: "trades-hall-glasgow", address: "85 Glassford Street", logoUrl: null, brandColour: null };
@@ -76,8 +77,11 @@ const DEVICES = {
   desktop: { viewport: { width: 1600, height: 900 }, deviceScaleFactor: 2, isMobile: false, hasTouch: false },
   phone: { viewport: { width: 393, height: 852 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
 };
-const device = DEVICES[DEVICE];
-if (device === undefined) throw new Error(`Unknown device ${DEVICE}`);
+const preset = DEVICES[DEVICE];
+if (preset === undefined) throw new Error(`Unknown device ${DEVICE}`);
+// --dpr: a display whose resting resolution differs from what a view settles at (a 1x office screen).
+const DPR = Number(option("dpr", String(preset.deviceScaleFactor)));
+const device = { ...preset, deviceScaleFactor: DPR };
 mkdirSync(OUT, { recursive: true });
 
 async function stubPlanner(page) {
@@ -97,12 +101,20 @@ async function stubPlanner(page) {
   } } }));
 }
 
+/** Serve a request from a public origin; a slow or failed fetch reaches the page as a network failure. */
+async function forward(route, url) {
+  try {
+    await route.fulfill({ response: await route.fetch({ url, timeout: 120_000 }) });
+  } catch {
+    await route.abort("failed").catch(() => undefined);
+  }
+}
+
 /** The rooms' real captures, read from the bucket they are published to (as the e2e capture cache does). */
 async function routeCaptures(page) {
   await page.route("**/splats/trades-hall/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    const response = await route.fetch({ url: `https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev${path}` });
-    await route.fulfill({ response });
+    await forward(route, `https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev${path}`);
   });
 }
 
@@ -110,8 +122,7 @@ async function routeCaptures(page) {
 async function routeTour(page) {
   await page.route("**/twin/trades-hall/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/twin/, "");
-    const response = await route.fetch({ url: `https://twin.venviewer.com${path}` });
-    await route.fulfill({ response });
+    await forward(route, `https://twin.venviewer.com${path}`);
   });
 }
 
@@ -216,6 +227,22 @@ async function triggerLoss(page, browser) {
   await page.evaluate(() => {
     window.__resetOldCanvas = document.querySelector("canvas");
     window.__resetOldRenderer = window.__venPerf?.gl ?? null;
+    // The page's own clock for the recovery, independent of when the harness can poll a busy main thread.
+    const timeline = { lossAt: performance.now(), shownAt: null, goneAt: null, longTasks: [] };
+    window.__resetTimeline = timeline;
+    const restoring = () => [...document.querySelectorAll('[role="status"]')].some((node) => node.textContent?.includes("Restoring the 3D view"));
+    new MutationObserver(() => {
+      const now = performance.now();
+      if (restoring()) timeline.shownAt ??= now;
+      else if (timeline.shownAt !== null) timeline.goneAt ??= now;
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    try {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.startTime >= timeline.lossAt) timeline.longTasks.push(Math.round(entry.duration));
+        }
+      }).observe({ type: "longtask" });
+    } catch { /* Long-task timing is optional. */ }
   });
   if (LOSS === "gpu-crash") {
     const cdp = await browser.newBrowserCDPSession();
@@ -243,10 +270,14 @@ async function triggerLoss(page, browser) {
 /** Poll the recovery until the view draws again or says it stopped. */
 async function awaitRecovery(page, startedAt) {
   const phases = [];
+  let restoringShot = false;
   const deadline = Date.now() + 45_000;
   for (;;) {
     const state = await page.evaluate(() => ({
-      phase: document.querySelector("[data-graphics-recovery]")?.getAttribute("data-graphics-recovery") ?? null,
+      phase: [
+        document.querySelector("[data-graphics-recovery]")?.getAttribute("data-graphics-recovery"),
+        document.querySelector("[data-graphics-attempt]")?.getAttribute("data-graphics-attempt"),
+      ].filter((part) => part !== null && part !== undefined).join("#") || null,
       restoring: [...document.querySelectorAll('[role="status"]')].some((node) => node.textContent?.includes("Restoring the 3D view")),
       stopped: [...document.querySelectorAll('[role="alert"]')].some((node) => node.textContent?.includes("The 3D view stopped")),
       canvasReplaced: document.querySelector("canvas") !== window.__resetOldCanvas,
@@ -255,6 +286,11 @@ async function awaitRecovery(page, startedAt) {
     const label = `${state.phase ?? "-"}${state.restoring ? "+restoring" : ""}${state.stopped ? "+stopped" : ""}`;
     if (phases.at(-1)?.label !== label) phases.push({ atMs: sinceStart(startedAt), label });
     const sawLoss = phases.some((entry) => entry.label.includes("restoring"));
+    // What a person sees while it restores, once.
+    if (state.restoring && !restoringShot) {
+      restoringShot = true;
+      writeFileSync(join(OUT, `${RUN}-restoring.png`), await page.screenshot());
+    }
     if (state.stopped) return { outcome: "stopped", phases, ...state };
     if (sawLoss && !state.restoring) return { outcome: "restored", phases, ...state };
     if (Date.now() > deadline) return { outcome: "timed-out", phases, ...state };
@@ -398,6 +434,15 @@ try {
   await triggerLoss(page, browser);
   report.recovery = await awaitRecovery(page, startedAt);
   report.recovery.totalMs = sinceStart(startedAt);
+  report.recovery.pageClock = await page.evaluate(() => {
+    const timeline = window.__resetTimeline;
+    if (timeline === undefined) return null;
+    return {
+      overlayShownMs: timeline.shownAt === null ? null : Math.round(timeline.shownAt - timeline.lossAt),
+      overlayGoneMs: timeline.goneAt === null ? null : Math.round(timeline.goneAt - timeline.lossAt),
+      longTasksMs: timeline.longTasks,
+    };
+  });
   writeFileSync(join(OUT, `${RUN}-during.png`), await page.screenshot());
   // The replacement rebuilds GPU resources (pipelines, splat snapshots, the hall's environment) as it draws.
   await page.waitForTimeout(SURFACE === "room-walk" ? 20_000 : 10_000);
@@ -434,6 +479,7 @@ try {
 }
 console.log(JSON.stringify({
   run: RUN, outcome: report.recovery?.outcome, totalMs: report.recovery?.totalMs, phases: report.recovery?.phases,
+  pageClock: report.recovery?.pageClock,
   settled: report.settled, replaced: { canvas: report.recovery?.canvasReplaced, renderer: report.recovery?.rendererReplaced },
   capture: { before: report.capture, after: report.captureAfter, showing: report.captureShowing, arrivalDismissed: report.arrivalDismissed },
   walking: report.walking,

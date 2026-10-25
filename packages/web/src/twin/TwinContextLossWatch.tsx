@@ -80,7 +80,8 @@ const COVER: CSSProperties = {
 
 const TRY_AGAIN: CSSProperties = {
   marginTop: 16, padding: "10px 20px", borderRadius: 999,
-  border: "1px solid var(--rule, rgba(216, 174, 91, 0.28))", background: "transparent",
+  // The tour's own rule colour (.vv-twin in twin.css wraps every tour view).
+  border: "1px solid var(--rule)", background: "transparent",
   color: "inherit", font: "inherit", cursor: "pointer",
 };
 

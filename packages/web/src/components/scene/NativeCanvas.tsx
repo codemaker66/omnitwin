@@ -4,7 +4,7 @@ import {
 } from "react";
 import { Canvas, useFrame, type CanvasProps, type RootState } from "@react-three/fiber";
 import { WebGPURenderer } from "three/webgpu";
-import { Scene, Texture } from "three";
+import { Scene } from "three";
 import { ActivityStatus } from "../shared/Activity.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import {
@@ -114,17 +114,6 @@ function hasNativeBackendDisposal(backend: object): backend is { dispose(): Prom
 
 function isProfilerScene(value: unknown): value is Scene { return value instanceof Scene; }
 
-/**
- * PMREM keeps its result per source texture rather than per renderer, so the
- * filtered environment a lost device held would never be rebuilt for the new
- * one. Effects that bake their own environment rebuild it from the renderer.
- */
-function markEnvironmentForRebuild(scene: Scene): void {
-  for (const texture of [scene.environment, scene.background]) {
-    if (texture instanceof Texture) texture.needsPMREMUpdate = true;
-  }
-}
-
 function settleWithin(work: Promise<void>, ms: number): Promise<void> {
   return new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, ms);
@@ -193,6 +182,11 @@ export function NativeCanvas({
   const running = useRef(false);
   const [stoppedWhileRunning, setStoppedWhileRunning] = useState(false);
   const [recoveryPhase, setRecoveryPhase] = useState<NativeRecoveryPhase>({ kind: "running" });
+  // A recovered view is not back until its new device has drawn: the first
+  // frame compiles every pipeline again (seconds on a phone), and the cover
+  // stays over the canvas until then.
+  const [awaitingFirstFrame, setAwaitingFirstFrame] = useState(false);
+  const firstFramePending = useRef(false);
   const mounted = useRef(true);
   const renderer = useRef<WebGPURenderer | null>(null);
   const failedRenderer = useRef<WebGPURenderer | null>(null);
@@ -207,6 +201,8 @@ export function NativeCanvas({
   /** WebGL renderers whose canvas another renderer draws on: never through r186's dispose(). */
   const sharedCanvas = useRef(new WeakSet<WebGPURenderer>());
   const lost = useRef<LostRenderer | null>(null);
+  /** The replacement a swap is starting, until it draws or fails. */
+  const swapping = useRef<{ readonly native: WebGPURenderer; reject(error: Error): void } | null>(null);
   const remounting = useRef<{ resolve(): void; reject(error: Error): void } | null>(null);
   const restorations = useRef(0);
   /** This view, for the once-per-view ?graphicsReset drill. */
@@ -214,26 +210,45 @@ export function NativeCanvas({
   const callbacks = useRef({ onCreated, options, forceWebGL });
   callbacks.current = { onCreated, options, forceWebGL };
 
+  const coverUntilFirstFrame = useCallback((covered: boolean): void => {
+    firstFramePending.current = covered;
+    if (mounted.current) setAwaitingFirstFrame(covered);
+  }, []);
+
   const fail = useCallback((cause: Error): void => {
     framePacer.current?.pacer.dispose();
     framePacer.current = null;
+    if (firstFramePending.current) coverUntilFirstFrame(false);
     // Stop further frames synchronously, before React removes the failed Canvas.
     if (renderer.current !== null && failedRenderer.current === renderer.current) return;
     failedRenderer.current = renderer.current;
     if (!mounted.current) return;
+    // A recovery's replacement that could not start (lost again, or failing,
+    // while it initialized) is one failed attempt, not a stopped view: the
+    // recovery decides what follows.
+    const pendingSwap = swapping.current;
+    if (pendingSwap !== null && pendingSwap.native === renderer.current) {
+      swapping.current = null;
+      pendingSwap.reject(cause);
+      return;
+    }
     const pendingRemount = remounting.current;
     if (pendingRemount !== null) {
-      // A recovery's new canvas that could not start: the recovery decides what follows.
       remounting.current = null;
       pendingRemount.reject(cause);
       return;
+    }
+    if (lost.current !== null) {
+      // The view stops here: no recovery may keep building on it.
+      lost.current = null;
+      recovery.current?.reset();
     }
     setStoppedWhileRunning(running.current);
     running.current = false;
     setError(cause);
     setStatus("error");
     lifecycle.current?.cancel();
-  }, []);
+  }, [coverUntilFirstFrame]);
 
   /** Recovery is exhausted: the view stopped while it held someone's work. */
   const giveUp = useCallback((cause: Error): void => {
@@ -244,11 +259,12 @@ export function NativeCanvas({
     if (renderer.current !== null) failedRenderer.current = renderer.current;
     running.current = false;
     if (!mounted.current) return;
+    coverUntilFirstFrame(false);
     setStoppedWhileRunning(true);
     setError(cause);
     setStatus("error");
     lifecycle.current?.cancel();
-  }, []);
+  }, [coverUntilFirstFrame]);
 
   const lose = useCallback((native: WebGPURenderer, api: NativeLossApi, message: string): void => {
     if (!mounted.current || renderer.current !== native || failedRenderer.current === native) return;
@@ -263,6 +279,7 @@ export function NativeCanvas({
     framePacer.current = null;
     failedRenderer.current = native;
     running.current = false;
+    if (firstFramePending.current) coverUntilFirstFrame(false);
     const backend = isNativeWebGLBackend(native.backend) ? "webgl2" : "webgpu";
     lost.current = { native, settings, pixelRatio: native.getPixelRatio(), backend };
     if (backend === "webgl2") {
@@ -274,7 +291,7 @@ export function NativeCanvas({
       });
     }
     recovery.current?.lost(api);
-  }, [fail]);
+  }, [coverUntilFirstFrame, fail]);
 
   const buildRenderer = useCallback((
     canvas: HTMLCanvasElement | OffscreenCanvas, reuse: LostRenderer["backend"] | null,
@@ -342,6 +359,20 @@ export function NativeCanvas({
           try { endGpuProfile(gpuProfile, successful); } catch { /* Preserve renderer failure ownership. */ }
         }
       }
+    };
+    // A lost renderer still answers the effect cleanups that captured it (the
+    // walk's camera restores the ratio it found on mount), and r186 resizes the
+    // canvas element itself on these: the canvas its replacement now draws on.
+    // A mismatched canvas is a WebGPU validation error on the next frame.
+    const setPixelRatio = native.setPixelRatio.bind(native);
+    native.setPixelRatio = (value?: number): void => { if (isCurrentRenderer()) setPixelRatio(value); };
+    const setSize = native.setSize.bind(native);
+    native.setSize = (width: number, height: number, updateStyle?: boolean): void => {
+      if (isCurrentRenderer()) setSize(width, height, updateStyle);
+    };
+    const setDrawingBufferSize = native.setDrawingBufferSize.bind(native);
+    native.setDrawingBufferSize = (width: number, height: number, pixelRatio: number): void => {
+      if (isCurrentRenderer()) setDrawingBufferSize(width, height, pixelRatio);
     };
     let releaseDevice: (() => void) | null = null;
     let releasing = false;
@@ -503,12 +534,14 @@ export function NativeCanvas({
       created: true,
       onActive: () => {
         const pendingRemount = remounting.current;
+        if (pendingRemount === null) return;
         remounting.current = null;
-        pendingRemount?.resolve();
+        coverUntilFirstFrame(true);
+        pendingRemount.resolve();
       },
       onFailed: fail,
     });
-  }, [fail, launch]);
+  }, [coverUntilFirstFrame, fail, launch]);
 
   /** A fresh renderer on the same canvas; the scene, camera and React tree stay. */
   const swap = useCallback(async (): Promise<void> => {
@@ -524,33 +557,40 @@ export function NativeCanvas({
     const next = buildRenderer(retired.native.domElement, retired.backend);
     baseSettings.current.set(next, retired.settings);
     await new Promise<void>((resolve, reject) => {
+      const failed = (cause: Error): void => {
+        // A replacement that could not start is not a stopped view: the recovery decides what follows.
+        failedRenderer.current = next;
+        if (swapping.current?.native === next) swapping.current = null;
+        reject(cause);
+      };
+      swapping.current = { native: next, reject: failed };
       lifecycle.current = launch(next, state, {
         created: false,
         prepare: () => {
           applyNativeRendererSettings(next, retired.settings);
           next.setPixelRatio(retired.pixelRatio);
-          const { size, scene } = state.get();
+          const { size } = state.get();
           next.setSize(size.width, size.height, false);
-          markEnvironmentForRebuild(scene);
           // Every renderer-keyed effect in the scene runs again against the new device.
           replaceStoreRenderer(state, next);
         },
         onActive: () => {
+          swapping.current = null;
           sharedCanvas.current.delete(next);
           lost.current = null;
+          // Let the lost renderer go; it is no longer current, which is what keeps it silent.
+          failedRenderer.current = null;
           restorations.current += 1;
           if (next.domElement instanceof HTMLCanvasElement) next.domElement.dataset["restorations"] = String(restorations.current);
-          state.get().invalidate();
+          // The first frame needs no request: the frame loop restarting with the
+          // recovery's "running" phase invalidates the root. It lifts the cover.
+          coverUntilFirstFrame(true);
           resolve();
         },
-        onFailed: (cause) => {
-          // A replacement that could not start is not a stopped view: the recovery decides what follows.
-          failedRenderer.current = next;
-          reject(cause);
-        },
+        onFailed: failed,
       });
     });
-  }, [buildRenderer, launch]);
+  }, [buildRenderer, coverUntilFirstFrame, launch]);
 
   /** A new canvas: the last way back, from a context the browser never returns. */
   const remount = useCallback((): Promise<void> => new Promise<void>((resolve, reject) => {
@@ -610,10 +650,13 @@ export function NativeCanvas({
       // Never fence that failed draw or a renderer replaced during a callback.
       const drawn = mounted.current && renderer.current === native && failedRenderer.current !== native;
       // The frames a viewer sees, for the frame-rate governor (main-draw-clock.ts).
-      if (drawn) noteMainDraw(startedAt);
+      if (drawn) {
+        noteMainDraw(startedAt);
+        if (firstFramePending.current) coverUntilFirstFrame(false);
+      }
       return drawn;
     });
-  }, []);
+  }, [coverUntilFirstFrame]);
 
   useEffect(() => {
     mounted.current = true;
@@ -629,6 +672,7 @@ export function NativeCanvas({
     recovery.current?.reset();
     lost.current = null;
     remounting.current = null;
+    coverUntilFirstFrame(false);
     framePacer.current?.pacer.dispose();
     framePacer.current = null;
     lifecycle.current?.cancel();
@@ -645,7 +689,11 @@ export function NativeCanvas({
   const recovering = recoveryPhase.kind !== "running" && recoveryPhase.kind !== "failed";
   const copy = SURFACE_COPY[surface];
   return (
-    <div data-graphics-recovery={recoveryPhase.kind} style={{ position: "relative", width: "100%", height: "100%", ...style }}>
+    <div
+      data-graphics-recovery={recoveryPhase.kind}
+      data-graphics-attempt={recoveryPhase.kind === "restoring" ? recoveryPhase.attempt : undefined}
+      style={{ position: "relative", width: "100%", height: "100%", ...style }}
+    >
       {status !== "error" && (
         <NativeCanvasFailureBoundary key={attempt} onError={fail}>
           <Canvas
@@ -664,7 +712,7 @@ export function NativeCanvas({
           <ActivityStatus variant="panel">Opening the 3D view…</ActivityStatus>
         </div>
       )}
-      {recovering && status !== "error" && (
+      {(recovering || awaitingFirstFrame) && status !== "error" && (
         <div style={{
           // The lost canvas shows nothing true; cover it, and take the gestures meant for it.
           position: "absolute", inset: 0, zIndex: 20,

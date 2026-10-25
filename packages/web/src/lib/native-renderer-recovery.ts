@@ -172,7 +172,13 @@ export function createNativeRendererRecovery({
       // context; a context that never returns needs a new canvas.
       stage = "waiting";
       report({ kind: "waiting", for: "context" });
-      cancelTimer = environment.setTimer(() => { cancelTimer = null; attemptNow("remount"); }, NATIVE_RECOVERY_CONTEXT_WAIT_MS);
+      cancelTimer = environment.setTimer(() => {
+        cancelTimer = null;
+        // Hidden since the wait began: the browser may well hand the context
+        // back once shown, so wait for that rather than replace the canvas.
+        if (!environment.visible()) proceed();
+        else attemptNow("remount");
+      }, NATIVE_RECOVERY_CONTEXT_WAIT_MS);
       return;
     }
     attemptNow(modeFor(attempt + 1));

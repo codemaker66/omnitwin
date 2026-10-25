@@ -11,6 +11,7 @@ interface Timer { readonly at: number; readonly callback: () => void; cancelled:
 function page(initiallyVisible = true): NativeRecoveryEnvironment & {
   advance(ms: number): Promise<void>;
   show(): void;
+  hide(): void;
   readonly pendingTimers: () => number;
   readonly listeners: () => number;
 } {
@@ -46,6 +47,7 @@ function page(initiallyVisible = true): NativeRecoveryEnvironment & {
       await settle();
     },
     show() { visible = true; for (const listener of [...visibleListeners]) listener(); },
+    hide() { visible = false; },
     pendingTimers: () => timers.filter((timer) => !timer.cancelled).length,
     listeners: () => visibleListeners.size,
   };
@@ -171,6 +173,24 @@ describe("native renderer recovery", () => {
     expect(last()).toEqual({ kind: "waiting", for: "visible" });
     recovery.contextRestored();
     environment.show();
+    await settle();
+    expect(attempts.map(({ mode }) => mode)).toEqual(["swap"]);
+  });
+
+  it("gives a page hidden during the context wait no new canvas; the wait resumes once it is shown", async () => {
+    const environment = page();
+    const { recovery, attempts, last } = harness(environment);
+    recovery.lost("WebGL");
+    await settle();
+    expect(last()).toEqual({ kind: "waiting", for: "context" });
+    environment.hide();
+    await environment.advance(NATIVE_RECOVERY_CONTEXT_WAIT_MS * 3);
+    expect(attempts).toHaveLength(0);
+    expect(last()).toEqual({ kind: "waiting", for: "visible" });
+    environment.show();
+    await settle();
+    expect(last()).toEqual({ kind: "waiting", for: "context" });
+    recovery.contextRestored();
     await settle();
     expect(attempts.map(({ mode }) => mode)).toEqual(["swap"]);
   });

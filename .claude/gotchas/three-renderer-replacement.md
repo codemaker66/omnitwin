@@ -11,8 +11,12 @@ and because consumers read `useThree((s) => s.gl)` with `gl` in their effect dep
 What breaks it:
 
 - **State only the GPU holds.** A texture filled by `copyTextureToTexture` whose source
-  bytes were recycled, a render target baked once, a PMREM result (cached per source
-  texture, not per renderer). Key such state on the renderer so it is rebuilt.
+  bytes were recycled, a render target baked once, a generator bound to its first
+  renderer (`hall-glazing.ts`' hand-built `pmremTexture()`). Key such state on the
+  renderer so it is rebuilt. Three's own PMREM cache is per renderer and rebuilds itself.
+- **Cleanups that act on the renderer they captured.** They run against the lost
+  renderer after the swap; r186's `setPixelRatio`/`setSize` resize the canvas element
+  itself, which is why NativeCanvas ignores them on a renderer that is not current.
 - **Caching the renderer outside `useThree`** (a ref filled in `onCreated`, a module
   map keyed by the first renderer). `onCreated` does not fire on a swap.
 - **`device.lost` with reason `"destroyed"`** is ignored by `WebGPUBackend`: watch the

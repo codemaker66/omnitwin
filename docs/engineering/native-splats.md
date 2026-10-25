@@ -127,8 +127,18 @@ Three r186 facts this depends on, each pinned by a test:
   (`releaseLostWebGLRenderer`). Disposed this way it forgets what it uploaded,
   so its dispose listeners never delete lost objects on the restored context
   (128 Chrome INVALID_OPERATION warnings in one run before this).
-- PMREM caches its result per source texture, not per renderer; the swap marks
-  the scene's environment and background for rebuild.
+- `setPixelRatio` and `setSize` resize the canvas element itself
+  (`CanvasTarget`). Effect cleanups that captured the lost renderer still run
+  after the swap (the walk's camera restores the ratio it found on mount), so
+  on a renderer that is no longer current they do nothing. Before this, a
+  1x display's room walk came back and then stopped on a WebGPU validation
+  error: depth 3200 × 1800 against a 1600 × 900 canvas.
+
+PMREM results are cached per renderer (`PMREMNode`), so a new renderer filters
+its environment again by itself. A lost WebGPU renderer is disposed; three
+keeps its texture dispose listeners until each texture is disposed, so each
+recovery leaves one disposed renderer's bookkeeping reachable from the scene's
+textures until then (bounded by three recoveries a minute).
 
 `NativeSplatScene.attach()` accepts the replacement renderer a swap hands it in
 the commit that detached the lost one, and rebuilds its snapshots for the new
@@ -139,10 +149,10 @@ tiles are empty until re-streamed (named to the planner lane, 25 October).
 
 Measured in Chromium on the RTX 4090 with `scripts/graphics-reset.mjs` (the
 furnished Grand Hall planner and 6,030,980 splats, the room walk, the tour on
-real imagery): every case restored, 1.0–1.6 s for a swap and 4.2–4.4 s for a
-context never returned, with the scene graph, camera, layout and selection
-preserved, before/after frames at the same pose within 0.04–1.65 mean levels,
-frame intervals back to baseline and no page errors. The report:
+real imagery, DPR 2 and DPR 1): every case restored, 1.0–1.6 s for a swap and
+4.2–4.4 s for a context never returned, with the scene graph, camera, layout
+and selection preserved, before/after frames at the same pose within 0.04–1.65
+mean levels, frame intervals back to baseline and no page errors. The report:
 [graphics reset recovery](../reports/graphics-reset-recovery-2026-10-25.md).
 `?graphicsReset=<s>[:never]` takes a view's graphics away once for checking on
 real phones ([the device-day script](../plan/device-day-2026-10-28-graphics-reset.md)).

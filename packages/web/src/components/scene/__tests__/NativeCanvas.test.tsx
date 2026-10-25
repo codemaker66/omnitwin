@@ -84,8 +84,13 @@ const native = vi.hoisted(() => {
     // The renderer settings a replacement must inherit (r186 Renderer fields).
     pixelRatio = 1;
     readonly getPixelRatio = vi.fn(() => this.pixelRatio);
-    readonly setPixelRatio = vi.fn((ratio: number) => { this.pixelRatio = ratio; });
-    readonly setSize = vi.fn();
+    // As r186's CanvasTarget does, these resize the canvas itself; NativeCanvas guards them.
+    readonly rawSetPixelRatio = vi.fn((ratio: number) => { this.pixelRatio = ratio; });
+    setPixelRatio = this.rawSetPixelRatio;
+    readonly rawSetSize = vi.fn((_width: number, _height: number, _updateStyle?: boolean): void => undefined);
+    setSize = this.rawSetSize;
+    readonly rawSetDrawingBufferSize = vi.fn((_width: number, _height: number, _ratio: number): void => undefined);
+    setDrawingBufferSize = this.rawSetDrawingBufferSize;
     toneMapping = 0;
     toneMappingExposure = 1;
     outputColorSpace = "srgb";
@@ -550,15 +555,17 @@ describe("NativeCanvas", () => {
       expect(lost.dispose).toHaveBeenCalledOnce();
       await start(1);
       await flush();
-      expect(screen.queryByRole("status")).toBeNull();
       expect(fiber.state?.gl).toBe(fresh);
+      // Frames resume so the new device can compile and draw; the room is not
+      // back until it has, so the cover stays until that first frame.
       expect(screen.getByTestId("fiber-canvas").getAttribute("data-frameloop")).toBe("demand");
-      expect(mounts.count).toBe(1);
-      expect(onCreated).toHaveBeenCalledOnce();
-      expect(fiber.invalidate).toHaveBeenCalled();
+      expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
       automaticFrame();
       expect(fresh.rawRender).toHaveBeenCalledOnce();
       expect(lost.rawRender).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(mounts.count).toBe(1);
+      expect(onCreated).toHaveBeenCalledOnce();
     });
 
     it("gives the replacement the renderer's own settings and the current resolution, not values a scene effect layered on", async () => {
@@ -588,9 +595,65 @@ describe("NativeCanvas", () => {
       expect(fresh.shadowMap).toEqual({ enabled: true, type: 2 });
       expect(fresh.clearColor.getHex()).toBe(0x123456);
       expect(fresh.clearAlpha).toBe(1);
-      expect(fresh.setPixelRatio).toHaveBeenLastCalledWith(1.5);
-      expect(fresh.setSize).toHaveBeenLastCalledWith(800, 600, false);
+      expect(fresh.rawSetPixelRatio).toHaveBeenLastCalledWith(1.5);
+      expect(fresh.rawSetSize).toHaveBeenLastCalledWith(800, 600, false);
     });
+
+    it("lets a lost renderer no longer resize the canvas its replacement draws on", async () => {
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = await start(0);
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      await flush();
+      const fresh = await start(1);
+      await flush();
+      lost.rawSetPixelRatio.mockClear();
+      lost.rawSetSize.mockClear();
+      // A renderer-keyed effect's cleanup restores what it found on the renderer it captured
+      // (InteriorCamera's mount ratio): r186 would rewrite the shared canvas's size.
+      lost.setPixelRatio(1);
+      lost.setSize(10, 10, false);
+      lost.setDrawingBufferSize(10, 10, 1);
+      expect(lost.rawSetPixelRatio).not.toHaveBeenCalled();
+      expect(lost.rawSetSize).not.toHaveBeenCalled();
+      expect(lost.rawSetDrawingBufferSize).not.toHaveBeenCalled();
+      fresh.setPixelRatio(1.25);
+      expect(fresh.rawSetPixelRatio).toHaveBeenLastCalledWith(1.25);
+    });
+
+    it.each(["onDeviceLost", "onError"] as const)(
+      "treats a replacement that fails as it starts (%s) as one failed attempt, not a stopped view",
+      async (failure) => {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        try {
+          render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+          const lost = await start(0);
+          act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+          await flush();
+          const failing = renderer(1);
+          act(() => {
+            if (failure === "onDeviceLost") failing.onDeviceLost({ api: "WebGPU", message: "Lost again while starting" });
+            else failing.onError({ message: "Validation failed while starting" });
+          });
+          await flush();
+          expect(screen.queryByRole("alert")).toBeNull();
+          expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+          expect(screen.getByText("Room geometry")).toBeDefined();
+          // The backoff, then the bounded wait for the failed replacement's still-pending init.
+          await act(async () => { await vi.advanceTimersByTimeAsync(2_500); });
+          await flush();
+          const fresh = await start(2);
+          await flush();
+          expect(fresh.domElement).toBe(lost.domElement);
+          expect(fiber.state?.gl).toBe(fresh);
+          expect(screen.queryByRole("alert")).toBeNull();
+          automaticFrame();
+          expect(fresh.rawRender).toHaveBeenCalledOnce();
+          expect(screen.queryByRole("status")).toBeNull();
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
 
     it("treats a device destroyed by anything but its own release as lost, a reason Three ignores", async () => {
       const devices = stubWebGpuDevices();
@@ -606,6 +669,7 @@ describe("NativeCanvas", () => {
       expect(fiber.state?.gl).toBe(fresh);
       expect(fresh.initializedDevice).toBe(devices[1]);
       expect(native.instances).toHaveLength(2);
+      automaticFrame();
       expect(screen.queryByRole("status")).toBeNull();
     });
 
@@ -626,17 +690,23 @@ describe("NativeCanvas", () => {
       try {
         const [first, second] = fakeDevices(2);
         native.negotiation.ownDevice = first ?? null;
-        render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+        const view = render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
         await start(0);
         await flush();
+        // The replacement Three negotiates gets its own, live device.
+        native.negotiation.ownDevice = second ?? null;
         await act(async () => { await vi.advanceTimersByTimeAsync(1_999); });
         expect(first?.destroy).not.toHaveBeenCalled();
         await act(async () => { await vi.advanceTimersByTimeAsync(1); });
         expect(first?.destroy).toHaveBeenCalledOnce();
         await flush();
-        native.negotiation.ownDevice = second ?? null;
-        await start(1);
+        const fresh = await start(1);
         await flush();
+        expect(fresh.initializedDevice ?? fresh.backend.device).toBe(second);
+        expect(fiber.state?.gl).toBe(fresh);
+        expect(screen.queryByRole("alert")).toBeNull();
+        expect(view.container.querySelector("[data-graphics-recovery]")?.getAttribute("data-graphics-recovery")).toBe("running");
+        // Once per view: the restored view is never taken away again.
         await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
         expect(second?.destroy).not.toHaveBeenCalled();
         expect(native.instances).toHaveLength(2);
@@ -680,6 +750,7 @@ describe("NativeCanvas", () => {
       await start(1);
       await flush();
       expect(fiber.state?.gl).toBe(fresh);
+      automaticFrame();
       expect(screen.queryByRole("status")).toBeNull();
     });
 
@@ -699,6 +770,7 @@ describe("NativeCanvas", () => {
         expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
         await start(1);
         await flush();
+        automaticFrame();
         expect(screen.queryByRole("status")).toBeNull();
         expect(screen.getByText("Room geometry")).toBeDefined();
         expect(onCreated).toHaveBeenCalledTimes(2);
@@ -740,6 +812,7 @@ describe("NativeCanvas", () => {
       act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Reported after the swap" }); });
       await flush();
       expect(native.instances).toHaveLength(2);
+      automaticFrame();
       expect(screen.queryByRole("status")).toBeNull();
     });
 
