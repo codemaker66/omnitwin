@@ -32,7 +32,7 @@ const Finite = z.number().finite();
  *  are refused — a deeply nested blob validates as "unknown" but breaks
  *  JSON.stringify on the relay, which would take the API process down. */
 const LiveMetadataSchema = z
-  .record(z.union([z.string().max(2_000), Finite, z.boolean(), z.null()]))
+  .record(z.string(), z.union([z.string().max(2_000), Finite, z.boolean(), z.null()]))
   .refine((value) => Object.keys(value).length <= 32, "Too many metadata keys");
 
 /** One object's complete state, in the batch save's field names and units. */

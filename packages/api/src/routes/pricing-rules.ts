@@ -64,8 +64,8 @@ const CreateRuleBody = z.object({
   minHours: z.number().int().positive().nullable().optional(),
   minGuests: z.number().int().positive().nullable().optional(),
   tiers: z.array(TierSchema).nullable().optional(),
-  dayOfWeekModifiers: z.record(z.number().positive()).nullable().optional(),
-  seasonalModifiers: z.record(z.number().positive()).nullable().optional(),
+  dayOfWeekModifiers: z.record(z.string(), z.number().positive()).nullable().optional(),
+  seasonalModifiers: z.record(z.string(), z.number().positive()).nullable().optional(),
   validFrom: CalendarDate.nullable().optional(),
   validTo: CalendarDate.nullable().optional(),
   isActive: z.boolean().default(true),
@@ -104,7 +104,12 @@ const ADVICE_KEY_MESSAGE = "That suggestion is not one of this venue's";
 // A patch may send one side when the other is already stored; the handler
 // judges the pair as it will be stored.
 
-const UpdateRuleBody = CreateRuleBody.partial();
+// zod 4 applies a default inside .partial(): a patch that left these out would
+// reset the currency to GBP and switch a disabled rule back on.
+const UpdateRuleBody = CreateRuleBody.partial().extend({
+  currency: CreateRuleBody.shape.currency.unwrap().optional(),
+  isActive: CreateRuleBody.shape.isActive.unwrap().optional(),
+});
 
 // A delete marks the rule and switches it off; the admin's Undo sends back
 // whether it was on.

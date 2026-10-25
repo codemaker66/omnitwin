@@ -327,7 +327,7 @@ export const FoundryInspectSourcesReportV0Schema =
       const { reportSha256: _reportSha256, ...payload } = report;
       const parsed = InspectSourcesReportPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const issue of parsed.error.issues) ctx.addIssue(issue);
+        for (const issue of parsed.error.issues) ctx.addIssue({ ...issue });
         return;
       }
       if (
@@ -402,7 +402,7 @@ export const FoundryWorkerArtifactIndexV0Schema =
       const { artifactIndexSha256: _artifactIndexSha256, ...payload } = index;
       const parsed = WorkerArtifactIndexPayloadObjectSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const issue of parsed.error.issues) ctx.addIssue(issue);
+        for (const issue of parsed.error.issues) ctx.addIssue({ ...issue });
         return;
       }
       if (

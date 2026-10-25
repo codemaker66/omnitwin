@@ -47,7 +47,7 @@ export type AIDraftEvidenceStatus = z.infer<typeof AIDraftEvidenceStatusSchema>;
 export const AIDraftSendStateSchema = z.enum(AI_DRAFT_SEND_STATES);
 export type AIDraftSendState = z.infer<typeof AIDraftSendStateSchema>;
 
-export const AIDraftContextSchema = z.record(CanonicalJsonValueSchema);
+export const AIDraftContextSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type AIDraftContext = z.infer<typeof AIDraftContextSchema>;
 
 export const CreateAIDraftRequestSchema = z.object({

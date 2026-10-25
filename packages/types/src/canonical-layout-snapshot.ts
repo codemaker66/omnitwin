@@ -38,7 +38,7 @@ export const CanonicalJsonValueSchema: z.ZodType<CanonicalJsonValue> = z.lazy(()
     z.number().finite(),
     z.string(),
     z.array(CanonicalJsonValueSchema),
-    z.record(CanonicalJsonValueSchema),
+    z.record(z.string(), CanonicalJsonValueSchema),
   ]),
 );
 
@@ -119,7 +119,7 @@ export const LayoutSnapshotPlacedObjectSchema = z.object({
   scale: z.number().positive().max(100),
   sortOrder: z.number().int().nonnegative(),
   groupId: z.string().trim().min(1).max(120).nullable(),
-  metadata: z.record(CanonicalJsonValueSchema).nullable(),
+  metadata: z.record(z.string(), CanonicalJsonValueSchema).nullable(),
 }).strict();
 export type LayoutSnapshotPlacedObject = z.infer<typeof LayoutSnapshotPlacedObjectSchema>;
 

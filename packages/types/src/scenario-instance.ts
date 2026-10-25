@@ -105,7 +105,7 @@ export const ScenarioInstanceSimulatorRefSchema = z.object({
   simulatorName: CrowdSimulatorSourceNameSchema,
   simulatorVersion: z.string().trim().min(1).max(120).nullable(),
   simulatorHash: z.string().regex(SHA256_HEX).nullable(),
-  parameters: z.record(CanonicalJsonValueSchema),
+  parameters: z.record(z.string(), CanonicalJsonValueSchema),
 }).strict();
 export type ScenarioInstanceSimulatorRef = z.infer<
   typeof ScenarioInstanceSimulatorRefSchema

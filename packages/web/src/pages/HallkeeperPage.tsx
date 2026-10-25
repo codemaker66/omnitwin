@@ -113,7 +113,7 @@ interface TickScope {
 }
 
 const ProgressResponseSchema = z.object({ data: z.object({
-  checked: z.record(z.string()),
+  checked: z.record(z.string(), z.string()),
   // Absent from an API older than ticks per event.
   eventId: z.string().uuid().nullable().optional(),
   linkedEvents: z.number().int().nonnegative().optional(),

@@ -160,7 +160,7 @@ export type ScenarioComparison = z.infer<typeof ScenarioComparisonSchema>;
 export const AnalyticsSnapshotPayloadSchema = z.object({
   generatedFrom: SafeCommercialTextSchema,
   notes: z.array(SafeCommercialTextSchema).max(20),
-  values: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
 }).strict();
 export type AnalyticsSnapshotPayload = z.infer<typeof AnalyticsSnapshotPayloadSchema>;
 
@@ -218,7 +218,7 @@ export const PipelineSummarySchema = z.object({
   proposalCount: z.number().int().nonnegative(),
   acceptedProposalCount: z.number().int().nonnegative(),
   conversionPercent: PercentSchema,
-  proposalStatusCounts: z.record(z.number().int().nonnegative()),
+  proposalStatusCounts: z.record(z.string(), z.number().int().nonnegative()),
 }).strict();
 export type PipelineSummary = z.infer<typeof PipelineSummarySchema>;
 
@@ -237,7 +237,7 @@ export const VenueDashboardAnalyticsSchema = z.object({
   currency: CurrencySchema,
   pipelineValueMinor: AggregateMinorUnitAmountSchema,
   enquiryConversionPercent: PercentSchema,
-  proposalStatusCounts: z.record(z.number().int().nonnegative()),
+  proposalStatusCounts: z.record(z.string(), z.number().int().nonnegative()),
   roomUtilisation: z.array(RoomUtilisationRowSchema),
   revenueScenarios: z.array(RevenueScenarioSchema),
   comfortFloorWarnings: z.array(SafeCommercialTextSchema),

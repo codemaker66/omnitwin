@@ -20,7 +20,7 @@ const ClerkUserDataSchema = z.object({
   first_name: z.string().nullable(),
   last_name: z.string().nullable(),
   phone_numbers: z.array(z.object({ phone_number: z.string() })),
-  public_metadata: z.record(z.unknown()),
+  public_metadata: z.record(z.string(), z.unknown()),
   username: z.string().nullable().optional(),
 });
 
@@ -38,7 +38,8 @@ const SupportedClerkWebhookEventSchema = z.discriminatedUnion("type", [
 
 const ClerkWebhookEnvelopeSchema = z.object({
   type: z.string().min(1),
-  data: z.unknown(),
+  // Optional as under zod 3: an event type we ignore is ignored, data or not.
+  data: z.unknown().optional(),
 });
 
 type ClerkUserData = z.infer<typeof ClerkUserDataSchema>;

@@ -51,7 +51,7 @@ const BatchObjectItem = z.object({
   rotationZ: z.number().finite().default(0),
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const BatchBody = z.object({

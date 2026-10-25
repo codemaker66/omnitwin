@@ -180,7 +180,7 @@ export const FoundryNormalizeMeshGlbReportV0Schema = ReportPayloadSchema.extend(
     const { reportSha256: _reportSha256, ...payload } = report;
     const parsed = ReportPayloadSchema.safeParse(payload);
     if (!parsed.success) {
-      for (const issue of parsed.error.issues) ctx.addIssue(issue);
+      for (const issue of parsed.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     if (report.reportSha256 !== computeFoundryNormalizeMeshGlbReportSha256(parsed.data)) {

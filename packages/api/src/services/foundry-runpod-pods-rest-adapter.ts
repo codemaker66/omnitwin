@@ -578,6 +578,9 @@ function parseJson(value: string): unknown {
   return JSON.parse(value) as unknown;
 }
 
+/** A body that parsed into the schema, or one that did not (bad JSON included). */
+type ParsedBody<T> = { readonly success: true; readonly data: T } | { readonly success: false };
+
 function exactMarkersMatch(
   pod: z.infer<typeof RunPodPodObservationSchema>,
   executionSubjectSha256: string,
@@ -1080,11 +1083,11 @@ async function executeSubmit(
   if (response.status !== 201) {
     return genericHttpOutcome(command, request, response, "submit");
   }
-  let parsed: z.SafeParseReturnType<unknown, z.infer<typeof RunPodPodObservationSchema>>;
+  let parsed: ParsedBody<z.infer<typeof RunPodPodObservationSchema>>;
   try {
     parsed = RunPodPodObservationSchema.safeParse(parseJson(response.bodyText));
   } catch {
-    parsed = { success: false, error: new z.ZodError([]) };
+    parsed = { success: false };
   }
   if (
     !parsed.success ||
@@ -1150,11 +1153,11 @@ async function executeReconcile(
   if (response.status !== 200) {
     return genericHttpOutcome(command, request, response, "reconcile");
   }
-  let parsed: z.SafeParseReturnType<unknown, z.infer<typeof RunPodPodListSchema>>;
+  let parsed: ParsedBody<z.infer<typeof RunPodPodListSchema>>;
   try {
     parsed = RunPodPodListSchema.safeParse(parseJson(response.bodyText));
   } catch {
-    parsed = { success: false, error: new z.ZodError([]) };
+    parsed = { success: false };
   }
   if (!parsed.success) {
     const outcomeCode = "runpod_reconcile_response_unknown";
@@ -1234,11 +1237,11 @@ async function executePoll(
   if (response.status !== 200) {
     return genericHttpOutcome(command, request, response, "poll");
   }
-  let parsed: z.SafeParseReturnType<unknown, z.infer<typeof RunPodPodObservationSchema>>;
+  let parsed: ParsedBody<z.infer<typeof RunPodPodObservationSchema>>;
   try {
     parsed = RunPodPodObservationSchema.safeParse(parseJson(response.bodyText));
   } catch {
-    parsed = { success: false, error: new z.ZodError([]) };
+    parsed = { success: false };
   }
   if (
     !parsed.success ||

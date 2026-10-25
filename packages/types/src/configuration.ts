@@ -89,7 +89,7 @@ export const PlacedObjectSchema = z.object({
   rotationZ: z.string(),
   scale: z.string(),
   sortOrder: z.number().int().nonnegative(),
-  metadata: z.record(z.unknown()).nullable(),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
 });
 
 export type PlacedObject = z.infer<typeof PlacedObjectSchema>;

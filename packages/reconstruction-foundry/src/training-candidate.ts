@@ -201,7 +201,7 @@ const SsimMetricSchema = z.number().finite().min(0).max(1);
 const LpipsMetricSchema = z.number().finite().min(0).max(100);
 const EvalHoldoutSchema = z
   .object({
-    config: z.record(z.unknown()),
+    config: z.record(z.string(), z.unknown()),
     data: nonBlankString(4096),
     device: nonBlankString(128),
     torch_version: nonBlankString(128),

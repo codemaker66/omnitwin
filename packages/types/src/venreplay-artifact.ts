@@ -256,7 +256,7 @@ export const VenreplayManifestV0BaseSchema = z.object({
   metricsShape: z.array(VenreplayMetricsShapeSchema).min(1),
   witnessCompatibility: z.array(VenreplayWitnessCompatibilityRequirementSchema).min(1),
   exposureTier: VenreplayExposureTierSchema,
-  manifestExtension: z.record(CanonicalJsonValueSchema).optional(),
+  manifestExtension: z.record(z.string(), CanonicalJsonValueSchema).optional(),
 }).strict();
 
 export const VenreplayManifestDigestIdentitySchema =

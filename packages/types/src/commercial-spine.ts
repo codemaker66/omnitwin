@@ -266,6 +266,9 @@ export const CreateOpportunitySchema = z.object({
 export type CreateOpportunity = z.infer<typeof CreateOpportunitySchema>;
 
 export const UpdateOpportunitySchema = CreateOpportunitySchema.omit({ venueId: true }).partial().extend({
+  // zod 4 applies a default inside .partial(), so a patch that leaves the
+  // currency out would reset it to GBP; an unsent currency stays as stored.
+  currency: CreateOpportunitySchema.shape.currency.unwrap().optional(),
   stage: OpportunityStageSchema.optional(),
   note: SafeCommercialTextSchema.nullable().optional(),
   /** Who won, given only when the deal is marked lost (the competitor watch). */
@@ -318,6 +321,6 @@ export type CreatePackageSelection = z.infer<typeof CreatePackageSelectionSchema
 export const CrmPipelineSummarySchema = z.object({
   opportunities: z.array(OpportunitySchema),
   todayTasks: z.array(FollowUpTaskSchema),
-  stageCounts: z.record(z.number().int().nonnegative()),
+  stageCounts: z.record(z.string(), z.number().int().nonnegative()),
 });
 export type CrmPipelineSummary = z.infer<typeof CrmPipelineSummarySchema>;

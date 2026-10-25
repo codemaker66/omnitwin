@@ -68,12 +68,12 @@ const SafeJsonRecordSchema = z.preprocess((input, ctx) => {
     }
   }
   return input;
-}, z.record(z.lazy(() => JsonValueSchema)));
+}, z.record(z.string(), z.lazy(() => JsonValueSchema)));
 
 // Input is `unknown` (not JsonValue): the record branch's pre-parse pollution
-// guard is a ZodEffects whose input type is deliberately wide — the schema
+// guard is a preprocess whose input type is deliberately wide — the schema
 // validates arbitrary input down to JsonValue output.
-export const JsonValueSchema: z.ZodType<JsonValue, z.ZodTypeDef, unknown> = z.lazy(() =>
+export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
     z.string(),
     z.number(),

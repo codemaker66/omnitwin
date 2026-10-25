@@ -338,7 +338,7 @@ export const FoundryDerivativeRightsRegistryAttestationV1Schema = z
         material,
       );
     if (!result.success) {
-      for (const issue of result.error.issues) ctx.addIssue(issue);
+      for (const issue of result.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     const expected = domainSeparatedDigest(
@@ -506,7 +506,7 @@ export const FoundryDerivativeRightsRegistryAttestationRevocationV1Schema = z
         material,
       );
     if (!result.success) {
-      for (const issue of result.error.issues) ctx.addIssue(issue);
+      for (const issue of result.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     const expected = domainSeparatedDigest(
@@ -1227,7 +1227,7 @@ export const FoundryDerivativeExecutionAuthorizationCandidateV1Schema = z
         material,
       );
     if (!result.success) {
-      for (const issue of result.error.issues) ctx.addIssue(issue);
+      for (const issue of result.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     const expected = domainSeparatedDigest(

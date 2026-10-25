@@ -36,7 +36,7 @@ const CreateObjectBody = z.object({
   rotationZ: z.number().finite().default(0),
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const UpdateObjectBody = z.object({
@@ -48,7 +48,7 @@ const UpdateObjectBody = z.object({
   rotationZ: z.number().finite().optional(),
   scale: z.number().positive().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const BatchObjectItem = z.object({
@@ -62,7 +62,7 @@ const BatchObjectItem = z.object({
   rotationZ: z.number().finite().default(0),
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const BatchBody = z.object({

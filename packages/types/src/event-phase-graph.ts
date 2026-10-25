@@ -154,7 +154,7 @@ export const EventScenarioSchema = z.object({
   phaseId: EventPhaseIdSchema.nullable(),
   name: z.string().trim().min(1).max(160),
   status: EventScenarioStatusSchema,
-  assumptions: z.record(z.unknown()),
+  assumptions: z.record(z.string(), z.unknown()),
   seed: z.number().int().nonnegative().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -193,7 +193,7 @@ export const PhaseLayoutSnapshotSchema = z.object({
   status: PhaseLayoutSnapshotStatusSchema,
   objectCount: z.number().int().nonnegative(),
   guestCount: z.number().int().nonnegative().nullable(),
-  payload: z.record(z.unknown()).nullable(),
+  payload: z.record(z.string(), z.unknown()).nullable(),
   createdAt: z.string().datetime(),
   frozenAt: z.string().datetime().nullable(),
 });
@@ -257,7 +257,7 @@ export const CreateEventScenarioSchema = z.object({
   phaseId: EventPhaseIdSchema.nullable().optional(),
   name: z.string().trim().min(1).max(160),
   status: EventScenarioStatusSchema.default("draft"),
-  assumptions: z.record(z.unknown()).default({}),
+  assumptions: z.record(z.string(), z.unknown()).default({}),
   seed: z.number().int().nonnegative().nullable().optional(),
 });
 export type CreateEventScenario = z.infer<typeof CreateEventScenarioSchema>;

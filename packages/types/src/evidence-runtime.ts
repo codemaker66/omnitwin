@@ -226,7 +226,7 @@ export const EvidenceItemSchema = z.object({
   status: EvidenceRuntimeStatusSchema,
   staleState: EvidenceStalenessSchema,
   wording: SafePlanningWordingSchema,
-  metadata: z.record(z.unknown()).nullable(),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 }).strict();
@@ -388,7 +388,7 @@ export const GeneralAuditLogSchema = z.object({
   targetType: z.string().trim().min(1).max(80),
   targetId: z.string().trim().min(1).max(160),
   summary: SafePlanningWordingSchema,
-  metadata: z.record(z.unknown()).nullable(),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
   createdAt: z.string().datetime(),
 }).strict();
 export type GeneralAuditLog = z.infer<typeof GeneralAuditLogSchema>;

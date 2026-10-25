@@ -5,13 +5,15 @@ import { InventoryAdjusterRoleSchema, InventoryAdjustmentCommandSchema, Inventor
 export const VenueInventoryParamsSchema = z.object({ venueId: InventoryIdSchema }).strict();
 export const VenueInventoryItemParamsSchema = VenueInventoryParamsSchema.extend({ assetDefinitionId: InventoryIdSchema });
 
+// zod 4 keeps a refinement on the object itself and refuses .omit() over it, so
+// each derived schema starts from the bare shape and re-applies the check.
 /** null explicitly records previously unknown stock; a number updates that revision. */
-export const VenueInventoryWriteInputSchema = InventoryAdjustmentCommandSchema.innerType()
+export const VenueInventoryWriteInputSchema = z.object(InventoryAdjustmentCommandSchema.shape)
   .omit({ venueId: true, assetDefinitionId: true }).extend({ expectedRevision: InventoryQuantitySchema.nullable() })
   .strict().superRefine(validateInventoryStockCounts);
 export type VenueInventoryWriteInput = z.infer<typeof VenueInventoryWriteInputSchema>;
 
-export const VenueInventoryWriteCommandSchema = VenueInventoryWriteInputSchema.innerType()
+export const VenueInventoryWriteCommandSchema = z.object(VenueInventoryWriteInputSchema.shape)
   .extend(VenueInventoryItemParamsSchema.shape).strict().superRefine(validateInventoryStockCounts);
 export type VenueInventoryWriteCommand = z.infer<typeof VenueInventoryWriteCommandSchema>;
 
@@ -29,11 +31,11 @@ const CreatedReceiptSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, message: "INVENTORY_RECEIPT_INTEGRITY" });
   }
 });
-const AdjustedReceiptSchema = InventoryAdjustmentReceiptSchema.innerType()
+const AdjustedReceiptSchema = z.object(InventoryAdjustmentReceiptSchema.shape)
   .extend({ kind: z.literal("adjusted") }).strict().superRefine((value, context) => {
     const { kind: _kind, ...receipt } = value;
     const parsed = InventoryAdjustmentReceiptSchema.safeParse(receipt);
-    if (!parsed.success) for (const issue of parsed.error.issues) context.addIssue(issue);
+    if (!parsed.success) for (const issue of parsed.error.issues) context.addIssue({ ...issue });
   });
 
 export const VenueInventoryReceiptSchema = z.union([CreatedReceiptSchema, AdjustedReceiptSchema]);

@@ -282,7 +282,7 @@ export const FoundryDerivativeNormalizationQuarantineLocatorV0Schema =
       const { locatorSha256: _locatorSha256, ...payload } = locator;
       const parsed = QuarantineLocatorPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       const expected = digest(QUARANTINE_LOCATOR_DOMAIN, parsed.data);
@@ -697,7 +697,7 @@ export const FoundryDerivativeNormalizationOutputReportV0Schema =
       const { reportSha256: _reportSha256, ...payload } = report;
       const parsed = ReportPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       if (report.reportSha256 !== digest(REPORT_DOMAIN, parsed.data)) {
@@ -778,7 +778,7 @@ export const FoundryDerivativeNormalizationArtifactIndexV0Schema =
       const { artifactIndexSha256: _artifactIndexSha256, ...payload } = index;
       const parsed = ArtifactIndexPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       if (index.artifactIndexSha256 !== digest(INDEX_DOMAIN, parsed.data)) {

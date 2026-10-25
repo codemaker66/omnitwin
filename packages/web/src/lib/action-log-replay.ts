@@ -115,8 +115,8 @@ const ReplayPlacedSchema = z.object({
 
 const ReplayPatchSchema = z.object({
   id: z.string(),
-  before: z.record(z.unknown()),
-  after: z.record(z.unknown()),
+  before: z.record(z.string(), z.unknown()),
+  after: z.record(z.string(), z.unknown()),
 });
 
 /** Exported so reverse-replay parses deltas with the SAME shape as forward

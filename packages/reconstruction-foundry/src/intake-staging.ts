@@ -196,7 +196,7 @@ export const FoundryIntakeStagingIndexV0Schema = z
     const { stagingSha256: _stagingSha256, ...payload } = index;
     const parsedPayload = StagingIndexPayloadSchema.safeParse(payload);
     if (!parsedPayload.success) {
-      for (const issue of parsedPayload.error.issues) ctx.addIssue(issue);
+      for (const issue of parsedPayload.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     if (index.stagingSha256 !== stagingPayloadSha256(parsedPayload.data)) {

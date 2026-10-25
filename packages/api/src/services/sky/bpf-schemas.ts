@@ -88,13 +88,13 @@ const UnitSchema = z.object({
 });
 
 const ParameterSchema = z.object({ unit: UnitSchema.optional() });
-const ParametersSchema = z.record(ParameterSchema);
+const ParametersSchema = z.record(z.string(), ParameterSchema);
 
 const CoverageSchema = z.object({
   type: z.literal("Coverage"),
-  domain: z.object({ axes: z.record(AxisSchema) }),
+  domain: z.object({ axes: z.record(z.string(), AxisSchema) }),
   parameters: ParametersSchema.optional(),
-  ranges: z.record(NdArraySchema),
+  ranges: z.record(z.string(), NdArraySchema),
 });
 export type Coverage = z.infer<typeof CoverageSchema>;
 

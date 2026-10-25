@@ -239,7 +239,7 @@ export const FoundryDerivativeTermsEvidenceCustodyReceiptV1Schema = z
         material,
       );
     if (!parsedMaterial.success) {
-      for (const issue of parsedMaterial.error.issues) ctx.addIssue(issue);
+      for (const issue of parsedMaterial.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     const expectedReceiptSha256 = domainSeparatedDigest(
@@ -402,7 +402,7 @@ export const FoundryDerivativeRightsRegistryAttestationReviewReceiptV1Schema = z
         material,
       );
     if (!parsedMaterial.success) {
-      for (const issue of parsedMaterial.error.issues) ctx.addIssue(issue);
+      for (const issue of parsedMaterial.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     const expectedReceiptSha256 = domainSeparatedDigest(

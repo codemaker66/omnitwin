@@ -261,7 +261,7 @@ function configAccessCondition(user: WsUser): SQL {
 }
 
 function metadataForObject(object: ObjectData, existing: unknown = null): Record<string, unknown> | null {
-  const parsedExisting = z.record(z.unknown()).safeParse(existing);
+  const parsedExisting = z.record(z.string(), z.unknown()).safeParse(existing);
   const metadata: Record<string, unknown> = parsedExisting.success ? { ...parsedExisting.data } : {};
   if (object.clothed !== undefined) metadata["clothed"] = object.clothed;
   if (object.clothStyle !== undefined) metadata["clothStyle"] = object.clothStyle;

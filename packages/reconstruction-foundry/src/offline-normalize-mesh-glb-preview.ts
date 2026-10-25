@@ -284,7 +284,7 @@ export const FoundryOfflineNormalizeMeshGlbPreviewOperatorAcknowledgementV0Schem
         acknowledgement;
       const parsed = OperatorAcknowledgementPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       if (
@@ -496,7 +496,7 @@ export const FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema =
       const { reportSha256: _reportSha256, ...payload } = report;
       const parsed = ReportPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       if (

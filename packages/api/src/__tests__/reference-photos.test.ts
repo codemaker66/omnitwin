@@ -24,9 +24,9 @@ function signToken(payload: { id: string; email: string; role: string; venueId: 
   return JSON.stringify(payload);
 }
 
-const LOADOUT_ID = "00000000-0000-0000-0000-000000000010";
-const PHOTO_ID = "00000000-0000-0000-0000-000000000020";
-const FILE_ID = "00000000-0000-0000-0000-000000000030";
+const LOADOUT_ID = "00000000-0000-4000-8000-000000000010";
+const PHOTO_ID = "00000000-0000-4000-8000-000000000020";
+const FILE_ID = "00000000-0000-4000-8000-000000000030";
 const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: "v1" });
 
 // ---------------------------------------------------------------------------

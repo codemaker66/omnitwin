@@ -223,7 +223,7 @@ export type FoundryPhase1IdentityReviewV0 = z.infer<
   typeof FoundryPhase1IdentityReviewV0Schema
 >;
 
-const CanonicalJsonObjectSchema = z.record(CanonicalJsonValueSchema);
+const CanonicalJsonObjectSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export const FoundryPhase1ProbeEnvelopeV0Schema = z.union([
   z
     .object({

@@ -108,7 +108,7 @@ export const VenreplayWitnessV0Schema = z.object({
   limitations: z.array(z.string().trim().min(1).max(1000)).min(1),
   witnessBlockRef: ScenarioInstanceArtifactRefSchema,
   generatedAt: z.string().datetime(),
-  facts: z.record(CanonicalJsonValueSchema).optional(),
+  facts: z.record(z.string(), CanonicalJsonValueSchema).optional(),
 }).strict().superRefine((witness, ctx) => {
   if (witness.witnessBlockRef.refType !== "witness_block") {
     ctx.addIssue({

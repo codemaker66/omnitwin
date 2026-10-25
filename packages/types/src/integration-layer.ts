@@ -82,7 +82,7 @@ export type EmailTemplateId = z.infer<typeof EmailTemplateIdSchema>;
 export const IntegrationEventIdSchema = z.string().uuid();
 export type IntegrationEventId = z.infer<typeof IntegrationEventIdSchema>;
 
-export const IntegrationConfigSchema = z.record(CanonicalJsonValueSchema);
+export const IntegrationConfigSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type IntegrationConfig = z.infer<typeof IntegrationConfigSchema>;
 
 export const IntegrationConnectionRecordSchema = z.object({

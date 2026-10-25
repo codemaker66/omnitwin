@@ -19,10 +19,10 @@ function signToken(payload: { id: string; email: string; role: string; venueId: 
   return JSON.stringify(payload);
 }
 
-const VENUE_ID = "00000000-0000-0000-0000-000000000001";
+const VENUE_ID = "00000000-0000-4000-8000-000000000001";
 const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: VENUE_ID });
 const staffForVenue = (): string => signToken({ id: "u2", email: "staff@test.com", role: "staff", venueId: VENUE_ID });
-const staffOtherVenue = (): string => signToken({ id: "u3", email: "other@test.com", role: "staff", venueId: "00000000-0000-0000-0000-999999999999" });
+const staffOtherVenue = (): string => signToken({ id: "u3", email: "other@test.com", role: "staff", venueId: "00000000-0000-4000-8000-999999999999" });
 const clientToken = (): string => signToken({ id: "u4", email: "client@test.com", role: "client", venueId: null });
 
 // ---------------------------------------------------------------------------
@@ -191,7 +191,7 @@ describe("POST /venues/:venueId/spaces", () => {
 // ---------------------------------------------------------------------------
 
 describe("PATCH /venues/:venueId/spaces/:id (polygon shape)", () => {
-  const SPACE_ID = "00000000-0000-0000-0000-000000000042";
+  const SPACE_ID = "00000000-0000-4000-8000-000000000042";
 
   it("400 when PATCH polygon has fewer than 3 points", async () => {
     const res = await server.inject({
@@ -249,7 +249,7 @@ describe("DELETE /venues/:venueId/spaces/:id", () => {
   it("returns 401 without auth", async () => {
     const res = await server.inject({
       method: "DELETE",
-      url: `/venues/${VENUE_ID}/spaces/00000000-0000-0000-0000-000000000002`,
+      url: `/venues/${VENUE_ID}/spaces/00000000-0000-4000-8000-000000000002`,
     });
     expect(res.statusCode).toBe(401);
   });
@@ -257,7 +257,7 @@ describe("DELETE /venues/:venueId/spaces/:id", () => {
   it("returns 403 for client role", async () => {
     const res = await server.inject({
       method: "DELETE",
-      url: `/venues/${VENUE_ID}/spaces/00000000-0000-0000-0000-000000000002`,
+      url: `/venues/${VENUE_ID}/spaces/00000000-0000-4000-8000-000000000002`,
       headers: { authorization: `Bearer ${clientToken()}` },
     });
     expect(res.statusCode).toBe(403);

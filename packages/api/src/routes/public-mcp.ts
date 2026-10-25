@@ -117,7 +117,7 @@ export function publicToolInputs(venues: readonly PublicVenueProfile[]) {
   // One fixed message for every other value: never echo what was asked, so a
   // second tenant's slug or id draws the same bytes as a name nobody uses.
   const unknownVenue = `Unknown venue. Only ${slugs.join(", ")} can be queried here.`;
-  const venue = z.enum(slugs, { errorMap: () => ({ message: unknownVenue }) }).default(defaultSlug);
+  const venue = z.enum(slugs, { error: unknownVenue }).default(defaultSlug);
   const venueJson: JsonSchemaDocument = {
     type: "string",
     enum: [...slugs],
