@@ -292,10 +292,22 @@ export function SelectionSystem(): null {
   // keyboard owner, and Esc for a drag or a box in progress. Esc stops a drag
   // where it is (one undo step, as a cancelled pointer always has); the next
   // press clears the selection (lib/planner-keymap.ts).
+  // The pointer's last place over the canvas, so Ctrl V pastes under it (Q-11).
+  const lastPointer = useRef<{ readonly x: number; readonly y: number } | null>(null);
+  useEffect(() => {
+    const canvasEl = gl.domElement;
+    const remember = (event: PointerEvent): void => { lastPointer.current = { x: event.clientX, y: event.clientY }; };
+    canvasEl.addEventListener("pointermove", remember, { passive: true });
+    return () => { canvasEl.removeEventListener("pointermove", remember); };
+  }, [gl]);
   usePlannerKeyBindings(selectionKeyBindings({
     invalidate: () => { invalidateRef.current(); },
     cancelGesture: () => { cancelPointerGesture.current(); },
     screenUp: () => screenUpOnFloor(camera),
+    pointerFloor: () => {
+      const at = lastPointer.current;
+      return at === null ? null : placementFloorPoint(scene, camera, raycaster, gl.domElement.getBoundingClientRect(), at.x, at.y);
+    },
   }));
   useEscapeLayer("operation", {
     open: () => isDragging.current || isMarquee.current,
