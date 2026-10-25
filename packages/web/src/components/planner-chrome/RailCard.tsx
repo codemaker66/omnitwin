@@ -65,14 +65,16 @@ export function RailCard({ card, slot, armed, inFlight, placed, onPress, onPoint
         onPointerDown(card, event);
       }}
     >
-      <span className="pc-railcard__mat" aria-hidden="true">
-        {art !== null ? <img src={art} alt="" draggable={false} /> : null}
+      <span className="pc-railcard__art" aria-hidden="true">
+        <span className="pc-railcard__mat">
+          {art !== null ? <img src={art} alt="" draggable={false} /> : null}
+        </span>
+        {placed > 0 ? <span className="pc-railcard__pip">×{placed}</span> : null}
       </span>
       <span className="pc-railcard__words">
         <span className="pc-railcard__name">{name}</span>
         <span className="pc-railcard__meta">{meta}</span>
       </span>
-      {placed > 0 ? <span className="pc-railcard__pip" aria-hidden="true">×{placed}</span> : null}
     </button>
   );
 }
