@@ -3,7 +3,7 @@ import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, judgeGhost, obstacleAt, refusalChip, type GhostObstacle, type GhostWorld } from "./ghost-truth.js";
 import { footprintBounds, selectionUnits, wholeSelection } from "./placement-edit.js";
-import { generatePlacedId, type PlacedItem } from "./placement.js";
+import { generatePlacedId, settleMovedOnSurfaces, type PlacedItem } from "./placement.js";
 import {
   cardMainItem,
   cardParamsFor,
@@ -328,12 +328,15 @@ export function planReplace(selectedIds: ReadonlySet<string>, card: CardParams, 
   }
   const kept = new Set(add.map((piece) => piece.id));
   const removeIds = new Set(selection.filter((piece) => !kept.has(piece.id)).map((piece) => piece.id));
+  const selectionIds = new Set(selection.map((piece) => piece.id));
+  const stays = world.placedItems.filter((piece) => !selectionIds.has(piece.id));
+  // Each new piece stands on what stays under it (a dance floor, a stage): judged, and set down, at that height.
+  add = settleMovedOnSurfaces(add, stays);
 
   // The store first (B2, hard), then the floor: judged against everything that stays, the other new pieces included.
   const shortfall = options.store?.({ removeIds, add }) ?? null;
   if (shortfall !== null) return { ok: false, obstacle: null, reason: shortfall };
-  const selectionIds = new Set(selection.map((piece) => piece.id));
-  const after = createGhostWorld([...world.placedItems.filter((piece) => !selectionIds.has(piece.id)), ...add], world.room);
+  const after = createGhostWorld([...stays, ...add], world.room);
   for (const unit of selectionUnits(add)) {
     const own = new Set(unit.map((piece) => piece.id));
     if (judgeGhost(unit, after, { excludeIds: own }).state !== "fits") return refused(obstacleAt(unit, after, own));

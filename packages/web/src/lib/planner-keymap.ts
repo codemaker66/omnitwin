@@ -13,7 +13,7 @@ import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, type GhostWorld } from "./ghost-truth.js";
-import { expandIdsToGroupMembers, settleMovedOnSurfaces, type PlacedItem } from "./placement.js";
+import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
 import {
   allPieceIds,
   copyPieces,
@@ -324,10 +324,9 @@ function landEdit(plan: EditPlan): FloorOffset | null {
     postPlacementNotice(plan.reason);
     return null;
   }
-  // The copies stand on what is under them where they land: a copy on a dance floor stands on it.
-  const copies = settleMovedOnSurfaces(plan.items, usePlacementStore.getState().placedItems);
+  // The copies come settled where they land (lib/placement-edit): a copy on a dance floor stands on it.
   let placed: readonly string[] = [];
-  asOneUndoStep(() => { placed = usePlacementStore.getState().placeSetup(copies); });
+  asOneUndoStep(() => { placed = usePlacementStore.getState().placeSetup(plan.items); });
   if (placed.length === 0) return null;
   useSelectionStore.getState().selectMultiple(placed);
   return plan.offset;
@@ -360,18 +359,15 @@ export function pasteAt(at: { readonly x: number; readonly z: number } | null): 
 // ---------------------------------------------------------------------------
 // Line up, Move and Replace (spec §8.2, §18; Q-16, Q-18, law 11), the
 // commands the caption's verbs and any key call alike: the plan
-// (lib/placement-edit, lib/replace), every piece settled where it stands,
+// (lib/placement-edit, lib/replace; every piece settled where it stands),
 // set down as one undo step (placement-store applyEdit), the result
 // selected. A refusal says why where a placement notice would.
 // ---------------------------------------------------------------------------
 
 /** Sets a plan's pieces down as one undo step, `removeIds` gone, and selects what changed or joined. */
 function landChange(removeIds: ReadonlySet<string>, add: readonly PlacedItem[]): boolean {
-  const landing = new Set(add.map((piece) => piece.id));
-  const stationary = usePlacementStore.getState().placedItems.filter((piece) => !removeIds.has(piece.id) && !landing.has(piece.id));
-  const settled = settleMovedOnSurfaces(add, stationary);
   let changed: readonly string[] = [];
-  asOneUndoStep(() => { changed = usePlacementStore.getState().applyEdit({ removeIds, add: settled }); });
+  asOneUndoStep(() => { changed = usePlacementStore.getState().applyEdit({ removeIds, add }); });
   if (changed.length === 0) return false;
   useSelectionStore.getState().selectMultiple([...changed]);
   return true;
