@@ -7,10 +7,29 @@ import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { postPlacementNotice } from "../stores/placement-notice-store.js";
+import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
-import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
+import { createGhostWorld, type GhostWorld } from "./ghost-truth.js";
+import { expandIdsToGroupMembers, settleMovedOnSurfaces, type PlacedItem } from "./placement.js";
+import {
+  allPieceIds,
+  copyPieces,
+  piecesOfKindIds,
+  planDuplicate,
+  planLineUp,
+  planMove,
+  planPaste,
+  type EditPlan,
+  type FloorOffset,
+  type MovePlan,
+  type PlannerClipboard,
+} from "./placement-edit.js";
+import { plannerFeatureEnabled } from "./planner-features.js";
+import { planReplace, type ReplaceOptions, type ReplaceResult } from "./replace.js";
+import type { CardParams } from "./setup-cards.js";
 import { ROTATION_SNAP_RAD, snapRotation } from "./selection.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 import { tableGroupSeatCapacity } from "./table-group.js";
@@ -272,6 +291,151 @@ export function ungroupSelection(): boolean {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Duplicate, copy, paste and select all (card-dock Q-11, spec §18; behind
+// editingKeys), each one undo step. The copies take new group, set and
+// table ids (lib/placement-edit.ts) and are selected, so a second Ctrl D
+// copies the copies one more pitch along.
+// ---------------------------------------------------------------------------
+
+/** Where the last Ctrl D put its copies this session: a repeat goes the same way. */
+let lastDuplicateOffset: FloorOffset | null = null;
+/** What Ctrl C holds this session. */
+let clipboard: PlannerClipboard | null = null;
+
+/** Forgets the session's last duplicate offset and clipboard. */
+export function resetEditingMemoryForTesting(): void {
+  lastDuplicateOffset = null;
+  clipboard = null;
+}
+
+function editingKeys(): boolean {
+  return plannerFeatureEnabled("editingKeys");
+}
+
+function editWorld(): GhostWorld {
+  return createGhostWorld(usePlacementStore.getState().placedItems, useRoomDimensionsStore.getState().dimensions);
+}
+
+/** Sets a plan's copies down as one undo step and selects them; a refusal says why where a placement notice would. */
+function landEdit(plan: EditPlan): FloorOffset | null {
+  if (!plan.ok) {
+    postPlacementNotice(plan.reason);
+    return null;
+  }
+  // The copies stand on what is under them where they land: a copy on a dance floor stands on it.
+  const copies = settleMovedOnSurfaces(plan.items, usePlacementStore.getState().placedItems);
+  let placed: readonly string[] = [];
+  asOneUndoStep(() => { placed = usePlacementStore.getState().placeSetup(copies); });
+  if (placed.length === 0) return null;
+  useSelectionStore.getState().selectMultiple(placed);
+  return plan.offset;
+}
+
+/** Ctrl D: the selection, made whole, one pitch away (the last offset this session first). */
+export function duplicateSelection(): boolean {
+  const ids = selectedIds();
+  if (ids.size === 0) return false;
+  const offset = landEdit(planDuplicate(ids, editWorld(), lastDuplicateOffset));
+  if (offset === null) return false;
+  lastDuplicateOffset = offset;
+  return true;
+}
+
+/** Ctrl C: the selection, made whole, onto the session's clipboard. */
+export function copySelection(): boolean {
+  const copied = copyPieces(selectedIds(), usePlacementStore.getState().placedItems);
+  if (copied === null) return false;
+  clipboard = copied;
+  return true;
+}
+
+/** Ctrl V: the clipboard set down centred on the floor point under the pointer. */
+export function pasteAt(at: { readonly x: number; readonly z: number } | null): boolean {
+  if (clipboard === null || at === null) return false;
+  return landEdit(planPaste(clipboard, at, editWorld())) !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Line up, Move and Replace (spec §8.2, §18; Q-16, Q-18, law 11), the
+// commands the caption's verbs and any key call alike: the plan
+// (lib/placement-edit, lib/replace), every piece settled where it stands,
+// set down as one undo step (placement-store applyEdit), the result
+// selected. A refusal says why where a placement notice would.
+// ---------------------------------------------------------------------------
+
+/** Sets a plan's pieces down as one undo step, `removeIds` gone, and selects what changed or joined. */
+function landChange(removeIds: ReadonlySet<string>, add: readonly PlacedItem[]): boolean {
+  const landing = new Set(add.map((piece) => piece.id));
+  const stationary = usePlacementStore.getState().placedItems.filter((piece) => !removeIds.has(piece.id) && !landing.has(piece.id));
+  const settled = settleMovedOnSurfaces(add, stationary);
+  let changed: readonly string[] = [];
+  asOneUndoStep(() => { changed = usePlacementStore.getState().applyEdit({ removeIds, add: settled }); });
+  if (changed.length === 0) return false;
+  useSelectionStore.getState().selectMultiple([...changed]);
+  return true;
+}
+
+function landMove(plan: MovePlan): boolean {
+  if (!plan.ok) {
+    postPlacementNotice(plan.reason);
+    return false;
+  }
+  return landChange(new Set(), plan.items);
+}
+
+/** Line up: the selected tables' centres onto one line along the axis they spread along most. */
+export function lineUpSelection(): boolean {
+  const ids = selectedIds();
+  if (ids.size === 0) return false;
+  return landMove(planLineUp(ids, editWorld()));
+}
+
+/** Move, then tap the destination: the selection, made whole, centred on the floor point `at`, pushed clear by up to 0.15 m. */
+export function moveSelectionTo(at: { readonly x: number; readonly z: number }): boolean {
+  const ids = selectedIds();
+  if (ids.size === 0) return false;
+  return landMove(planMove(ids, at, editWorld()));
+}
+
+/**
+ * Replace: the selection with what `params` describes (lib/replace), as one
+ * undo step. The plan comes back either way, so the caller can show its
+ * receipt and carry `plan.notes` to the new tables (the notes are the
+ * editor store's); refused, nothing changes.
+ */
+export function replaceSelection(params: CardParams, options: Pick<ReplaceOptions, "hasNote" | "store"> = {}): ReplaceResult {
+  const result = planReplace(selectedIds(), params, editWorld(), options);
+  if (!result.ok) {
+    postPlacementNotice(result.reason);
+    return result;
+  }
+  landChange(result.plan.removeIds, result.plan.add);
+  return result;
+}
+
+/** Whether the page has text selected, which Ctrl C copies before any piece. */
+function pageTextSelected(): boolean {
+  const selection = typeof window === "undefined" ? null : window.getSelection();
+  return selection !== null && !selection.isCollapsed && selection.toString().trim() !== "";
+}
+
+/** Ctrl A: every piece in the room. */
+export function selectAllPieces(): boolean {
+  const ids = allPieceIds(usePlacementStore.getState().placedItems);
+  if (ids.length === 0) return false;
+  useSelectionStore.getState().selectMultiple(ids);
+  return true;
+}
+
+/** Ctrl Shift A: every piece of the selected pieces' kinds. */
+export function selectAllOfKind(): boolean {
+  const ids = piecesOfKindIds(usePlacementStore.getState().placedItems, selectedIds());
+  if (ids.length === 0) return false;
+  useSelectionStore.getState().selectMultiple(ids);
+  return true;
+}
+
 /** Puts down the piece in hand without placing it. */
 export function putDownPieceInHand(): void {
   useCatalogueStore.getState().clearSelection();
@@ -289,6 +453,8 @@ export interface SceneKeyDeps {
   readonly cancelGesture: () => void;
   /** The floor direction that runs up the screen, from the camera. */
   readonly screenUp: () => FloorDirection;
+  /** The floor point under the pointer, render-space, for a paste; null off the floor. */
+  readonly pointerFloor?: () => { readonly x: number; readonly z: number } | null;
 }
 
 /** Asks for a frame after an edit, or declines the key when there was nothing to edit. */
@@ -347,6 +513,30 @@ export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
     {
       keys: letter("g"), priority: KEY_PRIORITY.planner,
       run: () => { usePlacementStore.getState().toggleSnap(); },
+    },
+    {
+      // Taken even when refused (the notice says why), so the browser never bookmarks the page instead.
+      keys: letter("d", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !placing(), mutates: true,
+      run: () => {
+        deps.cancelGesture();
+        if (duplicateSelection()) deps.invalidate();
+      },
+    },
+    {
+      keys: letter("c", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !pageTextSelected(),
+      run: () => (copySelection() ? undefined : false),
+    },
+    {
+      keys: letter("v", { mod: true }), priority, when: () => editingKeys() && !placing(), mutates: true,
+      run: () => afterEdit(deps, pasteAt(deps.pointerFloor?.() ?? null)),
+    },
+    {
+      keys: letter("a", { mod: true }), priority, when: () => editingKeys() && !placing(),
+      run: () => afterEdit(deps, selectAllPieces()),
+    },
+    {
+      keys: shiftedLetter("a", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !placing(),
+      run: () => afterEdit(deps, selectAllOfKind()),
     },
   ];
 }

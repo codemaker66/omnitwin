@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 401 cases. Four hosted CPU shards execute
-396 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 402 cases. Four hosted CPU shards execute
+397 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -142,7 +142,14 @@ exactly the last writes, and a client seeing nothing new
 (`layout-live-coediting.spec.ts`). They run only with the live stack
 (`E2E_LAYOUT_LIVE=1`), so the hosted shards record them as skips; this changes
 the inventory from 393 to 401, the CPU partition from 388 to 396 and the
-expected skips from 46 to 54.
+expected skips from 46 to 54. The next, on 25 October 2026, adds one
+ordinary case for phone touch on the planner (PR #196, card-dock lane P): real
+CDP touches on a phone-sized planner with the API stubbed, where a quick swipe
+with a round in hand turns the view and places nothing, a quick tap places one,
+a hold, a slide and a lift place it with the camera still, a still finger on a
+placed round lifts and carries it, and two fingers walk and zoom
+(`planner-touch-arbiter.spec.ts`); this changes the inventory from 401 to 402
+and the CPU partition from 396 to 397.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

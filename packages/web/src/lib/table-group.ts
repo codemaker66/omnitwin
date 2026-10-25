@@ -311,11 +311,15 @@ export function computeSideChairPositions(
  * Keeps the table (preserving its id, groupId, and clothed state), replaces
  * all chairs. Reuses existing chair IDs for slots 0..min(old,new)-1 so the
  * batch-save diff is minimal and DB records are not unnecessarily orphaned.
+ * Every chair takes the table's set, so a re-rung trestle's chairs stay
+ * with the set; new chairs take their ids from `newId` when given, so a
+ * plan previewed and then committed names them alike.
  */
 export function rearrangeTableGroup(
   tableId: string,
   newChairCount: number,
   placedItems: readonly PlacedItem[],
+  newId?: () => string,
 ): readonly PlacedItem[] {
   const table = placedItems.find((p) => p.id === tableId);
   if (table === undefined || table.groupId === null) return [...placedItems];
@@ -359,12 +363,13 @@ export function rearrangeTableGroup(
     );
 
   const newChairs: PlacedItem[] = chairPositions.map((pos, i) => ({
-    ...(existingChairs[i] ?? createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, table.y)),
+    ...(existingChairs[i] ?? createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, table.y, newId?.())),
     x: pos.x,
     y: table.y,
     z: pos.z,
     rotationY: pos.rotationY,
     groupId,
+    ...(table.setId === undefined ? {} : { setId: table.setId }),
   }));
 
   return [...others, table, ...newChairs];

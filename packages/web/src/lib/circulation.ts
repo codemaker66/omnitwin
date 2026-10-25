@@ -15,6 +15,8 @@
 // vocabulary.
 // ---------------------------------------------------------------------------
 
+import { normalizeFurnitureScale } from "./furniture-scale.js";
+
 /** A point on the floor plane, metres. `x` is world-X, `z` is world-Z. */
 export interface Vec2 {
   readonly x: number;
@@ -31,8 +33,35 @@ export interface FurnitureFootprint {
   /** Size before rotation, metres (width = X, depth = Z). */
   readonly width: number;
   readonly depth: number;
-  /** Rotation about the vertical axis, radians. */
+  /**
+   * Rotation about the vertical axis, radians, turning X toward Z: the
+   * NEGATIVE of a placed piece's three.js `rotationY` (which turns X away
+   * from Z). Build footprints of placed pieces with footprintOfPlacement.
+   */
   readonly rotation: number;
+}
+
+/**
+ * A placed piece's footprint, metres: its centre, scaled size and turn, in
+ * footprintCorners' convention. Three.js turns X toward −Z for a positive
+ * `rotationY`; footprints turn the other way, so the turn is negated here and
+ * only here.
+ */
+export function footprintOfPlacement(
+  placed: { readonly id: string; readonly x: number; readonly z: number; readonly rotationY: number; readonly scale?: number },
+  item: { readonly name: string; readonly width: number; readonly depth: number },
+  renderScale: number,
+): FurnitureFootprint {
+  const scale = normalizeFurnitureScale(placed.scale);
+  return {
+    id: placed.id,
+    label: item.name,
+    cx: placed.x / renderScale,
+    cz: placed.z / renderScale,
+    width: item.width * scale,
+    depth: item.depth * scale,
+    rotation: -placed.rotationY,
+  };
 }
 
 // Planning-grade walkway guidance (metres). Common event-planning rules of

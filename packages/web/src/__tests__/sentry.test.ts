@@ -168,6 +168,7 @@ describe("browser Sentry loading", () => {
     const scope = { setTag: vi.fn(), setContext: vi.fn() };
     const sdk = {
       init: vi.fn(),
+      browserApiErrorsIntegration: vi.fn((options: object) => ({ name: "BrowserApiErrors", options })),
       captureException: vi.fn(),
       withScope: vi.fn((callback: (value: typeof scope) => void) => {
         callback(scope);
@@ -192,6 +193,21 @@ describe("browser Sentry loading", () => {
       beforeSend: sentry.scrubSentryErrorEvent,
       beforeBreadcrumb: sentry.scrubSentryBreadcrumb,
     }));
+  });
+
+  it("stops wrapping animation frames and event listeners, and keeps every other default", async () => {
+    const { sentry, sdk } = await loadWithSdk();
+
+    await sentry.initBrowserSentry({ MODE: "production", VITE_SENTRY_DSN: DSN });
+
+    const options = sdk.init.mock.calls[0]?.[0] as { integrations: (defaults: { name: string }[]) => { name: string }[] };
+    const defaults = [{ name: "InboundFilters" }, { name: "BrowserApiErrors" }, { name: "Breadcrumbs" }];
+    const chosen = options.integrations(defaults);
+    expect(chosen.map((integration) => integration.name)).toEqual(["InboundFilters", "BrowserApiErrors", "Breadcrumbs"]);
+    expect(sdk.browserApiErrorsIntegration).toHaveBeenCalledWith({ requestAnimationFrame: false, eventTarget: false });
+    expect(chosen[1]).toBe(sdk.browserApiErrorsIntegration.mock.results[0]?.value);
+    expect(chosen[0]).toBe(defaults[0]);
+    expect(chosen[2]).toBe(defaults[2]);
   });
 
   it("reports boundary errors with a trimmed component stack", async () => {
