@@ -13,18 +13,23 @@ import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, type GhostWorld } from "./ghost-truth.js";
-import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
+import { expandIdsToGroupMembers, settleMovedOnSurfaces, type PlacedItem } from "./placement.js";
 import {
   allPieceIds,
   copyPieces,
   piecesOfKindIds,
   planDuplicate,
+  planLineUp,
+  planMove,
   planPaste,
   type EditPlan,
   type FloorOffset,
+  type MovePlan,
   type PlannerClipboard,
 } from "./placement-edit.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
+import { planReplace, type ReplaceOptions, type ReplaceResult } from "./replace.js";
+import type { CardParams } from "./setup-cards.js";
 import { ROTATION_SNAP_RAD, snapRotation } from "./selection.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 import { tableGroupSeatCapacity } from "./table-group.js";
@@ -318,8 +323,10 @@ function landEdit(plan: EditPlan): FloorOffset | null {
     postPlacementNotice(plan.reason);
     return null;
   }
+  // The copies stand on what is under them where they land: a copy on a dance floor stands on it.
+  const copies = settleMovedOnSurfaces(plan.items, usePlacementStore.getState().placedItems);
   let placed: readonly string[] = [];
-  asOneUndoStep(() => { placed = usePlacementStore.getState().placeSetup(plan.items); });
+  asOneUndoStep(() => { placed = usePlacementStore.getState().placeSetup(copies); });
   if (placed.length === 0) return null;
   useSelectionStore.getState().selectMultiple(placed);
   return plan.offset;
@@ -347,6 +354,64 @@ export function copySelection(): boolean {
 export function pasteAt(at: { readonly x: number; readonly z: number } | null): boolean {
   if (clipboard === null || at === null) return false;
   return landEdit(planPaste(clipboard, at, editWorld())) !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Line up, Move and Replace (spec §8.2, §18; Q-16, Q-18, law 11), the
+// commands the caption's verbs and any key call alike: the plan
+// (lib/placement-edit, lib/replace), every piece settled where it stands,
+// set down as one undo step (placement-store applyEdit), the result
+// selected. A refusal says why where a placement notice would.
+// ---------------------------------------------------------------------------
+
+/** Sets a plan's pieces down as one undo step, `removeIds` gone, and selects what changed or joined. */
+function landChange(removeIds: ReadonlySet<string>, add: readonly PlacedItem[]): boolean {
+  const landing = new Set(add.map((piece) => piece.id));
+  const stationary = usePlacementStore.getState().placedItems.filter((piece) => !removeIds.has(piece.id) && !landing.has(piece.id));
+  const settled = settleMovedOnSurfaces(add, stationary);
+  let changed: readonly string[] = [];
+  asOneUndoStep(() => { changed = usePlacementStore.getState().applyEdit({ removeIds, add: settled }); });
+  if (changed.length === 0) return false;
+  useSelectionStore.getState().selectMultiple([...changed]);
+  return true;
+}
+
+function landMove(plan: MovePlan): boolean {
+  if (!plan.ok) {
+    postPlacementNotice(plan.reason);
+    return false;
+  }
+  return landChange(new Set(), plan.items);
+}
+
+/** Line up: the selected tables' centres onto one line along the axis they spread along most. */
+export function lineUpSelection(): boolean {
+  const ids = selectedIds();
+  if (ids.size === 0) return false;
+  return landMove(planLineUp(ids, editWorld()));
+}
+
+/** Move, then tap the destination: the selection, made whole, centred on the floor point `at`, pushed clear by up to 0.15 m. */
+export function moveSelectionTo(at: { readonly x: number; readonly z: number }): boolean {
+  const ids = selectedIds();
+  if (ids.size === 0) return false;
+  return landMove(planMove(ids, at, editWorld()));
+}
+
+/**
+ * Replace: the selection with what `params` describes (lib/replace), as one
+ * undo step. The plan comes back either way, so the caller can show its
+ * receipt and carry `plan.notes` to the new tables (the notes are the
+ * editor store's); refused, nothing changes.
+ */
+export function replaceSelection(params: CardParams, options: Pick<ReplaceOptions, "hasNote" | "store"> = {}): ReplaceResult {
+  const result = planReplace(selectedIds(), params, editWorld(), options);
+  if (!result.ok) {
+    postPlacementNotice(result.reason);
+    return result;
+  }
+  landChange(result.plan.removeIds, result.plan.add);
+  return result;
 }
 
 /** Whether the page has text selected, which Ctrl C copies before any piece. */

@@ -828,6 +828,25 @@ export function settleOnSurfaces(pieces: readonly PlacedItem[], placedItems: rea
 }
 
 /**
+ * Pieces that move, or are copied, together (a Move, a Line up, a Replace, a
+ * duplicate) each settled on the surface under it once they stand: on the
+ * stationary pieces, or on another of the moving pieces, never on itself.
+ * The lowest settle first, so a lectern moved with its riser stands on the
+ * riser where it lands, and a set moved off a dance floor comes down to the
+ * floor. The pieces in their order.
+ */
+export function settleMovedOnSurfaces(moving: readonly PlacedItem[], stationary: readonly PlacedItem[]): readonly PlacedItem[] {
+  const settled = new Map<string, PlacedItem>();
+  for (const piece of [...moving].sort((a, b) => a.y - b.y)) {
+    const item = getCatalogueItem(piece.catalogueItemId);
+    const under = [...stationary, ...settled.values()];
+    const y = item === undefined ? piece.y : computeSurfaceHeight(piece.x, piece.z, item, under, new Set([piece.id]));
+    settled.set(piece.id, y === piece.y ? piece : { ...piece, y });
+  }
+  return moving.map((piece) => settled.get(piece.id) ?? piece);
+}
+
+/**
  * The pieces with every unlabelled dining table among them numbered, in
  * order, with the lowest numbers free among `placedItems` and the pieces
  * themselves. A table someone named keeps its name; the same array comes

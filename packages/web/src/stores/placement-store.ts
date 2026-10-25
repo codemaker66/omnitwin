@@ -121,6 +121,16 @@ export interface PlacementState {
    */
   readonly placeSetup: (pieces: readonly PlacedItem[]) => readonly string[];
   /**
+   * An edit set down as one write, so one undo step (Line up, Move, Replace;
+   * lib/placement-edit, lib/replace): the pieces in `removeIds` go, each
+   * piece of `add` already placed changes in place (keeping its id), and the
+   * rest join, exactly as they stand. Tables that join are numbered, and a
+   * table changed in place is numbered on its first edit (tableNumbers).
+   * Refused, with a notice, when it would take any kind of piece past the
+   * venue's cap. The ids of the pieces that changed or joined.
+   */
+  readonly applyEdit: (edit: { readonly removeIds?: ReadonlySet<string>; readonly add: readonly PlacedItem[] }) => readonly string[];
+  /**
    * A placed dance floor set to `cols` × `rows` whole panels (2 to 12 a
    * side), the anchored edge holding still, as one undo step (Q-08a): the
    * panels in place keep their ids, new ones join the floor's group. False
@@ -180,6 +190,23 @@ export function subscribeFurniturePlaced(listener: FurniturePlacedListener): () 
 function announcePlaced(ids: readonly string[]): void {
   if (ids.length === 0) return;
   for (const listener of furniturePlacedListeners) listener(ids);
+}
+
+/** The venue's cap a change would pass, counting every kind of piece before and after it: its notice, or null. */
+function capPassedBy(before: readonly PlacedItem[], after: readonly PlacedItem[]): string | null {
+  const count = (items: readonly PlacedItem[]): Map<string, number> => {
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(item.catalogueItemId, (counts.get(item.catalogueItemId) ?? 0) + 1);
+    return counts;
+  };
+  const was = count(before);
+  for (const [catalogueItemId, now] of count(after)) {
+    if (now <= (was.get(catalogueItemId) ?? 0)) continue;
+    // One fewer than there would be is already at the cap: the last one passes it.
+    const atCap = capReachedFor(catalogueItemId, Array.from({ length: now - 1 }, () => catalogueItemId));
+    if (atCap !== null) return atCap;
+  }
+  return null;
 }
 
 /** New tables take the lowest free numbers (Q-46), behind tableNumbers. */
@@ -620,6 +647,26 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const ids = numbered.map((piece) => piece.id);
     announcePlaced(ids);
     return ids;
+  },
+
+  applyEdit: ({ removeIds = new Set<string>(), add }) => {
+    if (isLayoutTimelineMutationLocked() || (removeIds.size === 0 && add.length === 0)) return [];
+    const state = get();
+    const kept = state.placedItems.filter((piece) => !removeIds.has(piece.id));
+    const keptIds = new Set(kept.map((piece) => piece.id));
+    const changes = new Map(add.filter((piece) => keptIds.has(piece.id)).map((piece) => [piece.id, piece]));
+    const joining = add.filter((piece) => !keptIds.has(piece.id));
+    const changed = kept.map((piece) => changes.get(piece.id) ?? piece);
+    const atCap = capPassedBy(state.placedItems, [...changed, ...joining]);
+    if (atCap !== null) {
+      postPlacementNotice(atCap);
+      return [];
+    }
+    const edited = numberEdited(changed, new Set(changes.keys()));
+    const numbered = numberNew(edited, joining);
+    set({ placedItems: [...edited, ...numbered] });
+    announcePlaced(numbered.map((piece) => piece.id));
+    return [...changes.keys(), ...numbered.map((piece) => piece.id)];
   },
 
   resizeArea: (groupId: string, cols: number, rows: number, anchor?: ResizeAnchor) => {
