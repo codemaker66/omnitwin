@@ -176,7 +176,7 @@ describe("setup card pictures", () => {
   });
 
   it.each(pictures)("ships $look as an 800 × 800 WebP", ({ url }) => {
-    expect(url).toMatch(/^\/models\/furniture\/setup\/[a-z-]+\/setup-v1\/[a-z-]+\.webp$/u);
+    expect(url).toMatch(/^\/models\/furniture\/setup-[a-z-]+\/setup-v1\/[a-z-]+\.webp$/u);
     const bytes = readFileSync(resolve(import.meta.dirname, "../../../public", `.${url ?? ""}`));
     expect(bytes.toString("ascii", 0, 4)).toBe("RIFF");
     expect(bytes.toString("ascii", 8, 16)).toBe("WEBPVP8X");
