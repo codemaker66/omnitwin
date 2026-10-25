@@ -740,6 +740,20 @@
       ],
       "expectedStatus": "skipped",
       "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 3f352fcb62a55bd2f17a-0588accbacaa6669e855 one for one and keeps its expected skip, so the totals (401 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-25",
+      "reason": "Phone touch on the planner (PR #196, card-dock lane P, Q-01): one ordinary case drives real CDP touches on a booted phone-sized planner with the backend stubbed and an uncaptured room centred on the origin. A quick swipe with a round in hand turns the view and places nothing; a quick tap places exactly one; a hold, a slide and a lift place it with the camera still; a still finger on a placed round lifts and carries it; two fingers walk and zoom and place nothing.",
+      "sourceCommit": "3dc6fb66ce034e159d2df4a2e3306247298c299f",
+      "sourceFile": "packages/web/e2e/planner-touch-arbiter.spec.ts",
+      "sourceFileGitBlobSha256": "34f02f86e656014fb39e327723d9b3a9daa07cf82efa5387c397d6ec33bd1643",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/planner-touch-arbiter.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f06c9e4c9c6e966efe630bba24a2e5fb5e4dab0e63e4efe7081c04fc3769b3b2",
+      "caseIds": [
+        "5596f33d6d2d5857ecfb-063336bbdae863fd1fe2"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; it switches the touch arbiter on with ?pf= and stubs the API before transport, so it proves the gestures in Chromium's emulated touch, not on a real phone's touch screen or GPU; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -5024,6 +5038,17 @@
       ],
       "project": "chromium",
       "expectedStatus": "skipped"
+    },
+    {
+      "id": "5596f33d6d2d5857ecfb-063336bbdae863fd1fe2",
+      "file": "planner-touch-arbiter.spec.ts",
+      "title": "a swipe looks, a tap and a hold place, a hold lifts, two fingers walk",
+      "suitePath": [
+        "planner-touch-arbiter.spec.ts",
+        "the touch arbiter on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
     }
   ]
 }
