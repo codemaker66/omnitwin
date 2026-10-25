@@ -137,16 +137,17 @@ describe("the copies Ctrl D sets down", () => {
     const poseur = getCatalogueItemBySlug("poseur-table");
     if (poseur === undefined) throw new Error("no poseur");
     usePlacementStore.getState().placeSetup(stampSetup(params("dance-floor"), { x: 2, z: 0 }, 0));
-    usePlacementStore.getState().placeItem(poseur.id, -2, 0, 0);
+    // Just off the floor's near edge (x −0.28), so one pitch (+x first) puts the copy wholly on it.
+    usePlacementStore.getState().placeItem(poseur.id, -1, 0, 0);
     const original = placed().find((piece) => piece.catalogueItemId === poseur.id);
     expect(original?.y).toBe(0);
     useSelectionStore.getState().select(original?.id ?? "");
     expect(duplicateSelection()).toBe(true);
     const copy = placed().find((piece) => piece.catalogueItemId === poseur.id && piece.id !== original?.id);
     if (copy === undefined) throw new Error("no copy");
-    // One pitch along the room's long axis (+x first) lands it on the floor's near edge, and it stands on the floor.
+    // One pitch along the room's long axis lands it on the floor, and it stands on the floor.
     const floor = placed().filter((piece) => getCatalogueItem(piece.catalogueItemId)?.slug === "dancefloor-panel");
-    expect(copy.x).toBeGreaterThan(-2);
+    expect(copy.x).toBeGreaterThan(0);
     expect(copy.y).toBeGreaterThan(0);
     expect(copy.y).toBe(settleOnSurfaces([copy], floor)[0]?.y);
   });

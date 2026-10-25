@@ -153,11 +153,24 @@ describe("one stamp for the ghost and the commit", () => {
     const world = createGhostWorld(placed(), GRAND_HALL_RENDER_DIMENSIONS);
     const judged = judgeCardAt(params("round"), origin, 0.3, world, undefined);
     expect(judged.verdict.state).toBe("pushed");
-    // The turn changes the set the judge sees, so a ghost judged unturned would push it elsewhere.
-    expect(judgeCardAt(params("round"), origin, 0, world, undefined).verdict).not.toEqual(judged.verdict);
+    // The judged set carries the turn: every chair stands elsewhere than in the unturned set.
+    const unturned = judgeCardAt(params("round"), origin, 0, world, undefined).pieces;
+    expect(judged.pieces.filter((piece, i) => pose(piece) === pose(unturned[i] ?? piece))).toHaveLength(0);
     const ids = placeCardAt(params("round"), origin, 0.3);
     const set = placed().filter((piece) => ids.includes(piece.id));
     expect(set.map(pose).sort()).toEqual(judged.pieces.map(pose).sort());
+  });
+
+  it("judges a long table turned a quarter at the wall as refused, where unturned it fits", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, tableSets: true });
+    const card = params("long-table");
+    const world = createGhostWorld([], GRAND_HALL_RENDER_DIMENSIONS);
+    const reach = Math.max(...stampSetup(card, { x: 0, z: 0 }, 0).map((piece) => Math.abs(piece.z))) + 0.6;
+    const origin = { x: 0, z: GRAND_HALL_RENDER_DIMENSIONS.length / 2 - reach - 0.3 };
+    expect(judgeCardAt(card, origin, 0, world, undefined).verdict.state).toBe("fits");
+    expect(judgeCardAt(card, origin, Math.PI / 2, world, undefined).verdict.state).toBe("refused");
+    expect(placeCardAt(card, origin, Math.PI / 2)).toEqual([]);
+    expect(placeCardAt(card, origin, 0).length).toBeGreaterThan(0);
   });
 
   it("stands each piece on the surface under it: a round across a dance floor's edge has chairs on the floor and chairs off it", () => {
