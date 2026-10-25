@@ -31,6 +31,7 @@ import {
   ASSEMBLY_TICK,
   REST,
   createMotion,
+  emptyPose,
   rests,
   tick,
   type CameraKey,
@@ -112,8 +113,8 @@ export const ACCIO_SPRINGS = {
   tableTilt: springOf(6, 0.9),
   /** A round's slow turn in the air: critically damped. */
   tableTurn: springOf(5, 1),
-  /** A chair's flight across the hall: critically damped. */
-  chairTravel: springOf(7.5, 1),
+  /** A chair's flight across the hall: critically damped, quick, as a thing summoned to hand. */
+  chairTravel: springOf(10, 1),
   /** A chair carried at the height it crosses the hall at. */
   chairRise: springOf(6.5, 1),
   /** Set down into its place: critically damped. */
@@ -130,7 +131,7 @@ export const ACCIO_BEATS = {
   /** The first round leaves its window. */
   anchorStart: 0.35,
   /** Rounds leave in wave order this often, seconds. */
-  tableCadence: 0.1,
+  tableCadence: 0.09,
   /** Rounds leave one window at least this far apart, seconds. */
   tableGap: 0.22,
   /** A round's chairs start this long after it lands, seconds. */
@@ -138,7 +139,7 @@ export const ACCIO_BEATS = {
   /** And follow one another round the table this often. */
   chairStagger: 0.04,
   /** Chairs leave one window at least this far apart, seconds. */
-  chairGap: 0.058,
+  chairGap: 0.05,
   /** A chair does not leave a window this soon after a round has. */
   tableClear: 0.2,
   /** A table's candles start to light this long after its last chair has landed (before, if negative). */
@@ -174,8 +175,12 @@ const EXIT_DEPTH = 2.2;
 const SEAT_APPROACH = 1.1;
 /** A piece whose place is this near the camera (along the floor)... */
 const NEAR_LENS = 3;
-/** ...crosses the hall at least this far below it, metres. */
+/** ...crosses the hall at least this far below it, metres: a round, and a chair (with room to spare)... */
 const UNDER_LENS = 1.6;
+const UNDER_LENS_CHAIR = 1.8;
+/** ...but at least this far above anything already down: a round (tipped, it reaches lower), and a chair. */
+const CLEAR_ROUND = 0.4;
+const CLEAR_CHAIR = 0.2;
 /** Choosing a window, a metre further along the hall weighs as much as this long a wait, seconds. */
 const WINDOW_DISTANCE_COST = 0.04;
 /** Consecutive rounds in the waves' order leave at least this far apart, seconds. */
@@ -228,9 +233,6 @@ export interface AccioFlight {
   readonly acrossX: number;
   readonly acrossZ: number;
   readonly swing: number;
-  /** The tip toward the viewer as a rotation vector. */
-  readonly tipX: number;
-  readonly tipZ: number;
 }
 
 function isRound(piece: AssemblyPiece): boolean {
@@ -283,7 +285,11 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
     // Spread over the middle of the light, clear of the curtains at its sides.
     const room = Math.max(0, window.width / 2 - ACCIO_REVEAL_MARGIN - reach * ACCIO_BIRTH_SIZE);
     const across = (pieceRandom(seed, piece.id, 4) - 0.5) * Math.min(room, window.width * 0.3) * 2;
-    const middle = window.sill + (window.top - window.sill) * (0.32 + 0.36 * pieceRandom(seed, piece.id, 5));
+    // Near the camera a piece crosses the hall lower, so it never passes across the lens;
+    // a chair for a seat by the camera is born in the lower part of the light, so it has less to come down.
+    const nearLens = Math.hypot(viewer[0] - piece.x, viewer[2] - piece.z) < NEAR_LENS;
+    const band = nearLens && !round ? 0.12 : 0.36;
+    const middle = window.sill + (window.top - window.sill) * (0.32 + band * pieceRandom(seed, piece.id, 5));
     const sx = window.x + across;
     const sz = window.glassZ + ACCIO_BIRTH_DEPTH;
     // A round swings across the camera's view of its place, so its bank never
@@ -291,17 +297,16 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
     const viewX = viewer[0] - piece.x;
     const viewZ = viewer[2] - piece.z;
     const view = Math.hypot(viewX, viewZ) || 1;
-    const tip = tiltToward(viewX, viewZ, TABLE_TIP);
     // A chair is set down into its seat from outside its round, never across it.
     const table = piece.tableId === null ? undefined : tablePlaces.get(piece.tableId);
     const outX = table === undefined ? 0 : piece.x - table.x;
     const outZ = table === undefined ? 0 : piece.z - table.z;
     const out = Math.hypot(outX, outZ);
     const seated = !round && out > 1e-6;
-    // Near the camera a piece crosses the hall lower, so it never passes across the lens.
-    const nearLens = Math.hypot(viewer[0] - piece.x, viewer[2] - piece.z) < NEAR_LENS;
     const crossing = round ? 2.3 + 0.45 * pieceRandom(seed, piece.id, 6) : 1.35 + 0.35 * pieceRandom(seed, piece.id, 6);
-    const cruise = nearLens ? Math.min(crossing, Math.max(piece.y + piece.height + 0.4, viewer[1] - UNDER_LENS - pivotOf(piece))) : crossing;
+    const clear = piece.y + piece.height + (round ? CLEAR_ROUND : CLEAR_CHAIR);
+    const under = viewer[1] - (round ? UNDER_LENS : UNDER_LENS_CHAIR) - pivotOf(piece);
+    const cruise = nearLens ? Math.min(crossing, Math.max(clear, under)) : crossing;
     return {
       window,
       sx,
@@ -316,8 +321,6 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
       acrossX: -viewZ / view,
       acrossZ: viewX / view,
       swing: pieceRandom(seed, piece.id, 7) < 0.5 ? -1 : 1,
-      tipX: tip.x,
-      tipZ: tip.z,
     };
   };
 
@@ -442,11 +445,13 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
       out.grow = clamp(motion.grow.value, 0, 1.02);
       out.squash = motion.squash.value;
       if (flight !== undefined && isRound(piece)) {
-        // Tipped toward the viewer, and banked into its swing like a leaf.
+        // Tipped toward the viewer from wherever it is (it may come through
+        // a window far from its place), and banked into its swing like a leaf.
         const tip = clamp(motion.pitch.value, -0.2, 1.2);
+        const toward = tiltToward(viewer[0] - motion.px, viewer[2] - motion.pz, TABLE_TIP);
         const bank = tiltToward(flight.acrossX, flight.acrossZ, motion.sway.velocity * SWING_BANK);
-        out.tiltX = flight.tipX * tip + bank.x;
-        out.tiltZ = flight.tipZ * tip + bank.z;
+        out.tiltX = toward.x * tip + bank.x;
+        out.tiltZ = toward.z * tip + bank.z;
       }
       // Its contact shadow gathers as it comes down, wide and faint at first.
       const above = Math.max(0, motion.py - piece.y);
@@ -468,17 +473,115 @@ export function accioModel(options: AccioOptions = {}): AccioModel {
 
 // --- The plan -------------------------------------------------------------------------
 
-/** Seconds from a piece's start until it lands, found by flying it on its own springs. */
-function landingAfter(piece: AssemblyPiece, model: DirectionModel, graph: ChoreographyGraph): number {
+/** A flight sampled every SAMPLE_TICKS ticks from its start until it lands. */
+const SAMPLE_TICKS = 2;
+const SAMPLE_SECONDS = SAMPLE_TICKS * ASSEMBLY_TICK;
+/** Clear air kept between two pieces in flight, metres. */
+const AIR_GAP = 0.03;
+/** A start is put back in these steps, at most this far, until its flight is clear of the pieces already flying. */
+const CLEAR_STEP = 0.02;
+const CLEAR_LIMIT = 1.5;
+
+interface FlightPath {
+  /** Per sample: its middle (x, y, z), then how far it reaches across and up from its middle, swept to its neighbours. */
+  readonly samples: Float64Array;
+  readonly count: number;
+  /** Seconds from its start until it lands. */
+  readonly landing: number;
+  /** The space the whole flight sweeps, reach included: min x, y, z, then max x, y, z. */
+  readonly bounds: readonly [number, number, number, number, number, number];
+}
+
+/** Flies a piece alone on its own springs: where it is while in the air, and when it lands. */
+function flyAlone(piece: AssemblyPiece, model: DirectionModel, graph: ChoreographyGraph): FlightPath {
   const motion: PieceMotion = createMotion(piece, 0);
   model.init(motion, graph);
   motion.started = true;
-  for (let ticks = 1; ticks <= 20 * 240; ticks++) {
+  const pose = emptyPose();
+  const values: number[] = [];
+  const bounds: [number, number, number, number, number, number] = [
+    Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY,
+  ];
+  let ticks = 0;
+  while (ticks < 20 * 240) {
+    ticks += 1;
     motion.elapsed += ASSEMBLY_TICK;
     model.step(motion, ASSEMBLY_TICK);
-    if (motion.landed) return ticks * ASSEMBLY_TICK;
+    if (motion.landed) break;
+    if (ticks % SAMPLE_TICKS !== 0) continue;
+    model.pose(motion, pose);
+    // A tipped piece reaches further up and less across.
+    const tilt = Math.min(Math.hypot(pose.tiltX, pose.tiltZ), Math.PI / 2);
+    const across = piece.radius * pose.grow;
+    const up = (piece.height / 2) * pose.grow;
+    const reach = across * Math.cos(tilt) + up * Math.sin(tilt);
+    const rise = up * Math.cos(tilt) + across * Math.sin(tilt);
+    const middle = pose.y + pose.pivot;
+    values.push(pose.x, middle, pose.z, reach, rise);
   }
-  return 20;
+  // Each sample stands for the time to its neighbours: it is swept by half the way to each.
+  const count = values.length / 5;
+  const samples = Float64Array.from(values);
+  for (let index = 0; index < count; index++) {
+    let sweep = 0;
+    for (const next of [index - 1, index + 1]) {
+      if (next < 0 || next >= count) continue;
+      const a = index * 5;
+      const b = next * 5;
+      sweep = Math.max(sweep, Math.hypot((values[a] ?? 0) - (values[b] ?? 0), (values[a + 1] ?? 0) - (values[b + 1] ?? 0), (values[a + 2] ?? 0) - (values[b + 2] ?? 0)) / 2);
+    }
+    const at = index * 5;
+    samples[at + 3] = (values[at + 3] ?? 0) + sweep;
+    samples[at + 4] = (values[at + 4] ?? 0) + sweep;
+    bounds[0] = Math.min(bounds[0], (samples[at] ?? 0) - (samples[at + 3] ?? 0));
+    bounds[1] = Math.min(bounds[1], (samples[at + 1] ?? 0) - (samples[at + 4] ?? 0));
+    bounds[2] = Math.min(bounds[2], (samples[at + 2] ?? 0) - (samples[at + 3] ?? 0));
+    bounds[3] = Math.max(bounds[3], (samples[at] ?? 0) + (samples[at + 3] ?? 0));
+    bounds[4] = Math.max(bounds[4], (samples[at + 1] ?? 0) + (samples[at + 4] ?? 0));
+    bounds[5] = Math.max(bounds[5], (samples[at + 2] ?? 0) + (samples[at + 3] ?? 0));
+  }
+  return { samples, count, landing: ticks * ASSEMBLY_TICK, bounds };
+}
+
+interface Scheduled {
+  readonly start: number;
+  readonly path: FlightPath;
+}
+
+/** Whether a flight started at `start` meets any piece already flying (as upright cylinders, tipped). */
+function clashes(path: FlightPath, start: number, flying: readonly Scheduled[]): boolean {
+  const end = start + path.count * SAMPLE_SECONDS;
+  const own = path.bounds;
+  for (const other of flying) {
+    const theirs = other.path.bounds;
+    if (other.start >= end || other.start + other.path.count * SAMPLE_SECONDS <= start) continue;
+    if (own[0] > theirs[3] + AIR_GAP || theirs[0] > own[3] + AIR_GAP) continue;
+    if (own[1] > theirs[4] + AIR_GAP || theirs[1] > own[4] + AIR_GAP) continue;
+    if (own[2] > theirs[5] + AIR_GAP || theirs[2] > own[5] + AIR_GAP) continue;
+    const mine = path.samples;
+    const them = other.path.samples;
+    for (let i = 0; i < path.count; i++) {
+      // Sample i is taken (i + 1) samples after its start.
+      const j = Math.round((start + (i + 1) * SAMPLE_SECONDS - other.start) / SAMPLE_SECONDS) - 1;
+      if (j < 0) continue;
+      if (j >= other.path.count) break;
+      const a = i * 5;
+      const b = j * 5;
+      const apart = Math.hypot((mine[a] ?? 0) - (them[b] ?? 0), (mine[a + 2] ?? 0) - (them[b + 2] ?? 0));
+      if (apart >= (mine[a + 3] ?? 0) + (them[b + 3] ?? 0) + AIR_GAP) continue;
+      if (Math.abs((mine[a + 1] ?? 0) - (them[b + 1] ?? 0)) < (mine[a + 4] ?? 0) + (them[b + 4] ?? 0) + AIR_GAP) return true;
+    }
+  }
+  return false;
+}
+
+/** The first start from `earliest` at which the flight is clear of every piece already flying. */
+function clearStart(path: FlightPath, earliest: number, flying: readonly Scheduled[]): number {
+  for (let delay = 0; delay <= CLEAR_LIMIT + 1e-9; delay += CLEAR_STEP) {
+    if (!clashes(path, earliest + delay, flying)) return earliest + delay;
+  }
+  return earliest;
 }
 
 interface Stream {
@@ -508,32 +611,74 @@ function planAccio(
   };
   const starts = new Map<string, number>();
   const landings = new Map<string, number>();
-  const fly = (piece: AssemblyPiece, window: AccioWindow, start: number): void => {
+  const flying: Scheduled[] = [];
+  /** The piece's flight through a window, flown alone. */
+  const pathThrough = (piece: AssemblyPiece, window: AccioWindow): FlightPath => {
     sources.set(piece.id, window);
+    return flyAlone(piece, model, base);
+  };
+  /**
+   * The window that lets the piece leave soonest once its flight is clear of
+   * the pieces already flying, a far one weighed by its longer flight. A
+   * window is flown only while it could still beat the best found.
+   */
+  const choose = (
+    piece: AssemblyPiece,
+    options: readonly { readonly window: AccioWindow; readonly earliest: number }[],
+  ): { readonly window: AccioWindow; readonly start: number; readonly path: FlightPath } | null => {
+    const ranked = options
+      .map((option) => ({ ...option, bound: option.earliest + WINDOW_DISTANCE_COST * Math.abs(option.window.x - piece.x) }))
+      .sort((a, b) => a.bound - b.bound);
+    let best: { readonly window: AccioWindow; readonly start: number; readonly cost: number; readonly path: FlightPath } | null = null;
+    for (const option of ranked) {
+      if (best !== null && option.bound >= best.cost - 1e-9) break;
+      const path = pathThrough(piece, option.window);
+      const start = clearStart(path, option.earliest, flying);
+      const cost = start + WINDOW_DISTANCE_COST * Math.abs(option.window.x - piece.x);
+      if (best === null || cost < best.cost - 1e-9) best = { window: option.window, start, cost, path };
+    }
+    return best;
+  };
+  const fly = (piece: AssemblyPiece, window: AccioWindow, start: number, path: FlightPath): void => {
+    sources.set(piece.id, window);
+    // The model keeps the flight of the window chosen, not the last one tried.
+    model.init(createMotion(piece, 0), base);
     starts.set(piece.id, start);
     emit(window, start, isRound(piece));
-    landings.set(piece.id, start + landingAfter(piece, model, base));
+    landings.set(piece.id, start + path.landing);
+    flying.push({ start, path });
   };
 
   // Rounds and other large pieces in the waves' order at a steady cadence,
   // never before a round nearer the top table, each through whichever of its
   // two nearest windows (that it can pass) is free soonest, a far one weighed
   // by its longer flight, and never on the heels of the last round through it.
+  // Every piece also waits until its whole flight is clear of the pieces
+  // already in the air, so no two ever pass through each other.
   const rounds = base.nodes
     .map((node) => byId.get(node.pieceId))
     .filter((piece): piece is AssemblyPiece => piece !== undefined && isRound(piece));
   let previous = Number.NEGATIVE_INFINITY;
+  // A round a whole wave ring further from the top table never leaves before a nearer one, held back or not.
+  const top = base.anchorId === null ? undefined : byId.get(base.anchorId);
+  const fromTop = (piece: AssemblyPiece): number => (top === undefined ? 0 : Math.hypot(piece.x - top.x, piece.z - top.z));
+  const sent: { readonly distance: number; readonly start: number }[] = [];
   rounds.forEach((piece, rank) => {
-    const wanted = Math.max(ACCIO_BEATS.anchorStart + rank * ACCIO_BEATS.tableCadence, previous + WAVE_STEP);
-    let best: { readonly window: AccioWindow; readonly start: number; readonly cost: number } | null = null;
-    for (const window of nearestWindows(windows, piece.x, true, piece.radius).slice(0, 2)) {
-      const start = Math.max(wanted, (streams.get(window.id)?.lastRound ?? Number.NEGATIVE_INFINITY) + ACCIO_BEATS.tableGap);
-      const cost = start + WINDOW_DISTANCE_COST * Math.abs(window.x - piece.x);
-      if (best === null || cost < best.cost - 1e-9) best = { window, start, cost };
+    const distance = fromTop(piece);
+    let ringAfter = Number.NEGATIVE_INFINITY;
+    for (const earlier of sent) {
+      if (earlier.distance <= distance - model.timing.waveRing) ringAfter = Math.max(ringAfter, earlier.start + WAVE_STEP);
     }
+    // The waves keep their cadence: a round held back for clear air does not hold back the rest.
+    const wanted = Math.max(ACCIO_BEATS.anchorStart + rank * ACCIO_BEATS.tableCadence, previous + WAVE_STEP, ringAfter);
+    const best = choose(piece, nearestWindows(windows, piece.x, true, piece.radius).slice(0, 2).map((window) => ({
+      window,
+      earliest: Math.max(wanted, (streams.get(window.id)?.lastRound ?? Number.NEGATIVE_INFINITY) + ACCIO_BEATS.tableGap),
+    })));
     if (best === null) return;
-    previous = best.start;
-    fly(piece, best.window, best.start);
+    previous = wanted;
+    sent.push({ distance, start: best.start });
+    fly(piece, best.window, best.start, best.path);
   });
 
   // Chairs: a table's only once it has landed, round it from the top table's
@@ -565,18 +710,18 @@ function planAccio(
   }
   wanted.sort((a, b) => a.at - b.at || (a.piece.id < b.piece.id ? -1 : 1));
   for (const { piece, at } of wanted) {
-    // Whichever of its three nearest windows lets it leave soonest, a far one
+    // Whichever of its four nearest windows lets it leave soonest, a far one
     // weighed by its longer flight: a busy end of the hall borrows a quiet window.
-    let best: { readonly window: AccioWindow; readonly start: number; readonly cost: number } | null = null;
-    for (const window of nearestWindows(windows, piece.x, false, piece.radius).slice(0, 3)) {
+    const best = choose(piece, nearestWindows(windows, piece.x, false, piece.radius).slice(0, 4).map((window) => {
       const stream = streams.get(window.id);
-      const start = Math.max(at,
-        (stream?.last ?? Number.NEGATIVE_INFINITY) + ACCIO_BEATS.chairGap,
-        (stream?.lastRound ?? Number.NEGATIVE_INFINITY) + ACCIO_BEATS.tableClear);
-      const cost = start + WINDOW_DISTANCE_COST * Math.abs(window.x - piece.x);
-      if (best === null || cost < best.cost - 1e-9) best = { window, start, cost };
-    }
-    if (best !== null) fly(piece, best.window, best.start);
+      return {
+        window,
+        earliest: Math.max(at,
+          (stream?.last ?? Number.NEGATIVE_INFINITY) + ACCIO_BEATS.chairGap,
+          (stream?.lastRound ?? Number.NEGATIVE_INFINITY) + ACCIO_BEATS.tableClear),
+      };
+    }));
+    if (best !== null) fly(piece, best.window, best.start, best.path);
   }
 
   // The candles on each table once its last chair is down.

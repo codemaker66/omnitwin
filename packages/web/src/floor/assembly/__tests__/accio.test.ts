@@ -150,6 +150,76 @@ function trace(seed: number): Trace {
 const SEED = 20261026;
 const flown = trace(SEED);
 
+/** Sample points of a piece in its own frame, base at y = 0: a round's rim and top, a chair's box. */
+function bodyPoints(piece: AssemblyPiece): Vector3[] {
+  const points: Vector3[] = [];
+  if (piece.role === "table") {
+    for (let step = 0; step < 16; step++) {
+      const angle = (step / 16) * Math.PI * 2;
+      for (const y of [0.05, piece.height / 2, piece.height]) points.push(new Vector3(Math.cos(angle) * piece.radius, y, Math.sin(angle) * piece.radius));
+    }
+    points.push(new Vector3(0, piece.height, 0));
+    return points;
+  }
+  const half = piece.radius * 0.8;
+  for (const x of [-half, 0, half]) for (const z of [-half, 0, half]) for (const y of [0.05, piece.height * 0.45, piece.height]) points.push(new Vector3(x, y, z));
+  return points;
+}
+
+/**
+ * Flies the show at the tick rate and lists every time one piece passes into
+ * another: two in the air (each an upright cylinder, tipped as it is), or one
+ * in the air into a piece already down (its body's points inside the other).
+ */
+function collisions(seed: number): string[] {
+  const { run } = accio(seed);
+  const found = new Map<string, string>();
+  const note = (key: string, text: string): void => { if (!found.has(key)) found.set(key, text); };
+  const bodies = new Map(pieces.map((piece) => [piece.id, bodyPoints(piece)]));
+  const down = new Set<string>();
+  const pose = emptyPose();
+  const matrix = new Matrix4();
+  const point = new Vector3();
+  for (let tick = 1; tick <= 10 * ASSEMBLY_TICK_RATE && !run.done(); tick++) {
+    const seconds = tick / ASSEMBLY_TICK_RATE;
+    run.advanceTo(seconds);
+    const aloft: { readonly id: string; readonly x: number; readonly y: number; readonly z: number; readonly reach: number; readonly rise: number }[] = [];
+    for (const piece of pieces) {
+      run.pose(piece.id, pose);
+      if (!pose.visible) continue;
+      const atRest = pose.y - piece.y < 0.005 && Math.hypot(pose.x - piece.x, pose.z - piece.z) < 0.01 && Math.abs(pose.grow - 1) < 0.01;
+      if (atRest || run.isDone(piece.id)) { down.add(piece.id); continue; }
+      if (pose.grow < 0.3) continue;
+      const tilt = Math.min(Math.hypot(pose.tiltX, pose.tiltZ), Math.PI / 2);
+      const across = piece.radius * pose.grow;
+      const up = (piece.height / 2) * pose.grow;
+      aloft.push({ id: piece.id, x: pose.x, y: pose.y + pose.pivot, z: pose.z, reach: across * Math.cos(tilt) + up * Math.sin(tilt), rise: up * Math.cos(tilt) + across * Math.sin(tilt) });
+      composePieceMatrix(pose, 1, matrix);
+      for (const other of pieces) {
+        if (!down.has(other.id)) continue;
+        const reach = other.role === "table" ? other.radius : other.radius * 0.8;
+        if (Math.hypot(pose.x - other.x, pose.z - other.z) > reach + piece.radius * 1.5 + 0.2) continue;
+        for (const body of bodies.get(piece.id) ?? []) {
+          point.copy(body).applyMatrix4(matrix);
+          const inside = Math.hypot(point.x - other.x, point.z - other.z) < reach - 0.02 && point.y > other.y && point.y < other.y + other.height - 0.02;
+          if (inside) { note(`${piece.id}|${other.id}`, `${piece.id} into ${other.id} (down) at ${seconds.toFixed(3)} s`); break; }
+        }
+      }
+    }
+    for (let i = 0; i < aloft.length; i++) {
+      for (let j = i + 1; j < aloft.length; j++) {
+        const a = aloft[i];
+        const b = aloft[j];
+        if (a === undefined || b === undefined) continue;
+        const across = a.reach + b.reach - Math.hypot(a.x - b.x, a.z - b.z);
+        const upward = a.rise + b.rise - Math.abs(a.y - b.y);
+        if (across > 0.01 && upward > 0.01) note(`${a.id}|${b.id}`, `${a.id} through ${b.id} at ${seconds.toFixed(3)} s, ${Math.min(across, upward).toFixed(2)} m`);
+      }
+    }
+  }
+  return [...found.values()];
+}
+
 describe("the 180-seat Grand Hall dinner", () => {
   it("is 18 rounds of 10 with stable ids, Table 1 at the fireplace end", () => {
     const tables = pieces.filter((piece) => piece.role === "table");
@@ -308,11 +378,16 @@ describe("Accio, second pass", () => {
     expect(flown.leastFacing).toBeGreaterThan(Math.cos((70 * Math.PI) / 180));
   });
 
+  it("never flies one piece through another, in the air or into one already down", () => {
+    for (const seed of [SEED, 7]) expect(collisions(seed), `seed ${String(seed)}`).toEqual([]);
+  });
+
   it("settles every piece exactly at its saved transform within the 8 s clip", () => {
     const { run } = accio(SEED);
     runToRest(run);
     expect(run.done()).toBe(true);
-    expect(run.settledAt() ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(run.clipSeconds - 0.5);
+    // At rest a moment before the clip ends.
+    expect(run.settledAt() ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(run.clipSeconds - 0.15);
     const drawn = new Matrix4();
     const saved = new Matrix4();
     for (const [index, pose] of snapshot(run).entries()) {

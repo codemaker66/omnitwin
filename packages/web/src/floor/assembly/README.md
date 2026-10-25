@@ -55,7 +55,19 @@ Off unless a device asks for it (`flag.ts`, the `hall-sky-access` pattern):
   - each window's stream is spaced;
   - chairs start only after their round has landed (found by flying it on its
     own springs);
+  - no two pieces pass through each other: prioritized planning in space and
+    time, worked out in this order:
+    1. Each piece is flown alone through each candidate window, sampled at
+       120 Hz, with each sample swept halfway to its neighbours.
+    2. It starts at the first moment, in 20 ms steps, when its whole flight
+       is clear of every piece already scheduled.
+    3. A held-back round does not hold back the rest of its wave, but no round
+       leaves before one a whole wave ring nearer the top table.
+
+    Planning 180 seats takes about 0.1 s on a desktop, once, at the start;
   - candles light as a table's last chair lands.
+- A round tips toward the camera from wherever it is, so its top shows even
+  when it comes through a window far from its place.
 
 ## Skip, cancel, reduced motion
 
@@ -81,6 +93,8 @@ shown only with the flag on. It steps aside while the Assembly plays.
   - chairs only after their round lands;
   - stream spacing;
   - no piece through the glass or wider than its reveal;
+  - no piece through another, in the air or into one already down (240 Hz,
+    real poses, two seeds);
   - rounds show the camera their tops;
   - nothing across the lens or set down across its table;
   - the final framing inside the orbit's limits with no chandelier mid-frame;
