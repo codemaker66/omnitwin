@@ -5,6 +5,7 @@ import { DoorClearNotice } from "../editor/DoorClearNotice.js";
 import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { ChromeShell } from "./ChromeShell.js";
 import { DockStack } from "./DockStack.js";
+import { Receipt } from "./Receipt.js";
 import { LayOutPanel } from "./LayOutPanel.js";
 import { RoomStage } from "./RoomStage.js";
 import { Slate } from "./Slate.js";
@@ -14,9 +15,10 @@ import { Slate } from "./Slate.js";
 // today's planner carries none of it until slice 21 makes it the default.
 //
 // The room, full bleed, under the zones the slices fill: so far the slate
-// (slice 7), the dock (8′), the rail (12′), and the door rule's notice above
-// the dock (lane E, T-679). The layout keeps syncing, saving and its live room
-// exactly as before; none of today's other surfaces mount.
+// (slice 7), the dock (8′), the rail (12′), the receipt and the door rule's
+// notice above the dock (spec §6.9; lane E, T-679). The layout keeps syncing,
+// saving and its live room exactly as before; none of today's other surfaces
+// mount.
 // ---------------------------------------------------------------------------
 
 export function PlannerChromeV2(): ReactElement {
@@ -26,11 +28,17 @@ export function PlannerChromeV2(): ReactElement {
     <>
       <EditorBridge />
       <a className="vv-skip-link" href="#main-content">Skip to the room</a>
-      {/* A table in front of a door, said calmly in the line above the dock, apart from the slate's notice. */}
+      {/* Above the dock: what just happened (5 s, with Undo), and a table in front of a door, said calmly
+          apart from the slate's notice. The door's line is the lower and stays put; a receipt comes and goes above it. */}
       <ChromeShell
         room={<RoomStage />}
         slate={<Slate />}
-        aboveDock={<DoorClearNotice zoned />}
+        aboveDock={
+          <>
+            <Receipt />
+            <DoorClearNotice zoned />
+          </>
+        }
         dock={<DockStack />}
         right={right === "lay-out" ? <LayOutPanel /> : null}
       />

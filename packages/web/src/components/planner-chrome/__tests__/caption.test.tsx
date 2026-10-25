@@ -8,6 +8,7 @@ import { stampSetup } from "../../../lib/setup-cards.js";
 import { projectScreenAnchors, screenAnchorCount, setScreenFloorPicker } from "../../../lib/screen-anchors.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { usePlannerChromeStore } from "../../../stores/planner-chrome-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 
@@ -96,6 +97,7 @@ describe("its verbs are the keys' commands", () => {
     act(() => { useSelectionStore.getState().select("t8"); });
     fireEvent.click(within(caption()).getByRole("button", { name: /^Remove/u }));
     expect(usePlacementStore.getState().placedItems).toEqual([]);
+    expect(usePlannerChromeStore.getState().receipt).toMatchObject({ text: "Table 8 put back in store", undo: true });
     expect(screen.queryByRole("group", { name: /^Table 8/u })).toBeNull();
   });
 });

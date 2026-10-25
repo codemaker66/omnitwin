@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { Catalogue } from "./Catalogue.js";
 import { Dock } from "./Dock.js";
 import { Rail } from "./Rail.js";
@@ -17,8 +17,23 @@ const moreKey = (): HTMLElement | null => document.querySelector<HTMLElement>(".
 
 export function DockStack({ catalogue }: { readonly catalogue?: ReactNode }): ReactElement {
   useStoreStock();
+  const stackRef = useRef<HTMLDivElement>(null);
+  // The receipt and anything else above the dock stand above the whole stack, whatever it shows.
+  useLayoutEffect(() => {
+    const stack = stackRef.current;
+    const shell = stack?.closest<HTMLElement>(".pc-shell") ?? null;
+    if (stack === null || shell === null) return undefined;
+    const publish = (): void => { shell.style.setProperty("--pc-dockstack-height", `${String(Math.round(stack.getBoundingClientRect().height))}px`); };
+    publish();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(publish);
+    observer?.observe(stack);
+    return () => {
+      observer?.disconnect();
+      shell.style.removeProperty("--pc-dockstack-height");
+    };
+  }, []);
   return (
-    <div className="pc-dockstack" data-testid="planner-dock-stack">
+    <div ref={stackRef} className="pc-dockstack" data-testid="planner-dock-stack">
       {catalogue ?? <Catalogue returnFocusTo={moreKey} />}
       <Rail />
       <SeatsMeter />
