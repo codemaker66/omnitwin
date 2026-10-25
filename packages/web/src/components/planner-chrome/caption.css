@@ -58,7 +58,8 @@
 /* Facts: Newsreader 20 over 12 px labels. */
 .pc-caption__facts {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 8px 20px;
   margin: 10px 0 0;
 }
 
@@ -75,6 +76,20 @@
   font: 400 20px/1.2 var(--house-serif);
   font-variant-numeric: lining-nums tabular-nums;
 }
+
+/* An aisle: a dash in its tone, as its line on the floor; tight reads amber. */
+.pc-caption__dash {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  margin: 0 6px 3px 0;
+  border-radius: 999px;
+  background: var(--house-sage-lit);
+  vertical-align: middle;
+}
+
+.pc-caption__fact--amber .pc-caption__dash { background: var(--house-amber-lit); }
+.pc-caption__fact--amber dd { color: var(--house-amber-lit); }
 
 .pc-caption__verbs {
   display: flex;

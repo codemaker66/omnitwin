@@ -169,3 +169,21 @@ describe("a dance floor's panels", () => {
     expect(usePlacementStore.getState().placedItems).toHaveLength(30);
   });
 });
+
+describe("its aisles, behind the live aisles switch", () => {
+  it("gives the gap to its nearest neighbour as a fact", () => {
+    const four = [
+      piece("t4", "round-table-6ft", 6.4, 3, { groupId: "g4", label: "Table 4" }),
+      ...Array.from({ length: 10 }, (_, n) => piece(`d${String(n)}`, "banquet-chair", 6.4 + 0.95 * Math.cos(n * 0.628), 3 + 0.95 * Math.sin(n * 0.628), { groupId: "g4" })),
+    ];
+    usePlacementStore.setState({ placedItems: [...tableEight(), ...four] });
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    expect(within(caption()).queryByText(/^to Table 4/u)).toBeNull();
+    cleanup();
+    setPlannerFeaturesForTesting({ liveAisles: true });
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    expect(within(caption()).getByText(/^to Table 4/u)).toBeTruthy();
+  });
+});

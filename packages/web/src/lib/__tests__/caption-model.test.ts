@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { seatsFor } from "@omnitwin/types";
 import { getCatalogueItemBySlug } from "../catalogue.js";
-import { captionModel, type CaptionVerb } from "../caption-model.js";
+import { captionAisles, captionModel, type CaptionVerb } from "../caption-model.js";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import type { PlacedItem } from "../placement.js";
 import type { PlannerFeature } from "../planner-features.js";
 import { stampSetup } from "../setup-cards.js";
@@ -116,5 +117,22 @@ describe("a dance floor", () => {
     expect(model).toMatchObject({ count: 1, name: "Dance floor", size: "4.6 m square", seats: null });
     expect(model?.panels).toEqual({ cols: 5, rows: 5, groupId: panels[0]?.groupId });
     expect(model?.verbs).toEqual(["panels", "turn", "remove"]);
+  });
+});
+
+describe("its aisles (lane E's live aisles)", () => {
+  it("names the two nearest neighbours with the gap to each, toned", () => {
+    const room = [...round("t8", -2, 10), ...round("t4", 1.2, 10), ...round("t7", 5, 10)];
+    const facts = captionAisles(new Set(["t8"]), room, GRAND_HALL_RENDER_DIMENSIONS, true);
+    expect(facts.length).toBeGreaterThan(0);
+    expect(facts.length).toBeLessThanOrEqual(2);
+    // The nearest thing across the gap, as lane E names it ("to Table 4's chairs" when the chairs are nearer).
+    expect(facts[0]?.label).toMatch(/^to Table 4/u);
+    expect(facts[0]?.value).toMatch(/^\d+\.\d m/u);
+    expect(["sage", "amber"]).toContain(facts[0]?.tone);
+  });
+
+  it("says nothing for nothing selected", () => {
+    expect(captionAisles(new Set(), [], GRAND_HALL_RENDER_DIMENSIONS, true)).toEqual([]);
   });
 });

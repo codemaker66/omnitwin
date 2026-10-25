@@ -1,5 +1,8 @@
 import { seatsFor } from "@omnitwin/types";
+import type { SpaceDimensions } from "@omnitwin/types";
 import { toRenderSpace } from "../constants/scale.js";
+import { GRAND_HALL_WALL_NAMES, grandHallExits } from "./auto-fill.js";
+import { liveAisles, type AisleTone } from "./clearance-ring.js";
 import { CATALOGUE_CARDS } from "./card-defaults.js";
 import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
 import { canApplyTableLinenToItem, isDiningTableItem } from "./furniture-semantics.js";
@@ -178,4 +181,37 @@ export function captionModel(
     anchor,
     primaryId: first.main.id,
   };
+}
+
+export interface CaptionFact {
+  /** "1.3 m", or "0.8 m · tight", in the caption's figures. */
+  readonly value: string;
+  /** "to Table 4", in the 12 px label under it. */
+  readonly label: string;
+  readonly tone: AisleTone;
+}
+
+/** The caption's own facts after its size: the gap to each of its two nearest neighbours. */
+const CAPTION_AISLES = 2;
+
+/**
+ * The aisles from the selection to its nearest neighbours (lane E's live
+ * aisles, the ghost's own measure), as the caption's facts. The Grand Hall's
+ * exits and wall names are known; elsewhere a gap names "the wall".
+ */
+export function captionAisles(
+  selectedIds: ReadonlySet<string>,
+  placedItems: readonly PlacedItem[],
+  room: SpaceDimensions,
+  grandHall: boolean,
+): readonly CaptionFact[] {
+  if (selectedIds.size === 0) return [];
+  const set = wholeSelection(selectedIds, placedItems);
+  if (set.length === 0) return [];
+  const lines = liveAisles(set, placedItems, room, {
+    count: CAPTION_AISLES,
+    exits: grandHall ? grandHallExits() : null,
+    ...(grandHall ? { wallNames: GRAND_HALL_WALL_NAMES } : {}),
+  });
+  return lines.slice(0, CAPTION_AISLES).map((line) => ({ value: line.words, label: `to ${line.neighbour}`, tone: line.tone }));
 }
