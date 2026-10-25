@@ -455,6 +455,7 @@ export function SelectionSystem(): null {
     let pressedPiece: string | null = null;
     let liftOrigin: { readonly x: number; readonly z: number } | null = null;
     let holdTimer = 0;
+    let holdFrame = 0;
     let ringFrame = 0;
     const ring = createHoldRing();
 
@@ -542,6 +543,7 @@ export function SelectionSystem(): null {
       const gesture = useTouchGestureStore.getState();
       if (mode !== "pending") {
         window.clearTimeout(holdTimer);
+        cancelAnimationFrame(holdFrame);
         hideRing();
       }
       if (mode === "orbit" || mode === "two") {
@@ -598,6 +600,7 @@ export function SelectionSystem(): null {
 
     function forgetTouch(): void {
       window.clearTimeout(holdTimer);
+      cancelAnimationFrame(holdFrame);
       hideRing();
       actedMode = "idle";
       touchPointer = null;
@@ -624,7 +627,10 @@ export function SelectionSystem(): null {
       actedMode = arbiter.press({ pointerId: event.pointerId, at, x: event.clientX, y: event.clientY, armed, onPiece: pressedPiece !== null });
       useTouchGestureStore.getState().setMode(actedMode);
       const hold = armed ? PLACE_HOLD_MS : pressedPiece !== null ? LIFT_HOLD_MS : null;
-      if (hold !== null) holdTimer = window.setTimeout(() => { follow(arbiter.tick(performance.now())); }, hold);
+      // The hold is judged a frame after its timer: a page too busy to run the timer on time
+      // may still hold the finger's moves, and the browser hands queued moves over before a
+      // frame's callbacks, so a swipe it was late to deliver is read as the swipe it was.
+      if (hold !== null) holdTimer = window.setTimeout(() => { holdFrame = requestAnimationFrame(() => { follow(arbiter.tick(performance.now())); }); }, hold);
       if (pressedPiece !== null) showRing(event.clientX, event.clientY);
     }
 
@@ -637,14 +643,22 @@ export function SelectionSystem(): null {
         onTouchCancel(event);
         return;
       }
-      const mode = arbiter.move(event.pointerId, event.timeStamp, event.clientX, event.clientY);
-      follow(mode);
+      // A busy page hands a frame's moves over as one event reporting the last: each
+      // sample is read at its own time, so a swipe made before the hold is a swipe.
+      const coalesced = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+      let mode = arbiter.mode;
+      for (const sample of coalesced.length > 0 ? coalesced : [event]) {
+        mode = arbiter.move(event.pointerId, sample.timeStamp, sample.clientX, sample.clientY);
+        follow(mode);
+        if (event.pointerId === touchPointer && (mode === "pending" || mode === "place" || mode === "lift")) {
+          trail.record(sample.timeStamp, sample.clientX, sample.clientY);
+        }
+      }
       if (mode !== "pending" && mode !== "place" && mode !== "lift") return;
       const gesture = useTouchGestureStore.getState();
       // The orbit must not turn the room while the finger may yet place, lift or tap.
       gesture.holdCamera(true);
       if (event.pointerId !== touchPointer) return;
-      trail.record(event.timeStamp, event.clientX, event.clientY);
       const finger = arbiter.finger;
       if (finger === null) return;
       if (mode === "place") gesture.setFinger(finger);

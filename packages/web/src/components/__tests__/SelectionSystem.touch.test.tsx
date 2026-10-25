@@ -142,6 +142,35 @@ function tableAt(): { readonly x: number; readonly z: number } {
   return { x: table.x, z: table.z };
 }
 
+/** A hold is judged on the frame after its timer: this long covers that frame. */
+const FRAME = 20;
+
+/** A finger move the page hands over late: its own timestamp is when the finger made it. */
+function lateMove(x: number, y: number, stamp: number): void {
+  act(() => {
+    const event = new PointerEvent("pointermove", { pointerId: 1, pointerType: "touch", isPrimary: true, buttons: 1, clientX: x, clientY: y, bubbles: true });
+    Object.defineProperty(event, "timeStamp", { value: stamp });
+    canvas.dispatchEvent(event);
+  });
+}
+
+/** One pointermove carrying a frame's coalesced samples, as a busy page delivers them; it reports the last. */
+function coalescedMoves(samples: readonly (readonly [number, number, number])[]): void {
+  act(() => {
+    const events = samples.map(([x, y, stamp]) => {
+      const sample = new PointerEvent("pointermove", { pointerId: 1, pointerType: "touch", isPrimary: true, buttons: 1, clientX: x, clientY: y });
+      Object.defineProperty(sample, "timeStamp", { value: stamp });
+      return sample;
+    });
+    const last = events.at(-1);
+    if (last === undefined) return;
+    const event = new PointerEvent("pointermove", { pointerId: 1, pointerType: "touch", isPrimary: true, buttons: 1, clientX: last.clientX, clientY: last.clientY, bubbles: true });
+    Object.defineProperty(event, "timeStamp", { value: last.timeStamp });
+    Object.defineProperty(event, "getCoalescedEvents", { value: () => events });
+    canvas.dispatchEvent(event);
+  });
+}
+
 /** The screen point over the round of eight. */
 const OVER_TABLE = { x: 298, y: 200 } as const;
 
@@ -180,7 +209,7 @@ describe("the touch arbiter", () => {
     useCatalogueStore.getState().selectItem(poseur.id);
     render(<SelectionSystem />);
     finger("pointerDown", 150, 260, 1_000);
-    wait(1_000 + PLACE_HOLD_MS);
+    wait(1_000 + PLACE_HOLD_MS + FRAME);
     expect(useTouchGestureStore.getState().mode).toBe("place");
     finger("pointerMove", 180, 260, 1_200);
     finger("pointerMove", 200, 262, 1_240);
@@ -195,11 +224,37 @@ describe("the touch arbiter", () => {
     expect(placed[0]?.z).toBeCloseTo(seen.z, 1);
   });
 
+  it("reads a swipe the page was too busy to hand over before the hold's timer as the swipe it was", () => {
+    useCatalogueStore.getState().selectItem(poseur.id);
+    render(<SelectionSystem />);
+    finger("pointerDown", 150, 220, 1_000);
+    // The page is busy: the hold's timer runs at 1 150 ms, before the move the finger made at 1 016 ms arrives
+    // (just before the next frame, at 1 160 ms).
+    wait(1_000 + PLACE_HOLD_MS + 5);
+    lateMove(175, 222, 1_016);
+    wait(1_000 + PLACE_HOLD_MS + 50);
+    expect(useTouchGestureStore.getState().mode).toBe("orbit");
+    finger("pointerUp", 175, 222, 1_300);
+    expect(placedPoseurs()).toHaveLength(0);
+  });
+
+  it("reads every sample of a coalesced move, so a fast swipe in a slow frame is still a swipe", () => {
+    useCatalogueStore.getState().selectItem(poseur.id);
+    render(<SelectionSystem />);
+    finger("pointerDown", 150, 220, 1_000);
+    wait(1_000 + 5);
+    // The finger crossed the slop at 1 032 ms; the frame that hands the moves over reports the last, at 1 160 ms.
+    coalescedMoves([[156, 220, 1_016], [168, 221, 1_032], [190, 222, 1_096], [214, 224, 1_160]]);
+    expect(useTouchGestureStore.getState().mode).toBe("orbit");
+    finger("pointerUp", 214, 224, 1_300);
+    expect(placedPoseurs()).toHaveLength(0);
+  });
+
   it("places nothing once a second finger lands", () => {
     useCatalogueStore.getState().selectItem(poseur.id);
     render(<SelectionSystem />);
     finger("pointerDown", 150, 260, 1_000);
-    wait(1_000 + PLACE_HOLD_MS);
+    wait(1_000 + PLACE_HOLD_MS + FRAME);
     finger("pointerMove", 170, 260, 1_200);
     finger("pointerDown", 260, 300, 1_250, 2);
     expect(useTouchGestureStore.getState().mode).toBe("two");
@@ -216,7 +271,7 @@ describe("the touch arbiter", () => {
     wait(1_000 + LIFT_HOLD_MS - 1);
     expect(useTouchGestureStore.getState().mode).toBe("pending");
     expect(document.querySelector("[data-testid=touch-hold-ring]")).not.toBeNull();
-    wait(1_000 + LIFT_HOLD_MS);
+    wait(1_000 + LIFT_HOLD_MS + FRAME);
     expect(useTouchGestureStore.getState().mode).toBe("lift");
     expect(useSelectionStore.getState().selectedIds.has(tableId)).toBe(true);
     // It rose above the finger at once: further from the camera, so further up the screen.
@@ -231,7 +286,7 @@ describe("the touch arbiter", () => {
     render(<SelectionSystem />);
     const before = tableAt();
     finger("pointerDown", OVER_TABLE.x, OVER_TABLE.y, 1_000);
-    wait(1_000 + LIFT_HOLD_MS);
+    wait(1_000 + LIFT_HOLD_MS + FRAME);
     finger("pointerMove", OVER_TABLE.x - 80, OVER_TABLE.y + 30, 1_400);
     expect(tableAt().x).not.toBeCloseTo(before.x, 2);
     finger("pointerDown", 100, 100, 1_450, 2);

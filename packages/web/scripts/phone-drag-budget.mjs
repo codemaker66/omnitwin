@@ -243,7 +243,10 @@ try {
   const cameraAt = () => page.evaluate(() => window.__r3fStore?.getState().camera.position.toArray() ?? null);
   const pieces = () => page.evaluate(() => window.__r3fStore?.getState().scene.getObjectByName("placed-furniture")?.children
     .filter((child) => child.name.startsWith("furniture-")).length ?? null);
-  /** The placed piece drawn nearest the middle of the view: its name, place on screen and in the room. */
+  /**
+   * The placed piece drawn nearest the middle of the view: its name, and its centre on screen and in
+   * the room. A piece's root stands at the origin; its pick proxy, a child, is where the piece is.
+   */
   const pieceNearMiddle = () => page.evaluate(() => {
     const state = window.__r3fStore?.getState();
     const root = state?.scene.getObjectByName("placed-furniture");
@@ -252,8 +255,12 @@ try {
     let best = null;
     for (const child of root.children) {
       if (!child.name.startsWith("furniture-")) continue;
-      const world = child.getWorldPosition(child.position.clone());
-      const point = world.clone().setY(world.y + 0.4).project(state.camera);
+      let mesh = null;
+      child.traverse((node) => { if (mesh === null && node.isMesh) mesh = node; });
+      if (mesh === null) continue;
+      mesh.geometry.computeBoundingSphere();
+      const world = mesh.geometry.boundingSphere.center.clone().applyMatrix4(mesh.matrixWorld);
+      const point = world.clone().project(state.camera);
       const x = rect.left + (point.x * 0.5 + 0.5) * rect.width;
       const y = rect.top + (-point.y * 0.5 + 0.5) * rect.height;
       const off = Math.hypot(x - (rect.left + rect.width / 2), y - (rect.top + rect.height * 0.5));
@@ -261,10 +268,20 @@ try {
     }
     return best;
   });
-  const piecePlace = (name) => page.evaluate((pieceName) => {
-    const piece = window.__r3fStore?.getState().scene.getObjectByName(pieceName);
-    return piece === undefined ? null : piece.getWorldPosition(piece.position.clone()).toArray();
-  }, name);
+  /** Every placed piece's centre in the room, by name (pieces overlap, so the press may take another). */
+  const piecePlaces = () => page.evaluate(() => {
+    const root = window.__r3fStore?.getState().scene.getObjectByName("placed-furniture");
+    const places = {};
+    for (const child of root?.children ?? []) {
+      let mesh = null;
+      child.traverse((node) => { if (mesh === null && node.isMesh) mesh = node; });
+      if (mesh === null) continue;
+      mesh.updateWorldMatrix(true, false);
+      mesh.geometry.computeBoundingSphere();
+      places[child.name] = mesh.geometry.boundingSphere.center.clone().applyMatrix4(mesh.matrixWorld).toArray();
+    }
+    return places;
+  });
 
   /** One finger: down at (x0, y0), held `holdMs`, then MOVES moves on a 60 Hz clock to (x1, y1), then up. */
   async function drag(name, holdMs, from = null) {
@@ -346,12 +363,17 @@ try {
   if (GESTURES.includes("lift")) {
     const piece = await pieceNearMiddle();
     if (piece === null) throw new Error("No placed piece to lift");
+    const before = await piecePlaces();
     const record = await drag("lift", 380, piece);
-    const after = await piecePlace(piece.name);
-    record.liftedM = after === null ? null : Math.hypot(after[0] - piece.world[0], after[2] - piece.world[2]);
-    record.checks.lifted = record.liftedM !== null && record.liftedM > 0.2;
+    const after = await piecePlaces();
+    // The furthest any piece travelled: the one the press took, and its set with it.
+    record.liftedM = Math.max(0, ...Object.entries(after).map(([name, place]) => {
+      const was = before[name];
+      return was === undefined ? 0 : Math.hypot(place[0] - was[0], place[2] - was[2]);
+    }));
+    record.checks.lifted = record.liftedM > 0.2;
     if (!record.checks.lifted) failed = true;
-    console.log(`lift     ${piece.name} moved ${String(record.liftedM?.toFixed(2))} m`);
+    console.log(`lift     pressed ${piece.name}; the furthest piece moved ${record.liftedM.toFixed(2)} m`);
   }
 } catch (error) {
   result.errors.push(String(error).slice(0, 300));
