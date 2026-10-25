@@ -1509,7 +1509,10 @@ export {
   assetDisplayName,
   getCanonicalAssetById,
   getCanonicalAssetBySlug,
+  seatBaseSlug,
+  seatsFor,
   type CanonicalAsset,
+  type SeatRange,
   type TableShape,
 } from "./asset-catalogue.js";
 
