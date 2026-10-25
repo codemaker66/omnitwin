@@ -14,6 +14,7 @@ import { atVerdict, createGhostWorld, judgeGhost, refusalChip } from "./ghost-tr
 import { capReachedFor } from "./placement-cap.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
 import { seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
+import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { tableClothStyleForCatalogueItem, tableDressingTargetIds, tableSettingForCatalogueItem } from "./table-dressing.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
@@ -120,7 +121,10 @@ export function placeCardAt(params: CardParams, origin: { readonly x: number; re
   const stamp = stampSetup(params, origin, rotationY);
   if (stamp.length === 0) return [];
   if (!plannerFeatureEnabled("truthfulGhost")) return placeState.placeSetup(stamp);
-  const verdict = judgeGhost(stamp, createGhostWorld(placeState.placedItems, useRoomDimensionsStore.getState().dimensions));
+  // With the ghost's own history (its hysteresis), so a click never places what the ghost showed refused.
+  const verdict = judgeGhost(stamp, createGhostWorld(placeState.placedItems, useRoomDimensionsStore.getState().dimensions), {
+    previous: useGhostVerdictStore.getState().verdict?.state,
+  });
   if (verdict.state === "refused") {
     postPlacementNotice(refusalChip(verdict.obstacle));
     return [];

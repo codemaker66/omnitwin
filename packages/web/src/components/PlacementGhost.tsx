@@ -43,6 +43,7 @@ import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
 import { findFurnitureItemId } from "./SelectionSystem.js";
+import { GhostSet } from "./GhostSet.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -85,6 +86,8 @@ interface PendingPointer {
 export function PlacementGhost(): React.ReactElement | null {
   const { invalidate, scene, camera, raycaster, gl } = useThree();
   const selectedItemId = useCatalogueStore((s) => s.selectedItemId);
+  const cardParams = useCatalogueStore((s) => s.cardParams);
+  const fromCardDrag = useCatalogueStore((s) => s.dragActive);
   const hasGhost = usePlacementStore((s) => s.ghostPosition !== null);
   const ghostRotation = usePlacementStore((s) => s.ghostRotation);
   const ghostValid = usePlacementStore((s) => s.ghostValid);
@@ -525,6 +528,12 @@ export function PlacementGhost(): React.ReactElement | null {
         </mesh>
       </group>
     );
+  }
+
+  // --- The truthful ghost: the card's whole set, judged with every body (Q-05) ---
+  const brushing = catalogueItem.category === "chair" && chairBrushPreview.length > 1;
+  if (cardParams !== null && !brushing && plannerFeatureEnabled("setupCards") && plannerFeatureEnabled("truthfulGhost")) {
+    return <GhostSet params={cardParams} warming={warming} fromCardDrag={fromCardDrag} />;
   }
 
   // --- Normal furniture ghost ---
