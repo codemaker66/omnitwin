@@ -1,4 +1,4 @@
-import { type ReactElement } from "react";
+import { type KeyboardEvent, type ReactElement } from "react";
 import { PenLine, Plus, Redo2, Ruler, Undo2 } from "lucide-react";
 import { canRedo, canUndo, redoLabel, undoLabel } from "../../lib/editor-history.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
@@ -7,7 +7,7 @@ import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
-import { chooseView, toggleLayOut, useDockKeys } from "./dock-keys.js";
+import { VIEW_ORDER, chooseView, toggleLayOut, useDockKeys } from "./dock-keys.js";
 import { LayOutGlyph } from "./glyphs.js";
 import { Key, KeyRow, KeySeparator } from "./Keys.js";
 import "./chrome.css";
@@ -49,22 +49,41 @@ export function Dock(): ReactElement {
     tools.setTool(tools.activeTool === next ? "select" : next);
   };
 
+  // The views are one Tab stop (the view in use); the arrows, Home and End move between them.
+  const tabStop = view ?? "plan";
+  const onViewKeys = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (!viewsReady) return;
+    const index = VIEW_ORDER.indexOf(tabStop);
+    const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? VIEW_ORDER[(index + 1) % VIEW_ORDER.length]
+      : event.key === "ArrowLeft" || event.key === "ArrowUp" ? VIEW_ORDER[(index - 1 + VIEW_ORDER.length) % VIEW_ORDER.length]
+        : event.key === "Home" ? VIEW_ORDER[0]
+          : event.key === "End" ? VIEW_ORDER[VIEW_ORDER.length - 1]
+            : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    chooseView(next);
+    event.currentTarget.querySelector<HTMLElement>(`[data-pc-key="${next}"]`)?.focus();
+  };
+
   return (
     <div className="pc-lacquer pc-dock" role="toolbar" aria-label="The dock" data-testid="planner-dock">
-      <KeyRow role="radiogroup" label="View" activeKey={viewsReady ? view : null}>
-        {(["plan", "room", "walk"] as const).map((id, index) => (
-          <Key
-            key={id}
-            rowKey={id}
-            label={DOCK_LABELS[index] ?? id}
-            radio
-            on={viewsReady && view === id}
-            shortcut={["Shift", String(index + 1)]}
-            disabledReason={viewsReady ? undefined : NO_SET_VIEWS}
-            onPress={() => { chooseView(id); }}
-          />
-        ))}
-      </KeyRow>
+      <div className="pc-dock__group" onKeyDown={onViewKeys}>
+        <KeyRow role="radiogroup" label="View" activeKey={viewsReady ? view : null}>
+          {VIEW_ORDER.map((id, index) => (
+            <Key
+              key={id}
+              rowKey={id}
+              label={DOCK_LABELS[index] ?? id}
+              radio
+              on={viewsReady && view === id}
+              tabIndex={id === tabStop ? 0 : -1}
+              shortcut={["Shift", String(index + 1)]}
+              disabledReason={viewsReady ? undefined : NO_SET_VIEWS}
+              onPress={() => { chooseView(id); }}
+            />
+          ))}
+        </KeyRow>
+      </div>
       <KeySeparator />
       <div className="pc-dock__group" role="group" aria-label="Making">
         <Key label="Add" icon={<Plus className="pc-icon" aria-hidden="true" />} shortcut={["A"]} disabledReason={ADD_WAITS} />
