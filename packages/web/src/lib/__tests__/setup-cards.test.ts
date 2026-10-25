@@ -53,7 +53,7 @@ describe("Round of N", () => {
     const params = paramsFor("round");
     expect(params).toEqual({ card: "round", seats: 10, colourway: "white" });
     expect(cardMainSlug(params)).toBe("round-table-6ft-white");
-    expect(describeCard(params)).toEqual({ name: "Round of 10", size: "1.83 m round", seats: 10 });
+    expect(describeCard(params)).toEqual({ name: "Round of 10", size: "1.8 m round", seats: 10 });
   });
 
   it("keeps its seats between eight and twelve", () => {
