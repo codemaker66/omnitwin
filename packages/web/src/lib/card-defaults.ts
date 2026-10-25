@@ -93,7 +93,7 @@ export const CATALOGUE_CARDS: readonly CatalogueCard[] = [
   setup(ROUND, "Round of 10", "Tables", ["round", "banquet round", "dinner table"]),
   setup(TOP, "Top table", "Tables", ["top", "head table", "panel table"]),
   setup(LONG, "Long table", "Tables", ["banqueting table", "long"]),
-  piece("Round 1.83 m", "Tables", [v("round-table-6ft-white", "white"), v("round-table-6ft-black", "black"), v("round-table-6ft", "bare")], ["6 ft round"]),
+  piece("Round 6 ft", "Tables", [v("round-table-6ft-white", "white"), v("round-table-6ft-black", "black"), v("round-table-6ft", "bare")], ["6 ft round"]),
   piece("Trestle 6 ft", "Tables", [v("trestle-6ft-white", "white"), v("trestle-6ft-black", "black"), v("trestle-6ft-wooden", "wood"), v("trestle-6ft", "bare")], ["trestle", "rectangular table"]),
   piece("Trestle 4 ft", "Tables", [v("trestle-4ft-white", "white"), v("trestle-4ft-black", "black"), v("trestle-4ft", "bare")]),
   piece("Poseur", "Tables", [v("poseur-table-white", "white"), v("poseur-table-black", "black"), v("poseur-table", "bare")], ["high table", "cocktail table", "poseur table"]),

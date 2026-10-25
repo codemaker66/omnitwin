@@ -34,7 +34,7 @@ describe("the catalogue", () => {
     expect(new Set(slugs).size).toBe(slugs.length);
     for (const slug of slugs) expect(getCatalogueItemBySlug(slug), slug).toBeDefined();
     expect(CATALOGUE_CARDS.length).toBeGreaterThanOrEqual(24);
-    expect(CATALOGUE_CARDS.find((card) => card.name === "Round 1.83 m")?.variants.map((variant) => variant.colour)).toEqual(["white", "black", "bare"]);
+    expect(CATALOGUE_CARDS.find((card) => card.name === "Round 6 ft")?.variants.map((variant) => variant.colour)).toEqual(["white", "black", "bare"]);
     // Dressing is not a card: cloths and place settings stay with the caption.
     expect(slugs).not.toContain("white-table-cloth");
     expect(slugs).not.toContain("dinner-place-setting");
