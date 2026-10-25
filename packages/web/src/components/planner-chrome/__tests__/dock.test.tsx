@@ -128,6 +128,22 @@ describe("the tools", () => {
     expect(usePlannerChromeStore.getState().right).toBeNull();
   });
 
+  it("opens and closes the catalogue from Add, and from A", async () => {
+    const { useCardsStore } = await import("../../../stores/cards-store.js");
+    useCardsStore.getState().reset();
+    render(<Dock />);
+    const add = within(dock()).getByRole("button", { name: /^Add/u });
+    fireEvent.click(add);
+    expect(useCardsStore.getState().catalogueOpen).toBe(true);
+    expect(add.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(add);
+    expect(useCardsStore.getState().catalogueOpen).toBe(false);
+    // The keymap's A puts the add tool in hand; under the new chrome that is the catalogue.
+    act(() => { useToolStore.getState().setTool("add"); });
+    expect(useCardsStore.getState().catalogueOpen).toBe(true);
+    expect(useToolStore.getState().activeTool).toBe("select");
+  });
+
   it("names Undo and Redo for what they would do", () => {
     facts.undo = "Place Round table";
     facts.redo = "Move Table 3";
