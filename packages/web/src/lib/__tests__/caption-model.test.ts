@@ -4,6 +4,7 @@ import { getCatalogueItemBySlug } from "../catalogue.js";
 import { captionModel, type CaptionVerb } from "../caption-model.js";
 import type { PlacedItem } from "../placement.js";
 import type { PlannerFeature } from "../planner-features.js";
+import { stampSetup } from "../setup-cards.js";
 
 // ---------------------------------------------------------------------------
 // What the caption says about a selection (T-671 slice 11′; approved spec
@@ -100,5 +101,20 @@ describe("nothing", () => {
   it("is nothing when nothing, or nothing that exists, is selected", () => {
     expect(captionModel(new Set(), [], none)).toBeNull();
     expect(captionModel(new Set(["gone"]), round("t8", 2, 4), none)).toBeNull();
+  });
+});
+
+describe("a dance floor", () => {
+  function floor(cols: number, rows: number): readonly PlacedItem[] {
+    let next = 0;
+    return stampSetup({ card: "dance-floor", cols, rows }, { x: 0, z: 0 }, 0, () => `p${String((next += 1))}`);
+  }
+
+  it("is one piece named for its card, with its size and panel steppers instead of seats", () => {
+    const panels = floor(5, 5);
+    const model = captionModel(new Set(["p7"]), panels, none);
+    expect(model).toMatchObject({ count: 1, name: "Dance floor", size: "4.6 m square", seats: null });
+    expect(model?.panels).toEqual({ cols: 5, rows: 5, groupId: panels[0]?.groupId });
+    expect(model?.verbs).toEqual(["panels", "turn", "remove"]);
   });
 });

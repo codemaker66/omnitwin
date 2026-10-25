@@ -6,7 +6,7 @@ import { canApplyTableLinenToItem, isDiningTableItem } from "./furniture-semanti
 import { footprintBounds, wholeSelection } from "./placement-edit.js";
 import type { PlacedItem } from "./placement.js";
 import type { PlannerFeature } from "./planner-features.js";
-import { cardParamsFor, describeCard, pieceCardId } from "./setup-cards.js";
+import { cardParamsFor, danceFloorGrid, describeCard, pieceCardId } from "./setup-cards.js";
 
 // ---------------------------------------------------------------------------
 // What the caption says about a selection (T-671 slice 11′; approved spec
@@ -18,7 +18,7 @@ import { cardParamsFor, describeCard, pieceCardId } from "./setup-cards.js";
 // Line up wait behind lane E's switches.
 // ---------------------------------------------------------------------------
 
-export type CaptionVerb = "seats" | "turn" | "duplicate" | "cloth" | "lineUp" | "move" | "remove";
+export type CaptionVerb = "seats" | "panels" | "turn" | "duplicate" | "cloth" | "lineUp" | "move" | "remove";
 
 export interface CaptionModel {
   /** Pieces selected, a table with its chairs counting once. */
@@ -31,6 +31,8 @@ export interface CaptionModel {
   /** "1.8 m round" for one piece. */
   readonly size: string | null;
   readonly seats: { readonly now: number; readonly min: number; readonly max: number } | null;
+  /** A dance floor's grid, for its Panels steppers (whole panels, one undo step each). */
+  readonly panels: { readonly cols: number; readonly rows: number; readonly groupId: string } | null;
   readonly verbs: readonly CaptionVerb[];
   /** Where the caption's pin sits: over the selection's middle, at table height (render space). */
   readonly anchor: readonly [number, number, number];
@@ -113,6 +115,25 @@ export function captionModel(
   const allTables = units.every((unit) => isDiningTableItem(unit.item) && canApplyTableLinenToItem(unit.item));
 
   if (units.length === 1) {
+    const grid = first.main.groupId === null ? null : danceFloorGrid(first.members);
+    if (grid !== null && first.main.groupId !== null) {
+      const verbs: CaptionVerb[] = ["panels", "turn"];
+      if (enabled("editingKeys")) verbs.push("duplicate");
+      if (enabled("moveVerb")) verbs.push("move");
+      verbs.push("remove");
+      return {
+        count: 1,
+        label: null,
+        eyebrow: null,
+        name: "Dance floor",
+        size: describeCard({ card: "dance-floor", cols: grid.cols, rows: grid.rows }).size,
+        seats: null,
+        panels: { cols: grid.cols, rows: grid.rows, groupId: first.main.groupId },
+        verbs,
+        anchor,
+        primaryId: first.main.id,
+      };
+    }
     const seats = seatsOf(first);
     const label = first.main.label?.trim() ?? "";
     const verbs: CaptionVerb[] = [];
@@ -131,6 +152,7 @@ export function captionModel(
       name: cardName(first.item),
       size: sizeOf(first.item),
       seats,
+      panels: null,
       verbs,
       anchor,
       primaryId: first.main.id,
@@ -151,6 +173,7 @@ export function captionModel(
     name: names.size === 1 ? `${String(units.length)} ${cardName(first.item)}` : `${String(units.length)} pieces`,
     size: null,
     seats: null,
+    panels: null,
     verbs,
     anchor,
     primaryId: first.main.id,
