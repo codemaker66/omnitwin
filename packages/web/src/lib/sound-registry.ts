@@ -606,8 +606,8 @@ export function useRoomTone(): RoomTone {
 
 export type PlannerSoundMode = "off" | "quiet" | "full";
 
-/** Decision D1 is Blake's. Until he answers, the planner is silent until someone chooses. */
-export const PLANNER_SOUND_DEFAULT_MODE: PlannerSoundMode = "off";
+/** Quiet by default, armed only by the first deliberate gesture (Blake's D1, 25 Oct 2026). */
+export const PLANNER_SOUND_DEFAULT_MODE: PlannerSoundMode = "quiet";
 export const PLANNER_SOUND_DEFAULT_LEVEL = 0.6;
 
 export const PLANNER_SOUND_MAX_PER_SECOND = 8;

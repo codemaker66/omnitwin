@@ -91,8 +91,8 @@ describe("the planner palette in the registry", () => {
     }
   });
 
-  it("is off until someone chooses (decision D1 is Blake's), at the design's level", () => {
-    expect(PLANNER_SOUND_DEFAULT_MODE).toBe("off");
+  it("is Quiet by default, armed by the first deliberate gesture (Blake's D1, 25 Oct), at the design's level", () => {
+    expect(PLANNER_SOUND_DEFAULT_MODE).toBe("quiet");
     expect(PLANNER_SOUND_DEFAULT_LEVEL).toBe(0.6);
   });
 });
@@ -232,6 +232,7 @@ describe("the engine", () => {
   });
 
   it("makes nothing and plays nothing while sound is off, even after a gesture", () => {
+    setPlannerSoundMode("off");
     expect(armPlannerSound()).toBe(false);
     expect(playPlannerSound("planner-set-table")).toBe(false);
     expect(made).toBe(0);
