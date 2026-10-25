@@ -14,7 +14,7 @@ import {
   type GhostVerdict,
   type GhostWorld,
 } from "../lib/ghost-truth.js";
-import { PLACEMENT_COLOR_INVALID, PLACEMENT_COLOR_VALID, type PlacedItem } from "../lib/placement.js";
+import type { PlacedItem } from "../lib/placement.js";
 import { describeCard, seatsInHand, stampSetup, type CardParams } from "../lib/setup-cards.js";
 import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
@@ -50,6 +50,13 @@ function ghostIds(): () => string {
   };
 }
 
+// The ghost material (docs/plan/02-DESIGN-LANGUAGE.md §3; card-dock spec §7.2–7.3): each piece in
+// its own albedo at the house ghost opacity, the set outlined in copper-bright; refused, tinted
+// toward the attention plane under the hatch, each piece in the way outlined in brick-lit.
+const GHOST_OPACITY = 0.32;
+const REFUSED_TINT = "#7e2d1b";
+const REFUSED_OPACITY = 0.45;
+const COPPER_BRIGHT = "#dca475";
 const BRICK_LIT = "#ffcdb7";
 const FLOOR_LINE_Y = 0.02;
 const TAG_CLEARANCE = 0.35;
@@ -85,19 +92,24 @@ function footprintSegments(placed: PlacedItem, item: CatalogueItem): readonly nu
   });
 }
 
-/** Every piece in the way, outlined on the floor in brick. */
+/** Pieces' footprints on the floor as one line geometry, or null with none. */
+function outlineGeometry(pieces: readonly { readonly placed: PlacedItem; readonly item: CatalogueItem }[]): BufferGeometry | null {
+  const segments = pieces.flatMap(({ placed, item }) => footprintSegments(placed, item));
+  if (segments.length === 0) return null;
+  const built = new BufferGeometry();
+  built.setAttribute("position", new BufferAttribute(new Float32Array(segments), 3));
+  return built;
+}
+
+/** Every piece in the way, outlined on the floor in brick-lit. */
 function BlockingOutlines({ ids }: { readonly ids: readonly string[] }): ReactElement | null {
   const geometry = useMemo(() => {
     const placedItems = usePlacementStore.getState().placedItems;
-    const segments = ids.flatMap((id) => {
+    return outlineGeometry(ids.flatMap((id) => {
       const placed = placedItems.find((piece) => piece.id === id);
       const item = placed === undefined ? undefined : getCatalogueItem(placed.catalogueItemId);
-      return placed === undefined || item === undefined ? [] : footprintSegments(placed, item);
-    });
-    if (segments.length === 0) return null;
-    const built = new BufferGeometry();
-    built.setAttribute("position", new BufferAttribute(new Float32Array(segments), 3));
-    return built;
+      return placed === undefined || item === undefined ? [] : [{ placed, item }];
+    }));
   }, [ids]);
   useEffect(() => () => { geometry?.dispose(); }, [geometry]);
   if (geometry === null) return null;
@@ -135,6 +147,8 @@ export function GhostSet({ params, warming, fromCardDrag }: GhostSetProps): Reac
     return item === undefined ? [] : [{ piece, item }];
   }), [local]);
   const tagHeight = useMemo(() => Math.max(0.1, ...pieces.map(({ item }) => item.height)) + TAG_CLEARANCE, [pieces]);
+  const outline = useMemo(() => outlineGeometry(pieces.map(({ piece, item }) => ({ placed: piece, item }))), [pieces]);
+  useEffect(() => () => { outline?.dispose(); }, [outline]);
   const [view, setView] = useState<GhostView>(() => ({ state: "fits", tag: ghostTag(params, null), chip: null, blockingIds: [] }));
   const [chipShown, setChipShown] = useState(false);
   const judged = useRef<{ key: string; verdict: GhostVerdict | null }>({ key: "", verdict: null });
@@ -207,16 +221,26 @@ export function GhostSet({ params, warming, fromCardDrag }: GhostSetProps): Reac
   });
 
   const refused = view.state === "refused";
-  const colour = refused ? PLACEMENT_COLOR_INVALID : PLACEMENT_COLOR_VALID;
   return (
     <>
       <group ref={group} rotation={[0, ghostRotation, 0]} scale={hasGhost ? 1 : 1e-4} visible={hasGhost || warming} name="placement-ghost-set">
         {pieces.map(({ piece, item }) => (
           <group key={piece.id} position={[piece.x, piece.y, piece.z]} rotation={[0, piece.rotationY, 0]}>
-            <FurnitureProxy item={item} position={[0, 0, 0]} rotationY={0} opacity={0.6} colorOverride={colour} name="placement-ghost-mesh" />
-            {refused && <ConstraintViolationSkin item={item} y={0} />}
+            {refused ? (
+              <>
+                <FurnitureProxy item={item} position={[0, 0, 0]} rotationY={0} opacity={REFUSED_OPACITY} colorOverride={REFUSED_TINT} name="placement-ghost-mesh" />
+                <ConstraintViolationSkin item={item} y={0} />
+              </>
+            ) : (
+              <FurnitureProxy item={item} position={[0, 0, 0]} rotationY={0} opacity={GHOST_OPACITY} name="placement-ghost-mesh" />
+            )}
           </group>
         ))}
+        {outline !== null && (
+          <lineSegments geometry={outline} visible={!refused} name="ghost-set-outline" renderOrder={2}>
+            <lineBasicMaterial color={COPPER_BRIGHT} transparent opacity={0.9} depthTest={false} />
+          </lineSegments>
+        )}
         {hasGhost && (
           <Html position={[0, tagHeight, 0]} center zIndexRange={[30, 0]}>
             <div className="ghost-set" data-testid="ghost-set-words" data-state={view.state}>
@@ -236,7 +260,7 @@ export function GhostSet({ params, warming, fromCardDrag }: GhostSetProps): Reac
         )}
       </group>
       <lineSegments geometry={hairline} visible={hasGhost && view.state === "pushed"} name="ghost-push-hairline">
-        <lineBasicMaterial color={PLACEMENT_COLOR_VALID} transparent opacity={0.5} depthTest={false} />
+        <lineBasicMaterial color={COPPER_BRIGHT} transparent opacity={0.6} depthTest={false} />
       </lineSegments>
       {hasGhost && refused && view.blockingIds.length > 0 && <BlockingOutlines ids={view.blockingIds} />}
     </>

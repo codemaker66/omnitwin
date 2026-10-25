@@ -7,16 +7,19 @@
   position: relative;
 }
 
+/* The stack grows upward from the set, so no word ever covers the set or the
+ * piece in its way: the tag nearest the set, the chip's second line above it,
+ * the reason on top. */
 .ghost-set__tag {
-  --pc-mark-y: 0px;
+  --pc-mark-y: -14px;
 }
 
 .ghost-set__chip {
-  --pc-mark-y: 30px;
+  --pc-mark-y: -72px;
 }
 
 .ghost-set__subline {
-  --pc-mark-y: 58px;
+  --pc-mark-y: -43px;
 }
 
 /* The second line says what letting go does, quieter than the reason. */
