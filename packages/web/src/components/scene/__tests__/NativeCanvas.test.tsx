@@ -67,8 +67,8 @@ vi.mock("../../../lib/native-gpu-completion.js", async (importOriginal) => ({
 
 const native = vi.hoisted(() => {
   const instances: Renderer[] = [];
-  /** Which backend the next renderer negotiates, as Three would. */
-  const negotiation = { backend: "webgpu" as "webgpu" | "webgl2" };
+  /** Which backend the next renderer negotiates, as Three would, and the device Three requests itself when given none. */
+  const negotiation = { backend: "webgpu" as "webgpu" | "webgl2", ownDevice: null as object | null };
   class Renderer {
     readonly domElement: HTMLCanvasElement;
     readonly info = { render: { drawCalls: 3, triangles: 8 }, memory: { total: 4096 }, autoReset: true };
@@ -76,6 +76,7 @@ const native = vi.hoisted(() => {
       isWebGPUBackend?: true;
       isWebGLBackend?: true;
       parameters: { canvas: HTMLCanvasElement; device?: object };
+      device?: object;
       dispose: ReturnType<typeof vi.fn>;
     };
     // The renderer settings a replacement must inherit (r186 Renderer fields).
@@ -108,6 +109,8 @@ const native = vi.hoisted(() => {
     initializedDevice: object | undefined;
     readonly init = vi.fn(() => {
       this.initializedDevice = this.backend.parameters.device;
+      // r186 WebGPUBackend.init keeps the device it was given, or the one it requested.
+      if (this.backend.isWebGPUBackend === true) this.backend.device = this.backend.parameters.device ?? negotiation.ownDevice ?? undefined;
       return this.pending;
     });
     readonly pending: Promise<void>;
@@ -181,6 +184,7 @@ import { isNativeCanvasRender } from "../../../lib/native-renderer.js";
 beforeEach(() => {
   native.instances.length = 0;
   native.negotiation.backend = "webgpu";
+  native.negotiation.ownDevice = null;
   fiber.frames.clear();
   fiber.state = null;
   fiber.invalidate.mockReset();
@@ -221,13 +225,22 @@ function MountProbe({ mounts }: { readonly mounts: { count: number } }): ReactNo
 
 interface FakeDevice { readonly destroy: Mock<() => void>; readonly lost: Promise<{ reason: string; message: string }> }
 
-/** A WebGPU device per request, whose `lost` resolves "destroyed" when destroyed, as a real one does. */
+/** A device whose `lost` resolves "destroyed" when destroyed, as a real one does. */
+function fakeDevice(): FakeDevice {
+  let lose = (_reason: string): void => undefined;
+  const lost = new Promise<{ reason: string; message: string }>((resolve) => { lose = (reason) => { resolve({ reason, message: "" }); }; });
+  return { destroy: vi.fn(() => { lose("destroyed"); }), lost };
+}
+
+function fakeDevices(count: number): FakeDevice[] {
+  return Array.from({ length: count }, fakeDevice);
+}
+
+/** A WebGPU device per request, negotiated by NativeCanvas itself. */
 function stubWebGpuDevices(): FakeDevice[] {
   const devices: FakeDevice[] = [];
   const requestDevice = vi.fn(() => {
-    let lose = (_reason: string): void => undefined;
-    const lost = new Promise<{ reason: string; message: string }>((resolve) => { lose = (reason) => { resolve({ reason, message: "" }); }; });
-    const device: FakeDevice = { destroy: vi.fn(() => { lose("destroyed"); }), lost };
+    const device = fakeDevice();
     devices.push(device);
     return Promise.resolve(device);
   });
@@ -590,6 +603,43 @@ describe("NativeCanvas", () => {
       expect(fresh.initializedDevice).toBe(devices[1]);
       expect(native.instances).toHaveLength(2);
       expect(screen.queryByRole("status")).toBeNull();
+    });
+
+    it("watches a device Three requested itself, which Three also stops reporting once destroyed", async () => {
+      const [threeDevice] = fakeDevices(1);
+      native.negotiation.ownDevice = threeDevice ?? null;
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      await start(0);
+      await flush();
+      threeDevice?.destroy();
+      await flush();
+      expect(renderer(1).domElement).toBe(renderer(0).domElement);
+    });
+
+    it("takes the graphics away once on ?graphicsReset, so a real phone can be checked without an inspector", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      window.history.replaceState({}, "", "/plan?graphicsReset=2");
+      try {
+        const [first, second] = fakeDevices(2);
+        native.negotiation.ownDevice = first ?? null;
+        render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+        await start(0);
+        await flush();
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_999); });
+        expect(first?.destroy).not.toHaveBeenCalled();
+        await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+        expect(first?.destroy).toHaveBeenCalledOnce();
+        await flush();
+        native.negotiation.ownDevice = second ?? null;
+        await start(1);
+        await flush();
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        expect(second?.destroy).not.toHaveBeenCalled();
+        expect(native.instances).toHaveLength(2);
+      } finally {
+        window.history.replaceState({}, "", "/");
+        vi.useRealTimers();
+      }
     });
 
     it("does not mistake releasing its own device for a loss", async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  NATIVE_RECOVERY_CONTEXT_WAIT_MS, NATIVE_RECOVERY_LOSS_LIMIT, NATIVE_RECOVERY_LOSS_WINDOW_MS,
+  NATIVE_RECOVERY_ATTEMPT_TIMEOUT_MS, NATIVE_RECOVERY_CONTEXT_WAIT_MS, NATIVE_RECOVERY_LOSS_LIMIT, NATIVE_RECOVERY_LOSS_WINDOW_MS,
   createNativeRendererRecovery, type NativeRecoveryEnvironment, type NativeRecoveryPhase,
   type NativeRestoreMode,
 } from "../native-renderer-recovery.js";
@@ -124,6 +124,21 @@ describe("native renderer recovery", () => {
     expect(environment.pendingTimers()).toBe(0);
   });
 
+  it("treats an attempt that never settles as failed instead of restoring forever", async () => {
+    const environment = page();
+    const { recovery, attempts } = harness(environment);
+    recovery.lost("WebGPU");
+    await settle();
+    await environment.advance(NATIVE_RECOVERY_ATTEMPT_TIMEOUT_MS - 1);
+    expect(attempts).toHaveLength(1);
+    await environment.advance(1 + 1_000);
+    expect(attempts.map(({ attempt }) => attempt)).toEqual([1, 2]);
+    // The abandoned attempt settling late changes nothing.
+    attempts[0]?.resolve();
+    await settle();
+    expect(attempts).toHaveLength(2);
+  });
+
   it("swaps onto a WebGL canvas only after the browser hands its context back", async () => {
     const environment = page();
     const { recovery, attempts, last } = harness(environment);
@@ -134,6 +149,9 @@ describe("native renderer recovery", () => {
     recovery.contextRestored();
     await settle();
     expect(attempts.map(({ mode }) => mode)).toEqual(["swap"]);
+    attempts[0]?.resolve();
+    await settle();
+    expect(last()).toEqual({ kind: "running" });
     expect(environment.pendingTimers()).toBe(0);
   });
 

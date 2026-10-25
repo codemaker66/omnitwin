@@ -27,6 +27,8 @@ export type NativeRecoveryPhase =
 
 /** Delay before each attempt. The first is immediate; a GPU process needs a moment to come back. */
 export const NATIVE_RECOVERY_BACKOFF_MS: readonly number[] = [0, 1_000, 3_000];
+/** An attempt still unsettled after this long (a context that cannot be created, say) has failed. */
+export const NATIVE_RECOVERY_ATTEMPT_TIMEOUT_MS = 15_000;
 /** How long a visible page waits for the browser to hand a lost WebGL context back. */
 export const NATIVE_RECOVERY_CONTEXT_WAIT_MS = 4_000;
 /** This many losses inside the window means the device is not coming back; stop asking. */
@@ -119,6 +121,13 @@ export function createNativeRendererRecovery({
     const owner = ++generation;
     const number = attempt;
     report({ kind: "restoring", attempt: number });
+    cancelTimer = environment.setTimer(() => {
+      cancelTimer = null;
+      if (owner !== generation) return;
+      // Abandon it: a late settle of this attempt changes nothing.
+      generation++;
+      retryAfter(new Error("The graphics device did not come back in time"));
+    }, NATIVE_RECOVERY_ATTEMPT_TIMEOUT_MS);
     let outcome: Promise<void>;
     try {
       outcome = restore(mode, number);
@@ -127,6 +136,7 @@ export function createNativeRendererRecovery({
     }
     outcome.then(() => {
       if (owner !== generation) return;
+      clearWaits();
       if (compromised) {
         retryAfter(new Error("The graphics device was lost again while the view was restoring"));
         return;
@@ -135,6 +145,7 @@ export function createNativeRendererRecovery({
       report({ kind: "running" });
     }, (error: unknown) => {
       if (owner !== generation) return;
+      clearWaits();
       retryAfter(error instanceof Error ? error : new Error(String(error)));
     });
   }

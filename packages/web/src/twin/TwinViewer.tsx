@@ -103,6 +103,7 @@ import { warmEquirectBase } from "./useEquirectTexture.js";
 import { useTwinPrefetch } from "./useTwinPrefetch.js";
 import { useTwinWalk } from "./useTwinWalk.js";
 import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
+import { useTwinGraphicsRecovery } from "./TwinContextLossWatch.js";
 
 // -----------------------------------------------------------------------------
 // TwinViewer — the walkable pano viewer (Twin Phase 1, Task 9).
@@ -1116,6 +1117,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   // The element the fullscreen button takes fullscreen — the viewer root, so
   // the canvas AND the HUD stay inside the fullscreen surface.
   const viewerRef = useRef<HTMLDivElement>(null);
+  // The browser can take the canvas's graphics away (a backgrounded phone, a
+  // driver reset); this brings them back, or gives the tour a new canvas.
+  const graphics = useTwinGraphicsRecovery();
   // Dollhouse warm gating (finding [33]): only desktops with memory headroom
   // pay the ~7 MB glb speculatively; everyone else waits for intent so a
   // walk-only mobile visitor never downloads it.
@@ -1636,11 +1640,13 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     >
       <div className="vv-twin-canvas">
       <Canvas
+        key={graphics.canvasKey}
         frameloop="demand"
         dpr={[1, 2]}
         gl={{ powerPreference: "high-performance" }}
         camera={{ fov: 75, near: 0.1, far: 200 }}
       >
+        {graphics.watch}
         {mode === "walk" ? (
           <>
             {/* Order matters: the look seed must land before WalkControls
@@ -1806,6 +1812,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           )
         )}
       </Canvas>
+      {graphics.notice}
       </div>
       {/* The opening wait, named. Until the first panorama is on stage the
           canvas holds black (its opacity is 0); the live walk measured 4 s of

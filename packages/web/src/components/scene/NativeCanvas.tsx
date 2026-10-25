@@ -27,6 +27,7 @@ import {
   createNativeRendererRecovery, type NativeLossApi, type NativeRecoveryPhase,
   type NativeRendererRecovery, type NativeRestoreMode,
 } from "../../lib/native-renderer-recovery.js";
+import { readGraphicsResetDrill, startGraphicsResetDrill } from "../../lib/graphics-reset-drill.js";
 export { isNativeRenderer } from "../../lib/native-renderer.js";
 
 export interface NativeCanvasOptions {
@@ -92,6 +93,18 @@ interface NativeGraphicsApi {
 function isNativeGraphicsApi(value: unknown): value is NativeGraphicsApi {
   return typeof value === "object" && value !== null && "requestAdapter" in value
     && typeof value.requestAdapter === "function";
+}
+
+function isNativeGraphicsDevice(value: unknown): value is NativeGraphicsDevice {
+  return typeof value === "object" && value !== null
+    && "destroy" in value && typeof value.destroy === "function"
+    && "lost" in value && typeof value.lost === "object" && value.lost !== null
+    && "then" in value.lost && typeof value.lost.then === "function";
+}
+
+/** The WebGPU device the backend draws with, whoever requested it; null on WebGL. */
+function nativeBackendDevice(backend: object): NativeGraphicsDevice | null {
+  return "device" in backend && isNativeGraphicsDevice(backend.device) ? backend.device : null;
 }
 
 function hasNativeBackendDisposal(backend: object): backend is { dispose(): Promise<void> | void } {
@@ -195,6 +208,8 @@ export function NativeCanvas({
   const lost = useRef<LostRenderer | null>(null);
   const remounting = useRef<{ resolve(): void; reject(error: Error): void } | null>(null);
   const restorations = useRef(0);
+  /** This view, for the once-per-view ?graphicsReset drill. */
+  const drillOwner = useRef({});
   const callbacks = useRef({ onCreated, options, forceWebGL });
   callbacks.current = { onCreated, options, forceWebGL };
 
@@ -322,6 +337,7 @@ export function NativeCanvas({
       }
     };
     let releaseDevice: (() => void) | null = null;
+    let releasing = false;
     // r186's backend copies constructor options and reads its own parameters
     // during init. Supply the negotiated device to that copy before init, so
     // supported storage limits reach the device that actually draws the scene.
@@ -338,14 +354,7 @@ export function NativeCanvas({
                 maxBufferSize: Math.min(adapter.limits.maxBufferSize, 536_870_912),
               },
             });
-            let released = false;
-            releaseDevice = () => { released = true; device.destroy(); };
-            // Three reports every loss of this device except one whose reason is
-            // "destroyed", which is how it reads its own disposal. Anything else
-            // that destroys it has still taken the view's graphics away.
-            void device.lost.then((info) => {
-              if (!released && info.reason === "destroyed") lose(native, "WebGPU", "The graphics device was destroyed");
-            });
+            releaseDevice = () => { device.destroy(); };
             if (!("parameters" in native.backend) || typeof native.backend.parameters !== "object"
               || native.backend.parameters === null) {
               throw new Error("The native renderer has no backend device configuration");
@@ -357,8 +366,19 @@ export function NativeCanvas({
         }
       }
       await native.init();
+      // Three reports every loss of its device except one whose reason is
+      // "destroyed", which is how it reads its own disposal. Anything else that
+      // destroys the device (whoever requested it) has still taken the view's
+      // graphics away.
+      const device = nativeBackendDevice(native.backend);
+      if (device !== null) {
+        void device.lost.then((info) => {
+          if (!releasing && info.reason === "destroyed") lose(native, "WebGPU", "The graphics device was destroyed");
+        });
+      }
     };
     dispose.current = async (initialized) => {
+      releasing = true;
       if (framePacer.current?.native === native) {
         framePacer.current.pacer.dispose();
         framePacer.current = null;
@@ -406,9 +426,11 @@ export function NativeCanvas({
     let unregisterScene: (() => void) | null = null;
     let unregisterProfiler: (() => void) | null = null;
     let stopRestoreWatch: (() => void) | null = null;
+    let stopDrill: (() => void) | null = null;
     return createNativeRendererLifecycle({
       initialize: async () => { if (initializeNative !== null) await initializeNative(); },
       dispose: async (initialized) => {
+        stopDrill?.();
         stopRestoreWatch?.();
         unregisterScene?.();
         try { unregisterProfiler?.(); } catch { /* Profiling must not prevent GPU resource disposal. */ }
@@ -436,6 +458,13 @@ export function NativeCanvas({
             const restored = (): void => { if (lost.current?.native === native) recovery.current?.contextRestored(); };
             canvas.addEventListener("webglcontextrestored", restored);
             stopRestoreWatch = () => { canvas.removeEventListener("webglcontextrestored", restored); };
+          }
+          const drill = typeof window === "undefined" ? null : readGraphicsResetDrill(window.location.search);
+          if (drill !== null) {
+            stopDrill = startGraphicsResetDrill(drillOwner.current, drill, {
+              device: nativeBackendDevice(backend),
+              canvas: canvas instanceof HTMLCanvasElement ? canvas : null,
+            });
           }
           framePacer.current?.pacer.dispose();
           const current = (): boolean => mounted.current && renderer.current === native
