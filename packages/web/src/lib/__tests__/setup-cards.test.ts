@@ -1,4 +1,7 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { setupCardPreviewUrl } from "../crafted-furniture.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
 import {
   SETUP_CARD_IDS,
@@ -152,5 +155,12 @@ describe("every card", () => {
       const params = paramsFor(id);
       expect(paramsFor(id, cardParamsRequest(params))).toEqual(params);
     }
+  });
+
+  it.each(SETUP_CARD_IDS)("ships a rendered picture for the %s card", (card) => {
+    const url = setupCardPreviewUrl(card);
+    expect(url).toBe(`/models/furniture/setup/${card}/setup-v1/preview.webp`);
+    const file = resolve(import.meta.dirname, "../../../public", `.${url}`);
+    expect(existsSync(file), file).toBe(true);
   });
 });

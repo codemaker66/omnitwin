@@ -10,6 +10,8 @@
 // changes to either.
 // ---------------------------------------------------------------------------
 
+import type { SetupCardId } from "./setup-cards.js";
+
 export const CRAFTED_FURNITURE_SLUGS = [
   "burgess-turini-18-3",
   "checked-banquet-chair",
@@ -51,4 +53,17 @@ export const CRAFTED_PREVIEW_VERSION = "crafted-v2";
 /** The rendered preview of a crafted piece, or null for any other item. */
 export function craftedFurniturePreviewUrl(slug: string): string | null {
   return isCraftedFurnitureSlug(slug) ? `/models/furniture/${slug}/${CRAFTED_PREVIEW_VERSION}/preview.webp` : null;
+}
+
+/**
+ * The folder of the setup cards' renders (card-dock Q-21): the whole set
+ * (a round with its chairs, four trestles with theirs, a 5 × 5 floor) drawn
+ * from the same models in the same studio as the crafted previews, by
+ * scripts/render-setup-previews.mjs. Versioned and immutable like them.
+ */
+export const SETUP_PREVIEW_VERSION = "setup-v1";
+
+/** The rendered preview of a setup card. */
+export function setupCardPreviewUrl(card: SetupCardId): string {
+  return `/models/furniture/setup/${card}/${SETUP_PREVIEW_VERSION}/preview.webp`;
 }
