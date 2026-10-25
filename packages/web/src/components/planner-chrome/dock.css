@@ -1,0 +1,42 @@
+/* ---------------------------------------------------------------------------
+ * THE DOCK (T-671, slice 8′; spec 4.1, 5.1, 6.3; card-dock spec §2).
+ *
+ * One lacquer bar, 56 px tall, bottom centre, keys 40 px; thin rules between
+ * the groups. The view group's copper underline slides on detent (KeyRow).
+ * The rail and its meter join the top edge in slice 12′.
+ * ------------------------------------------------------------------------- */
+
+.pc-dock {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 56px;
+  padding: 0 8px;
+  pointer-events: auto;
+}
+
+.pc-dock__group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+@media (max-width: 767px) {
+  .pc-dock { max-width: calc(100vw - 24px); overflow-x: auto; }
+}
+
+/* -- Lay out, in the right zone ----------------------------------------------- */
+.pc-layout-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  pointer-events: auto;
+}
+
+.pc-layout-panel__heading { margin: 0; color: var(--house-forest-ink-3); }
+
+.pc-layout-panel__choices { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.pc-layout-panel__line,
+.pc-layout-panel__result p { margin: 0; color: var(--house-forest-ink-2); }
