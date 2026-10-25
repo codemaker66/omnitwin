@@ -2,7 +2,7 @@ import { seatsFor } from "@omnitwin/types";
 import { toRenderSpace } from "../constants/scale.js";
 import { CATALOGUE_CARDS } from "./card-defaults.js";
 import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
-import { isDiningTableItem } from "./furniture-semantics.js";
+import { canApplyTableLinenToItem, isDiningTableItem } from "./furniture-semantics.js";
 import { footprintBounds, wholeSelection } from "./placement-edit.js";
 import type { PlacedItem } from "./placement.js";
 import type { PlannerFeature } from "./planner-features.js";
@@ -23,6 +23,8 @@ export type CaptionVerb = "seats" | "turn" | "duplicate" | "cloth" | "lineUp" | 
 export interface CaptionModel {
   /** Pieces selected, a table with its chairs counting once. */
   readonly count: number;
+  /** The piece's own number as written ("Table 8"), for its accessible name. */
+  readonly label: string | null;
   /** "TABLE 8" for one numbered piece; capitals carry no unit. */
   readonly eyebrow: string | null;
   readonly name: string;
@@ -106,8 +108,9 @@ export function captionModel(
   if (first === undefined || bounds === null) return null;
   const top = Math.max(...items.map((placed) => placed.y)) + toRenderSpace(PIN_HEIGHT_M);
   const anchor = [(bounds.minX + bounds.maxX) / 2, top, (bounds.minZ + bounds.maxZ) / 2] as const;
-  // Cloth is dining dressing: offered when every piece is a dining table (not a poseur or a servery).
-  const allTables = units.every((unit) => isDiningTableItem(unit.item));
+  // Cloth is dining dressing: offered when every piece is a dining table that can take one
+  // (not a poseur or a servery, and not a table whose model already wears its linen).
+  const allTables = units.every((unit) => isDiningTableItem(unit.item) && canApplyTableLinenToItem(unit.item));
 
   if (units.length === 1) {
     const seats = seatsOf(first);
@@ -123,6 +126,7 @@ export function captionModel(
     verbs.push("remove");
     return {
       count: 1,
+      label: label === "" ? null : label,
       eyebrow: label === "" ? null : label.toUpperCase(),
       name: cardName(first.item),
       size: sizeOf(first.item),
@@ -142,6 +146,7 @@ export function captionModel(
   verbs.push("remove");
   return {
     count: units.length,
+    label: null,
     eyebrow: null,
     name: names.size === 1 ? `${String(units.length)} ${cardName(first.item)}` : `${String(units.length)} pieces`,
     size: null,
