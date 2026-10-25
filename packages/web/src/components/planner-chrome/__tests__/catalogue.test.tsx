@@ -299,7 +299,8 @@ describe("the store (staff; Blake's B2, hard)", () => {
     openCatalogue();
     render(<Catalogue />);
     const round = cardButtons().find((face) => face.getAttribute("aria-label")?.startsWith("Round of 10,") === true) as HTMLElement;
-    expect(round.querySelector(".pc-ccard__store")?.textContent).toBe("None left in store");
+    expect(round.querySelector(".pc-ccard__store")?.textContent).toBe("None left");
+    expect(round.getAttribute("aria-label")).toContain("None left in store");
     expect(round.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(round);
     expect(useCatalogueStore.getState().armedCardId).toBeNull();

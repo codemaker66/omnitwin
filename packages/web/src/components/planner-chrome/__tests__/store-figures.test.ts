@@ -33,9 +33,9 @@ describe("a card's store face", () => {
     expect(storeFace(params, stockFor(params, 3), placed)?.line).toBe("×2 in store");
   });
 
-  it("refuses at none left (B2 hard), and says so", () => {
+  it("refuses at none left (B2 hard), and says so: short on the card, whole as the reason", () => {
     const params = roundOf10();
-    expect(storeFace(params, stockFor(params, 0), new Map())).toEqual({ line: NONE_LEFT_IN_STORE, spoken: "none left in store", refused: true });
+    expect(storeFace(params, stockFor(params, 0), new Map())).toEqual({ line: "None left", spoken: "none left in store", refused: true });
     expect(NONE_LEFT_IN_STORE).toBe("None left in store");
   });
 

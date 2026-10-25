@@ -18,10 +18,13 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 // card-stock.ts does the counting; this file words it and decides who sees it.
 // ---------------------------------------------------------------------------
 
+/** The reason, whole: the hint, the tooltip and the accessible name say it. */
 export const NONE_LEFT_IN_STORE = "None left in store";
+/** The card's own line, which has about 74 px on the rail and 88 in the catalogue. */
+const NONE_LEFT_ON_CARD = "None left";
 
 export interface StoreFace {
-  /** The card's store line: "×22 in store" or "None left in store". */
+  /** The card's store line: "×22 in store" or "None left". */
   readonly line: string;
   /** The same, for the card's accessible name. */
   readonly spoken: string;
@@ -34,7 +37,7 @@ export function storeFace(params: CardParams | null, stock: UsableStock | null, 
   if (params === null || stock === null) return null;
   const figure = cardStoreFigure(params, stock, placed);
   if (figure === null) return null;
-  if (storeRefuses(params, stock, placed)) return { line: NONE_LEFT_IN_STORE, spoken: "none left in store", refused: true };
+  if (storeRefuses(params, stock, placed)) return { line: NONE_LEFT_ON_CARD, spoken: "none left in store", refused: true };
   return { line: `×${String(figure)} in store`, spoken: `${String(figure)} in store`, refused: false };
 }
 
