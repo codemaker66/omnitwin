@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  GANGWAY_DECISION_MOVE_M,
   GANGWAY_DECISION_TOLERANCE_M,
   GangwayReviewItemSchema,
   GangwayReviewSchema,
   SCOTTISH_GANGWAY_GUIDANCE,
+  gangwayLocationCentre,
   gangwayReviewId,
   withGangwayDecisions,
   type GangwayReviewItem,
@@ -11,7 +13,7 @@ import {
 
 function item(overrides: Partial<GangwayReviewItem> = {}): GangwayReviewItem {
   return {
-    id: "gangway:zMin:6:g-4+wall:zMin",
+    id: "gangway:zMin:g-4+wall:zMin",
     widthM: 0.95,
     guidance: SCOTTISH_GANGWAY_GUIDANCE,
     gangway: "the window wall",
@@ -49,10 +51,10 @@ describe("the gangway review item", () => {
 });
 
 describe("the id rule", () => {
-  it("is the gangway, the whole metre along it and what stands either side, sorted", () => {
-    expect(gangwayReviewId("zMin", 6.4, [{ unit: "g-4" }, { wall: "zMin" }])).toBe("gangway:zMin:6:g-4+wall:zMin");
-    expect(gangwayReviewId("zMin", 6.6, [{ wall: "zMin" }, { unit: "g-4" }])).toBe("gangway:zMin:7:g-4+wall:zMin");
-    expect(gangwayReviewId("spine", 10.2, [{ unit: "g-9" }, { unit: "g-2" }])).toBe("gangway:spine:10:g-2+g-9");
+  it("is the gangway and what stands either side, sorted, with no position to round", () => {
+    expect(gangwayReviewId("zMin", [{ unit: "g-4" }, { wall: "zMin" }])).toBe("gangway:zMin:g-4+wall:zMin");
+    expect(gangwayReviewId("zMin", [{ wall: "zMin" }, { unit: "g-4" }])).toBe("gangway:zMin:g-4+wall:zMin");
+    expect(gangwayReviewId("spine", [{ unit: "g-9" }, { unit: "g-2" }])).toBe("gangway:spine:g-2+g-9");
   });
 });
 
@@ -68,6 +70,28 @@ describe("decisions laid over the derived items", () => {
     const [reopened] = withGangwayDecisions([narrower], [approved]);
     expect(reopened?.status).toBe("open");
     expect(reopened?.reviewer).toBeUndefined();
+  });
+
+  it("reopen a pinch widened by more than the tolerance, so a requested adjustment is reviewed once made", () => {
+    const denied = item({ status: "denied", widthM: 0.5 });
+    expect(withGangwayDecisions([item({ widthM: 0.95 })], [denied])[0]?.status).toBe("open");
+    const asked = item({ status: "adjustment-requested", widthM: 0.8 });
+    expect(withGangwayDecisions([item({ widthM: 1.0 })], [asked])[0]?.status).toBe("open");
+    expect(withGangwayDecisions([item({ widthM: 0.83 })], [asked])[0]?.status).toBe("adjustment-requested");
+  });
+
+  it("hold through a nudge across any half metre, and reopen a pinch moved more than a metre", () => {
+    // Along a Grand Hall wall a snapped piece sits at x.5 m, where a rounded position would flip.
+    const at = (x: number): GangwayReviewItem => item({ location: { kind: "segment", from: { x, z: -5.25 }, to: { x, z: -4.3 } } });
+    const decided = { ...at(0.5), status: "approved" as const, reviewer: "The hallkeeper" };
+    expect(withGangwayDecisions([at(0.499)], [decided])[0]?.status).toBe("approved");
+    expect(withGangwayDecisions([at(0.5 + GANGWAY_DECISION_MOVE_M - 0.01)], [decided])[0]?.status).toBe("approved");
+    expect(withGangwayDecisions([at(0.5 + GANGWAY_DECISION_MOVE_M + 0.01)], [decided])[0]?.status).toBe("open");
+  });
+
+  it("find the middle of a segment and of a polygon", () => {
+    expect(gangwayLocationCentre({ kind: "segment", from: { x: -1, z: 2 }, to: { x: 3, z: 4 } })).toEqual({ x: 1, z: 3 });
+    expect(gangwayLocationCentre({ kind: "polygon", points: [{ x: 0, z: 0 }, { x: 3, z: 0 }, { x: 3, z: 3 }] })).toEqual({ x: 2, z: 1 });
   });
 
   it("drop a decision whose pinch has gone, and ignore stored items still open", () => {
