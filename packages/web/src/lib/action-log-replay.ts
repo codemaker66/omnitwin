@@ -109,7 +109,7 @@ export function verifyReplayable(entries: readonly AuditLogEntry[]): ReplayVerdi
 export type ReplayObject = { readonly id: string } & Record<string, unknown>;
 
 const ReplayPlacedSchema = z.object({
-  object: z.object({ id: z.string() }).passthrough(),
+  object: z.object({ id: z.string() }).loose(),
   index: z.number().int().nonnegative(),
 });
 

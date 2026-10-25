@@ -25,7 +25,7 @@ export const LiveObjectIdSchema = z.string().regex(
   "Expected a placed-object uuid or a local-… id",
 );
 
-const Finite = z.number().finite();
+const Finite = z.number();
 
 /** Placed-object metadata as the planner writes it: flat, primitive values
  *  only (cloth, table setting, dressing, group, label, note). Nested values
@@ -63,13 +63,13 @@ export const LIVE_MAX_OPS_PER_FRAME = 300;
 
 /** What a participant reports they are looking at. Display only. */
 export const LiveViewSchema = z.object({
-  spaceId: z.string().uuid().nullable(),
+  spaceId: z.uuid().nullable(),
   /** The room's name as the viewer's planner shows it ("Grand Hall"). */
   label: z.string().trim().min(1).max(80),
 });
 export type LiveView = z.infer<typeof LiveViewSchema>;
 
-const IdPairs = z.array(z.tuple([LiveObjectIdSchema, z.string().uuid()])).max(500);
+const IdPairs = z.array(z.tuple([LiveObjectIdSchema, z.uuid()])).max(500);
 
 // --- client → server -------------------------------------------------------
 

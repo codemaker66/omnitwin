@@ -548,8 +548,8 @@ export interface StreetLamp {
   readonly switchAltitude: number;
 }
 
-const coordinate = z.number().finite().min(-COORDINATE_LIMIT).max(COORDINATE_LIMIT);
-const unitComponent = z.number().finite().min(-1.001).max(1.001);
+const coordinate = z.number().min(-COORDINATE_LIMIT).max(COORDINATE_LIMIT);
+const unitComponent = z.number().min(-1.001).max(1.001);
 
 const lampSchema = z.object({
   id: z.string().regex(/^(gcc:\d{1,9}|trades-hall:[a-z-]{1,40})$/u),
@@ -559,11 +559,11 @@ const lampSchema = z.object({
   head: z.tuple([coordinate, coordinate, coordinate]),
   foot_y: coordinate,
   heading: z.tuple([unitComponent, unitComponent]).refine(([x, y]) => Math.abs(Math.hypot(x, y) - 1) < 0.01, "is not a unit vector"),
-  reach: z.number().finite().min(0).max(5),
+  reach: z.number().min(0).max(5),
   fitting: z.enum(["drawn", "cut", "low-wall"]),
   height_source: z.enum(["facade-photo", "lidar", "default", "model-wall"]),
-  switch_altitude: z.number().finite().min(LAMP_SWITCH.lowest).max(LAMP_SWITCH.highest),
-  snap_shift: z.number().finite().min(0).max(60),
+  switch_altitude: z.number().min(LAMP_SWITCH.lowest).max(LAMP_SWITCH.highest),
+  snap_shift: z.number().min(0).max(60),
 }).strict();
 
 const lampsSchema = z.object({

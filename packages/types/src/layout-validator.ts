@@ -98,7 +98,7 @@ export const LayoutValidatorWitnessSchema = z.object({
   derivation: z.string().regex(/^layout\.[a-z0-9_.]+$/).max(160),
   policyRefs: z.array(z.string().trim().min(1).max(255)),
   snapshotRefs: z.array(z.string().regex(SHA256_HEX)),
-  affectedObjectIds: z.array(z.string().uuid()),
+  affectedObjectIds: z.array(z.uuid()),
   dataSufficiency: LayoutValidatorDataSufficiencySchema.nullable(),
   reviewGate: LayoutValidatorReviewGateSchema.nullable(),
 }).strict();

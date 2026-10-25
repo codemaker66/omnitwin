@@ -216,7 +216,7 @@ export const RunPodProviderReconcileRequestV0Schema = z
     schemaVersion: z.literal(RUNPOD_PROVIDER_RECONCILE_REQUEST_V0),
     ...RunPodTransientRequestBindingShape,
     expectedPodName: z.string().regex(/^omnitwin-[a-f0-9]{16}-[a-f0-9]{16}$/u),
-    submitCommandId: z.string().uuid(),
+    submitCommandId: z.uuid(),
     submitProviderRequestAuthorizationSha256: RuntimeSha256Schema,
     targetProviderCommandRef: RunPodProviderRefSchema.nullable(),
   })
@@ -245,7 +245,7 @@ export const RunPodProviderStopRequestV0Schema = z
   .object({
     schemaVersion: z.literal(RUNPOD_PROVIDER_STOP_REQUEST_V0),
     ...RunPodKnownPodRequestShape,
-    stopIntentId: z.string().uuid(),
+    stopIntentId: z.uuid(),
   })
   .strict();
 export type RunPodProviderStopRequestV0 = z.infer<
@@ -335,7 +335,7 @@ export const RunPodPodsRestV1LoweringProfileV0Schema = z
       ) !== profile.providerRequestProfileSha256
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerRequestProfileSha256"],
         message: "lowering profile must bind the exact reviewed provider-request profile digest",
       });
@@ -349,7 +349,7 @@ export const RunPodPodsRestV1LoweringProfileV0Schema = z
       profile.providerRequestProfile.target.targetKind !== "remote_worker_pool"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerRequestProfile"],
         message: "RunPod lowering requires this exact RunPod adapter and a remote-worker-pool profile",
       });
@@ -360,7 +360,7 @@ export const RunPodPodsRestV1LoweringProfileV0Schema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerRequestProfile", "supportedCommandKinds"],
         message: "RunPod Pods REST v1 does not support provider checkpoints",
       });
@@ -376,7 +376,7 @@ export const RunPodPodsRestV1LoweringProfileV0Schema = z
       profile.providerRequestProfile.providerAdapterConfigurationSha256
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: [
           "providerRequestProfile",
           "providerAdapterConfigurationSha256",
@@ -397,7 +397,7 @@ export const RunPodPodsRestV1LoweringProfileV0Schema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["capacityClasses"],
         message: "RunPod selectors must cover exactly the reviewed capacity classes",
       });
@@ -490,7 +490,7 @@ const RunPodPodObservationSchema = z
     env: z.record(z.string(), z.unknown()),
     desiredStatus: z.enum(["RUNNING", "EXITED", "TERMINATED"]),
   })
-  .passthrough();
+  .loose();
 
 const RunPodPodListSchema = z.array(RunPodPodObservationSchema).max(100_000);
 

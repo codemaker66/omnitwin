@@ -60,7 +60,7 @@ const SafeJsonRecordSchema = z.preprocess((input, ctx) => {
     for (const key of FORBIDDEN_JSON_KEYS) {
       if (Object.hasOwn(input, key)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           message: `forbidden record key: ${key}`,
         });
         return z.NEVER;
@@ -86,7 +86,7 @@ export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 
 export const ActionSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.uuid(),
     actor: ActionActorSchema,
     intent: z
       .string()

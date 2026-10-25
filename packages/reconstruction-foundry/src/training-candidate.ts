@@ -57,9 +57,9 @@ const PLY_HEAD_BYTES = 64 * 1024;
 const MAX_PLY_VERTICES = 100_000_000;
 const MAX_JSON_DEPTH = 128;
 
-const SafeIntegerSchema = z.number().int().nonnegative().safe();
-const PositiveIntegerSchema = z.number().int().positive().safe();
-const FiniteNumberSchema = z.number().finite();
+const SafeIntegerSchema = z.number().int().nonnegative().int();
+const PositiveIntegerSchema = z.number().int().positive().int();
+const FiniteNumberSchema = z.number();
 const Sha256HexSchema = z.string().regex(SHA256_HEX);
 const Sha256Schema = z.string().regex(SHA256);
 const compareCodePoints = (left: string, right: string): number =>
@@ -114,7 +114,7 @@ export const TrainingCandidateManifestV0Schema = z
       names.some((name, index) => name !== sortedNames[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["files"],
         message: "manifest files must be unique and sorted by name",
       });
@@ -122,7 +122,7 @@ export const TrainingCandidateManifestV0Schema = z
     for (const required of REQUIRED_CONTENT_FILES) {
       if (!names.includes(required)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["files"],
           message: `manifest is missing required file ${required}`,
         });
@@ -131,7 +131,7 @@ export const TrainingCandidateManifestV0Schema = z
     const sum = manifest.files.reduce((total, file) => total + file.size, 0);
     if (!Number.isSafeInteger(sum) || sum !== manifest.total_size) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["total_size"],
         message: "manifest total_size must exactly equal the listed byte total",
       });
@@ -168,37 +168,37 @@ const TrainingConfigSchema = z
         refine_every: PositiveIntegerSchema,
         min_opacity: FiniteNumberSchema.nonnegative().max(1),
       })
-      .passthrough(),
+      .loose(),
     extra_flags: z.array(nonBlankString(256)).max(256),
   })
-  .passthrough()
+  .loose()
   .superRefine((config, ctx) => {
     if (config.strategy.refine_stop_iter > config.max_steps) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["strategy", "refine_stop_iter"],
         message: "refine_stop_iter cannot exceed max_steps",
       });
     }
     if (config.post_processing === "bilateral_grid" && config.bilateral_grid_shape === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["bilateral_grid_shape"],
         message: "bilateral_grid post-processing requires an explicit grid shape",
       });
     }
     if (config.post_processing === "none" && config.bilateral_grid_shape !== undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["bilateral_grid_shape"],
         message: "a bilateral grid shape is not valid when post-processing is disabled",
       });
     }
   });
 
-const PsnrMetricSchema = z.number().finite().min(-1_000).max(1_000);
-const SsimMetricSchema = z.number().finite().min(0).max(1);
-const LpipsMetricSchema = z.number().finite().min(0).max(100);
+const PsnrMetricSchema = z.number().min(-1_000).max(1_000);
+const SsimMetricSchema = z.number().min(0).max(1);
+const LpipsMetricSchema = z.number().min(0).max(100);
 const EvalHoldoutSchema = z
   .object({
     config: z.record(z.string(), z.unknown()),
@@ -212,7 +212,7 @@ const EvalHoldoutSchema = z
         lpips: LpipsMetricSchema,
         fps: z.null(),
       })
-      .passthrough(),
+      .loose(),
     per_image: z
       .array(
         z
@@ -222,17 +222,17 @@ const EvalHoldoutSchema = z
             ssim: SsimMetricSchema,
             lpips: LpipsMetricSchema,
           })
-          .passthrough(),
+          .loose(),
       )
       .min(1)
       .max(1_000_000),
   })
-  .passthrough()
+  .loose()
   .superRefine((evaluation, ctx) => {
     const names = evaluation.per_image.map((image) => image.name);
     if (new Set(names).size !== names.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["per_image"],
         message: "held-out image names must be unique",
       });
@@ -240,7 +240,7 @@ const EvalHoldoutSchema = z
     const sorted = [...names].sort(compareCodePoints);
     if (names.some((name, index) => name !== sorted[index])) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["per_image"],
         message: "held-out image names must be sorted",
       });
@@ -266,7 +266,7 @@ const HardwareSchema = z
         /^(?:cpu|unknown|null|none|n\/a|na|unset|placeholder|tbd|-+)$/iu.test(value.trim())
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [key],
           message: `${key} must contain captured non-placeholder training hardware evidence`,
         });
@@ -285,14 +285,14 @@ const GitStateSchema = z
   .superRefine((git, ctx) => {
     if (!/^(?:https:\/\/|ssh:\/\/|git@)[^\s]+$/u.test(git.remote)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["remote"],
         message: "git remote must be an explicit sanitized https, ssh, or git@ location",
       });
     }
     if (/^https:\/\/[^/@:]+:[^/@]+@/u.test(git.remote)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["remote"],
         message: "git remote must not embed credentials",
       });
@@ -315,7 +315,7 @@ const ColmapInputSchema = z
     for (let index = 0; index < 3; index += 1) {
       if ((colmap.point_bbox_min[index] ?? 0) >= (colmap.point_bbox_max[index] ?? 0)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["point_bbox_max", index],
           message: "COLMAP bounding-box maximums must exceed minimums",
         });
@@ -332,7 +332,7 @@ const MetricLineSchema = z
     eval_ssim: SsimMetricSchema.optional(),
     eval_lpips: LpipsMetricSchema.optional(),
   })
-  .passthrough()
+  .loose()
   .superRefine((row, ctx) => {
     if (
       row.loss === undefined &&
@@ -342,7 +342,7 @@ const MetricLineSchema = z
       row.eval_lpips === undefined
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "a metric row must contain at least one declared training or evaluation metric",
       });
     }
@@ -444,7 +444,7 @@ const TrainingCandidateVerificationMaterialV0Schema = z
       names.some((name, index) => name !== sorted[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["files"],
         message: "verified files must be unique and sorted",
       });
@@ -454,7 +454,7 @@ const TrainingCandidateVerificationMaterialV0Schema = z
       names.some((name, index) => name !== VERIFIED_DOSSIER_FILES[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["files"],
         message: "verified dossiers must contain the exact non-bilateral D-014 file set",
       });
@@ -462,7 +462,7 @@ const TrainingCandidateVerificationMaterialV0Schema = z
     const manifestFile = verification.files.find((file) => file.name === "manifest.json");
     if (manifestFile?.sha256 !== verification.manifestSha256) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["manifestSha256"],
         message: "manifestSha256 must match the indexed manifest.json digest",
       });
@@ -472,7 +472,7 @@ const TrainingCandidateVerificationMaterialV0Schema = z
       .reduce((total, file) => total + file.sizeBytes, 0);
     if (!Number.isSafeInteger(contentTotal) || contentTotal !== verification.totalContentSizeBytes) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["totalContentSizeBytes"],
         message: "verified content byte total must match every non-manifest file",
       });
@@ -483,7 +483,7 @@ const TrainingCandidateVerificationMaterialV0Schema = z
     )}`;
     if (verification.contentSetSha256 !== expectedContentSetSha256) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["contentSetSha256"],
         message: "contentSetSha256 must bind the exact sorted non-manifest file index",
       });
@@ -521,7 +521,7 @@ export const TrainingCandidateVerificationV0Schema = z
       computeTrainingCandidateVerificationSha256(parsedMaterial.data)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["verificationSha256"],
         message: "verificationSha256 must bind the exact verification dossier",
       });

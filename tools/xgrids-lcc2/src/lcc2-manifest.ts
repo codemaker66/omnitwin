@@ -19,7 +19,7 @@ import { z } from "zod";
 export const LCC2_SPLAT_TYPES = [".sog", ".spz", ".ply"] as const;
 export type Lcc2SplatType = (typeof LCC2_SPLAT_TYPES)[number];
 
-const Vec3Schema = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
+const Vec3Schema = z.tuple([z.number(), z.number(), z.number()]);
 
 export const Lcc2BoundingBoxSchema = z
   .object({ min: Vec3Schema, max: Vec3Schema })
@@ -29,7 +29,7 @@ export const Lcc2BoundingBoxSchema = z
       const max = box.max[axis] ?? 0;
       if (min > max) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["min", axis],
           message: `Bounding box min exceeds max on axis ${String(axis)}.`,
         });
@@ -64,7 +64,7 @@ export const Lcc2NodeSchema: z.ZodType<Lcc2Node> = z.lazy(() =>
     splatFiles: z.array(z.string().min(1)).optional(),
     meshFiles: z.array(z.string().min(1)).optional(),
     bvhFiles: z.array(z.string().min(1)).optional(),
-  }).passthrough(),
+  }).loose(),
 );
 
 export const Lcc2ManifestSchema = z.object({
@@ -88,13 +88,13 @@ export const Lcc2ManifestSchema = z.object({
     boundingBox: Lcc2BoundingBoxSchema,
   }),
   root: Lcc2NodeSchema,
-}).passthrough().superRefine((manifest, ctx) => {
+}).loose().superRefine((manifest, ctx) => {
   // XGRIDS lists lodSplats finest-first, one entry per octree level. A count
   // that does not match totalLevels cannot be mapped onto tile levels, and a
   // silently mis-mapped level would report the wrong splat count for a room.
   if (manifest.lodSplats.length !== manifest.totalLevels) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["lodSplats"],
       message:
         `lodSplats has ${String(manifest.lodSplats.length)} entries but totalLevels is ` +
@@ -108,7 +108,7 @@ export const Lcc2ManifestSchema = z.object({
   );
   if (!reachesFinest) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["root", "splatFiles"],
       message: `No tile sits at the finest level (${String(manifest.totalLevels)}).`,
     });

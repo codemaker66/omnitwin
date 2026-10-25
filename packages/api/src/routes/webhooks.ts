@@ -8,7 +8,7 @@ import { getUserByClerkId, normalizeAuthEmail } from "../middleware/auth.js";
 import { evictClerkEmailCacheEntry } from "../middleware/clerk-email.js";
 
 const ClerkEmailAddressSchema = z.object({
-  email_address: z.string().email(),
+  email_address: z.email(),
   id: z.string().min(1),
   verification: z.object({ status: z.string().optional() }).nullable().optional(),
 });
@@ -48,7 +48,7 @@ export type SupportedClerkWebhookEvent = z.infer<typeof SupportedClerkWebhookEve
 export type ParsedClerkWebhookPayload =
   | { readonly kind: "supported"; readonly event: SupportedClerkWebhookEvent }
   | { readonly kind: "ignored"; readonly type: string }
-  | { readonly kind: "invalid"; readonly issues: readonly z.ZodIssue[] };
+  | { readonly kind: "invalid"; readonly issues: readonly z.core.$ZodIssue[] };
 
 export interface ClerkUserUpdate {
   readonly email?: string;

@@ -124,7 +124,7 @@ export function isPlannerEditable(
 // enquiry_status_history so UI timeline components render both.
 // ---------------------------------------------------------------------------
 
-export const ReviewHistoryEntryIdSchema = z.string().uuid();
+export const ReviewHistoryEntryIdSchema = z.uuid();
 export type ReviewHistoryEntryId = z.infer<typeof ReviewHistoryEntryIdSchema>;
 
 export const ReviewHistoryEntrySchema = z.object({
@@ -147,6 +147,6 @@ export const ReviewHistoryEntrySchema = z.object({
   changedByName: z.string().nullable(),
   /** Free-text context — required for reject / changes_requested, optional elsewhere. */
   note: z.string().nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 });
 export type ReviewHistoryEntry = z.infer<typeof ReviewHistoryEntrySchema>;

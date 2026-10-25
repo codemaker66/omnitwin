@@ -66,7 +66,7 @@ function addIssue(
   message: string,
 ): void {
   ctx.addIssue({
-    code: z.ZodIssueCode.custom,
+    code: "custom",
     path: [...path],
     message,
   });

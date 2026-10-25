@@ -65,7 +65,7 @@ const SourceSchema = z
     assetId: z.string().regex(SAFE_ID),
     inputType: z.literal("glb_gltf"),
     mediaType: z.literal("model/gltf-binary"),
-    sizeBytes: z.number().int().safe().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
+    sizeBytes: z.number().int().int().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
     sha256: z.string().regex(SHA256),
   })
   .strict();
@@ -108,7 +108,7 @@ const ReportPayloadSchema = z
     output: z
       .object({
         mediaType: z.literal("model/gltf-binary"),
-        sizeBytes: z.number().int().safe().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
+        sizeBytes: z.number().int().int().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
         sha256: z.string().regex(SHA256),
       })
       .strict(),
@@ -185,7 +185,7 @@ export const FoundryNormalizeMeshGlbReportV0Schema = ReportPayloadSchema.extend(
     }
     if (report.reportSha256 !== computeFoundryNormalizeMeshGlbReportSha256(parsed.data)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reportSha256"],
         message: "normalization report digest does not match its canonical payload",
       });

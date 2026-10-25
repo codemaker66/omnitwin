@@ -36,13 +36,13 @@ function refusePricingRead(reply: FastifyReply): FastifyReply {
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const VenueIdParam = z.object({ venueId: z.string().uuid() });
-const RuleIdParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid() });
+const VenueIdParam = z.object({ venueId: z.uuid() });
+const RuleIdParam = z.object({ venueId: z.uuid(), id: z.uuid() });
 
 const PRICING_TYPES = ["flat_rate", "per_hour", "per_head", "tiered"] as const;
 
 const EstimateBody = z.object({
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -56,7 +56,7 @@ const CalendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine((value) => new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value, { message: "Not a calendar date" });
 
 const CreateRuleBody = z.object({
-  spaceId: z.string().uuid().nullable().optional(),
+  spaceId: z.uuid().nullable().optional(),
   name: z.string().trim().min(1).max(200),
   type: z.enum(PRICING_TYPES),
   amount: z.number().nonnegative(),

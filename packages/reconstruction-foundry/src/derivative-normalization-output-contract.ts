@@ -108,7 +108,7 @@ function issue(
   path: readonly (string | number)[],
   message: string,
 ): void {
-  ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path], message });
+  ctx.addIssue({ code: "custom", path: [...path], message });
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -318,8 +318,8 @@ const AbsentActivationSchema = z
 const ClaimedRuntimeContextSchema = z
   .object({
     jobId: RuntimeManifestKeySchema,
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     attemptOrdinal: z.literal(1),
     stageId: RuntimeManifestKeySchema,
     fencingToken: PositiveFenceSchema,

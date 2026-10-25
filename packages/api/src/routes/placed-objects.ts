@@ -23,43 +23,43 @@ import {
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
-const ObjectIdParam = z.object({ configId: z.string().uuid(), id: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
+const ObjectIdParam = z.object({ configId: z.uuid(), id: z.uuid() });
 
 const CreateObjectBody = z.object({
-  assetDefinitionId: z.string().uuid(),
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
-  positionZ: z.number().finite(),
-  rotationX: z.number().finite().default(0),
-  rotationY: z.number().finite().default(0),
-  rotationZ: z.number().finite().default(0),
+  assetDefinitionId: z.uuid(),
+  positionX: z.number(),
+  positionY: z.number(),
+  positionZ: z.number(),
+  rotationX: z.number().default(0),
+  rotationY: z.number().default(0),
+  rotationZ: z.number().default(0),
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const UpdateObjectBody = z.object({
-  positionX: z.number().finite().optional(),
-  positionY: z.number().finite().optional(),
-  positionZ: z.number().finite().optional(),
-  rotationX: z.number().finite().optional(),
-  rotationY: z.number().finite().optional(),
-  rotationZ: z.number().finite().optional(),
+  positionX: z.number().optional(),
+  positionY: z.number().optional(),
+  positionZ: z.number().optional(),
+  rotationX: z.number().optional(),
+  rotationY: z.number().optional(),
+  rotationZ: z.number().optional(),
   scale: z.number().positive().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const BatchObjectItem = z.object({
-  id: z.string().uuid().optional(),
-  assetDefinitionId: z.string().uuid(),
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
-  positionZ: z.number().finite(),
-  rotationX: z.number().finite().default(0),
-  rotationY: z.number().finite().default(0),
-  rotationZ: z.number().finite().default(0),
+  id: z.uuid().optional(),
+  assetDefinitionId: z.uuid(),
+  positionX: z.number(),
+  positionY: z.number(),
+  positionZ: z.number(),
+  rotationX: z.number().default(0),
+  rotationY: z.number().default(0),
+  rotationZ: z.number().default(0),
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),

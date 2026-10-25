@@ -25,17 +25,17 @@ import { configurationRevisionEtag } from "../lib/configuration-revision.js";
 // test. Punch list #13.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 const SummaryIdsQuery = z.object({
   ids: z.string()
     .transform((value) => [...new Set(value.split(","))])
-    .pipe(z.array(z.string().uuid()).min(1).max(100)),
+    .pipe(z.array(z.uuid()).min(1).max(100)),
 });
 
 const CreateConfigBody = z.object({
-  spaceId: z.string().uuid(),
-  venueId: z.string().uuid(),
+  spaceId: z.uuid(),
+  venueId: z.uuid(),
   name: z.string().trim().min(1).max(200),
   layoutStyle: LayoutStyleSchema,
   guestCount: z.number().int().nonnegative().default(0),

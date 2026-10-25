@@ -28,7 +28,7 @@ const CreatedReceiptSchema = z.object({
     unavailableQuantity: command.unavailableQuantity, hires: command.hires,
     storageLocation: command.storageLocation, status: command.status, effectiveAt: receipt.recordedAt };
   if (command.expectedRevision !== null || receipt.reason !== command.reason || JSON.stringify(expected) !== JSON.stringify(after)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "INVENTORY_RECEIPT_INTEGRITY" });
+    context.addIssue({ code: "custom", message: "INVENTORY_RECEIPT_INTEGRITY" });
   }
 });
 const AdjustedReceiptSchema = z.object(InventoryAdjustmentReceiptSchema.shape)

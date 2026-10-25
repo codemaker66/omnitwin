@@ -7,7 +7,7 @@ export const EVIDENCE_RUNTIME_SCHEMA_VERSION = "evidence_runtime.v0";
 export const EVIDENCE_PACK_PAYLOAD_SCHEMA_VERSION = "evidence_pack.v0";
 export const EVIDENCE_PACK_DIGEST_DOMAIN_PREFIX = "venviewer.evidence_pack.v0\n";
 
-const UUID = z.string().uuid();
+const UUID = z.uuid();
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 
 export const EvidenceItemIdSchema = UUID.brand<"EvidenceItemId">();
@@ -208,7 +208,7 @@ export const SafePlanningWordingSchema = z.string().trim().min(1).max(500).super
   const unsafe = findUnsafePublicClaim(text);
   if (unsafe !== null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: `Unsafe public/client claim phrase "${unsafe}" is not allowed.`,
     });
   }
@@ -227,8 +227,8 @@ export const EvidenceItemSchema = z.object({
   staleState: EvidenceStalenessSchema,
   wording: SafePlanningWordingSchema,
   metadata: z.record(z.string(), z.unknown()).nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type EvidenceItem = z.infer<typeof EvidenceItemSchema>;
 
@@ -242,11 +242,11 @@ export const CheckResultSchema = z.object({
   status: CheckResultStatusSchema,
   severity: z.enum(["info", "warning", "blocking"]),
   message: SafePlanningWordingSchema,
-  measuredValue: z.number().finite().nullable(),
-  thresholdValue: z.number().finite().nullable(),
+  measuredValue: z.number().nullable(),
+  thresholdValue: z.number().nullable(),
   unit: z.string().trim().min(1).max(40).nullable(),
   sourceLabel: z.string().trim().min(1).max(200),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type CheckResult = z.infer<typeof CheckResultSchema>;
 
@@ -259,7 +259,7 @@ export const AssumptionRecordSchema = z.object({
   value: CanonicalJsonValueSchema,
   sourceLabel: z.string().trim().min(1).max(200),
   status: z.enum(["active", "superseded", "rejected"]),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type AssumptionRecord = z.infer<typeof AssumptionRecordSchema>;
 
@@ -274,10 +274,10 @@ export const ReviewGateSchema = z.object({
   description: SafePlanningWordingSchema,
   requiredRole: z.string().trim().min(1).max(80).nullable(),
   decisionBy: UserIdSchema.nullable(),
-  decisionAt: z.string().datetime().nullable(),
+  decisionAt: z.iso.datetime().nullable(),
   decisionNote: z.string().trim().max(1000).nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type ReviewGate = z.infer<typeof ReviewGateSchema>;
 
@@ -290,8 +290,8 @@ export const ClaimStateSchema = z.object({
   status: ClaimStateStatusSchema,
   safeWording: SafePlanningWordingSchema,
   evidencePackId: EvidencePackIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type ClaimState = z.infer<typeof ClaimStateSchema>;
 
@@ -304,7 +304,7 @@ export type EvidencePackCheckSummary = z.infer<typeof EvidencePackCheckSummarySc
 
 export const EvidencePackRuntimeAssetStatusSchema = z.object({
   status: EvidenceRuntimeStatusSchema,
-  runtimePackageId: z.string().uuid().nullable(),
+  runtimePackageId: z.uuid().nullable(),
   evidenceStatus: z.string().trim().min(1).max(80).nullable(),
   wording: SafePlanningWordingSchema,
 }).strict();
@@ -347,15 +347,15 @@ export function evidencePackPayloadDigest(payload: EvidencePackPayload): string 
 export const EvidencePackSchema = z.object({
   id: EvidencePackIdSchema,
   configId: ConfigurationIdSchema,
-  snapshotId: z.string().uuid(),
+  snapshotId: z.uuid(),
   snapshotHash: z.string().regex(SHA256_HEX),
   payloadHash: z.string().regex(SHA256_HEX),
   status: EvidencePackStatusSchema,
   humanReviewRequired: z.boolean(),
   payload: EvidencePackPayloadSchema,
   generatedBy: UserIdSchema.nullable(),
-  generatedAt: z.string().datetime(),
-  staleAt: z.string().datetime().nullable(),
+  generatedAt: z.iso.datetime(),
+  staleAt: z.iso.datetime().nullable(),
 }).strict();
 export type EvidencePack = z.infer<typeof EvidencePackSchema>;
 
@@ -364,7 +364,7 @@ export const EvidencePackItemSchema = z.object({
   evidencePackId: EvidencePackIdSchema,
   evidenceItemId: EvidenceItemIdSchema,
   itemRole: EvidenceItemTypeSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type EvidencePackItem = z.infer<typeof EvidencePackItemSchema>;
 
@@ -377,7 +377,7 @@ export const StaleEvidenceEventSchema = z.object({
   reason: z.string().trim().min(1).max(200),
   previousHash: z.string().regex(SHA256_HEX).nullable(),
   newHash: z.string().regex(SHA256_HEX).nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type StaleEvidenceEvent = z.infer<typeof StaleEvidenceEventSchema>;
 
@@ -389,7 +389,7 @@ export const GeneralAuditLogSchema = z.object({
   targetId: z.string().trim().min(1).max(160),
   summary: SafePlanningWordingSchema,
   metadata: z.record(z.string(), z.unknown()).nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type GeneralAuditLog = z.infer<typeof GeneralAuditLogSchema>;
 

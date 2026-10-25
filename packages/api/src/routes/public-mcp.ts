@@ -147,10 +147,10 @@ export function publicToolInputs(venues: readonly PublicVenueProfile[]) {
       }).optional(),
     }).strict().superRefine((value, context) => {
       if (value.to < value.from) {
-        context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "\"to\" must be on or after \"from\"." });
+        context.addIssue({ code: "custom", path: ["to"], message: "\"to\" must be on or after \"from\"." });
       } else if (inclusiveDayCount(value.from, value.to) > AVAILABILITY_MAX_SPAN_DAYS) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["to"],
           message: `Ask about at most ${String(AVAILABILITY_MAX_SPAN_DAYS)} days at a time; call again for later dates.`,
         });

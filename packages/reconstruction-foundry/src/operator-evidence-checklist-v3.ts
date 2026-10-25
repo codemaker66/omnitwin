@@ -786,7 +786,7 @@ const DuplicateSchema = z.discriminatedUnion("status", [
 const AffectedSourceSchema = z
   .object({
     path: FoundryRelativePathSchema,
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: z.string().regex(SHA256_HEX),
     duplicate: DuplicateSchema,
     laneIds: z
@@ -809,7 +809,7 @@ const AffectedSourceSchema = z
       JSON.stringify(canonicalLaneIds(source.laneIds))
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["laneIds"],
         message: "affected-source lane identifiers must be unique and canonically ordered",
       });
@@ -819,7 +819,7 @@ const AffectedSourceSchema = z
       source.readinessStatus === "facts_not_established";
     if (hasFacts !== (source.inspection !== null)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["inspection"],
         message: "affected-source inspection must agree with its readiness status",
       });
@@ -829,7 +829,7 @@ const AffectedSourceSchema = z
       source.inspection?.state !== "established"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["inspection", "state"],
         message: "established readiness requires an established inspection",
       });
@@ -839,7 +839,7 @@ const AffectedSourceSchema = z
       source.inspection?.state !== "facts_not_established"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["inspection", "state"],
         message: "incomplete readiness requires a facts-not-established inspection",
       });
@@ -849,7 +849,7 @@ const AffectedSourceSchema = z
       source.duplicate.groupSha256 !== source.sha256
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["duplicate", "groupSha256"],
         message: "duplicate group digest must equal the affected-source digest",
       });
@@ -901,7 +901,7 @@ const ChecklistItemSchema = z
     for (const [path, actual, expected] of fixedFields) {
       if (actual !== expected) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [path],
           message: `${path} must match the canonical evidence-code definition`,
         });
@@ -912,7 +912,7 @@ const ChecklistItemSchema = z
       JSON.stringify(completion.criteria)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["completionEvidenceRequirements"],
         message: "completion requirements must match the canonical evidence category",
       });
@@ -922,14 +922,14 @@ const ChecklistItemSchema = z
       JSON.stringify(canonicalLaneIds(item.laneIds))
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["laneIds"],
         message: "affected lane identifiers must be unique and canonically ordered",
       });
     }
     if (!isSortedUnique(item.affectedSources.map((source) => source.path))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["affectedSources"],
         message: "affected sources must be unique and canonically ordered",
       });
@@ -937,7 +937,7 @@ const ChecklistItemSchema = z
     const mayHaveNoSource = item.evidenceCode === "NO_SOURCE_OBSERVED";
     if (mayHaveNoSource !== (item.affectedSources.length === 0)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["affectedSources"],
         message: "only the conditional no-source request may omit affected sources",
       });
@@ -952,7 +952,7 @@ const ChecklistItemSchema = z
         )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["laneIds"],
         message: "item lanes must equal the union of its affected-source lanes",
       });
@@ -1066,7 +1066,7 @@ const LimitationsSchema = z.tuple([
 const BlockedSourceSchema = z
   .object({
     path: FoundryRelativePathSchema,
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: z.string().regex(SHA256_HEX),
     inputType: z.literal("xgrids_xbin"),
   })
@@ -1097,14 +1097,14 @@ const BlockedReasonSchema = z
       JSON.stringify(COMPLETION_DEFINITIONS.official_export.criteria)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["completionEvidenceRequirements"],
         message: "blocked export requirements must match the canonical definition",
       });
     }
     if (!isSortedUnique(reason.affectedSources.map((source) => source.path))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["affectedSources"],
         message: "blocked sources must be unique and canonically ordered",
       });
@@ -1395,7 +1395,7 @@ function validateArtifact(
     const expectedItems = canonicalItems(value.items);
     if (JSON.stringify(value.items) !== JSON.stringify(expectedItems)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["items"],
         message: "checklist items must be unique and canonically ordered",
       });
@@ -1405,7 +1405,7 @@ function validateArtifact(
       value.items.length
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["items"],
         message: "each evidence code must appear exactly once",
       });
@@ -1421,7 +1421,7 @@ function validateArtifact(
       );
     } catch {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["items"],
         message: "checklist items contain contradictory affected-source identities",
       });
@@ -1429,14 +1429,14 @@ function validateArtifact(
     }
     if (JSON.stringify(value.groups) !== JSON.stringify(expectedGroups)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["groups"],
         message: "checklist groups contradict the canonical item aggregation",
       });
     }
     if (JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["summary"],
         message: "checklist summary contradicts the canonical item aggregation",
       });
@@ -1451,14 +1451,14 @@ function validateArtifact(
       value.blockedReason.affectedSources.length
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["summary", "receiptFileCount"],
         message: "blocked receipt count cannot be smaller than affected sources",
       });
     }
     if (JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["summary"],
         message: "blocked checklist summary contradicts the export request",
       });
@@ -1466,7 +1466,7 @@ function validateArtifact(
   }
   if (value.checklistSha256 !== artifactDigest(value)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["checklistSha256"],
       message: "checklist digest does not match the canonical payload",
     });
