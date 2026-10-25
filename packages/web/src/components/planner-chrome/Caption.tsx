@@ -1,4 +1,4 @@
-import { PackageMinus, RotateCw } from "lucide-react";
+import { AlignCenterHorizontal, Copy, PackageMinus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import { captionModel, type CaptionModel, type CaptionVerb } from "../../lib/caption-model.js";
 import { placeCaption } from "../../lib/caption-placement.js";
@@ -6,11 +6,14 @@ import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import {
   QUARTER_TURN_RAD,
   changeSeatsAtSelectedTables,
+  duplicateSelection,
+  lineUpSelection,
   removeSelection,
   toggleClothOnSelection,
   turnSelection,
 } from "../../lib/planner-keymap.js";
 import { registerScreenAnchor, requestScreenAnchorFrame, type ScreenPoint } from "../../lib/screen-anchors.js";
+import { DANCE_FLOOR_PANELS } from "../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -44,8 +47,8 @@ interface VerbKey {
 }
 
 /**
- * The verbs this branch has commands for. Duplicate, Move and Line up join
- * with lane E's commands; a verb without a command is never drawn.
+ * Each verb's command, shared with its key (lane E's for Duplicate and Line
+ * up). A verb without a command here is never drawn.
  */
 const VERB_KEYS: Partial<Record<CaptionVerb, VerbKey>> = {
   turn: {
@@ -54,6 +57,19 @@ const VERB_KEYS: Partial<Record<CaptionVerb, VerbKey>> = {
     icon: <RotateCw className="pc-icon" aria-hidden="true" />,
     shortcut: ["R"],
     run: () => turnSelection(-QUARTER_TURN_RAD),
+  },
+  duplicate: {
+    label: "Duplicate",
+    icon: <Copy className="pc-icon" aria-hidden="true" />,
+    shortcut: ["Ctrl", "D"],
+    run: duplicateSelection,
+  },
+  lineUp: {
+    label: "Line up",
+    tip: "Line up their centres",
+    icon: <AlignCenterHorizontal className="pc-icon" aria-hidden="true" />,
+    shortcut: [],
+    run: lineUpSelection,
   },
   cloth: {
     label: "Cloth",
@@ -137,7 +153,11 @@ export function Caption(): ReactElement | null {
 
   if (!shown) return null;
   const name = nameOf(model);
-  const verbs = model.verbs.filter((verb) => verb !== "seats" && VERB_KEYS[verb] !== undefined);
+  const verbs = model.verbs.filter((verb) => VERB_KEYS[verb] !== undefined);
+  const panels = model.panels;
+  const resize = (cols: number, rows: number): void => {
+    if (panels !== null) act(() => usePlacementStore.getState().resizeArea(panels.groupId, cols, rows));
+  };
 
   return (
     <div ref={layerRef} className="pc-caption-layer" data-testid="planner-caption-layer">
@@ -167,6 +187,12 @@ export function Caption(): ReactElement | null {
               unit="seats"
               onChange={(next) => { act(() => changeSeatsAtSelectedTables(next > (model.seats?.now ?? next) ? 1 : -1)); }}
             />
+          ) : null}
+          {panels !== null ? (
+            <>
+              <Stepper label="Panels across" value={panels.cols} min={DANCE_FLOOR_PANELS.min} max={DANCE_FLOOR_PANELS.max} unit="across" onChange={(cols) => { resize(cols, panels.rows); }} />
+              <Stepper label="Panels deep" value={panels.rows} min={DANCE_FLOOR_PANELS.min} max={DANCE_FLOOR_PANELS.max} unit="deep" onChange={(rows) => { resize(panels.cols, rows); }} />
+            </>
           ) : null}
           {verbs.map((verb) => {
             const key = VERB_KEYS[verb];

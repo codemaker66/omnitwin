@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Caption } from "../Caption.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import type { PlacedItem } from "../../../lib/placement.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
+import { stampSetup } from "../../../lib/setup-cards.js";
 import { projectScreenAnchors, screenAnchorCount } from "../../../lib/screen-anchors.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -43,7 +45,7 @@ beforeEach(() => {
   useCatalogueStore.getState().disarm();
   useCockpitStore.getState().setWalkMode(false);
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); setPlannerFeaturesForTesting(null); });
 
 function caption(): HTMLElement {
   return screen.getByRole("group", { name: /^Table 8/u });
@@ -119,5 +121,51 @@ describe("where it is", () => {
     act(() => { useCatalogueStore.getState().disarm(); useSelectionStore.getState().select("t8"); useCockpitStore.getState().setWalkMode(true); });
     expect(screen.queryByRole("group", { name: /^Table 8/u })).toBeNull();
     expect(screenAnchorCount()).toBe(0);
+  });
+});
+
+describe("lane E's verbs, behind their switches", () => {
+  function tableFour(): PlacedItem[] {
+    return [
+      piece("t4", "round-table-6ft", 8, 5, { groupId: "g4", label: "Table 4" }),
+      ...Array.from({ length: 10 }, (_, n) => piece(`d${String(n)}`, "banquet-chair", 8 + 0.95 * Math.cos(n * 0.628), 5 + 0.95 * Math.sin(n * 0.628), { groupId: "g4" })),
+    ];
+  }
+
+  it("duplicates the table with its chairs (Ctrl D), and only with the editing switch on", () => {
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    expect(within(caption()).queryByRole("button", { name: /^Duplicate/u })).toBeNull();
+    cleanup();
+    setPlannerFeaturesForTesting({ editingKeys: true });
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    fireEvent.click(within(caption()).getByRole("button", { name: /^Duplicate/u }));
+    expect(usePlacementStore.getState().placedItems).toHaveLength(22);
+  });
+
+  it("lines several tables up, behind the Line up switch", () => {
+    setPlannerFeaturesForTesting({ lineUp: true });
+    usePlacementStore.setState({ placedItems: [...tableEight(), ...tableFour()] });
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().selectMultiple(["t8", "t4"]); });
+    const group = screen.getByRole("group", { name: /^2 Round 6 ft/u });
+    fireEvent.click(within(group).getByRole("button", { name: /^Line up/u }));
+    const [eight, four] = ["t8", "t4"].map((id) => usePlacementStore.getState().placedItems.find((item) => item.id === id));
+    // Their centres now sit on one line along the dominant (x) axis.
+    expect(eight?.z).toBeCloseTo(four?.z ?? Number.NaN, 2);
+  });
+});
+
+describe("a dance floor's panels", () => {
+  it("grows the floor a column with More across, as one step", () => {
+    let next = 0;
+    usePlacementStore.setState({ placedItems: [...stampSetup({ card: "dance-floor", cols: 5, rows: 5 }, { x: 0, z: 0 }, 0, () => `p${String((next += 1))}`)] });
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select(usePlacementStore.getState().placedItems[0]?.id ?? ""); });
+    const floor = screen.getByRole("group", { name: /^Dance floor/u });
+    expect(within(floor).getByRole("slider", { name: "Panels across" }).getAttribute("aria-valuenow")).toBe("5");
+    fireEvent.click(within(floor).getByRole("button", { name: /^More across/u }));
+    expect(usePlacementStore.getState().placedItems).toHaveLength(30);
   });
 });
