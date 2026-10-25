@@ -27,7 +27,7 @@ function piece(id: string, slug: string, x: number, z: number, extra: Partial<Pl
 function round(name: string, x: number, chairs: number): PlacedItem[] {
   const group = `g-${name}`;
   return [
-    piece(name, "round-table-6ft-white", x, 0, { groupId: group, label: name.replace("t", "Table ") }),
+    piece(name, "round-table-6ft", x, 0, { groupId: group, label: name.replace("t", "Table ") }),
     ...Array.from({ length: chairs }, (_, n) => piece(`${name}-c${String(n)}`, "banquet-chair", x + 0.9 * Math.cos(n), 0.9 * Math.sin(n), { groupId: group })),
   ];
 }
@@ -41,7 +41,7 @@ describe("one piece", () => {
 
   it("says the table's number, its card's name and its size, and steps its seats", () => {
     const model = captionModel(new Set(["t8"]), room, none);
-    const range = seatsFor({ slug: "round-table-6ft-white" });
+    const range = seatsFor({ slug: "round-table-6ft" });
     expect(model).toMatchObject({ count: 1, eyebrow: "TABLE 8", name: "Round 6 ft", size: "1.8 m round", primaryId: "t8" });
     expect(model?.seats).toEqual({ now: 10, min: range?.min, max: range?.max });
   });
@@ -70,6 +70,10 @@ describe("one piece", () => {
     const model = captionModel(new Set(["s1"]), stage, none);
     expect(model).toMatchObject({ eyebrow: null, name: "Stage deck", seats: null });
     expect(model?.verbs).toEqual(["turn", "remove"]);
+  });
+  it("offers no Cloth for a table whose model already wears its linen", () => {
+    const white = [piece("w1", "round-table-6ft-white", 0, 0, { groupId: "gw", label: "Table 1" })];
+    expect(captionModel(new Set(["w1"]), white, none)?.verbs).not.toContain("cloth");
   });
 });
 
