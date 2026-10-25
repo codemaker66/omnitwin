@@ -125,18 +125,25 @@ describe("the truthful ghost's set", () => {
 });
 
 describe("the ghost as the commit sees it", () => {
-  it("judges the set turned as the piece in hand is turned, as the commit will", () => {
-    const placed = stampSetup(round(), { x: 0, z: 0 }, 0);
-    usePlacementStore.setState({ placedItems: placed });
-    render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
-    const z = 2 * CHAIR_REACH - 0.1;
+  it("judges the set turned as the piece in hand is turned, as the commit will: a long table a quarter turned at the wall is refused", () => {
+    setPlannerFeaturesForTesting({ setupCards: true, truthfulGhost: true, tableSets: true });
+    const long = cardParamsFor("long-table");
+    if (long === null) throw new Error("no long table");
+    const reach = Math.max(...stampSetup(long, { x: 0, z: 0 }, 0).map((piece) => Math.abs(piece.z))) + 0.6;
+    const z = GRAND_HALL_RENDER_DIMENSIONS.length / 2 - reach - 0.3;
+    render(<GhostSet params={long} warming={false} fromCardDrag={false} />);
     act(() => {
-      usePlacementStore.setState({ ghostPosition: [0.4, 0, z], ghostRotation: 0.3 });
+      usePlacementStore.setState({ ghostPosition: [0, 0, z], ghostRotation: 0 });
       frames.latest?.();
     });
-    const world = createGhostWorld(placed, GRAND_HALL_RENDER_DIMENSIONS);
-    expect(useGhostVerdictStore.getState().verdict).toEqual(judgeCardAt(round(), { x: 0.4, z, y: 0 }, 0.3, world, undefined).verdict);
-    expect(useGhostVerdictStore.getState().verdict).not.toEqual(judgeCardAt(round(), { x: 0.4, z, y: 0 }, 0, world, undefined).verdict);
+    expect(words().dataset.state).toBe("fits");
+    act(() => {
+      usePlacementStore.setState({ ghostRotation: Math.PI / 2 });
+      frames.latest?.();
+    });
+    const world = createGhostWorld([], GRAND_HALL_RENDER_DIMENSIONS);
+    expect(words().dataset.state).toBe("refused");
+    expect(useGhostVerdictStore.getState().verdict).toEqual(judgeCardAt(long, { x: 0, z, y: 0 }, Math.PI / 2, world, "fits").verdict);
   });
 
   it("forgets its verdict when the ghost goes, so the next attempt starts fresh", () => {
