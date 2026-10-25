@@ -9,6 +9,7 @@ import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { claimConfigRoutes } from "../routes/claim-config.js";
 import { enquiryRoutes } from "../routes/enquiries.js";
+import { eventRoutes } from "../routes/events.js";
 import { placedObjectRoutes } from "../routes/placed-objects.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { cleanupPreviewConfigurations } from "../services/cleanup.js";
@@ -131,6 +132,7 @@ describe.skipIf(target === undefined)("claiming a plan on the migrated disposabl
     await server.register(placedObjectRoutes, { db, prefix: "/configurations/:configId/objects" });
     await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
     await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
+    await server.register(eventRoutes, { db, prefix: "/events" });
     await server.ready();
   }, 60000);
 
@@ -249,6 +251,79 @@ describe.skipIf(target === undefined)("claiming a plan on the migrated disposabl
     }
     expect((await claim(idOnPaper, staff, draft.claimSecret)).code).toBe("CONFIGURATION_IN_VENUE_WORK");
     expect(await row(draft.id)).toMatchObject({ userId: null, isPublicPreview: true });
+  });
+
+  async function newEvent(): Promise<string> {
+    const eventId = randomUUID();
+    await db.insert(schema.events).values({ id: eventId, venueId, name: "TEST ONLY link event", createdBy: staff.id });
+    return eventId;
+  }
+
+  async function linksTo(configId: string): Promise<number> {
+    const found = await db.select().from(schema.eventConfigurationLinks)
+      .where(eq(schema.eventConfigurationLinks.configurationId, configId));
+    return found.length;
+  }
+
+  // Claim first, link later: a variant built from a client's own layout would
+  // give that client the event, exactly as a direct link would.
+  it("does not let staff build an event's layout variant from a client's own layout", async () => {
+    const draft = await newDraft();
+    expect((await claim(draft.id, client, draft.claimSecret)).statusCode).toBe(200);
+    const eventId = await newEvent();
+
+    const variant = await server.inject({
+      method: "POST", url: `/events/${eventId}/layout-variants`, headers: as(staff),
+      payload: { configurationId: draft.id, name: "From the enquiry" },
+    });
+    expect(variant.statusCode, variant.body).toBe(409);
+    expect(variant.json<{ code: string }>().code).toBe("CONFIGURATION_OWNER_IS_CUSTOMER");
+    expect(await linksTo(draft.id)).toBe(0);
+    const variants = await db.select().from(schema.layoutVariants).where(eq(schema.layoutVariants.eventId, eventId));
+    expect(variants).toHaveLength(0);
+  });
+
+  // A claim and a link arriving together on one layout: whichever takes the
+  // layout's row second sees the first, so a client never ends up owning a
+  // layout linked to an event.
+  it("never lets a claim and an event link racing on one layout both succeed", async () => {
+    const draft = await newDraft();
+    const eventId = await newEvent();
+    const blocker = await pool.connect();
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [draft.id]);
+      const racing = Promise.all([
+        claim(draft.id, client, draft.claimSecret),
+        server.inject({
+          method: "POST", url: `/events/${eventId}/configuration-links`, headers: as(staff),
+          payload: { configurationId: draft.id },
+        }).then((response) => ({ statusCode: response.statusCode, code: response.json<{ code?: string }>().code })),
+      ]);
+      await expect.poll(async () => {
+        const waiting = await pool.query<{ count: string }>(
+          "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = current_setting('application_name') AND wait_event_type = 'Lock'");
+        return Number(waiting.rows[0]?.count);
+      }, { timeout: 5000 }).toBe(2);
+      await blocker.query("COMMIT");
+      const [claimed, linked] = await racing;
+
+      const owner = (await row(draft.id))?.userId ?? null;
+      const links = await linksTo(draft.id);
+      if (claimed.statusCode === 200) {
+        expect(linked).toMatchObject({ statusCode: 409, code: "CONFIGURATION_OWNER_IS_CUSTOMER" });
+        expect(owner).toBe(client.id);
+        expect(links).toBe(0);
+      } else {
+        expect(linked.statusCode).toBe(201);
+        expect(claimed).toMatchObject({ statusCode: 409, code: "CONFIGURATION_IN_VENUE_WORK" });
+        expect(owner).toBeNull();
+        expect(links).toBe(1);
+      }
+    } finally {
+      await blocker.query("ROLLBACK").catch(() => undefined);
+      blocker.release();
+    }
   });
 
   it("never lets a plan made before claim secrets be claimed", async () => {

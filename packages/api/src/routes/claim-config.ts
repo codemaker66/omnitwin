@@ -68,7 +68,8 @@ export async function claimConfigRoutes(
       if (config === undefined) return { kind: "not-found" };
       if (!config.isPublicPreview || config.userId !== null) return { kind: "already-claimed" };
 
-      // The secret is checked before anything else about the plan is said.
+      // Whether a plan exists and is still unclaimed is already public (its
+      // public read answers that); nothing else is said before the secret.
       const [secret] = await tx.select({ secretHash: configurationClaimSecrets.secretHash })
         .from(configurationClaimSecrets)
         .where(eq(configurationClaimSecrets.configurationId, configId))
