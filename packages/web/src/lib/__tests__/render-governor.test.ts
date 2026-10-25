@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FrameGovernor, REBUILD_WAIT_MS, SETTLE_MS, STILL_MS, displayRateFrom, rebuildDue, windowPace, type StepKind } from "../render-governor.js";
+import { FrameGovernor, REBUILD_WAIT_MS, SETTLE_MS, STILL_MS, SWAP_SETTLE_MAX_MS, SwapSettle, displayRateFrom, governorWarmWindows, rebuildDue, windowPace, type StepKind } from "../render-governor.js";
 
 /** A ladder with `rungs` to give up, recording every step asked of it. */
 function ladder(rungs = Number.POSITIVE_INFINITY): { readonly asked: StepKind[]; readonly giveUp: (held: StepKind) => boolean } {
@@ -33,6 +33,37 @@ describe("FrameGovernor", () => {
     windows(governor, giveUp, 30, 1);
     expect(asked).toEqual(["gpu"]);
     expect(governor.stepsDown).toBe(1);
+  });
+
+  it("judges a phone from its first window: 40 ms frames at 60 Hz give up a rung within two windows", () => {
+    const governor = new FrameGovernor({ warmWindows: governorWarmWindows("phone") });
+    governor.setDisplayRate(60);
+    const { asked, giveUp } = ladder();
+    windows(governor, giveUp, 25, 1, 30);
+    expect(asked).toEqual([]);
+    windows(governor, giveUp, 25, 1, 30);
+    expect(asked).toEqual(["cpu"]);
+    expect(governor.windowsJudged).toBe(2);
+  });
+
+  it("starts a fresh window when interrupted, so frames before a renderer swap and after it are not judged together", () => {
+    const governor = new FrameGovernor({ warmWindows: 0 });
+    governor.setDisplayRate(60);
+    const { asked, giveUp } = ladder();
+    windows(governor, giveUp, 25, 1, 30);
+    // Half a slow window, then the device is replaced.
+    for (let frame = 0; frame < 20; frame++) governor.observe(1 / 25, 30, giveUp);
+    governor.interrupt();
+    // Uninterrupted, these would close a second slow window and give a rung up.
+    for (let frame = 0; frame < 20; frame++) governor.observe(1 / 25, 30, giveUp);
+    expect(governor.windowsJudged).toBe(1);
+    expect(asked).toEqual([]);
+  });
+
+  it("leaves tablets and desktops their three warm-up windows", () => {
+    expect(governorWarmWindows("phone")).toBe(0);
+    expect(governorWarmWindows("tablet")).toBe(3);
+    expect(governorWarmWindows("desktop")).toBe(3);
   });
 
   it("leaves a device that holds its rate alone", () => {
@@ -137,6 +168,32 @@ describe("FrameGovernor", () => {
     windows(governor, giveUp, 60, 5);
     windows(governor, giveUp, 40, 2);
     expect(asked).toEqual(["gpu"]);
+  });
+});
+
+describe("SwapSettle", () => {
+  it("admits every frame until a renderer is replaced", () => {
+    const settle = new SwapSettle();
+    expect(settle.admit(0.2, 0)).toBe(true);
+  });
+
+  it("then holds judgement until two frames in a row come within 50 ms", () => {
+    const settle = new SwapSettle();
+    settle.begin(1000);
+    // A replaced device compiles everything it draws: slow frames, then quick ones.
+    expect(settle.admit(0.18, 1200)).toBe(false);
+    expect(settle.admit(0.03, 1230)).toBe(false);
+    expect(settle.admit(0.12, 1350)).toBe(false);
+    expect(settle.admit(0.04, 1390)).toBe(false);
+    expect(settle.admit(0.04, 1430)).toBe(false);
+    expect(settle.admit(0.12, 1550)).toBe(true);
+  });
+
+  it("gives up waiting after a while, so a phone slow by nature is judged again", () => {
+    const settle = new SwapSettle();
+    settle.begin(0);
+    expect(settle.admit(0.08, SWAP_SETTLE_MAX_MS - 1)).toBe(false);
+    expect(settle.admit(0.08, SWAP_SETTLE_MAX_MS)).toBe(true);
   });
 });
 
