@@ -610,6 +610,14 @@ export interface PlacementOverlapIndex {
    * overlap scan over the same items, visiting only nearby ones.
    */
   readonly overlapsAny: (body: PlacementBody, excludeIds: ReadonlySet<string>) => boolean;
+  /** Every indexed item `body` overlaps, outside `excludeIds`: what the ghost names when it refuses. */
+  readonly overlapping: (body: PlacementBody, excludeIds: ReadonlySet<string>) => readonly PlacementOverlap[];
+}
+
+/** An indexed item a body overlaps, with its own body for the depth of the overlap. */
+export interface PlacementOverlap {
+  readonly id: string;
+  readonly body: PlacementBody;
 }
 
 /**
@@ -679,7 +687,37 @@ export function createPlacementOverlapIndex(
     return false;
   }
 
-  return { overlapsAny };
+  function overlapping(body: PlacementBody, excludeIds: ReadonlySet<string>): readonly PlacementOverlap[] {
+    const found: PlacementOverlap[] = [];
+    const take = (entry: OverlapEntry): void => {
+      if (placementBodiesOverlap(body, entry.body) && !excludeIds.has(entry.id)) found.push({ id: entry.id, body: entry.body });
+    };
+    const range = overlapCellRange(body);
+    if (range === null) {
+      for (const entry of entries) take(entry);
+      return found;
+    }
+    if (stamp === 0xffffffff) {
+      visitedStamp.fill(0);
+      stamp = 0;
+    }
+    stamp += 1;
+    for (let cellX = range.x0; cellX <= range.x1; cellX += 1) {
+      for (let cellZ = range.z0; cellZ <= range.z1; cellZ += 1) {
+        const bucket = cells.get(overlapCellKey(cellX, cellZ));
+        if (bucket === undefined) continue;
+        for (const entry of bucket) {
+          if (visitedStamp[entry.slot] === stamp) continue;
+          visitedStamp[entry.slot] = stamp;
+          take(entry);
+        }
+      }
+    }
+    for (const entry of unbounded) take(entry);
+    return found;
+  }
+
+  return { overlapsAny, overlapping };
 }
 
 // ---------------------------------------------------------------------------
@@ -732,6 +770,47 @@ export interface PlacedItem {
   readonly centerpiece?: string | null;
   /** Group ID — items sharing a groupId move together (e.g. table + its chairs). */
   readonly groupId: string | null;
+  /**
+   * Set ID: binds several groups placed as one setup (a Top table's trestles,
+   * each with its own chairs' group), so the set moves, duplicates and is
+   * removed whole while each trestle's chairs re-ring on their own.
+   */
+  readonly setId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Table numbers (card-dock spec §6, Q-46): every dining table placed is
+// "Table N", the lowest number no table in the room already wears, so copy
+// that names a table ("Table 2's chairs") has a name to use.
+// ---------------------------------------------------------------------------
+
+const TABLE_LABEL = /^Table (\d+)$/u;
+
+/** The N of a "Table N" label, or null for any other label. */
+export function tableLabelNumber(label: string | undefined): number | null {
+  const match = label === undefined ? null : TABLE_LABEL.exec(label.trim());
+  if (match === null) return null;
+  const n = Number(match[1]);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+/** The next `count` free "Table N" labels, lowest first, given what the room already wears. */
+export function nextTableLabels(placedItems: readonly PlacedItem[], count: number): readonly string[] {
+  const taken = new Set<number>();
+  for (const placed of placedItems) {
+    const n = tableLabelNumber(placed.label);
+    if (n !== null) taken.add(n);
+  }
+  const labels: string[] = [];
+  for (let n = 1; labels.length < count; n += 1) {
+    if (!taken.has(n)) labels.push(`Table ${String(n)}`);
+  }
+  return labels;
+}
+
+/** The lowest free "Table N" label. */
+export function nextTableLabel(placedItems: readonly PlacedItem[]): string {
+  return nextTableLabels(placedItems, 1)[0] ?? "Table 1";
 }
 
 /**
@@ -744,9 +823,10 @@ export function createPlacedItem(
   rotationY: number = 0,
   groupId: string | null = null,
   y: number = 0,
+  id: string = generatePlacedId(),
 ): PlacedItem {
   return {
-    id: generatePlacedId(),
+    id,
     catalogueItemId,
     label: "",
     x,
@@ -820,6 +900,17 @@ export function expandIdsToGroupMembers(
     for (const memberId of getGroupMemberIds(id, placedItems)) {
       expanded.add(memberId);
     }
+  }
+  // A set (a Top table's trestles) moves, duplicates and is removed whole:
+  // every group bound into a set an expanded piece belongs to comes too.
+  const setIds = new Set<string>();
+  for (const placed of placedItems) {
+    if (placed.setId !== undefined && expanded.has(placed.id)) setIds.add(placed.setId);
+  }
+  if (setIds.size === 0) return expanded;
+  for (const placed of placedItems) {
+    if (placed.setId === undefined || !setIds.has(placed.setId) || expanded.has(placed.id)) continue;
+    for (const memberId of getGroupMemberIds(placed.id, placedItems)) expanded.add(memberId);
   }
   return expanded;
 }
