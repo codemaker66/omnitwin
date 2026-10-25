@@ -154,8 +154,16 @@ describe("the cards' pictures (Q-21)", () => {
   it("shows a setup card as its whole set, and a piece as itself", () => {
     render(<Rail />);
     const art = (name: RegExp): string => within(rail()).getByRole("button", { name }).querySelector("img")?.getAttribute("src") ?? "";
-    expect(art(/^Round of 10/u)).toBe("/models/furniture/setup/round/setup-v1/preview.webp");
-    expect(art(/^Dance floor/u)).toBe("/models/furniture/setup/dance-floor/setup-v1/preview.webp");
+    expect(art(/^Round of 10/u)).toMatch(/^\/models\/furniture\/setup\/round\/setup-v1\/(white|black|bare)\.webp$/u);
+    expect(art(/^Dance floor/u)).toBe("/models/furniture/setup/dance-floor/setup-v1/floor.webp");
+    expect(art(/^Top table/u)).toMatch(/^\/models\/furniture\/setup\/top-table\/setup-v1\/[a-z]+-(one|set)\.webp$/u);
     expect(art(/^Stage/u)).not.toContain("/setup/");
+  });
+
+  it("follows the look in hand: a black Round of 10 shows black", () => {
+    render(<Rail />);
+    act(() => { useCatalogueStore.getState().armCard("round", { colourway: "black" }); });
+    const src = within(rail()).getByRole("button", { name: /^Round of 10/u }).querySelector("img")?.getAttribute("src");
+    expect(src).toBe("/models/furniture/setup/round/setup-v1/black.webp");
   });
 });
