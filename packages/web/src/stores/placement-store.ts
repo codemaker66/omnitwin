@@ -13,6 +13,7 @@ import {
   withTableNumbers,
 } from "../lib/placement.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
+import { DANCE_FLOOR_PANELS, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
 import { planBanquetFill, planTheatreFill, type BanquetFillPlan, type TheatreFillPlan } from "../lib/auto-fill.js";
@@ -117,6 +118,14 @@ export interface PlacementState {
    * a notice, when any piece is at the venue's cap. The ids placed.
    */
   readonly placeSetup: (pieces: readonly PlacedItem[]) => readonly string[];
+  /**
+   * A placed dance floor set to `cols` × `rows` whole panels (2 to 12 a
+   * side), the anchored edge holding still, as one undo step (Q-08a): the
+   * panels in place keep their ids, new ones join the floor's group. False
+   * when the group is not one floor's grid, the size is unchanged, or the
+   * venue's cap refuses the panels it adds.
+   */
+  readonly resizeArea: (groupId: string, cols: number, rows: number, anchor?: ResizeAnchor) => boolean;
   /** Re-arrange chairs for an existing table group. */
   readonly rearrangeGroup: (tableId: string, newChairCount: number) => void;
   /**
@@ -607,6 +616,34 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const ids = settled.map((piece) => piece.id);
     announcePlaced(ids);
     return ids;
+  },
+
+  resizeArea: (groupId: string, cols: number, rows: number, anchor?: ResizeAnchor) => {
+    if (isLayoutTimelineMutationLocked()) return false;
+    const state = get();
+    const panels = state.placedItems.filter((piece) => piece.groupId === groupId);
+    const side = (n: number): number => Math.min(DANCE_FLOOR_PANELS.max, Math.max(DANCE_FLOOR_PANELS.min, Math.round(n)));
+    const resized = resizeDanceFloor(panels, side(cols), side(rows), anchor);
+    if (resized === null) return false;
+    if (resized.length === panels.length && resized.every((piece) => panels.includes(piece))) return false;
+    const kept = new Set(panels.map((piece) => piece.id));
+    const added = resized.filter((piece) => !kept.has(piece.id));
+    // The venue's cap for each panel added, counted against everything that stays.
+    const counted = [
+      ...state.placedItems.filter((piece) => piece.groupId !== groupId),
+      ...resized.filter((piece) => kept.has(piece.id)),
+    ].map((piece) => piece.catalogueItemId);
+    for (const piece of added) {
+      const atCap = capReachedFor(piece.catalogueItemId, counted);
+      if (atCap !== null) {
+        postPlacementNotice(atCap);
+        return false;
+      }
+      counted.push(piece.catalogueItemId);
+    }
+    set({ placedItems: [...state.placedItems.filter((piece) => piece.groupId !== groupId), ...resized] });
+    announcePlaced(added.map((piece) => piece.id));
+    return true;
   },
 
   rearrangeGroup: (tableId: string, newChairCount: number) => {

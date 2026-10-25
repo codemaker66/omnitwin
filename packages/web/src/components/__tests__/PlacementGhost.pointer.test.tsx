@@ -9,7 +9,8 @@ import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
-import { PLANNER_INTERACTION_FLOOR_NAME } from "../../lib/planner-interaction-floor.js";
+import { PLANNER_INTERACTION_FLOOR_NAME, placementFloorPoint } from "../../lib/planner-interaction-floor.js";
+import { drawnDanceFloor } from "../../lib/setup-cards.js";
 import { ghostRaisePx } from "../../lib/touch-arbiter.js";
 import { createPlacedItem } from "../../lib/placement.js";
 import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
@@ -269,6 +270,35 @@ it("picks a placed piece a click lands on with a card in hand, and puts the card
     box.geometry.dispose();
     box.material.dispose();
   } finally {
+    setPlannerFeaturesForTesting(null);
+  }
+});
+
+it("draws a dance floor by press-drag in whole panels, sets it down on release, and gives the card back its size (setupCards)", () => {
+  setPlannerFeaturesForTesting({ setupCards: true });
+  try {
+    act(() => { useCatalogueStore.getState().armCard("dance-floor"); });
+    render(<PlacementGhost />);
+    const rect = new DOMRect(0, 0, 100, 100);
+    const three = graphics.get();
+    const start = placementFloorPoint(three.scene, three.camera, three.raycaster, rect, 50, 50);
+    const end = placementFloorPoint(three.scene, three.camera, three.raycaster, rect, 90, 20);
+    const expected = start === null || end === null ? null : drawnDanceFloor(start, end, 0);
+    expect(expected).not.toBeNull();
+    // A size the card does not hold, so only the drawing can have set it down.
+    expect(expected?.cols === 5 && expected.rows === 5).toBe(false);
+    act(() => { fireEvent.pointerDown(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+    act(() => { fireEvent.pointerMove(canvas, { clientX: 90, clientY: 20, buttons: 1 }); });
+    runFrame();
+    act(() => { fireEvent.pointerUp(window, { clientX: 90, clientY: 20, button: 0 }); });
+    // The click a release sends afterwards sets nothing more down.
+    act(() => { fireEvent.click(canvas, { clientX: 90, clientY: 20, button: 0 }); });
+    const placed = usePlacementStore.getState().placedItems;
+    expect(placed).toHaveLength((expected?.cols ?? 0) * (expected?.rows ?? 0));
+    expect(new Set(placed.map((piece) => piece.groupId)).size).toBe(1);
+    expect(useCatalogueStore.getState().cardParams).toMatchObject({ card: "dance-floor", cols: 5, rows: 5 });
+  } finally {
+    useCatalogueStore.getState().disarm();
     setPlannerFeaturesForTesting(null);
   }
 });

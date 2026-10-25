@@ -480,6 +480,37 @@ export function resizeDanceFloor(
   });
 }
 
+/** A dance floor drawn by press-drag: its panels a side and its centre, render-space. */
+export interface DrawnDanceFloor {
+  readonly cols: number;
+  readonly rows: number;
+  readonly x: number;
+  readonly z: number;
+}
+
+/**
+ * A dance floor drawn by press-drag (Q-08a): whole panels from the press to
+ * the pointer, 2 to 12 a side, its near corner held at the press, turned as
+ * the piece in hand is turned. Null until the drag is half a panel long, so
+ * a click is still a click.
+ */
+export function drawnDanceFloor(
+  start: { readonly x: number; readonly z: number },
+  end: { readonly x: number; readonly z: number },
+  rotationY: number,
+): DrawnDanceFloor | null {
+  const panel = getCatalogueItemBySlug(DANCE_FLOOR_PANEL_SLUG);
+  if (panel === undefined) return null;
+  const size = toRenderSpace(panel.width);
+  const local = unturned(end.x - start.x, end.z - start.z, rotationY);
+  if (Math.max(Math.abs(local.x), Math.abs(local.z)) < size / 2) return null;
+  const cols = clamp(Math.abs(local.x) / size, DANCE_FLOOR_PANELS);
+  const rows = clamp(Math.abs(local.z) / size, DANCE_FLOOR_PANELS);
+  const towards = (value: number): number => (value < 0 ? -1 : 1);
+  const centre = turned((towards(local.x) * cols * size) / 2, (towards(local.z) * rows * size) / 2, rotationY);
+  return { cols, rows, x: start.x + centre.x, z: start.z + centre.z };
+}
+
 /**
  * One step of + or −: seats at a round or a dining piece, a panel each way
  * on a dance floor, a trestle on a run. At a limit it returns the same

@@ -41,6 +41,7 @@ import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
+import { cardParamsRequest, drawnDanceFloor, type CardParams } from "../lib/setup-cards.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
 import { findFurnitureItemId } from "./SelectionSystem.js";
 import { GhostSet } from "./GhostSet.js";
@@ -164,6 +165,8 @@ export function PlacementGhost(): React.ReactElement | null {
     let rect = canvasEl.getBoundingClientRect();
     const remeasure = (): void => { rect = canvasEl.getBoundingClientRect(); };
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(remeasure);
+    // A dance floor being drawn by press-drag: where the press began, the card's size before it, and whether it has been drawn yet.
+    let drawing: { readonly start: { readonly x: number; readonly z: number }; readonly before: CardParams; drawn: boolean } | null = null;
     observer?.observe(canvasEl);
     window.addEventListener("resize", remeasure);
     window.addEventListener("scroll", remeasure, true);
@@ -231,8 +234,23 @@ export function PlacementGhost(): React.ReactElement | null {
         useSelectionStore.getState().setActiveGuides(guides);
       }
       updateChairBrush(itemId, hit, pointer.buttons);
+      drawFloor(hit, pointer.buttons);
       invalidateRef.current();
     };
+
+    /** The floor being drawn: its size on the card, the ghost at its centre (the panels are their own grid, so no snap). */
+    function drawFloor(hit: { readonly x: number; readonly z: number }, buttons: number): void {
+      if (drawing === null || (buttons & 1) === 0) return;
+      const placement = usePlacementStore.getState();
+      const drawn = drawnDanceFloor(drawing.start, hit, placement.ghostRotation);
+      if (drawn === null) return;
+      drawing.drawn = true;
+      const params = useCatalogueStore.getState().cardParams;
+      if (params?.card !== "dance-floor" || params.cols !== drawn.cols || params.rows !== drawn.rows) {
+        useCatalogueStore.getState().setCardParams({ cols: drawn.cols, rows: drawn.rows });
+      }
+      usePlacementStore.setState({ ghostPosition: [drawn.x, placement.ghostPosition?.[1] ?? 0, drawn.z] });
+    }
 
     /** Whether the touch arbiter holds this touch, so the ghost follows it through the gesture store instead. */
     function arbiterHolds(event: PointerEvent): boolean {
@@ -242,6 +260,13 @@ export function PlacementGhost(): React.ReactElement | null {
     function onPointerDown(event: PointerEvent): void {
       if (event.button !== 0 || arbiterHolds(event)) return;
       const itemId = useCatalogueStore.getState().selectedItemId;
+      // A dance floor in hand is drawn by press-drag, in whole panels (Q-08a); a click still sets down its card's size.
+      const inHand = useCatalogueStore.getState();
+      if (inHand.cardParams?.card === "dance-floor" && !inHand.dragActive && plannerFeatureEnabled("setupCards")) {
+        const start = raycastToFloor(event.clientX, event.clientY);
+        if (start !== null) drawing = { start, before: inHand.cardParams, drawn: false };
+        return;
+      }
       if (selectedChairItem(itemId) === null) return;
       const hit = raycastToFloor(event.clientX, event.clientY);
       if (hit === null) return;
@@ -280,6 +305,16 @@ export function PlacementGhost(): React.ReactElement | null {
 
     function finishPlacementRelease(clientX: number, clientY: number, button: number): void {
       if (button !== 0) return;
+      // A drawn floor is set down where it was drawn, and the card goes back to the size in hand.
+      const drew = drawing;
+      drawing = null;
+      if (drew?.drawn === true) {
+        placeAtGhost();
+        useCatalogueStore.getState().setCardParams(cardParamsRequest(drew.before));
+        suppressClickAfterBrushRef.current = true;
+        invalidateRef.current();
+        return;
+      }
       const itemId = useCatalogueStore.getState().selectedItemId;
       if (
         itemId !== null &&
@@ -366,6 +401,8 @@ export function PlacementGhost(): React.ReactElement | null {
 
     function onPointerCancel(): void {
       clearChairBrush();
+      if (drawing !== null) useCatalogueStore.getState().setCardParams(cardParamsRequest(drawing.before));
+      drawing = null;
     }
 
     // The touch arbiter's raised finger: the ghost stands above it, so the finger never hides it.

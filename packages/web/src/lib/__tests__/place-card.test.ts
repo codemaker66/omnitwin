@@ -71,6 +71,29 @@ describe("a card set down", () => {
     expect(placed().filter((piece) => piece.groupId === round.groupId)).toHaveLength(9);
   });
 
+  it("resizes a 5 × 5 floor to 6 × 5 as one write, five panels added and the 25 in place keeping their ids", () => {
+    placeCardAt(params("dance-floor"), { x: 0, z: 0 }, 0);
+    const before = placed();
+    const groupId = before[0]?.groupId ?? "";
+    const writes = writesDuring(() => { expect(usePlacementStore.getState().resizeArea(groupId, 6, 5)).toBe(true); });
+    expect(writes).toBe(1);
+    expect(placed()).toHaveLength(30);
+    expect(placed().every((piece) => piece.groupId === groupId)).toBe(true);
+    const ids = new Set(placed().map((piece) => piece.id));
+    for (const panel of before) expect(ids.has(panel.id)).toBe(true);
+  });
+
+  it("leaves a floor as it is when its size does not change, and anything that is not a floor alone", () => {
+    placeCardAt(params("dance-floor"), { x: -5, z: 0 }, 0);
+    placeCardAt(params("round"), { x: 5, z: 0 }, 0);
+    const floorGroup = placed()[0]?.groupId ?? "";
+    const roundGroup = tables()[0]?.groupId ?? "";
+    const before = placed();
+    expect(usePlacementStore.getState().resizeArea(floorGroup, 5, 5)).toBe(false);
+    expect(usePlacementStore.getState().resizeArea(roundGroup, 6, 6)).toBe(false);
+    expect(placed()).toBe(before);
+  });
+
   it("lays the set exactly where it was asked, never snapped to the grid", () => {
     placeCardAt(params("round"), { x: 0.37, z: -1.23 }, 0.4);
     expect(tables()[0]).toMatchObject({ x: 0.37, z: -1.23, rotationY: 0.4 });
