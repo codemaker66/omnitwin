@@ -77,6 +77,17 @@ describe("placePieceInHand", () => {
     expect(useCatalogueStore.getState().selectedItemId).toBe(chair.id);
   });
 
+  it("dresses the table under the ghost with a cloth in hand, rather than setting the cloth down as a piece", () => {
+    const cloth = getCatalogueItemBySlug("white-table-cloth");
+    if (round === undefined || cloth === undefined) throw new Error("Missing the round or the white cloth");
+    usePlacementStore.getState().placeItem(round.id, 0, 0);
+    inHandAt(cloth.id, 0.1, 0.1);
+    placePieceInHand(vi.fn());
+    const placed = usePlacementStore.getState().placedItems;
+    expect(placed).toHaveLength(1);
+    expect(placed[0]?.clothed).toBe(true);
+  });
+
   it("does nothing with nothing in hand or no ghost", () => {
     placePieceInHand(vi.fn());
     if (chair === undefined) throw new Error("No banquet chair in the catalogue");
