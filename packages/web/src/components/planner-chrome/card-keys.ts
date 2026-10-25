@@ -6,6 +6,7 @@ import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
+import { storeRefusalFor } from "./store-figures.js";
 
 // ---------------------------------------------------------------------------
 // The cards' keys (T-671 slice 12′; card-dock spec §7.1, §12; Blake's B7):
@@ -19,8 +20,16 @@ import { useSelectionStore } from "../../stores/selection-store.js";
  * down, and the hint shows on its first three arms on this device.
  */
 export function armOrCancel(card: CardId): boolean {
-  const armed = useCatalogueStore.getState().toggleCard(card);
   const cards = useCardsStore.getState();
+  // B2 hard: a card the store has none left of does not arm, and the hint says why.
+  const refusal = useCatalogueStore.getState().armedCardId === card ? null : storeRefusalFor(card);
+  if (refusal !== null) {
+    cards.setHintFor(null);
+    cards.setRefusal({ card, text: refusal });
+    return false;
+  }
+  cards.setRefusal(null);
+  const armed = useCatalogueStore.getState().toggleCard(card);
   if (!armed) {
     cards.setHintFor(null);
     return false;

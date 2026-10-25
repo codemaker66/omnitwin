@@ -109,6 +109,25 @@
   white-space: nowrap;
 }
 
+/* Staff only: the store's figure under the seats (spec §4.1); three lines fit the 40 px card. */
+.pc-railcard:has(.pc-railcard__store) .pc-railcard__name,
+.pc-railcard:has(.pc-railcard__store) .pc-railcard__meta { line-height: 1.1; }
+
+.pc-railcard__store {
+  color: var(--house-forest-ink-3);
+  font: 400 11px/1.1 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* None left in store (B2 hard): the art at 45 %, and the line says so in the attention colour. */
+.pc-railcard.is-empty { cursor: not-allowed; }
+.pc-railcard.is-empty .pc-railcard__mat { opacity: 0.45; }
+.pc-railcard.is-empty .pc-railcard__store { color: var(--house-amber-lit); }
+
+/* A refusal takes the hint's place: the reason in amber, the card in cream. */
+.pc-rail__hint.is-refusal b { color: var(--house-amber-lit); }
+
 /* The "×N" sits on the picture's corner, clear of the name however long. */
 .pc-railcard__art {
   position: relative;

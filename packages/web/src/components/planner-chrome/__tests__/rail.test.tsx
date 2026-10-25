@@ -1,6 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Rail } from "../Rail.js";
+import { armOrCancel } from "../card-keys.js";
+import { cardNeeds, type UsableStock } from "../../../lib/card-stock.js";
+import { cardParamsFor } from "../../../lib/setup-cards.js";
 import { useCardsStore } from "../../../stores/cards-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -108,5 +111,40 @@ describe("a card in flight", () => {
     expect(useCatalogueStore.getState().dragActive).toBe(false);
     expect(useCatalogueStore.getState().armedCardId).toBeNull();
     expect(useCardsStore.getState().inFlight).toBeNull();
+  });
+});
+
+describe("the store (staff; Blake's B2, hard)", () => {
+  function stockOf(card: "round" | "dance-floor", whole: number): UsableStock {
+    const params = cardParamsFor(card, {});
+    if (params === null) throw new Error(`no ${card} card`);
+    return new Map([...cardNeeds(params)].map(([id, need]) => [id, need * whole]));
+  }
+
+  it("shows nothing to anyone without stock", () => {
+    render(<Rail />);
+    expect(rail().textContent).not.toContain("in store");
+  });
+
+  it("puts \"×22 in store\" under a card's seats, and says it", () => {
+    useCardsStore.getState().setStock(stockOf("round", 22));
+    render(<Rail />);
+    const round = within(rail()).getByRole("button", { name: /^Round of 10/u });
+    expect(round.querySelector(".pc-railcard__store")?.textContent).toBe("×22 in store");
+    expect(round.getAttribute("aria-label")).toContain("22 in store");
+  });
+
+  it("will not arm a card the store has none left of, by click or digit, and says why", () => {
+    useCardsStore.getState().setStock(stockOf("round", 0));
+    render(<Rail />);
+    const round = within(rail()).getByRole("button", { name: /^Round of 10/u });
+    expect(round.classList.contains("is-empty")).toBe(true);
+    expect(round.querySelector(".pc-railcard__store")?.textContent).toBe("None left in store");
+    expect(round.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(round);
+    expect(useCatalogueStore.getState().armedCardId).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("None left in store");
+    expect(armOrCancel("round")).toBe(false);
+    expect(useCatalogueStore.getState().armedCardId).toBeNull();
   });
 });
