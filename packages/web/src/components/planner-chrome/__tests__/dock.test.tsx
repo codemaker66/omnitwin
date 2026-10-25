@@ -86,6 +86,17 @@ describe("the view", () => {
     expect(useHallViewStore.getState().activePreset).toBe("room");
   });
 
+  it("is one stop for Tab, with the arrows moving between the views", () => {
+    render(<Dock />);
+    const views = within(dock()).getByRole("radiogroup", { name: "View" });
+    const stops = within(views).getAllByRole("radio").filter((radio) => radio.tabIndex === 0);
+    expect(stops.map((radio) => radio.textContent)).toEqual(["Room"]);
+    fireEvent.keyDown(within(views).getByRole("radio", { name: /^Room/u }), { key: "ArrowRight" });
+    expect(useHallViewStore.getState().activePreset).toBe("walk");
+    fireEvent.keyDown(within(views).getByRole("radio", { name: /^Room/u }), { key: "Home" });
+    expect(useHallViewStore.getState().activePreset).toBe("plan");
+  });
+
   it("switches on a press of a view key", () => {
     render(<Dock />);
     fireEvent.click(within(dock()).getByRole("radio", { name: /^Plan/u }));
