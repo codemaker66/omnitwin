@@ -26,7 +26,10 @@ import { RENDER_SCALE } from "../constants/scale.js";
 import {
   FILL_AISLE_RULE,
   designatedGangways,
+  floorOutline,
   gangwayFlag,
+  spineSide,
+  underGuidance,
   type AisleRule,
   type RoomExit,
   type RoomSide,
@@ -36,7 +39,6 @@ import {
   bandForGap,
   convexPolygonClosestPoints,
   footprintCorners,
-  footprintOfPlacement,
   type CirculationBand,
   type FurnitureFootprint,
   type Vec2,
@@ -199,16 +201,17 @@ function aisleMetres(gapM: number): string {
 
 /** A gap's tone and words: the gangway rule on a designated gangway, the planner's bands elsewhere. */
 function aisleWords(gapM: number, band: CirculationBand, onGangway: boolean, rule: AisleRule): { readonly tone: AisleTone; readonly words: string } {
-  if (onGangway && gapM < rule.gangwayM) return { tone: "amber", words: gangwayFlag(gapM, rule) };
+  if (onGangway && underGuidance(gapM, rule)) return { tone: "amber", words: gangwayFlag(gapM, rule) };
   if (onGangway || band === "generous" || band === "comfortable" || band === "open") return { tone: "sage", words: aisleMetres(gapM) };
   return { tone: "amber", words: `${aisleMetres(gapM)} · ${band === "tight" ? "tight" : "no way through"}` };
 }
 
+/** Each piece's floor outline, the one the gangway review measures (lib/auto-fill floorOutline). */
 function cornersOf(pieces: readonly PlacedItem[]): readonly { readonly piece: PlacedItem; readonly corners: readonly Vec2[] }[] {
   return pieces.flatMap((piece) => {
     if (!isSceneFurniturePlacement(piece)) return [];
     const item = getCatalogueItem(piece.catalogueItemId);
-    return item === undefined ? [] : [{ piece, corners: footprintCorners(footprintOfPlacement(piece, item, RENDER_SCALE)) }];
+    return item === undefined ? [] : [{ piece, corners: floorOutline(piece, item) }];
   });
 }
 
@@ -243,6 +246,8 @@ export function liveAisles(
     else unit.push(entry);
   }
   const spine = designated?.bands.find((band) => band.side === null)?.rect ?? null;
+  // Across a middle gangway when the set and its neighbour stand on opposite sides of it, as the review decides.
+  const setSide = spine === null ? null : spineSide(mine.flatMap((own) => own.corners), spine);
   for (const unit of units.values()) {
     let best: { readonly distance: number; readonly from: Vec2; readonly to: Vec2; readonly piece: PlacedItem } | null = null;
     for (const own of mine) {
@@ -252,10 +257,7 @@ export function liveAisles(
       }
     }
     if (best === null) continue;
-    // Across a middle gangway when the gap's ends lie either side of its centre line.
-    const onGangway = spine !== null && (spine.width >= spine.depth
-      ? (best.from.z - spine.cz) * (best.to.z - spine.cz) < 0
-      : (best.from.x - spine.cx) * (best.to.x - spine.cx) < 0);
+    const onGangway = spine !== null && setSide !== spineSide(unit.flatMap((other) => other.corners), spine);
     const band = bandForGap(best.distance);
     lines.push({ from: best.from, to: best.to, gapM: best.distance, band, ...aisleWords(best.distance, band, onGangway, rule), neighbour: obstacleName(best.piece.id, world).label, onGangway });
   }

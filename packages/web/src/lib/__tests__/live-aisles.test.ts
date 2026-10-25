@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
-import { FILL_AISLE_RULE, GRAND_HALL_WALL_NAMES, grandHallExits } from "../auto-fill.js";
+import { FILL_AISLE_RULE, GRAND_HALL_WALL_NAMES, gangwayReview, grandHallExits } from "../auto-fill.js";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import { CIRCULATION_AISLE } from "../circulation.js";
 import { liveAisles, type LiveAisleOptions } from "../clearance-ring.js";
@@ -78,6 +78,29 @@ describe("live aisles in the planner's bands", () => {
     const placed = round(-1, 0.4 + CHAIR_REACH);
     const [nearest] = liveAisles(ghost, placed, HALL, { ...OPTIONS, rule });
     expect(nearest).toMatchObject({ onGangway: true, words: "Gangway 0.80 m · under the 1.2 m guidance · the venue will review" });
+  });
+
+  it("flags a round pushed past the middle gangway's centre line, as the review does", () => {
+    const rule = { ...FILL_AISLE_RULE, gangwayM: 1.2 };
+    // The ghost's near chair reaches 0.65 m past the line; it still stands on its own table's side.
+    const ghost = round(-1, 0.65 - CHAIR_REACH);
+    const placed = round(-1, 1.25 + CHAIR_REACH);
+    const [nearest] = liveAisles(ghost, placed, HALL, { ...OPTIONS, rule });
+    expect(nearest?.gapM).toBeCloseTo(0.6, 6);
+    expect(nearest).toMatchObject({ onGangway: true, words: "Gangway 0.60 m · under the 1.2 m guidance · the venue will review" });
+    const review = gangwayReview([...ghost, ...placed], HALL, grandHallExits(), { wallNames: GRAND_HALL_WALL_NAMES, rule }).filter((item) => item.gangway === "the middle");
+    expect(review.map((item) => item.widthM)).toEqual([nearest?.gapM]);
+  });
+
+  it("measures a turned round with no chairs as the review does, to the millimetre", () => {
+    const item = getCatalogueItemBySlug("round-table-6ft-white");
+    if (item === undefined) throw new Error("no round");
+    const table = createPlacedItem(item.id, 0, HALL.length / 2 - 1.0 - 0.915, Math.PI / 4, null, 0, "turned");
+    const doorWall = liveAisles([table], [], HALL, OPTIONS).find((line) => line.neighbour === "the door wall");
+    const [listed] = gangwayReview([table], HALL, grandHallExits(), { wallNames: GRAND_HALL_WALL_NAMES });
+    expect(doorWall?.gapM).toBeCloseTo(1.0, 9);
+    expect(listed?.widthM).toBeCloseTo(doorWall?.gapM ?? Number.NaN, 9);
+    expect(doorWall?.words).toBe("Gangway 1.00 m · under the 1.1 m guidance · the venue will review");
   });
 
   it("measures to the three nearest only, nearest first", () => {
