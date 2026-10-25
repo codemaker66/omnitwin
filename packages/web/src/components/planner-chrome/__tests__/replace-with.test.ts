@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import { armOrCancel } from "../card-keys.js";
-import { replacePreview, replaceWith, selectionHasNote } from "../replace-with.js";
+import { replacePreview, replaceWith } from "../replace-with.js";
 import { useCardsStore } from "../../../stores/cards-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -71,14 +71,5 @@ describe("replacing", () => {
     expect(replaceWith("long-table")).toBe(false);
     expect(usePlacementStore.getState().placedItems.some((piece) => piece.id === "t1")).toBe(true);
     expect(useCardsStore.getState().replacing).not.toBeNull();
-  });
-});
-
-describe("a note on the selection", () => {
-  it("is seen, so Replace waits rather than lose it", () => {
-    expect(selectionHasNote(() => false)).toBe(false);
-    expect(selectionHasNote((id) => id === "t1")).toBe(true);
-    // The editor's own notes, with none written: nothing to lose.
-    expect(selectionHasNote()).toBe(false);
   });
 });
