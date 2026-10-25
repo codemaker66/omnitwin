@@ -2,7 +2,7 @@ import { type PointerEvent as ReactPointerEvent, type ReactElement } from "react
 import { catalogueIcon } from "../../lib/catalogue.js";
 import { setupCardPreviewUrl } from "../../lib/crafted-furniture.js";
 import { railName } from "../../lib/card-defaults.js";
-import { cardMainItem, cardParamsFor, describeCard, isSetupCardId, type CardId } from "../../lib/setup-cards.js";
+import { cardMainItem, cardParamsFor, describeCard, type CardId } from "../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import type { StoreFace } from "./store-figures.js";
 import { useTooltip } from "./Tooltip.js";
@@ -35,14 +35,16 @@ function iconSource(svg: string): string {
 
 export function RailCard({ card, slot, armed, inFlight, placed, store, onPress, onPointerDown }: RailCardProps): ReactElement {
   const remembered = useCatalogueStore((state) => state.rememberedSeats);
+  const inHand = useCatalogueStore((state) => (armed ? state.cardParams : null));
   const params = cardParamsFor(card, {}, remembered);
   const face = params === null ? null : describeCard(params);
   const item = params === null ? undefined : cardMainItem(params);
   const name = card === "round" && face !== null ? face.name : railName(card);
   const meta = face === null ? "Not in the catalogue" : face.seats > 0 ? `${String(face.seats)} seats` : face.size;
   const tooltip = useTooltip({ text: [name, face?.size ?? meta, String(slot)].filter((part) => part !== "").join(" · "), side: "above" });
-  // A setup card shows its whole set (Q-21); a piece card shows its piece.
-  const art = isSetupCardId(card) ? setupCardPreviewUrl(card) : item === undefined ? null : item.thumbnailUrl ?? iconSource(catalogueIcon(item));
+  // A setup card shows its look (Q-21): the one in hand while armed, so a colourway change shows; a piece card shows its piece.
+  const look = inHand ?? params;
+  const art = (look === null ? null : setupCardPreviewUrl(look)) ?? (item === undefined ? null : item.thumbnailUrl ?? iconSource(catalogueIcon(item)));
   if (face === null) {
     // A card that names nothing the catalogue holds stays in its slot, dimmed, and says why.
     return (

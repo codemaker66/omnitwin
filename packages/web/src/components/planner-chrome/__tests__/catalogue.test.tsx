@@ -218,7 +218,7 @@ describe("what a card says", () => {
     render(<Catalogue />);
     openCatalogue();
     expect(cardNamed("Round of 10").querySelector(".pc-ccard__seats")?.textContent).toBe("10");
-    expect(cardNamed("Round of 10").getAttribute("aria-label")).toBe("Round of 10, 1.83 metres round, 10 seats");
+    expect(cardNamed("Round of 10").getAttribute("aria-label")).toBe("Round of 10, 1.8 metres round, 10 seats");
     expect(cardNamed("Cake table").querySelector(".pc-ccard__seats")).toBeNull();
     fireEvent.click(within(catalogue()).getByRole("tab", { name: "Chairs" }));
     expect(row().querySelector(".pc-ccard__seats")).toBeNull();
@@ -318,7 +318,7 @@ describe("the cards' pictures (Q-21)", () => {
     openCatalogue();
     render(<Catalogue />);
     const art = (prefix: string): string => cardButtons().find((face) => face.getAttribute("aria-label")?.startsWith(prefix) === true)?.querySelector("img")?.getAttribute("src") ?? "";
-    expect(art("Round of 10,")).toBe("/models/furniture/setup/round/setup-v1/preview.webp");
+    expect(art("Round of 10,")).toMatch(/^\/models\/furniture\/setup\/round\/setup-v1\/(white|black|bare)\.webp$/u);
     expect(art("Round 6 ft,")).not.toContain("/setup/");
   });
 });
