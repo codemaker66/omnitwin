@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, relative, resolve, sep } from "node:path";
 import { seatsFor } from "@omnitwin/types";
 import { describe, expect, it } from "vitest";
 import { CATALOGUE_ITEMS } from "../catalogue.js";
@@ -43,8 +42,9 @@ describe("chairCountRange", () => {
 // The guard: no other module states or computes a table's seats.
 // ---------------------------------------------------------------------------
 
-const WEB_SRC = fileURLToPath(new URL("../../", import.meta.url));
-const TYPES_SRC = fileURLToPath(new URL("../../../../types/src/", import.meta.url));
+// Vitest runs from packages/web (happy-dom's import.meta.url is not a file URL).
+const WEB_SRC = resolve("src");
+const TYPES_SRC = resolve("../types/src");
 
 /**
  * Modules that read a `seatCount` that is not a dining table's seats: the
