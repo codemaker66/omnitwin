@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { projectScreenAnchors, registerScreenAnchor, screenAnchorCount, type ScreenPoint, type WorldPoint } from "../screen-anchors.js";
+import { projectScreenAnchors, registerScreenAnchor, requestScreenAnchorFrame, screenAnchorCount, setScreenAnchorFrame, type ScreenPoint, type WorldPoint } from "../screen-anchors.js";
 
 // ---------------------------------------------------------------------------
 // Points in the room that the chrome follows on screen (T-671 slice 11′; the
@@ -53,5 +53,19 @@ describe("screen anchors", () => {
     expect(second).toEqual([20]);
     leave.splice(0).forEach((undo) => { undo(); });
     expect(screenAnchorCount()).toBe(0);
+  });
+});
+
+describe("frames on demand", () => {
+  it("asks the canvas for a frame when an anchor arrives, and on request, and not once the canvas has gone", () => {
+    let frames = 0;
+    const unset = setScreenAnchorFrame(() => { frames += 1; });
+    leave.push(registerScreenAnchor("caption", () => [0, 0, 0], () => undefined));
+    expect(frames).toBe(1); // a still camera draws no frame of its own
+    requestScreenAnchorFrame();
+    expect(frames).toBe(2);
+    unset();
+    requestScreenAnchorFrame();
+    expect(frames).toBe(2);
   });
 });

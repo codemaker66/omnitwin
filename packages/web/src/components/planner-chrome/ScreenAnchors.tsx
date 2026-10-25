@@ -1,7 +1,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Vector3 } from "three";
-import { projectScreenAnchors, screenAnchorCount, type ScreenPoint, type WorldPoint } from "../../lib/screen-anchors.js";
+import { projectScreenAnchors, screenAnchorCount, setScreenAnchorFrame, type ScreenPoint, type WorldPoint } from "../../lib/screen-anchors.js";
 
 // ---------------------------------------------------------------------------
 // The one projector for the chrome's screen anchors (T-671 slice 11′; spec
@@ -13,7 +13,9 @@ import { projectScreenAnchors, screenAnchorCount, type ScreenPoint, type WorldPo
 export function ScreenAnchors(): null {
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
+  const invalidate = useThree((state) => state.invalidate);
   const scratch = useMemo(() => ({ projected: new Vector3(), inCamera: new Vector3() }), []);
+  useEffect(() => setScreenAnchorFrame(() => { invalidate(); }), [invalidate]);
 
   useFrame(() => {
     if (screenAnchorCount() === 0) return;
