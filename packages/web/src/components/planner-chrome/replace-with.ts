@@ -7,7 +7,6 @@ import { requestScreenAnchorFrame } from "../../lib/screen-anchors.js";
 import { cardParamsFor, type CardId, type CardParams, type CardParamsRequest } from "../../lib/setup-cards.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
-import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
@@ -19,8 +18,8 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 // catalogue, replaces the selection through lane E's replaceSelection (one
 // undo step, the result selected) and posts E's receipt. Pointing at a card
 // first says what would happen (E's sentence). For staff, the store's word
-// refuses a change past stock. Notes on the replaced tables wait for E's
-// in-step hook, so Replace is not offered while the selection carries one.
+// refuses a change past stock. The replaced tables' notes travel with the
+// change, in the same step (lane E's note seeds).
 // ---------------------------------------------------------------------------
 
 /** The store's word on a change, for staff; none for anyone else. */
@@ -35,16 +34,6 @@ function storeWord(): ReplaceOptions["store"] {
 
 function paramsFor(card: CardId, chosen: CardParamsRequest): CardParams | null {
   return cardParamsFor(card, chosen, useCatalogueStore.getState().rememberedSeats);
-}
-
-/** Whether any selected piece carries a note the editor holds (or, for tests, the lookup given). */
-export function selectionHasNote(hasNote: (id: string) => boolean = editorHasNote): boolean {
-  for (const id of useSelectionStore.getState().selectedIds) if (hasNote(id)) return true;
-  return false;
-}
-
-function editorHasNote(id: string): boolean {
-  return useEditorStore.getState().objects.some((object) => object.id === id && object.notes.trim() !== "");
 }
 
 /** Replaces the selection with this card (or one of its pieces): true when it did. */

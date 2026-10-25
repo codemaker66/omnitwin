@@ -27,7 +27,6 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { Stepper } from "./Controls.js";
 import { ClothGlyph } from "./glyphs.js";
 import { Key } from "./Keys.js";
-import { selectionHasNote } from "./replace-with.js";
 import "./chrome.css";
 import "./caption.css";
 
@@ -197,9 +196,7 @@ export function Caption(): ReactElement | null {
     setMoving(false);
   };
   const name = nameOf(model);
-  // Replace waits while a selected table carries a note, until lane E's in-step hook carries notes across.
-  const replaceOffered = model.verbs.includes("replace") && !selectionHasNote();
-  const verbs = model.verbs.filter((verb) => verb === "move" || (verb === "replace" && replaceOffered) || VERB_KEYS[verb] !== undefined);
+  const verbs = model.verbs.filter((verb) => verb === "move" || verb === "replace" || VERB_KEYS[verb] !== undefined);
   const panels = model.panels;
   const resize = (cols: number, rows: number): void => {
     if (panels !== null) act(() => usePlacementStore.getState().resizeArea(panels.groupId, cols, rows));
