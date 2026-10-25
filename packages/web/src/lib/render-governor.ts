@@ -19,13 +19,13 @@
 // GPU held the frames up, from the main thread's frame work between draws, so
 // the scene gives up passes for the one and pixels for the other. A step is
 // judged on the windows either side of it, after one left to settle, and two
-// steps in a row that gain nothing end the stepping. A phone is judged from
-// its first window: one slow from its first frame otherwise paid about ten
-// seconds of full-cost frames before anything was given up (perf study, 25
-// Oct 2026).
+// steps in a row that gain nothing end the stepping. With the lean motion
+// pipeline a phone is judged from its first window: one slow from its first
+// frame otherwise paid about ten seconds of full-cost frames before anything
+// was given up (perf study, 25 Oct 2026).
 // ---------------------------------------------------------------------------
 
-import type { RenderProfileName } from "./render-quality.js";
+import type { RenderProfile } from "./render-quality.js";
 
 /** Seconds of drawn frames a window judges. */
 export const GOVERNOR_WINDOW_S = 1.6;
@@ -38,9 +38,13 @@ const OUTLIER_SHARE = 0.2;
 /** Windows left alone while the planner settles. */
 const WARM_WINDOWS = 3;
 
-/** Windows a device's governor leaves alone: none on a phone, judged from its first. */
-export function governorWarmWindows(profile: RenderProfileName): number {
-  return profile === "phone" ? 0 : WARM_WINDOWS;
+/**
+ * Windows a device's governor leaves alone: none on a phone whose bloom pauses
+ * in motion (the `leanMotionPipeline` switch), judged from its first; three
+ * everywhere else, as before.
+ */
+export function governorWarmWindows(profile: Pick<RenderProfile, "name" | "bloomInMotion">): number {
+  return profile.name === "phone" && !profile.bloomInMotion ? 0 : WARM_WINDOWS;
 }
 
 export interface FrameGovernorOptions {

@@ -63,7 +63,8 @@ export interface RenderGovernorProps {
  * the pipeline, whose compile would stall a gesture, so it waits for a still
  * view, and frames are not judged meanwhile. Off on software rasterisers,
  * where every frame is slow by nature and the scene is already drawn plainly.
- * A phone is judged from its first window (governorWarmWindows). After a
+ * With the lean motion pipeline a phone is judged from its first window
+ * (governorWarmWindows). After a
  * graphics reset hands the planner a new renderer, frames are not judged
  * until the new device has compiled what it draws (SwapSettle).
  */
@@ -71,7 +72,7 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
   const gl = useThree((state) => state.gl);
   const get = useThree((state) => state.get);
   // One governor for the visit: the quality it gives up stays given up.
-  const [governor] = useState(() => new FrameGovernor({ warmWindows: governorWarmWindows(profile.name) }));
+  const [governor] = useState(() => new FrameGovernor({ warmWindows: governorWarmWindows(profile) }));
   const counts = useRef({ updates: 0, draws: 0, heldBack: 0 });
   const waiting = useRef<{ rung: QualityRung | null }>({ rung: null });
   const software = useRef<boolean | null>(null);
