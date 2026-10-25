@@ -2,7 +2,15 @@ import { seatBaseSlug } from "@omnitwin/types";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
-import { atVerdict, judgeGhost, refusalChip, type GhostObstacle, type GhostWorld } from "./ghost-truth.js";
+import {
+  atVerdict,
+  createGhostWorld,
+  judgeGhost,
+  obstacleAt,
+  refusalChip,
+  type GhostObstacle,
+  type GhostWorld,
+} from "./ghost-truth.js";
 import {
   computeRotatedFootprint,
   expandIdsToGroupMembers,
@@ -233,4 +241,92 @@ export function piecesOfKindIds(placedItems: readonly PlacedItem[], selectedIds:
   const all = pieces(placedItems);
   const kinds = new Set(all.filter((piece) => selectedIds.has(piece.id)).map(kindOf));
   return all.filter((piece) => kinds.has(kindOf(piece))).map((piece) => piece.id);
+}
+
+// ---------------------------------------------------------------------------
+// Line up and Move (spec §18, Q-18; law 11, Q-47): the selection's pieces
+// moved where asked, whole groups and sets together, judged like any ghost.
+// Each returns the moved pieces (same ids) for one undo step, or a refusal
+// with its reason.
+// ---------------------------------------------------------------------------
+
+export type MovePlan =
+  | { readonly ok: true; readonly items: readonly PlacedItem[] }
+  | { readonly ok: false; readonly obstacle: GhostObstacle | null; readonly reason: string };
+
+function moveRefused(obstacle: GhostObstacle | null): MovePlan {
+  return { ok: false, obstacle, reason: refusalChip(obstacle) };
+}
+
+function shifted(items: readonly PlacedItem[], dx: number, dz: number): readonly PlacedItem[] {
+  return items.map((piece) => ({ ...piece, x: piece.x + dx, z: piece.z + dz }));
+}
+
+/** The selection made whole, split into what moves as one: each set, each group, each lone piece. */
+function units(selectedIds: ReadonlySet<string>, placedItems: readonly PlacedItem[]): readonly (readonly PlacedItem[])[] {
+  const byKey = new Map<string, PlacedItem[]>();
+  for (const piece of wholeSelection(selectedIds, placedItems)) {
+    const key = piece.setId !== undefined ? `set:${piece.setId}` : piece.groupId !== null ? `group:${piece.groupId}` : `piece:${piece.id}`;
+    const unit = byKey.get(key);
+    if (unit === undefined) byKey.set(key, [piece]);
+    else unit.push(piece);
+  }
+  return [...byKey.values()];
+}
+
+/** Where a unit stands: its dining table's centre when it has one, else the centre of its footprint. */
+function anchorOf(unit: readonly PlacedItem[]): { readonly x: number; readonly z: number } | null {
+  const tables = unit.filter(isDiningTable);
+  if (tables.length > 0) {
+    return { x: tables.reduce((sum, t) => sum + t.x, 0) / tables.length, z: tables.reduce((sum, t) => sum + t.z, 0) / tables.length };
+  }
+  const bounds = footprintBounds(unit);
+  return bounds === null ? null : { x: (bounds.minX + bounds.maxX) / 2, z: (bounds.minZ + bounds.maxZ) / 2 };
+}
+
+/**
+ * Line up: the selected tables' centres onto one line along the axis they
+ * spread along most (the best-fit straight line: the mean of their other
+ * coordinate). Refused, with the reason, when any would then overlap.
+ * Needs two or more groups or pieces.
+ */
+export function planLineUp(selectedIds: ReadonlySet<string>, world: GhostWorld): MovePlan {
+  const moving = units(selectedIds, world.placedItems);
+  const anchors = moving.map(anchorOf);
+  if (moving.length < 2 || anchors.some((anchor) => anchor === null)) return moveRefused(null);
+  const points = anchors.filter((anchor): anchor is { readonly x: number; readonly z: number } => anchor !== null);
+  const spread = (values: readonly number[]): number => Math.max(...values) - Math.min(...values);
+  const alongX = spread(points.map((p) => p.x)) >= spread(points.map((p) => p.z));
+  const line = alongX
+    ? points.reduce((sum, p) => sum + p.z, 0) / points.length
+    : points.reduce((sum, p) => sum + p.x, 0) / points.length;
+  const moved = moving.map((unit, i) => {
+    const anchor = points[i] ?? { x: 0, z: 0 };
+    return alongX ? shifted(unit, 0, line - anchor.z) : shifted(unit, line - anchor.x, 0);
+  });
+
+  // Judged against everything else, the other moved pieces included.
+  const movingIds = new Set(moving.flat().map((piece) => piece.id));
+  const others = world.placedItems.filter((piece) => !movingIds.has(piece.id));
+  const after = createGhostWorld([...others, ...moved.flat()], world.room);
+  for (const unit of moved) {
+    const own = new Set(unit.map((piece) => piece.id));
+    if (judgeGhost(unit, after, { excludeIds: own }).state !== "fits") return moveRefused(obstacleAt(unit, after, own));
+  }
+  return { ok: true, items: moved.flat() };
+}
+
+/**
+ * Move, then tap the destination (law 11): the selection, made whole, with
+ * its footprint's centre on the floor point tapped. Pushed clear by up to
+ * 0.15 m like any ghost, or refused with the reason.
+ */
+export function planMove(selectedIds: ReadonlySet<string>, to: { readonly x: number; readonly z: number }, world: GhostWorld): MovePlan {
+  const source = wholeSelection(selectedIds, world.placedItems);
+  const bounds = footprintBounds(source);
+  if (source.length === 0 || bounds === null) return moveRefused(null);
+  const moved = shifted(source, to.x - (bounds.minX + bounds.maxX) / 2, to.z - (bounds.minZ + bounds.maxZ) / 2);
+  const verdict = judgeGhost(moved, world, { excludeIds: new Set(source.map((piece) => piece.id)) });
+  if (verdict.state === "refused") return moveRefused(verdict.obstacle);
+  return { ok: true, items: atVerdict(moved, verdict) };
 }
