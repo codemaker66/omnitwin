@@ -684,7 +684,7 @@ export function gangwayReview(
       guidance,
       gangway: pinch.gangwayName,
       location: { kind: "segment" as const, from: pinch.from, to: pinch.to },
-      pieceIds: pinch.pieceIds,
+      pieceIds: [...pinch.pieceIds],
       sides: [...pinch.sideNames],
       status: "open" as const,
     }));
