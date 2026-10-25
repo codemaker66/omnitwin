@@ -318,7 +318,7 @@ describe("the cards' pictures (Q-21)", () => {
     openCatalogue();
     render(<Catalogue />);
     const art = (prefix: string): string => cardButtons().find((face) => face.getAttribute("aria-label")?.startsWith(prefix) === true)?.querySelector("img")?.getAttribute("src") ?? "";
-    expect(art("Round of 10,")).toMatch(/^\/models\/furniture\/setup\/round\/setup-v1\/(white|black|bare)\.webp$/u);
+    expect(art("Round of 10,")).toMatch(/^\/models\/furniture\/setup-round\/setup-v1\/(white|black|bare)\.webp$/u);
     expect(art("Round 6 ft,")).not.toContain("/setup/");
   });
 });
