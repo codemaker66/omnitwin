@@ -189,3 +189,35 @@
 }
 
 .pc-railcard.is-missing { opacity: 0.55; cursor: default; }
+
+/* -- The seats meter: 3 px at the joint between the rail and the dock --------- */
+.pc-meter {
+  position: relative;
+  height: 3px;
+  background-color: color-mix(in srgb, var(--house-forest-ink-1) 10%, var(--house-lacquer-bottom));
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 0 calc(var(--pc-meter-over, 1) * 100%),
+      var(--house-plane-attention) calc(var(--pc-meter-over, 1) * 100%) calc(max(var(--pc-meter-fill, 0), var(--pc-meter-hand, 0)) * 100%),
+      transparent calc(max(var(--pc-meter-fill, 0), var(--pc-meter-hand, 0)) * 100%)
+    ),
+    linear-gradient(
+      to right,
+      var(--house-accent-copper-bright) 0 calc(var(--pc-meter-fill, 0) * 100%),
+      color-mix(in srgb, var(--house-cream) 40%, transparent) calc(var(--pc-meter-fill, 0) * 100%) calc(var(--pc-meter-hand, 0) * 100%),
+      transparent calc(var(--pc-meter-hand, 0) * 100%)
+    );
+  pointer-events: none;
+}
+
+.pc-meter.is-full::after {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--house-sage-lit);
+  content: "";
+}
