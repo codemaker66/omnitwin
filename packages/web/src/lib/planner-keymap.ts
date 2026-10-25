@@ -349,6 +349,12 @@ export function pasteAt(at: { readonly x: number; readonly z: number } | null): 
   return landEdit(planPaste(clipboard, at, editWorld())) !== null;
 }
 
+/** Whether the page has text selected, which Ctrl C copies before any piece. */
+function pageTextSelected(): boolean {
+  const selection = typeof window === "undefined" ? null : window.getSelection();
+  return selection !== null && !selection.isCollapsed && selection.toString().trim() !== "";
+}
+
 /** Ctrl A: every piece in the room. */
 export function selectAllPieces(): boolean {
   const ids = allPieceIds(usePlacementStore.getState().placedItems);
@@ -444,11 +450,15 @@ export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
       run: () => { usePlacementStore.getState().toggleSnap(); },
     },
     {
+      // Taken even when refused (the notice says why), so the browser never bookmarks the page instead.
       keys: letter("d", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !placing(), mutates: true,
-      run: () => { deps.cancelGesture(); return afterEdit(deps, duplicateSelection()); },
+      run: () => {
+        deps.cancelGesture();
+        if (duplicateSelection()) deps.invalidate();
+      },
     },
     {
-      keys: letter("c", { mod: true }), priority, when: () => editingKeys() && hasSelection(),
+      keys: letter("c", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !pageTextSelected(),
       run: () => (copySelection() ? undefined : false),
     },
     {

@@ -3,7 +3,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { type ReactNode } from "react";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { createGhostWorld, judgeGhost } from "../../lib/ghost-truth.js";
-import { placeCardAt } from "../../lib/place-in-hand.js";
+import { judgeCardAt, placeCardAt } from "../../lib/place-in-hand.js";
 import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
 import { cardParamsFor, stampSetup, type CardParams } from "../../lib/setup-cards.js";
 import { useGhostVerdictStore } from "../../stores/ghost-verdict-store.js";
@@ -85,7 +85,8 @@ describe("the truthful ghost's set", () => {
     ghostAt(CHAIR_REACH);
     expect(words().dataset.state).toBe("refused");
     expect(words().textContent).toBe("Round of 10 · +10 seats · won't fit");
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe("");
+    expect(screen.queryByTestId("ghost-set-chip")).toBeNull();
     expect(canvas.element?.style.cursor).toBe("not-allowed");
     act(() => { vi.advanceTimersByTime(80); });
     const chip = screen.getByRole("alert");
@@ -120,6 +121,65 @@ describe("the truthful ghost's set", () => {
     expect(words().dataset.state).toBe("refused");
     expect(placeCardAt(round(), { x: 0, z: band }, 0)).toEqual([]);
     expect(usePlacementStore.getState().placedItems).toBe(placed);
+  });
+});
+
+describe("the ghost as the commit sees it", () => {
+  it("judges the set turned as the piece in hand is turned, as the commit will", () => {
+    const placed = stampSetup(round(), { x: 0, z: 0 }, 0);
+    usePlacementStore.setState({ placedItems: placed });
+    render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
+    const z = 2 * CHAIR_REACH - 0.1;
+    act(() => {
+      usePlacementStore.setState({ ghostPosition: [0.4, 0, z], ghostRotation: 0.3 });
+      frames.latest?.();
+    });
+    const world = createGhostWorld(placed, GRAND_HALL_RENDER_DIMENSIONS);
+    expect(useGhostVerdictStore.getState().verdict).toEqual(judgeCardAt(round(), { x: 0.4, z, y: 0 }, 0.3, world, undefined).verdict);
+    expect(useGhostVerdictStore.getState().verdict).not.toEqual(judgeCardAt(round(), { x: 0.4, z, y: 0 }, 0, world, undefined).verdict);
+  });
+
+  it("forgets its verdict when the ghost goes, so the next attempt starts fresh", () => {
+    render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
+    ghostAt(0);
+    expect(useGhostVerdictStore.getState().verdict?.state).toBe("fits");
+    act(() => {
+      usePlacementStore.setState({ ghostPosition: null });
+      frames.latest?.();
+    });
+    expect(useGhostVerdictStore.getState().verdict).toBeNull();
+  });
+
+  it("announces a refusal once per attempt, however its words change, and again after it fits", () => {
+    vi.useFakeTimers();
+    usePlacementStore.setState({ placedItems: stampSetup(round(), { x: 0, z: 0 }, 0) });
+    render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
+    ghostAt(CHAIR_REACH);
+    act(() => { vi.advanceTimersByTime(80); });
+    const first = screen.getByRole("alert").textContent;
+    expect(first).toMatch(/^Won't fit/u);
+    // Further into the same refusal: the chip may change in place, the announcement does not repeat.
+    ghostAt(CHAIR_REACH - 0.3);
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(screen.getByRole("alert").textContent).toBe(first);
+    ghostAt(-3.5);
+    expect(words().dataset.state).toBe("fits");
+    expect(screen.getByRole("alert").textContent).toBe("");
+    expect(canvas.element?.style.cursor).toBe("crosshair");
+    ghostAt(CHAIR_REACH);
+    act(() => { vi.advanceTimersByTime(80); });
+    expect(screen.getByRole("alert").textContent).toBe(first);
+  });
+
+  it("leaves the cursor alone when it goes mid-refusal, after the hand has given it back", () => {
+    usePlacementStore.setState({ placedItems: stampSetup(round(), { x: 0, z: 0 }, 0) });
+    const { unmount } = render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
+    ghostAt(CHAIR_REACH);
+    expect(canvas.element?.style.cursor).toBe("not-allowed");
+    // PlacementGhost's own cleanup runs first as the card is put down.
+    if (canvas.element !== null) canvas.element.style.cursor = "";
+    unmount();
+    expect(canvas.element?.style.cursor).toBe("");
   });
 });
 

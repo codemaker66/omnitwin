@@ -13,7 +13,7 @@ import {
   withTableNumbers,
 } from "../lib/placement.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
-import { DANCE_FLOOR_PANELS, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
+import { DANCE_FLOOR_PANELS, cardIsWholeSet, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
 import { planBanquetFill, planTheatreFill, type BanquetFillPlan, type TheatreFillPlan } from "../lib/auto-fill.js";
@@ -22,6 +22,8 @@ import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
 import { postPlacementNotice } from "./placement-notice-store.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
+import { useCatalogueStore } from "./catalogue-store.js";
+import { createGhostWorld, judgeGhost, refusalChip } from "../lib/ghost-truth.js";
 import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
 import { computeChairBrushSummary } from "../lib/chair-brush.js";
 import {
@@ -358,9 +360,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     set({
-      placedItems: state.placedItems.map((item) =>
+      placedItems: numberEdited(state.placedItems.map((item) =>
         item.id === id ? { ...item, rotationY } : item,
-      ),
+      ), new Set([id])),
     });
   },
 
@@ -370,10 +372,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (rotations.size === 0) return;
     const state = get();
     set({
-      placedItems: state.placedItems.map((item) => {
+      placedItems: numberEdited(state.placedItems.map((item) => {
         const rotationY = rotations.get(item.id);
         return rotationY === undefined ? item : { ...item, rotationY };
-      }),
+      }), new Set(rotations.keys())),
     });
   },
 
@@ -381,10 +383,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (scales.size === 0) return;
     const state = get();
     set({
-      placedItems: state.placedItems.map((item) => {
+      placedItems: numberEdited(state.placedItems.map((item) => {
         const scale = scales.get(item.id);
         return scale === undefined ? item : { ...item, scale };
-      }),
+      }), new Set(scales.keys())),
     });
   },
 
@@ -398,7 +400,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     let finalX = gridPos[0];
     let finalZ = gridPos[2];
     const roomDims = useRoomDimensionsStore.getState().dimensions;
-    if (catalogueItem !== undefined) {
+    // A card's whole set (setupCards) takes the grid only: the edge, wall and line snaps are one
+    // piece's, and would pull the set's chairs through a wall. The truthful ghost pushes the set clear.
+    const card = plannerFeatureEnabled("setupCards") ? useCatalogueStore.getState().cardParams : null;
+    const wholeSet = card !== null && cardIsWholeSet(card);
+    if (catalogueItem !== undefined && !wholeSet) {
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catalogueItem, rot, state.placedItems, new Set());
       finalX = edgeSnap.x;
       finalZ = edgeSnap.z;
@@ -453,7 +459,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const catalogueItem = getCatalogueItem(target.catalogueItemId);
     if (catalogueItem === undefined || !canApplyTableLinenToItem(catalogueItem)) return;
     set({
-      placedItems: state.placedItems.map((item) =>
+      placedItems: numberEdited(state.placedItems.map((item) =>
         item.id === id
           ? {
               ...item,
@@ -461,7 +467,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
               clothStyle: item.clothed ? null : "black",
             }
           : item,
-      ),
+      ), new Set([id])),
     });
   },
 
@@ -482,7 +488,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       if (!targetIds.has(item.id)) return item;
       return { ...item, clothed: true, clothStyle: style };
     });
-    set({ placedItems });
+    set({ placedItems: numberEdited(placedItems, targetIds) });
   },
 
   applyTableSetting: (ids, setting) => {
@@ -502,7 +508,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       if (!targetIds.has(item.id)) return item;
       return { ...item, tableSetting: setting };
     });
-    set({ placedItems });
+    set({ placedItems: numberEdited(placedItems, targetIds) });
   },
 
   clearTableSetting: (id: string) => {
@@ -608,12 +614,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       }
       counted.push(piece.catalogueItemId);
     }
-    const settled = numberNew(state.placedItems, pieces).map((piece) => {
-      const y = candidateSurfaceHeight(piece.catalogueItemId, piece.x, piece.z, state.placedItems, new Set());
-      return y === piece.y ? piece : { ...piece, y };
-    });
-    set({ placedItems: [...state.placedItems, ...settled] });
-    const ids = settled.map((piece) => piece.id);
+    // As they stand: a card's set comes settled where it was judged (lib/place-in-hand), a copy at its original's heights.
+    const numbered = numberNew(state.placedItems, pieces);
+    set({ placedItems: [...state.placedItems, ...numbered] });
+    const ids = numbered.map((piece) => piece.id);
     announcePlaced(ids);
     return ids;
   },
@@ -640,6 +644,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         return false;
       }
       counted.push(piece.catalogueItemId);
+    }
+    // A floor grown through a wall or into a piece is refused with the ghost's reason, never moved (Q-05).
+    const others = state.placedItems.filter((piece) => piece.groupId !== groupId);
+    const verdict = judgeGhost(resized, createGhostWorld(others, useRoomDimensionsStore.getState().dimensions));
+    if (verdict.state !== "fits") {
+      postPlacementNotice(refusalChip(verdict.obstacle));
+      return false;
     }
     set({ placedItems: [...state.placedItems.filter((piece) => piece.groupId !== groupId), ...resized] });
     announcePlaced(added.map((piece) => piece.id));
@@ -695,8 +706,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const retainedApplicators = state.placedItems.filter(
       (item) => !isSceneFurniturePlacement(item),
     );
-    set({ placedItems: [...retainedApplicators, ...placedItems] });
-    announcePlaced(placedItems.map((item) => item.id));
+    const numbered = numberNew(retainedApplicators, placedItems);
+    set({ placedItems: [...retainedApplicators, ...numbered] });
+    announcePlaced(numbered.map((item) => item.id));
     return plan;
   },
 

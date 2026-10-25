@@ -814,6 +814,20 @@ export function nextTableLabel(placedItems: readonly PlacedItem[]): string {
 }
 
 /**
+ * Each piece settled on the surface under its own centre (a stage, a riser,
+ * the floor), as the placement store settles a piece it places. A set is
+ * settled before it is judged, so its bodies are judged at the heights it
+ * will stand at.
+ */
+export function settleOnSurfaces(pieces: readonly PlacedItem[], placedItems: readonly PlacedItem[]): readonly PlacedItem[] {
+  return pieces.map((piece) => {
+    const item = getCatalogueItem(piece.catalogueItemId);
+    const y = item === undefined ? piece.y : computeSurfaceHeight(piece.x, piece.z, item, placedItems, new Set());
+    return y === piece.y ? piece : { ...piece, y };
+  });
+}
+
+/**
  * The pieces with every unlabelled dining table among them numbered, in
  * order, with the lowest numbers free among `placedItems` and the pieces
  * themselves. A table someone named keeps its name; the same array comes

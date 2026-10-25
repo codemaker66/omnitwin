@@ -4,14 +4,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
+import { stockIdentity } from "../card-stock.js";
 import { createGhostWorld, judgeGhost } from "../ghost-truth.js";
-import { placeCardAt } from "../place-in-hand.js";
-import { resetPlacedIdCounter, type PlacedItem } from "../placement.js";
+import { judgeCardAt, placeCardAt, placePieceInHand } from "../place-in-hand.js";
+import { computeSurfaceHeight, resetPlacedIdCounter, type PlacedItem } from "../placement.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
 import { cardParamsFor, stampSetup, type CardId, type CardParams, type CardParamsRequest } from "../setup-cards.js";
+import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { useGhostVerdictStore } from "../../stores/ghost-verdict-store.js";
 import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
+import { useSelectionStore } from "../../stores/selection-store.js";
 
 /** A 6 ft round's outermost chair reach along Z: its ring radius and half a chair's depth. */
 const CHAIR_REACH = 0.915 + 0.05 + 0.58;
@@ -44,11 +48,19 @@ beforeEach(() => {
   useRoomDimensionsStore.setState({ dimensions: GRAND_HALL_RENDER_DIMENSIONS });
   usePlacementStore.setState({ placedItems: [], ghostPosition: null, ghostValid: false, ghostInvalidReason: null, snapEnabled: true });
   usePlacementNoticeStore.getState().dismiss();
+  useGhostVerdictStore.getState().setVerdict(null);
+  useSelectionStore.getState().clearSelection();
+  useCatalogueStore.getState().disarm();
 });
 
 afterEach(() => {
   setPlannerFeaturesForTesting(null);
 });
+
+/** A piece's place, turn and height, to nine places, and what it is. */
+function pose(piece: PlacedItem): string {
+  return [piece.catalogueItemId, piece.x.toFixed(9), piece.z.toFixed(9), piece.y.toFixed(9), piece.rotationY.toFixed(9)].join(" ");
+}
 
 describe("a card set down", () => {
   it("lays a Round of 10 as one step: the table and its ten chairs, one group", () => {
@@ -130,6 +142,122 @@ describe("the truthful ghost at the commit (truthfulGhost)", () => {
     placeCardAt(params("round"), { x: 0, z: 0 }, 0);
     placeCardAt(params("round"), { x: 0, z: CHAIR_REACH }, 0);
     expect(tables()).toHaveLength(2);
+  });
+});
+
+describe("one stamp for the ghost and the commit", () => {
+  it("sets a turned, pushed set down exactly as the ghost judged it: each piece's place, turn and height", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true });
+    placeCardAt(params("round"), { x: 0, z: 0 }, 0);
+    const origin = { x: 0.4, z: 2 * CHAIR_REACH - 0.1 };
+    const world = createGhostWorld(placed(), GRAND_HALL_RENDER_DIMENSIONS);
+    const judged = judgeCardAt(params("round"), origin, 0.3, world, undefined);
+    expect(judged.verdict.state).toBe("pushed");
+    // The turn changes the set the judge sees, so a ghost judged unturned would push it elsewhere.
+    expect(judgeCardAt(params("round"), origin, 0, world, undefined).verdict).not.toEqual(judged.verdict);
+    const ids = placeCardAt(params("round"), origin, 0.3);
+    const set = placed().filter((piece) => ids.includes(piece.id));
+    expect(set.map(pose).sort()).toEqual(judged.pieces.map(pose).sort());
+  });
+
+  it("stands each piece on the surface under it: a round across a dance floor's edge has chairs on the floor and chairs off it", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true });
+    placeCardAt(params("dance-floor"), { x: 0, z: 0 }, 0);
+    const floor = placed();
+    const edge = Math.max(...floor.map((panel) => panel.x)) + (getCatalogueItem(floor[0]?.catalogueItemId ?? "")?.width ?? 0) / 2;
+    const ids = placeCardAt(params("round"), { x: edge, z: 0 }, 0);
+    const set = placed().filter((piece) => ids.includes(piece.id));
+    expect(set).toHaveLength(11);
+    for (const piece of set) {
+      const item = getCatalogueItem(piece.catalogueItemId);
+      if (item === undefined) throw new Error("no item");
+      expect(piece.y, item.slug).toBeCloseTo(computeSurfaceHeight(piece.x, piece.z, item, floor, new Set()), 9);
+    }
+    expect(set.some((piece) => piece.y > 0)).toBe(true);
+    expect(set.some((piece) => piece.y === 0)).toBe(true);
+  });
+
+  it("refuses a set the store has too few chairs for, with the store's words, and places nothing (B2)", () => {
+    const stamped = stampSetup(params("round"), { x: 0, z: 0 }, 0);
+    const chair = stockIdentity(stamped.find((piece) => getCatalogueItem(piece.catalogueItemId)?.category === "chair")?.catalogueItemId ?? "");
+    const stock = new Map([[chair, 8]]);
+    expect(placeCardAt(params("round"), { x: 0, z: 0 }, 0, { stock })).toEqual([]);
+    expect(placed()).toHaveLength(0);
+    expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/: 8 in store, this needs 10$/u);
+    expect(placeCardAt(params("round", { seats: 8 }), { x: 0, z: 0 }, 0, { stock })).toHaveLength(9);
+  });
+
+  it("refuses a floor grown through a wall, and leaves it as it was", () => {
+    const halfLength = GRAND_HALL_RENDER_DIMENSIONS.length / 2;
+    placeCardAt(params("dance-floor"), { x: 0, z: halfLength - 2.4 }, 0);
+    const before = placed();
+    const groupId = before[0]?.groupId ?? "";
+    expect(usePlacementStore.getState().resizeArea(groupId, 5, 8)).toBe(false);
+    expect(placed()).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/^Won't fit/u);
+  });
+});
+
+describe("a click on a placed piece with something in hand (truthfulGhost)", () => {
+  function ghostAt(x: number, z: number): void {
+    usePlacementStore.setState({ ghostPosition: [x, 0, z] });
+  }
+
+  it("picks the piece where the card's set could not stand, and puts the card down", () => {
+    setPlannerFeaturesForTesting({ setupCards: true, truthfulGhost: true });
+    placeCardAt(params("round"), { x: 0, z: 0 }, 0);
+    const before = placed();
+    const table = tables()[0];
+    useCatalogueStore.getState().armCard("round");
+    ghostAt(0, 0);
+    expect(placePieceInHand(() => undefined, { pieceUnderPointer: table?.id ?? null })).toEqual([]);
+    expect(placed()).toBe(before);
+    expect(useSelectionStore.getState().selectedIds).toEqual(new Set([table?.id]));
+    expect(useCatalogueStore.getState().cardParams).toBeNull();
+  });
+
+  it("sets the card's set down where it fits, though the pointer is on a piece (seen past a chair back)", () => {
+    setPlannerFeaturesForTesting({ setupCards: true, truthfulGhost: true });
+    placeCardAt(params("round"), { x: -6, z: 0 }, 0);
+    const far = tables()[0];
+    useCatalogueStore.getState().armCard("round");
+    ghostAt(0, 0);
+    expect(placePieceInHand(() => undefined, { pieceUnderPointer: far?.id ?? null })).toHaveLength(11);
+    expect(tables()).toHaveLength(2);
+    expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+    expect(useCatalogueStore.getState().armedCardId).toBe("round");
+  });
+
+  it("dresses the table a cloth is let go on, never picks it", () => {
+    setPlannerFeaturesForTesting({ setupCards: true, truthfulGhost: true });
+    const poseur = getCatalogueItemBySlug("poseur-table");
+    const cloth = getCatalogueItemBySlug("white-table-cloth");
+    if (poseur === undefined || cloth === undefined) throw new Error("no poseur or cloth");
+    usePlacementStore.getState().placeItem(poseur.id, 0, 0, 0);
+    const table = placed()[0];
+    useCatalogueStore.getState().selectItem(cloth.id);
+    ghostAt(0, 0);
+    placePieceInHand(() => undefined, { pieceUnderPointer: table?.id ?? null });
+    expect(placed()[0]).toMatchObject({ id: table?.id, clothed: true, clothStyle: "white" });
+    expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+    expect(useCatalogueStore.getState().selectedItemId).toBe(cloth.id);
+  });
+});
+
+describe("the ghost following the pointer (setupCards)", () => {
+  it("keeps a card's whole set off the single piece's wall snap, and keeps the snap for a piece alone", () => {
+    setPlannerFeaturesForTesting({ setupCards: true });
+    const halfWidth = GRAND_HALL_RENDER_DIMENSIONS.width / 2;
+    const poseur = getCatalogueItemBySlug("poseur-table");
+    if (poseur === undefined) throw new Error("no poseur");
+    useCatalogueStore.getState().armCard("round");
+    const tableId = useCatalogueStore.getState().selectedItemId ?? "";
+    usePlacementStore.setState({ snapEnabled: false });
+    usePlacementStore.getState().updateGhost(halfWidth - 1.2, 0, tableId);
+    expect(usePlacementStore.getState().ghostPosition?.[0]).toBe(halfWidth - 1.2);
+    useCatalogueStore.getState().selectItem(poseur.id);
+    usePlacementStore.getState().updateGhost(halfWidth - poseur.width / 2 - 0.05, 0, poseur.id);
+    expect(usePlacementStore.getState().ghostPosition?.[0]).toBeCloseTo(halfWidth - poseur.width / 2, 6);
   });
 });
 

@@ -41,7 +41,7 @@ import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
-import { cardParamsRequest, drawnDanceFloor, type CardParams } from "../lib/setup-cards.js";
+import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, type CardParams } from "../lib/setup-cards.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
 import { findFurnitureItemId } from "./SelectionSystem.js";
 import { GhostSet } from "./GhostSet.js";
@@ -57,6 +57,8 @@ const WARM_FRAMES = 3;
 const WARM_SCALE = 1e-4;
 /** A click this soon after a touch the arbiter handled is that touch's own compatibility click, ms. */
 const ARBITRATED_CLICK_MS = 700;
+/** A click this soon after a brush or a drawn floor is let go is that release's own click, ms. */
+const RELEASE_CLICK_MS = 300;
 
 /** A pointer to follow on the next frame: a move, or the finger the touch arbiter raised the ghost above. */
 interface PendingPointer {
@@ -102,7 +104,8 @@ export function PlacementGhost(): React.ReactElement | null {
   const chairBrushStartRef = useRef<{ readonly x: number; readonly z: number } | null>(null);
   const chairBrushEndRef = useRef<{ readonly x: number; readonly z: number } | null>(null);
   const chairBrushActiveRef = useRef(false);
-  const suppressClickAfterBrushRef = useRef(false);
+  /** Until when a click is the release of a brush or a drawn floor, not a placement. */
+  const suppressClickUntil = useRef(0);
   const pendingPointer = useRef<PendingPointer | null>(null);
   const followPointer = useRef<(pointer: PendingPointer) => void>(() => undefined);
   const [warming, setWarming] = useState(false);
@@ -224,14 +227,19 @@ export function PlacementGhost(): React.ReactElement | null {
       const hit = onCanvas ? placementFloorPoint(scene, camera, raycaster, rect, pointer.x, pointer.y) : null;
       if (hit === null) return;
       usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
-      // Compute snap alignment guides at the ghost's snapped position
+      // Snap alignment guides at the ghost's snapped position; a card's set and a floor being drawn
+      // take no line snap (placement-store updateGhost), so they show none.
       const placeState = usePlacementStore.getState();
-      if (placeState.ghostPosition !== null) {
+      const card = plannerFeatureEnabled("setupCards") ? useCatalogueStore.getState().cardParams : null;
+      const wholeSet = card !== null && cardIsWholeSet(card);
+      if (placeState.ghostPosition !== null && !wholeSet && drawing === null) {
         const guides = computeSnapGuides(
           placeState.ghostPosition[0], placeState.ghostPosition[2],
           itemId, placeState.ghostRotation, placeState.placedItems, new Set(),
         );
         useSelectionStore.getState().setActiveGuides(guides);
+      } else if (useSelectionStore.getState().activeGuides.length > 0) {
+        useSelectionStore.getState().setActiveGuides([]);
       }
       updateChairBrush(itemId, hit, pointer.buttons);
       drawFloor(hit, pointer.buttons);
@@ -243,7 +251,14 @@ export function PlacementGhost(): React.ReactElement | null {
       if (drawing === null || (buttons & 1) === 0) return;
       const placement = usePlacementStore.getState();
       const drawn = drawnDanceFloor(drawing.start, hit, placement.ghostRotation);
-      if (drawn === null) return;
+      if (drawn === null) {
+        // Back within half a panel of the press: the card's own size again, under the pointer.
+        if (drawing.drawn) {
+          drawing.drawn = false;
+          useCatalogueStore.getState().setCardParams(cardParamsRequest(drawing.before));
+        }
+        return;
+      }
       drawing.drawn = true;
       const params = useCatalogueStore.getState().cardParams;
       if (params?.card !== "dance-floor" || params.cols !== drawn.cols || params.rows !== drawn.rows) {
@@ -289,8 +304,15 @@ export function PlacementGhost(): React.ReactElement | null {
       invalidateRef.current();
     }
 
-    function placeAtGhost(): void {
-      placePieceInHand(() => { invalidateRef.current(); });
+    /** Sets the piece in hand down at the ghost; the ids of a card's set it put down. */
+    function placeAtGhost(pieceUnderPointer: string | null = null): readonly string[] {
+      return placePieceInHand(() => { invalidateRef.current(); }, { pieceUnderPointer });
+    }
+
+    /** A drawn floor put back to the card's own size, as if it had never been drawn. */
+    function abandonDrawing(): void {
+      if (drawing?.drawn === true) useCatalogueStore.getState().setCardParams(cardParamsRequest(drawing.before));
+      drawing = null;
     }
 
     /** The placed piece a click lands on, if any: only placed furniture answers, never the ghost. */
@@ -309,9 +331,11 @@ export function PlacementGhost(): React.ReactElement | null {
       const drew = drawing;
       drawing = null;
       if (drew?.drawn === true) {
-        placeAtGhost();
+        // Let go off the canvas, the floor is not set down; either way the card goes back to its size.
+        if (raycastToFloor(clientX, clientY) !== null) placeAtGhost();
         useCatalogueStore.getState().setCardParams(cardParamsRequest(drew.before));
-        suppressClickAfterBrushRef.current = true;
+        suppressClickUntil.current = performance.now() + RELEASE_CLICK_MS;
+        useSelectionStore.getState().setActiveGuides([]);
         invalidateRef.current();
         return;
       }
@@ -335,7 +359,7 @@ export function PlacementGhost(): React.ReactElement | null {
         if (newIds.length > 0) {
           useSelectionStore.getState().selectMultiple(newIds);
         }
-        suppressClickAfterBrushRef.current = true;
+        suppressClickUntil.current = performance.now() + RELEASE_CLICK_MS;
         useCatalogueStore.getState().clearSelection();
         usePlacementStore.getState().clearGhost();
         useSelectionStore.getState().setActiveGuides([]);
@@ -350,7 +374,9 @@ export function PlacementGhost(): React.ReactElement | null {
       const hit = raycastToFloor(clientX, clientY);
       if (hit !== null && itemId !== null) {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
-        placeAtGhost();
+        // A card dragged out and let go leaves its set selected (a click-placed card stays in hand instead).
+        const placed = placeAtGhost();
+        if (placed.length > 0) useSelectionStore.getState().selectMultiple([...placed]);
       }
       useCatalogueStore.getState().endDrag();
       usePlacementStore.getState().clearGhost();
@@ -369,8 +395,8 @@ export function PlacementGhost(): React.ReactElement | null {
 
     function onClick(event: MouseEvent): void {
       if (event.button !== 0) return;
-      if (suppressClickAfterBrushRef.current) {
-        suppressClickAfterBrushRef.current = false;
+      if (performance.now() < suppressClickUntil.current) {
+        suppressClickUntil.current = 0;
         return;
       }
       // The touch arbiter already set the piece down for this tap.
@@ -379,16 +405,6 @@ export function PlacementGhost(): React.ReactElement | null {
       if (useCatalogueStore.getState().dragActive) return;
       const itemId = useCatalogueStore.getState().selectedItemId;
       pendingPointer.current = null;
-      // A click on a placed piece while a card is in hand picks the piece and puts the card down, with no refusal (Q-05).
-      const picked = plannerFeatureEnabled("truthfulGhost") ? placedPieceAt(event.clientX, event.clientY) : null;
-      if (picked !== null) {
-        useCatalogueStore.getState().disarm();
-        usePlacementStore.getState().clearGhost();
-        useSelectionStore.getState().setActiveGuides([]);
-        useSelectionStore.getState().select(picked);
-        invalidateRef.current();
-        return;
-      }
       const hit = raycastToFloor(event.clientX, event.clientY);
       if (itemId === null || hit === null) {
         usePlacementStore.getState().clearGhost();
@@ -396,13 +412,18 @@ export function PlacementGhost(): React.ReactElement | null {
       }
       // Touch taps and a direct click need not have a preceding pointer move.
       usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
-      placeAtGhost();
+      // On a placed piece where the card's set could not stand, the click picks the piece instead (Q-05; lib/place-in-hand).
+      placeAtGhost(plannerFeatureEnabled("truthfulGhost") ? placedPieceAt(event.clientX, event.clientY) : null);
     }
 
     function onPointerCancel(): void {
       clearChairBrush();
-      if (drawing !== null) useCatalogueStore.getState().setCardParams(cardParamsRequest(drawing.before));
-      drawing = null;
+      abandonDrawing();
+    }
+
+    // The window losing focus mid-draw (a switch of app) loses the release: the card goes back to its size.
+    function onBlur(): void {
+      abandonDrawing();
     }
 
     // The touch arbiter's raised finger: the ghost stands above it, so the finger never hides it.
@@ -427,6 +448,7 @@ export function PlacementGhost(): React.ReactElement | null {
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("blur", onBlur);
     canvasEl.addEventListener("click", onClick);
 
     return () => {
@@ -439,6 +461,7 @@ export function PlacementGhost(): React.ReactElement | null {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("pointercancel", onPointerCancel);
+      window.removeEventListener("blur", onBlur);
       canvasEl.removeEventListener("click", onClick);
       canvasEl.style.cursor = "";
       pendingPointer.current = null;

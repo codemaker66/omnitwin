@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Raycaster, Scene } from "three";
 import { PlacementGhost } from "../PlacementGhost.js";
@@ -249,27 +249,67 @@ it("ignores touch moves the arbiter holds, and the click its tap sends afterward
   expect(usePlacementStore.getState().placedItems).toHaveLength(0);
 });
 
-it("picks a placed piece a click lands on with a card in hand, and puts the card down instead of placing (truthfulGhost)", () => {
-  setPlannerFeaturesForTesting({ truthfulGhost: true });
+/** A placed piece drawn under the canvas's centre, as the scene names it, so a click there lands on it. */
+function drawPlacedPieceAtCentre(id: string): () => void {
+  const furniture = new Group();
+  furniture.name = "placed-furniture";
+  const box = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+  box.name = `furniture-${id}`;
+  box.position.y = 0.5;
+  furniture.add(box);
+  scene.add(furniture);
+  scene.updateMatrixWorld(true);
+  return () => { box.geometry.dispose(); box.material.dispose(); };
+}
+
+it("picks a placed piece a click lands on where the card's set could not stand, and puts the card down (truthfulGhost)", () => {
+  setPlannerFeaturesForTesting({ setupCards: true, truthfulGhost: true });
+  const dispose = drawPlacedPieceAtCentre("placed-poseur");
   try {
     usePlacementStore.setState({ placedItems: [createPlacedItem(itemId, 0, 0, 0, null, 0, "placed-poseur")] });
-    const furniture = new Group();
-    furniture.name = "placed-furniture";
-    const box = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
-    box.name = "furniture-placed-poseur";
-    box.position.y = 0.5;
-    furniture.add(box);
-    scene.add(furniture);
-    scene.updateMatrixWorld(true);
+    act(() => { useCatalogueStore.getState().armCard("round"); });
     render(<PlacementGhost />);
     act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
     expect(usePlacementStore.getState().placedItems).toHaveLength(1);
     expect(useSelectionStore.getState().selectedIds).toEqual(new Set(["placed-poseur"]));
     expect(useCatalogueStore.getState().selectedItemId).toBeNull();
     expect(usePlacementStore.getState().ghostPosition).toBeNull();
-    box.geometry.dispose();
-    box.material.dispose();
   } finally {
+    dispose();
+    useCatalogueStore.getState().disarm();
+    setPlannerFeaturesForTesting(null);
+  }
+});
+
+it("places a piece in hand with no card where a click lands on a placed piece, as before (truthfulGhost)", () => {
+  setPlannerFeaturesForTesting({ truthfulGhost: true });
+  const dispose = drawPlacedPieceAtCentre("placed-poseur");
+  try {
+    usePlacementStore.setState({ placedItems: [createPlacedItem(itemId, 3, 0, 0, null, 0, "placed-poseur")] });
+    render(<PlacementGhost />);
+    act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+    expect(usePlacementStore.getState().placedItems).toHaveLength(2);
+    expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+    expect(useCatalogueStore.getState().selectedItemId).toBe(itemId);
+  } finally {
+    dispose();
+    setPlannerFeaturesForTesting(null);
+  }
+});
+
+it("leaves a card dragged out and let go with its set selected (setupCards)", () => {
+  setPlannerFeaturesForTesting({ setupCards: true });
+  try {
+    act(() => { useCatalogueStore.getState().startCardDrag("round"); });
+    render(<PlacementGhost />);
+    act(() => { fireEvent.pointerMove(window, { clientX: 50, clientY: 50 }); });
+    runFrame();
+    act(() => { fireEvent.pointerUp(window, { clientX: 50, clientY: 50, button: 0 }); });
+    const placed = usePlacementStore.getState().placedItems;
+    expect(placed).toHaveLength(11);
+    expect(useSelectionStore.getState().selectedIds).toEqual(new Set(placed.map((piece) => piece.id)));
+  } finally {
+    useCatalogueStore.getState().disarm();
     setPlannerFeaturesForTesting(null);
   }
 });
@@ -301,4 +341,55 @@ it("draws a dance floor by press-drag in whole panels, sets it down on release, 
     useCatalogueStore.getState().disarm();
     setPlannerFeaturesForTesting(null);
   }
+});
+
+describe("a dance floor drawn by press-drag (setupCards)", () => {
+  const PANELS_ON_THE_CARD = 25;
+
+  function beginDrawing(): void {
+    act(() => { useCatalogueStore.getState().armCard("dance-floor"); });
+    render(<PlacementGhost />);
+    act(() => { fireEvent.pointerDown(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+    act(() => { fireEvent.pointerMove(canvas, { clientX: 90, clientY: 20, buttons: 1 }); });
+    runFrame();
+    expect(useCatalogueStore.getState().cardParams).not.toMatchObject({ cols: 5, rows: 5 });
+  }
+
+  beforeEach(() => { setPlannerFeaturesForTesting({ setupCards: true }); });
+  afterEach(() => {
+    useCatalogueStore.getState().disarm();
+    setPlannerFeaturesForTesting(null);
+  });
+
+  it("is not set down when let go off the canvas, the card gets its size back, and a later click still sets one down", () => {
+    const now = vi.spyOn(performance, "now").mockReturnValue(10_000);
+    beginDrawing();
+    act(() => { fireEvent.pointerUp(window, { clientX: 400, clientY: 20, button: 0 }); });
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+    expect(useCatalogueStore.getState().cardParams).toMatchObject({ cols: 5, rows: 5 });
+    // No click came from that release; the next one, a second on, is a placement.
+    now.mockReturnValue(11_000);
+    act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+    expect(usePlacementStore.getState().placedItems).toHaveLength(PANELS_ON_THE_CARD);
+  });
+
+  it("goes back to the card's size when the drag comes back to the press, and a release there sets that size down", () => {
+    beginDrawing();
+    act(() => { fireEvent.pointerMove(canvas, { clientX: 50, clientY: 50, buttons: 1 }); });
+    runFrame();
+    expect(useCatalogueStore.getState().cardParams).toMatchObject({ cols: 5, rows: 5 });
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 50, clientY: 50, button: 0 });
+      fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 });
+    });
+    expect(usePlacementStore.getState().placedItems).toHaveLength(PANELS_ON_THE_CARD);
+  });
+
+  it("gives the card its size back when the window loses focus mid-draw, and shows no guides while drawing", () => {
+    beginDrawing();
+    expect(useSelectionStore.getState().activeGuides).toEqual([]);
+    act(() => { window.dispatchEvent(new Event("blur")); });
+    expect(useCatalogueStore.getState().cardParams).toMatchObject({ cols: 5, rows: 5 });
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+  });
 });

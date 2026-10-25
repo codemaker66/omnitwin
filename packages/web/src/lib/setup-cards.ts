@@ -226,6 +226,15 @@ export function seatsInHand(params: CardParams): number {
   }
 }
 
+/**
+ * Whether a card sets down a whole set rather than one piece alone: every
+ * card but a piece with no seats. A set takes the grid only as it follows the
+ * pointer; one piece also takes the single piece's edge, wall and line snaps.
+ */
+export function cardIsWholeSet(params: CardParams): boolean {
+  return params.card !== "piece" || seatsInHand(params) > 0;
+}
+
 /** Card copy: metres to one place, "4.6"; whole figures plainly, "2". */
 function cardMetres(metres: number): string {
   const tenths = Math.round(metres * 10) / 10;

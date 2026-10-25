@@ -297,8 +297,14 @@ export function SelectionSystem(): null {
   useEffect(() => {
     const canvasEl = gl.domElement;
     const remember = (event: PointerEvent): void => { lastPointer.current = { x: event.clientX, y: event.clientY }; };
+    // Off the canvas, there is no place under the pointer to paste at.
+    const forget = (): void => { lastPointer.current = null; };
     canvasEl.addEventListener("pointermove", remember, { passive: true });
-    return () => { canvasEl.removeEventListener("pointermove", remember); };
+    canvasEl.addEventListener("pointerleave", forget);
+    return () => {
+      canvasEl.removeEventListener("pointermove", remember);
+      canvasEl.removeEventListener("pointerleave", forget);
+    };
   }, [gl]);
   usePlannerKeyBindings(selectionKeyBindings({
     invalidate: () => { invalidateRef.current(); },
@@ -306,7 +312,9 @@ export function SelectionSystem(): null {
     screenUp: () => screenUpOnFloor(camera),
     pointerFloor: () => {
       const at = lastPointer.current;
-      return at === null ? null : placementFloorPoint(scene, camera, raycaster, gl.domElement.getBoundingClientRect(), at.x, at.y);
+      // A panel since opened over the place the pointer rests is not the floor.
+      if (at === null || document.elementFromPoint(at.x, at.y) !== gl.domElement) return null;
+      return placementFloorPoint(scene, camera, raycaster, gl.domElement.getBoundingClientRect(), at.x, at.y);
     },
   }));
   useEscapeLayer("operation", {
@@ -574,12 +582,12 @@ export function SelectionSystem(): null {
     }
 
     /** Sets the piece in hand down under (`x`, `y`): its ghost goes there first, as a click's does. */
-    function placeInHandAt(x: number, y: number): void {
+    function placeInHandAt(x: number, y: number, pieceUnderPointer: string | null = null): void {
       const itemId = useCatalogueStore.getState().selectedItemId;
       const hit = itemId === null ? null : placementFloorPoint(scene, camera, raycaster, canvasEl.getBoundingClientRect(), x, y);
       if (itemId !== null && hit !== null) {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
-        placePieceInHand(() => { invalidateRef.current(); });
+        placePieceInHand(() => { invalidateRef.current(); }, { pieceUnderPointer });
       }
       // A finger leaves no hover: the ghost goes once the piece is down.
       usePlacementStore.getState().clearGhost();
@@ -588,14 +596,9 @@ export function SelectionSystem(): null {
     /** What a finished touch comes to. */
     function settleTouch(outcome: TouchOutcome, ended: TouchMode): void {
       if (outcome.kind === "tap") {
-        // A tap on a placed piece with a card in hand picks the piece and puts the card down (Q-05).
-        const picked = outcome.armed && plannerFeatureEnabled("truthfulGhost") ? interactionTargetAt(outcome.x, outcome.y).itemId : null;
-        if (picked !== null) {
-          useCatalogueStore.getState().disarm();
-          usePlacementStore.getState().clearGhost();
-          useSelectionStore.getState().select(picked);
-        } else if (outcome.armed) {
-          placeInHandAt(outcome.x, outcome.y);
+        if (outcome.armed) {
+          // On a placed piece where the card's set could not stand, the tap picks the piece instead (Q-05; lib/place-in-hand).
+          placeInHandAt(outcome.x, outcome.y, plannerFeatureEnabled("truthfulGhost") ? interactionTargetAt(outcome.x, outcome.y).itemId : null);
         } else {
           const found = interactionTargetAt(outcome.x, outcome.y);
           if (found.itemId !== null) useSelectionStore.getState().select(found.itemId);
