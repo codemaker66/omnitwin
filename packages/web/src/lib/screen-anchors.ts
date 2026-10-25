@@ -26,6 +26,21 @@ interface Anchor {
 
 const HIDDEN: ScreenPoint = { x: 0, y: 0, visible: false };
 const anchors = new Map<string, Anchor>();
+/** The canvas draws on demand; this asks it for a frame (set by ScreenAnchors while it is mounted). */
+let frame: (() => void) | null = null;
+
+/** ScreenAnchors hands over the canvas's invalidate; the returned function takes it back. */
+export function setScreenAnchorFrame(next: () => void): () => void {
+  frame = next;
+  return () => {
+    if (frame === next) frame = null;
+  };
+}
+
+/** One frame, so anchors (and anything the chrome just changed in the room) are drawn now. */
+export function requestScreenAnchorFrame(): void {
+  frame?.();
+}
 
 /**
  * Follows `world()` on screen until the returned function is called. A newer
@@ -35,6 +50,8 @@ const anchors = new Map<string, Anchor>();
 export function registerScreenAnchor(id: string, world: () => WorldPoint | null, write: (point: ScreenPoint) => void): () => void {
   const anchor: Anchor = { world, write };
   anchors.set(id, anchor);
+  // A still camera draws no frame of its own: ask for one so the anchor is placed at once.
+  frame?.();
   return () => {
     if (anchors.get(id) === anchor) anchors.delete(id);
   };
