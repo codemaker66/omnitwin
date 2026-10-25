@@ -610,6 +610,14 @@ export interface PlacementOverlapIndex {
    * overlap scan over the same items, visiting only nearby ones.
    */
   readonly overlapsAny: (body: PlacementBody, excludeIds: ReadonlySet<string>) => boolean;
+  /** Every indexed item `body` overlaps, outside `excludeIds`: what the ghost names when it refuses. */
+  readonly overlapping: (body: PlacementBody, excludeIds: ReadonlySet<string>) => readonly PlacementOverlap[];
+}
+
+/** An indexed item a body overlaps, with its own body for the depth of the overlap. */
+export interface PlacementOverlap {
+  readonly id: string;
+  readonly body: PlacementBody;
 }
 
 /**
@@ -679,7 +687,37 @@ export function createPlacementOverlapIndex(
     return false;
   }
 
-  return { overlapsAny };
+  function overlapping(body: PlacementBody, excludeIds: ReadonlySet<string>): readonly PlacementOverlap[] {
+    const found: PlacementOverlap[] = [];
+    const take = (entry: OverlapEntry): void => {
+      if (placementBodiesOverlap(body, entry.body) && !excludeIds.has(entry.id)) found.push({ id: entry.id, body: entry.body });
+    };
+    const range = overlapCellRange(body);
+    if (range === null) {
+      for (const entry of entries) take(entry);
+      return found;
+    }
+    if (stamp === 0xffffffff) {
+      visitedStamp.fill(0);
+      stamp = 0;
+    }
+    stamp += 1;
+    for (let cellX = range.x0; cellX <= range.x1; cellX += 1) {
+      for (let cellZ = range.z0; cellZ <= range.z1; cellZ += 1) {
+        const bucket = cells.get(overlapCellKey(cellX, cellZ));
+        if (bucket === undefined) continue;
+        for (const entry of bucket) {
+          if (visitedStamp[entry.slot] === stamp) continue;
+          visitedStamp[entry.slot] = stamp;
+          take(entry);
+        }
+      }
+    }
+    for (const entry of unbounded) take(entry);
+    return found;
+  }
+
+  return { overlapsAny, overlapping };
 }
 
 // ---------------------------------------------------------------------------
@@ -732,6 +770,47 @@ export interface PlacedItem {
   readonly centerpiece?: string | null;
   /** Group ID — items sharing a groupId move together (e.g. table + its chairs). */
   readonly groupId: string | null;
+  /**
+   * Set ID: binds several groups placed as one setup (a Top table's trestles,
+   * each with its own chairs' group), so the set moves, duplicates and is
+   * removed whole while each trestle's chairs re-ring on their own.
+   */
+  readonly setId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Table numbers (card-dock spec §6, Q-46): every dining table placed is
+// "Table N", the lowest number no table in the room already wears, so copy
+// that names a table ("Table 2's chairs") has a name to use.
+// ---------------------------------------------------------------------------
+
+const TABLE_LABEL = /^Table (\d+)$/u;
+
+/** The N of a "Table N" label, or null for any other label. */
+export function tableLabelNumber(label: string | undefined): number | null {
+  const match = label === undefined ? null : TABLE_LABEL.exec(label.trim());
+  if (match === null) return null;
+  const n = Number(match[1]);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+/** The next `count` free "Table N" labels, lowest first, given what the room already wears. */
+export function nextTableLabels(placedItems: readonly PlacedItem[], count: number): readonly string[] {
+  const taken = new Set<number>();
+  for (const placed of placedItems) {
+    const n = tableLabelNumber(placed.label);
+    if (n !== null) taken.add(n);
+  }
+  const labels: string[] = [];
+  for (let n = 1; labels.length < count; n += 1) {
+    if (!taken.has(n)) labels.push(`Table ${String(n)}`);
+  }
+  return labels;
+}
+
+/** The lowest free "Table N" label. */
+export function nextTableLabel(placedItems: readonly PlacedItem[]): string {
+  return nextTableLabels(placedItems, 1)[0] ?? "Table 1";
 }
 
 /**
@@ -744,9 +823,10 @@ export function createPlacedItem(
   rotationY: number = 0,
   groupId: string | null = null,
   y: number = 0,
+  id: string = generatePlacedId(),
 ): PlacedItem {
   return {
-    id: generatePlacedId(),
+    id,
     catalogueItemId,
     label: "",
     x,
@@ -762,7 +842,10 @@ export function createPlacedItem(
 
 /**
  * Collects the IDs of all items in the same group as the given item,
- * including the item itself. Returns a Set for O(1) lookup.
+ * including the item itself. A set (a Top table's trestles, each with its
+ * own chairs' group) counts as one group: its pieces select, move and are
+ * removed together and are never in each other's way. Returns a Set for
+ * O(1) lookup.
  */
 export function getGroupMemberIds(
   itemId: string,
@@ -771,10 +854,12 @@ export function getGroupMemberIds(
   const item = placedItems.find((p) => p.id === itemId);
   if (item === undefined) return new Set([itemId]);
   if (!isSceneFurniturePlacement(item)) return new Set();
-  if (item.groupId === null) return new Set([itemId]);
+  if (item.groupId === null && item.setId === undefined) return new Set([itemId]);
   const ids = new Set<string>();
   for (const p of placedItems) {
-    if (p.groupId === item.groupId && isSceneFurniturePlacement(p)) ids.add(p.id);
+    const together = (item.groupId !== null && p.groupId === item.groupId)
+      || (item.setId !== undefined && p.setId === item.setId);
+    if (together && isSceneFurniturePlacement(p)) ids.add(p.id);
   }
   return ids;
 }
@@ -782,7 +867,8 @@ export function getGroupMemberIds(
 /**
  * getGroupMemberIds for any id of one layout, from a single O(n) pass rather
  * than an O(n) scan per call. Returns the same sets (same members, same
- * order); members of one group share one set, so treat results as read-only.
+ * order); members of one group or set share one set, so treat results as
+ * read-only.
  */
 export function createGroupMemberIdsLookup(
   placedItems: readonly PlacedItem[],
@@ -790,19 +876,40 @@ export function createGroupMemberIdsLookup(
   // getGroupMemberIds resolves an id to its FIRST matching row.
   const firstById = new Map<string, PlacedItem>();
   const membersByGroup = new Map<string, Set<string>>();
+  const membersBySet = new Map<string, Set<string>>();
   for (const placed of placedItems) {
     if (!firstById.has(placed.id)) firstById.set(placed.id, placed);
-    if (placed.groupId === null || !isSceneFurniturePlacement(placed)) continue;
-    const members = membersByGroup.get(placed.groupId);
-    if (members === undefined) membersByGroup.set(placed.groupId, new Set([placed.id]));
-    else members.add(placed.id);
+    if (!isSceneFurniturePlacement(placed)) continue;
+    // In layout order, so a set's members come out as getGroupMemberIds lists them.
+    const keys: readonly [Map<string, Set<string>>, string | null | undefined][] = [
+      [membersByGroup, placed.groupId],
+      [membersBySet, placed.setId],
+    ];
+    for (const [byKey, key] of keys) {
+      if (key === null || key === undefined) continue;
+      const members = byKey.get(key);
+      if (members === undefined) byKey.set(key, new Set([placed.id]));
+      else members.add(placed.id);
+    }
   }
+  // A piece in a set answers with its group's and its set's pieces, in layout order.
+  const together = new Map<string, ReadonlySet<string>>();
   return (itemId) => {
     const item = firstById.get(itemId);
     if (item === undefined) return new Set([itemId]);
     if (!isSceneFurniturePlacement(item)) return new Set();
-    if (item.groupId === null) return new Set([itemId]);
-    return membersByGroup.get(item.groupId) ?? new Set();
+    if (item.setId === undefined) {
+      if (item.groupId === null) return new Set([itemId]);
+      return membersByGroup.get(item.groupId) ?? new Set();
+    }
+    const key = `${item.setId}\u0000${item.groupId ?? ""}`;
+    const cached = together.get(key);
+    if (cached !== undefined) return cached;
+    const group = item.groupId === null ? new Set<string>() : membersByGroup.get(item.groupId) ?? new Set<string>();
+    const set = membersBySet.get(item.setId) ?? new Set<string>();
+    const members = new Set(placedItems.filter((placed) => group.has(placed.id) || set.has(placed.id)).map((placed) => placed.id));
+    together.set(key, members);
+    return members;
   };
 }
 

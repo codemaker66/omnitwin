@@ -3,6 +3,7 @@ import { Catalogue } from "./Catalogue.js";
 import { Dock } from "./Dock.js";
 import { Rail } from "./Rail.js";
 import { SeatsMeter } from "./SeatsMeter.js";
+import { useStoreStock } from "./store-figures.js";
 import "./chrome.css";
 import "./dock.css";
 
@@ -15,6 +16,7 @@ import "./dock.css";
 const moreKey = (): HTMLElement | null => document.querySelector<HTMLElement>(".pc-rail__more");
 
 export function DockStack({ catalogue }: { readonly catalogue?: ReactNode }): ReactElement {
+  useStoreStock();
   return (
     <div className="pc-dockstack" data-testid="planner-dock-stack">
       {catalogue ?? <Catalogue returnFocusTo={moreKey} />}

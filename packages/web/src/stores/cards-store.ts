@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { z } from "zod";
 import { CARD_TABS, type CardTab, type RailStyle } from "../lib/card-defaults.js";
+import type { UsableStock } from "../lib/card-stock.js";
 import type { CardId } from "../lib/setup-cards.js";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,12 @@ interface CardsState {
   /** The card whose first-arms hint is showing, or null. */
   readonly hintFor: CardId | null;
   readonly setHintFor: (card: CardId | null) => void;
+  /** The venue's usable stock, for staff only (store-figures.ts); null shows no figures. */
+  readonly stock: UsableStock | null;
+  readonly setStock: (stock: UsableStock | null) => void;
+  /** Why the last card asked for would not arm, said in the hint's place. */
+  readonly refusal: { readonly card: CardId; readonly text: string } | null;
+  readonly setRefusal: (refusal: { readonly card: CardId; readonly text: string } | null) => void;
   readonly setStyle: (style: RailStyle) => void;
   readonly openCatalogue: () => void;
   readonly closeCatalogue: () => void;
@@ -73,6 +80,10 @@ export const useCardsStore = create<CardsState>()((set, get) => ({
   arms: readArms(),
   hintFor: null,
   setHintFor: (hintFor) => { set({ hintFor }); },
+  stock: null,
+  setStock: (stock) => { set({ stock }); },
+  refusal: null,
+  setRefusal: (refusal) => { set({ refusal }); },
   setStyle: (style) => { set({ style }); },
   openCatalogue: () => { set({ catalogueOpen: true }); },
   closeCatalogue: () => { set({ catalogueOpen: false }); },
@@ -87,5 +98,5 @@ export const useCardsStore = create<CardsState>()((set, get) => ({
     keepArms(arms);
     return before < HINT_ARMS;
   },
-  reset: () => { set({ style: "dinner", catalogueOpen: false, tab: FIRST_TAB, query: "", inFlight: null, arms: readArms(), hintFor: null }); },
+  reset: () => { set({ style: "dinner", catalogueOpen: false, tab: FIRST_TAB, query: "", inFlight: null, arms: readArms(), hintFor: null, stock: null, refusal: null }); },
 }));

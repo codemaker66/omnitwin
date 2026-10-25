@@ -53,6 +53,9 @@
 
 .pc-dockstack > .pc-dock { justify-content: center; }
 
+/* Staff's third line ("×22 in store") widens the cards by about 2 px each: eight still fit at 1600 [measured: 986 of 970]. */
+.pc-dockstack:has(.pc-railcard__store) { max-width: min(1100px, calc(100vw - 480px)); }
+
 .pc-dockstack > .pc-rail-wrap ~ .pc-dock {
   border-top-left-radius: 0;
   border-top-right-radius: 0;

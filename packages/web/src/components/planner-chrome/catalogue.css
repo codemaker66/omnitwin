@@ -195,6 +195,30 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * Staff only: the store's figure (spec §4.1), Inter 12, on its own row under
+ * the swatches. With figures showing, every card grows 16 px and the sheet
+ * with it (192 → 208), so the swatches never sit on the line.
+ */
+.pc-ccard__store {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  overflow: hidden;
+  color: var(--house-ink-2);
+  font: 400 12px/16px var(--house-sans);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pc-catalogue.has-store { height: 208px; }
+.pc-catalogue.has-store .pc-ccard { height: 140px; }
+.pc-catalogue.has-store .pc-ccard__choices { bottom: 22px; }
+
+.pc-ccard__store.is-empty { color: var(--house-amber-mark); }
+.pc-ccard.is-disabled .pc-ccard__store { opacity: 1; }
+
 /* Seat chip, top left, on dining pieces: Inter 12/600 on a forest pill. */
 .pc-ccard__seats {
   position: absolute;
