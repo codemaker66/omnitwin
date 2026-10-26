@@ -138,8 +138,9 @@ crafted pieces, so the planner downloads no furniture GLB.
   does not: making all fifteen maps takes it 8–13 ms on a desktop (35–62 ms at
   a 4× CPU throttle) where painting them in place took 272–357 ms (1.2–1.7 s),
   over three runs; furnishing 160 seats it spends 7 ms in the recipes, not 98. The
-  first map asked for sends the worker every map over 64 px, the wanted one
-  first; the felt and the feet's shade are painted where they are asked for.
+  maps the pieces built in one pass ask for go to the worker first, then every
+  other map over 64 px, ahead of need; the felt and the feet's shade are
+  painted where they are asked for.
   Each map is made at once at its full size and format, at rest (a normal map
   level, any other at its mean in linear light, which the tests hold it to),
   and filled when its pixels arrive, about 0.3 s later on a desktop: the same
@@ -147,8 +148,11 @@ crafted pieces, so the planner downloads no furniture GLB.
   crafted piece (`onCraftedTexturePainted`, which `CraftedFurniture` watches
   with its canvas's `invalidate`, counted once a canvas), because the planner
   draws on demand. The worker closes once every map is in. Where module
-  workers do not run, or the worker fails or sends a wrong answer, the map is
-  painted where it is asked for, as before. All fifteen maps are byte-identical
+  workers do not run, or the worker cannot start, has not answered within
+  10 s (its script stalled on a poor connection), fails or sends a wrong
+  answer, a map is painted where it is asked for, as before, and one no piece
+  has asked for waits until one does, so a failure costs the main thread no
+  more than master's painting did. All fifteen maps are byte-identical
   to the in-place painting, and so are all 44 previews drawn either way. The
   damask's figure is mirrored and on a half drop, so a quarter of its tile is
   evaluated and copied (exactly, tested), its shapes skipped where a pixel is

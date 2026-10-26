@@ -12,6 +12,7 @@ import {
 import {
   craftedTexture,
   craftedTexturesPending,
+  FIRST_ANSWER_MS,
   onCraftedTexturePainted,
   setCraftedTexturePainter,
   workerPainter,
@@ -173,14 +174,17 @@ describe("crafted textures", () => {
     expect(texture.version).toBeGreaterThan(version);
   });
 
-  it("asks for every other large map on first use, the one wanted first, and paints the small ones in place", () => {
+  it("asks first for the maps the pieces built in one pass want, then every other large map, and paints the small ones in place", async () => {
     const painter = heldPainter();
     setCraftedTexturePainter(() => painter);
     craftedTexture("parquet-colour");
-    const large = CRAFTED_TEXTURE_IDS.filter((id) => craftedTextureFormat(id).size > 64);
-    expect(painter.asked[0]).toBe("parquet-colour");
-    expect([...painter.asked].sort()).toEqual([...large].sort());
-    expect(craftedTexturesPending()).toBe(large.length);
+    craftedTexture("brass-lattice");
+    // The rest follow once this pass is done, behind these two.
+    expect(painter.asked).toEqual(["parquet-colour", "brass-lattice"]);
+    await settle();
+    expect(painter.asked.slice(0, 2)).toEqual(["parquet-colour", "brass-lattice"]);
+    expect([...painter.asked].sort()).toEqual([...SENT].sort());
+    expect(craftedTexturesPending()).toBe(SENT.length);
     // The feet's shade is never left unpainted.
     const spot = craftedTexture("contact-spot") as DataTexture;
     expect(Array.from(pixelsOf(spot))).toEqual(Array.from(paintCraftedTexture("contact-spot")));
@@ -207,7 +211,8 @@ describe("crafted textures", () => {
     painter.answer("damask-colour");
     await settle();
     expect(frames).toBe(1);
-    // A failed map is painted in place, and that too needs a frame.
+    // A failed map a piece wants is painted in place, and that too needs a frame.
+    craftedTexture("parquet-colour");
     painter.fail("parquet-colour");
     await settle();
     expect(frames).toBe(2);
@@ -221,6 +226,48 @@ describe("crafted textures", () => {
     painter.answer("check-fabric");
     await settle();
     expect(frames).toBe(3);
+  });
+
+  it("leaves a failed map no piece has asked for unpainted until one does", async () => {
+    const painter = heldPainter();
+    setCraftedTexturePainter(() => painter);
+    let frames = 0;
+    const stop = onCraftedTexturePainted(() => { frames += 1; });
+    try {
+      craftedTexture("damask-colour");
+      await settle();
+      painter.fail("brass-lattice");
+      await settle();
+      // Not painted on the main thread for nothing, and not waited for either.
+      expect(frames).toBe(0);
+      expect(craftedTexturesPending()).toBe(SENT.length - 1);
+      const lattice = craftedTexture("brass-lattice") as DataTexture;
+      expect(Array.from(pixelsOf(lattice))).toEqual(Array.from(paintCraftedTexture("brass-lattice")));
+      expect(frames).toBe(1);
+    } finally {
+      stop();
+    }
+  });
+
+  it("wakes every watching canvas when one of them throws, and reports it", async () => {
+    const reported = vi.fn();
+    vi.stubGlobal("reportError", reported);
+    const painter = heldPainter();
+    setCraftedTexturePainter(() => painter);
+    let woken = 0;
+    const stopLost = onCraftedTexturePainted(() => { throw new Error("lost canvas"); });
+    const stopFine = onCraftedTexturePainted(() => { woken += 1; });
+    try {
+      craftedTexture("damask-colour");
+      painter.answer("damask-colour");
+      await settle();
+      expect(woken).toBe(1);
+      expect(reported).toHaveBeenCalledTimes(1);
+      expect(String(reported.mock.calls[0]?.[0])).toContain("lost canvas");
+    } finally {
+      stopLost();
+      stopFine();
+    }
   });
 
   it("uses no worker in this test environment, so the maps are painted as before", () => {
@@ -247,6 +294,7 @@ describe("the worker painter", () => {
   it("fills each map with the worker's own pixels, the wanted one first, then closes the worker", async () => {
     vi.stubGlobal("Worker", FakePainterWorker);
     const texture = craftedTexture("damask-colour") as DataTexture;
+    await settle();
     const worker = onlyWorker();
     expect(worker.requests.map((request) => request.texture)).toEqual(["damask-colour", ...SENT.filter((id) => id !== "damask-colour")]);
     while (worker.requests.length > 1) worker.answer(marked);
@@ -264,6 +312,7 @@ describe("the worker painter", () => {
   it("paints a map in place when its answer is refused or the wrong size, and keeps the others' answers", async () => {
     vi.stubGlobal("Worker", FakePainterWorker);
     craftedTexture("damask-colour");
+    await settle();
     const worker = onlyWorker();
     const [short, refused, kept] = [0, 1, 2].map((index) => sentTexture(worker, index));
     if (short === undefined || refused === undefined || kept === undefined) throw new Error("expected three maps sent");
@@ -312,5 +361,80 @@ describe("the worker painter", () => {
     await expect(waiting).rejects.toThrow("stopped");
     await expect(dying.paint("plywood-grain")).rejects.toThrow("has stopped");
     expect(FakePainterWorker.started).toHaveLength(1);
+  });
+
+  it("paints in place when the browser refuses the worker outright", async () => {
+    class RefusedWorker extends FakePainterWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (String(url) !== "blob://") throw new Error("A script from another origin");
+      }
+    }
+    vi.stubGlobal("Worker", RefusedWorker);
+    const texture = craftedTexture("damask-colour") as DataTexture;
+    await settle();
+    expect(Array.from(pixelsOf(texture))).toEqual(Array.from(paintCraftedTexture("damask-colour")));
+    expect(craftedTexturesPending()).toBe(0);
+  });
+
+  it("gives up on a worker that has not answered in time and paints in place", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      vi.stubGlobal("Worker", FakePainterWorker);
+      const texture = craftedTexture("damask-colour") as DataTexture;
+      await settle();
+      const worker = onlyWorker();
+      vi.advanceTimersByTime(FIRST_ANSWER_MS - 1);
+      await settle();
+      expect(worker.terminated).toBe(false);
+      vi.advanceTimersByTime(1);
+      await settle();
+      expect(worker.terminated).toBe(true);
+      expect(Array.from(pixelsOf(texture))).toEqual(Array.from(paintCraftedTexture("damask-colour")));
+      expect(craftedTexturesPending()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a worker that has answered, however long the rest take", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      vi.stubGlobal("Worker", FakePainterWorker);
+      craftedTexture("damask-colour");
+      await settle();
+      const worker = onlyWorker();
+      worker.answer(marked);
+      vi.advanceTimersByTime(FIRST_ANSWER_MS * 3);
+      await settle();
+      expect(worker.terminated).toBe(false);
+      expect(craftedTexturesPending()).toBe(SENT.length - 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("the painting worker's script", () => {
+  it("answers a map with its pixels, the buffer transferred, and refuses what is not a map", async () => {
+    const posted: { message: CraftedTexturePaintAnswer; transfer: Transferable[] | undefined }[] = [];
+    // What arrives is whatever the page sent, checked by the worker itself.
+    const scope: {
+      onmessage: ((event: MessageEvent<unknown>) => void) | null;
+      postMessage: (message: CraftedTexturePaintAnswer, transfer?: Transferable[]) => void;
+    } = {
+      onmessage: null,
+      postMessage: (message, transfer) => { posted.push({ message, transfer }); },
+    };
+    vi.stubGlobal("self", scope);
+    await import("../crafted-texture.worker.js");
+    scope.onmessage?.(new MessageEvent("message", { data: { id: 4, texture: "linen-normal" } }));
+    scope.onmessage?.(new MessageEvent("message", { data: { id: 5, texture: "toString" } }));
+    const [painted, refused] = posted;
+    if (painted?.message.ok !== true) throw new Error("expected the linen painted");
+    expect(painted.message.id).toBe(4);
+    expect(Array.from(new Uint8Array(painted.message.pixels))).toEqual(Array.from(paintCraftedTexture("linen-normal")));
+    expect(painted.transfer).toEqual([painted.message.pixels]);
+    expect(refused?.message).toEqual({ id: 5, ok: false, error: "Not a crafted texture: toString" });
   });
 });
