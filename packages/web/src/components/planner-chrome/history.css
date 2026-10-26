@@ -8,6 +8,9 @@
  */
 
 .pc-history {
+  /* The spec's hairline, 8 % cream. Not var(--house-hairline): the page's paper register
+     (styles/workspace.css) remaps that to --house-rule, a bright line on lacquer. */
+  --pc-history-rule: color-mix(in srgb, var(--house-cream) 8%, transparent);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -23,7 +26,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 8px 8px 20px;
-  border-bottom: 1px solid var(--house-hairline);
+  border-bottom: 1px solid var(--pc-history-rule);
 }
 
 .pc-history__heading {
@@ -77,9 +80,11 @@
   scrollbar-color: color-mix(in srgb, var(--house-forest-ink-3) 40%, transparent) transparent;
 }
 
-/* The list's focus is shown on the row it is at (below), not as a second ring round the list. */
-.pc-history__list:focus-visible {
+/* The list's focus is shown on the row it is at (below), not as a second ring round the list:
+   this outranks global.css's ring for [tabindex] (0,3,0). */
+.pc-history .pc-history__list[tabindex]:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 
 .pc-history__sitting-head {
@@ -190,7 +195,7 @@
 .pc-history__foot {
   margin: 0;
   padding: 10px 20px 12px;
-  border-top: 1px solid var(--house-hairline);
+  border-top: 1px solid var(--pc-history-rule);
   color: var(--house-forest-ink-3);
 }
 
