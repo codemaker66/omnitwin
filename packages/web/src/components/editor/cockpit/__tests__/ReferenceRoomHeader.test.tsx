@@ -200,7 +200,8 @@ describe("ReferenceRoomHeader", () => {
   it("shows pending and failed save states without claiming success or allowing duplicate saves", () => {
     showHeader();
     act(() => { useEditorStore.setState({ isSaving: true }); });
-    const pending = screen.getByRole("button", { name: "Saving layout" });
+    const pending = screen.getByRole("button", { name: "Saving…" });
+    expect(screen.getByRole("status").textContent).toBe("Saving…");
     expect(pending.getAttribute("aria-busy")).toBe("true");
     expect(pending.querySelector("[data-activity-indicator]")).not.toBeNull();
     fireEvent.click(pending);
@@ -209,6 +210,25 @@ describe("ReferenceRoomHeader", () => {
     expect(screen.getByRole("status").textContent).toBe("Retry save");
     fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
     expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("never reads saved while the browser is offline with unsaved changes (D-03)", () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    showHeader();
+    act(() => { useEditorStore.setState({ isDirty: false, saveError: null }); });
+    expect(screen.getByRole("status").textContent).toBe("Layout saved");
+    onLine.mockReturnValue(false);
+    act(() => { window.dispatchEvent(new Event("offline")); });
+    // Offline with nothing unsaved is still true.
+    expect(screen.getByRole("status").textContent).toBe("Layout saved");
+    act(() => { useEditorStore.setState({ isDirty: true }); });
+    expect(screen.getByRole("status").textContent).toBe("Offline · not saved yet");
+    expect(screen.getByRole("button", { name: "Offline · not saved yet" }).getAttribute("title")).toBe("The connection has dropped. Press to save once it is back.");
+    act(() => { useEditorStore.setState({ isSaving: false, saveError: "Network error" }); });
+    expect(screen.getByRole("status").textContent).toBe("Offline · not saved yet");
+    onLine.mockReturnValue(true);
+    act(() => { window.dispatchEvent(new Event("online")); });
+    expect(screen.getByRole("status").textContent).toBe("Retry save");
   });
 
   it("prevents saving a frozen phase preview or absent configuration", () => {
