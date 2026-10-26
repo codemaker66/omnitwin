@@ -47,6 +47,8 @@ export { isCloth, isPoseurTable, isTableSetting } from "../lib/placement-ghost.j
 
 /** Frames the piece in hand is drawn, too small to see, as it is armed: enough for its materials to compile. */
 const WARM_FRAMES = 3;
+/** Frames the warm-up waits for React to show the ghost before it gives up on it. */
+const WARM_WAIT_FRAMES = 30;
 const WARM_SCALE = 1e-4;
 /** A click this soon after a touch the arbiter handled is that touch's own compatibility click, ms. */
 const ARBITRATED_CLICK_MS = 700;
@@ -98,6 +100,7 @@ export function PlacementGhost(): React.ReactElement | null {
   const followPointer = useRef<(pointer: PendingPointer) => void>(() => undefined);
   const [warming, setWarming] = useState(false);
   const warmFrames = useRef(0);
+  const warmWaits = useRef(0);
 
   // Stable ref for invalidate — avoids effect re-runs when invalidate ref changes
   const invalidateRef = useRef(invalidate);
@@ -122,6 +125,7 @@ export function PlacementGhost(): React.ReactElement | null {
   useEffect(() => {
     if (selectedItemId === null || dressing) return;
     warmFrames.current = WARM_FRAMES;
+    warmWaits.current = 0;
     setWarming(true);
     invalidateRef.current();
   }, [selectedItemId, dressing]);
@@ -134,7 +138,21 @@ export function PlacementGhost(): React.ReactElement | null {
     }
     if (warmFrames.current === 0) return;
     const group = ghost.current;
-    if (group !== null && usePlacementStore.getState().ghostPosition === null) {
+    // Nothing of the piece to warm here (the chair brush or a cloth draws in its place): the warm-up ends.
+    if (group === null) {
+      warmFrames.current = 0;
+      setWarming(false);
+      return;
+    }
+    // A warm frame counts once the ghost is drawn: React shows it a commit after the piece is armed, and
+    // a frame before that commit warms nothing (the ghost's shaders then compiled on the first frame of a
+    // drag). A ghost that never shows is not waited on for long.
+    if (!group.visible && warmWaits.current < WARM_WAIT_FRAMES) {
+      warmWaits.current += 1;
+      invalidateRef.current();
+      return;
+    }
+    if (usePlacementStore.getState().ghostPosition === null) {
       camera.getWorldDirection(_ahead);
       group.position.copy(camera.position).addScaledVector(_ahead, 1);
     }
