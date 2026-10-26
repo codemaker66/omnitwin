@@ -6,13 +6,13 @@ import { deriveEditorSaveStatus } from "../lib/editor-save-status.js";
 // Editor store tests — mock API modules
 // ---------------------------------------------------------------------------
 
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
 }));
@@ -33,6 +33,7 @@ vi.mock("../api/action-log.js", () => ({
 }));
 
 const configMock = vi.mocked(await import("../api/configurations.js"));
+const conflictApi = vi.mocked(await import("../api/configuration-conflict.js"));
 const spacesMock = vi.mocked(await import("../api/spaces.js"));
 
 const { useEditorStore, editorToBatch } = await import("../stores/editor-store.js");
@@ -636,8 +637,10 @@ describe("saveToServer", () => {
       expectedRevision: 1,
       currentRevision: 2,
       message: "Layout changed on the server. Reload before saving again.",
+      changedBy: null,
+      changedAt: null,
     };
-    configMock.parseRevisionConflict.mockReturnValueOnce(conflict);
+    conflictApi.parseRevisionConflict.mockReturnValueOnce(conflict);
     configMock.publicBatchSave.mockRejectedValue(new Error("stale"));
 
     useEditorStore.setState({ configId: "cfg-1", configRevision: 1, isDirty: true, isPublicPreview: true });
@@ -651,7 +654,11 @@ describe("saveToServer", () => {
     expect(useEditorStore.getState().isDirty).toBe(true);
     expect(useEditorStore.getState().objects).toEqual(localObjects);
     expect(useEditorStore.getState().configRevision).toBe(1);
-    expect(useEditorStore.getState().saveConflict).toEqual(conflict);
+    // The guest route's copy could not be read (the mock answers nothing),
+    // so the conflict stands with no summary of their change.
+    expect(configMock.getPublicConfig).toHaveBeenCalledWith("cfg-1");
+    expect(useEditorStore.getState().saveConflict).toEqual({ ...conflict, byYou: false, theirChange: null });
+    expect(useEditorStore.getState().saveErrorCode).toBe("REVISION_CONFLICT");
     expect(useEditorStore.getState().saveError).toContain("changed in another tab");
   });
 

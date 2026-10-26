@@ -29,7 +29,7 @@ export const VenueOperatingSettingsSchema = z.object({
   quietHoursEnd: ClockTimeSchema,
   /** The venue administrator escalations are addressed to; null means every
    *  administrator of the venue. */
-  dutyAdminUserId: z.string().uuid().nullable(),
+  dutyAdminUserId: z.uuid().nullable(),
   /** The venue-local hour at which a wall left on turns to the next day. */
   dayBoundaryHour: z.number().int().min(0).max(23),
   /** Seconds a named relief has to accept a handover before it escalates. */

@@ -27,6 +27,23 @@ beforeEach(() => {
 afterEach(() => { cleanup(); useEditorStore.getState().reset(); });
 
 describe("MobilePlannerTopBar activity", () => {
+  it("follows the browser offline and back through the shared online status", () => {
+    const setBrowserOnline = (online: boolean): void => {
+      Object.defineProperty(window.navigator, "onLine", { configurable: true, get: () => online });
+      window.dispatchEvent(new Event(online ? "online" : "offline"));
+    };
+    try {
+      render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+      expect(screen.getByRole("status").textContent).not.toMatch(/Offline/u);
+      act(() => { setBrowserOnline(false); });
+      expect(screen.getByRole("status").textContent).toMatch(/Offline/u);
+      act(() => { setBrowserOnline(true); });
+      expect(screen.getByRole("status").textContent).not.toMatch(/Offline/u);
+    } finally {
+      setBrowserOnline(true);
+    }
+  });
+
   it("replaces save activity with the real error control after failure", () => {
     useEditorStore.setState({ isSaving: true });
     render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
@@ -94,6 +111,14 @@ describe("MobilePlannerTopBar plan as a PDF", () => {
     useEditorStore.setState({ isPublicPreview: false });
     render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Send your plan" })).toBeNull();
+  });
+
+  // The guest enquiry route accepts only a guest's draft (public preview); a plan
+  // saved to an account goes to the venue through its review instead (QoL E-01).
+  it("does not offer the guest enquiry for a plan saved to an account", () => {
+    useEditorStore.setState({ isPublicPreview: false });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Send to Events Team" })).toBeNull();
   });
 
   it("is not offered before anything is placed", () => {

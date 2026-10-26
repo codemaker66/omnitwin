@@ -1,4 +1,6 @@
 import { type BufferGeometry, Matrix4 } from "three";
+import { aoBox, aoRod, CHAIR_FLOOR, occlude, STANDING_FLOOR, type AoBox } from "./crafted-ao.js";
+import { craftedDetail } from "./crafted-detail.js";
 import {
   cushion,
   post,
@@ -8,6 +10,7 @@ import {
   type Vec3,
 } from "./crafted-geometry.js";
 import type { CraftedPart } from "./crafted-model.js";
+import { casterGeometry, contactSpots } from "./crafted-shadow.js";
 
 // ---------------------------------------------------------------------------
 // Crafted banquet chairs
@@ -18,6 +21,11 @@ import type { CraftedPart } from "./crafted-model.js";
 // rolled edge; and a reclined, gently curved back cushion with a handle slot.
 // Drawn to the catalogue's width, depth and height, facing -Z (the planner's
 // seated forward axis, so saved poses face their tables).
+//
+// The venue keeps the shape in several finishes (its inventory): the pink
+// chair (salmon velvet on the mahogany-red frame, Blake's supplied model),
+// the red and gold gallery chair (crimson velvet on a gold frame, the
+// Burgess brochure's finish), and the checked chair (crimson trellis).
 // ---------------------------------------------------------------------------
 
 export interface ChairSize {
@@ -26,7 +34,9 @@ export interface ChairSize {
   readonly height: number;
 }
 
-export type ChairFabric = "velvet-coral" | "check-coral";
+export type ChairFabric = "velvet-coral" | "check-coral" | "velvet-crimson" | "velvet-pink";
+
+export type ChairFrame = "frame-lacquer" | "gilt";
 
 const TUBE = 0.0105;
 const GLIDE = 0.0125;
@@ -90,8 +100,8 @@ function transformed(geometry: BufferGeometry, matrix: Matrix4): BufferGeometry 
   return geometry;
 }
 
-/** The parts of a banquet chair sized to `size`, upholstered in `fabric`. */
-export function banquetChairParts(size: ChairSize, fabric: ChairFabric): CraftedPart[] {
+/** The parts of a banquet chair sized to `size`, upholstered in `fabric` on a frame of `frameFinish`. */
+export function banquetChairParts(size: ChairSize, fabric: ChairFabric, frameFinish: ChairFrame = "frame-lacquer"): CraftedPart[] {
   const { width, depth, height } = size;
   const halfDepth = depth / 2;
   // Frame lines (tube centres), set in so the splayed rear glides stay
@@ -110,9 +120,14 @@ export function banquetChairParts(size: ChairSize, fabric: ChairFabric): Crafted
   const topY = height - TUBE;
   const shoulderY = topY - 0.15;
 
-  const parts: CraftedPart[] = [];
-  const frame = (points: Vec3[], tension = 0.12): void => {
-    parts.push({ material: "frame-lacquer", geometry: tube({ points, radius: TUBE, tension, segmentsPerMetre: 50, radialSegments: 8 }) });
+  const detail = craftedDetail();
+  // Each part, with the stand-ins the occlusion bake skips for it.
+  const parts: { part: CraftedPart; self: readonly string[] }[] = [];
+  const frame = (points: Vec3[], tension = 0.12, self: readonly string[] = []): void => {
+    parts.push({
+      part: { material: frameFinish, geometry: tube({ points, radius: TUBE, tension, segmentsPerMetre: detail.perMetre * 0.72, radialSegments: detail.radial - 2 }) },
+      self,
+    });
   };
 
   // Rear legs and back frame: one continuous bent tube, foot to foot.
@@ -139,7 +154,7 @@ export function banquetChairParts(size: ChairSize, fabric: ChairFabric): Crafted
       back.push(...arch);
     }
   }
-  frame(back, 0.08);
+  frame(back, 0.08, ["rear-l", "rear-r", "upright-l", "upright-r", "arch"]);
 
   // Front legs, bending back into the seat side rails.
   for (const side of [-1, 1] as const) {
@@ -151,15 +166,15 @@ export function banquetChairParts(size: ChairSize, fabric: ChairFabric): Crafted
       [side * xs, seatRail, frontTopZ + 0.06],
       // Into the rear leg, so the rail's open end is hidden inside it.
       [side * xs, seatRail, junctionZ],
-    ]);
+    ], 0.12, [side < 0 ? "front-l" : "front-r"]);
   }
   // Seat cross rails, front and back, under the cushion.
-  frame([[-xs, seatRail - 0.012, frontTopZ + 0.03], [xs, seatRail - 0.012, frontTopZ + 0.03]], 0);
-  frame([[-xs, seatRail - 0.012, junctionZ - 0.03], [xs, seatRail - 0.012, junctionZ - 0.03]], 0);
+  frame([[-xs, seatRail - 0.012, frontTopZ + 0.03], [xs, seatRail - 0.012, frontTopZ + 0.03]], 0, ["seat"]);
+  frame([[-xs, seatRail - 0.012, junctionZ - 0.03], [xs, seatRail - 0.012, junctionZ - 0.03]], 0, ["seat"]);
 
   // Glides under the four feet.
   for (const [x, z, splay] of [[-1, frontFootZ, footSplay], [1, frontFootZ, footSplay], [-1, rearFootZ, rearSplay], [1, rearFootZ, rearSplay]] as const) {
-    parts.push({ material: "glide", geometry: post([x * (xs + splay), z], 0, GLIDE + 0.006, TUBE * 1.15, TUBE * 1.05) });
+    parts.push({ part: { material: "glide", geometry: post([x * (xs + splay), z], 0, GLIDE + 0.006, TUBE * 1.15, TUBE * 1.05, detail.rodRadial + 3) }, self: [] });
   }
 
   // Seat cushion: wider at the front, domed, with a rolled edge. Its outline
@@ -176,13 +191,21 @@ export function banquetChairParts(size: ChairSize, fabric: ChairFabric): Crafted
       [-seatBackHalf, seatBackZ],
     ],
     0.05,
-    6,
-    45,
+    detail.level === "full" ? 6 : 4,
+    detail.level === "full" ? 45 : 26,
   );
   const seatThickness = 0.062;
-  const seat = cushion({ outline: seatOutline, thickness: seatThickness, dome: 0.012, edge: 0.024, faceRings: 4, undersideRings: 1, edgeSteps: 7 });
+  const seat = cushion({
+    outline: seatOutline,
+    thickness: seatThickness,
+    dome: 0.012,
+    edge: 0.024,
+    faceRings: detail.cushionRings,
+    undersideRings: 1,
+    edgeSteps: detail.cushionEdge,
+  });
   seat.translate(0, seatTop - seatThickness / 2 - 0.006, 0);
-  parts.push({ material: fabric, geometry: seat });
+  parts.push({ part: { material: fabric, geometry: seat }, self: ["seat"] });
 
   // Back cushion: in the reclined plane, curved to the sitter, with a handle slot.
   const backBottom = seatTop + 0.06;
@@ -196,9 +219,9 @@ export function banquetChairParts(size: ChairSize, fabric: ChairFabric): Crafted
     thickness: backThickness,
     dome: 0.014,
     edge: 0.018,
-    faceRings: 4,
+    faceRings: detail.cushionRings,
     undersideRings: 2,
-    edgeSteps: 7,
+    edgeSteps: detail.cushionEdge,
   });
   // Curve: the edges come forward to hold the sitter.
   const position = backShape.getAttribute("position");
@@ -213,7 +236,41 @@ export function banquetChairParts(size: ChairSize, fabric: ChairFabric): Crafted
   const recline = new Matrix4().makeRotationX(RECLINE);
   const place = new Matrix4().makeTranslation(0, backBottom, zAt(backBottom) - TUBE * 0.6 - backThickness / 2 + 0.006);
   transformed(backShape, place.multiply(recline).multiply(stand));
-  parts.push({ material: fabric, geometry: backShape });
+  parts.push({ part: { material: fabric, geometry: backShape }, self: ["back"] });
 
-  return parts;
+  // The chair to the occlusion bake and the sun: its legs and back frame as
+  // rods, the two cushions as slabs.
+  const rod = (tag: string, a: Vec3, b: Vec3): AoBox => aoRod(a, b, TUBE * 2, tag);
+  const backMiddle = (backBottom + backTop) / 2;
+  const boxes: AoBox[] = [
+    aoBox([seatFrontHalf * 2, seatThickness, seatBackZ - seatFrontZ], [0, seatTop - seatThickness / 2 - 0.006, (seatFrontZ + seatBackZ) / 2], "seat"),
+    {
+      tag: "back",
+      centre: [0, backMiddle, zAt(backMiddle) - TUBE * 0.6 - backThickness / 2 + 0.006],
+      axes: [[backWidth / 2, 0, 0], [0, (backHeight / 2) * Math.cos(RECLINE), (backHeight / 2) * Math.sin(RECLINE)], [0, -(backThickness / 2) * Math.sin(RECLINE), (backThickness / 2) * Math.cos(RECLINE)]],
+    },
+    aoBox([2 * xs, TUBE * 2, TUBE * 2], [0, topY - TUBE, zAt(topY)], "arch"),
+  ];
+  for (const side of [-1, 1] as const) {
+    const s = side < 0 ? "l" : "r";
+    boxes.push(
+      rod(`rear-${s}`, [side * (xs + rearSplay), GLIDE, rearFootZ], [side * xs, seatRail, junctionZ]),
+      rod(`upright-${s}`, [side * xs, seatRail, junctionZ], [side * xs, topY, zAt(topY)]),
+      rod(`front-${s}`, [side * (xs + footSplay), GLIDE, frontFootZ], [side * xs, seatRail, frontTopZ]),
+    );
+  }
+  const baked = parts.map(({ part, self }) => ({
+    material: part.material,
+    geometry: occlude(part.geometry, {
+      boxes,
+      self,
+      floor: part.material === "glide" ? STANDING_FLOOR : CHAIR_FLOOR,
+      strength: 0.85,
+    }),
+  }));
+  baked.push({ material: "shadow-caster", geometry: casterGeometry(boxes, { inset: 0.002, minimum: detail.level === "full" ? 0.008 : 0.012 }) });
+  // The shade each glide leaves on the floor.
+  const feet = [[-1, frontFootZ, footSplay], [1, frontFootZ, footSplay], [-1, rearFootZ, rearSplay], [1, rearFootZ, rearSplay]] as const;
+  baked.push({ material: "contact", geometry: contactSpots(feet.map(([x, z, splay]) => ({ x: x * (xs + splay), z, radius: TUBE * 3.6 }))) });
+  return baked;
 }

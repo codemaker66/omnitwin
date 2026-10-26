@@ -323,3 +323,35 @@ describe("the staff shell stays out of the entry script", () => {
     expect(relative.filter((file) => file.startsWith("src/api/"))).toEqual(["src/api/auth-bridge.ts"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The planner's device drafts stay off every route's first load (T-671)
+//
+// Slice 7 first swept expired planner drafts from main.tsx with a static
+// import, so every route, the walkable twin's included, loaded the draft
+// module: the twin's byte budget (e2e/twin-performance, measured on the dev
+// server) went 19 KB over. The sweep now loads its module late, by itself, and
+// the save-conflict parsing lives apart from configurations.ts, which the
+// twin's enquiry modal loads.
+// ---------------------------------------------------------------------------
+
+describe("the planner's device drafts stay off the app root (T-671)", () => {
+  it("sweeps expired drafts through a late dynamic import, never a static one", async () => {
+    const { codeOnly } = await readSource("src/main.tsx");
+    expect(codeOnly).not.toMatch(/from\s+["']\.\/lib\/planner-draft-storage/);
+    expect(codeOnly).toMatch(/import\(["']\.\/lib\/planner-draft-storage\.js["']\)/);
+  });
+
+  it("keeps the save-conflict parsing out of the configurations client the twin loads", async () => {
+    const { codeOnly } = await readSource("src/api/configurations.ts");
+    expect(codeOnly).not.toMatch(/parseRevisionConflict|RevisionConflictDetailsSchema/);
+    const conflict = await readSource("src/api/configuration-conflict.ts");
+    expect(conflict.codeOnly).toMatch(/export function parseRevisionConflict/);
+  });
+
+  it("loads the twin's enquiry form on demand, with the planner keys and configurations client it brings", async () => {
+    const { codeOnly } = await readSource("src/twin/TwinViewerControls.tsx");
+    expect(codeOnly).not.toMatch(/from\s+["']\.\/TwinEnquiryModal/);
+    expect(codeOnly).toMatch(/import\(["']\.\/TwinEnquiryModal\.js["']\)/);
+  });
+});

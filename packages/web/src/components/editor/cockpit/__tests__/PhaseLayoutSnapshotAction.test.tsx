@@ -7,10 +7,11 @@ import {
 } from "../PhaseLayoutSnapshotAction.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 
-const mocks = vi.hoisted(() => ({ freeze: vi.fn(), useFreeze: vi.fn() }));
+const mocks = vi.hoisted(() => ({ freeze: vi.fn(), useFreeze: vi.fn(), flush: vi.fn(), order: [] as string[] }));
 vi.mock("../../../../hooks/use-freeze-phase-layout-snapshot.js", () => ({
   useFreezePhaseLayoutSnapshot: mocks.useFreeze,
 }));
+vi.mock("../../EditorBridge.js", () => ({ flushAutoSave: mocks.flush }));
 
 const EVENT_ID = "11111111-1111-4111-8111-111111111111";
 const PHASE_ID = "22222222-2222-4222-8222-222222222222";
@@ -47,6 +48,9 @@ beforeEach(() => {
   useLayoutTimelinePreviewStore.getState().clear();
   mocks.freeze.mockReset();
   mocks.useFreeze.mockReset();
+  mocks.flush.mockReset();
+  mocks.flush.mockResolvedValue(true);
+  mocks.order.length = 0;
   mocks.useFreeze.mockReturnValue({
     status: "idle",
     result: null,
@@ -83,6 +87,47 @@ describe("PhaseLayoutSnapshotAction", () => {
     });
     expect(onFrozen).toHaveBeenCalledWith(RESULT);
     expect(screen.getByText("Frozen layout saved.")).toBeTruthy();
+  });
+
+  it("saves the latest changes before it freezes, showing the save as work (D-15)", async () => {
+    const save = deferred<boolean>();
+    mocks.flush.mockImplementation(() => { mocks.order.push("flush"); return save.promise; });
+    mocks.freeze.mockImplementation(() => { mocks.order.push("freeze"); return Promise.resolve(RESULT); });
+    const onFrozen = vi.fn();
+    render(<PhaseLayoutSnapshotAction eventId={EVENT_ID} phaseId={PHASE_ID} configurationId={CONFIGURATION_ID} onFrozen={onFrozen} />);
+    fireEvent.click(screen.getByRole("button", { name: "Freeze current saved plan" }));
+    const saving = await screen.findByRole("button", { name: "Saving your changes…" });
+    expect(saving.hasAttribute("disabled")).toBe(true);
+    expect(saving.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(mocks.freeze).not.toHaveBeenCalled();
+    save.resolve(true);
+    await waitFor(() => { expect(onFrozen).toHaveBeenCalledWith(RESULT); });
+    expect(mocks.order).toEqual(["flush", "freeze"]);
+  });
+
+  it("freezes nothing when the save does not reach the server, and says so plainly", async () => {
+    mocks.flush.mockResolvedValue(false);
+    const onFrozen = vi.fn();
+    render(<PhaseLayoutSnapshotAction eventId={EVENT_ID} phaseId={PHASE_ID} configurationId={CONFIGURATION_ID} onFrozen={onFrozen} />);
+    fireEvent.click(screen.getByRole("button", { name: "Freeze current saved plan" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Your latest changes have not reached Venviewer yet, so nothing was frozen. Try again.");
+    expect(mocks.freeze).not.toHaveBeenCalled();
+    expect(onFrozen).not.toHaveBeenCalled();
+    // Trying again works once the save goes through.
+    mocks.flush.mockResolvedValue(true);
+    mocks.freeze.mockResolvedValue(RESULT);
+    fireEvent.click(screen.getByRole("button", { name: "Freeze current saved plan" }));
+    await waitFor(() => { expect(onFrozen).toHaveBeenCalledWith(RESULT); });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("treats a save that throws as not saved", async () => {
+    mocks.flush.mockRejectedValue(new Error("network"));
+    render(<PhaseLayoutSnapshotAction eventId={EVENT_ID} phaseId={PHASE_ID} configurationId={CONFIGURATION_ID} onFrozen={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Freeze current saved plan" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/nothing was frozen/u);
+    expect(mocks.freeze).not.toHaveBeenCalled();
   });
 
   it("surfaces the server's exact 409 without a success claim", () => {
@@ -122,6 +167,7 @@ describe("PhaseLayoutSnapshotAction", () => {
     const button = screen.getByRole("button", { name: "Exit preview to freeze" });
     expect(button.hasAttribute("disabled")).toBe(true);
     fireEvent.click(button);
+    expect(mocks.flush).not.toHaveBeenCalled();
     expect(mocks.freeze).not.toHaveBeenCalled();
   });
 

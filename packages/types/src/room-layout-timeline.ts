@@ -46,8 +46,8 @@ const TimelineIdentitySchema = {
 
 const ExplicitTimelineQuerySchema = z.object({
   ...TimelineIdentitySchema,
-  from: z.string().datetime(),
-  to: z.string().datetime(),
+  from: z.iso.datetime(),
+  to: z.iso.datetime(),
 }).strict();
 
 const ScopedTimelineQuerySchema = z.object({
@@ -70,7 +70,7 @@ export const RoomLayoutTimelineQuerySchema = z.union([
   const toMs = Date.parse(query.to);
   if (toMs <= fromMs) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["to"],
       message: "to must be later than from",
     });
@@ -78,7 +78,7 @@ export const RoomLayoutTimelineQuerySchema = z.union([
   }
   if (toMs - fromMs > ROOM_LAYOUT_TIMELINE_MAX_RANGE_MS) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["to"],
       message: "Timeline range cannot exceed eight elapsed days",
     });
@@ -113,12 +113,12 @@ const AvailableKeyframeSchema = z.object({
   state: z.literal("available"),
   snapshotId: PhaseLayoutSnapshotIdSchema,
   snapshotStatus: z.literal("frozen"),
-  canonicalSnapshotId: z.string().uuid(),
+  canonicalSnapshotId: z.uuid(),
   proofDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   frozenBy: UserIdSchema,
   supersedesSnapshotId: PhaseLayoutSnapshotIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  frozenAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  frozenAt: z.iso.datetime(),
   objectCount: z.number().int().nonnegative(),
   guestCount: z.number().int().nonnegative(),
   payload: CanonicalLayoutSnapshotV0Schema,
@@ -134,8 +134,8 @@ const InvalidKeyframeSchema = z.object({
   state: z.literal("invalid"),
   snapshotId: PhaseLayoutSnapshotIdSchema,
   snapshotStatus: PhaseLayoutSnapshotStatusSchema.nullable(),
-  createdAt: z.string().datetime(),
-  frozenAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  frozenAt: z.iso.datetime().nullable(),
   reason: RoomLayoutTimelineInvalidReasonSchema,
   message: z.string().trim().min(1).max(160),
 }).strict();
@@ -192,7 +192,7 @@ export const RoomLayoutTimelineRevenueFigureSchema = z.discriminatedUnion("state
       estimatedRevenueMinor: MinorUnitAmountSchema,
       comfortStatus: ComfortConstraintStatusSchema,
       reviewGateCount: z.number().int().nonnegative(),
-      updatedAt: z.string().datetime(),
+      updatedAt: z.iso.datetime(),
     }).strict(),
     disclosure: z.literal("Planning scenario estimate; not a quote or approval."),
   }).strict(),
@@ -230,8 +230,8 @@ export const RoomLayoutTimelineFrameSchema = z.object({
   phaseName: z.string().trim().min(1).max(100),
   templateKey: EventPhaseTemplateKeySchema.nullable(),
   sortOrder: z.number().int().nonnegative(),
-  startsAt: z.string().datetime(),
-  endsAt: z.string().datetime(),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
   guestCount: z.number().int().nonnegative().nullable(),
   opsTasksCount: z.number().int().nonnegative(),
   reviewGatesCount: z.number().int().nonnegative(),
@@ -244,7 +244,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
 }).strict().superRefine((frame, context) => {
   if (frame.id !== frame.phaseId) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["phaseId"],
       message: "Frame id must match phaseId",
     });
@@ -252,7 +252,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
 
   if ((frame.kind === "room_flip") !== (frame.templateKey === "room-flip")) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["templateKey"],
       message: "Frame kind and templateKey must agree on room-flip identity",
     });
@@ -262,7 +262,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
   const endsAtMs = Date.parse(frame.endsAt);
   if (endsAtMs <= startsAtMs) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["endsAt"],
       message: "Frame endsAt must be later than startsAt",
     });
@@ -273,7 +273,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
     && !(frame.keyframe.state === "missing" && frame.keyframe.reason === "room_flip_gap")
   ) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["keyframe"],
       message: "Room-flip frames must carry a missing room_flip_gap keyframe",
     });
@@ -284,7 +284,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
     && frame.keyframe.reason === "room_flip_gap"
   ) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["keyframe", "reason"],
       message: "Only room-flip frames may carry a room_flip_gap keyframe",
     });
@@ -293,14 +293,14 @@ export const RoomLayoutTimelineFrameSchema = z.object({
   if (frame.keyframe.state === "available") {
     if (frame.keyframe.objectCount !== frame.keyframe.payload.objects.length) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["keyframe", "objectCount"],
         message: "Available keyframe objectCount must match its payload",
       });
     }
     if (frame.keyframe.guestCount !== frame.keyframe.payload.guestCount) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["keyframe", "guestCount"],
         message: "Available keyframe guestCount must match its payload",
       });
@@ -317,7 +317,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
     || frame.figures.guests.value !== expectedGuests.value
   ) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["figures", "guests"],
       message: "Guests figure must match the authoritative keyframe, phase, or event source",
     });
@@ -327,7 +327,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
   if (frame.keyframe.state !== "available") {
     if (capacity.state !== "unavailable" || capacity.reason !== "no_valid_frozen_keyframe") {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["figures", "seatedCapacity"],
         message: "Capacity without an available keyframe must report no_valid_frozen_keyframe",
       });
@@ -346,7 +346,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
     if (seatingBasis === null) {
       if (capacity.state !== "unavailable" || capacity.reason !== "capacity_evidence_incomplete") {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["figures", "seatedCapacity"],
           message: "Incomplete seating evidence must report capacity_evidence_incomplete",
         });
@@ -363,7 +363,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
         || capacity.value !== expectedValue
       ) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["figures", "seatedCapacity"],
           message: "Available capacity must match chair-first canonical seating evidence",
         });
@@ -378,14 +378,14 @@ export const RoomLayoutTimelineFrameSchema = z.object({
       && revenue.scenario.plannedGuestCount !== frame.keyframe.payload.guestCount
     ) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["figures", "revenue", "scenario", "plannedGuestCount"],
         message: "Available revenue scenario guest count must match the frozen payload",
       });
     }
     if (revenue.state === "unavailable" && revenue.reason === "no_valid_frozen_keyframe") {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["figures", "revenue", "reason"],
         message: "An available keyframe cannot report no_valid_frozen_keyframe revenue",
       });
@@ -395,7 +395,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
     || (revenue.state === "unavailable" && revenue.reason !== "no_valid_frozen_keyframe")
   ) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["figures", "revenue"],
       message: "Revenue without an available keyframe must be restricted or unavailable for that reason",
     });
@@ -406,7 +406,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
     || frame.figures.staffing.staffConflictsLabel !== frame.staffConflictsLabel
   ) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["figures", "staffing"],
       message: "Staffing figure must match frame-level staff-conflict evidence",
     });
@@ -417,15 +417,15 @@ export type RoomLayoutTimelineFrame = z.infer<typeof RoomLayoutTimelineFrameSche
 const ExplicitAuthoritativeRangeSchema = z.object({
   scope: z.literal("custom"),
   anchorDate: z.null(),
-  from: z.string().datetime(),
-  to: z.string().datetime(),
+  from: z.iso.datetime(),
+  to: z.iso.datetime(),
 }).strict();
 
 const ScopedAuthoritativeRangeSchema = z.object({
   scope: RoomLayoutTimelineScopeSchema,
   anchorDate: RoomLayoutTimelineLocalDateSchema,
-  from: z.string().datetime(),
-  to: z.string().datetime(),
+  from: z.iso.datetime(),
+  to: z.iso.datetime(),
 }).strict();
 
 export const RoomLayoutTimelineRangeSchema = z.discriminatedUnion("scope", [
@@ -439,14 +439,14 @@ export const RoomLayoutTimelineResponseSchema = z.object({
   spaceId: SpaceIdSchema,
   timeZone: TimezoneSchema,
   /** Retained for existing clients; identical to range.from/range.to. */
-  from: z.string().datetime(),
-  to: z.string().datetime(),
+  from: z.iso.datetime(),
+  to: z.iso.datetime(),
   range: RoomLayoutTimelineRangeSchema,
   frames: z.array(RoomLayoutTimelineFrameSchema),
 }).strict().superRefine((response, context) => {
   if (response.from !== response.range.from || response.to !== response.range.to) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["range"],
       message: "Authoritative range must match top-level from/to",
     });
@@ -456,7 +456,7 @@ export const RoomLayoutTimelineResponseSchema = z.object({
   const toMs = Date.parse(response.range.to);
   if (toMs <= fromMs) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["range", "to"],
       message: "Authoritative range to must be later than from",
     });
@@ -467,7 +467,7 @@ export const RoomLayoutTimelineResponseSchema = z.object({
   for (const [index, frame] of response.frames.entries()) {
     if (seenPhaseIds.has(frame.phaseId)) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["frames", index, "phaseId"],
         message: "Timeline frames must have unique phase identities",
       });
@@ -482,7 +482,7 @@ export const RoomLayoutTimelineResponseSchema = z.object({
         || (previousStartsAtMs === frameStartsAtMs && previousFrame.id.localeCompare(frame.id) > 0)
       ) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["frames", index],
           message: "Timeline frames must be ordered by startsAt and then id",
         });
@@ -494,7 +494,7 @@ export const RoomLayoutTimelineResponseSchema = z.object({
     const endsAtMs = Date.parse(frame.endsAt);
     if (startsAtMs >= toMs || endsAtMs <= fromMs) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["frames", index],
         message: "Frame must overlap the authoritative range",
       });
@@ -507,7 +507,7 @@ export const RoomLayoutTimelineResponseSchema = z.object({
       || payload.venueRuntime.venueId !== response.venueId
     ) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["frames", index, "keyframe", "payload", "venueId"],
         message: "Available keyframe venue identity must match the timeline response",
       });
@@ -517,7 +517,7 @@ export const RoomLayoutTimelineResponseSchema = z.object({
       || payload.venueRuntime.spaceId !== response.spaceId
     ) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["frames", index, "keyframe", "payload", "spaceId"],
         message: "Available keyframe space identity must match the timeline response",
       });
@@ -551,7 +551,7 @@ export const FreezePhaseLayoutSnapshotResponseSchema = z.object({
   phaseId: EventPhaseIdSchema,
   configurationId: ConfigurationIdSchema,
   snapshotId: PhaseLayoutSnapshotIdSchema,
-  canonicalSnapshotId: z.string().uuid(),
+  canonicalSnapshotId: z.uuid(),
   snapshotHash: z.string().regex(/^[a-f0-9]{64}$/u),
   proofDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   frozenBy: UserIdSchema,
@@ -559,8 +559,8 @@ export const FreezePhaseLayoutSnapshotResponseSchema = z.object({
   coordinateSpace: z.literal("real_m_v1"),
   objectCount: z.number().int().nonnegative(),
   guestCount: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
-  frozenAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  frozenAt: z.iso.datetime(),
   supersedesSnapshotId: PhaseLayoutSnapshotIdSchema.nullable(),
 }).strict();
 export type FreezePhaseLayoutSnapshotResponse = z.infer<

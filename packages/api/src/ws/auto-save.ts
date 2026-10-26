@@ -28,10 +28,10 @@ const LIVE_HEARTBEAT_INTERVAL_MS = 20_000;
 const EDITABLE_REVIEW_STATUSES = ["draft", "changes_requested", "rejected"] as const;
 
 export const ObjectDataSchema = z.object({
-  id: z.string().uuid().optional(),
-  assetId: z.string().uuid(),
-  position: z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() }),
-  rotation: z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() }),
+  id: z.uuid().optional(),
+  assetId: z.uuid(),
+  position: z.object({ x: z.number(), y: z.number(), z: z.number() }),
+  rotation: z.object({ x: z.number(), y: z.number(), z: z.number() }),
   scale: z.number().positive(),
   sortOrder: z.number().int().nonnegative().optional(),
   clothed: z.boolean().optional(),
@@ -49,7 +49,7 @@ export const UpdateObjectsMessage = z.object({
 export const DeleteObjectMessage = z.object({
   type: z.literal("delete_object"),
   expectedRevision: z.number().int().min(1),
-  objectId: z.string().uuid(),
+  objectId: z.uuid(),
 });
 
 export const AuthMessage = z.object({
@@ -261,7 +261,7 @@ function configAccessCondition(user: WsUser): SQL {
 }
 
 function metadataForObject(object: ObjectData, existing: unknown = null): Record<string, unknown> | null {
-  const parsedExisting = z.record(z.unknown()).safeParse(existing);
+  const parsedExisting = z.record(z.string(), z.unknown()).safeParse(existing);
   const metadata: Record<string, unknown> = parsedExisting.success ? { ...parsedExisting.data } : {};
   if (object.clothed !== undefined) metadata["clothed"] = object.clothed;
   if (object.clothStyle !== undefined) metadata["clothStyle"] = object.clothStyle;
@@ -500,7 +500,7 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
   });
 
   server.get("/ws/configurations/:configId", { websocket: true }, async (socket, request) => {
-    const parsedParams = z.object({ configId: z.string().uuid() }).safeParse(request.params);
+    const parsedParams = z.object({ configId: z.uuid() }).safeParse(request.params);
     if (!parsedParams.success) {
       socket.send(JSON.stringify({ type: "error", code: "VALIDATION_ERROR", message: "Invalid configId" }));
       socket.close();

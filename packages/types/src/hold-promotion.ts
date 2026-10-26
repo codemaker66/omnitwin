@@ -41,11 +41,11 @@ export const PromotionDraftRecipientSourceSchema = z.enum(PROMOTION_DRAFT_RECIPI
 export type PromotionDraftRecipientSource = z.infer<typeof PromotionDraftRecipientSourceSchema>;
 
 export const PromotionDraftSchema = z.object({
-  bookingId: z.string().uuid(),
+  bookingId: z.uuid(),
   /** The client contact of record; null when none is recorded on the hold. */
   to: z.object({
     name: z.string().trim().min(1).max(200),
-    email: z.string().email().max(255),
+    email: z.email().max(255),
     source: PromotionDraftRecipientSourceSchema,
   }).nullable(),
   subject: z.string().trim().min(1).max(300),
