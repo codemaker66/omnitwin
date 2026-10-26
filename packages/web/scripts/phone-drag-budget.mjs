@@ -23,9 +23,13 @@
 //     [--floor empty|rounds] [--throttle 1|4] [--gestures orbit,place] [--out DIR] \
 //     [--query pf=leanMotionPipeline] [--label NAME]
 // Gestures: orbit (one finger, no hold); place (a round in hand, held 200 ms,
-// then slid); lift (nothing in hand, a still finger on the round nearest the
-// middle of the view, held 380 ms, then slid). With the touch arbiter on
-// (`pf=touchArbiter`), place and lift also fail if the camera moves.
+// then slid, from where the piece lands on clear floor whichever way the view
+// opens); lift (nothing in hand, a still finger on the round nearest the
+// middle of the view, held 380 ms, then slid). Place fails if nothing lands,
+// lift if nothing moves. With the touch arbiter on (`pf=touchArbiter`), place
+// and lift also fail if the camera moves. The 1.5 s after each lift are
+// reported apart: what the drop compiles and its longest frame (the first
+// piece of a kind compiles its instanced variant there).
 // The build needs no Clerk key in a mode other than production:
 //   pnpm exec vite build --mode budget && pnpm exec vite preview --mode budget
 // ---------------------------------------------------------------------------
@@ -54,6 +58,18 @@ const MAX_PASSES = 3;
 const QUIET_CPU = 15;
 /** With the touch arbiter on, a placing or lifting finger must leave the camera exactly where it was. */
 const ARBITER = /(^|[=,])touchArbiter(,|&|$)/u.test(QUERY);
+/** Every drag slides right and down by these shares of the canvas. */
+const SLIDE = { x: 0.2, y: 0.08 };
+/** How far a placing finger's ghost rides above it on this 852 px tall phone (lib/touch-arbiter.ts, ghostRaisePx). */
+const GHOST_RAISE_PX = 64;
+/** A finger needs this much canvas around it (px), clear of the header, cards and dock drawn over the view. */
+const FINGER_CLEARANCE_PX = 18;
+/** How long after a lift the drop is watched: the throttle is off by then, so this counts compiles, not pace. */
+const AFTER_DROP_MS = 1500;
+/** A PNG of the settled view before the gestures, when given (`--shot D:/x.png`). */
+const SHOT = option("shot", "");
+/** Keep the code of every shader compiled from arming the round on (`--keep-code`), to diff a twice-compiled one. */
+const KEEP_CODE = process.argv.includes("--keep-code");
 
 const API = "http://localhost:3001";
 const CONFIG_ID = "tour-config-0001";
@@ -169,6 +185,30 @@ function instrument() {
   count(GPUDevice.prototype, "createRenderPipeline", "pipeline");
   count(GPUDevice.prototype, "createRenderPipelineAsync", "pipeline");
   tr.counts = () => ({ ...counts });
+  // What each pipeline is, to say what a gesture compiled: colour targets (none for a depth-only
+  // shadow pass), samples, and how many vertex buffers step per instance (an instanced batch).
+  tr.pipelines = [];
+  // Shader code, kept only once `tr.keepCode` is set, to diff what compiled twice.
+  tr.shaders = [];
+  tr.keepCode = false;
+  const createShaderModule = GPUDevice.prototype.createShaderModule;
+  GPUDevice.prototype.createShaderModule = function (descriptor, ...rest) {
+    if (tr.keepCode) tr.shaders.push([performance.now(), descriptor?.label ?? null, descriptor?.code ?? ""]);
+    return createShaderModule.call(this, descriptor, ...rest);
+  };
+  for (const name of ["createRenderPipeline", "createRenderPipelineAsync"]) {
+    const described = GPUDevice.prototype[name];
+    GPUDevice.prototype[name] = function (descriptor, ...rest) {
+      tr.pipelines.push([performance.now(), {
+        targets: descriptor?.fragment?.targets?.length ?? 0,
+        samples: descriptor?.multisample?.count ?? 1,
+        depth: descriptor?.depthStencil?.format ?? null,
+        instanceBuffers: (descriptor?.vertex?.buffers ?? []).filter((buffer) => buffer?.stepMode === "instance").length,
+        label: descriptor?.label ?? null,
+      }]);
+      return described.call(this, descriptor, ...rest);
+    };
+  }
   const current = GPUCanvasContext.prototype.getCurrentTexture;
   GPUCanvasContext.prototype.getCurrentTexture = function (...args) {
     // The main view only: the largest canvas on the page.
@@ -235,6 +275,14 @@ try {
   // Let the room arrive and the loop go idle.
   await page.waitForTimeout(14_000);
   result.webgpu = await page.evaluate(() => typeof window.__budget.counts === "function");
+  // Where the view opened: the camera's place and the way it looks, in the room's metres.
+  result.view = await page.evaluate(() => {
+    const camera = window.__r3fStore?.getState().camera;
+    if (camera === undefined) return null;
+    const ahead = camera.getWorldDirection(camera.position.clone());
+    return { position: camera.position.toArray().map((v) => Math.round(v * 100) / 100), looking: ahead.toArray().map((v) => Math.round(v * 100) / 100) };
+  });
+  if (SHOT !== "") await page.screenshot({ path: SHOT });
   const cdp = await context.newCDPSession(page);
   const box = await page.locator("canvas").first().boundingBox();
   if (box === null) throw new Error("No canvas");
@@ -283,13 +331,71 @@ try {
     return places;
   });
 
+  /**
+   * Where a placing finger goes down so the piece lands on clear floor, whichever way the view opens:
+   * the ghost rides GHOST_RAISE_PX above the finger, so the floor under the ghost at the end of the
+   * slide is the landing spot, at least 2.2 m from every placed piece and 1 m inside the floor's
+   * edge, and the floor under it at the start must be floor too. Both finger positions must touch
+   * the canvas itself, with room for a finger, wherever the page draws its header, cards and dock.
+   * The landing spot nearest the middle of the floor in view wins; null if none.
+   */
+  const placeStart = () => page.evaluate(([slide, raise, clearance]) => {
+    const state = window.__r3fStore?.getState();
+    const floor = state?.scene.getObjectByName("planner-interaction-floor");
+    const rect = document.querySelector("canvas")?.getBoundingClientRect();
+    if (state === undefined || floor === undefined || floor.geometry === undefined || rect === undefined) return null;
+    floor.geometry.computeBoundingBox();
+    const low = floor.localToWorld(floor.geometry.boundingBox.min.clone());
+    const high = floor.localToWorld(floor.geometry.boundingBox.max.clone());
+    const taken = [];
+    for (const child of state.scene.getObjectByName("placed-furniture")?.children ?? []) {
+      let mesh = null;
+      child.traverse((node) => { if (mesh === null && node.isMesh) mesh = node; });
+      if (mesh === null) continue;
+      mesh.geometry.computeBoundingSphere();
+      const centre = mesh.geometry.boundingSphere.center.clone().applyMatrix4(mesh.matrixWorld);
+      taken.push([centre.x, centre.z]);
+    }
+    const points = [];
+    const [x0, x1] = [Math.min(low.x, high.x), Math.max(low.x, high.x)];
+    const [z0, z1] = [Math.min(low.z, high.z), Math.max(low.z, high.z)];
+    for (let x = x0 + 0.2; x < x1; x += 0.2) {
+      for (let z = z0 + 0.2; z < z1; z += 0.2) {
+        const point = state.camera.position.clone().set(x, 0, z).project(state.camera);
+        if (point.z > 1) continue;
+        points.push({ x, z, sx: rect.left + (point.x * 0.5 + 0.5) * rect.width, sy: rect.top + (-point.y * 0.5 + 0.5) * rect.height });
+      }
+    }
+    const onFloor = (sx, sy) => points.some((point) => Math.hypot(point.sx - sx, point.sy - sy) < 12);
+    const canvas = document.querySelector("canvas");
+    const touchesCanvas = (sx, sy) => [[0, 0], [clearance, 0], [-clearance, 0], [0, clearance], [0, -clearance]]
+      .every(([dx, dy]) => document.elementFromPoint(sx + dx, sy + dy) === canvas);
+    const inView = points.filter((point) => touchesCanvas(point.sx, point.sy));
+    if (inView.length === 0) return null;
+    const goal = [inView.reduce((sum, point) => sum + point.sx, 0) / inView.length, inView.reduce((sum, point) => sum + point.sy, 0) / inView.length];
+    // Clear floor first, nearest the middle of the floor in view; on a full floor, the spot with the
+    // most room (the planner takes a piece among others: it flags a squeeze, never refuses one).
+    const room = (point) => Math.min(Infinity, ...taken.map(([px, pz]) => Math.hypot(px - point.x, pz - point.z)));
+    const fromGoal = (point) => Math.hypot(point.sx - goal[0], point.sy - goal[1]);
+    const inside = points.filter((point) => point.x > x0 + 1 && point.x < x1 - 1 && point.z > z0 + 1 && point.z < z1 - 1);
+    const clear = inside.filter((point) => room(point) >= 2.2).sort((a, b) => fromGoal(a) - fromGoal(b));
+    const crowded = inside.filter((point) => room(point) < 2.2).sort((a, b) => room(b) - room(a));
+    for (const landing of [...clear, ...crowded]) {
+      const end = [landing.sx, landing.sy + raise];
+      const start = [end[0] - rect.width * slide.x, end[1] - rect.height * slide.y];
+      if (!touchesCanvas(...start) || !touchesCanvas(...end) || !onFloor(start[0], start[1] - raise)) continue;
+      return { x: start[0], y: start[1], landing: [landing.x, landing.z] };
+    }
+    return null;
+  }, [SLIDE, GHOST_RAISE_PX, FINGER_CLEARANCE_PX]);
+
   /** One finger: down at (x0, y0), held `holdMs`, then MOVES moves on a 60 Hz clock to (x1, y1), then up. */
   async function drag(name, holdMs, from = null) {
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
     const x0 = from?.x ?? box.x + box.width * 0.42;
     const y0 = from?.y ?? box.y + box.height * 0.5;
-    const x1 = x0 + box.width * 0.2;
-    const y1 = y0 + box.height * 0.08;
+    const x1 = x0 + box.width * SLIDE.x;
+    const y1 = y0 + box.height * SLIDE.y;
     const cameraBefore = await cameraAt();
     const downAt = await pageNow();
     await touch("touchStart", x0, y0);
@@ -311,10 +417,10 @@ try {
     await page.waitForTimeout(300);
     const releaseEnd = await pageNow();
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(AFTER_DROP_MS);
     const trace = await page.evaluate(() => {
       const tr = window.__budget;
-      return { draws: tr.draws, raf: tr.raf, input: tr.input, frames: tr.frames, longtasks: tr.longtasks, counts: tr.counts?.() ?? null };
+      return { draws: tr.draws, raf: tr.raf, input: tr.input, frames: tr.frames, longtasks: tr.longtasks, counts: tr.counts?.() ?? null, pipelines: tr.pipelines ?? [] };
     });
     const motion = frameStats(trace, moveFrom, upAt);
     // Compiles from the touch down until 300 ms after the lift: the counts at the last frame before
@@ -322,13 +428,26 @@ try {
     const before = trace.frames.filter(([t]) => t < downAt).at(-1)?.[1] ?? null;
     const after = trace.frames.filter(([t]) => t <= releaseEnd).at(-1)?.[1] ?? null;
     const compiled = before === null || after === null ? null : { shaderModules: after.shader - before.shader, pipelines: after.pipeline - before.pipeline };
+    // The drop, reported apart and not judged: what compiles once the finger is off, and the
+    // longest frame while it does.
+    const settled = trace.frames.filter(([t]) => t <= releaseEnd + AFTER_DROP_MS).at(-1)?.[1] ?? null;
+    const dropDraws = trace.draws.filter((t) => t > releaseEnd && t <= releaseEnd + AFTER_DROP_MS);
+    const dropIntervals = dropDraws.slice(1).map((t, index) => t - dropDraws[index]);
+    const afterDrop = after === null || settled === null ? null : {
+      shaderModules: settled.shader - after.shader, pipelines: settled.pipeline - after.pipeline,
+      longestFrameMs: dropIntervals.length === 0 ? null : Math.round(Math.max(...dropIntervals) * 10) / 10,
+    };
     const record = {
-      holdMs, moves: MOVES, draws: motion.draws,
+      holdMs, moves: MOVES, draws: motion.draws, liftAtMs: Math.round(upAt - downAt),
       workPerFrame: { p50: quantile(motion.work, 0.5), p95: quantile(motion.work, 0.95), max: quantile(motion.work, 1) },
       intervalMs: { p50: quantile(motion.intervals, 0.5), p95: quantile(motion.intervals, 0.95) },
       passesPerFrame: { p50: quantile(motion.passes, 0.5), p95: quantile(motion.passes, 0.95), max: quantile(motion.passes, 1) },
       drawsPerFrame: { p50: quantile(motion.drawCalls, 0.5) },
       compiled,
+      // The pipelines created in the gesture's window and in the drop's, described.
+      compiledPipelines: trace.pipelines.filter(([t]) => t >= downAt && t <= releaseEnd).map(([t, pipeline]) => ({ atMs: Math.round(t - downAt), ...pipeline })),
+      afterDrop,
+      afterDropPipelines: trace.pipelines.filter(([t]) => t > releaseEnd && t <= releaseEnd + AFTER_DROP_MS).map(([t, pipeline]) => ({ atMs: Math.round(t - downAt), ...pipeline })),
       longtasks: { n: motion.longtasks.length, max: quantile(motion.longtasks, 1) },
       cameraMovedM: cameraBefore === null || cameraAtLift === null ? null
         : Math.hypot(cameraAtLift[0] - cameraBefore[0], cameraAtLift[1] - cameraBefore[1], cameraAtLift[2] - cameraBefore[2]),
@@ -341,6 +460,8 @@ try {
     };
     result.gestures[name] = record;
     console.log(`${name.padEnd(8)} frames ${String(motion.draws).padStart(4)}  work p50/p95/max ${String(record.workPerFrame.p50)}/${String(record.workPerFrame.p95)}/${String(record.workPerFrame.max)} ms (budget ${String(BUDGET_MS)})  passes p50/p95 ${String(record.passesPerFrame.p50)}/${String(record.passesPerFrame.p95)}  compiled ${JSON.stringify(compiled)}  interval p50 ${String(record.intervalMs.p50)} ms  camera moved ${record.cameraMovedM === null ? "?" : record.cameraMovedM.toExponential(1)} m`);
+    for (const pipeline of record.compiledPipelines) console.log(`${name.padEnd(8)}   pipeline at ${String(pipeline.atMs)} ms: ${JSON.stringify(pipeline)}`);
+    console.log(`${name.padEnd(8)} after the lift (${String(AFTER_DROP_MS / 1000)} s): compiled ${afterDrop === null ? "?" : JSON.stringify({ shaderModules: afterDrop.shaderModules, pipelines: afterDrop.pipelines })}  longest frame ${String(afterDrop?.longestFrameMs ?? "?")} ms`);
     if (!Object.values(record.checks).every(Boolean)) failed = true;
     return record;
   }
@@ -350,12 +471,19 @@ try {
     // A round in hand: Add, then the six-foot round.
     await page.getByRole("button", { name: /^add/i }).first().tap({ timeout: 10_000 });
     await page.waitForTimeout(800);
+    if (KEEP_CODE) await page.evaluate(() => { window.__budget.keepCode = true; });
     await page.locator("[data-testid=catalogue-item-round-table-6ft-white]").first().tap({ timeout: 10_000 });
+    result.armedAt = await pageNow();
     await page.waitForTimeout(1200);
+    const start = await placeStart();
+    if (start === null) throw new Error("No clear floor in the open part of the view to place on");
     const before = await pieces();
-    const record = await drag("place", 200);
+    const record = await drag("place", 200, start);
+    record.landing = start.landing;
     record.piecesAdded = before === null ? null : (await pieces()) - before;
-    console.log(`place    pieces added ${String(record.piecesAdded)}`);
+    record.checks.placed = record.piecesAdded !== null && record.piecesAdded > 0;
+    if (!record.checks.placed) failed = true;
+    console.log(`place    pieces added ${String(record.piecesAdded)} at (${start.landing.map((v) => v.toFixed(1)).join(", ")}) m`);
     // The round stays in hand: put it down before the next gesture.
     await page.keyboard.press("Escape");
     await page.waitForTimeout(600);
@@ -375,6 +503,9 @@ try {
     if (!record.checks.lifted) failed = true;
     console.log(`lift     pressed ${piece.name}; the furthest piece moved ${record.liftedM.toFixed(2)} m`);
   }
+  // Every pipeline the page compiled, in page time, for reading what a warm-up did and did not cover.
+  result.pipelines = await page.evaluate(() => window.__budget.pipelines ?? []);
+  if (KEEP_CODE) result.shaders = await page.evaluate(() => window.__budget.shaders ?? []);
 } catch (error) {
   result.errors.push(String(error).slice(0, 300));
   failed = true;
