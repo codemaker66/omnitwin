@@ -117,7 +117,8 @@ describe("the four fixtures, laid out", () => {
     expect(text).toContain("Drawn from the saved layout, looking down.");
     expect(text).toContain("Setup, in order");
     expect(text.match(/Parquet Dance Floor Panel/gu)).toHaveLength(2); // store list and one setup line
-    expect(text).toContain("Perimeter 16 · East wall 10 · Centre 4");
+    // One laid floor is one line, at the floor's middle (planner-qol E-13).
+    expect(text).toContain("30 Parquet Dance Floor Panel Perimeter · Laid as one floor");
     expect(text).toContain("10 chairs each");
     expect(text).toContain("done by 10:00 · Band loads in at 10:15");
     expect(text).toContain("Final touches");
@@ -173,11 +174,28 @@ describe("inputs that bite", () => {
     for (const line of titleLines) expect(line.x + line.width).toBeLessThan(PAGE_W - MARGIN - 62);
   });
 
-  it("draws a supplied diagram in the plan's place", async () => {
+  // planner-qol E-X4: a thumbnail is a picture from some earlier save and can
+  // show an older layout than the one the sheet lists, so the saved plan wins.
+  it("draws the saved plan, never an older picture, when the layout has a plan", async () => {
     const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=";
     const buf = await generateSheetPdfV2({ ...weddingSheet(), diagramUrl: png });
+    expect(pdfImageCount(buf)).toBe(0);
+    expect(pdfText(buf)).toContain("Drawn from the saved layout");
+  });
+
+  // Release audit hallkeeper-ops-3 / planner-qol E-13: the crew sets each
+  // table's linen by its number and builds the floor to its size.
+  it("prints the tables' numbers and the dance floor's size in the setup", async () => {
+    const text = pdfText(await generateSheetPdfV2(weddingSheet()));
+    expect(text).toContain("Tables 1–11");
+    expect(text).toContain("Laid as one floor, 6 × 5 panels, 5.46 × 4.55 m");
+  });
+
+  it("draws a supplied picture only for a layout saved with no plan", async () => {
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=";
+    const buf = await generateSheetPdfV2({ ...weddingSheet(), floorPlan: null, diagramUrl: png });
     expect(pdfImageCount(buf)).toBe(1);
-    expect(pdfText(buf)).not.toContain("Drawn from the saved layout");
+    expect(pdfText(buf)).not.toContain("No plan was saved with this layout");
   });
 
   it("says no plan was saved when a sheet was frozen without one", async () => {

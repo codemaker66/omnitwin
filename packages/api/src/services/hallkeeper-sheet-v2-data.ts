@@ -172,6 +172,7 @@ export async function assembleSheetDataV2(
     const groupId = typeof rawGroupId === "string" ? rawGroupId : null;
     const rawNotes = meta?.["notes"];
     const notes = typeof rawNotes === "string" ? rawNotes : null;
+    const rawLabel = meta?.["displayLabel"];
     return {
       id: obj.id,
       assetName: asset?.name ?? "Unknown",
@@ -183,6 +184,10 @@ export async function assembleSheetDataV2(
       chairCount: 0,
       groupId,
       notes,
+      // The planner's table numbers and the footprints a laid floor is sized from.
+      displayLabel: typeof rawLabel === "string" ? rawLabel.slice(0, 80) : null,
+      ...(asset === undefined ? {} : { widthM: Number(asset.widthM), depthM: Number(asset.depthM) }),
+      scale: Number(obj.scale),
     };
   });
 
