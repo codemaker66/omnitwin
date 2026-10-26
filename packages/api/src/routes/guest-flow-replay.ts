@@ -90,6 +90,15 @@ function storedNavmesh(row: NavmeshVersionRow): StoredNavmeshVersion {
   });
 }
 
+/** A navmesh is stored once for its room's geometry and shared by every
+ *  scenario that walks the same room, so its links name the scenario that
+ *  first made it: shown to that scenario, and to any other, none at all. */
+function navmeshFor(row: NavmeshVersionRow, scenarioId: string | null): StoredNavmeshVersion {
+  const stored = storedNavmesh(row);
+  if (row.scenarioId !== null && row.scenarioId === scenarioId) return stored;
+  return { ...stored, eventId: null, phaseId: null, configurationId: null, scenarioId: null, createdBy: null };
+}
+
 function storedReplay(row: GuestFlowReplayRow): StoredGuestFlowReplay {
   return StoredGuestFlowReplaySchema.parse({
     id: row.id,
@@ -149,7 +158,7 @@ async function validateLinkedVenue(
     readonly phaseId: string | null;
     readonly configurationId: string | null;
   },
-): Promise<{ ok: true; eventId: string | null } | { ok: false; status: number; error: string; code: string }> {
+): Promise<{ ok: true; eventId: string | null; venueId: string | null } | { ok: false; status: number; error: string; code: string }> {
   if (!canUseGuestFlowReplay(user)) {
     return { ok: false, status: 403, error: "Only venue staff can manage guest-flow replay artifacts", code: "FORBIDDEN" };
   }
@@ -188,6 +197,7 @@ async function validateLinkedVenue(
   if (linkedVenueIds.size > 1) {
     return { ok: false, status: 422, error: "Guest-flow replay links must belong to one venue", code: "VENUE_MISMATCH" };
   }
+  const linkedVenueId = Array.from(linkedVenueIds)[0] ?? null;
 
   if (!isPlatformAdmin(user)) {
     if (linkedVenueIds.size === 0) {
@@ -199,7 +209,15 @@ async function validateLinkedVenue(
     }
   }
 
-  return { ok: true, eventId: resolvedEventId };
+  return { ok: true, eventId: resolvedEventId, venueId: linkedVenueId };
+}
+
+/** The venue a stored replay belongs to, through what it is linked to. */
+async function venueOfReplay(db: Database, replay: GuestFlowReplayRow): Promise<string | null> {
+  if (replay.eventId !== null) return venueForEvent(db, replay.eventId);
+  if (replay.configurationId !== null) return venueForConfiguration(db, replay.configurationId);
+  if (replay.phaseId !== null) return (await eventForPhase(db, replay.phaseId))?.venueId ?? null;
+  return null;
 }
 
 async function assembleStoredReplay(
@@ -282,7 +300,7 @@ async function assembleStoredReplay(
   return GuestFlowReplayPersistenceResultSchema.parse({
     created: false,
     scenario: scenario === undefined ? null : storedScenario(scenario),
-    navmeshVersion: storedNavmesh(navmesh),
+    navmeshVersion: navmeshFor(navmesh, replay.scenarioId),
     replay: storedReplay(replay),
     artifact,
   });
@@ -318,6 +336,14 @@ export async function guestFlowReplayRoutes(
       .where(eq(guestFlowReplays.artifactHash, artifact.artifactHash))
       .limit(1);
     if (existingReplay !== undefined) {
+      // A replay is stored once for its exact inputs, whichever venue asked:
+      // another venue's is not this one's answer, and its words stay its own.
+      if (!isPlatformAdmin(request.user) && await venueOfReplay(db, existingReplay) !== scope.venueId) {
+        return reply.status(409).send({
+          error: "These exact inputs were already replayed elsewhere. Change the seed to replay them here.",
+          code: "REPLAY_INPUTS_TAKEN",
+        });
+      }
       const existing = await assembleStoredReplay(db, existingReplay);
       if (existing !== null) return { data: existing };
     }
@@ -433,7 +459,7 @@ export async function guestFlowReplayRoutes(
       return GuestFlowReplayPersistenceResultSchema.parse({
         created: true,
         scenario: storedScenario(scenario),
-        navmeshVersion: storedNavmesh(navmesh),
+        navmeshVersion: navmeshFor(navmesh, scenario.id),
         replay: storedReplay(replay),
         artifact,
       });
