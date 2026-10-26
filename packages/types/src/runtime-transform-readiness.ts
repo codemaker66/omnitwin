@@ -119,7 +119,7 @@ export const RuntimeTransformCandidateSummarySchema = z
     targetFrame: RuntimeTransformFrameSchema,
     alignmentMethod: RuntimeTransformAlignmentMethodSchema,
     provenanceRefTypes: z.array(RuntimeTransformReferenceTypeSchema).min(1),
-    residualRmseM: z.number().finite().nonnegative().nullable(),
+    residualRmseM: z.number().nonnegative().nullable(),
     landmarkCount: z.number().int().nonnegative(),
     evidenceRefs: z.array(RuntimeTransformReadinessEvidenceRefSchema).min(1),
   })
@@ -127,7 +127,7 @@ export const RuntimeTransformCandidateSummarySchema = z
   .superRefine((candidate, ctx) => {
     if (candidate.sourceFrame === candidate.targetFrame) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrame"],
         message: "Candidate signed transforms must map between different frames.",
       });
@@ -136,14 +136,14 @@ export const RuntimeTransformCandidateSummarySchema = z
     if (candidate.alignmentMethod === "landmark_solve") {
       if (candidate.landmarkCount === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["landmarkCount"],
           message: "Landmark-solve candidates need at least one landmark pair.",
         });
       }
       if (candidate.residualRmseM === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["residualRmseM"],
           message: "Landmark-solve candidates need an aggregate residual RMSE.",
         });
@@ -155,7 +155,7 @@ export const RuntimeTransformCandidateSummarySchema = z
       candidate.alignmentMethod === "unconstrained_colmap"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["alignmentMethod"],
         message: "Signed transform readiness cannot use visual-only or unconstrained alignment methods.",
       });
@@ -178,7 +178,7 @@ export const RuntimeTransformChainRequirementSchema = z
   .superRefine((requirement, ctx) => {
     if (requirement.sourceFrame === requirement.targetFrame) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrame"],
         message: "Runtime transform chain requirements must map between different frames.",
       });
@@ -189,7 +189,7 @@ export const RuntimeTransformChainRequirementSchema = z
       requirement.evidenceRefs.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceRefs"],
         message: "Recorded or reviewed transform chain requirements need evidence references.",
       });
@@ -216,8 +216,8 @@ export const RuntimeTransformReadinessV0Schema = z
     readinessId: z.string().trim().min(1).max(160).regex(READINESS_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
-    recordedAt: z.string().datetime({ offset: true }),
+    runtimePackageId: z.uuid(),
+    recordedAt: z.iso.datetime({ offset: true }),
     recordedBy: z.string().trim().min(1).max(160),
     assetEvidenceStatus: AssetEvidenceStatusSchema,
     runtimeStatus: RuntimePackageStatusSchema,
@@ -252,7 +252,7 @@ export const RuntimeTransformReadinessV0Schema = z
       readiness.readinessDisposition !== "blocked_missing_control_evidence"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["readinessDisposition"],
         message: "Visual-alignment-only sources cannot be ready for signed transform payloads.",
       });
@@ -263,7 +263,7 @@ export const RuntimeTransformReadinessV0Schema = z
       readiness.readinessDisposition === "signed_transform_payload_preflighted";
     if (readyDisposition && readiness.candidateTransformArtifact === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["candidateTransformArtifact"],
         message: "Ready transform readiness records need a candidate TransformArtifactV0 summary.",
       });
@@ -271,7 +271,7 @@ export const RuntimeTransformReadinessV0Schema = z
 
     if (readyDisposition && !captureControlIsReviewable) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["captureControlPosture", "qaStatus"],
         message: "Ready transform readiness requires reviewed or accepted capture-control evidence.",
       });
@@ -279,7 +279,7 @@ export const RuntimeTransformReadinessV0Schema = z
 
     if (readyDisposition && readiness.blockers.length > 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Ready transform readiness records cannot retain open blockers.",
       });
@@ -287,7 +287,7 @@ export const RuntimeTransformReadinessV0Schema = z
 
     if (!readyDisposition && readiness.blockers.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Blocked transform readiness records must list at least one blocker.",
       });
@@ -295,7 +295,7 @@ export const RuntimeTransformReadinessV0Schema = z
 
     if (!readyDisposition && readiness.requiredBeforeSignedRegistration.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requiredBeforeSignedRegistration"],
         message: "Blocked transform readiness records must list requirements before signed registration.",
       });
@@ -306,7 +306,7 @@ export const RuntimeTransformReadinessV0Schema = z
       readiness.requiredTransformChain.some((requirement) => requirement.status !== "reviewed")
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requiredTransformChain"],
         message: "Ready transform readiness requires every transform-chain requirement to be reviewed.",
       });

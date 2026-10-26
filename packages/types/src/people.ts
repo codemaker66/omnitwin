@@ -100,7 +100,7 @@ export function isUsablePhone(raw: string): boolean {
 // Shared building blocks
 // ---------------------------------------------------------------------------
 
-const IsoDateTimeSchema = z.string().datetime();
+const IsoDateTimeSchema = z.iso.datetime();
 
 function optionalText(max: number) {
   return z.string().trim().max(max).transform((value) => (value === "" ? null : value)).nullable().optional();
@@ -114,7 +114,7 @@ const NameSchema = z.string().trim().min(1).max(200);
  * blank can be read, kept in a merge's snapshot and restored byte for byte.
  */
 const StoredNameSchema = z.string().max(200);
-const IdAndNameSchema = z.object({ id: z.string().uuid(), name: z.string() });
+const IdAndNameSchema = z.object({ id: z.uuid(), name: z.string() });
 const CountSchema = z.number().int().nonnegative();
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ const CountSchema = z.number().int().nonnegative();
 export const ContactPointInputSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("email"),
-    value: z.string().trim().email().max(255),
+    value: z.string().trim().check(z.email()).max(255),
     label: ContactPointLabelSchema.default("other"),
     isPrimary: z.boolean().default(false),
   }),
@@ -138,7 +138,7 @@ export const ContactPointInputSchema = z.discriminatedUnion("kind", [
 export type ContactPointInput = z.infer<typeof ContactPointInputSchema>;
 
 export const ContactPointSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   contactId: ContactIdSchema,
   kind: ContactPointKindSchema,
   value: z.string(),
@@ -213,7 +213,7 @@ export const PeopleOrganisationSchema = z.object({
 export type PeopleOrganisation = z.infer<typeof PeopleOrganisationSchema>;
 
 export const MembershipRowSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   venueId: VenueIdSchema,
   contactId: ContactIdSchema,
   clientAccountId: ClientAccountIdSchema,
@@ -225,7 +225,7 @@ export const MembershipRowSchema = z.object({
 export type MembershipRow = z.infer<typeof MembershipRowSchema>;
 
 export const PersonMembershipSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   organisation: z.object({ id: ClientAccountIdSchema, name: StoredNameSchema, kind: ClientAccountKindSchema }),
   roleLabel: z.string().nullable(),
   isPrimary: z.boolean(),
@@ -244,7 +244,7 @@ export const PersonProfileSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("merged"),
     mergedInto: IdAndNameSchema,
-    mergeId: z.string().uuid(),
+    mergeId: z.uuid(),
     mergedAt: IsoDateTimeSchema,
   }),
 ]);
@@ -379,7 +379,7 @@ export const KeepApartRequestSchema = z.object({
 export type KeepApartRequest = z.infer<typeof KeepApartRequestSchema>;
 
 export const KeptApartMarkSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   venueId: VenueIdSchema,
   /** The two people, the lower id first, as stored. */
   personIds: z.tuple([ContactIdSchema, ContactIdSchema]),
@@ -418,7 +418,7 @@ export const MergePreviewSchema = z.object({
 export type MergePreview = z.infer<typeof MergePreviewSchema>;
 
 export const MergeResultSchema = z.object({
-  mergeId: z.string().uuid(),
+  mergeId: z.uuid(),
   survivorId: ContactIdSchema,
   mergedId: ContactIdSchema,
   moves: MergeMovesSchema,
@@ -442,14 +442,14 @@ export const MergeUndoReportSchema = z.object({
 export type MergeUndoReport = z.infer<typeof MergeUndoReportSchema>;
 
 export const MergeUndoResultSchema = MergeUndoReportSchema.extend({
-  mergeId: z.string().uuid(),
+  mergeId: z.uuid(),
   replayed: z.boolean(),
 });
 export type MergeUndoResult = z.infer<typeof MergeUndoResultSchema>;
 
 export const RecordMergeMoveSchema = z.object({
   target: MergeMoveTargetSchema,
-  ids: z.array(z.string().uuid()),
+  ids: z.array(z.uuid()),
 });
 export type RecordMergeMove = z.infer<typeof RecordMergeMoveSchema>;
 
@@ -458,8 +458,8 @@ export const RecordMergeSnapshotSchema = z.object({
   contactPoints: z.array(ContactPointRowSchema),
   memberships: z.array(MembershipRowSchema),
   removed: z.object({
-    contactPointIds: z.array(z.string().uuid()),
-    membershipIds: z.array(z.string().uuid()),
+    contactPointIds: z.array(z.uuid()),
+    membershipIds: z.array(z.uuid()),
   }),
   survivorFilled: z.array(z.object({
     field: MergeFilledFieldSchema,

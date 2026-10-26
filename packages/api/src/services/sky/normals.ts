@@ -55,14 +55,14 @@ export const SkyNormalsFileSchema = z.object({
     licence: z.literal("Open Government Licence v3.0"),
     /** The citation the CEDA catalogue record requires. */
     citation: z.string().min(1),
-    catalogueUrl: z.string().url(),
+    catalogueUrl: z.url(),
     doi: z.string().min(1),
   }).strict(),
-  generatedAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
   generator: z.object({ name: z.string().min(1), version: z.string().min(1) }).strict(),
   inputs: z.array(z.object({
     variable: z.enum(["raindays1mm", "snowLying", "sun", "tas", "sfcWind"]),
-    url: z.string().url(),
+    url: z.url(),
     sha256: Hex64,
     bytes: z.number().int().positive(),
     /** As the file declares them (wind is converted to m/s on reading). */
@@ -87,7 +87,7 @@ export const SkyNormalsFileSchema = z.object({
 }).strict().superRefine((file, ctx) => {
   file.months.forEach((entry, index) => {
     if (entry.month !== index + 1) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["months", index, "month"], message: "months must run 1..12 in order" });
+      ctx.addIssue({ code: "custom", path: ["months", index, "month"], message: "months must run 1..12 in order" });
     }
   });
 });

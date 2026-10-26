@@ -1367,6 +1367,27 @@ export const configurationViewTokens = pgTable("configuration_view_tokens", {
 ]);
 
 // ---------------------------------------------------------------------------
+// configuration_claim_secrets — proof that a browser created a public plan
+// (migration 0102, release audit public-surface-1).
+//
+// POST /public/configurations returns the secret once, to the browser that
+// made the plan; only its SHA-256 is stored, beside the plan rather than on
+// it, so no configuration read can return it. Claiming the plan into an
+// account requires the secret and consumes it, so a plan whose id was shared
+// (/plan/<id>) cannot be taken by whoever opens the link. A plan with no row
+// (made before 0102, or already claimed) can never be claimed.
+// routes/claim-config.ts owns it.
+// ---------------------------------------------------------------------------
+
+export const configurationClaimSecrets = pgTable("configuration_claim_secrets", {
+  configurationId: uuid("configuration_id").primaryKey().references(() => configurations.id, { onDelete: "cascade" }),
+  secretHash: varchar("secret_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check("configuration_claim_secrets_secret_hash_shape", sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
+]);
+
+// ---------------------------------------------------------------------------
 // 15. subscriptions — one row per Stripe subscription.
 //
 // Created during Stripe Checkout (venue_id NULL until the onboarding

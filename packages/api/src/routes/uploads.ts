@@ -37,14 +37,14 @@ const PresignedBody = z.object({
   contentType: z.enum(ALLOWED_CONTENT_TYPES),
   contentLengthBytes: z.number().int().positive(),
   context: z.enum(UPLOAD_CONTEXTS),
-  contextId: z.string().uuid(),
+  contextId: z.uuid(),
   visibility: z.enum(UPLOAD_VISIBILITIES).default("private"),
   sha256: z.string().regex(SHA256_HEX).optional(),
 }).superRefine((body, ctx) => {
   const maxBytes = maxBytesForContentType(body.contentType);
   if (body.contentLengthBytes > maxBytes) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["contentLengthBytes"],
       message: `File exceeds ${formatBytes(maxBytes)} limit for ${body.contentType}`,
     });
@@ -52,7 +52,7 @@ const PresignedBody = z.object({
 
   if (!filenameMatchesContentType(body.filename, body.contentType)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["filename"],
       message: "Filename extension does not match content type",
     });
@@ -60,7 +60,7 @@ const PresignedBody = z.object({
 
   if (body.context === "public_marketing" && body.visibility !== "public") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["visibility"],
       message: "public_marketing uploads must be explicitly public",
     });
@@ -68,7 +68,7 @@ const PresignedBody = z.object({
 
   if (body.context !== "public_marketing" && body.visibility === "public") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["visibility"],
       message: "Only public_marketing uploads may request public visibility",
     });
@@ -77,7 +77,7 @@ const PresignedBody = z.object({
 
 const ListFilesParams = z.object({
   context: z.enum(UPLOAD_CONTEXTS),
-  contextId: z.string().uuid(),
+  contextId: z.uuid(),
 });
 
 /** Extract file extension from content type. */

@@ -117,7 +117,7 @@ export function publicToolInputs(venues: readonly PublicVenueProfile[]) {
   // One fixed message for every other value: never echo what was asked, so a
   // second tenant's slug or id draws the same bytes as a name nobody uses.
   const unknownVenue = `Unknown venue. Only ${slugs.join(", ")} can be queried here.`;
-  const venue = z.enum(slugs, { errorMap: () => ({ message: unknownVenue }) }).default(defaultSlug);
+  const venue = z.enum(slugs, { error: unknownVenue }).default(defaultSlug);
   const venueJson: JsonSchemaDocument = {
     type: "string",
     enum: [...slugs],
@@ -147,10 +147,10 @@ export function publicToolInputs(venues: readonly PublicVenueProfile[]) {
       }).optional(),
     }).strict().superRefine((value, context) => {
       if (value.to < value.from) {
-        context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "\"to\" must be on or after \"from\"." });
+        context.addIssue({ code: "custom", path: ["to"], message: "\"to\" must be on or after \"from\"." });
       } else if (inclusiveDayCount(value.from, value.to) > AVAILABILITY_MAX_SPAN_DAYS) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["to"],
           message: `Ask about at most ${String(AVAILABILITY_MAX_SPAN_DAYS)} days at a time; call again for later dates.`,
         });
