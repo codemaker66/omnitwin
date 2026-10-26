@@ -5,6 +5,7 @@ import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { governedRender, profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
+import { probeGpu } from "../../lib/gpu-class.js";
 import { RenderGovernor } from "../scene/RenderGovernor.js";
 import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
@@ -97,6 +98,11 @@ const GrandAssembly = lazy(loadGrandAssembly);
  * Computes render dimensions from room geometry polygon data.
  * Falls back to Grand Hall dimensions if no space is loaded.
  */
+// Which graphics draw the planner decides a desktop's profile (lib/gpu-class.ts).
+// Asked as the planner's code arrives, so the answer is in before the canvas
+// mounts while the layout and the room are still loading.
+void probeGpu();
+
 const COMPACT_PLANNER_MAX_VIEWPORT_WIDTH = 1099;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
 

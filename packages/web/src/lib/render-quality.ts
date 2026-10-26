@@ -7,13 +7,16 @@
 // the furniture's own contact shadows. Desktops get ambient occlusion and
 // temporal anti-aliasing that keeps refining for a few frames after the camera
 // stops, so a still view sharpens to a supersampled image at no cost while
-// moving. A query override (`?render=phone|tablet|desktop|off`) lets a
+// moving. A desktop on integrated graphics, or without WebGPU, starts on the
+// office profile: no occlusion and a phone-sized pixel budget (lib/gpu-class.ts,
+// F-X4). A query override (`?render=phone|tablet|desktop|office|off`) lets a
 // development build compare profiles on one machine.
 // ---------------------------------------------------------------------------
 
+import { gpuReading, isWeakDesktopGpu } from "./gpu-class.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
 
-export type RenderProfileName = "off" | "phone" | "tablet" | "desktop";
+export type RenderProfileName = "off" | "phone" | "tablet" | "desktop" | "office";
 
 export type AntiAlias = "temporal" | "fxaa" | "none";
 
@@ -43,6 +46,12 @@ export interface RenderProfile {
    * screens are drawn at 2x or below: their density hides the difference.
    */
   readonly pixelBudget: number | null;
+  /**
+   * The lowest pixel ratio the frame-rate governor may step down to. 1 on
+   * phones and tablets, which start within a budget well above it; 0.75 on
+   * desktops, so one at a pixel ratio of 1 still has a resolution rung.
+   */
+  readonly minPixelRatio: number;
   readonly antiAlias: AntiAlias;
   /** MSAA samples of the scene pass; zero whenever a pass reads its depth. */
   readonly sceneSamples: number;
@@ -68,6 +77,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
     name: "off",
     maxPixelRatio: 2,
     pixelBudget: null,
+    minPixelRatio: 1,
     antiAlias: "none",
     sceneSamples: 4,
     ambientOcclusion: null,
@@ -80,6 +90,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
     name: "phone",
     maxPixelRatio: 2,
     pixelBudget: 2_200_000,
+    minPixelRatio: 1,
     antiAlias: "none",
     sceneSamples: 4,
     ambientOcclusion: null,
@@ -92,6 +103,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
     name: "tablet",
     maxPixelRatio: 2,
     pixelBudget: 3_200_000,
+    minPixelRatio: 1,
     antiAlias: "fxaa",
     sceneSamples: 0,
     ambientOcclusion: { resolutionScale: 0.5, radius: 0.45, samples: 8, intensity: 0.85 },
@@ -103,10 +115,30 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
   desktop: {
     name: "desktop",
     maxPixelRatio: 2,
-    pixelBudget: null,
+    // About a 1440p screen at a ratio of 1.2, or 1080p at 1.5: above it a
+    // still view gains little that temporal anti-aliasing has not given it.
+    pixelBudget: 5_000_000,
+    minPixelRatio: 0.75,
     antiAlias: "temporal",
     sceneSamples: 0,
     ambientOcclusion: { resolutionScale: 0.5, radius: 0.5, samples: 12, intensity: 0.9 },
+    bloom: BLOOM,
+    bloomInMotion: true,
+    convergenceFrames: 16,
+    vignette: 0.22,
+  },
+  // A desktop on integrated graphics or WebGL2 (lib/gpu-class.ts): the
+  // desktop's temporal anti-aliasing and bloom, without occlusion (twelve
+  // samples a pixel at half resolution), within a budget of about a 1080p
+  // screen at a ratio of 1.1.
+  office: {
+    name: "office",
+    maxPixelRatio: 2,
+    pixelBudget: 2_400_000,
+    minPixelRatio: 0.75,
+    antiAlias: "temporal",
+    sceneSamples: 0,
+    ambientOcclusion: null,
     bloom: BLOOM,
     bloomInMotion: true,
     convergenceFrames: 16,
@@ -127,19 +159,21 @@ export interface RenderDeviceContext {
    * bloom in motion as before.
    */
   readonly leanMotion?: boolean;
+  /** Whether the graphics are integrated or WebGL2 (lib/gpu-class.ts): a desktop then starts on the office profile. */
+  readonly weakGpu?: boolean;
 }
 
 /** The phone profile as it was before bloom paused in motion: the way back. */
 const PHONE_WITH_BLOOM_IN_MOTION: RenderProfile = { ...RENDER_PROFILES.phone, bloomInMotion: true };
 
 function isProfileName(value: string): value is RenderProfileName {
-  return value === "off" || value === "phone" || value === "tablet" || value === "desktop";
+  return value === "off" || value === "phone" || value === "tablet" || value === "desktop" || value === "office";
 }
 
-/** The profile for a device: phones and tablets by pointer and screen size. */
+/** The profile for a device: phones and tablets by pointer and screen size, desktops by their graphics. */
 export function selectRenderProfile(device: RenderDeviceContext): RenderProfile {
   const named = device.override !== null && isProfileName(device.override) ? device.override
-    : !device.coarsePointer ? "desktop"
+    : !device.coarsePointer ? (device.weakGpu === true ? "office" : "desktop")
     : device.shortSide < 600 ? "phone" : "tablet";
   if (named === "phone" && device.leanMotion !== true) return PHONE_WITH_BLOOM_IN_MOTION;
   return RENDER_PROFILES[named];
@@ -182,7 +216,7 @@ export function rebuildsPipeline(rung: QualityRung): boolean {
  * rate (lib/render-governor.ts), or null when nothing given up would help.
  * Frames held up by the GPU give up the costliest and least visible first:
  * ambient occlusion, the resolution in quarter steps to 1.5, bloom, then the
- * resolution to 1. Frames held up by the CPU give up passes, each a chain of
+ * resolution to the profile's floor (1, or 0.75 on a desktop). Frames held up by the CPU give up passes, each a chain of
  * draws to encode (bloom's mip chain costs a slowed phone nearly half its
  * render), and keep their pixels, which cost the CPU nothing. A profile that
  * pauses bloom in motion never gives it up: the frames judged are drawn while
@@ -201,7 +235,7 @@ export function nextQualityRung(profile: RenderProfile, baseRatio: number, given
   if (profile.ambientOcclusion !== null && open("ambientOcclusion")) return "ambientOcclusion";
   if (ratio - RESOLUTION_STEP >= 1.5 - 1e-6) return "resolution";
   if (bloomOpen) return "bloom";
-  if (ratio - RESOLUTION_STEP >= 1 - 1e-6) return "resolution";
+  if (ratio - RESOLUTION_STEP >= profile.minPixelRatio - 1e-6) return "resolution";
   return null;
 }
 
@@ -216,10 +250,11 @@ const governedProfiles = new WeakMap<RenderProfile, Map<string, RenderProfile>>(
 /**
  * A profile and pixel ratio once the rungs `given` are given up. The profile
  * is the same object until an effect it has goes, so a resolution step only
- * resizes the canvas; the ratio never falls below 1 (or the base, if lower).
+ * resizes the canvas; the ratio never falls below the profile's floor (or the
+ * base, if lower).
  */
 export function governedRender(profile: RenderProfile, baseRatio: number, given: readonly QualityRung[]): GovernedRender {
-  const pixelRatio = Math.max(Math.min(1, baseRatio), baseRatio - given.filter((rung) => rung === "resolution").length * RESOLUTION_STEP);
+  const pixelRatio = Math.max(Math.min(profile.minPixelRatio, baseRatio), baseRatio - given.filter((rung) => rung === "resolution").length * RESOLUTION_STEP);
   const dropsOcclusion = profile.ambientOcclusion !== null && given.includes("ambientOcclusion");
   const dropsBloom = profile.bloom !== null && given.includes("bloom");
   if (!dropsOcclusion && !dropsBloom) return { profile, pixelRatio };
@@ -250,5 +285,6 @@ export function readRenderDeviceContext(development: boolean): RenderDeviceConte
     shortSide: Math.min(window.screen.width, window.screen.height),
     override,
     leanMotion: plannerFeatureEnabled("leanMotionPipeline"),
+    weakGpu: isWeakDesktopGpu(gpuReading()),
   };
 }
