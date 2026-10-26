@@ -56,6 +56,7 @@ import {
   type TouchOutcome,
 } from "../lib/touch-arbiter.js";
 import { useEscapeLayer, usePlannerKeyBindings } from "../lib/planner-keys.js";
+import { preparePlannerAnnouncer } from "../lib/planner-announcer.js";
 import { selectionKeyBindings, type FloorDirection } from "../lib/planner-keymap.js";
 import {
   DRAG_THRESHOLD_PX,
@@ -318,6 +319,8 @@ export function SelectionSystem(): null {
       canvasEl.removeEventListener("pointerleave", forget);
     };
   }, [gl]);
+  // The walk's words go to a live region made now, before the first key needs it.
+  useEffect(() => { preparePlannerAnnouncer(); }, []);
   usePlannerKeyBindings(selectionKeyBindings({
     invalidate: () => { invalidateRef.current(); },
     cancelGesture: () => { cancelPointerGesture.current(); },

@@ -165,12 +165,27 @@ function activatesOnKeys(target: EventTarget | null): boolean {
 
 const ARROW_CODES = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
 const ACTIVATING_CODES = new Set(["Space", "Enter", "NumpadEnter"]);
+const ENTER_CODES = new Set(["Enter", "NumpadEnter"]);
+
+/**
+ * The control that put the piece in hand (a card, a toolbox row), marked
+ * `data-holds-piece="true"` while it holds it. Pressing it again would only
+ * take the same piece up again, so its Enter is the planner's: it sets the
+ * piece down. Every other control keeps its own Enter.
+ */
+export const HOLDS_PIECE_ATTRIBUTE = "data-holds-piece";
+
+function holdsPieceInHand(target: EventTarget | null): boolean {
+  if (typeof Element === "undefined" || !(target instanceof Element)) return false;
+  return target.closest(`[${HOLDS_PIECE_ATTRIBUTE}='true']`) !== null;
+}
 
 /** Whether the focused element already owns this key, so the planner leaves it alone. */
 function focusOwnsKey(event: KeyboardEvent, binding: KeyBinding): boolean {
   const target = event.target;
   if (typesText(target)) return binding.inFields !== true;
   if (ARROW_CODES.has(event.code) && usesArrows(target)) return true;
+  if (ENTER_CODES.has(event.code) && holdsPieceInHand(target)) return false;
   return ACTIVATING_CODES.has(event.code) && activatesOnKeys(target);
 }
 

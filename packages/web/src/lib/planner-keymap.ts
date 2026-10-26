@@ -16,7 +16,7 @@ import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, type GhostWorld } from "./ghost-truth.js";
 import { judgeCardAt, placePieceInHand } from "./place-in-hand.js";
-import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
+import { GRID_SPACING_M, expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
 import { TABLE_KIND, stopWords, walkKind, walkOrder, walkStep, walkStops, type WalkCursor, type WalkStop } from "./piece-walk.js";
 import { announcePolitely } from "./planner-announcer.js";
 import { plannerChromeRequested } from "./planner-chrome-flag.js";
@@ -666,13 +666,20 @@ export function standGhostAt(x: number, z: number): boolean {
 /**
  * The ghost aloud, once the keys leave it: "Round of 10, 10 seats, fits",
  * "…, fits, moved 0.12 m", judged as the ghost and the commit judge it
- * (judgeCardAt). Null for a refusal, which the ghost says itself, once, and
- * for a piece the ghost claims nothing about.
+ * (judgeCardAt); a piece placed alone by its name, "Poseur Table, fits".
+ * Null for a refusal, which the ghost says itself, once, and for a card the
+ * ghost claims nothing about.
  */
 export function ghostWords(): string | null {
-  const { cardParams } = useCatalogueStore.getState();
-  const { ghostPosition, ghostRotation } = usePlacementStore.getState();
-  if (cardParams === null || ghostPosition === null || !placesAsCard(cardParams) || !judgesCard(cardParams)) return null;
+  const { cardParams, selectedItemId } = useCatalogueStore.getState();
+  const { ghostPosition, ghostRotation, ghostValid } = usePlacementStore.getState();
+  if (ghostPosition === null) return null;
+  if (cardParams === null || !placesAsCard(cardParams)) {
+    // A piece placed alone: its name, while its ghost says it fits.
+    const item = selectedItemId === null ? undefined : getCatalogueItem(selectedItemId);
+    return item === undefined || !ghostValid ? null : `${item.name}, fits`;
+  }
+  if (!judgesCard(cardParams)) return null;
   const origin = { x: ghostPosition[0], y: ghostPosition[1], z: ghostPosition[2] };
   const { verdict } = judgeCardAt(cardParams, origin, ghostRotation, editWorld(), useGhostVerdictStore.getState().verdict?.state);
   if (verdict.state === "refused") return null;
@@ -710,13 +717,15 @@ function nudgeGhost(ghost: readonly [number, number, number], direction: FloorDi
 
 /**
  * An arrow with a card in hand: its ghost one nudge along the floor
- * (nudgeMetres, arrowFloorDirection); steps smaller than a snap add up for
- * a piece its commit snaps. With no ghost yet, the first press shows it at
- * the middle of the visible floor. Its words follow once the arrows stop.
+ * (nudgeMetres, arrowFloorDirection). A piece its commit snaps to the grid
+ * moves a whole grid square a press, since a smaller step would show and
+ * place nothing. With no ghost yet, the first press shows it at the middle
+ * of the visible floor. Its words follow once the arrows stop.
  */
 export function moveGhostBy(direction: FloorDirection, metres: number, floorMiddle: FloorMiddle): boolean {
   const ghost = usePlacementStore.getState().ghostPosition;
-  const moved = ghost === null ? standGhostAtFloorMiddle(floorMiddle) : nudgeGhost(ghost, direction, metres);
+  const step = commitSnaps() && usePlacementStore.getState().snapEnabled ? Math.max(metres, GRID_SPACING_M) : metres;
+  const moved = ghost === null ? standGhostAtFloorMiddle(floorMiddle) : nudgeGhost(ghost, direction, step);
   if (moved) sayGhostSoon();
   return moved;
 }

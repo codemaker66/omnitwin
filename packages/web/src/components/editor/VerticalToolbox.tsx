@@ -2241,7 +2241,10 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
                     onClick={() => { handleAssetClick(item); }}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleAssetClick(item); }}
+                    aria-pressed={placingItemId === item.id}
+                    // While it holds the piece in hand, its Enter is the planner's and sets the piece down (lib/planner-keys).
+                    data-holds-piece={placingItemId === item.id ? "true" : undefined}
+                    onKeyDown={(e) => { if (e.key === "Enter" && placingItemId !== item.id) handleAssetClick(item); }}
                   >
                     {/* Supplied-model preview, with a silhouette fallback. */}
                     <div

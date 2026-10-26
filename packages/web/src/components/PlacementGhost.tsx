@@ -15,6 +15,7 @@ import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { usePlannerKeyBindings } from "../lib/planner-keys.js";
+import { preparePlannerAnnouncer } from "../lib/planner-announcer.js";
 import { placingKeyBindings, putDownPieceInHand, standGhostAt } from "../lib/planner-keymap.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
 import {
@@ -497,6 +498,8 @@ export function PlacementGhost(): React.ReactElement | null {
   // its card, the arrows move its ghost and Enter sets it down, each winning
   // over a selection held at the same time; Esc puts it down (the planner's
   // tool keys, lib/planner-keymap.ts). A right-click also puts it down.
+  // Their words go to a live region made now, before the first key needs it.
+  useEffect(() => { preparePlannerAnnouncer(); }, []);
   usePlannerKeyBindings(placingKeyBindings({
     invalidate: () => { invalidateRef.current(); },
     screenUp: () => screenUpOnFloor(camera),

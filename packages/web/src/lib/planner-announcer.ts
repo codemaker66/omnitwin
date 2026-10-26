@@ -23,6 +23,15 @@ function region(): HTMLElement | null {
   return made;
 }
 
+/**
+ * Puts the region on the page before anything is said in it: screen readers
+ * tend to miss the first words of a live region made in the same moment, so
+ * the planner's scene makes it when it mounts (PlacementGhost, SelectionSystem).
+ */
+export function preparePlannerAnnouncer(): void {
+  region();
+}
+
 /** Says `words` politely, after whatever the screen reader is reading. */
 export function announcePolitely(words: string): void {
   const text = words.trim();

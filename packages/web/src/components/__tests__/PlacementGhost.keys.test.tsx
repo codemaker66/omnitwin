@@ -307,17 +307,45 @@ describe("the ghost of a piece put in hand", () => {
     expect(ghost()?.[0]).toBeLessThan(0);
   });
 
-  it("moves a piece set down alone on the grid its commit snaps to, small steps adding up", () => {
+  it("moves a piece set down alone a whole grid square a press, the square its commit snaps to, and says so", () => {
+    vi.useFakeTimers();
     const poseur = getCatalogueItemBySlug("poseur-table");
     if (poseur === undefined) throw new Error("no poseur");
     mount();
     act(() => { useCatalogueStore.getState().selectItem(poseur.id); });
     expect(ghost()?.[0]).toBeCloseTo(0, 9);
-    for (let i = 0; i < 4; i += 1) press("ArrowRight");
-    expect(ghost()?.[0]).toBeCloseTo(0, 9);
-    for (let i = 0; i < 6; i += 1) press("ArrowRight");
+    press("ArrowRight");
     expect(ghost()?.[0]).toBeCloseTo(1, 9);
+    // Even a fine step moves a square: a smaller one would show and place nothing.
+    press("ArrowRight", { altKey: true });
+    expect(ghost()?.[0]).toBeCloseTo(2, 9);
+    act(() => { vi.advanceTimersByTime(GHOST_WORDS_DELAY_MS); });
+    expect(lastAnnouncement()).toBe(`${poseur.name}, fits`);
     press("Enter");
-    expect(placed()[0]?.x).toBeCloseTo(1, 9);
+    expect(placed()[0]?.x).toBeCloseTo(2, 9);
+  });
+
+  it("takes Enter from the control that holds the piece in hand, and leaves every other control its own", () => {
+    mount();
+    act(() => { useCatalogueStore.getState().armCard("round"); });
+    const other = document.createElement("button");
+    const holder = document.createElement("button");
+    holder.setAttribute("data-holds-piece", "true");
+    document.body.append(other, holder);
+    try {
+      expect(press("Enter", {}, other).defaultPrevented).toBe(false);
+      expect(ofCategory("table")).toHaveLength(0);
+      expect(press("Enter", {}, holder).defaultPrevented).toBe(true);
+      expect(ofCategory("table")).toHaveLength(1);
+    } finally {
+      other.remove();
+      holder.remove();
+    }
+  });
+
+  it("makes its live region when it mounts, before the first key needs it", () => {
+    expect(document.getElementById("planner-announcer")).toBeNull();
+    mount();
+    expect(document.getElementById("planner-announcer")).not.toBeNull();
   });
 });
