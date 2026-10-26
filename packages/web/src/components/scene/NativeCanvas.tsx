@@ -14,6 +14,7 @@ import {
   type NativeRendererSettings,
 } from "../../lib/native-renderer.js";
 import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-frame-pacer.js";
+import { isGpuOutOfMemory, reportGpuMemoryPressure } from "../../lib/gpu-memory-pressure.js";
 import { noteMainDraw } from "../../lib/main-draw-clock.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
@@ -575,6 +576,9 @@ export function NativeCanvas({
         return;
       }
       const message = describeGpuError(event);
+      // A device out of memory frees some at once (a quality rung, the hall's
+      // wall detail: lib/gpu-memory-pressure.ts) rather than wait to be judged.
+      if (isGpuOutOfMemory(event)) reportGpuMemoryPressure(native);
       if (gpuErrors.current?.error(message) === true) {
         // eslint-disable-next-line no-console
         console.warn("VenViewer: the graphics device reported an error; the 3D view keeps drawing.", message);

@@ -240,6 +240,22 @@ export function nextQualityRung(profile: RenderProfile, baseRatio: number, given
   return null;
 }
 
+/**
+ * The next quality a profile gives up when its device runs out of memory
+ * (lib/gpu-memory-pressure.ts), or null when nothing is left to give: the
+ * resolution first, to the profile's floor, since every target the view draws
+ * into scales with it; then ambient occlusion's target; then bloom's chain,
+ * even on a profile that pauses it in motion (its targets are held still or
+ * moving). A view that keeps drawing is worth more than its glow.
+ */
+export function memoryQualityRung(profile: RenderProfile, baseRatio: number, given: readonly QualityRung[]): QualityRung | null {
+  const ratio = baseRatio - given.filter((rung) => rung === "resolution").length * RESOLUTION_STEP;
+  if (ratio - RESOLUTION_STEP >= profile.minPixelRatio - 1e-6) return "resolution";
+  if (profile.ambientOcclusion !== null && !given.includes("ambientOcclusion")) return "ambientOcclusion";
+  if (profile.bloom !== null && !given.includes("bloom")) return "bloom";
+  return null;
+}
+
 export interface GovernedRender {
   readonly profile: RenderProfile;
   readonly pixelRatio: number;

@@ -195,6 +195,7 @@ vi.mock("@react-three/fiber", async () => {
 import { NATIVE_CAPTURE_RETURN_WAIT_MS, NativeCanvas } from "../NativeCanvas.js";
 import { PlannerWorkContext } from "../planner-work.js";
 import { isNativeCanvasRender } from "../../../lib/native-renderer.js";
+import { onGpuMemoryPressure } from "../../../lib/gpu-memory-pressure.js";
 import { NATIVE_GPU_ERROR_GRACE_MS } from "../../../lib/native-gpu-error-watch.js";
 
 beforeEach(() => {
@@ -359,6 +360,27 @@ describe("NativeCanvas", () => {
       warn.mockRestore();
     }
   });
+  it("frees memory at once when the device runs out of it, and keeps drawing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      render(<NativeCanvas frameloop="demand"><span>Room geometry</span></NativeCanvas>);
+      const instance = await start(0);
+      automaticFrame();
+      const pressed = vi.fn();
+      const stop = onGpuMemoryPressure(instance, pressed);
+      act(() => {
+        instance.onError({ type: "GPUValidationError", message: "Invalid texture view" });
+        instance.onError({ type: "GPUOutOfMemoryError", message: "Not enough memory left" });
+      });
+      expect(pressed).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByTestId("fiber-canvas").getAttribute("data-frameloop")).toBe("demand");
+      stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("stops at once for the app's own failures, which arrive as a message rather than a GPU error", async () => {
     render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
     const instance = await start(0);
