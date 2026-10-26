@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within, type BoundFunctions, type queries } from "@testing-library/react";
 import { StrictMode } from "react";
 import { ApiError } from "../../../api/client.js";
 import { ProposalsDesk } from "../ProposalsDesk.js";
@@ -288,9 +288,12 @@ describe("the ledger", () => {
     await screen.findByTestId("proposal-row-p3");
     fireEvent.click(screen.getByRole("button", { name: "With the client, 2" }));
     await waitFor(() => { expect(mocks.listProposalDesk).toHaveBeenLastCalledWith({ limit: 50, offset: 0, group: "with_client" }); });
-    await waitFor(() => { expect(screen.queryByTestId("proposal-row-p3")).toBeNull(); });
-    // The stages show no counts while the group is read; these come with its answer.
-    expect(await screen.findByRole("button", { name: "Drafts, 1" })).toBeDefined();
+    // The draft goes when the group is read, and the stages show no counts
+    // until its answer is drawn: both hold only once it is.
+    await waitFor(() => {
+      expect(screen.queryByTestId("proposal-row-p3")).toBeNull();
+      expect(screen.getByRole("button", { name: "Drafts, 1" })).toBeDefined();
+    });
     expect(screen.getByRole("button", { name: "All, 3" })).toBeDefined();
   });
 
@@ -2454,6 +2457,72 @@ describe("the next version", () => {
     fireEvent.click(back.getByTestId("composer-save"));
     await waitFor(() => { expect(back.getByTestId("composer-start").textContent).toMatch(/^Starts from version 2\./u); });
     expect(back.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("My words.");
+    expect(back.queryByTestId("kept-version")).toBeNull();
+    expect(reloadHeld()).toBe(false);
+  });
+
+  /** A quote the API made from one line of Grand Hall hire at this price. */
+  function madeHireQuote(unitMinor: number): Record<string, unknown> {
+    return {
+      id: "33333333-3333-4333-8333-333333333333", venueId: "v1", opportunityId: null, proposalId: "p1", enquiryId: null, spaceId: null,
+      name: "Autumn gala quote", status: "draft", currency: "GBP", subtotalMinor: unitMinor, totalMinor: unitMinor, validUntil: null,
+      supersededByQuoteId: null, notes: null, createdBy: "u1", createdAt: NOW, updatedAt: NOW, deletedAt: null,
+      lineItems: [{
+        id: "44444444-4444-4444-8444-444444444444", quoteId: "33333333-3333-4333-8333-333333333333", pricingRuleId: null,
+        description: "Grand Hall hire", quantity: 1, unitAmountMinor: unitMinor, lineTotalMinor: unitMinor, sortOrder: 0,
+      }],
+    };
+  }
+
+  /** Words saved by a save that stalled as the desk was left, then
+   *  remembered again by the coming-back composer after the save answered. */
+  async function staleCopyOfSavedWords(
+    words: { readonly message: string; readonly price?: string },
+    saved2: Record<string, unknown>,
+    after: Record<string, unknown>,
+  ): Promise<BoundFunctions<typeof queries>> {
+    let saved: (value: Record<string, unknown>) => void = () => undefined;
+    mocks.createProposalVersion
+      .mockImplementationOnce(() => new Promise((resolve) => { saved = resolve; }))
+      .mockRejectedValueOnce(new ApiError(409, "A newer version was saved or sent after this was read.", "PROPOSAL_VERSION_CHANGED"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: words.message } });
+    if (words.price !== undefined) fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: words.price } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    cleanup();
+    render(<ProposalsDesk />);
+    const back = within(await openProposal());
+    expect((await back.findByTestId<HTMLTextAreaElement>("composer-message")).value).toBe(words.message);
+    const written = recallDraft("u1", "p1");
+    expect(written?.draft.message).toBe(words.message);
+    existing = [proposal(after)];
+    mocks.getLatestProposalVersion.mockResolvedValue(saved2);
+    await act(async () => {
+      saved(saved2);
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 50); }); });
+    rememberDraft("u1", "p1", written);
+    return back;
+  }
+
+  it("keeps no copy of words the stalled save stored when a price was typed another way", async () => {
+    // "4600.5" saves as £4,600.50, which the version gives back as "4600.50":
+    // the same words as a version reads them, though not the same characters.
+    const hire = (minor: number): Record<string, unknown> => quoteSnapshot([{ description: "Grand Hall hire", quantity: 1, unitAmountMinor: minor }]);
+    existing = [proposal({ status: "changes_requested", currentVersion: 1 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1, { quote: hire(440_000) }));
+    mocks.createQuote.mockResolvedValue(madeHireQuote(460_050));
+    mocks.deleteQuote.mockResolvedValue(undefined);
+    const back = await staleCopyOfSavedWords(
+      { message: "My words.", price: "4600.5" },
+      version(2, { clientMessage: "My words.", quote: hire(460_050) }),
+      { status: "changes_requested", currentVersion: 2 },
+    );
+    fireEvent.click(back.getByTestId("composer-save"));
+    await waitFor(() => { expect(back.getByTestId("composer-start").textContent).toMatch(/^Starts from version 2\./u); });
     expect(back.queryByTestId("kept-version")).toBeNull();
     expect(reloadHeld()).toBe(false);
   });

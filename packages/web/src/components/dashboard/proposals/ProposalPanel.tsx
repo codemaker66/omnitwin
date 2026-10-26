@@ -200,17 +200,18 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
     formRef.current = form;
     memory?.remember(written);
   }, [memory]);
-  // The words of the version the next composer starts from: words that say
-  // the same are not lost, so no copy of them is kept. A late save's answer
-  // can land between a composer appearing and it remembering its words, so
-  // memory may still hold words the version now holds.
-  const startPayload = typeof start === "number" && start > 0 ? props.latest.value?.payload ?? null : null;
+  // The words of the latest version, open or closed: words it reads the same
+  // as (numbers as a version reads them, so "120.5" is £120.50) are not lost,
+  // so no copy of them is kept. A late save's answer can land between a
+  // composer appearing and it remembering its words, so memory may still hold
+  // words a version now holds.
+  const latestPayload = props.latest.value?.payload ?? null;
   useLayoutEffect(() => {
     // Until the version to start from is read, nothing has yet moved on.
     if (start === "reading") return;
     const why = putAsideWords(proposal.status, composable, typeof start === "number" ? start : proposal.currentVersion);
     const lost = (draft: ComposerDraft | null): ComposerDraft | null =>
-      draft !== null && startPayload !== null && !draftDiffers(startPayload, draft) ? null : draft;
+      draft !== null && latestPayload !== null && draftChanges(latestPayload, draft).length === 0 ? null : draft;
     let kept = false;
     const form = formRef.current;
     if (form !== null && form.start !== start) {
@@ -226,7 +227,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
       kept = onComposerGone(left.composer, lost(left.draft), why) || kept;
     }
     if (kept) focusKeptRef.current = true;
-  }, [start, startPayload, composable, proposal.status, proposal.currentVersion, memory, onComposerGone]);
+  }, [start, latestPayload, composable, proposal.status, proposal.currentVersion, memory, onComposerGone]);
   // Focus that was in the composer is lost with it: it goes to the words
   // kept, or else to what the next composer starts from, or, with no
   // composer, to the proposal's name. Never from wherever it has gone since.
