@@ -115,6 +115,16 @@ describe("ConfigurationMetadataSchema + PlacedObjectMetadataSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("carries the planner's event kind: a kind, null when skipped, absent when never asked (T-674)", () => {
+    expect(ConfigurationMetadataSchema.parse({ eventKind: "wedding" }).eventKind).toBe("wedding");
+    expect(ConfigurationMetadataSchema.parse({ eventKind: "corporate", instructions: undefined }).eventKind).toBe("corporate");
+    expect(ConfigurationMetadataSchema.parse({ eventKind: null }).eventKind).toBeNull();
+    // No default: a blob that never had the key keeps not having it (the sheet's sourceHash is unchanged).
+    expect("eventKind" in ConfigurationMetadataSchema.parse({})).toBe(false);
+    expect(ConfigurationMetadataSchema.safeParse({ eventKind: "gala" }).success).toBe(false);
+    expect(ConfigurationMetadataSchema.safeParse({ eventKind: "Wedding" }).success).toBe(false);
+  });
+
   it("placed-object metadata accepts groupId + notes", () => {
     const parsed = PlacedObjectMetadataSchema.safeParse({
       groupId: "group-1",

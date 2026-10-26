@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../api/client.js";
 import {
   DEVICE_RECORD_LIMIT,
   EVENT_KIND_WORDS,
@@ -28,8 +29,8 @@ function setOnline(value: boolean): void {
 
 const realStorage = window.localStorage;
 
-/** A device whose storage refuses every write (a full quota, a locked-down browser). jsdom's own
- *  localStorage keeps a spy on its methods as a stored item, so the whole object is swapped instead. */
+/** A device whose storage refuses every write (a full quota, a locked-down browser). happy-dom keeps a spy on
+ *  its localStorage methods as a stored item, so the whole object is swapped instead. */
 function refuseStorage(): void {
   const refusing: Storage = {
     length: 0,
@@ -44,6 +45,16 @@ function refuseStorage(): void {
 
 const question = (): ReturnType<typeof useEventKindQuestion.getState> => useEventKindQuestion.getState();
 const plannerKind = (): ReturnType<typeof usePlannerEventStore.getState>["eventKind"] => usePlannerEventStore.getState().eventKind;
+
+/** A guest's draft as editor-store's load hands it over. */
+function openDraft(configId = "draft", search = ""): void {
+  openLayoutEventKind({ configId, isPublicPreview: true, search, metadata: null });
+}
+
+/** A signed-in layout as editor-store's load hands it over, with the metadata it holds. */
+function openOwn(configId: string, metadata: unknown, write?: (configId: string, answer: unknown) => Promise<unknown>, search = ""): void {
+  openLayoutEventKind({ configId, isPublicPreview: false, search, metadata }, write === undefined ? {} : { writeMetadata: write });
+}
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -154,136 +165,174 @@ describe("when the planner asks, and what an answer sets", () => {
   });
 });
 
-describe("the open layout's answer", () => {
-  it("reads a guest draft's answer from this device and sets the planner's kind", async () => {
+describe("a guest's draft as it opens", () => {
+  it("takes this device's answer and sets the planner's kind", () => {
     rememberDeviceEventKind("draft", "wedding");
-    await openLayoutEventKind({ configId: "draft", isPublicPreview: true, search: "" });
-    expect(question()).toMatchObject({ configId: "draft", guest: true, known: true, answer: "wedding" });
+    openDraft();
+    expect(question()).toMatchObject({ configId: "draft", guest: true, known: true, answer: "wedding", save: "kept" });
     expect(plannerKind()).toBe("wedding");
   });
 
-  it("leaves a guest draft the device holds nothing for unasked", async () => {
-    await openLayoutEventKind({ configId: "draft", isPublicPreview: true, search: "" });
+  it("is unasked when the device holds nothing for it", () => {
+    openDraft();
     expect(question()).toMatchObject({ known: true, answer: undefined });
     expect(plannerKind()).toBeNull();
   });
 
-  it("takes the address's answer for a guest draft and keeps it on the device", async () => {
-    await openLayoutEventKind({ configId: "draft", isPublicPreview: true, search: "?event=corporate" });
+  it("takes the address's answer when it has none, and keeps it on the device", () => {
+    openDraft("draft", "?event=corporate");
     expect(question().answer).toBe("corporate");
     expect(deviceEventKind("draft")).toBe("corporate");
   });
 
-  it("reads a signed-in layout's answer from its metadata, writing nothing", async () => {
-    const writeMetadata = vi.fn(() => Promise.resolve());
-    await openLayoutEventKind(
-      { configId: "mine", isPublicPreview: false, search: "" },
-      { readMetadata: () => Promise.resolve({ eventKind: "corporate", instructions: {} }), writeMetadata },
-    );
-    expect(question()).toMatchObject({ guest: false, known: true, answer: "corporate" });
+  it("never lets the address override an answer it already has", () => {
+    rememberDeviceEventKind("draft", "corporate");
+    openDraft("draft", "?event=wedding");
+    expect(question().answer).toBe("corporate");
+    expect(deviceEventKind("draft")).toBe("corporate");
     expect(plannerKind()).toBe("corporate");
-    expect(writeMetadata).not.toHaveBeenCalled();
+  });
+});
+
+describe("a signed-in layout as it opens", () => {
+  it("takes the answer it holds, writing nothing", () => {
+    const write = vi.fn(() => Promise.resolve());
+    openOwn("mine", { eventKind: "corporate", instructions: {} }, write);
+    expect(question()).toMatchObject({ guest: false, known: true, answer: "corporate", save: "kept" });
+    expect(plannerKind()).toBe("corporate");
+    expect(write).not.toHaveBeenCalled();
   });
 
-  it("uses the metadata the caller already holds instead of reading it again", async () => {
-    const readMetadata = vi.fn(() => Promise.resolve({}));
-    await openLayoutEventKind({ configId: "mine", isPublicPreview: false, search: "", metadata: { eventKind: null } }, { readMetadata });
-    expect(question()).toMatchObject({ known: true, answer: null });
-    expect(readMetadata).not.toHaveBeenCalled();
-  });
-
-  it("gives a claimed draft the answer this device kept for it as a guest's", async () => {
-    rememberDeviceEventKind("claimed", "wedding");
-    const writeMetadata = vi.fn(() => Promise.resolve());
-    await openLayoutEventKind({ configId: "claimed", isPublicPreview: true, search: "" });
-    await openLayoutEventKind({ configId: "claimed", isPublicPreview: false, search: "" }, { readMetadata: () => Promise.resolve({}), writeMetadata });
-    expect(question()).toMatchObject({ guest: false, answer: "wedding" });
-    await vi.waitFor(() => { expect(writeMetadata).toHaveBeenCalledWith("claimed", "wedding"); });
-  });
-
-  it("neither asks nor keeps another layout's chair when the answer cannot be read", async () => {
+  it("is set before the load returns: no seat can take another event's chair in between", () => {
     rememberDeviceEventKind("before", "wedding");
-    await openLayoutEventKind({ configId: "before", isPublicPreview: true, search: "" });
+    openDraft("before");
     expect(plannerKind()).toBe("wedding");
-    await openLayoutEventKind({ configId: "unreadable", isPublicPreview: false, search: "" }, { readMetadata: () => Promise.reject(new Error("offline")) });
-    expect(question()).toMatchObject({ configId: "unreadable", known: false, answer: undefined });
+    openOwn("next", { eventKind: "corporate" });
+    expect(plannerKind()).toBe("corporate");
+    openOwn("third", null);
+    expect(question()).toMatchObject({ configId: "third", answer: undefined });
     expect(plannerKind()).toBeNull();
   });
 
-  it("drops a slow read for a layout already left", async () => {
-    let finish: (value: unknown) => void = () => undefined;
-    const slow = new Promise((resolve) => { finish = resolve; });
-    const first = openLayoutEventKind({ configId: "left", isPublicPreview: false, search: "" }, { readMetadata: () => slow });
-    await openLayoutEventKind({ configId: "now", isPublicPreview: true, search: "" });
-    finish({ eventKind: "wedding" });
-    await first;
-    expect(question()).toMatchObject({ configId: "now", answer: undefined });
-    expect(plannerKind()).toBeNull();
+  it("never takes the address: a link cannot change a layout's event, and opening writes nothing", () => {
+    const write = vi.fn(() => Promise.resolve());
+    openOwn("mine", { eventKind: "corporate" }, write, "?event=wedding");
+    expect(question().answer).toBe("corporate");
+    openOwn("unanswered", {}, write, "?event=wedding");
+    expect(question().answer).toBeUndefined();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("is given the answer this device kept for it as a guest's draft, claimed since", async () => {
+    rememberDeviceEventKind("claimed", "wedding");
+    const write = vi.fn(() => Promise.resolve());
+    openOwn("claimed", {}, write);
+    expect(question()).toMatchObject({ guest: false, answer: "wedding" });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledWith("claimed", "wedding"); });
+  });
+
+  it("keeps an answer still waiting to be written when the same layout loads again, and writes it again", async () => {
+    openOwn("mine", {});
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>().mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    // A reload of the server's copy (a save conflict) holds no answer yet.
+    openOwn("mine", {}, write);
+    expect(question()).toMatchObject({ answer: "wedding", save: "retrying" });
+    expect(plannerKind()).toBe("wedding");
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(2); });
+  });
+
+  it("lets the layout's own answer stand over one this tab could not write", async () => {
+    openOwn("theirs", {});
+    const refusedWrite = vi.fn(() => Promise.reject(new ApiError(403, "Insufficient permissions", "FORBIDDEN")));
+    answerEventKind("wedding", { writeMetadata: refusedWrite });
+    await vi.waitFor(() => { expect(question().save).toBe("this-visit"); });
+    openOwn("theirs", {});
+    expect(question()).toMatchObject({ answer: "wedding", save: "this-visit" });
+    openOwn("theirs", { eventKind: "corporate" });
+    expect(question()).toMatchObject({ answer: "corporate", save: "kept" });
   });
 });
 
 describe("answering", () => {
-  it("keeps a guest's answer on this device and gives a receipt", async () => {
-    await openLayoutEventKind({ configId: "draft", isPublicPreview: true, search: "" });
+  it("keeps a guest's answer on this device and gives a receipt", () => {
+    openDraft();
     answerEventKind("corporate");
     expect(deviceEventKind("draft")).toBe("corporate");
-    expect(question()).toMatchObject({ answer: "corporate", unsaved: false, receipt: { answer: "corporate" } });
+    expect(question()).toMatchObject({ answer: "corporate", save: "kept", receipt: { answer: "corporate" } });
     expect(plannerKind()).toBe("corporate");
   });
 
-  it("records a skip as null, so the layout is never asked again", async () => {
-    await openLayoutEventKind({ configId: "draft", isPublicPreview: true, search: "" });
+  it("records a skip as null, so the layout is never asked again", () => {
+    openDraft();
     answerEventKind(null);
     expect(deviceEventKind("draft")).toBeNull();
     expect(question()).toMatchObject({ known: true, answer: null, receipt: { answer: null } });
     expect(plannerKind()).toBeNull();
   });
 
-  it("says a guest's answer holds for this visit only when the device cannot keep it", async () => {
-    await openLayoutEventKind({ configId: "draft", isPublicPreview: true, search: "" });
+  it("holds a guest's answer for this visit when the device cannot keep it", () => {
+    openDraft();
     refuseStorage();
     answerEventKind("wedding");
-    expect(question()).toMatchObject({ answer: "wedding", unsaved: true });
+    expect(question()).toMatchObject({ answer: "wedding", save: "this-visit" });
     expect(plannerKind()).toBe("wedding");
   });
 
   it("writes a signed-in layout's answer, and tries again once the browser is back online", async () => {
-    await openLayoutEventKind({ configId: "mine", isPublicPreview: false, search: "" }, { readMetadata: () => Promise.resolve({}) });
+    openOwn("mine", {});
     setOnline(false);
     window.dispatchEvent(new Event("offline"));
-    const writeMetadata = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
-      .mockRejectedValueOnce(new Error("Network error"))
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"))
       .mockResolvedValue({});
-    answerEventKind("wedding", { writeMetadata });
+    answerEventKind("wedding", { writeMetadata: write });
     expect(plannerKind()).toBe("wedding");
-    await vi.waitFor(() => { expect(question().unsaved).toBe(true); });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
     setOnline(true);
     window.dispatchEvent(new Event("online"));
-    await vi.waitFor(() => { expect(writeMetadata).toHaveBeenCalledTimes(2); });
-    await vi.waitFor(() => { expect(question().unsaved).toBe(false); });
-    expect(writeMetadata).toHaveBeenLastCalledWith("mine", "wedding");
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => { expect(question().save).toBe("kept"); });
+    expect(write).toHaveBeenLastCalledWith("mine", "wedding");
+  });
+
+  it("holds a refused answer for this visit and does not try again (no permission to write)", async () => {
+    openOwn("theirs", {});
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    const write = vi.fn(() => Promise.reject(new ApiError(403, "Insufficient permissions", "FORBIDDEN")));
+    answerEventKind("other", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("this-visit"); });
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+    await Promise.resolve();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(plannerKind()).toBe("other");
   });
 
   it("writes one answer at a time, in the order given", async () => {
-    await openLayoutEventKind({ configId: "mine", isPublicPreview: false, search: "" }, { readMetadata: () => Promise.resolve({}) });
+    openOwn("mine", {});
     const calls: string[] = [];
     let release: () => void = () => undefined;
-    const writeMetadata = vi.fn((_configId: string, answer: unknown): Promise<unknown> => {
+    const write = vi.fn((_configId: string, answer: unknown): Promise<unknown> => {
       calls.push(`start ${String(answer)}`);
       if (answer === "wedding") return new Promise<void>((resolve) => { release = () => { calls.push("end wedding"); resolve(); }; });
       calls.push(`end ${String(answer)}`);
       return Promise.resolve();
     });
-    answerEventKind("wedding", { writeMetadata });
-    answerEventKind("corporate", { writeMetadata });
+    answerEventKind("wedding", { writeMetadata: write });
+    answerEventKind("corporate", { writeMetadata: write });
     await vi.waitFor(() => { expect(calls).toEqual(["start wedding"]); });
     release();
     await vi.waitFor(() => { expect(calls).toEqual(["start wedding", "end wedding", "start corporate", "end corporate"]); });
-    expect(question().answer).toBe("corporate");
+    expect(question()).toMatchObject({ answer: "corporate", save: "kept" });
   });
 
-  it("opens a change and closes it again without touching the answer", async () => {
-    await openLayoutEventKind({ configId: "draft", isPublicPreview: true, search: "" });
+  it("opens a change and closes it again without touching the answer", () => {
+    openDraft();
     answerEventKind("other");
     changeEventKind();
     expect(question()).toMatchObject({ changing: true, receipt: null, answer: "other" });

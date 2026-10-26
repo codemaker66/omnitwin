@@ -215,10 +215,9 @@ function EventKindDialog({ changing, current, leaving, onPick, onSkip }: DialogP
 
 /** What the planner just set, and where to change it; polite, gone after a few seconds. */
 function EventKindReceipt(): ReactElement {
-  const { receipt, unsaved, guest } = useEventKindQuestion(useShallow((state) => ({
+  const { receipt, save } = useEventKindQuestion(useShallow((state) => ({
     receipt: state.receipt,
-    unsaved: state.unsaved,
-    guest: state.guest,
+    save: state.save,
   })));
   useEffect(() => {
     if (receipt === null) return;
@@ -228,7 +227,7 @@ function EventKindReceipt(): ReactElement {
   const said = receipt === null ? null
     : receipt.answer === null ? "Noted. You can say what the event is any time, from the room's name."
       : EVENT_KIND_WORDS[receipt.answer].receipt;
-  const kept = !unsaved ? "" : guest ? " Kept for this visit only." : " Not saved yet.";
+  const kept = save === "retrying" ? " Not saved yet." : save === "this-visit" ? " Kept for this visit only." : "";
   // The live region is always there, so what appears in it is read out.
   return createPortal(
     <div className="ekp-receipt-region" role="status" aria-live="polite">

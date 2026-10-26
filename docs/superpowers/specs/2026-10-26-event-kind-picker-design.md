@@ -72,17 +72,29 @@ It asks only when all four of these hold:
 4. **Nothing answers the question already.** That means none of:
    - a stored `eventKind` key (absent means never asked; `null` means asked and skipped);
    - this device's record for a guest's draft;
-   - a valid `?event=wedding|corporate|other` parameter.
+   - a valid `?event=wedding|corporate|other` parameter on a guest's new draft.
 
-A known answer is applied silently. A URL answer is also stored.
+A known answer is applied silently. The address's answer applies only to a guest's draft that has no answer yet: the
+link it came by started the plan. It is kept on this device. The address never overrides an answer, and it never
+answers a signed-in layout, so a link cannot change a layout's event (lane E's review).
+
+**Opening writes almost nothing.** The one write on open is a claimed draft's device answer, which goes to the
+layout. Everything else is written only when someone picks. A viewer who may not write (a non-owner, a view-only
+share) is never made to try.
 
 ## The answer's record: `lib/event-kind-record.ts` (new)
 
 - **The seam.** It reads and writes E12's `usePlannerEventStore` (`eventKind: "wedding" | "corporate" | "other" | null`).
-- **Signed-in layout.** It calls `patchConfigMetadata(id, { eventKind })`, one write at a time in a tab. A failed
-  write keeps the answer for this tab and says so in the receipt ("Not saved yet"). It is written again when the
-  browser comes back online (`lib/online-status.ts`), on the next change, or on the next open. A dropped connection
-  must not make the planner ask twice.
+- **Signed-in layout.** It calls `patchConfigMetadata(id, { eventKind })`, one write at a time in a tab. The answer's
+  save state is one of three:
+  - **kept:** written.
+  - **retrying:** no network or a server error. The receipt says "Not saved yet". It is written again when the
+    browser comes back online (`lib/online-status.ts`). If the same layout loads again meanwhile, the tab's answer
+    stands and is written again.
+  - **this-visit:** the server refused it (4xx, no permission). The receipt says "Kept for this visit only". It is
+    not tried again, and the layout's own answer wins on the next load.
+
+  A dropped connection never makes the planner ask twice.
 - **A guest's draft.** It is kept in localStorage `venviewer.planner.eventKind` as
   `{ version: 1, entries: [{ configId, kind }] }`, newest first, with the latest 200 kept. It is validated on read,
   and a damaged record reads as empty. If storage is unavailable, the answer holds for this tab only.

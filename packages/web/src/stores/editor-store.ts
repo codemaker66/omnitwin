@@ -1023,7 +1023,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       beginActionLogForConfig(config.id);
       // The kind of event the layout is for, read from the metadata this load already holds (T-674), so a
       // new seat never takes the wrong chair while a second read is in flight.
-      void openLayoutEventKind({ configId: config.id, isPublicPreview: config.isPublicPreview, search: plannerSearch(), metadata: config.metadata ?? null });
+      openLayoutEventKind({ configId: config.id, isPublicPreview: config.isPublicPreview, search: plannerSearch(), metadata: config.metadata ?? null });
       // Load space data (name, dimensions) for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
@@ -1110,7 +1110,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // would append under the previous config's id.
       beginActionLogForConfig(config.id);
       // A new guest draft: the planner has not asked what the event is yet, unless the address says (T-674).
-      void openLayoutEventKind({ configId: config.id, isPublicPreview: true, search: plannerSearch(), metadata: null });
+      openLayoutEventKind({ configId: config.id, isPublicPreview: true, search: plannerSearch(), metadata: null });
 
       // Load space data for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.

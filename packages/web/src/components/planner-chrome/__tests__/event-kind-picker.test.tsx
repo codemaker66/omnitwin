@@ -50,15 +50,15 @@ function reducedMotion(reduce: boolean): void {
   }));
 }
 
-/** A guest's draft as the editor holds it once open, its answer read from this device. */
-async function openDraft(options: { readonly furnished?: boolean; readonly inReview?: boolean } = {}): Promise<void> {
+/** A guest's draft as the editor holds it once open, its answer read from this device as the load does. */
+function openDraft(options: { readonly furnished?: boolean; readonly inReview?: boolean } = {}): void {
   useEditorStore.setState({
     configId: CONFIG,
     isPublicPreview: true,
     objects: options.furnished === true ? [TABLE] : [],
     reviewStatus: options.inReview === true ? "submitted" : null,
   });
-  await openLayoutEventKind({ configId: CONFIG, isPublicPreview: true, search: "", metadata: null });
+  openLayoutEventKind({ configId: CONFIG, isPublicPreview: true, search: "", metadata: null });
 }
 
 /** The room's name and the question, as the cockpit mounts them (it says whether the layout came from an event). */
@@ -89,8 +89,8 @@ afterEach(() => {
 });
 
 describe("the first open of a new layout", () => {
-  it("asks what the event is with three named panels, the first in hand, and a way to skip", async () => {
-    await openDraft();
+  it("asks what the event is with three named panels, the first in hand, and a way to skip", () => {
+    openDraft();
     renderPlanner();
     const dialog = question();
     const wedding = within(dialog).getByRole("button", { name: "Wedding: Round tables and gold Chiavari chairs" });
@@ -101,7 +101,7 @@ describe("the first open of a new layout", () => {
   });
 
   it("sets up the room for the pick, keeps it on this device and says what it set", async () => {
-    await openDraft();
+    openDraft();
     renderPlanner();
     fireEvent.click(within(question()).getByRole("button", { name: /^Corporate event/u }));
     expect(usePlannerEventStore.getState().eventKind).toBe("corporate");
@@ -111,8 +111,8 @@ describe("the first open of a new layout", () => {
     expect(screen.getByRole("button", { name: "The event: Corporate event. Change it" })).toBeTruthy();
   });
 
-  it("answers to 1, 2 and 3, and the planner's own keys never hear them", async () => {
-    await openDraft();
+  it("answers to 1, 2 and 3, and the planner's own keys never hear them", () => {
+    openDraft();
     renderPlanner();
     const plannerKey = vi.fn();
     const stop = registerKeyBindings([{ keys: [{ code: "Digit3" }], run: plannerKey }]);
@@ -122,8 +122,8 @@ describe("the first open of a new layout", () => {
     expect(plannerKey).not.toHaveBeenCalled();
   });
 
-  it("moves between the panels with the arrows", async () => {
-    await openDraft();
+  it("moves between the panels with the arrows", () => {
+    openDraft();
     renderPlanner();
     const dialog = question();
     fireEvent.keyDown(dialog, { key: "ArrowRight", code: "ArrowRight" });
@@ -133,8 +133,8 @@ describe("the first open of a new layout", () => {
     expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: /^Something else/u }));
   });
 
-  it("skips on Escape, says where to answer later, and never asks that layout again", async () => {
-    await openDraft();
+  it("skips on Escape, says where to answer later, and never asks that layout again", () => {
+    openDraft();
     renderPlanner();
     fireEvent(question(), new Event("cancel", { cancelable: true }));
     expect(useEventKindQuestion.getState().answer).toBeNull();
@@ -143,23 +143,23 @@ describe("the first open of a new layout", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     cleanup();
     resetEventKindQuestionForTesting();
-    await openDraft();
+    openDraft();
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "Say what the event is" })).toBeTruthy();
   });
 
-  it("skips on Not sure yet in the same way", async () => {
-    await openDraft();
+  it("skips on Not sure yet in the same way", () => {
+    openDraft();
     renderPlanner();
     fireEvent.click(within(question()).getByRole("button", { name: "Not sure yet" }));
     expect(useEventKindQuestion.getState()).toMatchObject({ known: true, answer: null });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("hands the room back at once under reduced motion", async () => {
+  it("hands the room back at once under reduced motion", () => {
     reducedMotion(true);
-    await openDraft();
+    openDraft();
     renderPlanner();
     fireEvent.click(within(question()).getByRole("button", { name: /^Wedding/u }));
     expect(usePlannerEventStore.getState().eventKind).toBe("wedding");
@@ -168,28 +168,28 @@ describe("the first open of a new layout", () => {
 });
 
 describe("never over someone's work", () => {
-  it("does not ask a layout with something on the floor", async () => {
-    await openDraft({ furnished: true });
+  it("does not ask a layout with something on the floor", () => {
+    openDraft({ furnished: true });
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("does not ask a layout opened from an event", async () => {
-    await openDraft();
+  it("does not ask a layout opened from an event", () => {
+    openDraft();
     renderPlanner(true);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("does not ask a layout locked for review, and offers no change while it is", async () => {
-    await openDraft({ inReview: true });
+  it("does not ask a layout locked for review, and offers no change while it is", () => {
+    openDraft({ inReview: true });
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("button", { name: "Say what the event is" })).toBeNull();
   });
 
-  it("does not ask on a device told not to", async () => {
+  it("does not ask on a device told not to", () => {
     window.localStorage.setItem("venviewer.planner.eventKind", JSON.stringify({ version: 1, entries: [], quiet: true }));
-    await openDraft();
+    openDraft();
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -203,9 +203,9 @@ describe("never over someone's work", () => {
 });
 
 describe("changing the answer", () => {
-  it("opens from the room's name with the answer marked, and Keep leaves it as it was", async () => {
+  it("opens from the room's name with the answer marked, and Keep leaves it as it was", () => {
     rememberDeviceEventKind(CONFIG, "wedding");
-    await openDraft();
+    openDraft();
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "The event: Wedding. Change it" }));
@@ -218,7 +218,7 @@ describe("changing the answer", () => {
 
   it("takes a new answer, and the receipt can open it again", async () => {
     rememberDeviceEventKind(CONFIG, "wedding");
-    await openDraft();
+    openDraft();
     renderPlanner();
     fireEvent.click(screen.getByRole("button", { name: "The event: Wedding. Change it" }));
     fireEvent.click(within(question()).getByRole("button", { name: /^Corporate event/u }));

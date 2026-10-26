@@ -210,6 +210,29 @@ describe("PATCH /configurations/:id", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it("accepts the planner's event kind, or null for a skipped question (T-674)", async () => {
+    for (const eventKind of ["wedding", "corporate", "other", null]) {
+      const res = await server.inject({
+        method: "PATCH",
+        url: "/configurations/00000000-0000-4000-8000-000000000001",
+        headers: { authorization: `Bearer ${adminToken()}` },
+        payload: { metadata: { eventKind } },
+      });
+      // Validation must pass: 403/404 are acceptable (fake UUID), 400 is not.
+      expect(res.statusCode).not.toBe(400);
+    }
+  });
+
+  it("rejects an event kind the planner does not know (T-674)", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { metadata: { eventKind: "gala" } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("accepts null metadata to clear instructions", async () => {
     const res = await server.inject({
       method: "PATCH",

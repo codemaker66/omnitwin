@@ -130,14 +130,26 @@ export type EventInstructions = z.infer<typeof EventInstructionsSchema>;
 // ---------------------------------------------------------------------------
 // ConfigurationMetadataSchema — the shape of configurations.metadata JSONB
 //
-// Currently only "instructions" is defined. Future additions (e.g.
-// seating-chart, dietary flags) go alongside it without breaking
+// "instructions" and "eventKind" are defined. Future additions (e.g.
+// seating-chart, dietary flags) go alongside them without breaking
 // existing records since the schema uses .passthrough() to tolerate
 // unknown keys.
 // ---------------------------------------------------------------------------
 
+/** The kinds of event the planner asks about on a new layout's first open (T-674). */
+export const PlannerEventKindSchema = z.enum(["wedding", "corporate", "other"]);
+
 export const ConfigurationMetadataSchema = z.object({
   instructions: EventInstructionsSchema.optional(),
+  /**
+   * The kind of event the layout is for, as the planner asks it on a new
+   * layout's first open (T-674): absent until asked, null when the person
+   * skipped the question. The planner reads it for the chair a new seat gets
+   * and the shape Lay out starts with (web lib/event-kind-record). No default,
+   * for the same reason as protectedPremises: an absent key keeps every
+   * existing blob, and the sheet's sourceHash, exactly as it was.
+   */
+  eventKind: PlannerEventKindSchema.nullable().optional(),
 }).loose();
 export type ConfigurationMetadata = z.infer<typeof ConfigurationMetadataSchema>;
 
