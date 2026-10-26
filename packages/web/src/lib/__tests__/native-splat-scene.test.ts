@@ -333,6 +333,33 @@ describe("native complete draw lifecycle", () => {
     expect(source.rendered).toHaveBeenCalledOnce();
   });
 
+  it("rebuilds its draw for a replacement renderer attached in the commit that detached the lost one", async () => {
+    const state = setup(), source = state.add(2);
+    await vi.advanceTimersByTimeAsync(50); state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+    const built = evidence.created, released = evidence.disposed;
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    const compile = vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+
+    // A graphics reset hands R3F a new renderer: React runs every cleanup of
+    // that commit before its setups, so the lost renderer's host has detached
+    // and its deferred teardown has not run yet.
+    state.detach();
+    expect(() => state.runtime.attach(replacement, state.camera, state.invalidate)).not.toThrow();
+    expect(evidence.disposed).toBeGreaterThan(released);
+    await vi.advanceTimersByTimeAsync(50);
+    // From the source it still holds: nothing is decoded again.
+    expect(evidence.created).toBeGreaterThan(built);
+    expect(compile).toHaveBeenCalled();
+  });
+
+  it("still refuses a second renderer while the first one is attached", () => {
+    const state = setup();
+    expect(() => state.runtime.attach(new WebGPURenderer({ forceWebGL: true }), state.camera, state.invalidate))
+      .toThrow("A native splat scene must have one active renderer");
+  });
+
   it("wakes demand rendering when another source becomes eligible during the pending fence", async () => {
     const state = setup();
     let opacity = 0.5;

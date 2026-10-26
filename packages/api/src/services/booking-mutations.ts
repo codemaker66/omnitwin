@@ -25,7 +25,7 @@ import {
   type ResequenceResult,
 } from "./hold-hygiene.js";
 import { jointlyPromoted, writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
-import { bindBookingToEvent, syncEventStatus, syncEventStatuses, type BindTarget } from "./event-binding.js";
+import { bindBookingToEvent, movePhasesWithBooking, syncEventStatus, syncEventStatuses, type BindTarget } from "./event-binding.js";
 
 // ---------------------------------------------------------------------------
 // Booking mutation cores (T-537; Canon §9) — extracted VERBATIM from the
@@ -545,8 +545,21 @@ async function updateBookingLocked(
       error: "Failed to update booking",
     };
   }
-  // A booking that moved between events changes what both events hold.
-  if (updated.eventId !== row.eventId) await syncEventStatuses(conn, [row.eventId, updated.eventId]);
+  // A move reaches its event (release audit events-diary-1/-3): the event's
+  // phases on the booking's day follow it, and the event's dates follow its
+  // bookings. A booking that moved between events changes what both hold.
+  const timesChanged = updated.startsAt.getTime() !== row.startsAt.getTime()
+    || updated.endsAt.getTime() !== row.endsAt.getTime();
+  const roomChanged = updated.spaceId !== row.spaceId;
+  if (row.eventId !== null && updated.eventId === row.eventId && (timesChanged || roomChanged)) {
+    await movePhasesWithBooking(conn, {
+      bookingId: row.id,
+      eventId: row.eventId,
+      from: { spaceId: row.spaceId, startsAt: row.startsAt, endsAt: row.endsAt },
+      to: { spaceId: updated.spaceId, startsAt: updated.startsAt },
+    });
+  }
+  if (updated.eventId !== row.eventId || timesChanged) await syncEventStatuses(conn, [row.eventId, updated.eventId]);
   return { ok: true, status: 200, booking: updated, changeKind: "booking.updated" };
 }
 

@@ -166,6 +166,7 @@ describe("InstancedFurnitureLayer editable batches", () => {
           expect(mesh.geometry.getAttribute("position").count).toBe(group.geometry.getAttribute("position").count);
           expect(mesh.castShadow).toBe(shadows.castShadow);
           expect(mesh.receiveShadow).toBe(shadows.receiveShadow);
+          expect(mesh.layers.mask).toBe(shadows.layers);
           if (Array.isArray(mesh.material)) throw new Error("Expected one material per group");
           expect(mesh.material.type).toBe(base.type);
           expect(colourOf(mesh.material)).toBe(colourOf(base));
