@@ -129,30 +129,17 @@ describe("GeneratedFurnitureProxyBadge", () => {
     expect(screen.queryByTestId("generated-furniture-proxy-badge")).toBeNull();
   });
 
-  it("discloses one generated stand-in", () => {
-    usePlacementStore.setState({
-      placedItems: [
-        createPlacedItem(catalogueId("platform-narrow"), 0, 0),
-        createPlacedItem(catalogueId("bar-counter"), 2, 0),
-      ],
-    });
-
-    render(<GeneratedFurnitureProxyBadge />);
-
-    expect(screen.getByTestId("generated-furniture-proxy-badge").textContent)
-      .toBe("AI-generated furniture proxy · visual stand-in · not measured");
-  });
-
-  it("discloses plural generated stand-ins across the registered batch", () => {
+  // Blake, 26 Oct 2026: nobody sees the stand-in line (T-674, QoL F-15).
+  it("shows nobody a stand-in line, even with every generated model placed", () => {
     usePlacementStore.setState({
       placedItems: GENERATED_FURNITURE_SLUGS.map((slug, index) => (
         createPlacedItem(catalogueId(slug), index * 2, 0)
       )),
     });
 
-    render(<GeneratedFurnitureProxyBadge />);
+    const { container } = render(<GeneratedFurnitureProxyBadge />);
 
-    expect(screen.getByTestId("generated-furniture-proxy-badge").textContent)
-      .toBe("AI-generated furniture proxies · visual stand-ins · not measured");
+    expect(container.textContent).toBe("");
+    expect(screen.queryByText(/AI-generated|stand-in|not measured/u)).toBeNull();
   });
 });

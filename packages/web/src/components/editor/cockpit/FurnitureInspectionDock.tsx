@@ -167,25 +167,12 @@ export function FurnitureInspectionDock({
   );
 }
 
-/** Persistent disclosure whenever a generated visual stand-in is in the plan. */
-export function GeneratedFurnitureProxyBadge(): ReactElement | null {
-  const placedItems = usePlacementStore((state) => state.placedItems);
-  const generatedCount = placedItems.reduce((count, placed) => {
-    if (!isSceneFurniturePlacement(placed)) return count;
-    const item = getCatalogueItem(placed.catalogueItemId);
-    return item !== undefined && drawsGeneratedProxy(item) ? count + 1 : count;
-  }, 0);
-
-  if (generatedCount === 0) return null;
-  const noun = generatedCount === 1 ? "proxy" : "proxies";
-  const standIn = generatedCount === 1 ? "stand-in" : "stand-ins";
-  return (
-    <p
-      className="generated-furniture-proxy-badge"
-      data-testid="generated-furniture-proxy-badge"
-      role="status"
-    >
-      AI-generated furniture {noun} · visual {standIn} · not measured
-    </p>
-  );
+/**
+ * The stand-in line ("AI-generated furniture proxy · visual stand-in · not
+ * measured") is retired: Blake decided on 26 Oct 2026 that nobody sees it, and
+ * that the furniture itself should carry accurate sizes (T-674, QoL F-15). It
+ * renders nothing until lane P's App.tsx stops mounting it.
+ */
+export function GeneratedFurnitureProxyBadge(): null {
+  return null;
 }
