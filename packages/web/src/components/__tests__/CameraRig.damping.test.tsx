@@ -40,6 +40,7 @@ vi.mock("@react-three/drei", async () => {
   const { OrbitControls } = await import("three-stdlib");
   interface ControlProps {
     readonly target?: [number, number, number]; readonly enabled?: boolean; readonly enableDamping: boolean; readonly dampingFactor: number;
+    readonly enableZoom?: boolean;
     readonly minDistance: number; readonly maxDistance: number; readonly onChange?: () => void;
   }
   return { OrbitControls: React.forwardRef<OrbitControlsImpl, ControlProps>((props, ref) => {
@@ -57,6 +58,10 @@ vi.mock("@react-three/drei", async () => {
       controls.maxDistance = props.maxDistance;
       harness.controls = controls;
     }, [controls, props]);
+    // R3F applies a primitive's prop when its value changes, never again on a re-render.
+    React.useLayoutEffect(() => {
+      if (props.enableZoom !== undefined) controls.enableZoom = props.enableZoom;
+    }, [controls, props.enableZoom]);
     React.useEffect(() => {
       const onChange = (): void => { harness.invalidate(); props.onChange?.(); };
       controls.addEventListener("change", onChange);
@@ -134,5 +139,22 @@ describe("the orbit camera's damping", () => {
     expect(run, "the coast takes many frames").toBeGreaterThan(10);
     expect(run, "and then the loop rests").toBeLessThan(400);
     expect(controls().getAzimuthalAngle()).toBeCloseTo(goal, 2);
+  });
+});
+
+describe("the orbit camera's zoom", () => {
+  function finger(type: string, pointerId: number): PointerEvent {
+    return new PointerEvent(type, { pointerType: "touch", pointerId });
+  }
+
+  it("leaves every wheel to the inertial zoom and zooms the controls only while a finger is down", () => {
+    render(<CameraRig dimensions={dimensions} />);
+    expect(controls().enableZoom, "no finger: the controls never zoom a wheel").toBe(false);
+
+    act(() => { window.dispatchEvent(finger("pointerdown", 1)); window.dispatchEvent(finger("pointerdown", 2)); });
+    expect(controls().enableZoom, "two fingers down: the pinch dollies").toBe(true);
+
+    act(() => { window.dispatchEvent(finger("pointerup", 1)); window.dispatchEvent(finger("pointerup", 2)); });
+    expect(controls().enableZoom, "the last finger lifted").toBe(false);
   });
 });

@@ -143,7 +143,9 @@ function fingerId(event: Event): number | null {
  * two-finger pinch's dolly; every wheel and trackpad already has the rig's own
  * inertial zoom, and with both on a wheel on a touch-first device zoomed
  * twice. Listens in the capture phase on `target` (the window), so the zoom is
- * on before OrbitControls reads the finger. Returns the unsubscribe.
+ * on before OrbitControls reads the finger. A blur forgets every finger: a
+ * touch the browser drops without a cancel (an alert, an app switch) would
+ * otherwise leave the zoom on for good. Returns the unsubscribe.
  */
 export function zoomWhileFingersDown(target: EventTarget, setZoom: (on: boolean) => void): () => void {
   const fingers = new Set<number>();
@@ -158,13 +160,20 @@ export function zoomWhileFingersDown(target: EventTarget, setZoom: (on: boolean)
     if (id === null || !fingers.delete(id)) return;
     if (fingers.size === 0) setZoom(false);
   };
+  const forget = (): void => {
+    if (fingers.size === 0) return;
+    fingers.clear();
+    setZoom(false);
+  };
   target.addEventListener("pointerdown", down, true);
   target.addEventListener("pointerup", up, true);
   target.addEventListener("pointercancel", up, true);
+  target.addEventListener("blur", forget);
   return () => {
     target.removeEventListener("pointerdown", down, true);
     target.removeEventListener("pointerup", up, true);
     target.removeEventListener("pointercancel", up, true);
+    target.removeEventListener("blur", forget);
   };
 }
 

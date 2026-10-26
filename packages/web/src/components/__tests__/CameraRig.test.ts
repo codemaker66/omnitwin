@@ -126,6 +126,24 @@ describe("zoomWhileFingersDown", () => {
     stop();
   });
 
+  it("forgets every finger when the window loses focus", () => {
+    const target = new EventTarget();
+    const calls: boolean[] = [];
+    const stop = zoomWhileFingersDown(target, (on) => { calls.push(on); });
+
+    target.dispatchEvent(pointer("pointerdown", "touch", 1));
+    target.dispatchEvent(new Event("blur"));
+    expect(calls).toEqual([true, false]);
+    // The dropped finger's id is gone: the next finger turns the zoom on and off again.
+    target.dispatchEvent(pointer("pointerdown", "touch", 2));
+    target.dispatchEvent(pointer("pointerup", "touch", 2));
+    expect(calls).toEqual([true, false, true, false]);
+    // A blur with no finger down changes nothing.
+    target.dispatchEvent(new Event("blur"));
+    expect(calls).toHaveLength(4);
+    stop();
+  });
+
   it("stops listening once unsubscribed", () => {
     const target = new EventTarget();
     const calls: boolean[] = [];
