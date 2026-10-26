@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { usePlannerWork } from "./scene/planner-work.js";
 
 // ---------------------------------------------------------------------------
 // PlannerCanvasBoundary — graceful fallback when the 3D canvas can't start.
@@ -8,10 +9,11 @@ import { Component, type ReactNode } from "react";
 // blocked, GPU blocklisted, context lost on mount), the Canvas throws during
 // mount and — unwrapped — white-screens the entire planner.
 //
-// This boundary confines that failure and offers the 2D floor planner instead,
-// which is pure SVG and needs no WebGL, so the user can still plan their whole
-// layout. It only renders the fallback on an actual error, so in tests (where
-// the Canvas is mocked and never throws) it is inert and adds no DOM.
+// This boundary confines that failure and offers the editor's own 2D view of
+// the same layout instead (PlannerWorkContext), which is pure SVG and needs no
+// WebGL, so the user can still plan their whole layout. It only renders the
+// fallback on an actual error, so in tests (where the Canvas is mocked and
+// never throws) it is inert and adds no DOM.
 // ---------------------------------------------------------------------------
 
 interface PlannerCanvasBoundaryProps {
@@ -56,6 +58,8 @@ export class PlannerCanvasBoundary extends Component<
 }
 
 function PlannerCanvasFallback({ onRetry }: { readonly onRetry: () => void }): React.ReactElement {
+  // The editor's own 2D view of this layout, where it allows one now.
+  const continueIn2d = usePlannerWork()?.continueIn2d ?? null;
   return (
     <section
       role="alert"
@@ -67,50 +71,29 @@ function PlannerCanvasFallback({ onRetry }: { readonly onRetry: () => void }): R
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-        background: "#eee9de",
+        background: "var(--vv-ivory)",
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
       <div style={{ maxWidth: 420, textAlign: "center" }}>
         <h2
           id="planner-canvas-fallback-title"
-          style={{ fontSize: 20, fontWeight: 700, color: "#2a2a2a", margin: "0 0 10px" }}
+          style={{ fontSize: 20, fontWeight: 700, color: "var(--vv-forest)", margin: "0 0 10px" }}
         >
           3D view couldn&rsquo;t start
         </h2>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: "#5a5a5a", margin: "0 0 20px" }}>
-          WebGL may be unavailable. Use the 2D planner or try again.
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: "var(--vv-forest-soft)", margin: "0 0 20px" }}>
+          {continueIn2d !== null
+            ? "Your layout is safe. Continue in 2D, or try the 3D view again."
+            : "Your layout is safe. Try the 3D view again in a moment."}
         </p>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-          <a
-            href="/blueprint"
-            style={{
-              display: "inline-block",
-              padding: "11px 20px",
-              fontSize: 14,
-              fontWeight: 600,
-              borderRadius: 10,
-              background: "#2a2a2a",
-              color: "#fff",
-              textDecoration: "none",
-            }}
-          >
-            Open the 2D planner
-          </a>
-          <button
-            type="button"
-            onClick={onRetry}
-            style={{
-              padding: "11px 20px",
-              fontSize: 14,
-              fontWeight: 600,
-              borderRadius: 10,
-              background: "transparent",
-              color: "#2a2a2a",
-              border: "1px solid rgba(0,0,0,0.2)",
-              cursor: "pointer",
-            }}
-          >
+          {continueIn2d !== null && (
+            <button type="button" className="vv-button primary" onClick={continueIn2d}>
+              Continue in 2D
+            </button>
+          )}
+          <button type="button" className={continueIn2d !== null ? "vv-button" : "vv-button primary"} onClick={onRetry}>
             Try 3D again
           </button>
         </div>

@@ -7,6 +7,7 @@ import { useFreezePhaseLayoutSnapshot } from "../../../hooks/use-freeze-phase-la
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-preview-lock.js";
 import { EVENT_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
+import { flushAutoSave } from "../EditorBridge.js";
 import "./PhaseLayoutSnapshotAction.css";
 
 interface PhaseLayoutSnapshotActionProps {
@@ -37,15 +38,34 @@ export function PhaseLayoutSnapshotAction({
   const freeze = useFreezePhaseLayoutSnapshot();
   const previewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const [completedLabel, setCompletedLabel] = useState<string | null>(null);
+  const [flushing, setFlushing] = useState(false);
+  const [notSaved, setNotSaved] = useState(false);
 
   const freezeSavedPlan = async (): Promise<void> => {
     if (
       previewActive
+      || flushing
       || isLayoutTimelineMutationLocked()
       || freeze.status === "saving"
       || freeze.status === "success"
     ) return;
     setCompletedLabel(null);
+    setNotSaved(false);
+    // The freeze copies the server's saved layout, so the latest edits must
+    // reach the server first, or the act's frozen layout (and the hallkeeper's
+    // sheet) silently misses them (QoL D-15).
+    setFlushing(true);
+    let saved = false;
+    try {
+      saved = await flushAutoSave();
+    } catch {
+      saved = false;
+    }
+    setFlushing(false);
+    if (!saved) {
+      setNotSaved(true);
+      return;
+    }
     const result = await freeze.freeze({ eventId, phaseId }, { configurationId });
     if (result === null) return;
     setCompletedLabel(
@@ -61,25 +81,29 @@ export function PhaseLayoutSnapshotAction({
       <button
         type="button"
         className="phase-layout-freeze-action__button"
-        disabled={previewActive || freeze.status === "saving" || freeze.status === "success"}
+        disabled={previewActive || flushing || freeze.status === "saving" || freeze.status === "success"}
+        aria-busy={flushing || freeze.status === "saving"}
         title={previewActive ? "Exit the room timeline preview before freezing a layout." : undefined}
         onClick={() => { void freezeSavedPlan(); }}
       >
-        {freeze.status === "saving"
-          ? <ActivityIndicator size={18} />
-          : freeze.status === "success"
-            ? <Check size={13} aria-hidden="true" />
-            : <Link2 size={13} aria-hidden="true" />}
         {previewActive
-          ? "Exit preview to freeze"
-          : freeze.status === "saving" ? "Freezing saved plan…" : "Freeze current saved plan"}
+          ? <><Link2 size={13} aria-hidden="true" />Exit preview to freeze</>
+          : flushing
+            ? <><ActivityIndicator size={18} />Saving your changes…</>
+            : freeze.status === "saving"
+              ? <><ActivityIndicator size={18} />Freezing saved plan…</>
+              : freeze.status === "success"
+                ? <><Check size={13} aria-hidden="true" />Freeze current saved plan</>
+                : <><Link2 size={13} aria-hidden="true" />Freeze current saved plan</>}
       </button>
       <span
-        className={`phase-layout-freeze-action__status${freeze.status === "error" ? " is-error" : ""}`}
-        role={freeze.status === "error" ? "alert" : "status"}
+        className={`phase-layout-freeze-action__status${notSaved || freeze.status === "error" ? " is-error" : ""}`}
+        role={notSaved || freeze.status === "error" ? "alert" : "status"}
         aria-live="polite"
       >
-        {freeze.error ?? completedLabel ?? ""}
+        {notSaved
+          ? "Your latest changes have not reached Venviewer yet, so nothing was frozen. Try again."
+          : freeze.error ?? completedLabel ?? ""}
       </span>
     </div>
   );

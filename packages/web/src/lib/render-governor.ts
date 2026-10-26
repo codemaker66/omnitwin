@@ -19,8 +19,13 @@
 // GPU held the frames up, from the main thread's frame work between draws, so
 // the scene gives up passes for the one and pixels for the other. A step is
 // judged on the windows either side of it, after one left to settle, and two
-// steps in a row that gain nothing end the stepping.
+// steps in a row that gain nothing end the stepping. With the lean motion
+// pipeline a phone is judged from its first window: one slow from its first
+// frame otherwise paid about ten seconds of full-cost frames before anything
+// was given up (perf study, 25 Oct 2026).
 // ---------------------------------------------------------------------------
+
+import type { RenderProfile } from "./render-quality.js";
 
 /** Seconds of drawn frames a window judges. */
 export const GOVERNOR_WINDOW_S = 1.6;
@@ -32,6 +37,20 @@ const GAP_S = 0.25;
 const OUTLIER_SHARE = 0.2;
 /** Windows left alone while the planner settles. */
 const WARM_WINDOWS = 3;
+
+/**
+ * Windows a device's governor leaves alone: none on a phone whose bloom pauses
+ * in motion (the `leanMotionPipeline` switch), judged from its first; three
+ * everywhere else, as before.
+ */
+export function governorWarmWindows(profile: Pick<RenderProfile, "name" | "bloomInMotion">): number {
+  return profile.name === "phone" && !profile.bloomInMotion ? 0 : WARM_WINDOWS;
+}
+
+export interface FrameGovernorOptions {
+  /** Windows left alone while the planner settles (governorWarmWindows). */
+  readonly warmWindows?: number;
+}
 /** Below this share of the display's rate (60 at most) a window is slow. */
 const SLOW_SHARE = 0.9;
 /** A step that does not raise the rate by this much gained nothing. */
@@ -88,6 +107,7 @@ export function windowPace(frames: readonly FrameSample[]): WindowPace {
 }
 
 export class FrameGovernor {
+  private readonly warmWindows: number;
   private displayHz: number | null = null;
   private frames: FrameSample[] = [];
   private time = 0;
@@ -102,6 +122,10 @@ export class FrameGovernor {
   private readonly recent: number[] = [];
   /** A step awaiting judgement: the pace before it and the windows since. */
   private pending: { readonly before: number; readonly after: number[] } | null = null;
+
+  constructor({ warmWindows = WARM_WINDOWS }: FrameGovernorOptions = {}) {
+    this.warmWindows = warmWindows;
+  }
 
   /** How many rungs have been given up. */
   get stepsDown(): number {
@@ -131,6 +155,17 @@ export class FrameGovernor {
   /** Whether stepping has ended: nothing was left to give up, or steps gained nothing. */
   get finished(): boolean {
     return this.stopped;
+  }
+
+  /**
+   * Discards the window in progress and any run of slow windows: the frames
+   * after it come from another device (a renderer replaced after a graphics
+   * reset), so they are not judged together with those before.
+   */
+  interrupt(): void {
+    this.frames = [];
+    this.time = 0;
+    this.slowStreak = 0;
   }
 
   /** The display's refresh rate, from an idle probe (displayRateFrom). */
@@ -176,7 +211,7 @@ export class FrameGovernor {
         if (this.fruitless >= 2) this.stopped = true;
       }
     }
-    if (this.windows <= WARM_WINDOWS || this.displayHz === null || this.stopped) {
+    if (this.windows <= this.warmWindows || this.displayHz === null || this.stopped) {
       this.slowStreak = 0;
       return;
     }
@@ -190,6 +225,42 @@ export class FrameGovernor {
     this.steps += 1;
     this.settling = true;
     this.pending = { before: median(this.recent), after: [] };
+  }
+}
+
+/** Two frames in a row this quick show a replaced renderer has compiled what it draws, s. */
+const SWAP_SETTLED_INTERVAL_S = 0.05;
+const SWAP_SETTLED_FRAMES = 2;
+/** Frames are judged again this long after a swap whatever their pace, ms: a phone slow by nature. */
+export const SWAP_SETTLE_MAX_MS = 5000;
+
+/**
+ * Holds judgement after the renderer is replaced (a graphics reset: the
+ * planner keeps its scene on a new device, components/scene/NativeCanvas.tsx).
+ * The new device compiles every pipeline it draws, a second or more on the
+ * RTX 4090 and longer on a phone, and frames judged meanwhile would give up
+ * quality for good over a one-off cost. Judgement resumes once two frames in
+ * a row come within 50 ms, or SWAP_SETTLE_MAX_MS after the swap.
+ */
+export class SwapSettle {
+  private since: number | null = null;
+  private calm = 0;
+
+  /** The renderer was replaced at `now` (ms). */
+  begin(now: number): void {
+    this.since = now;
+    this.calm = 0;
+  }
+
+  /** Whether a frame drawn at `now` (ms), `interval` seconds after the one before, may be judged. */
+  admit(interval: number, now: number): boolean {
+    if (this.since === null) return true;
+    if (now - this.since >= SWAP_SETTLE_MAX_MS || this.calm >= SWAP_SETTLED_FRAMES) {
+      this.since = null;
+      return true;
+    }
+    this.calm = interval < SWAP_SETTLED_INTERVAL_S ? this.calm + 1 : 0;
+    return false;
   }
 }
 

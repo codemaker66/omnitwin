@@ -1,6 +1,15 @@
 import { create } from "zustand";
 import type { SnapGuide } from "../lib/snap-guide.js";
 
+function sameGuides(a: readonly SnapGuide[], b: readonly SnapGuide[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((guide, index) => {
+    const other = b[index];
+    return other !== undefined && guide.axis === other.axis && guide.kind === other.kind
+      && guide.coord === other.coord && guide.start === other.start && guide.end === other.end;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Selection store — manages selected furniture items
 // ---------------------------------------------------------------------------
@@ -111,8 +120,9 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
   },
 
   setActiveGuides: (guides: readonly SnapGuide[]) => {
-    // Drags report guides every frame, usually none; keep the empty list.
-    if (guides.length === 0 && get().activeGuides.length === 0) return;
+    // Drags report guides every frame, usually the ones already drawn: keep them,
+    // so SnapGuides neither re-renders nor rebuilds its lines.
+    if (sameGuides(guides, get().activeGuides)) return;
     set({ activeGuides: guides });
   },
 }));
