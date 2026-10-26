@@ -174,7 +174,7 @@ export type ShortCode = z.infer<typeof ShortCodeSchema>;
 /** Result when the incoming URL is already the canonical form. */
 const CanonicalResolveSchema = z.object({
   status: z.literal("canonical"),
-  configId: z.string().uuid(),
+  configId: z.uuid(),
 });
 
 /**
@@ -183,7 +183,7 @@ const CanonicalResolveSchema = z.object({
  */
 const RedirectResolveSchema = z.object({
   status: z.literal("redirect"),
-  configId: z.string().uuid(),
+  configId: z.uuid(),
   toPath: z.string().min(1),
 });
 

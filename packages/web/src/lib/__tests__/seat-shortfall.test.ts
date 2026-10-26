@@ -70,6 +70,18 @@ describe("seat shortfall: chairs at the tables while they have room", () => {
     expect(seatShortfallDoneLine(fix.offer)).toBe("Added 16 chairs at 8 tables.");
   });
 
+  it("adds them at tables grouped by hand without losing one of them or its chairs", () => {
+    // Group (Ctrl G) puts every table and chair under one groupId.
+    const layout = groups(OLD_FILL, 8).map((item) => ({ ...item, groupId: "grouped-by-hand" }));
+    const fix = applySeatShortfallFix(input(layout, 80));
+    if (fix === null) throw new Error("no fix");
+    expect(seatingCountsFromPlacedItems(fix.placedItems).chairs).toBe(80);
+    expect(fix.placedItems.filter((item) => item.catalogueItemId === ROUND)).toHaveLength(8);
+    const ids = new Set(fix.placedItems.map((item) => item.id));
+    for (const item of layout) expect(ids.has(item.id)).toBe(true);
+    expect(fix.addedIds).toHaveLength(16);
+  });
+
   it("gives a table placed on its own a group, so its new chairs move with it", () => {
     const table = createPlacedItem(ROUND, 0, 0, 0, null, 0);
     const fix = applySeatShortfallFix(input([table], 6));

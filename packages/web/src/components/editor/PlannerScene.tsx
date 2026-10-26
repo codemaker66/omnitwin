@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { governedRender, profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
+import { gpuProbeSettled, probeGpu, subscribeGpuProbe } from "../../lib/gpu-class.js";
 import { RenderGovernor } from "../scene/RenderGovernor.js";
 import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
@@ -31,6 +32,7 @@ import { XrayToggle } from "../XrayToggle.js";
 import { MeasurementTool } from "../MeasurementTool.js";
 import { TapeMeasure } from "../TapeMeasure.js";
 import { PlacementGhost } from "../PlacementGhost.js";
+import { WarmPieceInHand } from "../WarmPlacedVariants.js";
 import { PlannerInteractionFloor } from "./PlannerInteractionFloor.js";
 import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
@@ -54,6 +56,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
@@ -83,11 +86,25 @@ import { HallContext } from "../grand-hall/HallContext.js";
 import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
+import { assemblyRequested } from "../../floor/assembly/flag.js";
+import { useAssemblyRecall } from "../../floor/assembly/recall.js";
+import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
+
+// The Grand Assembly (goal 03, S6), behind `?assembly=accio` (floor/assembly/flag.ts):
+// loaded only where a device asks for it, and fetched as soon as it does.
+const loadGrandAssembly = () => import("../../floor/assembly/GrandAssembly.js");
+const GrandAssembly = lazy(loadGrandAssembly);
 
 /**
  * Computes render dimensions from room geometry polygon data.
  * Falls back to Grand Hall dimensions if no space is loaded.
  */
+// Which graphics draw the planner decides a desktop's profile (lib/gpu-class.ts).
+// Asked as the planner's code arrives, so the answer is usually in while the
+// layout and the room are still loading; the canvas waits for it (400 ms at
+// most), as a profile changed after the first frame would compile it twice.
+void probeGpu();
+
 const COMPACT_PLANNER_MAX_VIEWPORT_WIDTH = 1099;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
 
@@ -146,7 +163,10 @@ declare global {
 }
 
 function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean {
-  return event.pointerType === "touch" || event.button === 1 || event.button === 2;
+  // With the touch arbiter a finger is the camera's only once it orbits or
+  // pinches, which CameraRig marks; a finger placing or lifting is not.
+  if (event.pointerType === "touch") return !plannerFeatureEnabled("touchArbiter");
+  return event.button === 1 || event.button === 2;
 }
 
 function plannerTouchLookEnabled(): boolean {
@@ -251,11 +271,16 @@ export function PlannerScene(): ReactElement {
   const dimensions = useRoomDimensions();
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
+  // Where this device asks for the Grand Assembly (`?assembly=accio`), a saved
+  // layout's arrival is the Assembly in the drawn hall, not a walk in the capture.
+  const assemblyAsked = useMemo(() => typeof window !== "undefined" && assemblyRequested(window.location.search) !== null, []);
   const viewportWidth = usePlannerViewportWidth();
   const nativeDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
-  // One render profile per page (phone, tablet or desktop); phones and tablets
-  // draw within a pixel budget instead of their full native density.
-  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), []);
+  // One render profile per page (phone, tablet, desktop or office); phones and
+  // tablets draw within a pixel budget instead of their full native density.
+  // Chosen once the graphics probe has answered, before the canvas exists.
+  const gpuKnown = useSyncExternalStore(subscribeGpuProbe, gpuProbeSettled, () => true);
+  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), [gpuKnown]);
   const profileDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
   // A device that cannot hold its frame rate gives up quality, a rung at a
   // time, cheapest to lose first (lib/render-governor.ts); `?governor=off`
@@ -355,9 +380,9 @@ export function PlannerScene(): ReactElement {
 
   useEffect(() => {
     if (timelinePreviewActive) return;
-    if (!plannerArrivalPolicy.claim(arrivalKey, roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
+    if (!plannerArrivalPolicy.claim(arrivalKey, !assemblyAsked && roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
     useCockpitStore.setState({ layerMode: "splat", walkMode: true });
-  }, [arrivalKey, hasAsset, roomSlug, timelinePreviewActive, walkData]);
+  }, [arrivalKey, assemblyAsked, hasAsset, roomSlug, timelinePreviewActive, walkData]);
   // If the room changes to one with no walk data, the mode cannot stand.
   useEffect(() => {
     if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
@@ -414,8 +439,13 @@ export function PlannerScene(): ReactElement {
   // attribute. Still-mounted URLs retain their draws; a recreated renderer
   // must draw them again before progress can settle.
   const [rendererGeneration, setRendererGeneration] = useState(0);
+  // A 3D view on its couldn't-start or stopped card: no arrival may open over
+  // it as if the room were still opening, whichever layout it opens for.
+  const [canvasUnavailable, setCanvasUnavailable] = useState(false);
+  const markCanvasUnavailable = useCallback(() => { setCanvasUnavailable(true); }, []);
   const handleCanvasCreated = useCallback(() => {
     setRendererGeneration((generation) => generation + 1);
+    setCanvasUnavailable(false);
   }, []);
   const arrivals = useChunkArrivals(splatUrls.join("|"), rendererGeneration);
   const totalChunks = splatUrls.length;
@@ -435,7 +465,7 @@ export function PlannerScene(): ReactElement {
   // Once entered (or bypassed), later refinements never cover the workspace.
   const showArrival = arrivalKey !== null && roomSlug === "grand-hall" && !timelinePreviewActive
     && sceneLayerMode !== "mesh"
-    && !enteredRooms.has(arrivalKey) && !captureFailed
+    && !enteredRooms.has(arrivalKey) && !captureFailed && !canvasUnavailable
     && (splatStatus === "loading" || hasAsset);
   const meshVisible = !timelinePreviewActive && (!hasAsset || captureFailed || sceneLayerMode !== "splat");
   const splatActive = !timelinePreviewActive && hasAsset && !captureFailed && sceneLayerMode !== "mesh";
@@ -449,6 +479,28 @@ export function PlannerScene(): ReactElement {
   // The real sun, moon and sky over the drawn hall, where this device asks for them.
   const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
   const skyLit = hallSkyAsked && hallDrawn && !timelinePreviewActive;
+  // The Grand Assembly: a saved layout that opens assembles itself in the drawn
+  // hall where this device asks for it (`?assembly=accio`). While it plays it
+  // holds the camera through CameraRig's `suspended`.
+  // (The drawn hall is never shown under the timeline's frozen preview.)
+  const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
+  const [assemblyCamera, setAssemblyCamera] = useState(false);
+  // The Assembly's code is fetched the moment this device asks for it, so it is
+  // there by the time the hall is drawn.
+  const [assemblyCodeReady, setAssemblyCodeReady] = useState(false);
+  useEffect(() => {
+    if (!assemblyAsked) return undefined;
+    let current = true;
+    void loadGrandAssembly().then(() => { if (current) setAssemblyCodeReady(true); }, () => undefined);
+    return () => { current = false; };
+  }, [assemblyAsked]);
+  // A room known not to be the drawn Grand Hall lets a held layout go at once.
+  // While the room is still unknown, or the hall is drawn but the Assembly's code
+  // is still arriving (a phone's cold first load), a held layout waits for it.
+  const assemblyElsewhere = space !== null && !realHall;
+  const assemblyComing = assemblyAsked && !walkMode && !assemblyElsewhere
+    && (space === null || (hallDrawn && !assemblyCodeReady));
+  useAssemblyRecall(assemblyAsked, assemblyStage, assemblyElsewhere, assemblyComing);
   const hallSetting = useMemo(() => (typeof window === "undefined" ? "none" : hallSettingRequested(window.location.search)), []);
   // A capture that fails behind the drawn hall changes nothing on screen: the
   // camera and a walk of the drawn hall carry on.
@@ -530,6 +582,16 @@ export function PlannerScene(): ReactElement {
     useCockpitStore.getState().setCameraInteractionActive(false);
   }, [clearCameraInteractionTimer]);
 
+  // Until the graphics probe answers (lib/gpu-class.ts): the host and the arrival, no canvas yet.
+  if (!gpuKnown) {
+    return (
+      <PlannerCanvasBoundary>
+        <div className="planner-scene-canvas-host" />
+        {showArrival && <PlannerArrival onEnter={enterRoom} />}
+      </PlannerCanvasBoundary>
+    );
+  }
+
   return (
     <PlannerCanvasBoundary>
       <div
@@ -543,6 +605,7 @@ export function PlannerScene(): ReactElement {
         {hallSkyAsked && <HallOpeningHour />}
         <Canvas
           onCreated={handleCanvasCreated}
+          onUnavailable={markCanvasUnavailable}
           shadows={furnitureLighting === "panorama-shadow" || skyLit ? "percentage" : false}
           frameloop="demand"
           dpr={canvasDpr}
@@ -630,6 +693,7 @@ export function PlannerScene(): ReactElement {
             <MeasurementTool />
             <TapeMeasure />
             <PlacementGhost />
+            <WarmPieceInHand />
             <SelectionSystem />
             <FurnitureMotion />
             <CockpitSceneOverlays renderGeometry={renderSceneOverlays} />
@@ -641,8 +705,8 @@ export function PlannerScene(): ReactElement {
             <PlacedFurniture />
           </group>
           {realHall && !timelinePreviewActive && <HallViewDirector />}
-          <CockpitPlanningCamera suspended={timelinePreviewActive} />
-          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive}
+          <CockpitPlanningCamera suspended={timelinePreviewActive || assemblyCamera} />
+          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
             defaultPose={realHall ? HALL_VIEW_POSES.room : null}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
@@ -663,11 +727,15 @@ export function PlannerScene(): ReactElement {
             />
           )}
           <FrozenLayoutPreviewCamera active={timelinePreviewActive} room={frozenRoom} />
+          {assemblyStage && (
+            <Suspense fallback={null}><GrandAssembly onCamera={setAssemblyCamera} /></Suspense>
+          )}
           {import.meta.env.DEV && <PerfMonitor />}
           {!timelinePreviewActive && <PlannerWarmup />}
           {/* Re-register last when a camera owner mounts or the room shell changes. */}
           <PlannerScenePrecompiler key={`${sceneWarmupSignature}:${String(walkMode)}`} signature={sceneWarmupSignature} />
         </Canvas>
+        {assemblyStage && <AssemblyReplay />}
       </div>
       {showArrival && <PlannerArrival onEnter={enterRoom} />}
     </PlannerCanvasBoundary>

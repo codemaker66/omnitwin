@@ -73,4 +73,23 @@ describe("useHallDetail", () => {
     unmount();
     expect(counts.disposals).toBe(2);
   });
+
+  it("replaces and disposes the layer when the renderer is replaced (a graphics reset)", () => {
+    // The layer fills its slot array on the GPU device by copy alone and then lets the decoded bytes go: on a new
+    // device the array is empty while the old layer would believe its tiles resident.
+    const { decoder, counts } = countingDecoder();
+    const invalidate = (): void => undefined;
+    const seams: HallDetailSeams = { decoder, fetchIndex: quietIndex };
+    const { result, rerender, unmount } = renderHook(({ renderer }: { renderer: object }) => useHallDetail(16, 1, invalidate, seams, renderer), {
+      initialProps: { renderer: { device: "lost" } },
+    });
+    const first = result.current.layer;
+    rerender({ renderer: { device: "fresh" } });
+    expect(result.current.layer).not.toBe(first);
+    expect(first.enabled).toBe(false);
+    expect(result.current.layer.enabled).toBe(true);
+    expect(counts.disposals).toBe(1);
+    unmount();
+    expect(counts.disposals).toBe(2);
+  });
 });

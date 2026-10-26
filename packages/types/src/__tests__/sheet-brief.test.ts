@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { HallkeeperSheetV2, ManifestRowV2 } from "../hallkeeper-v2.js";
 import type { EventInstructions } from "../hallkeeper-instructions.js";
 import {
+  formatTableLabels,
   accessNeeds,
   allergyFacts,
   otherMeals,
@@ -153,6 +154,7 @@ describe("sheetSetupSteps", () => {
     expect(steps[0]?.items).toEqual([{
       name: "Parquet Dance Floor Panel", qty: 30, chairs: null, accessory: false, notes: [],
       where: [{ zone: "Perimeter", qty: 16 }, { zone: "East wall", qty: 10 }, { zone: "Centre", qty: 4 }],
+      labels: [],
     }]);
     expect(steps[0]?.deadline).toEqual({ at: bst(10), reason: "Band at 10:15", late: false, otherDay: false });
   });
@@ -229,5 +231,38 @@ describe("keep in view facts", () => {
     expect(otherMeals(dietary)).toBe("14 vegetarian · 4 vegan · 3 halal");
     expect(otherMeals({ ...dietary, vegetarian: 0, vegan: 0, halal: 0 })).toBeNull();
     expect(otherMeals(null)).toBeNull();
+  });
+});
+
+describe("formatTableLabels: the planner's table numbers as a crew reads them", () => {
+  it("runs numbered tables together", () => {
+    expect(formatTableLabels(["Table 4"])).toBe("Table 4");
+    expect(formatTableLabels(["Table 3", "Table 1", "Table 2", "Table 5", "Table 8", "Table 7"])).toBe("Tables 1–3, 5, 7–8");
+    expect(formatTableLabels(["Table 2", "Table 2", " Table 1 "])).toBe("Tables 1–2");
+  });
+
+  it("lists any other names as they were written", () => {
+    expect(formatTableLabels(["Top table"])).toBe("Top table");
+    expect(formatTableLabels(["Table 10", "Top table", "Table 2"])).toBe("Table 2, Table 10, Top table");
+  });
+
+  it("says nothing when there are no names", () => {
+    expect(formatTableLabels([])).toBe("");
+    expect(formatTableLabels(["  "])).toBe("");
+  });
+});
+
+describe("sheetSetupSteps: table numbers", () => {
+  it("gathers one item's table numbers from every zone it is set in", () => {
+    const steps = sheetSetupSteps(sheet({
+      instructions: null,
+      phases: [{ phase: "furniture", zones: [
+        { zone: "Centre", rows: [row({ name: "6ft Round Table with 10 chairs", qty: 2, labels: ["Table 1", "Table 2"] })] },
+        { zone: "South wall", rows: [row({ name: "6ft Round Table with 10 chairs", qty: 1, labels: ["Table 3"] })] },
+      ] }],
+    }));
+    const [item] = steps[0]?.items ?? [];
+    expect(item?.labels).toEqual(["Table 1", "Table 2", "Table 3"]);
+    expect(formatTableLabels(item?.labels ?? [])).toBe("Tables 1–3");
   });
 });

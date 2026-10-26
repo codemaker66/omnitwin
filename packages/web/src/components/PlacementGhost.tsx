@@ -1,18 +1,17 @@
-import { useEffect, useRef, useState } from "react";
-import { useThree } from "@react-three/fiber";
-import { Vector2 } from "three";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { Object3D, Vector3, type Camera, type Group } from "three";
 
-/** Reusable Vector2 for NDC coordinates — avoids per-event allocation. */
-const _ndc = new Vector2();
+/** Reusable vector for the warm-up copy's place ahead of the camera. */
+const _ahead = new Vector3();
 
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
-import { useChairDialogStore } from "../stores/chair-dialog-store.js";
+import { useTouchGestureStore } from "../stores/touch-gesture-store.js";
 import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
-import { isDiningTableItem } from "../lib/furniture-semantics.js";
 import { usePlannerKeyBindings } from "../lib/planner-keys.js";
 import { placingKeyBindings, putDownPieceInHand } from "../lib/planner-keymap.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
@@ -35,9 +34,11 @@ import {
   tableSettingForCatalogueItem,
 } from "../lib/table-dressing.js";
 import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-brush.js";
-import { findPlacementFloor } from "../lib/planner-interaction-floor.js";
-import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
-import { postPlacementNotice } from "../stores/placement-notice-store.js";
+import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
+import { capReachedLine } from "../lib/placement-cap.js";
+import { placePieceInHand } from "../lib/place-in-hand.js";
+import { ghostRaisePx } from "../lib/touch-arbiter.js";
+import { onMainDraw } from "../lib/main-draw-clock.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -45,34 +46,141 @@ import { postPlacementNotice } from "../stores/placement-notice-store.js";
 
 export { isCloth, isPoseurTable, isTableSetting } from "../lib/placement-ghost.js";
 
+/** Frames the piece in hand is drawn, too small to see, as it is armed: enough for its materials to compile. */
+const WARM_FRAMES = 3;
+/**
+ * Frame updates the warm-up asks for at most. NativeCanvas paces its draws by the GPU's progress, so an
+ * update behind unfinished GPU work draws nothing (lib/main-draw-clock.ts): the warm-up counts draws that
+ * took the ghost in, and asks for updates until it has them, but not forever where nothing draws.
+ */
+const WARM_WAIT_FRAMES = 60;
+
+/**
+ * Whether a frame drawn now would draw any mesh of `group` through `camera`: one shown, under parents all
+ * shown, on a layer the camera sees. A piece's shadow casters live on a layer only the sun's camera sees
+ * (hall-sun.ts), and can arrive before the meshes the view draws.
+ */
+function drawsSomething(group: Object3D, camera: Camera): boolean {
+  let found = false;
+  group.traverseVisible((object) => {
+    if ((object as { readonly isMesh?: boolean }).isMesh === true && object.layers.test(camera.layers)) found = true;
+  });
+  return found;
+}
+const WARM_SCALE = 1e-4;
+/** A click this soon after a touch the arbiter handled is that touch's own compatibility click, ms. */
+const ARBITRATED_CLICK_MS = 700;
+
+/** A pointer to follow on the next frame: a move, or the finger the touch arbiter raised the ghost above. */
+interface PendingPointer {
+  readonly x: number;
+  readonly y: number;
+  readonly buttons: number;
+  /** Whether the pointer is over the canvas, or null to ask the page (a drag the catalogue holds). */
+  readonly onCanvas: boolean | null;
+  /** From the touch arbiter's raised finger. */
+  readonly touch: boolean;
+}
+
 /**
  * Handles drag-and-drop furniture placement from the shop bar:
  * 1. User drags item from shop bar (dragActive=true, selectedItemId set)
  * 2. Pointer moves over canvas → ghost follows via raycasting to floor
  * 3. Pointer released → places item at ghost position
  *
- * Also supports click-to-place mode (select then click).
+ * Also supports click-to-place mode (select then click). A finger on a
+ * phone is the touch arbiter's (SelectionSystem): it raises the ghost above
+ * the finger through the touch gesture store, and places on the lift.
+ *
+ * Moves are followed once a frame, not once an event: the latest pointer is
+ * kept and the next frame raycasts, snaps and draws the guides for it. The
+ * ghost moves by ref, so React commits only when its validity, reason or
+ * turn changes.
  */
 export function PlacementGhost(): React.ReactElement | null {
   const { invalidate, scene, camera, raycaster, gl } = useThree();
   const selectedItemId = useCatalogueStore((s) => s.selectedItemId);
-  const ghostPosition = usePlacementStore((s) => s.ghostPosition);
+  const hasGhost = usePlacementStore((s) => s.ghostPosition !== null);
   const ghostRotation = usePlacementStore((s) => s.ghostRotation);
   const ghostValid = usePlacementStore((s) => s.ghostValid);
   const ghostInvalidReason = usePlacementStore((s) => s.ghostInvalidReason);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
+  const dressing = selectedItemId !== null
+    && (tableClothStyleForCatalogueItem(selectedItemId) !== null || tableSettingForCatalogueItem(selectedItemId) !== null);
+  // A dressing's preview snaps to the table under it, so it follows in React.
+  const dressingPosition = usePlacementStore((s) => (dressing ? s.ghostPosition : null));
   const [chairBrushPreview, setChairBrushPreview] = useState<readonly ChairBrushPoint[]>([]);
   const chairBrushStartRef = useRef<{ readonly x: number; readonly z: number } | null>(null);
   const chairBrushEndRef = useRef<{ readonly x: number; readonly z: number } | null>(null);
   const chairBrushActiveRef = useRef(false);
   const suppressClickAfterBrushRef = useRef(false);
-
-  // No manual store subscriptions needed — the useStore selectors above
-  // (selectedItemId, ghostPosition, ghostValid) trigger React re-renders.
+  const pendingPointer = useRef<PendingPointer | null>(null);
+  const followPointer = useRef<(pointer: PendingPointer) => void>(() => undefined);
+  const [warming, setWarming] = useState(false);
+  const warmFrames = useRef(0);
+  const warmWaits = useRef(0);
 
   // Stable ref for invalidate — avoids effect re-runs when invalidate ref changes
   const invalidateRef = useRef(invalidate);
   invalidateRef.current = invalidate;
+
+  // The piece's ghost moves by ref: a pointer move commits nothing to React.
+  // Only a three object has a place (the planner's DOM tests render this tree into the page).
+  const ghost = useRef<Object3D | null>(null);
+  const ghostRef = useCallback((group: Group | null) => {
+    ghost.current = group instanceof Object3D ? group : null;
+    const position = usePlacementStore.getState().ghostPosition;
+    if (ghost.current !== null && position !== null) ghost.current.position.set(position[0], position[1], position[2]);
+  }, []);
+  useEffect(() => usePlacementStore.subscribe((state, previous) => {
+    const position = state.ghostPosition;
+    if (position !== previous.ghostPosition && position !== null) ghost.current?.position.set(position[0], position[1], position[2]);
+  }), []);
+
+  // Warm the ghost on arm: the piece is built and drawn, too small to see,
+  // just ahead of the camera, for its first frames in hand, so its materials
+  // compile as it is armed rather than on the first frame of a drag.
+  useEffect(() => {
+    if (selectedItemId === null || dressing) return;
+    warmFrames.current = WARM_FRAMES;
+    warmWaits.current = 0;
+    setWarming(true);
+    invalidateRef.current();
+  }, [selectedItemId, dressing]);
+
+  useFrame(() => {
+    const pointer = pendingPointer.current;
+    if (pointer !== null) {
+      pendingPointer.current = null;
+      followPointer.current(pointer);
+    }
+    if (warmFrames.current === 0) return;
+    const group = ghost.current;
+    // Nothing of the piece to warm here (the chair brush or a cloth draws in its place), or it never drew:
+    // the warm-up ends.
+    if (group === null || warmWaits.current >= WARM_WAIT_FRAMES) {
+      warmFrames.current = 0;
+      setWarming(false);
+      return;
+    }
+    warmWaits.current += 1;
+    if (usePlacementStore.getState().ghostPosition === null) {
+      camera.getWorldDirection(_ahead);
+      group.position.copy(camera.position).addScaledVector(_ahead, 1);
+    }
+    invalidateRef.current();
+  });
+
+  // A warm frame is a draw of the main view that took the ghost in. React shows the ghost a commit after
+  // the piece is armed, its model's meshes can arrive later still, and an update behind unfinished GPU
+  // work draws nothing; counted any earlier, the warm-up warmed nothing and the ghost's shaders compiled
+  // on the first frame of a drag.
+  useEffect(() => onMainDraw(() => {
+    const group = ghost.current;
+    if (warmFrames.current === 0 || group === null || !drawsSomething(group, camera)) return;
+    warmFrames.current -= 1;
+    if (warmFrames.current === 0) setWarming(false);
+  }), [camera]);
 
   // Raycasting: update ghost on pointer move, place on pointer up (drag) or click.
   // All handlers read selectedItemId from the store (not the closure) to avoid stale values.
@@ -83,23 +191,18 @@ export function PlacementGhost(): React.ReactElement | null {
 
     canvasEl.style.cursor = "crosshair";
 
-    function raycastToFloor(clientX: number, clientY: number): { x: number; z: number } | null {
-      // A visible shell may unmount or change while placement remains selected.
-      const floorMesh = findPlacementFloor(scene);
-      if (floorMesh === null) return null;
-      const topElement = document.elementFromPoint(clientX, clientY);
-      if (topElement !== canvasEl) return null;
-      const rect = canvasEl.getBoundingClientRect();
-      const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
-      const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
+    // The canvas's place on the page, kept current by its observer rather than read on every move.
+    let rect = canvasEl.getBoundingClientRect();
+    const remeasure = (): void => { rect = canvasEl.getBoundingClientRect(); };
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(remeasure);
+    observer?.observe(canvasEl);
+    window.addEventListener("resize", remeasure);
+    window.addEventListener("scroll", remeasure, true);
 
-      const intersects = raycaster.intersectObjects([floorMesh], false);
-      const hit = intersects[0];
-      if (hit !== undefined) {
-        return { x: hit.point.x, z: hit.point.z };
-      }
-      return null;
+    /** The floor point under (clientX, clientY), or null when a panel covers the canvas there or it is off the room. */
+    function raycastToFloor(clientX: number, clientY: number): { x: number; z: number } | null {
+      if (document.elementFromPoint(clientX, clientY) !== canvasEl) return null;
+      return placementFloorPoint(scene, camera, raycaster, rect, clientX, clientY);
     }
 
     function clearChairBrush(): void {
@@ -139,8 +242,36 @@ export function PlacementGhost(): React.ReactElement | null {
       }
     }
 
+    // One pointer a frame: the raycast, the snaps and the guides.
+    followPointer.current = (pointer) => {
+      const itemId = useCatalogueStore.getState().selectedItemId;
+      if (itemId === null) return;
+      // A raised ghost the finger has since let go of, or turned into a look round, stays down.
+      if (pointer.touch && useTouchGestureStore.getState().mode !== "place") return;
+      const onCanvas = pointer.onCanvas ?? document.elementFromPoint(pointer.x, pointer.y) === canvasEl;
+      const hit = onCanvas ? placementFloorPoint(scene, camera, raycaster, rect, pointer.x, pointer.y) : null;
+      if (hit === null) return;
+      usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
+      // Compute snap alignment guides at the ghost's snapped position
+      const placeState = usePlacementStore.getState();
+      if (placeState.ghostPosition !== null) {
+        const guides = computeSnapGuides(
+          placeState.ghostPosition[0], placeState.ghostPosition[2],
+          itemId, placeState.ghostRotation, placeState.placedItems, new Set(),
+        );
+        useSelectionStore.getState().setActiveGuides(guides);
+      }
+      updateChairBrush(itemId, hit, pointer.buttons);
+      invalidateRef.current();
+    };
+
+    /** Whether the touch arbiter holds this touch, so the ghost follows it through the gesture store instead. */
+    function arbiterHolds(event: PointerEvent): boolean {
+      return event.pointerType === "touch" && useTouchGestureStore.getState().mode !== "idle";
+    }
+
     function onPointerDown(event: PointerEvent): void {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || arbiterHolds(event)) return;
       const itemId = useCatalogueStore.getState().selectedItemId;
       if (selectedChairItem(itemId) === null) return;
       const hit = raycastToFloor(event.clientX, event.clientY);
@@ -152,90 +283,20 @@ export function PlacementGhost(): React.ReactElement | null {
     }
 
     function onPointerMove(event: PointerEvent): void {
-      const itemId = useCatalogueStore.getState().selectedItemId;
-      if (itemId === null) return;
-      const hit = raycastToFloor(event.clientX, event.clientY);
-      if (hit !== null) {
-        usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
-        // Compute snap alignment guides at the ghost's snapped position
-        const placeState = usePlacementStore.getState();
-        if (placeState.ghostPosition !== null) {
-          const guides = computeSnapGuides(
-            placeState.ghostPosition[0], placeState.ghostPosition[2],
-            itemId, placeState.ghostRotation, placeState.placedItems, new Set(),
-          );
-          useSelectionStore.getState().setActiveGuides(guides);
-        }
-        updateChairBrush(itemId, hit, event.buttons);
-        invalidateRef.current();
-      }
+      if (useCatalogueStore.getState().selectedItemId === null || arbiterHolds(event)) return;
+      pendingPointer.current = {
+        x: event.clientX,
+        y: event.clientY,
+        buttons: event.buttons,
+        // A drag the catalogue holds reports from its own element: ask the page, once a frame.
+        onCanvas: event.target === canvasEl ? true : useCatalogueStore.getState().dragActive ? null : false,
+        touch: false,
+      };
+      invalidateRef.current();
     }
 
     function placeAtGhost(): void {
-      const catState = useCatalogueStore.getState();
-      const placeState = usePlacementStore.getState();
-      if (catState.selectedItemId === null) return;
-      if (placeState.ghostPosition === null) return;
-
-      // Table dressing: apply to selected table(s), or the nearest table under the drop.
-      const clothStyle = tableClothStyleForCatalogueItem(catState.selectedItemId);
-      const tableSetting = tableSettingForCatalogueItem(catState.selectedItemId);
-      if (clothStyle !== null || tableSetting !== null) {
-        const target = tableSetting === null ? "linen" : "dinner";
-        const nearest = (target === "dinner" ? findNearestDiningTable : findNearestTable)(
-          placeState.ghostPosition[0],
-          placeState.ghostPosition[2],
-          placeState.placedItems,
-          CLOTH_SNAP_DISTANCE_RENDER,
-        );
-        const targetIds = new Set(tableDressingTargetIds(
-          placeState.placedItems,
-          useSelectionStore.getState().selectedIds,
-          nearest?.id ?? null,
-          target,
-        ));
-        if (targetIds.size > 0) {
-          if (clothStyle !== null) {
-            placeState.applyTableCloth(targetIds, clothStyle);
-          } else if (tableSetting !== null) {
-            placeState.applyTableSetting(targetIds, tableSetting);
-          }
-          invalidateRef.current();
-        }
-        return;
-      }
-
-      // Seated dining tables request chairs; service/standing tables place directly.
-      const item = getCatalogueItem(catState.selectedItemId);
-      if (item === undefined) return;
-      // Every piece the venue has is already on the floor: say so, near the tap.
-      const atCap = capReachedFor(catState.selectedItemId, placeState.placedItems.map((p) => p.catalogueItemId));
-      if (atCap !== null) {
-        postPlacementNotice(atCap);
-        return;
-      }
-
-      if (item.tableShape !== null && isDiningTableItem(item)) {
-        useChairDialogStore.getState().showDialog({
-          catalogueItemId: catState.selectedItemId,
-          x: placeState.ghostPosition[0],
-          z: placeState.ghostPosition[2],
-          rotationY: placeState.ghostRotation,
-          tableShape: item.tableShape,
-        });
-        catState.clearSelection();
-        placeState.clearGhost();
-        invalidateRef.current();
-        return;
-      }
-
-      placeState.placeItem(
-        catState.selectedItemId,
-        placeState.ghostPosition[0],
-        placeState.ghostPosition[2],
-        placeState.ghostRotation,
-      );
-      invalidateRef.current();
+      placePieceInHand(() => { invalidateRef.current(); });
     }
 
     function finishPlacementRelease(clientX: number, clientY: number, button: number): void {
@@ -271,6 +332,7 @@ export function PlacementGhost(): React.ReactElement | null {
       if (!useCatalogueStore.getState().dragActive) return;
 
       // Update ghost one final time at release position
+      pendingPointer.current = null;
       const hit = raycastToFloor(clientX, clientY);
       if (hit !== null && itemId !== null) {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
@@ -297,9 +359,12 @@ export function PlacementGhost(): React.ReactElement | null {
         suppressClickAfterBrushRef.current = false;
         return;
       }
+      // The touch arbiter already set the piece down for this tap.
+      if (performance.now() - useTouchGestureStore.getState().endedAt < ARBITRATED_CLICK_MS) return;
       // Click-to-place only when NOT in drag mode
       if (useCatalogueStore.getState().dragActive) return;
       const itemId = useCatalogueStore.getState().selectedItemId;
+      pendingPointer.current = null;
       const hit = raycastToFloor(event.clientX, event.clientY);
       if (itemId === null || hit === null) {
         usePlacementStore.getState().clearGhost();
@@ -314,6 +379,21 @@ export function PlacementGhost(): React.ReactElement | null {
       clearChairBrush();
     }
 
+    // The touch arbiter's raised finger: the ghost stands above it, so the finger never hides it.
+    const unsubscribeTouch = useTouchGestureStore.subscribe((state, previous) => {
+      const finger = state.finger;
+      if (state.mode === "place" && finger !== null && (finger !== previous.finger || previous.mode !== "place")) {
+        pendingPointer.current = { x: finger.x, y: finger.y - ghostRaisePx(window.innerHeight), buttons: 0, onCanvas: true, touch: true };
+        invalidateRef.current();
+      } else if (previous.mode === "place" && state.mode !== "place") {
+        // Placed on the lift by the arbiter, or given up to a look round or a pinch.
+        pendingPointer.current = null;
+        if (state.mode !== "idle") usePlacementStore.getState().clearGhost();
+        useSelectionStore.getState().setActiveGuides([]);
+        invalidateRef.current();
+      }
+    });
+
     // Listen on window so dragging out of the catalogue can cross into the
     // canvas smoothly; the floor raycast itself still uses the canvas bounds.
     canvasEl.addEventListener("pointerdown", onPointerDown);
@@ -324,6 +404,10 @@ export function PlacementGhost(): React.ReactElement | null {
     canvasEl.addEventListener("click", onClick);
 
     return () => {
+      unsubscribeTouch();
+      observer?.disconnect();
+      window.removeEventListener("resize", remeasure);
+      window.removeEventListener("scroll", remeasure, true);
       canvasEl.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
@@ -331,6 +415,8 @@ export function PlacementGhost(): React.ReactElement | null {
       window.removeEventListener("pointercancel", onPointerCancel);
       canvasEl.removeEventListener("click", onClick);
       canvasEl.style.cursor = "";
+      pendingPointer.current = null;
+      followPointer.current = () => undefined;
       usePlacementStore.getState().clearGhost();
       useSelectionStore.getState().setActiveGuides([]);
       clearChairBrush();
@@ -352,20 +438,21 @@ export function PlacementGhost(): React.ReactElement | null {
     return () => { window.removeEventListener("contextmenu", onContextMenu); };
   }, []);
 
-  if (selectedItemId === null || ghostPosition === null) return null;
+  if (selectedItemId === null) return null;
 
   const catalogueItem = getCatalogueItem(selectedItemId);
   if (catalogueItem === undefined) return null;
 
   // --- Table dressing ghost: show preview on selected/nearest table or floating icon ---
-  const clothStyle = tableClothStyleForCatalogueItem(selectedItemId);
-  const tableSetting = tableSettingForCatalogueItem(selectedItemId);
-  if (clothStyle !== null || tableSetting !== null) {
+  if (dressing) {
+    if (dressingPosition === null) return null;
+    const clothStyle = tableClothStyleForCatalogueItem(selectedItemId);
+    const tableSetting = tableSettingForCatalogueItem(selectedItemId);
     const placedItems = usePlacementStore.getState().placedItems;
     const target = tableSetting === null ? "linen" : "dinner";
     const nearestTable = (target === "dinner" ? findNearestDiningTable : findNearestTable)(
-      ghostPosition[0],
-      ghostPosition[2],
+      dressingPosition[0],
+      dressingPosition[2],
       placedItems,
       CLOTH_SNAP_DISTANCE_RENDER,
     );
@@ -437,7 +524,7 @@ export function PlacementGhost(): React.ReactElement | null {
       // No table nearby — show floating cloth with billowing physics.
       return (
         <ClothPreview
-          position={ghostPosition}
+          position={dressingPosition}
           nearTable={false}
           colorOverride={TABLE_CLOTH_COLORS[clothStyle]}
         />
@@ -445,7 +532,7 @@ export function PlacementGhost(): React.ReactElement | null {
     }
 
     return (
-      <group position={ghostPosition} name="table-setting-placement-ghost">
+      <group position={dressingPosition} name="table-setting-placement-ghost">
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.16, 0.24, 32]} />
           <meshStandardMaterial color="#d6b44f" emissive="#8a6c1a" emissiveIntensity={0.5} transparent opacity={0.72} />
@@ -457,17 +544,18 @@ export function PlacementGhost(): React.ReactElement | null {
   // --- Normal furniture ghost ---
   const ghostColor = ghostValid ? PLACEMENT_COLOR_VALID : PLACEMENT_COLOR_INVALID;
   const atCapReason = catalogueItem.maxCount !== null && ghostInvalidReason === capReachedLine(catalogueItem.maxCount);
-  const showConstraintSkin = !ghostValid &&
+  const showConstraintSkin = hasGhost && !ghostValid &&
     !atCapReason &&
     ghostInvalidReason !== "Unknown catalogue item";
 
   if (catalogueItem.category === "chair" && chairBrushPreview.length > 1) {
+    const floorY = usePlacementStore.getState().ghostPosition?.[1] ?? 0;
     return (
       <group name="chair-brush-preview">
         {chairBrushPreview.map((point, index) => (
           <group
             key={`${point.x.toFixed(3)}:${point.z.toFixed(3)}:${String(index)}`}
-            position={[point.x, ghostPosition[1], point.z]}
+            position={[point.x, floorY, point.z]}
             rotation={[0, point.rotationY, 0]}
           >
             <FurnitureProxy
@@ -484,8 +572,16 @@ export function PlacementGhost(): React.ReactElement | null {
     );
   }
 
+  // Mounted from the moment the piece is in hand (drawn tiny while it warms,
+  // then hidden), so the first move shows it without building or compiling it.
   return (
-    <group position={ghostPosition} rotation={[0, ghostRotation, 0]} name="placement-ghost">
+    <group
+      ref={ghostRef}
+      rotation={[0, ghostRotation, 0]}
+      scale={hasGhost ? 1 : WARM_SCALE}
+      visible={hasGhost || warming}
+      name="placement-ghost"
+    >
       <FurnitureProxy
         item={catalogueItem}
         position={[0, 0, 0]}

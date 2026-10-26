@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as configApi from "../../api/configurations.js";
+import * as conflictApi from "../../api/configuration-conflict.js";
 import type { PlacedObject } from "../../api/configurations.js";
 import {
   editorYieldedIds,
@@ -18,6 +19,7 @@ import {
 // yielded object is never resent with an older local value.
 // ---------------------------------------------------------------------------
 
+vi.mock("../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../api/configurations.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/configurations.js")>();
   return {
@@ -27,7 +29,6 @@ vi.mock("../../api/configurations.js", async (importOriginal) => {
     createPublicConfig: vi.fn(),
     authBatchSave: vi.fn(),
     publicBatchSave: vi.fn(),
-    parseRevisionConflict: vi.fn(() => null),
   };
 });
 
@@ -123,7 +124,7 @@ beforeEach(() => {
   useEditorStore.getState().reset();
   vi.mocked(configApi.authBatchSave).mockReset();
   vi.mocked(configApi.getConfig).mockReset();
-  vi.mocked(configApi.parseRevisionConflict).mockReset().mockReturnValue(null);
+  vi.mocked(conflictApi.parseRevisionConflict).mockReset().mockReturnValue(null);
 });
 
 afterEach(() => {
@@ -212,14 +213,14 @@ describe("yieldObjectsToRemote", () => {
 });
 
 describe("a revision conflict while live", () => {
-  const conflict = { expectedRevision: 2, currentRevision: 3, message: "changed" };
+  const conflict = { expectedRevision: 2, currentRevision: 3, message: "changed", changedBy: null, changedAt: null };
 
   it("refetches, rebases and saves again, keeping both people's work", async () => {
     setEditorLiveHooks(hooks());
     setEditorConflictPolicy("rebase");
     open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
     const conflictError = new Error("409");
-    vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
+    vi.mocked(conflictApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
     vi.mocked(configApi.authBatchSave)
       .mockRejectedValueOnce(conflictError)
       .mockResolvedValueOnce({ objects: [wire(T1, 10), wire(T2, 20), wire(T3, 3)], revision: 4 });
@@ -239,7 +240,7 @@ describe("a revision conflict while live", () => {
     setEditorConflictPolicy("rebase");
     open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
     const conflictError = new Error("409");
-    vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
+    vi.mocked(conflictApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
     vi.mocked(configApi.authBatchSave).mockRejectedValue(conflictError);
     vi.mocked(configApi.getConfig).mockResolvedValue(serverConfig(3, [wire(T1, 1), wire(T2, 2), wire(T3, 3)]));
 
@@ -248,14 +249,29 @@ describe("a revision conflict while live", () => {
     expect(useEditorStore.getState().saveConflict).not.toBeNull();
   });
 
-  it("keeps today's behaviour when not live: report the conflict, fetch nothing", async () => {
+  it("when not live, reports the conflict with what they changed and adopts nothing", async () => {
     open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
     const conflictError = new Error("409");
-    vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
+    vi.mocked(conflictApi.parseRevisionConflict).mockImplementation((err) => err === conflictError ? conflict : null);
     vi.mocked(configApi.authBatchSave).mockRejectedValueOnce(conflictError);
+    vi.mocked(configApi.getConfig).mockResolvedValueOnce(serverConfig(3, [wire(T1, 1), wire(T2, 20), wire(T4, 4)]));
     expect(await useEditorStore.getState().saveToServer(true)).toBe(false);
-    expect(vi.mocked(configApi.getConfig)).not.toHaveBeenCalled();
-    expect(useEditorStore.getState().saveConflict).toEqual(conflict);
+    expect(vi.mocked(configApi.getConfig)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(configApi.authBatchSave)).toHaveBeenCalledTimes(1);
+    const state = useEditorStore.getState();
+    // Their version is read, never taken: this person's document is untouched.
+    expect(positions(state.objects)).toEqual(["1@10", "2@2", "3@3"]);
+    expect(state.configRevision).toBe(2);
+    expect(state.saveConflict).toEqual({
+      ...conflict,
+      byYou: false,
+      theirChange: {
+        moved: [{ noun: "item", label: null }],
+        added: [{ noun: "item", label: null }],
+        removed: [{ noun: "item", label: null }],
+        restyled: [],
+      },
+    });
   });
 });
 
@@ -264,8 +280,8 @@ describe("review findings", () => {
     setEditorConflictPolicy("rebase");
     open([editor(T1, 10), editor(T2, 2), editor(T3, 3)], true);
     const conflictError = new Error("409");
-    vi.mocked(configApi.parseRevisionConflict).mockImplementation((err) => err === conflictError
-      ? { expectedRevision: 2, currentRevision: 3, message: "changed" } : null);
+    vi.mocked(conflictApi.parseRevisionConflict).mockImplementation((err) => err === conflictError
+      ? { expectedRevision: 2, currentRevision: 3, message: "changed", changedBy: null, changedAt: null } : null);
     let releaseFetch: (value: configApi.Configuration) => void = () => undefined;
     vi.mocked(configApi.getConfig).mockReturnValueOnce(new Promise((resolve) => { releaseFetch = resolve; }));
     vi.mocked(configApi.authBatchSave)

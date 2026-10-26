@@ -29,9 +29,9 @@ const LOOK_MAX_PITCH_DEG = 85;
 
 const lookSchema = z.object({
   nodeId: z.string().regex(/^[\w-]+$/),
-  yawDeg: z.number().finite(),
-  pitchDeg: z.number().finite(),
-  fovDeg: z.number().finite(),
+  yawDeg: z.number(),
+  pitchDeg: z.number(),
+  fovDeg: z.number(),
 });
 
 /** Encode a camera pose for the URL: `scan_045,12.3,-4.5,68.5`.

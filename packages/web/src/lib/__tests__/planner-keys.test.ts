@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ESCAPE_ORDER,
   hasPlannerKeyListener,
+  lastInputWasKeys,
   registerEscapeLayer,
   registerKeyBindings,
   type EscapeLayerKind,
@@ -313,6 +314,20 @@ describe("the keymap", () => {
     expect([...held]).toEqual(["ArrowRight"]);
     window.dispatchEvent(new Event("blur"));
     expect(held.size).toBe(0);
+  });
+
+  it("knows whether the last input was a key or the pointer, so motion can answer keys at once", () => {
+    track(registerKeyBindings([{ keys: [{ code: "KeyX" }], run: () => undefined }]));
+    expect(lastInputWasKeys()).toBe(false);
+    press("x", { code: "KeyX" });
+    expect(lastInputWasKeys()).toBe(true);
+    window.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(lastInputWasKeys()).toBe(false);
+    // A key another widget claimed is still a key press.
+    const claimed = new KeyboardEvent("keydown", { key: "ArrowUp", code: "ArrowUp", bubbles: true, cancelable: true });
+    claimed.preventDefault();
+    window.dispatchEvent(claimed);
+    expect(lastInputWasKeys()).toBe(true);
   });
 
   it("listens only while something is registered", () => {

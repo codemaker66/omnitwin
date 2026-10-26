@@ -133,6 +133,20 @@ export class NativeSplatScene {
     };
   }
 
+  /**
+   * Whether this renderer's capture is still to come: after a graphics reset
+   * the replacement's own snapshot must be built before the room is back (a
+   * snapshot of the lost device never counts: teardown cleared it, and stale
+   * builds are rejected). Not pending once it draws, once its build failed
+   * (the planner falls back to its drawn room), or while nothing is selected.
+   */
+  capturePending(renderer: object): boolean {
+    if (this.renderer !== renderer) return this.sources.size > 0;
+    if ((this.perfStats(0)?.splats ?? 0) > 0) return false;
+    const selected = this.selectedSources();
+    return selected.length > 0 && !this.failedKeys.has(this.key(selected));
+  }
+
   /** Splats the active draw keeps after GPU culling. WebGPU reads the sort's
    * indirect arguments back; WebGL has no culling and draws every loaded splat. */
   async drawnSplats(renderer: WebGPURenderer): Promise<number | null> {
@@ -145,7 +159,14 @@ export class NativeSplatScene {
   }
 
   attach(renderer: WebGPURenderer, camera: Camera, invalidate: () => void): () => void {
-    if (this.renderer !== null && this.renderer !== renderer) throw new Error("A native splat scene must have one active renderer");
+    if (this.renderer !== null && this.renderer !== renderer) {
+      if (this.hosts !== 0) throw new Error("A native splat scene must have one active renderer");
+      // A graphics reset hands the canvas a replacement renderer in the same
+      // React commit that detached the lost one, before that host's deferred
+      // teardown has run. Release the lost device's snapshots now; the next
+      // build compiles them for the new device from the sources still held.
+      this.teardown();
+    }
     // The first host after a full teardown finds exclusionTexture disposed (see below); its
     // mask data survives on the JS side, but the GPU-side storage must be re-created.
     if (this.hosts === 0 && this.renderer === null) this.exclusionTexture.needsUpdate = true;
@@ -158,20 +179,24 @@ export class NativeSplatScene {
       this.hosts--;
       // React StrictMode immediately attaches again; do not dispose shared resources between those effects.
       queueMicrotask(() => {
-        if (this.hosts !== 0) return;
-        this.generation++;
-        if (this.timer !== null) clearTimeout(this.timer);
-        this.timer = null;
-        this.clearSnapshots();
-        this.cpuSortPool?.dispose();
-        this.cpuSortPool = null;
-        // Safe here, not earlier: every snapshot sampling this shared mask was just cleared above, and StrictMode's immediate re-attach already had its chance to return early before this point runs.
-        this.exclusionTexture.dispose();
-        this.renderer = null;
-        this.camera = null;
-        this.desiredKey = "";
+        if (this.hosts !== 0 || this.renderer !== renderer) return;
+        this.teardown();
       });
     };
+  }
+
+  private teardown(): void {
+    this.generation++;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.clearSnapshots();
+    this.cpuSortPool?.dispose();
+    this.cpuSortPool = null;
+    // Safe here, not earlier: every snapshot sampling this shared mask was just cleared above, and StrictMode's immediate re-attach already had its chance to return early before this point runs.
+    this.exclusionTexture.dispose();
+    this.renderer = null;
+    this.camera = null;
+    this.desiredKey = "";
   }
 
   configure(kernelRadius: number | undefined, minSortIntervalMs: number | undefined): void {
@@ -636,6 +661,11 @@ const runtimes = new WeakMap<Scene, NativeSplatScene>();
 /** Profiling must never construct a native runtime for an unrelated scene. */
 export function nativeScenePerfStats(scene: Scene, now: number): NativeScenePerfStats | null {
   return runtimes.get(scene)?.perfStats(now) ?? null;
+}
+
+/** Whether the scene's capture is still to come on `renderer` (a recovered view's cover waits for it). */
+export function nativeSceneCapturePending(scene: Scene, renderer: object): boolean {
+  return runtimes.get(scene)?.capturePending(renderer) ?? false;
 }
 
 /** Profiler only: splats the active draw keeps after GPU culling. */
