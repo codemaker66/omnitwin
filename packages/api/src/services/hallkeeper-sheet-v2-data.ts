@@ -104,9 +104,19 @@ export async function assembleSheetDataV2(
     // evidence must never replace the approved layout with current live edits.
     const snapshot = await loadLatestApprovedSnapshot(db, configId);
     const frozen = resolveApprovedSnapshotPayload(configId, snapshot);
+    // Approval freezes the layout, not the hour (release audit tenancy-f-1):
+    // the times are read from the Diary now, so a booking moved after
+    // approval moves the sheet, its PDF and the Day Board with it. Only the
+    // response carries them; the stored snapshot is never rewritten, and
+    // neither its source hash nor its issue identity includes timing.
+    const timing = await resolveTiming(db, {
+      id: config.id,
+      spaceId: config.spaceId,
+      venueId: config.venueId,
+    }, requestedEventId);
     return {
       authPivot: { venueId: config.venueId, configUserId: config.userId },
-      payload: { ...frozen, generatedAt: nowIso, webViewUrl },
+      payload: { ...frozen, timing, generatedAt: nowIso, webViewUrl },
       issue: snapshot === null
         ? null
         : { snapshotId: snapshot.id, version: snapshot.version, sourceHash: snapshot.sourceHash },
@@ -210,8 +220,8 @@ export async function assembleSheetDataV2(
   const roomDims = { widthM: Number(space.widthM), lengthM: Number(space.lengthM) };
   const manifest = generateManifestV2(manifestObjects, roomDims, accessoryMap);
 
-  // Approved snapshots carry their own timing and instructions; only live
-  // sheets reach this branch, so only they read the Diary.
+  // Both branches take the times from the Diary; an approved sheet keeps its
+  // frozen instructions, so only the live sheet reads them here.
   const timing = await resolveTiming(db, {
     id: config.id,
     spaceId: config.spaceId,
