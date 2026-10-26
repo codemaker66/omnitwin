@@ -7,6 +7,7 @@ import { WebGPURenderer } from "three/webgpu";
 import { Color, Scene } from "three";
 import { ActivityStatus } from "../shared/Activity.js";
 import { usePlannerWork } from "./planner-work.js";
+import { reportFailure } from "../../observability/failure-reports.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import {
   applyNativeRendererSettings, detachNativeWebGLBackend, isNativeWebGLBackend, readNativeRendererSettings,
@@ -58,6 +59,12 @@ export interface NativeCanvasProps extends Omit<CanvasProps, "gl"> {
    * aside, or the card and its way on stay hidden under a false "Opening…".
    */
   readonly onUnavailable?: () => void;
+}
+
+/** The graphics backend a renderer draws with, as a failure report names it. */
+function rendererBackend(native: WebGPURenderer | null): string {
+  if (native === null) return "none";
+  return isNativeWebGLBackend(native.backend) ? "webgl2" : "webgpu";
 }
 
 const SURFACE_COPY: Record<NativeCanvasSurface, {
@@ -242,6 +249,9 @@ export function NativeCanvas({
 }: NativeCanvasProps): ReactElement {
   const plannerWork = usePlannerWork();
   const surface = surfaceProp ?? (plannerWork === null ? "walk" : "planner");
+  // Failures reach Sentry tagged with the view they stopped (observability/failure-reports.ts).
+  const surfaceRef = useRef(surface);
+  surfaceRef.current = surface;
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"initializing" | "ready" | "error">("initializing");
   const [error, setError] = useState<Error | null>(null);
@@ -332,6 +342,9 @@ export function NativeCanvas({
       recovery.current?.reset();
     }
     if (running.current && root.current !== null && !awaitingCapture) setStage(stageToneOf(root.current.scene));
+    reportFailure(running.current ? "view-stopped" : "renderer-failed", {
+      surface: surfaceRef.current, backend: rendererBackend(renderer.current), detail: cause.message,
+    });
     setStoppedWhileRunning(running.current);
     running.current = false;
     setError(cause);
@@ -348,6 +361,9 @@ export function NativeCanvas({
     if (renderer.current !== null) failedRenderer.current = renderer.current;
     running.current = false;
     if (!mounted.current) return;
+    reportFailure("view-stopped", {
+      surface: surfaceRef.current, backend: rendererBackend(failedRenderer.current), detail: cause.message, restorations: restorations.current,
+    });
     coverUntilFirstFrame(false);
     setStoppedWhileRunning(true);
     setError(cause);
@@ -377,6 +393,7 @@ export function NativeCanvas({
     if (firstFramePending.current) coverUntilFirstFrame(false);
     if (!awaitingCapture) setStage(stageToneOf(root.current.scene));
     const backend = isNativeWebGLBackend(native.backend) ? "webgl2" : "webgpu";
+    reportFailure("device-lost", { surface: surfaceRef.current, backend, detail: errorMessage ?? message });
     lost.current = {
       native, settings, pixelRatio: native.getPixelRatio(), backend, errorMessage,
       captureShown: awaitingCapture || sceneShowsCapture(root.current.scene),
@@ -576,6 +593,7 @@ export function NativeCanvas({
       }
       const message = describeGpuError(event);
       if (gpuErrors.current?.error(message) === true) {
+        reportFailure("gpu-error", { surface: surfaceRef.current, backend: rendererBackend(native), detail: message });
         // eslint-disable-next-line no-console
         console.warn("VenViewer: the graphics device reported an error; the 3D view keeps drawing.", message);
       }

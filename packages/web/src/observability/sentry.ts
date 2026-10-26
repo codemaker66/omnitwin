@@ -185,3 +185,22 @@ export async function captureBoundaryError(error: Error, info: ErrorInfo): Promi
     Sentry.captureException(error);
   });
 }
+
+/**
+ * A warning with tags only (the event scrubber drops `extra`): for failures the
+ * page lives through, such as a lost graphics device or a failed save
+ * (failure-reports.ts). Does nothing without a DSN.
+ */
+export async function captureWarning(message: string, tags: Readonly<Record<string, string>>): Promise<void> {
+  if (readBrowserSentryConfig(import.meta.env) === null || disabledAfterError) return;
+
+  await initBrowserSentry();
+  if (!initialized) return;
+
+  const Sentry = await loadSentryModule();
+  Sentry.withScope((scope) => {
+    scope.setLevel("warning");
+    for (const [name, value] of Object.entries(tags)) scope.setTag(name, value);
+    Sentry.captureMessage(message);
+  });
+}

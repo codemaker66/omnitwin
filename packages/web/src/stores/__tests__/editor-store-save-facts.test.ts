@@ -7,6 +7,9 @@ import { setLayoutTimelineMutationLock } from "../../lib/layout-timeline-preview
 import { useAuthStore, type AuthUser } from "../auth-store.js";
 import { placedObjectToEditor, useEditorStore, type EditorObject } from "../editor-store.js";
 
+const reports = vi.hoisted(() => ({ reportFailure: vi.fn() }));
+vi.mock("../../observability/failure-reports.js", () => reports);
+
 // ---------------------------------------------------------------------------
 // The save facts the slate states are written from (T-671 slice 7): counts,
 // why a save did not land, offline, what is kept on this device, a newer
@@ -161,6 +164,8 @@ describe("why a save did not land", () => {
     vi.mocked(configApi.authBatchSave).mockRejectedValueOnce(new ApiError(401, "Session expired — please sign in again", "UNAUTHORIZED"));
     expect(await store().saveToServer(true)).toBe(false);
     expect(store()).toMatchObject({ saveError: "Session expired — please sign in again", saveErrorCode: "UNAUTHORIZED", isDirty: true });
+    // Sentry hears the status, never the server's words (observability/failure-reports.ts).
+    expect(reports.reportFailure).toHaveBeenCalledWith("save-failed", { status: 401 });
     store().clearSaveError();
     expect(store()).toMatchObject({ saveError: null, saveErrorCode: null });
   });
