@@ -113,7 +113,7 @@ describe("PATCH /venues/:id", () => {
   it("returns 401 without auth", async () => {
     const res = await server.inject({
       method: "PATCH",
-      url: "/venues/00000000-0000-0000-0000-000000000001",
+      url: "/venues/00000000-0000-4000-8000-000000000001",
       payload: { name: "Updated" },
     });
     expect(res.statusCode).toBe(401);
@@ -138,7 +138,7 @@ describe("DELETE /venues/:id", () => {
   it("returns 401 without auth", async () => {
     const res = await server.inject({
       method: "DELETE",
-      url: "/venues/00000000-0000-0000-0000-000000000001",
+      url: "/venues/00000000-0000-4000-8000-000000000001",
     });
     expect(res.statusCode).toBe(401);
   });
@@ -146,7 +146,7 @@ describe("DELETE /venues/:id", () => {
   it("returns 403 for non-admin", async () => {
     const res = await server.inject({
       method: "DELETE",
-      url: "/venues/00000000-0000-0000-0000-000000000001",
+      url: "/venues/00000000-0000-4000-8000-000000000001",
       headers: { authorization: `Bearer ${staffToken()}` },
     });
     expect(res.statusCode).toBe(403);

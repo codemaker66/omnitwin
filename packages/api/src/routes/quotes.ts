@@ -25,7 +25,7 @@ import { multiplyMinor, sumMinor } from "../services/money.js";
 // the referential shape.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 const UpdateQuoteBody = z.object({
   name: z.string().trim().min(1).max(200).optional(),
@@ -36,12 +36,12 @@ const UpdateQuoteBody = z.object({
 const TransitionBody = z.object({
   status: z.enum(QUOTE_STATES),
   note: z.string().max(1000).nullable().optional(),
-  supersededByQuoteId: z.string().uuid().optional(),
+  supersededByQuoteId: z.uuid().optional(),
 });
 
 const ListQuery = z.object({
   status: z.enum(QUOTE_STATES).optional(),
-  proposalId: z.string().uuid().optional(),
+  proposalId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });

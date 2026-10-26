@@ -7,6 +7,7 @@ import {
   OpportunitySchema,
   ProposalCommentSchema,
   ProposalShareTokenSchema,
+  UpdateOpportunitySchema,
   VenueReplyBodySchema,
   isValidOpportunityStageTransition,
 } from "../commercial-spine.js";
@@ -85,6 +86,14 @@ describe("commercial spine schemas", () => {
       title: "Bad value",
       estimatedValueMinor: 12.5,
     }).success).toBe(false);
+  });
+
+  it("leaves an unsent currency out of an opportunity patch instead of resetting it to GBP", () => {
+    const patch = UpdateOpportunitySchema.parse({ title: "Reception Room dinner" });
+    expect(patch).toEqual({ title: "Reception Room dinner" });
+    expect("currency" in patch).toBe(false);
+    expect(UpdateOpportunitySchema.parse({ currency: "EUR" }).currency).toBe("EUR");
+    expect(UpdateOpportunitySchema.safeParse({ currency: "EURO" }).success).toBe(false);
   });
 
   it("stores proposal share tokens as hashes, not bearer tokens", () => {

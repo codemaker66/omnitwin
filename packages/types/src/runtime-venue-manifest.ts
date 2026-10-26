@@ -147,20 +147,20 @@ export const RuntimeTransformReferenceTypeSchema = z.enum(
 export const RuntimeTransformActorTypeSchema = z.enum(RUNTIME_TRANSFORM_ACTOR_TYPES);
 
 export const RuntimeVec3Schema = z.tuple([
-  z.number().finite(),
-  z.number().finite(),
-  z.number().finite(),
+  z.number(),
+  z.number(),
+  z.number(),
 ]);
 
 export const Matrix4dSchema = z
-  .array(z.number().finite())
+  .array(z.number())
   .length(16, "Matrix4d must contain exactly 16 column-major numbers");
 
 export const RuntimeTransformMatrix4dSchema = Matrix4dSchema.superRefine((values, ctx) => {
   const validation = validateSimilarityTransformMatrix4d(matrix4d(values), 1e-7);
   if (!validation.ok) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: `TransformArtifactV0 matrix must be a finite affine similarity transform: ${validation.reason}`,
     });
   }
@@ -178,7 +178,7 @@ export const RuntimeBoundsSchema = z
       const max = bounds.max[axis];
       if (min >= max) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["max", axis],
           message: "Runtime bounds max must be greater than min on every axis",
         });
@@ -228,7 +228,7 @@ export const RuntimeTransformLandmarkPairSchema = z
     label: z.string().trim().min(1).max(160).optional(),
     source: RuntimeVec3Schema,
     target: RuntimeVec3Schema,
-    residualM: z.number().finite().nonnegative().nullable().optional(),
+    residualM: z.number().nonnegative().nullable().optional(),
     provenanceRefs: z.array(RuntimeTransformReferenceSchema).default([]),
   })
   .strict();
@@ -241,18 +241,18 @@ export const TransformArtifactV0Schema = z
     units: z.literal("meters"),
     matrix: RuntimeTransformMatrix4dSchema,
     alignmentMethod: RuntimeTransformAlignmentMethodSchema,
-    residualRmseM: z.number().finite().nonnegative().nullable(),
+    residualRmseM: z.number().nonnegative().nullable(),
     landmarks: z.array(RuntimeTransformLandmarkPairSchema).default([]),
     provenance: RuntimeTransformProvenanceSchema,
     creator: RuntimeTransformActorSchema,
     reviewer: RuntimeTransformActorSchema,
-    date: z.string().datetime({ offset: true }),
+    date: z.iso.datetime({ offset: true }),
   })
   .strict()
   .superRefine((artifact, ctx) => {
     if (artifact.sourceFrame === artifact.targetFrame) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrame"],
         message: "TransformArtifactV0 sourceFrame and targetFrame must differ.",
       });
@@ -260,7 +260,7 @@ export const TransformArtifactV0Schema = z
 
     if (artifact.reviewer.actorType !== "human") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewer", "actorType"],
         message: "TransformArtifactV0 reviewer must be a human actor.",
       });
@@ -268,7 +268,7 @@ export const TransformArtifactV0Schema = z
 
     if (artifact.reviewer.role === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewer", "role"],
         message: "TransformArtifactV0 reviewer must declare a review role.",
       });
@@ -276,7 +276,7 @@ export const TransformArtifactV0Schema = z
 
     if (artifact.alignmentMethod === "landmark_solve" && artifact.landmarks.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["landmarks"],
         message: "landmark_solve TransformArtifactV0 records need at least one landmark pair.",
       });
@@ -284,7 +284,7 @@ export const TransformArtifactV0Schema = z
 
     if (artifact.alignmentMethod === "landmark_solve" && artifact.residualRmseM === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["residualRmseM"],
         message: "landmark_solve TransformArtifactV0 records need an aggregate residual RMSE.",
       });
@@ -296,7 +296,7 @@ export const TransformArtifactV0Schema = z
         (landmark.residualM === null || landmark.residualM === undefined)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["landmarks", index, "residualM"],
           message: "landmark_solve landmark pairs need per-landmark residuals.",
         });
@@ -307,7 +307,7 @@ export const TransformArtifactV0Schema = z
         landmark.provenanceRefs.length === 0
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["landmarks", index, "provenanceRefs"],
           message: "landmark_solve landmark pairs need provenance references.",
         });
@@ -321,7 +321,7 @@ export const TransformArtifactV0Schema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["residualRmseM"],
         message:
           "TransformArtifactV0 records with landmark residuals need an aggregate residual RMSE.",
@@ -333,7 +333,7 @@ export const TransformArtifactV0Schema = z
       artifact.provenance.state === "measured"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["provenance", "state"],
         message: "visual_alignment TransformArtifactV0 records cannot claim measured provenance.",
       });
@@ -344,7 +344,7 @@ export const TransformArtifactV0Schema = z
       artifact.provenance.state === "measured"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["provenance", "state"],
         message:
           "unconstrained_colmap TransformArtifactV0 records cannot claim measured provenance without external metric control.",
@@ -388,13 +388,13 @@ export const RuntimeRenderLayerSchema = z.discriminatedUnion("kind", [
 export const RuntimeVenueManifestV0Schema = z
   .object({
     schemaVersion: z.literal(RUNTIME_VENUE_MANIFEST_V0_VERSION),
-    manifestId: z.string().uuid(),
-    runtimePackageId: z.string().uuid(),
+    manifestId: z.uuid(),
+    runtimePackageId: z.uuid(),
     venueId: VenueIdSchema,
     venueSlug: VenueSlugSchema,
     spaceId: SpaceIdSchema,
     spaceSlug: SpaceSlugSchema,
-    createdAt: z.string().datetime({ offset: true }),
+    createdAt: z.iso.datetime({ offset: true }),
     units: z.literal("meters"),
     exposure: RuntimeManifestExposureMetadataSchema.default(() =>
       internalOnlyExposureMetadata("runtime_package"),
@@ -421,7 +421,7 @@ export const RuntimeVenueManifestV0Schema = z
       manifest.exposure.ownerVenueId !== manifest.venueId
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["exposure", "ownerVenueId"],
         message: "Runtime manifest exposure ownerVenueId must match venueId.",
       });
@@ -433,7 +433,7 @@ export const RuntimeVenueManifestV0Schema = z
       manifest.exposure.ownerVenueId !== manifest.venueId
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["exposure", "ownerVenueId"],
         message:
           "Client or case-study runtime exposure must be scoped to the manifest venue.",
@@ -443,7 +443,7 @@ export const RuntimeVenueManifestV0Schema = z
     for (const [index, transformArtifact] of manifest.transformArtifacts.entries()) {
       if (transformArtifactIds.has(transformArtifact.id)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["transformArtifacts", index, "id"],
           message: "TransformArtifactV0 IDs must be unique",
         });
@@ -454,7 +454,7 @@ export const RuntimeVenueManifestV0Schema = z
     for (const [index, asset] of manifest.assets.entries()) {
       if (assetIds.has(asset.id)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "id"],
           message: "Runtime asset IDs must be unique",
         });
@@ -465,7 +465,7 @@ export const RuntimeVenueManifestV0Schema = z
     for (const [index, layer] of manifest.layers.entries()) {
       if (layerIds.has(layer.id)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["layers", index, "id"],
           message: "Runtime layer IDs must be unique",
         });
@@ -475,7 +475,7 @@ export const RuntimeVenueManifestV0Schema = z
       const asset = assetById.get(layer.assetId);
       if (asset === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["layers", index, "assetId"],
           message: "Runtime layer assetId must reference a declared asset",
         });
@@ -484,7 +484,7 @@ export const RuntimeVenueManifestV0Schema = z
 
       if (asset.format !== layer.format) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["layers", index, "format"],
           message: "Runtime layer format must match its referenced asset format",
         });
@@ -492,7 +492,7 @@ export const RuntimeVenueManifestV0Schema = z
 
       if (layer.kind === "gaussian_splat" && asset.role !== "radiance") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["layers", index, "assetId"],
           message: "Gaussian splat layers must reference a radiance asset",
         });
@@ -500,7 +500,7 @@ export const RuntimeVenueManifestV0Schema = z
 
       if (layer.kind === "mesh" && asset.role !== "geometry") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["layers", index, "assetId"],
           message: "Mesh layers must reference a geometry asset",
         });
@@ -511,7 +511,7 @@ export const RuntimeVenueManifestV0Schema = z
         !transformArtifactIds.has(layer.transformArtifactId)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["layers", index, "transformArtifactId"],
           message: "Runtime layer transformArtifactId must reference a declared TransformArtifactV0",
         });
@@ -524,7 +524,7 @@ export const RuntimeVenueManifestV0Schema = z
           !matrix4dEquals(layer.transform, transformArtifact.matrix)
         ) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["layers", index, "transform"],
             message:
               "Runtime layer transform must match the referenced TransformArtifactV0 matrix",
@@ -534,7 +534,7 @@ export const RuntimeVenueManifestV0Schema = z
 
       if (layer.transformArtifactId === undefined && !matrix4dEquals(layer.transform, IDENTITY_MATRIX4D)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["layers", index, "transformArtifactId"],
           message: "Non-identity runtime layer transforms must reference a TransformArtifactV0",
         });
@@ -543,7 +543,7 @@ export const RuntimeVenueManifestV0Schema = z
 
     if (!layerIds.has(manifest.defaultLayerId)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["defaultLayerId"],
         message: "defaultLayerId must reference a declared layer",
       });
