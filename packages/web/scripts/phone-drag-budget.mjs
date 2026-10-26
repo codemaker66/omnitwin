@@ -82,6 +82,8 @@ const SHOT_END = option("shot-end", "");
 const KEEP_CODE = process.argv.includes("--keep-code") || process.argv.includes("--keep-code-all");
 /** Keep shader code from the page's first frame (`--keep-code-all`), to diff a batch against one built before arming. */
 const KEEP_CODE_ALL = process.argv.includes("--keep-code-all");
+/** Record which pipelines each frame draws for 4 s from arming (`--trace-arm`): what the warm-ups drew, and the drag. */
+const TRACE_ARM = process.argv.includes("--trace-arm");
 
 const API = "http://localhost:3001";
 const CONFIG_ID = "tour-config-0001";
@@ -217,6 +219,14 @@ function instrument() {
   count(GPUDevice.prototype, "createRenderPipeline", "pipeline");
   count(GPUDevice.prototype, "createRenderPipelineAsync", "pipeline");
   tr.counts = () => ({ ...counts });
+  // Which pipelines each frame drew, kept while `tr.traceDraws` is set (from arming, `--trace-arm`).
+  tr.drawn = [];
+  tr.traceDraws = false;
+  const setPipeline = GPURenderPassEncoder.prototype.setPipeline;
+  GPURenderPassEncoder.prototype.setPipeline = function (pipeline, ...rest) {
+    if (tr.traceDraws) tr.drawn.push([performance.now(), pipeline?.label ?? null]);
+    return setPipeline.call(this, pipeline, ...rest);
+  };
   // What each pipeline is, to say what a gesture compiled: colour targets (none for a depth-only
   // shadow pass), samples, and how many vertex buffers step per instance (an instanced batch).
   tr.pipelines = [];
@@ -561,6 +571,7 @@ try {
     await activate(page.getByRole("button", { name: /^add/i }).first());
     await page.waitForTimeout(800);
     if (KEEP_CODE) await page.evaluate(() => { window.__budget.keepCode = true; });
+    if (TRACE_ARM) await page.evaluate(() => { window.__budget.traceDraws = true; setTimeout(() => { window.__budget.traceDraws = false; }, 4000); });
     await activate(page.locator("[data-testid=catalogue-item-round-table-6ft-white]").first());
     result.armedAt = await pageNow();
     await page.waitForTimeout(1200);
@@ -616,6 +627,7 @@ try {
   // Every pipeline the page compiled, in page time, for reading what a warm-up did and did not cover.
   result.pipelines = await page.evaluate(() => window.__budget.pipelines ?? []);
   if (KEEP_CODE) result.shaders = await page.evaluate(() => window.__budget.shaders ?? []);
+  if (TRACE_ARM) result.drawnFromArming = await page.evaluate(() => window.__budget.drawn ?? []);
 } catch (error) {
   result.errors.push(String(error).slice(0, 300));
   failed = true;
