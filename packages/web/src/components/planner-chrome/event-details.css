@@ -1,0 +1,459 @@
+/*
+ * Event details, in the left zone (T-674 slice 19; approved spec 6.13).
+ * A lacquer panel, e2, as tall as the zone allows: the title, then the
+ * sections scrolling inside the panel, then one line saying whether it is
+ * saved, with the function sheet for staff. Fields are wells on lacquer, as
+ * in Details (spec 7.3: black at 22 % with the 12 % hairline, radius 4).
+ * It rises 12 px from its own edge with its opacity over 240 ms, and under
+ * reduced motion only fades. On a phone it is a sheet over the dock (5.4).
+ */
+
+.pc-ed {
+  /* The spec's hairline, 8 % cream, here and not var(--house-hairline): the
+     paper register remaps that token to a bright rule (as History notes). */
+  --pc-ed-rule: color-mix(in srgb, var(--house-cream) 8%, transparent);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(100%, calc(100dvh - var(--pc-left-top, 198px) - var(--pc-above-stack, 88px)));
+  overflow: hidden;
+  pointer-events: auto;
+  animation: pc-ed-in var(--house-motion-deliberate) var(--house-ease-out);
+}
+
+@keyframes pc-ed-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pc-ed-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.pc-ed__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 10px 12px 20px;
+  border-bottom: 1px solid var(--pc-ed-rule);
+}
+
+.pc-ed__titles {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.pc-ed__title {
+  margin: 0;
+  color: var(--house-forest-ink-1);
+}
+
+.pc-ed__subtitle {
+  margin: 0;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-ed__guest {
+  margin: 0;
+  padding: 16px 20px 20px;
+  color: var(--house-forest-ink-2);
+  font: 400 14px/1.5 var(--house-sans);
+}
+
+.pc-ed__status-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px 20px;
+  color: var(--house-forest-ink-2);
+}
+
+.pc-ed__status-panel .pc-ed__guest {
+  padding: 0;
+}
+
+.pc-ed__lock {
+  margin: 0;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--pc-ed-rule);
+  color: var(--house-amber-lit);
+}
+
+.pc-ed__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--house-forest-ink-3) 40%, transparent) transparent;
+}
+
+/* -- Sections ------------------------------------------------------------------ */
+.pc-ed__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--pc-ed-rule);
+}
+
+.pc-ed__section:last-child {
+  border-bottom: 0;
+}
+
+.pc-ed__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.pc-ed__section-title {
+  margin: 0;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-ed__section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pc-ed__hint,
+.pc-ed__empty {
+  margin: 0;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-ed__note,
+.pc-ed__waiting {
+  margin: 0;
+  color: var(--house-amber-lit);
+}
+
+.pc-ed__mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--house-forest-ink-2);
+  font: 400 12px/1 var(--house-sans);
+  white-space: nowrap;
+}
+
+.pc-ed__mark--saved { color: var(--house-sage-lit); }
+.pc-ed__mark--held { color: var(--house-amber-lit); }
+.pc-ed__mark--failed { color: var(--house-brick-lit); }
+
+/* -- Fields ------------------------------------------------------------------- */
+.pc-ed__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pc-ed__label {
+  margin: 0;
+  color: var(--house-forest-ink-2);
+  font: 400 12px/1.3 var(--house-sans);
+}
+
+.pc-ed__zone {
+  color: var(--house-forest-ink-3);
+}
+
+.pc-ed__well {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--house-radius-key);
+  background: color-mix(in srgb, black 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--house-hairline-hover);
+}
+
+.pc-ed__well--multi {
+  align-items: stretch;
+  padding: 9px 12px;
+}
+
+.pc-ed__well:focus-within {
+  box-shadow: inset 0 0 0 1px var(--house-forest-edge);
+}
+
+.pc-ed__well[data-invalid="true"] { box-shadow: inset 0 0 0 1px var(--house-brick-lit); }
+
+.pc-ed__well[data-readonly="true"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--pc-ed-rule);
+}
+
+/* The ring sits on the well, 2 px out, as on every control on lacquer (spec 7.3). */
+.pc-ed__well:has(.pc-ed__input:focus-visible) {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+.pc-ed__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--house-radius-key);
+  background: transparent;
+  color: var(--house-forest-ink-1);
+  font: 400 14px/1.45 var(--house-sans);
+  user-select: text;
+}
+
+.pc-ed__input:focus-visible {
+  outline: none;
+}
+
+textarea.pc-ed__input {
+  min-height: 44px;
+  resize: vertical;
+}
+
+.pc-ed__input::placeholder {
+  color: var(--house-forest-ink-3);
+  opacity: 0.8;
+}
+
+.pc-ed__input::selection {
+  background: color-mix(in srgb, var(--house-accent-copper-bright) 40%, transparent);
+}
+
+.pc-ed__input[type="datetime-local"],
+.pc-ed__select {
+  color-scheme: dark;
+}
+
+.pc-ed__select {
+  cursor: pointer;
+}
+
+.pc-ed__select:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.pc-ed__unit {
+  flex: none;
+  margin-left: 8px;
+  color: var(--house-forest-ink-3);
+  font: 400 12px/1 var(--house-sans);
+}
+
+.pc-ed__problem {
+  color: var(--house-brick-lit);
+  font: 400 12px/1.3 var(--house-sans);
+}
+
+.pc-ed__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pc-ed__grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pc-ed__switches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pc-ed__row-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* -- The running order ---------------------------------------------------------- */
+.pc-ed__acts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pc-ed__act {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 92px;
+  grid-template-areas:
+    "name start length"
+    "mark mark mark";
+  gap: 6px 8px;
+  align-items: end;
+}
+
+.pc-ed__act-name { grid-area: name; }
+.pc-ed__field--clock { grid-area: start; }
+.pc-ed__act-length { grid-area: length; }
+.pc-ed__act-mark { grid-area: mark; }
+
+.pc-ed__act-mark:empty {
+  display: none;
+}
+
+.pc-ed__act--read {
+  display: block;
+}
+
+.pc-ed__act-read {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  margin: 0;
+}
+
+.pc-ed__act-time {
+  color: var(--house-copper-lit);
+  font: 400 16px/1.2 var(--house-serif);
+}
+
+.pc-ed__act-title {
+  color: var(--house-forest-ink-1);
+  font: 400 14px/1.35 var(--house-sans);
+}
+
+.pc-ed__act-for {
+  color: var(--house-forest-ink-3);
+}
+
+.pc-ed__overlaps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  color: var(--house-amber-lit);
+  list-style: none;
+}
+
+/* -- Guests ------------------------------------------------------------------- */
+.pc-ed__guests {
+  max-width: 180px;
+}
+
+.pc-ed__guests-read {
+  margin: 0;
+  color: var(--house-forest-ink-1);
+}
+
+/* -- Doors, deadlines and Martyn's Law ------------------------------------------- */
+.pc-ed__door,
+.pc-ed__procedure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--house-radius-key);
+  box-shadow: inset 0 0 0 1px var(--pc-ed-rule);
+}
+
+.pc-ed__door-time,
+.pc-ed__deadline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--pc-ed-rule);
+}
+
+.pc-ed__door-time .pc-quiet,
+.pc-ed__deadline .pc-quiet {
+  align-self: flex-start;
+}
+
+.pc-ed__procedure-name {
+  margin: 0;
+  color: var(--house-forest-ink-1);
+  font: 500 14px/1.35 var(--house-sans);
+}
+
+/* -- The foot ------------------------------------------------------------------- */
+.pc-ed__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 12px 20px 14px;
+  border-top: 1px solid var(--pc-ed-rule);
+}
+
+.pc-ed__summary {
+  flex: 1 1 160px;
+  margin: 0;
+  color: var(--house-forest-ink-2);
+}
+
+.pc-ed__summary[data-mark="saved"] { color: var(--house-sage-lit); }
+.pc-ed__summary[data-mark="held"] { color: var(--house-amber-lit); }
+.pc-ed__summary[data-mark="failed"] { color: var(--house-brick-lit); }
+
+.pc-ed__foot-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pc-ed__foot-keys a.pc-quiet {
+  text-decoration: none;
+}
+
+/* -- Phones (spec 5.4): a sheet over the dock, 44 px targets -------------------- */
+@media (max-width: 767px) {
+  .pc-ed {
+    width: 100%;
+    max-height: 56dvh;
+    border-radius: 16px 16px 0 0;
+  }
+
+  /* 16 px in fields, so iOS does not zoom the page on focus. */
+  .pc-ed__input {
+    font-size: 16px;
+  }
+
+  .pc-ed__grid--three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pc-ed .pc-quiet,
+  .pc-ed .pc-key {
+    min-height: 44px;
+  }
+
+  .pc-ed .pc-key--icon {
+    min-width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-ed {
+    animation: pc-ed-fade var(--house-motion-press) var(--house-ease-out);
+  }
+}
