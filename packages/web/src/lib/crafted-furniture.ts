@@ -10,30 +10,15 @@
 // changes to either.
 // ---------------------------------------------------------------------------
 
-export const CRAFTED_FURNITURE_SLUGS = [
-  "burgess-turini-18-3",
-  "checked-banquet-chair",
-  "round-table-6ft-white",
-  "round-table-6ft-black",
-  "cake-cutting-table",
-  "trestle-4ft-white",
-  "trestle-4ft-black",
-  "trestle-6ft-white",
-  "trestle-6ft-black",
-  "trestle-6ft",
-  "trestle-6ft-wooden",
-  "ceremony-table",
-  "round-cafe-table-white",
-  "square-cafe-table-white",
-  "poseur-table-white",
-  "poseur-table-black",
-  "bar-counter",
-  "servery-unit",
-  "platform",
-  "room-divider",
-] as const;
+import {
+  CRAFTED_FURNITURE_SLUGS,
+  CRAFTED_PREVIEW_VERSION,
+  type CraftedFurnitureSlug,
+} from "../components/meshes/crafted/crafted-slugs.js";
+import type { CardParams } from "./setup-cards.js";
 
-export type CraftedFurnitureSlug = (typeof CRAFTED_FURNITURE_SLUGS)[number];
+// The list and the previews' folder are the furniture rebuild's to change (components/meshes/crafted/crafted-slugs).
+export { CRAFTED_FURNITURE_SLUGS, CRAFTED_PREVIEW_VERSION, type CraftedFurnitureSlug };
 
 const CRAFTED: ReadonlySet<string> = new Set(CRAFTED_FURNITURE_SLUGS);
 
@@ -41,14 +26,38 @@ export function isCraftedFurnitureSlug(slug: string): slug is CraftedFurnitureSl
   return CRAFTED.has(slug);
 }
 
-/**
- * The folder of the current crafted previews. Files under a versioned
- * folder are served immutable (vercel.json), so a redesign that changes how
- * a piece looks re-renders the previews into a new folder.
- */
-export const CRAFTED_PREVIEW_VERSION = "crafted-v2";
-
 /** The rendered preview of a crafted piece, or null for any other item. */
 export function craftedFurniturePreviewUrl(slug: string): string | null {
   return isCraftedFurnitureSlug(slug) ? `/models/furniture/${slug}/${CRAFTED_PREVIEW_VERSION}/preview.webp` : null;
+}
+
+/**
+ * The version folder of the setup cards' pictures (card-dock Q-21): each
+ * look's whole set (a round with its chairs, a trestle or a set with theirs,
+ * a 5 × 5 floor) drawn from the same models in the same studio as the crafted
+ * previews, by scripts/render-setup-previews.mjs. Each card has its own folder
+ * beside the pieces', `/models/furniture/setup-<card>/<version>/`, so the
+ * version sits where the immutable cache rule (vercel.json) reads it.
+ */
+export const SETUP_PREVIEW_VERSION = "setup-v1";
+
+/**
+ * The look a setup card's picture shows: its colourway, and for Top and Long
+ * table whether it sets down one trestle or a set. The counts are the card's
+ * text. Null for a piece card, whose picture is its crafted preview.
+ */
+export function setupCardLook(params: CardParams): string | null {
+  switch (params.card) {
+    case "round": return params.colourway;
+    case "top-table":
+    case "long-table": return `${params.colourway}-${params.trestles > 1 ? "set" : "one"}`;
+    case "dance-floor": return "floor";
+    case "piece": return null;
+  }
+}
+
+/** The picture of what this setup card sets down, as its parameters stand; null for a piece card. */
+export function setupCardPreviewUrl(params: CardParams): string | null {
+  const look = setupCardLook(params);
+  return look === null ? null : `/models/furniture/setup-${params.card}/${SETUP_PREVIEW_VERSION}/${look}.webp`;
 }
