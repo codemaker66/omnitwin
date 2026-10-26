@@ -17,9 +17,11 @@ import { aoBox, aoRod, occlude } from "../crafted-ao.js";
 import { craftedDetail, setCraftedDetailLevel } from "../crafted-detail.js";
 import { lathe, roundedBox } from "../crafted-geometry.js";
 import { craftedMaterial } from "../crafted-materials.js";
+import { instantiateCraftedModel, mergeCraftedParts } from "../crafted-model.js";
 import { clearCraftedGeometryCache, createCraftedFurniture } from "../crafted-registry.js";
 import { casterGeometry } from "../crafted-shadow.js";
 import { damaskFigure, damaskFigureField } from "../crafted-textures.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
 function assetFor(slug: string): CanonicalAsset {
   const asset = CANONICAL_ASSETS.find((candidate) => candidate.slug === slug);
@@ -346,12 +348,23 @@ describe("crafted shadows", () => {
     }
   });
 
+  it.each(CRAFTED_FURNITURE_SLUGS)("casts %s's sun shadow with a caster of its own", (slug) => {
+    const model = build(slug);
+    try {
+      expect(meshesOf(model.object).some(isCaster)).toBe(true);
+    } finally {
+      model.dispose();
+    }
+  });
+
   it("keeps a piece without a caster casting from what is seen", () => {
-    const model = build("trestle-6ft");
+    const parts = mergeCraftedParts([{ material: "plastic-white", geometry: roundedBox([0.5, 0.5, 0.5], 0.01, [0, 0.25, 0]) }]);
+    const model = instantiateCraftedModel("no-caster", parts);
     try {
       for (const mesh of meshesOf(model.object)) expect(mesh.castShadow, mesh.name).toBe(true);
     } finally {
       model.dispose();
+      for (const geometry of parts.values()) geometry.dispose();
     }
   });
 
@@ -486,6 +499,38 @@ describe("crafted detail", () => {
     expect(materialAppearanceSignature(craftedMaterial("gilt"))).toBe(gilt);
     expect(materialAppearanceSignature(craftedMaterial("pad-ivory"))).not.toBe(gilt);
     expect(materialAppearanceSignature(craftedMaterial("shadow-caster"))).not.toBe(gilt);
+  });
+});
+
+describe("crafted geometry", () => {
+  it.each([
+    [[0.6, 0.9, 0.4], 0.01, 2],
+    [[1.6, 0.03, 0.6], 0.008, 1],
+  ] as const)("rounds a %j box exactly as three's RoundedBoxGeometry does, without its non-indexed copy", (size, radius, segments) => {
+    const ours = roundedBox([size[0], size[1], size[2]], radius, [0.3, 0.2, -0.1], { segments });
+    const three = new RoundedBoxGeometry(size[0], size[1], size[2], segments, radius);
+    three.translate(0.3, 0.2, -0.1);
+    try {
+      const index = ours.index;
+      if (index === null) throw new Error("expected an indexed box");
+      const position = ours.getAttribute("position");
+      const normal = ours.getAttribute("normal");
+      const theirPosition = three.getAttribute("position");
+      const theirNormal = three.getAttribute("normal");
+      // The same triangles, in the same order: three's copy is the grid's own index, unrolled.
+      expect(index.count).toBe(theirPosition.count);
+      let worst = 0;
+      for (let corner = 0; corner < index.count; corner += 1) {
+        const vertex = index.getX(corner);
+        worst = Math.max(worst,
+          Math.abs(position.getX(vertex) - theirPosition.getX(corner)), Math.abs(position.getY(vertex) - theirPosition.getY(corner)), Math.abs(position.getZ(vertex) - theirPosition.getZ(corner)),
+          Math.abs(normal.getX(vertex) - theirNormal.getX(corner)), Math.abs(normal.getY(vertex) - theirNormal.getY(corner)), Math.abs(normal.getZ(vertex) - theirNormal.getZ(corner)));
+      }
+      expect(worst).toBeLessThan(1e-6);
+    } finally {
+      ours.dispose();
+      three.dispose();
+    }
   });
 });
 

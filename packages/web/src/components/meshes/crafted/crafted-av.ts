@@ -1,4 +1,5 @@
 import { type BufferGeometry, Matrix4 } from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { aoBox, aoRod, occlude, STANDING_FLOOR, type AoBox } from "./crafted-ao.js";
 import { craftedDetail } from "./crafted-detail.js";
 import { lathe, post, roundedBox, tube, type Vec3 } from "./crafted-geometry.js";
@@ -219,10 +220,15 @@ export function handheldMicParts(size: AvSize): CraftedPart[] {
 export function lapelMicParts(size: AvSize): CraftedPart[] {
   const { width, depth, height } = size;
   const packH = height * 0.8;
+  const pack = aoBox([width * 0.8, packH, depth * 0.45], [0, packH / 2, 0]);
+  const lead = aoRod([width * 0.18, packH, 0], [width * 0.18, height, 0], 0.008);
   return [
-    { material: "plastic-dark", geometry: roundedBox([width * 0.8, packH, depth * 0.45], 0.006, [0, packH / 2, 0], { segments: 2 }) },
-    { material: "steel-black", geometry: post([width * 0.18, 0], packH, height - 0.004, 0.003, 0.003, 8) },
-    { material: "steel-black", geometry: roundedBox([0.008, 0.012, 0.008], 0.003, [width * 0.18, height - 0.006, 0], { segments: 1 }) },
+    ...baked([
+      { material: "plastic-dark", geometry: roundedBox([width * 0.8, packH, depth * 0.45], 0.006, [0, packH / 2, 0], { segments: 2 }) },
+      { material: "steel-black", geometry: post([width * 0.18, 0], packH, height - 0.004, 0.003, 0.003, 8) },
+      { material: "steel-black", geometry: roundedBox([0.008, 0.012, 0.008], 0.003, [width * 0.18, height - 0.006, 0], { segments: 1 }) },
+    ], [pack]),
+    { material: "shadow-caster", geometry: casterGeometry([pack, lead], { inset: 0.001, minimum: 0.008 }) },
   ];
 }
 
@@ -264,7 +270,9 @@ export function lecternParts(size: AvSize): CraftedPart[] {
   const underDesk = (z: number): number => deskMid - deskThickness + (z * tilt);
   const backHeight = underDesk(bodyBack) - plinth;
   const frontHeight = backHeight + bodyD * tilt;
-  const body = roundedBox([bodyW, backHeight, bodyD], 0.006, [0, plinth + backHeight / 2, bodyZ], { segments: 2, grain: "y" });
+  // Welded across its faces first: the normals are recomputed after the
+  // slope, and a seam left open would crease every rounded edge.
+  const body = mergeVertices(roundedBox([bodyW, backHeight, bodyD], 0.006, [0, plinth + backHeight / 2, bodyZ], { segments: 2, grain: "y" }));
   const position = body.getAttribute("position");
   for (let i = 0; i < position.count; i += 1) {
     const rise = ((position.getY(i) - plinth) / backHeight) * tilt * (position.getZ(i) - bodyBack);
