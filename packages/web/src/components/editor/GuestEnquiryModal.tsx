@@ -5,6 +5,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlannerVenueIdentity } from "../../hooks/use-planner-venue-identity.js";
 import { usePlannerTruth } from "../../hooks/use-planner-truth.js";
+import { formatLinkUntil, useVisitorPlanLinks } from "../../hooks/use-visitor-plan-links.js";
 import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
 import {
   guestsAbovePublished,
@@ -17,6 +18,7 @@ import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { isValidEmail } from "../../lib/email-validation.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
+import { PLAN_LINK_CONSEQUENCE } from "./VisitorPlanLinkActions.js";
 
 // ---------------------------------------------------------------------------
 // GuestEnquiryModal — premium conversion moment
@@ -112,6 +114,78 @@ interface GuestEnquiryModalProps {
   readonly onClose: () => void;
 }
 
+const VISUALLY_HIDDEN: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap",
+};
+const LINK_HINT: React.CSSProperties = {
+  fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.5, margin: "8px 0 0",
+};
+
+/**
+ * The success screen's share action, in this dialog's own style: a view-only
+ * link (its own token, which can only read) made by the shared hook that the
+ * Share lens and the phone sheet use, never the planner address.
+ */
+function ViewOnlyLink({ configId }: { readonly configId: string }): React.ReactElement {
+  // Mounted only on the success screen, so the plan's links are read only
+  // after the enquiry has gone, never each time the form opens.
+  const links = useVisitorPlanLinks(configId);
+  const { state } = links;
+  const made = state.phase === "made" ? state : null;
+  const making = state.phase === "making";
+  const failed = state.phase === "error";
+  const copied = made?.copied === true;
+  return (
+    <div style={{ marginBottom: 10 }} data-testid="enquiry-view-link">
+      <button
+        type="button"
+        disabled={making}
+        aria-busy={making}
+        style={{
+          width: "100%", padding: "13px 20px", fontSize: 14, fontWeight: 600,
+          fontFamily: "'Inter', system-ui, sans-serif",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          background: copied ? "rgba(34,197,94,0.12)" : failed ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.05)",
+          border: `1px solid ${copied ? "rgba(34,197,94,0.3)" : failed ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.1)"}`,
+          borderRadius: 12, cursor: making ? "progress" : "pointer",
+          color: copied ? "#22c55e" : failed ? "#ef4444" : "rgba(255,255,255,0.7)",
+          transition: "background 0.25s ease, border-color 0.25s ease, color 0.25s ease",
+          letterSpacing: 0.2,
+        }}
+        onClick={() => { if (made === null) links.make(); else links.copyAgain(); }}
+      >
+        {making && <ActivityIndicator size={16} />}
+        {making ? "Making the link…"
+          : made !== null ? (made.copied ? "View-only link copied" : "Copy the view-only link")
+            : failed ? "Try again" : "Copy a view-only link"}
+      </button>
+      <span role="status" aria-live="polite" aria-atomic="true" style={VISUALLY_HIDDEN}>
+        {made === null ? "" : made.copied ? "View-only link copied" : "View-only link made"}
+      </span>
+      {state.phase === "idle" && <p style={LINK_HINT}>{PLAN_LINK_CONSEQUENCE}</p>}
+      {state.phase === "error" && <p role="alert" style={{ ...LINK_HINT, color: "#ef4444" }}>{state.message}</p>}
+      {made !== null && (
+        <>
+          {!made.copied && (
+            <input
+              className="omni-enq-input"
+              style={{ marginTop: 8 }}
+              type="text"
+              readOnly
+              value={made.url}
+              aria-label="View-only link"
+              onFocus={(event) => { event.currentTarget.select(); }}
+            />
+          )}
+          <p style={LINK_HINT}>
+            Works until {formatLinkUntil(made.expiresAt)} unless you stop it. Nobody can change the plan through it.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps): React.ReactElement {
   // The venue this layout belongs to, never a hard-coded one: another venue's
   // guest must not be told that Trades Hall will reply (T-635 N5, item 1).
@@ -129,7 +203,10 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
-  const [copied, setCopied] = useState<"idle" | "success" | "fail">("idle");
+  // A view-only link, never the planner address (planner-qol E-10): /plan/<id>
+  // is an anonymous plan's edit capability, so whoever was sent it could
+  // change the layout the venue is reading.
+  const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const emailRef = useRef<HTMLInputElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
 
@@ -189,17 +266,6 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
       setIsSubmitting(false);
     }
   }, [configId, email, phone, name, eventDate, eventType, guestCount, message, emailValid]);
-
-  const handleCopy = useCallback(async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/plan/${configId}`);
-      setCopied("success");
-      setTimeout(() => { setCopied("idle"); }, 2500);
-    } catch {
-      setCopied("fail");
-      setTimeout(() => { setCopied("idle"); }, 2500);
-    }
-  }, [configId]);
 
   // Escape closes it wherever focus is, through the planner's one keyboard
   // owner, and while it is open the planner's shortcuts leave the room alone.
@@ -281,27 +347,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             {layoutSummary}
           </div>
 
-          {/* Copy link button */}
-          <button
-            type="button"
-            style={{
-              width: "100%", padding: "13px 20px", fontSize: 14, fontWeight: 600,
-              fontFamily: "'Inter', system-ui, sans-serif",
-              background: copied === "success"
-                ? "rgba(34,197,94,0.12)"
-                : copied === "fail"
-                  ? "rgba(239,68,68,0.12)"
-                  : "rgba(255,255,255,0.05)",
-              border: `1px solid ${copied === "success" ? "rgba(34,197,94,0.3)" : copied === "fail" ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.1)"}`,
-              borderRadius: 12, cursor: "pointer",
-              color: copied === "success" ? "#22c55e" : copied === "fail" ? "#ef4444" : "rgba(255,255,255,0.7)",
-              transition: "background 0.25s ease, border-color 0.25s ease, color 0.25s ease", marginBottom: 10,
-              letterSpacing: 0.2,
-            }}
-            onClick={() => { void handleCopy(); }}
-          >
-            {copied === "success" ? "Copied to clipboard" : copied === "fail" ? "Couldn\u2019t copy \u2014 try manually" : "Copy layout link"}
-          </button>
+          {/* A view-only link to share the plan: it can only read */}
+          {isPublicPreview && <ViewOnlyLink configId={configId} />}
 
           {/* Close */}
           <button

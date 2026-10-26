@@ -3,9 +3,18 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import type { VenueDetail } from "../../../api/spaces.js";
 
-const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn(), createLink: vi.fn(), listLinks: vi.fn(), flush: vi.fn() }));
 vi.mock("../../../api/spaces.js", () => ({ getVenue: mocks.getVenue }));
 vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.submit }));
+vi.mock("../../../api/plan-view.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../api/plan-view.js")>()),
+  createPlanViewLink: mocks.createLink,
+  listPlanViewLinks: mocks.listLinks,
+}));
+vi.mock("../EditorBridge.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../EditorBridge.js")>()),
+  flushAutoSave: mocks.flush,
+}));
 
 const { GuestEnquiryModal } = await import("../GuestEnquiryModal.js");
 import { useEditorStore } from "../../../stores/editor-store.js";
@@ -166,5 +175,68 @@ describe("GuestEnquiryModal names the layout's own venue", () => {
 
     expect(await screen.findByText("Your details are shared only with this venue's events team.")).toBeTruthy();
     expect(document.body.textContent ?? "").not.toMatch(/Venue unavailable|Trades Hall/u);
+  });
+});
+
+// planner-qol E-10: "Copy layout link" handed out /plan/<id>, an anonymous
+// plan's edit capability, so whoever the guest sent it to could change the
+// layout the venue is reading. After sending, the guest shares a view-only link.
+describe("GuestEnquiryModal shares a view-only link after sending", () => {
+  const venueRooms: VenueDetail = {
+    id: "venue-share", name: "Share Rooms", slug: "share-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+  let written: string[] = [];
+
+  beforeEach(() => {
+    resetStores();
+    written = [];
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(venueRooms);
+    mocks.submit.mockResolvedValue({});
+    mocks.flush.mockResolvedValue(true);
+    mocks.listLinks.mockResolvedValue([]);
+    mocks.createLink.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111", prefix: "tokenpre", token: "tokenprefix0123456789abcdefghijklmnopqrstuv",
+      createdAt: "2026-10-26T12:00:00.000Z", expiresAt: "2026-11-25T12:00:00.000Z",
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: (text: string) => { written.push(text); return Promise.resolve(); } },
+    });
+    useEditorStore.setState({ configId: "cfg-1", venueId: venueRooms.id, isPublicPreview: true });
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function send(): Promise<void> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Share Rooms events team.");
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await screen.findByText("Share Rooms will reply to");
+  }
+
+  it("copies a view-only link, never the planner address", async () => {
+    await send();
+    expect(screen.queryByText(/Copy layout link/u)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Copy a view-only link" }));
+    expect(await screen.findByRole("button", { name: "View-only link copied" })).toBeTruthy();
+    expect(mocks.flush).toHaveBeenCalled();
+    expect(mocks.createLink).toHaveBeenCalledWith("cfg-1");
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatch(/\/plan-view\/tokenprefix/u);
+    expect(written[0]).not.toMatch(/\/plan\/cfg-1/u);
+    expect(screen.getByText(/Nobody can change the plan through it\./u)).toBeTruthy();
+  });
+
+  it("offers no public link for a plan already saved to an account", async () => {
+    useEditorStore.setState({ isPublicPreview: false });
+    await send();
+    expect(screen.queryByRole("button", { name: /view-only link/u })).toBeNull();
+    expect(mocks.createLink).not.toHaveBeenCalled();
   });
 });
