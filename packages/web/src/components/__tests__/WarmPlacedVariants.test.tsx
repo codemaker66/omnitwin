@@ -7,6 +7,7 @@ import { plannerChairSlug } from "../../lib/furniture-defaults.js";
 import { createPlacedItem } from "../../lib/placement.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { usePlannerEventStore } from "../../stores/planner-event-store.js";
 import { instanceCapacityFor, InstancedFurnitureLayer } from "../editor/InstancedFurnitureLayer.js";
 import { noteMainDraw } from "../../lib/main-draw-clock.js";
 import { landsWith, poolsLanding, WARM_PLACED_FRAMES, WARM_PLACED_UPDATES, WarmPieceInHand, WarmPlacedVariants } from "../WarmPlacedVariants.js";
@@ -43,6 +44,15 @@ describe("landsWith", () => {
   it("lands a dining table with the planner's chair, and anything else alone", () => {
     expect(landsWith(TABLE)).toEqual([TABLE, CHAIR]);
     expect(landsWith(CHAIR)).toEqual([CHAIR]);
+  });
+
+  it("lands a table with the event's chair, so a wedding warms the Chiavari", () => {
+    usePlannerEventStore.getState().setEventKind("wedding");
+    try {
+      expect(landsWith(TABLE)).toEqual([TABLE, catalogueItem("chiavari-chair")]);
+    } finally {
+      usePlannerEventStore.getState().setEventKind(null);
+    }
   });
 });
 

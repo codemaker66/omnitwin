@@ -5,7 +5,7 @@ import { PLANNER_CHAIR_BY_EVENT, plannerChairSlug, UNASKED_PLANNER_CHAIR_SLUG } 
 import { stockIdentity } from "../card-stock.js";
 import { createPlacedItem, type PlacedItem } from "../placement.js";
 import { cardParamsFor, stampSetup, type CardParams } from "../setup-cards.js";
-import { createTableGroup, newSeatChairSlug, rearrangeTableGroup } from "../table-group.js";
+import { createTableGroup, newSeatChairSlug, rearrangeTableGroup, tableOwnChairs } from "../table-group.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
 
 const HALL = { roomWidthM: 21, roomLengthM: 10.5 } as const;
@@ -93,7 +93,7 @@ describe("a card set down at a wedding", () => {
 });
 
 describe("a table keeps its own chairs", () => {
-  it("gives a seat added to a pink-chair round at a wedding a pink chair", () => {
+  it("gives a seat added to a Turini round at a wedding a Turini", () => {
     const placed = createTableGroup(ROUND.id, 0, 0, 0, 8);
     const [table] = placed;
     if (table === undefined) throw new Error("no table");
@@ -108,6 +108,26 @@ describe("a table keeps its own chairs", () => {
     const pinks = Array.from({ length: 10 }, (_, i) => ({ ...createPlacedItem(item("pink-chair").id, i, 1, 0, table.groupId), id: `pink-${String(i)}` }));
     atEvent("wedding");
     expect(newSeatChairSlug(table, [table, ...pinks])).toBe("burgess-turini-18-3");
+    const added = rearrangeTableGroup(table.id, 11, [table, ...pinks]).filter((piece) => piece.id !== table.id && !pinks.some((pink) => pink.id === piece.id));
+    expect(chairSlugs(added)).toEqual(["burgess-turini-18-3"]);
+  });
+
+  it("counts only a table's own chairs when Group puts two rounds in one group", () => {
+    const chiavariRound = createTableGroup(ROUND.id, 0, 0, 0, 4, 0, undefined, "around", "chiavari-chair");
+    const [a] = chiavariRound;
+    if (a === undefined || a.groupId === null) throw new Error("no round");
+    const turiniRound = createTableGroup(ROUND.id, 6, 0, 0, 10, 0, undefined, "around", "burgess-turini-18-3")
+      .map((piece) => ({ ...piece, groupId: a.groupId }));
+    const grouped = [...chiavariRound, ...turiniRound];
+    atEvent("corporate");
+    // Ten Turinis in the group, four Chiavari at this round: its own four decide.
+    expect(newSeatChairSlug(a, grouped)).toBe("chiavari-chair");
+    const after = rearrangeTableGroup(a.id, 6, grouped);
+    const aAfter = after.find((piece) => piece.id === a.id);
+    if (aAfter === undefined) throw new Error("no round after");
+    expect(chairSlugs(tableOwnChairs(aAfter, after))).toEqual(Array.from({ length: 6 }, () => "chiavari-chair"));
+    // The other round is left as it stood.
+    for (const piece of turiniRound) expect(after).toContainEqual(piece);
   });
 
   it("gives a table with no chairs the event's", () => {
@@ -137,14 +157,18 @@ describe("a table keeps its own chairs", () => {
     const own = (pieces: readonly PlacedItem[]): readonly PlacedItem[] => pieces.filter((piece) => piece.groupId === table.groupId && piece.id !== table.id);
     const before = own(placed);
     atEvent("wedding");
-    const after = own(rearrangeTableGroup(table.id, before.length - 1, placed));
-    expect(new Set(chairSlugs(after))).toEqual(new Set(["burgess-turini-18-3"]));
-    // Along the back, set off by the Turini's depth, not the Chiavari's.
-    for (const chair of after) expect(Math.abs(chair.z - table.z)).toBeCloseTo(Math.abs((before[0]?.z ?? Number.NaN) - table.z), 9);
+    // One fewer, and one more: the seat added is a Turini too.
+    for (const count of [before.length - 1, before.length + 1]) {
+      const after = own(rearrangeTableGroup(table.id, count, placed));
+      expect(after).toHaveLength(count);
+      expect(new Set(chairSlugs(after))).toEqual(new Set(["burgess-turini-18-3"]));
+      // Along the back, set off by the Turini's depth, not the Chiavari's.
+      for (const chair of after) expect(Math.abs(chair.z - table.z)).toBeCloseTo(Math.abs((before[0]?.z ?? Number.NaN) - table.z), 9);
+    }
   });
 });
 
-describe("the store's count at a wedding", () => {
+describe("the store's count, whatever the event", () => {
   it("counts the Chiavari as itself and the Turini as the venue's pink chair", () => {
     expect(stockIdentity(item("chiavari-chair").id)).toBe(item("chiavari-chair").id);
     expect(stockIdentity(item("burgess-turini-18-3").id)).toBe(item("pink-chair").id);

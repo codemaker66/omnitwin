@@ -194,8 +194,8 @@ describe("EditorBridge component", () => {
     cleanup();
   });
 
-  // A piece can become another where it stands (Fill sets a reused chair as
-  // the event's chair): that is a change like a move, so the save has it.
+  // A piece can become another where it stands (a chair set as the
+  // event's chair): that is a change like a move, so the save has it.
   it("carries a piece that becomes another in place, though it has not moved", async () => {
     const React = await import("react");
     const { render, cleanup } = await import("@testing-library/react");

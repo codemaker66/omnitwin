@@ -221,7 +221,7 @@ function planShortfall(input: SeatShortfallInput): Planned | null {
   if (spare >= short) return chairsOffer(short);
 
   const table = commonestTable(tables);
-  const seats = table === null ? 0 : banquetSeatsPerTable(table);
+  const seats = table === null ? 0 : banquetSeatsPerTable(table, input.chairSlug);
   const tablesNeeded = seats > 0 ? Math.ceil(short / seats) : 0;
   const spots = table === null || seats === 0 ? [] : freeTableSpots(input, table, seats, tablesNeeded);
   const tablesOffer = (item: CatalogueItem, count: number, chairs: number): Planned => ({
@@ -269,7 +269,7 @@ export function applySeatShortfallFix(input: SeatShortfallInput): SeatShortfallF
     const extra = offer.chairs % offer.tables;
     planned.spots.slice(0, offer.tables).forEach((spot, index) => {
       const chairs = base + (index < extra ? 1 : 0);
-      items.push(...createTableGroup(offer.tableItemId, toRenderSpace(spot.x), toRenderSpace(spot.z), 0, chairs));
+      items.push(...createTableGroup(offer.tableItemId, toRenderSpace(spot.x), toRenderSpace(spot.z), 0, chairs, 0, undefined, "around", input.chairSlug));
     });
   }
 

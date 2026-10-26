@@ -72,7 +72,9 @@ export function seatCapacity(table: CatalogueItem, scale?: number, chairFootprin
 }
 
 // ---------------------------------------------------------------------------
-// Chair position computation (pure)
+// Chair position computation: pure but for the chair, which defaults to the
+// event's (plannerChairSlug reads the planner-event store), so a memo that
+// calls these without naming the chair must depend on the event.
 // ---------------------------------------------------------------------------
 
 export interface ChairPlacement {
@@ -446,10 +448,10 @@ export function ungroupedKeepingTables(
  */
 export function newSeatChairSlug(table: PlacedItem, placedItems: readonly PlacedItem[]): string {
   const counts = new Map<string, number>();
-  for (const placed of placedItems) {
-    if (table.groupId === null || placed.groupId !== table.groupId || placed.id === table.id || !isSceneFurniturePlacement(placed)) continue;
-    const catalogue = getCatalogueItem(placed.catalogueItemId);
-    const chair = catalogue?.category === "chair" ? plannerChairFor(catalogue.slug) : null;
+  // Its own chairs (tableOwnChairs), not its group's: a group made with Group can hold another table's.
+  for (const seat of tableOwnChairs(table, placedItems)) {
+    const slug = getCatalogueItem(seat.catalogueItemId)?.slug;
+    const chair = slug === undefined ? null : plannerChairFor(slug);
     if (chair === null) continue;
     counts.set(chair, (counts.get(chair) ?? 0) + 1);
   }
@@ -550,10 +552,11 @@ export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: numbe
 /**
  * The seats a dining table is set for at a banquet: `seatsFor`'s default
  * (seat truth, card-dock spec §17.2), never more than fit around it. A table
- * seat truth does not know is set for as many as fit.
+ * seat truth does not know is set for as many as fit. Fit is judged with the
+ * chair named, or the event's.
  */
-export function banquetSeatsPerTable(table: CatalogueItem): number {
-  const fit = seatCapacity(table);
+export function banquetSeatsPerTable(table: CatalogueItem, chairSlug?: string): number {
+  const fit = seatCapacity(table, undefined, chairSlug === undefined ? undefined : getCatalogueItemBySlug(chairSlug));
   if (fit === 0) return 0;
   return Math.max(1, Math.min(fit, seatsFor(table)?.default ?? fit));
 }
