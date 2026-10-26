@@ -58,7 +58,7 @@ function addIssue(
   message: string,
 ): void {
   ctx.addIssue({
-    code: z.ZodIssueCode.custom,
+    code: "custom",
     path: [...path],
     message,
   });
@@ -258,9 +258,7 @@ export const FoundryDerivativeAssetRightsEvidenceV0Schema = z
       "written_permission",
       "public_domain",
     ]),
-    termsReference: z
-      .string()
-      .url()
+    termsReference: z.url()
       .refine(
         (value) => value.toLowerCase().startsWith("https://"),
         "terms reference must use HTTPS",

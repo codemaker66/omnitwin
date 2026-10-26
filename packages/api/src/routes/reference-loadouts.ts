@@ -10,8 +10,8 @@ import { canManageVenue } from "../utils/query.js";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const SpaceParams = z.object({ venueId: z.string().uuid(), spaceId: z.string().uuid() });
-const LoadoutParams = z.object({ venueId: z.string().uuid(), spaceId: z.string().uuid(), id: z.string().uuid() });
+const SpaceParams = z.object({ venueId: z.uuid(), spaceId: z.uuid() });
+const LoadoutParams = z.object({ venueId: z.uuid(), spaceId: z.uuid(), id: z.uuid() });
 
 const CreateLoadoutBody = z.object({
   name: z.string().trim().min(1).max(500),

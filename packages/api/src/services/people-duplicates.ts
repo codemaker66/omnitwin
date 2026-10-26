@@ -31,7 +31,7 @@ import { liveAccount, liveContact, type PeopleConn, type PeopleTx } from "./peop
 export const DUPLICATE_SUGGESTION_LIMIT = 50;
 
 const SuggestionRowSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
   organisation_name: z.string().nullable(),
   shared_email: z.boolean(),

@@ -35,10 +35,10 @@ export const CanonicalJsonValueSchema: z.ZodType<CanonicalJsonValue> = z.lazy(()
   z.union([
     z.null(),
     z.boolean(),
-    z.number().finite(),
+    z.number(),
     z.string(),
     z.array(CanonicalJsonValueSchema),
-    z.record(CanonicalJsonValueSchema),
+    z.record(z.string(), CanonicalJsonValueSchema),
   ]),
 );
 
@@ -119,7 +119,7 @@ export const LayoutSnapshotPlacedObjectSchema = z.object({
   scale: z.number().positive().max(100),
   sortOrder: z.number().int().nonnegative(),
   groupId: z.string().trim().min(1).max(120).nullable(),
-  metadata: z.record(CanonicalJsonValueSchema).nullable(),
+  metadata: z.record(z.string(), CanonicalJsonValueSchema).nullable(),
 }).strict();
 export type LayoutSnapshotPlacedObject = z.infer<typeof LayoutSnapshotPlacedObjectSchema>;
 
@@ -166,8 +166,8 @@ export const LayoutSnapshotPolicyBundleReferenceSchema = z.object({
   policyBundleId: z.string().trim().min(1).max(160),
   policyBundleDigest: z.string().regex(SHA256_HEX).nullable(),
   policyBundleVersion: z.string().trim().min(1).max(80),
-  effectiveFrom: z.string().datetime().nullable(),
-  effectiveTo: z.string().datetime().nullable(),
+  effectiveFrom: z.iso.datetime().nullable(),
+  effectiveTo: z.iso.datetime().nullable(),
   jurisdiction: z.string().trim().min(1).max(160),
   venueRuleSet: z.string().trim().min(1).max(160),
   humanReviewRequiredFor: z.array(z.string().trim().min(1).max(160)),
@@ -183,7 +183,7 @@ export const LayoutSnapshotGeneratorProvenanceSchema = z.object({
   promptDigest: z.string().regex(SHA256_HEX).nullable(),
   sourceTemplateId: z.string().trim().min(1).max(160).nullable(),
   humanEditedAfterGeneration: z.boolean(),
-  generatedAt: z.string().datetime().nullable(),
+  generatedAt: z.iso.datetime().nullable(),
 }).strict();
 export type LayoutSnapshotGeneratorProvenance = z.infer<
   typeof LayoutSnapshotGeneratorProvenanceSchema
@@ -198,9 +198,9 @@ export const CanonicalLayoutSnapshotV0Schema = z.object({
   layoutStyle: LayoutStyleSchema,
   visibility: VisibilitySchema,
   guestCount: z.number().int().nonnegative(),
-  createdFromConfigurationUpdatedAt: z.string().datetime(),
+  createdFromConfigurationUpdatedAt: z.iso.datetime(),
   createdBy: UserIdSchema.nullable(),
-  snapshotCreatedAt: z.string().datetime(),
+  snapshotCreatedAt: z.iso.datetime(),
   sourceState: LayoutSnapshotSourceStateSchema,
   units: LayoutSnapshotUnitsSchema,
   tolerancePolicy: LayoutSnapshotTolerancePolicySchema,

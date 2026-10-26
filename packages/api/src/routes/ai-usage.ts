@@ -16,7 +16,7 @@ import { canReadAIUsage } from "../utils/query.js";
 // reads another venue's. Read-only: the ledger is written only by the calls.
 // ---------------------------------------------------------------------------
 
-const VenueParam = z.object({ venueId: z.string().uuid() }).strict();
+const VenueParam = z.object({ venueId: z.uuid() }).strict();
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
