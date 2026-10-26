@@ -178,7 +178,7 @@ test.describe("Public Editor", () => {
   });
 
   test("laser diagram tool draws persisted floor markup", async ({ page }) => {
-    await page.getByRole("button", { name: "Start floor drawing" }).click();
+    await page.getByRole("button", { name: "Draw on the floor" }).click();
     const panel = page.getByTestId("markup-panel");
     await expect(panel).toBeVisible({ timeout: 5_000 });
     await expect(panel).toContainText("Routes, staging notes, and camera marks.");

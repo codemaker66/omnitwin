@@ -87,6 +87,11 @@ function build(layout: Layout, room: { widthM: number; lengthM: number }): Pick<
     chairCount: 0,
     groupId: p.groupId,
     notes: p.notes,
+    // As the data layer passes them: the planner's table names and the footprints.
+    displayLabel: p.label,
+    widthM: p.asset.widthM,
+    depthM: p.asset.depthM,
+    scale: 1,
   }));
   const manifest = generateManifestV2(objects, { widthM: room.widthM, lengthM: room.lengthM }, accessoryMap());
   const assets = new Map<string, FloorPlanAsset>(layout.placements.map((p) => [p.asset.id, {
@@ -148,10 +153,12 @@ function weddingLayout(): Layout {
     }
   }
   layout.place("White Highchair", -3.7, 1.95, { notes: "Highchair for table 6" });
-  // Dance floor, 6 x 5 parquet panels, east of the rounds.
+  // Dance floor, 6 x 5 parquet panels, east of the rounds, in one group as
+  // the planner's dance-floor card lays them.
+  const floor = fixtureId();
   for (let i = 0; i < 6; i++) {
     for (let j = 0; j < 5; j++) {
-      layout.place("Parquet Dance Floor Panel", 4.6 + i * 0.91, -1.4 + j * 0.91);
+      layout.place("Parquet Dance Floor Panel", 4.6 + i * 0.91, -1.4 + j * 0.91, { groupId: floor });
     }
   }
   // Band stage against the east wall.

@@ -68,13 +68,13 @@ export const ONBOARDING_AUDIT_EVENT_TYPES = [
   "invitation_revoked",
 ] as const;
 
-export const OrganisationIdSchema = z.string().uuid();
-export const WorkspaceIdSchema = z.string().uuid();
-export const WorkspaceMembershipIdSchema = z.string().uuid();
-export const OnboardingProjectIdSchema = z.string().uuid();
-export const WorkspaceEntitlementIdSchema = z.string().uuid();
-export const OnboardingAuditEventIdSchema = z.string().uuid();
-export const UserInvitationIdSchema = z.string().uuid();
+export const OrganisationIdSchema = z.uuid();
+export const WorkspaceIdSchema = z.uuid();
+export const WorkspaceMembershipIdSchema = z.uuid();
+export const OnboardingProjectIdSchema = z.uuid();
+export const WorkspaceEntitlementIdSchema = z.uuid();
+export const OnboardingAuditEventIdSchema = z.uuid();
+export const UserInvitationIdSchema = z.uuid();
 
 export type OrganisationId = z.infer<typeof OrganisationIdSchema>;
 export type WorkspaceId = z.infer<typeof WorkspaceIdSchema>;
@@ -110,7 +110,7 @@ export type WorkspaceEntitlementStatus = z.infer<typeof WorkspaceEntitlementStat
 export type ProviderVerificationStatus = z.infer<typeof ProviderVerificationStatusSchema>;
 export type OnboardingAuditEventType = z.infer<typeof OnboardingAuditEventTypeSchema>;
 
-const IsoDateTimeSchema = z.string().datetime();
+const IsoDateTimeSchema = z.iso.datetime();
 const PlanKeySchema = z
   .string()
   .trim()
@@ -148,7 +148,7 @@ function addProviderVerificationIssues(
 
   if (verified && input.billingProvider === "none") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["billingProvider"],
       message: "Provider verification requires a real billing or invoice provider",
     });
@@ -156,7 +156,7 @@ function addProviderVerificationIssues(
 
   if (verified && !hasProviderEvidence(input)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["providerEvidenceRef"],
       message: "Provider verification requires a customer, entitlement, or evidence reference",
     });
@@ -164,7 +164,7 @@ function addProviderVerificationIssues(
 
   if (input.accessEnforced && !verified) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["accessEnforced"],
       message: "Access cannot be enforced until the provider state is verified",
     });
@@ -175,7 +175,7 @@ export const ManagedVenueOnboardingInputSchema = z.object({
   name: z.string().trim().min(1).max(200),
   slug: VenueSlugSchema,
   address: z.string().trim().min(1).max(500),
-  logoUrl: z.string().url().nullable().optional(),
+  logoUrl: z.url().nullable().optional(),
   brandColour: BrandColourSchema.optional(),
   timezone: TimezoneSchema.default(DEFAULT_VENUE_TIMEZONE),
 }).strict();
@@ -219,7 +219,7 @@ export const CreateManagedOnboardingSchema = z.object({
   operatorReviewNote: ReviewNoteSchema.nullable().optional(),
 }).strict().superRefine((input, ctx) => {
   if ((input.venue === undefined) === (input.existingVenueId === undefined)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["venue"], message: "Choose an existing venue or provide a new venue, but not both" });
+    ctx.addIssue({ code: "custom", path: ["venue"], message: "Choose an existing venue or provide a new venue, but not both" });
   }
   const seen = new Set<string>();
   const emails = [input.ownerInvite.email, ...input.staffInvites.map((invite) => invite.email)];
@@ -227,7 +227,7 @@ export const CreateManagedOnboardingSchema = z.object({
     const normalized = email.trim().toLowerCase();
     if (seen.has(normalized)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: index === 0 ? ["ownerInvite", "email"] : ["staffInvites", index - 1, "email"],
         message: "Each workspace invitation email must be unique",
       });
@@ -245,7 +245,7 @@ export const InviteWorkspaceMembersSchema = z.object({
     const normalized = invite.email.trim().toLowerCase();
     if (seen.has(normalized)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["staffInvites", index, "email"],
         message: "Each workspace invitation email must be unique",
       });
@@ -289,7 +289,7 @@ export const OnboardingVenueSchema = z.object({
   name: z.string().trim().min(1).max(200),
   slug: VenueSlugSchema,
   address: z.string().trim().min(1).max(500),
-  logoUrl: z.string().url().nullable(),
+  logoUrl: z.url().nullable(),
   brandColour: BrandColourSchema,
   timezone: TimezoneSchema,
   createdAt: IsoDateTimeSchema,
@@ -359,14 +359,14 @@ export const WorkspaceEntitlementSchema = z.object({
 }).strict().superRefine((input, ctx) => {
   if (input.accessEnforced && input.providerVerificationStatus !== "provider_verified") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["accessEnforced"],
       message: "Access cannot be enforced until the provider state is verified",
     });
   }
   if (input.accessEnforced && input.providerVerifiedAt === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["providerVerifiedAt"],
       message: "Access enforcement requires a provider verification timestamp",
     });

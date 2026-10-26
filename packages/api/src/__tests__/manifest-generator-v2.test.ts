@@ -230,9 +230,9 @@ describe("generateManifestV2 — totals", () => {
 });
 
 describe("generateManifestV2 — per-row positions", () => {
-  const UUID_A = "00000000-0000-0000-0000-00000000000a";
-  const UUID_B = "00000000-0000-0000-0000-00000000000b";
-  const UUID_C = "00000000-0000-0000-0000-00000000000c";
+  const UUID_A = "00000000-0000-4000-8000-00000000000a";
+  const UUID_B = "00000000-0000-4000-8000-00000000000b";
+  const UUID_C = "00000000-0000-4000-8000-00000000000c";
 
   it("emits one position per non-accessory placement, none per accessory", () => {
     const placed: readonly ManifestObjectV2[] = [
@@ -269,8 +269,8 @@ describe("generateManifestV2 — per-row positions", () => {
 });
 
 describe("generateManifestV2 — per-row notes", () => {
-  const UUID_A = "00000000-0000-0000-0000-00000000000a";
-  const UUID_B = "00000000-0000-0000-0000-00000000000b";
+  const UUID_A = "00000000-0000-4000-8000-00000000000a";
+  const UUID_B = "00000000-0000-4000-8000-00000000000b";
 
   it("row notes carry the planner's annotation", () => {
     const placed: readonly ManifestObjectV2[] = [
@@ -359,5 +359,122 @@ describe("generateManifestV2 — stable keys survive re-save", () => {
     const keysA = a.phases.flatMap((p) => p.zones.flatMap((z) => z.rows.map((r) => r.key))).sort();
     const keysB = b.phases.flatMap((p) => p.zones.flatMap((z) => z.rows.map((r) => r.key))).sort();
     expect(keysA).toEqual(keysB);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Release audit hallkeeper-ops-3 / planner-qol E-13: every chair the planner
+// placed is on the sheet once, at the right table, and the crew can read the
+// tables' numbers and the dance floor's size.
+// ---------------------------------------------------------------------------
+
+/** Chairs the sheet asks for: "with N chairs" rows and the chairs listed as themselves. */
+function chairsOnSheet(result: ReturnType<typeof generateManifestV2>): number {
+  let total = 0;
+  for (const phase of result.phases) for (const zone of phase.zones) for (const row of zone.rows) {
+    if (row.isAccessory) continue;
+    const seated = /^.* with (\d+) chairs?$/u.exec(row.name);
+    if (seated?.[1] !== undefined) total += row.qty * Number(seated[1]);
+    else if (row.category === "chair") total += row.qty;
+  }
+  return total;
+}
+
+describe("generateManifestV2 — chairs grouped with no table", () => {
+  const rowOfChairs = Array.from({ length: 12 }, (_, seat) => obj({
+    id: `c${String(seat).padStart(2, "0")}`, assetName: "Banquet Chair", assetCategory: "chair",
+    groupId: "ceremony-row", positionX: -3 + seat * 0.5, positionZ: 0,
+  }));
+
+  it("keeps every chair on the sheet, listed as chairs", () => {
+    const result = generateManifestV2(rowOfChairs, ROOM, ACC);
+    const chairRows = result.phases.flatMap((p) => p.zones.flatMap((z) => z.rows))
+      .filter((row) => row.name === "Banquet Chair" && !row.isAccessory);
+    expect(chairRows.reduce((sum, row) => sum + row.qty, 0)).toBe(12);
+    expect(chairsOnSheet(result)).toBe(12);
+  });
+});
+
+describe("generateManifestV2 — two tables in one group", () => {
+  const layout = [
+    obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: -2, positionZ: 0 }),
+    obj({ id: "t2", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 2, positionZ: 0 }),
+    ...Array.from({ length: 4 }, (_, seat) => obj({ id: `a${String(seat)}`, assetName: "Banquet Chair", assetCategory: "chair", groupId: "g1", positionX: -2.9, positionZ: -0.6 + seat * 0.4 })),
+    ...Array.from({ length: 6 }, (_, seat) => obj({ id: `b${String(seat)}`, assetName: "Banquet Chair", assetCategory: "chair", groupId: "g1", positionX: 2.9, positionZ: -1 + seat * 0.4 })),
+  ];
+
+  it("counts each table's own chairs, not the whole group's twice", () => {
+    const result = generateManifestV2(layout, ROOM, ACC);
+    const names = result.phases.flatMap((p) => p.zones.flatMap((z) => z.rows)).filter((row) => row.category === "table").map((row) => row.name).sort();
+    expect(names).toEqual(["6ft Round Table with 4 chairs", "6ft Round Table with 6 chairs"]);
+    expect(chairsOnSheet(result)).toBe(10);
+  });
+});
+
+describe("generateManifestV2 — the sheet's chairs equal the chairs placed", () => {
+  it("holds for 200 random layouts of tables, chairs and groups", () => {
+    // A small seeded generator, so a failure names a layout that can be replayed.
+    let seed = 20261026;
+    const next = (): number => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    for (let layoutIndex = 0; layoutIndex < 200; layoutIndex += 1) {
+      const objects: ManifestObjectV2[] = [];
+      let chairs = 0;
+      const groups = Math.floor(next() * 6);
+      for (let group = 0; group < groups; group += 1) {
+        const groupId = `g${String(group)}`;
+        const tables = Math.floor(next() * 3);
+        for (let table = 0; table < tables; table += 1) {
+          objects.push(obj({ id: `${groupId}t${String(table)}`, assetName: "6ft Round Table", assetCategory: "table", groupId, positionX: next() * 18 - 9, positionZ: next() * 8 - 4 }));
+        }
+        const seats = Math.floor(next() * 12);
+        for (let seat = 0; seat < seats; seat += 1) {
+          objects.push(obj({ id: `${groupId}c${String(seat)}`, assetName: "Banquet Chair", assetCategory: "chair", groupId, positionX: next() * 18 - 9, positionZ: next() * 8 - 4 }));
+          chairs += 1;
+        }
+      }
+      const loose = Math.floor(next() * 5);
+      for (let seat = 0; seat < loose; seat += 1) {
+        objects.push(obj({ id: `loose${String(seat)}`, assetName: "Banquet Chair", assetCategory: "chair", positionX: next() * 18 - 9, positionZ: next() * 8 - 4 }));
+        chairs += 1;
+      }
+      expect(chairsOnSheet(generateManifestV2(objects, ROOM, ACC)), `layout ${String(layoutIndex)}`).toBe(chairs);
+    }
+  });
+});
+
+describe("generateManifestV2 — a laid dance floor", () => {
+  const panel = (i: number, j: number, groupId: string | null = "floor"): ManifestObjectV2 => obj({
+    id: `p${String(i)}${String(j)}`, assetName: "Parquet Dance Floor Panel", assetCategory: "stage", groupId,
+    positionX: 2 + i * 0.91, positionZ: -1 + j * 0.91, widthM: 0.91, depthM: 0.91, scale: 1,
+  });
+  const grid = (cols: number, rows: number): ManifestObjectV2[] =>
+    Array.from({ length: cols }, (_, i) => Array.from({ length: rows }, (_, j) => panel(i, j))).flat();
+
+  it("is one row of its panels, with the floor's size as it is built", () => {
+    const rows = generateManifestV2(grid(6, 4), ROOM, ACC).phases.flatMap((p) => p.zones.flatMap((z) => z.rows));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: "Parquet Dance Floor Panel", qty: 24, labels: ["Laid as one floor, 6 × 4 panels, 5.46 × 3.64 m"] });
+    expect(rows[0]?.positions).toHaveLength(24);
+  });
+
+  it("says only that it is one floor when the panels do not make a rectangle", () => {
+    const rows = generateManifestV2(grid(6, 4).slice(1), ROOM, ACC).phases.flatMap((p) => p.zones.flatMap((z) => z.rows));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ qty: 23, labels: ["Laid as one floor"] });
+  });
+
+  it("leaves loose panels as they were", () => {
+    const rows = generateManifestV2([panel(0, 0, null), panel(9, 0, null)], ROOM, ACC).phases.flatMap((p) => p.zones.flatMap((z) => z.rows));
+    expect(rows.every((row) => row.labels === undefined)).toBe(true);
+  });
+});
+
+describe("generateManifestV2 — the planner's table numbers", () => {
+  it("carries each table's name on its row, and none on the linen", () => {
+    const tables = [1, 2, 3].map((n) => obj({ id: `t${String(n)}`, assetName: "6ft Round Table", assetCategory: "table", positionX: 0, positionZ: 0, displayLabel: `Table ${String(n)}` }));
+    const rows = generateManifestV2(tables, ROOM, ACC).phases.flatMap((p) => p.zones.flatMap((z) => z.rows));
+    const tableRow = rows.find((row) => row.category === "table");
+    expect(tableRow?.labels).toEqual(["Table 1", "Table 2", "Table 3"]);
+    expect(rows.filter((row) => row.isAccessory).every((row) => row.labels === undefined)).toBe(true);
   });
 });

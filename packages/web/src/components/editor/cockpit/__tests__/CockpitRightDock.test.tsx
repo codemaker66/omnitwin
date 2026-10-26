@@ -19,6 +19,18 @@ vi.mock("../PowerLensPanel.js", () => ({ PowerLensPanel: () => <div data-testid=
 vi.mock("../RiggingLensPanel.js", () => ({ RiggingLensPanel: () => <div data-testid="rigging-panel-mock" /> }));
 vi.mock("../AVLensPanel.js", () => ({ AVLensPanel: () => <div data-testid="av-panel-mock" /> }));
 vi.mock("../CockpitTruthRail.js", () => ({ CockpitTruthRail: () => <div data-testid="truth-rail-mock" /> }));
+// Every catalogue piece is drawn crafted (T-675), so none reaches the generated
+// stand-in path any more. Two pieces are treated here as not crafted, so the
+// routing a stand-in would take (the inspection dock in Design, closed on
+// leaving it) stays under test; the rest keep their crafted truth.
+const { STAND_INS } = vi.hoisted(() => ({ STAND_INS: new Set(["lectern", "platform-narrow"]) as ReadonlySet<string> }));
+vi.mock("../../../../lib/crafted-furniture.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../../lib/crafted-furniture.js")>();
+  return {
+    ...actual,
+    isCraftedFurnitureSlug: (slug: string): boolean => !STAND_INS.has(slug) && actual.isCraftedFurnitureSlug(slug),
+  };
+});
 
 const { CockpitRightDock, panelForMode } = await import("../CockpitRightDock.js");
 const { useCockpitStore } = await import("../../../../stores/cockpit-store.js");
@@ -98,7 +110,7 @@ describe("CockpitRightDock", () => {
   it.each([
     { slug: "bar-counter", name: "Bar" },
     { slug: "platform", name: "Platform" },
-  ])("keeps the ordinary inspector for imported $slug without generated-part controls", ({ slug, name }) => {
+  ])("keeps the ordinary inspector for crafted $slug without generated-part controls", ({ slug, name }) => {
     const placed = createPlacedItem(catalogueId(slug), 0, 0);
     usePlacementStore.setState({ placedItems: [placed] });
     useSelectionStore.getState().select(placed.id);
