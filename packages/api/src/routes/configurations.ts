@@ -230,13 +230,12 @@ export async function configurationRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    // Only what the access check and metadata merge read; the response is the
-    // UPDATE's own RETURNING row. Skipping thumbnail_url keeps a metadata save
-    // from reading the stored data URL twice.
+    // Only what the access check reads; the response is the UPDATE's own
+    // RETURNING row. Skipping thumbnail_url keeps a metadata save from reading
+    // the stored data URL twice.
     const [config] = await db.select({
       userId: configurations.userId,
       venueId: configurations.venueId,
-      metadata: configurations.metadata,
     })
       .from(configurations)
       .where(and(eq(configurations.id, params.data.id), isNull(configurations.deletedAt)))
@@ -264,13 +263,14 @@ export async function configurationRoutes(
       // Preserve the .passthrough() contract declared on ConfigurationMetadataSchema:
       // unknown sibling keys (e.g. a future seatingChart or dietary flags) must
       // survive a partial PATCH that only updates `instructions`. Null clears the
-      // column outright; any object merges onto the existing blob.
-      if (parsed.data.metadata === null) {
-        updateData["metadata"] = null;
-      } else {
-        const existing = (config.metadata ?? {}) as Record<string, unknown>;
-        updateData["metadata"] = { ...existing, ...parsed.data.metadata };
-      }
+      // column outright; any object merges onto the stored blob, key by key.
+      // The merge happens in the UPDATE itself, on the row as it stands: two
+      // saves of different keys at once (Event details' instructions, the
+      // planner's gangway review and event kind) once read the same old blob
+      // and the later write dropped the other's key.
+      updateData["metadata"] = parsed.data.metadata === null
+        ? null
+        : sql`coalesce(${configurations.metadata}, '{}'::jsonb) || ${JSON.stringify(parsed.data.metadata)}::jsonb`;
     }
 
     const [updated] = await db.update(configurations)
