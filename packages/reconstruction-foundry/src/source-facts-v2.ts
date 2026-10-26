@@ -57,7 +57,7 @@ const TYPE_CODE_HEX = /^[a-f0-9]{8}$/u;
 
 const SourceIdentityBaseSchema = z.object({
   path: FoundryRelativePathSchema,
-  sizeBytes: z.number().int().safe().nonnegative(),
+  sizeBytes: z.number().int().int().nonnegative(),
   sha256: z.string().regex(SHA256_HEX),
 }).strict();
 
@@ -88,7 +88,7 @@ const InspectionSchema = z.object({
   ]),
 }).strict().superRefine((value, ctx) => {
   if ((value.state === "established") !== (value.category === "established")) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["category"], message: "inspection state and category must agree" });
+    ctx.addIssue({ code: "custom", path: ["category"], message: "inspection state and category must agree" });
   }
 });
 
@@ -125,13 +125,13 @@ const ExtensionRecordSchema = z.object({
       ? "adobe_coordinate_system"
       : "unknown";
   if (record.recognizedType !== expected) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recognizedType"], message: "SPZ extension recognition contradicts its type code" });
+    ctx.addIssue({ code: "custom", path: ["recognizedType"], message: "SPZ extension recognition contradicts its type code" });
   }
   if (
     (record.recognizedType === "adobe_safe_orbit_camera" && record.payloadBytes !== 12) ||
     (record.recognizedType === "adobe_coordinate_system" && record.payloadBytes !== 4)
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["payloadBytes"], message: "recognized SPZ extension has the wrong payload length" });
+    ctx.addIssue({ code: "custom", path: ["payloadBytes"], message: "recognized SPZ extension has the wrong payload length" });
   }
 });
 
@@ -155,19 +155,19 @@ const AttributeLayoutSchema = z.object({
 
 const V4StreamSchema = z.object({
   role: z.enum(["positions", "alphas", "colors_dc", "scales", "rotations", "spherical_harmonics_non_dc"]),
-  compressedSizeBytes: z.number().int().safe().positive(),
-  uncompressedSizeBytes: z.number().int().safe().positive(),
+  compressedSizeBytes: z.number().int().int().positive(),
+  uncompressedSizeBytes: z.number().int().int().positive(),
   zstdFrameMagicVerified: z.literal(true),
   completeZstdDecompressionVerified: z.literal(true),
 }).strict();
 
 const LegacyContainerSchema = z.object({
   kind: z.literal("legacy_gzip"),
-  sourceSizeBytes: z.number().int().safe().positive().max(FOUNDRY_SPZ_SOURCE_MAX_BYTES),
+  sourceSizeBytes: z.number().int().int().positive().max(FOUNDRY_SPZ_SOURCE_MAX_BYTES),
   headerBytes: z.literal(FOUNDRY_SPZ_LEGACY_HEADER_BYTES),
-  corePayloadBytes: z.number().int().safe().positive().max(FOUNDRY_SPZ_DECOMPRESSED_MAX_BYTES),
+  corePayloadBytes: z.number().int().int().positive().max(FOUNDRY_SPZ_DECOMPRESSED_MAX_BYTES),
   extensionBytes: z.number().int().min(0).max(FOUNDRY_SPZ_EXTENSION_MAX_BYTES),
-  decompressedSizeBytes: z.number().int().safe().positive().max(FOUNDRY_SPZ_DECOMPRESSED_MAX_BYTES),
+  decompressedSizeBytes: z.number().int().int().positive().max(FOUNDRY_SPZ_DECOMPRESSED_MAX_BYTES),
   gzipHeaderBytes: z.number().int().min(10).max(FOUNDRY_SPZ_GZIP_HEADER_MAX_BYTES),
   singleGzipMemberVerified: z.literal(true),
   gzipCrc32Verified: z.literal(true),
@@ -177,13 +177,13 @@ const LegacyContainerSchema = z.object({
 
 const V4ContainerSchema = z.object({
   kind: z.literal("v4_zstd_multistream"),
-  sourceSizeBytes: z.number().int().safe().positive().max(FOUNDRY_SPZ_SOURCE_MAX_BYTES),
+  sourceSizeBytes: z.number().int().int().positive().max(FOUNDRY_SPZ_SOURCE_MAX_BYTES),
   headerBytes: z.literal(FOUNDRY_SPZ_V4_HEADER_BYTES),
-  tocByteOffset: z.number().int().safe().min(FOUNDRY_SPZ_V4_HEADER_BYTES),
+  tocByteOffset: z.number().int().int().min(FOUNDRY_SPZ_V4_HEADER_BYTES),
   tocBytes: z.union([z.literal(80), z.literal(96)]),
   streamCount: z.union([z.literal(5), z.literal(6)]),
-  totalCompressedStreamBytes: z.number().int().safe().positive(),
-  totalUncompressedStreamBytes: z.number().int().safe().positive().max(FOUNDRY_SPZ_DECOMPRESSED_MAX_BYTES),
+  totalCompressedStreamBytes: z.number().int().int().positive(),
+  totalUncompressedStreamBytes: z.number().int().int().positive().max(FOUNDRY_SPZ_DECOMPRESSED_MAX_BYTES),
   compressedStreamsEndAtFileEnd: z.literal(true),
   streams: z.array(V4StreamSchema).min(5).max(6),
 }).strict();
@@ -219,7 +219,7 @@ export const FoundrySpzFactsV2Schema = z.object({
     facts.sphericalHarmonics.nonDcCoefficientCount !== expectedCoefficients ||
     facts.sphericalHarmonics.bytesPerGaussian !== expectedShBytes
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sphericalHarmonics"], message: "SPZ SH degree and byte counts disagree" });
+    ctx.addIssue({ code: "custom", path: ["sphericalHarmonics"], message: "SPZ SH degree and byte counts disagree" });
   }
   const expectedPositionBytes = facts.version === 1 ? 6 : 9;
   const expectedRotationBytes = facts.version >= 3 ? 4 : 3;
@@ -233,14 +233,14 @@ export const FoundrySpzFactsV2Schema = z.object({
     layout.sphericalHarmonicsBytesPerGaussian !== expectedShBytes ||
     layout.totalBytesPerGaussian !== expectedTotal
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["attributeLayout"], message: "SPZ version and attribute layout disagree" });
+    ctx.addIssue({ code: "custom", path: ["attributeLayout"], message: "SPZ version and attribute layout disagree" });
   }
   const recordBytes = facts.extensions.records.reduce((total, record) => total + 8 + record.payloadBytes, 0);
   if (
     facts.extensions.totalBytes !== recordBytes ||
     facts.extensions.declared !== (facts.extensions.totalBytes > 0)
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["extensions"], message: "SPZ extension declarations and record bytes disagree" });
+    ctx.addIssue({ code: "custom", path: ["extensions"], message: "SPZ extension declarations and record bytes disagree" });
   }
   if (facts.container.kind === "legacy_gzip") {
     const expectedDecompressed = FOUNDRY_SPZ_LEGACY_HEADER_BYTES +
@@ -252,7 +252,7 @@ export const FoundrySpzFactsV2Schema = z.object({
       facts.container.extensionBytes !== facts.extensions.totalBytes ||
       facts.container.decompressedSizeBytes !== expectedDecompressed
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["container"], message: "legacy SPZ container facts are inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["container"], message: "legacy SPZ container facts are inconsistent" });
     }
     return;
   }
@@ -275,7 +275,7 @@ export const FoundrySpzFactsV2Schema = z.object({
     facts.container.totalUncompressedStreamBytes !== uncompressedTotal ||
     facts.container.sourceSizeBytes !== facts.container.tocByteOffset + facts.container.tocBytes + compressedTotal
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["container"], message: "SPZ v4 stream table is inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["container"], message: "SPZ v4 stream table is inconsistent" });
   }
 });
 export type FoundrySpzFactsV2 = z.infer<typeof FoundrySpzFactsV2Schema>;
@@ -288,10 +288,10 @@ const SpzAssetSchema = z.object({
   unknowns: z.array(UnknownFactSchema),
 }).strict().superRefine((asset, ctx) => {
   if ((asset.inspection.state === "established") !== (asset.facts !== null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facts"], message: "SPZ facts must match inspection state" });
+    ctx.addIssue({ code: "custom", path: ["facts"], message: "SPZ facts must match inspection state" });
   }
   if (JSON.stringify(asset.unknowns) !== JSON.stringify(FOUNDRY_SPZ_UNKNOWNS)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["unknowns"], message: "SPZ unknowns must match V2 coverage" });
+    ctx.addIssue({ code: "custom", path: ["unknowns"], message: "SPZ unknowns must match V2 coverage" });
   }
   if (asset.inspection.state === "established") {
     if (
@@ -300,7 +300,7 @@ const SpzAssetSchema = z.object({
       asset.inspection.coverage !== "complete_stream" ||
       asset.facts?.container.sourceSizeBytes !== asset.source.sizeBytes
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection"], message: "established SPZ inspection fields are inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["inspection"], message: "established SPZ inspection fields are inconsistent" });
     }
     return;
   }
@@ -313,7 +313,7 @@ const SpzAssetSchema = z.object({
     category === undefined || category === "cancelled" ||
     asset.inspection.category !== category || asset.inspection.coverage !== "none"
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection"], message: "failed SPZ inspection fields are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["inspection"], message: "failed SPZ inspection fields are inconsistent" });
   }
 });
 
@@ -425,7 +425,7 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
   const paths = value.assets.map((asset) => asset.source.path);
   const sorted = [...paths].sort(compareText);
   if (new Set(paths).size !== paths.length || paths.some((path, index) => path !== sorted[index])) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["assets"], message: "V2 asset paths must be unique and sorted" });
+    ctx.addIssue({ code: "custom", path: ["assets"], message: "V2 asset paths must be unique and sorted" });
   }
   const expectedSummary = value.state === "available"
     ? {
@@ -445,13 +445,13 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
         blockedSourceCount: value.affectedSources.length,
       };
   if (expectedSummary.untargetedFileCount < 0 || JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["summary"], message: "V2 summary does not match artifact contents" });
+    ctx.addIssue({ code: "custom", path: ["summary"], message: "V2 summary does not match artifact contents" });
   }
   if (value.state === "unavailable") {
     const blockedPaths = value.affectedSources.map((source) => source.path);
     const sortedBlocked = [...blockedPaths].sort(compareText);
     if (new Set(blockedPaths).size !== blockedPaths.length || blockedPaths.some((path, index) => path !== sortedBlocked[index])) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["affectedSources"], message: "V2 affected sources must be unique and sorted" });
+      ctx.addIssue({ code: "custom", path: ["affectedSources"], message: "V2 affected sources must be unique and sorted" });
     }
   }
   const usesPye57 = value.assets.some((asset) =>
@@ -459,10 +459,10 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
   );
   const expectedProbe = usesPye57 ? "local_pye57_read_only" : "none";
   if (value.policy.metadataProbe !== expectedProbe || value.policy.externalProcess !== expectedProbe) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["policy", "metadataProbe"], message: "V2 metadata probe policy contradicts attached E57 evidence" });
+    ctx.addIssue({ code: "custom", path: ["policy", "metadataProbe"], message: "V2 metadata probe policy contradicts attached E57 evidence" });
   }
   if (value.factsSha256 !== artifactDigest(value)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["factsSha256"], message: "V2 facts digest does not match canonical payload" });
+    ctx.addIssue({ code: "custom", path: ["factsSha256"], message: "V2 facts digest does not match canonical payload" });
   }
 }
 

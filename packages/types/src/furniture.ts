@@ -60,7 +60,7 @@ const RootRelativeAssetPathSchema = z.string().refine((value) => {
   }
 }, "Expected a safe root-relative asset path");
 
-const AssetReferenceSchema = z.union([z.string().url(), RootRelativeAssetPathSchema]);
+const AssetReferenceSchema = z.union([z.url(), RootRelativeAssetPathSchema]);
 
 // ---------------------------------------------------------------------------
 // Asset Definition — a global catalogue entry (matches DB: asset_definitions)
@@ -81,7 +81,7 @@ export const AssetDefinitionSchema = z.object({
   heightM: z.string(),
   seatCount: z.number().int().positive().nullable(),
   collisionType: z.string().max(20),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 });
 
 export type AssetDefinition = z.infer<typeof AssetDefinitionSchema>;

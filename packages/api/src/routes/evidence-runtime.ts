@@ -19,9 +19,9 @@ import {
   listEvidenceItemsForConfig,
 } from "../services/evidence-runtime.js";
 
-const ConfigParam = z.object({ configId: z.string().uuid() });
-const IdParam = z.object({ id: z.string().uuid() });
-const EvidenceItemsQuery = z.object({ configId: z.string().uuid() });
+const ConfigParam = z.object({ configId: z.uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const EvidenceItemsQuery = z.object({ configId: z.uuid() });
 const TruthModeSummaryQuery = z.object({
   targetType: EvidenceTargetTypeSchema,
   targetId: z.string().trim().min(1).max(160),

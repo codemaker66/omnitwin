@@ -27,8 +27,8 @@ import {
   safeEmbedConfig,
 } from "../services/integration-layer.js";
 
-const IdParam = z.object({ id: z.string().uuid() });
-const VenueQuery = z.object({ venueId: z.string().uuid().optional() });
+const IdParam = z.object({ id: z.uuid() });
+const VenueQuery = z.object({ venueId: z.uuid().optional() });
 
 
 type IntegrationConnectionUpdate = Partial<Pick<

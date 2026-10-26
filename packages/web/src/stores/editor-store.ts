@@ -766,8 +766,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // Keep its existing bounded recovery entry, but do not open it or return
       // a successful navigation result to the stale caller.
       try {
-        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string }[];
-        stored.push({ configId: config.id, createdAt: new Date().toISOString() });
+        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string; claimSecret?: string }[];
+        // The claim secret stays with this browser's own draft: it alone can
+        // claim the plan into an account (lib/planner-claim.ts).
+        stored.push({ configId: config.id, createdAt: new Date().toISOString(), ...(config.claimSecret === undefined ? {} : { claimSecret: config.claimSecret }) });
         const capped = stored.length > MAX_TRACKED_CONFIGS
           ? stored.slice(stored.length - MAX_TRACKED_CONFIGS)
           : stored;

@@ -20,7 +20,7 @@ const PAGE_H = 841.89;
 const MARGIN = 40;
 
 const BASE_SHEET: HallkeeperSheetV2 = {
-  config: { id: "00000000-0000-0000-0000-000000000001", name: "Anderson Wedding Reception", guestCount: 120, layoutStyle: "dinner-rounds" },
+  config: { id: "00000000-0000-4000-8000-000000000001", name: "Anderson Wedding Reception", guestCount: 120, layoutStyle: "dinner-rounds" },
   venue: { name: "Trades Hall Glasgow", address: "85 Glassford St, Glasgow G1 1UH", logoUrl: null, timezone: "Europe/London" },
   space: { name: "Grand Hall", widthM: 21, lengthM: 10.5, heightM: 7 },
   timing: { eventStart: "2026-06-15T18:00:00.000Z", setupBy: "2026-06-15T16:30:00.000Z", bufferMinutes: 90 },

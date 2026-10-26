@@ -73,6 +73,26 @@ describe("Clerk webhook runtime contract", () => {
     }).kind).toBe("invalid");
   });
 
+  it("stops at the list cap instead of reporting every bad entry", async () => {
+    const { parseClerkWebhookPayload } = await import("../routes/webhooks.js");
+    const parsed = parseClerkWebhookPayload({
+      type: "user.updated",
+      data: {
+        id: "clerk_user_123",
+        email_addresses: Array.from({ length: 50_000 }, () => ({})),
+        primary_email_address_id: null,
+        first_name: null,
+        last_name: null,
+        phone_numbers: [],
+        public_metadata: {},
+      },
+    });
+    expect(parsed.kind).toBe("invalid");
+    if (parsed.kind !== "invalid") return;
+    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues[0]).toMatchObject({ code: "too_big", path: ["data", "email_addresses"] });
+  });
+
   it("accepts Clerk's minimal deleted-user payload", async () => {
     const { parseClerkWebhookPayload } = await import("../routes/webhooks.js");
     expect(parseClerkWebhookPayload({

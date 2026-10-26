@@ -14,9 +14,9 @@ import { contactProfile, searchClients } from "../services/client-search.js";
 // ---------------------------------------------------------------------------
 
 const SearchQuery = z.object({ q: z.string().trim().min(2).max(200) });
-const UserIdParam = z.object({ userId: z.string().uuid() });
-const LeadIdParam = z.object({ leadId: z.string().uuid() });
-const ContactIdParam = z.object({ contactId: z.string().uuid() });
+const UserIdParam = z.object({ userId: z.uuid() });
+const LeadIdParam = z.object({ leadId: z.uuid() });
+const ContactIdParam = z.object({ contactId: z.uuid() });
 
 /** The enquiries that are still live: new, in review, or approved. */
 const LIVE_ENQUIRY_STATES = ["submitted", "under_review", "approved"] as const;

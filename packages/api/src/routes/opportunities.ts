@@ -36,8 +36,8 @@ import type { PeopleConn, PeopleTx } from "../services/people-records.js";
 import { mergedPerson } from "./people.js";
 import { lostToRefusal, recordLoss } from "../services/competitor-watch-data.js";
 
-const IdParam = z.object({ id: z.string().uuid() });
-const TaskParam = z.object({ id: z.string().uuid(), taskId: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const TaskParam = z.object({ id: z.uuid(), taskId: z.uuid() });
 const ListQuery = z.object({
   stage: z.enum(OPPORTUNITY_STAGES).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
