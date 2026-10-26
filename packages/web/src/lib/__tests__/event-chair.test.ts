@@ -157,9 +157,11 @@ describe("a table keeps its own chairs", () => {
     const own = (pieces: readonly PlacedItem[]): readonly PlacedItem[] => pieces.filter((piece) => piece.groupId === table.groupId && piece.id !== table.id);
     const before = own(placed);
     atEvent("wedding");
-    // One fewer, and one more: the seat added is a Turini too.
-    for (const count of [before.length - 1, before.length + 1]) {
-      const after = own(rearrangeTableGroup(table.id, count, placed));
+    // One fewer, and one more: the seat added is a Turini too. A 6 ft trestle seats three along
+    // its back (0.6 m a seat), so the step up starts from the two the step down leaves.
+    const fewer = rearrangeTableGroup(table.id, before.length - 1, placed);
+    const more = rearrangeTableGroup(table.id, before.length, fewer);
+    for (const [after, count] of [[own(fewer), before.length - 1], [own(more), before.length]] as const) {
       expect(after).toHaveLength(count);
       expect(new Set(chairSlugs(after))).toEqual(new Set(["burgess-turini-18-3"]));
       // Along the back, set off by the Turini's depth, not the Chiavari's.
