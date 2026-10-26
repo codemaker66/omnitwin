@@ -135,7 +135,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     return { ...f, userId: owner, headers: { authorization: `Bearer ${JSON.stringify(token)}` } };
   }
 
-  it.each(["staff", "manager", "admin"])("leaves the venue's side of a review to the venue when another venue's %s owns the layout", async role => {
+  it.each(["staff", "manager", "admin", "hallkeeper", "sales"])("leaves the venue's side of a review to the venue when another venue's %s owns the layout", async role => {
     const venue = await fixture();
     const owner = await ownedElsewhere(venue, role);
     // The owner submits as its planner; taking it into review, deciding and
@@ -154,6 +154,17 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(saved.history.map(row => [row.toStatus, row.changedBy])).toEqual([
       ["submitted", owner.userId], ["under_review", venue.userId], ["approved", venue.userId],
     ]);
+  });
+
+  it("shows the venue's manager the plan submitted for the review they decide", async () => {
+    const f = await fixture();
+    expect((await post(f, "submit")).statusCode).toBe(200);
+    const manager = randomUUID();
+    const token = { id: manager, name: "Test manager", email: `${manager}@demo.invalid`, role: "manager", venueId: f.venueId };
+    const latest = await server.inject({ method: "GET", url: `/configurations/${f.configId}/snapshot/latest`,
+      headers: { authorization: `Bearer ${JSON.stringify(token)}` } });
+    expect(latest.statusCode).toBe(200);
+    expect(latest.json<{ data: { version: number; approvedAt: string | null } }>().data).toMatchObject({ version: 1, approvedAt: null });
   });
 
   it("holds a submitted layout against another venue's admin who owns it, and leaves this venue's admin its fix", async () => {

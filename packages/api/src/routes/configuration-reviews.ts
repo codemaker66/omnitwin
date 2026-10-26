@@ -71,13 +71,13 @@ import {
 // layout's venue (reviewRole).
 // ---------------------------------------------------------------------------
 
-/** The role a user takes in a layout's review. canAccessResource admits a
- *  layout's owner before it looks at the venue, and anyone may plan in a
- *  venue's room, so a venue role counts at its own venue only: elsewhere the
- *  owner is the layout's planner, who submits and withdraws it, and the venue
- *  reviews it. */
+/** The role a user takes in a layout's review: their own on the venue's
+ *  floor, and otherwise its planner's. canAccessResource admits only the
+ *  venue's floor and the layout's owner, and anyone may plan in a venue's room
+ *  (another venue's team, sales, a caterer), so whoever is not on this venue's
+ *  floor is the owner: they submit and withdraw it, and the venue reviews it. */
 function reviewRole(user: JwtUser, venueId: string): string {
-  return isVenueReviewRole(user.role) && !canManageVenue(user, venueId) ? "client" : user.role;
+  return canManageVenue(user, venueId) ? user.role : "client";
 }
 
 const ConfigIdParam = z.object({ configId: z.uuid() });
@@ -1182,7 +1182,6 @@ export async function configurationReviewRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const role = request.user.role;
     const isOwner = config.userId === request.user.id;
 
     // Drafts are the planner's private workspace. A prior submit-then-
@@ -1198,7 +1197,9 @@ export async function configurationReviewRoutes(
       return reply.status(404).send({ error: "No snapshot available", code: "SNAPSHOT_NOT_FOUND" });
     }
 
-    const snapshot = role === "staff" || role === "admin" || isPlatformAdmin(request.user)
+    // The latest, submitted or not, is for whoever reviews it at this venue
+    // (a manager decides reviews too); everyone else sees what was approved.
+    const snapshot = isVenueReviewRole(reviewRole(request.user, config.venueId)) || isPlatformAdmin(request.user)
       ? await getLatestSnapshot(db, config.id)
       : await getLatestApprovedSnapshot(db, config.id);
 
