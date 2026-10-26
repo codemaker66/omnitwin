@@ -51,11 +51,14 @@ describe("the graphics reset drill", () => {
   it("gives a WebGPU view one uncaptured error, and takes nothing away, for :error", () => {
     vi.useFakeTimers();
     try {
-      const device = { destroy: vi.fn(), createBuffer: vi.fn() };
+      const device = { destroy: vi.fn(), createBuffer: vi.fn(), queue: { submit: vi.fn() } };
       startGraphicsResetDrill({}, { afterMs: 2_000, handBack: true, fault: "error" }, { device, canvas: null });
       vi.advanceTimersByTime(2_000);
-      // A buffer with no usage fails validation outside any error scope.
+      // A buffer with no usage fails validation outside any error scope; an idle
+      // device delivers its errors only once something is submitted.
       expect(device.createBuffer).toHaveBeenCalledExactlyOnceWith({ size: 4, usage: 0 });
+      expect(device.queue.submit).toHaveBeenCalledExactlyOnceWith([]);
+      expect(device.createBuffer.mock.invocationCallOrder[0]).toBeLessThan(device.queue.submit.mock.invocationCallOrder[0] ?? 0);
       expect(device.destroy).not.toHaveBeenCalled();
 
       const extension = { loseContext: vi.fn(), restoreContext: vi.fn() };

@@ -337,6 +337,7 @@ describe("native complete draw lifecycle", () => {
     const state = setup(), source = state.add(2);
     await vi.advanceTimersByTimeAsync(50); state.render(); await vi.advanceTimersByTimeAsync(16);
     expect(source.rendered).toHaveBeenCalledOnce();
+    expect(state.runtime.showsSplats(state.renderer)).toBe(true);
     const built = evidence.created, released = evidence.disposed;
     const replacement = new WebGPURenderer({ forceWebGL: true });
     const compile = vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
@@ -348,10 +349,15 @@ describe("native complete draw lifecycle", () => {
     state.detach();
     expect(() => state.runtime.attach(replacement, state.camera, state.invalidate)).not.toThrow();
     expect(evidence.disposed).toBeGreaterThan(released);
+    // The capture is not back until the new device draws its own snapshot.
+    expect(state.runtime.showsSplats(replacement)).toBe(false);
+    expect(state.runtime.showsSplats(state.renderer)).toBe(false);
     await vi.advanceTimersByTimeAsync(50);
     // From the source it still holds: nothing is decoded again.
     expect(evidence.created).toBeGreaterThan(built);
     expect(compile).toHaveBeenCalled();
+    expect(state.runtime.showsSplats(replacement)).toBe(true);
+    expect(state.runtime.showsSplats(state.renderer)).toBe(false);
   });
 
   it("still refuses a second renderer while the first one is attached", () => {

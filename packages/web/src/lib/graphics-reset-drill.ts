@@ -34,7 +34,11 @@ export function readGraphicsResetDrill(search: string): GraphicsResetDrill | nul
 interface DrillLoseContext { loseContext(): void; restoreContext(): void }
 interface DrillTarget {
   /** The view's WebGPU device; null on WebGL. */
-  readonly device: { destroy(): void; createBuffer?: (descriptor: { size: number; usage: number }) => unknown } | null;
+  readonly device: {
+    destroy(): void;
+    createBuffer?: (descriptor: { size: number; usage: number }) => unknown;
+    readonly queue?: { submit(commandBuffers: readonly unknown[]): void };
+  } | null;
   readonly canvas: { getContext(kind: "webgl2"): { getExtension(name: "WEBGL_lose_context"): DrillLoseContext | null } | null } | null;
 }
 
@@ -46,9 +50,12 @@ export function startGraphicsResetDrill(owner: object, drill: GraphicsResetDrill
   const timer = setTimeout(() => {
     drilled.add(owner);
     if (drill.fault === "error") {
-      // A buffer with no usage fails validation outside any error scope. WebGL
-      // reports no uncaptured errors to a page, so there is nothing to drill there.
+      // A buffer with no usage fails validation outside any error scope. An idle
+      // device delivers its errors only once something is submitted (measured in
+      // Chromium, 26 October), and an empty submit is enough. WebGL reports no
+      // uncaptured errors to a page, so there is nothing to drill there.
       target.device?.createBuffer?.({ size: 4, usage: 0 });
+      target.device?.queue?.submit([]);
       return;
     }
     if (target.device !== null) {

@@ -7,6 +7,7 @@ import { useFrame } from "@react-three/fiber";
 import type { NativeGpuWorkResult } from "../../../lib/native-gpu-completion.js";
 import type { GpuProfileToken } from "../../../lib/perf-runtime.js";
 import type { RenderedFrameSample } from "../../../lib/perf-profiler.js";
+import type { NativeScenePerfStats } from "../../../lib/native-splat-scene.js";
 
 interface FiberState {
   gl: object;
@@ -28,15 +29,18 @@ const profiling = vi.hoisted(() => ({
   enabled: vi.fn(() => false), begin: vi.fn((): GpuProfileToken | null => null), end: vi.fn(),
   record: vi.fn<(sample: RenderedFrameSample, renderer: object) => void>(),
   release: vi.fn(), register: vi.fn(),
-  sceneStats: vi.fn(() => ({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 })),
+  sceneStats: vi.fn((): NativeScenePerfStats | null => ({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 })),
   sampleDrawn: vi.fn(), drawn: vi.fn(() => Promise.resolve(45)),
+  showsSplats: vi.fn((_scene: object, _renderer: object) => true),
 }));
 vi.mock("../../../lib/perf-runtime.js", () => ({
   shouldProfileFrames: profiling.enabled, beginGpuProfile: profiling.begin,
   endGpuProfile: profiling.end, recordRenderedFrame: profiling.record,
   registerProfilerRenderer: profiling.register, sampleDrawnSplats: profiling.sampleDrawn,
 }));
-vi.mock("../../../lib/native-splat-scene.js", () => ({ nativeScenePerfStats: profiling.sceneStats, nativeSceneDrawnSplats: profiling.drawn }));
+vi.mock("../../../lib/native-splat-scene.js", () => ({
+  nativeScenePerfStats: profiling.sceneStats, nativeSceneDrawnSplats: profiling.drawn, nativeSceneShowsSplats: profiling.showsSplats,
+}));
 
 const gpuCompletion = vi.hoisted(() => {
   class Ticket {
@@ -188,7 +192,7 @@ vi.mock("@react-three/fiber", async () => {
   };
 });
 
-import { NativeCanvas } from "../NativeCanvas.js";
+import { NATIVE_CAPTURE_RETURN_WAIT_MS, NativeCanvas } from "../NativeCanvas.js";
 import { PlannerWorkContext } from "../planner-work.js";
 import { isNativeCanvasRender } from "../../../lib/native-renderer.js";
 import { NATIVE_GPU_ERROR_GRACE_MS } from "../../../lib/native-gpu-error-watch.js";
@@ -208,6 +212,7 @@ beforeEach(() => {
   profiling.record.mockReset();
   profiling.release.mockReset();
   profiling.register.mockReset().mockReturnValue(profiling.release);
+  profiling.showsSplats.mockReset().mockReturnValue(true);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -911,6 +916,45 @@ describe("NativeCanvas", () => {
       }
     });
 
+    it("keeps the cover over a recovered capture until the new device draws it, and no longer than its bound", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        render(<NativeCanvas frameloop="demand"><span>Room geometry</span></NativeCanvas>);
+        const lost = await start(0);
+        // The capture was drawn when the device went (the profiling stats report its splats).
+        profiling.showsSplats.mockReturnValue(false);
+        act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+        await flush();
+        const fresh = await start(1);
+        await flush();
+        automaticFrame();
+        expect(fresh.rawRender).toHaveBeenCalledOnce();
+        // The room has drawn, but its capture is still being rebuilt for the new device.
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        expect(profiling.showsSplats).toHaveBeenLastCalledWith(expect.any(Scene), fresh);
+        profiling.showsSplats.mockReturnValue(true);
+        automaticFrame();
+        expect(screen.queryByRole("status")).toBeNull();
+
+        // A capture that cannot come back must not keep the room covered.
+        profiling.showsSplats.mockReturnValue(false);
+        act(() => { fresh.onDeviceLost({ api: "WebGPU", message: "Device lost again" }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+        await flush();
+        await start(2);
+        await flush();
+        automaticFrame();
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        fiber.invalidate.mockClear();
+        await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_CAPTURE_RETURN_WAIT_MS); });
+        expect(fiber.invalidate).toHaveBeenCalled();
+        automaticFrame();
+        expect(screen.queryByRole("status")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("covers a dark hall in its own ground while it restores, not a cream flash", async () => {
       render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
       const lost = await start(0);
@@ -923,12 +967,27 @@ describe("NativeCanvas", () => {
       expect(new Color(cover?.style.backgroundColor ?? "").getHexString()).toBe("120e0b");
     });
 
-    it("covers a light room in its own ground", async () => {
+    it("covers a captured room in the dark stage, though the colour behind its splats is light", async () => {
+      // The eye-level walk: the capture fills the view over the light shell's clear colour.
       render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
       const lost = await start(0);
       const state = fiber.state;
       if (state === null) throw new Error("No R3F root state");
       state.scene.background = new Color("#eee9de");
+      profiling.sceneStats.mockReturnValueOnce({ splats: 6_030_980, sortTimeMs: null, sortAgeMs: null, sortBacklog: null });
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      const cover = screen.getByRole("status").closest<HTMLElement>("[data-graphics-cover]");
+      expect(cover?.dataset["graphicsCover"]).toBe("dark");
+      expect(new Color(cover?.style.backgroundColor ?? "").getHexString()).toBe("120e0b");
+    });
+
+    it("covers a light room with no capture in its own ground", async () => {
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = await start(0);
+      const state = fiber.state;
+      if (state === null) throw new Error("No R3F root state");
+      state.scene.background = new Color("#eee9de");
+      profiling.sceneStats.mockReturnValueOnce(null);
       act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
       const cover = screen.getByRole("status").closest<HTMLElement>("[data-graphics-cover]");
       expect(cover?.dataset["graphicsCover"]).toBe("light");

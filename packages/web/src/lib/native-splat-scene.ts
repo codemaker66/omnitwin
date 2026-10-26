@@ -133,6 +133,15 @@ export class NativeSplatScene {
     };
   }
 
+  /**
+   * Whether this renderer draws the capture now. After a graphics reset the
+   * replacement's own snapshot must be built first; a snapshot of the lost
+   * device never counts (teardown cleared it, and stale builds are rejected).
+   */
+  showsSplats(renderer: object): boolean {
+    return this.renderer === renderer && (this.perfStats(0)?.splats ?? 0) > 0;
+  }
+
   /** Splats the active draw keeps after GPU culling. WebGPU reads the sort's
    * indirect arguments back; WebGL has no culling and draws every loaded splat. */
   async drawnSplats(renderer: WebGPURenderer): Promise<number | null> {
@@ -647,6 +656,11 @@ const runtimes = new WeakMap<Scene, NativeSplatScene>();
 /** Profiling must never construct a native runtime for an unrelated scene. */
 export function nativeScenePerfStats(scene: Scene, now: number): NativeScenePerfStats | null {
   return runtimes.get(scene)?.perfStats(now) ?? null;
+}
+
+/** Whether `renderer` draws the scene's capture now (a recovered view's cover waits for it). */
+export function nativeSceneShowsSplats(scene: Scene, renderer: object): boolean {
+  return runtimes.get(scene)?.showsSplats(renderer) ?? false;
 }
 
 /** Profiler only: splats the active draw keeps after GPU culling. */

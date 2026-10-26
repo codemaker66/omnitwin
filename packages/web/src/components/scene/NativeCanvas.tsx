@@ -17,7 +17,7 @@ import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-
 import { noteMainDraw } from "../../lib/main-draw-clock.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
-import { nativeSceneDrawnSplats, nativeScenePerfStats } from "../../lib/native-splat-scene.js";
+import { nativeSceneDrawnSplats, nativeScenePerfStats, nativeSceneShowsSplats } from "../../lib/native-splat-scene.js";
 import {
   beginGpuProfile, endGpuProfile, recordRenderedFrame, registerProfilerRenderer,
   sampleDrawnSplats, shouldProfileFrames, type GpuProfileToken,
@@ -88,8 +88,19 @@ interface StageTone {
 }
 
 const DEFAULT_STAGE = { ground: "var(--vv-ivory)", ink: "var(--vv-forest)", tone: "light" } as const;
+/** The planner's dark stage, its drawn hall's own background (PlannerScene). */
+const DARK_STAGE: StageTone = { ground: "#120e0b", tone: "dark" };
+
+/** Whether a captured room's splats are drawn in this scene now. */
+function sceneShowsCapture(scene: Scene): boolean {
+  return (nativeScenePerfStats(scene, performance.now())?.splats ?? 0) > 0;
+}
 
 function stageToneOf(scene: Scene): StageTone | null {
+  // A captured room fills the view (at eye level, all of it) over the light
+  // shell's clear colour: what a person sees is the warm, dark room, and a
+  // light cover would flash over it.
+  if (sceneShowsCapture(scene)) return DARK_STAGE;
   const background = scene.background;
   if (!(background instanceof Color)) return null;
   // Working-space (linear) luminance; the planner's grounds are the dark hall
@@ -116,6 +127,14 @@ function describeGpuError(event: unknown): string {
  * keep a person from their room.
  */
 const RETIRE_WAIT_MS = 1_500;
+
+/**
+ * After a swap, a captured room is back only once the new device draws its
+ * own splat snapshot, seconds after the first frame (rebuilt from the sources
+ * the scene still holds). The cover waits for it, but never longer than this:
+ * a capture that cannot come back must not keep the room covered.
+ */
+export const NATIVE_CAPTURE_RETURN_WAIT_MS = 15_000;
 
 // TypeScript 5.7's DOM library predates the browser WebGPU types. Describe only
 // the standard negotiation calls used here; Three's own device input is opaque.
@@ -191,6 +210,8 @@ interface LostRenderer {
   readonly backend: "webgpu" | "webgl2";
   /** Given up for GPU errors that never stopped, its device still alive. */
   readonly forErrors: boolean;
+  /** A captured room was drawn when it went: the restored view must draw it again. */
+  readonly captureShown: boolean;
 }
 
 interface LaunchOptions {
@@ -235,6 +256,8 @@ export function NativeCanvas({
   // stays over the canvas until then.
   const [awaitingFirstFrame, setAwaitingFirstFrame] = useState(false);
   const firstFramePending = useRef(false);
+  /** The replacement whose capture the cover still waits for, and the bound on that wait. */
+  const captureReturn = useRef<{ readonly native: WebGPURenderer; readonly timer: ReturnType<typeof setTimeout> } | null>(null);
   // A cover over a lost view stands in for its scene: the ground it was drawn
   // on, not a flash of another colour over the dark hall.
   const [stage, setStage] = useState<StageTone | null>(null);
@@ -265,6 +288,10 @@ export function NativeCanvas({
   callbacks.current = { onCreated, onUnavailable, options, forceWebGL };
 
   const coverUntilFirstFrame = useCallback((covered: boolean): void => {
+    if (!covered && captureReturn.current !== null) {
+      clearTimeout(captureReturn.current.timer);
+      captureReturn.current = null;
+    }
     firstFramePending.current = covered;
     if (mounted.current) setAwaitingFirstFrame(covered);
   }, []);
@@ -337,7 +364,10 @@ export function NativeCanvas({
     if (firstFramePending.current) coverUntilFirstFrame(false);
     setStage(stageToneOf(root.current.scene));
     const backend = isNativeWebGLBackend(native.backend) ? "webgl2" : "webgpu";
-    lost.current = { native, settings, pixelRatio: native.getPixelRatio(), backend, forErrors };
+    lost.current = {
+      native, settings, pixelRatio: native.getPixelRatio(), backend, forErrors,
+      captureShown: sceneShowsCapture(root.current.scene),
+    };
     if (backend === "webgl2") {
       // Now, while its GL calls are silent no-ops (see releaseLostWebGLRenderer);
       // its later lifecycle disposal must then leave the shared canvas alone.
@@ -677,8 +707,18 @@ export function NativeCanvas({
           restorations.current += 1;
           if (next.domElement instanceof HTMLCanvasElement) next.domElement.dataset["restorations"] = String(restorations.current);
           // The first frame needs no request: the frame loop restarting with the
-          // recovery's "running" phase invalidates the root. It lifts the cover.
+          // recovery's "running" phase invalidates the root. It lifts the cover,
+          // or the first frame that draws the capture again does.
           coverUntilFirstFrame(true);
+          if (retired.captureShown) {
+            const timer = setTimeout(() => {
+              if (captureReturn.current?.native !== next) return;
+              captureReturn.current = null;
+              // The capture did not come back in time; the next frame lifts the cover.
+              if (mounted.current) state.get().invalidate();
+            }, NATIVE_CAPTURE_RETURN_WAIT_MS);
+            captureReturn.current = { native: next, timer };
+          }
           resolve();
         },
         onFailed: failed,
@@ -747,7 +787,10 @@ export function NativeCanvas({
       if (drawn) {
         noteMainDraw(startedAt);
         gpuErrors.current?.drawn();
-        if (firstFramePending.current) coverUntilFirstFrame(false);
+        const awaitedCapture = captureReturn.current?.native === native;
+        if (firstFramePending.current && (!awaitedCapture || nativeSceneShowsSplats(state.scene, native))) {
+          coverUntilFirstFrame(false);
+        }
       }
       return drawn;
     });
