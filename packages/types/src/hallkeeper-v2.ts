@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ConfigurationIdSchema, LayoutStyleSchema } from "./configuration.js";
 import { SetupPhaseSchema } from "./hallkeeper-accessories.js";
 import { EventInstructionsSchema } from "./hallkeeper-instructions.js";
+import { GangwayReviewSchema } from "./gangway-review.js";
 import { TimezoneSchema, DEFAULT_VENUE_TIMEZONE } from "./venue.js";
 import { ZONES, ZoneSchema, type Zone } from "./zone.js";
 import { SheetPaperCheckSchema } from "./sheet-paper-check.js";
@@ -225,6 +226,14 @@ export const HallkeeperSheetV2Schema = z.object({
    * stub.
    */
   instructions: EventInstructionsSchema.nullable(),
+  /**
+   * The layout's gangway review as it stood when the sheet was assembled
+   * (configurations.metadata.gangwayReview, written by the planner): every
+   * pinch under the guidance, with the venue's decisions. Frozen with a
+   * submitted or approved snapshot, so the venue reviews what was sent.
+   * Null when the layout has none; absent from older snapshots.
+   */
+  gangwayReview: GangwayReviewSchema.nullable().optional(),
   phases: z.array(PhaseSchema),
   totals: z.object({
     /** One entry per distinct item name, summed across phases + zones. */
