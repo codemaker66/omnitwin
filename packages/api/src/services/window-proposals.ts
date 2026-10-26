@@ -5,7 +5,7 @@ import { bookings, diaryCommands, events, spaces, users } from "../db/schema.js"
 import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
-import { syncEventStatus } from "./event-binding.js";
+import { movePhasesWithBooking, syncEventStatus } from "./event-binding.js";
 
 // ---------------------------------------------------------------------------
 // Proposing a window (goal 19 S6; D1, D2, D5).
@@ -175,6 +175,17 @@ export async function proposeWindowCore(
         .returning();
       if (row === undefined) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");
       changeKind = "booking.updated";
+      // A moved proposal reaches its event as a Diary move does: its phases
+      // on the day follow it, and the event's dates follow its bookings.
+      if (!unchanged) {
+        await movePhasesWithBooking(tx, {
+          bookingId: mine.id,
+          eventId,
+          from: { spaceId: mine.spaceId, startsAt: mine.startsAt, endsAt: mine.endsAt },
+          to: { spaceId: space.id, startsAt },
+        });
+        await syncEventStatus(tx, eventId);
+      }
     } else {
       // The office owns its own proposal, as it owns a hold it pencils on the
       // Diary; a client's proposal is owned by the office on their behalf.

@@ -15,7 +15,6 @@ import { CLIENT_SIDE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SceneOutliner } from "./SceneOutliner.js";
 import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
-import { GeneratedFurnitureProxyBadge } from "./FurnitureInspectionDock.js";
 import "./PlannerCockpit.css";
 import "./ReferenceViewer.css";
 
@@ -49,7 +48,7 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
     >
       {mobile ? null : <div className="reference-left-dock" key="left-dock">
         <CockpitNavRail />
-        <div className="reference-left-content"><ReferenceRoomHeader /><SceneOutliner /><GeneratedFurnitureProxyBadge /></div>
+        <div className="reference-left-content"><ReferenceRoomHeader /><SceneOutliner /></div>
       </div>}
       {/* T-615: the stage is the planner's <main>, and the landmark belongs
           here rather than on the shell in EditorPage. A <main> wrapped around

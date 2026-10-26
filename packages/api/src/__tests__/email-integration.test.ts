@@ -36,7 +36,7 @@ describe("email integration — enquiry notifications", () => {
     const res = await server.inject({
       method: "POST", url: "/public/enquiries",
       payload: {
-        configurationId: "00000000-0000-0000-0000-000000000001",
+        configurationId: "00000000-0000-4000-8000-000000000001",
         email: "guest@test.com",
         name: "Guest User",
         eventType: "Wedding",
@@ -51,7 +51,7 @@ describe("email integration — enquiry notifications", () => {
 
   it("enquiry transition endpoint is wired (requires auth)", async () => {
     const res = await server.inject({
-      method: "POST", url: "/enquiries/00000000-0000-0000-0000-000000000001/transition",
+      method: "POST", url: "/enquiries/00000000-0000-4000-8000-000000000001/transition",
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { status: "approved" },
     });
@@ -67,7 +67,7 @@ describe("email integration — enquiry notifications", () => {
     const res = await server.inject({
       method: "POST", url: "/public/enquiries",
       payload: {
-        configurationId: "00000000-0000-0000-0000-000000000001",
+        configurationId: "00000000-0000-4000-8000-000000000001",
         email: "guest2@test.com",
       },
     });
@@ -81,7 +81,7 @@ describe("email integration — enquiry notifications", () => {
 
     // under_review transition should NOT trigger planner email
     const res = await server.inject({
-      method: "POST", url: "/enquiries/00000000-0000-0000-0000-000000000001/transition",
+      method: "POST", url: "/enquiries/00000000-0000-4000-8000-000000000001/transition",
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { status: "under_review" },
     });

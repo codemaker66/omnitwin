@@ -8,7 +8,8 @@ import type { Database } from "../db/client.js";
 
 /**
  * Deletes public preview configurations (and their placed objects) that are:
- * - Older than 72 hours
+ * - Unsaved for 72 hours (updated_at, which every save of the plan or its
+ *   pieces advances; judging by created_at deleted drafts still in use)
  * - Not claimed (userId is null, isPublicPreview is true)
  * - Not linked to any enquiry
  * - Not the source of any compiled handoff pack
@@ -52,14 +53,21 @@ export async function cleanupPreviewConfigurations(db: Database, now: Date = new
       )),
   );
 
+  // Inactivity, not age: every save of the plan or its pieces advances
+  // updated_at, so a draft worked on all week is not deleted on its fourth
+  // day. Ownerless public previews only; an owned plan is never touched.
+  const abandonedPreview = and(
+    eq(configurations.isPublicPreview, true),
+    isNull(configurations.userId),
+    lt(configurations.updatedAt, cutoff),
+  );
+
   // Single query: find stale preview configs NOT linked to any enquiry
   // Replaces N+1 per-config enquiry existence check
   const stale = await db.select({ id: configurations.id })
     .from(configurations)
     .where(and(
-      eq(configurations.isPublicPreview, true),
-      isNull(configurations.userId),
-      lt(configurations.createdAt, cutoff),
+      abandonedPreview,
       notExists(
         db.select({ one: sql`1` })
           .from(enquiries)
@@ -73,12 +81,12 @@ export async function cleanupPreviewConfigurations(db: Database, now: Date = new
 
   const staleIds = stale.map((c) => c.id);
 
-  // The configurations go first, under the same guards, so a handoff pack
-  // compiled or a view-only link made since the read keeps its configuration
-  // and its placed objects. Placed objects cascade with their configuration;
-  // the explicit delete stays for the ones removed.
+  // The configurations go first, under the same guards, so a plan claimed or
+  // saved, a handoff pack compiled or a view-only link made since the read
+  // keeps its configuration and its placed objects. Placed objects cascade
+  // with their configuration; the explicit delete stays for the ones removed.
   const deleted = await db.delete(configurations)
-    .where(and(inArray(configurations.id, staleIds), noHandoffPack, noLiveViewLink))
+    .where(and(inArray(configurations.id, staleIds), abandonedPreview, noHandoffPack, noLiveViewLink))
     .returning({ id: configurations.id });
   const deletedIds = deleted.map((row) => row.id);
   if (deletedIds.length > 0) {

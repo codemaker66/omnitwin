@@ -45,7 +45,7 @@ export const BoundedActionSchema = z.preprocess((input, ctx) => {
   const depth = jsonDepth(input);
   if (depth > ACTION_MAX_DEPTH) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: `action nesting depth ${String(depth)} exceeds ${String(ACTION_MAX_DEPTH)}`,
     });
     return z.NEVER;
@@ -58,7 +58,7 @@ export const BoundedActionSchema = z.preprocess((input, ctx) => {
   }
   if (serialized === undefined || serialized.length > ACTION_MAX_BYTES) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: `action exceeds ${String(ACTION_MAX_BYTES)} serialized bytes`,
     });
     return z.NEVER;
@@ -68,7 +68,7 @@ export const BoundedActionSchema = z.preprocess((input, ctx) => {
 
 export const ActionLogBatchSchema = z
   .object({
-    batchId: z.string().uuid(),
+    batchId: z.uuid(),
     /** The configuration revision the client had when it flushed — anchors
      *  the audit trail to the save history without claiming causality. */
     revision: z.number().int().nonnegative(),
@@ -84,7 +84,7 @@ export const ActionLogBatchSchema = z
         for (const [index, action] of actions.entries()) {
           if (seen.has(action.id)) {
             ctx.addIssue({
-              code: z.ZodIssueCode.custom,
+              code: "custom",
               message: `duplicate action id in batch: ${action.id}`,
               path: [index, "id"],
             });
@@ -104,7 +104,7 @@ export const BoundedJsonValueSchema = z.preprocess((input, ctx) => {
   const depth = jsonDepth(input);
   if (depth > ACTION_MAX_DEPTH) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: `nesting depth ${String(depth)} exceeds ${String(ACTION_MAX_DEPTH)}`,
     });
     return z.NEVER;

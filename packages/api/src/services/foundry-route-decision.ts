@@ -78,7 +78,7 @@ const AllowedNetworkAccessSchema = z
 
 const FoundryRouteThresholdsV0Schema = z
   .object({
-    maximumInputBytes: z.number().int().safe().nonnegative(),
+    maximumInputBytes: z.number().int().int().nonnegative(),
     maximumAssetCount: z.number().int().nonnegative().max(MAXIMUM_ASSET_COUNT),
     maximumStageCount: z.number().int().positive().max(MAXIMUM_STAGE_COUNT),
     maximumPeakCpuCores: z.number().int().positive().max(MAXIMUM_CPU_CORES),
@@ -133,7 +133,7 @@ export const FoundryRoutePolicyV0Schema = z
       policy.localCpu.maximumPerGpuVramGiB !== 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["localCpu"],
         message: "local CPU thresholds must prohibit GPUs and GPU VRAM",
       });
@@ -143,7 +143,7 @@ export const FoundryRoutePolicyV0Schema = z
       policy.localCuda.maximumPerGpuVramGiB === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["localCuda"],
         message: "local CUDA thresholds must declare positive GPU capacity",
       });
@@ -151,7 +151,7 @@ export const FoundryRoutePolicyV0Schema = z
     for (const field of MONOTONIC_THRESHOLD_FIELDS) {
       if (policy.localCpu[field] > policy.localCuda[field]) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["localCpu", field],
           message: "local CPU thresholds must not exceed local CUDA thresholds",
         });
@@ -163,7 +163,7 @@ export const FoundryRoutePolicyV0Schema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["localCpu", "allowedNetworkAccess"],
         message: "local CPU network modes must be a subset of local CUDA modes",
       });
@@ -180,7 +180,7 @@ export const FoundryRouteDecisionInputV0Schema = z
     inputBytes: z
       .number()
       .int()
-      .safe()
+      .int()
       .nonnegative()
       .max(MAXIMUM_INPUT_BYTES),
     assetCount: z.number().int().positive().max(MAXIMUM_ASSET_COUNT),
@@ -206,7 +206,7 @@ export const FoundryRouteDecisionInputV0Schema = z
     const hasVram = input.minimumPerGpuVramGiB > 0;
     if (hasGpu !== hasVram) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["minimumPerGpuVramGiB"],
         message: "GPU count and per-GPU VRAM requirements must both be zero or both be positive",
       });
@@ -237,7 +237,7 @@ export const FoundryRouteAdapterBindingV0Schema = z
     const local = isLocalProviderKind(binding.providerKind);
     if (local !== (binding.targetKind === "local_worker")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetKind"],
         message: "local providers require a local runner and remote providers require a remote pool",
       });
@@ -282,7 +282,7 @@ export const FoundryRouteCandidateV0Schema = z
   .superRefine((candidate, ctx) => {
     if (candidate.providerKind !== candidate.adapterBinding.providerKind) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["adapterBinding", "providerKind"],
         message: "candidate and adapter binding provider kinds must match",
       });
@@ -310,7 +310,7 @@ export const FoundryLocalAdapterInventoryV0Schema = z
     );
     if (new Set(canonicalBindings).size !== canonicalBindings.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["bindings"],
         message: "local adapter inventory bindings must be unique",
       });
@@ -327,7 +327,7 @@ export const FoundryLocalAdapterInventoryV0Schema = z
     );
     if (new Set(executorBindingKeys).size !== executorBindingKeys.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["bindings"],
         message: "one executor adapter identity cannot advertise multiple local lowering bindings",
       });
@@ -426,7 +426,7 @@ export const FoundryRouteDecisionV0Schema =
     const payload = routeDecisionPayload(decision);
     if (decision.decisionSha256 !== computeFoundryRouteDecisionSha256(payload)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["decisionSha256"],
         message: "route decision digest must match its canonical payload",
       });
@@ -460,7 +460,7 @@ function validateDecisionState(
       : "oversized_remote";
   if (decision.routeClass !== expectedClass) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["routeClass"],
       message: "route class must match the selected provider kind",
     });
@@ -468,14 +468,14 @@ function validateDecisionState(
   const local = isLocalProviderKind(decision.providerKind);
   if (!local && decision.status !== "awaiting_provider_adapter") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["status"],
       message: "every remote route must await a provider adapter",
     });
   }
   if (local && decision.status === "awaiting_provider_adapter") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["status"],
       message: "local routes cannot use the remote provider-adapter state",
     });
@@ -483,7 +483,7 @@ function validateDecisionState(
   const matched = decision.matchedLocalAdapterBindingSha256 !== null;
   if ((decision.status === "executable_local") !== matched) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["matchedLocalAdapterBindingSha256"],
       message: "only an executable local route may carry an available local binding",
     });

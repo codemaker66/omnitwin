@@ -12,9 +12,11 @@ type CanvasMockProps = Readonly<{
   frameloop?: unknown;
   children?: ReactNode;
   onCreated?: () => void;
+  onUnavailable?: () => void;
 }>;
 const canvasChildren = vi.hoisted(() => ({ current: null as ReactNode }));
 const canvasCreated = vi.hoisted(() => ({ current: null as (() => void) | null }));
+const canvasUnavailable = vi.hoisted(() => ({ current: null as (() => void) | null }));
 const precompiler = vi.hoisted(() => ({
   gl: { compileAsync: vi.fn((_scene: Scene, _camera: Camera) => Promise.resolve()) },
   scene: null as Scene | null,
@@ -41,9 +43,10 @@ vi.mock("@react-three/fiber", async () => {
       return () => { precompiler.frame = null; };
     }, []);
   },
-  Canvas: ({ dpr, frameloop, children, onCreated }: CanvasMockProps) => {
+  Canvas: ({ dpr, frameloop, children, onCreated, onUnavailable }: CanvasMockProps) => {
     canvasChildren.current = children;
     canvasCreated.current = onCreated ?? null;
+    canvasUnavailable.current = onUnavailable ?? null;
     return (
     <div
       data-testid="r3f-canvas"
@@ -206,6 +209,22 @@ describe("PlannerScene", () => {
     act(() => { useCockpitStore.getState().setLayerMode("mesh"); });
     act(() => { useCockpitStore.getState().setLayerMode("splat"); });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps the arrival off a 3D view that cannot draw, whatever layout it opens for, until a renderer starts", () => {
+    chooseGrandHall(); readyGrandHall();
+    const { rerender } = render(<PlannerScene />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    // NativeCanvas landed on its couldn't-start card: a modal "Opening…" over it would hide the way on.
+    act(() => { canvasUnavailable.current?.(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The layout gets an id (its first save) while the view still cannot draw: a new arrival key.
+    act(() => { chooseGrandHall(); });
+    rerender(<PlannerScene />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // "Try 3D again" started a renderer: the room is opening again.
+    act(() => { canvasCreated.current?.(); });
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("gives the stage floor the splat layer's own transform, and no room for a registered package", () => {

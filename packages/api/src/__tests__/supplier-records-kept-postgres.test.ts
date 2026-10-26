@@ -89,7 +89,8 @@ describe.skipIf(explicitUrl === undefined)("supplier records outlive every delet
     const stale = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
     await db.insert(schema.configurations).values(options.preview === true
       ? { id: configId, venueId, spaceId: roomId, userId: null, name: "Preview plan", layoutStyle: "custom",
-          isPublicPreview: true, createdAt: stale }
+          // Abandoned means unsaved, not merely old: the sweep judges updated_at.
+          isPublicPreview: true, createdAt: stale, updatedAt: stale }
       : { id: configId, venueId, spaceId: roomId, userId, name: "Dinner plan", layoutStyle: "custom" });
     await db.insert(schema.configurationSheetSnapshots).values({ id: snapshotId, configurationId: configId,
       version: 1, payload: { fixture: "supplier records" }, sourceHash: "a".repeat(64), createdBy: userId });

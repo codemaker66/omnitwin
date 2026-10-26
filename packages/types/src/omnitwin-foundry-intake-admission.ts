@@ -50,14 +50,14 @@ export const FoundryIntakeClassificationDecisionSchema = z
   .superRefine((decision, ctx) => {
     if (decision.method === "operator_override" && decision.evidenceReferences.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceReferences"],
         message: "operator format overrides require at least one evidence reference",
       });
     }
     if (new Set(decision.evidenceReferences).size !== decision.evidenceReferences.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceReferences"],
         message: "classification evidence references must be unique",
       });
@@ -75,7 +75,7 @@ export const FoundryIntakeAdmitDecisionSchema = z
   .superRefine((decision, ctx) => {
     if (decision.asset.relativePath !== decision.path) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["asset", "relativePath"],
         message: "admitted asset path must equal the reviewed receipt path",
       });
@@ -148,7 +148,7 @@ function validateAdmissionReviewPayload(
   const paths = review.decisions.map((decision) => decision.path);
   if (new Set(paths).size !== paths.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["decisions"],
       message: "every receipt path must have at most one admission decision",
     });
@@ -156,14 +156,14 @@ function validateAdmissionReviewPayload(
   const sorted = [...paths].sort();
   if (paths.some((path, index) => path !== sorted[index])) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["decisions"],
       message: "admission decisions must be sorted by path",
     });
   }
   if (!review.decisions.some((decision) => decision.action === "admit")) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["decisions"],
       message: "an admission review must admit at least one asset",
     });
@@ -205,7 +205,7 @@ export const FoundryIntakeAdmissionReviewV0Schema =
         domainSeparatedDigest(REVIEW_DIGEST_DOMAIN, parsedPayload.data)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviewSha256"],
           message: "admission review digest must match its canonical payload",
         });
@@ -244,14 +244,14 @@ function validateAdmissionResultPayload(
 ): void {
   if (result.manifestSha256 !== computeFoundryIngestManifestSha256(result.manifest)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestSha256"],
       message: "admission result must bind the exact ingest manifest",
     });
   }
   if (result.manifest.legalReviewState === "approved") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifest", "legalReviewState"],
       message: "intake admission cannot approve legal review",
     });
@@ -260,7 +260,7 @@ function validateAdmissionResultPayload(
   const sorted = [...paths].sort();
   if (new Set(paths).size !== paths.length || paths.some((path, index) => path !== sorted[index])) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["exclusions"],
       message: "exclusions must contain unique paths in sorted order",
     });
@@ -297,7 +297,7 @@ export const FoundryIntakeAdmissionResultV0Schema =
         domainSeparatedDigest(RESULT_DIGEST_DOMAIN, parsedPayload.data)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["resultSha256"],
           message: "admission result digest must match its canonical payload",
         });
