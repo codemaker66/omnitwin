@@ -112,15 +112,16 @@ export function metadataWithoutNote(metadata: unknown): Record<string, unknown> 
 /** A save-history payload with no piece's note, or null when it has none. */
 export function revisionWithoutPieceNotes(payload: unknown): Record<string, unknown> | null {
   if (!isRecord(payload) || !Array.isArray(payload["objects"])) return null;
-  let changed = false;
+  // A holder, not a let: the flag is set inside the callbacks below.
+  const found = { note: false };
   const objects = payload["objects"].map((object: unknown) => {
     if (!isRecord(object)) return object;
     const metadata = metadataWithoutNote(object["metadata"]);
     if (metadata === null) return object;
-    changed = true;
+    found.note = true;
     return { ...object, metadata };
   });
-  return changed ? { ...payload, objects } : null;
+  return found.note ? { ...payload, objects } : null;
 }
 
 /** An issued sheet's payload with no piece's note on its plan or setup rows,
@@ -128,7 +129,7 @@ export function revisionWithoutPieceNotes(payload: unknown): Record<string, unkn
  *  (HallkeeperFloorPlanSchema), so it is dropped; a row's `notes` is "". */
 export function sheetWithoutPieceNotes(payload: unknown): Record<string, unknown> | null {
   if (!isRecord(payload)) return null;
-  let changed = false;
+  const found = { note: false };
   const next: Record<string, unknown> = { ...payload };
   const plan = payload["floorPlan"];
   if (isRecord(plan) && Array.isArray(plan["objects"])) {
@@ -136,7 +137,7 @@ export function sheetWithoutPieceNotes(payload: unknown): Record<string, unknown
       ...plan,
       objects: plan["objects"].map((object: unknown) => {
         if (!isRecord(object) || !holdsText(object["note"])) return object;
-        changed = true;
+        found.note = true;
         return omit(object, "note");
       }),
     };
@@ -145,7 +146,7 @@ export function sheetWithoutPieceNotes(payload: unknown): Record<string, unknown
   if (Array.isArray(phases)) {
     const withoutRowNotes = (row: unknown): unknown => {
       if (!isRecord(row) || !holdsText(row["notes"])) return row;
-      changed = true;
+      found.note = true;
       return { ...row, notes: "" };
     };
     next["phases"] = phases.map((phase: unknown) => {
@@ -158,17 +159,17 @@ export function sheetWithoutPieceNotes(payload: unknown): Record<string, unknown
       };
     });
   }
-  return changed ? next : null;
+  return found.note ? next : null;
 }
 
 /** An object action's payload or inverse with no piece's note, each entry
  *  that held one marked notesRedacted: true, or null when it has none. */
 export function loggedDeltaWithoutPieceNotes(value: unknown): Record<string, unknown> | null {
   if (!isRecord(value)) return null;
-  let changed = false;
+  const found = { note: false };
   const withoutNote = (entry: unknown): unknown => {
     if (!isRecord(entry) || !holdsText(entry["notes"])) return entry;
-    changed = true;
+    found.note = true;
     return { ...omit(entry, "notes"), notesRedacted: true };
   };
   const next: Record<string, unknown> = { ...value };
@@ -185,7 +186,7 @@ export function loggedDeltaWithoutPieceNotes(value: unknown): Record<string, unk
       return { ...patch, ...(patch["before"] === undefined ? {} : { before }), ...(patch["after"] === undefined ? {} : { after }) };
     });
   }
-  return changed ? next : null;
+  return found.note ? next : null;
 }
 
 /** A setup task's detail without the rows' notes it ends with, or null. */
