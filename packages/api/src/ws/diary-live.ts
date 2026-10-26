@@ -786,10 +786,11 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
           );
           send(execution.ack);
           // Commit → broadcast, on the SAME bus path REST mutations use, so
-          // every venue connection (sender included) sees one event stream.
+          // every venue connection (sender included) sees one event stream:
+          // the booking's venue's, which a platform admin's is not always.
           if (execution.changed !== null) {
             emit(server.log, "diary.changed", {
-              venueId: commandVenueId,
+              venueId: execution.changed.venueId,
               kind: execution.changed.kind,
               bookingId: execution.changed.bookingId,
               actorUserId: commandActor.id,
