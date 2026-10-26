@@ -56,7 +56,8 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
   // not merely present in the DOM (it truncates, never hides — CARD A1).
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("uncaptured room: the procedural room, with no capture row for a guest", async ({ page }, testInfo) => {
+  // The title is this case's identity in .github/gpu/browser-baseline.json; the honest fallback is now no capture row for a guest.
+  test("uncaptured room: honest fallback over the procedural room", async ({ page }, testInfo) => {
     await stubPlannerBootstrap(page, true);
     let registryRequests = 0;
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
