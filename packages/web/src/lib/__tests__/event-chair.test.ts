@@ -102,6 +102,14 @@ describe("a table keeps its own chairs", () => {
     expect(chairSlugs(rearrangeTableGroup(table.id, 10, placed))).toEqual(tenOf("burgess-turini-18-3"));
   });
 
+  it("counts the venue's pink chair as the Turini it is: a pink-chair round stepped up at a wedding gets a Turini", () => {
+    const [table] = createTableGroup(ROUND.id, 0, 0, 0, 0);
+    if (table === undefined) throw new Error("no table");
+    const pinks = Array.from({ length: 10 }, (_, i) => ({ ...createPlacedItem(item("pink-chair").id, i, 1, 0, table.groupId), id: `pink-${String(i)}` }));
+    atEvent("wedding");
+    expect(newSeatChairSlug(table, [table, ...pinks])).toBe("burgess-turini-18-3");
+  });
+
   it("gives a table with no chairs the event's", () => {
     atEvent("wedding");
     const placed = createTableGroup(ROUND.id, 0, 0, 0, 0);
@@ -148,6 +156,19 @@ describe("Fill at a wedding", () => {
     expect(kept).toHaveLength(10);
     expect(new Set(chairSlugs(kept))).toEqual(new Set(["chiavari-chair"]));
     expect(new Set(chairSlugs(pieces))).toEqual(new Set(["chiavari-chair"]));
+  });
+
+  it("keeps a chair the planner never sets as it is: a highchair at a round stays a highchair", () => {
+    const [table, first, ...rest] = createTableGroup(ROUND.id, 0, 0, 0, 10);
+    if (table === undefined || first === undefined) throw new Error("no round");
+    const highchair = { ...first, catalogueItemId: item("highchair-wooden").id };
+    const placed = [table, highchair, ...rest];
+    atEvent("wedding");
+    const plan = planGangwayFill({ table: ROUND, seatsPerTable: 10, guests: 0, ...HALL, exits: grandHallExits(), rule: FILL_AISLE_RULE });
+    if (plan === null) throw new Error("no plan");
+    const round = refillPieces(placed, fillRefillIds(placed, ROUND), plan).filter((piece) => piece.groupId === table.groupId && piece.id !== table.id);
+    expect(chairSlugs(round.filter((piece) => piece.id === highchair.id))).toEqual(["highchair-wooden"]);
+    expect(chairSlugs(round.filter((piece) => piece.id !== highchair.id))).toEqual(Array.from({ length: 9 }, () => "chiavari-chair"));
   });
 });
 

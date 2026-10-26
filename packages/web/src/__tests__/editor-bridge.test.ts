@@ -194,6 +194,33 @@ describe("EditorBridge component", () => {
     cleanup();
   });
 
+  // A piece can become another where it stands (Fill sets a reused chair as
+  // the event's chair): that is a change like a move, so the save has it.
+  it("carries a piece that becomes another in place, though it has not moved", async () => {
+    const React = await import("react");
+    const { render, cleanup } = await import("@testing-library/react");
+    const { EditorBridge, __resetEditorBridgeMountCountForTests } = await import("../components/editor/EditorBridge.js");
+    const { usePlacementStore } = await import("../stores/placement-store.js");
+
+    __resetEditorBridgeMountCountForTests();
+    useEditorStore.setState({ configId: "cfg-identity" });
+    usePlacementStore.setState({ placedItems: [] });
+    const { unmount } = render(React.createElement(EditorBridge));
+
+    const chair = { id: "c1", catalogueItemId: "burgess-turini", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null };
+    usePlacementStore.setState({ placedItems: [chair] });
+    await new Promise((r) => { setTimeout(r, 0); });
+    const stepsBefore = useEditorStore.getState().history.past.length;
+
+    usePlacementStore.setState({ placedItems: [{ ...chair, catalogueItemId: "chiavari" }] });
+    await new Promise((r) => { setTimeout(r, 0); });
+    expect(useEditorStore.getState().objects.find((object) => object.id === "c1")?.assetDefinitionId).toBe("chiavari");
+    expect(useEditorStore.getState().history.past).toHaveLength(stepsBefore + 1);
+
+    unmount();
+    cleanup();
+  });
+
   // -------------------------------------------------------------------------
   // Autosave-requester pin: while the bridge is mounted, store-initiated
   // mutations (undo/redo) must schedule the same debounced auto-save as

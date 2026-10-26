@@ -27,7 +27,7 @@ import {
   tableGroupPlanningFootprint,
   tableGroupPlanningRadius,
 } from "./table-group.js";
-import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairSlug } from "./furniture-defaults.js";
+import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairFor, plannerChairSlug } from "./furniture-defaults.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { countLabel } from "./count-label.js";
 import type { PublishedCapacityAnswer, PublishedFormat } from "./planner-truth.js";
@@ -815,10 +815,11 @@ function refillOrder(a: PlacedItem, b: PlacedItem): number {
 /**
  * The round groups a fill plan sets down, reusing the refilled tables' ids,
  * names, cloths and chairs' ids in refill order; tables beyond those are new.
- * Fill sets the room with the event's chair, so a reused chair keeps its
- * record but becomes the chair its place was planned for (a Turini kept at
- * a wedding's Chiavari spacing would sit into its table). Render-space,
- * ready for the placement store.
+ * Fill sets the room with the event's chair, so a reused planner chair keeps
+ * its record but becomes the chair its place was planned for (a Turini kept
+ * at a wedding's Chiavari spacing would sit into its table). A chair the
+ * planner never sets (a highchair, a legacy chair) was somebody's choice and
+ * keeps what it is. Render-space, ready for the placement store.
  */
 export function refillPieces(
   placedItems: readonly PlacedItem[],
@@ -845,9 +846,13 @@ export function refillPieces(
     pieces.push({ ...old, x: table.x, z: table.z, y: table.y, rotationY: table.rotationY });
     chairs.forEach((chair, c) => {
       const reuse = oldChairs[c];
-      pieces.push(reuse === undefined
-        ? { ...chair, groupId }
-        : { ...reuse, catalogueItemId: chair.catalogueItemId, x: chair.x, z: chair.z, y: chair.y, rotationY: chair.rotationY });
+      if (reuse === undefined) {
+        pieces.push({ ...chair, groupId });
+        return;
+      }
+      const reusedSlug = getCatalogueItem(reuse.catalogueItemId)?.slug;
+      const converts = reusedSlug !== undefined && plannerChairFor(reusedSlug) !== null;
+      pieces.push({ ...reuse, ...(converts ? { catalogueItemId: chair.catalogueItemId } : {}), x: chair.x, z: chair.z, y: chair.y, rotationY: chair.rotationY });
     });
   });
   return pieces;
