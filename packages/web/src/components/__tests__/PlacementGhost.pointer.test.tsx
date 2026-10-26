@@ -31,6 +31,11 @@ vi.mock("@react-three/fiber", () => ({
   useFrame: (callback: () => void) => { frames.latest = callback; },
 }));
 vi.mock("../FurnitureProxy.js", () => ({ FurnitureProxy: () => { proxy.renders += 1; return null; } }));
+// The set's ghost has its own tests (GhostSet.test.tsx); here, which set it is asked to show.
+const ghostSet = vi.hoisted(() => ({ card: null as string | null }));
+vi.mock("../GhostSet.js", () => ({
+  GhostSet: ({ params }: { readonly params: { readonly card: string } }) => { ghostSet.card = params.card; return null; },
+}));
 
 function runFrame(): void {
   act(() => { frames.latest?.(); });
@@ -111,6 +116,28 @@ it("says why a tap placed nothing once every piece the venue has is on the floor
   expect(usePlacementNoticeStore.getState().notice?.text)
     .toBe("The venue has one of these, and it is already placed; move it to use it elsewhere.");
   usePlacementNoticeStore.getState().dismiss();
+});
+
+it("sets a Round of 10 armed from v2's rail down whole, in one write, with no chair dialog, the switches as shipped (Q-07, Q-13)", () => {
+  setPlannerFeaturesForTesting(null);
+  ghostSet.card = null;
+  try {
+    act(() => { useCatalogueStore.getState().armCard("round"); });
+    render(<PlacementGhost />);
+    // The ghost is the set the click will set down.
+    expect(ghostSet.card).toBe("round");
+    let writes = 0;
+    const unsubscribe = usePlacementStore.subscribe((state, previous) => { if (state.placedItems !== previous.placedItems) writes += 1; });
+    act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+    unsubscribe();
+    expect(writes).toBe(1);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(11);
+    expect(useChairDialogStore.getState().pending).toBeNull();
+    // The card stays in hand for the next one.
+    expect(useCatalogueStore.getState().armedCardId).toBe("round");
+  } finally {
+    useCatalogueStore.getState().disarm();
+  }
 });
 
 it("keeps the seating dialog for an imported dining table", () => {

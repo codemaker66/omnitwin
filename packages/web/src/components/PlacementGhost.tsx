@@ -41,7 +41,7 @@ import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
-import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, type CardParams } from "../lib/setup-cards.js";
+import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, placesAsCard, type CardParams } from "../lib/setup-cards.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
 import { findFurnitureItemId } from "./SelectionSystem.js";
 import { GhostSet } from "./GhostSet.js";
@@ -230,8 +230,8 @@ export function PlacementGhost(): React.ReactElement | null {
       // Snap alignment guides at the ghost's snapped position; a card's set and a floor being drawn
       // take no line snap (placement-store updateGhost), so they show none.
       const placeState = usePlacementStore.getState();
-      const card = plannerFeatureEnabled("setupCards") ? useCatalogueStore.getState().cardParams : null;
-      const wholeSet = card !== null && cardIsWholeSet(card);
+      const card = useCatalogueStore.getState().cardParams;
+      const wholeSet = card !== null && placesAsCard(card) && cardIsWholeSet(card);
       if (placeState.ghostPosition !== null && !wholeSet && drawing === null) {
         const guides = computeSnapGuides(
           placeState.ghostPosition[0], placeState.ghostPosition[2],
@@ -277,7 +277,7 @@ export function PlacementGhost(): React.ReactElement | null {
       const itemId = useCatalogueStore.getState().selectedItemId;
       // A dance floor in hand is drawn by press-drag, in whole panels (Q-08a); a click still sets down its card's size.
       const inHand = useCatalogueStore.getState();
-      if (inHand.cardParams?.card === "dance-floor" && !inHand.dragActive && plannerFeatureEnabled("setupCards")) {
+      if (inHand.cardParams?.card === "dance-floor" && !inHand.dragActive) {
         const start = raycastToFloor(event.clientX, event.clientY);
         if (start !== null) drawing = { start, before: inHand.cardParams, drawn: false };
         return;
@@ -592,7 +592,8 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // --- The truthful ghost: the card's whole set, judged with every body (Q-05) ---
   const brushing = catalogueItem.category === "chair" && chairBrushPreview.length > 1;
-  if (cardParams !== null && !brushing && plannerFeatureEnabled("setupCards") && plannerFeatureEnabled("truthfulGhost")) {
+  // A card set down as a card shows that set, whichever chrome armed it (setup-cards placesAsCard); judged under truthfulGhost.
+  if (cardParams !== null && !brushing && placesAsCard(cardParams)) {
     return <GhostSet params={cardParams} warming={warming} fromCardDrag={fromCardDrag} />;
   }
 

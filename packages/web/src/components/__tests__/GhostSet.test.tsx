@@ -68,6 +68,17 @@ describe("the truthful ghost's set", () => {
     expect(words().textContent).toBe("Round of 10 · +10 seats ✓ fits");
   });
 
+  it("without the truthful ghost, shows the set where it will be set down and claims nothing", () => {
+    setPlannerFeaturesForTesting(null);
+    usePlacementStore.setState({ placedItems: stampSetup(round(), { x: 0, z: 0 }, 0) });
+    render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
+    ghostAt(CHAIR_REACH);
+    expect(words().dataset.state).toBe("fits");
+    expect(words().textContent).toBe("Round of 10 · +10 seats");
+    expect(useGhostVerdictStore.getState().verdict).toBeNull();
+    expect(canvas.element?.style.cursor).toBe("");
+  });
+
   it("says how far it moved a set it pushes clear", () => {
     usePlacementStore.setState({ placedItems: stampSetup(round(), { x: 0, z: 0 }, 0) });
     render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
