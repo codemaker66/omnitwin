@@ -41,6 +41,8 @@ export interface ScheduledCleanupResult {
   /** Layouts and event sheets whose allergy note passed its retention. */
   readonly lapsedNoteLayouts: number;
   readonly lapsedNoteSheets: number;
+  /** Action log entries that still held an allergy note. */
+  readonly loggedNotesRemoved: number;
   readonly rememberedNotesRemoved: number;
   readonly engagementEventsRemoved: number;
 }
@@ -57,7 +59,7 @@ export async function runScheduledCleanup(
   log(`[cleanup] Deleted ${String(deletedFiles)} orphaned file(s)`);
 
   const lapsed = await removeLapsedDietaryNotes(db);
-  log(`[cleanup] Removed the allergy note from ${String(lapsed.layouts)} layout(s) and ${String(lapsed.sheets)} event sheet(s) past their retention`);
+  log(`[cleanup] Removed the allergy note from ${String(lapsed.layouts)} layout(s) and ${String(lapsed.sheets)} event sheet(s) past their retention, and from ${String(lapsed.actionLog)} logged change(s)`);
 
   const remembered = await removeUnusedRememberedNotes(db);
   log(`[cleanup] Removed ${String(remembered.removed)} remembered allergy note(s) unused for the agreed period`);
@@ -70,6 +72,7 @@ export async function runScheduledCleanup(
     deletedFiles,
     lapsedNoteLayouts: lapsed.layouts,
     lapsedNoteSheets: lapsed.sheets,
+    loggedNotesRemoved: lapsed.actionLog,
     rememberedNotesRemoved: remembered.removed,
     engagementEventsRemoved,
   };
