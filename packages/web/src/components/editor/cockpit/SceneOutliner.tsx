@@ -90,7 +90,9 @@ export function SceneOutliner({ className = "" }: { readonly className?: string 
       <header className="reference-panel-heading"><ListTree size={15} aria-hidden="true" /><h2>On the floor</h2><span className="reference-count" aria-label={countLabel(summary.objects, "piece")}>{summary.objects}</span></header>
       <label className="reference-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="Find a table or piece" placeholder="Find a table or piece" value={search} onChange={(event) => { setSearch(event.target.value); }} /></label>
       <div className="reference-panel-scroll">
-        {(locked || staff) && <details className="reference-tree-category reference-architecture" open>
+        {/* Staff always; anyone while a captured layer is actually shown, so its honest status
+            (e.g. "staged from source — not yet registered") reaches the person looking at it. */}
+        {(locked || staff || gaussianSplatsAvailable()) && <details className="reference-tree-category reference-architecture" open>
           <summary><ChevronDown size={13} /><Building2 size={14} /><span>The room</span></summary>
           <div className="reference-capture-label"><span>{locked ? previewRuntime === null ? "Room preview unavailable" : "Frozen room outline" : "Room capture"}</span><small>{locked ? previewRuntime === null ? previewMessage ?? "No frozen room snapshot" : "Historical layout preview" : captureNote(runtime)}</small></div>
         </details>}
