@@ -24,6 +24,28 @@ export interface CasterOptions {
   readonly minimum?: number;
 }
 
+/**
+ * A draped surface's own shadow caster (the `shadow-sheet` material, drawn
+ * from both sides): a coarse copy of the drape, every vertex set in along its
+ * normal by `inset`, so a fold's valley lies outside its own caster and the
+ * sun never streaks it, while the cloth's outline still shades the floor.
+ */
+export function insetSheet(drape: BufferGeometry, inset: number): BufferGeometry {
+  const position = drape.getAttribute("position");
+  const normal = drape.getAttribute("normal");
+  for (let i = 0; i < position.count; i += 1) {
+    position.setXYZ(
+      i,
+      position.getX(i) - normal.getX(i) * inset,
+      // Never below the floor: a hem set in stays on it.
+      Math.max(0, position.getY(i) - normal.getY(i) * inset),
+      position.getZ(i) - normal.getZ(i) * inset,
+    );
+  }
+  position.needsUpdate = true;
+  return normalizeAttributes(drape);
+}
+
 /** Where a piece meets the floor: a foot's centre in plan and the reach of its contact shade, metres. */
 export interface FootContact {
   readonly x: number;

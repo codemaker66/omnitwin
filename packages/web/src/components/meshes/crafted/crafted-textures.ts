@@ -307,18 +307,25 @@ const RECIPES: Readonly<Record<CraftedTextureId, TextureRecipe>> = {
     tileMetres: 0.09,
     colour: true,
     paint: (size) => {
-      // The checked banquet chair's trellis: bold orange bands crossing on
-      // the diagonal over a deep red ground, a fine weave through both.
-      const ground = hex(0xb3220f);
-      const band = hex(0xf56a2c);
-      const shadow = hex(0x8a170a);
+      // Trades Hall's checked chair (its Reception Room and Grand Hall
+      // photographs): a crimson ground under a fine darker diamond trellis,
+      // a small dark diamond at every crossing, a weave through all of it.
+      const ground = hex(0xb52a1d);
+      const trellis = hex(0x6d1610);
+      const lift = hex(0xc8382a);
       return paintColour(size, (u, v) => {
         const d = latticeDistance(u, v, 2) * 2;
         const weave = 0.9 + 0.14 * linenHeight((u * 3) % 1, (v * 3) % 1);
-        const bandMix = 1 - smooth(Math.min(1, Math.max(0, (d - 0.055) / 0.025)));
-        const shadowMix = 1 - smooth(Math.min(1, Math.max(0, (d - 0.085) / 0.03)));
-        const base = mix(ground, shadow, (shadowMix - bandMix) * 0.6);
-        const [r, g, b] = mix(base, band, bandMix);
+        const line = 1 - smooth(Math.min(1, Math.max(0, (d - 0.012) / 0.014)));
+        // Crossings: where both diagonals are near a lattice line.
+        const a = (u + v) * 2;
+        const b2 = (u - v) * 2;
+        const crossing = Math.hypot(a - Math.round(a), b2 - Math.round(b2)) / 2;
+        const diamond = 1 - smooth(Math.min(1, Math.max(0, (crossing - 0.035) / 0.02)));
+        // The cushion's pile lifts a touch in the middle of each diamond.
+        const centre = 1 - smooth(Math.min(1, d / 0.12));
+        const base = mix(ground, lift, (1 - centre) * 0.25);
+        const [r, g, b] = mix(base, trellis, Math.max(line * 0.75, diamond * 0.9));
         return [r * weave, g * weave, b * weave];
       });
     },
@@ -347,9 +354,10 @@ const RECIPES: Readonly<Record<CraftedTextureId, TextureRecipe>> = {
     tileMetres: 0.5,
     colour: true,
     paint: (size) => {
-      // A varnished birch-ply face: warm honey with long soft streaks.
-      const pale = hex(0xdba266);
-      const warm = hex(0xb9773d);
+      // A varnished birch-ply face, as on the supplied trestle and the
+      // venue's boardroom tables: pale, faintly pink, long soft streaks.
+      const pale = hex(0xe9d2ae);
+      const warm = hex(0xc9a072);
       return paintColour(size, (u, v) => {
         const streak = fbm(u * 0.125, v, 32, 4, 53);
         const cloud = fbm(u, v, 3, 2, 61);

@@ -16,7 +16,8 @@
 // 800 px square: the dashboard's featured inventory picture is 360 CSS px.
 //
 // Needs the dev server running. CHROMIUM_PATH may name a Chromium binary when
-// Playwright's own browser for this version is not installed.
+// Playwright's own browser for this version is not installed. PREVIEW_GPU=1
+// renders on the GPU (take the shared GPU lock first on a shared machine).
 //   node scripts/render-crafted-previews.mjs [baseUrl] [slug ...]
 import { chromium } from "@playwright/test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -44,10 +45,19 @@ for (const slug of selected) {
     throw new Error(`${existing} exists; render a new CRAFTED_PREVIEW_VERSION, or set OVERWRITE=1 if this version has never shipped`);
   }
 }
-const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH,
-  args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
-});
+// PREVIEW_GPU=1 draws on this machine's GPU through WebGPU, the planner's own
+// renderer, in seconds a piece; otherwise SwiftShader draws on the CPU, which
+// needs no GPU but takes the machine for minutes.
+const browser = process.env.PREVIEW_GPU === "1"
+  ? await chromium.launch({
+    channel: "chromium",
+    headless: true,
+    args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"],
+  })
+  : await chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH,
+    args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+  });
 let failures = 0;
 try {
   const context = await browser.newContext({ viewport: { width: SIZE, height: SIZE }, deviceScaleFactor: 2 });

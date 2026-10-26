@@ -21,6 +21,11 @@ import { casterGeometry, contactSpots } from "./crafted-shadow.js";
 // rolled edge; and a reclined, gently curved back cushion with a handle slot.
 // Drawn to the catalogue's width, depth and height, facing -Z (the planner's
 // seated forward axis, so saved poses face their tables).
+//
+// The venue keeps the shape in several finishes (its inventory): the pink
+// chair (salmon velvet on the mahogany-red frame, Blake's supplied model),
+// the red and gold gallery chair (crimson velvet on a gold frame, the
+// Burgess brochure's finish), and the checked chair (crimson trellis).
 // ---------------------------------------------------------------------------
 
 export interface ChairSize {
@@ -29,7 +34,9 @@ export interface ChairSize {
   readonly height: number;
 }
 
-export type ChairFabric = "velvet-coral" | "check-coral";
+export type ChairFabric = "velvet-coral" | "check-coral" | "velvet-crimson" | "velvet-pink";
+
+export type ChairFrame = "frame-lacquer" | "gilt";
 
 const TUBE = 0.0105;
 const GLIDE = 0.0125;
@@ -93,8 +100,8 @@ function transformed(geometry: BufferGeometry, matrix: Matrix4): BufferGeometry 
   return geometry;
 }
 
-/** The parts of a banquet chair sized to `size`, upholstered in `fabric`. */
-export function banquetChairParts(size: ChairSize, fabric: ChairFabric): CraftedPart[] {
+/** The parts of a banquet chair sized to `size`, upholstered in `fabric` on a frame of `frameFinish`. */
+export function banquetChairParts(size: ChairSize, fabric: ChairFabric, frameFinish: ChairFrame = "frame-lacquer"): CraftedPart[] {
   const { width, depth, height } = size;
   const halfDepth = depth / 2;
   // Frame lines (tube centres), set in so the splayed rear glides stay
@@ -118,7 +125,7 @@ export function banquetChairParts(size: ChairSize, fabric: ChairFabric): Crafted
   const parts: { part: CraftedPart; self: readonly string[] }[] = [];
   const frame = (points: Vec3[], tension = 0.12, self: readonly string[] = []): void => {
     parts.push({
-      part: { material: "frame-lacquer", geometry: tube({ points, radius: TUBE, tension, segmentsPerMetre: detail.perMetre * 0.72, radialSegments: detail.radial - 2 }) },
+      part: { material: frameFinish, geometry: tube({ points, radius: TUBE, tension, segmentsPerMetre: detail.perMetre * 0.72, radialSegments: detail.radial - 2 }) },
       self,
     });
   };

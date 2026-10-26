@@ -45,7 +45,7 @@ function trianglesOf(geometry: BufferGeometry): number {
 }
 
 function isCaster(mesh: Mesh): boolean {
-  return materialsOf(mesh).some((material) => material.name === "crafted:shadow-caster");
+  return materialsOf(mesh).some((material) => material.name === "crafted:shadow-caster" || material.name === "crafted:shadow-sheet");
 }
 
 /** Signed volume of a closed indexed surface: positive when its faces point out. */
@@ -83,15 +83,17 @@ const DRAPE_ALLOWANCE: Partial<Record<CraftedFurnitureSlug, number>> = {
   "platform": 0.008,
 };
 
-const CHAIRS: ReadonlySet<string> = new Set(["chiavari-chair", "burgess-turini-18-3", "checked-banquet-chair"]);
+const CHAIRS: ReadonlySet<string> = new Set(["chiavari-chair", "burgess-turini-18-3", "checked-banquet-chair", "gallery-chair-red-gold", "pink-chair", "banquet-chair"]);
 
 /** Chairs are placed by the hundred, so they get the tightest budget (what is seen). */
 function triangleBudget(slug: CraftedFurnitureSlug): number {
   return CHAIRS.has(slug) ? 10_000 : 30_000;
 }
 
-/** What a piece may cast the sun's shadow with: a few hundred triangles. */
-const CASTER_BUDGET = 600;
+/** What a piece may cast the sun's shadow with: a few hundred triangles a chair, a few thousand a draped table. */
+function casterBudget(slug: CraftedFurnitureSlug): number {
+  return CHAIRS.has(slug) ? 600 : 3_000;
+}
 
 afterEach(() => {
   setCraftedDetailLevel("full");
@@ -104,7 +106,7 @@ describe("crafted furniture", () => {
     for (const slug of supplied) expect(isCraftedFurnitureSlug(slug), slug).toBe(true);
     const catalogue = new Set(CANONICAL_ASSETS.map((asset) => asset.slug));
     for (const slug of CRAFTED_FURNITURE_SLUGS) expect(catalogue.has(slug), slug).toBe(true);
-    expect(isCraftedFurnitureSlug("lectern")).toBe(false);
+    expect(isCraftedFurnitureSlug("black-table-cloth")).toBe(false);
     expect(isCraftedFurnitureSlug("burgess-turini-18-3")).toBe(true);
   });
 
@@ -138,7 +140,7 @@ describe("crafted furniture", () => {
         }
       }
       expect(triangles).toBeLessThanOrEqual(triangleBudget(slug));
-      expect(casterTriangles).toBeLessThanOrEqual(CASTER_BUDGET);
+      expect(casterTriangles).toBeLessThanOrEqual(casterBudget(slug));
 
       // The piece's extent, without the shade its feet leave on the floor
       // (which reaches a few centimetres past them, as a shade does).
@@ -255,7 +257,7 @@ describe("crafted furniture", () => {
   });
 
   it("refuses slugs it does not draw and sizes it cannot", () => {
-    expect(() => createCraftedFurniture({ slug: "lectern", width: 0.6, depth: 0.5, height: 1.15 })).toThrow(/No crafted model/u);
+    expect(() => createCraftedFurniture({ slug: "black-table-cloth", width: 0.5, depth: 0.5, height: 0.01 })).toThrow(/No crafted model/u);
     expect(() => createCraftedFurniture({ slug: "trestle-6ft", width: 0, depth: 0.76, height: 0.74 })).toThrow(/positive dimensions/u);
     expect(() => createCraftedFurniture({ slug: "trestle-6ft", width: Number.NaN, depth: 0.76, height: 0.74 })).toThrow(/positive dimensions/u);
   });

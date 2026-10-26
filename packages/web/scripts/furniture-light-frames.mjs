@@ -68,6 +68,10 @@ const POSES = {
   chair: [[2.35, 1.05, 1.55], [1.62, 0.45, 0.62]],
   // Toward the window wall (−z), over the floor where the sun and the moon fall.
   windows: [[1.5, 2.4, 4.6], [-2.0, 0.2, -1.5]],
+  // Low over the chairs of the window-side row, where the summer morning sun
+  // falls (June 08:30: light enters at 2-4 m and lands 1-4 m into the room):
+  // the shadow proof, feet and legs close up.
+  sunchair: [[3.1, 1.05, -0.7], [1.5, 0.22, -2.5]],
   // The wedding layout (--layout wedding): across the dance floor to the top table and the bar.
   wedding: [[7.6, 3.3, -1.4], [-1.2, 0.4, 3.6]],
   dance: [[3.4, 1.7, 0.9], [-0.2, 0.1, 3.6]],
@@ -86,11 +90,11 @@ const WEDDING = [
   ...[-7.32, -5.49, -3.66].map((x) => ({ slug: "trestle-6ft-white", x, z: 4.25 })),
   ...[-7.93, -7.32, -6.71, -6.1, -5.49, -4.88, -4.27, -3.66, -3.05].map((x) => ({ slug: "@chair", x, z: 4.88 })),
   ...[-1.365, -0.455, 0.455, 1.365].flatMap((x) => [1.98, 2.89, 3.8, 4.71].map((z) => ({ slug: "dancefloor-panel", x, z }))),
-  { slug: "staging-deck-6x4", x: 4.2, z: 4.5 },
-  { slug: "staging-deck-6x4", x: 6.03, z: 4.5 },
+  { slug: "staging-deck-6x4", x: 5.0, z: 4.5 },
+  { slug: "staging-deck-6x4", x: 6.83, z: 4.5 },
   { slug: "bar-counter", x: 9.85, z: 3.3, rotationY: Math.PI / 2 },
-  { slug: "poseur-table-white", x: 2.75, z: 2.35 },
-  { slug: "poseur-table-black", x: 3.45, z: 3.3 },
+  { slug: "poseur-table-white", x: 2.75, z: 2.2 },
+  { slug: "poseur-table-black", x: 3.2, z: 3.3 },
   { slug: "cake-cutting-table", x: -2.55, z: 2.85 },
 ];
 

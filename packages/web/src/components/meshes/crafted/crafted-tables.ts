@@ -16,7 +16,7 @@ import { cornerCascades, swag } from "./crafted-drapes.js";
 import type { CraftedMaterialId } from "./crafted-materials.js";
 import type { CraftedPart } from "./crafted-model.js";
 import { poseurCover } from "./crafted-poseur.js";
-import { casterCylinder, casterGeometry } from "./crafted-shadow.js";
+import { casterGeometry, insetSheet } from "./crafted-shadow.js";
 
 // ---------------------------------------------------------------------------
 // Crafted tables
@@ -75,7 +75,7 @@ export function clothedRoundParts(size: TableSize, colour: ClothColour, seed = 1
   const detail = craftedDetail();
   const radius = Math.min(size.width, size.depth) / 2;
   const hem = colour === "black" && radius > 0.8 ? BLACK_ROUND_HEM : FLOOR_HEM;
-  const cloth = roundCloth({
+  const drape = (samplesPerFold: number, rows: number): ReturnType<typeof roundCloth> => roundCloth({
     radius,
     top: size.height,
     hem,
@@ -90,13 +90,13 @@ export function clothedRoundParts(size: TableSize, colour: ClothColour, seed = 1
     hemLift: 0.016,
     hemWave: hem > FLOOR_HEM ? 0.006 : 0,
     seed,
-    samplesPerFold: detail.level === "full" ? 10 : 6,
-    rows: detail.clothRows,
+    samplesPerFold,
+    rows,
   });
   const parts: CraftedPart[] = [
-    { material: banquetLinen(colour), geometry: occlude(cloth, CLOTH_OCCLUSION) },
-    // The sun's shadow: the cloth's fall as one solid, a little inside it.
-    { material: "shadow-caster", geometry: casterCylinder(radius + 0.002, radius - 0.004, hem, size.height - 0.004, detail.level === "full" ? 40 : 24) },
+    { material: banquetLinen(colour), geometry: occlude(drape(detail.level === "full" ? 10 : 6, detail.clothRows), CLOTH_OCCLUSION) },
+    // The sun's shadow: the same fall drawn coarsely, set in under the cloth.
+    { material: "shadow-sheet", geometry: insetSheet(drape(2, 5), 0.012) },
   ];
   if (hem > FLOOR_HEM) {
     // A cloth clear of the floor shows the table's feet beneath its hem.

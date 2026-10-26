@@ -35,6 +35,8 @@ export type CraftedMaterialId =
   | "linen-white"
   | "linen-black"
   | "velvet-coral"
+  | "velvet-crimson"
+  | "velvet-pink"
   | "check-coral"
   | "frame-lacquer"
   | "glide"
@@ -62,8 +64,18 @@ export type CraftedMaterialId =
   | "parquet"
   | "deck-phenolic"
   | "aluminium"
+  | "screen-white"
+  | "screen-glass"
+  | "plastic-dark"
+  | "paint-white"
+  | "paint-green"
+  | "paint-blue"
+  | "beech"
+  | "porcelain"
+  | "glass"
   | "contact"
-  | "shadow-caster";
+  | "shadow-caster"
+  | "shadow-sheet";
 
 /**
  * Cloth hung as a single open sheet. Drawn from the front only, but it casts
@@ -82,7 +94,7 @@ const OPEN_SHEETS: ReadonlySet<CraftedMaterialId> = new Set<CraftedMaterialId>([
 
 /** Whether parts of this material are a piece's shadow caster rather than what is seen. */
 export function isShadowCaster(id: CraftedMaterialId): boolean {
-  return id === "shadow-caster";
+  return id === "shadow-caster" || id === "shadow-sheet";
 }
 
 /** Whether parts of this material only shade the floor: never a shadow caster, never lit. */
@@ -132,11 +144,13 @@ function physical(id: CraftedMaterialId, parameters: MeshPhysicalNodeMaterialPar
  * the sun's map. Its solids are closed, so the shadow pass draws their back
  * faces, which keeps the acne off the surfaces they stand inside.
  */
-function shadowCaster(): MeshBasicNodeMaterial {
+function shadowCaster(sheet = false): MeshBasicNodeMaterial {
   const material = new MeshBasicNodeMaterial({ color: new Color(0x000000) });
-  material.name = "crafted:shadow-caster";
+  material.name = sheet ? "crafted:shadow-sheet" : "crafted:shadow-caster";
   material.clippingPlanes = noClipPlanes;
+  // A solid's back faces cast; an open sheet (a drape's inset copy) casts from both.
   material.side = FrontSide;
+  if (sheet) material.shadowSide = DoubleSide;
   material.maskNode = bool(false);
   material.maskShadowNode = bool(true);
   // Belt and braces: should the view ever keep a fragment, it writes nothing.
@@ -150,6 +164,8 @@ export function craftedMaterial(id: CraftedMaterialId): Material {
   switch (id) {
     case "shadow-caster":
       return shadowCaster();
+    case "shadow-sheet":
+      return shadowCaster(true);
     case "contact":
       return contactShade();
     case "gilt":
@@ -224,6 +240,31 @@ export function craftedMaterial(id: CraftedMaterialId): Material {
         clearcoat: 0.25,
         clearcoatRoughness: 0.45,
       });
+    case "paint-white":
+    case "paint-green":
+    case "paint-blue": {
+      // The highchairs' satin enamel.
+      const colour = id === "paint-white" ? 0xf2f1ec : id === "paint-green" ? 0x4c6b4a : 0x3f5d7d;
+      return physical(id, { color: new Color(colour), roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.3 });
+    }
+    case "beech":
+      // Lacquered beech: the wooden highchair.
+      return physical(id, { color: new Color(0xf6e3c8), map: craftedTexture("plywood-grain"), roughness: 0.45, clearcoat: 0.4, clearcoatRoughness: 0.25 });
+    case "porcelain":
+      // White bone china: a soft glaze with a bright highlight.
+      return physical(id, { color: new Color(0xf7f6f2), roughness: 0.18, clearcoat: 0.8, clearcoatRoughness: 0.06 });
+    case "glass":
+      // Clear glass, drawn as a faint, bright skin (no refraction: a hall of them stays cheap).
+      return physical(id, { color: new Color(0xeef3f4), roughness: 0.04, metalness: 0, transparent: true, opacity: 0.22, clearcoat: 1, clearcoatRoughness: 0.02 });
+    case "screen-white":
+      // A projection face: matt, near white, no sheen to hot-spot.
+      return standard(id, { color: new Color(0xf1f1ee), roughness: 0.92, metalness: 0 });
+    case "screen-glass":
+      // A switched-off panel or a lens: black glass with a sharp reflection.
+      return physical(id, { color: new Color(0x050607), roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03 });
+    case "plastic-dark":
+      // AV kit's charcoal housings, softly satin.
+      return standard(id, { color: new Color(0x26272a), roughness: 0.55, metalness: 0 });
     case "aluminium":
       // Extruded edge trim: brushed, a soft metal highlight.
       return standard(id, { color: new Color(0xc7c9cb), metalness: 1, roughness: 0.36 });
@@ -257,6 +298,28 @@ export function craftedMaterial(id: CraftedMaterialId): Material {
         sheenRoughness: 0.32,
         sheenColor: new Color(0xff8c66),
       });
+    case "velvet-crimson":
+      // The gallery chair's and the plain banquet chair's red velvet.
+      return physical(id, {
+        color: new Color(0xa3221b),
+        roughness: 0.88,
+        normalMap: craftedTexture("velvet-normal"),
+        normalScale: new Vector2(0.3, 0.3),
+        sheen: 0.9,
+        sheenRoughness: 0.3,
+        sheenColor: new Color(0xff6450),
+      });
+    case "velvet-pink":
+      // The pink chair's salmon velvet, as on Blake's supplied model.
+      return physical(id, {
+        color: new Color(0xd98a78),
+        roughness: 0.88,
+        normalMap: craftedTexture("velvet-normal"),
+        normalScale: new Vector2(0.3, 0.3),
+        sheen: 0.85,
+        sheenRoughness: 0.32,
+        sheenColor: new Color(0xffc2b0),
+      });
     case "check-coral":
       return physical(id, {
         color: new Color(0xffffff),
@@ -264,9 +327,9 @@ export function craftedMaterial(id: CraftedMaterialId): Material {
         roughness: 0.84,
         normalMap: craftedTexture("velvet-normal"),
         normalScale: new Vector2(0.15, 0.15),
-        sheen: 0.45,
+        sheen: 0.5,
         sheenRoughness: 0.4,
-        sheenColor: new Color(0xff8a5c),
+        sheenColor: new Color(0xff5a44),
       });
     case "frame-lacquer":
       return physical(id, {

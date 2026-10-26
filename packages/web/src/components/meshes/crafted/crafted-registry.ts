@@ -1,6 +1,18 @@
 import { barCounterParts, roomDividerParts, serveryParts } from "./crafted-cabinets.js";
 import { banquetChairParts } from "./crafted-chairs.js";
+import {
+  handheldMicParts,
+  lapelMicParts,
+  laptopParts,
+  lecternParts,
+  micStandParts,
+  projectorParts,
+  projectorScreenParts,
+  tableMicParts,
+  televisionParts,
+} from "./crafted-av.js";
 import { chiavariParts } from "./crafted-chiavari.js";
+import { foldedClothParts, highchairParts, placeSettingParts } from "./crafted-extras.js";
 import { danceFloorPanelParts, stagingDeckParts } from "./crafted-staging.js";
 import {
   barePoseurParts,
@@ -49,6 +61,9 @@ const FACTORIES: Readonly<Record<CraftedFurnitureSlug, CraftedFactory>> = {
   "chiavari-chair": (size) => chiavariParts(size),
   "burgess-turini-18-3": (size) => banquetChairParts(size, "velvet-coral"),
   "checked-banquet-chair": (size) => banquetChairParts(size, "check-coral"),
+  "gallery-chair-red-gold": (size) => banquetChairParts(size, "velvet-crimson", "gilt"),
+  "pink-chair": (size) => banquetChairParts(size, "velvet-pink"),
+  "banquet-chair": (size) => banquetChairParts(size, "velvet-crimson"),
   "round-table-6ft-white": (size) => clothedRoundParts(size, "white"),
   "round-table-6ft-black": (size) => clothedRoundParts(size, "black"),
   "round-table-6ft": (size) => bareRoundParts(size),
@@ -58,6 +73,7 @@ const FACTORIES: Readonly<Record<CraftedFurnitureSlug, CraftedFactory>> = {
   "trestle-6ft-white": (size) => clothedTrestleParts(size, "white", 7),
   "trestle-6ft-black": (size) => clothedTrestleParts(size, "black", 7),
   "trestle-6ft": (size) => bareTrestleParts(size, "plastic"),
+  "trestle-4ft": (size) => bareTrestleParts(size, "plastic"),
   "trestle-6ft-wooden": (size) => bareTrestleParts(size, "wood"),
   "ceremony-table": (size) => ceremonyTableParts(size),
   "round-cafe-table-white": (size) => roundCafeParts(size),
@@ -72,6 +88,22 @@ const FACTORIES: Readonly<Record<CraftedFurnitureSlug, CraftedFactory>> = {
   "staging-deck-6x4": (size) => stagingDeckParts(size),
   "staging-deck-6x3": (size) => stagingDeckParts(size),
   "dancefloor-panel": (size) => danceFloorPanelParts(size),
+  "lectern": (size) => lecternParts(size),
+  "projector-screen": (size) => projectorScreenParts(size),
+  "hisense-television": (size) => televisionParts(size),
+  "mic-stand": (size) => micStandParts(size),
+  "projector": (size) => projectorParts(size),
+  "laptop": (size) => laptopParts(size),
+  "handheld-microphone": (size) => handheldMicParts(size),
+  "lapel-microphone": (size) => lapelMicParts(size),
+  "microphone": (size) => tableMicParts(size),
+  "highchair-white": (size) => highchairParts(size, "paint-white"),
+  "highchair-green": (size) => highchairParts(size, "paint-green"),
+  "highchair-blue": (size) => highchairParts(size, "paint-blue"),
+  "highchair-wooden": (size) => highchairParts(size, "beech"),
+  "dinner-place-setting": (size) => placeSettingParts(size),
+  "white-table-cloth": (size) => foldedClothParts(size, "damask-ivory"),
+  "black-table-cloth": (size) => foldedClothParts(size, "poly-black"),
   "room-divider": (size) => roomDividerParts(size),
 };
 
