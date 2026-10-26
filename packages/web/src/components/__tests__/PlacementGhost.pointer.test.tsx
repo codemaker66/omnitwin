@@ -33,6 +33,8 @@ function runFrame(): void {
   act(() => { frames.latest?.(); });
 }
 vi.mock("../ConstraintViolationSkin.js", () => ({ ConstraintViolationSkin: () => null }));
+// The placed look's warm-up has its own frame and its own suite (WarmPlacedVariants.test.tsx).
+vi.mock("../WarmPlacedVariants.js", () => ({ WarmPlacedVariants: () => null }));
 
 let canvas: HTMLCanvasElement;
 let scene: Scene;

@@ -9,7 +9,7 @@ import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useTouchGestureStore } from "../stores/touch-gesture-store.js";
-import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
+import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { usePlannerKeyBindings } from "../lib/planner-keys.js";
@@ -38,6 +38,9 @@ import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
+import { DEFAULT_PLANNER_CHAIR_SLUG } from "../lib/furniture-defaults.js";
+import { isDiningTableItem } from "../lib/furniture-semantics.js";
+import { WarmPlacedVariants } from "./WarmPlacedVariants.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -50,6 +53,13 @@ const WARM_FRAMES = 3;
 const WARM_SCALE = 1e-4;
 /** A click this soon after a touch the arbiter handled is that touch's own compatibility click, ms. */
 const ARBITRATED_CLICK_MS = 700;
+
+/** What lands when `item` is set down: the piece, and a dining table's seats (lib/table-group.ts). */
+function landsWith(item: CatalogueItem): readonly CatalogueItem[] {
+  if (!isDiningTableItem(item)) return [item];
+  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  return chair === undefined ? [item] : [item, chair];
+}
 
 /** A pointer to follow on the next frame: a move, or the finger the touch arbiter raised the ghost above. */
 interface PendingPointer {
@@ -535,25 +545,29 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // Mounted from the moment the piece is in hand (drawn tiny while it warms,
   // then hidden), so the first move shows it without building or compiling it.
+  // Its placed look warms beside it, so the drop compiles nothing either.
   return (
-    <group
-      ref={ghostRef}
-      rotation={[0, ghostRotation, 0]}
-      scale={hasGhost ? 1 : WARM_SCALE}
-      visible={hasGhost || warming}
-      name="placement-ghost"
-    >
-      <FurnitureProxy
-        item={catalogueItem}
-        position={[0, 0, 0]}
-        rotationY={0}
-        opacity={0.6}
-        colorOverride={ghostColor}
-        name="placement-ghost-mesh"
-      />
-      {showConstraintSkin && (
-        <ConstraintViolationSkin item={catalogueItem} y={0} />
-      )}
-    </group>
+    <>
+      <group
+        ref={ghostRef}
+        rotation={[0, ghostRotation, 0]}
+        scale={hasGhost ? 1 : WARM_SCALE}
+        visible={hasGhost || warming}
+        name="placement-ghost"
+      >
+        <FurnitureProxy
+          item={catalogueItem}
+          position={[0, 0, 0]}
+          rotationY={0}
+          opacity={0.6}
+          colorOverride={ghostColor}
+          name="placement-ghost-mesh"
+        />
+        {showConstraintSkin && (
+          <ConstraintViolationSkin item={catalogueItem} y={0} />
+        )}
+      </group>
+      <WarmPlacedVariants items={landsWith(catalogueItem)} />
+    </>
   );
 }
