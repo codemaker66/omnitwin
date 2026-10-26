@@ -1245,3 +1245,64 @@ export async function requestEscalation(
   const html = await render(<RequestEscalationEmail {...data} />);
   return { subject, html };
 }
+
+// ---------------------------------------------------------------------------
+// venueTeamInvitation — a venue administrator gave this address access to the
+// venue (the Team tab, Plan 19 L1). Read by someone who has no account yet, so
+// it says who invited them, what the access opens, the one rule that makes it
+// work (sign up with exactly this address) and that ignoring it changes
+// nothing. Client letterhead, 7:1 throughout.
+// ---------------------------------------------------------------------------
+
+export interface VenueTeamInvitationData {
+  readonly venueName: string;
+  /** The administrator's name; null reads as the venue's team. */
+  readonly inviterName: string | null;
+  readonly email: string;
+  readonly roleLabel: string;
+  readonly roleSummary: string;
+  /** The venue-local day the grant lapses, e.g. "Tuesday 24 November 2026". */
+  readonly openUntil: string;
+  readonly signUpUrl: string;
+}
+
+export function VenueTeamInvitationEmail(props: VenueTeamInvitationData): ReactElement {
+  const inviter = props.inviterName ?? `The team at ${props.venueName}`;
+  return (
+    <Layout label="Team invitation" preview={`${inviter} gave you ${props.roleLabel} access to ${props.venueName}`}>
+      <Heading style={h2Style()}>Your access to {props.venueName}</Heading>
+      <Text style={paragraphStyle}>
+        {inviter} has given you {props.roleLabel} access to {props.venueName} on Venviewer.
+      </Text>
+      <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
+        <tbody>
+          <MetaRow label="Access" value={`${props.roleLabel}: ${props.roleSummary}`} />
+          <MetaRow label="Sign up as" value={props.email} />
+          <MetaRow label="Open until" value={props.openUntil} />
+        </tbody>
+      </table>
+      <Text style={paragraphStyle}>
+        Create your account with exactly this email address, then confirm it from the
+        message that follows. Your access connects the moment you sign in.
+      </Text>
+      <Section style={{ marginTop: 20 }}>
+        <Button href={props.signUpUrl} style={buttonStyle}>
+          Create your account
+        </Button>
+      </Section>
+      <Text style={{ ...paragraphStyle, marginTop: 20 }}>
+        Not expecting this? You can ignore it: nothing happens unless someone signs up
+        with this address.
+      </Text>
+      <Hr style={ruleStyle} />
+    </Layout>
+  );
+}
+
+export async function venueTeamInvitation(
+  data: VenueTeamInvitationData,
+): Promise<{ subject: string; html: string }> {
+  const subject = `Your access to ${data.venueName} on Venviewer`;
+  const html = await render(<VenueTeamInvitationEmail {...data} />);
+  return { subject, html };
+}

@@ -10,45 +10,21 @@
 // changes to either.
 // ---------------------------------------------------------------------------
 
+import {
+  CRAFTED_FURNITURE_SLUGS,
+  CRAFTED_PREVIEW_VERSION,
+  type CraftedFurnitureSlug,
+} from "../components/meshes/crafted/crafted-slugs.js";
 import type { CardParams } from "./setup-cards.js";
 
-export const CRAFTED_FURNITURE_SLUGS = [
-  "burgess-turini-18-3",
-  "checked-banquet-chair",
-  "round-table-6ft-white",
-  "round-table-6ft-black",
-  "cake-cutting-table",
-  "trestle-4ft-white",
-  "trestle-4ft-black",
-  "trestle-6ft-white",
-  "trestle-6ft-black",
-  "trestle-6ft",
-  "trestle-6ft-wooden",
-  "ceremony-table",
-  "round-cafe-table-white",
-  "square-cafe-table-white",
-  "poseur-table-white",
-  "poseur-table-black",
-  "bar-counter",
-  "servery-unit",
-  "platform",
-  "room-divider",
-] as const;
-
-export type CraftedFurnitureSlug = (typeof CRAFTED_FURNITURE_SLUGS)[number];
+// The list and the previews' folder are the furniture rebuild's to change (components/meshes/crafted/crafted-slugs).
+export { CRAFTED_FURNITURE_SLUGS, CRAFTED_PREVIEW_VERSION, type CraftedFurnitureSlug };
 
 const CRAFTED: ReadonlySet<string> = new Set(CRAFTED_FURNITURE_SLUGS);
 
 export function isCraftedFurnitureSlug(slug: string): slug is CraftedFurnitureSlug {
   return CRAFTED.has(slug);
 }
-
-/**
- * The folder of the current crafted previews. Files under a versioned
- * folder are served immutable (vercel.json), so a redesign that changes how
- * a piece looks re-renders the previews into a new folder.
- */
-export const CRAFTED_PREVIEW_VERSION = "crafted-v2";
 
 /** The rendered preview of a crafted piece, or null for any other item. */
 export function craftedFurniturePreviewUrl(slug: string): string | null {
