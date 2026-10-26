@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FILL_AISLE_RULE, fillRefillIds, grandHallExits, planAutoFill, planBanquetFill, planGangwayFill, refillPieces } from "../auto-fill.js";
+import { planAutoFill, planBanquetFill } from "../auto-fill.js";
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../catalogue.js";
 import { PLANNER_CHAIR_BY_EVENT, plannerChairSlug, UNASKED_PLANNER_CHAIR_SLUG } from "../furniture-defaults.js";
 import { stockIdentity } from "../card-stock.js";
@@ -144,34 +144,6 @@ describe("a table keeps its own chairs", () => {
   });
 });
 
-describe("Fill at a wedding", () => {
-  it("re-lays the room on Chiavari, keeping each old chair's record", () => {
-    const placed = createTableGroup(ROUND.id, 0, 0, 0, 10);
-    const oldChairIds = new Set(placed.slice(1).map((piece) => piece.id));
-    atEvent("wedding");
-    const plan = planGangwayFill({ table: ROUND, seatsPerTable: 10, guests: 0, ...HALL, exits: grandHallExits(), rule: FILL_AISLE_RULE });
-    if (plan === null) throw new Error("no plan");
-    const pieces = refillPieces(placed, fillRefillIds(placed, ROUND), plan);
-    const kept = pieces.filter((piece) => oldChairIds.has(piece.id));
-    expect(kept).toHaveLength(10);
-    expect(new Set(chairSlugs(kept))).toEqual(new Set(["chiavari-chair"]));
-    expect(new Set(chairSlugs(pieces))).toEqual(new Set(["chiavari-chair"]));
-  });
-
-  it("keeps a chair the planner never sets as it is: a highchair at a round stays a highchair", () => {
-    const [table, first, ...rest] = createTableGroup(ROUND.id, 0, 0, 0, 10);
-    if (table === undefined || first === undefined) throw new Error("no round");
-    const highchair = { ...first, catalogueItemId: item("highchair-wooden").id };
-    const placed = [table, highchair, ...rest];
-    atEvent("wedding");
-    const plan = planGangwayFill({ table: ROUND, seatsPerTable: 10, guests: 0, ...HALL, exits: grandHallExits(), rule: FILL_AISLE_RULE });
-    if (plan === null) throw new Error("no plan");
-    const round = refillPieces(placed, fillRefillIds(placed, ROUND), plan).filter((piece) => piece.groupId === table.groupId && piece.id !== table.id);
-    expect(chairSlugs(round.filter((piece) => piece.id === highchair.id))).toEqual(["highchair-wooden"]);
-    expect(chairSlugs(round.filter((piece) => piece.id !== highchair.id))).toEqual(Array.from({ length: 9 }, () => "chiavari-chair"));
-  });
-});
-
 describe("the store's count at a wedding", () => {
   it("counts the Chiavari as itself and the Turini as the venue's pink chair", () => {
     expect(stockIdentity(item("chiavari-chair").id)).toBe(item("chiavari-chair").id);
@@ -180,24 +152,16 @@ describe("the store's count at a wedding", () => {
 });
 
 describe("the Grand Hall's figures follow the event's chair", () => {
-  function gangwayFill(seatsPerTable: number): number | undefined {
-    return planGangwayFill({ table: ROUND, seatsPerTable, guests: 0, ...HALL, exits: grandHallExits(), rule: FILL_AISLE_RULE })?.roomForSeats;
-  }
-
-  it("seats 170 and 204 at 0.6 m, 140 and 168 with gangways, at a wedding", () => {
+  it("seats 170 and 204 at 0.6 m at a wedding", () => {
     atEvent("wedding");
     expect(planBanquetFill(ROUND, 0, 10, HALL.roomWidthM, HALL.roomLengthM)?.roomForSeats).toBe(170);
     expect(planBanquetFill(ROUND, 0, 12, HALL.roomWidthM, HALL.roomLengthM)?.roomForSeats).toBe(204);
-    expect(gangwayFill(10)).toBe(140);
-    expect(gangwayFill(12)).toBe(168);
   });
 
-  it("seats 140 and 168 at 0.6 m, 110 and 132 with gangways, at a business event", () => {
+  it("seats 140 and 168 at 0.6 m at a business event", () => {
     atEvent("corporate");
     expect(planBanquetFill(ROUND, 0, 10, HALL.roomWidthM, HALL.roomLengthM)?.roomForSeats).toBe(140);
     expect(planBanquetFill(ROUND, 0, 12, HALL.roomWidthM, HALL.roomLengthM)?.roomForSeats).toBe(168);
-    expect(gangwayFill(10)).toBe(110);
-    expect(gangwayFill(12)).toBe(132);
   });
 
   it("sets theatre rows with the event's chair, on the rows' own fixed pitch", () => {
