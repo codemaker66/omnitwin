@@ -292,15 +292,16 @@ function EveningOpen({ phone }: { readonly phone: boolean }): ReactElement {
     const slider = sliderRef.current;
     const section = sectionRef.current;
     if (slider === null || section === null) return undefined;
+    // Layout widths, not the box on screen: the panel opens from 0.96 of its size.
     const measure = (): void => {
-      const measured = Math.round(slider.getBoundingClientRect().width);
+      const measured = slider.clientWidth;
       if (measured > 0) setWidth(measured);
     };
     const chip = hourChipElement();
     // As wide as the dock (its stack, with the rail), rising from the chip.
     const dock = chip?.closest<HTMLElement>("[data-testid='planner-dock-stack']") ?? chip?.closest<HTMLElement>(".pc-dock") ?? null;
     const place = (): void => {
-      if (!phone && dock !== null) section.style.setProperty("--pc-evening-width", `${String(Math.round(dock.getBoundingClientRect().width))}px`);
+      if (!phone && dock !== null && dock.offsetWidth > 0) section.style.setProperty("--pc-evening-width", `${String(dock.offsetWidth)}px`);
       if (chip !== null) {
         const chipBox = chip.getBoundingClientRect();
         const box = section.getBoundingClientRect();

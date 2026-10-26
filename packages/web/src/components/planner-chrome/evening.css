@@ -141,6 +141,12 @@
 
 .pc-evening__chevron { color: var(--house-forest-ink-3); }
 
+/* Now while following the clock, Whole day while the line shows it: the key held down, in words and wash. */
+.pc-evening .pc-quiet[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--house-cream) 34%, transparent);
+  background: color-mix(in srgb, var(--house-cream) 9%, transparent);
+}
+
 .pc-evening__date-menu { width: 264px; }
 
 /* -- The slider: the sky and the line as one control --------------------------- */
@@ -393,7 +399,8 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  box-shadow: inset 0 0 0 1px var(--house-hairline-hover);
+  /* 12 % cream, mixed here: the planner page remaps the hairline tokens to its paper rules (workspace.css). */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house-cream) 12%, transparent);
   color: var(--house-forest-ink-1);
   text-align: left;
   cursor: pointer;

@@ -7,6 +7,7 @@ import type { EveningSource } from "../evening-state.js";
 // ---------------------------------------------------------------------------
 
 const { Evening } = await import("../Evening.js");
+const { EveningSky } = await import("../EveningSky.js");
 const { useEveningStore } = await import("../evening-state.js");
 const { useHallTimeStore } = await import("../../../stores/hall-time-store.js");
 const { useEditorStore } = await import("../../../stores/editor-store.js");
@@ -344,5 +345,22 @@ describe("on a phone (frame 11)", () => {
     fireEvent.click(done);
     expect(useEveningStore.getState().open).toBe(false);
     expect(readRememberedHour("layout-a")).toEqual({ mode: "set", at: held });
+  });
+});
+
+describe("the sky's marks", () => {
+  const DAY = { start: t("2026-11-28T06:00:00Z"), end: t("2026-11-29T06:00:00Z") };
+
+  it("name sunrise, sunset and moonrise on the horizon", () => {
+    render(<EveningSky span={DAY} width={1036} skyHeight={128} at={t("2026-11-28T12:30:00Z")} acts={ACTS} dayStops={[]} compact={false} />);
+    const words = [...screen.getByTestId("planner-evening-drawing").querySelectorAll(".pc-evening__mark-label")].map((label) => label.textContent);
+    expect(words).toEqual(expect.arrayContaining(["Sunrise 08:18", "Sunset 15:51", "Moonrise 20:09"]));
+  });
+
+  it("give way where the body at the hour, or its line to the horizon, would cross their words (the phone at 12:30)", () => {
+    render(<EveningSky span={DAY} width={361} skyHeight={112} at={t("2026-11-28T12:30:00Z")} acts={ACTS} dayStops={[]} compact />);
+    const words = [...screen.getByTestId("planner-evening-drawing").querySelectorAll(".pc-evening__mark-label")].map((label) => label.textContent);
+    expect(words).not.toContain("Sunrise 08:18");
+    expect(words).toContain("Moonrise 20:09");
   });
 });

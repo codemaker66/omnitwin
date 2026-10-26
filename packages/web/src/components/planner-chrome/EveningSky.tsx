@@ -253,12 +253,17 @@ export function EveningSky({ span, width, skyHeight, at, acts, dayStops, compact
           const previous = marks[index - 1];
           const raised = previous !== undefined && mx - x(previous.at) < 110 ? 16 : 0;
           const anchor = mx < 56 ? "start" : mx > width - 56 ? "end" : "middle";
+          const words = `${mark.name} ${formatWallTime(mark.at)}`;
+          const wide = widthOf(words, 12, 400);
+          const left = anchor === "start" ? mx : anchor === "end" ? mx - wide : mx - wide / 2;
+          // Where the body at the hour, or its line down to the horizon, would cross the words, they give way.
+          const underBody = (reading.sun.up || reading.moon.up) && headX > left - 14 && headX < left + wide + 14;
           return (
             <g key={`${mark.name}-${String(mark.at)}`} className="pc-evening__mark">
               <line className="pc-evening__mark-tick" x1={mx} x2={mx} y1={skyHeight - 24 - raised} y2={skyHeight - 3} />
-              {markLabels ? (
-                <text className="pc-evening__mark-label" x={mx} y={skyHeight - 30 - raised} textAnchor={anchor}>
-                  {`${mark.name} ${formatWallTime(mark.at)}`}
+              {markLabels && !underBody ? (
+                <text className="pc-evening__mark-label" x={mx} y={skyHeight - 30 - raised} textAnchor={anchor} data-pc-measure={`400/12/${words}`}>
+                  {words}
                 </text>
               ) : null}
             </g>
