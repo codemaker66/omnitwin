@@ -3,9 +3,9 @@ import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { referenceLoadouts, referencePhotos, files, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { outerColumn } from "../db/outer-column.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
+import { outerColumn } from "../utils/outer-column.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -60,7 +60,7 @@ export async function referenceLoadoutRoutes(
       name: referenceLoadouts.name,
       description: referenceLoadouts.description,
       createdAt: referenceLoadouts.createdAt,
-      photoCount: sql<number>`(SELECT count(*)::int FROM reference_photos rp WHERE rp.loadout_id = ${outerColumn(referenceLoadouts.id)})`,
+      photoCount: sql<number>`(SELECT count(*)::int FROM reference_photos WHERE loadout_id = ${outerColumn(referenceLoadouts.id)})`,
       coverFileKey: sql<string | null>`(SELECT f.file_key FROM reference_photos rp JOIN files f ON f.id = rp.file_id WHERE rp.loadout_id = ${outerColumn(referenceLoadouts.id)} ORDER BY rp.sort_order LIMIT 1)`,
     })
       .from(referenceLoadouts)

@@ -114,4 +114,19 @@ describe("GeneratedFurnitureProxyBadge", () => {
 
     expect(screen.queryByTestId("generated-furniture-proxy-badge")).toBeNull();
   });
+
+  // Blake, 26 Oct 2026: nobody sees the stand-in line (T-674, QoL F-15), even if a
+  // generated model ever came back into the catalogue.
+  it("shows nobody a stand-in line, even with every generated model placed", () => {
+    usePlacementStore.setState({
+      placedItems: GENERATED_FURNITURE_SLUGS.map((slug, index) => (
+        createPlacedItem(catalogueId(slug), index * 2, 0)
+      )),
+    });
+
+    const { container } = render(<GeneratedFurnitureProxyBadge />);
+
+    expect(container.textContent).toBe("");
+    expect(screen.queryByText(/AI-generated|stand-in|not measured/u)).toBeNull();
+  });
 });

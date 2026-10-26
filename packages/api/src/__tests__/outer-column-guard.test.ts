@@ -8,7 +8,7 @@ import * as schema from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
 // A hand-written subquery reaches the row outside it only through
-// outerColumn() (db/outer-column.ts), and names its own table with an alias.
+// outerColumn() (utils/outer-column.ts), and names its own table with an alias.
 //
 // Interpolated straight into a single-table select's own SQL, `${table.column}`
 // is rendered without its table, and PostgreSQL gives the name to the
@@ -132,7 +132,7 @@ describe("subqueries name the outer row by its table", () => {
     const found = sourceFiles(SRC).flatMap((path) => judge(relative(SRC, path), readFileSync(path, "utf8")));
     expect(
       found,
-      "Name the outer row with outerColumn() from db/outer-column.ts and alias the subquery's own tables; see .claude/gotchas/drizzle-single-table-subquery-columns.md",
+      "Name the outer row with outerColumn() from utils/outer-column.ts and alias the subquery's own tables; see .claude/gotchas/drizzle-single-table-subquery-columns.md",
     ).toEqual([]);
   });
 });

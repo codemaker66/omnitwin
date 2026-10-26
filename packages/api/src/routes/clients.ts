@@ -5,7 +5,7 @@ import {
   users, configurations, enquiries, guestLeads,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { outerColumn } from "../db/outer-column.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canManageCommercial, canReadClients } from "../utils/query.js";
 import { contactProfile, searchClients } from "../services/client-search.js";

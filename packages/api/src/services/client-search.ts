@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Database } from "../db/client.js";
-import { outerColumn } from "../db/outer-column.js";
+import { outerColumn } from "../utils/outer-column.js";
 import {
   clientAccounts,
   configurations,

@@ -23,7 +23,7 @@ SQL reads correctly as soon as the select gains a join, because Drizzle then
 qualifies every column, so a refactor can break or mend it without touching the
 subquery. Mocked route tests never run the SQL and cannot see any of this.
 
-Name the outer row with `outerColumn()` from `packages/api/src/db/outer-column.ts`,
+Name the outer row with `outerColumn()` from `packages/api/src/utils/outer-column.ts`,
 which always writes `"table"."column"`, and alias the subquery's own tables:
 
 ```ts

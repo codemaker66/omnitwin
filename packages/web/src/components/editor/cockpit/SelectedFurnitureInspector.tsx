@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState, type ReactElement } from "react";
-import { Armchair, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { Armchair, LayoutGrid, Plus, RotateCcw, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import { useAutoFillRequestStore } from "../../../stores/auto-fill-request-store.js";
+import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { toRealWorld, toRenderSpace } from "../../../constants/scale.js";
 import { normalizeFurnitureScale } from "../../../lib/furniture-scale.js";
 import { SCALE_MIN, SCALE_MAX } from "../../../lib/planner-tools.js";
@@ -12,6 +14,8 @@ import { dispatchPlannerToolbarCommand } from "../../../lib/planner-toolbar-even
 import { useEscapeLayer } from "../../../lib/planner-keys.js";
 import { asOneUndoStep } from "../../../lib/planner-keymap.js";
 import { referenceSceneEntries, referenceSceneSummary, referenceSelection, type ReferenceSceneEntry } from "../../../lib/reference-scene-model.js";
+import { floorNames, withFloorNames } from "../../../lib/floor-names.js";
+import { countLabel } from "../../../lib/count-label.js";
 import "./ReferencePanels.css";
 
 interface NumberControlProps {
@@ -66,14 +70,14 @@ function InspectorOverview({ primary, members }: { readonly primary: ReferenceSc
   const catalogue = primary.catalogue;
   const scale = normalizeFurnitureScale(primary.item.scale);
   return <section className="reference-inspector-section"><h3>Overview</h3><dl>
-    <NumberFact label="Type" value={catalogue?.name ?? "Uncatalogued object"} />
+    <NumberFact label="Type" value={catalogue?.name ?? "Not in the catalogue"} />
     {catalogue !== undefined && <>
       <NumberFact label={catalogue.tableShape === "round" ? "Diameter" : "Width"} value={`${(catalogue.width * scale).toFixed(2)} m`} />
       {catalogue.tableShape !== "round" && <NumberFact label="Depth" value={`${(catalogue.depth * scale).toFixed(2)} m`} />}
       <NumberFact label="Height" value={`${(catalogue.height * scale).toFixed(2)} m`} />
     </>}
-    <NumberFact label="Group / selection" value={`${String(members.length)} ${members.length === 1 ? "object" : "objects"}`} />
-    <NumberFact label="Placed chairs" value={String(members.filter((entry) => entry.category === "chair").length)} />
+    <NumberFact label="Pieces" value={countLabel(members.length, "piece")} />
+    <NumberFact label="Seats" value={String(members.filter((entry) => entry.category === "chair").length)} />
   </dl>{catalogue?.dimensionStatus === "approximate" && <p className="reference-muted">Approximate planning dimensions · confirm before final setup.</p>}</section>;
 }
 
@@ -90,6 +94,12 @@ function InspectorTransforms({ primary, members, ids }: {
     const delta = degrees * Math.PI / 180 - item.rotationY;
     asOneUndoStep(() => { usePlacementStore.getState().rotateItemsTo(new Map(members.map((entry) => [entry.item.id, entry.item.rotationY + delta]))); });
   };
+  // Catalogue pieces are the hall's own stock at their real size (spec D10):
+  // nothing in the hall changes size, so only a piece outside the catalogue
+  // can be resized. A legacy layout keeps its stored scale; it is named and
+  // can be put back to the real size in one step.
+  const resizable = members.length > 0 && members.every((entry) => entry.catalogue === undefined);
+  const offSize = members.filter((entry) => entry.catalogue !== undefined && Math.abs(normalizeFurnitureScale(entry.item.scale) - 1) > 1e-6);
   const scales = members.map((entry) => normalizeFurnitureScale(entry.item.scale));
   const minPercent = Math.ceil(SCALE_MIN / Math.min(...scales) * scale * 100);
   const maxPercent = Math.floor(SCALE_MAX / Math.max(...scales) * scale * 100);
@@ -104,8 +114,16 @@ function InspectorTransforms({ primary, members, ids }: {
     </div>
     <dl><NumberFact label="Surface height" value={`${item.y.toFixed(3)} m`} /></dl>
     <NumberControl label={group ? "Piece rotation (°)" : "Rotation (°)"} value={Number((item.rotationY * 180 / Math.PI).toFixed(1))} step={1} onCommit={rotate} />
-    <NumberControl label={group ? "Piece scale (%)" : "Scale (%)"} value={Number((scale * 100).toFixed(1))} step={1} min={minPercent} max={maxPercent} onCommit={resize} />
-    {group && <p className="reference-muted">Position moves the group; rotation and scale affect each piece.</p>}
+    {resizable && <NumberControl label={group ? "Piece size (%)" : "Size (%)"} value={Number((scale * 100).toFixed(1))} step={1} min={minPercent} max={maxPercent} onCommit={resize} />}
+    {offSize.length > 0 && <div data-testid="reference-off-size">
+      <p className="reference-muted">{offSize.length === 1 && offSize[0] !== undefined
+        ? `Drawn at ${String(Math.round(normalizeFurnitureScale(offSize[0].item.scale) * 100))}% of its real size.`
+        : `${countLabel(offSize.length, "piece")} drawn away from their real size.`}</p>
+      <button type="button" className="reference-action" onClick={() => { asOneUndoStep(() => { usePlacementStore.getState().scaleItemsTo(new Map(offSize.map((entry) => [entry.item.id, 1]))); }); }}>
+        <RotateCcw size={14} aria-hidden="true" />Reset to the real size
+      </button>
+    </div>}
+    {group && <p className="reference-muted">Position moves the whole group; turning applies to each piece.</p>}
   </section>;
 }
 
@@ -130,11 +148,29 @@ function InspectorStyle({ primary }: { readonly primary: ReferenceSceneEntry }):
   </section>;
 }
 
+function openCatalogue(): void {
+  if (useLayoutTimelinePreviewStore.getState().mode === "inactive") dispatchPlannerToolbarCommand("open-furniture");
+}
+
+function layOutForGuests(): void {
+  if (useLayoutTimelinePreviewStore.getState().mode !== "inactive") return;
+  useAutoFillRequestStore.getState().request("dinner-rounds");
+  useCockpitStore.getState().setMode("guests");
+}
+
 function EmptyInspector({ entries, roomName }: { readonly entries: readonly ReferenceSceneEntry[]; readonly roomName: string }): ReactElement {
+  // An empty floor says once where to start, and shows no zeros (A-15).
+  if (entries.length === 0) {
+    return <div className="reference-empty-inspector" data-testid="reference-empty-floor"><Armchair size={28} strokeWidth={1} aria-hidden="true" /><h3>{roomName}</h3>
+      <p>Nothing on the floor yet. Add a table, or lay out for your guests.</p>
+      <button className="reference-action" type="button" onClick={openCatalogue}><Plus size={14} aria-hidden="true" />Add a table</button>
+      <button className="reference-action" type="button" aria-label="Lay out tables and seats for your guests" onClick={layOutForGuests}><LayoutGrid size={14} aria-hidden="true" />Lay out</button>
+    </div>;
+  }
   const summary = referenceSceneSummary(entries);
-  return <div className="reference-empty-inspector"><Armchair size={28} strokeWidth={1} /><h3>{roomName}</h3><p>Select furniture to edit.</p>
-    <dl><NumberFact label="Tables" value={String(summary.tables)} /><NumberFact label="Placed chairs" value={String(summary.chairs)} /><NumberFact label="Objects" value={String(summary.objects)} /></dl>
-    <button className="reference-action" type="button" onClick={() => { if (useLayoutTimelinePreviewStore.getState().mode === "inactive") dispatchPlannerToolbarCommand("open-furniture"); }}><Plus size={14} />Add furniture</button>
+  return <div className="reference-empty-inspector"><Armchair size={28} strokeWidth={1} aria-hidden="true" /><h3>{roomName}</h3><p>Select a table or piece to change it.</p>
+    <dl><NumberFact label="Tables" value={String(summary.tables)} /><NumberFact label="Seats" value={String(summary.chairs)} /><NumberFact label="Pieces" value={String(summary.objects)} /></dl>
+    <button className="reference-action" type="button" onClick={openCatalogue}><Plus size={14} aria-hidden="true" />Add furniture</button>
   </div>;
 }
 
@@ -143,12 +179,12 @@ export function SelectedFurnitureInspector({ className = "" }: { readonly classN
   const selectedIds = useSelectionStore((state) => state.selectedIds);
   const roomName = useEditorStore((state) => state.space?.name ?? "Room layout");
   const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
-  const entries = useMemo(() => referenceSceneEntries(items), [items]);
+  const entries = useMemo(() => withFloorNames(referenceSceneEntries(items), floorNames(items)), [items]);
   const selection = useMemo(() => referenceSelection(entries, selectedIds), [entries, selectedIds]);
   const primary = selection.primary;
   const locked = previewMode !== "inactive";
   return <aside className={`reference-panel reference-furniture-inspector ${className}`} aria-label="Furniture inspector" data-testid="reference-furniture-inspector">
-    <header className="reference-panel-heading"><SlidersHorizontal size={15} /><h2>{locked ? "Phase preview" : primary?.label ?? "Inspector"}</h2>
+    <header className="reference-panel-heading"><SlidersHorizontal size={15} /><h2>{locked ? "Phase preview" : primary?.label ?? "Details"}</h2>
       {!locked && primary !== undefined && <button type="button" className="reference-icon-button" aria-label="Clear furniture selection" onClick={() => { useSelectionStore.getState().clearSelection(); }}><X size={15} /></button>}
     </header>
     <div className="reference-panel-scroll">
@@ -158,6 +194,6 @@ export function SelectedFurnitureInspector({ className = "" }: { readonly classN
         <InspectorStyle primary={primary} />
       </>}
     </div>
-    {!locked && primary !== undefined && <footer className="reference-panel-footer"><button type="button" className="reference-action reference-action-danger" onClick={() => { asOneUndoStep(() => { usePlacementStore.getState().removeItems(selection.ids); useSelectionStore.getState().clearSelection(); }); }}><Trash2 size={14} />Remove {selection.members.length > 1 ? `${String(selection.members.length)} objects` : "object"}</button></footer>}
+    {!locked && primary !== undefined && <footer className="reference-panel-footer"><button type="button" className="reference-action reference-action-danger" onClick={() => { asOneUndoStep(() => { usePlacementStore.getState().removeItems(selection.ids); useSelectionStore.getState().clearSelection(); }); }}><Trash2 size={14} aria-hidden="true" />{selection.members.length > 1 ? `Remove ${countLabel(selection.members.length, "piece")}` : "Remove this piece"}</button></footer>}
   </aside>;
 }

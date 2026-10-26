@@ -18,7 +18,7 @@ import {
   type RecordMergeSnapshot,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { outerColumn } from "../db/outer-column.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { accountMemberships, clientAccounts, contactPoints, contacts, enquiries, opportunities, recordMerges } from "../db/schema.js";
 import {
   adoptLegacyMirror,

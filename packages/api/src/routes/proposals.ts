@@ -39,7 +39,7 @@ import {
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { outerColumn } from "../db/outer-column.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canManageCommercial, isVenueCommercialMember, roleReadsInternalEvents } from "../utils/query.js";

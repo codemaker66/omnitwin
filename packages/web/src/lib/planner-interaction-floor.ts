@@ -1,4 +1,4 @@
-import { Shape, type Object3D } from "three";
+import { Shape, Vector2, type Camera, type Object3D, type Raycaster } from "three";
 import type { SpaceDimensions } from "@omnitwin/types";
 import type { RoomGeometry } from "../data/room-geometries.js";
 import { toRenderSpace } from "../constants/scale.js";
@@ -23,6 +23,49 @@ export function plannerInteractionFloorShape(geometry: RoomGeometry | null, dime
   return shape;
 }
 
+/** The interaction surface last found in each scene. */
+const interactionFloors = new WeakMap<Object3D, Object3D>();
+
+function isIn(object: Object3D, scene: Object3D): boolean {
+  let node: Object3D | null = object;
+  while (node !== null && node !== scene) node = node.parent;
+  return node === scene;
+}
+
+/**
+ * The surface placement raycasts against: the interaction floor, else a room
+ * shell's own floor. The ghost asks on every pointer move, so the interaction
+ * floor is found by name once and reused while it stays in the scene (a walk
+ * of the hall's ~810 nodes cost 1 ms a move on a slowed phone). A shell's
+ * floor is looked up afresh, since an interaction floor may yet replace it.
+ */
 export function findPlacementFloor(scene: Object3D): Object3D | null {
-  return scene.getObjectByName(PLANNER_INTERACTION_FLOOR_NAME) ?? scene.getObjectByName("floor") ?? null;
+  const known = interactionFloors.get(scene);
+  if (known !== undefined && known.name === PLANNER_INTERACTION_FLOOR_NAME && isIn(known, scene)) return known;
+  const found = scene.getObjectByName(PLANNER_INTERACTION_FLOOR_NAME);
+  if (found !== undefined) {
+    interactionFloors.set(scene, found);
+    return found;
+  }
+  interactionFloors.delete(scene);
+  return scene.getObjectByName("floor") ?? null;
+}
+
+const _ndc = new Vector2();
+
+/**
+ * The point on the placement surface under a screen point (client px) on a
+ * canvas at `rect`, or null off the room: where a piece set down there stands.
+ */
+export function placementFloorPoint(
+  scene: Object3D, camera: Camera, raycaster: Raycaster,
+  rect: { readonly left: number; readonly top: number; readonly width: number; readonly height: number },
+  clientX: number, clientY: number,
+): { readonly x: number; readonly z: number } | null {
+  const floor = findPlacementFloor(scene);
+  if (floor === null || rect.width <= 0 || rect.height <= 0) return null;
+  _ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(_ndc, camera);
+  const hit = raycaster.intersectObject(floor, false)[0];
+  return hit === undefined ? null : { x: hit.point.x, z: hit.point.z };
 }

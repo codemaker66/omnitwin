@@ -6,7 +6,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 import { clientRoutes } from "../routes/clients.js";
 import { crmRoutes } from "../routes/crm.js";
-import { referenceLoadoutRoutes } from "../routes/reference-loadouts.js";
 
 // ---------------------------------------------------------------------------
 // Counts and names read by a subquery for each row, on real PostgreSQL.
@@ -18,7 +17,9 @@ import { referenceLoadoutRoutes } from "../routes/reference-loadouts.js";
 // layout read "0 pieces") and `rp.loadout_id = "id"` was ambiguous between
 // the photo and its file, so every room's reference loadouts answered 500
 // (found on 18 October 2026). Only real rows show it: the mocked route tests
-// never run the SQL. Each case below builds its own people and rows.
+// never run the SQL. The loadouts list and the client search's counts are
+// reference-loadouts-postgres's and client-search-postgres's; each case below
+// builds its own people and rows.
 //
 // Opt-in, disposable PostgreSQL only. Never consults DATABASE_URL or .env.
 // ---------------------------------------------------------------------------
@@ -90,7 +91,6 @@ describe.skipIf(target === undefined)("per-row subqueries on the migrated dispos
     server = Fastify();
     await server.register(clientRoutes, { db, prefix: "/clients" });
     await server.register(crmRoutes, { db, prefix: "/crm" });
-    await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
     await server.ready();
 
     const outline = [{ x: -5, y: -5 }, { x: 5, y: -5 }, { x: 5, y: 5 }, { x: -5, y: 5 }];
@@ -106,45 +106,6 @@ describe.skipIf(target === undefined)("per-row subqueries on the migrated dispos
   }, 60_000);
 
   afterAll(async () => { await server?.close(); await pool?.end(); });
-
-  it("lists a room's reference loadouts with each one's own photo count and cover", async () => {
-    const [full] = await db.insert(schema.referenceLoadouts).values({ venueId, spaceId, name: "Banquet", createdBy: staffId }).returning();
-    await db.insert(schema.referenceLoadouts).values({ venueId, spaceId, name: "Empty", createdBy: staffId });
-    if (full === undefined) throw new Error("Loadout fixture missing");
-    const keys = [`loadouts/${randomUUID()}/second.jpg`, `loadouts/${randomUUID()}/cover.jpg`];
-    const stored = await db.insert(schema.files).values(keys.map((fileKey) => ({
-      fileKey, filename: "photo.jpg", contentType: "image/jpeg", context: "loadout", contextId: full.id, uploadedBy: staffId,
-    }))).returning({ id: schema.files.id, fileKey: schema.files.fileKey });
-    // The cover is the photo shown first, whichever was uploaded first.
-    await db.insert(schema.referencePhotos).values(stored.map((file) => ({
-      loadoutId: full.id, fileId: file.id, sortOrder: file.fileKey.endsWith("cover.jpg") ? 0 : 1,
-    })));
-
-    const response = await server.inject({ method: "GET", url: `/venues/${venueId}/spaces/${spaceId}/loadouts` });
-    expect(response.statusCode, response.body).toBe(200);
-    const rows = response.json<{ data: { name: string; photoCount: number; coverFileKey: string | null }[] }>().data;
-    expect(rows.map(({ name, photoCount, coverFileKey }) => ({ name, photoCount, coverFileKey }))).toEqual([
-      { name: "Banquet", photoCount: 2, coverFileKey: keys[1] },
-      { name: "Empty", photoCount: 0, coverFileKey: null },
-    ]);
-  });
-
-  it("counts each person's own layouts and enquiries in the client search: this venue's for its staff, every venue's for a platform admin", async () => {
-    const person = await client();
-    await layout(person.id, venueId, spaceId, 0);
-    await layout(person.id, venueId, spaceId, 0);
-    await layout(person.id, otherVenueId, otherSpaceId, 0);
-    await db.insert(schema.enquiries).values([
-      { venueId, spaceId, userId: person.id, name: person.name, email: person.email },
-      { venueId: otherVenueId, spaceId: otherSpaceId, userId: person.id, name: person.name, email: person.email },
-    ]);
-
-    type Found = { users: { id: string; configurationCount: number; enquiryCount: number }[] };
-    const here = await get<Found>(`/clients/search?q=${encodeURIComponent(person.name)}`);
-    expect(here.users.find((row) => row.id === person.id)).toMatchObject({ configurationCount: 2, enquiryCount: 1 });
-    const everywhere = await get<Found>(`/clients/search?q=${encodeURIComponent(person.name)}`, platformAdmin);
-    expect(everywhere.users.find((row) => row.id === person.id)).toMatchObject({ configurationCount: 3, enquiryCount: 2 });
-  });
 
   it("counts each guest lead's own enquiries, not enquiries whose two emails agree", async () => {
     const leadEmail = `rhona-${randomUUID()}@subqueries.invalid`;

@@ -15,7 +15,7 @@ const migrationsFolder = join(apiRoot, "drizzle");
 export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/client-search-postgres.test.ts",
-  // Per-row subqueries name the outer row by its table (db/outer-column.ts).
+  // Per-row subqueries name the outer row by its table (utils/outer-column.ts).
   "src/__tests__/correlated-subqueries-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
   // A Diary move reaches its event: dates, phases, sheet times and retention (release audit batch A).
@@ -56,6 +56,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/opportunity-merge-race-postgres.test.ts",
   // POST /public/enquiries against real constraints, on its own database (below).
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
+  // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
+  "src/__tests__/reference-loadouts-postgres.test.ts",
 ] as const;
 
 /**

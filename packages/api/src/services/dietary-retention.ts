@@ -8,7 +8,7 @@ import {
   events,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { outerColumn } from "../db/outer-column.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { sqlStateOf } from "./dietary-memory.js";
 
 // ---------------------------------------------------------------------------
