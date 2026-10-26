@@ -23,13 +23,13 @@ import type { BatchObjectInput, PlacedObject } from "../../api/configurations.js
 // updates addressed to deleted rows — a dead id would lose the object).
 // ---------------------------------------------------------------------------
 
+vi.mock("../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../api/configurations.js", () => ({
   getConfig: vi.fn(),
   getPublicConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   authBatchSave: vi.fn(),
   publicBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   updatePublicThumbnail: vi.fn(),
   claimConfig: vi.fn(),
   patchConfigMetadata: vi.fn(),
@@ -41,8 +41,10 @@ vi.mock("../../api/spaces.js", () => ({
 }));
 
 vi.mock("../../lib/anonymous-planner-draft.js", () => ({
-  persistAnonymousPlannerDraft: vi.fn(),
+  persistAnonymousPlannerDraft: vi.fn(() => false),
   readAnonymousPlannerDraft: vi.fn(() => null),
+  plannerDraftBaseObjects: vi.fn(() => null),
+  discardPlannerDraft: vi.fn(),
 }));
 
 const TABLE_ID = "round-table-6ft";

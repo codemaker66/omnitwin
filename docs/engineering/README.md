@@ -130,6 +130,7 @@ on future experiments.
 | Camera resetting after updates | [Pose identity](../../.claude/gotchas/interior-camera-pose-identity.md) |
 | Staging hidden splat layers | [Visibility and sorting](../../.claude/gotchas/spark-invisible-splat-load.md) |
 | Shadows, probes or postprocessing | [Render-target interactions](../../.claude/gotchas/spark-render-target-effects.md) |
+| Losing, replacing or disposing a renderer | [Renderer replacement](../../.claude/gotchas/three-renderer-replacement.md) |
 | Blank splats in a browser tool | [Browser instrumentation](../../.claude/gotchas/browser-pane-splat-streaming.md) |
 | XGRIDS level counts/budgets | [LOD level copies](../../.claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md) |
 | V8 memory or test contention | [Windows/V8 notes](../../.claude/gotchas/windows-v8-heap.md) |

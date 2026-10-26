@@ -35,14 +35,15 @@ import {
 } from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
 import { recordPlannerArrivalChoice } from "../lib/planner-room-arrival.js";
+import { PlannerWorkContext, type PlannerWork } from "../components/scene/planner-work.js";
 import "../components/editor/MobilePlannerChrome.css";
 
-// CARD A1 (G1a): the Reception Room owns the default /plan experience — it is
-// the one room with a built runtime package (splat), so first-visit planners
-// land in captured reality rather than a procedural-only hall. Venues seeded
-// without it degrade through the legacy default, then the first space.
-const DEFAULT_SPACE_SLUG = "reception-room";
-const LEGACY_DEFAULT_SPACE_SLUG = "grand-hall";
+// The Grand Hall owns the default /plan experience (Blake, 26 Oct 2026,
+// superseding CARD A1's Reception Room): the drawn hall, the Grand Assembly and
+// the card dock live there. Venues seeded without it fall back to the Reception
+// Room, then the first space.
+const DEFAULT_SPACE_SLUG = "grand-hall";
+const FALLBACK_SPACE_SLUG = "reception-room";
 const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
 const MAX_REUSABLE_CONFIG_PROBES = 5;
 /** How long an empty plan of one's own is offered again before a fresh one. */
@@ -326,7 +327,7 @@ export function EditorPage(): React.ReactElement {
         const space =
           spaces.find((s) => s.slug === wantedSpaceSlug)
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
-          ?? spaces.find((s) => s.slug === LEGACY_DEFAULT_SPACE_SLUG)
+          ?? spaces.find((s) => s.slug === FALLBACK_SPACE_SLUG)
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
         setOpeningRoomName(space.name);
@@ -510,10 +511,19 @@ function PlannerChrome(): React.ReactElement {
         </div>
       )}
     >
-      <PlannerChromeV2 />
+      <PlannerWorkContext.Provider value={NO_2D_VIEW}>
+        <PlannerChromeV2 />
+      </PlannerWorkContext.Provider>
     </Suspense>
   );
 }
+
+/**
+ * The new chrome's layout, with no 2D view of it yet.
+ * TODO(#219): once lane C wires Plan's Drawing, pass its in-place switch
+ * (PlanDrawingSwitch) here so the cards offer "Continue in the drawing".
+ */
+const NO_2D_VIEW: PlannerWork = { continueIn2d: null };
 
 /** The new chrome (T-671), loaded only behind its flag. */
 const PlannerChromeV2 = lazy(async () => {
@@ -577,6 +587,10 @@ function PlannerCommsLayer(): React.ReactElement {
     recordPlannerArrivalChoice();
     setViewMode(nextMode);
   }, [timelinePreviewActive]);
+  // A 3D view that cannot draw continues in this layout's 2D view, in place.
+  const plannerWork = useMemo<PlannerWork>(() => ({
+    continueIn2d: timelinePreviewActive ? null : () => { changeViewMode("2d"); },
+  }), [changeViewMode, timelinePreviewActive]);
   return (
     <>
       <EditorBridge />
@@ -614,7 +628,9 @@ function PlannerCommsLayer(): React.ReactElement {
         }}
       >
         {viewMode === "3d" ? (
-          <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+          <PlannerWorkContext.Provider value={plannerWork}>
+            <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+          </PlannerWorkContext.Provider>
         ) : (
           <BlueprintPage source="editor-store" />
         )}

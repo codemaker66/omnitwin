@@ -2,9 +2,11 @@ import { useEffect, useMemo, useCallback } from "react";
 import { useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { BufferGeometry, Float32BufferAttribute, Raycaster, Vector2 } from "three";
+import { TriangleAlert } from "lucide-react";
 import { useMeasurementStore, type Measurement } from "../stores/measurement-store.js";
 import {
   type Point3,
+  FIRE_EXIT_MINIMUM_M,
   formatDistance,
   getMeasurementColor,
   computeMidpoint,
@@ -40,6 +42,15 @@ const dotStyle: React.CSSProperties = {
 // Sub-components
 // ---------------------------------------------------------------------------
 
+/** What a measurement says to a screen reader: the distance and, when it is
+ *  narrower than an exit route, that fact in words rather than a glyph. */
+export function measurementName(distance: number, belowExitWidth: boolean): string {
+  const metres = formatDistance(distance);
+  return belowExitWidth
+    ? `${metres} · narrower than the ${FIRE_EXIT_MINIMUM_M.toFixed(2)} m an exit route needs`
+    : metres;
+}
+
 /** Renders a single completed measurement: line + midpoint label + endpoint dots. */
 function MeasurementLine({ measurement }: { readonly measurement: Measurement }): React.ReactElement {
   const { pointA, pointB, distance } = measurement;
@@ -70,16 +81,24 @@ function MeasurementLine({ measurement }: { readonly measurement: Measurement })
       {/* Distance label at midpoint */}
       <group position={[midpoint[0], midpoint[1], midpoint[2]]}>
         <Html center style={{ pointerEvents: "none" }}>
-          <div style={{
-            ...labelStyle,
-            background: warning ? "rgba(220, 30, 30, 0.9)" : "rgba(30, 30, 30, 0.85)",
-            color: "white",
-            boxShadow: warning
-              ? "0 2px 8px rgba(220,30,30,0.4)"
-              : "0 2px 8px rgba(0,0,0,0.2)",
-          }}>
+          <div
+            role="note"
+            aria-label={measurementName(distance, warning)}
+            data-testid="measurement-label"
+            style={{
+              ...labelStyle,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              background: warning ? "rgba(220, 30, 30, 0.9)" : "rgba(30, 30, 30, 0.85)",
+              color: "white",
+              boxShadow: warning
+                ? "0 2px 8px rgba(220,30,30,0.4)"
+                : "0 2px 8px rgba(0,0,0,0.2)",
+            }}
+          >
             {formatDistance(distance)}
-            {warning && " ⚠"}
+            {warning && <TriangleAlert size={12} strokeWidth={2} aria-hidden="true" />}
           </div>
         </Html>
       </group>

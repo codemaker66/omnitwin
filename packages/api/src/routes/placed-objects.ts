@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
+import { canJoinLayoutLive } from "@omnitwin/types";
 import { placedObjects, configurations, configurationLayoutRevisions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, type JwtUser } from "../middleware/auth.js";
@@ -16,6 +17,7 @@ import {
 } from "../lib/placement-validation.js";
 import {
   configurationRevisionEtag,
+  loadRevisionChange,
   revisionConflictBody,
 } from "../lib/configuration-revision.js";
 
@@ -104,6 +106,22 @@ async function verifyConfigAccess(
   }
 
   return { config };
+}
+
+/**
+ * Who made a newer revision is told only to those who see each other in the
+ * layout's live room (the same predicate admits them there); anyone else who
+ * may open the layout — a customer who owns it — is named only their own
+ * revision. Never a second rule for the same question.
+ */
+function revisionDisclosure(user: JwtUser, config: ConfigAccessRow): { discloseActor: boolean; callerUserId: string } {
+  return {
+    discloseActor: canJoinLayoutLive(
+      { userId: user.id, role: user.role, venueId: user.venueId, platformRole: user.platformRole },
+      { ownerUserId: config.userId, venueId: config.venueId },
+    ),
+    callerUserId: user.id,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -293,9 +311,11 @@ export async function placedObjectRoutes(
     }
 
     if (result.config.revision !== parsed.data.expectedRevision) {
+      const change = await loadRevisionChange(db, params.data.configId, result.config.revision,
+        { ...revisionDisclosure(request.user, result.config), log: request.log });
       reply.header("ETag", configurationRevisionEtag(result.config.revision));
       return reply.status(409).send(
-        revisionConflictBody(parsed.data.expectedRevision, result.config.revision),
+        revisionConflictBody(parsed.data.expectedRevision, result.config.revision, change),
       );
     }
 
@@ -364,9 +384,11 @@ export async function placedObjectRoutes(
     });
 
     if (saveResult.status === "conflict") {
+      const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
+        { ...revisionDisclosure(request.user, result.config), log: request.log });
       reply.header("ETag", configurationRevisionEtag(saveResult.currentRevision));
       return reply.status(409).send(
-        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision),
+        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision, change),
       );
     }
 

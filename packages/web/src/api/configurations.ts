@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { EventInstructions, GuestEnquiry } from "@omnitwin/types";
-import { ApiError, api } from "./client.js";
+import { ConfigurationReviewStatusSchema, type EventInstructions, type GuestEnquiry } from "@omnitwin/types";
+import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
 // Response schemas — Zod validation at the API boundary
@@ -86,6 +86,13 @@ const ConfigurationResponseSchema = z.object({
   // field, Zod's default object mode strips metadata entirely and the
   // Event Details panel loads blank on every reopen.
   metadata: z.unknown().optional(),
+  // The review workflow's state (authenticated reads return the whole row).
+  // A value this client does not know reads as absent rather than failing
+  // the layout's load: the editor only needs to know when edits are refused.
+  reviewStatus: ConfigurationReviewStatusSchema.optional().catch(undefined),
+  // One of the venue's sample layouts (the row's is_template). Optional, and
+  // anything but a boolean reads as absent: a label never fails a load.
+  isTemplate: z.boolean().optional().catch(undefined),
 });
 
 export type Configuration = z.infer<typeof ConfigurationResponseSchema>;
@@ -131,12 +138,6 @@ export interface BatchObjectInput {
   readonly scale: number;
   readonly sortOrder: number;
   readonly metadata?: ObjectMetadata | null;
-}
-
-export interface RevisionConflict {
-  readonly expectedRevision: number;
-  readonly currentRevision: number;
-  readonly message: string;
 }
 
 /** Re-export the canonical guest enquiry input type from @omnitwin/types. */
@@ -216,23 +217,6 @@ export async function authBatchSave(
     undefined,
     BatchSaveResponseSchema,
   );
-}
-
-const RevisionConflictDetailsSchema = z.object({
-  expectedRevision: z.number().int().min(1),
-  currentRevision: z.number().int().min(1),
-});
-
-export function parseRevisionConflict(err: unknown): RevisionConflict | null {
-  if (!(err instanceof ApiError)) return null;
-  if (err.status !== 409 || err.code !== "REVISION_CONFLICT") return null;
-  const parsed = RevisionConflictDetailsSchema.safeParse(err.details);
-  if (!parsed.success) return null;
-  return {
-    expectedRevision: parsed.data.expectedRevision,
-    currentRevision: parsed.data.currentRevision,
-    message: err.message,
-  };
 }
 
 // ---------------------------------------------------------------------------

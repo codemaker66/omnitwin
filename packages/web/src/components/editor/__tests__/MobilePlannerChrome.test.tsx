@@ -106,10 +106,13 @@ describe("mobile planner chrome", () => {
     expect(container.querySelector("textarea")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByTestId("mobile-object-sheet")).toBeTruthy();
-    expect(container.querySelector("#mobile-object-notes textarea")?.getAttribute("aria-label")).toBe("Planner note");
-    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Keep this table draft after cancel");
+    const field = screen.getByRole("textbox", { name: "Note for the hallkeeper", hidden: true });
+    expect(field.closest("#mobile-object-notes")).not.toBeNull();
+    expect((field as HTMLTextAreaElement).value).toBe("Keep this table draft after cancel");
     expect([...useSelectionStore.getState().selectedIds]).toEqual(selection);
-    expect(useEditorStore.getState().objects.every((item) => item.notes === "")).toBe(true);
+    fireEvent.blur(field);
+    const tableId = usePlacementStore.getState().placedItems.at(-1)?.id;
+    expect(useEditorStore.getState().objects.find((item) => item.id === tableId)?.notes).toBe("Keep this table draft after cancel");
   });
 
   it("keeps the nine-object group labelled as its table with eight placed chairs and notes inside the action sheet", () => {
@@ -117,7 +120,7 @@ describe("mobile planner chrome", () => {
     const sheet = screen.getByTestId("mobile-object-sheet");
     expect(within(sheet).getByText(getCatalogueItemBySlug("round-table-6ft")?.name ?? "")).toBeTruthy();
     expect(within(sheet).getByText("8 chairs placed · 9 objects selected")).toBeTruthy();
-    const note = screen.getByRole("region", { name: "Selected object dressing and note", hidden: true });
+    const note = screen.getByRole("region", { name: "Dressing and note for the hallkeeper", hidden: true });
     expect(note.closest("#mobile-object-notes")).not.toBeNull();
     expect(note.style.position).toBe("static");
     expect(container.querySelectorAll("textarea")).toHaveLength(1);
@@ -131,7 +134,7 @@ describe("mobile planner chrome", () => {
     const input = container.querySelector("textarea");
     if (input === null) throw new Error("Missing note input");
     fireEvent.change(input, { target: { value: "Table for the speakers" } });
-    fireEvent.click(screen.getByText("Save Note"));
+    fireEvent.blur(input);
     const tableId = usePlacementStore.getState().placedItems.at(-1)?.id;
     expect(useEditorStore.getState().objects.find((item) => item.id === tableId)?.notes).toBe("Table for the speakers");
     expect(useEditorStore.getState().objects.filter((item) => item.id !== tableId).every((item) => item.notes === "")).toBe(true);
@@ -154,7 +157,9 @@ describe("mobile planner chrome", () => {
     expect(screen.queryByTestId("mobile-object-sheet")).toBeNull();
     act(() => { useLayoutTimelinePreviewStore.getState().clear(); });
     expect(container.querySelector("textarea")?.value).toBe("Keep the table draft");
-    expect(useEditorStore.getState().objects.every((item) => item.notes === "")).toBe(true);
+    // Never lost: the draft is written into its table once the preview ends.
+    const tableId = usePlacementStore.getState().placedItems.at(-1)?.id;
+    expect(useEditorStore.getState().objects.find((item) => item.id === tableId)?.notes).toBe("Keep the table draft");
   });
 
   it.each([

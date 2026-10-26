@@ -372,6 +372,20 @@ describe("ghost", () => {
     expect(usePlacementStore.getState().ghostValid).toBe(true);
   });
 
+  it("updateGhost leaves the store alone when the ghost would land where it stands", () => {
+    usePlacementStore.getState().updateGhost(0, 0, tableId);
+    const position = usePlacementStore.getState().ghostPosition;
+    let notifications = 0;
+    const unsubscribe = usePlacementStore.subscribe(() => { notifications += 1; });
+    // A pointer that moves within one grid cell snaps to the same spot.
+    usePlacementStore.getState().updateGhost(0.01, -0.01, tableId);
+    expect(notifications).toBe(0);
+    expect(usePlacementStore.getState().ghostPosition).toBe(position);
+    usePlacementStore.getState().updateGhost(GRID_SPACING_RENDER * 3, 0, tableId);
+    unsubscribe();
+    expect(notifications).toBe(1);
+  });
+
   it("updateGhost with out-of-bounds position marks invalid", () => {
     usePlacementStore.getState().updateGhost(999, 999, tableId);
     expect(usePlacementStore.getState().ghostValid).toBe(false);
