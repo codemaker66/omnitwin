@@ -1,0 +1,290 @@
+/* ---------------------------------------------------------------------------
+ * PLAN'S DRAWING (T-674; approved spec §6.3, §7.2): the layout set on paper,
+ * the register for what leaves the building. The sheet's ground, ink lines in
+ * three weights, copper for the selection, the planner's own sage and amber
+ * for the aisles. Over the room (and over the scene's own tags), under the
+ * caption, which keeps following its piece here. It comes and goes as a
+ * cross-fade and nothing in it moves under the person.
+ * ------------------------------------------------------------------------- */
+
+/* -- The switch at top centre ------------------------------------------------ */
+.pc-plan-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+}
+
+.pc-plan-switch .pc-seg {
+  min-width: 176px;
+}
+
+/* -- The sheet --------------------------------------------------------------- */
+.pc-drawing {
+  position: absolute;
+  /* Over the scene's tags (drei's range tops out at 16777271, and the paper comes later), under the caption (16777272). */
+  z-index: 16777271;
+  inset: 0;
+  overflow: hidden;
+  background: var(--house-sheet);
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity var(--house-motion-reveal) var(--house-ease-out);
+}
+
+.pc-drawing[data-shown] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pc-drawing[data-gesture="move"] { cursor: grabbing; }
+.pc-drawing[data-gesture="pan"] { cursor: grabbing; }
+.pc-drawing[data-gesture="box"] { cursor: crosshair; }
+
+.pc-drawing__svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: visible;
+  transform-origin: 0 0;
+}
+
+/* -- The room ----------------------------------------------------------------- */
+.pc-drawing__floor {
+  fill: var(--house-paper);
+}
+
+.pc-drawing__wall {
+  stroke: none;
+}
+
+.pc-drawing__hatch {
+  stroke: var(--house-rule-strong);
+  stroke-width: 1;
+}
+
+.pc-drawing__wall-face {
+  fill: none;
+  stroke: var(--house-ink-1);
+  stroke-width: 1.5;
+}
+
+.pc-drawing__wall-edge {
+  fill: none;
+  stroke: var(--house-ink-2);
+  stroke-width: 1;
+}
+
+.pc-drawing__cut {
+  fill: var(--house-paper);
+  stroke: none;
+}
+
+.pc-drawing__glass {
+  stroke: var(--house-ink-3);
+  stroke-width: 1;
+}
+
+.pc-drawing__leaf {
+  stroke: var(--house-ink-2);
+  stroke-width: 1.25;
+}
+
+.pc-drawing__swing {
+  fill: none;
+  stroke: var(--house-ink-3);
+  stroke-width: 0.75;
+  stroke-dasharray: 2 3;
+}
+
+.pc-drawing__firebox {
+  fill: var(--house-rule);
+  stroke: var(--house-ink-2);
+  stroke-width: 1;
+}
+
+.pc-drawing__surround {
+  fill: var(--house-sheet);
+  stroke: var(--house-ink-1);
+  stroke-width: 1.25;
+}
+
+.pc-drawing__wall-name {
+  fill: var(--house-ink-2);
+  font: 600 11px/1 var(--house-sans);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.pc-drawing__door-name,
+.pc-drawing__feature {
+  fill: var(--house-ink-2);
+  font: 400 12px/1 var(--house-sans);
+}
+
+.pc-drawing__scale line {
+  stroke: var(--house-ink-2);
+  stroke-width: 1;
+}
+
+.pc-drawing__scale text {
+  fill: var(--house-ink-2);
+  font: 500 11px/1 var(--house-sans);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.pc-drawing__empty {
+  fill: var(--house-ink-3);
+  font: 400 14px/1 var(--house-sans);
+}
+
+/* -- The pieces --------------------------------------------------------------- */
+.pc-drawing__piece {
+  fill: var(--house-sheet);
+  stroke: var(--house-ink-2);
+  stroke-width: 1;
+  cursor: grab;
+  transition: fill var(--house-motion-hover) var(--house-ease-out), stroke var(--house-motion-hover) var(--house-ease-out);
+}
+
+.pc-drawing__piece--table {
+  stroke: var(--house-ink-1);
+  stroke-width: 1.25;
+}
+
+.pc-drawing__piece--chair {
+  fill: var(--house-paper);
+  stroke: var(--house-ink-3);
+}
+
+.pc-drawing__piece--panel {
+  fill: var(--house-sheet-selected);
+  stroke: var(--house-rule-strong);
+  stroke-width: 0.75;
+}
+
+.pc-drawing__piece--stage {
+  fill: var(--house-rule);
+  stroke: var(--house-ink-2);
+}
+
+.pc-drawing__back {
+  stroke: var(--house-ink-1);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.pc-drawing__outline {
+  fill: none;
+  stroke: var(--house-ink-2);
+  stroke-width: 1.25;
+  pointer-events: none;
+}
+
+.pc-drawing__label,
+.pc-drawing__detail {
+  pointer-events: none;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.pc-drawing__label {
+  fill: var(--house-ink-1);
+  font: 500 12px/1 var(--house-sans);
+}
+
+.pc-drawing__label--name {
+  fill: var(--house-ink-2);
+}
+
+.pc-drawing__detail {
+  fill: var(--house-ink-3);
+  font: 400 11px/1 var(--house-sans);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-drawing__unit:not([data-selected]):hover .pc-drawing__piece--table,
+  .pc-drawing__unit:not([data-selected]):hover .pc-drawing__piece--stage,
+  .pc-drawing__unit:not([data-selected]):hover .pc-drawing__piece--piece {
+    fill: var(--house-sheet-hover);
+  }
+}
+
+/* -- The selection, in copper ---------------------------------------------- */
+.pc-drawing__unit[data-selected] .pc-drawing__piece {
+  stroke: var(--house-copper-text);
+}
+
+.pc-drawing__unit[data-selected] .pc-drawing__piece--table,
+.pc-drawing__unit[data-selected] .pc-drawing__piece--stage,
+.pc-drawing__unit[data-selected] .pc-drawing__piece--piece {
+  fill: var(--house-copper-wash);
+  stroke-width: 2;
+}
+
+.pc-drawing__unit[data-selected] .pc-drawing__back,
+.pc-drawing__unit[data-selected] .pc-drawing__outline {
+  stroke: var(--house-copper-text);
+}
+
+.pc-drawing__unit[data-selected] .pc-drawing__label {
+  fill: var(--house-copper-text);
+  font-weight: 600;
+}
+
+/* -- Aisles, guides and the area being selected ----------------------------- */
+.pc-drawing__aisle {
+  pointer-events: none;
+}
+
+.pc-drawing__aisle line {
+  stroke-width: 1;
+}
+
+.pc-drawing__aisle--sage line { stroke: var(--house-sage-text); }
+.pc-drawing__aisle--amber line { stroke: var(--house-amber-text); }
+
+.pc-drawing__aisle-plate {
+  fill: var(--house-paper);
+  stroke-width: 1;
+}
+
+.pc-drawing__aisle--sage .pc-drawing__aisle-plate { stroke: color-mix(in srgb, var(--house-sage-text) 45%, transparent); }
+.pc-drawing__aisle--amber .pc-drawing__aisle-plate { stroke: color-mix(in srgb, var(--house-amber-text) 55%, transparent); }
+
+.pc-drawing__aisle text {
+  font: 500 12px/1 var(--house-sans);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.pc-drawing__aisle--sage text { fill: var(--house-sage-text); }
+.pc-drawing__aisle--amber text { fill: var(--house-amber-text); }
+
+.pc-drawing__guide {
+  stroke: var(--house-copper-text);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  pointer-events: none;
+}
+
+.pc-drawing__box {
+  fill: color-mix(in srgb, var(--house-copper-wash) 45%, transparent);
+  stroke: var(--house-copper-text);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+/* -- Reduced motion: the cross-fade at most 120 ms; nothing moves under the person. -- */
+@media (prefers-reduced-motion: reduce) {
+  .pc-drawing {
+    transition-duration: var(--house-motion-press);
+  }
+
+  .pc-drawing__piece {
+    transition: none;
+  }
+}
