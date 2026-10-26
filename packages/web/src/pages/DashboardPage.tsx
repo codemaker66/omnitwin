@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   ANALYTICS_ROLES, awaitsVenue, canDraftWithAI, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_WRITE_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PRICING_READ_ROLES, REVIEW_QUEUE_ROLES,
-  ROTA_TAB_ROLES, WORKSPACE_ROLES,
+  ROTA_TAB_ROLES, TEAM_TAB_ROLES, WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
 import { DashboardLayout, NAV_ITEMS, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { VenueNotConnected } from "../components/dashboard/VenueNotConnected.js";
@@ -21,6 +21,7 @@ import { PipelineDesk } from "../components/dashboard/PipelineDesk.js";
 import { OnboardingView } from "../components/dashboard/OnboardingView.js";
 import { PricingDesk } from "../components/dashboard/pricing/PricingDesk.js";
 import { RotaView } from "../components/dashboard/rota/RotaView.js";
+import { TeamView } from "../components/dashboard/TeamView.js";
 import { useAuthStore } from "../stores/auth-store.js";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "search",
   "loadouts",
   "settings",
+  "team",
   "inventory",
   "rota",
   "onboarding",
@@ -80,6 +82,10 @@ const ROTA_VIEWS = new Set<DashboardView>(["rota"]);
 // price list; the desk itself shows edit controls only to those who set
 // prices. See lib/role-capabilities.ts PRICING_READ_ROLES.
 const PRICING_VIEWS = new Set<DashboardView>(["pricing"]);
+// The Team mirrors routes/venue-team.ts (canManageVenueTeam): the venue's
+// administrators, and platform admins through the shortcut above. See
+// lib/role-capabilities.ts TEAM_TAB_ROLES.
+const TEAM_VIEWS = new Set<DashboardView>(["team"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
 /** The views of one venue's work: all but the platform's own. */
 type VenueView = Exclude<DashboardView, "onboarding" | "admin">;
@@ -99,6 +105,7 @@ const NOT_CONNECTED: Readonly<Record<VenueView, string>> = {
   search: "there are no clients to show",
   loadouts: "there are no reference loadouts to show",
   settings: "there are no venue settings to show",
+  team: "there is no team to show",
   inventory: "there is no inventory to show",
   rota: "there is no rota to show",
 };
@@ -145,6 +152,7 @@ export function canOpenDashboardView(view: DashboardView, role: string | null, p
   if (REVIEW_QUEUE_VIEWS.has(view)) return hasRole(REVIEW_QUEUE_ROLES, role);
   if (ROTA_VIEWS.has(view)) return hasRole(ROTA_TAB_ROLES, role);
   if (PRICING_VIEWS.has(view)) return hasRole(PRICING_READ_ROLES, role);
+  if (TEAM_VIEWS.has(view)) return hasRole(TEAM_TAB_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 
@@ -430,6 +438,8 @@ export function DashboardPage(): React.ReactElement {
         return <LoadoutsView />;
       case "settings":
         return <VenueSettings />;
+      case "team":
+        return <TeamView />;
       case "inventory":
         return <InventoryPanel />;
       case "rota":
@@ -441,8 +451,9 @@ export function DashboardPage(): React.ReactElement {
     }
   };
 
+  // The Team draws its own ivory sheet on the Rota's sage ground.
   const surface = deniedRequestedView !== null ? undefined
-    : notConnectedConsequence !== undefined || view === "rota" ? "rota" as const
+    : notConnectedConsequence !== undefined || view === "rota" || view === "team" ? "rota" as const
     : DESK_VIEWS.has(view) ? "desk" as const : undefined;
 
   return (

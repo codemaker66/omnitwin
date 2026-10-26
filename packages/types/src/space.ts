@@ -5,7 +5,7 @@ import { VenueIdSchema } from "./venue.js";
 // Space ID — UUID v4
 // ---------------------------------------------------------------------------
 
-export const SpaceIdSchema = z.string().uuid();
+export const SpaceIdSchema = z.uuid();
 
 export type SpaceId = z.infer<typeof SpaceIdSchema>;
 
@@ -41,8 +41,8 @@ export type SpaceDimensions = z.infer<typeof SpaceDimensionsSchema>;
 // ---------------------------------------------------------------------------
 
 export const FloorPlanPointSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
+  x: z.number(),
+  y: z.number(),
 });
 
 export type FloorPlanPoint = z.infer<typeof FloorPlanPointSchema>;
@@ -108,11 +108,11 @@ export const SpaceSchema = z.object({
   lengthM: z.string(),
   heightM: z.string(),
   floorPlanOutline: FloorPlanOutlineSchema,
-  meshUrl: z.string().url().nullable(),
-  thumbnailUrl: z.string().url().nullable(),
+  meshUrl: z.url().nullable(),
+  thumbnailUrl: z.url().nullable(),
   sortOrder: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 
 export type Space = z.infer<typeof SpaceSchema>;

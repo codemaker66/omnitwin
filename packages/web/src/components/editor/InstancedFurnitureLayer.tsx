@@ -22,6 +22,13 @@ import { isImportedFurnitureMaterial } from "../../lib/gltf-furniture-instance.j
 import { furnitureMaterialParts } from "../../lib/gltf-furniture-parts.js";
 import { composeFurnitureMotion, furnitureMotionPose, subscribeFurnitureSettleFrames, type FurnitureMotionPose } from "../../lib/furniture-motion.js";
 import {
+  HIDDEN_MATRIX,
+  currentFurniturePresentation,
+  presentedPiece,
+  subscribeFurniturePresentation,
+  type PresentationFrame,
+} from "../../floor/presentation-channel.js";
+import {
   materialAppearanceSignature,
   mergePartsByMaterial,
   type ExtractedPart,
@@ -245,6 +252,8 @@ export interface EditableInstancePool {
   readonly settling: Set<string>;
   /** Slot of each item id, for the items it was built from. */
   readonly slots: { items: readonly PlacedItem[] | null; readonly byId: Map<string, number> };
+  /** Items drawn as a reveal presents them (floor/presentation-channel.ts), not as placed. */
+  readonly presented: Set<string>;
 }
 
 const WRITTEN_STRIDE = 5;
@@ -291,6 +300,7 @@ export function createEditableInstancePool(
     written: new Float64Array(capacity * WRITTEN_STRIDE).fill(Number.NaN),
     settling: new Set(),
     slots: { items: null, byId: new Map() },
+    presented: new Set(),
   };
 }
 
@@ -425,6 +435,57 @@ export function drawEditableSettleFrame(
   if (last >= 0) uploadEditableSlots(pool, first, last);
 }
 
+const presentedPlaced = new Matrix4();
+
+/**
+ * Follow a reveal's presentation frame (floor/presentation-channel.ts): each
+ * item it presents is drawn as delta · placed, or not at all, straight into
+ * the shared instance buffer, so the renderer's previous-instance matrices
+ * give every moving piece its own motion vectors. Items it no longer
+ * presents, and every item once it is released (null), are recomposed from
+ * their placed transforms exactly. The store is never written.
+ */
+export function drawEditablePresentation(
+  pool: EditableInstancePool,
+  items: readonly PlacedItem[],
+  itemScale: number,
+  frame: PresentationFrame | null,
+): boolean {
+  if (frame === null && pool.presented.size === 0) return false;
+  const count = Math.min(items.length, pool.capacity);
+  let first = pool.capacity;
+  let last = -1;
+  for (let index = 0; index < count; index += 1) {
+    const item = items[index];
+    if (item === undefined) continue;
+    const shown = frame === null ? null : presentedPiece(frame, item.id);
+    if (shown === null) {
+      if (!pool.presented.delete(item.id)) continue;
+      composeEditableSlot(pool, index, item, editableInstanceScale(item, itemScale), null);
+    } else {
+      if (shown === "hidden") {
+        HIDDEN_MATRIX.toArray(pool.matrices.array, index * 16);
+      } else {
+        editableInstanceTransform.position.set(item.x, item.y, item.z);
+        editableInstanceTransform.rotation.set(0, item.rotationY, 0);
+        editableInstanceTransform.scale.setScalar(editableInstanceScale(item, itemScale));
+        editableInstanceTransform.updateMatrix();
+        presentedPlaced.multiplyMatrices(shown.delta, editableInstanceTransform.matrix).toArray(pool.matrices.array, index * 16);
+      }
+      // No longer the placed transform: the next placed write recomposes it.
+      pool.written[index * WRITTEN_STRIDE] = Number.NaN;
+      pool.presented.add(item.id);
+    }
+    first = Math.min(first, index);
+    last = index;
+  }
+  // Items gone from the list since they were presented are not drawn at all.
+  if (frame === null) pool.presented.clear();
+  if (last < 0) return false;
+  uploadEditableSlots(pool, first, last);
+  return true;
+}
+
 /** Release the pool's instance buffers and renderer state. The layer owns geometry and materials. */
 export function disposeEditableInstancePool(pool: EditableInstancePool): void {
   for (const mesh of pool.meshes) mesh.dispose();
@@ -457,12 +518,20 @@ function EditableVariantBatch({
 
   useLayoutEffect(() => {
     drawn.current = { items, itemScale };
-    if (writeEditableInstancePool(pool, items, itemScale)) invalidate();
+    const wrote = writeEditableInstancePool(pool, items, itemScale);
+    // A pool built or rewritten while a reveal plays draws the reveal's frame at once.
+    const presented = drawEditablePresentation(pool, items, itemScale, currentFurniturePresentation());
+    if (wrote || presented) invalidate();
   }, [invalidate, itemScale, items, pool]);
 
   // Runs inside FurnitureMotion's frame, before that frame renders.
   useLayoutEffect(() => subscribeFurnitureSettleFrames((live) => {
     drawEditableSettleFrame(pool, drawn.current.items, drawn.current.itemScale, live);
+  }), [pool]);
+
+  // A reveal's frames, published before the frame renders (the publisher invalidates).
+  useLayoutEffect(() => subscribeFurniturePresentation((frame) => {
+    drawEditablePresentation(pool, drawn.current.items, drawn.current.itemScale, frame);
   }), [pool]);
 
   return <>{pool.meshes.map((mesh) => <primitive key={mesh.uuid} object={mesh} />)}</>;

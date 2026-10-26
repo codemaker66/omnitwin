@@ -141,9 +141,9 @@ export const PricingAdviceItemSchema = z.object({
   key: PricingAdviceKeySchema,
   kind: PricingAdviceKindSchema,
   /** The rate that prices this room, date and time now. */
-  ruleId: z.string().uuid(),
+  ruleId: z.uuid(),
   ruleName: z.string(),
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   roomName: z.string(),
   date: DateOnlySchema,
   /** "Evening, 19:00–00:30", "Any time". */
@@ -168,7 +168,7 @@ export const PricingAdviceItemSchema = z.object({
 export type PricingAdviceItem = z.infer<typeof PricingAdviceItemSchema>;
 
 export const PricingAdviceSchema = z.object({
-  computedAt: z.string().datetime({ offset: true }),
+  computedAt: z.iso.datetime({ offset: true }),
   timezone: z.string(),
   from: DateOnlySchema,
   through: DateOnlySchema,

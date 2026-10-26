@@ -45,14 +45,14 @@ import type { JwtUser } from "../../middleware/auth.js";
 //   | client        | no      | any         | FALSE    |
 // ---------------------------------------------------------------------------
 
-const VENUE_A = "00000000-0000-0000-0000-0000000000a0";
-const VENUE_B = "00000000-0000-0000-0000-0000000000b0";
-const USER_PLANNER_1 = "00000000-0000-0000-0000-0000000000f1";
-const USER_PLANNER_2 = "00000000-0000-0000-0000-0000000000f2";
+const VENUE_A = "00000000-0000-4000-8000-0000000000a0";
+const VENUE_B = "00000000-0000-4000-8000-0000000000b0";
+const USER_PLANNER_1 = "00000000-0000-4000-8000-0000000000f1";
+const USER_PLANNER_2 = "00000000-0000-4000-8000-0000000000f2";
 
 function makeUser(overrides: Partial<JwtUser> & Pick<JwtUser, "role">): JwtUser {
   return {
-    id: overrides.id ?? "00000000-0000-0000-0000-000000000001",
+    id: overrides.id ?? "00000000-0000-4000-8000-000000000001",
     email: overrides.email ?? "user@test.com",
     name: overrides.name ?? "Test User",
     role: overrides.role,

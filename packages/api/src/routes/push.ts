@@ -17,14 +17,14 @@ import { canManageVenue } from "../utils/query.js";
 const DeviceKindSchema = z.enum(["wall", "phone", "desk"]);
 
 const SubscribeBody = z.object({
-  venueId: z.string().uuid(),
-  endpoint: z.string().url().max(2000).refine((url) => url.startsWith("https://"), "Push endpoints are https"),
+  venueId: z.uuid(),
+  endpoint: z.url().max(2000).refine((url) => url.startsWith("https://"), "Push endpoints are https"),
   keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }).strict(),
   deviceKind: DeviceKindSchema,
   userAgent: z.string().max(300).optional(),
 }).strict();
 
-const UnsubscribeBody = z.object({ endpoint: z.string().url().max(2000) }).strict();
+const UnsubscribeBody = z.object({ endpoint: z.url().max(2000) }).strict();
 
 export async function pushRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void> {
   const { db } = opts;

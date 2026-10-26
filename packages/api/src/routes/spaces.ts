@@ -21,11 +21,11 @@ import { PUBLIC_SPACE_COLUMNS } from "./venues.js";
 // change) or supplying a new one; `widthM` / `lengthM` are not accepted.
 // ---------------------------------------------------------------------------
 
-const VenueIdParam = z.object({ venueId: z.string().uuid() });
-const SpaceIdParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid() });
+const VenueIdParam = z.object({ venueId: z.uuid() });
+const SpaceIdParam = z.object({ venueId: z.uuid(), id: z.uuid() });
 
 const FloorPlanOutlineBody = z
-  .array(z.object({ x: z.number().finite(), y: z.number().finite() }))
+  .array(z.object({ x: z.number(), y: z.number() }))
   .min(3);
 
 const CreateSpaceBody = z.object({
@@ -34,8 +34,8 @@ const CreateSpaceBody = z.object({
   description: z.string().max(2000).default(""),
   heightM: z.number().positive().max(50),
   floorPlanOutline: FloorPlanOutlineBody,
-  meshUrl: z.string().url().nullable().optional(),
-  thumbnailUrl: z.string().url().nullable().optional(),
+  meshUrl: z.url().nullable().optional(),
+  thumbnailUrl: z.url().nullable().optional(),
   sortOrder: z.number().int().nonnegative().default(0),
 });
 
@@ -44,8 +44,8 @@ const UpdateSpaceBody = z.object({
   description: z.string().max(2000).optional(),
   heightM: z.number().positive().max(50).optional(),
   floorPlanOutline: FloorPlanOutlineBody.optional(),
-  meshUrl: z.string().url().nullable().optional(),
-  thumbnailUrl: z.string().url().nullable().optional(),
+  meshUrl: z.url().nullable().optional(),
+  thumbnailUrl: z.url().nullable().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
 });
 

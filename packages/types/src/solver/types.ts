@@ -15,8 +15,8 @@ import { LayoutStyleSchema, Vec3Schema } from "../configuration.js";
 // ---------------------------------------------------------------------------
 
 export const SolverPlacedObjectSchema = z.object({
-  id: z.string().uuid(),
-  furnitureItemId: z.string().uuid(),
+  id: z.uuid(),
+  furnitureItemId: z.uuid(),
   position: Vec3Schema,
   rotation: Vec3Schema,
   scale: Vec3Schema,

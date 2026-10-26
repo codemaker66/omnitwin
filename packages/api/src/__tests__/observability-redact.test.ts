@@ -358,7 +358,10 @@ describe("errorLogSerializer", () => {
     expect(redacted).toContain("request errored");
     expect(redacted).not.toContain("aileen");
     expect(redacted).not.toContain("example.test");
-    expect(redacted).not.toContain("0141");
+    // The raw log lines also carry time, pid and responseTime digits, which can
+    // contain "0141" by chance (CI run 40215667439 logged "time":1792949730141),
+    // so look for the number as it was entered.
+    expect(redacted).not.toContain("0141 555");
     // Still diagnosable: the constraint and code survive.
     expect(redacted).toContain(CONSTRAINT);
     expect(redacted).toContain("23505");
