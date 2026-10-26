@@ -191,8 +191,11 @@ function instrument() {
   // Shader code, kept only once `tr.keepCode` is set, to diff what compiled twice.
   tr.shaders = [];
   tr.keepCode = false;
+  // Every shader module's time, so a window counts what was created in it, not what a frame saw.
+  tr.shaderTimes = [];
   const createShaderModule = GPUDevice.prototype.createShaderModule;
   GPUDevice.prototype.createShaderModule = function (descriptor, ...rest) {
+    tr.shaderTimes.push(performance.now());
     if (tr.keepCode) tr.shaders.push([performance.now(), descriptor?.label ?? null, descriptor?.code ?? ""]);
     return createShaderModule.call(this, descriptor, ...rest);
   };
@@ -420,21 +423,24 @@ try {
     await page.waitForTimeout(AFTER_DROP_MS);
     const trace = await page.evaluate(() => {
       const tr = window.__budget;
-      return { draws: tr.draws, raf: tr.raf, input: tr.input, frames: tr.frames, longtasks: tr.longtasks, counts: tr.counts?.() ?? null, pipelines: tr.pipelines ?? [] };
+      return { draws: tr.draws, raf: tr.raf, input: tr.input, frames: tr.frames, longtasks: tr.longtasks, counts: tr.counts?.() ?? null, pipelines: tr.pipelines ?? [], shaderTimes: tr.shaderTimes ?? null };
     });
     const motion = frameStats(trace, moveFrom, upAt);
-    // Compiles from the touch down until 300 ms after the lift: the counts at the last frame before
-    // the touch, against those at the last frame inside the window.
-    const before = trace.frames.filter(([t]) => t < downAt).at(-1)?.[1] ?? null;
-    const after = trace.frames.filter(([t]) => t <= releaseEnd).at(-1)?.[1] ?? null;
-    const compiled = before === null || after === null ? null : { shaderModules: after.shader - before.shader, pipelines: after.pipeline - before.pipeline };
-    // The drop, reported apart and not judged: what compiles once the finger is off, and the
+    // Compiles from the touch down until 300 ms after the lift, counted by when each was created (a
+    // count read at the window's last frame would move a compile between this window and the drop's
+    // with frame timing).
+    const createdIn = (from, until) => trace.shaderTimes === null ? null : {
+      shaderModules: trace.shaderTimes.filter((t) => t >= from && t <= until).length,
+      pipelines: trace.pipelines.filter(([t]) => t >= from && t <= until).length,
+    };
+    const compiled = createdIn(downAt, releaseEnd);
+    // The drop, reported apart and not judged: what compiles once the window has closed, and the
     // longest frame while it does.
-    const settled = trace.frames.filter(([t]) => t <= releaseEnd + AFTER_DROP_MS).at(-1)?.[1] ?? null;
     const dropDraws = trace.draws.filter((t) => t > releaseEnd && t <= releaseEnd + AFTER_DROP_MS);
     const dropIntervals = dropDraws.slice(1).map((t, index) => t - dropDraws[index]);
-    const afterDrop = after === null || settled === null ? null : {
-      shaderModules: settled.shader - after.shader, pipelines: settled.pipeline - after.pipeline,
+    const dropCompiled = createdIn(releaseEnd + 1e-6, releaseEnd + AFTER_DROP_MS);
+    const afterDrop = dropCompiled === null ? null : {
+      ...dropCompiled,
       longestFrameMs: dropIntervals.length === 0 ? null : Math.round(Math.max(...dropIntervals) * 10) / 10,
     };
     const record = {
