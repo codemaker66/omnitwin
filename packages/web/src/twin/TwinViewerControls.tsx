@@ -7,13 +7,15 @@ import {
 } from "react";
 import {
   TWIN_ENQUIRE_LABEL,
+  TWIN_ENQUIRE_LOAD_FAILED,
+  TWIN_ENQUIRE_OPENING,
   TWIN_FULLSCREEN_ENTER,
   TWIN_FULLSCREEN_EXIT,
   TWIN_SHARE_COPIED,
   TWIN_SHARE_LABEL,
   twinEnquireAria,
 } from "./twin-copy.js";
-import { TwinEnquiryModal } from "./TwinEnquiryModal.js";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 import { useFullscreen } from "./useFullscreen.js";
 
 // -----------------------------------------------------------------------------
@@ -29,6 +31,25 @@ import { useFullscreen } from "./useFullscreen.js";
 // itself is pointer-events:none so its dead gaps stay click-through to travel;
 // only the controls take the pointer.
 // -----------------------------------------------------------------------------
+
+type EnquiryModal = typeof import("./TwinEnquiryModal.js").TwinEnquiryModal;
+
+// The enquiry form, with the focus trap, planner keys and configurations client
+// it brings, loads only when a visitor reaches for Enquire: none of it belongs
+// on the twin's first load (its byte budget, e2e/twin-performance). One load is
+// shared; a failed one is forgotten so the next press tries again.
+let enquiryModalLoad: Promise<EnquiryModal> | null = null;
+
+function loadEnquiryModal(): Promise<EnquiryModal> {
+  if (enquiryModalLoad === null) {
+    const load = import("./TwinEnquiryModal.js").then((module) => module.TwinEnquiryModal);
+    enquiryModalLoad = load;
+    load.catch(() => {
+      if (enquiryModalLoad === load) enquiryModalLoad = null;
+    });
+  }
+  return enquiryModalLoad;
+}
 
 /** How long the share button shows its "copied" check before reverting. */
 const COPIED_REVERT_MS = 1600;
@@ -77,6 +98,8 @@ export function TwinViewerControls({
   const [copied, setCopied] = useState(false);
   const [announce, setAnnounce] = useState("");
   const [enquireOpen, setEnquireOpen] = useState(false);
+  const [EnquiryForm, setEnquiryForm] = useState<EnquiryModal | null>(null);
+  const [enquiryLoading, setEnquiryLoading] = useState(false);
   const revertTimer = useRef<number | null>(null);
 
   const onShare = useCallback((): void => {
@@ -98,10 +121,38 @@ export function TwinViewerControls({
     });
   }, [shareUrl]);
 
+  const onEnquire = useCallback((): void => {
+    if (EnquiryForm !== null) {
+      setEnquireOpen(true);
+      return;
+    }
+    if (enquiryLoading) return;
+    setEnquiryLoading(true);
+    setAnnounce(TWIN_ENQUIRE_OPENING);
+    loadEnquiryModal().then(
+      (form) => {
+        // A component is a function: hand it to state as a value, not an updater.
+        setEnquiryForm(() => form);
+        setEnquiryLoading(false);
+        setAnnounce("");
+        setEnquireOpen(true);
+      },
+      () => {
+        setEnquiryLoading(false);
+        setAnnounce(TWIN_ENQUIRE_LOAD_FAILED);
+      },
+    );
+  }, [EnquiryForm, enquiryLoading]);
+
+  // Reaching for the button starts the load, so a click usually finds it ready.
+  const warmEnquiry = useCallback((): void => {
+    void loadEnquiryModal().catch(() => undefined);
+  }, []);
+
   return (
     <>
-      {enquireOpen && (
-        <TwinEnquiryModal
+      {enquireOpen && EnquiryForm !== null && (
+        <EnquiryForm
           venueName={venueName}
           onClose={() => {
             setEnquireOpen(false);
@@ -114,21 +165,26 @@ export function TwinViewerControls({
           className="vv-twin-enquire"
           aria-label={twinEnquireAria(venueName)}
           aria-haspopup="dialog"
-          onClick={() => {
-            setEnquireOpen(true);
-          }}
+          aria-busy={enquiryLoading}
+          onPointerEnter={warmEnquiry}
+          onFocus={warmEnquiry}
+          onClick={onEnquire}
         >
-          <svg
-            viewBox="0 0 24 24"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            aria-hidden
-          >
-            <path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z" />
-          </svg>
+          {enquiryLoading ? (
+            <ActivityIndicator size={14} />
+          ) : (
+            <svg
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              aria-hidden
+            >
+              <path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z" />
+            </svg>
+          )}
           {TWIN_ENQUIRE_LABEL}
         </button>
 

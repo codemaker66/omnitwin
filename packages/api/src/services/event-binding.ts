@@ -160,12 +160,102 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
   return { ok: true, eventId: await createEventFor(conn, seed), created: true };
 }
 
+interface SpanBooking {
+  readonly kind: string;
+  readonly status: string;
+  readonly deletedAt: Date | null;
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+}
+
+/**
+ * When an event happens, as its Diary bookings say (release audit
+ * events-diary-1): from the first live confirmed booking's start to the last
+ * one's end, or, before anything is confirmed, across its live options. Null
+ * when nothing is live, and the event keeps the dates it last had. The event's
+ * dates are what clients see, what supplier passes and the client schedule
+ * read, and what allergy-note retention counts from, so they must move when
+ * the booking moves.
+ */
+export function eventSpanFromBookings(rows: readonly SpanBooking[]): { readonly startsAt: Date; readonly endsAt: Date } | null {
+  const live = rows.filter((row) => row.deletedAt === null && row.status === "active");
+  const inks = live.filter((row) => row.kind === "ink");
+  const spanning = inks.length > 0 ? inks : live.filter((row) => row.kind === "hold");
+  if (spanning.length === 0) return null;
+  return {
+    startsAt: new Date(Math.min(...spanning.map((row) => row.startsAt.getTime()))),
+    endsAt: new Date(Math.max(...spanning.map((row) => row.endsAt.getTime()))),
+  };
+}
+
+/** A booking's day, as the sheet's set-up deadline reads it (resolveTiming in
+ *  hallkeeper-sheet-v2-data.ts): from a day before it starts to its end. */
+const BOOKING_DAY_LEAD_MS = 24 * 60 * 60_000;
+
+export interface BookingMove {
+  readonly bookingId: string;
+  readonly eventId: string;
+  readonly from: { readonly spaceId: string; readonly startsAt: Date; readonly endsAt: Date };
+  readonly to: { readonly spaceId: string; readonly startsAt: Date };
+}
+
+/**
+ * The event's timed phases follow a booking that moves (release audit
+ * events-diary-3): every phase of the event in the booking's room on the
+ * booking's day shifts by the same amount and goes to its new room, so the
+ * Day Board, the sheet's set-up deadline and the conflict engine read where
+ * and when the work now is. A phase inside another live booking of the same
+ * event in that room belongs to that booking and stays. The shift is in
+ * absolute time, as the booking's is, so a phase keeps its place relative to
+ * the booking across midnight and a change of the clocks.
+ *
+ * Locks the event first (lock order: the booking, then the event), the lock
+ * the phase editor takes too, so a phase edit and a move never write over
+ * each other. Call inside the booking write's transaction, after it.
+ */
+export async function movePhasesWithBooking(conn: BindConn, move: BookingMove): Promise<number> {
+  const deltaMs = move.to.startsAt.getTime() - move.from.startsAt.getTime();
+  if (deltaMs === 0 && move.to.spaceId === move.from.spaceId) return 0;
+  await conn.select({ id: events.id }).from(events).where(eq(events.id, move.eventId)).limit(1).for("no key update");
+  const dayBefore = new Date(move.from.startsAt.getTime() - BOOKING_DAY_LEAD_MS);
+  // Qualified by hand: inside the subquery a bare starts_at would be the
+  // booking's, not the phase's (PostgreSQL takes the innermost name).
+  const phaseStart = sql`"event_phases"."starts_at"`;
+  const moved = await conn.update(eventPhases)
+    .set({
+      startsAt: sql`${phaseStart} + (${deltaMs}::bigint * interval '1 millisecond')`,
+      spaceId: move.to.spaceId,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(eventPhases.eventId, move.eventId),
+      eq(eventPhases.spaceId, move.from.spaceId),
+      sql`${phaseStart} is not null`,
+      sql`${phaseStart} >= ${dayBefore}`,
+      sql`${phaseStart} < ${move.from.endsAt}`,
+      sql`not exists (
+        select 1 from "bookings" as other
+        where other."event_id" = ${move.eventId}
+          and other."space_id" = ${move.from.spaceId}
+          and other."id" <> ${move.bookingId}
+          and other."status" = 'active'
+          and other."deleted_at" is null
+          and ${phaseStart} >= other."starts_at"
+          and ${phaseStart} < other."ends_at"
+      )`,
+    ))
+    .returning({ id: eventPhases.id });
+  return moved.length;
+}
+
 /**
  * Re-derive one event's status from its bookings (deriveEventStatus in
  * @omnitwin/types) and store it when it changed. Locks the event row, then
  * reads its bookings in a later statement, so a concurrent writer's committed
  * booking is always seen: two holds of one event released at once leave it
  * lost, never draft. Returns the change, or null when the event is missing.
+ * The event's dates follow its live bookings in the same step
+ * (eventSpanFromBookings), so every booking writer moves them with it.
  *
  * The lock is FOR NO KEY UPDATE, not FOR UPDATE. Every booking written or
  * moved onto an event takes FOR KEY SHARE on it through the foreign key, and
@@ -175,19 +265,32 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
  * updateEventCore's FOR UPDATE, which is all the status needs.
  */
 export async function syncEventStatus(conn: BindConn, eventId: string): Promise<EventStatusChange | null> {
-  const [event] = await conn.select({ id: events.id, status: events.status })
+  const [event] = await conn.select({ id: events.id, status: events.status, startsAt: events.startsAt, endsAt: events.endsAt })
     .from(events)
     .where(eq(events.id, eventId))
     .limit(1)
     .for("no key update");
   if (event === undefined) return null;
   const from = EventStatusSchema.parse(event.status);
-  const rows = await conn.select({ kind: bookings.kind, status: bookings.status, deletedAt: bookings.deletedAt })
+  const rows = await conn.select({
+    kind: bookings.kind,
+    status: bookings.status,
+    deletedAt: bookings.deletedAt,
+    startsAt: bookings.startsAt,
+    endsAt: bookings.endsAt,
+  })
     .from(bookings)
     .where(eq(bookings.eventId, eventId));
   const to = deriveEventStatus(from, summariseEventBookings(rows));
-  if (to !== from) {
-    await conn.update(events).set({ status: to, updatedAt: new Date() }).where(eq(events.id, eventId));
+  const span = eventSpanFromBookings(rows);
+  const spanMoved = span !== null && (event.startsAt?.getTime() !== span.startsAt.getTime()
+    || event.endsAt?.getTime() !== span.endsAt.getTime());
+  if (to !== from || spanMoved) {
+    await conn.update(events).set({
+      status: to,
+      ...(spanMoved ? { startsAt: span.startsAt, endsAt: span.endsAt } : {}),
+      updatedAt: new Date(),
+    }).where(eq(events.id, eventId));
   }
   return { eventId, from, to };
 }

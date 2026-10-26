@@ -5,6 +5,7 @@ import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { governedRender, profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
+import { gpuProbeSettled, probeGpu, subscribeGpuProbe } from "../../lib/gpu-class.js";
 import { RenderGovernor } from "../scene/RenderGovernor.js";
 import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
@@ -31,6 +32,7 @@ import { XrayToggle } from "../XrayToggle.js";
 import { MeasurementTool } from "../MeasurementTool.js";
 import { TapeMeasure } from "../TapeMeasure.js";
 import { PlacementGhost } from "../PlacementGhost.js";
+import { WarmPieceInHand } from "../WarmPlacedVariants.js";
 import { PlannerInteractionFloor } from "./PlannerInteractionFloor.js";
 import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
@@ -97,6 +99,12 @@ const GrandAssembly = lazy(loadGrandAssembly);
  * Computes render dimensions from room geometry polygon data.
  * Falls back to Grand Hall dimensions if no space is loaded.
  */
+// Which graphics draw the planner decides a desktop's profile (lib/gpu-class.ts).
+// Asked as the planner's code arrives, so the answer is usually in while the
+// layout and the room are still loading; the canvas waits for it (400 ms at
+// most), as a profile changed after the first frame would compile it twice.
+void probeGpu();
+
 const COMPACT_PLANNER_MAX_VIEWPORT_WIDTH = 1099;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
 
@@ -268,9 +276,11 @@ export function PlannerScene(): ReactElement {
   const assemblyAsked = useMemo(() => typeof window !== "undefined" && assemblyRequested(window.location.search) !== null, []);
   const viewportWidth = usePlannerViewportWidth();
   const nativeDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
-  // One render profile per page (phone, tablet or desktop); phones and tablets
-  // draw within a pixel budget instead of their full native density.
-  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), []);
+  // One render profile per page (phone, tablet, desktop or office); phones and
+  // tablets draw within a pixel budget instead of their full native density.
+  // Chosen once the graphics probe has answered, before the canvas exists.
+  const gpuKnown = useSyncExternalStore(subscribeGpuProbe, gpuProbeSettled, () => true);
+  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), [gpuKnown]);
   const profileDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
   // A device that cannot hold its frame rate gives up quality, a rung at a
   // time, cheapest to lose first (lib/render-governor.ts); `?governor=off`
@@ -429,8 +439,13 @@ export function PlannerScene(): ReactElement {
   // attribute. Still-mounted URLs retain their draws; a recreated renderer
   // must draw them again before progress can settle.
   const [rendererGeneration, setRendererGeneration] = useState(0);
+  // A 3D view on its couldn't-start or stopped card: no arrival may open over
+  // it as if the room were still opening, whichever layout it opens for.
+  const [canvasUnavailable, setCanvasUnavailable] = useState(false);
+  const markCanvasUnavailable = useCallback(() => { setCanvasUnavailable(true); }, []);
   const handleCanvasCreated = useCallback(() => {
     setRendererGeneration((generation) => generation + 1);
+    setCanvasUnavailable(false);
   }, []);
   const arrivals = useChunkArrivals(splatUrls.join("|"), rendererGeneration);
   const totalChunks = splatUrls.length;
@@ -450,7 +465,7 @@ export function PlannerScene(): ReactElement {
   // Once entered (or bypassed), later refinements never cover the workspace.
   const showArrival = arrivalKey !== null && roomSlug === "grand-hall" && !timelinePreviewActive
     && sceneLayerMode !== "mesh"
-    && !enteredRooms.has(arrivalKey) && !captureFailed
+    && !enteredRooms.has(arrivalKey) && !captureFailed && !canvasUnavailable
     && (splatStatus === "loading" || hasAsset);
   const meshVisible = !timelinePreviewActive && (!hasAsset || captureFailed || sceneLayerMode !== "splat");
   const splatActive = !timelinePreviewActive && hasAsset && !captureFailed && sceneLayerMode !== "mesh";
@@ -567,6 +582,16 @@ export function PlannerScene(): ReactElement {
     useCockpitStore.getState().setCameraInteractionActive(false);
   }, [clearCameraInteractionTimer]);
 
+  // Until the graphics probe answers (lib/gpu-class.ts): the host and the arrival, no canvas yet.
+  if (!gpuKnown) {
+    return (
+      <PlannerCanvasBoundary>
+        <div className="planner-scene-canvas-host" />
+        {showArrival && <PlannerArrival onEnter={enterRoom} />}
+      </PlannerCanvasBoundary>
+    );
+  }
+
   return (
     <PlannerCanvasBoundary>
       <div
@@ -580,6 +605,7 @@ export function PlannerScene(): ReactElement {
         {hallSkyAsked && <HallOpeningHour />}
         <Canvas
           onCreated={handleCanvasCreated}
+          onUnavailable={markCanvasUnavailable}
           shadows={furnitureLighting === "panorama-shadow" || skyLit ? "percentage" : false}
           frameloop="demand"
           dpr={canvasDpr}
@@ -667,6 +693,7 @@ export function PlannerScene(): ReactElement {
             <MeasurementTool />
             <TapeMeasure />
             <PlacementGhost />
+            <WarmPieceInHand />
             <SelectionSystem />
             <FurnitureMotion />
             <CockpitSceneOverlays renderGeometry={renderSceneOverlays} />

@@ -25,6 +25,7 @@ vi.mock("../components/editor/ObjectNotePanel.js", () => ({ ObjectNotePanel: () 
 vi.mock("../components/editor/EventDetailsPanel.js", () => ({ EventDetailsPanel: () => null }));
 vi.mock("../components/truth/TruthModeIndicator.js", () => ({ TruthModeIndicator: () => null }));
 vi.mock("../hooks/use-media-query.js", () => ({ useIsCoarsePointer: () => false, useIsNarrowViewport: () => false }));
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
@@ -32,7 +33,6 @@ vi.mock("../api/configurations.js", () => ({
   claimConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
 }));
 vi.mock("../api/spaces.js", () => ({ listVenues: vi.fn(), listSpaces: vi.fn(), getSpace: vi.fn(), getVenue: vi.fn() }));
 
@@ -91,7 +91,9 @@ function LeavePlanner(): ReactElement {
   return <button type="button" onClick={() => { void navigate("/elsewhere"); }}>Leave planner</button>;
 }
 
-function renderPlanner(entry = "/plan"): void {
+// These cases exercise the tracked-draft lookups for the Reception Room, the /plan
+// default until 26 Oct 2026; naming the room keeps them about the lookups, not the default.
+function renderPlanner(entry = "/plan?space=reception-room"): void {
   render(
     <MemoryRouter initialEntries={[entry]}>
       <Location />
@@ -309,5 +311,56 @@ describe("a signed-in person's new plan", () => {
     await waitFor(() => { expect(location()).toBe("/plan/created"); });
     expect(configApi.getPublicConfig).not.toHaveBeenCalled();
     expect(configApi.claimConfig).not.toHaveBeenCalledWith("reception-draft", expect.anything());
+  });
+});
+
+// planner-qol A-X3: a claimed draft is private, so the public lookup could not
+// see it, and every visit to /plan made and claimed another empty plan. A
+// signed-in person's own empty, recent plan opens again; "Start a new plan"
+// (?new=1) always makes a fresh one.
+describe("a signed-in person coming back to /plan", () => {
+  const planner = { id: "planner-9", email: "planner9@example.test", name: "Planner", role: "client", platformRole: "none" as const, venueId: null };
+  const recently = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+  const ownEmpty = (extra: Partial<Configuration> = {}): Configuration =>
+    draft("own-plan", reception, { userId: planner.id, isPublicPreview: false, objects: [], updatedAt: recently, ...extra });
+  /** A tracked draft of this browser's that was claimed, so it holds no secret. */
+  const trackClaimed = (configId: string): void => {
+    localStorage.setItem("omnitwin_my_configs", JSON.stringify([{ configId, createdAt: "2026-10-26T08:00:00.000Z" }]));
+  };
+
+  beforeEach(() => {
+    useAuthStore.getState().setUser(planner);
+    configApi.createPublicConfig.mockResolvedValue({ ...draft("created", reception, { revision: 1, objects: [] }), claimSecret: secretFor("created") });
+    configApi.claimConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [], isPublicPreview: false, userId: planner.id }));
+  });
+
+  it("opens their own empty plan for the room again rather than making another", async () => {
+    trackClaimed("own-plan");
+    configApi.getConfig.mockResolvedValue(ownEmpty());
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/own-plan"); });
+    expect(configApi.createPublicConfig).not.toHaveBeenCalled();
+    expect(configApi.claimConfig).not.toHaveBeenCalled();
+  });
+
+  it("makes a fresh plan for Start a new plan, and leaves the request off the address", async () => {
+    trackClaimed("own-plan");
+    configApi.getConfig.mockResolvedValue(ownEmpty());
+    renderPlanner("/plan?new=1");
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.createPublicConfig).toHaveBeenCalledTimes(1);
+    expect(configApi.getConfig).not.toHaveBeenCalledWith("own-plan");
+  });
+
+  it.each([
+    ["a plan with pieces on it", { objects: draft("x", reception).objects ?? [] }],
+    ["a plan last changed over a week ago", { updatedAt: "2026-09-01T10:00:00.000Z" }],
+    ["someone else's plan", { userId: "someone-else" }],
+  ] as const)("does not reopen %s, and makes a new one", async (_case, extra) => {
+    trackClaimed("own-plan");
+    configApi.getConfig.mockResolvedValue(ownEmpty(extra));
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.createPublicConfig).toHaveBeenCalledTimes(1);
   });
 });

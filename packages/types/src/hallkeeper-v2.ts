@@ -94,6 +94,13 @@ export const ManifestRowV2Schema = z.object({
    * own coordinates, they follow their parent's.
    */
   positions: z.array(RowPositionSchema).default([]),
+  /**
+   * The planner's names for the pieces in this row ("Table 1", "Table 2"),
+   * from placed_objects.metadata.displayLabel, so the crew sets the right
+   * linen at the right number. Absent on rows (and frozen sheets) that
+   * carry none; formatTableLabels prints them.
+   */
+  labels: z.array(z.string().min(1).max(80)).max(500).optional(),
 });
 
 export type ManifestRowV2 = z.infer<typeof ManifestRowV2Schema>;
