@@ -169,9 +169,15 @@ describe("event routes", () => {
   it("rejects cross-venue configuration links before writing an event variant", async () => {
     const source = await readFile(resolve("src/routes/events.ts"), "utf-8");
     const variantRoute = source.slice(source.indexOf('server.post("/:id/layout-variants"'));
-    expect(variantRoute).toContain("config.venueId !== eventRow.venueId");
-    expect(variantRoute).toContain('code: "CONFIGURATION_VENUE_MISMATCH"');
-    expect(variantRoute.indexOf("config.venueId !== eventRow.venueId"))
+    // Both link routes share one check, made under a share lock on the layout
+    // (release audit public-surface-1); the event row's venue is the authority.
+    const check = source.slice(source.indexOf("async function lockLinkableLayout("), source.indexOf("function toIso("));
+    expect(check).toContain("config.venueId !== eventVenueId");
+    expect(check).toContain('code: "CONFIGURATION_VENUE_MISMATCH"');
+    expect(check).toContain('.for("share")');
+    expect(check).toContain('code: "CONFIGURATION_OWNER_IS_CUSTOMER"');
+    expect(variantRoute).toContain("lockLinkableLayout(tx, request.user, configurationId, eventRow.venueId");
+    expect(variantRoute.indexOf("lockLinkableLayout(tx"))
       .toBeLessThan(variantRoute.indexOf("tx.insert(layoutVariants)"));
   });
 
@@ -305,7 +311,7 @@ describe("event configuration links — the planner corridor's binding", () => {
     // The venue of the loaded event row is the authority, and the link row is
     // made idempotent by the unique constraint rather than a read-then-write
     // precheck, which two simultaneous corridor opens would race past.
-    expect(route).toContain("config.venueId !== eventRow.venueId");
+    expect(route).toContain("lockLinkableLayout(tx, request.user, parsed.data.configurationId, eventRow.venueId");
     expect(route).toContain("onConflictDoNothing");
   });
 });

@@ -24,8 +24,8 @@ export const ClientHomeEventSchema = z.object({
   id: EventIdSchema,
   name: z.string().trim().min(1).max(200),
   eventType: z.string().trim().max(80).nullable(),
-  startsAt: z.string().datetime().nullable(),
-  endsAt: z.string().datetime().nullable(),
+  startsAt: z.iso.datetime().nullable(),
+  endsAt: z.iso.datetime().nullable(),
   guestCount: z.number().int().nonnegative(),
   venue: HomeVenueSchema.extend({ timezone: TimezoneSchema }).strict(),
   /** How many of this person's own saved layouts are linked to the event. */
@@ -37,7 +37,7 @@ export const ClientHomePlanSchema = z.object({
   id: ConfigurationIdSchema,
   name: z.string().trim().min(1).max(200),
   /** When the plan was last saved. */
-  updatedAt: z.string().datetime(),
+  updatedAt: z.iso.datetime(),
   space: z.object({ id: SpaceIdSchema, name: z.string().trim().min(1).max(200) }).strict(),
   venue: HomeVenueSchema,
   /** The listed event this plan belongs to, or null while it stands alone. */

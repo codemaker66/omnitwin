@@ -7,6 +7,7 @@ import { useClientHome, type ClientHomeResult } from "../hooks/use-client-home.j
 import { useAuthStore } from "../stores/auth-store.js";
 import { isE2EAuthBypassEnabled } from "../lib/e2e-auth-bypass.js";
 import { authRouteWithReturnTo } from "../lib/auth-return.js";
+import { useSignOutLayouts } from "../components/auth/sign-out-layouts.js";
 import "./ClientHomePage.css";
 
 // ---------------------------------------------------------------------------
@@ -139,7 +140,7 @@ function PlanRows({ plans, planTotal, events }: {
     <section className="client-home__section" aria-labelledby="client-home-plans">
       <div className="client-home__section-head">
         <h2 id="client-home-plans">Your room plans</h2>
-        <Link className="client-home__quiet" to="/plan">Start a new plan</Link>
+        <Link className="client-home__quiet" to="/plan?new=1">Start a new plan</Link>
       </div>
       {plans.length === 0
         ? <p className="client-home__note">You have not saved a room plan yet.</p>
@@ -177,7 +178,13 @@ function NothingYet(): ReactElement {
   );
 }
 
-function ClerkSignOut({ onLocalSignOut }: { readonly onLocalSignOut: () => void }): ReactElement {
+interface SignOutProps {
+  readonly onLocalSignOut: () => void;
+  /** Asks first about unsaved layout work kept on this device. */
+  readonly askFirst: (signOut: () => void) => void;
+}
+
+function ClerkSignOut({ onLocalSignOut, askFirst }: SignOutProps): ReactElement {
   const { signOut } = useClerk();
   const [signingOut, setSigningOut] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -195,7 +202,7 @@ function ClerkSignOut({ onLocalSignOut }: { readonly onLocalSignOut: () => void 
   };
   return (
     <>
-      <button type="button" className="client-home__signout" disabled={signingOut} aria-busy={signingOut} onClick={() => { void handle(); }}>
+      <button type="button" className="client-home__signout" disabled={signingOut} aria-busy={signingOut} onClick={() => { askFirst(() => { void handle(); }); }}>
         {signingOut && <ActivityIndicator size={16} />}
         {signingOut ? "Signing out…" : "Sign out"}
       </button>
@@ -205,9 +212,9 @@ function ClerkSignOut({ onLocalSignOut }: { readonly onLocalSignOut: () => void 
 }
 
 /** Under the E2E auth bypass there is no Clerk provider to ask. */
-function LocalSignOut({ onLocalSignOut }: { readonly onLocalSignOut: () => void }): ReactElement {
+function LocalSignOut({ onLocalSignOut, askFirst }: SignOutProps): ReactElement {
   const navigate = useNavigate();
-  return <button type="button" className="client-home__signout" onClick={() => { onLocalSignOut(); void navigate("/login"); }}>Sign out</button>;
+  return <button type="button" className="client-home__signout" onClick={() => { askFirst(() => { onLocalSignOut(); void navigate("/login"); }); }}>Sign out</button>;
 }
 
 function HomeBody({ result }: { readonly result: ClientHomeResult }): ReactElement {
@@ -253,6 +260,8 @@ export function ClientHomePage(): ReactElement {
   const result = useClientHome();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  // The sign-out button stays in sight, so staying needs no other focus.
+  const signOutLayouts = useSignOutLayouts(user?.id ?? null, () => undefined);
   return (
     <main className="client-home" aria-labelledby="client-home-title">
       <div className="client-home__sheet">
@@ -261,7 +270,10 @@ export function ClientHomePage(): ReactElement {
           <Link className="client-home__mark" to="/">Venviewer</Link>
           {user !== null && <div className="client-home__account">
             <span>{user.name}</span>
-            {isE2EAuthBypassEnabled() ? <LocalSignOut onLocalSignOut={logout} /> : <ClerkSignOut onLocalSignOut={logout} />}
+            {isE2EAuthBypassEnabled()
+              ? <LocalSignOut onLocalSignOut={logout} askFirst={signOutLayouts.askFirst} />
+              : <ClerkSignOut onLocalSignOut={logout} askFirst={signOutLayouts.askFirst} />}
+            {signOutLayouts.question}
           </div>}
         </div>
         <h1 id="client-home-title">Your events</h1>

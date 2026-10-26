@@ -29,7 +29,7 @@ export const PEOPLE_SEARCH_LIMIT = 20;
 const PHONE_SEARCH_MIN_DIGITS = 6;
 
 const PersonRowSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
   organisation_name: z.string().nullable(),
   email: z.string().nullable(),
@@ -38,7 +38,7 @@ const PersonRowSchema = z.object({
 });
 
 const OrganisationRowSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
   kind: ClientAccountKindSchema,
   member_count: z.number().int().nonnegative(),
