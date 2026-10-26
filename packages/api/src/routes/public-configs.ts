@@ -35,25 +35,25 @@ import {
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
 
 const CreatePublicConfigBody = z.object({
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   name: z.string().trim().min(1).max(200).default("Untitled Layout"),
 });
 
 const BatchObjectItem = z.object({
-  id: z.string().uuid().optional(),
-  assetDefinitionId: z.string().uuid(),
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
-  positionZ: z.number().finite(),
-  rotationX: z.number().finite().default(0),
-  rotationY: z.number().finite().default(0),
-  rotationZ: z.number().finite().default(0),
+  id: z.uuid().optional(),
+  assetDefinitionId: z.uuid(),
+  positionX: z.number(),
+  positionY: z.number(),
+  positionZ: z.number(),
+  rotationX: z.number().default(0),
+  rotationY: z.number().default(0),
+  rotationZ: z.number().default(0),
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const BatchBody = z.object({

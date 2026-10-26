@@ -104,8 +104,8 @@ export type EventArchitectValidatorPolicy = z.infer<
 export const EventArchitectRequestSchema = z.object({
   configurationId: ConfigurationIdSchema,
   createdBy: UserIdSchema.nullable(),
-  configurationUpdatedAt: z.string().datetime(),
-  snapshotCreatedAt: z.string().datetime(),
+  configurationUpdatedAt: z.iso.datetime(),
+  snapshotCreatedAt: z.iso.datetime(),
   brief: EventArchitectBriefSchema,
   room: EventArchitectRoomContextSchema,
   policyBundle: LayoutSnapshotPolicyBundleReferenceSchema,
@@ -193,10 +193,10 @@ export const EventArchitectRepairActionSchema = z.enum([
 export type EventArchitectRepairAction = z.infer<typeof EventArchitectRepairActionSchema>;
 
 export const EventArchitectRepairHintSchema = z.object({
-  hintId: z.string().uuid(),
+  hintId: z.uuid(),
   action: EventArchitectRepairActionSchema,
   sourceWitnessId: z.string().regex(SHA256_HEX),
-  affectedObjectIds: z.array(z.string().uuid()),
+  affectedObjectIds: z.array(z.uuid()),
   quantity: z.number().int().positive().nullable(),
   amountM: z.number().positive().nullable(),
   amountMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
@@ -205,7 +205,7 @@ export const EventArchitectRepairHintSchema = z.object({
 export type EventArchitectRepairHint = z.infer<typeof EventArchitectRepairHintSchema>;
 
 export const EventArchitectCandidateSchema = z.object({
-  candidateId: z.string().uuid(),
+  candidateId: z.uuid(),
   rank: z.number().int().min(1).max(3),
   strategy: EventArchitectStrategySchema,
   strategyParameters: EventArchitectStrategyParametersSchema,
@@ -223,7 +223,7 @@ export const EventArchitectRunSchema = z.object({
   engineVersion: z.literal(EVENT_ARCHITECT_ENGINE_VERSION),
   engineDigest: z.string().regex(SHA256_HEX),
   requestDigest: z.string().regex(SHA256_HEX),
-  runId: z.string().uuid(),
+  runId: z.uuid(),
   candidates: z.array(EventArchitectCandidateSchema).length(3),
 }).strict();
 export type EventArchitectRun = z.infer<typeof EventArchitectRunSchema>;
@@ -244,8 +244,8 @@ export type CreateEventArchitectRunInput = z.infer<
 export const PersistedEventArchitectRunSchema = z.object({
   run: EventArchitectRunSchema,
   createdBy: UserIdSchema,
-  createdAt: z.string().datetime(),
-  selectedCandidateId: z.string().uuid().nullable(),
+  createdAt: z.iso.datetime(),
+  selectedCandidateId: z.uuid().nullable(),
   selectedConfigurationId: ConfigurationIdSchema.nullable(),
   selectedSnapshotDigest: z.string().regex(SHA256_HEX).nullable(),
   selectedProofDigest: z.string().regex(SHA256_HEX).nullable(),
@@ -263,13 +263,13 @@ export type SelectEventArchitectCandidateInput = z.infer<
 >;
 
 export const EventArchitectCandidateSelectionSchema = z.object({
-  runId: z.string().uuid(),
-  candidateId: z.string().uuid(),
+  runId: z.uuid(),
+  candidateId: z.uuid(),
   configurationId: ConfigurationIdSchema,
   snapshotDigest: z.string().regex(SHA256_HEX),
   proofDigest: z.string().regex(SHA256_HEX),
   plannerPath: z.string().regex(/^\/plan\/[a-zA-Z0-9-]+$/u),
-  selectedAt: z.string().datetime(),
+  selectedAt: z.iso.datetime(),
 }).strict();
 export type EventArchitectCandidateSelection = z.infer<
   typeof EventArchitectCandidateSelectionSchema
@@ -295,7 +295,7 @@ export const EventArchitectOpsEvidenceWitnessSchema = z.object({
   sourceLabel: z.string().trim().min(3).max(200),
   sourceReference: z.string().trim().min(3).max(500),
   contentDigest: z.string().regex(SHA256_HEX),
-  observedAt: z.string().datetime(),
+  observedAt: z.iso.datetime(),
 }).strict();
 export type EventArchitectOpsEvidenceWitness = z.infer<
   typeof EventArchitectOpsEvidenceWitnessSchema
@@ -307,7 +307,7 @@ export const EventArchitectOpsEvidenceWitnessesSchema = z.array(
   for (const kind of EVENT_ARCHITECT_OPS_EVIDENCE_KINDS) {
     if (witnesses.filter((witness) => witness.kind === kind).length !== 1) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: `Exactly one ${kind} witness is required.`,
       });
     }
@@ -337,7 +337,7 @@ export const CreateEventArchitectOpsReviewInputSchema = z.object({
   expectedGuestFlowArtifactHash: z.string().regex(SHA256_HEX),
   decision: EventArchitectOpsReviewDecisionSchema,
   note: z.string().trim().min(10).max(2000),
-  validUntil: z.string().datetime(),
+  validUntil: z.iso.datetime(),
   witnesses: EventArchitectOpsEvidenceWitnessesSchema,
 }).strict();
 export type CreateEventArchitectOpsReviewInput = z.infer<
@@ -346,10 +346,10 @@ export type CreateEventArchitectOpsReviewInput = z.infer<
 
 export const EventArchitectOpsReviewArtifactSchema = z.object({
   schemaVersion: z.literal(EVENT_ARCHITECT_OPS_REVIEW_SCHEMA_VERSION),
-  artifactId: z.string().uuid(),
+  artifactId: z.uuid(),
   artifactDigest: z.string().regex(SHA256_HEX),
-  candidateId: z.string().uuid(),
-  runId: z.string().uuid(),
+  candidateId: z.uuid(),
+  runId: z.uuid(),
   venueId: VenueIdSchema,
   configurationId: ConfigurationIdSchema,
   decision: EventArchitectOpsReviewDecisionSchema,
@@ -361,15 +361,15 @@ export const EventArchitectOpsReviewArtifactSchema = z.object({
   guestFlowArtifactHash: z.string().regex(SHA256_HEX),
   witnesses: EventArchitectOpsEvidenceWitnessesSchema,
   note: z.string().trim().min(10).max(2000),
-  reviewedAt: z.string().datetime(),
-  validUntil: z.string().datetime(),
+  reviewedAt: z.iso.datetime(),
+  validUntil: z.iso.datetime(),
 }).strict();
 export type EventArchitectOpsReviewArtifact = z.infer<
   typeof EventArchitectOpsReviewArtifactSchema
 >;
 
 export const EventArchitectOpsReviewGateSchema = z.object({
-  candidateId: z.string().uuid(),
+  candidateId: z.uuid(),
   status: z.enum(["open", "approved", "rejected", "expired"]),
   blockingForOpsCompilation: z.boolean(),
   requiredData: z.tuple([

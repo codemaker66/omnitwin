@@ -109,11 +109,11 @@ export type PipelineTask = z.infer<typeof PipelineTaskSchema>;
 const PipelineSchema = z.object({
   opportunities: z.array(PipelineOpportunitySchema),
   todayTasks: z.array(PipelineTaskSchema),
-  stageCounts: z.record(z.number().int()),
+  stageCounts: z.record(z.string(), z.number().int()),
   // What each stage's deals are estimated at, and how many open deals have a
   // step due today or already past it, over the whole pipeline (roadmap X1).
   // Optional, as below, for a web build briefly ahead of the API.
-  stageValues: z.record(z.number().int()).optional(),
+  stageValues: z.record(z.string(), z.number().int()).optional(),
   due: z.object({ overdue: z.number().int(), today: z.number().int() }).optional(),
   // Served by the API, never summed from `opportunities` here: that array is
   // one PAGE of the board, and a page total is not a pipeline total. It is

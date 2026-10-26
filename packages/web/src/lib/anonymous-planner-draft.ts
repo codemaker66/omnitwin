@@ -8,15 +8,15 @@ const MAX_DRAFT_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const EditorObjectDraftSchema = z.object({
   id: z.string().min(1),
   assetDefinitionId: z.string().min(1),
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
-  positionZ: z.number().finite(),
-  rotationX: z.number().finite(),
-  rotationY: z.number().finite(),
-  rotationZ: z.number().finite(),
+  positionX: z.number(),
+  positionY: z.number(),
+  positionZ: z.number(),
+  rotationX: z.number(),
+  rotationY: z.number(),
+  rotationZ: z.number(),
   // Matches the API's positive uniform-scale contract. Corrupt/legacy drafts
   // are discarded rather than restoring a scene the renderer must reinterpret.
-  scale: z.number().finite().positive(),
+  scale: z.number().positive(),
   sortOrder: z.number().int(),
   clothed: z.boolean(),
   clothStyle: z.enum(["black", "white"]).nullable().default(null),

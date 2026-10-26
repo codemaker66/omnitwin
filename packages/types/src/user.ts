@@ -5,7 +5,7 @@ import { VenueIdSchema } from "./venue.js";
 // User ID — UUID v4
 // ---------------------------------------------------------------------------
 
-export const UserIdSchema = z.string().uuid();
+export const UserIdSchema = z.uuid();
 
 export type UserId = z.infer<typeof UserIdSchema>;
 
@@ -58,7 +58,7 @@ export const EmailSchema = z
   .trim()
   .min(1, "Email must not be empty")
   .max(320, "Email must be at most 320 characters")
-  .email("Email must be a valid email address");
+  .check(z.email("Email must be a valid email address"));
 
 // ---------------------------------------------------------------------------
 // User — the full persisted entity (matches DB columns)
@@ -78,8 +78,8 @@ export const UserSchema = z.object({
   role: UserRoleSchema,
   platformRole: PlatformRoleSchema.default("none"),
   venueId: VenueIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 
 export type User = z.infer<typeof UserSchema>;

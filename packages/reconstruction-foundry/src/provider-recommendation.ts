@@ -86,7 +86,7 @@ function validateEvidenceWindow(
 ): void {
   if (Date.parse(window.observedAt) >= Date.parse(window.expiresAt)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["expiresAt"],
       message: "evidence must expire after it was observed",
     });
@@ -131,7 +131,7 @@ const QueueEvidenceSchema = z
     validateEvidenceWindow(queue, ctx);
     if (queue.availability === "available" !== (queue.expectedWaitSeconds !== null)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["expectedWaitSeconds"],
         message: "only an available queue may carry an expected wait",
       });
@@ -160,7 +160,7 @@ const SoftwareEvidenceSchema = z
       images.some((image, index) => image !== sorted[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["workerImages"],
         message: "worker image assessments must be unique and sorted",
       });
@@ -171,7 +171,7 @@ const CostEvidenceSchema = z
   .object({
     ...evidenceWindowShape,
     currency: z.literal("USD"),
-    estimatedCostMicrousd: z.number().int().safe().nonnegative(),
+    estimatedCostMicrousd: z.number().int().int().nonnegative(),
   })
   .strict()
   .superRefine(validateEvidenceWindow);
@@ -232,7 +232,7 @@ function validateCriterionPriority(
     SOFT_CRITERIA.some((criterion) => !priority.includes(criterion))
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["softCriterionPriority"],
       message: "soft criterion priority must be an exact permutation",
     });
@@ -245,21 +245,21 @@ function validatePlanBindings(
 ): void {
   if (Date.parse(request.evaluatedAt) < Date.parse(request.planOnlyRequest.createdAt)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["evaluatedAt"],
       message: "recommendation cannot predate its PlanOnly request",
     });
   }
   if (request.planOnlyRequestSha256 !== planRequestSha256(request.planOnlyRequest)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["planOnlyRequestSha256"],
       message: "recommendation request must bind the exact PlanOnly request",
     });
   }
   if (request.planOnlyDossierSha256 !== request.planOnlyDossier.dossierSha256) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["planOnlyDossierSha256"],
       message: "recommendation request must bind the exact PlanOnly dossier",
     });
@@ -269,7 +269,7 @@ function validatePlanBindings(
     canonicalString(request.planOnlyDossier.request) !== canonicalString(request.planOnlyRequest)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["planOnlyDossier"],
       message: "PlanOnly request and dossier subjects must be identical",
     });
@@ -288,7 +288,7 @@ function validateRouteBindings(
   const candidateRoutes = request.planOnlyDossier.candidates.map(routeKey);
   if (canonicalString(requestRoutes) !== canonicalString(candidateRoutes)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["planOnlyDossier", "candidates"],
       message: "PlanOnly routes and candidates must have an exact one-to-one binding",
     });
@@ -300,14 +300,14 @@ function validateRouteBindings(
     evidenceRoutes.some((route, index) => route !== sortedEvidenceRoutes[index])
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["routeEvidence"],
       message: "route evidence must be unique and sorted",
     });
   }
   if (evidenceRoutes.some((route) => !candidateRoutes.includes(route))) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["routeEvidence"],
       message: "route evidence cannot name a route absent from the PlanOnly dossier",
     });
@@ -346,8 +346,8 @@ const FreshnessSchema = z.enum([
 
 const CapacityFactorSchema = z
   .object({
-    requiredMicroGiB: z.number().int().safe().nonnegative().nullable(),
-    availableMicroGiB: z.number().int().safe().nonnegative().nullable(),
+    requiredMicroGiB: z.number().int().int().nonnegative().nullable(),
+    availableMicroGiB: z.number().int().int().nonnegative().nullable(),
     status: z.enum(["within_capacity", "exceeds_capacity", "not_exact_fixed_point"]),
   })
   .strict();
@@ -370,8 +370,8 @@ const CandidateEvaluationSchema = z
       .object({
         inputSize: z
           .object({
-            requiredBytes: z.number().int().safe().nonnegative(),
-            maximumBytes: z.number().int().safe().nonnegative(),
+            requiredBytes: z.number().int().int().nonnegative(),
+            maximumBytes: z.number().int().int().nonnegative(),
             status: z.enum(["within_capacity", "exceeds_capacity"]),
           })
           .strict(),
@@ -408,8 +408,8 @@ const CandidateEvaluationSchema = z
         estimatedCost: z
           .object({
             currency: z.literal("USD"),
-            planEstimatedCostMicrousd: z.number().int().safe().nonnegative().nullable(),
-            evidenceEstimatedCostMicrousd: z.number().int().safe().nonnegative().nullable(),
+            planEstimatedCostMicrousd: z.number().int().int().nonnegative().nullable(),
+            evidenceEstimatedCostMicrousd: z.number().int().int().nonnegative().nullable(),
             freshness: FreshnessSchema,
             status: z.enum([
               "matches_plan",
@@ -435,7 +435,7 @@ export type FoundryProviderCandidateEvaluationV0 = z.infer<
 const ComparisonValueSchema = z
   .object({
     criterion: z.enum(SOFT_CRITERIA),
-    value: z.number().int().safe().nonnegative(),
+    value: z.number().int().int().nonnegative(),
   })
   .strict();
 
@@ -628,21 +628,21 @@ function validateRequestDerivedCandidateBindings(
     const expected = expectedRouteContract(request, route);
     if (candidate.estimatedCostUsd !== expected.estimatedCostUsd) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["planOnlyDossier", "candidates", index, "estimatedCostUsd"],
         message: "candidate cost must equal the request-derived route cost",
       });
     }
     if (candidate.budgetCapUsd !== expected.budgetCapUsd) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["planOnlyDossier", "candidates", index, "budgetCapUsd"],
         message: "candidate budget must equal the request-derived route budget",
       });
     }
     if (canonicalString(candidate.jobSpec) !== canonicalString(expected.jobSpec)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["planOnlyDossier", "candidates", index, "jobSpec"],
         message:
           "candidate JobSpec must exactly match the request-derived route, economics, stages, identity, output, and storage contract",
@@ -990,7 +990,7 @@ function validateDerivedRecommendation(
       computeFoundryProviderRecommendationRequestSha256(payload.request)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["recommendationRequestSha256"],
       message: "recommendation must bind its exact request",
     });
@@ -1000,7 +1000,7 @@ function validateDerivedRecommendation(
     payload.planOnlyDossierSha256 !== payload.request.planOnlyDossierSha256
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["planOnlyDossierSha256"],
       message: "recommendation must preserve both PlanOnly subject digests",
     });
@@ -1012,7 +1012,7 @@ function validateDerivedRecommendation(
   };
   if (canonicalString(expected) !== canonicalString(actual)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["candidateEvaluations"],
       message: "recommendation evaluation and decision must be deterministically derived",
     });
@@ -1051,7 +1051,7 @@ export const FoundryProviderRecommendationV0Schema =
           computeFoundryProviderRecommendationSha256(payloadResult.data)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["recommendationSha256"],
           message: "recommendation digest must match its canonical payload",
         });

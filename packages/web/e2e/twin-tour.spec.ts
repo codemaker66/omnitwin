@@ -252,6 +252,25 @@ async function openTour(page: Page, query = ""): Promise<void> {
 }
 
 /**
+ * Wait until a click on the stage walks from `nodeId`.
+ *
+ * The HUD is React DOM and paints in the viewer's first commit; the scene that
+ * turns a click into a hop mounts later, because R3F renders its children only
+ * once it has measured the canvas (a frame and a 50 ms debounce at the least).
+ * A click in between reaches no listener and is dropped, and on CI's starved
+ * CPU shard that gap rejected the release gate seven times from 21 Oct, the URL
+ * held at the first viewpoint for the whole HOP_MS. TravelControls states the
+ * moment its click listener is armed as `data-walk-ready` on the canvas, beside
+ * the listener itself, and this waits for exactly that — not for a timeout.
+ */
+async function waitForWalkableStage(page: Page, nodeId: string): Promise<void> {
+  await expect(
+    page.getByTestId("twin-stage").locator("canvas[data-walk-ready]"),
+    `a click must walk from ${nodeId} before the test clicks`,
+  ).toHaveAttribute("data-walk-ready", nodeId, { timeout: READY_MS });
+}
+
+/**
  * The stage is not merely present — it is holding a live WebGL context with a
  * non-empty drawing buffer.
  *
@@ -360,6 +379,7 @@ test("a click on the stage walks to the next viewpoint and relabels the HUD", as
   await expect(page.getByTestId("twin-node-label")).toHaveText(
     twinNodeLabel("scan_000", VENUE_NAME),
   );
+  await waitForWalkableStage(page, "scan_000");
 
   const box = await page.getByTestId("twin-stage").boundingBox();
   expect(box, "the stage must have a box to click in").not.toBeNull();

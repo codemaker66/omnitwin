@@ -16,7 +16,7 @@ import { claimSecretMatches } from "../services/configuration-claim-secrets.js";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
 const ClaimBody = z.object({ claimSecret: z.string().min(16).max(256) });
 
 // ---------------------------------------------------------------------------

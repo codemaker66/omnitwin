@@ -24,7 +24,7 @@ import { UserIdSchema } from "./user.js";
 // Photo ID — UUID v4 (shared)
 // ---------------------------------------------------------------------------
 
-export const PhotoIdSchema = z.string().uuid();
+export const PhotoIdSchema = z.uuid();
 
 export type PhotoId = z.infer<typeof PhotoIdSchema>;
 
@@ -53,15 +53,15 @@ export const LegacyPhotoSchema = z.object({
   id: PhotoIdSchema,
   configurationId: ConfigurationIdSchema,
   uploadedBy: UserIdSchema,
-  url: z.string().url("URL must be a valid URL"),
-  thumbnailUrl: z.string().url("Thumbnail URL must be a valid URL").nullable(),
+  url: z.url("URL must be a valid URL"),
+  thumbnailUrl: z.url("Thumbnail URL must be a valid URL").nullable(),
   caption: z
     .string()
     .trim()
     .max(MAX_CAPTION_LENGTH, `Caption must be at most ${String(MAX_CAPTION_LENGTH)} characters`)
     .optional()
     .default(""),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
+  createdAt: z.iso.datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
 });
 
 export type LegacyPhoto = z.infer<typeof LegacyPhotoSchema>;
@@ -94,8 +94,8 @@ export type LegacyPhotoUploadRequest = z.infer<typeof LegacyPhotoUploadRequestSc
 
 export const LegacyPhotoUploadResponseSchema = z.object({
   photoId: PhotoIdSchema,
-  presignedUrl: z.string().url("Presigned URL must be a valid URL"),
-  expiresAt: z.string().datetime({ message: "expiresAt must be an ISO 8601 datetime string" }),
+  presignedUrl: z.url("Presigned URL must be a valid URL"),
+  expiresAt: z.iso.datetime({ message: "expiresAt must be an ISO 8601 datetime string" }),
 });
 
 export type LegacyPhotoUploadResponse = z.infer<typeof LegacyPhotoUploadResponseSchema>;
@@ -108,12 +108,12 @@ export type LegacyPhotoUploadResponse = z.infer<typeof LegacyPhotoUploadResponse
 // ---------------------------------------------------------------------------
 
 export const ReferencePhotoSchema = z.object({
-  id: z.string().uuid(),
-  loadoutId: z.string().uuid(),
-  fileId: z.string().uuid(),
+  id: z.uuid(),
+  loadoutId: z.uuid(),
+  fileId: z.uuid(),
   caption: z.string().nullable(),
   sortOrder: z.number().int().nonnegative(),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
+  createdAt: z.iso.datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
 });
 
 export type ReferencePhoto = z.infer<typeof ReferencePhotoSchema>;

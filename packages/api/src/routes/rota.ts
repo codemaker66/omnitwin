@@ -55,8 +55,8 @@ import {
 // another venue answers 404, never its contents.
 // ---------------------------------------------------------------------------
 
-const VenueParam = z.object({ venueId: z.string().uuid() });
-const ItemParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid() });
+const VenueParam = z.object({ venueId: z.uuid() });
+const ItemParam = z.object({ venueId: z.uuid(), id: z.uuid() });
 const RevisionQuery = z.object({ expectedRevision: z.coerce.number().int().min(1) }).strict();
 
 export function rotaAccess(user: Pick<JwtUser, "role" | "venueId" | "platformRole">, venueId: string): RotaAccess | null {

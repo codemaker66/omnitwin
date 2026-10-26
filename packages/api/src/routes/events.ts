@@ -52,8 +52,8 @@ type LayoutVariantRow = typeof layoutVariants.$inferSelect;
 type EventConfigurationLinkRow = typeof eventConfigurationLinks.$inferSelect;
 type PhaseLayoutSnapshotRow = typeof phaseLayoutSnapshots.$inferSelect;
 
-const IdParam = z.object({ id: z.string().uuid() });
-const EventIdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const EventIdParam = z.object({ id: z.uuid() });
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({

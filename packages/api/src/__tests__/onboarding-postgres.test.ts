@@ -59,8 +59,10 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
       max: 10, options: `-c search_path=${fixtureSchema} -c statement_timeout=30000` });
     await pool.query(`CREATE SCHEMA "${fixtureSchema}"`);
     await pool.query(await readFile(new URL("./fixtures/onboarding-postgres.sql", import.meta.url), "utf8"));
+    // 0086 adds the venue location columns every venue read now selects; the
+    // fixture's venues table predates it.
     for (const migration of ["0022_user_invitations.sql", "0037_onboarding_entitlements.sql",
-      "0043_platform_admin_scope.sql", "0070_client_onboarding_access.sql"]) {
+      "0043_platform_admin_scope.sql", "0070_client_onboarding_access.sql", "0086_venue_location.sql"]) {
       await pool.query(await readFile(new URL(`../../drizzle/${migration}`, import.meta.url), "utf8"));
     }
     db = drizzle(pool, { schema });

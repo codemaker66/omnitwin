@@ -68,8 +68,8 @@ import {
  */
 export const SUPPLIER_RESPONSE_AUDIENCE: readonly EventPlanAudienceRole[] = ["staff", "hallkeeper"];
 
-const IdParam = z.object({ id: z.string().uuid() });
-const EventParam = z.object({ eventId: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const EventParam = z.object({ eventId: z.uuid() });
 const ShareTokenParam = z.object({
   token: z.string().min(32).max(96).regex(/^[A-Za-z0-9_-]+$/),
 });
