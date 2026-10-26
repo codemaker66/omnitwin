@@ -259,8 +259,18 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
     // MRT, every visible piece with the view's own camera, in view or not.
     const precompile = async (signal: AbortSignal): Promise<void> => {
       if (isSoftwareRenderer(nativeRendererGpuString(native))) return;
-      await compileWithin(native, built.scenePass.renderTarget, built.scenePass.getMRT(), signal,
-        () => compileEach(native, scene, camera, scene, signal));
+      // Under temporal anti-aliasing the scene is drawn with the projection TRAA
+      // hands the velocity node on every frame it draws (TRAANode.setViewOffset),
+      // which the velocity output builds into each shader as its own uniform;
+      // without it the compile builds a shader the frames never draw.
+      const temporal = profile.antiAlias === "temporal";
+      if (temporal) velocity.setProjectionMatrix(camera.projectionMatrix);
+      try {
+        await compileWithin(native, built.scenePass.renderTarget, built.scenePass.getMRT(), signal,
+          () => compileEach(native, scene, camera, scene, signal));
+      } finally {
+        if (temporal) velocity.setProjectionMatrix(null);
+      }
     };
     const release = registerNativeFrameComposer(native, () => {
       // A software rasteriser (a virtual machine, a headless browser) would run
