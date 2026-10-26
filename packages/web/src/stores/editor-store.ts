@@ -853,7 +853,7 @@ function lockReasonFor(state: EditorState): EditorLockReason | null {
   // in every state (canOverrideReviewLock in require-editable-config); another
   // venue's admin who owns the layout waits for its review like any planner.
   const user = useAuthStore.getState().user;
-  if (user !== null && (user.platformRole === "admin" || (user.role === "admin" && user.venueId !== null && user.venueId === state.venueId))) return null;
+  if (user?.platformRole === "admin" || (user?.role === "admin" && user.venueId !== null && user.venueId === state.venueId)) return null;
   return state.reviewStatus === "submitted" || state.reviewStatus === "under_review" ? "in-review" : null;
 }
 
