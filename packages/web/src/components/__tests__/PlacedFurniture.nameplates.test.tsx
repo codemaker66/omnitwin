@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CameraBookmark } from "../../lib/camera-animation.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createPlacedItem, type PlacedItem } from "../../lib/placement.js";
+import { PLANNER_CHROME_STORAGE_KEY } from "../../lib/planner-chrome-flag.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
@@ -141,6 +142,20 @@ afterEach(() => {
 });
 
 describe("the selection nameplate", () => {
+  it("shows no plate over the item in hand under the new chrome, whose caption says it (T-671 slice 11′)", () => {
+    window.history.replaceState(null, "", "/plan?chrome=v2");
+    try {
+      const tables = [labelledTable("Table 1", -5), labelledTable("Table 2", 5)];
+      usePlacementStore.setState({ placedItems: tables });
+      mounted = mountInStubRoot(<PlacedFurniture />);
+      act(() => { useSelectionStore.getState().select(tables[1]?.id ?? ""); });
+      expect(plateTextures(mounted.scene)).toEqual([]);
+    } finally {
+      window.history.replaceState(null, "", "/");
+      window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
+    }
+  });
+
   it("shows one plate for a single selected table, and none for separate tables", () => {
     const tables = [labelledTable("Table 1", -5), labelledTable("Table 2", 5)];
     usePlacementStore.setState({ placedItems: tables });

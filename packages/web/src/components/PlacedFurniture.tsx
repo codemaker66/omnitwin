@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   CanvasTexture,
@@ -865,7 +866,9 @@ export function PlacedFurniture(): React.ReactElement {
   // One plate, for the piece in hand (primaryNameplateId), and none while a
   // marquee sweeps: a plate over every labelled table covers the very layout
   // it describes, and the layers list names every table. A camera reference
-  // keeps its plate whenever the camera rests.
+  // keeps its plate whenever the camera rests. Under the new chrome the
+  // caption speaks for the piece in hand, so it gets no plate (T-671 slice 11′).
+  const chromeV2 = useMemo(() => plannerChromeRequested(window.location.search) === "v2", []);
   const primaryNameplateItemId = useMemo(
     () => primaryNameplateId(selectedIds, placedItems),
     [placedItems, selectedIds],
@@ -874,9 +877,9 @@ export function PlacedFurniture(): React.ReactElement {
     !cameraInteractionActive
     && (
       cameraReferenceItemIds.has(placedId)
-      || (!marqueeActive && placedId === primaryNameplateItemId)
+      || (!chromeV2 && !marqueeActive && placedId === primaryNameplateItemId)
     )
-  ), [cameraInteractionActive, cameraReferenceItemIds, marqueeActive, primaryNameplateItemId]);
+  ), [cameraInteractionActive, cameraReferenceItemIds, chromeV2, marqueeActive, primaryNameplateItemId]);
 
   const activeReferenceItemId = useMemo(() => {
     if (activeReferenceId === null) return null;
