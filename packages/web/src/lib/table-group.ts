@@ -293,15 +293,11 @@ export function rearrangeTableGroup(
   const groupId = table.groupId;
   // The default applies only to new slots. Existing slots retain their exact
   // asset identity, including groups mixing legacy, imported and scaled chairs.
-  const existingChairs = placedItems.filter((p) => (
-    p.groupId === groupId
-    && p.id !== table.id
-    && isSceneFurniturePlacement(p)
-    && getCatalogueItem(p.catalogueItemId)?.category === "chair"
-  ));
-  const others = placedItems.filter(
-    (p) => p.groupId !== groupId || !isSceneFurniturePlacement(p),
-  );
+  // Only this table's own chairs are re-rung: a group made with Group can hold
+  // other tables and their chairs, and any other piece, which all stay.
+  const existingChairs = tableOwnChairs(table, placedItems);
+  const replaced = new Set([table.id, ...existingChairs.map((chair) => chair.id)]);
+  const others = placedItems.filter((p) => !replaced.has(p.id));
 
   const footprint = tableGroupChairFootprint(table, placedItems, newChairCount > existingChairs.length);
 
@@ -328,6 +324,35 @@ export function rearrangeTableGroup(
   return [...others, table, ...newChairs];
 }
 
+/**
+ * The chairs that belong to `table`: the chairs of its group nearer to it
+ * than to any other dining table of the group (a tie goes to the table placed
+ * first). A table group holds one table, but a group made with Group can hold
+ * several, each with its own chairs.
+ */
+export function tableOwnChairs(table: PlacedItem, placedItems: readonly PlacedItem[]): readonly PlacedItem[] {
+  if (table.groupId === null) return [];
+  const group = placedItems.filter((p) => p.groupId === table.groupId && isSceneFurniturePlacement(p));
+  const tables = group.filter((p) => {
+    const item = getCatalogueItem(p.catalogueItemId);
+    return item !== undefined && isDiningTableItem(item);
+  });
+  const chairs = group.filter((p) => p.id !== table.id && getCatalogueItem(p.catalogueItemId)?.category === "chair");
+  if (tables.length <= 1) return chairs;
+  return chairs.filter((chair) => {
+    let owner = tables[0];
+    let nearest = Infinity;
+    for (const candidate of tables) {
+      const distance = Math.hypot(candidate.x - chair.x, candidate.z - chair.z);
+      if (distance < nearest) {
+        nearest = distance;
+        owner = candidate;
+      }
+    }
+    return owner?.id === table.id;
+  });
+}
+
 /** Conservative dimensions of saved chairs, including the default only for new slots. */
 export function tableGroupChairFootprint(
   table: PlacedItem,
@@ -339,8 +364,7 @@ export function tableGroupChairFootprint(
     width: includeNewChairs ? defaultChair?.width ?? 0 : 0,
     depth: includeNewChairs ? defaultChair?.depth ?? 0 : 0,
   };
-  for (const placed of placedItems) {
-    if (table.groupId === null || placed.groupId !== table.groupId || !isSceneFurniturePlacement(placed)) continue;
+  for (const placed of tableOwnChairs(table, placedItems)) {
     const catalogue = getCatalogueItem(placed.catalogueItemId);
     if (catalogue?.category !== "chair") continue;
     const scale = normalizeFurnitureScale(placed.scale);
@@ -354,10 +378,7 @@ export function tableGroupChairFootprint(
 export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
   const catalogue = getCatalogueItem(table.catalogueItemId);
   if (catalogue === undefined) return 0;
-  const existingCount = table.groupId === null ? 0 : placedItems.filter((item) => (
-    item.groupId === table.groupId && isSceneFurniturePlacement(item)
-    && getCatalogueItem(item.catalogueItemId)?.category === "chair"
-  )).length;
+  const existingCount = tableOwnChairs(table, placedItems).length;
   const existingCapacity = seatCapacity(catalogue, table.scale, tableGroupChairFootprint(table, placedItems, false));
   const expandedCapacity = seatCapacity(catalogue, table.scale, tableGroupChairFootprint(table, placedItems, true));
   return Math.max(Math.min(existingCount, existingCapacity), expandedCapacity > existingCount ? expandedCapacity : 0);

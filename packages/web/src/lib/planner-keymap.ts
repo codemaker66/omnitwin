@@ -13,7 +13,7 @@ import { isDiningTableItem } from "./furniture-semantics.js";
 import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
 import { ROTATION_SNAP_RAD, snapRotation } from "./selection.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
-import { tableGroupSeatCapacity } from "./table-group.js";
+import { tableGroupSeatCapacity, tableOwnChairs } from "./table-group.js";
 import {
   KEY_PRIORITY,
   letter,
@@ -200,10 +200,9 @@ export function nudgeSelection(direction: FloorDirection, metres: number): boole
   return true;
 }
 
-/** The chairs round one table. */
-function seatsAt(tableGroupId: string, tableId: string): number {
-  return usePlacementStore.getState().placedItems.filter((item) => item.groupId === tableGroupId && item.id !== tableId
-    && isSceneFurniturePlacement(item) && getCatalogueItem(item.catalogueItemId)?.category === "chair").length;
+/** The chairs round one table: its own, not those of another table grouped with it. */
+function seatsAt(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
+  return tableOwnChairs(table, placedItems).length;
 }
 
 /** One chair more or fewer round each selected table, within what fits. */
@@ -215,7 +214,7 @@ export function changeSeatsAtSelectedTables(delta: 1 | -1): boolean {
     if (!ids.has(item.id) || item.groupId === null) continue;
     const catalogue = getCatalogueItem(item.catalogueItemId);
     if (catalogue === undefined || !isDiningTableItem(catalogue)) continue;
-    const seats = seatsAt(item.groupId, item.id);
+    const seats = seatsAt(item, placed);
     const next = Math.min(Math.max(seats + delta, 1), tableGroupSeatCapacity(item, placed));
     if (next !== seats) changes.push({ tableId: item.id, seats: next });
   }
