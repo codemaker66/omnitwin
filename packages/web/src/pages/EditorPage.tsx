@@ -481,7 +481,11 @@ function PlannerChrome(): React.ReactElement {
   );
 }
 
-/** The new chrome's layout, with no 2D view of it yet (until Plan's Drawing). */
+/**
+ * The new chrome's layout, with no 2D view of it yet.
+ * TODO(#219): once lane C wires Plan's Drawing, pass its in-place switch
+ * (PlanDrawingSwitch) here so the cards offer "Continue in the drawing".
+ */
 const NO_2D_VIEW: PlannerWork = { continueIn2d: null };
 
 /** The new chrome (T-671), loaded only behind its flag. */
