@@ -15,7 +15,6 @@ import {
   onboardingProjects,
   organisations,
   userInvitations,
-  users,
   venues,
   workspaceEntitlements,
   workspaceMemberships,
@@ -23,7 +22,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
-import { OnboardingConflict, prepareWorkspaceInvitation } from "../services/workspace-invitations.js";
+import { OnboardingConflict, prepareWorkspaceInvitation, settleCancelledMembership } from "../services/workspace-invitations.js";
 
 const WorkspaceIdParam = z.object({ workspaceId: z.string().uuid() });
 const ProjectIdParam = z.object({ projectId: z.string().uuid() });
@@ -314,14 +313,7 @@ export async function onboardingRoutes(
         if (revoked === undefined) throw new OnboardingConflict("Invitation is no longer pending", "INVITATION_NOT_PENDING");
         // Cancelling an unaccepted upgrade must preserve a connected account's
         // existing grant. New, unconnected invitations become removed.
-        const [user] = current.userId === null ? [] : await tx.select().from(users)
-          .where(eq(users.id, current.userId)).limit(1);
-        const [updated] = await tx.update(workspaceMemberships).set({
-          status: user === undefined ? "removed" : "active",
-          ...(user === undefined ? {} : { venueRole: user.role, role: current.role === "owner" ? "owner" : user.role }),
-          updatedAt: now,
-        }).where(eq(workspaceMemberships.id, current.id)).returning();
-        if (updated === undefined) throw new Error("Membership disappeared during cancellation");
+        const updated = await settleCancelledMembership(tx, current, now);
         await tx.insert(onboardingAuditEvents).values({
           workspaceId: workspace.id, eventType: "invitation_revoked", actorUserId: request.user.id,
           summary: `Pending invitation cancelled for ${current.email}; existing account access preserved`,
