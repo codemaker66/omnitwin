@@ -143,14 +143,14 @@ const DENIED: readonly DeniedRoute[] = [
 const GUARDED: readonly GuardedRoute[] = [...DENIED, { path: "/events/event-1", page: "ClientEventPage", allowed: client }];
 
 const browserSettings = window.happyDOM.settings as typeof window.happyDOM.settings
-  & Pick<HappyWindow["happyDOM"]["settings"], "disableCSSFileLoading" | "handleDisabledFileLoadingAsSuccess">;
-const previousCssLoading = browserSettings.disableCSSFileLoading;
+  & Pick<HappyWindow["happyDOM"]["settings"], "enableCSSFileLoading" | "handleDisabledFileLoadingAsSuccess">;
+const previousCssLoading = browserSettings.enableCSSFileLoading;
 const previousDisabledLoading = browserSettings.handleDisabledFileLoadingAsSuccess;
 
 // The real router attaches a font stylesheet with the first cockpit chunk;
 // network fonts are unrelated to route admission and must not escape here.
 beforeAll(async () => {
-  browserSettings.disableCSSFileLoading = true;
+  browserSettings.enableCSSFileLoading = false;
   browserSettings.handleDisabledFileLoadingAsSuccess = true;
   // The persistent staff shell's code is asked for with Clerk's and the
   // page's while access is checked, so a browser holds it by the time an
@@ -159,7 +159,7 @@ beforeAll(async () => {
   await import("../../dashboard/DashboardLayout.js");
 });
 afterAll(() => {
-  browserSettings.disableCSSFileLoading = previousCssLoading;
+  browserSettings.enableCSSFileLoading = previousCssLoading;
   browserSettings.handleDisabledFileLoadingAsSuccess = previousDisabledLoading;
 });
 
