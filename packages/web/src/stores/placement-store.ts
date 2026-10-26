@@ -26,7 +26,6 @@ import {
   type RoomExit,
   type TheatreFillPlan,
 } from "../lib/auto-fill.js";
-import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { applySeatShortfallFix, type SeatShortfallFixResult } from "../lib/seat-shortfall.js";
 import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
 import { postPlacementNotice } from "./placement-notice-store.js";

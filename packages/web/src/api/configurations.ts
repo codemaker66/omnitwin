@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { EventInstructions, GuestEnquiry } from "@omnitwin/types";
+import type { EventInstructions, GangwayReview, GuestEnquiry } from "@omnitwin/types";
 import { ApiError, api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -234,6 +234,8 @@ export function parseRevisionConflict(err: unknown): RevisionConflict | null {
 
 export interface ConfigMetadataInput {
   readonly instructions?: EventInstructions | null;
+  /** The layout's gangway review, as lib/gangway-review-record writes it. */
+  readonly gangwayReview?: GangwayReview | null;
 }
 
 const PatchConfigResponseSchema = z.object({ id: z.string() }).passthrough();

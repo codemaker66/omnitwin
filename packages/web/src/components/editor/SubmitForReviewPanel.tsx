@@ -11,6 +11,7 @@ import { updatePublicThumbnail } from "../../api/configurations.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { flushAutoSave } from "./EditorBridge.js";
+import { recordGangwayReview } from "../../lib/gangway-review-record.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import {
   getAvailableTransitions,
@@ -148,6 +149,13 @@ async function submitReviewWithNotifications(configId: string, notifyTeam?: bool
   if (!saved) {
     throw new Error("Save failed. Retry before submitting the layout.");
   }
+  // The gangway review goes to the venue with the layout: the submit snapshots its metadata.
+  try {
+    await recordGangwayReview();
+  } catch {
+    throw new Error("Saving the gangway review failed. Retry before submitting the layout.");
+  }
+  assertCurrent();
 
   // Best-effort floor-plan capture. A capture problem is non-blocking, but a
   // timeline lock appearing across either await must stop the review mutation.

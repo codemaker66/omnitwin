@@ -738,11 +738,11 @@ export function gangwayReview(
 
 /**
  * The flag the ghost and the caption show: "Gangway 0.95 m · under the 1.1 m
- * guidance · the venue will review". The width is cut, never rounded, to the
+ * guidance · goes to the venue with this layout". The width is cut, never rounded, to the
  * centimetre, so a gangway under the guidance never reads as meeting it.
  */
 export function gangwayFlag(widthM: number, rule: AisleRule = FILL_AISLE_RULE): string {
-  return `Gangway ${(Math.floor(widthM * 100 + 1e-6) / 100).toFixed(2)} m · under the ${String(rule.gangwayM)} m guidance · the venue will review`;
+  return `Gangway ${(Math.floor(widthM * 100 + 1e-6) / 100).toFixed(2)} m · under the ${String(rule.gangwayM)} m guidance · goes to the venue with this layout`;
 }
 
 // ---------------------------------------------------------------------------
@@ -788,6 +788,11 @@ export function fillRefillIds(placedItems: readonly PlacedItem[], fillTable: Cat
 /** A room's ways out by its slug: the Grand Hall's surveyed doors; for any other room, not recorded (null), so every wall carries a gangway. */
 export function roomExits(roomSlug: string | null): readonly RoomExit[] | null {
   return roomSlug === "grand-hall" ? grandHallExits() : null;
+}
+
+/** A room's walls as its staff name them, for the review's words; undefined where they are not recorded. */
+export function roomWallNames(roomSlug: string | null): Readonly<Record<RoomSide, string>> | undefined {
+  return roomSlug === "grand-hall" ? GRAND_HALL_WALL_NAMES : undefined;
 }
 
 /** Fill over what is placed: the plan, and the round groups it sets anew. */

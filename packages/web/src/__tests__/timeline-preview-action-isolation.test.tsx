@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   flushAutoSave: vi.fn<() => Promise<boolean>>(),
   captureOrthographic: vi.fn<() => Promise<string | null>>(),
   updatePublicThumbnail: vi.fn<() => Promise<void>>(),
+  getConfig: vi.fn<() => Promise<{ readonly metadata: unknown }>>(),
+  patchConfigMetadata: vi.fn<() => Promise<unknown>>(),
   getAvailableTransitions: vi.fn(),
   submitForReview: vi.fn(),
   withdrawReview: vi.fn(),
@@ -23,6 +25,8 @@ vi.mock("../lib/ortho-capture.js", () => ({
 
 vi.mock("../api/configurations.js", () => ({
   updatePublicThumbnail: mocks.updatePublicThumbnail,
+  getConfig: mocks.getConfig,
+  patchConfigMetadata: mocks.patchConfigMetadata,
 }));
 
 vi.mock("../api/configuration-reviews.js", () => ({
@@ -111,6 +115,8 @@ beforeEach(() => {
     isPublicPreview: false,
   });
   mocks.flushAutoSave.mockResolvedValue(true);
+  mocks.getConfig.mockResolvedValue({ metadata: null });
+  mocks.patchConfigMetadata.mockResolvedValue({ id: CONFIG_ID });
   mocks.captureOrthographic.mockResolvedValue("data:image/png;base64,preview");
   mocks.updatePublicThumbnail.mockResolvedValue();
   mocks.getAvailableTransitions.mockResolvedValue({
@@ -227,6 +233,12 @@ describe("timeline preview action isolation", () => {
     expect(screen.getByRole("button", { name: "Submit for Approval" })).toHaveProperty("disabled", false);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "Review saved plan: Withdrawn" })).toBeNull();
+  });
+
+  it("does not submit a layout whose gangway review could not be saved with it", async () => {
+    mocks.getConfig.mockRejectedValueOnce(new Error("network down"));
+    await expect(submitConfigurationForReview(CONFIG_ID, false)).rejects.toThrow(/gangway review failed/u);
+    expect(mocks.submitForReview).not.toHaveBeenCalled();
   });
 
   it("does not submit into a replacement editing session after saving", async () => {

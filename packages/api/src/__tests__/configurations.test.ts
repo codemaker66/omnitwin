@@ -210,6 +210,43 @@ describe("PATCH /configurations/:id", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it("accepts a layout's gangway review with its metadata", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        metadata: {
+          gangwayReview: {
+            items: [{
+              id: "gangway:zMin:group-1+wall:zMin",
+              widthM: 0.95,
+              guidance: { thresholdM: 1.1, source: "Scottish Government, Practical fire safety guidance for existing non-residential premises, ch. 7" },
+              gangway: "the window wall",
+              location: { kind: "segment", from: { x: -1, z: -5.25 }, to: { x: 1, z: -5.25 } },
+              pieceIds: ["p-1"],
+              sides: ["the window wall", "Table 4's chairs"],
+              status: "approved",
+              reviewer: "Hallkeeper",
+              decidedAt: "2026-10-26T09:00:00.000Z",
+            }],
+          },
+        },
+      },
+    });
+    expect(res.statusCode).not.toBe(400);
+  });
+
+  it("rejects a malformed gangway review (an unknown status)", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { metadata: { gangwayReview: { items: [{ id: "gangway:zMin:wall:zMin", status: "maybe" }] } } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("accepts null metadata to clear instructions", async () => {
     const res = await server.inject({
       method: "PATCH",
