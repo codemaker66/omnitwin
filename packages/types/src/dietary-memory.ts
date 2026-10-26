@@ -55,7 +55,7 @@ export const DIETARY_MEMORY_NOTE_MAX = 1000;
  * exactly what that layout carries, and the request never carries the note.
  */
 export const RememberDietaryNoteRequestSchema = z.object({
-  configurationId: z.string().uuid(),
+  configurationId: z.uuid(),
   consentVersion: z.string().trim().min(1).max(40),
 }).strict();
 export type RememberDietaryNoteRequest = z.infer<typeof RememberDietaryNoteRequestSchema>;
@@ -67,18 +67,18 @@ export type RememberDietaryNoteRequest = z.infer<typeof RememberDietaryNoteReque
  * in a log line cannot carry it out.
  */
 export const RememberedDietaryNoteSchema = z.object({
-  id: z.string().uuid(),
-  venueId: z.string().uuid(),
+  id: z.uuid(),
+  venueId: z.uuid(),
   venueName: z.string(),
   otherAllergies: z.string().min(1).max(DIETARY_MEMORY_NOTE_MAX),
   /** The words beside the box when the client ticked it. */
   consentWording: z.string().min(1),
   /** When the client ticked the box. */
-  consentedAt: z.string().datetime({ offset: true }),
+  consentedAt: z.iso.datetime({ offset: true }),
   /** When the note was last saved with a layout. */
-  updatedAt: z.string().datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
   /** The layout it was last saved from, while that layout is still theirs. */
-  sourceLayout: z.object({ id: z.string().uuid(), name: z.string() }).nullable(),
+  sourceLayout: z.object({ id: z.uuid(), name: z.string() }).nullable(),
 });
 export type RememberedDietaryNote = z.infer<typeof RememberedDietaryNoteSchema>;
 

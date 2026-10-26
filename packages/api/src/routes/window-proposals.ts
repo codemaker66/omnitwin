@@ -18,7 +18,7 @@ import { withHeaderKey } from "./conversations.js";
 // hygiene and the ledger live in services/window-proposals.ts.
 // ---------------------------------------------------------------------------
 
-const EventParam = z.object({ eventId: z.string().uuid() });
+const EventParam = z.object({ eventId: z.uuid() });
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });

@@ -7,7 +7,7 @@ import { z } from "zod";
 const manifestPath = process.env["INVENTORY_RESERVATIONS_FIXTURE"];
 const api = process.env["INVENTORY_LIVE_API_URL"] ?? "";
 const fixture = manifestPath === undefined ? null : z.object({
-  venueId: z.string().uuid(), adminId: z.string().uuid(),
+  venueId: z.uuid(), adminId: z.uuid(),
 }).parse(JSON.parse(readFileSync(manifestPath, "utf8")));
 test.skip(fixture === null || !/^http:\/\/127\.0\.0\.1:\d+$/u.test(api), "Requires the owned local inventory fixture");
 

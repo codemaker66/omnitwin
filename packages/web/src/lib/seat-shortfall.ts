@@ -11,6 +11,7 @@ import {
   tableGroupPlanningFootprint,
   tableGroupPlanningRadius,
   tableGroupSeatCapacity,
+  tableOwnChairs,
 } from "./table-group.js";
 import { BANQUET_CHAIR_CLEARANCE_M } from "./auto-fill.js";
 import { countLabel } from "./count-label.js";
@@ -76,12 +77,8 @@ function seatedTables(placedItems: readonly PlacedItem[]): SeatedTable[] {
     if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined || !isDiningTableItem(item) || item.tableShape === null) continue;
-    const chairs = placed.groupId === null ? 0 : placedItems.filter((other) => (
-      other.groupId === placed.groupId
-      && other.id !== placed.id
-      && isSceneFurniturePlacement(other)
-      && getCatalogueItem(other.catalogueItemId)?.category === "chair"
-    )).length;
+    // Its own chairs: a group made with Group can hold other tables and theirs.
+    const chairs = tableOwnChairs(placed, placedItems).length;
     const limit = Math.min(banquetSeatsPerTable(item), tableGroupSeatCapacity(placed, placedItems));
     tables.push({ placed, item, chairs, limit });
   }

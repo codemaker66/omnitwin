@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INVENTORY_ADJUSTER_ROLES, USER_ROLES } from "@omnitwin/types";
+import { INVENTORY_ADJUSTER_ROLES, USER_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
 import {
   ANALYTICS_ROLES,
   CLIENT_SEARCH_ROLES,
@@ -14,6 +14,7 @@ import {
   PRICING_READ_ROLES,
   PRICING_WRITE_ROLES,
   REVIEW_QUEUE_ROLES,
+  TEAM_TAB_ROLES,
   VENUE_DAY_ROLES,
   VENUE_FLOOR_ROLES,
   VENUE_MEMBER_ROLES,
@@ -24,7 +25,7 @@ import {
   hasRole,
 } from "../role-capabilities.js";
 import { NAV_ITEMS, canShowNavItem } from "../../components/dashboard/DashboardLayout.js";
-import { canOpenDashboardView } from "../../pages/DashboardPage.js";
+import { canOpenDashboardView, dashboardViewFromSearchValue } from "../../pages/DashboardPage.js";
 import { getDefaultRoute } from "../role-routing.js";
 import { canReadInternalEventData } from "../event-access.js";
 
@@ -163,6 +164,41 @@ describe("nav offers are reachable", () => {
     }
   });
 
+  it("offers the Team tab to exactly the roles canManageVenueTeam admits", () => {
+    // routes/venue-team.ts gates on canManageVenueTeam, which reads the one
+    // list in @omnitwin/types (Blake, 24 October 2026: the venue's
+    // administrators invite; managers and staff do not). A platform admin
+    // passes that gate at any venue.
+    expect(TEAM_TAB_ROLES).toBe(VENUE_TEAM_INVITER_ROLES);
+    expect([...TEAM_TAB_ROLES]).toEqual(["admin"]);
+    expect(dashboardViewFromSearchValue("team")).toBe("team");
+    const team = NAV_ITEMS.find((item) => item.view === "team");
+    expect(team?.label).toBe("Team");
+    if (team === undefined) throw new Error("Team tab missing");
+
+    for (const role of USER_ROLES) {
+      expect(canOpenDashboardView("team", role, "none"), `team for ${role}`).toBe(role === "admin");
+    }
+    expect(canShowNavItem(team, "admin", "none")).toBe(true);
+    for (const role of ["manager", "staff", "hallkeeper", "sales"]) {
+      expect(canShowNavItem(team, role, "none"), `${role} is offered Team`).toBe(false);
+      expect(canOpenDashboardView("team", role, "none"), `${role} opens Team`).toBe(false);
+    }
+    // A platform admin passes whatever its venue role; an operator does not.
+    for (const role of ["admin", "manager", "staff"]) {
+      expect(canShowNavItem(team, role, "admin"), `${role} as platform admin`).toBe(true);
+    }
+    expect(canShowNavItem(team, "staff", "operator")).toBe(false);
+
+    // Offered exactly where it opens, for every role and platform role.
+    for (const role of ALL_ROLES) {
+      for (const platformRole of ["none", "operator", "admin"] as const) {
+        expect(canShowNavItem(team, role, platformRole), `${String(role)} (platformRole ${platformRole})`)
+          .toBe(canOpenDashboardView("team", role, platformRole));
+      }
+    }
+  });
+
   it("hides the Event Architect entry for R1", () => {
     // Goal 18 §6 decision 8. The route survives; only the way in is closed.
     expect(NAV_ITEMS.some((item) => item.label.includes("Event Architect"))).toBe(false);
@@ -246,7 +282,7 @@ describe("the capability sets themselves", () => {
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES,
       DIARY_ROLES, VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES,
       ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
-      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES,
+      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES, TEAM_TAB_ROLES,
     ]) {
       expect(hasRole(set, "caterer")).toBe(false);
     }
@@ -258,7 +294,7 @@ describe("the capability sets themselves", () => {
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES, DIARY_ROLES,
       VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES, CRM_PIPELINE_ROLES,
       ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
-      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES,
+      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES, TEAM_TAB_ROLES,
     ]) {
       for (const role of set) {
         expect(vocabulary.has(role), `${role} is not in USER_ROLES`).toBe(true);

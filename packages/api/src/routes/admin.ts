@@ -134,7 +134,7 @@ export async function adminRoutes(
   // -------------------------------------------------------------------------
 
   const PruneBody = z.object({
-    configId: z.string().uuid().optional(),
+    configId: z.uuid().optional(),
     keep: z.number().int().min(1).max(100).optional(),
   });
 

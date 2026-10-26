@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, useRef, useState } from "react";
 import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
 import { DashboardLayout, forgetKnownVenueNames, type DashboardView } from "../DashboardLayout.js";
 import { InventoryNavigationGuard } from "../inventory/InventoryNavigationGuard.js";
@@ -92,6 +92,17 @@ function renderShell({ path = "/dashboard?view=inventory", onViewChange }: {
   render(<MemoryRouter initialEntries={[path]}><DashboardLayout activeView="inventory" onViewChange={onViewChange}>
     <h1>Inventory workspace</h1><button type="button">Workspace action</button><CurrentRoute />
   </DashboardLayout></MemoryRouter>);
+}
+
+// A refusal's "Use another account" is a lazy chunk (ProtectedRoute.tsx);
+// until it arrives the screen shows a disabled, busy stand-in. Load the chunk
+// before any spec, and find the real button by `busy: false`, so no spec can
+// click the stand-in while a busy machine is still transforming the module.
+beforeAll(async () => { await import("../../auth/ClerkExitButton.js"); });
+
+/** The refusal's real exit button, never the stand-in shown while it loads. */
+function findRefusalExit(): Promise<HTMLElement> {
+  return screen.findByRole("button", { name: "Use another account", busy: false });
 }
 
 beforeEach(() => {
@@ -362,7 +373,7 @@ describe("DashboardLayout navigation", () => {
       <ProtectedRoute allowedRoles={["hallkeeper"]}><h1>Hallkeeper page</h1></ProtectedRoute>
     </DashboardLayout></MemoryRouter>);
     await screen.findByText("Trades Hall");
-    const other = screen.getByRole("button", { name: "Use another account" });
+    const other = await findRefusalExit();
     other.focus();
     fireEvent.click(other);
     const question = await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" });
@@ -383,7 +394,7 @@ describe("DashboardLayout navigation", () => {
     mocks.bypass.mockReturnValue(localFixture);
     rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
     render(<MemoryRouter initialEntries={["/hallkeeper/config-1"]}><ProtectedRoute allowedRoles={["hallkeeper"]}><h1>Sheet</h1></ProtectedRoute></MemoryRouter>);
-    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    fireEvent.click(await findRefusalExit());
     await waitFor(() => { expect(useAuthStore.getState().user).toBeNull(); });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(mocks.signOut).toHaveBeenCalledTimes(localFixture ? 0 : 1);
