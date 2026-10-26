@@ -1,0 +1,467 @@
+/* ---------------------------------------------------------------------------
+ * THE HOUR CHIP AND THE EVENING (T-674, v2 slice 10; spec 6.2, 7, 8, 12;
+ * frames 01, 03 and 11).
+ *
+ * The chip: a dock key, a 20 px glyph and the hour in Newsreader 20. The
+ * evening: a lacquer panel as wide as the dock, rising from the chip; on a
+ * phone a sheet over the dock. Every colour is a house token (alpha steps
+ * mixed from one); no blur, no filter: the moon path's glow is a wide stroke
+ * at 16 %, halos are radial gradients, the playhead's glow a gradient disc.
+ * ------------------------------------------------------------------------- */
+
+/* -- The chip ---------------------------------------------------------------- */
+.pc-key.pc-hourchip {
+  gap: 9px;
+  /* A drag on the chip scrubs: the dock does not scroll under it, nor the page zoom. */
+  touch-action: none;
+}
+
+.pc-key.pc-hourchip > span {
+  color: var(--house-forest-ink-1);
+  font: 400 20px/1 var(--house-serif);
+  letter-spacing: -0.005em;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.pc-hourchip__sun { color: var(--house-forest-ink-1); }
+
+/* -- The moon in its phase (the chip, the sky) ------------------------------ */
+.pc-moon {
+  flex: none;
+  overflow: visible;
+}
+
+.pc-moon__dark { fill: color-mix(in srgb, var(--house-bg-0) 88%, transparent); }
+
+.pc-moon__shine {
+  fill: color-mix(in srgb, var(--house-forest-ink-1) 18%, transparent);
+  stroke: color-mix(in srgb, var(--house-forest-ink-1) 55%, transparent);
+  stroke-width: 0.7;
+}
+
+.pc-moon__lit { fill: var(--house-forest-ink-1); }
+
+/* Below the horizon: the limb and the terminator as hairlines, the lit side barely filled. */
+.pc-moon__limb {
+  fill: none;
+  stroke: color-mix(in srgb, var(--house-forest-ink-2) 55%, transparent);
+  stroke-width: 1.2;
+}
+
+.pc-moon__line {
+  fill: color-mix(in srgb, var(--house-forest-ink-1) 16%, transparent);
+  stroke: color-mix(in srgb, var(--house-forest-ink-1) 72%, transparent);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+/* -- The evening: the panel ---------------------------------------------------- */
+.pc-evening {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--pc-evening-width, 900px), calc(100vw - 40px));
+  overflow: hidden;
+  pointer-events: auto;
+  container-type: inline-size;
+  opacity: 0;
+  transform: scale(0.96);
+  transform-origin: var(--pc-evening-origin, 50%) 100%;
+  transition:
+    opacity var(--house-motion-reveal) var(--house-ease-out),
+    transform var(--house-motion-reveal) var(--house-ease-out);
+}
+
+.pc-evening.is-shown {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.pc-evening__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 0 22px;
+}
+
+.pc-evening__when {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  min-width: 0;
+}
+
+.pc-evening__hour {
+  flex: none;
+  color: var(--house-forest-ink-1);
+}
+
+.pc-evening__what {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding-bottom: 1px;
+}
+
+.pc-evening__act {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: var(--house-forest-ink-1);
+}
+
+/* The act's copper square: filled for the act under the hour, open between acts. */
+.pc-evening__square {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: var(--house-accent-copper-bright);
+}
+
+.pc-evening__square.is-open {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--house-accent-copper-bright);
+}
+
+.pc-evening__sky-words {
+  margin: 0;
+  color: var(--house-forest-ink-2);
+}
+
+.pc-evening__tools {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+
+.pc-evening__chevron { color: var(--house-forest-ink-3); }
+
+.pc-evening__date-menu { width: 264px; }
+
+/* -- The slider: the sky and the line as one control --------------------------- */
+.pc-evening__slider {
+  position: relative;
+  margin: 16px 16px 0;
+  border-radius: 6px;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pc-evening__slider:focus { outline: none; }
+
+.pc-evening__slider:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 4px;
+}
+
+.pc-evening__drawing {
+  display: block;
+  overflow: visible;
+}
+
+/* The sky */
+.pc-evening__warm-stop { stop-color: var(--house-copper-lit); }
+.pc-evening__light-stop { stop-color: var(--house-forest-ink-1); }
+.pc-evening__star { fill: var(--house-forest-ink-1); }
+.pc-evening__sun { fill: var(--house-cream); }
+
+.pc-evening__guide {
+  stroke: color-mix(in srgb, var(--house-cream) 8%, transparent);
+  stroke-dasharray: 2 6;
+}
+
+.pc-evening__guide-label {
+  fill: color-mix(in srgb, var(--house-forest-ink-2) 85%, transparent);
+  font: 400 11px/1 var(--house-sans);
+}
+
+/* The moon's path: travelled solid with a glow that is a wide stroke at 16 %, ahead dotted. */
+.pc-evening__path-glow,
+.pc-evening__path-done,
+.pc-evening__path-ahead {
+  fill: none;
+  stroke: var(--house-forest-ink-1);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pc-evening__path-glow { stroke-opacity: 0.16; stroke-width: 5; }
+.pc-evening__path-done { stroke-opacity: 0.95; stroke-width: 1.3; }
+.pc-evening__path-ahead { stroke-opacity: 0.45; stroke-width: 1.4; stroke-dasharray: 0.1 5; }
+
+/* The sun's own arc reads warmer than the moon's. */
+.pc-evening__path--sun .pc-evening__path-glow,
+.pc-evening__path--sun .pc-evening__path-done,
+.pc-evening__path--sun .pc-evening__path-ahead { stroke: var(--house-copper-lit); }
+
+.pc-evening__drop { stroke: color-mix(in srgb, var(--house-forest-ink-1) 35%, transparent); }
+.pc-evening__mark-tick { stroke: color-mix(in srgb, var(--house-forest-ink-1) 32%, transparent); }
+
+.pc-evening__mark-label {
+  fill: color-mix(in srgb, var(--house-forest-ink-1) 92%, transparent);
+  font: 400 12px/1 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.pc-evening__mark-dot {
+  fill: var(--house-bg-0);
+  stroke: color-mix(in srgb, var(--house-forest-ink-1) 85%, transparent);
+  stroke-width: 1.3;
+}
+
+/* The line on the ground */
+.pc-evening__axis { stroke: color-mix(in srgb, var(--house-cream) 30%, transparent); }
+.pc-evening__bar--past { fill: color-mix(in srgb, var(--house-accent-copper-bright) 55%, transparent); }
+.pc-evening__bar--current { fill: var(--house-accent-copper-bright); }
+.pc-evening__bar--ahead { fill: color-mix(in srgb, var(--house-cream) 38%, transparent); }
+.pc-evening__tick { stroke: color-mix(in srgb, var(--house-cream) 32%, transparent); }
+.pc-evening__leader { stroke: color-mix(in srgb, var(--house-cream) 24%, transparent); }
+
+.pc-evening__act-name {
+  fill: var(--house-forest-ink-1);
+  font: 500 14px/1 var(--house-sans);
+}
+
+.pc-evening__act-time {
+  fill: var(--house-forest-ink-3);
+  font: 400 12px/1 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.pc-evening__label.is-current .pc-evening__act-name { font-weight: 600; }
+.pc-evening__label.is-current .pc-evening__act-time { fill: var(--house-copper-lit); }
+
+/* The playhead: a cream disc on a dark ring, with a copper glow. */
+.pc-evening__head-ring {
+  fill: none;
+  stroke: var(--house-lacquer-bottom);
+  stroke-width: 3;
+}
+
+.pc-evening__head-disc { fill: var(--house-cream); }
+
+/* -- The foot -------------------------------------------------------------------- */
+.pc-evening__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 6px 18px 14px 22px;
+  color: var(--house-forest-ink-3);
+  font: 400 12px/1.3 var(--house-sans);
+}
+
+.pc-evening__keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.pc-evening__keys b {
+  color: var(--house-forest-ink-1);
+  font-weight: 500;
+}
+
+.pc-evening__chord {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.pc-evening__dot {
+  flex: none;
+  width: 3px;
+  height: 3px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: var(--house-forest-ink-3);
+}
+
+.pc-evening__credit {
+  margin: 0;
+  color: var(--house-forest-ink-3);
+  font: 400 11px/1.35 var(--house-sans);
+  text-align: right;
+}
+
+.pc-evening__credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A narrower dock (a tablet, a compact laptop): the tools and the credit take their own rows. */
+@container (max-width: 820px) {
+  .pc-evening__head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 12px;
+  }
+
+  .pc-evening__tools { padding-bottom: 0; }
+
+  .pc-evening__foot {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .pc-evening__credit { text-align: left; }
+}
+
+/* -- The phone: a sheet over the dock (frame 11) -------------------------------- */
+.pc-evening--sheet {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: auto;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  /* Opaque over the dock it replaces. */
+  background:
+    linear-gradient(180deg, var(--house-lacquer-top), var(--house-lacquer-bottom)),
+    var(--house-bg-0);
+  touch-action: none;
+  transform: translateY(12px);
+  transform-origin: 50% 100%;
+}
+
+.pc-evening--sheet.is-shown { transform: translateY(0); }
+
+.pc-evening__grab {
+  width: 40px;
+  height: 5px;
+  margin: 8px auto 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--house-cream) 28%, transparent);
+}
+
+.pc-evening__sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px 0 18px;
+}
+
+.pc-evening__sheet-words {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pc-evening__sheet-words .pc-evening__act { margin-top: 2px; }
+
+.pc-cream.pc-evening__done {
+  flex: none;
+  padding: 0 20px;
+  border-radius: 999px;
+}
+
+.pc-evening__chips {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 0 16px;
+  overflow-x: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
+}
+
+.pc-evening__chip {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 107px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--house-hairline-hover);
+  color: var(--house-forest-ink-1);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--house-motion-hover) var(--house-ease-out);
+}
+
+.pc-evening__chip b { font: 500 14px/1 var(--house-sans); }
+
+.pc-evening__chip span {
+  color: var(--house-forest-ink-3);
+  font: 400 12px/1 var(--house-sans);
+}
+
+.pc-evening__chip.is-current {
+  background: color-mix(in srgb, var(--house-accent-copper-bright) 8%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--house-accent-copper-bright) 75%, transparent);
+}
+
+.pc-evening__chip.is-current span { color: var(--house-copper-lit); }
+
+.pc-evening__chip:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: -4px;
+}
+
+.pc-evening__sheet-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 16px 0;
+}
+
+.pc-quiet.pc-evening__touch { height: 44px; }
+
+.pc-evening__back {
+  height: 44px;
+  margin-left: auto;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--house-radius-key);
+  background: transparent;
+  color: var(--house-forest-ink-2);
+  font: 500 14px/1 var(--house-sans);
+  cursor: pointer;
+}
+
+.pc-evening__back:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+.pc-evening--sheet .pc-evening__credit {
+  padding: 12px 16px 0;
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-evening__chip:hover:not(.is-current) { box-shadow: inset 0 0 0 1px var(--house-forest-edge); }
+  .pc-evening__back:hover { color: var(--house-forest-ink-1); }
+}
+
+/* -- Reduced motion: the evening fades; nothing scales or slides ----------------- */
+@media (prefers-reduced-motion: reduce) {
+  .pc-evening,
+  .pc-evening.is-shown,
+  .pc-evening--sheet,
+  .pc-evening--sheet.is-shown {
+    transform: none;
+    transition-duration: var(--house-motion-press);
+  }
+}
