@@ -3,10 +3,11 @@ import { ActivityStatus } from "../../shared/Activity.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../../../lib/guest-flow-layout-input.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG, DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../../lib/furniture-defaults.js";
+import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairSlug } from "../../../lib/furniture-defaults.js";
 import { banquetSeatsPerTable } from "../../../lib/table-group.js";
 import { guestsAbovePublished, type PublishedCapacityAnswer } from "../../../lib/planner-truth.js";
 import {
@@ -55,6 +56,8 @@ export interface AutoFillPromptProps {
 export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFillPromptProps): ReactElement {
   const plannedGuestCount = useCockpitStore((state) => state.plannedGuestCount);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
+  // Rows are set with the event's chair, so the figure follows the event.
+  const eventChair = usePlannerEventStore((state) => plannerChairSlug(state.eventKind));
   const [draft, setDraft] = useState(() => (plannedGuestCount === null ? "" : String(plannedGuestCount)));
   const inputRef = useRef<HTMLInputElement>(null);
   const baseId = useId();
@@ -74,8 +77,8 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
   const plan = useMemo(
     () => (guests === null
       ? null
-      : planAutoFill(style, guests, dimensions.width / RENDER_SCALE, dimensions.length / RENDER_SCALE)),
-    [guests, style, dimensions],
+      : planAutoFill(style, guests, dimensions.width / RENDER_SCALE, dimensions.length / RENDER_SCALE, eventChair)),
+    [guests, style, dimensions, eventChair],
   );
   const figure = publishedFigureFor(published, option.format);
   const short = plan === null ? null : roomAtSpacingLine(plan, figure);
@@ -94,7 +97,7 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
       const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
       if (table !== undefined) placed = placement.autoArrangeBanquet(table.id, guests, banquetSeatsPerTable(table));
     } else {
-      const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+      const chair = getCatalogueItemBySlug(eventChair);
       if (chair !== undefined) placed = placement.autoArrangeTheatre(chair.id, guests);
     }
     if (placed !== null) onPlaced(placed);

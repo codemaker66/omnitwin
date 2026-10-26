@@ -2,6 +2,7 @@ import { seatBaseSlug, seatsFor } from "@omnitwin/types";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItemBySlug, type CatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
+import { plannerChairSlug } from "./furniture-defaults.js";
 import { createPlacedItem, generatePlacedId, type PlacedItem } from "./placement.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
 import { createTableGroup } from "./table-group.js";
@@ -329,10 +330,10 @@ function unturned(dx: number, dz: number, rotationY: number): { readonly x: numb
   return { x: dx * cos - dz * sin, z: dx * sin + dz * cos };
 }
 
-function stampPiece(item: CatalogueItem, seats: number | null, origin: StampOrigin, rotationY: number, newId: () => string): readonly PlacedItem[] {
+function stampPiece(item: CatalogueItem, seats: number | null, origin: StampOrigin, rotationY: number, newId: () => string, chairSlug: string): readonly PlacedItem[] {
   const y = origin.y ?? 0;
   if (seats !== null && seats > 0 && isDiningTableItem(item)) {
-    return createTableGroup(item.id, origin.x, origin.z, rotationY, seats, y, newId);
+    return createTableGroup(item.id, origin.x, origin.z, rotationY, seats, y, newId, "around", chairSlug);
   }
   return [createPlacedItem(item.id, origin.x, origin.z, rotationY, null, y, newId())];
 }
@@ -352,7 +353,7 @@ function stampDanceFloor(params: DanceFloorCardParams, origin: StampOrigin, rota
   return panels;
 }
 
-function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rotationY: number, newId: () => string): readonly PlacedItem[] {
+function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rotationY: number, newId: () => string, chairSlug: string): readonly PlacedItem[] {
   const trestle = cardMainItem(params);
   if (trestle === undefined) return [];
   const length = toRenderSpace(trestle.width);
@@ -370,6 +371,7 @@ function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rota
       origin.y ?? 0,
       newId,
       side,
+      chairSlug,
     );
     pieces.push(...(setId === undefined ? group : group.map((piece) => ({ ...piece, setId }))));
   }
@@ -378,23 +380,25 @@ function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rota
 
 /**
  * The pieces this card sets down at this pose (spec §6). `newId` lets the
- * ghost keep the same ids frame to frame; the commit takes fresh ones.
+ * ghost keep the same ids frame to frame; the commit takes fresh ones. Seats
+ * get the event's chair (plannerChairSlug) unless `chairSlug` names one.
  */
 export function stampSetup(
   params: CardParams,
   origin: StampOrigin,
   rotationY: number,
   newId: () => string = generatePlacedId,
+  chairSlug: string = plannerChairSlug(),
 ): readonly PlacedItem[] {
   switch (params.card) {
     case "round":
     case "piece": {
       const item = cardMainItem(params);
-      return item === undefined ? [] : stampPiece(item, params.seats, origin, rotationY, newId);
+      return item === undefined ? [] : stampPiece(item, params.seats, origin, rotationY, newId, chairSlug);
     }
     case "dance-floor": return stampDanceFloor(params, origin, rotationY, newId);
     case "top-table":
-    case "long-table": return stampTrestleRun(params, origin, rotationY, newId);
+    case "long-table": return stampTrestleRun(params, origin, rotationY, newId, chairSlug);
   }
 }
 
