@@ -1728,7 +1728,7 @@ async function saveDocument(isAuthenticated: boolean | undefined, keeping: boole
     // Log the failing payload so we can see which field the server rejects.
     // Safe to log — no PII in the placed-object batch.
     // The status only: the server's message may quote the layout's own words.
-    reportFailure("save-failed", { status: err instanceof ApiError ? err.status : "network" });
+    reportFailure("save-failed", { status: err instanceof ApiError && err.status > 0 ? err.status : "network" });
     // eslint-disable-next-line no-console
     console.error("[editor-store] save failed:", message, { objects });
     // Set saveError (NOT error) — leaving `error: null` keeps EditorPage's

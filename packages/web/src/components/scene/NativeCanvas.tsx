@@ -61,6 +61,11 @@ export interface NativeCanvasProps extends Omit<CanvasProps, "gl"> {
   readonly onUnavailable?: () => void;
 }
 
+/** What a failure says, whatever was thrown (a boundary catches anything thrown while the scene renders). */
+function failureDetail(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 /** The graphics backend a renderer draws with, as a failure report names it. */
 function rendererBackend(native: WebGPURenderer | null): string {
   if (native === null) return "none";
@@ -343,7 +348,7 @@ export function NativeCanvas({
     }
     if (running.current && root.current !== null && !awaitingCapture) setStage(stageToneOf(root.current.scene));
     reportFailure(running.current ? "view-stopped" : "renderer-failed", {
-      surface: surfaceRef.current, backend: rendererBackend(renderer.current), detail: cause.message,
+      surface: surfaceRef.current, backend: rendererBackend(renderer.current), detail: failureDetail(cause),
     });
     setStoppedWhileRunning(running.current);
     running.current = false;
@@ -362,7 +367,7 @@ export function NativeCanvas({
     running.current = false;
     if (!mounted.current) return;
     reportFailure("view-stopped", {
-      surface: surfaceRef.current, backend: rendererBackend(failedRenderer.current), detail: cause.message, restorations: restorations.current,
+      surface: surfaceRef.current, backend: rendererBackend(failedRenderer.current), detail: failureDetail(cause), restorations: restorations.current,
     });
     coverUntilFirstFrame(false);
     setStoppedWhileRunning(true);

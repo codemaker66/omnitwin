@@ -6,8 +6,16 @@ import {
   readBrowserSentryConfig,
   scrubSentryBreadcrumb,
   scrubSentryEvent,
+  withoutIds,
   withoutQuery,
 } from "../observability/sentry.js";
+
+/** A breadcrumb the scrubber keeps (fetch, xhr, navigation and clicks are kept; console ones are dropped). */
+function kept(breadcrumb: Breadcrumb): Breadcrumb {
+  const scrubbed = scrubSentryBreadcrumb(breadcrumb);
+  if (scrubbed === null) throw new Error("The breadcrumb was dropped");
+  return scrubbed;
+}
 
 describe("browser Sentry config", () => {
   it("is disabled when the browser DSN is absent", () => {
@@ -110,7 +118,7 @@ describe("browser Sentry breadcrumbs and search terms", () => {
   });
 
   it("does the same for an xhr breadcrumb", () => {
-    const scrubbed = scrubSentryBreadcrumb({
+    const scrubbed = kept({
       category: "xhr",
       type: "http",
       data: { method: "GET", url: "/clients/search?q=aileen%40example.test", status_code: 200 },
@@ -119,7 +127,7 @@ describe("browser Sentry breadcrumbs and search terms", () => {
   });
 
   it("keeps the query out of a navigation breadcrumb's from and to", () => {
-    const scrubbed = scrubSentryBreadcrumb({
+    const scrubbed = kept({
       category: "navigation",
       data: { from: "/dashboard?view=search&q=Aileen", to: "/clients?q=Aileen#top" },
     });
@@ -133,6 +141,25 @@ describe("browser Sentry breadcrumbs and search terms", () => {
     const original: Breadcrumb = { category: "fetch", data: { url: "/clients/search?q=Aileen" } };
     scrubSentryBreadcrumb(original);
     expect(original.data?.["url"]).toBe("/clients/search?q=Aileen");
+  });
+
+  it("drops console breadcrumbs, which can quote a layout's own words", () => {
+    expect(scrubSentryBreadcrumb({ category: "console", level: "error", message: "[editor-store] save failed: Smith wedding top table", data: { arguments: ["x"] } })).toBeNull();
+  });
+
+  it("keeps a guest layout's id and a shared plan's token out of every url", () => {
+    expect(withoutIds("/plan/7f1fb7a2-5210-57b1-9108-11255c059520")).toBe("/plan/:id");
+    expect(withoutIds("/plan/tour-config-0001?mode=walk")).toBe("/plan/:id?mode=walk");
+    expect(withoutIds("/plan-view/Zq3kP9vR2mW7xY1tB8nC4dF")).toBe("/plan-view/:id");
+    expect(withoutIds("https://api.example.test/public/configurations/abc123/objects/batch")).toBe("https://api.example.test/public/configurations/:id/objects/batch");
+    expect(withoutIds("/supplier-share/short")).toBe("/supplier-share/:id");
+    expect(withoutIds("/dashboard/clients")).toBe("/dashboard/clients");
+    expect(withoutIds("/plan")).toBe("/plan");
+    expect(kept({ category: "fetch", data: { url: "https://api.example.test/public/configurations/abc123?revision=4" } }).data?.["url"])
+      .toBe("https://api.example.test/public/configurations/:id?[redacted]");
+    expect(kept({ category: "navigation", data: { from: "/plan/abc123", to: "/plan-view/Zq3kP9vR2mW7xY1tB8nC4dF" } }).data)
+      .toEqual({ from: "/plan/:id", to: "/plan-view/:id" });
+    expect(scrubSentryEvent({ request: { url: "https://venviewer.com/plan/abc123?x=1" } }).request).toEqual({ url: "https://venviewer.com/plan/:id" });
   });
 });
 
