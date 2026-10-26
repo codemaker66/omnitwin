@@ -30,10 +30,11 @@ describe("CameraRig source guards", () => {
     expect(source).toContain('canvas.addEventListener("contextmenu", onContextMenu);');
   });
 
-  it("disables desktop right-button mouse orbit in lean control mode", async () => {
+  it("keeps right-button mouse orbit at every width, compact windows included", async () => {
     const source = await readFile("src/components/CameraRig.tsx", "utf8");
 
-    expect(source).toContain("RIGHT: (smoothControls ? 0 : -1) as number");
+    expect(source).toContain("RIGHT: 0 as number");
+    expect(source).not.toContain("smoothControls ? 0 : -1");
   });
 
   it("does not emit OrbitControls performance regression events when planner DPR is fixed", async () => {

@@ -875,7 +875,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       mouseButtons={{
         LEFT: -1 as number, // Disabled — reserved for object selection
         MIDDLE: 2, // THREE.MOUSE.PAN
-        RIGHT: (smoothControls ? 0 : -1) as number, // THREE.MOUSE.ROTATE (desktop orbit)
+        RIGHT: 0 as number, // THREE.MOUSE.ROTATE: a mouse's right-drag looks around at every width
       }}
       onStart={markCameraInteractionActive}
       onChange={onControlsChange}
