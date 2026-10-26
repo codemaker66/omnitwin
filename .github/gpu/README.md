@@ -148,7 +148,10 @@ saved Grand Hall layout that assembles itself, comes to rest as placed and
 hands the camera back on its final framing without writing anything, Escape
 snapping it to the true state, and the layout simply opening without the flag
 (`grand-assembly.spec.ts`); this changes the inventory from 401 to 404 and the
-CPU partition from 396 to 399.
+CPU partition from 396 to 399. Later that day the Assembly went on for everyone
+(Blake), so its third case is restated one for one: with no flag a layout plays
+the first time it opens, the visible Skip hurries it to its end, and after a
+reload it opens as placed. The totals are unchanged.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
