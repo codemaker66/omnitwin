@@ -348,4 +348,10 @@ describe("the planner's device drafts stay off the app root (T-671)", () => {
     const conflict = await readSource("src/api/configuration-conflict.ts");
     expect(conflict.codeOnly).toMatch(/export function parseRevisionConflict/);
   });
+
+  it("loads the twin's enquiry form on demand, with the planner keys and configurations client it brings", async () => {
+    const { codeOnly } = await readSource("src/twin/TwinViewerControls.tsx");
+    expect(codeOnly).not.toMatch(/from\s+["']\.\/TwinEnquiryModal/);
+    expect(codeOnly).toMatch(/import\(["']\.\/TwinEnquiryModal\.js["']\)/);
+  });
 });
