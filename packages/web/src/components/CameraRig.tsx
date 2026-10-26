@@ -190,16 +190,42 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     () => openingPose?.target ?? computeCameraTarget(stableDimensions, aspect),
     [openingPose, stableDimensions, aspect],
   );
+  /** The arrival the opening pose was applied for, and where that left the camera. */
+  const opened = useRef<{ readonly dimensions: SpaceDimensions; readonly pose: CameraRigProps["defaultPose"]; readonly position: Vector3 } | null>(null);
+  /** The view as of the camera's last change: what a resize keeps once the camera has left the opening pose. */
+  const heldTarget = useRef<Vector3 | null>(null);
   useEffect(() => {
     if (suspendedRef.current || previouslySuspended.current || captureUnavailableKey !== null) return;
     if (humanPovActiveRef.current || walkActiveRef.current || useBookmarkStore.getState().tour !== null) return;
+    const controls = controlsRef.current;
+    const last = opened.current;
+    // A resize (window, browser zoom, rotation, devtools) is no new arrival:
+    // once the camera has left the pose it opened on (a hand, a glide, a tour),
+    // it keeps its view (A-04). R3F may have set the orbit target anew at a
+    // portrait-landscape crossing; the view's own target is put back.
+    if (last !== null && last.dimensions === stableDimensions && last.pose === defaultPose
+      && camera.position.distanceToSquared(last.position) > 1e-8) {
+      const held = heldTarget.current;
+      if (controls !== null && held !== null && !controls.target.equals(held)) {
+        controls.target.copy(held);
+        controls.update();
+        invalidate();
+      }
+      return;
+    }
     const [x, y, z] = openingPose?.position ?? computeDefaultCameraPosition(stableDimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
+    if (controls !== null) {
+      controls.target.set(target[0], target[1], target[2]);
+      controls.update();
+      (heldTarget.current ??= new Vector3()).copy(controls.target);
+    }
+    opened.current = { dimensions: stableDimensions, pose: defaultPose, position: camera.position.clone() };
     // A glide under way still owns where the camera ends up.
     if (useBookmarkStore.getState().transition === null) onOpeningPoseRef.current?.(openingPose !== null);
     invalidate();
-  }, [camera, stableDimensions, target, aspect, invalidate, captureUnavailableKey, openingPose]);
+  }, [camera, stableDimensions, target, aspect, invalidate, captureUnavailableKey, openingPose, defaultPose]);
   useEffect(() => { previouslySuspended.current = suspended; }, [suspended]);
 
   // Keyboard input — single keydown handler tracks state AND wakes demand-mode frame loop.
@@ -452,6 +478,8 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
 
   const onControlsChange = useCallback(() => {
     if (suspendedRef.current) return;
+    const controls = controlsRef.current;
+    if (controls !== null) (heldTarget.current ??= new Vector3()).copy(controls.target);
     dampingFrames.current = smoothControls ? DAMPING_SETTLE_FRAMES : 0;
     invalidate();
   }, [invalidate, smoothControls]);
