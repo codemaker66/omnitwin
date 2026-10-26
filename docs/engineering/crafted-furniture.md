@@ -80,8 +80,13 @@ crafted pieces, so the planner downloads no furniture GLB.
 - **Sun and moon shadows.** A piece casts the shadow map with its
   `shadow-caster` part alone: the same boxes, set in a few millimetres (so a lit
   face never shadows itself into acne), thickened to the map's least useful
-  width, drawn by a material the view discards (`maskNode` false) and the shadow
-  pass keeps (`maskShadowNode` true). What is seen only receives. A chair casts
+  width, on the stand-ins' layer (`HALL_SUN_CASTER_LAYER`, which only shadow
+  cameras see; the instancing harvest keeps each batch's layers), drawn by a
+  material that would also be discarded in a view (`maskNode` false) and kept in
+  the shadow pass (`maskShadowNode` true). The view never draws a caster: no
+  pipeline, no vertices, no pick, and none at all without the real sky. Any
+  other light that casts must see that layer too (the lab's studio light does).
+  What is seen only receives. A chair casts
   with a few hundred triangles instead of several thousand; a clothed round with
   a coarse copy of its drape set in along its normals (`shadow-sheet`, cast
   from both faces), so a fold's valley lies outside its own caster. The

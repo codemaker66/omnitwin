@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { Box3, type BufferGeometry, type Material, Mesh, type Object3D, Texture } from "three";
+import { Box3, type BufferGeometry, Layers, type Material, Mesh, type Object3D, Texture } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
 import {
@@ -12,6 +12,7 @@ import {
 } from "../../../../lib/crafted-furniture.js";
 import { materialAppearanceSignature } from "../../../../lib/furniture-instancing.js";
 import { disposeVariant, harvestVariant } from "../../../editor/InstancedFurnitureLayer.js";
+import { HALL_SUN_CASTER_LAYER } from "../../../grand-hall/hall-sun.js";
 import { aoBox, aoRod, occlude } from "../crafted-ao.js";
 import { craftedDetail, setCraftedDetailLevel } from "../crafted-detail.js";
 import { lathe, roundedBox } from "../crafted-geometry.js";
@@ -205,6 +206,8 @@ describe("crafted furniture", () => {
           const shadows = variant.shadowsByKey.get(group.materialKey);
           const source = meshesOf(model.object).find((mesh) => materialAppearanceSignature(mesh.material as Material) === group.materialKey);
           expect(shadows?.castShadow, group.materialKey).toBe(source?.castShadow);
+          // and on the same layers: a caster's batch stays out of the view.
+          expect(shadows?.layers, group.materialKey).toBe(source?.layers.mask);
         }
       } finally {
         disposeVariant(variant);
@@ -278,10 +281,17 @@ describe("crafted shadows", () => {
       const meshes = meshesOf(model.object);
       const casters = meshes.filter(isCaster);
       expect(casters).toHaveLength(1);
+      const view = new Layers();
+      const sun = new Layers();
+      sun.enable(HALL_SUN_CASTER_LAYER);
       for (const mesh of meshes) {
         const shade = mesh.name.endsWith(":contact");
         expect(mesh.castShadow, mesh.name).toBe(isCaster(mesh));
         expect(mesh.receiveShadow, mesh.name).toBe(!isCaster(mesh) && !shade);
+        // The caster lives on the stand-ins' layer: the sun's shadow camera
+        // sees it, the view's camera (and its picking) never does.
+        expect(mesh.layers.test(view), mesh.name).toBe(!isCaster(mesh));
+        expect(mesh.layers.test(sun), mesh.name).toBe(true);
       }
       const material = materialsOf(casters[0] as Mesh)[0] as Material & { maskNode: { isNode?: boolean } | null; maskShadowNode: { isNode?: boolean } | null };
       // Discarded in the view, kept in the shadow pass (three reads maskShadowNode first there).

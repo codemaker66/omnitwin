@@ -1,4 +1,5 @@
 import { type BufferGeometry, Color, Group, type Material, Mesh } from "three";
+import { HALL_SUN_CASTER_LAYER } from "../../grand-hall/hall-sun.js";
 import { craftedMaterial, isFloorShade, isShadowCaster, type CraftedMaterialId } from "./crafted-materials.js";
 import { mergeParts } from "./crafted-geometry.js";
 
@@ -79,7 +80,10 @@ export function instantiateCraftedModel(
     mesh.receiveShadow = !caster && !shade;
     object.add(mesh);
     if (caster) {
-      // Never drawn on screen, so never faded or tinted.
+      // On the stand-ins' layer, which only shadow cameras see: the view never
+      // draws it (no pipeline, no vertices, no pick), so it is never faded or
+      // tinted either.
+      mesh.layers.set(HALL_SUN_CASTER_LAYER);
       casters.push(mesh);
       continue;
     }
