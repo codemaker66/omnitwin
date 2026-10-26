@@ -374,7 +374,7 @@ function cavityDepths(geometry: BufferGeometry, passes: number): Float32Array {
   const weld = new Int32Array(count);
   const seen = new Map<string, number>();
   for (let i = 0; i < count; i += 1) {
-    const key = `${Math.round(position.getX(i) * 1e4)},${Math.round(position.getY(i) * 1e4)},${Math.round(position.getZ(i) * 1e4)}`;
+    const key = [position.getX(i), position.getY(i), position.getZ(i)].map((value) => String(Math.round(value * 1e4))).join(",");
     const first = seen.get(key);
     if (first === undefined) seen.set(key, i);
     weld[i] = first ?? i;

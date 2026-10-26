@@ -18,6 +18,7 @@ import { lathe, roundedBox } from "../crafted-geometry.js";
 import { craftedMaterial } from "../crafted-materials.js";
 import { clearCraftedGeometryCache, createCraftedFurniture } from "../crafted-registry.js";
 import { casterGeometry } from "../crafted-shadow.js";
+import { damaskFigure, damaskFigureField } from "../crafted-textures.js";
 
 function assetFor(slug: string): CanonicalAsset {
   const asset = CANONICAL_ASSETS.find((candidate) => candidate.slug === slug);
@@ -442,5 +443,38 @@ describe("crafted detail", () => {
     expect(materialAppearanceSignature(craftedMaterial("gilt"))).toBe(gilt);
     expect(materialAppearanceSignature(craftedMaterial("pad-ivory"))).not.toBe(gilt);
     expect(materialAppearanceSignature(craftedMaterial("shadow-caster"))).not.toBe(gilt);
+  });
+});
+
+describe("crafted textures", () => {
+  it("paints the damask's figure from a quarter of its tile, exactly as evaluated everywhere", () => {
+    // Mirrored about the vertical and repeated on the half drop: the copy of
+    // one quarter must match the figure itself at every pixel.
+    const size = 64;
+    const field = damaskFigureField(size);
+    let worst = 0;
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const direct = damaskFigure((x + 0.5) / size, (y + 0.5) / size, 1 / size);
+        worst = Math.max(worst, Math.abs((field[y * size + x] ?? Number.NaN) - direct));
+      }
+    }
+    expect(worst).toBeLessThan(1e-6);
+    // And the figure is there: some satin, some ground.
+    expect(Math.max(...field)).toBeGreaterThan(0.9);
+    expect(Math.min(...field)).toBeLessThan(0.1);
+  });
+
+  it("skips only the damask's ground: its shapes' bounds clip no figure at the size it is painted", () => {
+    const size = 512;
+    let worst = 0;
+    for (let y = 0; y < size / 2; y += 1) {
+      for (let x = 0; x < size / 2; x += 1) {
+        const u = (x + 0.5) / size;
+        const v = (y + 0.5) / size;
+        worst = Math.max(worst, Math.abs(damaskFigure(u, v, 1 / size) - damaskFigure(u, v, 1 / size, false)));
+      }
+    }
+    expect(worst).toBe(0);
   });
 });

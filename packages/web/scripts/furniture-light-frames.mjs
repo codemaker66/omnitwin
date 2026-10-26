@@ -10,7 +10,11 @@
 // repository.
 //   node scripts/furniture-light-frames.mjs --base http://127.0.0.1:5261 --out D:/claude/x \
 //     [--profile desktop|tablet|phone] [--guests 180] [--states morning,sun,night,moon,street] \
-//     [--views room,table,chair] [--frames 0] [--cpu 1]
+//     [--views room,table,chair] [--frames 0] [--cpu 1] [--refit 1]
+//
+// --refit 1 redraws the sun's and moon's shadow map in every measured frame.
+// The map is drawn only when asked (hall-sun.ts): after the sun moves or the
+// layout changes, so this times what each such change costs.
 import { chromium } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,6 +32,7 @@ const STATES = option("states", "morning,sun,night,moon,street").split(",").filt
 const VIEWS = option("views", "room,table,chair").split(",").filter((view) => view.length > 0);
 const FRAMES = Number(option("frames", "0"));
 const CPU = Number(option("cpu", "1"));
+const REFIT = option("refit", "0") === "1";
 /** Seat the dinner on another chair: its catalogue slug (the lab furnishes with the planner's default chair). */
 const CHAIR = option("chair", "");
 /** `wedding` adds the rest of a wedding beside the rounds (see WEDDING). */
@@ -208,8 +213,38 @@ try {
       console.log(`captured ${file}`);
     }
     if (FRAMES > 0) {
+      const refitting = !REFIT ? 0 : await page.evaluate(() => {
+        const scene = window.__venPerf.scene;
+        const lights = [];
+        scene.traverse((object) => { if (object.isDirectionalLight === true && object.castShadow === true) lights.push(object); });
+        const previous = scene.onBeforeRender;
+        const counts = { frames: 0, redrawn: 0 };
+        window.__refitCounts = counts;
+        window.__refitRestore = () => { scene.onBeforeRender = previous; };
+        scene.onBeforeRender = function (renderer, renderedScene, camera, ...rest) {
+          // Only the view's own render, not the shadow pass inside it.
+          if (camera.isPerspectiveCamera === true) {
+            counts.frames += 1;
+            // A request the last frame cleared is a map it drew.
+            for (const light of lights) {
+              if (light.shadow.needsUpdate === false) counts.redrawn += 1;
+              light.shadow.needsUpdate = true;
+            }
+            // three draws a map at most once a node frame (ShadowNode.updateBefore),
+            // and a frame measured in a loop may not pass an animation tick.
+            renderer._nodes.nodeFrame.update();
+          }
+          return previous.call(this, renderer, renderedScene, camera, ...rest);
+        };
+        return lights.length;
+      });
+      if (REFIT) console.log(`refitting ${refitting} shadow map(s) every frame`);
       const frames = await page.evaluate((count) => window.__plannerLab.measure(count, true), FRAMES);
       const gpu = await page.evaluate((count) => window.__plannerLab.measureGpu(count), FRAMES);
+      if (REFIT) {
+        const counts = await page.evaluate(() => { window.__refitRestore?.(); return window.__refitCounts; });
+        console.log(`refit: ${counts.redrawn} maps drawn over ${counts.frames} frames`);
+      }
       // What a frame draws, and what the furniture's instanced batches hold:
       // triangles seen, and triangles cast into the sun's map.
       const load = await page.evaluate(() => {
@@ -226,7 +261,8 @@ try {
           const material = Array.isArray(object.material) ? object.material[0] : object.material;
           if (typeof material?.name !== "string" || !material.name.startsWith("crafted:") && !object.name.includes("furniture")) return;
           batches += 1;
-          if (material.name === "crafted:shadow-caster") cast += triangles;
+          if (material.name === "crafted:shadow-caster" || material.name === "crafted:shadow-sheet") cast += triangles;
+          else if (material.name === "crafted:contact") return;
           else {
             seen += triangles;
             if (object.castShadow) cast += triangles;

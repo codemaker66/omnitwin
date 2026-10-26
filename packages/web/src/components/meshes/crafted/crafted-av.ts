@@ -248,34 +248,52 @@ export function tableMicParts(size: AvSize): CraftedPart[] {
 export function lecternParts(size: AvSize): CraftedPart[] {
   const { width, depth, height } = size;
   const plinth = 0.07;
-  const deskFront = height;
-  const deskBack = height - Math.tan((16 * Math.PI) / 180) * (depth - 0.04);
-  const bodyTop = deskBack - 0.03;
+  const run = depth - 0.04;
+  const tilt = Math.tan((16 * Math.PI) / 180);
+  // The desk falls from the audience's edge (+z, the full height) toward the speaker.
+  const deskHigh = height;
+  const deskLow = height - tilt * run;
+  const deskMid = (deskHigh + deskLow) / 2;
+  const deskThickness = 0.026;
   const bodyW = width - 0.06;
   const bodyD = depth - 0.08;
-  const bodyH = bodyTop - plinth;
+  const bodyZ = 0.02;
+  // The body closes up under the desk: built to the height of its back, then its
+  // upper vertices raised with the desk's slope, so its top lies under the desk.
+  const bodyBack = bodyZ - bodyD / 2;
+  const underDesk = (z: number): number => deskMid - deskThickness + (z * tilt);
+  const backHeight = underDesk(bodyBack) - plinth;
+  const frontHeight = backHeight + bodyD * tilt;
+  const body = roundedBox([bodyW, backHeight, bodyD], 0.006, [0, plinth + backHeight / 2, bodyZ], { segments: 2, grain: "y" });
+  const position = body.getAttribute("position");
+  for (let i = 0; i < position.count; i += 1) {
+    const rise = ((position.getY(i) - plinth) / backHeight) * tilt * (position.getZ(i) - bodyBack);
+    position.setY(i, position.getY(i) + rise);
+  }
+  body.computeVertexNormals();
+  const panelHeight = frontHeight - 0.16;
+  const panelY = plinth + 0.08 + panelHeight / 2;
+  const front = bodyZ + bodyD / 2;
   const parts: CraftedPart[] = [
     { material: "mahogany", geometry: roundedBox([width - 0.01, plinth, depth - 0.01], 0.008, [0, plinth / 2, 0], { segments: 2, grain: "x" }) },
-    { material: "mahogany", geometry: roundedBox([bodyW, bodyH, bodyD], 0.006, [0, plinth + bodyH / 2, 0.02], { segments: 2, grain: "y" }) },
+    { material: "mahogany", geometry: body },
     // The raised panel to the audience, and its field.
-    { material: "mahogany-dark", geometry: roundedBox([bodyW - 0.12, bodyH - 0.16, 0.012], 0.004, [0, plinth + bodyH / 2, 0.02 + bodyD / 2 + 0.006], { segments: 2, grain: "y" }) },
-    { material: "mahogany", geometry: roundedBox([bodyW - 0.16, bodyH - 0.2, 0.018], 0.006, [0, plinth + bodyH / 2, 0.02 + bodyD / 2 + 0.01], { segments: 2, grain: "y" }) },
+    { material: "mahogany-dark", geometry: roundedBox([bodyW - 0.12, panelHeight, 0.012], 0.004, [0, panelY, front + 0.006], { segments: 2, grain: "y" }) },
+    { material: "mahogany", geometry: roundedBox([bodyW - 0.16, panelHeight - 0.04, 0.018], 0.006, [0, panelY, front + 0.01], { segments: 2, grain: "y" }) },
   ];
-  // The sloping desk: a slab tilted down toward the speaker, its ledge along the low edge.
-  const slope = Math.atan2(deskFront - deskBack, depth - 0.04);
-  const deskLength = Math.hypot(deskFront - deskBack, depth - 0.04);
-  const desk = roundedBox([width, 0.026, deskLength + 0.02], 0.006, [0, 0, 0], { segments: 2, grain: "z" });
-  desk.applyMatrix4(new Matrix4().makeRotationX(slope));
-  desk.translate(0, (deskFront + deskBack) / 2 - 0.013, 0);
+  // The sloping desk, high to the audience, and the ledge a book rests on along its low edge.
+  const desk = roundedBox([width, deskThickness, Math.hypot(deskHigh - deskLow, run) + 0.02], 0.006, [0, 0, 0], { segments: 2, grain: "z" });
+  desk.applyMatrix4(new Matrix4().makeRotationX(-Math.atan(tilt)));
+  desk.translate(0, deskMid - deskThickness / 2, 0);
   parts.push({ material: "mahogany-top", geometry: desk });
-  const ledgeZ = -(depth - 0.04) / 2 - 0.005;
-  parts.push({ material: "mahogany", geometry: roundedBox([width - 0.02, 0.03, 0.018], 0.006, [0, deskBack + 0.008, ledgeZ], { segments: 2, grain: "x" }) });
+  const ledgeZ = -run / 2 + 0.012;
+  parts.push({ material: "mahogany", geometry: roundedBox([width - 0.02, 0.03, 0.018], 0.006, [0, deskLow + 0.012 * tilt + 0.015, ledgeZ], { segments: 2, grain: "x" }) });
   const boxes = [
-    aoBox([width, 0.03, depth], [0, (deskFront + deskBack) / 2, 0]),
-    aoBox([bodyW, bodyH, bodyD], [0, plinth + bodyH / 2, 0.02]),
+    aoBox([width, 0.03, depth], [0, deskMid, 0]),
+    aoBox([bodyW, (backHeight + frontHeight) / 2, bodyD], [0, plinth + (backHeight + frontHeight) / 4, bodyZ]),
   ];
   const caster = casterGeometry([
-    aoBox([width - 0.02, (deskFront + deskBack) / 2 - 0.01, depth - 0.02], [0, ((deskFront + deskBack) / 2 - 0.01) / 2 + 0.005, 0]),
+    aoBox([width - 0.02, deskMid - 0.01, depth - 0.02], [0, (deskMid - 0.01) / 2 + 0.005, 0]),
   ], { inset: 0.004 });
   return [...baked(parts, boxes, 0.6), { material: "shadow-caster", geometry: caster }];
 }

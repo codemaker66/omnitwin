@@ -160,39 +160,69 @@ function linenHeight(u: number, v: number): number {
   return (0.35 + 0.65 * across * (0.55 + 0.45 * along)) * slub;
 }
 
+/** A damask leaf: where it sits and leans, and its length and breadth (tile units). */
+interface LeafShape {
+  readonly cx: number;
+  readonly cy: number;
+  readonly cos: number;
+  readonly sin: number;
+  readonly length: number;
+  readonly width: number;
+}
+
+function leafShape(cx: number, cy: number, angle: number, length: number, width: number): LeafShape {
+  return { cx, cy, cos: Math.cos(angle), sin: Math.sin(angle), length, width };
+}
+
+/** A leaf's signed distance: an ellipse along its lean, pointed at both ends, its midrib cut back to ground. */
+function leafDistance(ax: number, y: number, shape: LeafShape): number {
+  const dx = ax - shape.cx;
+  const dy = y - shape.cy;
+  const lx = dx * shape.cos + dy * shape.sin;
+  const ly = -dx * shape.sin + dy * shape.cos;
+  const taper = Math.max(0.15, 1 - (lx / shape.length) ** 2);
+  const body = (Math.hypot(lx / shape.length, ly / (shape.width * Math.sqrt(taper))) - 1) * Math.min(shape.length, shape.width);
+  const midrib = 0.0028 - Math.abs(ly);
+  return Math.abs(lx) < shape.length * 0.85 ? Math.max(body, midrib) : body;
+}
+
+const MEDALLION_LEAVES: readonly LeafShape[] = [leafShape(0.13, 0.085, 0.62, 0.088, 0.034), leafShape(0.125, -0.09, -0.72, 0.082, 0.031)];
+const SPRIG_LEAF = leafShape(0.045, -0.03, -0.5, 0.034, 0.013);
+/**
+ * How far each shape reaches from its centre (tile units): the medallion
+ * across and up (its leaves and finials), the sprig all round (its leaf).
+ */
+const MEDALLION_REACH_X = 0.225;
+const MEDALLION_REACH_Y = 0.332;
+const SPRIG_REACH = 0.091;
+
 /**
  * The damask's figure, 1 on the satin-woven motif and 0 on the matt ground:
  * a mirrored floral medallion (a five-petal bloom, four leaves, two scrolls
  * and a finial above and below) on a half-drop repeat (one medallion at the
- * tile's corners, one at its centre), framed by an ogee lattice. Shapes are
- * signed distances in tile units, softened over about a pixel.
+ * tile's corners, one at its centre) with a small sprig between them. Shapes are
+ * signed distances in tile units, softened over two pixels.
+ *
+ * `bounded` skips a shape wherever the point is clear of its reach by more
+ * than the softening can carry (a few pixels, since the leaves' and the
+ * finials' distances are stretched ellipses): the figure there is ground
+ * either way, and painting skips about two thirds of the work.
  */
-function damaskFigure(u: number, v: number, pixel: number): number {
-  /** A leaf: an ellipse along `angle`, its midrib cut back to ground. */
-  const leaf = (ax: number, y: number, cx: number, cy: number, angle: number, length: number, width: number): number => {
-    const dx = ax - cx;
-    const dy = y - cy;
-    const c = Math.cos(angle);
-    const s = Math.sin(angle);
-    const lx = dx * c + dy * s;
-    const ly = -dx * s + dy * c;
-    // Pointed at both ends: the width narrows toward the tips.
-    const taper = Math.max(0.15, 1 - (lx / length) ** 2);
-    const body = (Math.hypot(lx / length, ly / (width * Math.sqrt(taper))) - 1) * Math.min(length, width);
-    const midrib = 0.0028 - Math.abs(ly);
-    return Math.abs(lx) < length * 0.85 ? Math.max(body, midrib) : body;
-  };
+export function damaskFigure(u: number, v: number, pixel: number, bounded = true): number {
+  const margin = bounded ? 4 * pixel : Infinity;
   const medallion = (x: number, y: number): number => {
+    if (Math.abs(x) > MEDALLION_REACH_X + margin || Math.abs(y) > MEDALLION_REACH_Y + margin) return 1;
     // Mirror symmetric about the vertical axis, as damask is woven.
     const ax = Math.abs(x);
     const r = Math.hypot(x, y);
     const theta = Math.atan2(y, x);
-    // The bloom: five full rounded petals round an open eye, a fine ring of ground inside them.
-    let d = r - 0.085 * (0.7 + 0.3 * Math.abs(Math.cos(2.5 * theta)));
+    // The bloom: five full rounded petals round an open eye, a fine ring of
+    // ground inside them, one petal standing straight up so the bloom mirrors too.
+    let d = r - 0.085 * (0.7 + 0.3 * Math.abs(Math.cos(2.5 * (theta - Math.PI / 2))));
     const eye = 0.018 - r;
     const ring = 0.0055 - Math.abs(r - 0.05);
     // Two pairs of broad leaves leaning out from the bloom.
-    d = Math.min(d, leaf(ax, y, 0.13, 0.085, 0.62, 0.088, 0.034), leaf(ax, y, 0.125, -0.09, -0.72, 0.082, 0.031));
+    for (const shape of MEDALLION_LEAVES) d = Math.min(d, leafDistance(ax, y, shape));
     // Scrolls: open arcs curling out above and below the leaves.
     const scroll = (cx: number, cy: number, radius: number, from: number, to: number): number => {
       const dx = ax - cx;
@@ -211,10 +241,10 @@ function damaskFigure(u: number, v: number, pixel: number): number {
   /** A sprig between the medallions: a small four-petalled flower with two leaves. */
   const sprig = (x: number, y: number): number => {
     const r = Math.hypot(x, y);
+    if (r > SPRIG_REACH + margin) return 1;
     const theta = Math.atan2(y, x);
     const flower = r - 0.032 * (0.65 + 0.35 * Math.abs(Math.cos(2 * theta)));
-    const ax = Math.abs(x);
-    return Math.max(Math.min(flower, leaf(ax, y, 0.045, -0.03, -0.5, 0.034, 0.013)), 0.007 - r);
+    return Math.max(Math.min(flower, leafDistance(Math.abs(x), y, SPRIG_LEAF)), 0.007 - r);
   };
   // The half-drop: medallions at the tile's corners and centre, sprigs between.
   const wrap = (value: number): number => value - Math.round(value);
@@ -257,6 +287,77 @@ function parquetCell(u: number, v: number, pixel: number): { tone: number; grain
   const distance = Math.min(stripJoint, squareJoint * 0.7);
   const joint = 1 - smooth(Math.min(1, Math.max(0, distance / (pixel * 1.4))));
   return { tone, grain, joint };
+}
+
+/**
+ * Per-pixel values two maps of one figure share (its colour and its relief
+ * or roughness): built for whichever map is painted first, handed to the
+ * second and then dropped, so the figure is evaluated once per page.
+ */
+function pairedField<T>(build: (size: number) => T): (size: number) => T {
+  let held: { readonly size: number; readonly value: T } | null = null;
+  return (size) => {
+    if (held !== null && held.size === size) {
+      const { value } = held;
+      held = null;
+      return value;
+    }
+    const value = build(size);
+    held = { size, value };
+    return value;
+  };
+}
+
+/**
+ * The damask's figure at every pixel of a tile. The figure is mirrored about
+ * the vertical (f(u, v) = f(1 − u, v)) and repeats on the half drop
+ * (f(u, v) = f(u + ½, v + ½)), both exactly at pixel centres, so one
+ * quarter of the tile is evaluated and copied to the other three.
+ */
+export function damaskFigureField(size: number): Float32Array {
+  const field = new Float32Array(size * size);
+  const half = size / 2;
+  for (let y = 0; y < half; y += 1) {
+    for (let x = 0; x < half; x += 1) {
+      const value = damaskFigure((x + 0.5) / size, (y + 0.5) / size, 1 / size);
+      const dropX = x + half;
+      const dropY = y + half;
+      field[y * size + x] = value;
+      field[y * size + (size - 1 - x)] = value;
+      field[dropY * size + dropX] = value;
+      field[dropY * size + (size - 1 - dropX)] = value;
+    }
+  }
+  return field;
+}
+
+const damaskField = pairedField(damaskFigureField);
+
+interface ParquetField {
+  readonly tone: Float32Array;
+  readonly grain: Float32Array;
+  readonly joint: Float32Array;
+}
+
+/** The parquet's strips at every pixel of a tile, for its colour and its relief. */
+const parquetField = pairedField((size: number): ParquetField => {
+  const tone = new Float32Array(size * size);
+  const grain = new Float32Array(size * size);
+  const joint = new Float32Array(size * size);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const cell = parquetCell((x + 0.5) / size, (y + 0.5) / size, 1 / size);
+      tone[y * size + x] = cell.tone;
+      grain[y * size + x] = cell.grain;
+      joint[y * size + x] = cell.joint;
+    }
+  }
+  return { tone, grain, joint };
+});
+
+/** The pixel a painter's (u, v) sample sits at. */
+function pixelAt(u: number, v: number, size: number): number {
+  return Math.floor(v * size) * size + Math.floor(u * size);
 }
 
 /** Tileable cellular noise: distance to the nearest of `cells` jittered points per side, 0 at a point. */
@@ -383,8 +484,9 @@ const RECIPES: Readonly<Record<CraftedTextureId, TextureRecipe>> = {
       // Light enough to read ivory, not beige, in the hall's warm light.
       const ground = hex(0xf3eee4);
       const figure = hex(0xf8f5ee);
+      const field = damaskField(size);
       return paintColour(size, (u, v) => {
-        const motif = damaskFigure(u, v, 1 / size);
+        const motif = field[pixelAt(u, v, size)] ?? 0;
         const slub = 0.985 + 0.03 * valueNoise(u, v, 64, 83) - 0.012 * valueNoise(u, v * 0.25, 8, 89);
         const [r, g, b] = mix(ground, figure, motif);
         return [r * slub, g * slub, b * slub];
@@ -398,9 +500,10 @@ const RECIPES: Readonly<Record<CraftedTextureId, TextureRecipe>> = {
     paint: (size) => {
       // Roughness in the green channel (three reads it there): the satin
       // figure catches the light, the twill ground stays matt.
+      const field = damaskField(size);
       return paintColour(size, (u, v) => {
         // A gentle step only: in direct sun a glossier figure flashes white.
-        const motif = damaskFigure(u, v, 1 / size);
+        const motif = field[pixelAt(u, v, size)] ?? 0;
         const roughness = 0.8 - motif * 0.15 + (valueNoise(u, v, 32, 97) - 0.5) * 0.04;
         const value = roughness * 255;
         return [value, value, value];
@@ -440,11 +543,12 @@ const RECIPES: Readonly<Record<CraftedTextureId, TextureRecipe>> = {
       const pale = hex(0xc8935a);
       const deep = hex(0x8a5428);
       const joint = hex(0x3a2412);
+      const field = parquetField(size);
       return paintColour(size, (u, v) => {
-        const cell = parquetCell(u, v, 1 / size);
-        const base = mix(pale, deep, 0.15 + cell.tone * 0.6);
-        const [r, g, b] = mix(base, mix(base, deep, 0.55), cell.grain * 0.55);
-        return mix([r, g, b], joint, cell.joint * 0.85);
+        const at = pixelAt(u, v, size);
+        const base = mix(pale, deep, 0.15 + (field.tone[at] ?? 0) * 0.6);
+        const [r, g, b] = mix(base, mix(base, deep, 0.55), (field.grain[at] ?? 0) * 0.55);
+        return mix([r, g, b], joint, (field.joint[at] ?? 0) * 0.85);
       });
     },
   },
@@ -453,10 +557,13 @@ const RECIPES: Readonly<Record<CraftedTextureId, TextureRecipe>> = {
     tileMetres: 0.91,
     colour: false,
     // Each strip a hair proud of its joints, its grain faintly raised.
-    paint: (size) => paintHeight(size, (u, v) => {
-      const cell = parquetCell(u, v, 1 / size);
-      return (1 - cell.joint) * 0.8 + cell.grain * 0.05;
-    }, 2.4),
+    paint: (size) => {
+      const field = parquetField(size);
+      return paintHeight(size, (u, v) => {
+        const at = pixelAt(u, v, size);
+        return (1 - (field.joint[at] ?? 0)) * 0.8 + (field.grain[at] ?? 0) * 0.05;
+      }, 2.4);
+    },
   },
   "hex-deck-normal": {
     size: 128,

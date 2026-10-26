@@ -82,37 +82,6 @@ export function contactSpots(feet: readonly FootContact[], lift = 0.0012): Buffe
   return normalizeAttributes(geometry);
 }
 
-/**
- * A closed upright cylinder (a round table in its cloth, a poseur's cover):
- * from `bottom` to `top`, `segments` round, radius `bottomRadius` widening or
- * narrowing to `topRadius`, already set in by the caller.
- */
-export function casterCylinder(bottomRadius: number, topRadius: number, bottom: number, top: number, segments = 24): BufferGeometry {
-  const positions: number[] = [0, bottom, 0, 0, top, 0];
-  const indices: number[] = [];
-  for (let i = 0; i < segments; i += 1) {
-    const a = (i / segments) * Math.PI * 2;
-    positions.push(Math.cos(a) * bottomRadius, bottom, Math.sin(a) * bottomRadius);
-    positions.push(Math.cos(a) * topRadius, top, Math.sin(a) * topRadius);
-  }
-  for (let i = 0; i < segments; i += 1) {
-    const b0 = 2 + i * 2;
-    const t0 = b0 + 1;
-    const b1 = 2 + ((i + 1) % segments) * 2;
-    const t1 = b1 + 1;
-    // Wound outward: (t0 − b0) × (b1 − b0) points away from the axis, the
-    // bottom cap down and the top cap up.
-    indices.push(b0, t0, b1, b1, t0, t1);
-    indices.push(0, b0, b1);
-    indices.push(1, t1, t0);
-  }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return normalizeAttributes(geometry);
-}
-
 /** A closed geometry of `boxes`, set in by `inset`: what a piece casts its shadow with. */
 export function casterGeometry(boxes: readonly AoBox[], options: CasterOptions = {}): BufferGeometry {
   const inset = options.inset ?? 0.003;
