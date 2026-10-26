@@ -1,0 +1,540 @@
+/* ---------------------------------------------------------------------------
+ * THE STAFF WORKSPACES (T-674, v2 slice 18; spec 4.6, 6.15, frame 20).
+ *
+ * The menu: a popover from the dock's left key, 330 px, five rows of a 28 px
+ * icon, the name, one line and the Ctrl digit; the one in use carries a cream
+ * wash and a copper rule. The panel: lacquer e2 in the right zone, as tall as
+ * its content and never taller than the zone, scrolling inside; it rises
+ * 12 px with its opacity on `deliberate`, and under reduced motion only fades.
+ *
+ * Its bodies are v1's lens panels, unedited. Everything under
+ * `.pc-workspace .lens-panel…` below sets them on lacquer: the house's two
+ * faces and eight sizes, its radii, forest inks and 8 % hairlines, the status
+ * colours that carry a word (sage, amber, brick), and no glow. The panel
+ * takes the forest register (data-register="forest"), so their
+ * var(--house-text-*) and hairlines read as forest ink here.
+ * ------------------------------------------------------------------------- */
+
+/* -- The menu's key ----------------------------------------------------------- */
+.pc-workspace-key { gap: 6px; padding-right: 9px; }
+
+.pc-workspace-key__chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--house-forest-ink-3);
+  transition: transform var(--house-motion-reveal) var(--house-ease-out);
+}
+
+.pc-workspace-key[aria-expanded="true"] .pc-workspace-key__chevron { transform: rotate(180deg); }
+
+/* -- The menu ---------------------------------------------------------------- */
+.pc-workspace-menu { width: 330px; }
+
+.pc-workspace-menu__section {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 8px 10px;
+}
+
+.pc-workspace-menu__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 2px 10px 9px;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-workspace-menu__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pc-workspace-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--house-forest-ink-1);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--house-motion-hover) var(--house-ease-out);
+}
+
+.pc-workspace-menu__row[aria-checked="true"] {
+  background: color-mix(in srgb, var(--house-cream) 7%, transparent);
+  box-shadow: inset 2px 0 0 var(--house-accent-copper-bright);
+}
+
+.pc-workspace-menu__row:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-workspace-menu__row:hover:not([aria-checked="true"]) {
+    background: color-mix(in srgb, var(--house-cream) 4.5%, transparent);
+  }
+}
+
+.pc-workspace-menu__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--house-forest-ink-2);
+}
+
+.pc-workspace-menu__words {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pc-workspace-menu__name { font: 500 14px/1.2 var(--house-sans); }
+
+.pc-workspace-menu__line {
+  font: 400 12px/1.3 var(--house-sans);
+  color: var(--house-forest-ink-3);
+}
+
+.pc-workspace-menu__keys {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.pc-workspace-menu__foot { padding: 10px 18px 12px; }
+
+/* -- The panel ---------------------------------------------------------------- */
+.pc-workspace {
+  /* The spec's hairline, 8 % cream, whatever register the page is in. */
+  --pc-workspace-rule: color-mix(in srgb, var(--house-cream) 8%, transparent);
+  --pc-workspace-well: color-mix(in srgb, black 22%, transparent);
+  --pc-workspace-edge: color-mix(in srgb, var(--house-cream) 12%, transparent);
+  --pc-workspace-wash: color-mix(in srgb, var(--house-cream) 3%, transparent);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Within the zone, and never under the dock stack (the rail stands above the dock it is measured from). */
+  max-height: min(100%, calc(100dvh - var(--pc-left-top, 198px) - var(--pc-above-stack, 88px)));
+  overflow: hidden;
+  pointer-events: auto;
+  animation: pc-workspace-in var(--house-motion-deliberate) var(--house-ease-out);
+}
+
+.pc-workspace__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 8px 12px 20px;
+  border-bottom: 1px solid var(--pc-workspace-rule);
+}
+
+.pc-workspace__titles {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.pc-workspace__title {
+  margin: 0;
+  color: var(--house-forest-ink-1);
+}
+
+.pc-workspace__line {
+  margin: 0;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-workspace__notice {
+  margin: 14px 16px 16px;
+  box-shadow: none;
+}
+
+.pc-workspace__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+  padding: 14px 20px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--house-forest-ink-3) 40%, transparent) transparent;
+}
+
+.pc-workspace__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pc-workspace__group-head {
+  margin: 0 0 4px;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-workspace__note {
+  margin: 0;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-workspace__parts { flex: none; }
+
+.pc-workspace__part[hidden] { display: none; }
+
+.pc-workspace__kept { display: contents; }
+
+@keyframes pc-workspace-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-workspace { animation: pc-workspace-fade var(--house-motion-reveal) linear; }
+  .pc-workspace-key__chevron { transition: none; }
+}
+
+@keyframes pc-workspace-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Phones have no right zone (shell.css); whoever hosts the panel there gets a sheet. */
+@media (max-width: 767px) {
+  .pc-workspace {
+    width: 100%;
+    max-height: 56dvh;
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+/* -- The map (v1's minimap, embedded) ------------------------------------------- */
+.pc-workspace__map .cockpit-minimap-embedded,
+.pc-workspace__map .cockpit-minimap {
+  position: static;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.pc-workspace__map .cockpit-minimap__plate {
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--pc-workspace-edge);
+}
+
+.pc-workspace__map .cockpit-minimap__note,
+.pc-workspace__map .cockpit-minimap__unavailable {
+  margin: 6px 0 0;
+  color: var(--house-forest-ink-3);
+  font: 400 12px/1.4 var(--house-sans);
+}
+
+/* -- v1's lens bodies, set on lacquer -------------------------------------------- */
+.pc-workspace .lens-panel {
+  grid-area: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: auto;
+  padding: 0;
+  overflow: visible;
+  animation: none;
+  border: 0;
+  background: none;
+  color: var(--house-forest-ink-1);
+  font-family: var(--house-sans);
+}
+
+.pc-workspace .lens-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--pc-workspace-rule);
+}
+
+.pc-workspace .lens-panel__head-icon { display: none; }
+
+.pc-workspace .lens-panel__title,
+.pc-workspace .lens-panel__section-label,
+.pc-workspace .lens-panel__assumption-label,
+.pc-workspace .lens-panel__published-mark {
+  color: var(--house-forest-ink-3);
+  font: 600 11px/1.25 var(--house-sans);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.pc-workspace .lens-panel__source {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--house-forest-ink-3);
+  font: 400 12px/1.4 var(--house-sans);
+  letter-spacing: 0;
+}
+
+.pc-workspace .lens-panel__body { gap: 16px; }
+.pc-workspace .lens-panel__section { gap: 8px; }
+.pc-workspace .lens-panel__section-body { gap: 8px; }
+
+/* Facts: a quiet well, the label in Inter, the figure in Newsreader. */
+.pc-workspace .lens-panel__metric,
+.pc-workspace .lens-panel__style-row,
+.pc-workspace .lens-panel__unrecorded,
+.pc-workspace .lens-panel__published-row,
+.pc-workspace .lens-panel__mvr {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--pc-workspace-wash);
+  box-shadow: inset 0 0 0 1px var(--pc-workspace-rule);
+}
+
+.pc-workspace .lens-panel__metric-label,
+.pc-workspace .lens-panel__style-label,
+.pc-workspace .lens-panel__cost-line-label,
+.pc-workspace .lens-panel__published-format {
+  color: var(--house-forest-ink-2);
+  font: 400 14px/1.35 var(--house-sans);
+  letter-spacing: 0;
+}
+
+.pc-workspace .lens-panel__metric-value,
+.pc-workspace .lens-panel__style-cap,
+.pc-workspace .lens-panel__cost-line-amount,
+.pc-workspace .lens-panel__published-figure,
+.pc-workspace .lens-panel__estimate-figure {
+  color: var(--house-forest-ink-1);
+  font: 400 16px/1.2 var(--house-serif);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.pc-workspace .lens-panel__cost-line--total .lens-panel__cost-line-label { color: var(--house-forest-ink-1); }
+.pc-workspace .lens-panel__cost-line--total .lens-panel__cost-line-amount { font: 300 20px/1.2 var(--house-serif); color: var(--house-forest-ink-1); }
+
+.pc-workspace .lens-panel__style-cap small,
+.pc-workspace .lens-panel__cost-line-label small,
+.pc-workspace .lens-panel__published-format small,
+.pc-workspace .lens-panel__unrecorded-value,
+.pc-workspace .lens-panel__unrecorded-hint,
+.pc-workspace .lens-panel__stated,
+.pc-workspace .lens-panel__entered,
+.pc-workspace .lens-panel__field-hint,
+.pc-workspace .lens-panel__row-meta,
+.pc-workspace .lens-panel__circuit-id,
+.pc-workspace .lens-panel__circuit-load,
+.pc-workspace .lens-panel__paragraph--muted,
+.pc-workspace .lens-panel__note {
+  color: var(--house-forest-ink-3);
+  font: 400 12px/1.4 var(--house-sans);
+  letter-spacing: 0;
+}
+
+.pc-workspace .lens-panel__unrecorded-label,
+.pc-workspace .lens-panel__row-title,
+.pc-workspace .lens-panel__assumption-value,
+.pc-workspace .lens-panel__estimate {
+  color: var(--house-forest-ink-1);
+  font: 500 14px/1.35 var(--house-sans);
+}
+
+.pc-workspace .lens-panel__assumption { border-bottom-color: var(--pc-workspace-rule); }
+.pc-workspace .lens-panel__assumption-source { color: var(--house-copper-lit); font: 400 12px/1.4 var(--house-sans); }
+
+.pc-workspace .lens-panel__hint,
+.pc-workspace .lens-panel__paragraph {
+  margin: 0;
+  padding: 0;
+  color: var(--house-forest-ink-2);
+  font: 400 14px/1.45 var(--house-sans);
+}
+
+.pc-workspace .lens-panel__note--warn { color: var(--house-amber-lit); }
+.pc-workspace .lens-panel__error { color: var(--house-brick-lit); font: 400 14px/1.45 var(--house-sans); }
+
+.pc-workspace .lens-panel__footer {
+  margin: 4px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--pc-workspace-rule);
+  color: var(--house-forest-ink-3);
+  font: 400 12px/1.4 var(--house-sans);
+}
+
+/* Fields: the house's well, Inter 14, the cream ring on focus. */
+.pc-workspace .lens-panel__field-label {
+  color: var(--house-forest-ink-2);
+  font: 400 14px/1.35 var(--house-sans);
+  letter-spacing: 0;
+}
+
+.pc-workspace .lens-panel__field--inline { grid-template-columns: minmax(0, 1fr) 112px; }
+
+.pc-workspace .lens-panel__input {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--pc-workspace-well);
+  box-shadow: inset 0 0 0 1px var(--pc-workspace-edge);
+  color: var(--house-forest-ink-1);
+  font: 400 14px/1.2 var(--house-sans);
+  transition: box-shadow var(--house-motion-hover) var(--house-ease-out);
+}
+
+.pc-workspace .lens-panel__input::placeholder { color: var(--house-forest-ink-3); font-weight: 400; }
+.pc-workspace .lens-panel__input:hover { box-shadow: inset 0 0 0 1px var(--house-forest-edge); }
+.pc-workspace .lens-panel__input--area { min-height: 72px; line-height: 1.45; }
+
+/* Chips say their state in words; the colour only agrees with them. */
+.pc-workspace .lens-panel__chip {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--pc-workspace-edge);
+  color: var(--house-forest-ink-2);
+  font: 500 12px/1.3 var(--house-sans);
+  letter-spacing: 0;
+}
+
+.pc-workspace .lens-panel__chip strong { font: 600 14px/1 var(--house-sans); }
+.pc-workspace .lens-panel__chip--review { color: var(--house-brick-lit); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house-brick-lit) 55%, transparent); }
+.pc-workspace .lens-panel__chip--attention { color: var(--house-amber-lit); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house-amber-lit) 55%, transparent); }
+.pc-workspace .lens-panel__chip--info { color: var(--house-forest-ink-2); }
+.pc-workspace .lens-panel__chip--ok { color: var(--house-sage-lit); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house-sage-lit) 55%, transparent); }
+
+.pc-workspace .lens-panel__row {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--pc-workspace-wash);
+  box-shadow: inset 0 0 0 1px var(--pc-workspace-rule);
+}
+
+.pc-workspace .lens-panel__row--review { box-shadow: inset 2px 0 0 var(--house-brick-lit), inset 0 0 0 1px var(--pc-workspace-rule); }
+.pc-workspace .lens-panel__row--attention { box-shadow: inset 2px 0 0 var(--house-amber-lit), inset 0 0 0 1px var(--pc-workspace-rule); }
+.pc-workspace .lens-panel__row--info { box-shadow: inset 2px 0 0 var(--house-forest-edge), inset 0 0 0 1px var(--pc-workspace-rule); }
+
+/* Actions: the house's quiet key; the cream key stays the next step's. */
+.pc-workspace .lens-panel__button,
+.pc-workspace .lens-panel__chip-link,
+.pc-workspace .lens-panel__ask {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid var(--house-forest-edge);
+  border-radius: var(--house-radius-key);
+  background: var(--pc-workspace-wash);
+  box-shadow: none;
+  color: var(--house-forest-ink-1);
+  font: 500 14px/1 var(--house-sans);
+  letter-spacing: 0;
+  text-decoration: none;
+  transition:
+    border-color var(--house-motion-hover) var(--house-ease-out),
+    background-color var(--house-motion-hover) var(--house-ease-out),
+    transform var(--house-motion-press) var(--house-ease-out);
+}
+
+.pc-workspace .lens-panel__button { width: 100%; }
+.pc-workspace .lens-panel__button--ghost { width: auto; border-color: var(--pc-workspace-edge); }
+.pc-workspace .lens-panel__chip-link.is-active { background: color-mix(in srgb, var(--house-cream) 7.5%, transparent); border-color: var(--house-accent-copper-bright); }
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-workspace .lens-panel__button:hover:not(:disabled),
+  .pc-workspace .lens-panel__chip-link:hover,
+  .pc-workspace .lens-panel__ask:hover {
+    border-color: var(--house-forest-ink-3);
+    background: color-mix(in srgb, var(--house-cream) 5.5%, transparent);
+    box-shadow: none;
+  }
+}
+
+.pc-workspace .lens-panel__button:active:not(:disabled),
+.pc-workspace .lens-panel__chip-link:active,
+.pc-workspace .lens-panel__ask:active { transform: scale(0.98); box-shadow: none; }
+
+/* Meters: flat fills in the status colours, no glow. */
+.pc-workspace .lens-panel__meter,
+.pc-workspace .lens-panel__circuit-bar {
+  background: var(--pc-workspace-well);
+  box-shadow: inset 0 0 0 1px var(--pc-workspace-rule);
+}
+
+.pc-workspace .lens-panel__meter-fill,
+.pc-workspace .lens-panel__circuit-fill {
+  background: var(--house-accent-copper-bright);
+  box-shadow: none;
+}
+
+.pc-workspace .lens-panel__meter-fill--ok { background: var(--house-sage-lit); }
+.pc-workspace .lens-panel__meter-fill--attention,
+.pc-workspace .lens-panel__circuit-fill--attention { background: var(--house-amber-lit); }
+.pc-workspace .lens-panel__meter-fill--review,
+.pc-workspace .lens-panel__circuit-fill--review { background: var(--house-brick-lit); }
+
+.pc-workspace .lens-panel__circuits { border-left-color: var(--pc-workspace-rule); }
+
+.pc-workspace .lens-panel__model-preview {
+  border: 0;
+  border-radius: 6px;
+  background: var(--pc-workspace-well);
+  box-shadow: inset 0 0 0 1px var(--pc-workspace-rule);
+}
+
+/* Lay out's question and the seat fix, inside Guests. */
+.pc-workspace .auto-fill__hint,
+.pc-workspace .auto-fill__note,
+.pc-workspace .auto-fill__placed,
+.pc-workspace .seat-fix__statement,
+.pc-workspace .seat-fix__done {
+  color: var(--house-forest-ink-1);
+  font: 400 14px/1.45 var(--house-sans);
+}
+
+.pc-workspace .auto-fill__stated,
+.pc-workspace .auto-fill__basis,
+.pc-workspace .seat-fix__detail {
+  color: var(--house-forest-ink-3);
+  font: 400 12px/1.4 var(--house-sans);
+  letter-spacing: 0;
+}
+
+.pc-workspace .auto-fill__choice { min-height: 36px; padding: 0 13px; font: 500 14px/1 var(--house-sans); }
+.pc-workspace .auto-fill__actions .lens-panel__button,
+.pc-workspace .seat-fix__action { min-height: 36px; }
+.pc-workspace .auto-fill__result { border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-workspace .lens-panel__button,
+  .pc-workspace .lens-panel__chip-link,
+  .pc-workspace .lens-panel__ask { transition: none; }
+
+  .pc-workspace .lens-panel__button:active:not(:disabled),
+  .pc-workspace .lens-panel__chip-link:active,
+  .pc-workspace .lens-panel__ask:active { transform: none; }
+}
