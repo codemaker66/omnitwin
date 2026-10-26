@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { cardStoreFigure, loadUsableStock, placedCounts, storeRefuses, type UsableStock } from "../../lib/card-stock.js";
+import { cardStoreFigure, loadUsableStock, placedCounts, registerStoreStock, storeRefuses, type UsableStock } from "../../lib/card-stock.js";
 import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import { cardParamsFor, type CardId, type CardParams } from "../../lib/setup-cards.js";
 import { useAuthStore } from "../../stores/auth-store.js";
@@ -66,6 +66,8 @@ export function useStoreStock(): void {
   const user = useAuthStore((state) => state.user);
   const venueId = useEditorStore((state) => state.venueId);
   const allowed = plannerFeatureEnabled("storeCounts") && seesStoreFigures(user, venueId);
+  // Lane E's placement store holds every adding commit to the same stock (B2 hard): while the chrome is mounted it reads ours.
+  useEffect(() => registerStoreStock(() => useCardsStore.getState().stock), []);
   useEffect(() => {
     if (!allowed || venueId === null) {
       useCardsStore.getState().setStock(null);

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { cardNeeds, type UsableStock } from "../../../lib/card-stock.js";
+import { cardNeeds, currentStoreStock, type UsableStock } from "../../../lib/card-stock.js";
 import { cardParamsFor, type CardParams } from "../../../lib/setup-cards.js";
-import { NONE_LEFT_IN_STORE, seesStoreFigures, storeFace } from "../store-figures.js";
+import { renderHook } from "@testing-library/react";
+import { useCardsStore } from "../../../stores/cards-store.js";
+import { NONE_LEFT_IN_STORE, seesStoreFigures, storeFace, useStoreStock } from "../store-figures.js";
 
 // ---------------------------------------------------------------------------
 // The store on the cards (T-671; card-dock spec §4.1, §4.2, §17.1; Blake's
@@ -61,5 +63,18 @@ describe("who sees the store", () => {
     expect(seesStoreFigures({ role: "staff", venueId: "00000000-0000-4000-8000-000000000002" }, venue)).toBe(false);
     expect(seesStoreFigures({ role: "staff", venueId: venue }, null)).toBe(false);
     expect(seesStoreFigures(null, venue)).toBe(false);
+  });
+});
+
+describe("the store's own limit (lane E's placement store)", () => {
+  it("reads this stock while the chrome is mounted, and nothing once it has gone", () => {
+    const stock: UsableStock = new Map([["piece", 3]]);
+    const mounted = renderHook(() => { useStoreStock(); });
+    // No staff here, so the hook loads none itself: set it as a staff load would.
+    useCardsStore.getState().setStock(stock);
+    expect(currentStoreStock()).toBe(stock);
+    mounted.unmount();
+    expect(currentStoreStock()).toBeNull();
+    useCardsStore.getState().setStock(null);
   });
 });
