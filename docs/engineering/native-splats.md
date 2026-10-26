@@ -106,8 +106,10 @@ resets its splat arrival counts on `onCreated`. While it restores, frames stop
 and the canvas is covered by "Restoring the 3D view" (`ActivityStatus`). The
 cover stays until the new device has drawn its first frame, because that frame
 compiles every pipeline again; if a captured room was drawn at the loss, it
-stays until the new renderer draws the capture's own snapshot
-(`nativeSceneShowsSplats`), at most 15 s. `NativeSplatScene` rebuilds that
+stays until the new renderer draws the capture's own snapshot, or its rebuild
+fails, or nothing is selected to draw (`nativeSceneCapturePending`), at most
+15 s; a second loss during that wait keeps the capture and the stage of the
+first. `NativeSplatScene` rebuilds that
 snapshot from the sources it holds, and the rebuild is CPU work that does not
 depend on the device (measured 26 October on the 6.03 M-splat Grand Hall:
 1.2-1.8 s merging and bounding the sources, 1.0-1.2 s more bounding for the
@@ -138,13 +140,16 @@ device. Three r186 forwards each one to `renderer.onError` as
 draw is usually followed by good frames. `lib/native-gpu-error-watch.ts`
 reports each distinct message once (`console.warn`; at most five per view;
 F-07's Sentry warning belongs there) and asks for a frame. A frame counts as
-having got through once 250 ms pass with no further error. An idle WebGPU
-device delivers uncaptured errors only when it is ticked (a submit: 0–1 ms
-after; none in 2 s without, measured 26 October), so a scene's errors arrive
-with its own frames, and the watch's redraw is what keeps them coming. Only when 3 s pass
-with no frame getting through is the view broken. It then gets one fresh device
-by the same swap; the same errors on that device are the scene's own, and the
-view stops with the stopped card. The app's own failures (a resident splat sort
+having got through once its own GPU work has completed and 250 ms more pass
+with no further error: a device reports a frame's errors ahead of that
+completion, and only when it is ticked (an idle device delivers none; a submit
+delivers them in 0–1 ms, measured 26 October), so a busy GPU returning errors
+late cannot make a broken frame look healthy. Only when 3 s pass with no frame
+getting through is the view broken; the grace waits while the page is hidden,
+because a hidden page draws nothing. It then gets one fresh device by the same
+swap. The same error again on that device within a minute is the scene's own,
+and the view stops with the stopped card; any other error gets the usual
+recovery, whose three-losses-a-minute limit ends a loop. The app's own failures (a resident splat sort
 that died, a GPU readiness callback that threw) still reach `onError` as a
 message string and stop the view at once.
 

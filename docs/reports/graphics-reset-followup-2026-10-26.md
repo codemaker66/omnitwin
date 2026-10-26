@@ -23,7 +23,8 @@ profiles are in `D:/claude/l3c-graphics-reset/followup/`.
   arrival steps aside when the view cannot draw.
 - **F-03, the cover.** The cover is the stage the person was looking at: the
   dark stage (#120e0b) over a captured room, otherwise the scene's own ground.
-  After a swap it now stays until the new device draws the capture again.
+  After a swap it now stays until the new device draws the capture again, or
+  until the capture can no longer come.
 
 ## Measured
 
@@ -68,14 +69,42 @@ assumes. The device-day drill (`?graphicsReset=<s>:error`) submits after its
 invalid buffer. The harness makes its errors inside `render()`, because
 `setInterval` errors on an idle planner were not delivered and looked healthy.
 
+## Independent review (TypeScript reviewer, Opus at xhigh)
+
+It found no HIGH issues; four MEDIUM and three LOW, all now fixed with a test
+for each:
+
+- **A hidden page could break a healthy view.** No frames draw while the page
+  is hidden, but the grace ran on the clock. The grace now waits while the
+  page is hidden.
+- **A healthy frame was timed from the CPU submit.** A busy GPU returning a
+  frame's error late could have made a broken frame look healthy. A frame now
+  counts once its own GPU work has completed (a ticket asked for only while
+  errors are being judged).
+- **A replacement stayed marked for life, whatever the error.** The stopped
+  card now needs the same error on the replacement within a minute; anything
+  else gets the usual recovery.
+- **The arrival could open over the stopped card.** A first save made a new
+  arrival key. PlannerScene now holds `canvasUnavailable` (set by
+  `onUnavailable`, cleared when a renderer starts) and keeps the arrival off
+  while it is set.
+- **A second loss during the capture wait** lost the capture and the dark
+  stage. Both are kept now.
+- **A capture whose rebuild failed** held the cover for 15 s. The wait ends
+  once the capture can no longer come (`capturePending`).
+- **The capture timer** is now cleared on unmount.
+
 ## Tests
 
-The watch (8), NativeCanvas (44, including the persistent-error swap and stop,
-app failures, the cover tones, the capture wait and its bound, Continue in 2D,
-no promise without a layout, `onUnavailable`), PlannerCanvasBoundary (4),
-EditorPage (Continue in 2D: same pathname, the same objects array), the drill
-(`:error` with its submit) and `NativeSplatScene.showsSplats`. The affected
-suites: 64 files, 1,145 passed.
+- The watch (13): hidden page, late errors, aborted work.
+- NativeCanvas (46): persistent-error swap and stop, a different error's recovery, app failures, the cover tones, the capture wait, its bound and a second loss during it, Continue in 2D, no promise without a layout, `onUnavailable`.
+- PlannerCanvasBoundary (4).
+- PlannerScene: the arrival kept off while the view cannot draw, under a new key too.
+- EditorPage: Continue in 2D at the same pathname, with the same objects array.
+- The drill: `:error` with its submit.
+- `NativeSplatScene.capturePending`: rebuilt, failed, nothing selected.
+
+The affected suites: 64 files, 1,154 passed; typecheck (src and e2e) and lint clean, run through `heavy-hold.sh`.
 
 ## Limits
 

@@ -31,7 +31,7 @@ const profiling = vi.hoisted(() => ({
   release: vi.fn(), register: vi.fn(),
   sceneStats: vi.fn((): NativeScenePerfStats | null => ({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 })),
   sampleDrawn: vi.fn(), drawn: vi.fn(() => Promise.resolve(45)),
-  showsSplats: vi.fn((_scene: object, _renderer: object) => true),
+  capturePending: vi.fn((_scene: object, _renderer: object) => false),
 }));
 vi.mock("../../../lib/perf-runtime.js", () => ({
   shouldProfileFrames: profiling.enabled, beginGpuProfile: profiling.begin,
@@ -39,7 +39,7 @@ vi.mock("../../../lib/perf-runtime.js", () => ({
   registerProfilerRenderer: profiling.register, sampleDrawnSplats: profiling.sampleDrawn,
 }));
 vi.mock("../../../lib/native-splat-scene.js", () => ({
-  nativeScenePerfStats: profiling.sceneStats, nativeSceneDrawnSplats: profiling.drawn, nativeSceneShowsSplats: profiling.showsSplats,
+  nativeScenePerfStats: profiling.sceneStats, nativeSceneDrawnSplats: profiling.drawn, nativeSceneCapturePending: profiling.capturePending,
 }));
 
 const gpuCompletion = vi.hoisted(() => {
@@ -212,7 +212,7 @@ beforeEach(() => {
   profiling.record.mockReset();
   profiling.release.mockReset();
   profiling.register.mockReset().mockReturnValue(profiling.release);
-  profiling.showsSplats.mockReset().mockReturnValue(true);
+  profiling.capturePending.mockReset().mockReturnValue(false);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -922,7 +922,7 @@ describe("NativeCanvas", () => {
         render(<NativeCanvas frameloop="demand"><span>Room geometry</span></NativeCanvas>);
         const lost = await start(0);
         // The capture was drawn when the device went (the profiling stats report its splats).
-        profiling.showsSplats.mockReturnValue(false);
+        profiling.capturePending.mockReturnValue(true);
         act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
         await flush();
         const fresh = await start(1);
@@ -931,13 +931,13 @@ describe("NativeCanvas", () => {
         expect(fresh.rawRender).toHaveBeenCalledOnce();
         // The room has drawn, but its capture is still being rebuilt for the new device.
         expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
-        expect(profiling.showsSplats).toHaveBeenLastCalledWith(expect.any(Scene), fresh);
-        profiling.showsSplats.mockReturnValue(true);
+        expect(profiling.capturePending).toHaveBeenLastCalledWith(expect.any(Scene), fresh);
+        profiling.capturePending.mockReturnValue(false);
         automaticFrame();
         expect(screen.queryByRole("status")).toBeNull();
 
         // A capture that cannot come back must not keep the room covered.
-        profiling.showsSplats.mockReturnValue(false);
+        profiling.capturePending.mockReturnValue(true);
         act(() => { fresh.onDeviceLost({ api: "WebGPU", message: "Device lost again" }); });
         await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
         await flush();
@@ -951,6 +951,68 @@ describe("NativeCanvas", () => {
         automaticFrame();
         expect(screen.queryByRole("status")).toBeNull();
       } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the capture and the dark stage for a view lost again while its cover waits for the capture", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        render(<NativeCanvas frameloop="demand"><span>Room geometry</span></NativeCanvas>);
+        const lost = await start(0);
+        const state = fiber.state;
+        if (state === null) throw new Error("No R3F root state");
+        // The eye-level walk: a light clear colour behind the capture that fills the view.
+        state.scene.background = new Color("#eee9de");
+        profiling.capturePending.mockReturnValue(true);
+        act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+        await flush();
+        const fresh = await start(1);
+        await flush();
+        automaticFrame();
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        // The replacement's splat host has let the lost snapshot go: the scene shows no capture now.
+        profiling.sceneStats.mockReturnValue(null);
+        act(() => { fresh.onDeviceLost({ api: "WebGPU", message: "Device lost again" }); });
+        const cover = screen.getByRole("status").closest<HTMLElement>("[data-graphics-cover]");
+        expect(cover?.dataset["graphicsCover"]).toBe("dark");
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+        await flush();
+        await start(2);
+        await flush();
+        automaticFrame();
+        // Still the captured room it has to bring back.
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        profiling.capturePending.mockReturnValue(false);
+        automaticFrame();
+        expect(screen.queryByRole("status")).toBeNull();
+      } finally {
+        profiling.sceneStats.mockReturnValue({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 });
+        vi.useRealTimers();
+      }
+    });
+
+    it("gives a fresh device that breaks on a different error the usual recovery, not the stopped card", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+        const failing = await start(0);
+        automaticFrame();
+        act(() => { failing.onError({ message: "Invalid bind group" }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_GPU_ERROR_GRACE_MS); });
+        await flush();
+        const fresh = await start(1);
+        await flush();
+        automaticFrame();
+        act(() => { fresh.onError({ message: "Out of memory" }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_GPU_ERROR_GRACE_MS); });
+        await flush();
+        expect(screen.queryByRole("alert")).toBeNull();
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        expect(native.instances).toHaveLength(3);
+      } finally {
+        warn.mockRestore();
         vi.useRealTimers();
       }
     });

@@ -134,12 +134,17 @@ export class NativeSplatScene {
   }
 
   /**
-   * Whether this renderer draws the capture now. After a graphics reset the
-   * replacement's own snapshot must be built first; a snapshot of the lost
-   * device never counts (teardown cleared it, and stale builds are rejected).
+   * Whether this renderer's capture is still to come: after a graphics reset
+   * the replacement's own snapshot must be built before the room is back (a
+   * snapshot of the lost device never counts: teardown cleared it, and stale
+   * builds are rejected). Not pending once it draws, once its build failed
+   * (the planner falls back to its drawn room), or while nothing is selected.
    */
-  showsSplats(renderer: object): boolean {
-    return this.renderer === renderer && (this.perfStats(0)?.splats ?? 0) > 0;
+  capturePending(renderer: object): boolean {
+    if (this.renderer !== renderer) return this.sources.size > 0;
+    if ((this.perfStats(0)?.splats ?? 0) > 0) return false;
+    const selected = this.selectedSources();
+    return selected.length > 0 && !this.failedKeys.has(this.key(selected));
   }
 
   /** Splats the active draw keeps after GPU culling. WebGPU reads the sort's
@@ -658,9 +663,9 @@ export function nativeScenePerfStats(scene: Scene, now: number): NativeScenePerf
   return runtimes.get(scene)?.perfStats(now) ?? null;
 }
 
-/** Whether `renderer` draws the scene's capture now (a recovered view's cover waits for it). */
-export function nativeSceneShowsSplats(scene: Scene, renderer: object): boolean {
-  return runtimes.get(scene)?.showsSplats(renderer) ?? false;
+/** Whether the scene's capture is still to come on `renderer` (a recovered view's cover waits for it). */
+export function nativeSceneCapturePending(scene: Scene, renderer: object): boolean {
+  return runtimes.get(scene)?.capturePending(renderer) ?? false;
 }
 
 /** Profiler only: splats the active draw keeps after GPU culling. */

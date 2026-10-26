@@ -17,7 +17,7 @@ import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-
 import { noteMainDraw } from "../../lib/main-draw-clock.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
-import { nativeSceneDrawnSplats, nativeScenePerfStats, nativeSceneShowsSplats } from "../../lib/native-splat-scene.js";
+import { nativeSceneCapturePending, nativeSceneDrawnSplats, nativeScenePerfStats } from "../../lib/native-splat-scene.js";
 import {
   beginGpuProfile, endGpuProfile, recordRenderedFrame, registerProfilerRenderer,
   sampleDrawnSplats, shouldProfileFrames, type GpuProfileToken,
@@ -26,7 +26,7 @@ import {
   createNativeRendererLifecycle, nativeRendererError, type NativeRendererLifecycle,
 } from "../../lib/native-renderer-lifecycle.js";
 import {
-  createNativeRendererRecovery, type NativeLossApi, type NativeRecoveryPhase,
+  NATIVE_RECOVERY_LOSS_WINDOW_MS, createNativeRendererRecovery, type NativeLossApi, type NativeRecoveryPhase,
   type NativeRendererRecovery, type NativeRestoreMode,
 } from "../../lib/native-renderer-recovery.js";
 import { readGraphicsResetDrill, startGraphicsResetDrill } from "../../lib/graphics-reset-drill.js";
@@ -208,8 +208,8 @@ interface LostRenderer {
   readonly settings: NativeRendererSettings;
   readonly pixelRatio: number;
   readonly backend: "webgpu" | "webgl2";
-  /** Given up for GPU errors that never stopped, its device still alive. */
-  readonly forErrors: boolean;
+  /** The GPU error it was given up for (its device still alive), or null for a real loss. */
+  readonly errorMessage: string | null;
   /** A captured room was drawn when it went: the restored view must draw it again. */
   readonly captureShown: boolean;
 }
@@ -262,8 +262,13 @@ export function NativeCanvas({
   // on, not a flash of another colour over the dark hall.
   const [stage, setStage] = useState<StageTone | null>(null);
   const gpuErrors = useRef<NativeGpuErrorWatch | null>(null);
-  /** Replacements for a renderer whose GPU errors never stopped: the same on a fresh device are the scene's own. */
-  const errorReplacements = useRef(new WeakSet<WebGPURenderer>());
+  /**
+   * Replacements for a renderer whose GPU errors never stopped, with that
+   * error and how long it counts: the same errors soon after, on a fresh
+   * device, are the scene's own. Anything else gets the usual recovery, whose
+   * three-losses-a-minute limit already ends a loop.
+   */
+  const errorReplacements = useRef(new WeakMap<WebGPURenderer, { readonly message: string; readonly until: number }>());
   const mounted = useRef(true);
   const renderer = useRef<WebGPURenderer | null>(null);
   const failedRenderer = useRef<WebGPURenderer | null>(null);
@@ -299,6 +304,8 @@ export function NativeCanvas({
   const fail = useCallback((cause: Error): void => {
     framePacer.current?.pacer.dispose();
     framePacer.current = null;
+    // A view still waiting for its capture shows the stage from the loss; the scene no longer does.
+    const awaitingCapture = captureReturn.current !== null && captureReturn.current.native === renderer.current;
     if (firstFramePending.current) coverUntilFirstFrame(false);
     // Stop further frames synchronously, before React removes the failed Canvas.
     if (renderer.current !== null && failedRenderer.current === renderer.current) return;
@@ -324,7 +331,7 @@ export function NativeCanvas({
       lost.current = null;
       recovery.current?.reset();
     }
-    if (running.current && root.current !== null) setStage(stageToneOf(root.current.scene));
+    if (running.current && root.current !== null && !awaitingCapture) setStage(stageToneOf(root.current.scene));
     setStoppedWhileRunning(running.current);
     running.current = false;
     setError(cause);
@@ -348,7 +355,9 @@ export function NativeCanvas({
     lifecycle.current?.cancel();
   }, [coverUntilFirstFrame]);
 
-  const lose = useCallback((native: WebGPURenderer, api: NativeLossApi, message: string, forErrors = false): void => {
+  const lose = useCallback((
+    native: WebGPURenderer, api: NativeLossApi, message: string, errorMessage: string | null = null,
+  ): void => {
     if (!mounted.current || renderer.current !== native || failedRenderer.current === native) return;
     const settings = baseSettings.current.get(native);
     if (!running.current || settings === undefined || root.current === null) {
@@ -361,12 +370,16 @@ export function NativeCanvas({
     framePacer.current = null;
     failedRenderer.current = native;
     running.current = false;
+    // Lost again while the cover still waits for the capture: the replacement's
+    // splat host has already let the old snapshot go, so the scene no longer
+    // shows what the person last saw. Keep the capture and the stage from the first loss.
+    const awaitingCapture = captureReturn.current?.native === native;
     if (firstFramePending.current) coverUntilFirstFrame(false);
-    setStage(stageToneOf(root.current.scene));
+    if (!awaitingCapture) setStage(stageToneOf(root.current.scene));
     const backend = isNativeWebGLBackend(native.backend) ? "webgl2" : "webgpu";
     lost.current = {
-      native, settings, pixelRatio: native.getPixelRatio(), backend, forErrors,
-      captureShown: sceneShowsCapture(root.current.scene),
+      native, settings, pixelRatio: native.getPixelRatio(), backend, errorMessage,
+      captureShown: awaitingCapture || sceneShowsCapture(root.current.scene),
     };
     if (backend === "webgl2") {
       // Now, while its GL calls are silent no-ops (see releaseLostWebGLRenderer);
@@ -384,9 +397,11 @@ export function NativeCanvas({
     const native = renderer.current;
     if (!mounted.current || native === null || failedRenderer.current === native) return;
     // A fresh device clears whatever the old one held (fragmented memory, a
-    // resource left invalid). The same errors on a fresh device, or on a view
-    // not yet drawing, are the scene's own: stop rather than loop.
-    if (running.current && !errorReplacements.current.has(native)) lose(native, "WebGPU", message, true);
+    // resource left invalid). The same errors soon after on a fresh device, or
+    // on a view not yet drawing, are the scene's own: stop rather than loop.
+    const replaced = errorReplacements.current.get(native);
+    const repeated = replaced !== undefined && replaced.message === message && performance.now() < replaced.until;
+    if (running.current && !repeated) lose(native, "WebGPU", message, message);
     else fail(nativeRendererError(message));
   }, [fail, lose]);
 
@@ -679,7 +694,9 @@ export function NativeCanvas({
     if (!mounted.current || lost.current !== retired) throw new Error("The view closed while it was restoring");
     const next = buildRenderer(retired.native.domElement, retired.backend);
     baseSettings.current.set(next, retired.settings);
-    if (retired.forErrors) errorReplacements.current.add(next);
+    if (retired.errorMessage !== null) {
+      errorReplacements.current.set(next, { message: retired.errorMessage, until: performance.now() + NATIVE_RECOVERY_LOSS_WINDOW_MS });
+    }
     await new Promise<void>((resolve, reject) => {
       const failed = (cause: Error): void => {
         // A replacement that could not start is not a stopped view: the recovery decides what follows.
@@ -708,7 +725,8 @@ export function NativeCanvas({
           if (next.domElement instanceof HTMLCanvasElement) next.domElement.dataset["restorations"] = String(restorations.current);
           // The first frame needs no request: the frame loop restarting with the
           // recovery's "running" phase invalidates the root. It lifts the cover,
-          // or the first frame that draws the capture again does.
+          // or, for a captured room, the first frame once its capture is drawn
+          // again or can no longer come (nativeSceneCapturePending).
           coverUntilFirstFrame(true);
           if (retired.captureShown) {
             const timer = setTimeout(() => {
@@ -786,9 +804,10 @@ export function NativeCanvas({
       // The frames a viewer sees, for the frame-rate governor (main-draw-clock.ts).
       if (drawn) {
         noteMainDraw(startedAt);
-        gpuErrors.current?.drawn();
+        // While errors are being judged, this frame counts once its own GPU work has completed.
+        gpuErrors.current?.drawn(() => createNativeGpuWorkTicket(native, new AbortController().signal).completion);
         const awaitedCapture = captureReturn.current?.native === native;
-        if (firstFramePending.current && (!awaitedCapture || nativeSceneShowsSplats(state.scene, native))) {
+        if (firstFramePending.current && (!awaitedCapture || !nativeSceneCapturePending(state.scene, native))) {
           coverUntilFirstFrame(false);
         }
       }
@@ -802,7 +821,12 @@ export function NativeCanvas({
       mounted.current = false;
       // React StrictMode rehearses effect cleanup/setup on the same renderer.
       // A real unmount stays detached; pending init still belongs to its owner.
-      queueMicrotask(() => { if (!mounted.current) lifecycle.current?.cancel(); });
+      queueMicrotask(() => {
+        if (mounted.current) return;
+        lifecycle.current?.cancel();
+        if (captureReturn.current !== null) clearTimeout(captureReturn.current.timer);
+        captureReturn.current = null;
+      });
     };
   }, []);
 
