@@ -506,34 +506,42 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     const stillMounted = (): boolean => live;
     void requestNativePrecompile(renderer, async (signal) => {
       if (!stillMounted()) return;
-      if (environment !== null) {
-        // Installed as the first frame would (the frame loop below): the
-        // scene's materials are built against the texture they keep.
-        if (prepared.current !== environment) {
-          prepared.current = environment;
-          scene.environment = environment.prepare();
-          scene.environmentIntensity = resources.mood.reflections;
+      // The chandeliers compile for both passes: the capture always draws
+      // them, and the view does on a walk, in the overview once the camera
+      // comes down, and in its first frames (their warm frames, below).
+      const fittings = chandelierGroup.current;
+      const fittingsShown = fittings?.visible ?? false;
+      if (fittings !== null) fittings.visible = true;
+      try {
+        if (environment !== null) {
+          // Installed as the first frame would (the frame loop below): the
+          // scene's materials are built against the texture they keep.
+          if (prepared.current !== environment) {
+            prepared.current = environment;
+            scene.environment = environment.prepare();
+            scene.environmentIntensity = resources.mood.reflections;
+          }
+          // The capture draws the room with the panes away (the capture below).
+          const paneMesh = panes.current;
+          const panesShown = paneMesh?.visible ?? false;
+          if (paneMesh !== null) paneMesh.visible = false;
+          try {
+            await environment.compile(roomGroup, signal);
+          } finally {
+            if (paneMesh !== null) paneMesh.visible = panesShown;
+          }
         }
-        // What a capture draws that the view may not: the chandeliers lit and
-        // shown, the panes away (the capture below).
-        const fittings = chandelierGroup.current;
-        const fittingsShown = fittings?.visible ?? false;
-        const paneMesh = panes.current;
-        const panesShown = paneMesh?.visible ?? false;
-        if (fittings !== null) fittings.visible = true;
-        if (paneMesh !== null) paneMesh.visible = false;
-        try {
-          await environment.compile(roomGroup, signal);
-        } finally {
-          if (fittings !== null) fittings.visible = fittingsShown;
-          if (paneMesh !== null) paneMesh.visible = panesShown;
-        }
+        const scenePass = nativeFramePrecompile(renderer);
+        if (stillMounted() && !signal.aborted && scenePass !== null) await scenePass(signal);
+      } finally {
+        if (fittings !== null) fittings.visible = fittingsShown;
       }
-      const scenePass = nativeFramePrecompile(renderer);
-      if (stillMounted() && !signal.aborted && scenePass !== null) await scenePass(signal);
     });
     return () => { live = false; };
-  }, [environment, gl, resources, scene]);
+    // The section's cap arrives with the walls' relief, often after the first
+    // job has run, and the captures after it draw the cap: a second job then
+    // compiles it (all else is built by then, so it holds the frames briefly).
+  }, [environment, gl, resources, scene, sectionCap]);
 
   // Without the reflection map the chandeliers' metal leans on its own light.
   useEffect(() => {
