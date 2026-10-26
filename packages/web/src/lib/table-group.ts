@@ -7,7 +7,7 @@ import type { PlacedItem } from "./placement.js";
 import { normalizeFurnitureScale } from "./furniture-scale.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
-import { isPlannerChair, plannerChairSlug } from "./furniture-defaults.js";
+import { plannerChairFor, plannerChairSlug } from "./furniture-defaults.js";
 
 // ---------------------------------------------------------------------------
 // Table group — geometry-driven seating arrangement
@@ -438,7 +438,8 @@ export function ungroupedKeepingTables(
 /**
  * The chair a new seat at this table gets. A table keeps its own chairs: a new
  * seat is the planner's chair most of its seats already are (the first seen,
- * on a tie), so a seat added to a Turini round at a wedding is a Turini. A
+ * on a tie), so a seat added to a Turini round at a wedding is a Turini, and
+ * so is one added to a round of the venue's pink chairs (plannerChairFor). A
  * table with none of the planner's chairs (no chairs, or only legacy and
  * imported ones, which are kept but never copied) takes the event's
  * (plannerChairSlug).
@@ -448,8 +449,9 @@ export function newSeatChairSlug(table: PlacedItem, placedItems: readonly Placed
   for (const placed of placedItems) {
     if (table.groupId === null || placed.groupId !== table.groupId || placed.id === table.id || !isSceneFurniturePlacement(placed)) continue;
     const catalogue = getCatalogueItem(placed.catalogueItemId);
-    if (catalogue?.category !== "chair" || !isPlannerChair(catalogue.slug)) continue;
-    counts.set(catalogue.slug, (counts.get(catalogue.slug) ?? 0) + 1);
+    const chair = catalogue?.category === "chair" ? plannerChairFor(catalogue.slug) : null;
+    if (chair === null) continue;
+    counts.set(chair, (counts.get(chair) ?? 0) + 1);
   }
   let chosen: string | null = null;
   let most = 0;
