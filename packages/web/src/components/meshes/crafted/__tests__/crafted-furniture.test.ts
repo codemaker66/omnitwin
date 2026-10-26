@@ -106,7 +106,7 @@ describe("crafted furniture", () => {
     for (const slug of supplied) expect(isCraftedFurnitureSlug(slug), slug).toBe(true);
     const catalogue = new Set(CANONICAL_ASSETS.map((asset) => asset.slug));
     for (const slug of CRAFTED_FURNITURE_SLUGS) expect(catalogue.has(slug), slug).toBe(true);
-    expect(isCraftedFurnitureSlug("black-table-cloth")).toBe(false);
+    expect(isCraftedFurnitureSlug("not-a-catalogue-piece")).toBe(false);
     expect(isCraftedFurnitureSlug("burgess-turini-18-3")).toBe(true);
   });
 
@@ -257,7 +257,7 @@ describe("crafted furniture", () => {
   });
 
   it("refuses slugs it does not draw and sizes it cannot", () => {
-    expect(() => createCraftedFurniture({ slug: "black-table-cloth", width: 0.5, depth: 0.5, height: 0.01 })).toThrow(/No crafted model/u);
+    expect(() => createCraftedFurniture({ slug: "not-a-catalogue-piece", width: 0.5, depth: 0.5, height: 0.01 })).toThrow(/No crafted model/u);
     expect(() => createCraftedFurniture({ slug: "trestle-6ft", width: 0, depth: 0.76, height: 0.74 })).toThrow(/positive dimensions/u);
     expect(() => createCraftedFurniture({ slug: "trestle-6ft", width: Number.NaN, depth: 0.76, height: 0.74 })).toThrow(/positive dimensions/u);
   });
@@ -310,6 +310,26 @@ describe("crafted shadows", () => {
       const material = materialsOf(shade)[0];
       expect(material?.transparent).toBe(true);
       expect(material?.depthWrite).toBe(false);
+    } finally {
+      model.dispose();
+    }
+  });
+
+  it("keeps a placement ghost out of the sun's map, and puts the placed piece back in", () => {
+    const model = build("chiavari-chair");
+    try {
+      const caster = meshesOf(model.object).find(isCaster);
+      if (caster === undefined) throw new Error("expected a caster");
+      const before = materialsOf(caster)[0];
+      model.setAppearance(0.5);
+      expect(caster.castShadow).toBe(false);
+      model.setAppearance(1, "#ff0000");
+      expect(caster.castShadow).toBe(false);
+      model.setAppearance(1);
+      expect(caster.castShadow).toBe(true);
+      // The caster's material is never faded or tinted, so a ghost compiles nothing new for it.
+      expect(materialsOf(caster)[0]).toBe(before);
+      expect(before?.transparent).toBe(false);
     } finally {
       model.dispose();
     }

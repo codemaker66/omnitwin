@@ -49,9 +49,6 @@ export const CRAFTED_FURNITURE_SLUGS = [
   "highchair-green",
   "highchair-blue",
   "highchair-wooden",
-  "dinner-place-setting",
-  "white-table-cloth",
-  "black-table-cloth",
   "room-divider",
 ] as const;
 

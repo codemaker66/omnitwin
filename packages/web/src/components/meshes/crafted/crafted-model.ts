@@ -65,6 +65,7 @@ export function instantiateCraftedModel(
   const object = new Group();
   object.name = name;
   const owned: OwnedMaterial[] = [];
+  const casters: Mesh[] = [];
   // A piece with a shadow caster casts the sun's shadow with it alone: the
   // parts that are seen only receive (crafted-materials.ts).
   const hasCaster = [...geometries.keys()].some(isShadowCaster);
@@ -77,6 +78,11 @@ export function instantiateCraftedModel(
     mesh.castShadow = caster || (!hasCaster && !shade);
     mesh.receiveShadow = !caster && !shade;
     object.add(mesh);
+    if (caster) {
+      // Never drawn on screen, so never faded or tinted.
+      casters.push(mesh);
+      continue;
+    }
     const colour = colourOf(material);
     owned.push({
       material,
@@ -90,6 +96,11 @@ export function instantiateCraftedModel(
     object,
     setAppearance(opacity, colorOverride) {
       const multiplier = Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : 1;
+      // A ghost (faded or tinted) casts no sun shadow: carried through a drag,
+      // it would bring the caster into the shadow pass mid-gesture, and the
+      // placement ghost must compile nothing then.
+      const ghost = multiplier < 1 || colorOverride !== undefined;
+      for (const mesh of casters) mesh.castShadow = !ghost;
       for (const entry of owned) {
         const colour = colourOf(entry.material);
         if (colour !== null && entry.baseColour !== null) {
@@ -107,6 +118,10 @@ export function instantiateCraftedModel(
     },
     dispose() {
       for (const entry of owned) entry.material.dispose();
+      for (const mesh of casters) {
+        const material = mesh.material;
+        if (!Array.isArray(material)) material.dispose();
+      }
     },
   };
 }

@@ -160,8 +160,9 @@ export function projectorParts(size: AvSize): CraftedPart[] {
   const parts: CraftedPart[] = [
     { material: "plastic-dark", geometry: roundedBox([width, height - 0.012, depth], 0.02, [0, height / 2 + 0.006, 0], { segments: 3 }) },
     // The lens barrel and its glass, to the screen.
-    { material: "steel-black", geometry: turned(post([0, 0], 0, 0.03, 0.034, 0.03, detail.radial + 6), [width * 0.25, height / 2 + 0.006, -depth / 2]) },
-    { material: "screen-glass", geometry: turned(post([0, 0], 0.028, 0.032, 0.026, 0.026, detail.radial + 6), [width * 0.25, height / 2 + 0.006, -depth / 2]) },
+    // Set into the front face, its glass flush with it.
+    { material: "steel-black", geometry: turned(post([0, 0], 0, 0.03, 0.034, 0.03, detail.radial + 6), [width * 0.25, height / 2 + 0.006, -depth / 2 + 0.03]) },
+    { material: "screen-glass", geometry: turned(post([0, 0], 0.028, 0.0305, 0.026, 0.026, detail.radial + 6), [width * 0.25, height / 2 + 0.006, -depth / 2 + 0.03]) },
   ];
   for (const x of [-width * 0.38, width * 0.38]) {
     for (const z of [-depth * 0.35, depth * 0.35]) parts.push({ material: "rubber", geometry: post([x, z], 0, 0.008, 0.012, 0.012, 10) });
@@ -175,12 +176,13 @@ export function projectorParts(size: AvSize): CraftedPart[] {
 /** An open laptop: its base on the table, its screen tilted back, facing −z toward whoever uses it. */
 export function laptopParts(size: AvSize): CraftedPart[] {
   const { width, depth, height } = size;
-  const baseD = depth * 0.92;
   const base = 0.016;
   const lid = 0.006;
-  const lidH = Math.min(height - base, depth * 0.95);
   const tilt = (15 * Math.PI) / 180;
-  const hinge: Vec3 = [0, base, baseD / 2 - 0.006];
+  const lidH = Math.min(height - base, depth * 0.95);
+  // The catalogue's depth holds the open laptop: the lid leans back within it.
+  const baseD = depth - lidH * Math.sin(tilt) - lid;
+  const hinge: Vec3 = [0, base, -depth / 2 + baseD - 0.004];
   const lidCentre: Vec3 = [0, hinge[1] + (lidH / 2) * Math.cos(tilt), hinge[2] + (lidH / 2) * Math.sin(tilt)];
   const screen = roundedBox([width - 0.006, lidH, lid], 0.004, [0, 0, 0], { segments: 1 });
   screen.applyMatrix4(new Matrix4().makeRotationX(tilt));
@@ -190,7 +192,7 @@ export function laptopParts(size: AvSize): CraftedPart[] {
   glass.translate(lidCentre[0], lidCentre[1], lidCentre[2]);
   const parts: CraftedPart[] = [
     { material: "aluminium", geometry: roundedBox([width, base, baseD], 0.006, [0, base / 2, -(depth - baseD) / 2], { segments: 2 }) },
-    { material: "plastic-dark", geometry: roundedBox([width - 0.03, 0.0015, baseD * 0.45], 0.0006, [0, base + 0.0006, 0.01], { segments: 1 }) },
+    { material: "plastic-dark", geometry: roundedBox([width - 0.03, 0.0015, baseD * 0.45], 0.0006, [0, base + 0.0006, -depth / 2 + baseD * 0.6], { segments: 1 }) },
     { material: "aluminium", geometry: screen },
     { material: "screen-glass", geometry: glass },
   ];

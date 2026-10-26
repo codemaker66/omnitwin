@@ -12,7 +12,7 @@ import {
   televisionParts,
 } from "./crafted-av.js";
 import { chiavariParts } from "./crafted-chiavari.js";
-import { foldedClothParts, highchairParts, placeSettingParts } from "./crafted-extras.js";
+import { highchairParts } from "./crafted-extras.js";
 import { danceFloorPanelParts, stagingDeckParts } from "./crafted-staging.js";
 import {
   barePoseurParts,
@@ -101,9 +101,6 @@ const FACTORIES: Readonly<Record<CraftedFurnitureSlug, CraftedFactory>> = {
   "highchair-green": (size) => highchairParts(size, "paint-green"),
   "highchair-blue": (size) => highchairParts(size, "paint-blue"),
   "highchair-wooden": (size) => highchairParts(size, "beech"),
-  "dinner-place-setting": (size) => placeSettingParts(size),
-  "white-table-cloth": (size) => foldedClothParts(size, "damask-ivory"),
-  "black-table-cloth": (size) => foldedClothParts(size, "poly-black"),
   "room-divider": (size) => roomDividerParts(size),
 };
 
