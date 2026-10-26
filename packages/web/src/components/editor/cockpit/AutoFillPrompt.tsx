@@ -3,20 +3,25 @@ import { ActivityStatus } from "../../shared/Activity.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useEditorStore } from "../../../stores/editor-store.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../../../lib/guest-flow-layout-input.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { DEFAULT_PLANNER_CHAIR_SLUG, DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../../lib/furniture-defaults.js";
+import { plannerFeatureEnabled } from "../../../lib/planner-features.js";
 import { banquetSeatsPerTable } from "../../../lib/table-group.js";
 import { guestsAbovePublished, type PublishedCapacityAnswer } from "../../../lib/planner-truth.js";
 import {
+  FILL_AISLE_RULE,
   autoFillActionLabel,
   autoFillBasis,
   autoFillStyleOption,
   planAutoFill,
+  planRoomFill,
   publishedFigureFor,
   publishedFigureLine,
   roomAtSpacingLine,
+  roomExits,
   type AutoFillPlan,
   type AutoFillStyle,
 } from "../../../lib/auto-fill.js";
@@ -71,12 +76,22 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
   }, []);
 
   const guests = parseGuestDraft(draft);
-  const plan = useMemo(
-    () => (guests === null
-      ? null
-      : planAutoFill(style, guests, dimensions.width / RENDER_SCALE, dimensions.length / RENDER_SCALE)),
-    [guests, style, dimensions],
-  );
+  // Fill over the layout behind fillKeepOuts: the same plan the store will lay, over what is placed now, to the room's own doors.
+  const fillsOver = style === "dinner-rounds" && plannerFeatureEnabled("fillKeepOuts");
+  const placedItems = usePlacementStore((state) => (fillsOver ? state.placedItems : null));
+  const roomSlug = useEditorStore((state) => state.space?.slug ?? null);
+  const exits = useMemo(() => roomExits(roomSlug), [roomSlug]);
+  const plan = useMemo(() => {
+    if (guests === null) return null;
+    const widthM = dimensions.width / RENDER_SCALE;
+    const lengthM = dimensions.length / RENDER_SCALE;
+    const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
+    if (fillsOver && placedItems !== null && table !== undefined) {
+      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE }, placedItems);
+      return fill?.plan ?? null;
+    }
+    return planAutoFill(style, guests, widthM, lengthM);
+  }, [guests, style, dimensions, fillsOver, placedItems, exits]);
   const figure = publishedFigureFor(published, option.format);
   const short = plan === null ? null : roomAtSpacingLine(plan, figure);
   // Only when the room takes them: above the published figure is its own fact.
@@ -92,7 +107,7 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
     let placed: AutoFillPlan | null = null;
     if (style === "dinner-rounds") {
       const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
-      if (table !== undefined) placed = placement.autoArrangeBanquet(table.id, guests, banquetSeatsPerTable(table));
+      if (table !== undefined) placed = placement.autoArrangeBanquet(table.id, guests, banquetSeatsPerTable(table), exits);
     } else {
       const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
       if (chair !== undefined) placed = placement.autoArrangeTheatre(chair.id, guests);
