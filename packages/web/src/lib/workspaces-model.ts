@@ -38,7 +38,7 @@ export interface WorkspaceEntry {
  */
 export const WORKSPACES: readonly WorkspaceEntry[] = [
   { id: "design", name: "Design", line: "Snap, guides and overlays", digit: 1 },
-  { id: "guests", name: "Guests", line: "Guests, seats and the room's limits", digit: 2 },
+  { id: "guests", name: "Guests", line: "Guests, seats and capacity", digit: 2 },
   { id: "flow", name: "Flow", line: "Arrivals, exits and the evidence", digit: 3 },
   { id: "production", name: "Production", line: "Lighting, power, rigging and AV", digit: 4 },
   { id: "costs", name: "Costs", line: "Costs at the rates you enter", digit: 5 },
