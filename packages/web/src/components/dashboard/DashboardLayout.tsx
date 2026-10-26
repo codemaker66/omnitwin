@@ -21,7 +21,7 @@ import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
   ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
-  PRICING_READ_ROLES, REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
+  PRICING_READ_ROLES, REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, TEAM_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
 import "./DashboardLayout.css";
 
@@ -29,7 +29,7 @@ import "./DashboardLayout.css";
 // DashboardLayout — shared venue navigation and a single workspace landmark
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "pricing" | "search" | "loadouts" | "settings" | "inventory" | "rota" | "onboarding" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "pricing" | "search" | "loadouts" | "settings" | "team" | "inventory" | "rota" | "onboarding" | "admin";
 
 interface DashboardLayoutProps {
   /** Present only on /dashboard, which owns the view switch itself. Every
@@ -45,7 +45,8 @@ interface DashboardLayoutProps {
   readonly mainLabel?: string;
   /** A view that paints its own full-bleed workspace asks for it here: a
    *  desk (Enquiries, Pending reviews, Clients) on the sage ground, or the
-   *  Rota; everything else keeps the padded forest ground. */
+   *  Rota and the Team, which draw their own sheet on it; everything else
+   *  keeps the padded forest ground. */
   readonly surface?: "desk" | "rota";
   /** What the page adds to Find while it shows (the Diary's board). It must
    *  keep its identity across the page's renders. */
@@ -62,7 +63,7 @@ interface DashboardLayoutProps {
 // that answers 403.
 type NavCapability =
   | "workspace" | "commercial" | "crmPipeline" | "analytics" | "clientSearch"
-  | "reviewQueue" | "venueAdmin" | "rota" | "pricing" | "platformAdmin";
+  | "reviewQueue" | "venueAdmin" | "rota" | "pricing" | "team" | "platformAdmin";
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavCapability }[] = [
   { view: "enquiries", label: "Enquiries", capability: "workspace" },
@@ -84,6 +85,10 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   { view: "search", label: "Clients", capability: "clientSearch" },
   { view: "loadouts", label: "Reference loadouts", capability: "workspace" },
   { view: "settings", label: "Venue settings", capability: "workspace" },
+  // The Team is TeamView, reading api/venue-team.js — routes/venue-team.ts
+  // gates on canManageVenueTeam: the venue's administrators, and platform
+  // admins as at every venue gate.
+  { view: "team", label: "Team", capability: "team" },
   { view: "inventory", label: "Inventory", capability: "venueAdmin" },
   // The Rota is RotaView, reading api/rota.js — routes/rota.ts answers the
   // venue's whole team: the week for the floor, their own shifts for sales.
@@ -141,6 +146,7 @@ export function canShowNavItem(
   if (item.capability === "reviewQueue") return hasRole(REVIEW_QUEUE_ROLES, role);
   if (item.capability === "rota") return hasRole(ROTA_TAB_ROLES, role);
   if (item.capability === "pricing") return hasRole(PRICING_READ_ROLES, role);
+  if (item.capability === "team") return hasRole(TEAM_TAB_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 

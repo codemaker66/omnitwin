@@ -2,7 +2,10 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
-import { resetEditingMemoryForTesting, selectionKeyBindings, usePlannerToolKeys } from "../planner-keymap.js";
+import { PASTE_OTHER_VENUE, resetEditingMemoryForTesting, selectionKeyBindings, usePlannerToolKeys } from "../planner-keymap.js";
+import { cardNeeds, registerStoreStock } from "../card-stock.js";
+import type { Space } from "../../api/spaces.js";
+import { useEditorStore } from "../../stores/editor-store.js";
 import { registerKeyBindings } from "../planner-keys.js";
 import { resetPlacedIdCounter, type PlacedItem } from "../placement.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
@@ -182,6 +185,88 @@ describe("Ctrl C and Ctrl V", () => {
       window.getSelection()?.removeAllRanges();
       text.remove();
     }
+  });
+});
+
+describe("the store's stock (B2 hard; QoL B-X1)", () => {
+  let unregister: () => void = () => undefined;
+  afterEach(() => { unregister(); });
+
+  /** Stock where every piece a Round of 10 needs has exactly what one round takes. */
+  function stockForOneRound(): Map<string, number> {
+    const params = cardParamsFor("round");
+    if (params === null) throw new Error("no round");
+    return new Map(cardNeeds(params));
+  }
+
+  it("changes nothing on Ctrl D once the store holds no more, and says why", () => {
+    unregister = registerStoreStock(stockForOneRound);
+    usePlacementStore.getState().placeSetup(round(-6, 0));
+    const before = placed();
+    useSelectionStore.getState().select(tables()[0]?.id ?? "");
+    ctrl("KeyD");
+    expect(placed()).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/: 1 in store, this needs 2$/u);
+  });
+
+  it("changes nothing on + once the store's chairs are all at tables, and says why", () => {
+    unregister = registerStoreStock(stockForOneRound);
+    usePlacementStore.getState().placeSetup(round(-6, 0));
+    const before = placed();
+    useSelectionStore.getState().select(tables()[0]?.id ?? "");
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Equal", key: "+", shiftKey: true, bubbles: true, cancelable: true }));
+    expect(placed()).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/: 10 in store, this needs 11$/u);
+  });
+});
+
+describe("the clipboard remembers where it was copied (QoL B-X10)", () => {
+  function room(id: string, name: string, venueId: string): Space {
+    return { id, venueId, name, slug: id, widthM: "21", lengthM: "10.5", heightM: "7",
+      floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }] };
+  }
+
+  it("says where a paste in another room came from", () => {
+    useEditorStore.setState({ configId: "layout-hall", space: room("space-hall", "Grand Hall", "venue-1") });
+    usePlacementStore.getState().placeSetup(round(-6, 0));
+    useSelectionStore.getState().select(tables()[0]?.id ?? "");
+    ctrl("KeyC");
+    useEditorStore.setState({ configId: "layout-saloon", space: room("space-saloon", "Saloon", "venue-1") });
+    pointer = { x: 4, z: 0 };
+    ctrl("KeyV");
+    expect(tables()).toHaveLength(2);
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe("Pasted 1 table from the Grand Hall");
+  });
+
+  it("refuses a paste into another venue's layout, and takes the key", () => {
+    useEditorStore.setState({ configId: "layout-hall", space: room("space-hall", "Grand Hall", "venue-1") });
+    usePlacementStore.getState().placeSetup(round(-6, 0));
+    useSelectionStore.getState().select(tables()[0]?.id ?? "");
+    ctrl("KeyC");
+    useEditorStore.setState({ configId: "layout-elsewhere", space: room("space-other", "Ballroom", "venue-2") });
+    pointer = { x: 4, z: 0 };
+    expect(ctrl("KeyV").defaultPrevented).toBe(true);
+    expect(tables()).toHaveLength(1);
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(PASTE_OTHER_VENUE);
+  });
+
+  it("keeps Ctrl D's last way for its own layout: another layout starts afresh", () => {
+    useEditorStore.setState({ configId: "layout-one", space: room("space-hall", "Grand Hall", "venue-1") });
+    // Hard by the end wall, the first copy can only go the other way.
+    const halfWidth = GRAND_HALL_RENDER_DIMENSIONS.width / 2;
+    usePlacementStore.getState().placeSetup(round(halfWidth - 1.7, 0));
+    useSelectionStore.getState().select(tables()[0]?.id ?? "");
+    ctrl("KeyD");
+    const [first, copy] = tables();
+    expect((copy?.x ?? 0) < (first?.x ?? 0)).toBe(true);
+    // A new layout: the copy goes the first way again (along the room, onwards), not the last.
+    useEditorStore.setState({ configId: "layout-two" });
+    usePlacementStore.setState({ placedItems: [] });
+    usePlacementStore.getState().placeSetup(round(0, 0));
+    useSelectionStore.getState().select(tables()[0]?.id ?? "");
+    ctrl("KeyD");
+    const [origin, onward] = tables();
+    expect((onward?.x ?? 0) > (origin?.x ?? 0)).toBe(true);
   });
 });
 

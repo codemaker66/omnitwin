@@ -15,6 +15,8 @@
 // checks it alongside these sets rather than finding it inside them.
 // ---------------------------------------------------------------------------
 
+import { VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+
 /** Mirrors `canManageVenue` — the base "works this venue's floor" capability. */
 export const VENUE_FLOOR_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
 
@@ -125,6 +127,16 @@ export const WORKSPACE_ROLES = ["admin", "manager", "staff", "sales", "hallkeepe
  * exactly that set: admin, manager, staff and sales.
  */
 export const CRM_PIPELINE_ROLES = COMMERCIAL_ROLES;
+
+/**
+ * The Team tab: who has access at the venue, inviting people and cancelling
+ * an invitation. Mirrors `canManageVenueTeam` (`utils/query.ts`), which reads
+ * the same list from @omnitwin/types (Blake, 24 October 2026: the venue's
+ * administrators invite, any role; managers and staff do not). A platform
+ * admin passes that gate as it passes every venue gate, so each consumer
+ * checks `platformRole` beside this set.
+ */
+export const TEAM_TAB_ROLES: readonly string[] = VENUE_TEAM_INVITER_ROLES;
 
 /** A caterer is event-scoped: it reaches an event through a share, never a venue surface. */
 export const EVENT_SCOPED_ROLES = ["caterer"] as const;

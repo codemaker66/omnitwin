@@ -68,6 +68,27 @@ describe("the truthful ghost's set", () => {
     expect(words().textContent).toBe("Round of 10 · +10 seats ✓ fits");
   });
 
+  it("judges a set card even without the truthful ghost: the card dock's own (QoL B-01)", () => {
+    setPlannerFeaturesForTesting(null);
+    usePlacementStore.setState({ placedItems: stampSetup(round(), { x: 0, z: 0 }, 0) });
+    render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
+    ghostAt(CHAIR_REACH);
+    expect(words().dataset.state).toBe("refused");
+  });
+
+  it("without the truthful ghost, shows a piece card's piece where it will be set down and claims nothing", () => {
+    setPlannerFeaturesForTesting({ setupCards: true });
+    const poseur = cardParamsFor("piece:poseur-table");
+    if (poseur === null) throw new Error("no poseur card");
+    usePlacementStore.setState({ placedItems: stampSetup(poseur, { x: 0, z: 0 }, 0) });
+    render(<GhostSet params={poseur} warming={false} fromCardDrag={false} />);
+    ghostAt(0);
+    expect(words().dataset.state).toBe("fits");
+    expect(words().textContent).not.toMatch(/fits|won't/u);
+    expect(useGhostVerdictStore.getState().verdict).toBeNull();
+    expect(canvas.element?.style.cursor).toBe("");
+  });
+
   it("says how far it moved a set it pushes clear", () => {
     usePlacementStore.setState({ placedItems: stampSetup(round(), { x: 0, z: 0 }, 0) });
     render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);

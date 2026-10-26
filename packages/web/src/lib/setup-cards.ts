@@ -235,6 +235,31 @@ export function cardIsWholeSet(params: CardParams): boolean {
   return params.card !== "piece" || seatsInHand(params) > 0;
 }
 
+/**
+ * Whether the card in hand is set down as a card, its whole stamp in one
+ * step with no chair dialog: a set card (Round, Top table, Long table, Dance
+ * floor) always, from v2's rail as from v1's list (Q-07, Q-13); a piece card
+ * once the card dock is on (setupCards), a dining table's only once its
+ * seats ride on the card (seatsOnTheCard), else the old way, through the
+ * chair dialog. The ghost, the snaps and the commit all ask this.
+ */
+export function placesAsCard(params: CardParams): boolean {
+  if (params.card !== "piece") return true;
+  if (!plannerFeatureEnabled("setupCards")) return false;
+  // A dining table from v1's list keeps its chair dialog until its seats ride on the card (Q-07, Q-12).
+  return params.seats === null || plannerFeatureEnabled("seatsOnTheCard");
+}
+
+/**
+ * Whether the card in hand is judged with every body, before the drop and
+ * at the commit (the truthful ghost, Q-05): a set card always, as the card
+ * dock's own, from v2's rail as from v1's list; a piece card behind
+ * truthfulGhost.
+ */
+export function judgesCard(params: CardParams): boolean {
+  return params.card !== "piece" || plannerFeatureEnabled("truthfulGhost");
+}
+
 /** Card copy: metres to one place, "4.6"; whole figures plainly, "2". */
 function cardMetres(metres: number): string {
   const tenths = Math.round(metres * 10) / 10;

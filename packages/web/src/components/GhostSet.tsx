@@ -13,9 +13,9 @@ import {
   type GhostVerdict,
   type GhostWorld,
 } from "../lib/ghost-truth.js";
-import { judgeCardAt } from "../lib/place-in-hand.js";
+import { judgeCardAt, settledStamp } from "../lib/place-in-hand.js";
 import type { PlacedItem } from "../lib/placement.js";
-import { describeCard, seatsInHand, stampSetup, type CardParams } from "../lib/setup-cards.js";
+import { describeCard, judgesCard, seatsInHand, stampSetup, type CardParams } from "../lib/setup-cards.js";
 import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
@@ -25,8 +25,9 @@ import { MarkLabel } from "./planner-chrome/Surfaces.js";
 import "./ghost-set.css";
 
 // ---------------------------------------------------------------------------
-// GhostSet — the truthful ghost (card-dock spec §7.2–7.5, Q-05; behind
-// truthfulGhost and setupCards): the whole set a card will set down, worked
+// GhostSet — the truthful ghost (card-dock spec §7.2–7.5, Q-05): the whole
+// set a card will set down (setup-cards placesAsCard), judged behind
+// judgesCard (a set card always; else the set as set down, claiming nothing), worked
 // out by the same function as the commit (lib/place-in-hand judgeCardAt), so
 // what it shows is what is set down: turned as the piece in hand is turned,
 // each piece at the height of the surface under it, judged with every body
@@ -251,10 +252,15 @@ export function GhostSet({ params, warming, fromCardDrag }: GhostSetProps): Reac
     const key = `${String(pose[0])}|${String(pose[2])}|${String(placement.ghostRotation)}`;
     if (current === null || key === judged.current.key) return;
     const origin = { x: pose[0], z: pose[2], y: pose[1] };
-    const { verdict, pieces: standing } = judgeCardAt(params, origin, placement.ghostRotation, current, judged.current.verdict?.state, ghostIds());
+    // Judged as the commit judges it (setup-cards judgesCard); otherwise the set stands where it will be set down, and claims nothing.
+    const judgedCard = judgesCard(params)
+      ? judgeCardAt(params, origin, placement.ghostRotation, current, judged.current.verdict?.state, ghostIds())
+      : null;
+    const verdict = judgedCard?.verdict ?? null;
+    const standing = judgedCard?.pieces ?? settledStamp(params, origin, placement.ghostRotation, placement.placedItems, ghostIds());
     judged.current = { key, verdict };
     useGhostVerdictStore.getState().setVerdict(verdict);
-    const at: SetPose = { x: pose[0] + verdict.dx, y: pose[1], z: pose[2] + verdict.dz, heights: standing.map((piece) => piece.y - pose[1]) };
+    const at: SetPose = { x: pose[0] + (verdict?.dx ?? 0), y: pose[1], z: pose[2] + (verdict?.dz ?? 0), heights: standing.map((piece) => piece.y - pose[1]) };
     const line = hairline.getAttribute("position");
     if (line instanceof BufferAttribute) {
       line.setXYZ(0, pose[0], FLOOR_LINE_Y, pose[2]);
@@ -262,10 +268,10 @@ export function GhostSet({ params, warming, fromCardDrag }: GhostSetProps): Reac
       line.needsUpdate = true;
     }
     const next: GhostView = {
-      state: verdict.state,
+      state: verdict?.state ?? "fits",
       tag: ghostTag(params, verdict),
-      chip: verdict.state === "refused" ? refusalChip(verdict.obstacle) : null,
-      blockingIds: verdict.blockingIds,
+      chip: verdict?.state === "refused" ? refusalChip(verdict.obstacle) : null,
+      blockingIds: verdict?.blockingIds ?? [],
     };
     const shown = view;
     const same = shown.state === next.state && shown.tag === next.tag && shown.chip === next.chip
