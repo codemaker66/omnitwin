@@ -343,6 +343,16 @@ describe("the ghost of a piece put in hand", () => {
     }
   });
 
+  it("keeps what Enter said: words the arrows left waiting are dropped when it sets the piece down", () => {
+    vi.useFakeTimers();
+    mount();
+    act(() => { useCatalogueStore.getState().armCard("round"); });
+    press("ArrowRight");
+    press("Enter");
+    act(() => { vi.advanceTimersByTime(GHOST_WORDS_DELAY_MS); });
+    expect(lastAnnouncement()).toMatch(/^Placed /u);
+  });
+
   it("makes its live region when it mounts, before the first key needs it", () => {
     expect(document.getElementById("planner-announcer")).toBeNull();
     mount();

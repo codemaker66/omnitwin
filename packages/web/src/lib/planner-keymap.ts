@@ -344,6 +344,12 @@ let keyAim: { readonly x: number; readonly z: number; readonly left: readonly [n
 /** The ghost's words, waiting for the arrows to stop. */
 let ghostWordsTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Drops the ghost's words still waiting: a key that sets the piece down or puts it away says its own. */
+function quietGhostWords(): void {
+  if (ghostWordsTimer !== null) clearTimeout(ghostWordsTimer);
+  ghostWordsTimer = null;
+}
+
 /** The open layout, its room and its venue. */
 function hereNow(): CopiedFrom {
   const { configId, space } = useEditorStore.getState();
@@ -366,8 +372,7 @@ export function resetEditingMemoryForTesting(): void {
   clipboard = null;
   walkCursor = null;
   keyAim = null;
-  if (ghostWordsTimer !== null) clearTimeout(ghostWordsTimer);
-  ghostWordsTimer = null;
+  quietGhostWords();
 }
 
 function editingKeys(): boolean {
@@ -534,6 +539,7 @@ export function selectAllOfKind(): boolean {
 
 /** Puts down the piece in hand without placing it. */
 export function putDownPieceInHand(): void {
+  quietGhostWords();
   useCatalogueStore.getState().clearSelection();
   usePlacementStore.getState().clearGhost();
 }
@@ -740,6 +746,7 @@ export function moveGhostBy(direction: FloorDirection, metres: number, floorMidd
  */
 export function placeInHandByKey(deps: Pick<PlacingKeyDeps, "invalidate" | "floorMiddle">): boolean {
   if (!placing()) return false;
+  quietGhostWords();
   if (usePlacementStore.getState().ghostPosition === null) {
     if (!standGhostAtFloorMiddle(deps.floorMiddle)) return false;
     const words = ghostWords();
