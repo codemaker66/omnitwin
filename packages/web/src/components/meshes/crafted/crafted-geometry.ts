@@ -15,9 +15,10 @@ import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferG
 // ---------------------------------------------------------------------------
 // Crafted furniture geometry
 //
-// Every helper returns an indexed geometry with exactly position, normal and
-// uv, so parts that share a material always merge (here, and again in the
-// instancing harvest). UVs are in metres; the shared textures carry their
+// Every helper returns an indexed geometry with exactly position, normal, uv
+// and ao (the baked occlusion, 1 where nothing was baked), so parts that
+// share a material always merge (here, and again in the instancing
+// harvest). UVs are in metres; the shared textures carry their
 // real tile size, so wood grain, weave and felt keep one texel density on
 // every part of every model.
 // ---------------------------------------------------------------------------
@@ -33,16 +34,22 @@ export function seeded(seed: number, index: number): number {
   return (h >>> 0) / 4294967296;
 }
 
-/** Keeps only position, normal and uv, indexed, so any two parts can merge. */
+/**
+ * Keeps only position, normal, uv and the baked occlusion (crafted-ao.ts),
+ * indexed, so any two parts can merge. A part the bake never saw is open.
+ */
 export function normalizeAttributes(source: BufferGeometry): BufferGeometry {
   let geometry = source;
   for (const name of Object.keys(geometry.attributes)) {
-    if (name !== "position" && name !== "normal" && name !== "uv") geometry.deleteAttribute(name);
+    if (name !== "position" && name !== "normal" && name !== "uv" && name !== "ao") geometry.deleteAttribute(name);
   }
   if (!geometry.hasAttribute("normal")) geometry.computeVertexNormals();
+  const count = geometry.getAttribute("position").count;
   if (!geometry.hasAttribute("uv")) {
-    const count = geometry.getAttribute("position").count;
     geometry.setAttribute("uv", new Float32BufferAttribute(new Float32Array(count * 2), 2));
+  }
+  if (!geometry.hasAttribute("ao")) {
+    geometry.setAttribute("ao", new Float32BufferAttribute(new Float32Array(count).fill(1), 1));
   }
   if (geometry.index === null) {
     const indexed = mergeVertices(geometry);
@@ -186,7 +193,7 @@ function tryMerge(geometries: BufferGeometry[]): BufferGeometry | null {
 export function mergeParts(parts: readonly BufferGeometry[]): BufferGeometry {
   if (parts.length === 1) {
     const only = parts[0];
-    if (only !== undefined) return only;
+    if (only !== undefined) return normalizeAttributes(only);
   }
   const merged = tryMerge(parts.map(normalizeAttributes));
   for (const part of parts) part.dispose();

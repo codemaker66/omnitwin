@@ -2,6 +2,7 @@ import {
   accessNeeds,
   allergyFacts,
   buildProtectedPremisesSummary,
+  formatTableLabels,
   otherMeals,
   sheetNoteMarkers,
   sheetRunningOrder,
@@ -508,7 +509,11 @@ function drawLegend(flow: Flow, entries: readonly LegendEntry[], top: number): {
 export function room(flow: Flow, sheet: HallkeeperSheetV2): void {
   const { doc } = flow;
   const plan = sheet.floorPlan ?? null;
-  const diagram = diagramBytes(sheet.diagramUrl);
+  // The saved plan is drawn whenever there is one (planner-qol E-X4): a
+  // thumbnail is a picture taken at some earlier save and can show an older
+  // layout than the one the sheet lists. The picture is used only for a
+  // layout saved with no plan at all.
+  const diagram = plan === null ? diagramBytes(sheet.diagramUrl) : null;
   const markers = sheetNoteMarkers(sheet);
   const legend = diagram === null ? [...markers.entries()].sort((a, b) => a[1] - b[1]) : [];
   const legendH = plan !== null && diagram === null ? legendHeight(doc, legend) : 0;
@@ -584,7 +589,10 @@ function chairsText(item: SetupItem): string | null {
 }
 
 function whereText(item: SetupItem): string {
-  return item.where.map((place) => (item.where.length === 1 ? place.zone : `${place.zone} ${String(place.qty)}`)).join(" · ");
+  const zones = item.where.map((place) => (item.where.length === 1 ? place.zone : `${place.zone} ${String(place.qty)}`)).join(" · ");
+  // The planner's table numbers, or a laid floor's size, beside where they go.
+  const names = formatTableLabels(item.labels);
+  return names.length === 0 ? zones : `${zones} · ${names}`;
 }
 
 const CHAIRS_STYLE: TextStyle = { face: "Inter-Regular", size: 8.4, color: INK.quiet };

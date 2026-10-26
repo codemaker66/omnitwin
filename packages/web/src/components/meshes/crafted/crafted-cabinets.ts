@@ -1,6 +1,5 @@
 import { CylinderGeometry, Matrix4, type BufferGeometry } from "three";
 import {
-  gatheredSkirt,
   lathe,
   normalizeAttributes,
   post,
@@ -10,6 +9,8 @@ import {
 } from "./crafted-geometry.js";
 import type { CraftedMaterialId } from "./crafted-materials.js";
 import type { CraftedPart } from "./crafted-model.js";
+import { aoBox, occlude, STANDING_FLOOR } from "./crafted-ao.js";
+import { casterGeometry } from "./crafted-shadow.js";
 
 // ---------------------------------------------------------------------------
 // Crafted cabinets and staging
@@ -147,7 +148,23 @@ export function barCounterParts(size: CabinetSize): CraftedPart[] {
   parts.push({ material: "stainless", geometry: roundedBox([wellW + 0.04, 0.012, 0.03], 0.004, [wellX, wellTop, innerZ + wellD / 2 + 0.015], { segments: 1 }) });
   parts.push({ material: "stainless", geometry: roundedBox([wellW, 0.07, 0.05], 0.006, [wellX, wellTop - 0.13, depth / 2 - 0.07], { segments: 1 }) });
   parts.push({ material: "stainless", geometry: roundedBox([half - 0.01, 0.018, innerD], 0.003, [wellX, plinth + 0.2, innerZ], { segments: 1 }) });
-  return parts;
+  // The counter's own shade: under the top's overhang, and deep in the
+  // service side between its walls; the sun's shadow from its outline.
+  const boxes = [
+    aoBox([width, topThickness, depth], [0, height - topThickness / 2, 0]),
+    aoBox([bodyW, bodyH, board], [0, bodyY, -(bodyD - board) / 2]),
+    aoBox([board, bodyH, bodyD], [-(bodyW - board) / 2, bodyY, 0]),
+    aoBox([board, bodyH, bodyD], [(bodyW - board) / 2, bodyY, 0]),
+  ];
+  const baked = parts.map((part) => ({ material: part.material, geometry: occlude(part.geometry, { boxes, floor: STANDING_FLOOR, strength: 0.7 }) }));
+  baked.push({
+    material: "shadow-caster",
+    geometry: casterGeometry([
+      aoBox([width, topThickness + 0.1, depth], [0, height - (topThickness + 0.1) / 2, 0]),
+      aoBox([bodyW, corniceBottom, bodyD], [0, corniceBottom / 2, 0]),
+    ], { inset: 0.004 }),
+  });
+  return baked;
 }
 
 /** The servery: two doors to the staff (-z), a brass lattice and three panels to the room (+z), on castors. */
@@ -209,29 +226,6 @@ export function serveryParts(size: CabinetSize): CraftedPart[] {
     for (const z of [-(bodyD / 2 - 0.06), bodyD / 2 - 0.06]) parts.push(...castor(x, z, "brass", "rubber", 0.026));
   }
   return parts;
-}
-
-/** A staging platform: a felt deck with a pleated black skirt to the floor. */
-export function platformParts(size: CabinetSize): CraftedPart[] {
-  const { width, depth, height } = size;
-  return [
-    { material: "stage-felt", geometry: roundedBox([width, 0.022, depth], 0.006, [0, height - 0.011, 0], { segments: 2, grain: "x" }) },
-    {
-      material: "stage-skirt",
-      geometry: gatheredSkirt({
-        width: width - 0.012,
-        depth: depth - 0.012,
-        top: height - 0.004,
-        pinned: 0.014,
-        hem: 0.004,
-        offset: 0.002,
-        spacing: 0.05,
-        foldDepth: 0.006,
-        emergeOver: 0.03,
-        seed: 41,
-      }),
-    },
-  ];
 }
 
 /** The folding divider: hinged black panels between two castored end frames. */

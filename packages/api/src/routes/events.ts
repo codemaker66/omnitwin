@@ -701,21 +701,31 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
       return eventPhaseSpaceMismatch(reply);
     }
 
-    const [updated] = await db.update(eventPhases).set({
-      spaceId: parsed.data.spaceId === undefined ? joined.phase.spaceId : parsed.data.spaceId,
-      name: parsed.data.name ?? joined.phase.name,
-      startsAt: parsed.data.startsAt === undefined ? joined.phase.startsAt : dateOrNull(parsed.data.startsAt),
-      durationMinutes: parsed.data.durationMinutes ?? joined.phase.durationMinutes,
-      guestCount: parsed.data.guestCount === undefined ? joined.phase.guestCount : parsed.data.guestCount,
-      opsTasksCount: parsed.data.opsTasksCount ?? joined.phase.opsTasksCount,
-      reviewGatesCount: parsed.data.reviewGatesCount ?? joined.phase.reviewGatesCount,
-      densityStatus: parsed.data.densityStatus ?? joined.phase.densityStatus,
-      densityLabel: parsed.data.densityLabel ?? joined.phase.densityLabel,
-      staffConflictsStatus: parsed.data.staffConflictsStatus ?? joined.phase.staffConflictsStatus,
-      staffConflictsLabel: parsed.data.staffConflictsLabel ?? joined.phase.staffConflictsLabel,
-      notes: parsed.data.notes === undefined ? joined.phase.notes : parsed.data.notes,
-      updatedAt: new Date(),
-    }).where(eq(eventPhases.id, params.data.id)).returning();
+    // Written from the phase as it stands under its event's lock, the lock a
+    // Diary move takes when it shifts phases (movePhasesWithBooking): a move
+    // that lands between this request's first read and its write is kept, not
+    // written over with the time read before it.
+    const updated = await db.transaction(async (tx) => {
+      await tx.select({ id: events.id }).from(events).where(eq(events.id, joined.event.id)).limit(1).for("no key update");
+      const [current] = await tx.select().from(eventPhases).where(eq(eventPhases.id, params.data.id)).limit(1);
+      if (current === undefined) return undefined;
+      const [written] = await tx.update(eventPhases).set({
+        spaceId: parsed.data.spaceId === undefined ? current.spaceId : parsed.data.spaceId,
+        name: parsed.data.name ?? current.name,
+        startsAt: parsed.data.startsAt === undefined ? current.startsAt : dateOrNull(parsed.data.startsAt),
+        durationMinutes: parsed.data.durationMinutes ?? current.durationMinutes,
+        guestCount: parsed.data.guestCount === undefined ? current.guestCount : parsed.data.guestCount,
+        opsTasksCount: parsed.data.opsTasksCount ?? current.opsTasksCount,
+        reviewGatesCount: parsed.data.reviewGatesCount ?? current.reviewGatesCount,
+        densityStatus: parsed.data.densityStatus ?? current.densityStatus,
+        densityLabel: parsed.data.densityLabel ?? current.densityLabel,
+        staffConflictsStatus: parsed.data.staffConflictsStatus ?? current.staffConflictsStatus,
+        staffConflictsLabel: parsed.data.staffConflictsLabel ?? current.staffConflictsLabel,
+        notes: parsed.data.notes === undefined ? current.notes : parsed.data.notes,
+        updatedAt: new Date(),
+      }).where(eq(eventPhases.id, params.data.id)).returning();
+      return written;
+    });
 
     if (updated === undefined) {
       return reply.status(500).send({ error: "Failed to update event phase", code: "EVENT_PHASE_UPDATE_FAILED" });

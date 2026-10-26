@@ -1,5 +1,6 @@
 import { Matrix4 } from "three";
 import {
+  boxProjectUvs,
   gatheredSkirt,
   lathe,
   post,
@@ -9,10 +10,13 @@ import {
   tube,
   type Vec3,
 } from "./crafted-geometry.js";
+import { aoBox, aoRod, occlude, STANDING_FLOOR } from "./crafted-ao.js";
+import { craftedDetail } from "./crafted-detail.js";
 import { cornerCascades, swag } from "./crafted-drapes.js";
 import type { CraftedMaterialId } from "./crafted-materials.js";
 import type { CraftedPart } from "./crafted-model.js";
 import { poseurCover } from "./crafted-poseur.js";
+import { casterGeometry, insetSheet } from "./crafted-shadow.js";
 
 // ---------------------------------------------------------------------------
 // Crafted tables
@@ -35,63 +39,103 @@ export interface TableSize {
 
 export type ClothColour = "white" | "black";
 
-function linen(colour: ClothColour): CraftedMaterialId {
-  return colour === "white" ? "linen-white" : "linen-black";
+/**
+ * The venue's own banqueting linen: its "white" rounds and trestles are
+ * ivory damask (its photographs of the Grand Hall at dinner), its black ones
+ * spun polyester (16 black 130 in rounds in its inventory).
+ */
+function banquetLinen(colour: ClothColour): CraftedMaterialId {
+  return colour === "white" ? "damask-ivory" : "poly-black";
 }
 
 /** Hem height of a floor-length cloth: just clear of the floor. */
 const FLOOR_HEM = 0.006;
 
-/** Folds per metre round a hanging cloth, after the supplied rounds. */
+/**
+ * Hem of the venue's black 130 in rounds on a 6 ft table at 30 in: the cloth
+ * hangs 29 in, about 2 cm clear of the floor.
+ */
+const BLACK_ROUND_HEM = 0.021;
+
+/** Folds per metre round a hanging cloth: the venue's rounds hang in fine folds, seven or so a metre. */
 const FOLDS_PER_METRE = 7;
+
+/**
+ * A hanging cloth's own shading: its fold valleys (the surface lies inside
+ * its smoothed self) and the last few centimetres over the floor.
+ */
+const CLOTH_OCCLUSION = {
+  cavity: { passes: 8, perMetre: 7 },
+  floor: { strength: 0.45, range: 0.14 },
+  floorValue: 0.4,
+} as const;
 
 /** A banqueting round in a floor-length cloth, its crests kept clear of the chairs. */
 export function clothedRoundParts(size: TableSize, colour: ClothColour, seed = 11): CraftedPart[] {
+  const detail = craftedDetail();
   const radius = Math.min(size.width, size.depth) / 2;
-  return [{
-    material: linen(colour),
-    geometry: roundCloth({
-      radius,
-      top: size.height,
-      hem: FLOOR_HEM,
-      edge: 0.02,
-      flare: 0.012,
-      folds: Math.max(12, Math.round(radius * 2 * Math.PI * FOLDS_PER_METRE)),
-      foldDepth: 0.04,
-      inward: 0.72,
-      growth: 0.5,
-      hemLift: 0.016,
-      seed,
-      samplesPerFold: 10,
-      rows: 14,
-    }),
-  }];
+  const hem = colour === "black" && radius > 0.8 ? BLACK_ROUND_HEM : FLOOR_HEM;
+  const drape = (samplesPerFold: number, rows: number): ReturnType<typeof roundCloth> => roundCloth({
+    radius,
+    top: size.height,
+    hem,
+    edge: 0.02,
+    flare: 0.012,
+    folds: Math.max(12, Math.round(radius * 2 * Math.PI * FOLDS_PER_METRE)),
+    foldDepth: 0.042,
+    inward: 0.72,
+    growth: 0.5,
+    irregularity: 0.62,
+    crease: 0.55,
+    hemLift: 0.016,
+    hemWave: hem > FLOOR_HEM ? 0.006 : 0,
+    seed,
+    samplesPerFold,
+    rows,
+  });
+  const parts: CraftedPart[] = [
+    { material: banquetLinen(colour), geometry: occlude(drape(detail.level === "full" ? 10 : 6, detail.clothRows), CLOTH_OCCLUSION) },
+    // The sun's shadow: the same fall drawn coarsely, set in under the cloth.
+    { material: "shadow-sheet", geometry: insetSheet(drape(2, 5), 0.012) },
+  ];
+  if (hem > FLOOR_HEM) {
+    // A cloth clear of the floor shows the table's feet beneath its hem.
+    for (const [x, z] of [[0.55, 0.4], [0.55, -0.4], [-0.55, 0.4], [-0.55, -0.4]] as const) {
+      parts.push({
+        material: "rubber",
+        geometry: occlude(post([x * radius * 1.04, z * radius * 1.1], 0, hem + 0.04, 0.016, 0.013, detail.rodRadial + 3), { floor: STANDING_FLOOR }),
+      });
+    }
+  }
+  return parts;
 }
 
 /** A trestle in a floor-length cloth: near-flat sides, cascades at the corners. */
 export function clothedTrestleParts(size: TableSize, colour: ClothColour, seed = 5): CraftedPart[] {
-  return [{
-    material: linen(colour),
-    geometry: rectCloth({
-      width: size.width,
-      depth: size.depth,
-      top: size.height,
-      hem: FLOOR_HEM,
-      edge: 0.016,
-      cornerDrape: 0.05,
-      flare: 0.006,
-      sideFolds: 1.4,
-      foldDepth: 0.01,
-      cornerFolds: 3,
-      cornerDepth: 0.022,
-      cornerSpread: 0.1,
-      cornerFlare: 0.028,
-      pool: 0.02,
-      hemVariation: 0.004,
-      seed,
-      rows: 14,
-    }),
-  }];
+  const detail = craftedDetail();
+  const cloth = rectCloth({
+    width: size.width,
+    depth: size.depth,
+    top: size.height,
+    hem: FLOOR_HEM,
+    edge: 0.016,
+    cornerDrape: 0.05,
+    flare: 0.006,
+    sideFolds: 1.4,
+    foldDepth: 0.01,
+    cornerFolds: 3,
+    cornerDepth: 0.022,
+    cornerSpread: 0.1,
+    cornerFlare: 0.028,
+    pool: 0.02,
+    hemVariation: 0.004,
+    seed,
+    rows: detail.clothRows,
+  });
+  return [
+    { material: banquetLinen(colour), geometry: occlude(cloth, CLOTH_OCCLUSION) },
+    { material: "shadow-caster", geometry: casterGeometry([aoBox([size.width - 0.008, size.height - 0.01, size.depth - 0.008], [0, (size.height - 0.01) / 2 + 0.004, 0])], { inset: 0 }) },
+  ];
 }
 
 /** How far below the top the ceremony table's hanging layers are pinned, and how far they take to come away. */
@@ -345,7 +389,105 @@ export function squareCafeParts(size: TableSize, seed = 23): CraftedPart[] {
   ];
 }
 
+/**
+ * A bare banqueting round: a varnished birch-ply top with a black edge band
+ * on two folding steel leg frames, each a pair of legs joined by a bar under
+ * the top and a stretcher low down, with rubber feet.
+ */
+export function bareRoundParts(size: TableSize): CraftedPart[] {
+  const detail = craftedDetail();
+  const radius = Math.min(size.width, size.depth) / 2;
+  const thickness = 0.018;
+  const underside = size.height - thickness;
+  const legRadius = 0.0125;
+  const reach = radius * 0.58;
+  const spread = radius * 0.42;
+  const frames: Vec3[][] = [];
+  const boxes = [aoBox([radius * 2, thickness + 0.02, radius * 2], [0, size.height - (thickness + 0.02) / 2, 0], "top")];
+  const parts: CraftedPart[] = [];
+  const steel = (geometry: ReturnType<typeof tube>, self: readonly string[]): void => {
+    parts.push({ material: "steel-black", geometry: occlude(geometry, { boxes, self, floor: STANDING_FLOOR, strength: 0.8 }) });
+  };
+  for (const side of [-1, 1] as const) {
+    const x = side * reach;
+    for (const z of [-spread, spread]) {
+      frames.push([[x, underside - 0.012, z], [x * 1.04, 0.03, z * 1.1]]);
+      steel(tube({ points: [[x, underside - 0.012, z], [x * 1.04, 0.03, z * 1.1]], radius: legRadius, tension: 0, segmentsPerMetre: 4, radialSegments: detail.rodRadial + 3 }), []);
+      parts.push({ material: "rubber", geometry: occlude(post([x * 1.04, z * 1.1], 0, 0.032, legRadius * 1.3, legRadius * 1.2, detail.rodRadial + 3), { floor: STANDING_FLOOR }) });
+    }
+    // The frame's bar under the top, and its low stretcher.
+    steel(tube({ points: [[x, underside - 0.014, -spread], [x, underside - 0.014, spread]], radius: legRadius * 0.85, tension: 0, segmentsPerMetre: 4, radialSegments: detail.rodRadial + 2 }), []);
+    steel(tube({ points: [[x * 1.03, 0.2, -spread * 1.07], [x * 1.03, 0.2, spread * 1.07]], radius: legRadius * 0.7, tension: 0, segmentsPerMetre: 4, radialSegments: detail.rodRadial + 2 }), []);
+  }
+  // The top: its varnished face and underside, and the edge band round it.
+  // A cylinder, so the face and the edge keep their own normals; its UVs in metres for the grain.
+  const top = boxProjectUvs(post([0, 0], underside, size.height, radius - 0.004, radius - 0.004, detail.level === "full" ? 96 : 56), "x");
+  parts.push({ material: "plywood", geometry: occlude(top, { boxes, self: ["top"] }) });
+  const band = lathe([[radius - 0.004, size.height - 0.0012], [radius - 0.0005, size.height - 0.003], [radius, size.height - thickness / 2], [radius - 0.0005, underside + 0.002], [radius - 0.004, underside + 0.001]], detail.level === "full" ? 96 : 56);
+  parts.push({ material: "steel-black", geometry: occlude(band, { boxes, self: ["top"] }) });
+  parts.push({
+    material: "shadow-caster",
+    geometry: casterGeometry([
+      ...frames.map(([a, b]) => aoRod(a ?? [0, 0, 0], b ?? [0, 0, 0], legRadius * 2)),
+      { centre: [0, size.height - thickness / 2, 0], axes: [[radius * 0.97, 0, 0], [0, thickness / 2, 0], [0, 0, radius * 0.97]] },
+    ], { inset: 0.002, minimum: 0.01 }),
+  });
+  return parts;
+}
+
+/**
+ * A bare poseur: a 60 cm top of white laminate with a chrome edge on a
+ * chrome column, over a weighted round foot.
+ */
+export function barePoseurParts(size: TableSize): CraftedPart[] {
+  const detail = craftedDetail();
+  const radius = Math.min(size.width, size.depth) / 2;
+  const segments = detail.level === "full" ? 64 : 40;
+  const thickness = 0.025;
+  const footRadius = radius * 0.72;
+  const boxes = [aoBox([radius * 2, thickness, radius * 2], [0, size.height - thickness / 2, 0], "top")];
+  return [
+    {
+      material: "plastic-white",
+      geometry: occlude(post([0, 0], size.height - thickness, size.height, radius - 0.006, radius - 0.006, segments), { boxes, self: ["top"] }),
+    },
+    {
+      material: "chrome",
+      geometry: occlude(lathe([
+        [radius - 0.006, size.height - 0.001], [radius, size.height - 0.006], [radius, size.height - thickness + 0.004], [radius - 0.006, size.height - thickness],
+      ], segments), { boxes, self: ["top"] }),
+    },
+    {
+      material: "chrome",
+      geometry: occlude(lathe([
+        [0, size.height - thickness], [0.05, size.height - thickness], [0.05, size.height - thickness - 0.012], [0.03, size.height - thickness - 0.02],
+        [0.03, 0.04], [0.042, 0.03], [footRadius, 0.018], [footRadius, 0.004], [footRadius - 0.006, 0], [0, 0],
+      ], segments), { boxes, floor: STANDING_FLOOR, strength: 0.8 }),
+    },
+    {
+      material: "shadow-caster",
+      geometry: casterGeometry([
+        { centre: [0, size.height - thickness / 2, 0], axes: [[radius * 0.95, 0, 0], [0, thickness / 2, 0], [0, 0, radius * 0.95]] },
+        aoRod([0, 0.04, 0], [0, size.height - thickness, 0], 0.05),
+        { centre: [0, 0.01, 0], axes: [[footRadius * 0.9, 0, 0], [0, 0.009, 0], [0, 0, footRadius * 0.9]] },
+      ], { inset: 0.002 }),
+    },
+  ];
+}
+
 /** A poseur table in a stretch cover: a round top on an hourglass that grips four feet. */
 export function poseurParts(size: TableSize, colour: ClothColour): CraftedPart[] {
-  return [{ material: colour === "black" ? "spandex-black" : "spandex-white", geometry: poseurCover(size) }];
+  const radius = Math.min(size.width, size.depth) / 2;
+  const waistY = size.height * 0.59;
+  const cover = occlude(poseurCover(size), { cavity: { passes: 6, perMetre: 5 }, floor: STANDING_FLOOR, floorValue: 0.4 });
+  // The sun's shadow: the top, the column to the waist, and the flare to the feet.
+  const caster = casterGeometry([
+    { centre: [0, size.height - 0.02, 0], axes: [[radius * 0.97, 0, 0], [0, 0.018, 0], [0, 0, radius * 0.97]] },
+    aoRod([0, waistY, 0], [0, size.height - 0.04, 0], radius * 0.62),
+    aoRod([0, 0.004, 0], [0, waistY, 0], radius * 0.7),
+  ], { inset: 0.004 });
+  return [
+    { material: colour === "black" ? "spandex-black" : "spandex-white", geometry: cover },
+    { material: "shadow-caster", geometry: caster },
+  ];
 }
