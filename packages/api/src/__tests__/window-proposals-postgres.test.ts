@@ -151,6 +151,25 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     expect(holds).toHaveLength(1);
   });
 
+  it("answers a replayed key on the event it was used on, and on no other", async () => {
+    // One client, with a plan on an event at each of two venues.
+    const f = await fixture();
+    const g = await fixture();
+    const theirPlan = randomUUID();
+    await db.insert(schema.configurations).values({
+      id: theirPlan, spaceId: g.roomId, venueId: g.venueId, userId: f.client.id, name: "A plan at the other venue", layoutStyle: LAYOUT_STYLES[0],
+    });
+    await db.insert(schema.eventConfigurationLinks).values({ id: randomUUID(), eventId: g.eventId, configurationId: theirPlan, linkType: "source_configuration" });
+    const key = randomUUID();
+    granted(await propose(f, f.client, "18:00", "23:00", key));
+    // Their part in the first event ends; the key is sent to the second.
+    await db.update(schema.configurations).set({ deletedAt: new Date() }).where(eq(schema.configurations.id, f.configurationId));
+    const reused = refused(await propose(g, f.client, "18:00", "23:00", key));
+    expect(reused).toMatchObject({ status: 409, code: "IDEMPOTENCY_KEY_REUSED" });
+    expect(await db.select({ id: schema.bookings.id }).from(schema.bookings)
+      .where(and(eq(schema.bookings.eventId, g.eventId), eq(schema.bookings.createdBy, f.client.id)))).toEqual([]);
+  });
+
   it("admits a planner by their own link and the office at its venue; refuses manager, sales and hallkeeper", async () => {
     const f = await fixture();
     granted(await propose(f, f.planner, "12:00", "16:00"));
