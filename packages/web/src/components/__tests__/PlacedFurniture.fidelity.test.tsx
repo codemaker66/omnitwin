@@ -34,7 +34,9 @@ vi.mock("../editor/InstancedFurnitureLayer.js", () => ({
   },
 }));
 vi.mock("../FurnitureProxy.js", () => ({
-  FurnitureProxy: ({ item }: { item: CatalogueItem }) => <div data-testid="individual-model" data-slug={item.slug} />,
+  FurnitureProxy: ({ item, rotationY }: { item: CatalogueItem; rotationY?: number }) => (
+    <div data-testid="individual-model" data-slug={item.slug} data-rotation={String(rotationY ?? 0)} />
+  ),
 }));
 vi.mock("../meshes/TableClothMesh.js", () => ({ TableClothMesh: () => <div data-testid="table-linen" /> }));
 vi.mock("../meshes/AnimatedTableCloth.js", () => ({ AnimatedTableCloth: () => <div data-testid="animated-linen" /> }));
@@ -53,6 +55,7 @@ const { useSelectionStore } = await import("../../stores/selection-store.js");
 const { useCockpitStore } = await import("../../stores/cockpit-store.js");
 const { useFurnitureInspectionStore } = await import("../../stores/furniture-inspection-store.js");
 const { useLayoutTimelinePreviewStore } = await import("../../stores/layout-timeline-preview-store.js");
+const { drawnRotationY } = await import("../meshes/crafted/crafted-turn.js");
 
 function catalogueId(slug: string): string {
   const item = getCatalogueItemBySlug(slug);
@@ -242,5 +245,22 @@ describe("saved furniture fidelity", () => {
     // Replacing only the attribute on the old geometry preserves stale culling.
     expect(geometry()).not.toBeNull();
     expect(geometry()).not.toBe(original);
+  });
+
+  it("draws a round's own model and applied cloth at the round's own turn, as its batch does, and its settings at the table's", () => {
+    const roundId = catalogueId("round-table-6ft");
+    scene.failedVariants = new Set([roundId]);
+    render(<PlacedFurniture />);
+    const rounds = usePlacementStore.getState().placedItems.filter((item) => item.catalogueItemId === roundId);
+    const drawn = screen.getAllByTestId("individual-model")
+      .filter((node) => node.getAttribute("data-slug") === "round-table-6ft")
+      .map((node) => Number(node.getAttribute("data-rotation")));
+    expect(drawn).toEqual(rounds.map((round) => drawnRotationY(round)));
+    expect(new Set(drawn).size).toBe(rounds.length);
+    const clothed = rounds[0];
+    if (clothed === undefined) throw new Error("missing round");
+    const turnOf = (testId: string) => screen.getByTestId(testId).parentElement?.getAttribute("rotation");
+    expect(turnOf("table-linen")).toBe(`0,${String(drawnRotationY(clothed))},0`);
+    expect(turnOf("dinner-settings")).toBe(`0,${String(clothed.rotationY)},0`);
   });
 });
