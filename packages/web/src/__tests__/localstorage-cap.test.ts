@@ -21,13 +21,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 //     and the try/catch wrapper can't be silently removed.
 // ---------------------------------------------------------------------------
 
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
 }));

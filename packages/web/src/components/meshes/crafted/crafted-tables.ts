@@ -99,13 +99,15 @@ export function clothedRoundParts(size: TableSize, colour: ClothColour, seed = 1
     { material: "shadow-sheet", geometry: insetSheet(drape(2, 5), 0.012) },
   ];
   if (hem > FLOOR_HEM) {
-    // A cloth clear of the floor shows the table's feet beneath its hem.
-    for (const [x, z] of [[0.55, 0.4], [0.55, -0.4], [-0.55, 0.4], [-0.55, -0.4]] as const) {
+    // A cloth clear of the floor shows the table's feet beneath its hem, each on its spot of shade.
+    const feet = ([[0.55, 0.4], [0.55, -0.4], [-0.55, 0.4], [-0.55, -0.4]] as const).map(([x, z]) => [x * radius * 1.04, z * radius * 1.1] as const);
+    for (const foot of feet) {
       parts.push({
         material: "rubber",
-        geometry: occlude(post([x * radius * 1.04, z * radius * 1.1], 0, hem + 0.04, 0.016, 0.013, detail.rodRadial + 3), { floor: STANDING_FLOOR }),
+        geometry: occlude(post(foot, 0, hem + 0.04, 0.016, 0.013, detail.rodRadial + 3), { floor: STANDING_FLOOR }),
       });
     }
+    parts.push({ material: "contact", geometry: contactSpots(feet.map(([x, z]) => ({ x, z, radius: 0.045 }))) });
   }
   return parts;
 }
@@ -451,6 +453,7 @@ export function bareRoundParts(size: TableSize): CraftedPart[] {
   const reach = radius * 0.58;
   const spread = radius * 0.42;
   const frames: Vec3[][] = [];
+  const feet: { x: number; z: number; radius: number }[] = [];
   const boxes = [aoBox([radius * 2, thickness + 0.02, radius * 2], [0, size.height - (thickness + 0.02) / 2, 0], "top")];
   const parts: CraftedPart[] = [];
   const steel = (geometry: ReturnType<typeof tube>, self: readonly string[]): void => {
@@ -460,6 +463,7 @@ export function bareRoundParts(size: TableSize): CraftedPart[] {
     const x = side * reach;
     for (const z of [-spread, spread]) {
       frames.push([[x, underside - 0.012, z], [x * 1.04, 0.03, z * 1.1]]);
+      feet.push({ x: x * 1.04, z: z * 1.1, radius: 0.045 });
       steel(tube({ points: [[x, underside - 0.012, z], [x * 1.04, 0.03, z * 1.1]], radius: legRadius, tension: 0, segmentsPerMetre: 4, radialSegments: detail.rodRadial + 3 }), []);
       parts.push({ material: "rubber", geometry: occlude(post([x * 1.04, z * 1.1], 0, 0.032, legRadius * 1.3, legRadius * 1.2, detail.rodRadial + 3), { floor: STANDING_FLOOR }) });
     }
@@ -480,6 +484,7 @@ export function bareRoundParts(size: TableSize): CraftedPart[] {
       { centre: [0, size.height - thickness / 2, 0], axes: [[radius * 0.97, 0, 0], [0, thickness / 2, 0], [0, 0, radius * 0.97]] },
     ], { inset: 0.002, minimum: 0.01 }),
   });
+  parts.push({ material: "contact", geometry: contactSpots(feet) });
   return parts;
 }
 

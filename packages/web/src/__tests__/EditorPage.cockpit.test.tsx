@@ -1,11 +1,22 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
-vi.mock("../components/editor/cockpit/PlannerCockpit.js", () => ({
-  PlannerCockpit: () => <div data-testid="planner-cockpit" />,
-}));
+vi.mock("../components/editor/cockpit/PlannerCockpit.js", async () => {
+  const { usePlannerWork } = await import("../components/scene/planner-work.js");
+  return {
+    // As NativeCanvas's stopped card does, offer the 2D view the editor provides.
+    PlannerCockpit: () => {
+      const continueIn2d = usePlannerWork()?.continueIn2d ?? null;
+      return (
+        <div data-testid="planner-cockpit">
+          {continueIn2d !== null && <button type="button" onClick={continueIn2d}>Continue in 2D</button>}
+        </div>
+      );
+    },
+  };
+});
 vi.mock("../pages/BlueprintPage.js", () => ({ BlueprintPage: () => <div data-testid="mock-blueprint" /> }));
 vi.mock("../components/editor/MobilePlannerTopBar.js", () => ({ MobilePlannerTopBar: ({ onModeChange }: { onModeChange: (mode: "2d" | "3d") => void }) => <button type="button" onClick={() => { onModeChange("2d"); }}>Show test plan</button> }));
 vi.mock("../components/editor/SaveSendPanel.js", () => ({ SaveSendPanel: () => null }));
@@ -59,6 +70,26 @@ describe("EditorPage cockpit", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show test plan" }));
     expect(screen.getByTestId("consumer-truth").getAttribute("data-capture")).toBe("none");
     expect(screen.getByTestId("consumer-truth").textContent).toBe("2D planning geometry");
+  });
+
+  it("continues a 3D view that cannot draw in this layout's own 2D view, at the same address", async () => {
+    const objects = useEditorStore.getState().objects;
+    let pathname = "";
+    function LocationProbe(): null {
+      pathname = useLocation().pathname;
+      return null;
+    }
+    render(
+      <MemoryRouter initialEntries={["/plan/cfg-1"]}>
+        <Routes><Route path="/plan/:code" element={<><EditorPage /><LocationProbe /></>} /></Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => { expect(screen.getByTestId("planner-cockpit")).toBeTruthy(); });
+    fireEvent.click(screen.getByRole("button", { name: "Continue in 2D" }));
+    expect(screen.getByTestId("mock-blueprint")).toBeTruthy();
+    expect(screen.queryByTestId("planner-cockpit")).toBeNull();
+    expect(pathname).toBe("/plan/cfg-1");
+    expect(useEditorStore.getState().objects).toBe(objects);
   });
 
   it("renders the cockpit at /plan on desktop when a config is loaded", async () => {

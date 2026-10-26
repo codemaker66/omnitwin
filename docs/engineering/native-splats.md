@@ -105,7 +105,16 @@ activation before any scene effect layered its own, and the current resolution.
 resets its splat arrival counts on `onCreated`. While it restores, frames stop
 and the canvas is covered by "Restoring the 3D view" (`ActivityStatus`). The
 cover stays until the new device has drawn its first frame, because that frame
-compiles every pipeline again.
+compiles every pipeline again; if a captured room was drawn at the loss, it
+stays until the new renderer draws the capture's own snapshot, or its rebuild
+fails, or nothing is selected to draw (`nativeSceneCapturePending`), at most
+15 s; a second loss during that wait keeps the capture and the stage of the
+first. `NativeSplatScene` rebuilds that
+snapshot from the sources it holds, and the rebuild is CPU work that does not
+depend on the device (measured 26 October on the 6.03 M-splat Grand Hall:
+1.2-1.8 s merging and bounding the sources, 1.0-1.2 s more bounding for the
+sort, 0.35 s of SH); before the cover waited for it, the room showed without
+its capture and then froze for those seconds.
 
 The policy is `lib/native-renderer-recovery.ts`. It waits for a hidden page to
 be shown. A WebGL canvas waits up to 4 s for `webglcontextrestored`; a context
@@ -113,9 +122,36 @@ that never returns gets a new canvas (a remount, which re-streams the capture
 and keeps only what lives outside the canvas: layout, selection, the planner's
 pose). Attempts back off 0/1/3 s, the third is a remount, each times out after
 15 s, and three losses in a minute stop. Then the existing stopped card offers
-"Try 3D again"; `surface="walk"` (the room walk) promises no layout and offers
-no 2D planner. The tour (`/tour`, a classic `WebGLRenderer`) restores in place
-on the same policy through `twin/TwinContextLossWatch.tsx`.
+"Try 3D again". Inside the editor (`PlannerWorkContext`,
+`components/scene/planner-work.ts`) the view holds someone's layout: the card
+says it is safe and offers "Continue in 2D", which switches the editor's own
+view mode in place (no reload, same address; not during a timeline preview,
+not yet in the v2 chrome). Anywhere else (a landing, `/room/...`) the view
+defaults to `surface="walk"`, which promises no layout. The cover and the
+stopped card stand in for the scene: the dark stage (#120e0b) when a capture
+is drawn (at eye level it fills the view, over the light shell's clear
+colour), otherwise the scene's own background colour, read at the loss. The tour (`/tour`, a classic
+`WebGLRenderer`) restores in place on the same policy through
+`twin/TwinContextLossWatch.tsx`.
+
+An uncaptured WebGPU error (validation, out of memory, internal) is not a lost
+device. Three r186 forwards each one to `renderer.onError` as
+`{ api, type, message }` and documents it as non-escalating; one bad upload or
+draw is usually followed by good frames. `lib/native-gpu-error-watch.ts`
+reports each distinct message once (`console.warn`; at most five per view;
+F-07's Sentry warning belongs there) and asks for a frame. A frame counts as
+having got through once its own GPU work has completed and 250 ms more pass
+with no further error: a device reports a frame's errors ahead of that
+completion, and only when it is ticked (an idle device delivers none; a submit
+delivers them in 0–1 ms, measured 26 October), so a busy GPU returning errors
+late cannot make a broken frame look healthy. Only when 3 s pass with no frame
+getting through is the view broken; the grace waits while the page is hidden,
+because a hidden page draws nothing. It then gets one fresh device by the same
+swap. The same error again on that device within a minute is the scene's own,
+and the view stops with the stopped card; any other error gets the usual
+recovery, whose three-losses-a-minute limit ends a loop. The app's own failures (a resident splat sort
+that died, a GPU readiness callback that threw) still reach `onError` as a
+message string and stop the view at once.
 
 Three r186 facts this depends on, each pinned by a test:
 

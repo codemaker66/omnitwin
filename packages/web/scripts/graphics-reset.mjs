@@ -5,6 +5,13 @@
 //   lose-never    the context is lost and never handed back
 //   gpu-crash     Chrome's GPU process crashes (CDP Browser.crashGpuProcess),
 //                 the nearest thing to a real driver reset
+//   error-once    one uncaptured WebGPU validation error (a buffer with no usage)
+//                 made inside the next frame: not a loss, the view keeps drawing
+//   errors        such an error inside every frame, on whichever renderer the view
+//                 has (development bridge): one fresh device, then the stopped
+//                 card, then the planner's "Continue in 2D" at the same address
+// With --backend none (no WebGPU, no WebGL) the planner cannot start at all and
+// must offer the same layout in 2D.
 // For each it records the recovery phases and how long they took, whether the
 // scene graph, camera, layout and selection survived, the pixels before and
 // after at the same pose, console errors, and orbit frame intervals before and
@@ -15,10 +22,12 @@
 //
 // Needs a development server: it reads window.__venPerf.
 //   node scripts/graphics-reset.mjs --base http://127.0.0.1:5231 --out D:/claude/l3c-graphics-reset/run \
-//     [--surface planner|planner-walk|room-walk|tour] [--backend webgpu|webgl2]
-//     [--loss destroy|lose-restore|lose-never|gpu-crash] [--device desktop|phone] [--entry saved|fresh]
+//     [--surface planner|planner-walk|room-walk|tour] [--backend webgpu|webgl2|none]
+//     [--loss destroy|lose-restore|lose-never|gpu-crash|error-once|errors] [--device desktop|phone] [--entry saved|fresh]
 //     [--layer as|capture|model]   (the planner's view: as it opens, the captured room's splats, or the drawn hall)
 //     [--dpr 1]   (the display's device pixel ratio, default the device's)
+//     [--profile] (a CPU profile from the loss until the view settles: what fills each long task)
+//     [--trace]   (every 50 ms for 8 s after the loss: GPU errors delivered, frames drawn, the phase)
 import { chromium } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -31,11 +40,13 @@ function option(name, fallback) {
 const BASE = option("base", "http://127.0.0.1:5231");
 const SURFACE = option("surface", "planner");
 const BACKEND = option("backend", "webgpu");
-const LOSS = option("loss", BACKEND === "webgpu" ? "destroy" : "lose-restore");
+const LOSS = option("loss", BACKEND === "none" ? "none" : BACKEND === "webgpu" ? "destroy" : "lose-restore");
 const DEVICE = option("device", "desktop");
 const ENTRY = option("entry", "saved");
 const LAYER = option("layer", "as");
 const OUT = option("out", "D:/claude/l3c-graphics-reset/run");
+const PROFILE = process.argv.includes("--profile");
+const TRACE = process.argv.includes("--trace");
 const RUN = `${SURFACE}-${BACKEND}-${LOSS}-${DEVICE}${SURFACE.startsWith("planner") && ENTRY === "fresh" ? "-fresh" : ""}${LAYER === "as" ? "" : `-${LAYER}`}${process.argv.includes("--dpr") ? `-dpr${option("dpr", "")}` : ""}`;
 const API = "http://localhost:3001";
 const CONFIG_ID = "reset-config-0001";
@@ -228,7 +239,7 @@ async function triggerLoss(page, browser) {
     window.__resetOldCanvas = document.querySelector("canvas");
     window.__resetOldRenderer = window.__venPerf?.gl ?? null;
     // The page's own clock for the recovery, independent of when the harness can poll a busy main thread.
-    const timeline = { lossAt: performance.now(), shownAt: null, goneAt: null, longTasks: [] };
+    const timeline = { lossAt: performance.now(), shownAt: null, goneAt: null, captureGoneAt: null, captureBackAt: null, longTasks: [] };
     window.__resetTimeline = timeline;
     const restoring = () => [...document.querySelectorAll('[role="status"]')].some((node) => node.textContent?.includes("Restoring the 3D view"));
     new MutationObserver(() => {
@@ -236,10 +247,29 @@ async function triggerLoss(page, browser) {
       if (restoring()) timeline.shownAt ??= now;
       else if (timeline.shownAt !== null) timeline.goneAt ??= now;
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    // When the capture (visible splat draws) leaves the scene after the loss and comes back.
+    const visibleSplats = () => {
+      let splats = 0;
+      window.__venPerf?.scene.traverse((object) => { if (typeof object.splatCount === "number" && object.visible) splats += object.splatCount; });
+      return splats;
+    };
+    if (window.__venPerf !== undefined && visibleSplats() > 0) {
+      const watch = () => {
+        const now = performance.now();
+        const splats = visibleSplats();
+        if (splats === 0) timeline.captureGoneAt ??= now;
+        else if (timeline.captureGoneAt !== null) { timeline.captureBackAt = now; return; }
+        if (now - timeline.lossAt < 60_000) requestAnimationFrame(watch);
+      };
+      requestAnimationFrame(watch);
+    }
     try {
       new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
-          if (entry.startTime >= timeline.lossAt) timeline.longTasks.push(Math.round(entry.duration));
+          if (entry.startTime >= timeline.lossAt) {
+            timeline.longTasks.push(Math.round(entry.duration));
+            timeline.longTaskSpans = [...(timeline.longTaskSpans ?? []), { atMs: Math.round(entry.startTime - timeline.lossAt), ms: Math.round(entry.duration) }];
+          }
         }
       }).observe({ type: "longtask" });
     } catch { /* Long-task timing is optional. */ }
@@ -247,6 +277,41 @@ async function triggerLoss(page, browser) {
   if (LOSS === "gpu-crash") {
     const cdp = await browser.newBrowserCDPSession();
     await cdp.send("Browser.crashGpuProcess");
+    return;
+  }
+  if (LOSS === "error-once" || LOSS === "errors") {
+    await page.evaluate((loss) => {
+      // A broken scene fails inside its own frames, and a frame's submit is what
+      // delivers its errors (an idle device delivers none): fail inside render().
+      // A buffer with no usage fails validation outside any error scope.
+      let once = loss === "error-once";
+      const patch = () => {
+        const renderer = window.__venPerf?.gl;
+        if (renderer === undefined || renderer.__resetFailing === true) return;
+        renderer.__resetFailing = true;
+        const render = renderer.render;
+        renderer.render = function (...args) {
+          if (loss === "errors" || once) {
+            once = false;
+            renderer.backend?.device?.createBuffer({ size: 4, usage: 0 });
+          }
+          return render.apply(this, args);
+        };
+      };
+      patch();
+      if (window.__venPerf?.gl?.__resetFailing !== true) throw new Error("No renderer to fail");
+      // Errors that never stop follow the view onto a replacement renderer.
+      if (loss === "errors") window.__resetErrors = setInterval(patch, 20);
+    }, LOSS);
+    // The planner draws on demand: nudge the orbit for the frame that carries the first error.
+    const box = await page.locator("canvas").first().boundingBox();
+    if (box !== null) {
+      const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      await page.mouse.move(centre.x, centre.y);
+      await page.mouse.down({ button: "right" });
+      await page.mouse.move(centre.x + 12, centre.y, { steps: 4 });
+      await page.mouse.up({ button: "right" });
+    }
     return;
   }
   await page.evaluate((loss) => {
@@ -271,7 +336,9 @@ async function triggerLoss(page, browser) {
 async function awaitRecovery(page, startedAt) {
   const phases = [];
   let restoringShot = false;
-  const deadline = Date.now() + 45_000;
+  let cover = null;
+  const began = Date.now();
+  const deadline = began + 45_000;
   for (;;) {
     const state = await page.evaluate(() => ({
       phase: [
@@ -280,19 +347,27 @@ async function awaitRecovery(page, startedAt) {
       ].filter((part) => part !== null && part !== undefined).join("#") || null,
       restoring: [...document.querySelectorAll('[role="status"]')].some((node) => node.textContent?.includes("Restoring the 3D view")),
       stopped: [...document.querySelectorAll('[role="alert"]')].some((node) => node.textContent?.includes("The 3D view stopped")),
+      cover: (() => {
+        const node = document.querySelector("[data-graphics-cover]");
+        return node === null ? null : { tone: node.getAttribute("data-graphics-cover"), ground: getComputedStyle(node).backgroundColor };
+      })(),
       canvasReplaced: document.querySelector("canvas") !== window.__resetOldCanvas,
       rendererReplaced: window.__resetOldRenderer !== null && window.__venPerf?.gl !== window.__resetOldRenderer,
     }));
     const label = `${state.phase ?? "-"}${state.restoring ? "+restoring" : ""}${state.stopped ? "+stopped" : ""}`;
     if (phases.at(-1)?.label !== label) phases.push({ atMs: sinceStart(startedAt), label });
     const sawLoss = phases.some((entry) => entry.label.includes("restoring"));
+    cover ??= state.cover;
     // What a person sees while it restores, once.
     if (state.restoring && !restoringShot) {
       restoringShot = true;
       writeFileSync(join(OUT, `${RUN}-restoring.png`), await page.screenshot());
     }
-    if (state.stopped) return { outcome: "stopped", phases, ...state };
-    if (sawLoss && !state.restoring) return { outcome: "restored", phases, ...state };
+    if (state.stopped) return { outcome: "stopped", phases, ...state, cover };
+    // Errors that never stop come back through one fresh device, then stop: wait for the card.
+    if (sawLoss && !state.restoring && LOSS !== "errors") return { outcome: "restored", phases, ...state, cover };
+    // One error is not a loss: the view keeps drawing, with no cover at all.
+    if (LOSS === "error-once" && !sawLoss && Date.now() - began > 6_000) return { outcome: "kept-drawing", phases, ...state, cover };
     if (Date.now() > deadline) return { outcome: "timed-out", phases, ...state };
     await page.waitForTimeout(50);
   }
@@ -396,6 +471,74 @@ async function openSurface(page) {
   }
 }
 
+/**
+ * The main thread's busy stretches in a CPU profile (samples with no idle or
+ * GC gap over 5 ms), each over 200 ms with the functions that filled it,
+ * counted inclusively: a long task named by what it was doing.
+ */
+function busyStretches(profile) {
+  const nodes = new Map(profile.nodes.map((node) => [node.id, node]));
+  const parents = new Map();
+  for (const node of profile.nodes) for (const child of node.children ?? []) parents.set(child, node.id);
+  const idle = new Set(["(idle)", "(program)", "(garbage collector)"]);
+  const label = (node) => `${node.callFrame.functionName || "(anonymous)"} ${node.callFrame.url.replace(/^.*\/(src|node_modules)\//, "$1/").replace(/\?.*$/, "")}:${node.callFrame.lineNumber + 1}`;
+  const stretches = [];
+  let current = null;
+  let at = profile.startTime;
+  profile.samples.forEach((id, index) => {
+    const delta = profile.timeDeltas[index] ?? 0;
+    at += delta;
+    const node = nodes.get(id);
+    const busy = node !== undefined && !idle.has(node.callFrame.functionName);
+    if (!busy) {
+      if (current !== null && at - current.lastBusy > 5_000) { stretches.push(current); current = null; }
+      return;
+    }
+    current ??= { start: at, lastBusy: at, inclusive: new Map() };
+    current.lastBusy = at;
+    const seen = new Set();
+    for (let walk = id; walk !== undefined; walk = parents.get(walk)) {
+      const name = label(nodes.get(walk));
+      if (seen.has(name)) continue;
+      seen.add(name);
+      current.inclusive.set(name, (current.inclusive.get(name) ?? 0) + delta);
+    }
+  });
+  if (current !== null) stretches.push(current);
+  return stretches
+    .map((stretch) => ({
+      startMs: Math.round((stretch.start - profile.startTime) / 1_000),
+      ms: Math.round((stretch.lastBusy - stretch.start) / 1_000),
+      top: [...stretch.inclusive].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([name, us]) => `${Math.round(us / 1_000)} ms ${name}`),
+    }))
+    .filter((stretch) => stretch.ms >= 200);
+}
+
+/** A run that has answered its question before the full loss/restore comparison. */
+class Done extends Error {}
+
+/** The card's "Continue in 2D": the same layout at the same address, without a reload. */
+async function continueIn2d(page) {
+  const urlBefore = page.url();
+  await page.evaluate(() => { window.__resetSamePage = true; });
+  writeFileSync(join(OUT, `${RUN}-card.png`), await page.screenshot());
+  const arrival = page.getByRole("button", { name: /^Open planner/ });
+  if (await arrival.count() > 0 && await arrival.first().isVisible()) await arrival.first().click();
+  const button = page.getByRole("button", { name: "Continue in 2D" });
+  if (await button.count() === 0) return { offered: false };
+  await button.first().click();
+  await page.waitForSelector("main.bp-body", { timeout: 20_000 });
+  await page.waitForTimeout(1_500);
+  writeFileSync(join(OUT, `${RUN}-2d.png`), await page.screenshot());
+  return page.evaluate((before) => ({
+    offered: true,
+    sameAddress: location.href === before,
+    samePage: window.__resetSamePage === true,
+    twoD: document.querySelector("main.bp-body") !== null,
+    text: document.querySelector("main.bp-body")?.innerText.replace(/\s+/g, " ").slice(0, 300) ?? null,
+  }), urlBefore);
+}
+
 const browser = await chromium.launch({
   channel: "chromium",
   headless: true,
@@ -405,9 +548,18 @@ const report = { run: RUN, surface: SURFACE, backend: BACKEND, loss: LOSS, devic
 let lossStarted = false;
 try {
   const context = await browser.newContext(device);
-  if (BACKEND === "webgl2") {
+  if (BACKEND === "webgl2" || BACKEND === "none") {
     // As on a browser without WebGPU: Three negotiates its WebGL2 backend.
     await context.addInitScript(() => { Object.defineProperty(navigator, "gpu", { configurable: true, get: () => undefined }); });
+  }
+  if (BACKEND === "none") {
+    // As on a locked-down machine: no WebGL context either.
+    await context.addInitScript(() => {
+      const getContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+        return /webgl/.test(type) ? null : getContext.call(this, type, ...rest);
+      };
+    });
   }
   const page = await context.newPage();
   page.on("pageerror", (error) => { report.pageErrors.push({ afterLoss: lossStarted, message: error.message.slice(0, 400) }); });
@@ -416,6 +568,18 @@ try {
     (lossStarted ? report.console.afterLoss : report.console.beforeLoss).push(`${message.type()}: ${message.text().slice(0, 300)}`);
   });
 
+  if (BACKEND === "none") {
+    // Nothing can draw: the planner must say so plainly and offer this layout in 2D.
+    await stubPlanner(page);
+    await routeCaptures(page);
+    await page.goto(`${BASE}/plan/${CONFIG_ID}?space=grand-hall`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => [...document.querySelectorAll('[role="alert"]')]
+      .some((node) => /couldn.t start/.test(node.textContent ?? "")), undefined, { timeout: 120_000, polling: 250 });
+    report.card = await page.evaluate(() => [...document.querySelectorAll('[role="alert"]')]
+      .map((node) => node.textContent?.trim().slice(0, 300) ?? ""));
+    report.continueIn2d = await continueIn2d(page);
+    throw new Done();
+  }
   await openSurface(page);
   const canvas = page.locator("canvas").first();
   const box = await canvas.boundingBox();
@@ -430,8 +594,37 @@ try {
   writeFileSync(join(OUT, `${RUN}-before.png`), shotBefore);
 
   lossStarted = true;
+  let profiler = null;
+  if (PROFILE) {
+    profiler = await page.context().newCDPSession(page);
+    await profiler.send("Profiler.enable");
+    await profiler.send("Profiler.setSamplingInterval", { interval: 500 });
+    await profiler.send("Profiler.start");
+  }
+  if (TRACE) {
+    await page.evaluate(() => {
+      const trace = [];
+      window.__resetTrace = trace;
+      const device = document.querySelector("canvas")?.getContext("webgpu")?.getConfiguration?.()?.device ?? null;
+      const counts = { errors: 0 };
+      device?.addEventListener("uncapturederror", () => { counts.errors++; });
+      const started = performance.now();
+      const sample = setInterval(() => {
+        const at = Math.round(performance.now() - started);
+        trace.push({
+          at, errors: counts.errors, renders: window.__venPerf?.gl?.info?.render?.calls ?? null,
+          phase: document.querySelector("[data-graphics-recovery]")?.getAttribute("data-graphics-recovery") ?? null,
+        });
+        if (at > 8_000) clearInterval(sample);
+      }, 50);
+    });
+  }
   const startedAt = performance.now();
   await triggerLoss(page, browser);
+  if (TRACE) {
+    await page.waitForTimeout(8_500);
+    report.trace = await page.evaluate(() => window.__resetTrace.filter((_, index) => index % 4 === 0));
+  }
   report.recovery = await awaitRecovery(page, startedAt);
   report.recovery.totalMs = sinceStart(startedAt);
   report.recovery.pageClock = await page.evaluate(() => {
@@ -440,12 +633,40 @@ try {
     return {
       overlayShownMs: timeline.shownAt === null ? null : Math.round(timeline.shownAt - timeline.lossAt),
       overlayGoneMs: timeline.goneAt === null ? null : Math.round(timeline.goneAt - timeline.lossAt),
+      captureGoneMs: timeline.captureGoneAt === null ? null : Math.round(timeline.captureGoneAt - timeline.lossAt),
+      captureBackMs: timeline.captureBackAt === null ? null : Math.round(timeline.captureBackAt - timeline.lossAt),
       longTasksMs: timeline.longTasks,
     };
   });
+  if (LOSS === "errors") {
+    // The second device failed the same way: the stopped card, then the same layout in 2D.
+    await page.evaluate(() => { clearInterval(window.__resetErrors); });
+    report.continueIn2d = await continueIn2d(page);
+    throw new Done();
+  }
   writeFileSync(join(OUT, `${RUN}-during.png`), await page.screenshot());
   // The replacement rebuilds GPU resources (pipelines, splat snapshots, the hall's environment) as it draws.
   await page.waitForTimeout(SURFACE === "room-walk" ? 20_000 : 10_000);
+  if (profiler !== null) {
+    const { profile } = await profiler.send("Profiler.stop");
+    writeFileSync(join(OUT, `${RUN}.cpuprofile`), JSON.stringify(profile));
+    report.longTaskProfile = busyStretches(profile);
+  }
+  // The page clock again once settled: when the capture came back, every long task.
+  report.settledClock = await page.evaluate(() => {
+    const timeline = window.__resetTimeline;
+    if (timeline === undefined) return null;
+    return {
+      overlayGoneMs: timeline.goneAt === null ? null : Math.round(timeline.goneAt - timeline.lossAt),
+      captureGoneMs: timeline.captureGoneAt === null ? null : Math.round(timeline.captureGoneAt - timeline.lossAt),
+      captureBackMs: timeline.captureBackAt === null ? null : Math.round(timeline.captureBackAt - timeline.lossAt),
+      longTasksMs: timeline.longTasks,
+      longTaskSpans: timeline.longTaskSpans ?? [],
+      // Long tasks over 200 ms that start after the cover lifted: what a person feels as a freeze.
+      afterCoverOver200: (timeline.longTaskSpans ?? []).filter((span) => timeline.goneAt !== null
+        && span.atMs >= timeline.goneAt - timeline.lossAt && span.ms > 200),
+    };
+  });
   // A view that came back must still be drawing once the rebuilt scene has settled.
   report.settled = await page.evaluate(() => ({
     phase: document.querySelector("[data-graphics-recovery]")?.getAttribute("data-graphics-recovery") ?? null,
@@ -472,7 +693,7 @@ try {
     walkNode: report.after.walkReady === report.atPose.walkReady,
   };
 } catch (error) {
-  report.error = error instanceof Error ? error.message : String(error);
+  if (!(error instanceof Done)) report.error = error instanceof Error ? error.message : String(error);
 } finally {
   writeFileSync(join(OUT, `${RUN}.json`), `${JSON.stringify(report, null, 2)}\n`);
   await browser.close();
@@ -484,6 +705,10 @@ console.log(JSON.stringify({
   capture: { before: report.capture, after: report.captureAfter, showing: report.captureShowing, arrivalDismissed: report.arrivalDismissed },
   walking: report.walking,
   preserved: report.preserved, pixels: report.pixels, framesBefore: report.framesBefore, framesAfter: report.framesAfter,
+  cover: report.recovery?.cover, card: report.card, continueIn2d: report.continueIn2d,
+  settledClock: report.settledClock,
+  trace: report.trace,
+  longTaskProfile: report.longTaskProfile?.map((stretch) => ({ ...stretch, top: stretch.top.slice(0, 12) })),
   consoleAfterLoss: report.console.afterLoss.length,
   // Console lines of a kind the page had not already logged before the loss.
   newConsoleKinds: [...new Set(report.console.afterLoss)].filter((line) => !report.console.beforeLoss.includes(line)),

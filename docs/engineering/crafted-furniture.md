@@ -99,7 +99,16 @@ crafted pieces, so the planner downloads no furniture GLB.
   the sun's normal offset as under the chandeliers, which cast no shadows. It
   shares its piece's instance transforms, so while a reveal (the Grand
   Assembly) moves or hides a batch's pieces, that batch's shade is not drawn
-  and `FurnitureContactShadows` grounds them as the reveal presents them.
+  and `FurnitureContactShadows` grounds them as the reveal presents them. A
+  test holds every piece to it: what a piece shows within 2 cm of the floor
+  (its triangles' edges, sampled), in groups, is a foot when no wider than
+  16 cm and not under a wider group, and every foot stands inside a spot. A
+  hem, a plinth, a base or a panel is wider, and the footprint shadow every
+  placed piece gets grounds it. That test added the rounds' feet (the bare
+  round's, and the black cloth's, which clears the floor), the television's
+  castors and the microphones. The same pass brought the television's
+  uprights up onto their rails (only the castors touch the floor) and the
+  projector's feet up into its body, which they stopped 4 mm short of.
 - **Detail.** A phone draws each piece with fewer segments round its turned and
   bent parts and fewer cloth samples (`crafted-detail.ts`): same footprint,
   same caster, same materials. So does a software rasteriser (SwiftShader,

@@ -4,8 +4,9 @@ import {
 } from "react";
 import { Canvas, useFrame, type CanvasProps, type RootState } from "@react-three/fiber";
 import { WebGPURenderer } from "three/webgpu";
-import { Scene } from "three";
+import { Color, Scene } from "three";
 import { ActivityStatus } from "../shared/Activity.js";
+import { usePlannerWork } from "./planner-work.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import {
   applyNativeRendererSettings, detachNativeWebGLBackend, isNativeWebGLBackend, readNativeRendererSettings,
@@ -16,7 +17,7 @@ import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-
 import { noteMainDraw } from "../../lib/main-draw-clock.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
-import { nativeSceneDrawnSplats, nativeScenePerfStats } from "../../lib/native-splat-scene.js";
+import { nativeSceneCapturePending, nativeSceneDrawnSplats, nativeScenePerfStats } from "../../lib/native-splat-scene.js";
 import {
   beginGpuProfile, endGpuProfile, recordRenderedFrame, registerProfilerRenderer,
   sampleDrawnSplats, shouldProfileFrames, type GpuProfileToken,
@@ -25,10 +26,11 @@ import {
   createNativeRendererLifecycle, nativeRendererError, type NativeRendererLifecycle,
 } from "../../lib/native-renderer-lifecycle.js";
 import {
-  createNativeRendererRecovery, type NativeLossApi, type NativeRecoveryPhase,
+  NATIVE_RECOVERY_LOSS_WINDOW_MS, createNativeRendererRecovery, type NativeLossApi, type NativeRecoveryPhase,
   type NativeRendererRecovery, type NativeRestoreMode,
 } from "../../lib/native-renderer-recovery.js";
 import { readGraphicsResetDrill, startGraphicsResetDrill } from "../../lib/graphics-reset-drill.js";
+import { createNativeGpuErrorWatch, type NativeGpuErrorWatch } from "../../lib/native-gpu-error-watch.js";
 export { isNativeRenderer } from "../../lib/native-renderer.js";
 
 export interface NativeCanvasOptions {
@@ -37,35 +39,87 @@ export interface NativeCanvasOptions {
   readonly powerPreference?: "default" | "high-performance" | "low-power";
 }
 
-/** Whose work the view holds, which decides what a stopped or restoring view may promise. */
+/**
+ * Whose work the view holds, which decides what a stopped or restoring view
+ * may promise: a planner shows someone's layout; a walk (a landing, a room)
+ * holds none.
+ */
 export type NativeCanvasSurface = "planner" | "walk";
 
 export interface NativeCanvasProps extends Omit<CanvasProps, "gl"> {
   readonly gl?: NativeCanvasOptions;
   /** Development qualification of Three's native WebGL2 backend. */
   readonly forceWebGL?: boolean;
+  /** Defaults to "planner" inside the editor's PlannerWorkContext, otherwise "walk". */
   readonly surface?: NativeCanvasSurface;
+  /**
+   * The view landed on its couldn't-start or stopped card. Anything the page
+   * shows over the view as still opening (the planner's arrival) must step
+   * aside, or the card and its way on stay hidden under a false "Opening…".
+   */
+  readonly onUnavailable?: () => void;
 }
 
 const SURFACE_COPY: Record<NativeCanvasSurface, {
-  readonly restoring: string;
+  readonly restoring: string | null;
   readonly stopped: string;
   readonly cannotStart: string;
-  readonly fallback: { readonly href: string; readonly label: string } | null;
+  /** Whether the planner's own 2D view may stand in, where the editor offers one. */
+  readonly offers2d: boolean;
 }> = {
   planner: {
-    restoring: "The browser reset this page’s graphics. Your layout is safe.",
-    stopped: "The 3D view stopped. Your layout is safe; nothing you placed was lost. Try again, or continue in the 2D planner.",
-    cannotStart: "The 3D view couldn’t start. Try again, or continue in the 2D planner.",
-    fallback: { href: "/blueprint", label: "Open the 2D planner" },
+    restoring: "Your layout is safe; nothing you placed was lost.",
+    stopped: "The 3D view stopped. Your layout is safe; nothing you placed was lost.",
+    cannotStart: "The 3D view couldn’t start.",
+    offers2d: true,
   },
   walk: {
-    restoring: "The browser reset this page’s graphics.",
-    stopped: "The 3D view stopped. Try again in a moment.",
-    cannotStart: "The 3D view couldn’t start. Try again in a moment.",
-    fallback: null,
+    restoring: null,
+    stopped: "The 3D view stopped.",
+    cannotStart: "The 3D view couldn’t start.",
+    offers2d: false,
   },
 };
+
+/** The ground the scene is drawn on, for a cover that stands in for it. */
+interface StageTone {
+  readonly ground: string;
+  readonly tone: "dark" | "light";
+}
+
+const DEFAULT_STAGE = { ground: "var(--vv-ivory)", ink: "var(--vv-forest)", tone: "light" } as const;
+/** The planner's dark stage, its drawn hall's own background (PlannerScene). */
+const DARK_STAGE: StageTone = { ground: "#120e0b", tone: "dark" };
+
+/** Whether a captured room's splats are drawn in this scene now. */
+function sceneShowsCapture(scene: Scene): boolean {
+  return (nativeScenePerfStats(scene, performance.now())?.splats ?? 0) > 0;
+}
+
+function stageToneOf(scene: Scene): StageTone | null {
+  // A captured room fills the view (at eye level, all of it) over the light
+  // shell's clear colour: what a person sees is the warm, dark room, and a
+  // light cover would flash over it.
+  if (sceneShowsCapture(scene)) return DARK_STAGE;
+  const background = scene.background;
+  if (!(background instanceof Color)) return null;
+  // Working-space (linear) luminance; the planner's grounds are the dark hall
+  // (#120e0b) and the light room shell (#eee9de), far either side of this.
+  const luminance = 0.2126 * background.r + 0.7152 * background.g + 0.0722 * background.b;
+  return { ground: `#${background.getHexString()}`, tone: luminance < 0.18 ? "dark" : "light" };
+}
+
+function stageStyle(stage: StageTone | null): { backgroundColor: string; color: string } {
+  if (stage === null) return { backgroundColor: DEFAULT_STAGE.ground, color: DEFAULT_STAGE.ink };
+  return { backgroundColor: stage.ground, color: stage.tone === "dark" ? "var(--house-text-1)" : "var(--vv-forest)" };
+}
+
+/** Three r186 passes `{ api, type, message }` for an uncaptured WebGPU error. */
+function describeGpuError(event: unknown): string {
+  if (typeof event !== "object" || event === null) return String(event);
+  const message = "message" in event && typeof event.message === "string" ? event.message : "Unknown GPU error";
+  return "type" in event && typeof event.type === "string" ? `${event.type}: ${message}` : message;
+}
 
 /**
  * How long a swap waits for the lost renderer to finish releasing. Three's
@@ -73,6 +127,14 @@ const SURFACE_COPY: Record<NativeCanvasSurface, {
  * keep a person from their room.
  */
 const RETIRE_WAIT_MS = 1_500;
+
+/**
+ * After a swap, a captured room is back only once the new device draws its
+ * own splat snapshot, seconds after the first frame (rebuilt from the sources
+ * the scene still holds). The cover waits for it, but never longer than this:
+ * a capture that cannot come back must not keep the room covered.
+ */
+export const NATIVE_CAPTURE_RETURN_WAIT_MS = 15_000;
 
 // TypeScript 5.7's DOM library predates the browser WebGPU types. Describe only
 // the standard negotiation calls used here; Three's own device input is opaque.
@@ -146,6 +208,10 @@ interface LostRenderer {
   readonly settings: NativeRendererSettings;
   readonly pixelRatio: number;
   readonly backend: "webgpu" | "webgl2";
+  /** The GPU error it was given up for (its device still alive), or null for a real loss. */
+  readonly errorMessage: string | null;
+  /** A captured room was drawn when it went: the restored view must draw it again. */
+  readonly captureShown: boolean;
 }
 
 interface LaunchOptions {
@@ -171,8 +237,11 @@ interface LaunchOptions {
  * (lib/native-renderer-recovery.ts owns when and how often).
  */
 export function NativeCanvas({
-  children, gl: options = {}, forceWebGL = false, frameloop = "always", onCreated, surface = "planner", style, ...props
+  children, gl: options = {}, forceWebGL = false, frameloop = "always", onCreated, surface: surfaceProp, onUnavailable,
+  style, ...props
 }: NativeCanvasProps): ReactElement {
+  const plannerWork = usePlannerWork();
+  const surface = surfaceProp ?? (plannerWork === null ? "walk" : "planner");
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"initializing" | "ready" | "error">("initializing");
   const [error, setError] = useState<Error | null>(null);
@@ -187,6 +256,19 @@ export function NativeCanvas({
   // stays over the canvas until then.
   const [awaitingFirstFrame, setAwaitingFirstFrame] = useState(false);
   const firstFramePending = useRef(false);
+  /** The replacement whose capture the cover still waits for, and the bound on that wait. */
+  const captureReturn = useRef<{ readonly native: WebGPURenderer; readonly timer: ReturnType<typeof setTimeout> } | null>(null);
+  // A cover over a lost view stands in for its scene: the ground it was drawn
+  // on, not a flash of another colour over the dark hall.
+  const [stage, setStage] = useState<StageTone | null>(null);
+  const gpuErrors = useRef<NativeGpuErrorWatch | null>(null);
+  /**
+   * Replacements for a renderer whose GPU errors never stopped, with that
+   * error and how long it counts: the same errors soon after, on a fresh
+   * device, are the scene's own. Anything else gets the usual recovery, whose
+   * three-losses-a-minute limit already ends a loop.
+   */
+  const errorReplacements = useRef(new WeakMap<WebGPURenderer, { readonly message: string; readonly until: number }>());
   const mounted = useRef(true);
   const renderer = useRef<WebGPURenderer | null>(null);
   const failedRenderer = useRef<WebGPURenderer | null>(null);
@@ -207,10 +289,14 @@ export function NativeCanvas({
   const restorations = useRef(0);
   /** This view, for the once-per-view ?graphicsReset drill. */
   const drillOwner = useRef({});
-  const callbacks = useRef({ onCreated, options, forceWebGL });
-  callbacks.current = { onCreated, options, forceWebGL };
+  const callbacks = useRef({ onCreated, onUnavailable, options, forceWebGL });
+  callbacks.current = { onCreated, onUnavailable, options, forceWebGL };
 
   const coverUntilFirstFrame = useCallback((covered: boolean): void => {
+    if (!covered && captureReturn.current !== null) {
+      clearTimeout(captureReturn.current.timer);
+      captureReturn.current = null;
+    }
     firstFramePending.current = covered;
     if (mounted.current) setAwaitingFirstFrame(covered);
   }, []);
@@ -218,6 +304,8 @@ export function NativeCanvas({
   const fail = useCallback((cause: Error): void => {
     framePacer.current?.pacer.dispose();
     framePacer.current = null;
+    // A view still waiting for its capture shows the stage from the loss; the scene no longer does.
+    const awaitingCapture = captureReturn.current !== null && captureReturn.current.native === renderer.current;
     if (firstFramePending.current) coverUntilFirstFrame(false);
     // Stop further frames synchronously, before React removes the failed Canvas.
     if (renderer.current !== null && failedRenderer.current === renderer.current) return;
@@ -243,6 +331,7 @@ export function NativeCanvas({
       lost.current = null;
       recovery.current?.reset();
     }
+    if (running.current && root.current !== null && !awaitingCapture) setStage(stageToneOf(root.current.scene));
     setStoppedWhileRunning(running.current);
     running.current = false;
     setError(cause);
@@ -266,7 +355,9 @@ export function NativeCanvas({
     lifecycle.current?.cancel();
   }, [coverUntilFirstFrame]);
 
-  const lose = useCallback((native: WebGPURenderer, api: NativeLossApi, message: string): void => {
+  const lose = useCallback((
+    native: WebGPURenderer, api: NativeLossApi, message: string, errorMessage: string | null = null,
+  ): void => {
     if (!mounted.current || renderer.current !== native || failedRenderer.current === native) return;
     const settings = baseSettings.current.get(native);
     if (!running.current || settings === undefined || root.current === null) {
@@ -279,9 +370,17 @@ export function NativeCanvas({
     framePacer.current = null;
     failedRenderer.current = native;
     running.current = false;
+    // Lost again while the cover still waits for the capture: the replacement's
+    // splat host has already let the old snapshot go, so the scene no longer
+    // shows what the person last saw. Keep the capture and the stage from the first loss.
+    const awaitingCapture = captureReturn.current?.native === native;
     if (firstFramePending.current) coverUntilFirstFrame(false);
+    if (!awaitingCapture) setStage(stageToneOf(root.current.scene));
     const backend = isNativeWebGLBackend(native.backend) ? "webgl2" : "webgpu";
-    lost.current = { native, settings, pixelRatio: native.getPixelRatio(), backend };
+    lost.current = {
+      native, settings, pixelRatio: native.getPixelRatio(), backend, errorMessage,
+      captureShown: awaitingCapture || sceneShowsCapture(root.current.scene),
+    };
     if (backend === "webgl2") {
       // Now, while its GL calls are silent no-ops (see releaseLostWebGLRenderer);
       // its later lifecycle disposal must then leave the shared canvas alone.
@@ -292,6 +391,31 @@ export function NativeCanvas({
     }
     recovery.current?.lost(api);
   }, [coverUntilFirstFrame, fail]);
+
+  /** GPU errors outlasted their grace with no frame getting through. */
+  const breakOnGpuErrors = useCallback((message: string): void => {
+    const native = renderer.current;
+    if (!mounted.current || native === null || failedRenderer.current === native) return;
+    // A fresh device clears whatever the old one held (fragmented memory, a
+    // resource left invalid). The same errors soon after on a fresh device, or
+    // on a view not yet drawing, are the scene's own: stop rather than loop.
+    const replaced = errorReplacements.current.get(native);
+    const repeated = replaced !== undefined && replaced.message === message && performance.now() < replaced.until;
+    if (running.current && !repeated) lose(native, "WebGPU", message, message);
+    else fail(nativeRendererError(message));
+  }, [fail, lose]);
+
+  useEffect(() => {
+    const watch = createNativeGpuErrorWatch({
+      onBroken: breakOnGpuErrors,
+      redraw: () => { root.current?.invalidate(); },
+    });
+    gpuErrors.current = watch;
+    return () => {
+      watch.dispose();
+      if (gpuErrors.current === watch) gpuErrors.current = null;
+    };
+  }, [breakOnGpuErrors]);
 
   const buildRenderer = useCallback((
     canvas: HTMLCanvasElement | OffscreenCanvas, reuse: LostRenderer["backend"] | null,
@@ -437,14 +561,28 @@ export function NativeCanvas({
     native.onDeviceLost = (info) => {
       lose(native, info.api === "WebGL" ? "WebGL" : "WebGPU", info.message);
     };
+    // An uncaptured error is not a lost device: Three r186 documents onError as
+    // non-escalating, and one bad upload or draw is usually followed by good
+    // frames. The watch decides when errors mean the view is broken.
     native.onError = (event: unknown): void => {
-      if (renderer.current !== native) return;
-      const message = typeof event === "object" && event !== null && "message" in event
-        ? event.message : event;
-      fail(nativeRendererError(message));
+      if (renderer.current !== native || failedRenderer.current === native) return;
+      // The app's own failures (a resident splat sort that died, a GPU readiness
+      // callback that threw; lib/native-splat-scene.ts, lib/native-renderer.ts)
+      // arrive as a message and stop the view at once, as they always have.
+      // Three reports GPU errors as { api, type, message }.
+      if (typeof event === "string") {
+        fail(nativeRendererError(event));
+        return;
+      }
+      const message = describeGpuError(event);
+      if (gpuErrors.current?.error(message) === true) {
+        // eslint-disable-next-line no-console
+        console.warn("VenViewer: the graphics device reported an error; the 3D view keeps drawing.", message);
+      }
     };
     if (reuse === "webgl2") sharedCanvas.current.add(native);
     renderer.current = native;
+    gpuErrors.current?.reset();
     // R3F8's factory accepts its structural Renderer contract (render), so the
     // native object needs no cast. Its legacy RootState.gl annotation remains
     // narrower; backend-specific consumers must use isNativeRenderer.
@@ -556,6 +694,9 @@ export function NativeCanvas({
     if (!mounted.current || lost.current !== retired) throw new Error("The view closed while it was restoring");
     const next = buildRenderer(retired.native.domElement, retired.backend);
     baseSettings.current.set(next, retired.settings);
+    if (retired.errorMessage !== null) {
+      errorReplacements.current.set(next, { message: retired.errorMessage, until: performance.now() + NATIVE_RECOVERY_LOSS_WINDOW_MS });
+    }
     await new Promise<void>((resolve, reject) => {
       const failed = (cause: Error): void => {
         // A replacement that could not start is not a stopped view: the recovery decides what follows.
@@ -583,8 +724,19 @@ export function NativeCanvas({
           restorations.current += 1;
           if (next.domElement instanceof HTMLCanvasElement) next.domElement.dataset["restorations"] = String(restorations.current);
           // The first frame needs no request: the frame loop restarting with the
-          // recovery's "running" phase invalidates the root. It lifts the cover.
+          // recovery's "running" phase invalidates the root. It lifts the cover,
+          // or, for a captured room, the first frame once its capture is drawn
+          // again or can no longer come (nativeSceneCapturePending).
           coverUntilFirstFrame(true);
+          if (retired.captureShown) {
+            const timer = setTimeout(() => {
+              if (captureReturn.current?.native !== next) return;
+              captureReturn.current = null;
+              // The capture did not come back in time; the next frame lifts the cover.
+              if (mounted.current) state.get().invalidate();
+            }, NATIVE_CAPTURE_RETURN_WAIT_MS);
+            captureReturn.current = { native: next, timer };
+          }
           resolve();
         },
         onFailed: failed,
@@ -652,7 +804,12 @@ export function NativeCanvas({
       // The frames a viewer sees, for the frame-rate governor (main-draw-clock.ts).
       if (drawn) {
         noteMainDraw(startedAt);
-        if (firstFramePending.current) coverUntilFirstFrame(false);
+        // While errors are being judged, this frame counts once its own GPU work has completed.
+        gpuErrors.current?.drawn(() => createNativeGpuWorkTicket(native, new AbortController().signal).completion);
+        const awaitedCapture = captureReturn.current?.native === native;
+        if (firstFramePending.current && (!awaitedCapture || !nativeSceneCapturePending(state.scene, native))) {
+          coverUntilFirstFrame(false);
+        }
       }
       return drawn;
     });
@@ -664,7 +821,12 @@ export function NativeCanvas({
       mounted.current = false;
       // React StrictMode rehearses effect cleanup/setup on the same renderer.
       // A real unmount stays detached; pending init still belongs to its owner.
-      queueMicrotask(() => { if (!mounted.current) lifecycle.current?.cancel(); });
+      queueMicrotask(() => {
+        if (mounted.current) return;
+        lifecycle.current?.cancel();
+        if (captureReturn.current !== null) clearTimeout(captureReturn.current.timer);
+        captureReturn.current = null;
+      });
     };
   }, []);
 
@@ -686,8 +848,15 @@ export function NativeCanvas({
     setAttempt((current) => current + 1);
   };
 
+  useEffect(() => {
+    if (status === "error") callbacks.current.onUnavailable?.();
+  }, [status]);
+
   const recovering = recoveryPhase.kind !== "running" && recoveryPhase.kind !== "failed";
   const copy = SURFACE_COPY[surface];
+  const continueIn2d = copy.offers2d ? plannerWork?.continueIn2d ?? null : null;
+  // A view that never drew has no scene ground to stand in for.
+  const cardStage = stoppedWhileRunning ? stage : null;
   return (
     <div
       data-graphics-recovery={recoveryPhase.kind}
@@ -713,16 +882,16 @@ export function NativeCanvas({
         </div>
       )}
       {(recovering || awaitingFirstFrame) && status !== "error" && (
-        <div style={{
+        <div data-graphics-cover={stage?.tone ?? DEFAULT_STAGE.tone} style={{
           // The lost canvas shows nothing true; cover it, and take the gestures meant for it.
           position: "absolute", inset: 0, zIndex: 20,
           display: "grid", placeItems: "safe center", padding: 24,
           boxSizing: "border-box", textAlign: "center",
-          background: "#f5f1e8", color: "#183b32",
+          ...stageStyle(stage),
         }}>
           <div style={{ width: "100%", maxWidth: 440, lineHeight: 1.5 }}>
             <ActivityStatus variant="panel">Restoring the 3D view…</ActivityStatus>
-            <p style={{ margin: "14px 0 0" }}>{copy.restoring}</p>
+            {copy.restoring !== null && <p style={{ margin: "14px 0 0" }}>{copy.restoring}</p>}
           </div>
         </div>
       )}
@@ -731,13 +900,22 @@ export function NativeCanvas({
           // Keep recovery above scene HUDs, within the failed canvas's bounds.
           position: "absolute", inset: 0, zIndex: 20,
           display: "grid", placeItems: "safe center", padding: 24,
-          overflow: "auto", boxSizing: "border-box",
-          background: "#f5f1e8", color: "#183b32",
+          overflow: "auto", boxSizing: "border-box", textAlign: "center",
+          ...stageStyle(cardStage),
         }}>
           <div style={{ width: "100%", maxWidth: 440, lineHeight: 1.5 }}>
-            <p>{stoppedWhileRunning ? copy.stopped : copy.cannotStart}</p>
-            <button type="button" onClick={retry}>Try 3D again</button>
-            {copy.fallback !== null && <>{" "}<a href={copy.fallback.href}>{copy.fallback.label}</a></>}
+            <p style={{ margin: "0 0 16px" }}>
+              {stoppedWhileRunning ? copy.stopped : copy.cannotStart}{" "}
+              {continueIn2d !== null ? "Try again, or continue in 2D." : "Try again in a moment."}
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+              {continueIn2d !== null && (
+                <button type="button" className="vv-button primary" onClick={continueIn2d}>Continue in 2D</button>
+              )}
+              <button type="button" className={continueIn2d !== null ? "vv-button" : "vv-button primary"} onClick={retry}>
+                Try 3D again
+              </button>
+            </div>
             {import.meta.env.DEV && error !== null && <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{error.message}</pre>}
           </div>
         </section>

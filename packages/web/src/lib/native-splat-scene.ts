@@ -133,6 +133,20 @@ export class NativeSplatScene {
     };
   }
 
+  /**
+   * Whether this renderer's capture is still to come: after a graphics reset
+   * the replacement's own snapshot must be built before the room is back (a
+   * snapshot of the lost device never counts: teardown cleared it, and stale
+   * builds are rejected). Not pending once it draws, once its build failed
+   * (the planner falls back to its drawn room), or while nothing is selected.
+   */
+  capturePending(renderer: object): boolean {
+    if (this.renderer !== renderer) return this.sources.size > 0;
+    if ((this.perfStats(0)?.splats ?? 0) > 0) return false;
+    const selected = this.selectedSources();
+    return selected.length > 0 && !this.failedKeys.has(this.key(selected));
+  }
+
   /** Splats the active draw keeps after GPU culling. WebGPU reads the sort's
    * indirect arguments back; WebGL has no culling and draws every loaded splat. */
   async drawnSplats(renderer: WebGPURenderer): Promise<number | null> {
@@ -647,6 +661,11 @@ const runtimes = new WeakMap<Scene, NativeSplatScene>();
 /** Profiling must never construct a native runtime for an unrelated scene. */
 export function nativeScenePerfStats(scene: Scene, now: number): NativeScenePerfStats | null {
   return runtimes.get(scene)?.perfStats(now) ?? null;
+}
+
+/** Whether the scene's capture is still to come on `renderer` (a recovered view's cover waits for it). */
+export function nativeSceneCapturePending(scene: Scene, renderer: object): boolean {
+  return runtimes.get(scene)?.capturePending(renderer) ?? false;
 }
 
 /** Profiler only: splats the active draw keeps after GPU culling. */

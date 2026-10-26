@@ -10,6 +10,8 @@ import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-prev
 import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { PLANNER_INTERACTION_FLOOR_NAME } from "../../lib/planner-interaction-floor.js";
+import { ghostRaisePx } from "../../lib/touch-arbiter.js";
+import { useTouchGestureStore } from "../../stores/touch-gesture-store.js";
 
 const graphics = vi.hoisted(() => ({ get: vi.fn<() => {
   scene: Scene;
@@ -18,8 +20,18 @@ const graphics = vi.hoisted(() => ({ get: vi.fn<() => {
   gl: { domElement: HTMLCanvasElement };
   invalidate: () => void;
 }>() }));
-vi.mock("@react-three/fiber", () => ({ useThree: () => graphics.get() }));
-vi.mock("../FurnitureProxy.js", () => ({ FurnitureProxy: () => null }));
+// The frame loop is driven by hand: moves are followed once a frame.
+const frames = vi.hoisted(() => ({ latest: null as (() => void) | null }));
+const proxy = vi.hoisted(() => ({ renders: 0 }));
+vi.mock("@react-three/fiber", () => ({
+  useThree: () => graphics.get(),
+  useFrame: (callback: () => void) => { frames.latest = callback; },
+}));
+vi.mock("../FurnitureProxy.js", () => ({ FurnitureProxy: () => { proxy.renders += 1; return null; } }));
+
+function runFrame(): void {
+  act(() => { frames.latest?.(); });
+}
 vi.mock("../ConstraintViolationSkin.js", () => ({ ConstraintViolationSkin: () => null }));
 
 let canvas: HTMLCanvasElement;
@@ -31,6 +43,9 @@ if (item === undefined) throw new Error("Poseur fixture missing");
 const itemId = item.id;
 
 beforeEach(() => {
+  frames.latest = null;
+  proxy.renders = 0;
+  useTouchGestureStore.getState().end(-Infinity);
   useChairDialogStore.getState().clearDialog();
   useLayoutTimelinePreviewStore.getState().clear();
   useSelectionStore.setState({ selectedIds: new Set() });
@@ -131,6 +146,7 @@ function beginChairBrush(): void {
   render(<PlacementGhost />);
   act(() => { fireEvent.pointerDown(canvas, { clientX: 40, clientY: 50, button: 0, buttons: 1 }); });
   act(() => { fireEvent.pointerMove(window, { clientX: 65, clientY: 50, buttons: 1 }); });
+  runFrame();
   expect(usePlacementStore.getState().ghostPosition).not.toBeNull();
 }
 
@@ -165,4 +181,67 @@ it("uses the chair brush release point and places only once through pointer, mou
   expect(finish.mock.calls[0]?.[3]).toBeCloseTo(1.632993, 5);
   expect(usePlacementStore.getState().placedItems.length).toBeGreaterThan(1);
   expect(useCatalogueStore.getState().dragActive).toBe(false);
+});
+
+it("follows five moves before a frame with one ghost update, and never walks the scene for the floor again", () => {
+  render(<PlacementGhost />);
+  act(() => { fireEvent.pointerMove(canvas, { clientX: 40, clientY: 50 }); });
+  runFrame();
+  expect(usePlacementStore.getState().ghostPosition).not.toBeNull();
+  const update = vi.spyOn(usePlacementStore.getState(), "updateGhost");
+  const walk = vi.spyOn(scene, "getObjectByName");
+  act(() => { for (const x of [42, 46, 50, 55, 60]) fireEvent.pointerMove(canvas, { clientX: x, clientY: 50 }); });
+  expect(update).not.toHaveBeenCalled();
+  runFrame();
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(walk).not.toHaveBeenCalled();
+  // The last move is the one followed: right of centre.
+  expect(update.mock.calls[0]?.[0]).toBeGreaterThan(0.5);
+});
+
+it("moves the ghost without a React commit while its validity holds", () => {
+  render(<PlacementGhost />);
+  act(() => { fireEvent.pointerMove(canvas, { clientX: 40, clientY: 50 }); });
+  runFrame();
+  // The piece's warm-up frames end first: that commit is the arming's, not a move's.
+  runFrame();
+  runFrame();
+  const settled = proxy.renders;
+  const valid = usePlacementStore.getState().ghostValid;
+  // Each lands in another grid cell, all well inside the room.
+  for (const x of [55, 60, 65, 70]) {
+    act(() => { fireEvent.pointerMove(canvas, { clientX: x, clientY: 50 }); });
+    runFrame();
+  }
+  expect(usePlacementStore.getState().ghostPosition?.[0]).toBeGreaterThan(0);
+  expect(usePlacementStore.getState().ghostValid).toBe(valid);
+  expect(proxy.renders).toBe(settled);
+});
+
+it("raises the ghost above a finger the touch arbiter holds to place, and lets it go when the finger looks round", () => {
+  render(<PlacementGhost />);
+  act(() => {
+    useTouchGestureStore.getState().setMode("place");
+    useTouchGestureStore.getState().setFinger({ x: 50, y: 50 + ghostRaisePx(window.innerHeight) });
+  });
+  runFrame();
+  // The point the ghost stands on is the one under (50, 50), above the finger: the room's centre.
+  expect(usePlacementStore.getState().ghostPosition?.[0]).toBeCloseTo(0, 5);
+  expect(usePlacementStore.getState().ghostPosition?.[2]).toBeCloseTo(0, 5);
+  act(() => { useTouchGestureStore.getState().setMode("orbit"); });
+  expect(usePlacementStore.getState().ghostPosition).toBeNull();
+  // A move the finger made as it turned to looking round is not followed afterwards.
+  runFrame();
+  expect(usePlacementStore.getState().ghostPosition).toBeNull();
+});
+
+it("ignores touch moves the arbiter holds, and the click its tap sends afterwards", () => {
+  render(<PlacementGhost />);
+  act(() => { useTouchGestureStore.getState().setMode("pending"); });
+  act(() => { fireEvent.pointerMove(canvas, { clientX: 50, clientY: 50, pointerType: "touch" }); });
+  runFrame();
+  expect(usePlacementStore.getState().ghostPosition).toBeNull();
+  act(() => { useTouchGestureStore.getState().end(performance.now()); });
+  act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+  expect(usePlacementStore.getState().placedItems).toHaveLength(0);
 });

@@ -25,6 +25,7 @@ vi.mock("../components/editor/ObjectNotePanel.js", () => ({ ObjectNotePanel: () 
 vi.mock("../components/editor/EventDetailsPanel.js", () => ({ EventDetailsPanel: () => null }));
 vi.mock("../components/truth/TruthModeIndicator.js", () => ({ TruthModeIndicator: () => null }));
 vi.mock("../hooks/use-media-query.js", () => ({ useIsCoarsePointer: () => false, useIsNarrowViewport: () => false }));
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
@@ -32,7 +33,6 @@ vi.mock("../api/configurations.js", () => ({
   claimConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
 }));
 vi.mock("../api/spaces.js", () => ({ listVenues: vi.fn(), listSpaces: vi.fn(), getSpace: vi.fn(), getVenue: vi.fn() }));
 
@@ -91,7 +91,9 @@ function LeavePlanner(): ReactElement {
   return <button type="button" onClick={() => { void navigate("/elsewhere"); }}>Leave planner</button>;
 }
 
-function renderPlanner(entry = "/plan"): void {
+// These cases exercise the tracked-draft lookups for the Reception Room, the /plan
+// default until 26 Oct 2026; naming the room keeps them about the lookups, not the default.
+function renderPlanner(entry = "/plan?space=reception-room"): void {
   render(
     <MemoryRouter initialEntries={[entry]}>
       <Location />
