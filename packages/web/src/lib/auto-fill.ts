@@ -81,6 +81,19 @@ export function autoFillStyleOption(style: AutoFillStyle): AutoFillStyleOption {
   return AUTO_FILL_STYLES.find((option) => option.style === style) ?? { style, label: style, format: "dinner" };
 }
 
+/**
+ * Whether a style may lay out this floor. Any style may on an empty floor.
+ * With Fill over the layout (Q-10, `fillOver`), banquet rounds may on any
+ * floor: they re-plan the rounds of their kind and keep everything else.
+ * Theatre rows still replace the whole floor, so they wait for a clear one.
+ */
+export function canLayOut(style: AutoFillStyle, floorEmpty: boolean, fillOver: boolean): boolean {
+  return floorEmpty || (fillOver && style === "dinner-rounds");
+}
+
+/** What laying out banquet rounds does on a floor that already has pieces. */
+export const LAY_OUT_OVER_WORDS = "Re-plans the rounds and keeps everything else.";
+
 /** Tables and chairs for a banquet, planned in metres on a room-centred origin. */
 export interface BanquetFillPlan {
   readonly style: "dinner-rounds";
