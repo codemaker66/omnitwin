@@ -52,6 +52,12 @@ export interface NativeCanvasProps extends Omit<CanvasProps, "gl"> {
   readonly forceWebGL?: boolean;
   /** Defaults to "planner" inside the editor's PlannerWorkContext, otherwise "walk". */
   readonly surface?: NativeCanvasSurface;
+  /**
+   * The view landed on its couldn't-start or stopped card. Anything the page
+   * shows over the view as still opening (the planner's arrival) must step
+   * aside, or the card and its way on stay hidden under a false "Opening…".
+   */
+  readonly onUnavailable?: () => void;
 }
 
 const SURFACE_COPY: Record<NativeCanvasSurface, {
@@ -210,7 +216,8 @@ interface LaunchOptions {
  * (lib/native-renderer-recovery.ts owns when and how often).
  */
 export function NativeCanvas({
-  children, gl: options = {}, forceWebGL = false, frameloop = "always", onCreated, surface: surfaceProp, style, ...props
+  children, gl: options = {}, forceWebGL = false, frameloop = "always", onCreated, surface: surfaceProp, onUnavailable,
+  style, ...props
 }: NativeCanvasProps): ReactElement {
   const plannerWork = usePlannerWork();
   const surface = surfaceProp ?? (plannerWork === null ? "walk" : "planner");
@@ -254,8 +261,8 @@ export function NativeCanvas({
   const restorations = useRef(0);
   /** This view, for the once-per-view ?graphicsReset drill. */
   const drillOwner = useRef({});
-  const callbacks = useRef({ onCreated, options, forceWebGL });
-  callbacks.current = { onCreated, options, forceWebGL };
+  const callbacks = useRef({ onCreated, onUnavailable, options, forceWebGL });
+  callbacks.current = { onCreated, onUnavailable, options, forceWebGL };
 
   const coverUntilFirstFrame = useCallback((covered: boolean): void => {
     firstFramePending.current = covered;
@@ -773,6 +780,10 @@ export function NativeCanvas({
     setStatus("initializing");
     setAttempt((current) => current + 1);
   };
+
+  useEffect(() => {
+    if (status === "error") callbacks.current.onUnavailable?.();
+  }, [status]);
 
   const recovering = recoveryPhase.kind !== "running" && recoveryPhase.kind !== "failed";
   const copy = SURFACE_COPY[surface];

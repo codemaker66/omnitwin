@@ -576,6 +576,7 @@ export function PlannerScene(): ReactElement {
         {hallSkyAsked && <HallOpeningHour />}
         <Canvas
           onCreated={handleCanvasCreated}
+          onUnavailable={enterRoom}
           shadows={furnitureLighting === "panorama-shadow" || skyLit ? "percentage" : false}
           frameloop="demand"
           dpr={canvasDpr}

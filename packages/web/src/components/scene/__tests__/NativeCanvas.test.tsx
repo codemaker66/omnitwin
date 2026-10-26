@@ -981,6 +981,19 @@ describe("NativeCanvas", () => {
       expect(screen.getByRole("button", { name: "Try 3D again" })).toBeDefined();
     });
 
+    it("tells the page each time the view lands on its card, so nothing still says it is opening over it", async () => {
+      const onUnavailable = vi.fn();
+      render(<NativeCanvas onUnavailable={onUnavailable}><span>Room geometry</span></NativeCanvas>);
+      await act(() => { renderer(0).reject(new Error("No graphics adapter")); return Promise.resolve(); });
+      expect(onUnavailable).toHaveBeenCalledOnce();
+      fireEvent.click(screen.getByRole("button", { name: "Try 3D again" }));
+      const retried = await start(1);
+      expect(onUnavailable).toHaveBeenCalledOnce();
+      automaticFrame();
+      act(() => { retried.onError("Native splat sorting failed: resident worker crashed"); });
+      expect(onUnavailable).toHaveBeenCalledTimes(2);
+    });
+
     it("makes no promise about a layout on a page that holds none", async () => {
       render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
       const lost = await start(0);
