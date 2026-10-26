@@ -55,6 +55,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
@@ -155,7 +156,10 @@ declare global {
 }
 
 function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean {
-  return event.pointerType === "touch" || event.button === 1 || event.button === 2;
+  // With the touch arbiter a finger is the camera's only once it orbits or
+  // pinches, which CameraRig marks; a finger placing or lifting is not.
+  if (event.pointerType === "touch") return !plannerFeatureEnabled("touchArbiter");
+  return event.button === 1 || event.button === 2;
 }
 
 function plannerTouchLookEnabled(): boolean {
