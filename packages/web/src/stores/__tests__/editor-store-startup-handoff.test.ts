@@ -4,15 +4,16 @@ import type { Space } from "../../api/spaces.js";
 import { handOffPublicConfiguration, prefetchPlannerSpace, useEditorStore } from "../editor-store.js";
 import { useActionLogStore } from "../action-log-store.js";
 
+vi.mock("../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../api/configurations.js", () => ({
   getConfig: vi.fn(), getPublicConfig: vi.fn(), createPublicConfig: vi.fn(),
-  authBatchSave: vi.fn(), publicBatchSave: vi.fn(), parseRevisionConflict: vi.fn(() => null),
-}));
+  authBatchSave: vi.fn(), publicBatchSave: vi.fn(),}));
 vi.mock("../../api/spaces.js", () => ({ getSpace: vi.fn() }));
 vi.mock("../../api/action-log.js", () => ({
   postActionBatch: vi.fn(() => Promise.resolve({ accepted: 0, duplicates: 0 })),
 }));
 const configApi = vi.mocked(await import("../../api/configurations.js"));
+const conflictApi = vi.mocked(await import("../../api/configuration-conflict.js"));
 const spacesApi = vi.mocked(await import("../../api/spaces.js"));
 
 function configuration(id: string, extra: Partial<Configuration> = {}): Configuration {
@@ -45,7 +46,7 @@ beforeEach(() => {
   localStorage.clear();
   store().reset();
   useActionLogStore.getState().reset();
-  configApi.parseRevisionConflict.mockReturnValue(null);
+  conflictApi.parseRevisionConflict.mockReturnValue(null);
   spacesApi.getSpace.mockImplementation((_venue, id) => Promise.resolve(space(id)));
 });
 

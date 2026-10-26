@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ConfigurationReviewStatusSchema, type EventInstructions, type GuestEnquiry } from "@omnitwin/types";
-import { ApiError, api } from "./client.js";
+import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
 // Response schemas — Zod validation at the API boundary
@@ -75,7 +75,7 @@ const ConfigurationResponseSchema = z.object({
   revision: z.number().int().min(1),
   // Keep the server timestamp for saved-state display after a clean reopen.
   // Older responses may omit it; never substitute the browser's load time.
-  updatedAt: z.string().datetime({ offset: true }).optional(),
+  updatedAt: z.iso.datetime({ offset: true }).optional(),
   objects: z.array(PlacedObjectResponseSchema).optional(),
   // Event-level metadata (special instructions, day-of contact, phase
   // deadlines, access notes). Absent on legacy rows, null on cleared rows,
@@ -96,6 +96,15 @@ const ConfigurationResponseSchema = z.object({
 });
 
 export type Configuration = z.infer<typeof ConfigurationResponseSchema>;
+
+// A new public plan comes back with the secret that lets this browser, and
+// only this browser, claim it into an account later (migration 0102). An API
+// from before 0102 sends none, and the plan then stays a public draft.
+const CreatedPublicConfigurationSchema = ConfigurationResponseSchema.extend({
+  claimSecret: z.string().min(16).optional(),
+});
+
+export type CreatedPublicConfiguration = z.infer<typeof CreatedPublicConfigurationSchema>;
 
 const PlacedObjectArraySchema = z.array(PlacedObjectResponseSchema);
 
@@ -131,25 +140,6 @@ export interface BatchObjectInput {
   readonly metadata?: ObjectMetadata | null;
 }
 
-/** Who made the newer revision a save collided with. */
-export interface RevisionAuthor {
-  readonly userId: string | null;
-  /** Their display name (else account name); never an email. */
-  readonly name: string | null;
-}
-
-export interface RevisionConflict {
-  readonly expectedRevision: number;
-  readonly currentRevision: number;
-  readonly message: string;
-  /** Null when the server does not know or will not say (a guest's save, a
-   *  revision older than the history, any 409 to an anonymous caller, an
-   *  older server that sends neither field). */
-  readonly changedBy: RevisionAuthor | null;
-  /** When the newer revision was made, by the server's clock; null when unknown. */
-  readonly changedAt: Date | null;
-}
-
 /** Re-export the canonical guest enquiry input type from @omnitwin/types. */
 export type GuestEnquiryInput = GuestEnquiry;
 
@@ -157,8 +147,8 @@ export type GuestEnquiryInput = GuestEnquiry;
 // Public endpoints (no auth)
 // ---------------------------------------------------------------------------
 
-export async function createPublicConfig(spaceId: string, name?: string): Promise<Configuration> {
-  return api.post("/public/configurations", { spaceId, name }, true, ConfigurationResponseSchema);
+export async function createPublicConfig(spaceId: string, name?: string): Promise<CreatedPublicConfiguration> {
+  return api.post("/public/configurations", { spaceId, name }, true, CreatedPublicConfigurationSchema);
 }
 
 export async function publicBatchSave(
@@ -210,8 +200,10 @@ export async function getConfigSummaries(configIds: readonly string[]): Promise<
   return api.get(`/configurations/summaries?ids=${ids}`, z.array(ConfigurationSummarySchema));
 }
 
-export async function claimConfig(configId: string): Promise<Configuration> {
-  return api.post(`/configurations/${configId}/claim`, undefined, undefined, ConfigurationResponseSchema);
+/** Claims a public plan into the signed-in account with the secret its
+ *  creating browser was given; lib/planner-claim.ts is the caller. */
+export async function claimConfig(configId: string, claimSecret: string): Promise<Configuration> {
+  return api.post(`/configurations/${configId}/claim`, { claimSecret }, undefined, ConfigurationResponseSchema);
 }
 
 export async function authBatchSave(
@@ -227,39 +219,6 @@ export async function authBatchSave(
   );
 }
 
-// Who and when are explanations, not the conflict: a missing or malformed
-// value (an older server, a proxy) degrades to unknown and never costs the
-// client the 409 it must act on.
-const RevisionAuthorSchema = z.object({
-  userId: z.string().trim().min(1).max(200).nullable().catch(null),
-  name: z.string().trim().max(200).nullable().catch(null)
-    .transform((name) => name === null || name.length === 0 ? null : name),
-}).transform((author): RevisionAuthor | null => author.userId === null && author.name === null ? null : author);
-
-const RevisionConflictDetailsSchema = z.object({
-  expectedRevision: z.number().int().min(1),
-  currentRevision: z.number().int().min(1),
-  changedBy: RevisionAuthorSchema.nullable().optional().catch(null),
-  changedAt: z.string().datetime({ offset: true }).nullable().optional().catch(null),
-});
-
-export function parseRevisionConflict(err: unknown): RevisionConflict | null {
-  if (!(err instanceof ApiError)) return null;
-  if (err.status !== 409 || err.code !== "REVISION_CONFLICT") return null;
-  const parsed = RevisionConflictDetailsSchema.safeParse(err.details);
-  if (!parsed.success) return null;
-  const changedAt = parsed.data.changedAt === undefined || parsed.data.changedAt === null
-    ? null
-    : new Date(parsed.data.changedAt);
-  return {
-    expectedRevision: parsed.data.expectedRevision,
-    currentRevision: parsed.data.currentRevision,
-    message: err.message,
-    changedBy: parsed.data.changedBy ?? null,
-    changedAt: changedAt !== null && Number.isFinite(changedAt.getTime()) ? changedAt : null,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Event-level instructions — configurations.metadata.instructions
 //
@@ -272,7 +231,7 @@ export interface ConfigMetadataInput {
   readonly instructions?: EventInstructions | null;
 }
 
-const PatchConfigResponseSchema = z.object({ id: z.string() }).passthrough();
+const PatchConfigResponseSchema = z.object({ id: z.string() }).loose();
 
 export async function patchConfigMetadata(
   configId: string,

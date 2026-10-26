@@ -130,10 +130,12 @@ on future experiments.
 | Camera resetting after updates | [Pose identity](../../.claude/gotchas/interior-camera-pose-identity.md) |
 | Staging hidden splat layers | [Visibility and sorting](../../.claude/gotchas/spark-invisible-splat-load.md) |
 | Shadows, probes or postprocessing | [Render-target interactions](../../.claude/gotchas/spark-render-target-effects.md) |
+| Losing, replacing or disposing a renderer | [Renderer replacement](../../.claude/gotchas/three-renderer-replacement.md) |
 | Blank splats in a browser tool | [Browser instrumentation](../../.claude/gotchas/browser-pane-splat-streaming.md) |
 | XGRIDS level counts/budgets | [LOD level copies](../../.claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md) |
 | V8 memory or test contention | [Windows/V8 notes](../../.claude/gotchas/windows-v8-heap.md) |
 | Zod input/output inference | [Passthrough inference](../../.claude/gotchas/zod-passthrough-inference.md) |
+| Zod defaults and patches, refined objects, request arrays, test UUIDs, issue codes | [zod 4 semantics](../../.claude/gotchas/zod4-semantics.md) |
 | Docker build arguments | [ARG scope](../../.claude/gotchas/dockerfile-arg-scope.md) |
 | Deploying the API or adding a migration | [Deploy ordering](deploy-ordering.md) |
 | Supplier passes, the supplier's page or their acknowledgements | [Supplier passes](supplier-passes.md) |

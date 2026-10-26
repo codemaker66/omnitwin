@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { ReactElement } from "react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { findUnsupportedProposalClaim, type TwinManifest } from "@omnitwin/types";
 import {
   allTwinCopy,
@@ -106,11 +107,19 @@ function jsonResponse(data: unknown, status = 200): Response {
   } as Response;
 }
 
+/** The router's query string, where a test can wait on what the page wrote. */
+function LocationSearch(): ReactElement {
+  return <span data-testid="location-search">{useLocation().search}</span>;
+}
+
 function mount(): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={["/venues/trades-hall/twin"]}>
       <Routes>
-        <Route path="/venues/:venueSlug/twin" element={<TwinPage />} />
+        <Route
+          path="/venues/:venueSlug/twin"
+          element={<><TwinPage /><LocationSearch /></>}
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -255,6 +264,15 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
     // this test now watches: same behaviour under test (walk-only chrome
     // appears in walk and is gone in a mesh mode), a control that still ships.
     expect(screen.getByTestId("twin-quick-actions")).toBeTruthy();
+    // The walk writes its viewpoint into the address (?node=) from an effect
+    // that runs after the commit showing the stage, as a replace built from the
+    // address the page mounted with. A mode switch made before that lands is a
+    // push the pending replace then overwrites, so Dollhouse reverts to Walk:
+    // master runs 40279751773 and 40284359345 failed exactly so. Switch once
+    // the walk's own write is in the address.
+    await waitFor(() => {
+      expect(screen.getByTestId("location-search").textContent).toMatch(/[?&]node=/u);
+    });
 
     fireEvent.click(screen.getByRole("radio", { name: TWIN_MODE_DOLLHOUSE_LABEL }));
     // The switch is a navigation (?mode=dollhouse) that re-renders the whole

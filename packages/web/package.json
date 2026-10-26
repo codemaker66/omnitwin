@@ -38,7 +38,7 @@
     "react-dom": "18.3.1",
     "react-router-dom": "7.18.2",
     "three": "0.186.0",
-    "zod": "3.24.2",
+    "zod": "4.6.7",
     "zustand": "5.0.3"
   },
   "devDependencies": {
@@ -52,7 +52,7 @@
     "@types/three": "0.186.0",
     "@vitejs/plugin-react": "4.3.4",
     "eslint": "9.19.0",
-    "happy-dom": "20.9.0",
+    "happy-dom": "21.0.4",
     "three-stdlib": "2.36.1",
     "typescript": "5.7.3",
     "typescript-eslint": "8.48.0",

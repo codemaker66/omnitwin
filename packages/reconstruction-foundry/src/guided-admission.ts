@@ -82,7 +82,7 @@ export const FoundryGuidedGenerationDeclarationSchema = z
     modelVersion: z.string().trim().min(1).max(160),
     checkpointPath: FoundryRelativePathSchema,
     conditionPath: FoundryRelativePathSchema,
-    confidence: z.number().finite().min(0).max(1),
+    confidence: z.number().min(0).max(1),
     exportRestrictions: z.array(z.string().trim().min(1).max(500)).min(1).max(50),
     truthModeDisclosure: z.string().trim().min(20).max(1_000),
   })

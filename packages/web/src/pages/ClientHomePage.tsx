@@ -140,7 +140,7 @@ function PlanRows({ plans, planTotal, events }: {
     <section className="client-home__section" aria-labelledby="client-home-plans">
       <div className="client-home__section-head">
         <h2 id="client-home-plans">Your room plans</h2>
-        <Link className="client-home__quiet" to="/plan">Start a new plan</Link>
+        <Link className="client-home__quiet" to="/plan?new=1">Start a new plan</Link>
       </div>
       {plans.length === 0
         ? <p className="client-home__note">You have not saved a room plan yet.</p>

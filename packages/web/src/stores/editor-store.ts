@@ -4,6 +4,7 @@ import { isPlannerEditable, type ConfigurationReviewStatus } from "@omnitwin/typ
 import type { Space } from "../api/spaces.js";
 import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import * as configApi from "../api/configurations.js";
+import { parseRevisionConflict, type RevisionConflict } from "../api/configuration-conflict.js";
 import { ApiError } from "../api/client.js";
 import * as spacesApi from "../api/spaces.js";
 import {
@@ -376,7 +377,7 @@ type EditorStore = EditorState & EditorActions;
 
 /** A save met a newer revision: the server's facts plus what this client
  *  derived from the newer version it then read. */
-export interface EditorSaveConflict extends configApi.RevisionConflict {
+export interface EditorSaveConflict extends RevisionConflict {
   /** The newer revision is this signed-in person's own (another tab or
    *  device); false for guests and whenever the author is not known. */
   readonly byYou: boolean;
@@ -1054,8 +1055,10 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // Keep its existing bounded recovery entry, but do not open it or return
       // a successful navigation result to the stale caller.
       try {
-        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string }[];
-        stored.push({ configId: config.id, createdAt: new Date().toISOString() });
+        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string; claimSecret?: string }[];
+        // The claim secret stays with this browser's own draft: it alone can
+        // claim the plan into an account (lib/planner-claim.ts).
+        stored.push({ configId: config.id, createdAt: new Date().toISOString(), ...(config.claimSecret === undefined ? {} : { claimSecret: config.claimSecret }) });
         const capped = stored.length > MAX_TRACKED_CONFIGS
           ? stored.slice(stored.length - MAX_TRACKED_CONFIGS)
           : stored;
@@ -1665,7 +1668,7 @@ async function saveDocument(isAuthenticated: boolean | undefined, keeping: boole
     return true;
   } catch (err) {
     if (session !== configurationSession || get().configId !== configId) return false;
-    const conflict = configApi.parseRevisionConflict(err);
+    const conflict = parseRevisionConflict(err);
     if (conflict !== null) {
       // Someone committed first. Read their version: in the live room this
       // client rebases onto it and saves again (once); otherwise, and always

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { governedRender, nextQualityRung, profilePixelRatio, rebuildsPipeline, RENDER_PROFILES, selectRenderProfile, type QualityRung, type RenderProfile } from "../render-quality.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { setPlannerFeaturesForTesting } from "../planner-features.js";
+import { governedRender, nextQualityRung, profilePixelRatio, readRenderDeviceContext, rebuildsPipeline, RENDER_PROFILES, selectRenderProfile, type QualityRung, type RenderProfile } from "../render-quality.js";
 
 /** Every rung a profile gives up, in order, when each step is held up by `held`. */
 function ladder(profile: RenderProfile, baseRatio: number, held: "cpu" | "gpu"): QualityRung[] {
@@ -10,9 +11,21 @@ function ladder(profile: RenderProfile, baseRatio: number, held: "cpu" | "gpu"):
   return given;
 }
 
+describe("bloom in motion", () => {
+  it("pauses on phones only, whose slowed CPUs spend half a frame on its passes", () => {
+    expect(RENDER_PROFILES.phone.bloomInMotion).toBe(false);
+    expect(RENDER_PROFILES.tablet.bloomInMotion).toBe(true);
+    expect(RENDER_PROFILES.desktop.bloomInMotion).toBe(true);
+  });
+});
+
 describe("nextQualityRung", () => {
-  it("gives up a GPU-bound phone's resolution to 1.5, then bloom, then resolution to 1, and keeps multisampling", () => {
-    expect(ladder(RENDER_PROFILES.phone, 2, "gpu")).toEqual(["resolution", "resolution", "bloom", "resolution", "resolution"]);
+  it("gives up a GPU-bound phone's resolution to 1, and keeps multisampling and its still view's bloom", () => {
+    expect(ladder(RENDER_PROFILES.phone, 2, "gpu")).toEqual(["resolution", "resolution", "resolution", "resolution"]);
+  });
+
+  it("gives up a GPU-bound tablet's occlusion, its resolution to 1.5, then bloom, then resolution to 1", () => {
+    expect(ladder(RENDER_PROFILES.tablet, 2, "gpu")).toEqual(["ambientOcclusion", "resolution", "resolution", "bloom", "resolution", "resolution"]);
   });
 
   it("gives up ambient occlusion first where a profile has it", () => {
@@ -21,10 +34,14 @@ describe("nextQualityRung", () => {
   });
 
   it("gives up passes, never pixels, for frames held up by the CPU", () => {
-    expect(ladder(RENDER_PROFILES.phone, 2, "cpu")).toEqual(["bloom"]);
     expect(ladder(RENDER_PROFILES.desktop, 2, "cpu")).toEqual(["bloom", "ambientOcclusion"]);
     // Once the CPU's passes are gone, a GPU-held frame still finds its pixels.
-    expect(nextQualityRung(RENDER_PROFILES.phone, 2, ["bloom"], "gpu")).toBe("resolution");
+    expect(nextQualityRung(RENDER_PROFILES.desktop, 2, ["bloom", "ambientOcclusion"], "gpu")).toBe("resolution");
+  });
+
+  it("never gives up bloom where it pauses in motion: the frames it judges were drawn without it", () => {
+    expect(ladder(RENDER_PROFILES.phone, 2, "cpu")).toEqual([]);
+    expect(nextQualityRung(RENDER_PROFILES.phone, 2, [], "gpu")).toBe("resolution");
   });
 
   it("has nothing to give up from a plain scene at 1x", () => {
@@ -82,6 +99,29 @@ describe("selectRenderProfile", () => {
   it("honours a known override and ignores an unknown one", () => {
     expect(selectRenderProfile({ coarsePointer: false, shortSide: 1080, override: "phone" }).name).toBe("phone");
     expect(selectRenderProfile({ coarsePointer: false, shortSide: 1080, override: "ultra" }).name).toBe("desktop");
+  });
+
+  it("keeps a phone's bloom in motion until the lean motion pipeline is switched on", () => {
+    const phone = { coarsePointer: true, shortSide: 393, override: null } as const;
+    const kept = selectRenderProfile(phone);
+    expect(kept.name).toBe("phone");
+    expect(kept.bloomInMotion).toBe(true);
+    expect(selectRenderProfile({ ...phone, leanMotion: false })).toBe(kept);
+    expect(selectRenderProfile({ ...phone, leanMotion: true })).toBe(RENDER_PROFILES.phone);
+    expect(selectRenderProfile({ coarsePointer: false, shortSide: 1080, override: "phone", leanMotion: true })).toBe(RENDER_PROFILES.phone);
+    // A profile that draws bloom in motion anyway is the same either way.
+    expect(selectRenderProfile({ coarsePointer: true, shortSide: 820, override: null, leanMotion: false })).toBe(RENDER_PROFILES.tablet);
+  });
+});
+
+describe("readRenderDeviceContext", () => {
+  afterEach(() => { setPlannerFeaturesForTesting(null); });
+
+  it("reads the lean motion pipeline's switch (lib/planner-features.ts)", () => {
+    setPlannerFeaturesForTesting({ leanMotionPipeline: true });
+    expect(readRenderDeviceContext(false).leanMotion).toBe(true);
+    setPlannerFeaturesForTesting({ leanMotionPipeline: false });
+    expect(readRenderDeviceContext(false).leanMotion).toBe(false);
   });
 });
 

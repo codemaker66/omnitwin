@@ -1,7 +1,9 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  A_TABLE_KEEPS_ITS_CHAIRS,
   NUDGE_METRES,
+  TABLES_KEEP_THEIR_CHAIRS,
   arrowFloorDirection,
   nudgeMetres,
   placingKeyBindings,
@@ -21,6 +23,7 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 
 // ---------------------------------------------------------------------------
 // The planner's keymap (T-671 slice 5; spec 11 and 4.5) over the real stores.
@@ -176,6 +179,37 @@ describe("nudging", () => {
   });
 });
 
+describe("group and ungroup, tables keeping their own chairs (QoL B-03)", () => {
+  function bindSelectionKeys(): void {
+    cleanups.push(registerKeyBindings(selectionKeyBindings({
+      invalidate: () => undefined, cancelGesture: () => undefined, screenUp: SCREEN_UP_NORTH,
+    })));
+  }
+
+  it("refuses Ctrl G across two tables with the reason, and changes nothing", () => {
+    bindSelectionKeys();
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("Missing canonical table");
+    usePlacementStore.setState({ placedItems: [...usePlacementStore.getState().placedItems, ...createTableGroup(table.id, 4, 0, 0, 8)] });
+    const before = usePlacementStore.getState().placedItems;
+    useSelectionStore.getState().selectMultiple(before.map((item) => item.id));
+    usePlacementNoticeStore.getState().dismiss();
+    expect(press("KeyG", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(usePlacementStore.getState().placedItems).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(TABLES_KEEP_THEIR_CHAIRS);
+  });
+
+  it("refuses Ctrl Shift G on a lone table's own group with the reason, and its chairs stay", () => {
+    bindSelectionKeys();
+    const before = usePlacementStore.getState().placedItems;
+    useSelectionStore.getState().select(tableId);
+    usePlacementNoticeStore.getState().dismiss();
+    press("KeyG", { ctrlKey: true, shiftKey: true });
+    expect(usePlacementStore.getState().placedItems).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(A_TABLE_KEEPS_ITS_CHAIRS);
+  });
+});
+
 describe("seats", () => {
   it("+ and − add and take away one chair at the selected table", () => {
     cleanups.push(registerKeyBindings(selectionKeyBindings({
@@ -189,6 +223,28 @@ describe("seats", () => {
     press("Minus", { key: "-" });
     press("Minus", { key: "-" });
     expect(chairs()).toBe(7);
+  });
+
+  it("+ at a table grouped by hand with another adds one chair there and leaves the other table and its chairs", () => {
+    cleanups.push(registerKeyBindings(selectionKeyBindings({
+      invalidate: () => undefined, cancelGesture: () => undefined, screenUp: SCREEN_UP_NORTH,
+    })));
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("Missing canonical table");
+    const other = createTableGroup(table.id, 4, 0, 0, 8);
+    const otherTable = other.find((item) => item.catalogueItemId === table.id);
+    if (otherTable === undefined) throw new Error("no second table");
+    // Group (Ctrl G) puts both tables and all their chairs under one groupId.
+    const grouped = [...usePlacementStore.getState().placedItems, ...other].map((item) => ({ ...item, groupId: "grouped-by-hand" }));
+    usePlacementStore.setState({ placedItems: grouped });
+    useSelectionStore.getState().selectMultiple(grouped.map((item) => item.id));
+    press("Equal", { key: "+", shiftKey: true });
+    const after = usePlacementStore.getState().placedItems;
+    expect(after).toHaveLength(grouped.length + 2);
+    expect(after.find((item) => item.id === otherTable.id)).toEqual(grouped.find((item) => item.id === otherTable.id));
+    const near = (x: number): number => after.filter((item) => item.catalogueItemId !== table.id && Math.abs(item.x - x) < 2).length;
+    expect(near(0)).toBe(9);
+    expect(near(4)).toBe(9);
   });
 });
 
