@@ -433,4 +433,26 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
       .where(eq(schema.configurationLayoutRevisions.configurationId, configId));
     expect(revisions.map((revision) => revision.revision).sort()).toEqual([2, 3]);
   });
+
+  it("holds a guest plan in review still, as it holds a signed-in planner's", async () => {
+    // The venue may take a guest plan into review; until it is sent back,
+    // its snapshot is the plan, and the public link may not move it.
+    const configId = await configuration({ guest: true });
+    const first = await save(configId, 1, [item(0)], true);
+    await db.update(schema.configurations).set({ reviewStatus: "submitted" }).where(eq(schema.configurations.id, configId));
+    const held = await server.inject({ method: "POST", url: `/public/configurations/${configId}/objects/batch`,
+      payload: { expectedRevision: first.revision, objects: [] } });
+    expect(held.statusCode).toBe(409);
+    expect(held.json()).toMatchObject({ code: "CONFIG_LOCKED", reviewStatus: "submitted" });
+    const thumbnail = await server.inject({ method: "POST", url: `/public/configurations/${configId}/thumbnail`,
+      payload: { thumbnailUrl: "data:image/png;base64,iVBORw0KGgo=" } });
+    expect(thumbnail.statusCode).toBe(409);
+    expect(await stored(configId)).toHaveLength(1);
+    const [kept] = await db.select({ revision: schema.configurations.revision, thumbnailUrl: schema.configurations.thumbnailUrl })
+      .from(schema.configurations).where(eq(schema.configurations.id, configId));
+    expect(kept).toEqual({ revision: first.revision, thumbnailUrl: null });
+    // Sent back for changes, it is the guest's to change again.
+    await db.update(schema.configurations).set({ reviewStatus: "changes_requested" }).where(eq(schema.configurations.id, configId));
+    expect((await save(configId, first.revision, [], true)).objects).toEqual([]);
+  });
 });

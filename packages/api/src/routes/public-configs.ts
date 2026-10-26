@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
-import { buildLayoutPathKey } from "@omnitwin/types";
+import { buildLayoutPathKey, ConfigurationReviewStatusSchema, isPlannerEditable } from "@omnitwin/types";
 import {
   configurations,
   configurationClaimSecrets,
@@ -73,6 +73,15 @@ const ThumbnailBody = z.object({
     .startsWith("data:image/png;base64,", "Must be a PNG data URL")
     .max(MAX_THUMBNAIL_STRING_LEN, "Thumbnail data URL too large (max ~200KB decoded PNG)"),
 });
+
+/** A guest plan the venue has taken into review holds still for its snapshot
+ *  until it is sent back, as a signed-in planner's does; a status this code
+ *  does not know holds it too. */
+function lockedFor(reviewStatus: string): { error: string; code: "CONFIG_LOCKED"; reviewStatus: string } | null {
+  const status = ConfigurationReviewStatusSchema.safeParse(reviewStatus);
+  if (status.success && isPlannerEditable(status.data)) return null;
+  return { error: "This plan is with the venue for review, so it cannot be changed now.", code: "CONFIG_LOCKED", reviewStatus };
+}
 
 // ---------------------------------------------------------------------------
 // Plugin — public (no auth) configuration endpoints
@@ -189,7 +198,7 @@ export async function publicConfigRoutes(
 
     // Only allow saving to public preview configs. Guest autosaves need the
     // revision and room only — never the stored thumbnail data URL.
-    const [config] = await db.select({ revision: configurations.revision, spaceId: configurations.spaceId })
+    const [config] = await db.select({ revision: configurations.revision, spaceId: configurations.spaceId, reviewStatus: configurations.reviewStatus })
       .from(configurations)
       .where(and(
         eq(configurations.id, params.data.configId),
@@ -201,6 +210,8 @@ export async function publicConfigRoutes(
     if (config === undefined) {
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
+    const locked = lockedFor(config.reviewStatus);
+    if (locked !== null) return reply.status(409).send(locked);
 
     if (config.revision !== parsed.data.expectedRevision) {
       // When, never who: an anonymous caller is not told who edited.
@@ -261,6 +272,8 @@ export async function publicConfigRoutes(
           eq(configurations.id, configId),
           eq(configurations.revision, parsed.data.expectedRevision),
           eq(configurations.isPublicPreview, true),
+          // Still in the editable state read above: a review begun since holds it.
+          eq(configurations.reviewStatus, config.reviewStatus),
           isNull(configurations.deletedAt),
         ))
         .returning({ revision: configurations.revision });
@@ -351,7 +364,7 @@ export async function publicConfigRoutes(
     }
 
     // Only allow thumbnail updates on unclaimed public preview configs
-    const [config] = await db.select({ id: configurations.id })
+    const [config] = await db.select({ id: configurations.id, reviewStatus: configurations.reviewStatus })
       .from(configurations)
       .where(and(
         eq(configurations.id, params.data.configId),
@@ -363,6 +376,8 @@ export async function publicConfigRoutes(
     if (config === undefined) {
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
+    const locked = lockedFor(config.reviewStatus);
+    if (locked !== null) return reply.status(409).send(locked);
 
     const [updated] = await db.update(configurations)
       .set({ thumbnailUrl: parsed.data.thumbnailUrl, updatedAt: new Date() })
@@ -370,6 +385,7 @@ export async function publicConfigRoutes(
         eq(configurations.id, params.data.configId),
         eq(configurations.isPublicPreview, true),
         isNull(configurations.userId),
+        eq(configurations.reviewStatus, config.reviewStatus),
         isNull(configurations.deletedAt),
       ))
       .returning();
