@@ -1,4 +1,5 @@
 import { type BufferGeometry, Matrix4 } from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { aoBox, aoRod, occlude, STANDING_FLOOR, type AoBox } from "./crafted-ao.js";
 import { craftedDetail } from "./crafted-detail.js";
 import { lathe, post, roundedBox, tube, type Vec3 } from "./crafted-geometry.js";
@@ -269,7 +270,9 @@ export function lecternParts(size: AvSize): CraftedPart[] {
   const underDesk = (z: number): number => deskMid - deskThickness + (z * tilt);
   const backHeight = underDesk(bodyBack) - plinth;
   const frontHeight = backHeight + bodyD * tilt;
-  const body = roundedBox([bodyW, backHeight, bodyD], 0.006, [0, plinth + backHeight / 2, bodyZ], { segments: 2, grain: "y" });
+  // Welded across its faces first: the normals are recomputed after the
+  // slope, and a seam left open would crease every rounded edge.
+  const body = mergeVertices(roundedBox([bodyW, backHeight, bodyD], 0.006, [0, plinth + backHeight / 2, bodyZ], { segments: 2, grain: "y" }));
   const position = body.getAttribute("position");
   for (let i = 0; i < position.count; i += 1) {
     const rise = ((position.getY(i) - plinth) / backHeight) * tilt * (position.getZ(i) - bodyBack);
