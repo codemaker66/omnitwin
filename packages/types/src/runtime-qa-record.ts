@@ -74,7 +74,7 @@ export const RuntimeQaCheckSchema = z
   .superRefine((check, ctx) => {
     if (check.status === "passed" && check.evidenceRefs.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceRefs"],
         message: "Passed runtime QA checks need at least one evidence reference.",
       });
@@ -86,7 +86,7 @@ export const RuntimeQaViewTransformSchema = z
     posture: RuntimeQaTransformPostureSchema,
     position: RuntimeVec3Schema,
     rotation: RuntimeVec3Schema,
-    scale: z.number().finite().positive(),
+    scale: z.number().positive(),
     signedTransformArtifactId: RuntimeManifestKeySchema.nullable(),
     signedTransformArtifactSha256: z
       .string()
@@ -102,7 +102,7 @@ export const RuntimeQaViewTransformSchema = z
       transform.signedTransformArtifactId === null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["signedTransformArtifactId"],
         message: "Signed runtime QA transforms need a signed TransformArtifactV0 reference.",
       });
@@ -113,7 +113,7 @@ export const RuntimeQaViewTransformSchema = z
       transform.signedTransformArtifactId !== null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["signedTransformArtifactId"],
         message: "Unsigned runtime QA transforms must not reference a signed transform artifact.",
       });
@@ -125,7 +125,7 @@ export const RuntimeQaViewTransformSchema = z
       transform.signedTransformArtifactSha256 !== undefined
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["signedTransformArtifactSha256"],
         message: "Unsigned runtime QA transforms must not bind signed transform artifact content.",
       });
@@ -144,7 +144,7 @@ export const RuntimeQaCameraBoundsSchema = z
       const max = bounds.max[axis];
       if (min >= max) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["max", axis],
           message: "Runtime QA camera bounds max must be greater than min on every axis.",
         });
@@ -159,7 +159,7 @@ export const RuntimeQaCameraProfileSchema = z
     arrivalPosition: RuntimeVec3Schema.nullable(),
     arrivalTarget: RuntimeVec3Schema.nullable(),
     arrivalDurationMs: z.number().int().nonnegative(),
-    fov: z.number().finite().positive(),
+    fov: z.number().positive(),
     targetBounds: RuntimeQaCameraBoundsSchema.nullable(),
     cameraBounds: RuntimeQaCameraBoundsSchema.nullable(),
     note: SafePlanningWordingSchema,
@@ -180,7 +180,7 @@ export const RuntimeQaSparkLoadSchema = z
   .superRefine((load, ctx) => {
     if (load.loadStatus === "loaded" && load.loadedSplats === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["loadedSplats"],
         message: "Loaded Spark runtime QA records need a positive loaded splat count.",
       });
@@ -188,7 +188,7 @@ export const RuntimeQaSparkLoadSchema = z
 
     if (load.loadStatus === "loaded" && load.evidenceRefs.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceRefs"],
         message: "Loaded Spark runtime QA records need at least one evidence reference.",
       });
@@ -219,8 +219,8 @@ export const RuntimeQaRecordV0Schema = z
     recordId: RuntimeQaRecordIdSchema,
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
-    recordedAt: z.string().datetime({ offset: true }),
+    runtimePackageId: z.uuid(),
+    recordedAt: z.iso.datetime({ offset: true }),
     recordedBy: z.string().trim().min(1).max(160),
     assetEvidenceStatus: AssetEvidenceStatusSchema,
     runtimeStatus: RuntimePackageStatusSchema,
@@ -238,7 +238,7 @@ export const RuntimeQaRecordV0Schema = z
     for (const requiredCheck of RUNTIME_QA_CHECK_KEYS) {
       if (!seenChecks.has(requiredCheck)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["checks"],
           message: `Runtime QA record is missing required check ${requiredCheck}.`,
         });
@@ -250,7 +250,7 @@ export const RuntimeQaRecordV0Schema = z
     );
     if (duplicateCheck !== undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checks"],
         message: `Runtime QA record has duplicate check ${duplicateCheck.checkKey}.`,
       });
@@ -265,7 +265,7 @@ export const RuntimeQaRecordV0Schema = z
       record.sparkLoad.loadStatus !== "loaded"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checks", sparkPayloadLoadCheckIndex, "status"],
         message:
           `The spark_payload_loads check cannot pass when sparkLoad.loadStatus is ${record.sparkLoad.loadStatus}.`,
@@ -281,7 +281,7 @@ export const RuntimeQaRecordV0Schema = z
       signedTransformCheck?.status === "passed"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checks", signedTransformCheckIndex, "status"],
         message: "Unsigned runtime QA records cannot pass the signed transform artifact check.",
       });
@@ -292,7 +292,7 @@ export const RuntimeQaRecordV0Schema = z
       record.assetEvidenceStatus !== "human_reviewed"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["publicExposure", "decision"],
         message: "Public runtime exposure requires human-reviewed asset evidence.",
       });
@@ -303,7 +303,7 @@ export const RuntimeQaRecordV0Schema = z
       record.viewTransform.posture !== "signed_room_local_transform"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["publicExposure", "decision"],
         message: "Public runtime exposure requires a signed room-local transform.",
       });
@@ -315,7 +315,7 @@ export const RuntimeQaRecordV0Schema = z
         record.viewTransform.signedTransformArtifactSha256 === undefined)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["viewTransform", "signedTransformArtifactSha256"],
         message: "Public runtime exposure requires an exact signed transform artifact SHA-256.",
       });
@@ -325,7 +325,7 @@ export const RuntimeQaRecordV0Schema = z
       record.checks.forEach((check, index) => {
         if (check.status === "passed") return;
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["checks", index, "status"],
           message:
             `Public runtime exposure requires every required QA check to pass; ${check.checkKey} is ${check.status}.`,
@@ -374,7 +374,7 @@ export function runtimeQaRecordAllowsPublicExposure(record: RuntimeQaRecordV0): 
 export const RuntimeQaRecordRegistrationSchema = z
   .object({
     id: z.string(),
-    runtimePackageId: z.string().uuid(),
+    runtimePackageId: z.uuid(),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
     recordId: RuntimeQaRecordIdSchema,
@@ -391,56 +391,56 @@ export const RuntimeQaRecordRegistrationSchema = z
   .superRefine((row, ctx) => {
     if (row.record.runtimePackageId !== row.runtimePackageId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["record", "runtimePackageId"],
         message: "Runtime QA record package id must match its registration row.",
       });
     }
     if (row.record.venueSlug !== row.venueSlug) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["record", "venueSlug"],
         message: "Runtime QA record venueSlug must match its registration row.",
       });
     }
     if (row.record.roomSlug !== row.roomSlug) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["record", "roomSlug"],
         message: "Runtime QA record roomSlug must match its registration row.",
       });
     }
     if (row.record.recordId !== row.recordId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["record", "recordId"],
         message: "Runtime QA record id must match its registration row.",
       });
     }
     if (runtimeQaRecordSignedTransformArtifactId(row.record) !== row.signedTransformArtifactId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["signedTransformArtifactId"],
         message: "Runtime QA signed transform artifact id must match the embedded record.",
       });
     }
     if (row.record.publicExposure.decision !== row.publicExposureDecision) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["publicExposureDecision"],
         message: "Runtime QA public exposure decision must match the embedded record.",
       });
     }
     if (row.record.assetEvidenceStatus !== row.assetEvidenceStatus) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["assetEvidenceStatus"],
         message: "Runtime QA asset evidence status must match the embedded record.",
       });
     }
     if (row.record.runtimeStatus !== row.runtimeStatus) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["runtimeStatus"],
         message: "Runtime QA runtime status must match the embedded record.",
       });
@@ -449,7 +449,7 @@ export const RuntimeQaRecordRegistrationSchema = z
 
 export const RegisterRuntimeQaRecordInputSchema = z
   .object({
-    runtimePackageId: z.string().uuid(),
+    runtimePackageId: z.uuid(),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
     record: RuntimeQaRecordV0Schema,
@@ -458,21 +458,21 @@ export const RegisterRuntimeQaRecordInputSchema = z
   .superRefine((body, ctx) => {
     if (body.record.runtimePackageId !== body.runtimePackageId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["record", "runtimePackageId"],
         message: "Runtime QA record package id must match the request runtimePackageId.",
       });
     }
     if (body.record.venueSlug !== body.venueSlug) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["record", "venueSlug"],
         message: "Runtime QA record venueSlug must match the request venueSlug.",
       });
     }
     if (body.record.roomSlug !== body.roomSlug) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["record", "roomSlug"],
         message: "Runtime QA record roomSlug must match the request roomSlug.",
       });
@@ -480,20 +480,20 @@ export const RegisterRuntimeQaRecordInputSchema = z
   });
 
 export const RuntimeQaRecordQuerySchema = z.object({
-  runtimePackageId: z.string().uuid(),
+  runtimePackageId: z.uuid(),
 }).strict();
 
 export const RuntimeQaRecordRegistrationReportSchema = z
   .object({
     schemaVersion: z.literal("venviewer.runtime-qa-registration-report.v0"),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     mode: z.enum(["dry_run", "registered"]),
-    apiUrl: z.string().url(),
+    apiUrl: z.url(),
     payloadFile: z.string().trim().min(1),
     payload: z.object({
       venueSlug: RuntimeSlugSchema,
       roomSlug: TradesHallRuntimeRoomSlugSchema,
-      runtimePackageId: z.string().uuid(),
+      runtimePackageId: z.uuid(),
       recordId: z.string().trim().min(1),
       assetEvidenceStatus: AssetEvidenceStatusSchema,
       runtimeStatus: RuntimePackageStatusSchema,
@@ -502,8 +502,8 @@ export const RuntimeQaRecordRegistrationReportSchema = z
       publicExposureDecision: RuntimeQaPublicExposureDecisionSchema,
     }).strict(),
     preflight: z.object({
-      payloadRuntimePackageId: z.string().uuid(),
-      latestRuntimePackageId: z.string().uuid().nullable(),
+      payloadRuntimePackageId: z.uuid(),
+      latestRuntimePackageId: z.uuid().nullable(),
       latestRuntimePackageRuntimeStatus: RuntimePackageStatusSchema.nullable(),
       latestRuntimePackageEvidenceStatus: AssetEvidenceStatusSchema.nullable(),
       runtimePackageMatchesLatest: z.boolean(),
@@ -517,8 +517,8 @@ export const RuntimeQaRecordRegistrationReportSchema = z
       signedTransformArtifactId: RuntimeManifestKeySchema.nullable(),
       publicExposureDecision: RuntimeQaPublicExposureDecisionSchema,
       reviewedBy: z.string().nullable(),
-      createdAt: z.string().datetime(),
-      updatedAt: z.string().datetime(),
+      createdAt: z.iso.datetime(),
+      updatedAt: z.iso.datetime(),
     }).strict().nullable(),
     guardrails: z.object({
       runtimePackageDriftAllowed: z.boolean(),
@@ -530,21 +530,21 @@ export const RuntimeQaRecordRegistrationReportSchema = z
   .superRefine((report, ctx) => {
     if (report.mode === "dry_run" && report.registration !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["registration"],
         message: "Dry-run reports cannot include a registration row.",
       });
     }
     if (report.mode === "registered" && report.registration === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["registration"],
         message: "Registered reports must include the persisted runtime QA row.",
       });
     }
     if (report.payload.runtimePackageId !== report.preflight.payloadRuntimePackageId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "payloadRuntimePackageId"],
         message: "Preflight payload runtime package id must match the report payload.",
       });
@@ -553,21 +553,21 @@ export const RuntimeQaRecordRegistrationReportSchema = z
       report.preflight.latestRuntimePackageId === report.preflight.payloadRuntimePackageId;
     if (report.preflight.runtimePackageMatchesLatest !== expectedMatch) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "runtimePackageMatchesLatest"],
         message: "runtimePackageMatchesLatest must reflect payload/latest runtime package identity.",
       });
     }
     if (!expectedMatch && !report.preflight.runtimePackageDriftAllowed) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "runtimePackageDriftAllowed"],
         message: "Runtime package drift reports require the explicit drift override.",
       });
     }
     if (report.guardrails.runtimePackageDriftAllowed !== report.preflight.runtimePackageDriftAllowed) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["guardrails", "runtimePackageDriftAllowed"],
         message: "Guardrail drift override must match preflight drift override.",
       });
@@ -575,21 +575,21 @@ export const RuntimeQaRecordRegistrationReportSchema = z
     const signedTransformRequired = report.payload.signedTransformArtifactId !== null;
     if (report.preflight.signedTransformRequired !== signedTransformRequired) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "signedTransformRequired"],
         message: "Signed-transform preflight requirement must match the report payload.",
       });
     }
     if (signedTransformRequired && report.preflight.signedTransformRegistered !== true) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "signedTransformRegistered"],
         message: "Signed-transform QA reports require registered signed-transform readback.",
       });
     }
     if (!signedTransformRequired && report.preflight.signedTransformRegistered !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "signedTransformRegistered"],
         message: "Unsigned QA reports must not claim signed-transform registration readback.",
       });
@@ -599,7 +599,7 @@ export const RuntimeQaRecordRegistrationReportSchema = z
       report.payload.transformPosture !== "signed_room_local_transform"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payload", "transformPosture"],
         message: "Approved-public QA reports require a signed room-local transform posture.",
       });
@@ -609,7 +609,7 @@ export const RuntimeQaRecordRegistrationReportSchema = z
       report.payload.signedTransformArtifactId === null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payload", "signedTransformArtifactId"],
         message: "Approved-public QA reports require a signed transform artifact id.",
       });
@@ -619,7 +619,7 @@ export const RuntimeQaRecordRegistrationReportSchema = z
       !report.guardrails.publicExposureAllowed
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["guardrails", "publicExposureAllowed"],
         message: "Approved-public QA reports require the explicit public-exposure override.",
       });
@@ -629,7 +629,7 @@ export const RuntimeQaRecordRegistrationReportSchema = z
       (report.payload.publicExposureDecision === "approved_public")
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["guardrails", "publicExposureChanged"],
         message: "publicExposureChanged must reflect whether this QA record approves public exposure.",
       });
@@ -637,21 +637,21 @@ export const RuntimeQaRecordRegistrationReportSchema = z
     if (report.registration !== null) {
       if (report.registration.recordId !== report.payload.recordId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["registration", "recordId"],
           message: "Registered QA record id must match the report payload record id.",
         });
       }
       if (report.registration.signedTransformArtifactId !== report.payload.signedTransformArtifactId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["registration", "signedTransformArtifactId"],
           message: "Registered QA signed transform artifact id must match the report payload.",
         });
       }
       if (report.registration.publicExposureDecision !== report.payload.publicExposureDecision) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["registration", "publicExposureDecision"],
           message: "Registered QA public exposure decision must match the report payload.",
         });
@@ -678,9 +678,9 @@ export type RuntimeQaRecordRegistrationReportInspectionStatus = z.infer<
 export const RuntimeQaRecordRegistrationReportInspectionSchema = z
   .object({
     schemaVersion: z.literal("venviewer.runtime-qa-registration-report-inspection.v0"),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     inspectedReportFile: z.string().trim().min(1),
-    inspectedReportGeneratedAt: z.string().datetime().nullable(),
+    inspectedReportGeneratedAt: z.iso.datetime().nullable(),
     status: RuntimeQaRecordRegistrationReportInspectionStatusSchema,
     liveQaRegistrationReady: z.boolean(),
     mode: z.enum(["dry_run", "registered"]).nullable(),
@@ -688,8 +688,8 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
     roomSlug: TradesHallRuntimeRoomSlugSchema.nullable(),
     recordId: z.string().trim().min(1).nullable(),
     publicExposureDecision: RuntimeQaPublicExposureDecisionSchema.nullable(),
-    reportRuntimePackageId: z.string().uuid().nullable(),
-    reportLatestRuntimePackageId: z.string().uuid().nullable(),
+    reportRuntimePackageId: z.uuid().nullable(),
+    reportLatestRuntimePackageId: z.uuid().nullable(),
     reportRuntimePackageMatchesLatest: z.boolean().nullable(),
     reportRuntimePackageDriftAllowed: z.boolean().nullable(),
     reportSignedTransformRequired: z.boolean().nullable(),
@@ -703,7 +703,7 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
   .superRefine((inspection, ctx) => {
     if (inspection.liveQaRegistrationReady && inspection.status !== "ready_for_live_qa_registration") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["status"],
         message: "Only ready_for_live_qa_registration inspections may set liveQaRegistrationReady.",
       });
@@ -711,14 +711,14 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
     if (inspection.status === "ready_for_live_qa_registration") {
       if (!inspection.liveQaRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveQaRegistrationReady"],
           message: "Ready inspections must set liveQaRegistrationReady.",
         });
       }
       if (inspection.mode !== "dry_run") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["mode"],
           message: "Ready inspections must come from dry-run reports.",
         });
@@ -731,42 +731,42 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
         inspection.inspectedReportGeneratedAt === null
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["status"],
           message: "Ready inspections must include report target identity.",
         });
       }
       if (inspection.blockers.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Ready inspections cannot include blockers.",
         });
       }
       if (inspection.reportRuntimePackageId === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageId"],
           message: "Ready inspections must be scoped to a runtime package.",
         });
       }
       if (inspection.reportLatestRuntimePackageId !== inspection.reportRuntimePackageId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportLatestRuntimePackageId"],
           message: "Ready inspections require the payload runtime package to match latest loadable package.",
         });
       }
       if (inspection.reportRuntimePackageMatchesLatest !== true) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageMatchesLatest"],
           message: "Ready inspections require runtimePackageMatchesLatest true.",
         });
       }
       if (inspection.reportRuntimePackageDriftAllowed !== false) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageDriftAllowed"],
           message: "Ready inspections cannot use runtime-package drift override.",
         });
@@ -776,7 +776,7 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
         inspection.reportSignedTransformRegistered !== true
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportSignedTransformRegistered"],
           message: "Ready signed-transform QA inspections require registered signed-transform readback.",
         });
@@ -786,7 +786,7 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
         inspection.reportPublicExposureAllowed !== true
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportPublicExposureAllowed"],
           message: "Ready approved-public QA inspections require the public-exposure override.",
         });
@@ -797,7 +797,7 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
       inspection.blockers.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Not-ready inspections must include at least one blocker.",
       });
@@ -805,21 +805,21 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
     if (inspection.status === "registered_qa_report_verified") {
       if (inspection.liveQaRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveQaRegistrationReady"],
           message: "Registered QA reports are audit evidence, not live-registration authorization.",
         });
       }
       if (inspection.mode !== "registered") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["mode"],
           message: "Registered QA report inspections must cite registered mode.",
         });
       }
       if (inspection.blockers.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Registered QA report inspections must state why they are not live-registration-ready.",
         });
@@ -828,14 +828,14 @@ export const RuntimeQaRecordRegistrationReportInspectionSchema = z
     if (inspection.status === "invalid_report") {
       if (inspection.liveQaRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveQaRegistrationReady"],
           message: "Invalid reports cannot be live-registration-ready.",
         });
       }
       if (inspection.blockers.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Invalid report inspections must include validation blockers.",
         });

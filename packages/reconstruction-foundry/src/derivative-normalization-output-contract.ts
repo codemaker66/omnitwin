@@ -108,7 +108,7 @@ function issue(
   path: readonly (string | number)[],
   message: string,
 ): void {
-  ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path], message });
+  ctx.addIssue({ code: "custom", path: [...path], message });
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -282,7 +282,7 @@ export const FoundryDerivativeNormalizationQuarantineLocatorV0Schema =
       const { locatorSha256: _locatorSha256, ...payload } = locator;
       const parsed = QuarantineLocatorPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       const expected = digest(QUARANTINE_LOCATOR_DOMAIN, parsed.data);
@@ -318,8 +318,8 @@ const AbsentActivationSchema = z
 const ClaimedRuntimeContextSchema = z
   .object({
     jobId: RuntimeManifestKeySchema,
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     attemptOrdinal: z.literal(1),
     stageId: RuntimeManifestKeySchema,
     fencingToken: PositiveFenceSchema,
@@ -697,7 +697,7 @@ export const FoundryDerivativeNormalizationOutputReportV0Schema =
       const { reportSha256: _reportSha256, ...payload } = report;
       const parsed = ReportPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       if (report.reportSha256 !== digest(REPORT_DOMAIN, parsed.data)) {
@@ -778,7 +778,7 @@ export const FoundryDerivativeNormalizationArtifactIndexV0Schema =
       const { artifactIndexSha256: _artifactIndexSha256, ...payload } = index;
       const parsed = ArtifactIndexPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       if (index.artifactIndexSha256 !== digest(INDEX_DOMAIN, parsed.data)) {

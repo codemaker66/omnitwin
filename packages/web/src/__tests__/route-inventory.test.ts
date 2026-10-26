@@ -49,14 +49,35 @@ function devFixtureBounds(): { readonly start: number; readonly end: number } {
   return { start, end };
 }
 
-/** Production routes: every `path: "..."` and `staffPage("...")` in the
- *  router, minus the dev-only fixtures (absent from production builds) and
- *  the `*` fallback. */
+/** A route whose path is a named constant (`path: CLIENT_HOME_ROUTE`) is read
+ *  from where router.tsx defines or imports it. The literal-only inventory
+ *  missed /events, every client's home after sign-in, so Vercel never served
+ *  it on a direct load; a constant this cannot resolve now fails the test
+ *  instead of dropping out of the inventory unseen. */
+function resolvePathConstant(name: string): string {
+  const definition = new RegExp(`\\bconst\\s+${name}\\s*(?::\\s*string\\s*)?=\\s*"([^"]+)"`, "u");
+  const local = definition.exec(routerSource);
+  if (local?.[1] !== undefined) return local[1];
+  const imported = new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*"(\\.[^"]+)\\.js"`, "u").exec(routerSource);
+  if (imported?.[1] === undefined) throw new Error(`router.tsx: route path ${name} is neither a local constant nor imported`);
+  for (const extension of [".ts", ".tsx"]) {
+    const file = join(root, "src", `${imported[1]}${extension}`);
+    if (!existsSync(file)) continue;
+    const exported = definition.exec(readFileSync(file, "utf8"));
+    if (exported?.[1] !== undefined) return exported[1];
+  }
+  throw new Error(`router.tsx: cannot find the string value of route path ${name} in ${imported[1]}`);
+}
+
+/** Production routes: every `path: "..."`, `path: CONSTANT` and
+ *  `staffPage("...")` in the router, minus the dev-only fixtures (absent from
+ *  production builds) and the `*` fallback. */
 function productionRouterPaths(): string[] {
   const { start, end } = devFixtureBounds();
   const production = routerSource.slice(0, start) + routerSource.slice(end);
   const paths = [
     ...[...production.matchAll(/\bpath:\s*"([^"]+)"/gu)].map((match) => match[1] ?? ""),
+    ...[...production.matchAll(/\bpath:\s*([A-Z][A-Z0-9_]*)\b/gu)].map((match) => resolvePathConstant(match[1] ?? "")),
     ...[...production.matchAll(/\bstaffPage\(\s*"([^"]+)"/gu)].map((match) => match[1] ?? ""),
   ];
   return [...new Set(paths)].filter((path) => path !== "*");
@@ -159,7 +180,7 @@ function routerDeclares(path: string): boolean {
 describe("the route inventory, read from router.tsx", () => {
   it("finds the router's real routes, including every share and planner link", () => {
     expect(ROUTER_PATHS.length).toBeGreaterThan(50);
-    for (const path of ["/", "/proposal-share/:token", "/plan/:code", "/supplier-share/:token", "/proposal/:shareCode", "/pricing"]) {
+    for (const path of ["/", "/proposal-share/:token", "/plan/:code", "/supplier-share/:token", "/proposal/:shareCode", "/pricing", "/events"]) {
       expect(ROUTER_PATHS).toContain(path);
     }
     // The dev-only fixtures are not production routes.

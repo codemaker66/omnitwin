@@ -27,19 +27,19 @@ import {
 export const DiaryCommandSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("booking.create"),
-    commandId: z.string().uuid(),
+    commandId: z.uuid(),
     payload: CreateBookingSchema,
   }),
   z.object({
     kind: z.literal("booking.update"),
-    commandId: z.string().uuid(),
-    bookingId: z.string().uuid(),
+    commandId: z.uuid(),
+    bookingId: z.uuid(),
     payload: UpdateBookingSchema,
   }),
   z.object({
     kind: z.literal("booking.transition"),
-    commandId: z.string().uuid(),
-    bookingId: z.string().uuid(),
+    commandId: z.uuid(),
+    bookingId: z.uuid(),
     payload: TransitionBookingSchema,
   }),
 ]);
@@ -51,16 +51,16 @@ export const DiaryAckResequenceSchema = z
   .object({
     changes: z.array(
       z.object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         fromRank: z.number().int().nullable(),
         toRank: z.number().int(),
       }),
     ),
     promotedToFirst: z.array(
       z.object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         title: z.string(),
-        ownerUserId: z.string().uuid().nullable(),
+        ownerUserId: z.uuid().nullable(),
       }),
     ),
   })
@@ -68,7 +68,7 @@ export const DiaryAckResequenceSchema = z
 
 export const DiaryCommandAckSchema = z.object({
   type: z.literal("diary.ack"),
-  commandId: z.string().uuid(),
+  commandId: z.uuid(),
   outcome: z.enum(["applied", "rejected"]),
   /** True when this ack restates a previously recorded outcome (resend). */
   replay: z.boolean(),

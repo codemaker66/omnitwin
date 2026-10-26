@@ -11,11 +11,11 @@ import { sql } from "drizzle-orm";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const LoadoutIdParam = z.object({ loadoutId: z.string().uuid() });
-const PhotoIdParam = z.object({ loadoutId: z.string().uuid(), id: z.string().uuid() });
+const LoadoutIdParam = z.object({ loadoutId: z.uuid() });
+const PhotoIdParam = z.object({ loadoutId: z.uuid(), id: z.uuid() });
 
 const AddPhotoBody = z.object({
-  fileId: z.string().uuid(),
+  fileId: z.uuid(),
   caption: z.string().max(500).nullable().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
 });
@@ -29,7 +29,7 @@ const UpdatePhotoBody = z.object({
 );
 
 const ReorderBody = z.object({
-  photoIds: z.array(z.string().uuid()).min(1),
+  photoIds: z.array(z.uuid()).min(1),
 }).refine(
   (data) => new Set(data.photoIds).size === data.photoIds.length,
   { message: "photoIds must not contain duplicates" },

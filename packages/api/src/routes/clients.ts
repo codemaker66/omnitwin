@@ -7,6 +7,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canManageCommercial, canReadClients } from "../utils/query.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { contactProfile, searchClients } from "../services/client-search.js";
 
 // ---------------------------------------------------------------------------
@@ -14,9 +15,9 @@ import { contactProfile, searchClients } from "../services/client-search.js";
 // ---------------------------------------------------------------------------
 
 const SearchQuery = z.object({ q: z.string().trim().min(2).max(200) });
-const UserIdParam = z.object({ userId: z.string().uuid() });
-const LeadIdParam = z.object({ leadId: z.string().uuid() });
-const ContactIdParam = z.object({ contactId: z.string().uuid() });
+const UserIdParam = z.object({ userId: z.uuid() });
+const LeadIdParam = z.object({ leadId: z.uuid() });
+const ContactIdParam = z.object({ contactId: z.uuid() });
 
 /** The enquiries that are still live: new, in review, or approved. */
 const LIVE_ENQUIRY_STATES = ["submitted", "under_review", "approved"] as const;
@@ -141,8 +142,8 @@ export async function clientRoutes(
     const configs = await db.select({
       id: configurations.id,
       name: configurations.name,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${configurations.spaceId})`,
-      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects WHERE configuration_id = ${configurations.id})`,
+      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${outerColumn(configurations.spaceId)})`,
+      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects WHERE configuration_id = ${outerColumn(configurations.id)})`,
       createdAt: configurations.createdAt,
     })
       .from(configurations)
@@ -157,7 +158,7 @@ export async function clientRoutes(
       state: enquiries.state,
       eventType: enquiries.eventType,
       preferredDate: enquiries.preferredDate,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${outerColumn(enquiries.spaceId)})`,
       // False when the guest named no room: spaceName is then where the
       // enquiry is filed, not what they asked for (migration 0079).
       roomChosen: enquiries.roomChosen,
