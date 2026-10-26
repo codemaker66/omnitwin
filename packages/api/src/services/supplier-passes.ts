@@ -216,7 +216,7 @@ export async function readUserContact(db: Database, userId: string | null): Prom
   return passContact(user.displayName ?? user.name, user.phone);
 }
 
-const LineageMetadata = z.object({ previousPackId: z.string().uuid() }).passthrough();
+const LineageMetadata = z.object({ previousPackId: z.uuid() }).loose();
 
 /**
  * What changed for the holder of a fresh pass: its items against the pass it

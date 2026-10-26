@@ -16,12 +16,12 @@ const ScheduleSpaceSchema = z.object({
  *  No notes, no ladder position, no owner, no decision date: the client reads
  *  their when, never the Diary's internals. */
 export const ScheduleSlotSchema = z.object({
-  bookingId: z.string().uuid(),
+  bookingId: z.uuid(),
   kind: BookingKindSchema,
   title: z.string().trim().min(1).max(200),
   space: ScheduleSpaceSchema,
-  startsAt: z.string().datetime(),
-  endsAt: z.string().datetime(),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
 }).strict();
 export type ClientEventScheduleSlot = z.infer<typeof ScheduleSlotSchema>;
 
@@ -33,8 +33,8 @@ export const ClientEventScheduleSchema = z.object({
     name: z.string().trim().min(1).max(200),
     eventType: z.string().trim().max(80).nullable(),
     status: EventStatusSchema,
-    startsAt: z.string().datetime().nullable(),
-    endsAt: z.string().datetime().nullable(),
+    startsAt: z.iso.datetime().nullable(),
+    endsAt: z.iso.datetime().nullable(),
     guestCount: z.number().int().nonnegative(),
   }).strict(),
   venue: z.object({
@@ -48,7 +48,7 @@ export const ClientEventScheduleSchema = z.object({
   phases: z.array(z.object({
     id: EventPhaseIdSchema,
     name: z.string().trim().min(1).max(100),
-    startsAt: z.string().datetime().nullable(),
+    startsAt: z.iso.datetime().nullable(),
     durationMinutes: z.number().int().nonnegative(),
     space: ScheduleSpaceSchema.nullable(),
   }).strict()),
@@ -92,10 +92,10 @@ export type ClientEventScheduleQuery = z.infer<typeof ClientEventScheduleQuerySc
 
 export const ProposeWindowSchema = z.object({
   spaceId: SpaceIdSchema,
-  startsAt: z.string().datetime(),
-  endsAt: z.string().datetime(),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
   /** Minted once per gesture; a resend after a dropped answer replays. */
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: z.uuid(),
 }).strict().refine((window) => Date.parse(window.endsAt) > Date.parse(window.startsAt), {
   message: "endsAt must be after startsAt — a window occupies a real interval.",
   path: ["endsAt"],
@@ -121,12 +121,12 @@ export const RoomDayQuerySchema = z.object({
 }).strict();
 export type RoomDayQuery = z.infer<typeof RoomDayQuerySchema>;
 
-const RoomDayInstants = { startsAt: z.string().datetime(), endsAt: z.string().datetime() };
+const RoomDayInstants = { startsAt: z.iso.datetime(), endsAt: z.iso.datetime() };
 
 export const RoomDaySpanSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("yours"),
-    bookingId: z.string().uuid(),
+    bookingId: z.uuid(),
     title: z.string().trim().min(1).max(200),
     ...RoomDayInstants,
   }).strict(),

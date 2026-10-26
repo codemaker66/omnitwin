@@ -30,8 +30,8 @@ import { loadPricingAdvice, loadPricingDesk, recordAdviceDecision } from "../ser
 //     the same way; this file writes no price.
 // ---------------------------------------------------------------------------
 
-const VenueIdParam = z.object({ venueId: z.string().uuid() });
-const KeyParam = z.object({ venueId: z.string().uuid(), key: PricingAdviceKeySchema });
+const VenueIdParam = z.object({ venueId: z.uuid() });
+const KeyParam = z.object({ venueId: z.uuid(), key: PricingAdviceKeySchema });
 
 /** A year and a half ahead by default: peak Saturdays sell 12 to 18 months
  *  out (docs/research/r6-revenue-management.md). */

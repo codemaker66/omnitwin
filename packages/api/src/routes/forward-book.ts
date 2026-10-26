@@ -27,8 +27,8 @@ import { USER_DISPLAY_NAME_MAX, userDisplayName } from "../utils/user-display-na
 // the time of each standing record: never a name or a note.
 // ---------------------------------------------------------------------------
 
-const VenueIdParam = z.object({ venueId: z.string().uuid() });
-const CheckIdParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid() });
+const VenueIdParam = z.object({ venueId: z.uuid() });
+const CheckIdParam = z.object({ venueId: z.uuid(), id: z.uuid() });
 
 const CHECK_COLUMNS = {
   id: forwardBookChecks.id,

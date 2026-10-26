@@ -24,7 +24,7 @@ const CLI_OPTIONS = {
 } as const;
 
 const CanonicalPoseIndexSchema = z.string().regex(/^(0|[1-9]\d*)$/);
-const FiniteNumberSchema = z.number().finite();
+const FiniteNumberSchema = z.number();
 const RawPosesSchema = z
   .record(
     CanonicalPoseIndexSchema,

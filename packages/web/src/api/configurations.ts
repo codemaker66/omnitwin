@@ -75,7 +75,7 @@ const ConfigurationResponseSchema = z.object({
   revision: z.number().int().min(1),
   // Keep the server timestamp for saved-state display after a clean reopen.
   // Older responses may omit it; never substitute the browser's load time.
-  updatedAt: z.string().datetime({ offset: true }).optional(),
+  updatedAt: z.iso.datetime({ offset: true }).optional(),
   objects: z.array(PlacedObjectResponseSchema).optional(),
   // Event-level metadata (special instructions, day-of contact, phase
   // deadlines, access notes). Absent on legacy rows, null on cleared rows,
@@ -236,7 +236,7 @@ export interface ConfigMetadataInput {
   readonly instructions?: EventInstructions | null;
 }
 
-const PatchConfigResponseSchema = z.object({ id: z.string() }).passthrough();
+const PatchConfigResponseSchema = z.object({ id: z.string() }).loose();
 
 export async function patchConfigMetadata(
   configId: string,
