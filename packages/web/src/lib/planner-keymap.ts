@@ -395,7 +395,8 @@ export function pasteAt(at: { readonly x: number; readonly z: number } | null): 
   }
   const plan = planPaste(copied, at, editWorld());
   if (landEdit(plan) === null || !plan.ok) return false;
-  if (from.spaceId !== here.spaceId && from.roomName !== null) postPlacementNotice(`Pasted ${pastedWords(plan.items)} from the ${from.roomName}`);
+  // A receipt one Undo takes back: v2's receipt host offers Undo beside it.
+  if (from.spaceId !== here.spaceId && from.roomName !== null) postPlacementNotice(`Pasted ${pastedWords(plan.items)} from the ${from.roomName}`, { undo: true });
   return true;
 }
 
