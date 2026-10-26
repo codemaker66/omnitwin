@@ -1,0 +1,239 @@
+/*
+ * History, in the left zone (T-674 slice 15; approved spec §6.9). A lacquer
+ * panel, e2, as tall as the zone allows: its head, then the steps oldest
+ * first, grouped by sitting, scrolling inside the panel. The step the layout
+ * stands at carries a copper rule and a cream wash; the steps Redo would put
+ * back are dimmed. It rises 12 px from its own edge with its opacity over
+ * 240 ms, and under reduced motion only fades, over 120 ms.
+ */
+
+.pc-history {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  pointer-events: auto;
+  animation: pc-history-in var(--house-motion-deliberate) var(--house-ease-out);
+}
+
+.pc-history__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 20px;
+  border-bottom: 1px solid var(--house-hairline);
+}
+
+.pc-history__heading {
+  margin: 0;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-history__count {
+  flex: 1 1 auto;
+  color: var(--house-forest-ink-2);
+  text-align: right;
+}
+
+.pc-history__notice {
+  margin: 12px 12px 0;
+  box-shadow: none;
+}
+
+.pc-history__cap {
+  margin: 0;
+  padding: 10px 20px 0;
+  color: var(--house-amber-lit);
+}
+
+.pc-history__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px 4px;
+}
+
+.pc-history__lead {
+  margin: 0;
+  color: var(--house-forest-ink-1);
+  font: 400 20px/1.2 var(--house-serif);
+}
+
+.pc-history__line {
+  margin: 0;
+  color: var(--house-forest-ink-2);
+}
+
+/* -- The steps --------------------------------------------------------------- */
+.pc-history__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 8px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--house-forest-ink-3) 40%, transparent) transparent;
+}
+
+.pc-history__list:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--house-radius-key);
+}
+
+.pc-history__sitting-head {
+  padding: 12px 12px 6px;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-history__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px 0 8px;
+  border-radius: var(--house-radius-key);
+  color: var(--house-forest-ink-1);
+  font: 400 14px/1.3 var(--house-sans);
+  cursor: pointer;
+  transition: background-color var(--house-motion-hover) var(--house-ease-out);
+}
+
+.pc-history__mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+}
+
+/* The step the layout stands at: a copper rule at its edge and a cream wash. */
+.pc-history__row.is-current {
+  background: color-mix(in srgb, var(--house-cream) 7%, transparent);
+}
+
+.pc-history__row.is-current .pc-history__mark::before {
+  content: "";
+  width: 3px;
+  height: 18px;
+  border-radius: var(--house-radius-pill);
+  background: var(--house-accent-copper-bright);
+}
+
+/* What Redo would put back: dimmed, still legible (about 5:1 on lacquer). */
+.pc-history__row.is-undone {
+  color: color-mix(in srgb, var(--house-forest-ink-3) 78%, transparent);
+}
+
+.pc-history__row.is-saved {
+  min-height: 28px;
+  color: var(--house-copper-lit);
+  font: 500 12px/1.3 var(--house-sans);
+}
+
+.pc-history__row.is-saved.is-undone {
+  color: color-mix(in srgb, var(--house-copper-lit) 72%, transparent);
+}
+
+.pc-history__bookmark {
+  width: 14px;
+  height: 14px;
+}
+
+.pc-history__row.is-origin {
+  color: var(--house-forest-ink-2);
+}
+
+.pc-history__row.is-origin.is-current {
+  color: var(--house-forest-ink-1);
+}
+
+/* The keyboard's place in the list: the cream ring, inset, never like a hover. */
+.pc-history__list:focus-visible .pc-history__row.is-cursor {
+  box-shadow: inset 0 0 0 2px var(--house-cream);
+}
+
+.pc-history__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pc-history__time {
+  flex: none;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-history__row.is-current .pc-history__time {
+  color: var(--house-forest-ink-2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-history__row:hover {
+    background: color-mix(in srgb, var(--house-cream) 5%, transparent);
+  }
+
+  .pc-history__row.is-current:hover {
+    background: color-mix(in srgb, var(--house-cream) 9%, transparent);
+  }
+}
+
+.pc-history__row:active {
+  background: color-mix(in srgb, var(--house-cream) 9%, transparent);
+}
+
+.pc-history__foot {
+  margin: 0;
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--house-hairline);
+  color: var(--house-forest-ink-3);
+}
+
+/* Words for assistive technology only: where the layout is, what was undone, where History returned. */
+.pc-history__hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Phones (5.4): History is a sheet in place of the dock, the width of the screen. */
+@media (max-width: 767px) {
+  .pc-history {
+    width: 100%;
+    max-height: min(56dvh, 480px);
+    border-radius: 16px 16px var(--house-radius-surface) var(--house-radius-surface);
+  }
+
+  .pc-history__row { min-height: 44px; }
+  .pc-history__row.is-saved { min-height: 36px; }
+}
+
+@keyframes pc-history-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-history { animation: pc-history-fade var(--house-motion-hover) var(--house-ease-out); }
+  .pc-history__row { transition: none; }
+}
+
+@keyframes pc-history-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
