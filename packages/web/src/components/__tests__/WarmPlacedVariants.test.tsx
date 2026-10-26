@@ -8,7 +8,8 @@ import { createPlacedItem } from "../../lib/placement.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { InstancedFurnitureLayer } from "../editor/InstancedFurnitureLayer.js";
-import { landsWith, WARM_PLACED_FRAMES, WarmPieceInHand, WarmPlacedVariants } from "../WarmPlacedVariants.js";
+import { instanceCapacityFor } from "../editor/InstancedFurnitureLayer.js";
+import { landsWith, poolsLanding, WARM_PLACED_FRAMES, WarmPieceInHand, WarmPlacedVariants } from "../WarmPlacedVariants.js";
 import { mountInStubRoot, type StubRoot } from "./stub-r3f-root.js";
 
 function catalogueItem(slug: string): CatalogueItem {
@@ -19,6 +20,8 @@ function catalogueItem(slug: string): CatalogueItem {
 
 const TABLE = catalogueItem("round-table-6ft");
 const CHAIR = catalogueItem(DEFAULT_PLANNER_CHAIR_SLUG);
+/** The pool a first piece of a kind is drawn from. */
+const FIRST = instanceCapacityFor(1);
 
 let mounted: StubRoot | null = null;
 
@@ -43,6 +46,27 @@ describe("landsWith", () => {
   });
 });
 
+describe("poolsLanding", () => {
+  const placed = (counts: Readonly<Record<string, number>>) => (id: string): number => counts[id] ?? 0;
+
+  it("warms the first pool of a table and of its seats on an empty floor", () => {
+    expect(poolsLanding(TABLE, placed({}))).toEqual([{ item: TABLE, capacity: FIRST }, { item: CHAIR, capacity: FIRST }]);
+  });
+
+  it("warms the doubled pool the 33rd chair is drawn from", () => {
+    expect(poolsLanding(CHAIR, placed({ [CHAIR.id]: FIRST }))).toEqual([{ item: CHAIR, capacity: instanceCapacityFor(FIRST + 1) }]);
+  });
+
+  it("warms both pools a table's seats can land in when they straddle a doubling", () => {
+    const pools = poolsLanding(TABLE, placed({ [TABLE.id]: 3, [CHAIR.id]: FIRST - 2 }));
+    expect(pools).toEqual([
+      { item: TABLE, capacity: FIRST },
+      { item: CHAIR, capacity: FIRST },
+      { item: CHAIR, capacity: instanceCapacityFor(FIRST + 1) },
+    ]);
+  });
+});
+
 describe("WarmPieceInHand", () => {
   it("warms nothing with nothing in hand, and the table and its seats once a table is armed", () => {
     mounted = mountInStubRoot(<WarmPieceInHand />);
@@ -51,6 +75,14 @@ describe("WarmPieceInHand", () => {
     act(() => { useCatalogueStore.setState({ selectedItemId: TABLE.id }); });
     expect(warming(mounted.scene)).toEqual([TABLE.id, CHAIR.id]);
     expect(instancedUnder(mounted.scene, "warm-placed-variants").length).toBeGreaterThan(0);
+  });
+
+  it("warms the pool a table's seats grow into once the floor is near a doubling", () => {
+    usePlacementStore.setState({ placedItems: Array.from({ length: FIRST - 2 }, (_unused, index) => createPlacedItem(CHAIR.id, index, 0, 0)) });
+    mounted = mountInStubRoot(<WarmPieceInHand />);
+    act(() => { useCatalogueStore.setState({ selectedItemId: TABLE.id }); });
+    const capacities = new Set(instancedUnder(mounted.scene, "warm-placed-variants").map((mesh) => mesh.instanceMatrix.count));
+    expect([...capacities].sort((a, b) => a - b)).toEqual([FIRST, instanceCapacityFor(FIRST + 1)]);
   });
 
   it("never warms table dressing, which lands on a table rather than as a piece", () => {
@@ -112,7 +144,7 @@ describe("WarmPlacedVariants", () => {
     mounted = mountInStubRoot(
       <>
         <StoreLayer />
-        <WarmPlacedVariants items={[TABLE, CHAIR]} />
+        <WarmPlacedVariants pools={[{ item: TABLE, capacity: FIRST }, { item: CHAIR, capacity: FIRST }]} />
       </>,
     );
     frame();
@@ -127,7 +159,7 @@ describe("WarmPlacedVariants", () => {
     mounted = mountInStubRoot(
       <>
         <CameraProbe />
-        <WarmPlacedVariants items={[TABLE]} />
+        <WarmPlacedVariants pools={[{ item: TABLE, capacity: FIRST }]} />
       </>,
     );
     const meshes = instancedUnder(mounted.scene, "warm-placed-variants");
@@ -149,7 +181,7 @@ describe("WarmPlacedVariants", () => {
   });
 
   it("is never found by a raycast through the place it is built", () => {
-    mounted = mountInStubRoot(<WarmPlacedVariants items={[TABLE, CHAIR]} />);
+    mounted = mountInStubRoot(<WarmPlacedVariants pools={[{ item: TABLE, capacity: FIRST }, { item: CHAIR, capacity: FIRST }]} />);
     frame();
     // The templates stand at the origin; a ray straight down through it finds nothing of them.
     const raycaster = new Raycaster(new Vector3(0, 10, 0), new Vector3(0, -1, 0));
@@ -157,7 +189,7 @@ describe("WarmPlacedVariants", () => {
   });
 
   it("lets go of the geometry and materials it harvested when the piece leaves the hand", () => {
-    mounted = mountInStubRoot(<WarmPlacedVariants items={[TABLE, CHAIR]} />);
+    mounted = mountInStubRoot(<WarmPlacedVariants pools={[{ item: TABLE, capacity: FIRST }, { item: CHAIR, capacity: FIRST }]} />);
     const meshes = instancedUnder(mounted.scene, "warm-placed-variants");
     expect(meshes.length).toBeGreaterThan(0);
     const released = new Set<object>();

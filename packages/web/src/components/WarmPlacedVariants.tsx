@@ -32,29 +32,37 @@ import { DEFAULT_PLANNER_CHAIR_SLUG } from "../lib/furniture-defaults.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
 import { isTableDressingApplicator } from "../lib/table-dressing.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
+import { usePlacementStore } from "../stores/placement-store.js";
 
 /** Frames each batch is drawn: enough for every pass of the frame to draw it once. */
 export const WARM_PLACED_FRAMES = 3;
 const WARM_SCALE = 1e-4;
 const IDENTITY = new Matrix4();
 const _ahead = new Vector3();
-/**
- * The pool a first piece of a kind is drawn from. three's node renderer sizes the instance-matrix
- * binding it compiles from the pool's capacity, so a pool of any other size warms another shader.
- */
-const FIRST_CAPACITY = instanceCapacityFor(1);
+/** The most pieces of one kind a single drop sets down: a round table's seats. */
+const MOST_LANDING = 12;
 /** The templates sit at the origin: no raycast may find them (a false return skips the subtree). */
 const skipSubtreeRaycast = (): boolean => false;
 
 type HarvestedVariant = ReturnType<typeof harvestVariant>;
 
+/**
+ * A batch to warm: a kind of piece, and the capacity of the pool it will be drawn from. three's
+ * node renderer sizes the instance-matrix binding it compiles from the pool's capacity, so a pool
+ * of any other size warms another shader.
+ */
+export interface WarmPool {
+  readonly item: CatalogueItem;
+  readonly capacity: number;
+}
+
 export interface WarmPlacedVariantsProps {
-  /** Everything that lands when the piece in hand is set down: the piece, and a table's seats. */
-  readonly items: readonly CatalogueItem[];
+  /** The pools the next drop draws from: the piece in hand's, and a table's seats'. */
+  readonly pools: readonly WarmPool[];
 }
 
 /** Draws the batches the given pieces will be drawn with once placed, so they compile now. */
-export function WarmPlacedVariants({ items }: WarmPlacedVariantsProps): ReactElement {
+export function WarmPlacedVariants({ pools }: WarmPlacedVariantsProps): ReactElement {
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
   const templates = useRef<Group>(null);
@@ -63,27 +71,30 @@ export function WarmPlacedVariants({ items }: WarmPlacedVariantsProps): ReactEle
   // An imported model resolves after mount; its template then harvests again, as the layer's does.
   const [templateRevision, setTemplateRevision] = useState(0);
   const onTemplateReady = useCallback(() => { setTemplateRevision((revision) => revision + 1); }, []);
-  const itemsKey = items.map((item) => item.id).join("|");
+  const poolsKey = pools.map((pool) => `${pool.item.id}@${String(pool.capacity)}`).join("|");
+  const items = [...new Map(pools.map((pool) => [pool.item.id, pool.item])).values()];
 
   useLayoutEffect(() => {
     const root = templates.current;
     const target = batches.current;
     // Only a three object has templates to harvest (the planner's DOM tests render this tree into the page).
     if (!(root instanceof Object3D) || !(target instanceof Object3D)) return undefined;
-    const variants: HarvestedVariant[] = [];
+    const variants = new Map<string, HarvestedVariant>();
     const meshes: InstancedMesh[] = [];
-    for (const item of items) {
-      const node = root.getObjectByName(`warm-template-${item.id}`);
-      if (node === undefined) continue;
-      let variant: HarvestedVariant;
-      try {
-        variant = harvestVariant(node);
-      } catch {
-        // The layer draws a piece it cannot harvest by its own per-item path, which the ghost warmed.
-        continue;
+    for (const { item, capacity } of pools) {
+      let variant = variants.get(item.id);
+      if (variant === undefined) {
+        const node = root.getObjectByName(`warm-template-${item.id}`);
+        if (node === undefined) continue;
+        try {
+          variant = harvestVariant(node);
+        } catch {
+          // The layer draws a piece it cannot harvest by its own per-item path, which the ghost warmed.
+          continue;
+        }
+        variants.set(item.id, variant);
       }
-      variants.push(variant);
-      const pool = createEditableInstancePool(variant, FIRST_CAPACITY);
+      const pool = createEditableInstancePool(variant, capacity);
       for (const mesh of pool.meshes) {
         mesh.setMatrixAt(0, IDENTITY);
         mesh.count = 1;
@@ -98,10 +109,10 @@ export function WarmPlacedVariants({ items }: WarmPlacedVariantsProps): ReactEle
     return () => {
       if (meshes.length > 0) target.remove(...meshes);
       target.visible = false;
-      for (const variant of variants) disposeVariant(variant);
+      for (const variant of variants.values()) disposeVariant(variant);
     };
-    // itemsKey is the identity of `items`, read inside.
-  }, [itemsKey, templateRevision, invalidate]);
+    // poolsKey is the identity of `pools`, read inside.
+  }, [poolsKey, templateRevision, invalidate]);
 
   useFrame(() => {
     const target = batches.current;
@@ -141,13 +152,38 @@ export function landsWith(item: CatalogueItem): readonly CatalogueItem[] {
 }
 
 /**
+ * The pools the next drop of `item` draws from, given how many of each kind are already placed:
+ * every capacity the layer's pool can reach with the pieces that land (the piece itself, one at a
+ * time; a table's seats, up to MOST_LANDING). On an empty floor that is the first pool; near a
+ * doubling it is the doubled one too, so the 33rd chair compiles nothing either.
+ */
+export function poolsLanding(item: CatalogueItem, placedOfKind: (id: string) => number): readonly WarmPool[] {
+  const pools: WarmPool[] = [];
+  for (const piece of landsWith(item)) {
+    const placed = placedOfKind(piece.id);
+    const landing = piece.id === item.id ? 1 : MOST_LANDING;
+    const capacities = new Set<number>();
+    for (let count = 1; count <= landing; count++) capacities.add(instanceCapacityFor(placed + count));
+    for (const capacity of capacities) pools.push({ item: piece, capacity });
+  }
+  return pools;
+}
+
+/**
  * Warms the placed look of the piece in hand from the moment it is armed, before the pointer
- * reaches the floor. Table dressing (a cloth, a setting) lands on a table rather than as a piece.
+ * reaches the floor, and again after a drop when the next one would grow a pool. Table dressing
+ * (a cloth, a setting) lands on a table rather than as a piece.
  */
 export function WarmPieceInHand(): ReactElement | null {
   const selectedItemId = useCatalogueStore((state) => state.selectedItemId);
-  if (selectedItemId === null || isTableDressingApplicator(selectedItemId)) return null;
-  const item = getCatalogueItem(selectedItemId);
+  const item = selectedItemId === null || isTableDressingApplicator(selectedItemId) ? undefined : getCatalogueItem(selectedItemId);
+  const kinds = item === undefined ? [] : landsWith(item).map((piece) => piece.id);
+  // How many of each landing kind are placed, as one string: a drag that moves pieces re-renders nothing.
+  const placed = usePlacementStore((state) => kinds
+    .map((id) => String(state.placedItems.reduce((count, placedItem) => (placedItem.catalogueItemId === id ? count + 1 : count), 0)))
+    .join("|"));
   if (item === undefined) return null;
-  return <WarmPlacedVariants key={item.id} items={landsWith(item)} />;
+  const counts = new Map(kinds.map((id, index) => [id, Number(placed.split("|")[index] ?? 0)]));
+  const pools = poolsLanding(item, (id) => counts.get(id) ?? 0);
+  return <WarmPlacedVariants key={item.id} pools={pools} />;
 }
