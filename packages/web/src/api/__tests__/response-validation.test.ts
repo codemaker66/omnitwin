@@ -22,6 +22,7 @@ const pricing = await import("../pricing.js");
 const spaces = await import("../spaces.js");
 const uploads = await import("../uploads.js");
 const configurations = await import("../configurations.js");
+const { parseRevisionConflict } = await import("../configuration-conflict.js");
 const proposals = await import("../proposals.js");
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -244,7 +245,7 @@ describe("configurations response validation", () => {
     );
 
     // An older server sends neither who nor when: still a conflict, both unknown.
-    expect(configurations.parseRevisionConflict(err)).toEqual({
+    expect(parseRevisionConflict(err)).toEqual({
       expectedRevision: 1,
       currentRevision: 2,
       message: "Layout changed on the server. Reload before saving again.",
@@ -261,7 +262,7 @@ describe("configurations response validation", () => {
       changedAt: "2026-10-20T21:58:00.000Z",
     });
 
-    const conflict = configurations.parseRevisionConflict(err);
+    const conflict = parseRevisionConflict(err);
     expect(conflict?.changedBy).toEqual({ userId: "u-elaine", name: "Elaine" });
     expect(conflict?.changedAt?.toISOString()).toBe("2026-10-20T21:58:00.000Z");
   });
@@ -274,22 +275,22 @@ describe("configurations response validation", () => {
       ["Elaine", { at: "21:58" }],
     ];
     for (const [changedBy, changedAt] of cases) {
-      const conflict = configurations.parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
+      const conflict = parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
         expectedRevision: 1, currentRevision: 2, changedBy, changedAt,
       }));
       expect(conflict).toMatchObject({ expectedRevision: 1, currentRevision: 2, changedBy: null, changedAt: null });
     }
     // A guest's revision (no account) as the public route reports it: when, never who.
-    expect(configurations.parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
+    expect(parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
       expectedRevision: 1, currentRevision: 2, changedBy: null, changedAt: "2026-10-20T21:58:00+01:00",
     }))?.changedAt?.toISOString()).toBe("2026-10-20T20:58:00.000Z");
   });
 
   it("is not a revision conflict without the revisions themselves", () => {
-    expect(configurations.parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
+    expect(parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
       changedBy: { userId: "u-elaine", name: "Elaine" }, changedAt: "2026-10-20T21:58:00.000Z",
     }))).toBeNull();
-    expect(configurations.parseRevisionConflict(new ApiError(409, "locked", "CONFIG_LOCKED"))).toBeNull();
+    expect(parseRevisionConflict(new ApiError(409, "locked", "CONFIG_LOCKED"))).toBeNull();
   });
 
   it("reads a layout's review status and survives one it does not know", async () => {

@@ -25,6 +25,7 @@ vi.mock("../components/editor/ObjectNotePanel.js", () => ({ ObjectNotePanel: () 
 vi.mock("../components/editor/EventDetailsPanel.js", () => ({ EventDetailsPanel: () => null }));
 vi.mock("../components/truth/TruthModeIndicator.js", () => ({ TruthModeIndicator: () => null }));
 vi.mock("../hooks/use-media-query.js", () => ({ useIsCoarsePointer: () => false, useIsNarrowViewport: () => false }));
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
@@ -32,7 +33,6 @@ vi.mock("../api/configurations.js", () => ({
   claimConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
 }));
 vi.mock("../api/spaces.js", () => ({ listVenues: vi.fn(), listSpaces: vi.fn(), getSpace: vi.fn(), getVenue: vi.fn() }));
 

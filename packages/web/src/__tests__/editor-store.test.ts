@@ -6,13 +6,13 @@ import { deriveEditorSaveStatus } from "../lib/editor-save-status.js";
 // Editor store tests — mock API modules
 // ---------------------------------------------------------------------------
 
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
 }));
@@ -33,6 +33,7 @@ vi.mock("../api/action-log.js", () => ({
 }));
 
 const configMock = vi.mocked(await import("../api/configurations.js"));
+const conflictApi = vi.mocked(await import("../api/configuration-conflict.js"));
 const spacesMock = vi.mocked(await import("../api/spaces.js"));
 
 const { useEditorStore, editorToBatch } = await import("../stores/editor-store.js");
@@ -639,7 +640,7 @@ describe("saveToServer", () => {
       changedBy: null,
       changedAt: null,
     };
-    configMock.parseRevisionConflict.mockReturnValueOnce(conflict);
+    conflictApi.parseRevisionConflict.mockReturnValueOnce(conflict);
     configMock.publicBatchSave.mockRejectedValue(new Error("stale"));
 
     useEditorStore.setState({ configId: "cfg-1", configRevision: 1, isDirty: true, isPublicPreview: true });
