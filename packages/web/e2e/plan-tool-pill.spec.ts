@@ -44,7 +44,7 @@ test.describe("Stage S2 — the tool pill and the clearance ring", () => {
       void route.fulfill({ status: 404, body: "not in this spec" });
     });
 
-    await page.goto("/plan");
+    await page.goto("/plan?space=reception-room");
     await settleCockpit(page);
 
     // Interact only with a settled stage: the resolve choreography animates

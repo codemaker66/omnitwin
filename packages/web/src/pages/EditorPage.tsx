@@ -37,12 +37,12 @@ import * as spacesApi from "../api/spaces.js";
 import { recordPlannerArrivalChoice } from "../lib/planner-room-arrival.js";
 import "../components/editor/MobilePlannerChrome.css";
 
-// CARD A1 (G1a): the Reception Room owns the default /plan experience — it is
-// the one room with a built runtime package (splat), so first-visit planners
-// land in captured reality rather than a procedural-only hall. Venues seeded
-// without it degrade through the legacy default, then the first space.
-const DEFAULT_SPACE_SLUG = "reception-room";
-const LEGACY_DEFAULT_SPACE_SLUG = "grand-hall";
+// The Grand Hall owns the default /plan experience (Blake, 26 Oct 2026,
+// superseding CARD A1's Reception Room): the drawn hall, the Grand Assembly and
+// the card dock live there. Venues seeded without it fall back to the Reception
+// Room, then the first space.
+const DEFAULT_SPACE_SLUG = "grand-hall";
+const FALLBACK_SPACE_SLUG = "reception-room";
 const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
 const MAX_REUSABLE_CONFIG_PROBES = 5;
 
@@ -294,7 +294,7 @@ export function EditorPage(): React.ReactElement {
         const space =
           spaces.find((s) => s.slug === wantedSpaceSlug)
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
-          ?? spaces.find((s) => s.slug === LEGACY_DEFAULT_SPACE_SLUG)
+          ?? spaces.find((s) => s.slug === FALLBACK_SPACE_SLUG)
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
         setOpeningRoomName(space.name);
