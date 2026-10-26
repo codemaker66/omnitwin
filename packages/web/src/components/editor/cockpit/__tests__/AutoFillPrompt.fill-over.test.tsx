@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../../../constants/scale.js";
 import type { PublishedCapacityAnswer } from "../../../../lib/planner-truth.js";
 import { setPlannerFeaturesForTesting } from "../../../../lib/planner-features.js";
+import { cardParamsFor, stampSetup } from "../../../../lib/setup-cards.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../../stores/room-dimensions-store.js";
 import { AutoFillPrompt } from "../AutoFillPrompt.js";
@@ -51,5 +52,19 @@ describe("Fill's prompt over a layout", () => {
     const tables = new Set(usePlacementStore.getState().placedItems.map((piece) => piece.groupId)).size;
     expect(label).toBe(`Place ${String(tables)} tables and ${String(usePlacementStore.getState().placedItems.length - tables)} chairs`);
     expect(onPlaced).toHaveBeenCalledTimes(1);
+  });
+
+  it("says what it does to the rounds already laid before it lays, and seats rather than places (C-02)", () => {
+    const params = cardParamsFor("round");
+    if (params === null) throw new Error("no round");
+    const laid = [-6, -3, 0, 3, 6].flatMap((x, i) => stampSetup(params, { x, z: 0 }, 0)
+      .map((piece, p) => (p === 0 ? { ...piece, label: `Table ${String(i + 1)}` } : piece)));
+    usePlacementStore.setState({ placedItems: laid });
+    render(<AutoFillPrompt style="dinner-rounds" published={PUBLISHED} onPlaced={vi.fn()} onCancel={vi.fn()} />);
+    askFor(30);
+    expect(screen.getByTestId("auto-fill-consequence").textContent).toBe("Moves 3 rounds and takes away 2.");
+    expect(screen.getByTestId("auto-fill-place").textContent).toBe("Seat 30 at 3 tables");
+    // Nothing moves until the button is pressed.
+    expect(usePlacementStore.getState().placedItems).toBe(laid);
   });
 });

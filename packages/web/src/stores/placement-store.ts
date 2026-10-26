@@ -18,6 +18,7 @@ import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
 import {
   FILL_AISLE_RULE,
+  fillOverReceipt,
   planBanquetFill,
   planRoomFill,
   planTheatreFill,
@@ -793,6 +794,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       if (refusedByStore(state.placedItems, [...kept, ...numbered])) return null;
       set({ placedItems: [...kept, ...numbered] });
       announcePlaced(numbered.map((item) => item.id));
+      // A receipt one Undo takes back (planner-qol C-02): it may have moved and taken away rounds.
+      postPlacementNotice(fillOverReceipt(fill.plan), { undo: true });
       return fill.plan;
     }
     // Room dimensions are render-space; the plan works in metres. Spacing runs

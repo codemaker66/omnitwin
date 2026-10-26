@@ -16,6 +16,9 @@ import {
   autoFillActionLabel,
   autoFillBasis,
   autoFillStyleOption,
+  fillConsequence,
+  fillConsequenceLine,
+  fillOverActionLabel,
   planAutoFill,
   planRoomFill,
   publishedFigureFor,
@@ -24,6 +27,7 @@ import {
   roomExits,
   type AutoFillPlan,
   type AutoFillStyle,
+  type RoomFill,
 } from "../../../lib/auto-fill.js";
 import "./AutoFill.css";
 
@@ -80,18 +84,28 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
   const fillsOver = style === "dinner-rounds" && plannerFeatureEnabled("fillKeepOuts");
   const placedItems = usePlacementStore((state) => (fillsOver ? state.placedItems : null));
   const roomSlug = useEditorStore((state) => state.space?.slug ?? null);
+  const objects = useEditorStore((state) => state.objects);
   const exits = useMemo(() => roomExits(roomSlug), [roomSlug]);
-  const plan = useMemo(() => {
+  const preview = useMemo((): { readonly plan: AutoFillPlan; readonly fill: RoomFill | null } | null => {
     if (guests === null) return null;
     const widthM = dimensions.width / RENDER_SCALE;
     const lengthM = dimensions.length / RENDER_SCALE;
     const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
     if (fillsOver && placedItems !== null && table !== undefined) {
       const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE }, placedItems);
-      return fill?.plan ?? null;
+      return fill === null ? null : { plan: fill.plan, fill };
     }
-    return planAutoFill(style, guests, widthM, lengthM);
+    const planned = planAutoFill(style, guests, widthM, lengthM);
+    return planned === null ? null : { plan: planned, fill: null };
   }, [guests, style, dimensions, fillsOver, placedItems, exits]);
+  const plan = preview?.plan ?? null;
+  // What a fill over a laid floor does to the rounds already there, said before it is pressed (planner-qol C-02).
+  const consequence = useMemo(() => {
+    const fill = preview?.fill ?? null;
+    if (fill === null || placedItems === null) return null;
+    const noted = new Set(objects.filter((object) => object.notes.trim() !== "").map((object) => object.id));
+    return fillConsequence(placedItems, fill.refillIds, fill.plan, (id) => noted.has(id));
+  }, [preview, placedItems, objects]);
   const figure = publishedFigureFor(published, option.format);
   const short = plan === null ? null : roomAtSpacingLine(plan, figure);
   // Only when the room takes them: above the published figure is its own fact.
@@ -166,6 +180,9 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
       {plan !== null && (
         <p className="auto-fill__basis" id={basisId} data-testid="auto-fill-basis">{autoFillBasis(plan)}</p>
       )}
+      {consequence !== null && (
+        <p className="auto-fill__note" data-testid="auto-fill-consequence">{fillConsequenceLine(consequence)}</p>
+      )}
       {short !== null && <p className="auto-fill__short" data-testid="auto-fill-short">{short}</p>}
       {above !== null && <p className="auto-fill__short" data-testid="auto-fill-above">{above}</p>}
 
@@ -176,7 +193,9 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
           disabled={plan === null}
           data-testid="auto-fill-place"
         >
-          {plan === null ? "Lay out the room" : autoFillActionLabel(plan)}
+          {plan === null
+            ? "Lay out the room"
+            : consequence !== null && plan.style === "dinner-rounds" ? fillOverActionLabel(plan) : autoFillActionLabel(plan)}
         </button>
         <button
           type="button"
