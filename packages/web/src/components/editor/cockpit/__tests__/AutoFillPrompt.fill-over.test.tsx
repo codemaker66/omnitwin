@@ -74,7 +74,8 @@ describe("Fill's prompt over a layout", () => {
     expect(screen.getByTestId("auto-fill-consequence").textContent).toBe("Moves 3 rounds and takes away 2.");
     fireEvent.click(screen.getByTestId("auto-fill-place"));
     // Three rounds stay, keeping the first three names; Table 4 and Table 5 are taken away.
-    const names = usePlacementStore.getState().placedItems.flatMap((piece) => (piece.label === undefined ? [] : [piece.label]));
+    // A chair is created with an empty label (createPlacedItem), so only the tables' names count.
+    const names = usePlacementStore.getState().placedItems.map((piece) => piece.label ?? "").filter((name) => name !== "");
     expect([...names].sort()).toEqual(["Table 1", "Table 2", "Table 3"]);
     expect(onPlaced).toHaveBeenCalledWith(expect.objectContaining({ tableCount: 3 }), "Seated 30 at 3 tables: moved 3 rounds and took away 2.");
   });
