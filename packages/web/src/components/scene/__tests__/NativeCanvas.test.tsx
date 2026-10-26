@@ -17,6 +17,9 @@ interface FiberState {
   invalidate(): void;
   get(): FiberState;
   set(partial: { readonly gl?: object }): void;
+  frameloop: string;
+  readonly setFrameloop: (frameloop: string) => void;
+  readonly internal: { frames: number };
 }
 
 const fiber = vi.hoisted(() => ({
@@ -183,6 +186,9 @@ vi.mock("@react-three/fiber", async () => {
           set: (partial) => {
             if (state.current !== null && partial.gl !== undefined) state.current.gl = partial.gl;
           },
+          frameloop,
+          setFrameloop: vi.fn((next: string) => { if (state.current !== null) state.current.frameloop = next; }),
+          internal: { frames: 0 },
         };
         fiber.state = state.current;
         onCreated(state.current);
@@ -193,6 +199,7 @@ vi.mock("@react-three/fiber", async () => {
 });
 
 import { NATIVE_CAPTURE_RETURN_WAIT_MS, NativeCanvas } from "../NativeCanvas.js";
+import { nativePrecompilePending, PRECOMPILE_JOB_LIMIT_MS, requestNativePrecompile } from "../../../lib/native-precompile.js";
 import { PlannerWorkContext } from "../planner-work.js";
 import { isNativeCanvasRender } from "../../../lib/native-renderer.js";
 import { NATIVE_GPU_ERROR_GRACE_MS } from "../../../lib/native-gpu-error-watch.js";
@@ -273,6 +280,16 @@ function automaticFrame(): void {
   act(() => {
     for (const subscription of [...fiber.frames].sort((a, b) => a.priority - b.priority)) subscription.callback(state);
   });
+}
+
+function rootState(): FiberState {
+  const state = fiber.state;
+  if (state === null) throw new Error("No R3F root state");
+  return state;
+}
+
+function frameloopShown(): string | null {
+  return screen.getByTestId("fiber-canvas").getAttribute("data-frameloop");
 }
 
 describe("NativeCanvas", () => {
@@ -1220,5 +1237,61 @@ describe("NativeCanvas", () => {
     expect(instance?.dispose).toHaveBeenCalledOnce();
     expect(gpuCompletion.tickets[0]?.signal.aborted).toBe(true);
     expect(fiber.frames.size).toBe(0);
+  });
+});
+
+describe("NativeCanvas while the scene's pipelines compile ahead (lib/native-precompile.ts, F-01)", () => {
+  it("holds its frames from the moment a job is queued, and draws again once the queue is empty", async () => {
+    render(<NativeCanvas frameloop="demand"><MountProbe mounts={{ count: 0 }} /></NativeCanvas>);
+    const instance = await start(0);
+    const state = rootState();
+    state.internal.frames = 2;
+    let release: () => void = () => undefined;
+    let done = false;
+    act(() => { void requestNativePrecompile(instance, () => new Promise<void>((resolve) => { release = resolve; })).then(() => { done = true; }); });
+    expect(state.setFrameloop).toHaveBeenCalledWith("never");
+    expect(state.internal.frames, "no frame owed from before the hold draws").toBe(0);
+    expect(frameloopShown()).toBe("never");
+    fiber.invalidate.mockClear();
+    release();
+    await flush();
+    expect(done).toBe(true);
+    expect(frameloopShown()).toBe("demand");
+    expect(fiber.invalidate, "the view draws what the job prepared").toHaveBeenCalled();
+  });
+
+  it("fails open: a job that never settles lets the frames go at its limit, with a warning", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      render(<NativeCanvas frameloop="demand"><MountProbe mounts={{ count: 0 }} /></NativeCanvas>);
+      const instance = await start(0);
+      act(() => { void requestNativePrecompile(instance, () => new Promise<void>(() => undefined)); });
+      expect(frameloopShown()).toBe("never");
+      await act(async () => { vi.advanceTimersByTime(PRECOMPILE_JOB_LIMIT_MS); await Promise.resolve(); });
+      await flush();
+      expect(frameloopShown(), "the view draws on, compiling as it goes").toBe("demand");
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a lost renderer's queue go: the replacement draws, and the old job holds nothing", async () => {
+    render(<NativeCanvas frameloop="demand"><MountProbe mounts={{ count: 0 }} /></NativeCanvas>);
+    const lost = await start(0);
+    automaticFrame();
+    act(() => { void requestNativePrecompile(lost, () => new Promise<void>(() => undefined)); });
+    expect(frameloopShown()).toBe("never");
+    act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+    await flush();
+    const fresh = renderer(1);
+    await start(1);
+    await flush();
+    expect(nativePrecompilePending(fresh)).toBe(false);
+    expect(frameloopShown(), "the replacement is not held by the lost renderer's job").toBe("demand");
+    automaticFrame();
+    expect(fresh.rawRender).toHaveBeenCalledOnce();
   });
 });

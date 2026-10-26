@@ -896,10 +896,12 @@ export function NativeCanvas({
     };
   }, [status, attempt, recovering]);
   const precompiling = renderer.current !== null && nativePrecompilePending(renderer.current);
+  const wasPrecompiling = useRef(false);
   useLayoutEffect(() => {
     // The Canvas below has set its frame loop by now (a child's layout effect
-    // runs first): once the jobs are done, draw what they prepared.
-    if (!precompiling) root.current?.get().invalidate();
+    // runs first): once a hold ends, draw what its jobs prepared.
+    if (wasPrecompiling.current && !precompiling) root.current?.get().invalidate();
+    wasPrecompiling.current = precompiling;
   }, [precompiling]);
   const copy = SURFACE_COPY[surface];
   const continueIn2d = copy.offers2d ? plannerWork?.continueIn2d ?? null : null;
