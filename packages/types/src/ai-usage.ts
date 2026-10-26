@@ -103,7 +103,7 @@ export const AIUsageMonthSchema = z.object({
 export type AIUsageMonth = z.infer<typeof AIUsageMonthSchema>;
 
 export const AIUsageSummarySchema = z.object({
-  venueId: z.string().uuid(),
+  venueId: z.uuid(),
   currency: z.literal("USD"),
   /** The price table the platform prices calls with now; each ledger row keeps its own. */
   priceTableVersion: z.string().trim().min(1).max(40),

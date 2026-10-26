@@ -42,14 +42,14 @@ export const PaperWallClockSchema = z.string().regex(
 
 /** The approved version a printed copy was made from. */
 export const SheetPaperIssueSchema = z.object({
-  snapshotId: z.string().uuid(),
+  snapshotId: z.uuid(),
   version: SnapshotVersionSchema,
   fingerprint: FingerprintSchema,
 });
 export type SheetPaperIssue = z.infer<typeof SheetPaperIssueSchema>;
 
-const IssuedQuerySchema = z.object({ s: z.string().uuid(), v: VersionParamSchema, h: FingerprintSchema });
-const WorkingQuerySchema = z.object({ c: z.string().uuid() });
+const IssuedQuerySchema = z.object({ s: z.uuid(), v: VersionParamSchema, h: FingerprintSchema });
+const WorkingQuerySchema = z.object({ c: z.uuid() });
 
 /**
  * What the public check endpoint accepts. An issued copy is tried first, so a
@@ -101,7 +101,7 @@ export type SheetPaperQr = z.infer<typeof SheetPaperQrSchema>;
  * `withPrintedAt`. `qr` encodes `url` for renderers with no QR encoder.
  */
 export const SheetPaperCheckSchema = z.object({
-  url: z.string().url(),
+  url: z.url(),
   qr: SheetPaperQrSchema,
 });
 export type SheetPaperCheck = z.infer<typeof SheetPaperCheckSchema>;
