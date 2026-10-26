@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { useEscapeLayer, usePlannerKeyBindings, type KeyChord } from "../lib/planner-keys.js";
-import { seatCapacity, tableGroupSeatCapacity } from "../lib/table-group.js";
+import { chairCountRange, seatCapacity, tableGroupSeatCapacity } from "../lib/table-group.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import type { PlacedItem } from "../lib/placement.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 
@@ -139,13 +140,12 @@ const GOLD = "#c98a5b";
 const GOLD_LIGHT = "#dca475";
 const GOLD_DARK = "#7e4620";
 
-export function initialChairCountForCapacity(
-  tableShape: ChairCountRequest["tableShape"],
-  maxChairs: number,
-): number {
-  const normalizedMax = Math.max(0, Math.floor(maxChairs));
-  const preferred = tableShape === "round" ? 10 : 2;
-  return Math.min(preferred, normalizedMax);
+/** Chairs already at a placed table: the count its stepper starts from. */
+function chairsAtTable(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
+  if (table.groupId === null) return 0;
+  return placedItems.filter((item) => (
+    item.groupId === table.groupId && getCatalogueItem(item.catalogueItemId)?.category === "chair"
+  )).length;
 }
 
 export function ChairCountDialog({
@@ -158,26 +158,34 @@ export function ChairCountDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
-  // Cap the stepper at what physically fits around this specific table, so the
-  // count the planner picks is exactly what gets placed (no silent clamping).
+  // The stepper runs over seat truth's range (seatsFor), held to what
+  // physically fits around this specific table, so the count the planner
+  // picks is exactly what gets placed (no silent clamping).
   const tableItem = request === null ? undefined : getCatalogueItem(request.catalogueItemId);
   const editTableId = useChairDialogStore((state) => state.editTableId);
   const placedItems = usePlacementStore((state) => state.placedItems);
   const existingTable = placedItems.find((item) => item.id === editTableId && item.catalogueItemId === request?.catalogueItemId);
-  const maxChairs = existingTable !== undefined
+  const physicalMax = existingTable !== undefined
     ? tableGroupSeatCapacity(existingTable, placedItems)
     : tableItem !== undefined
     ? seatCapacity(tableItem, request?.scale)
-    : request?.tableShape === "rectangular" ? 8 : 12;
-  const minChairs = maxChairs > 0 ? 1 : 0;
+    : 0;
+  const range = tableItem === undefined
+    ? { min: 0, max: 0, initial: 0 }
+    : chairCountRange(tableItem, physicalMax);
+  // A placed table keeps the count it already has, even outside seat truth's range.
+  const current = existingTable === undefined ? 0 : Math.min(physicalMax, chairsAtTable(existingTable, placedItems));
+  const minChairs = current > 0 ? Math.min(range.min, current) : range.min;
+  const maxChairs = Math.max(range.max, current);
+  const startCount = current > 0 ? current : range.initial;
 
   useEffect(() => {
     if (request !== null) {
-      setCount(initialChairCountForCapacity(request.tableShape, maxChairs));
+      setCount(startCount);
       setAnimKey((k) => k + 1);
       setTimeout(() => { inputRef.current?.select(); }, 80);
     }
-  }, [maxChairs, request]);
+  }, [startCount, request]);
 
   const decrement = useCallback(() => {
     setCount((c) => { const n = Math.max(c - 1, minChairs); if (n !== c) setAnimKey((k) => k + 1); return n; });
@@ -380,7 +388,7 @@ export function ChairCountDialog({
           fontSize: 13, color: "#555", marginTop: -20,
           letterSpacing: 0.8, fontWeight: 400,
         }}>
-          {maxChairs > 0 ? `1 – ${String(maxChairs)} chairs` : "No chairs fit at this scale"}
+          {maxChairs > 0 ? `${String(minChairs)} – ${String(maxChairs)} chairs` : "No chairs fit at this scale"}
         </div>
 
         {/* Primary CTA */}

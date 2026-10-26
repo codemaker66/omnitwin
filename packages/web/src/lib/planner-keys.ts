@@ -139,6 +139,17 @@ export function typesText(target: EventTarget | null): boolean {
 /** What the last pointer press landed on; Tab forgets it (keyboard navigation took over). */
 let lastPointerPress: Node | null = null;
 
+/** Whether the person's last input was a key press (true) or the pointer (false). */
+let lastInputKeys = false;
+
+/**
+ * Whether the last thing the person did was press a key: motion that answers
+ * the keyboard is instant (spec 8; a figure the keys changed does not roll).
+ */
+export function lastInputWasKeys(): boolean {
+  return lastInputKeys;
+}
+
 /**
  * Widgets that move with the arrows themselves: a slider, a radio group, a
  * menu, a toolbar's keys. A key someone pressed with the pointer gives the
@@ -239,6 +250,7 @@ function runShortcut(event: KeyboardEvent): void {
 }
 
 function onKeyDown(event: KeyboardEvent): void {
+  lastInputKeys = true;
   if (event.code === "Tab" || event.key === "Tab") lastPointerPress = null;
   if (event.defaultPrevented || event.isComposing) return;
   if (event.key === "Escape" || event.code === "Escape") {
@@ -249,6 +261,7 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 
 function onPointerDown(event: PointerEvent): void {
+  lastInputKeys = false;
   lastPointerPress = event.target instanceof Node ? event.target : null;
 }
 
@@ -285,6 +298,7 @@ function syncListener(): void {
     window.removeEventListener("blur", onBlur);
     window.removeEventListener("pointerdown", onPointerDown, true);
     lastPointerPress = null;
+    lastInputKeys = false;
   }
 }
 

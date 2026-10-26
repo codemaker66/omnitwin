@@ -5,9 +5,9 @@ import { useEditorStore } from "../../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { prepareLayoutForGuestEnquiry } from "../send-layout-flow.js";
 
+vi.mock("../../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../../api/configurations.js", () => ({
   getPublicConfig: vi.fn(), publicBatchSave: vi.fn(), updatePublicThumbnail: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
 }));
 vi.mock("../../../api/spaces.js", () => ({ getSpace: vi.fn() }));
 vi.mock("../../../lib/ortho-capture.js", () => ({ captureOrthographic: vi.fn() }));

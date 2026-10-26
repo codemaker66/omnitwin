@@ -1,0 +1,348 @@
+/* ---------------------------------------------------------------------------
+ * THE SLATE AND THE COPPER PLANE (T-671, slice 7; spec 6.1, frames 01, 17, 19).
+ *
+ * A lacquer plate, 340 px, radius 10 (top corners only while the plane is
+ * joined under it). The plane is --house-plane with an 8 px slant off its
+ * bottom-left corner and three cells, the seats cell a third wider, divided
+ * by hairlines; figures in Newsreader 300 at 28 px over 12 px labels in
+ * plane-ink. Past the room's limit the seats turn plane-attention beside the
+ * word "over". A changing figure rolls once (reveal, 180 ms); reduced motion
+ * keeps it still.
+ * ------------------------------------------------------------------------- */
+
+.pc-slate {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.pc-slate__plate {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 13px;
+}
+
+.pc-slate[data-plane="joined"] .pc-slate__plate {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.pc-slate__crest {
+  display: inline-flex;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-top: 2px;
+}
+
+.pc-slate__crest > img,
+.pc-slate__crest > svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.pc-slate__words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.pc-slate__eyebrow {
+  color: var(--house-forest-ink-3);
+}
+
+.pc-slate__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--house-radius-key);
+  background: transparent;
+  color: var(--house-forest-ink-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pc-slate__title-words {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pc-slate__chevron {
+  color: var(--house-forest-ink-3);
+  transition: transform var(--house-motion-hover) var(--house-ease-out);
+}
+
+.pc-slate__title[aria-expanded="true"] .pc-slate__chevron {
+  transform: rotate(180deg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-slate__title:hover .pc-slate__chevron { color: var(--house-forest-ink-1); }
+}
+
+.pc-slate__title:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+.pc-slate__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 3px 0 0;
+  color: var(--house-forest-ink-2);
+}
+
+.pc-slate__save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pc-slate__status {
+  color: var(--house-forest-ink-1);
+  font-weight: 600;
+}
+
+.pc-slate__line-action {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--house-cream);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.pc-slate__line-action:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+  border-radius: var(--house-radius-key);
+}
+
+/* -- The copper plane -------------------------------------------------------- */
+.pc-plane {
+  display: grid;
+  grid-template-columns: 1fr 1.33fr 1fr;
+  background: var(--house-plane);
+  color: var(--house-plane-ink);
+  border-bottom-right-radius: var(--house-radius-surface);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  box-shadow: var(--house-shadow-e1);
+}
+
+.pc-plane__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 14px 12px 18px;
+}
+
+.pc-plane__cell + .pc-plane__cell {
+  border-left: 1px solid color-mix(in srgb, var(--house-plane-ink) 22%, transparent);
+}
+
+.pc-plane__figures {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.pc-plane__figure {
+  display: inline-block;
+  color: var(--house-ink-1);
+}
+
+.pc-plane__of {
+  font: 400 16px/1 var(--house-serif);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.pc-plane__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 400 12px/1.2 var(--house-sans);
+  white-space: nowrap;
+}
+
+.pc-plane__tick {
+  flex: none;
+  stroke-width: 2;
+}
+
+.pc-plane__cell--seats[data-standing="over"] .pc-plane__figure,
+.pc-plane__cell--seats[data-standing="over"] .pc-plane__label,
+.pc-plane__cell--seats[data-standing="short"] .pc-plane__standing {
+  color: var(--house-plane-attention);
+}
+
+.pc-plane__cell--seats[data-standing="over"] .pc-plane__standing {
+  font-weight: 600;
+}
+
+/* A figure that changes rolls once, from the side it came from. */
+.pc-plane__figure.is-rolling-up { animation: pc-plane-roll-up var(--house-motion-reveal) var(--house-ease-out); }
+.pc-plane__figure.is-rolling-down { animation: pc-plane-roll-down var(--house-motion-reveal) var(--house-ease-out); }
+
+@keyframes pc-plane-roll-up {
+  from { opacity: 0; transform: translateY(35%); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pc-plane-roll-down {
+  from { opacity: 0; transform: translateY(-35%); }
+  to { opacity: 1; transform: none; }
+}
+
+/* -- The notice under the plane ----------------------------------------------- */
+.pc-slate__notice {
+  margin-top: 8px;
+}
+
+/* -- The slate's menu (frame 19) ---------------------------------------------- */
+.pc-popover.pc-slate-menu {
+  width: 384px;
+}
+
+.pc-slate-menu__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 14px 12px;
+  border-top: 1px solid var(--house-hairline);
+}
+
+.pc-slate-menu__section:first-child { border-top: 0; }
+
+.pc-slate-menu__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px;
+  color: var(--house-forest-ink-3);
+}
+
+.pc-slate-menu__rooms {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.pc-slate-menu__room {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--house-forest-ink-1) 5%, transparent);
+  box-shadow: inset 0 0 0 1px var(--house-hairline);
+  color: var(--house-forest-ink-1);
+  font: 500 14px/1.2 var(--house-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--house-motion-hover) var(--house-ease-out);
+}
+
+.pc-slate-menu__room[aria-current="true"] {
+  box-shadow: inset 0 0 0 1px var(--house-cream);
+}
+
+.pc-slate-menu__capacity {
+  font: 300 20px/1 var(--house-serif);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.pc-slate-menu__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pc-slate-menu__layout,
+.pc-slate-menu__act,
+.pc-slate-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--house-forest-ink-1);
+  text-decoration: none;
+}
+
+.pc-slate-menu__layout.is-current {
+  background: color-mix(in srgb, var(--house-forest-ink-1) 6%, transparent);
+  box-shadow: inset 2px 0 0 var(--house-copper-lit);
+}
+
+.pc-slate-menu__layout-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pc-slate-menu__layout-name {
+  overflow: hidden;
+  font: 500 14px/1.25 var(--house-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pc-slate-menu__sub { color: var(--house-forest-ink-3); }
+
+.pc-slate-menu__check { color: var(--house-forest-ink-2); }
+
+.pc-slate-menu__walls { margin-left: auto; }
+
+.pc-slate-menu__problem {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--house-brick-lit);
+}
+
+.pc-slate-menu__room:focus-visible,
+.pc-slate-menu__layout:focus-visible,
+.pc-slate-menu__item:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-slate-menu__room:hover,
+  a.pc-slate-menu__layout:hover,
+  a.pc-slate-menu__item:hover {
+    background: color-mix(in srgb, var(--house-forest-ink-1) 10%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-slate-menu__room { transition: none; }
+  .pc-slate__chevron { transition: none; }
+  .pc-plane__figure.is-rolling-up,
+  .pc-plane__figure.is-rolling-down { animation: none; }
+}

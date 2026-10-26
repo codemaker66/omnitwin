@@ -170,6 +170,28 @@ describe("the furniture presentation channel", () => {
     expect(usePlacementStore.getState().placedItems).toBe(placed);
   });
 
+  it("draws the feet's floor shade only under furniture at rest: never under a piece the frame moves or hides", () => {
+    const root = mount(chairs);
+    const shades: InstancedMesh[] = [];
+    root.scene.getObjectByName("instanced-furniture")?.traverse((object) => {
+      if (isInstancedMesh(object) && !Array.isArray(object.material) && object.material.name === "crafted:contact") shades.push(object);
+    });
+    // The crafted chair grounds each foot with its own shade batch.
+    expect(shades.length).toBeGreaterThan(0);
+    expect(shades.every((mesh) => mesh.visible)).toBe(true);
+    // A frame about other pieces leaves these as placed, shade and all.
+    act(() => { publishFurniturePresentation({ pieces: new Map([["elsewhere", lifted(1)]]), others: "placed" }); });
+    frame();
+    expect(shades.every((mesh) => mesh.visible)).toBe(true);
+    // Lifted: the shade would float with the chair, so the floor's own contact shadow grounds it alone.
+    act(() => { publishFurniturePresentation({ pieces: new Map([[first.id, lifted(1)]]), others: "placed" }); });
+    frame();
+    expect(shades.some((mesh) => mesh.visible)).toBe(false);
+    act(() => { publishFurniturePresentation(null); });
+    frame();
+    expect(shades.every((mesh) => mesh.visible)).toBe(true);
+  });
+
   it("holds the room empty while a frame says so, even for furniture drawn after it was published", () => {
     act(() => { publishFurniturePresentation({ pieces: new Map(), others: "hidden" }); });
     const root = mount(chairs);

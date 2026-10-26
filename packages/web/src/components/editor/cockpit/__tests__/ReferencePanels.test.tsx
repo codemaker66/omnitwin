@@ -11,6 +11,10 @@ import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../../stores/selection-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
+import { useAuthStore } from "../../../../stores/auth-store.js";
+import { useAutoFillRequestStore } from "../../../../stores/auto-fill-request-store.js";
+import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { floorNames } from "../../../../lib/floor-names.js";
 import { PLANNER_TOOLBAR_COMMAND_EVENT, readPlannerToolbarCommand } from "../../../../lib/planner-toolbar-events.js";
 import { registerEscapeLayer } from "../../../../lib/planner-keys.js";
 import { EditorBridge, placedItemToEditor } from "../../EditorBridge.js";
@@ -37,7 +41,14 @@ function changeNumber(label: string, value: string): void {
   fireEvent.blur(control);
 }
 
+const STAFF = { id: "staff-1", email: "floor@example.com", name: "Floor Staff", role: "staff", platformRole: "none", venueId: "venue-1" } as const;
+
+function signInAsStaff(): void {
+  useAuthStore.setState({ user: STAFF, isAuthenticated: true, isLoading: false });
+}
+
 beforeEach(() => {
+  useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });
   useLayoutTimelinePreviewStore.getState().clear();
   useEditorStore.getState().reset();
   usePlacementStore.setState({ placedItems: [], snapEnabled: false });
@@ -49,6 +60,7 @@ afterEach(() => {
   useEditorStore.getState().reset();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("SceneOutliner", () => {
@@ -90,7 +102,7 @@ describe("SceneOutliner", () => {
     const { table, other } = fixture();
     render(<SceneOutliner />);
     expect(useSelectionStore.getState().selectedIds.size).toBe(0);
-    const label = referenceSceneEntries(usePlacementStore.getState().placedItems).find((entry) => entry.item.id === table.id)?.label;
+    const label = floorNames(usePlacementStore.getState().placedItems).get(table.id)?.label;
     if (label === undefined) throw new Error("Missing table label");
     fireEvent.click(screen.getByRole("button", { name: new RegExp(label) }));
     expect(useSelectionStore.getState().selectedIds.size).toBe(9);
@@ -105,17 +117,90 @@ describe("SceneOutliner", () => {
     expect(screen.getByRole("button", { name: /Family table/ })).toBeDefined();
     expect(screen.queryByRole("button", { name: /Banquet Chair/ })).toBeNull();
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "not in this room" } });
-    expect(screen.getByText("No matching objects.")).toBeDefined();
+    expect(screen.getByText("Nothing matches that name.")).toBeDefined();
   });
 
   it("shows preview objects rather than current saved counts and locks selection and add", () => {
     fixture();
     useLayoutTimelinePreviewStore.getState().showScheduleGap("No phase here");
     render(<SceneOutliner />);
-    expect(screen.getByText("0 tables · 0 chairs · 0 groups")).toBeDefined();
+    expect(screen.getByText("0 tables · 0 chairs")).toBeDefined();
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Add furniture" }).disabled).toBe(true);
     expect(screen.getByText("Room preview unavailable")).toBeDefined();
     expect(screen.queryByText("Frozen room outline")).toBeNull();
+  });
+});
+
+describe("SceneOutliner names and counts (B-17, C-11)", () => {
+  it("numbers unlabelled tables from 1 in reading order, the same after a save re-mints every id", () => {
+    const round = catalogueId("round-table-6ft");
+    const back = createPlacedItem(round, 0, 6);
+    const frontRight = createPlacedItem(round, 4, 0);
+    const frontLeft = createPlacedItem(round, -4, 0);
+    usePlacementStore.setState({ placedItems: [back, frontRight, frontLeft] });
+    render(<SceneOutliner />);
+    const rows = (): string[] => screen.getAllByRole("button").map((button) => button.textContent ?? "").filter((text) => text.startsWith("Table"));
+    expect(rows()).toEqual(["Table 1", "Table 2", "Table 3"]);
+    expect(screen.getByRole("button", { name: /^Table 1\b/u }).getAttribute("data-furniture-id")).toBe(frontLeft.id);
+    expect(document.body.textContent).not.toMatch(/Table 0\d/u);
+    // A save replaces local ids with server ids and may return rows in another order.
+    act(() => {
+      usePlacementStore.setState({ placedItems: [frontLeft, back, frontRight].map((item, index) => ({ ...item, id: `server-${String(9 - index)}` })) });
+    });
+    expect(rows()).toEqual(["Table 1", "Table 2", "Table 3"]);
+    expect(screen.getByRole("button", { name: /^Table 1\b/u }).getAttribute("data-furniture-id")).toBe("server-9");
+  });
+
+  it("keeps an authored name and never gives its number to another table", () => {
+    const round = catalogueId("round-table-6ft");
+    const named = { ...createPlacedItem(round, 9, 9), label: "Table 1" };
+    const other = createPlacedItem(round, 0, 0);
+    usePlacementStore.setState({ placedItems: [named, other] });
+    render(<SceneOutliner />);
+    expect(screen.getByRole("button", { name: "Table 1" }).getAttribute("data-furniture-id")).toBe(named.id);
+    expect(screen.getByRole("button", { name: /^Table 2\b/u }).getAttribute("data-furniture-id")).toBe(other.id);
+  });
+
+  it("says one table and drops groups for a guest; staff see the group, pluralised", () => {
+    usePlacementStore.setState({ placedItems: createTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 10) });
+    const view = render(<SceneOutliner />);
+    expect(screen.getByText("1 table · 10 chairs")).toBeDefined();
+    expect(document.body.textContent).not.toMatch(/group/iu);
+    view.unmount();
+    signInAsStaff();
+    render(<SceneOutliner />);
+    expect(screen.getByText("1 table · 10 chairs · 1 group")).toBeDefined();
+  });
+
+  it("shows the photographed room's state to staff only, in plain words", () => {
+    vi.stubEnv("DEV", false);
+    useCockpitStore.getState().reset();
+    const view = render(<SceneOutliner />);
+    expect(screen.queryByText("Room capture")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/splat|work in progress/iu);
+    view.unmount();
+    signInAsStaff();
+    render(<SceneOutliner />);
+    expect(screen.getByText("Photographed room · coming soon")).toBeDefined();
+    expect(document.body.textContent).not.toMatch(/splat/iu);
+  });
+});
+
+describe("SelectedFurnitureInspector's empty floor (A-15)", () => {
+  it("says once where to start, with no zeros, and its two keys do what they say", () => {
+    useEditorStore.setState({ space: null });
+    const listener = vi.fn();
+    window.addEventListener(PLANNER_TOOLBAR_COMMAND_EVENT, listener);
+    render(<SelectedFurnitureInspector />);
+    expect(screen.getByText("Nothing on the floor yet. Add a table, or lay out for your guests.")).toBeDefined();
+    expect(screen.getByTestId("reference-empty-floor").textContent).not.toMatch(/\b0\b/u);
+    fireEvent.click(screen.getByRole("button", { name: "Add a table" }));
+    expect(listener).toHaveBeenCalledOnce();
+    window.removeEventListener(PLANNER_TOOLBAR_COMMAND_EVENT, listener);
+    const request = vi.spyOn(useAutoFillRequestStore.getState(), "request");
+    fireEvent.click(screen.getByRole("button", { name: "Lay out tables and seats for your guests" }));
+    expect(request).toHaveBeenCalledWith("dinner-rounds");
+    expect(useCockpitStore.getState().activeMode).toBe("guests");
   });
 });
 
@@ -146,7 +231,7 @@ describe("SelectedFurnitureInspector", () => {
     const { table } = fixture();
     useSelectionStore.getState().select(table.id);
     render(<SelectedFurnitureInspector />);
-    expect(screen.getByText("Placed chairs").nextElementSibling?.textContent).toBe("8");
+    expect(screen.getByText("Seats").nextElementSibling?.textContent).toBe("8");
     expect(screen.queryByText(/Clearance/)).toBeNull();
   });
 
@@ -167,23 +252,38 @@ describe("SelectedFurnitureInspector", () => {
     expect(usePlacementStore.getState().placedItems).toHaveLength(10);
   });
 
-  it("preserves relative piece rotation/scale and rejects invalid scale input", () => {
+  it("turns each piece of the group, offers no resize for catalogue pieces and rejects an invalid turn", () => {
     const { items, table, other } = fixture();
     useSelectionStore.getState().select(table.id);
     render(<SelectedFurnitureInspector />);
+    expect(screen.queryByRole("spinbutton", { name: /size|scale/iu })).toBeNull();
     changeNumber("Piece rotation (°)", "45");
-    changeNumber("Piece scale (%)", "120");
     for (const item of usePlacementStore.getState().placedItems) {
       const original = items.find((candidate) => candidate.id === item.id);
       if (original === undefined) throw new Error("Missing original");
       expect(item.rotationY - original.rotationY).toBeCloseTo(item.id === other.id ? 0 : Math.PI / 4, 8);
-      expect(item.scale ?? 1).toBeCloseTo(item.id === other.id ? 1 : 1.2, 8);
+      expect(item.scale ?? 1).toBe(1);
       expect([item.x, item.z]).toEqual([original.x, original.z]);
     }
     const beforeInvalid = usePlacementStore.getState().placedItems;
-    changeNumber("Piece scale (%)", "0");
+    changeNumber("Piece rotation (°)", "");
     expect(usePlacementStore.getState().placedItems).toBe(beforeInvalid);
     expect(screen.getByRole("alert")).toBeDefined();
+  });
+
+  it("names a legacy scaled round and puts it back to its real size in one undo step", () => {
+    const { items, table } = fixture();
+    const scaled = items.map((item) => item.id === table.id ? { ...item, scale: 1.5 } : item);
+    usePlacementStore.setState({ placedItems: scaled });
+    useSelectionStore.getState().select(table.id);
+    render(<SelectedFurnitureInspector />);
+    expect(screen.getByText("Drawn at 150% of its real size.")).toBeDefined();
+    expect(screen.queryByRole("spinbutton", { name: /size|scale/iu })).toBeNull();
+    // Stored scales are left as they are until someone chooses the reset.
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === table.id)?.scale).toBe(1.5);
+    fireEvent.click(screen.getByRole("button", { name: "Reset to the real size" }));
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === table.id)?.scale).toBe(1);
+    expect(screen.queryByTestId("reference-off-size")).toBeNull();
   });
 
   it("applies and removes linen/settings through real table commands, then removes the whole group", () => {
@@ -196,7 +296,7 @@ describe("SelectedFurnitureInspector", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Table linen" }), { target: { value: "none" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Table place settings" }), { target: { value: "none" } });
     expect(usePlacementStore.getState().placedItems.find((item) => item.id === table.id)).toMatchObject({ clothed: false, clothStyle: null, tableSetting: null });
-    fireEvent.click(screen.getByRole("button", { name: "Remove 9 objects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove 9 pieces" }));
     expect(usePlacementStore.getState().placedItems).toEqual([other]);
     expect(useSelectionStore.getState().selectedIds.size).toBe(0);
   });
