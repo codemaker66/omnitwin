@@ -23,6 +23,7 @@ import {
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
 import { getPublicConfig, type Configuration } from "../api/configurations.js";
+import { claimTrackedDraft } from "../lib/planner-claim.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
@@ -48,6 +49,8 @@ const MAX_REUSABLE_CONFIG_PROBES = 5;
 interface TrackedPlannerConfig {
   readonly configId: string;
   readonly createdAt: string;
+  /** Present on drafts this browser created since migration 0102. */
+  readonly claimSecret?: unknown;
 }
 
 type PlannerBootstrapBlocker =
@@ -98,7 +101,9 @@ function isTrackedPlannerConfig(value: unknown): value is TrackedPlannerConfig {
     && typeof candidate["createdAt"] === "string";
 }
 
-function readReusableConfigCandidates(): readonly string[] {
+/** A signed-in person reuses only drafts this browser can claim: any other
+ *  would open as a plan their account may not save. */
+function readReusableConfigCandidates(requireClaimSecret: boolean): readonly string[] {
   if (typeof window === "undefined") return [];
   let raw: string | null;
   try {
@@ -118,6 +123,7 @@ function readReusableConfigCandidates(): readonly string[] {
 
   return parsed
     .filter(isTrackedPlannerConfig)
+    .filter((entry) => !requireClaimSecret || typeof entry.claimSecret === "string")
     .slice(-MAX_REUSABLE_CONFIG_PROBES)
     .reverse()
     .map((entry) => entry.configId);
@@ -128,8 +134,8 @@ function readReusableConfigCandidates(): readonly string[] {
  * not the venue or room it must match, so the bootstrap starts them all
  * beside those requests instead of one after another at the end.
  */
-function probeReusablePublicConfigs(signal: AbortSignal): readonly Promise<Configuration | null>[] {
-  return readReusableConfigCandidates().map((configId) =>
+function probeReusablePublicConfigs(signal: AbortSignal, requireClaimSecret: boolean): readonly Promise<Configuration | null>[] {
+  return readReusableConfigCandidates(requireClaimSecret).map((configId) =>
     // Ignore stale, claimed, or unreachable local entries.
     getPublicConfig(configId, signal).catch(() => null));
 }
@@ -147,6 +153,18 @@ async function findReusablePublicConfig(
     if (config !== null && config.isPublicPreview && config.spaceId === spaceId) return config;
   }
   return null;
+}
+
+/** Makes a draft this browser created the signed-in person's own, with the
+ *  claim secret it was given (release audit, batch C). False, with the draft
+ *  left a public draft, when this browser holds no secret for it or the claim
+ *  is refused or does not arrive. */
+async function claimOwnDraft(configId: string): Promise<boolean> {
+  try {
+    return await claimTrackedDraft(configId) === "claimed";
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +268,7 @@ export function EditorPage(): React.ReactElement {
       try {
         // The venue lookup leads the critical path, so it is requested first.
         const venuesRequest = spacesApi.listVenues();
-        const reusableDrafts = probeReusablePublicConfigs(draftLookups.signal);
+        const reusableDrafts = probeReusablePublicConfigs(draftLookups.signal, isAuthenticated);
         const venues = await venuesRequest;
         if (!isCurrent()) return;
         const venueResolution = resolvePlannerVenue(venues, routeVenueSlug, venueAccessUser);
@@ -291,10 +309,25 @@ export function EditorPage(): React.ReactElement {
         if (reusableConfig !== null) {
           // A guest's page loads it through the public endpoint just read.
           if (!isAuthenticated) handOffPublicConfiguration(reusableConfig);
+          // A signed-in person's page reads and saves through the authenticated
+          // routes, which refuse a plan nobody owns to anyone off the venue
+          // floor, so the draft becomes theirs before it opens.
+          else await claimOwnDraft(reusableConfig.id);
+          if (!isCurrent()) return;
           void navigate({ pathname: `/plan/${reusableConfig.id}`, search }, { replace: true });
           return;
         }
         const newConfigId = await useEditorStore.getState().createPublicConfig(space.id, isCurrent);
+        // The same for a new plan: created through the public route, it is
+        // claimed at once, so it saves to the person's account and is never
+        // left ownerless for the preview sweep. A failed claim leaves it a
+        // public draft, exactly as before. Committing the draft has already
+        // cleaned up this effect, so the guard is the same route and account
+        // (ownsRoute), as for the navigation below.
+        if (isAuthenticated && ownsRoute() && await claimOwnDraft(newConfigId)
+          && ownsRoute() && useEditorStore.getState().configId === newConfigId) {
+          useEditorStore.setState({ isPublicPreview: false });
+        }
         // Committing this draft changes storeConfigId and cleans up the effect.
         // That self-settlement may still navigate, but only for the same route,
         // account and exact created document; superseding contexts cannot.

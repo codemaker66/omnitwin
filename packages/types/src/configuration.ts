@@ -7,7 +7,7 @@ import { UserIdSchema } from "./user.js";
 // Configuration ID — UUID v4
 // ---------------------------------------------------------------------------
 
-export const ConfigurationIdSchema = z.string().uuid();
+export const ConfigurationIdSchema = z.uuid();
 
 export type ConfigurationId = z.infer<typeof ConfigurationIdSchema>;
 
@@ -55,9 +55,9 @@ export type Visibility = z.infer<typeof VisibilitySchema>;
 // ---------------------------------------------------------------------------
 
 export const Vec3Schema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
-  z: z.number().finite(),
+  x: z.number(),
+  y: z.number(),
+  z: z.number(),
 });
 
 export type Vec3 = z.infer<typeof Vec3Schema>;
@@ -69,12 +69,12 @@ export type Vec3 = z.infer<typeof Vec3Schema>;
 // sortOrder, metadata (JSONB). NOT nested Vec3 objects.
 // ---------------------------------------------------------------------------
 
-export const PlacedObjectIdSchema = z.string().uuid();
+export const PlacedObjectIdSchema = z.uuid();
 
 export type PlacedObjectId = z.infer<typeof PlacedObjectIdSchema>;
 
 /** Asset definition ID (global catalogue, not venue-scoped). */
-export const AssetDefinitionIdSchema = z.string().uuid();
+export const AssetDefinitionIdSchema = z.uuid();
 
 
 export const PlacedObjectSchema = z.object({
@@ -89,7 +89,7 @@ export const PlacedObjectSchema = z.object({
   rotationZ: z.string(),
   scale: z.string(),
   sortOrder: z.number().int().nonnegative(),
-  metadata: z.record(z.unknown()).nullable(),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
 });
 
 export type PlacedObject = z.infer<typeof PlacedObjectSchema>;
@@ -110,11 +110,11 @@ export const ConfigurationSchema = z.object({
   guestCount: z.number().int().nonnegative(),
   isTemplate: z.boolean(),
   visibility: VisibilitySchema,
-  thumbnailUrl: z.string().url().nullable(),
-  lightmapUrl: z.string().url().nullable(),
-  publishedAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  thumbnailUrl: z.url().nullable(),
+  lightmapUrl: z.url().nullable(),
+  publishedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 
 export type Configuration = z.infer<typeof ConfigurationSchema>;

@@ -33,8 +33,8 @@ import {
 //   404, so a response never says which.
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
-const LinkParams = z.object({ configId: z.string().uuid(), linkId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
+const LinkParams = z.object({ configId: z.uuid(), linkId: z.uuid() });
 const TokenParam = z.object({ token: PlanViewTokenSchema });
 
 const PLAN_NOT_FOUND = { error: "Public preview configuration not found", code: "NOT_FOUND" } as const;

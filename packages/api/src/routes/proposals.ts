@@ -81,21 +81,21 @@ import {
 // certainty wording before anything is persisted.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 const CreateProposalBody = z.object({
-  venueId: z.string().uuid(),
-  opportunityId: z.string().uuid().nullable().optional(),
-  enquiryId: z.string().uuid().nullable().optional(),
-  configurationId: z.string().uuid().nullable().optional(),
+  venueId: z.uuid(),
+  opportunityId: z.uuid().nullable().optional(),
+  enquiryId: z.uuid().nullable().optional(),
+  configurationId: z.uuid().nullable().optional(),
   title: z.string().trim().min(1).max(200),
 });
 
 const UpdateProposalBody = z.object({
   title: z.string().trim().min(1).max(200).optional(),
-  opportunityId: z.string().uuid().nullable().optional(),
-  enquiryId: z.string().uuid().nullable().optional(),
-  configurationId: z.string().uuid().nullable().optional(),
+  opportunityId: z.uuid().nullable().optional(),
+  enquiryId: z.uuid().nullable().optional(),
+  configurationId: z.uuid().nullable().optional(),
   /** Where the proposal stood on the screen the change was made from. */
   expectedStatus: z.enum(PROPOSAL_STATES).optional(),
 });
@@ -232,7 +232,7 @@ const DeskQuery = z.object({
 });
 
 const VersionParam = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   version: z.coerce.number().int().positive(),
 });
 
@@ -1927,7 +1927,7 @@ export async function proposalShareRoutes(
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
     }
-    const parsed = CreateProposalCommentSchema.merge(ReadVersion).safeParse(request.body);
+    const parsed = CreateProposalCommentSchema.extend(ReadVersion.shape).safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
@@ -2039,7 +2039,10 @@ export async function proposalShareRoutes(
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
     }
-    const parsed = CreateProposalCommentSchema.partial({ body: true, kind: true }).merge(ReadVersion).safeParse(request.body ?? {});
+    // zod 4 applies a default inside .partial(); an unsent kind stays unsent.
+    const parsed = CreateProposalCommentSchema.partial({ body: true, kind: true })
+      .extend({ kind: CreateProposalCommentSchema.shape.kind.unwrap().optional(), ...ReadVersion.shape })
+      .safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
@@ -2124,7 +2127,7 @@ export async function proposalShareRoutes(
 const RespondBody = z.object({
   action: z.enum(["accept", "request_changes"]),
   note: z.string().max(1000).nullable().optional(),
-}).merge(ReadVersion);
+}).extend(ReadVersion.shape);
 
 const RESPOND_ACTION_TO_STATUS: Record<"accept" | "request_changes", ProposalStatus> = {
   accept: "accepted",

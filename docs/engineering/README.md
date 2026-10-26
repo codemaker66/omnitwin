@@ -134,6 +134,7 @@ on future experiments.
 | XGRIDS level counts/budgets | [LOD level copies](../../.claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md) |
 | V8 memory or test contention | [Windows/V8 notes](../../.claude/gotchas/windows-v8-heap.md) |
 | Zod input/output inference | [Passthrough inference](../../.claude/gotchas/zod-passthrough-inference.md) |
+| Zod defaults and patches, refined objects, request arrays, test UUIDs, issue codes | [zod 4 semantics](../../.claude/gotchas/zod4-semantics.md) |
 | Docker build arguments | [ARG scope](../../.claude/gotchas/dockerfile-arg-scope.md) |
 | Deploying the API or adding a migration | [Deploy ordering](deploy-ordering.md) |
 | Supplier passes, the supplier's page or their acknowledgements | [Supplier passes](supplier-passes.md) |

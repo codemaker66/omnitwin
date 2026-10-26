@@ -30,6 +30,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/proposal-links-postgres.test.ts",
   "src/__tests__/proposal-next-version-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
+  // A signed-in person's new plan: refused unclaimed, theirs once claimed (batch C).
+  "src/__tests__/claim-new-draft-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",

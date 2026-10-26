@@ -13,7 +13,7 @@ const snapshotSchema = z.object({
     reuseExistingServer: z.boolean(),
   }).nullable(),
 });
-const resultsSchema = z.record(z.union([snapshotSchema, z.object({ error: z.string() })]));
+const resultsSchema = z.record(z.string(), z.union([snapshotSchema, z.object({ error: z.string() })]));
 const invalidPorts = ["", "0", "65536", "-1", "5199.5", "abc", "5199 && echo injected"];
 const environments: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   default: {},
