@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { Box3, type BufferGeometry, Layers, type Material, Mesh, type Object3D, Texture } from "three";
+import { Box3, type BufferGeometry, Layers, type Material, Mesh, type Object3D, Texture, Vector3 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
 import {
@@ -97,6 +97,112 @@ function triangleBudget(slug: CraftedFurnitureSlug): number {
 /** What a piece may cast the sun's shadow with: a few hundred triangles a chair, a few thousand a draped table. */
 function casterBudget(slug: CraftedFurnitureSlug): number {
   return CHAIRS.has(slug) ? 600 : 3_000;
+}
+
+/** Within this of the floor a vertex stands on it, metres. */
+const FLOOR_TOUCH = 0.004;
+/** Up to this high a seen vertex belongs to what stands on the floor beneath it, metres. */
+const LOW_BAND = 0.02;
+/** Vertices this close together stand as one, metres. */
+const TOUCH_LINK = 0.03;
+/** What stands no wider than this is a foot, a pad or a castor; wider is a hem, a plinth, a base or a panel. */
+const FOOT_EXTENT = 0.16;
+
+interface FloorTouch {
+  readonly x: number;
+  readonly z: number;
+  /** Its larger side across the floor. */
+  readonly extent: number;
+}
+
+/**
+ * The feet a piece stands on. Its seen surface up to LOW_BAND high (its
+ * triangles' edges, sampled every centimetre so a long low face is not just
+ * its corners), joined when within TOUCH_LINK (a grid of TOUCH_LINK cells
+ * finds the neighbours), makes what stands low; each group reaching within
+ * FLOOR_TOUCH of the floor stands on it. A group no wider than FOOT_EXTENT,
+ * and not under a wider one, is a foot: where it touches the floor is returned.
+ */
+function standingFeet(meshes: readonly Mesh[]): FloorTouch[] {
+  const points: Vector3[] = [];
+  for (const mesh of meshes) {
+    if (isCaster(mesh) || mesh.name.endsWith(":contact")) continue;
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.getAttribute("position");
+    const corner = (i: number): Vector3 => new Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+    const index = mesh.geometry.index;
+    const triangles = (index?.count ?? position.count) / 3;
+    for (let t = 0; t < triangles; t += 1) {
+      const [a, b, c] = [0, 1, 2].map((k) => corner(index === null ? t * 3 + k : index.getX(t * 3 + k)));
+      if (a === undefined || b === undefined || c === undefined || Math.min(a.y, b.y, c.y) > LOW_BAND) continue;
+      for (const [from, to] of [[a, b], [b, c], [c, a]] as const) {
+        const steps = Math.max(1, Math.ceil(from.distanceTo(to) / 0.01));
+        for (let s = 0; s <= steps; s += 1) {
+          const point = from.clone().lerp(to, s / steps);
+          if (point.y <= LOW_BAND) points.push(point);
+        }
+      }
+    }
+  }
+  const parent = points.map((_, i) => i);
+  const root = (i: number): number => {
+    let at = i;
+    while ((parent[at] ?? at) !== at) at = parent[at] ?? at;
+    return at;
+  };
+  const cells = new Map<string, number[]>();
+  const cellOf = (point: Vector3, dx = 0, dz = 0): string => `${String(Math.floor(point.x / TOUCH_LINK) + dx)},${String(Math.floor(point.z / TOUCH_LINK) + dz)}`;
+  points.forEach((point, i) => {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dz = -1; dz <= 1; dz += 1) {
+        for (const j of cells.get(cellOf(point, dx, dz)) ?? []) {
+          const other = points[j];
+          if (other !== undefined && Math.hypot(other.x - point.x, other.z - point.z) <= TOUCH_LINK) parent[root(i)] = root(j);
+        }
+      }
+    }
+    const key = cellOf(point);
+    const cell = cells.get(key);
+    if (cell === undefined) cells.set(key, [i]);
+    else cell.push(i);
+  });
+  const groups = new Map<number, Vector3[]>();
+  points.forEach((point, i) => {
+    const key = root(i);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [point]);
+    else group.push(point);
+  });
+  const extent = (box: Box3): number => Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+  const standing = [...groups.values()]
+    .map((group) => ({ all: new Box3().setFromPoints(group), touching: group.filter((point) => point.y <= FLOOR_TOUCH) }))
+    .filter((group) => group.touching.length > 0);
+  const wide = standing.filter((group) => extent(group.all) > FOOT_EXTENT).map((group) => group.all);
+  return standing
+    .filter((group) => extent(group.all) <= FOOT_EXTENT)
+    .map((group) => new Box3().setFromPoints(group.touching))
+    .filter((box) => {
+      const x = (box.min.x + box.max.x) / 2;
+      const z = (box.min.z + box.max.z) / 2;
+      return !wide.some((under) => x >= under.min.x && x <= under.max.x && z >= under.min.z && z <= under.max.z);
+    })
+    .map((box) => ({ x: (box.min.x + box.max.x) / 2, z: (box.min.z + box.max.z) / 2, extent: extent(box) }));
+}
+
+/** The spots of shade a piece leaves on the floor: each a quad of four corners, centred on its foot. */
+function contactSpotsOf(meshes: readonly Mesh[]): { readonly x: number; readonly z: number; readonly radius: number }[] {
+  const spots: { x: number; z: number; radius: number }[] = [];
+  for (const mesh of meshes) {
+    if (!mesh.name.endsWith(":contact")) continue;
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.getAttribute("position");
+    for (let corner = 0; corner + 3 < position.count; corner += 4) {
+      const quad = [0, 1, 2, 3].map((k) => new Vector3().fromBufferAttribute(position, corner + k).applyMatrix4(mesh.matrixWorld));
+      const box = new Box3().setFromPoints(quad);
+      spots.push({ x: (box.min.x + box.max.x) / 2, z: (box.min.z + box.max.z) / 2, radius: (box.max.x - box.min.x) / 2 });
+    }
+  }
+  return spots;
 }
 
 afterEach(() => {
@@ -323,6 +429,22 @@ describe("crafted shadows", () => {
       const material = materialsOf(shade)[0];
       expect(material?.transparent).toBe(true);
       expect(material?.depthWrite).toBe(false);
+    } finally {
+      model.dispose();
+    }
+  });
+
+  // A foot, a pad or a castor needs its own spot of shade, which the footprint
+  // shadow every placed piece gets (FurnitureContactShadows) is too broad to
+  // give; a hem, a plinth or a panel is what that footprint shadow grounds.
+  it.each(CRAFTED_FURNITURE_SLUGS)("grounds every foot %s stands on with a spot of shade round it", (slug) => {
+    const model = build(slug);
+    try {
+      const meshes = meshesOf(model.object);
+      const spots = contactSpotsOf(meshes);
+      const bare = standingFeet(meshes)
+        .filter((foot) => !spots.some((spot) => Math.hypot(spot.x - foot.x, spot.z - foot.z) + foot.extent / 2 <= spot.radius));
+      expect(bare.map((touch) => `${touch.extent.toFixed(3)} m at (${touch.x.toFixed(3)}, ${touch.z.toFixed(3)})`)).toEqual([]);
     } finally {
       model.dispose();
     }
