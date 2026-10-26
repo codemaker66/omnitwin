@@ -49,6 +49,15 @@ export { isCloth, isPoseurTable, isTableSetting } from "../lib/placement-ghost.j
 const WARM_FRAMES = 3;
 /** Frames the warm-up waits for React to show the ghost before it gives up on it. */
 const WARM_WAIT_FRAMES = 30;
+
+/** Whether a frame drawn now would draw any mesh of `group`: one shown, under parents all shown. */
+function drawsSomething(group: Object3D): boolean {
+  let found = false;
+  group.traverseVisible((object) => {
+    if ((object as { readonly isMesh?: boolean }).isMesh === true) found = true;
+  });
+  return found;
+}
 const WARM_SCALE = 1e-4;
 /** A click this soon after a touch the arbiter handled is that touch's own compatibility click, ms. */
 const ARBITRATED_CLICK_MS = 700;
@@ -144,10 +153,11 @@ export function PlacementGhost(): React.ReactElement | null {
       setWarming(false);
       return;
     }
-    // A warm frame counts once the ghost is drawn: React shows it a commit after the piece is armed, and
-    // a frame before that commit warms nothing (the ghost's shaders then compiled on the first frame of a
-    // drag). A ghost that never shows is not waited on for long.
-    if (!group.visible && warmWaits.current < WARM_WAIT_FRAMES) {
+    // A warm frame counts once the ghost draws something: React shows the ghost a commit after the piece
+    // is armed, and its model's meshes can arrive later still; a frame before then warms nothing (the
+    // ghost's shaders then compiled on the first frame of a drag). A ghost that never shows is not waited
+    // on for long.
+    if (!drawsSomething(group) && warmWaits.current < WARM_WAIT_FRAMES) {
       warmWaits.current += 1;
       invalidateRef.current();
       return;
