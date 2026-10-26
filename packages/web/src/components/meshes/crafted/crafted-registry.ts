@@ -1,6 +1,22 @@
-import { barCounterParts, platformParts, roomDividerParts, serveryParts } from "./crafted-cabinets.js";
+import { barCounterParts, roomDividerParts, serveryParts } from "./crafted-cabinets.js";
 import { banquetChairParts } from "./crafted-chairs.js";
 import {
+  handheldMicParts,
+  lapelMicParts,
+  laptopParts,
+  lecternParts,
+  micStandParts,
+  projectorParts,
+  projectorScreenParts,
+  tableMicParts,
+  televisionParts,
+} from "./crafted-av.js";
+import { chiavariParts } from "./crafted-chiavari.js";
+import { highchairParts } from "./crafted-extras.js";
+import { danceFloorPanelParts, stagingDeckParts } from "./crafted-staging.js";
+import {
+  barePoseurParts,
+  bareRoundParts,
   bareTrestleParts,
   ceremonyTableParts,
   clothedRoundParts,
@@ -42,25 +58,49 @@ export interface CraftedSize {
 type CraftedFactory = (size: CraftedSize) => CraftedPart[];
 
 const FACTORIES: Readonly<Record<CraftedFurnitureSlug, CraftedFactory>> = {
+  "chiavari-chair": (size) => chiavariParts(size),
   "burgess-turini-18-3": (size) => banquetChairParts(size, "velvet-coral"),
   "checked-banquet-chair": (size) => banquetChairParts(size, "check-coral"),
+  "gallery-chair-red-gold": (size) => banquetChairParts(size, "velvet-crimson", "gilt"),
+  "pink-chair": (size) => banquetChairParts(size, "velvet-pink"),
+  "banquet-chair": (size) => banquetChairParts(size, "velvet-crimson"),
   "round-table-6ft-white": (size) => clothedRoundParts(size, "white"),
   "round-table-6ft-black": (size) => clothedRoundParts(size, "black"),
+  "round-table-6ft": (size) => bareRoundParts(size),
   "cake-cutting-table": (size) => clothedRoundParts(size, "white", 29),
   "trestle-4ft-white": (size) => clothedTrestleParts(size, "white"),
   "trestle-4ft-black": (size) => clothedTrestleParts(size, "black"),
   "trestle-6ft-white": (size) => clothedTrestleParts(size, "white", 7),
   "trestle-6ft-black": (size) => clothedTrestleParts(size, "black", 7),
   "trestle-6ft": (size) => bareTrestleParts(size, "plastic"),
+  "trestle-4ft": (size) => bareTrestleParts(size, "plastic"),
   "trestle-6ft-wooden": (size) => bareTrestleParts(size, "wood"),
   "ceremony-table": (size) => ceremonyTableParts(size),
   "round-cafe-table-white": (size) => roundCafeParts(size),
   "square-cafe-table-white": (size) => squareCafeParts(size),
   "poseur-table-white": (size) => poseurParts(size, "white"),
   "poseur-table-black": (size) => poseurParts(size, "black"),
+  "poseur-table": (size) => barePoseurParts(size),
   "bar-counter": (size) => barCounterParts(size),
   "servery-unit": (size) => serveryParts(size),
-  "platform": (size) => platformParts(size),
+  "platform": (size) => stagingDeckParts(size),
+  "platform-narrow": (size) => stagingDeckParts(size),
+  "staging-deck-6x4": (size) => stagingDeckParts(size),
+  "staging-deck-6x3": (size) => stagingDeckParts(size),
+  "dancefloor-panel": (size) => danceFloorPanelParts(size),
+  "lectern": (size) => lecternParts(size),
+  "projector-screen": (size) => projectorScreenParts(size),
+  "hisense-television": (size) => televisionParts(size),
+  "mic-stand": (size) => micStandParts(size),
+  "projector": (size) => projectorParts(size),
+  "laptop": (size) => laptopParts(size),
+  "handheld-microphone": (size) => handheldMicParts(size),
+  "lapel-microphone": (size) => lapelMicParts(size),
+  "microphone": (size) => tableMicParts(size),
+  "highchair-white": (size) => highchairParts(size, "paint-white"),
+  "highchair-green": (size) => highchairParts(size, "paint-green"),
+  "highchair-blue": (size) => highchairParts(size, "paint-blue"),
+  "highchair-wooden": (size) => highchairParts(size, "beech"),
   "room-divider": (size) => roomDividerParts(size),
 };
 

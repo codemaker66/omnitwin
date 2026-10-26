@@ -21,7 +21,7 @@ let server: FastifyInstance;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
-const CONFIG_ID = "00000000-0000-0000-0000-000000000001";
+const CONFIG_ID = "00000000-0000-4000-8000-000000000001";
 
 describe("WebSocket auto-save registration", () => {
   it("server starts with websocket plugin", () => {
@@ -54,7 +54,7 @@ describe("auto-save message schemas", () => {
       type: "update_objects",
       expectedRevision: 7,
       objects: [{
-        assetId: "00000000-0000-0000-0000-000000000001",
+        assetId: "00000000-0000-4000-8000-000000000001",
         position: { x: 1, y: 0, z: 2 },
         rotation: { x: 0, y: 1.57, z: 0 },
         scale: 1,
@@ -77,7 +77,7 @@ describe("auto-save message schemas", () => {
       type: "update_objects",
       expectedRevision: 1,
       objects: [{
-        assetId: "00000000-0000-0000-0000-000000000001",
+        assetId: "00000000-0000-4000-8000-000000000001",
         rotation: { x: 0, y: 0, z: 0 },
         scale: 1,
       }],
@@ -88,8 +88,8 @@ describe("auto-save message schemas", () => {
   it("delete_object requires a valid UUID and revision", async () => {
     const { DeleteObjectMessage } = await import("../ws/auto-save.js");
     expect(DeleteObjectMessage.safeParse({ type: "delete_object", expectedRevision: 1, objectId: "bad" }).success).toBe(false);
-    expect(DeleteObjectMessage.safeParse({ type: "delete_object", expectedRevision: 1, objectId: "00000000-0000-0000-0000-000000000001" }).success).toBe(true);
-    expect(DeleteObjectMessage.safeParse({ type: "delete_object", objectId: "00000000-0000-0000-0000-000000000001" }).success).toBe(false);
+    expect(DeleteObjectMessage.safeParse({ type: "delete_object", expectedRevision: 1, objectId: "00000000-0000-4000-8000-000000000001" }).success).toBe(true);
+    expect(DeleteObjectMessage.safeParse({ type: "delete_object", objectId: "00000000-0000-4000-8000-000000000001" }).success).toBe(false);
   });
 
   it("ping message is valid", async () => {
@@ -126,7 +126,7 @@ describe("resolveWsUser — test-mode mock token path", () => {
     const { resolveWsUser } = await import("../ws/auto-save.js");
     const mockDb = {} as Parameters<typeof resolveWsUser>[0];
     const token = JSON.stringify({
-      id: "00000000-0000-0000-0000-00000000dead",
+      id: "00000000-0000-4000-8000-00000000dead",
       email: "alice@example.com",
       role: "admin",
       venueId: null,
@@ -135,7 +135,7 @@ describe("resolveWsUser — test-mode mock token path", () => {
     const result = await resolveWsUser(mockDb, token, true);
 
     expect(result).not.toBeNull();
-    expect(result?.userId).toBe("00000000-0000-0000-0000-00000000dead");
+    expect(result?.userId).toBe("00000000-0000-4000-8000-00000000dead");
     expect(result?.userRole).toBe("admin");
     expect(result?.platformRole).toBe("none");
     expect(result?.userVenueId).toBeNull();

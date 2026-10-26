@@ -82,7 +82,8 @@ describe("BlueprintFromStore save status", () => {
     act(() => { useEditorStore.setState({ isSaving: false, saveError: "Failed" }); });
     expect(chrome()).toContain("Save failed - retry");
     expect(mobile()).toContain("Save failed - retry");
-    act(() => { useEditorStore.setState({ saveConflict: { expectedRevision: 1, currentRevision: 2, message: "Changed elsewhere" } }); });
+    act(() => { useEditorStore.setState({ saveConflict: { expectedRevision: 1, currentRevision: 2, message: "Changed elsewhere",
+      changedBy: null, changedAt: null, byYou: false, theirChange: null } }); });
     expect(chrome()).toContain("Save conflict - reload");
     expect(mobile()).toContain("Reload layout");
     act(() => { useEditorStore.setState({ isDirty: false, saveError: null, saveConflict: null, lastSavedAt: null }); });

@@ -36,6 +36,14 @@ import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
 import { toRenderSpace } from "../../constants/scale.js";
 import { eventLight } from "../../lib/event-light.js";
 import type { PlacedItem } from "../../lib/placement.js";
+import {
+  HIDDEN_MATRIX,
+  currentFurniturePresentation,
+  presentedPiece,
+  subscribeFurniturePresentation,
+  type PresentationFrame,
+  type PresentedPiece,
+} from "../../floor/presentation-channel.js";
 
 /** The cluster, in the table's own frame: offset from its centre, height, radius (metres). */
 const CLUSTER: readonly { readonly x: number; readonly z: number; readonly height: number; readonly radius: number }[] = [
@@ -51,6 +59,8 @@ const FLAME = [1.0, 0.58, 0.22] as const;
 const CANDLE_LIGHT = [1.0, 0.66, 0.36] as const;
 
 interface CandleTable {
+  /** The table's placed-item id. */
+  readonly id: string;
   readonly x: number;
   readonly z: number;
   /** Height of the table's top above the floor, metres. */
@@ -68,6 +78,7 @@ export function candleTables(items: readonly PlacedItem[]): CandleTable[] {
     if (item === undefined || !isDiningTableItem(item)) continue;
     const scale = normalizeFurnitureScale(placed.scale);
     tables.push({
+      id: placed.id,
       x: placed.x,
       z: placed.z,
       top: placed.y + toRenderSpace(item.height) * scale,
@@ -187,30 +198,70 @@ function disposeCandleMeshes(meshes: CandleMeshes): void {
   }
 }
 
-const matrix = new Matrix4();
 const position = new Vector3();
 const rotation = new Quaternion();
 const size = new Vector3();
 const UP = new Vector3(0, 1, 0);
 
-function fillCandles(meshes: CandleMeshes, tables: readonly CandleTable[]): void {
+/** Height of the flames' middle above the table top, metres: they catch about it. */
+const FLAME_CENTRE = 0.2;
+const presented = new Matrix4();
+const local = new Matrix4();
+const flameStep = new Matrix4();
+const flameSize = new Vector3();
+
+/**
+ * One candle part of one table, as placed or as a reveal presents it: the
+ * wax rises from the linen, the flames catch at the wicks and their light
+ * spreads over the linen and the floor (floor/presentation-channel.ts).
+ */
+function writePart(mesh: InstancedMesh, index: number, placed: Matrix4, shown: PresentedPiece | null, part: "candles" | "flames" | "linen" | "floor"): void {
+  if (shown === null) {
+    mesh.setMatrixAt(index, placed);
+    return;
+  }
+  const amount = part === "candles" ? shown.wax : part === "flames" ? shown.flame : shown.glow;
+  if (amount <= 0.02) {
+    mesh.setMatrixAt(index, HIDDEN_MATRIX);
+    return;
+  }
+  presented.multiplyMatrices(shown.delta, placed);
+  if (part === "candles") local.makeScale(1, amount, 1);
+  else if (part === "flames") local.makeTranslation(0, FLAME_CENTRE, 0).scale(flameSize.set(amount, amount, amount)).multiply(flameStep.makeTranslation(0, -FLAME_CENTRE, 0));
+  else local.makeScale(amount, 1, amount);
+  mesh.setMatrixAt(index, presented.multiply(local));
+}
+
+const placedCandles = new Matrix4();
+const placedLinen = new Matrix4();
+const placedFloor = new Matrix4();
+
+function fillCandles(meshes: CandleMeshes, tables: readonly CandleTable[], frame: PresentationFrame | null): void {
   const count = Math.min(tables.length, meshes.candles.instanceMatrix.count);
   for (let index = 0; index < count; index++) {
     const table = tables[index];
     if (table === undefined) continue;
+    const shown = frame === null ? null : presentedPiece(frame, table.id);
+    if (shown === "hidden") {
+      for (const mesh of [meshes.candles, meshes.flames, meshes.linen, meshes.floor]) mesh.setMatrixAt(index, HIDDEN_MATRIX);
+      continue;
+    }
     rotation.setFromAxisAngle(UP, table.rotationY);
     position.set(table.x, table.top + 0.002, table.z);
     size.set(1, 1, 1);
-    meshes.candles.setMatrixAt(index, matrix.compose(position, rotation, size));
-    meshes.flames.setMatrixAt(index, matrix);
+    placedCandles.compose(position, rotation, size);
     position.set(table.x, table.top + 0.004, table.z);
     const linen = Math.min(LINEN_GLOW_RADIUS, table.reach) * 2;
     size.set(linen, 1, linen);
-    meshes.linen.setMatrixAt(index, matrix.compose(position, rotation, size));
+    placedLinen.compose(position, rotation, size);
     position.set(table.x, 0.004, table.z);
     const pool = Math.max(FLOOR_POOL_RADIUS, table.reach * 2.2) * 2;
     size.set(pool, 1, pool);
-    meshes.floor.setMatrixAt(index, matrix.compose(position, rotation, size));
+    placedFloor.compose(position, rotation, size);
+    writePart(meshes.candles, index, placedCandles, shown, "candles");
+    writePart(meshes.flames, index, placedCandles, shown, "flames");
+    writePart(meshes.linen, index, placedLinen, shown, "linen");
+    writePart(meshes.floor, index, placedFloor, shown, "floor");
   }
   for (const mesh of [meshes.candles, meshes.flames, meshes.linen, meshes.floor]) {
     mesh.count = count;
@@ -227,10 +278,17 @@ export function TableCandles(): ReactElement {
   const meshes = useMemo(() => createCandleMeshes(capacity), [capacity]);
 
   useEffect(() => () => { disposeCandleMeshes(meshes); }, [meshes]);
+  const latest = useRef(tables);
+  latest.current = tables;
   useEffect(() => {
-    fillCandles(meshes, tables);
+    fillCandles(meshes, tables, currentFurniturePresentation());
     invalidate();
   }, [invalidate, meshes, tables]);
+
+  // A reveal's frames, published before the frame renders (the publisher invalidates).
+  useEffect(() => subscribeFurniturePresentation((frame) => {
+    fillCandles(meshes, latest.current, frame);
+  }), [meshes]);
 
   // Unlit candles are not drawn at all, except vanishingly small (and at
   // least once) for their first frames, so their shaders compile on arrival
@@ -245,7 +303,7 @@ export function TableCandles(): ReactElement {
       for (const mesh of all) { mesh.visible = true; mesh.count = Math.max(1, mesh.count); }
       group.current?.scale.setScalar(lit ? 1 : 1e-4);
       // The last warm frame restores the real instance counts.
-      if (warmFrames.current === 0) fillCandles(meshes, tables);
+      if (warmFrames.current === 0) fillCandles(meshes, tables, currentFurniturePresentation());
       invalidate();
       return;
     }

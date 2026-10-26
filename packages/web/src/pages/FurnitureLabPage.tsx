@@ -12,6 +12,7 @@ import { GrandHallModel } from "../components/grand-hall/GrandHallModel.js";
 import { FULL_HALL_FINISH } from "../components/grand-hall/hall-finish.js";
 import { CaptureToneMapping } from "../components/scene/CaptureToneMapping.js";
 import { FurnitureProxy } from "../components/FurnitureProxy.js";
+import { HALL_SUN_CASTER_LAYER } from "../components/grand-hall/hall-sun.js";
 import { GltfFurniture } from "../components/meshes/GltfFurniture.js";
 import { MeshErrorBoundary } from "../components/MeshErrorBoundary.js";
 import { isCraftedFurnitureSlug } from "../lib/crafted-furniture.js";
@@ -239,6 +240,8 @@ function FurniturePreviewStudio({ item }: { readonly item: CatalogueItem }): Rea
           shadow-camera-bottom={-reach}
           shadow-camera-near={0.1}
           shadow-camera-far={reach * 6}
+          // Furniture casts with its stand-ins on the caster layer (crafted-model.ts).
+          shadow-camera-layers-mask={1 | (1 << HALL_SUN_CASTER_LAYER)}
         />
         <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[60, 60]} />

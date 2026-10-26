@@ -292,7 +292,7 @@ export type DoorEventType = z.infer<typeof DoorEventTypeSchema>;
 
 export const DoorEventSchema = z.object({
   /** ISO-8601 datetime this event happens. */
-  at: z.string().datetime(),
+  at: z.iso.datetime(),
   kind: DoorEventTypeSchema,
   /** Optional context ("after VIP arrival", "overnight lockup"). */
   note: z.string().max(200).default(""),

@@ -20,7 +20,7 @@ export type { LineItem };
 // undefined, never as none, so nothing is priced without it.
 const PricingTiersSchema = z.array(z.object({ upTo: z.number().positive(), amount: z.number().nonnegative() }))
   .nullable().optional().catch(undefined);
-const PricingModifiersSchema = z.record(z.number().positive()).nullable().optional().catch(undefined);
+const PricingModifiersSchema = z.record(z.string(), z.number().positive()).nullable().optional().catch(undefined);
 
 export const PricingRuleResponseSchema = z.object({
   id: z.string(),

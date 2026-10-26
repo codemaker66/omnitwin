@@ -187,7 +187,7 @@ export const ScenarioTemplateV0Schema = z.object({
     for (const requiredKind of ["queue", "wait_service"] as const) {
       if (!requiredZoneKinds.has(requiredKind)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["requiredFlowZones"],
           message: "Bar queue templates require queue and wait_service flow zones.",
         });
@@ -201,7 +201,7 @@ export const ScenarioTemplateV0Schema = z.object({
     !humanReviewTriggers.has("missing_connector_graph")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Connector or navmesh requirements must declare missing connector review behavior.",
     });
@@ -213,7 +213,7 @@ export const ScenarioTemplateV0Schema = z.object({
     !humanReviewTriggers.has("navmesh_dependency_review")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Navmesh-dependent templates must declare navmesh dependency review.",
     });
@@ -224,7 +224,7 @@ export const ScenarioTemplateV0Schema = z.object({
     !humanReviewTriggers.has("unsupported_v0_request")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Unsupported v0 route input requirements must declare unsupported request review.",
     });

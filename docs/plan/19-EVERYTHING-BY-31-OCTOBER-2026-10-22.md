@@ -31,7 +31,11 @@ His answers the same afternoon, after the assessment told him plainly which done
    deployed or accepted. A line that needs Blake's acceptance closes only with his recorded words.
 2. All pilot gates closed (16 October): monitoring and uptime, a restore drill, branch protection, honest claims,
    legal copy matching the product, Clerk polish, venue admins inviting staff, one real event, his acceptance.
-3. Final reviews passed on a frozen candidate (section 7).
+3. Final reviews passed on a frozen candidate (section 7). **The freeze never trims scope** (Blake, 25 October,
+   verbatim: "idk what you mean by freeze, i want you to complete everything now"): Thursday 29 at 18:00 is the
+   release-candidate cut that Friday's review runs on. Every piece ships live as soon as it passes its own gates,
+   before or after the cut; anything that lands after the cut gets a delta review before Saturday's tag. A flag is
+   only for a piece that is not yet safe, never a way to drop it.
 4. `v1.0` tagged on a verified master commit, with web and API both serving it and a rollback marker
    (Neon snapshot id and the previous Vercel and Railway deployment ids).
 

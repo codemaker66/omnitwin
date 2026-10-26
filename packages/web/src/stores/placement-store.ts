@@ -12,7 +12,7 @@ import {
   getPlacementViolations,
 } from "../lib/placement.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
-import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
+import { createTableGroup, diningTablesAmong, rearrangeTableGroup, tableGroupChairFootprint, ungroupedKeepingTables } from "../lib/table-group.js";
 import { planBanquetFill, planTheatreFill, type BanquetFillPlan, type TheatreFillPlan } from "../lib/auto-fill.js";
 import { applySeatShortfallFix, type SeatShortfallFixResult } from "../lib/seat-shortfall.js";
 import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
@@ -394,6 +394,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         reason = violations[0]?.message ?? "Constraint warning";
       }
     }
+    // A pointer moving within a grid cell snaps to the ghost's own spot: no write, no frame of work for its readers.
+    const current = state.ghostPosition;
+    if (current !== null && current[0] === pos[0] && current[1] === pos[1] && current[2] === pos[2]
+      && state.ghostValid === valid && state.ghostInvalidReason === reason) return;
     set({ ghostPosition: pos, ghostValid: valid, ghostInvalidReason: reason });
   },
 
@@ -711,6 +715,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const state = get();
     const expandedIds = expandIdsToGroupMembers(ids, state.placedItems);
     if (expandedIds.size < 2) return;
+    // Tables keep their own chairs: Group never joins two dining tables (QoL B-03; a table with a lectern or a floor may group).
+    if (diningTablesAmong(state.placedItems.filter((item) => expandedIds.has(item.id))).length > 1) return;
     const newGroupId = generatePlacedId();
     set({
       placedItems: state.placedItems.map((item) =>
@@ -723,11 +729,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     const state = get();
-    const expandedIds = expandIdsToGroupMembers(ids, state.placedItems);
-    set({
-      placedItems: state.placedItems.map((item) =>
-        expandedIds.has(item.id) ? { ...item, groupId: null } : item,
-      ),
-    });
+    // Each table keeps its own chairs; everything else leaves the group (lib/table-group ungroupedKeepingTables).
+    const ungrouped = ungroupedKeepingTables(expandIdsToGroupMembers(ids, state.placedItems), state.placedItems);
+    if (ungrouped === state.placedItems) return;
+    set({ placedItems: ungrouped });
   },
 }));

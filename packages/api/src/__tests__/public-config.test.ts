@@ -14,9 +14,9 @@ function signToken(payload: { id: string; email: string; role: string; venueId: 
   return JSON.stringify(payload);
 }
 
-const SPACE_ID = "00000000-0000-0000-0000-000000000010";
-const CONFIG_ID = "00000000-0000-0000-0000-000000000050";
-const ASSET_ID = "00000000-0000-0000-0000-000000000020";
+const SPACE_ID = "00000000-0000-4000-8000-000000000010";
+const CONFIG_ID = "00000000-0000-4000-8000-000000000050";
+const ASSET_ID = "00000000-0000-4000-8000-000000000020";
 const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: "v1" });
 
 // ---------------------------------------------------------------------------
@@ -104,6 +104,24 @@ describe("POST /public/configurations/:configId/objects/batch", () => {
       },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  // GHSA-mrhx-c7xc-m3w5, replayed: an anonymous 1 MiB body of 349,521 bad
+  // objects. Without a bound zod reports one issue per object (+100 MB of
+  // heap and a reply tens of megabytes long); the .max(500) stops it at one.
+  it("refuses a 1 MiB list of bad objects with one issue, not one per object", async () => {
+    const payload = `{"expectedRevision":1,"objects":[${"{},".repeat(349_520)}{}]}`;
+    expect(payload.length).toBeGreaterThan(1_048_576);
+    const res = await server.inject({
+      method: "POST", url: `/public/configurations/${CONFIG_ID}/objects/batch`,
+      headers: { "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ details: readonly { code: string; path: readonly string[]; maximum: number }[] }>();
+    expect(body.details).toHaveLength(1);
+    expect(body.details[0]).toMatchObject({ code: "too_big", path: ["objects"], maximum: 500 });
+    expect(res.payload.length).toBeLessThan(1_000);
   });
 });
 
@@ -205,6 +223,7 @@ describe("POST /configurations/:configId/claim", () => {
     const res = await server.inject({
       method: "POST", url: `/configurations/${CONFIG_ID}/claim`,
       headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { claimSecret: "a".repeat(43) },
     });
     expect(res.statusCode).not.toBe(401);
     expect(res.statusCode).not.toBe(400);
@@ -220,21 +239,14 @@ describe("POST /configurations/:configId/claim", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Claim scope tripwire — punch list #14
+// Claim scope tripwire — punch list #14, then release audit public-surface-1
 //
-// The claim endpoint previously linked enquiries by `guestEmail` only,
-// which meant claiming config A would silently reassign every unowned
-// enquiry from the same email address (including enquiries for unrelated
-// configs B, C, D...). The fix scopes the link to `configurationId` and
-// wraps both updates in a transaction so they're atomic.
-//
-// These tests read the route source code and pin five structural
-// properties of the fix. Behavioural verification of the cross-config
-// bleed scenario is deferred to integration.test.ts (currently bit-rotted
-// — see project_integration_test_rot.md memory). When that file is
-// resurrected, add an end-to-end test that creates two enquiries with
-// different `configurationId` values and the same email, claims one,
-// and asserts only one is reassigned.
+// The claim endpoint once linked enquiries by `guestEmail`, then by
+// `configurationId`; either way a claim handed the claimer a guest's contact
+// details. A claim now never touches enquiries, and needs the creating
+// browser's secret. These tests pin the structure; the behaviour is proven on
+// a migrated database (claim-new-draft-postgres.test.ts) and under row locks
+// (route-atomicity-postgres.test.ts).
 // ---------------------------------------------------------------------------
 
 describe("claim-config.ts source-of-truth (#14)", () => {
@@ -253,34 +265,21 @@ describe("claim-config.ts source-of-truth (#14)", () => {
     return { raw, codeOnly };
   }
 
-  it("wraps the two updates in db.transaction (atomicity)", async () => {
+  it("claims and consumes the secret in one db.transaction (atomicity)", async () => {
     const { codeOnly } = await readClaimConfigSource();
     expect(codeOnly).toContain("db.transaction(");
+    expect(codeOnly).toContain("tx.delete(configurationClaimSecrets)");
   });
 
-  it("filters enquiries by configurationId (correct scope)", async () => {
+  it("never reads or moves enquiries (a guest's details stay the venue's)", async () => {
     const { codeOnly } = await readClaimConfigSource();
-    expect(codeOnly).toContain("eq(enquiries.configurationId,");
-  });
-
-  it("does NOT filter enquiries by guestEmail (bug eliminated)", async () => {
-    const { codeOnly } = await readClaimConfigSource();
-    // The original bug: linking enquiries by email scoped the side effect
-    // to "every enquiry from this address" instead of "every enquiry for
-    // this config". Comments may still mention guestEmail for context;
-    // the negative check runs against code only.
-    expect(codeOnly).not.toContain("eq(enquiries.guestEmail,");
+    expect(codeOnly).not.toContain("enquiries");
   });
 
   it("emits an audit log on claim (observability)", async () => {
     const { codeOnly } = await readClaimConfigSource();
     expect(codeOnly).toContain("request.log.info");
     expect(codeOnly).toContain("configuration claimed");
-  });
-
-  it("captures linkedEnquiryCount for the audit log", async () => {
-    const { codeOnly } = await readClaimConfigSource();
-    expect(codeOnly).toContain("linkedEnquiryCount");
   });
 });
 

@@ -372,6 +372,20 @@ describe("ghost", () => {
     expect(usePlacementStore.getState().ghostValid).toBe(true);
   });
 
+  it("updateGhost leaves the store alone when the ghost would land where it stands", () => {
+    usePlacementStore.getState().updateGhost(0, 0, tableId);
+    const position = usePlacementStore.getState().ghostPosition;
+    let notifications = 0;
+    const unsubscribe = usePlacementStore.subscribe(() => { notifications += 1; });
+    // A pointer that moves within one grid cell snaps to the same spot.
+    usePlacementStore.getState().updateGhost(0.01, -0.01, tableId);
+    expect(notifications).toBe(0);
+    expect(usePlacementStore.getState().ghostPosition).toBe(position);
+    usePlacementStore.getState().updateGhost(GRID_SPACING_RENDER * 3, 0, tableId);
+    unsubscribe();
+    expect(notifications).toBe(1);
+  });
+
   it("updateGhost with out-of-bounds position marks invalid", () => {
     usePlacementStore.getState().updateGhost(999, 999, tableId);
     expect(usePlacementStore.getState().ghostValid).toBe(false);
@@ -703,7 +717,7 @@ describe("table group integrity", () => {
     }
   });
 
-  it("ungroups a partially selected table ring as a whole group", () => {
+  it("never strips a lone table ring of its chairs on ungroup, whichever member is selected (QoL B-03)", () => {
     const store = usePlacementStore.getState();
     store.placeTableGroup(tableId, 0, 0, 0, 6);
     const initialItems = usePlacementStore.getState().placedItems;
@@ -716,11 +730,37 @@ describe("table group integrity", () => {
 
     usePlacementStore.getState().ungroupItems(new Set([firstChair.id]));
 
+    expect(usePlacementStore.getState().placedItems).toBe(initialItems);
+  });
+
+  it("ungroups a lectern from the table grouped with it, the table keeping its chairs (QoL B-03)", () => {
+    const lectern = getCatalogueItemBySlug("lectern");
+    if (lectern === undefined) throw new Error("Expected a lectern");
+    const store = usePlacementStore.getState();
+    store.placeTableGroup(tableId, 0, 0, 0, 6);
+    store.placeItem(lectern.id, GRID_SPACING_RENDER * 6, GRID_SPACING_RENDER * 6);
+    const table = usePlacementStore.getState().placedItems.find((item) => item.catalogueItemId === tableId);
+    const stand = usePlacementStore.getState().placedItems.find((item) => item.catalogueItemId === lectern.id);
+    if (table === undefined || stand === undefined) throw new Error("Expected a table and a lectern");
+    usePlacementStore.getState().groupItems(new Set([table.id, stand.id]));
+    const grouped = usePlacementStore.getState().placedItems.find((item) => item.id === table.id)?.groupId ?? null;
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === stand.id)?.groupId).toBe(grouped);
+
+    usePlacementStore.getState().ungroupItems(new Set([table.id]));
+
     const after = usePlacementStore.getState().placedItems;
-    for (const id of groupIds) {
-      const item = after.find((candidate) => candidate.id === id);
-      expect(item?.groupId).toBeNull();
-    }
+    expect(after.find((item) => item.id === stand.id)?.groupId).toBeNull();
+    expect(after.filter((item) => item.groupId === grouped)).toHaveLength(7);
+  });
+
+  it("never joins two tables in one group (QoL B-03)", () => {
+    const store = usePlacementStore.getState();
+    store.placeTableGroup(tableId, 0, 0, 0, 4);
+    store.placeTableGroup(tableId, GRID_SPACING_RENDER * 8, 0, 0, 4);
+    const before = usePlacementStore.getState().placedItems;
+    const tables = before.filter((item) => item.catalogueItemId === tableId);
+    usePlacementStore.getState().groupItems(new Set(tables.map((item) => item.id)));
+    expect(usePlacementStore.getState().placedItems).toBe(before);
   });
 
   it("regroups an existing table ring without leaving chairs behind", () => {

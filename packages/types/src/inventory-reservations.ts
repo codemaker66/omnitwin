@@ -31,7 +31,7 @@ export const InventoryReservationPhaseSchema = z.object({ phaseId: Id, name: z.s
   if ((phase.mode === "frozen_layout" ? lineage.some((value) => value === null)
     : lineage.some((value) => value !== null) || phase.objects.length > 0)
     || new Set(phase.objects.map((object) => object.objectId)).size !== phase.objects.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid inventory phase evidence" });
+    context.addIssue({ code: "custom", message: "Invalid inventory phase evidence" });
   }
 });
 export type InventoryReservationPhase = z.infer<typeof InventoryReservationPhaseSchema>;
@@ -57,7 +57,7 @@ export const InventoryReservationReleaseSchema = z.object({ id: Id, venueId: Id,
     || peak.size !== release.demands.length || release.demands.some((row) => peak.get(row.assetDefinitionId) !== row.quantity)
     || [...release.phases, ...release.bookings].some((row) => Date.parse(row.window.startsAt) < Date.parse(release.occupiedWindow.startsAt)
       || Date.parse(row.window.endsAt) > Date.parse(release.occupiedWindow.endsAt))) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid inventory release evidence" });
+    context.addIssue({ code: "custom", message: "Invalid inventory release evidence" });
   }
 });
 export type InventoryReservationRelease = z.infer<typeof InventoryReservationReleaseSchema>;
@@ -69,7 +69,7 @@ export const InventoryAvailabilitySegmentSchema = z.object({ startsAt: Instant, 
     || segment.usableQuantity - segment.reservedQuantity !== segment.remainingQuantity
     || Math.max(0, -segment.remainingQuantity) !== segment.shortageQuantity
     || new Set(segment.commitmentIds).size !== segment.commitmentIds.length || new Set(segment.eventIds).size !== segment.eventIds.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Inventory interval arithmetic or identity is inconsistent" });
+    context.addIssue({ code: "custom", message: "Inventory interval arithmetic or identity is inconsistent" });
   }
 });
 export const InventoryAvailabilityResultSchema = z.object({ venueId: Id, assetDefinitionId: Id, stockRevision: Quantity,
@@ -79,7 +79,7 @@ export const InventoryAvailabilityResultSchema = z.object({ venueId: Id, assetDe
   if (result.minimumRemainingQuantity !== Math.min(...result.segments.map((segment) => segment.remainingQuantity))
     || result.maximumShortageQuantity !== Math.max(...result.segments.map((segment) => segment.shortageQuantity))
     || result.segments.some((segment, index) => index > 0 && result.segments[index - 1]?.endsAt !== segment.startsAt)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Inventory interval summary is inconsistent" });
+    context.addIssue({ code: "custom", message: "Inventory interval summary is inconsistent" });
   }
 });
 export const InventoryAssessmentItemSchema = z.object({ assetDefinitionId: Id, name: z.string(), category: z.string(),
@@ -91,7 +91,7 @@ export const InventoryAssessmentItemSchema = z.object({ assetDefinitionId: Id, n
     || (item.unavailableReason === "historical_unsupported" && (item.stockRevision === null || item.stockRevision < 1))
     : item.unavailableReason !== null || item.stockRevision !== item.availability.stockRevision
       || item.assetDefinitionId !== item.availability.assetDefinitionId) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Inventory availability state is inconsistent" });
+    context.addIssue({ code: "custom", message: "Inventory availability state is inconsistent" });
   }
 });
 export type InventoryAssessmentItem = z.infer<typeof InventoryAssessmentItemSchema>;
@@ -121,7 +121,7 @@ export const InventoryRemedySchema = z.object({ id: Id, venueId: Id, kind: z.enu
   const approvedByRole = remedy.approvedByRole ?? null;
   if (remedy.status === "prepared" ? remedy.approvedBy !== null || remedy.approvedAt !== null || approvedByRole !== null
     : remedy.approvedBy === null || remedy.approvedAt === null || Date.parse(remedy.approvedAt) < Date.parse(remedy.preparedAt)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Inventory remedy approval lineage is inconsistent" });
+    context.addIssue({ code: "custom", message: "Inventory remedy approval lineage is inconsistent" });
   }
 });
 export type InventoryRemedy = z.infer<typeof InventoryRemedySchema>;
