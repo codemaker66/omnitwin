@@ -124,14 +124,12 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
    *  (a hop lands long after the closure that began it; see twin-search-params). */
   const writeNodeParam = useCallback(
     (id: string, mode: "push" | "replace") => {
-      editSearchParams(
-        (params) => {
-          params.set("node", id);
-        },
+      editSearchParams((params) => {
+        params.set("node", id);
         // Commit a visited node before Back can return to the prior URL while
         // the router still renders that prior location. Canonicalisation stays async.
-        { replace: mode === "replace", flushSync: mode === "push" },
-      );
+        return { replace: mode === "replace", flushSync: mode === "push" };
+      });
     },
     [editSearchParams],
   );

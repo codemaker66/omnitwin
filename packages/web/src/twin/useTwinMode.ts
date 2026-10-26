@@ -45,35 +45,39 @@ export function useTwinMode(hasMesh: boolean): TwinModeState {
   // without adding history, preserving every other param (?node= included).
   useEffect(() => {
     if (param !== null && parseMode(param, hasMesh) === "walk") {
-      editSearchParams(
-        (params) => {
-          params.delete("mode");
-        },
-        { replace: true },
-      );
+      editSearchParams((params) => {
+        const now = params.get("mode");
+        if (now === null || parseMode(now, hasMesh) !== "walk") {
+          return null; // the address moved on before this ran
+        }
+        params.delete("mode");
+        return { replace: true };
+      });
     }
   }, [param, hasMesh, editSearchParams]);
 
+  // Decided from the address as it stands when the visitor asks, not from
+  // the last render: two quick presses must not both read the old mode, which
+  // would replace the first press's history entry or push a second one.
   const setMode = useCallback(
     (next: TwinMode) => {
-      if (next === mode || (!hasMesh && next !== "walk")) {
-        return;
-      }
-      // Crossing the dollhouse boundary is a navigation (push once); every
-      // other switch is a view tweak (replace).
-      const crossesDollhouse = (mode === "dollhouse") !== (next === "dollhouse");
-      editSearchParams(
-        (params) => {
-          if (next === "walk") {
-            params.delete("mode");
-          } else {
-            params.set("mode", next);
-          }
-        },
-        { replace: !crossesDollhouse },
-      );
+      editSearchParams((params) => {
+        const now = parseMode(params.get("mode"), hasMesh);
+        if (next === now || (!hasMesh && next !== "walk")) {
+          return null;
+        }
+        if (next === "walk") {
+          params.delete("mode");
+        } else {
+          params.set("mode", next);
+        }
+        // Crossing the dollhouse boundary is a navigation (push once); every
+        // other switch is a view tweak (replace).
+        const crossesDollhouse = (now === "dollhouse") !== (next === "dollhouse");
+        return { replace: !crossesDollhouse };
+      });
     },
-    [mode, hasMesh, editSearchParams],
+    [hasMesh, editSearchParams],
   );
 
   return { mode, setMode };
