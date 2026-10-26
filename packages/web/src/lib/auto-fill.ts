@@ -815,7 +815,10 @@ function refillOrder(a: PlacedItem, b: PlacedItem): number {
 /**
  * The round groups a fill plan sets down, reusing the refilled tables' ids,
  * names, cloths and chairs' ids in refill order; tables beyond those are new.
- * Render-space, ready for the placement store.
+ * Fill sets the room with the event's chair, so a reused chair keeps its
+ * record but becomes the chair its place was planned for (a Turini kept at
+ * a wedding's Chiavari spacing would sit into its table). Render-space,
+ * ready for the placement store.
  */
 export function refillPieces(
   placedItems: readonly PlacedItem[],
@@ -842,7 +845,9 @@ export function refillPieces(
     pieces.push({ ...old, x: table.x, z: table.z, y: table.y, rotationY: table.rotationY });
     chairs.forEach((chair, c) => {
       const reuse = oldChairs[c];
-      pieces.push(reuse === undefined ? { ...chair, groupId } : { ...reuse, x: chair.x, z: chair.z, y: chair.y, rotationY: chair.rotationY });
+      pieces.push(reuse === undefined
+        ? { ...chair, groupId }
+        : { ...reuse, catalogueItemId: chair.catalogueItemId, x: chair.x, z: chair.z, y: chair.y, rotationY: chair.rotationY });
     });
   });
   return pieces;

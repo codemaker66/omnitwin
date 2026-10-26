@@ -5,9 +5,9 @@ export const DEFAULT_PLANNER_ROUND_TABLE_SLUG = "round-table-6ft-white";
 
 /**
  * The chair a new seat is set with, by the kind of event (Blake, 26 Oct 2026):
- * the venue's gold Chiavari at a wedding, the pink velvet chair (the Burgess
- * Turini 18/3, measured 42 × 58 cm) at a business event. Seats already placed
- * keep the chair they have.
+ * the venue's gold Chiavari at a wedding; the pink velvet chair, which is the
+ * Burgess Turini 18/3 (maker's 42 × 58 cm), at a business event and at
+ * anything else. Seats already placed keep the chair they have.
  */
 export const PLANNER_CHAIR_BY_EVENT: Readonly<Record<PlannerEventKind, string>> = {
   wedding: "chiavari-chair",

@@ -24,7 +24,7 @@
 import type { PlacedItem } from "../../lib/placement.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { computeChairPositions } from "../../lib/table-group.js";
-import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairSlug } from "../../lib/furniture-defaults.js";
+import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, UNASKED_PLANNER_CHAIR_SLUG } from "../../lib/furniture-defaults.js";
 
 /** Table centres across the hall's length (x), fireplace end first. */
 export const DINNER_COLUMNS_X = [-8.6, -5.3, -2.0, 2.0, 5.3, 8.6] as const;
@@ -65,10 +65,11 @@ export function dinnerTableId(number: number): string {
   return `ga-table-${twoDigits(number)}`;
 }
 
-/** The saved layout: each table followed by its ten chairs, Table 1 first. */
+/** The saved layout: each table followed by its ten chairs, Table 1 first. Its
+ *  chair is fixed, not the event's, so every run loads the identical layout. */
 export function grandHallDinner180(): PlacedItem[] {
   const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
-  const chair = getCatalogueItemBySlug(plannerChairSlug());
+  const chair = getCatalogueItemBySlug(UNASKED_PLANNER_CHAIR_SLUG);
   if (table === undefined || chair === undefined) {
     throw new Error("The planner's default round table and chair are missing from the catalogue");
   }
@@ -89,7 +90,7 @@ export function grandHallDinner180(): PlacedItem[] {
       tableSetting: null,
       groupId,
     });
-    const seats = computeChairPositions(position.x, position.z, table, 0, DINNER_SEATS_PER_TABLE);
+    const seats = computeChairPositions(position.x, position.z, table, 0, DINNER_SEATS_PER_TABLE, undefined, chair);
     if (seats.length !== DINNER_SEATS_PER_TABLE) {
       throw new Error(`A ${table.slug} seats ${String(seats.length)}, not ${String(DINNER_SEATS_PER_TABLE)}`);
     }

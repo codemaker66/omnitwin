@@ -355,7 +355,7 @@ export function rearrangeTableGroup(
   // Compute new chair positions without creating a fresh groupId; a top
   // table's trestle keeps its chairs along its back.
   const chairPositions = tableChairSide(table, placedItems) === "back"
-    ? computeSideChairPositions(table.x, table.z, tableItem, table.rotationY, newChairCount, table.scale)
+    ? computeSideChairPositions(table.x, table.z, tableItem, table.rotationY, newChairCount, table.scale, footprint)
     : computeChairPositions(
       table.x,
       table.z,
@@ -449,12 +449,12 @@ export function tableChairSide(table: PlacedItem, placedItems: readonly PlacedIt
   return chairs > 0 ? "back" : "around";
 }
 
-/** Editing retains existing assets; an increased count must also fit new Turini chairs. */
+/** Editing retains existing assets; an increased count must also fit the chairs new seats get (newSeatChairSlug). */
 export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
   const catalogue = getCatalogueItem(table.catalogueItemId);
   if (catalogue === undefined) return 0;
   if (tableChairSide(table, placedItems) === "back") {
-    return computeSideChairPositions(0, 0, catalogue, 0, Number.MAX_SAFE_INTEGER, table.scale).length;
+    return computeSideChairPositions(0, 0, catalogue, 0, Number.MAX_SAFE_INTEGER, table.scale, tableGroupChairFootprint(table, placedItems, true)).length;
   }
   const existingCount = table.groupId === null ? 0 : placedItems.filter((item) => (
     item.groupId === table.groupId && isSceneFurniturePlacement(item)
@@ -466,12 +466,12 @@ export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly 
 }
 
 /** Complete occupied envelope in metres, so layout aisles run between chair backs. */
-export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: number): ChairFootprint {
+export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: number, chairSlug: string = plannerChairSlug()): ChairFootprint {
   let halfWidth = toRenderSpace(table.width) / 2;
   let halfDepth = toRenderSpace(table.depth) / 2;
-  const chair = getCatalogueItemBySlug(plannerChairSlug());
+  const chair = getCatalogueItemBySlug(chairSlug);
   if (chair !== undefined) {
-    for (const position of computeChairPositions(0, 0, table, 0, chairCount)) {
+    for (const position of computeChairPositions(0, 0, table, 0, chairCount, undefined, chair)) {
       const extent = computeRotatedFootprint(chair, position.rotationY);
       halfWidth = Math.max(halfWidth, Math.abs(position.x) + extent.halfW);
       halfDepth = Math.max(halfDepth, Math.abs(position.z) + extent.halfD);
@@ -487,9 +487,9 @@ export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: nu
  * and its corners half a chair-width either side. Layout spacing between
  * rounds is measured between these circles.
  */
-export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: number): number {
+export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: number, chairSlug: string = plannerChairSlug()): number {
   const tableRadius = table.width / 2;
-  const chair = getCatalogueItemBySlug(plannerChairSlug());
+  const chair = getCatalogueItemBySlug(chairSlug);
   if (chair === undefined || table.tableShape !== "round" || chairCount <= 0) return tableRadius;
   return Math.max(tableRadius, Math.hypot(tableRadius + CHAIR_GAP_M + chair.depth, chair.width / 2));
 }

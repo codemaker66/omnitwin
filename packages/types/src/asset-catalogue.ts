@@ -578,10 +578,13 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     slug: "pink-chair",
     name: "Pink Chair",
     category: "chair",
-    widthM: 0.45, depthM: 0.45, heightM: 0.90,
-    dimensionStatus: "approximate",
+    // The venue's pink chair is the Burgess Turini 18/3 (Blake, 26 Oct 2026),
+    // so it takes that maker's envelope. The stock import records the venue's
+    // count here; the planner sets the burgess-turini-18-3 entry, which the
+    // store limit counts against this record (web lib/card-stock).
+    widthM: 0.42, depthM: 0.58, heightM: 0.88,
     seatCount: 1, collisionType: "box", tableShape: null,
-    maxCount: null, subtitle: "Padded · stackable", color: "#c98a9b",
+    maxCount: null, subtitle: "Padded · stackable · 42 × 58cm", color: "#c98a9b",
     equipmentTags: [],
   },
   // Four highchairs, kept as separate identities because the venue counts them

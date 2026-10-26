@@ -2,7 +2,9 @@ import { useId, useMemo, useState, type ReactElement } from "react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
+import { plannerChairSlug } from "../../../lib/furniture-defaults.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import { countLabel } from "../../../lib/count-label.js";
 import { publishedFigureLine, type PublishedFigure } from "../../../lib/auto-fill.js";
@@ -47,6 +49,8 @@ export function SeatShortfallFix({ testId, statement = false, published = null, 
   const placedItems = usePlacementStore((state) => state.placedItems);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
   const guests = useCockpitStore((state) => state.plannedGuestCount);
+  // New tables are set with the event's chair, so the free spots follow the event.
+  const eventChair = usePlannerEventStore((state) => plannerChairSlug(state.eventKind));
   const [done, setDone] = useState<Done | null>(null);
   const detailId = useId();
 
@@ -56,8 +60,9 @@ export function SeatShortfallFix({ testId, statement = false, published = null, 
       guests,
       roomWidthM: dimensions.width / RENDER_SCALE,
       roomLengthM: dimensions.length / RENDER_SCALE,
+      chairSlug: eventChair,
     }),
-    [placedItems, guests, dimensions],
+    [placedItems, guests, dimensions, eventChair],
   );
   const label = offer === null ? null : seatShortfallActionLabel(offer);
   const doneLine = done !== null && done.after === placedItems ? done.line : "";

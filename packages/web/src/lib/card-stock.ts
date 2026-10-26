@@ -30,25 +30,29 @@ import { isSceneFurniturePlacement } from "./table-dressing.js";
 export type UsableStock = ReadonlyMap<string, number>;
 
 /**
- * Clothed tables and the bare table the store counts them as: a cloth is
- * dressing, not a table. Nothing else is pooled. A wooden-top trestle is not
- * assumed to be a 6 ft trestle, because a guessed pooled count is what the
- * stock import refuses to make (api/src/scripts/import-venue-stock.ts).
+ * Pieces the store counts under another catalogue entry. Clothed tables count
+ * as their bare table: a cloth is dressing, not a table. The Burgess Turini
+ * 18/3 the planner sets counts as the venue's pink chair, the same chair
+ * (Blake, 26 Oct 2026), whose record the stock import writes. Nothing else is
+ * pooled. A wooden-top trestle is not assumed to be a 6 ft trestle, because a
+ * guessed pooled count is what the stock import refuses to make
+ * (api/src/scripts/import-venue-stock.ts).
  */
-const CLOTHED_TABLES: ReadonlyMap<string, string> = new Map([
+const COUNTED_AS: ReadonlyMap<string, string> = new Map([
   ["round-table-6ft-white", "round-table-6ft"],
   ["round-table-6ft-black", "round-table-6ft"],
   ["trestle-6ft-white", "trestle-6ft"],
   ["trestle-6ft-black", "trestle-6ft"],
   ["trestle-4ft-white", "trestle-4ft"],
   ["trestle-4ft-black", "trestle-4ft"],
+  ["burgess-turini-18-3", "pink-chair"],
 ]);
 
-/** The catalogue id the store counts a piece under: a clothed table's bare table, else the piece itself. */
+/** The catalogue id the store counts a piece under: a clothed table's bare table, the Turini's pink chair, else the piece itself. */
 export function stockIdentity(catalogueItemId: string): string {
   const slug = getCatalogueItem(catalogueItemId)?.slug;
-  const bare = slug === undefined ? undefined : CLOTHED_TABLES.get(slug);
-  return (bare === undefined ? undefined : getCatalogueItemBySlug(bare)?.id) ?? catalogueItemId;
+  const countedAs = slug === undefined ? undefined : COUNTED_AS.get(slug);
+  return (countedAs === undefined ? undefined : getCatalogueItemBySlug(countedAs)?.id) ?? catalogueItemId;
 }
 
 /**
