@@ -1,4 +1,4 @@
-import { DataTexture, Matrix4, NearestFilter, Object3D, RedFormat, Scene, UnsignedByteType, Vector2, Vector3, SRGBColorSpace, type BufferGeometry, type Camera } from "three";
+import { DataTexture, Matrix4, NearestFilter, Object3D, RedFormat, Scene, UnsignedByteType, Vector2, Vector3, SRGBColorSpace, type Box3, type BufferGeometry, type Camera, type Sphere } from "three";
 import { StorageBufferAttribute, type UniformNode, type WebGPURenderer } from "three/webgpu";
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
 import { Fn, If, float, length, max, min, storage, texture, uniform, uniformArray, vec3, vec4 } from "three/tsl";
@@ -36,9 +36,28 @@ interface Source extends NativeSourceRegistration {
 }
 interface ReadySource extends Source { geometry: BufferGeometry }
 
+type MergedSplats = ReturnType<typeof mergeNativeSplatSources>;
+
+/**
+ * What a draw is built from that no device holds: its sources merged, and the
+ * bounds of their splats. The splat sort bounds every splat again the first
+ * time it sorts (GaussianSplat.computeBoundingSphere). For a 6 M-splat capture
+ * these took about 2.5 s of a graphics reset's restore on desktop (L3c's
+ * profile, 26 Oct 2026), so they are kept for the next renderer's build.
+ */
+interface CarriedBuild {
+  readonly key: string;
+  readonly storageLimit: number | null;
+  readonly merged: MergedSplats;
+  readonly boundingBox: Box3 | null;
+  readonly boundingSphere: Sphere | null;
+}
+
 interface Snapshot {
   readonly key: string;
   readonly mesh: NativeGaussianObject;
+  readonly merged: MergedSplats;
+  readonly storageLimit: number | null;
   readonly geometry: BufferGeometry;
   readonly tileAttribute: StorageBufferAttribute;
   readonly sources: readonly ReadySource[];
@@ -100,6 +119,8 @@ export class NativeSplatScene {
   private desiredKey = "";
   private building = false;
   private generation = 0;
+  /** The last draw's device-free build, kept through a renderer's loss for the next one's build of the same sources. */
+  private carried: CarriedBuild | null = null;
   private gpuCompletion: { snapshot: Snapshot; controller: AbortController } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastFrame = -1;
@@ -189,6 +210,11 @@ export class NativeSplatScene {
     this.generation++;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    const active = this.active;
+    this.carried = active === null ? null : {
+      key: active.key, storageLimit: active.storageLimit, merged: active.merged,
+      boundingBox: active.mesh.boundingBox?.clone() ?? null, boundingSphere: active.mesh.boundingSphere?.clone() ?? null,
+    };
     this.clearSnapshots();
     // The sources stay held for the next renderer, which must draw each of
     // them again before it counts as drawn: the view's arrival counts afresh
@@ -224,11 +250,13 @@ export class NativeSplatScene {
         registration.anchor.updateWorldMatrix(true, false);
         source.matrix.multiplyMatrices(this.inverseSceneMatrix, registration.anchor.matrixWorld);
         source.version++;
+        this.carried = null;
         this.schedule();
         this.invalidate();
       },
       dispose: () => {
         disposed = true;
+        this.carried = null;
         if (this.sources.get(key) === source) this.sources.delete(key);
         if (this.active !== null && this.active.sources.every((member) => this.sources.get(member.anchor.uuid) !== member)) {
           // A new room/URL must never inherit the previous room's draw while it loads or fails.
@@ -408,7 +436,11 @@ export class NativeSplatScene {
 
   private createSnapshot(sources: readonly ReadySource[], key: string, renderer: WebGPURenderer): Snapshot {
     const storageLimit = nativeRendererStorageLimit(renderer);
-    const merged = mergeNativeSplatSources(sources.map((source) => ({ geometry: source.geometry, matrix: source.matrix, maxSh: source.maxSh() })), storageLimit);
+    // The same sources on a device of the same limits: built before the loss.
+    const carried = this.carried !== null && this.carried.key === key && this.carried.storageLimit === storageLimit ? this.carried : null;
+    if (carried !== null) this.carried = null;
+    const merged = carried?.merged
+      ?? mergeNativeSplatSources(sources.map((source) => ({ geometry: source.geometry, matrix: source.matrix, maxSh: source.maxSh() })), storageLimit);
     const tileAttribute = new StorageBufferAttribute(merged.tileIndices, 1);
     const tileIds = storage(tileAttribute, "uint", merged.tileIndices.length).toReadOnly();
     if ("isWebGLBackend" in renderer.backend && renderer.backend.isWebGLBackend === true) tileIds.setPBO(true);
@@ -464,6 +496,10 @@ export class NativeSplatScene {
     }
     mesh.name = "Native Gaussian splats (global sort)";
     mesh.frustumCulled = false;
+    if (carried !== null) {
+      mesh.boundingBox = carried.boundingBox;
+      mesh.boundingSphere = carried.boundingSphere;
+    }
     mesh.material.toneMapped = false;
     mesh.raycast = () => undefined;
     let cpuSort: NativeCpuSortHandle | null = null;
@@ -505,7 +541,7 @@ export class NativeSplatScene {
       }
     }
     const snapshot: Snapshot = {
-      key, mesh, geometry: merged.geometry, tileAttribute, sources, opacityValues,
+      key, mesh, merged, storageLimit, geometry: merged.geometry, tileAttribute, sources, opacityValues,
       center, halfExtent, softEdge, clipEnabled,
       exclusionEnabled, exclusionMatrix, exclusionBand,
       completionFailed: false, cpuSort, sortFailed: false,
@@ -654,7 +690,7 @@ export class NativeSplatScene {
     }
   }
 
-  private invalidateSnapshots(): void { this.generation++; this.failedKeys.clear(); this.removeStaleSnapshots(); this.schedule(); }
+  private invalidateSnapshots(): void { this.generation++; this.failedKeys.clear(); this.carried = null; this.removeStaleSnapshots(); this.schedule(); }
   private clearSnapshots(): void {
     for (const snapshot of this.snapshots.values()) snapshot.dispose();
     this.snapshots.clear(); this.active = null; this.failedKeys.clear();

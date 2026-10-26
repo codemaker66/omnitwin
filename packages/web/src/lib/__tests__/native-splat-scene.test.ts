@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BufferAttribute, BufferGeometry, Group, Matrix4, Object3D, OrthographicCamera, PerspectiveCamera, RenderTarget, Scene, Vector3, type Material, type Mesh, type InstancedBufferGeometry } from "three";
+import { BufferAttribute, BufferGeometry, Group, Matrix4, Object3D, OrthographicCamera, PerspectiveCamera, RenderTarget, Scene, Sphere, Vector3, type Material, type Mesh, type InstancedBufferGeometry } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { NativeSplatScene } from "../native-splat-scene.js";
 import { withNativeRenderScope } from "../native-renderer.js";
@@ -376,6 +376,43 @@ describe("native complete draw lifecycle", () => {
     await vi.advanceTimersByTimeAsync(16);
     // The view counts arrivals afresh for a new renderer (hooks/use-chunk-arrivals.ts).
     expect(source.rendered).toHaveBeenCalledTimes(2);
+  });
+
+  it("builds a replacement renderer's draw from the merge and bounds it made before the loss", async () => {
+    const state = setup();
+    state.add(2);
+    await vi.advanceTimersByTimeAsync(50);
+    const before = state.draw() as unknown as GaussianSplat;
+    const merged = evidence.inputs.at(-1);
+    // The sort bounds every splat the first time it runs; the mock leaves that to the test.
+    before.boundingSphere = new Sphere(new Vector3(1, 2, 3), 4);
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+    state.detach();
+    state.runtime.attach(replacement, state.camera, state.invalidate);
+    await vi.advanceTimersByTimeAsync(50);
+    const after = state.draw() as unknown as GaussianSplat;
+    expect(after).not.toBe(before);
+    expect(evidence.inputs.at(-1), "the sources are not merged again").toBe(merged);
+    expect(after.boundingSphere?.center.toArray()).toEqual([1, 2, 3]);
+    expect(after.boundingSphere?.radius).toBe(4);
+  });
+
+  it("merges again for a replacement renderer once a source has changed", async () => {
+    const state = setup();
+    const source = state.add(2);
+    await vi.advanceTimersByTimeAsync(50);
+    const merged = evidence.inputs.at(-1);
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+    state.detach();
+    source.setGeometry(geometry(3));
+    state.runtime.attach(replacement, state.camera, state.invalidate);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(evidence.inputs.at(-1)).not.toBe(merged);
+    expect((state.draw() as unknown as GaussianSplat).splatCount).toBe(3);
   });
 
   it("stops expecting the capture on a replacement whose rebuild failed, and while nothing is selected", async () => {
