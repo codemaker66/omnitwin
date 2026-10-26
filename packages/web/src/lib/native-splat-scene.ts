@@ -145,7 +145,14 @@ export class NativeSplatScene {
   }
 
   attach(renderer: WebGPURenderer, camera: Camera, invalidate: () => void): () => void {
-    if (this.renderer !== null && this.renderer !== renderer) throw new Error("A native splat scene must have one active renderer");
+    if (this.renderer !== null && this.renderer !== renderer) {
+      if (this.hosts !== 0) throw new Error("A native splat scene must have one active renderer");
+      // A graphics reset hands the canvas a replacement renderer in the same
+      // React commit that detached the lost one, before that host's deferred
+      // teardown has run. Release the lost device's snapshots now; the next
+      // build compiles them for the new device from the sources still held.
+      this.teardown();
+    }
     // The first host after a full teardown finds exclusionTexture disposed (see below); its
     // mask data survives on the JS side, but the GPU-side storage must be re-created.
     if (this.hosts === 0 && this.renderer === null) this.exclusionTexture.needsUpdate = true;
@@ -158,20 +165,24 @@ export class NativeSplatScene {
       this.hosts--;
       // React StrictMode immediately attaches again; do not dispose shared resources between those effects.
       queueMicrotask(() => {
-        if (this.hosts !== 0) return;
-        this.generation++;
-        if (this.timer !== null) clearTimeout(this.timer);
-        this.timer = null;
-        this.clearSnapshots();
-        this.cpuSortPool?.dispose();
-        this.cpuSortPool = null;
-        // Safe here, not earlier: every snapshot sampling this shared mask was just cleared above, and StrictMode's immediate re-attach already had its chance to return early before this point runs.
-        this.exclusionTexture.dispose();
-        this.renderer = null;
-        this.camera = null;
-        this.desiredKey = "";
+        if (this.hosts !== 0 || this.renderer !== renderer) return;
+        this.teardown();
       });
     };
+  }
+
+  private teardown(): void {
+    this.generation++;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.clearSnapshots();
+    this.cpuSortPool?.dispose();
+    this.cpuSortPool = null;
+    // Safe here, not earlier: every snapshot sampling this shared mask was just cleared above, and StrictMode's immediate re-attach already had its chance to return early before this point runs.
+    this.exclusionTexture.dispose();
+    this.renderer = null;
+    this.camera = null;
+    this.desiredKey = "";
   }
 
   configure(kernelRadius: number | undefined, minSortIntervalMs: number | undefined): void {
