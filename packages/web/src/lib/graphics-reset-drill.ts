@@ -1,17 +1,21 @@
 /**
- * `?graphicsReset=<seconds>[:never]`: a drill for real devices (the device day).
+ * `?graphicsReset=<seconds>[:never|:error]`: a drill for real devices (the device day).
  *
  * After the view has drawn for that long, take its graphics away exactly as a
  * browser does: destroy the WebGPU device, or lose the WebGL context through
  * WEBGL_lose_context and hand it back a second later (or never, with
- * `:never`). Recovery can then be watched on a phone without a cable and an
- * inspector. It affects only a page whose own address asks for it, and runs
- * once per view, so a restored view is never taken away again.
+ * `:never`). With `:error`, nothing is taken: the WebGPU device gets one
+ * uncaptured validation error instead, and the view must keep drawing.
+ * Recovery can then be watched on a phone without a cable and an inspector.
+ * It affects only a page whose own address asks for it, and runs once per
+ * view, so a restored view is never taken away again.
  */
 export interface GraphicsResetDrill {
   readonly afterMs: number;
   /** False for `:never`: the browser keeps the context, so the view needs a new canvas. */
   readonly handBack: boolean;
+  /** "error" for `:error`: one uncaptured WebGPU error, not a loss. */
+  readonly fault: "loss" | "error";
 }
 
 const LONGEST_WAIT_S = 600;
@@ -23,14 +27,14 @@ export function readGraphicsResetDrill(search: string): GraphicsResetDrill | nul
   const [seconds = "", mode] = value.split(":");
   const parsed = Number(seconds);
   if (seconds === "" || !Number.isFinite(parsed) || parsed < 0 || parsed > LONGEST_WAIT_S) return null;
-  if (mode !== undefined && mode !== "never") return null;
-  return { afterMs: Math.round(parsed * 1_000), handBack: mode === undefined };
+  if (mode !== undefined && mode !== "never" && mode !== "error") return null;
+  return { afterMs: Math.round(parsed * 1_000), handBack: mode !== "never", fault: mode === "error" ? "error" : "loss" };
 }
 
 interface DrillLoseContext { loseContext(): void; restoreContext(): void }
 interface DrillTarget {
   /** The view's WebGPU device; null on WebGL. */
-  readonly device: { destroy(): void } | null;
+  readonly device: { destroy(): void; createBuffer?: (descriptor: { size: number; usage: number }) => unknown } | null;
   readonly canvas: { getContext(kind: "webgl2"): { getExtension(name: "WEBGL_lose_context"): DrillLoseContext | null } | null } | null;
 }
 
@@ -41,6 +45,12 @@ export function startGraphicsResetDrill(owner: object, drill: GraphicsResetDrill
   if (drilled.has(owner)) return () => undefined;
   const timer = setTimeout(() => {
     drilled.add(owner);
+    if (drill.fault === "error") {
+      // A buffer with no usage fails validation outside any error scope. WebGL
+      // reports no uncaptured errors to a page, so there is nothing to drill there.
+      target.device?.createBuffer?.({ size: 4, usage: 0 });
+      return;
+    }
     if (target.device !== null) {
       target.device.destroy();
       return;

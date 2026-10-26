@@ -19,6 +19,8 @@ room walk (`/room/grand-hall`) is checked on a preview build only.
 after it first draws, exactly as a browser does: it destroys the WebGPU device,
 or loses the WebGL context and hands it back a second later. Adding `:never`
 keeps the context away, which is the case where the view needs a new canvas.
+Adding `:error` takes nothing away: it gives a WebGPU view one GPU error of the
+kind a phone can produce (a bad upload), and the view must simply keep drawing.
 
 | # | Open | Before the reset | Expect | Pass if back within |
 |---|---|---|---|---|
@@ -27,6 +29,7 @@ keeps the context away, which is the case where the view needs a new canvas.
 | 3 | `/tour?graphicsReset=20` | Walk two viewpoints in, look at a portrait | The same viewpoint and portrait | 5 s |
 | 4 | `/tour?graphicsReset=20:never` | The same | The same viewpoint; the look may turn back to the viewpoint's opening | 10 s |
 | 5 | `/room/grand-hall?graphicsReset=30` (preview build only) | Walk to the far wall | The same place and view | 10 s |
+| 6 | `/plan?space=grand-hall&graphicsReset=30:error` (WebGPU devices only) | Place a table, select it | Nothing at all: no cover, no message, the room keeps moving as you orbit | (no pause) |
 
 The cover stays until the room has actually drawn again, and that first frame
 recompiles every shader on the device. On the RTX 4090 that took 0.9–2.4 s, so
@@ -61,4 +64,10 @@ One row per check:
 Add the rows to the device-day report next to the frame-rate numbers. For a
 fail, note the address, the step and what was on screen, and screenshot it if
 you can. A stopped card that reads "The 3D view stopped" means recovery gave up
-after three tries; press "Try 3D again" once and note whether that works.
+after three tries; press "Try 3D again" once and note whether that works. If it
+does not, press "Continue in 2D": the same layout must open in 2D at the same
+address, without the page reloading. Note whether it did.
+
+While the planner shows "Restoring the 3D view" over the Grand Hall, the cover
+should be the hall's own dark ground, not a light flash. Note any frame where
+it was not.

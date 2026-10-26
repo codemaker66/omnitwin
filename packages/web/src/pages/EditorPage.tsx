@@ -35,6 +35,7 @@ import {
 } from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
 import { recordPlannerArrivalChoice } from "../lib/planner-room-arrival.js";
+import { PlannerWorkContext, type PlannerWork } from "../components/scene/planner-work.js";
 import "../components/editor/MobilePlannerChrome.css";
 
 // CARD A1 (G1a): the Reception Room owns the default /plan experience — it is
@@ -473,10 +474,15 @@ function PlannerChrome(): React.ReactElement {
         </div>
       )}
     >
-      <PlannerChromeV2 />
+      <PlannerWorkContext.Provider value={NO_2D_VIEW}>
+        <PlannerChromeV2 />
+      </PlannerWorkContext.Provider>
     </Suspense>
   );
 }
+
+/** The new chrome's layout, with no 2D view of it yet (until Plan's Drawing). */
+const NO_2D_VIEW: PlannerWork = { continueIn2d: null };
 
 /** The new chrome (T-671), loaded only behind its flag. */
 const PlannerChromeV2 = lazy(async () => {
@@ -540,6 +546,10 @@ function PlannerCommsLayer(): React.ReactElement {
     recordPlannerArrivalChoice();
     setViewMode(nextMode);
   }, [timelinePreviewActive]);
+  // A 3D view that cannot draw continues in this layout's 2D view, in place.
+  const plannerWork = useMemo<PlannerWork>(() => ({
+    continueIn2d: timelinePreviewActive ? null : () => { changeViewMode("2d"); },
+  }), [changeViewMode, timelinePreviewActive]);
   return (
     <>
       <EditorBridge />
@@ -577,7 +587,9 @@ function PlannerCommsLayer(): React.ReactElement {
         }}
       >
         {viewMode === "3d" ? (
-          <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+          <PlannerWorkContext.Provider value={plannerWork}>
+            <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+          </PlannerWorkContext.Provider>
         ) : (
           <BlueprintPage source="editor-store" />
         )}

@@ -113,9 +113,30 @@ that never returns gets a new canvas (a remount, which re-streams the capture
 and keeps only what lives outside the canvas: layout, selection, the planner's
 pose). Attempts back off 0/1/3 s, the third is a remount, each times out after
 15 s, and three losses in a minute stop. Then the existing stopped card offers
-"Try 3D again"; `surface="walk"` (the room walk) promises no layout and offers
-no 2D planner. The tour (`/tour`, a classic `WebGLRenderer`) restores in place
-on the same policy through `twin/TwinContextLossWatch.tsx`.
+"Try 3D again". Inside the editor (`PlannerWorkContext`,
+`components/scene/planner-work.ts`) the view holds someone's layout: the card
+says it is safe and offers "Continue in 2D", which switches the editor's own
+view mode in place (no reload, same address; not during a timeline preview,
+not yet in the v2 chrome). Anywhere else (a landing, `/room/...`) the view
+defaults to `surface="walk"`, which promises no layout. The cover and the
+stopped card take the scene's own background colour, read at the loss, so the
+dark hall is not covered in cream. The tour (`/tour`, a classic
+`WebGLRenderer`) restores in place on the same policy through
+`twin/TwinContextLossWatch.tsx`.
+
+An uncaptured WebGPU error (validation, out of memory, internal) is not a lost
+device. Three r186 forwards each one to `renderer.onError` as
+`{ api, type, message }` and documents it as non-escalating; one bad upload or
+draw is usually followed by good frames. `lib/native-gpu-error-watch.ts`
+reports each distinct message once (`console.warn`; at most five per view;
+F-07's Sentry warning belongs there) and asks for a frame. A frame counts as
+having got through once 250 ms pass with no further error, because errors
+arrive a frame or two after the submission that caused them. Only when 3 s pass
+with no frame getting through is the view broken. It then gets one fresh device
+by the same swap; the same errors on that device are the scene's own, and the
+view stops with the stopped card. The app's own failures (a resident splat sort
+that died, a GPU readiness callback that threw) still reach `onError` as a
+message string and stop the view at once.
 
 Three r186 facts this depends on, each pinned by a test:
 
