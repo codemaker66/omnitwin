@@ -1,6 +1,10 @@
 import { seatBaseSlug, seatsFor } from "@omnitwin/types";
+import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItemBySlug, type CatalogueItem } from "./catalogue.js";
+import { isDiningTableItem } from "./furniture-semantics.js";
+import { createPlacedItem, generatePlacedId, type PlacedItem } from "./placement.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
+import { createTableGroup } from "./table-group.js";
 
 // ---------------------------------------------------------------------------
 // The cards' definitions (card-dock spec §5–§6; slices E0).
@@ -257,6 +261,223 @@ export function describeCard(params: CardParams): CardFace {
       return { name: item?.name ?? params.slug, size: item === undefined ? "" : pieceSize(item), seats };
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Stamping: the pieces a card sets down (spec §6, Q-08a)
+//
+// The ghost draws exactly what `stampSetup` returns and the commit places
+// exactly that, so preview and result never differ. A table and its chairs
+// share one groupId; a dance floor is one group with no table; a run of
+// trestles gives each trestle its own group with its own chairs, bound into
+// one set by setId so each trestle's chairs still re-ring on their own.
+// Positions are render-space, turned about the stamp's origin.
+// ---------------------------------------------------------------------------
+
+export interface StampOrigin {
+  readonly x: number;
+  readonly z: number;
+  /** The surface the set stands on (0 is the floor). */
+  readonly y?: number;
+}
+
+/** A local offset (before turning) as a world offset, by the planner's convention for chairs round a table. */
+function turned(localX: number, localZ: number, rotationY: number): { readonly x: number; readonly z: number } {
+  const cos = Math.cos(rotationY);
+  const sin = Math.sin(rotationY);
+  return { x: localX * cos + localZ * sin, z: -localX * sin + localZ * cos };
+}
+
+/** A world offset as a local one: the inverse of `turned`. */
+function unturned(dx: number, dz: number, rotationY: number): { readonly x: number; readonly z: number } {
+  const cos = Math.cos(rotationY);
+  const sin = Math.sin(rotationY);
+  return { x: dx * cos - dz * sin, z: dx * sin + dz * cos };
+}
+
+function stampPiece(item: CatalogueItem, seats: number | null, origin: StampOrigin, rotationY: number, newId: () => string): readonly PlacedItem[] {
+  const y = origin.y ?? 0;
+  if (seats !== null && seats > 0 && isDiningTableItem(item)) {
+    return createTableGroup(item.id, origin.x, origin.z, rotationY, seats, y, newId);
+  }
+  return [createPlacedItem(item.id, origin.x, origin.z, rotationY, null, y, newId())];
+}
+
+function stampDanceFloor(params: DanceFloorCardParams, origin: StampOrigin, rotationY: number, newId: () => string): readonly PlacedItem[] {
+  const panel = getCatalogueItemBySlug(DANCE_FLOOR_PANEL_SLUG);
+  if (panel === undefined) return [];
+  const size = toRenderSpace(panel.width);
+  const groupId = newId();
+  const panels: PlacedItem[] = [];
+  for (let row = 0; row < params.rows; row += 1) {
+    for (let col = 0; col < params.cols; col += 1) {
+      const offset = turned((col - (params.cols - 1) / 2) * size, (row - (params.rows - 1) / 2) * size, rotationY);
+      panels.push(createPlacedItem(panel.id, origin.x + offset.x, origin.z + offset.z, rotationY, groupId, origin.y ?? 0, newId()));
+    }
+  }
+  return panels;
+}
+
+function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rotationY: number, newId: () => string): readonly PlacedItem[] {
+  const trestle = cardMainItem(params);
+  if (trestle === undefined) return [];
+  const length = toRenderSpace(trestle.width);
+  const setId = params.trestles > 1 ? newId() : undefined;
+  const side = params.card === "top-table" ? "back" : "around";
+  const pieces: PlacedItem[] = [];
+  for (let i = 0; i < params.trestles; i += 1) {
+    const offset = turned((i - (params.trestles - 1) / 2) * length, 0, rotationY);
+    const group = createTableGroup(
+      trestle.id,
+      origin.x + offset.x,
+      origin.z + offset.z,
+      rotationY,
+      SEATS_PER_TRESTLE[params.card],
+      origin.y ?? 0,
+      newId,
+      side,
+    );
+    pieces.push(...(setId === undefined ? group : group.map((piece) => ({ ...piece, setId }))));
+  }
+  return pieces;
+}
+
+/**
+ * The pieces this card sets down at this pose (spec §6). `newId` lets the
+ * ghost keep the same ids frame to frame; the commit takes fresh ones.
+ */
+export function stampSetup(
+  params: CardParams,
+  origin: StampOrigin,
+  rotationY: number,
+  newId: () => string = generatePlacedId,
+): readonly PlacedItem[] {
+  switch (params.card) {
+    case "round":
+    case "piece": {
+      const item = cardMainItem(params);
+      return item === undefined ? [] : stampPiece(item, params.seats, origin, rotationY, newId);
+    }
+    case "dance-floor": return stampDanceFloor(params, origin, rotationY, newId);
+    case "top-table":
+    case "long-table": return stampTrestleRun(params, origin, rotationY, newId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A placed dance floor: read its grid back, and resize it in whole panels.
+// ---------------------------------------------------------------------------
+
+export interface DanceFloorGrid {
+  readonly cols: number;
+  readonly rows: number;
+  /** The floor's centre (render-space). */
+  readonly x: number;
+  readonly z: number;
+  readonly y: number;
+  readonly rotationY: number;
+}
+
+/** Panels this far (render units) from a whole-panel position still count as on the grid. */
+const GRID_TOLERANCE = 0.01;
+
+interface PanelCell {
+  readonly piece: PlacedItem;
+  readonly col: number;
+  readonly row: number;
+}
+
+function panelCells(panels: readonly PlacedItem[]): { readonly cells: readonly PanelCell[]; readonly size: number; readonly first: PlacedItem } | null {
+  const first = panels[0];
+  const panel = getCatalogueItemBySlug(DANCE_FLOOR_PANEL_SLUG);
+  if (first === undefined || panel === undefined) return null;
+  const size = toRenderSpace(panel.width);
+  const cells: PanelCell[] = [];
+  for (const piece of panels) {
+    if (piece.catalogueItemId !== panel.id && piece.catalogueItemId !== panel.slug) return null;
+    const local = unturned(piece.x - first.x, piece.z - first.z, first.rotationY);
+    const col = Math.round(local.x / size);
+    const row = Math.round(local.z / size);
+    if (Math.abs(local.x - col * size) > GRID_TOLERANCE || Math.abs(local.z - row * size) > GRID_TOLERANCE) return null;
+    cells.push({ piece, col, row });
+  }
+  return { cells, size, first };
+}
+
+/** The whole grid a dance floor's panels form, or null when they do not form one. */
+export function danceFloorGrid(panels: readonly PlacedItem[]): DanceFloorGrid | null {
+  const read = panelCells(panels);
+  if (read === null) return null;
+  const cols = read.cells.map((cell) => cell.col);
+  const rows = read.cells.map((cell) => cell.row);
+  const col0 = Math.min(...cols);
+  const row0 = Math.min(...rows);
+  const width = Math.max(...cols) - col0 + 1;
+  const depth = Math.max(...rows) - row0 + 1;
+  const filled = new Set(read.cells.map((cell) => `${String(cell.col)},${String(cell.row)}`));
+  if (filled.size !== read.cells.length || filled.size !== width * depth) return null;
+  const centre = turned((col0 + (width - 1) / 2) * read.size, (row0 + (depth - 1) / 2) * read.size, read.first.rotationY);
+  return {
+    cols: width,
+    rows: depth,
+    x: read.first.x + centre.x,
+    z: read.first.z + centre.z,
+    y: read.first.y,
+    rotationY: read.first.rotationY,
+  };
+}
+
+/** Which edge holds still as a floor is resized: −1 its low side, 1 its high side, 0 its centre. */
+export interface ResizeAnchor {
+  readonly x: -1 | 0 | 1;
+  readonly z: -1 | 0 | 1;
+}
+
+/**
+ * The dance floor resized to `cols` × `rows` whole panels, as `resizeArea`
+ * commits it: the anchored edge holds still, panels already in place keep
+ * their ids, and new panels take the group's. Null when the panels do not
+ * form one grid.
+ */
+export function resizeDanceFloor(
+  panels: readonly PlacedItem[],
+  cols: number,
+  rows: number,
+  anchor: ResizeAnchor = { x: 0, z: 0 },
+  newId: () => string = generatePlacedId,
+): readonly PlacedItem[] | null {
+  const read = panelCells(panels);
+  const grid = danceFloorGrid(panels);
+  if (read === null || grid === null) return null;
+  const nextCols = Math.min(DANCE_FLOOR_PANELS.max, Math.max(DANCE_FLOOR_PANELS.min, Math.round(cols)));
+  const nextRows = Math.min(DANCE_FLOOR_PANELS.max, Math.max(DANCE_FLOOR_PANELS.min, Math.round(rows)));
+  const col0 = Math.min(...read.cells.map((cell) => cell.col));
+  const row0 = Math.min(...read.cells.map((cell) => cell.row));
+  // The new grid's first cell, in the old grid's cells: anchored low, high or about the centre.
+  const startCol = anchor.x === -1 ? col0 : anchor.x === 1 ? col0 + grid.cols - nextCols : col0 + (grid.cols - nextCols) / 2;
+  const startRow = anchor.z === -1 ? row0 : anchor.z === 1 ? row0 + grid.rows - nextRows : row0 + (grid.rows - nextRows) / 2;
+
+  const byCell = new Map(read.cells.map((cell) => [`${String(cell.col)},${String(cell.row)}`, cell.piece]));
+  const kept = new Set<string>();
+  const slots: { readonly col: number; readonly row: number; readonly piece: PlacedItem | undefined }[] = [];
+  for (let row = 0; row < nextRows; row += 1) {
+    for (let col = 0; col < nextCols; col += 1) {
+      const atCol = startCol + col;
+      const atRow = startRow + row;
+      const piece = Number.isInteger(atCol) && Number.isInteger(atRow) ? byCell.get(`${String(atCol)},${String(atRow)}`) : undefined;
+      if (piece !== undefined) kept.add(piece.id);
+      slots.push({ col: atCol, row: atRow, piece });
+    }
+  }
+  // A panel already in its cell stays exactly as it is. Panels the new grid
+  // leaves are reused for its new cells before any new id is taken.
+  const spare = read.cells.map((cell) => cell.piece).filter((piece) => !kept.has(piece.id));
+  return slots.map((slot) => {
+    if (slot.piece !== undefined) return slot.piece;
+    const offset = turned(slot.col * read.size, slot.row * read.size, read.first.rotationY);
+    const base = spare.shift() ?? { ...read.first, id: newId() };
+    return { ...base, x: read.first.x + offset.x, z: read.first.z + offset.z, y: grid.y, rotationY: grid.rotationY, groupId: read.first.groupId };
+  });
 }
 
 /**

@@ -382,7 +382,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   // photographs, the walls' detail (useHallDetail) and the beyond's photographs.
   const photos = useMemo(() => new HallPhotos(), [quality]);
   useEffect(() => () => { photos.dispose(); }, [photos]);
-  const { layer: detail, wake: detailWake } = useHallDetail(detailSlots, quality, invalidate);
+  const { layer: detail, wake: detailWake } = useHallDetail(detailSlots, quality, invalidate, {}, gl);
   const beyondPhotos = useMemo(() => (wantsBeyondPhotos(sectionPreset) ? new HallBeyondPhotos() : null), [sectionPreset]);
   useEffect(() => () => { beyondPhotos?.dispose(); }, [beyondPhotos]);
   const resources = useMemo(
