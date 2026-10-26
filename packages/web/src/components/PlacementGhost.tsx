@@ -91,6 +91,7 @@ export function PlacementGhost(): React.ReactElement | null {
   const { invalidate, scene, camera, raycaster, gl } = useThree();
   const selectedItemId = useCatalogueStore((s) => s.selectedItemId);
   const cardParams = useCatalogueStore((s) => s.cardParams);
+  const armedCardId = useCatalogueStore((s) => s.armedCardId);
   const fromCardDrag = useCatalogueStore((s) => s.dragActive);
   const hasGhost = usePlacementStore((s) => s.ghostPosition !== null);
   const ghostRotation = usePlacementStore((s) => s.ghostRotation);
@@ -137,14 +138,16 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // Warm the ghost on arm: the piece is built and drawn, too small to see,
   // just ahead of the camera, for its first frames in hand, so its materials
-  // compile as it is armed rather than on the first frame of a drag.
+  // compile as it is armed rather than on the first frame of a drag. A card armed over
+  // the same piece warms too: the Round of 10's table is the list's round table, but
+  // its chairs are new to the hand.
   useEffect(() => {
     if (selectedItemId === null || dressing) return;
     warmFrames.current = WARM_FRAMES;
     warmWaits.current = 0;
     setWarming(true);
     invalidateRef.current();
-  }, [selectedItemId, dressing]);
+  }, [selectedItemId, armedCardId, dressing]);
 
   useFrame(() => {
     const pointer = pendingPointer.current;

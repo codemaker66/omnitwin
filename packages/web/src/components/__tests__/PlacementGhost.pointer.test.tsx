@@ -185,6 +185,21 @@ describe("a card's set warms as a piece does", () => {
     expect(ghostSet.warming).toBe(false);
   });
 
+  it("warms the set when a card is armed over the same table picked from the list", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft-white");
+    if (table === undefined) throw new Error("Missing the round table");
+    setPlannerFeaturesForTesting(null);
+    act(() => { useCatalogueStore.getState().selectItem(table.id); });
+    render(<PlacementGhost />);
+    // The piece's warm-up ends (the page draws no three ghost for it here).
+    runFrame();
+    act(() => { useCatalogueStore.getState().armCard("round"); });
+    // The hand holds the same table, now with its ring of chairs: the set warms all the same.
+    expect(useCatalogueStore.getState().selectedItemId).toBe(table.id);
+    expect(ghostSet.card).toBe("round");
+    expect(ghostSet.warming).toBe(true);
+  });
+
   it("leaves the set where GhostSet stands it", () => {
     const set = armedSet();
     set.visible = true;
