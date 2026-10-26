@@ -7,9 +7,9 @@ import { DEFAULT_PLANNER_CHAIR_SLUG } from "../../lib/furniture-defaults.js";
 import { createPlacedItem } from "../../lib/placement.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
-import { InstancedFurnitureLayer } from "../editor/InstancedFurnitureLayer.js";
-import { instanceCapacityFor } from "../editor/InstancedFurnitureLayer.js";
-import { landsWith, poolsLanding, WARM_PLACED_FRAMES, WarmPieceInHand, WarmPlacedVariants } from "../WarmPlacedVariants.js";
+import { instanceCapacityFor, InstancedFurnitureLayer } from "../editor/InstancedFurnitureLayer.js";
+import { noteMainDraw } from "../../lib/main-draw-clock.js";
+import { landsWith, poolsLanding, WARM_PLACED_FRAMES, WARM_PLACED_UPDATES, WarmPieceInHand, WarmPlacedVariants } from "../WarmPlacedVariants.js";
 import { mountInStubRoot, type StubRoot } from "./stub-r3f-root.js";
 
 function catalogueItem(slug: string): CatalogueItem {
@@ -98,6 +98,12 @@ function frame(): void {
   act(() => { advance(performance.now(), true); });
 }
 
+/** A frame NativeCanvas draws: the update, then the main view's draw. */
+function drawnFrame(): void {
+  frame();
+  noteMainDraw(performance.now());
+}
+
 const seen: { camera: Camera | null } = { camera: null };
 function CameraProbe(): null {
   seen.camera = useThree((state) => state.camera);
@@ -155,7 +161,7 @@ describe("WarmPlacedVariants", () => {
     expect(warm).toEqual(placed);
   });
 
-  it("draws one instance of each, too small to see, just ahead of the camera, for its first frames only", () => {
+  it("draws one instance of each, too small to see, just ahead of the camera, for its first draws only", () => {
     mounted = mountInStubRoot(
       <>
         <CameraProbe />
@@ -169,7 +175,7 @@ describe("WarmPlacedVariants", () => {
     if (batches === null || batches === undefined || seen.camera === null) throw new Error("Nothing warmed");
 
     for (let drawn = 0; drawn < WARM_PLACED_FRAMES; drawn++) {
-      frame();
+      drawnFrame();
       expect(batches.visible).toBe(true);
     }
     const ahead = seen.camera.getWorldDirection(new Vector3()).add(seen.camera.position);
@@ -177,6 +183,19 @@ describe("WarmPlacedVariants", () => {
     expect(batches.scale.x).toBeLessThan(1e-3);
 
     frame();
+    expect(batches.visible).toBe(false);
+  });
+
+  it("keeps warming through updates the paced canvas did not draw, and gives up only after many", () => {
+    mounted = mountInStubRoot(<WarmPlacedVariants pools={[{ item: TABLE, capacity: FIRST }]} />);
+    const batches = instancedUnder(mounted.scene, "warm-placed-variants")[0]?.parent;
+    if (batches === null || batches === undefined) throw new Error("Nothing warmed");
+
+    // Updates that drew nothing (the GPU behind) do not count.
+    for (let update = 0; update < WARM_PLACED_FRAMES * 3; update++) frame();
+    expect(batches.visible).toBe(true);
+    // Where nothing ever draws, the warm-up stops asking.
+    for (let update = 0; update < WARM_PLACED_UPDATES; update++) frame();
     expect(batches.visible).toBe(false);
   });
 

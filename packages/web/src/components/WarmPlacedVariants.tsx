@@ -21,7 +21,7 @@
 // program with the layer's. Numbered in each shader's own order, they do.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useLayoutEffect, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Matrix4, Object3D, Vector3, type Group, type InstancedMesh } from "three";
 import { createEditableInstancePool, disposeVariant, harvestVariant, instanceCapacityFor } from "./editor/InstancedFurnitureLayer.js";
@@ -30,12 +30,19 @@ import { GltfFurnitureTemplateContext } from "./meshes/GltfFurnitureTemplateCont
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../lib/catalogue.js";
 import { DEFAULT_PLANNER_CHAIR_SLUG } from "../lib/furniture-defaults.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
+import { onMainDraw } from "../lib/main-draw-clock.js";
 import { isTableDressingApplicator } from "../lib/table-dressing.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 
-/** Frames each batch is drawn: enough for every pass of the frame to draw it once. */
+/** Draws of the main view the batches take part in: enough for every pass of a frame to draw them. */
 export const WARM_PLACED_FRAMES = 3;
+/**
+ * Frame updates the warm-up asks for at most. NativeCanvas paces its draws by the GPU's progress, so
+ * an update behind unfinished GPU work draws nothing (lib/main-draw-clock.ts): the warm-up counts draws,
+ * and asks for updates until it has them, but not forever where nothing draws.
+ */
+export const WARM_PLACED_UPDATES = 60;
 const WARM_SCALE = 1e-4;
 const IDENTITY = new Matrix4();
 const _ahead = new Vector3();
@@ -67,7 +74,8 @@ export function WarmPlacedVariants({ pools }: WarmPlacedVariantsProps): ReactEle
   const invalidate = useThree((state) => state.invalidate);
   const templates = useRef<Group>(null);
   const batches = useRef<Group>(null);
-  const framesLeft = useRef(0);
+  const drawsLeft = useRef(0);
+  const updatesLeft = useRef(0);
   // An imported model resolves after mount; its template then harvests again, as the layer's does.
   const [templateRevision, setTemplateRevision] = useState(0);
   const onTemplateReady = useCallback(() => { setTemplateRevision((revision) => revision + 1); }, []);
@@ -103,7 +111,8 @@ export function WarmPlacedVariants({ pools }: WarmPlacedVariantsProps): ReactEle
       pool.matrices.needsUpdate = true;
     }
     if (meshes.length > 0) target.add(...meshes);
-    framesLeft.current = WARM_PLACED_FRAMES;
+    drawsLeft.current = WARM_PLACED_FRAMES;
+    updatesLeft.current = WARM_PLACED_UPDATES;
     target.visible = meshes.length > 0;
     invalidate();
     return () => {
@@ -114,15 +123,21 @@ export function WarmPlacedVariants({ pools }: WarmPlacedVariantsProps): ReactEle
     // poolsKey is the identity of `pools`, read inside.
   }, [poolsKey, templateRevision, invalidate]);
 
+  // A draw of the main view while the batches are shown is a draw they took part in.
+  useEffect(() => onMainDraw(() => {
+    const target = batches.current;
+    if (target instanceof Object3D && target.visible && drawsLeft.current > 0) drawsLeft.current -= 1;
+  }), []);
+
   useFrame(() => {
     const target = batches.current;
     if (!(target instanceof Object3D) || !target.visible) return;
-    // Drawn for WARM_PLACED_FRAMES frames, then hidden on the next.
-    if (framesLeft.current === 0) {
+    // Shown until WARM_PLACED_FRAMES draws have taken them in, then hidden on the next update.
+    if (drawsLeft.current === 0 || updatesLeft.current === 0) {
       target.visible = false;
       return;
     }
-    framesLeft.current -= 1;
+    updatesLeft.current -= 1;
     camera.getWorldDirection(_ahead);
     target.position.copy(camera.position).addScaledVector(_ahead, 1);
     invalidate();
