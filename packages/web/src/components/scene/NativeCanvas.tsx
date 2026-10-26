@@ -10,7 +10,7 @@ import { usePlannerWork } from "./planner-work.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import {
   applyNativeRendererSettings, detachNativeWebGLBackend, isNativeWebGLBackend, readNativeRendererSettings,
-  registerNativeSceneRenderer, releaseLostWebGLRenderer, replaceStoreRenderer, withNativeRenderScope,
+  registerNativeSceneRenderer, releaseLostWebGLRenderer, replaceStoreRenderer, withNativeComposedFrame, withNativeRenderScope,
   type NativeRendererSettings,
 } from "../../lib/native-renderer.js";
 import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-frame-pacer.js";
@@ -794,9 +794,10 @@ export function NativeCanvas({
     owner.pacer.request(() => {
       const startedAt = performance.now();
       // A registered pipeline draws the whole frame (its own scene passes and
-      // the final output) through the same render wrapper.
+      // the final output) through the same render wrapper; its scene pass is
+      // this frame's main draw of the scene (withNativeComposedFrame).
       const composer = nativeFrameComposer(native);
-      if (composer !== null) composer();
+      if (composer !== null) withNativeComposedFrame(native, state.scene, state.camera, composer);
       else native.render(state.scene, state.camera);
       // The render wrapper reports main-frame errors through fail() and returns.
       // Never fence that failed draw or a renderer replaced during a callback.

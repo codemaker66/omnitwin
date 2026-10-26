@@ -358,6 +358,26 @@ describe("native complete draw lifecycle", () => {
     expect(state.runtime.capturePending(replacement)).toBe(false);
   });
 
+  it("reports each source it still holds as drawn again once a replacement renderer draws it", async () => {
+    const state = setup(), source = state.add(2);
+    await vi.advanceTimersByTimeAsync(50); state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+    state.detach();
+    state.runtime.attach(replacement, state.camera, state.invalidate);
+    await vi.advanceTimersByTimeAsync(50);
+    const object = state.draw();
+    if (object === undefined) throw new Error("Expected the replacement's draw");
+    withNativeRenderScope(replacement, state.scene, state.camera, () => {
+      Reflect.apply(object.onAfterRender.bind(object), object, [replacement, state.scene, state.camera, object.geometry, object.material, new Group()]);
+    });
+    await vi.advanceTimersByTimeAsync(16);
+    // The view counts arrivals afresh for a new renderer (hooks/use-chunk-arrivals.ts).
+    expect(source.rendered).toHaveBeenCalledTimes(2);
+  });
+
   it("stops expecting the capture on a replacement whose rebuild failed, and while nothing is selected", async () => {
     const state = setup(), source = state.add(2);
     await vi.advanceTimersByTimeAsync(50); state.render(); await vi.advanceTimersByTimeAsync(16);
