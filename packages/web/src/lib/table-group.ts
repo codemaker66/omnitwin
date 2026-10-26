@@ -333,10 +333,7 @@ export function rearrangeTableGroup(
 export function tableOwnChairs(table: PlacedItem, placedItems: readonly PlacedItem[]): readonly PlacedItem[] {
   if (table.groupId === null) return [];
   const group = placedItems.filter((p) => p.groupId === table.groupId && isSceneFurniturePlacement(p));
-  const tables = group.filter((p) => {
-    const item = getCatalogueItem(p.catalogueItemId);
-    return item !== undefined && isDiningTableItem(item);
-  });
+  const tables = diningTablesAmong(group);
   const chairs = group.filter((p) => p.id !== table.id && getCatalogueItem(p.catalogueItemId)?.category === "chair");
   if (tables.length <= 1) return chairs;
   return chairs.filter((chair) => {
@@ -350,6 +347,45 @@ export function tableOwnChairs(table: PlacedItem, placedItems: readonly PlacedIt
       }
     }
     return owner?.id === table.id;
+  });
+}
+
+/** The dining tables among placed pieces. */
+export function diningTablesAmong(pieces: readonly PlacedItem[]): readonly PlacedItem[] {
+  return pieces.filter((p) => {
+    const item = getCatalogueItem(p.catalogueItemId);
+    return item !== undefined && isDiningTableItem(item) && isSceneFurniturePlacement(p);
+  });
+}
+
+/**
+ * The pieces with the groups holding `ids` broken (Ungroup, Ctrl Shift G),
+ * no table broken from its chairs: each dining table keeps its own chairs
+ * (tableOwnChairs) in a group of their own, the old group where it held one
+ * table, and every other piece leaves. The same array when nothing would
+ * change: a lone table with its own chairs, which keeps them.
+ */
+export function ungroupedKeepingTables(
+  ids: ReadonlySet<string>,
+  placedItems: readonly PlacedItem[],
+  newId: () => string = generatePlacedId,
+): readonly PlacedItem[] {
+  const groupIds = new Set(placedItems.filter((p) => ids.has(p.id) && p.groupId !== null).map((p) => p.groupId));
+  const next = new Map<string, string | null>();
+  for (const groupId of groupIds) {
+    const members = placedItems.filter((p) => p.groupId === groupId);
+    const tables = diningTablesAmong(members);
+    for (const [i, table] of tables.entries()) {
+      const keep = tables.length === 1 || i === 0 ? groupId : newId();
+      next.set(table.id, keep);
+      for (const chair of tableOwnChairs(table, placedItems)) next.set(chair.id, keep);
+    }
+    for (const member of members) if (!next.has(member.id)) next.set(member.id, null);
+  }
+  if ([...next].every(([id, groupId]) => placedItems.find((p) => p.id === id)?.groupId === groupId)) return placedItems;
+  return placedItems.map((p) => {
+    const groupId = next.get(p.id);
+    return groupId === undefined || groupId === p.groupId ? p : { ...p, groupId };
   });
 }
 

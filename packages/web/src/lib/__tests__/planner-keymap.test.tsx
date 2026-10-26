@@ -1,7 +1,9 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  A_TABLE_KEEPS_ITS_CHAIRS,
   NUDGE_METRES,
+  TABLES_KEEP_THEIR_CHAIRS,
   arrowFloorDirection,
   nudgeMetres,
   placingKeyBindings,
@@ -21,6 +23,7 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 
 // ---------------------------------------------------------------------------
 // The planner's keymap (T-671 slice 5; spec 11 and 4.5) over the real stores.
@@ -173,6 +176,37 @@ describe("nudging", () => {
       expect(item.z).toBeCloseTo((was?.z ?? 0) - 0.1);
       expect(item.x).toBeCloseTo((was?.x ?? 0) + 1.01);
     }
+  });
+});
+
+describe("group and ungroup, tables keeping their own chairs (QoL B-03)", () => {
+  function bindSelectionKeys(): void {
+    cleanups.push(registerKeyBindings(selectionKeyBindings({
+      invalidate: () => undefined, cancelGesture: () => undefined, screenUp: SCREEN_UP_NORTH,
+    })));
+  }
+
+  it("refuses Ctrl G across two tables with the reason, and changes nothing", () => {
+    bindSelectionKeys();
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("Missing canonical table");
+    usePlacementStore.setState({ placedItems: [...usePlacementStore.getState().placedItems, ...createTableGroup(table.id, 4, 0, 0, 8)] });
+    const before = usePlacementStore.getState().placedItems;
+    useSelectionStore.getState().selectMultiple(before.map((item) => item.id));
+    usePlacementNoticeStore.getState().dismiss();
+    expect(press("KeyG", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(usePlacementStore.getState().placedItems).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(TABLES_KEEP_THEIR_CHAIRS);
+  });
+
+  it("refuses Ctrl Shift G on a lone table's own group with the reason, and its chairs stay", () => {
+    bindSelectionKeys();
+    const before = usePlacementStore.getState().placedItems;
+    useSelectionStore.getState().select(tableId);
+    usePlacementNoticeStore.getState().dismiss();
+    press("KeyG", { ctrlKey: true, shiftKey: true });
+    expect(usePlacementStore.getState().placedItems).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(A_TABLE_KEEPS_ITS_CHAIRS);
   });
 });
 

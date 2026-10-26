@@ -7,13 +7,14 @@ import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { postPlacementNotice } from "../stores/placement-notice-store.js";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
 import { ROTATION_SNAP_RAD, snapRotation } from "./selection.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
-import { tableGroupSeatCapacity, tableOwnChairs } from "./table-group.js";
+import { diningTablesAmong, tableGroupSeatCapacity, tableOwnChairs, ungroupedKeepingTables } from "./table-group.js";
 import {
   KEY_PRIORITY,
   letter,
@@ -252,20 +253,46 @@ function selectionIsOneGroup(ids: ReadonlySet<string>): boolean {
   return expanded.size >= 2 && groups.size === 1 && !groups.has(null);
 }
 
-/** Ctrl G groups the selection; a group breaks only on Ctrl Shift G (F-24). */
+/** Group's refusal to join two dining tables (QoL B-03): each keeps its own chairs. */
+export const TABLES_KEEP_THEIR_CHAIRS = "Tables keep their own chairs · select them together to move them";
+/** Ungroup's refusal on a lone table's own group. */
+export const A_TABLE_KEEPS_ITS_CHAIRS = "A table keeps its chairs";
+
+/**
+ * Ctrl G (and the deck's Group) groups the selection; a group breaks only on
+ * Ctrl Shift G (F-24). Two dining tables are never joined, each keeps its
+ * own chairs, so that is refused with the reason; a table with a lectern or
+ * a dance floor may group. True when the planner handled it, grouped or
+ * refused; false when there was nothing to group.
+ */
 export function groupSelection(): boolean {
   const ids = selectedIds();
   if (ids.size < 2 || selectionIsOneGroup(ids)) return false;
-  const expanded = expandIdsToGroupMembers(ids, usePlacementStore.getState().placedItems);
+  const placed = usePlacementStore.getState().placedItems;
+  const expanded = expandIdsToGroupMembers(ids, placed);
+  if (diningTablesAmong(placed.filter((item) => expanded.has(item.id))).length > 1) {
+    postPlacementNotice(TABLES_KEEP_THEIR_CHAIRS);
+    return true;
+  }
   asOneUndoStep(() => { usePlacementStore.getState().groupItems(expanded); });
   useSelectionStore.getState().selectMultiple([...expanded]);
   return true;
 }
 
+/**
+ * Ctrl Shift G (and the deck's Ungroup) breaks the selected group, each
+ * table keeping its own chairs; on a lone table's own group, where only its
+ * chairs would leave it, it is refused with the reason. True when handled.
+ */
 export function ungroupSelection(): boolean {
   const ids = selectedIds();
   if (!selectionIsOneGroup(ids)) return false;
-  const expanded = expandIdsToGroupMembers(ids, usePlacementStore.getState().placedItems);
+  const placed = usePlacementStore.getState().placedItems;
+  const expanded = expandIdsToGroupMembers(ids, placed);
+  if (ungroupedKeepingTables(expanded, placed) === placed) {
+    postPlacementNotice(A_TABLE_KEEPS_ITS_CHAIRS);
+    return true;
+  }
   asOneUndoStep(() => { usePlacementStore.getState().ungroupItems(expanded); });
   useSelectionStore.getState().selectMultiple([...expanded]);
   return true;
