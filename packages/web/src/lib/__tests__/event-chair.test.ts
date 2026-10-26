@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FILL_AISLE_RULE, grandHallExits, planAutoFill, planBanquetFill, planGangwayFill } from "../auto-fill.js";
+import { FILL_AISLE_RULE, fillRefillIds, grandHallExits, planAutoFill, planBanquetFill, planGangwayFill, refillPieces } from "../auto-fill.js";
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../catalogue.js";
 import { PLANNER_CHAIR_BY_EVENT, plannerChairSlug, UNASKED_PLANNER_CHAIR_SLUG } from "../furniture-defaults.js";
-import type { PlacedItem } from "../placement.js";
+import { stockIdentity } from "../card-stock.js";
+import { createPlacedItem, type PlacedItem } from "../placement.js";
 import { cardParamsFor, stampSetup, type CardParams } from "../setup-cards.js";
 import { createTableGroup, newSeatChairSlug, rearrangeTableGroup } from "../table-group.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
@@ -108,6 +109,52 @@ describe("a table keeps its own chairs", () => {
     if (table === undefined) throw new Error("no table");
     expect(placed).toHaveLength(1);
     expect(chairSlugs(rearrangeTableGroup(table.id, 10, placed))).toEqual(tenOf("chiavari-chair"));
+  });
+
+  it("gives a mixed table the chair most of its seats are", () => {
+    const turinis = createTableGroup(ROUND.id, 0, 0, 0, 3);
+    const [table] = turinis;
+    if (table === undefined) throw new Error("no table");
+    const chiavari = { ...createPlacedItem(item("chiavari-chair").id, 1, 1, 0, table.groupId), id: "odd-one" };
+    atEvent("wedding");
+    expect(newSeatChairSlug(table, [...turinis, chiavari])).toBe("burgess-turini-18-3");
+  });
+
+  it("keeps a top table's chairs where they stand when its count changes at another event", () => {
+    const params = cardParamsFor("top-table");
+    if (params === null) throw new Error("no top table");
+    const placed = stampSetup(params, { x: 0, z: 0 }, 0);
+    const [table] = placed;
+    if (table === undefined) throw new Error("no table");
+    const own = (pieces: readonly PlacedItem[]): readonly PlacedItem[] => pieces.filter((piece) => piece.groupId === table.groupId && piece.id !== table.id);
+    const before = own(placed);
+    atEvent("wedding");
+    const after = own(rearrangeTableGroup(table.id, before.length - 1, placed));
+    expect(new Set(chairSlugs(after))).toEqual(new Set(["burgess-turini-18-3"]));
+    // Along the back, set off by the Turini's depth, not the Chiavari's.
+    for (const chair of after) expect(Math.abs(chair.z - table.z)).toBeCloseTo(Math.abs((before[0]?.z ?? Number.NaN) - table.z), 9);
+  });
+});
+
+describe("Fill at a wedding", () => {
+  it("re-lays the room on Chiavari, keeping each old chair's record", () => {
+    const placed = createTableGroup(ROUND.id, 0, 0, 0, 10);
+    const oldChairIds = new Set(placed.slice(1).map((piece) => piece.id));
+    atEvent("wedding");
+    const plan = planGangwayFill({ table: ROUND, seatsPerTable: 10, guests: 0, ...HALL, exits: grandHallExits(), rule: FILL_AISLE_RULE });
+    if (plan === null) throw new Error("no plan");
+    const pieces = refillPieces(placed, fillRefillIds(placed, ROUND), plan);
+    const kept = pieces.filter((piece) => oldChairIds.has(piece.id));
+    expect(kept).toHaveLength(10);
+    expect(new Set(chairSlugs(kept))).toEqual(new Set(["chiavari-chair"]));
+    expect(new Set(chairSlugs(pieces))).toEqual(new Set(["chiavari-chair"]));
+  });
+});
+
+describe("the store's count at a wedding", () => {
+  it("counts the Chiavari as itself and the Turini as the venue's pink chair", () => {
+    expect(stockIdentity(item("chiavari-chair").id)).toBe(item("chiavari-chair").id);
+    expect(stockIdentity(item("burgess-turini-18-3").id)).toBe(item("pink-chair").id);
   });
 });
 

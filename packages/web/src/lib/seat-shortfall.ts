@@ -50,6 +50,8 @@ export interface SeatShortfallInput {
   /** The room's interior, metres. */
   readonly roomWidthM: number;
   readonly roomLengthM: number;
+  /** The chair new tables are set with; the event's (plannerChairSlug) unless named. */
+  readonly chairSlug?: string;
 }
 
 export interface SeatShortfallFixResult {
@@ -129,8 +131,8 @@ function freeTableSpots(input: SeatShortfallInput, table: CatalogueItem, seats: 
   if (wanted <= 0) return [];
   const clearance = BANQUET_CHAIR_CLEARANCE_M;
   const round = table.tableShape === "round";
-  const footprint = tableGroupPlanningFootprint(table, seats);
-  const radius = round ? tableGroupPlanningRadius(table, seats) : 0;
+  const footprint = tableGroupPlanningFootprint(table, seats, input.chairSlug);
+  const radius = round ? tableGroupPlanningRadius(table, seats, input.chairSlug) : 0;
   const hw = round ? radius : footprint.width / 2;
   const hd = round ? radius : footprint.depth / 2;
 
