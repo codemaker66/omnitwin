@@ -7,6 +7,7 @@ import { useFrame } from "@react-three/fiber";
 import type { NativeGpuWorkResult } from "../../../lib/native-gpu-completion.js";
 import type { GpuProfileToken } from "../../../lib/perf-runtime.js";
 import type { RenderedFrameSample } from "../../../lib/perf-profiler.js";
+import type { NativeScenePerfStats } from "../../../lib/native-splat-scene.js";
 
 interface FiberState {
   gl: object;
@@ -28,15 +29,18 @@ const profiling = vi.hoisted(() => ({
   enabled: vi.fn(() => false), begin: vi.fn((): GpuProfileToken | null => null), end: vi.fn(),
   record: vi.fn<(sample: RenderedFrameSample, renderer: object) => void>(),
   release: vi.fn(), register: vi.fn(),
-  sceneStats: vi.fn(() => ({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 })),
+  sceneStats: vi.fn((): NativeScenePerfStats | null => ({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 })),
   sampleDrawn: vi.fn(), drawn: vi.fn(() => Promise.resolve(45)),
+  capturePending: vi.fn((_scene: object, _renderer: object) => false),
 }));
 vi.mock("../../../lib/perf-runtime.js", () => ({
   shouldProfileFrames: profiling.enabled, beginGpuProfile: profiling.begin,
   endGpuProfile: profiling.end, recordRenderedFrame: profiling.record,
   registerProfilerRenderer: profiling.register, sampleDrawnSplats: profiling.sampleDrawn,
 }));
-vi.mock("../../../lib/native-splat-scene.js", () => ({ nativeScenePerfStats: profiling.sceneStats, nativeSceneDrawnSplats: profiling.drawn }));
+vi.mock("../../../lib/native-splat-scene.js", () => ({
+  nativeScenePerfStats: profiling.sceneStats, nativeSceneDrawnSplats: profiling.drawn, nativeSceneCapturePending: profiling.capturePending,
+}));
 
 const gpuCompletion = vi.hoisted(() => {
   class Ticket {
@@ -124,7 +128,8 @@ const native = vi.hoisted(() => {
     resolve = (): void => { throw new Error("Not initialized"); };
     reject = (_cause: Error): void => { throw new Error("Not initialized"); };
     onDeviceLost = (_event: { api?: "WebGL" | "WebGPU"; message: string }): void => undefined;
-    onError = (_event: { message: string }): void => undefined;
+    // r186 reports uncaptured GPU errors as an object; the app reports its own failures as a message.
+    onError = (_event: { message: string; type?: string } | string): void => undefined;
     constructor(options: { canvas: HTMLCanvasElement }) {
       this.domElement = options.canvas;
       // Match r186 Backend: it copies the options before async initialization.
@@ -187,8 +192,10 @@ vi.mock("@react-three/fiber", async () => {
   };
 });
 
-import { NativeCanvas } from "../NativeCanvas.js";
+import { NATIVE_CAPTURE_RETURN_WAIT_MS, NativeCanvas } from "../NativeCanvas.js";
+import { PlannerWorkContext } from "../planner-work.js";
 import { isNativeCanvasRender } from "../../../lib/native-renderer.js";
+import { NATIVE_GPU_ERROR_GRACE_MS } from "../../../lib/native-gpu-error-watch.js";
 
 beforeEach(() => {
   native.instances.length = 0;
@@ -205,6 +212,7 @@ beforeEach(() => {
   profiling.record.mockReset();
   profiling.release.mockReset();
   profiling.register.mockReset().mockReturnValue(profiling.release);
+  profiling.capturePending.mockReset().mockReturnValue(false);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -327,18 +335,41 @@ describe("NativeCanvas", () => {
     expect(screen.getByRole("alert").textContent).toContain("Draw failed");
   });
 
-  it("does not publish a draw which reports an error without throwing", async () => {
-    profiling.enabled.mockReturnValue(true);
-    render(<NativeCanvas />);
-    const instance = native.instances[0];
-    if (instance === undefined) throw new Error("Missing renderer");
-    await act(() => { instance.resolve(); return Promise.resolve(); });
-    instance.rawRender.mockImplementationOnce(() => { instance.onError({ message: "Backend reported failure" }); });
-    automaticFrame();
-    expect(profiling.record).not.toHaveBeenCalled();
-    expect(gpuCompletion.create).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert").textContent).toContain("Backend reported failure");
+  it("keeps drawing through an uncaptured GPU error, reports it once and asks for the frame that proves it", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      render(<NativeCanvas frameloop="demand"><span>Room geometry</span></NativeCanvas>);
+      const instance = await start(0);
+      automaticFrame();
+      fiber.invalidate.mockClear();
+      act(() => {
+        instance.onError({ message: "Invalid texture view" });
+        instance.onError({ message: "Invalid texture view" });
+      });
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.getByTestId("fiber-canvas").getAttribute("data-frameloop")).toBe("demand");
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0]?.join(" ")).toContain("Invalid texture view");
+      expect(fiber.invalidate).toHaveBeenCalled();
+      automaticFrame();
+      expect(instance.rawRender).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Room geometry")).toBeDefined();
+    } finally {
+      warn.mockRestore();
+    }
   });
+  it("stops at once for the app's own failures, which arrive as a message rather than a GPU error", async () => {
+    render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+    const instance = await start(0);
+    automaticFrame();
+    // As NativeSplatScene reports a resident sort that died, and the GPU readiness bridge a failed callback.
+    act(() => { instance.onError("Native splat sorting failed: resident worker crashed"); });
+    expect(screen.getByRole("alert").textContent).toContain("The 3D view stopped.");
+    expect(screen.getByRole("alert").textContent).toContain("Native splat sorting failed");
+    expect(native.instances).toHaveLength(1);
+  });
+
   it.each([
     [134_217_728, 268_435_456, 134_217_728, 268_435_456],
     [536_870_912, 1_073_741_824, 268_435_456, 536_870_912],
@@ -634,6 +665,8 @@ describe("NativeCanvas", () => {
             if (failure === "onDeviceLost") failing.onDeviceLost({ api: "WebGPU", message: "Lost again while starting" });
             else failing.onError({ message: "Validation failed while starting" });
           });
+          // An error, unlike a loss, counts once it has outlasted its grace with nothing drawn.
+          if (failure === "onError") await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_GPU_ERROR_GRACE_MS); });
           await flush();
           expect(screen.queryByRole("alert")).toBeNull();
           expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
@@ -819,7 +852,8 @@ describe("NativeCanvas", () => {
     it("tells someone whose view stopped for good that their layout is safe, then speaks about starting on a failed retry", async () => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {
-        render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+        // The editor during a timeline preview: someone's layout, with no 2D view allowed.
+        render(<PlannerWorkContext.Provider value={{ continueIn2d: null }}><NativeCanvas><span>Room geometry</span></NativeCanvas></PlannerWorkContext.Provider>);
         const lost = await start(0);
         act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
         await flush();
@@ -847,8 +881,186 @@ describe("NativeCanvas", () => {
       }
     });
 
+    it("gives a view whose GPU errors never stop one fresh device, then stops it with the stopped words", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        render(<PlannerWorkContext.Provider value={{ continueIn2d: null }}><NativeCanvas><span>Room geometry</span></NativeCanvas></PlannerWorkContext.Provider>);
+        const failing = await start(0);
+        automaticFrame();
+        act(() => { failing.onError({ message: "Invalid bind group" }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_GPU_ERROR_GRACE_MS - 1); });
+        expect(screen.queryByRole("status")).toBeNull();
+        await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        await flush();
+        const fresh = renderer(1);
+        expect(fresh.domElement).toBe(failing.domElement);
+        expect(failing.dispose).toHaveBeenCalledOnce();
+        await start(1);
+        await flush();
+        automaticFrame();
+        expect(screen.queryByRole("status")).toBeNull();
+        expect(screen.getByText("Room geometry")).toBeDefined();
+
+        // The same errors on a fresh device are the scene's own: another device would not help.
+        act(() => { fresh.onError({ message: "Invalid bind group" }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_GPU_ERROR_GRACE_MS); });
+        await flush();
+        expect(screen.getByRole("alert").textContent).toContain("The 3D view stopped. Your layout is safe");
+        expect(native.instances).toHaveLength(2);
+        expect(warn).toHaveBeenCalledOnce();
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the cover over a recovered capture until the new device draws it, and no longer than its bound", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        render(<NativeCanvas frameloop="demand"><span>Room geometry</span></NativeCanvas>);
+        const lost = await start(0);
+        // The capture was drawn when the device went (the profiling stats report its splats).
+        profiling.capturePending.mockReturnValue(true);
+        act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+        await flush();
+        const fresh = await start(1);
+        await flush();
+        automaticFrame();
+        expect(fresh.rawRender).toHaveBeenCalledOnce();
+        // The room has drawn, but its capture is still being rebuilt for the new device.
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        expect(profiling.capturePending).toHaveBeenLastCalledWith(expect.any(Scene), fresh);
+        profiling.capturePending.mockReturnValue(false);
+        automaticFrame();
+        expect(screen.queryByRole("status")).toBeNull();
+
+        // A capture that cannot come back must not keep the room covered.
+        profiling.capturePending.mockReturnValue(true);
+        act(() => { fresh.onDeviceLost({ api: "WebGPU", message: "Device lost again" }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+        await flush();
+        await start(2);
+        await flush();
+        automaticFrame();
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        fiber.invalidate.mockClear();
+        await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_CAPTURE_RETURN_WAIT_MS); });
+        expect(fiber.invalidate).toHaveBeenCalled();
+        automaticFrame();
+        expect(screen.queryByRole("status")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the capture and the dark stage for a view lost again while its cover waits for the capture", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        render(<NativeCanvas frameloop="demand"><span>Room geometry</span></NativeCanvas>);
+        const lost = await start(0);
+        const state = fiber.state;
+        if (state === null) throw new Error("No R3F root state");
+        // The eye-level walk: a light clear colour behind the capture that fills the view.
+        state.scene.background = new Color("#eee9de");
+        profiling.capturePending.mockReturnValue(true);
+        act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+        await flush();
+        const fresh = await start(1);
+        await flush();
+        automaticFrame();
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        // The replacement's splat host has let the lost snapshot go: the scene shows no capture now.
+        profiling.sceneStats.mockReturnValue(null);
+        act(() => { fresh.onDeviceLost({ api: "WebGPU", message: "Device lost again" }); });
+        const cover = screen.getByRole("status").closest<HTMLElement>("[data-graphics-cover]");
+        expect(cover?.dataset["graphicsCover"]).toBe("dark");
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+        await flush();
+        await start(2);
+        await flush();
+        automaticFrame();
+        // Still the captured room it has to bring back.
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        profiling.capturePending.mockReturnValue(false);
+        automaticFrame();
+        expect(screen.queryByRole("status")).toBeNull();
+      } finally {
+        profiling.sceneStats.mockReturnValue({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 });
+        vi.useRealTimers();
+      }
+    });
+
+    it("gives a fresh device that breaks on a different error the usual recovery, not the stopped card", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+        const failing = await start(0);
+        automaticFrame();
+        act(() => { failing.onError({ message: "Invalid bind group" }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_GPU_ERROR_GRACE_MS); });
+        await flush();
+        const fresh = await start(1);
+        await flush();
+        automaticFrame();
+        act(() => { fresh.onError({ message: "Out of memory" }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(NATIVE_GPU_ERROR_GRACE_MS); });
+        await flush();
+        expect(screen.queryByRole("alert")).toBeNull();
+        expect(screen.getByRole("status").textContent).toContain("Restoring the 3D view");
+        expect(native.instances).toHaveLength(3);
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it("covers a dark hall in its own ground while it restores, not a cream flash", async () => {
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = await start(0);
+      const state = fiber.state;
+      if (state === null) throw new Error("No R3F root state");
+      state.scene.background = new Color("#120e0b");
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      const cover = screen.getByRole("status").closest<HTMLElement>("[data-graphics-cover]");
+      expect(cover?.dataset["graphicsCover"]).toBe("dark");
+      expect(new Color(cover?.style.backgroundColor ?? "").getHexString()).toBe("120e0b");
+    });
+
+    it("covers a captured room in the dark stage, though the colour behind its splats is light", async () => {
+      // The eye-level walk: the capture fills the view over the light shell's clear colour.
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = await start(0);
+      const state = fiber.state;
+      if (state === null) throw new Error("No R3F root state");
+      state.scene.background = new Color("#eee9de");
+      profiling.sceneStats.mockReturnValueOnce({ splats: 6_030_980, sortTimeMs: null, sortAgeMs: null, sortBacklog: null });
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      const cover = screen.getByRole("status").closest<HTMLElement>("[data-graphics-cover]");
+      expect(cover?.dataset["graphicsCover"]).toBe("dark");
+      expect(new Color(cover?.style.backgroundColor ?? "").getHexString()).toBe("120e0b");
+    });
+
+    it("covers a light room with no capture in its own ground", async () => {
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = await start(0);
+      const state = fiber.state;
+      if (state === null) throw new Error("No R3F root state");
+      state.scene.background = new Color("#eee9de");
+      profiling.sceneStats.mockReturnValueOnce(null);
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      const cover = screen.getByRole("status").closest<HTMLElement>("[data-graphics-cover]");
+      expect(cover?.dataset["graphicsCover"]).toBe("light");
+      expect(new Color(cover?.style.backgroundColor ?? "").getHexString()).toBe("eee9de");
+    });
+
     it("stops after repeated resets and tells a visitor on a walk only what is true for them", async () => {
-      render(<NativeCanvas surface="walk"><span>Room geometry</span></NativeCanvas>);
+      // A walk has no 2D view of its own, whatever page it sits in.
+      render(<PlannerWorkContext.Provider value={{ continueIn2d: vi.fn() }}>
+        <NativeCanvas surface="walk"><span>Room geometry</span></NativeCanvas>
+      </PlannerWorkContext.Provider>);
       for (let loss = 0; loss < 2; loss++) {
         const current = await start(loss);
         act(() => { current.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
@@ -862,8 +1074,54 @@ describe("NativeCanvas", () => {
       const alert = screen.getByRole("alert");
       expect(alert.textContent).toContain("The 3D view stopped.");
       expect(alert.textContent).not.toContain("layout");
-      expect(screen.queryByRole("link", { name: "Open the 2D planner" })).toBeNull();
+      expect(alert.textContent).not.toContain("2D");
+      expect(screen.queryByRole("button", { name: "Continue in 2D" })).toBeNull();
       expect(screen.getByRole("button", { name: "Try 3D again" })).toBeDefined();
+    });
+  });
+
+  describe("when the view cannot draw", () => {
+    it("offers the planner's own 2D view of this layout, not a demonstration plan", async () => {
+      const continueIn2d = vi.fn();
+      render(<PlannerWorkContext.Provider value={{ continueIn2d }}>
+        <NativeCanvas><span>Room geometry</span></NativeCanvas>
+      </PlannerWorkContext.Provider>);
+      await act(() => { renderer(0).reject(new Error("No graphics adapter")); return Promise.resolve(); });
+      expect(screen.getByRole("alert").textContent).toContain("continue in 2D");
+      expect(screen.queryByRole("link")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Continue in 2D" }));
+      expect(continueIn2d).toHaveBeenCalledOnce();
+    });
+
+    it("promises no 2D view where the page has none", async () => {
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      await act(() => { renderer(0).reject(new Error("No graphics adapter")); return Promise.resolve(); });
+      expect(screen.getByRole("alert").textContent).not.toContain("2D");
+      expect(screen.queryByRole("button", { name: "Continue in 2D" })).toBeNull();
+      expect(screen.queryByRole("link")).toBeNull();
+      expect(screen.getByRole("button", { name: "Try 3D again" })).toBeDefined();
+    });
+
+    it("tells the page each time the view lands on its card, so nothing still says it is opening over it", async () => {
+      const onUnavailable = vi.fn();
+      render(<NativeCanvas onUnavailable={onUnavailable}><span>Room geometry</span></NativeCanvas>);
+      await act(() => { renderer(0).reject(new Error("No graphics adapter")); return Promise.resolve(); });
+      expect(onUnavailable).toHaveBeenCalledOnce();
+      fireEvent.click(screen.getByRole("button", { name: "Try 3D again" }));
+      const retried = await start(1);
+      expect(onUnavailable).toHaveBeenCalledOnce();
+      automaticFrame();
+      act(() => { retried.onError("Native splat sorting failed: resident worker crashed"); });
+      expect(onUnavailable).toHaveBeenCalledTimes(2);
+    });
+
+    it("makes no promise about a layout on a page that holds none", async () => {
+      render(<NativeCanvas><span>Room geometry</span></NativeCanvas>);
+      const lost = await start(0);
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      const cover = screen.getByRole("status").closest("[data-graphics-cover]");
+      expect(cover?.textContent).toContain("Restoring the 3D view");
+      expect(cover?.textContent).not.toContain("layout");
     });
   });
 
