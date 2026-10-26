@@ -31,10 +31,19 @@ vi.mock("@react-three/fiber", () => ({
   useFrame: (callback: () => void) => { frames.latest = callback; },
 }));
 vi.mock("../FurnitureProxy.js", () => ({ FurnitureProxy: () => { proxy.renders += 1; return null; } }));
-// The set's ghost has its own tests (GhostSet.test.tsx); here, which set it is asked to show.
-const ghostSet = vi.hoisted(() => ({ card: null as string | null }));
+// The set's ghost has its own tests (GhostSet.test.tsx); here, which set it is asked to show, and its warm-up.
+const ghostSet = vi.hoisted(() => ({ card: null as string | null, warming: false, groupRef: null as ((group: Group | null) => void) | null }));
 vi.mock("../GhostSet.js", () => ({
-  GhostSet: ({ params }: { readonly params: { readonly card: string } }) => { ghostSet.card = params.card; return null; },
+  GhostSet: ({ params, warming, groupRef }: {
+    readonly params: { readonly card: string };
+    readonly warming: boolean;
+    readonly groupRef?: (group: Group | null) => void;
+  }) => {
+    ghostSet.card = params.card;
+    ghostSet.warming = warming;
+    ghostSet.groupRef = groupRef ?? null;
+    return null;
+  },
 }));
 
 function runFrame(): void {
@@ -138,6 +147,50 @@ it("sets a Round of 10 armed from v2's rail down whole, in one write, with no ch
   } finally {
     useCatalogueStore.getState().disarm();
   }
+});
+
+describe("a card's set warms as a piece does", () => {
+  /** A Round of 10 armed, and the set's group as GhostSet would hand it over: not yet drawn. */
+  function armedSet(): Group {
+    setPlannerFeaturesForTesting(null);
+    act(() => { useCatalogueStore.getState().armCard("round"); });
+    render(<PlacementGhost />);
+    const set = new Group();
+    set.visible = false;
+    act(() => { ghostSet.groupRef?.(set); });
+    return set;
+  }
+
+  afterEach(() => { useCatalogueStore.getState().disarm(); });
+
+  it("counts its warm frames only once the set is drawn", () => {
+    const set = armedSet();
+    expect(ghostSet.warming).toBe(true);
+    // Frames before the commit that shows the set warm nothing: the warm-up waits for it.
+    for (let frame = 0; frame < 5; frame += 1) runFrame();
+    expect(ghostSet.warming).toBe(true);
+    set.visible = true;
+    runFrame();
+    runFrame();
+    expect(ghostSet.warming).toBe(true);
+    runFrame();
+    expect(ghostSet.warming).toBe(false);
+  });
+
+  it("does not wait long for a set that never shows", () => {
+    armedSet();
+    for (let frame = 0; frame < 32; frame += 1) runFrame();
+    expect(ghostSet.warming).toBe(true);
+    runFrame();
+    expect(ghostSet.warming).toBe(false);
+  });
+
+  it("leaves the set where GhostSet stands it", () => {
+    const set = armedSet();
+    set.visible = true;
+    runFrame();
+    expect(set.position.toArray()).toEqual([0, 0, 0]);
+  });
 });
 
 it("keeps the seating dialog for an imported dining table", () => {

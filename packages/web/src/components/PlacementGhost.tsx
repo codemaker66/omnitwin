@@ -129,6 +129,11 @@ export function PlacementGhost(): React.ReactElement | null {
     const position = state.ghostPosition;
     if (position !== previous.ghostPosition && position !== null) ghost.current?.position.set(position[0], position[1], position[2]);
   }), []);
+  // A card's set, when GhostSet draws it in the piece's place: the warm-up waits on it as on the piece.
+  const ghostSet = useRef<Object3D | null>(null);
+  const ghostSetRef = useCallback((group: Group | null) => {
+    ghostSet.current = group instanceof Object3D ? group : null;
+  }, []);
 
   // Warm the ghost on arm: the piece is built and drawn, too small to see,
   // just ahead of the camera, for its first frames in hand, so its materials
@@ -148,8 +153,9 @@ export function PlacementGhost(): React.ReactElement | null {
       followPointer.current(pointer);
     }
     if (warmFrames.current === 0) return;
-    const group = ghost.current;
-    // Nothing of the piece to warm here (the chair brush or a cloth draws in its place): the warm-up ends.
+    const piece = ghost.current;
+    const group = piece ?? ghostSet.current;
+    // Nothing to warm here (the chair brush or a cloth draws in the ghost's place): the warm-up ends.
     if (group === null) {
       warmFrames.current = 0;
       setWarming(false);
@@ -163,9 +169,10 @@ export function PlacementGhost(): React.ReactElement | null {
       invalidateRef.current();
       return;
     }
-    if (usePlacementStore.getState().ghostPosition === null) {
+    // The set stands itself ahead of the camera (GhostSet); the piece is stood here.
+    if (piece !== null && usePlacementStore.getState().ghostPosition === null) {
       camera.getWorldDirection(_ahead);
-      group.position.copy(camera.position).addScaledVector(_ahead, 1);
+      piece.position.copy(camera.position).addScaledVector(_ahead, 1);
     }
     warmFrames.current -= 1;
     if (warmFrames.current === 0) setWarming(false);
@@ -612,7 +619,7 @@ export function PlacementGhost(): React.ReactElement | null {
   const brushing = catalogueItem.category === "chair" && chairBrushPreview.length > 1;
   // A card set down as a card shows that set, whichever chrome armed it (setup-cards placesAsCard), judged as the commit is (judgesCard).
   if (cardParams !== null && !brushing && placesAsCard(cardParams)) {
-    return <GhostSet params={cardParams} warming={warming} fromCardDrag={fromCardDrag} />;
+    return <GhostSet params={cardParams} warming={warming} fromCardDrag={fromCardDrag} groupRef={ghostSetRef} />;
   }
 
   // --- Normal furniture ghost ---
