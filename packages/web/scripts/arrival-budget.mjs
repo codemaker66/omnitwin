@@ -40,6 +40,8 @@ const LABEL = option("label", "arrival");
 const RELOAD = process.argv.includes("--reload");
 /** Keep every shader module's code (`--keep-code`), written to <label>-<run>-shaders.json, to diff what compiled twice. */
 const KEEP_CODE = process.argv.includes("--keep-code");
+/** Save the settled view at the end of each arrival (`--shot`), <label>-<run>.png, to compare builds pixel for pixel. */
+const SHOT = process.argv.includes("--shot");
 /** A frame not presented for longer than this is a stall the user sees (F-01's bar). */
 const GAP_MS = 250;
 
@@ -204,6 +206,18 @@ async function arrive(browser, page, name) {
   await page.evaluate(() => window.__arrival.sync());
   await page.waitForTimeout(300);
   await browser.stopTracing();
+  if (SHOT) {
+    // The largest canvas: the view, settled (temporal anti-aliasing has converged by the window's end).
+    const clip = await page.evaluate(() => {
+      let best = null;
+      for (const canvas of document.querySelectorAll("canvas")) {
+        const rect = canvas.getBoundingClientRect();
+        if (best === null || rect.width * rect.height > best.width * best.height) best = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+      }
+      return best;
+    });
+    if (clip !== null && clip.width > 0 && clip.height > 0) await page.screenshot({ path: join(OUT, `${LABEL}-${name}.png`), clip });
+  }
   const tr = await page.evaluate(() => { const { sync: _sync, ...rest } = window.__arrival; return rest; });
   if (KEEP_CODE) writeFileSync(join(OUT, `${LABEL}-${name}-shaders.json`), JSON.stringify(tr.code));
   const { events, zero } = readTrace(tracePath);
