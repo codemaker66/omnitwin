@@ -11,7 +11,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: 100%;
+  /* Within the zone, and never under the dock stack (the rail stands above the dock it is measured from). */
+  max-height: min(100%, calc(100dvh - var(--pc-left-top, 198px) - var(--pc-above-stack, 88px)));
   overflow: hidden;
   pointer-events: auto;
   animation: pc-history-in var(--house-motion-deliberate) var(--house-ease-out);
@@ -76,10 +77,9 @@
   scrollbar-color: color-mix(in srgb, var(--house-forest-ink-3) 40%, transparent) transparent;
 }
 
+/* The list's focus is shown on the row it is at (below), not as a second ring round the list. */
 .pc-history__list:focus-visible {
-  outline: var(--vv-focus-ring);
-  outline-offset: -2px;
-  border-radius: var(--house-radius-key);
+  outline: none;
 }
 
 .pc-history__sitting-head {
