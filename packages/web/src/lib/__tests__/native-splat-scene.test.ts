@@ -382,21 +382,21 @@ describe("native complete draw lifecycle", () => {
     const state = setup();
     state.add(2);
     await vi.advanceTimersByTimeAsync(50);
-    const before = state.draw() as unknown as GaussianSplat;
+    const before = state.draw();
     const merged = evidence.inputs.at(-1);
     // The sort bounds every splat the first time it runs; the mock leaves that to the test.
-    before.boundingSphere = new Sphere(new Vector3(1, 2, 3), 4);
+    Reflect.set(before ?? {}, "boundingSphere", new Sphere(new Vector3(1, 2, 3), 4));
     const replacement = new WebGPURenderer({ forceWebGL: true });
     vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
     vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
     state.detach();
     state.runtime.attach(replacement, state.camera, state.invalidate);
     await vi.advanceTimersByTimeAsync(50);
-    const after = state.draw() as unknown as GaussianSplat;
+    const after = state.draw();
     expect(after).not.toBe(before);
     expect(evidence.inputs.at(-1), "the sources are not merged again").toBe(merged);
-    expect(after.boundingSphere?.center.toArray()).toEqual([1, 2, 3]);
-    expect(after.boundingSphere?.radius).toBe(4);
+    const bounds: unknown = Reflect.get(after ?? {}, "boundingSphere");
+    expect(bounds instanceof Sphere ? [bounds.center.toArray(), bounds.radius] : null, "nor their splats bounded again").toEqual([[1, 2, 3], 4]);
   });
 
   it("merges again for a replacement renderer once a source has changed", async () => {
@@ -412,7 +412,7 @@ describe("native complete draw lifecycle", () => {
     state.runtime.attach(replacement, state.camera, state.invalidate);
     await vi.advanceTimersByTimeAsync(50);
     expect(evidence.inputs.at(-1)).not.toBe(merged);
-    expect((state.draw() as unknown as GaussianSplat).splatCount).toBe(3);
+    expect(Reflect.get(state.draw() ?? {}, "splatCount")).toBe(3);
   });
 
   it("stops expecting the capture on a replacement whose rebuild failed, and while nothing is selected", async () => {
