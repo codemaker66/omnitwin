@@ -251,7 +251,7 @@ const RevisionConflictDetailsSchema = z.object({
   expectedRevision: z.number().int().min(1),
   currentRevision: z.number().int().min(1),
   changedBy: RevisionAuthorSchema.nullable().optional().catch(null),
-  changedAt: z.string().datetime({ offset: true }).nullable().optional().catch(null),
+  changedAt: z.iso.datetime({ offset: true }).nullable().optional().catch(null),
 });
 
 export function parseRevisionConflict(err: unknown): RevisionConflict | null {
