@@ -16,10 +16,12 @@
 // the hold has taken effect; the frames resume once the queue is empty. What
 // compileAsync cannot reach (the post passes' materials, built by their chain
 // as it draws its first frame) a job draws one frame ahead of, into a target
-// of its own, its pipelines built off that thread (drawAhead). A job
-// that has not settled by PRECOMPILE_JOB_LIMIT_MS (a device lost mid-compile,
-// a driver hang) is aborted: it puts the renderer's target and MRT back, and
-// the view draws on, compiling what is left as it draws (slowly, not never).
+// of its own, its pipelines built off that thread (drawAhead). A hold that
+// lasts PRECOMPILE_JOB_LIMIT_MS (a device lost mid-compile, a driver hang)
+// ends: the job running is aborted (it puts the renderer's target and MRT
+// back), those waiting are dropped, and the view draws on, compiling what is
+// left as it draws (slowly, not never); it draws again once the aborted
+// job's pipelines are built, since a draw waits for its pipeline.
 // ---------------------------------------------------------------------------
 
 import type { Camera, LightShadow, Object3D, Scene } from "three";
@@ -31,7 +33,7 @@ import type { Camera, LightShadow, Object3D, Scene } from "three";
  */
 export type NativePrecompileJob = (signal: AbortSignal) => Promise<void>;
 
-/** The longest one job may hold the frame loop, ms: past it the view draws again, compiling the rest as before. */
+/** The longest one pass of jobs may hold the frame loop, ms: past it the view draws again, compiling the rest as before. */
 export const PRECOMPILE_JOB_LIMIT_MS = 8_000;
 
 interface Entry {
@@ -56,8 +58,19 @@ function queueFor(renderer: object): Queue {
   return queue;
 }
 
+/** Hands an error on to the page without unwinding the caller: the queue must go on, or the frames stay held. */
+function rethrowLater(error: unknown): void {
+  setTimeout(() => { throw error; });
+}
+
 function notify(queue: Queue): void {
-  for (const listener of [...queue.listeners]) listener();
+  for (const listener of [...queue.listeners]) {
+    try {
+      listener();
+    } catch (error: unknown) {
+      rethrowLater(error);
+    }
+  }
 }
 
 /**
@@ -87,40 +100,64 @@ export function subscribeNativePrecompile(renderer: object, listener: () => void
 }
 
 export interface NativePrecompileRun {
-  /** The longest one job may hold the frames, ms. */
+  /** The longest one pass may hold the frames, ms, from its first job: every job queued meanwhile shares it. */
   readonly limitMs?: number;
-  /** Told of a job aborted at its limit (the view reports it: observability). */
+  /** Told once a pass reaches its limit: the job running is aborted and those waiting dropped (observability). */
   readonly onTimeout?: () => void;
+  /**
+   * Told when a job aborted at the limit settles after all: the pipelines it
+   * started are built by then, and r186 skips a draw until its pipeline is,
+   * so a view standing still must draw again to show them.
+   */
+  readonly onLateSettle?: () => void;
 }
 
 /**
- * Runs `renderer`'s queued jobs in order, each to completion or to its limit,
- * until none are left (NativeCanvas, with its frame loop held). Jobs queued
- * meanwhile run in the same pass; a call while one is already running leaves
- * the queue to it.
+ * Runs `renderer`'s queued jobs in order until none are left (NativeCanvas,
+ * with its frame loop held). Jobs queued meanwhile run in the same pass, all
+ * within its limit: past it, the job running is aborted and those waiting
+ * are dropped, and the frames go (failing open). A call while one is
+ * already running leaves the queue to it.
  */
-export async function runNativePrecompiles(renderer: object, { limitMs = PRECOMPILE_JOB_LIMIT_MS, onTimeout }: NativePrecompileRun = {}): Promise<void> {
+export async function runNativePrecompiles(
+  renderer: object, { limitMs = PRECOMPILE_JOB_LIMIT_MS, onTimeout, onLateSettle }: NativePrecompileRun = {},
+): Promise<void> {
   const queue = queueFor(renderer);
   if (queue.running !== null) return;
+  const deadline = performance.now() + limitMs;
   for (let entry = queue.jobs.shift(); entry !== undefined; entry = queue.jobs.shift()) {
     queue.running = entry;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     try {
+      // Through an async function, a job that throws as it starts rejects.
+      const run = (async (): Promise<void> => { await entry.job(controller.signal); })();
       const settled = await Promise.race([
-        entry.job(controller.signal).then(() => true, () => true),
-        new Promise<false>((resolve) => { timer = setTimeout(() => { resolve(false); }, limitMs); }),
+        run.then(() => true, () => true),
+        new Promise<false>((resolve) => { timer = setTimeout(() => { resolve(false); }, Math.max(0, deadline - performance.now())); }),
       ]);
       if (!settled) {
+        timedOut = true;
         controller.abort();
-        onTimeout?.();
+        const late = (): void => { onLateSettle?.(); };
+        void run.then(late, late);
       }
     } finally {
       clearTimeout(timer);
       queue.running = null;
       entry.done();
+      if (timedOut) {
+        for (const waiting of queue.jobs.splice(0)) waiting.done();
+        try {
+          onTimeout?.();
+        } catch (error: unknown) {
+          rethrowLater(error);
+        }
+      }
       notify(queue);
     }
+    if (timedOut) return;
   }
 }
 
@@ -225,8 +262,8 @@ interface DrawRoute {
 
 const routes = new WeakMap<object, DrawRoute>();
 
-/** r186's draw path, minified or not: `updateForRender(renderObject) { this.getForRender(renderObject); }`. */
-const R186_UPDATE_FOR_RENDER = /\.getForRender\(\s*[\w$]+\s*\)/u;
+/** r186's draw path, the whole method, minified or not: `updateForRender(renderObject) { this.getForRender(renderObject); }`. */
+const R186_UPDATE_FOR_RENDER = /^updateForRender\s*\(\s*([\w$]+)\s*\)\s*\{\s*this\.getForRender\(\s*\1\s*\);?\s*\}$/u;
 
 /**
  * Routes `pipelines`' updateForRender through a DrawRoute, once and for good:

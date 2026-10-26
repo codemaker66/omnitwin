@@ -57,7 +57,7 @@ import { getNativeRenderer, nativeRendererGpuString } from "../../lib/native-ren
 import { isSoftwareRenderer } from "../grand-hall/hall-finish.js";
 import { CameraPoseWatch, MotionBloom } from "../../lib/motion-bloom.js";
 import { registerNativeFrameComposer } from "../../lib/native-frame-composer.js";
-import { compileEach, compileWithin, drawAhead, withoutShadowMapDraws } from "../../lib/native-precompile.js";
+import { compileEach, compileWithin, drawAhead, requestNativePrecompile, withoutShadowMapDraws } from "../../lib/native-precompile.js";
 import type { RenderProfile } from "../../lib/render-quality.js";
 import { sceneGrade } from "../../lib/scene-grade.js";
 import { watchViewHand } from "../../lib/view-hand.js";
@@ -249,6 +249,8 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
   const convergence = useRef({ remaining: 0, selfRequested: false });
   // Whether this renderer is a software rasteriser, read at its first frame.
   const software = useRef<boolean | null>(null);
+  /** The renderer a pipeline was last built for: a rebuild for it compiles ahead itself. */
+  const builtFor = useRef<object | null>(null);
 
   // A layout effect registers the composer before the next frame can draw:
   // one plain frame would compile every visible material for the canvas too.
@@ -278,8 +280,13 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
     // first frame, so one frame is drawn ahead into a 1 px target of its own,
     // each pass's pipeline built off the GPU process's main thread and none
     // drawn (drawAhead). The pass to the canvas compiles as the view draws.
+    // A job may still be waiting or running when this pipeline is replaced: it
+    // must not touch the disposed passes (it would allocate their targets anew).
+    let live = true;
+    // Read after each await: the pipeline may have been replaced meanwhile.
+    const isLive = (): boolean => live;
     const precompile = async (signal: AbortSignal): Promise<void> => {
-      if (isSoftwareRenderer(nativeRendererGpuString(native))) return;
+      if (!isLive() || isSoftwareRenderer(nativeRendererGpuString(native))) return;
       // Under temporal anti-aliasing the scene is drawn with the projection TRAA
       // hands the velocity node on every frame it draws (TRAANode.setViewOffset),
       // which the velocity output builds into each shader as its own uniform;
@@ -292,16 +299,23 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
       } finally {
         if (temporal) velocity.setProjectionMatrix(null);
       }
-      if (signal.aborted) return;
+      if (signal.aborted || !isLive()) return;
       const scratch = new RenderTarget(1, 1, { depthBuffer: false });
       try {
         await compileWithin(native, scratch, null, signal, () => drawAhead(native, () => {
-          withoutShadowMapDraws(scene, () => { built.pipeline.render(); });
+          const { toneMapping, outputColorSpace } = native;
+          try {
+            withoutShadowMapDraws(scene, () => { built.pipeline.render(); });
+          } finally {
+            // RenderPipeline.render puts these back only when it returns.
+            native.toneMapping = toneMapping;
+            native.outputColorSpace = outputColorSpace;
+          }
         }, signal));
       } finally {
         scratch.dispose();
       }
-      if (built.temporal !== null) restartHistory(built.temporal);
+      if (isLive() && built.temporal !== null) restartHistory(built.temporal);
     };
     const release = registerNativeFrameComposer(native, () => {
       // A software rasteriser (a virtual machine, a headless browser) would run
@@ -323,8 +337,15 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
       }
       built.pipeline.render();
     }, precompile);
+    // A pipeline rebuilt for the same renderer (an effect given up, the
+    // profile changed) compiles ahead before it draws. The first is compiled
+    // by its view's own job, after the hall's capture, whose environment its
+    // materials are built with (GrandHallModel, PlannerScene).
+    if (builtFor.current === native) void requestNativePrecompile(native, precompile);
+    builtFor.current = native;
     invalidate();
     return () => {
+      live = false;
       release();
       hand?.dispose();
       built.dispose();

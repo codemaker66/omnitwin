@@ -210,10 +210,11 @@ function PlannerScenePrecompiler({
   // Under a composer the scene draws into its pass's own targets: the
   // composer compiles them, queued ahead of the frames that would draw them
   // (lib/native-precompile.ts, F-01). A frame-loop compile below would come
-  // on the very frame that draws, synchronously, too late.
+  // on the very frame that draws, synchronously, too late. The composer is
+  // read when the job runs: one replaced while it waited compiles its own.
   useLayoutEffect(() => {
-    const precompile = nativeFramePrecompile(gl);
-    if (precompile !== null) void requestNativePrecompile(gl, precompile);
+    if (nativeFramePrecompile(gl) === null) return;
+    void requestNativePrecompile(gl, (signal) => nativeFramePrecompile(gl)?.(signal) ?? Promise.resolve());
   }, [camera, gl, scene, signature]);
   useEffect(() => () => {
     generation.current++;

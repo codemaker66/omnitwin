@@ -479,7 +479,9 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   }, [invalidate, resources, sunlit]);
   useEffect(() => { setReflection(null); }, [environment]);
 
-  useEffect(() => {
+  // A layout effect, before the precompile job's below: the job installs the
+  // capture's texture as it starts, and what was there before is kept first.
+  useLayoutEffect(() => {
     if (environment === null) return undefined;
     const previous = scene.environment;
     const previousIntensity = scene.environmentIntensity;
@@ -506,11 +508,24 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     const stillMounted = (): boolean => live;
     void requestNativePrecompile(renderer, async (signal) => {
       if (!stillMounted()) return;
+      // What the job shows and hides goes back as it ends, or the moment it is
+      // aborted at its limit (a compile stuck there may never settle).
+      const fittings = chandelierGroup.current;
+      const fittingsShown = fittings?.visible ?? false;
+      const paneMesh = panes.current;
+      const panesShown = paneMesh?.visible ?? false;
+      let restored = false;
+      const wasRestored = (): boolean => restored;
+      const restore = (): void => {
+        if (restored) return;
+        restored = true;
+        if (fittings !== null) fittings.visible = fittingsShown;
+        if (paneMesh !== null) paneMesh.visible = panesShown;
+      };
+      signal.addEventListener("abort", restore, { once: true });
       // The chandeliers compile for both passes: the capture always draws
       // them, and the view does on a walk, in the overview once the camera
       // comes down, and in its first frames (their warm frames, below).
-      const fittings = chandelierGroup.current;
-      const fittingsShown = fittings?.visible ?? false;
       if (fittings !== null) fittings.visible = true;
       try {
         if (environment !== null) {
@@ -522,19 +537,18 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
             scene.environmentIntensity = resources.mood.reflections;
           }
           // The capture draws the room with the panes away (the capture below).
-          const paneMesh = panes.current;
-          const panesShown = paneMesh?.visible ?? false;
           if (paneMesh !== null) paneMesh.visible = false;
           try {
             await environment.compile(roomGroup, signal);
           } finally {
-            if (paneMesh !== null) paneMesh.visible = panesShown;
+            if (paneMesh !== null && !wasRestored()) paneMesh.visible = panesShown;
           }
         }
         const scenePass = nativeFramePrecompile(renderer);
         if (stillMounted() && !signal.aborted && scenePass !== null) await scenePass(signal);
       } finally {
-        if (fittings !== null) fittings.visible = fittingsShown;
+        signal.removeEventListener("abort", restore);
+        restore();
       }
     });
     return () => { live = false; };

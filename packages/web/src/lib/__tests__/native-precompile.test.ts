@@ -60,21 +60,57 @@ describe("the native precompile queue", () => {
     expect(nativePrecompilePending(renderer)).toBe(false);
   });
 
-  it("fails open: a job that never settles is aborted at its limit, reported, and the frames go", async () => {
+  it("fails open: past its limit a pass aborts its job, drops those waiting, reports, and the frames go", async () => {
     const renderer = {};
     let aborted = false;
-    const stuck = requestNativePrecompile(renderer, (signal) => {
+    const late = deferred();
+    const stuck = requestNativePrecompile(renderer, async (signal) => {
       signal.addEventListener("abort", () => { aborted = true; });
-      return new Promise<void>(() => undefined);
+      await late.promise;
     });
-    const after = requestNativePrecompile(renderer, () => Promise.resolve());
+    let ranAfter = false;
+    const after = requestNativePrecompile(renderer, () => { ranAfter = true; return Promise.resolve(); });
     const timeouts: number[] = [];
-    await runNativePrecompiles(renderer, { limitMs: 5, onTimeout: () => { timeouts.push(1); } });
+    let redrawn = 0;
+    await runNativePrecompiles(renderer, { limitMs: 5, onTimeout: () => { timeouts.push(1); }, onLateSettle: () => { redrawn += 1; } });
     await expect(stuck).resolves.toBeUndefined();
     await expect(after).resolves.toBeUndefined();
     expect(aborted, "the job is told to put the renderer back").toBe(true);
+    expect(ranAfter, "a job waiting past the limit is dropped").toBe(false);
     expect(timeouts).toHaveLength(1);
     expect(nativePrecompilePending(renderer), "nothing holds the frames").toBe(false);
+    // The aborted job's pipelines are built when it settles: the view draws again to show them.
+    expect(redrawn).toBe(0);
+    late.resolve();
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    expect(redrawn).toBe(1);
+  });
+
+  it("holds the frames one limit for the whole pass, not one a job", async () => {
+    const renderer = {};
+    const slow = (): Promise<void> => new Promise<void>((resolve) => { setTimeout(resolve, 60); });
+    let secondAborted = false;
+    void requestNativePrecompile(renderer, slow);
+    void requestNativePrecompile(renderer, async (signal) => {
+      signal.addEventListener("abort", () => { secondAborted = true; });
+      await slow();
+    });
+    const timeouts: number[] = [];
+    // Each job alone is within the limit; the two together are not.
+    await runNativePrecompiles(renderer, { limitMs: 100, onTimeout: () => { timeouts.push(1); } });
+    expect(secondAborted).toBe(true);
+    expect(timeouts).toHaveLength(1);
+  });
+
+  it("lets the frames go when a job throws as it starts", async () => {
+    const renderer = {};
+    const thrown = requestNativePrecompile(renderer, () => { throw new Error("not an async job"); });
+    let ranAfter = false;
+    void requestNativePrecompile(renderer, () => { ranAfter = true; return Promise.resolve(); });
+    await runNativePrecompiles(renderer);
+    await expect(thrown).resolves.toBeUndefined();
+    expect(ranAfter).toBe(true);
+    expect(nativePrecompilePending(renderer)).toBe(false);
   });
 
   it("drops the waiting jobs of a view torn down, and lets a running one finish", async () => {
@@ -253,6 +289,30 @@ describe("drawAhead", () => {
     native._pipelines.compiles[1]?.();
     await second;
     expect(native._pipelines.built).toEqual([{ subject: "bloom", async: true }, { subject: "resolve", async: true }]);
+  });
+
+  it("routes three r186's own draw path", async () => {
+    const specifier = "three/src/renderers/common/Pipelines.js";
+    const loaded: unknown = await import(/* @vite-ignore */ specifier);
+    if (typeof loaded !== "object" || loaded === null || !("default" in loaded) || typeof loaded.default !== "function") {
+      throw new Error("three no longer ships its Pipelines where drawAhead expects it");
+    }
+    const pipelines: unknown = Reflect.construct(loaded.default, [{}, {}, { destroyProgram: (): void => undefined }]);
+    if (typeof pipelines !== "object" || pipelines === null) throw new Error("three's Pipelines changed shape");
+    const built: boolean[] = [];
+    // Only whether the draw path asks for promises is of interest, not three's build.
+    Object.defineProperty(pipelines, "getForRender", {
+      configurable: true, writable: true,
+      value: (_renderObject: object, promises: Promise<unknown>[] | null = null): void => { built.push(promises !== null); },
+    });
+    const draw = (): void => {
+      const update: unknown = Reflect.get(pipelines, "updateForRender");
+      if (typeof update !== "function") throw new Error("three's Pipelines has no updateForRender");
+      Reflect.apply(update, pipelines, [{}]);
+    };
+    await drawAhead({ _pipelines: pipelines }, draw);
+    draw();
+    expect(built, "ahead: asynchronously; after: as three builds").toEqual([true, false]);
   });
 
   it("leaves a draw path that is not r186's alone, and draws nothing ahead", async () => {

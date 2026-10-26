@@ -410,6 +410,10 @@ export function NativeCanvas({
     const watch = createNativeGpuErrorWatch({
       onBroken: breakOnGpuErrors,
       redraw: () => { root.current?.invalidate(); },
+      // A view holding its frames for a precompile draws nothing, so nothing
+      // can get through: the grace waits, as for a hidden page.
+      isHidden: () => document.visibilityState === "hidden"
+        || (renderer.current !== null && nativePrecompilePending(renderer.current)),
     });
     gpuErrors.current = watch;
     return () => {
@@ -881,6 +885,8 @@ export function NativeCanvas({
             // eslint-disable-next-line no-console
             console.warn("VenViewer: compiling the view's pipelines ahead took too long; it draws on and compiles as it goes.");
           },
+          // What the aborted job started is built now; a still view draws to show it.
+          onLateSettle: () => { state.get().invalidate(); },
         });
       } else if (!pending) {
         held = false;
