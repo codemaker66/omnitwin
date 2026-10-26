@@ -1,0 +1,50 @@
+/* The Grand Assembly's replay control (AssemblyReplay.tsx): a quiet pill over
+   the drawn hall, clear of the planner's toolbox, that steps aside while the
+   Assembly plays. House BOH tokens; presses press down, nothing swells. */
+
+.planner-scene-canvas-host:has(> .assembly-replay) {
+  position: relative;
+}
+
+.assembly-replay {
+  position: absolute;
+  left: calc(var(--toolbox-offset, 68px) + 16px);
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 4;
+  padding: 9px 16px 10px;
+  border: 1px solid rgba(201, 138, 91, 0.38);
+  border-radius: 999px;
+  background: rgba(19, 17, 16, 0.72);
+  color: var(--house-text-1, #f4efe6);
+  font: 500 13px/1.2 Inter, system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: opacity 220ms ease, background-color 160ms ease, border-color 160ms ease, transform 90ms ease;
+}
+
+.assembly-replay:hover {
+  background: rgba(27, 25, 23, 0.86);
+  border-color: rgba(220, 164, 117, 0.6);
+}
+
+.assembly-replay:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.assembly-replay:focus-visible {
+  outline: 2px solid var(--house-accent-copper-bright, #dca475);
+  outline-offset: 3px;
+}
+
+.assembly-replay[data-playing="true"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assembly-replay {
+    transition: none;
+  }
+}

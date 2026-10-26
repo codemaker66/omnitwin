@@ -13,6 +13,7 @@ import {
   holdDecisionReminder,
   newEnquiryNotification,
   requestEscalation,
+  venueTeamInvitation,
 } from "../services/email-templates.js";
 
 // ---------------------------------------------------------------------------
@@ -93,10 +94,15 @@ async function letterheadEmails(): Promise<readonly { readonly name: string; rea
       adminName: "Elaine", kindLabel: "Chairs", quantity: 10, roomName: "Grand Hall", requestedByName: "Sam",
       detail: null, waitingMinutes: 12, dayBoardUrl: "https://example.test/day",
     }),
+    venueTeamInvitation({
+      venueName: "Trades Hall Glasgow", inviterName: "Elaine", email: "sam@example.test", roleLabel: "Hallkeeper",
+      roleSummary: "The room on the day: sheets, setup and requests", openUntil: "Tuesday 24 November 2026",
+      signUpUrl: "https://example.test/register",
+    }),
   ]);
   const names = [
     "new enquiry", "acknowledgement", "approved", "rejected", "config submitted", "config approved",
-    "config rejected", "config changes requested", "hallkeeper notified", "request escalation",
+    "config rejected", "config changes requested", "hallkeeper notified", "request escalation", "team invitation",
   ];
   return rendered.map((email, index) => ({ name: names[index] ?? String(index), html: email.html }));
 }
