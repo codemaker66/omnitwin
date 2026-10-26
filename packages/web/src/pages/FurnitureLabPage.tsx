@@ -13,6 +13,7 @@ import { FULL_HALL_FINISH } from "../components/grand-hall/hall-finish.js";
 import { CaptureToneMapping } from "../components/scene/CaptureToneMapping.js";
 import { FurnitureProxy } from "../components/FurnitureProxy.js";
 import { HALL_SUN_CASTER_LAYER } from "../components/grand-hall/hall-sun.js";
+import { craftedTexturesPending } from "../components/meshes/crafted/crafted-textures.js";
 import { GltfFurniture } from "../components/meshes/GltfFurniture.js";
 import { MeshErrorBoundary } from "../components/MeshErrorBoundary.js";
 import { isCraftedFurnitureSlug } from "../lib/crafted-furniture.js";
@@ -201,7 +202,11 @@ function previewPose(item: CatalogueItem): LabPose {
   return { position: [position.x, position.y, position.z], target: [target.x, target.y, target.z], fov };
 }
 
-/** Marks the preview ready a few frames after mounting, once its environment is in. */
+/**
+ * Marks the preview ready once its environment is in and every crafted map is
+ * painted (crafted-textures.ts paints off the main thread): four frames drawn
+ * after the last map arrived, so its upload is in the picture.
+ */
 function PreviewReady(): null {
   const frames = useRef(0);
   const invalidate = useThree((state) => state.invalidate);
@@ -211,7 +216,7 @@ function PreviewReady(): null {
     return () => { delete window.__furniturePreview; };
   }, [invalidate]);
   useFrame(() => {
-    frames.current += 1;
+    frames.current = craftedTexturesPending() > 0 ? 0 : frames.current + 1;
     if (frames.current < 4) invalidate();
     else if (window.__furniturePreview?.ready !== true) window.__furniturePreview = { ready: true };
   });

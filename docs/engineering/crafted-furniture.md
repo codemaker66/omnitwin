@@ -42,7 +42,8 @@ models never change the catalogue themselves.
 | Baked occlusion | `crafted-ao.ts` |
 | Sun shadow casters, the feet's floor shade | `crafted-shadow.ts` |
 | Phone and desktop detail | `crafted-detail.ts` |
-| Palette (node materials) and code-painted maps | `crafted-materials.ts`, `crafted-textures.ts` |
+| Palette (node materials) | `crafted-materials.ts` |
+| Code-painted maps: the recipes, the shared maps, the worker that paints them | `crafted-texture-recipes.ts`, `crafted-textures.ts`, `crafted-texture.worker.ts` |
 | Merge by material, appearance, disposal | `crafted-model.ts`, `CraftedFurniture.tsx` |
 | Side-by-side lab and preview studio (dev only) | `packages/web/src/pages/FurnitureLabPage.tsx`, `/dev/furniture` |
 | Frames in the real sky's light, frame times | `packages/web/scripts/furniture-light-frames.mjs` on `/dev/planner-lab` |
@@ -132,12 +133,28 @@ crafted pieces, so the planner downloads no furniture GLB.
   profile), with half the triangles seen in the phone profile and 4 % of them in the
   sun's map (`scripts/furniture-light-frames.mjs --frames 240`; `--refit 1` redraws
   the map every frame).
-- **Painted maps.** Each map is painted on the CPU the first time a material
-  needs it and kept for the page. The damask's figure is mirrored and on a half
-  drop, so a quarter of its tile is evaluated and copied (exactly, tested), its
-  shapes skipped where a pixel is clear of them, and its colour and roughness
-  maps share the one figure; the parquet's two maps share theirs. First use on a
-  desktop: the damask 82 ms, the parquet 101 ms, any other map under 30 ms.
+- **Painted maps.** The recipes (`crafted-texture-recipes.ts`) are pure, and a
+  worker paints them (`crafted-texture.worker.ts`), so the page's main thread
+  does not: making all fifteen maps takes it 8–13 ms on a desktop (35–62 ms at
+  a 4× CPU throttle) where painting them in place took 272–357 ms (1.2–1.7 s),
+  over three runs; furnishing 160 seats it spends 7 ms in the recipes, not 98. The
+  first map asked for sends the worker every map over 64 px, the wanted one
+  first; the felt and the feet's shade are painted where they are asked for.
+  Each map is made at once at its full size and format, at rest (a normal map
+  level, any other at its mean in linear light, which the tests hold it to),
+  and filled when its pixels arrive, about 0.3 s later on a desktop: the same
+  GPU texture uploaded again, and a frame asked of every canvas showing a
+  crafted piece (`onCraftedTexturePainted`, which `CraftedFurniture` watches
+  with its canvas's `invalidate`, counted once a canvas), because the planner
+  draws on demand. The worker closes once every map is in. Where module
+  workers do not run, or the worker fails or sends a wrong answer, the map is
+  painted where it is asked for, as before. All fifteen maps are byte-identical
+  to the in-place painting, and so are all 44 previews drawn either way. The
+  damask's figure is mirrored and on a half drop, so a quarter of its tile is
+  evaluated and copied (exactly, tested), its shapes skipped where a pixel is
+  clear of them, and its colour and roughness maps share the one figure; the
+  parquet's two maps share theirs. Painting on a desktop: the damask 82 ms, the
+  parquet 101 ms, any other map under 30 ms.
 
 ## Previews
 
@@ -152,6 +169,8 @@ pnpm --filter @omnitwin/web dev   # in one shell
 PREVIEW_GPU=1 node packages/web/scripts/render-crafted-previews.mjs http://localhost:5173 [slug ...]
 ```
 
+The studio calls a piece ready four frames after the last map is painted
+(`craftedTexturesPending`), so no preview catches a map at rest.
 `PREVIEW_GPU=1` draws on the GPU through WebGPU, the planner's own renderer, in
 a second or two a piece (take the shared GPU lock first on a shared machine);
 without it SwiftShader draws on the CPU, which takes minutes. `CHROMIUM_PATH`
