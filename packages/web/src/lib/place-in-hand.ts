@@ -6,7 +6,7 @@
 // finger on a phone (components/SelectionSystem.tsx, the touch arbiter), so
 // dressings, the venue's counts and seats behave the same whichever it was.
 //
-// A card's set (setupCards) is worked out once, by settledStamp and
+// A card's set (setup-cards placesAsCard) is worked out once, by settledStamp and
 // judgeCardAt, for the ghost (components/GhostSet.tsx), the commit and the
 // click that picks a piece instead: what the ghost shows is what is set down.
 // ---------------------------------------------------------------------------
@@ -19,7 +19,7 @@ import { atVerdict, createGhostWorld, judgeGhost, refusalChip, type GhostState, 
 import { settleOnSurfaces, type PlacedItem } from "./placement.js";
 import { capReachedFor } from "./placement-cap.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
-import { seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
+import { placesAsCard, seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
 import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { tableClothStyleForCatalogueItem, tableDressingTargetIds, tableSettingForCatalogueItem } from "./table-dressing.js";
@@ -111,7 +111,7 @@ function pickInstead(pieceId: string | null, params: CardParams, origin: CardOri
 /**
  * Puts the piece in hand down at the ghost. A cloth or a place setting
  * dresses the selected tables, or the nearest under the ghost. A card in hand
- * (setupCards) sets its whole set down, or picks the placed piece the pointer
+ * (placesAsCard) sets its whole set down, or picks the placed piece the pointer
  * is on where the set could not stand. A dining table takes the seats on its
  * card in the same step (`seatsOnTheCard`), or asks for them in the chair
  * dialog as before. A piece whose every copy is already placed is refused
@@ -153,8 +153,8 @@ export function placePieceInHand(invalidate: () => void, options: PlaceInHandOpt
     return [];
   }
 
-  // A card in hand (setupCards): the piece the pointer is on, where the set could not stand; else the whole set, one step.
-  const card = plannerFeatureEnabled("setupCards") ? catState.cardParams : null;
+  // A card in hand (setup-cards placesAsCard): the piece the pointer is on, where the set could not stand; else the whole set, one step.
+  const card = catState.cardParams !== null && placesAsCard(catState.cardParams) ? catState.cardParams : null;
   if (card !== null && pickInstead(options.pieceUnderPointer ?? null, card, { x, z, y }, placeState.ghostRotation)) {
     invalidate();
     return [];

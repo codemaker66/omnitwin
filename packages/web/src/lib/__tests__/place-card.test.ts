@@ -11,6 +11,7 @@ import { computeSurfaceHeight, resetPlacedIdCounter, type PlacedItem } from "../
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
 import { cardParamsFor, stampSetup, type CardId, type CardParams, type CardParamsRequest } from "../setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { useGhostVerdictStore } from "../../stores/ghost-verdict-store.js";
 import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
@@ -207,6 +208,30 @@ describe("one stamp for the ghost and the commit", () => {
     expect(usePlacementStore.getState().resizeArea(groupId, 5, 8)).toBe(false);
     expect(placed()).toBe(before);
     expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/^Won't fit/u);
+  });
+});
+
+describe("a card set down as a card, whichever chrome armed it (Q-07, Q-13)", () => {
+  it("sets every set card down whole in one write with no chair dialog, the switches as shipped", () => {
+    for (const card of ["round", "top-table", "long-table", "dance-floor"] as const) {
+      usePlacementStore.setState({ placedItems: [] });
+      useCatalogueStore.getState().armCard(card);
+      usePlacementStore.setState({ ghostPosition: [0, 0, 0] });
+      const writes = writesDuring(() => { expect(placePieceInHand(() => undefined).length, card).toBeGreaterThan(1); });
+      expect(writes, card).toBe(1);
+      expect(useChairDialogStore.getState().pending, card).toBeNull();
+    }
+  });
+
+  it("still asks the chair dialog for a dining table picked from v1's list while the card dock is off", () => {
+    const round = getCatalogueItemBySlug("round-table-6ft-white");
+    if (round === undefined) throw new Error("no round");
+    useCatalogueStore.getState().selectItem(round.id);
+    usePlacementStore.setState({ ghostPosition: [0, 0, 0] });
+    placePieceInHand(() => undefined);
+    expect(placed()).toHaveLength(0);
+    expect(useChairDialogStore.getState().pending).toMatchObject({ catalogueItemId: round.id });
+    useChairDialogStore.getState().clearDialog();
   });
 });
 

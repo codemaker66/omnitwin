@@ -13,7 +13,7 @@ import {
   withTableNumbers,
 } from "../lib/placement.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
-import { DANCE_FLOOR_PANELS, cardIsWholeSet, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
+import { DANCE_FLOOR_PANELS, cardIsWholeSet, placesAsCard, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
 import { planBanquetFill, planTheatreFill, type BanquetFillPlan, type TheatreFillPlan } from "../lib/auto-fill.js";
@@ -400,10 +400,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     let finalX = gridPos[0];
     let finalZ = gridPos[2];
     const roomDims = useRoomDimensionsStore.getState().dimensions;
-    // A card's whole set (setupCards) takes the grid only: the edge, wall and line snaps are one
+    // A card's whole set (placesAsCard) takes the grid only: the edge, wall and line snaps are one
     // piece's, and would pull the set's chairs through a wall. The truthful ghost pushes the set clear.
-    const card = plannerFeatureEnabled("setupCards") ? useCatalogueStore.getState().cardParams : null;
-    const wholeSet = card !== null && cardIsWholeSet(card);
+    const card = useCatalogueStore.getState().cardParams;
+    const wholeSet = card !== null && placesAsCard(card) && cardIsWholeSet(card);
     if (catalogueItem !== undefined && !wholeSet) {
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catalogueItem, rot, state.placedItems, new Set());
       finalX = edgeSnap.x;
