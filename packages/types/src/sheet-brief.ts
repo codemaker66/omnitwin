@@ -144,6 +144,35 @@ export interface SetupItem {
   /** The planner's notes, each printed only at its first row in the setup. */
   readonly notes: readonly string[];
   readonly accessory: boolean;
+  /** The planner's names for these pieces ("Table 1"); formatTableLabels prints them. */
+  readonly labels: readonly string[];
+}
+
+const TABLE_LABEL = /^Table\s+(\d+)$/iu;
+
+/**
+ * The planner's names for a row's pieces as a crew reads them: numbered
+ * tables run together ("Table 4", "Tables 1–3, 5, 7–8"); any other names are
+ * listed as they were written. Empty when there are none.
+ */
+export function formatTableLabels(labels: readonly string[]): string {
+  const unique = [...new Set(labels.map((label) => label.trim()).filter((label) => label.length > 0))];
+  if (unique.length === 0) return "";
+  const numbers = unique.map((label) => TABLE_LABEL.exec(label)?.[1]);
+  if (numbers.every((value): value is string => value !== undefined)) {
+    const sorted = [...new Set(numbers.map(Number))].sort((a, b) => a - b);
+    const runs: string[] = [];
+    let start = sorted[0] ?? 0;
+    let previous = start;
+    for (const value of [...sorted.slice(1), Number.NaN]) {
+      if (value === previous + 1) { previous = value; continue; }
+      runs.push(start === previous ? String(start) : `${String(start)}–${String(previous)}`);
+      start = value;
+      previous = value;
+    }
+    return `${sorted.length === 1 ? "Table" : "Tables"} ${runs.join(", ")}`;
+  }
+  return [...unique].sort((a, b) => a.localeCompare(b, "en-GB", { numeric: true })).join(", ");
 }
 
 export interface SetupStep {
@@ -166,6 +195,7 @@ interface ItemDraft {
   where: Map<Zone, number>;
   notes: string[];
   accessory: boolean;
+  labels: string[];
 }
 
 /**
@@ -185,8 +215,9 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
       const chairs = WITH_CHAIRS.exec(row.name);
       const name = chairs?.[1] ?? row.name;
       const key = `${name}|${String(row.afterDepth)}|${String(row.isAccessory)}`;
-      const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), someBare: false, where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory };
+      const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), someBare: false, where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory, labels: [] };
       draft.qty += row.qty;
+      draft.labels.push(...(row.labels ?? []));
       if (chairs?.[2] !== undefined) {
         const each = Number(chairs[2]);
         draft.chairTotal += row.qty * each;
@@ -219,6 +250,7 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
         where: [...draft.where].map(([zone, qty]) => ({ zone, qty })).sort((a, b) => b.qty - a.qty),
         notes: draft.notes,
         accessory: draft.accessory,
+        labels: draft.labels,
       })),
     };
   });

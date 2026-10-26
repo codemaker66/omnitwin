@@ -20,12 +20,16 @@
 // lib/render-quality.ts. The pipeline stands aside while a captured room is
 // shown (captures carry their own camera response), and a software
 // rasteriser draws the scene plainly.
+//
+// On a phone bloom pauses while the view moves (lib/motion-bloom.ts): its
+// passes are skipped and the composite weights its last glow 0, so the same
+// compiled pipeline draws both, and switching between them compiles nothing.
 // ---------------------------------------------------------------------------
 
 import { useLayoutEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NormalBlending, UnsignedByteType, type Camera, type Scene } from "three";
-import { BlendMode, RenderPipeline, type Node, type WebGPURenderer } from "three/webgpu";
+import { BlendMode, RenderPipeline, type Node, type NodeFrame, type UniformNode, type WebGPURenderer } from "three/webgpu";
 import {
   float,
   luminance,
@@ -39,23 +43,50 @@ import {
   sample,
   screenUV,
   smoothstep,
+  uniform,
   unpackRGBToNormal,
   vec3,
   vec4,
   velocity,
 } from "three/tsl";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
-import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
+import BloomNode from "three/examples/jsm/tsl/display/BloomNode.js";
 import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 import { fxaa } from "three/examples/jsm/tsl/display/FXAANode.js";
 import { getNativeRenderer, nativeRendererGpuString } from "../../lib/native-renderer.js";
 import { isSoftwareRenderer } from "../grand-hall/hall-finish.js";
+import { CameraPoseWatch, MotionBloom } from "../../lib/motion-bloom.js";
 import { registerNativeFrameComposer } from "../../lib/native-frame-composer.js";
 import type { RenderProfile } from "../../lib/render-quality.js";
 import { sceneGrade } from "../../lib/scene-grade.js";
+import { watchViewHand } from "../../lib/view-hand.js";
+
+/**
+ * Bloom whose passes can be skipped. The composite multiplies its glow by
+ * `weight`; at 0 the passes are skipped and the glow they last drew is
+ * weighted away. The first frame draws them whatever the weight, so they
+ * compile with the rest of the pipeline rather than when the view next stills.
+ */
+export class PausableBloomNode extends BloomNode {
+  readonly weight: UniformNode<"float", number> = uniform(1);
+  private drawn = false;
+
+  /** The glow's weight in the composite, 0 to 1. */
+  setWeight(weight: number): void {
+    this.weight.value = weight;
+  }
+
+  override updateBefore(frame: NodeFrame): boolean | undefined {
+    if (this.drawn && this.weight.value === 0) return undefined;
+    this.drawn = true;
+    return super.updateBefore(frame);
+  }
+}
 
 interface BuiltPipeline {
   readonly pipeline: RenderPipeline;
+  /** The pipeline's bloom, or null for a profile without it. */
+  readonly bloom: PausableBloomNode | null;
   readonly dispose: () => void;
 }
 
@@ -133,7 +164,7 @@ export function buildPlannerPipeline(
       const pipeline = new RenderPipeline(renderer);
       pipeline.outputColorTransform = false;
       pipeline.outputNode = vec4(vec3(occlusionPass.getTextureNode().r), 1);
-      return { pipeline, dispose: () => { pipeline.dispose(); for (const item of owned) item.dispose(); } };
+      return { pipeline, bloom: null, dispose: () => { pipeline.dispose(); for (const item of owned) item.dispose(); } };
     }
   }
 
@@ -145,10 +176,11 @@ export function buildPlannerPipeline(
   }
 
   let graded: Node<"vec4"> = resolved;
+  let glow: PausableBloomNode | null = null;
   if (profile.bloom !== null) {
-    const glow = bloom(resolved, profile.bloom.strength, profile.bloom.radius, profile.bloom.threshold);
+    glow = new PausableBloomNode(resolved, profile.bloom.strength, profile.bloom.radius, profile.bloom.threshold);
     owned.push(glow);
-    graded = vec4(resolved.rgb.add(glow.rgb), resolved.a);
+    graded = vec4(resolved.rgb.add(glow.rgb.mul(glow.weight)), resolved.a);
   }
   // The camera's eye: white balance, then saturation, in linear light.
   const balanced = graded.rgb.mul(sceneGrade.whiteBalance);
@@ -171,6 +203,7 @@ export function buildPlannerPipeline(
   }
   return {
     pipeline,
+    bloom: glow,
     dispose: () => {
       pipeline.dispose();
       for (const item of owned) item.dispose();
@@ -210,18 +243,37 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
       // Without post-processing the planner still draws its scene plainly.
       return undefined;
     }
+    // A phone's bloom pauses while a hand is on the view or the camera moves.
+    const glow = profile.bloomInMotion ? null : built.bloom;
+    const motion = new MotionBloom();
+    const pose = new CameraPoseWatch();
+    let weight = 1;
+    // A paused frame stays on screen until the next one: draw it once the hand leaves.
+    const hand = glow === null ? null : watchViewHand(gl.domElement, () => { if (weight < 1) invalidate(); });
     const release = registerNativeFrameComposer(native, () => {
       // A software rasteriser (a virtual machine, a headless browser) would run
       // every pass on the CPU, seconds a frame, so it draws the scene plainly,
       // as the hall's finish lightens there too (hall-finish.ts). Its backend
       // names the rasteriser once initialised, which the first frame awaits.
       software.current ??= isSoftwareRenderer(nativeRendererGpuString(native));
-      if (software.current) native.render(scene, camera);
-      else built.pipeline.render();
+      if (software.current) {
+        native.render(scene, camera);
+        return;
+      }
+      if (glow !== null && hand !== null) {
+        const now = performance.now();
+        const cameraMoved = pose.changed(camera);
+        weight = motion.frame(now, cameraMoved || hand.isOn(now));
+        glow.setWeight(weight);
+        // Frames follow while the glow returns, and one after a camera move to see it stop.
+        if (motion.returning || cameraMoved) invalidate();
+      }
+      built.pipeline.render();
     });
     invalidate();
     return () => {
       release();
+      hand?.dispose();
       built.dispose();
       invalidate();
     };

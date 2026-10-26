@@ -29,7 +29,6 @@ import {
   MAX_POLAR_ANGLE,
   MIN_POLAR_ANGLE,
   PAN_KEYS,
-  PAN_SPEED,
   ZOOM_FRICTION,
   ZOOM_IMPULSE,
   ZOOM_VELOCITY_THRESHOLD,
@@ -37,10 +36,12 @@ import {
   computeDefaultCameraPosition,
   computeDistanceLimits,
   computeKeyboardPanDirection,
+  computeKeyboardPanStep,
   computePanBounds,
   computeZoomFrameScale,
   isCameraKeyboardInputLocked,
   isCameraKeyboardPanSuspendedByPlannerState,
+  zoomWhileFingersDown,
   type CameraKeyboardPlannerState,
 } from "../lib/camera-rig.js";
 import { useEscapeLayer, usePlannerKeyBindings } from "../lib/planner-keys.js";
@@ -163,12 +164,6 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   const humanPovEuler = useRef(new Euler(0, 0, 0, "YXZ"));
   const humanPovForward = useRef(new Vector3());
 
-  // Touch devices (iPad, iPhone) don't have a scroll wheel — the custom
-  // inertial-wheel zoom below is desktop-only. Enabling OrbitControls' own
-  // zoom on coarse-pointer devices wires pinch-to-zoom through the same
-  // control surface used by orbit/pan, so two-finger gestures work out of
-  // the box. Desktop wheel remains owned by the custom inertial handler.
-  const isTouchDevice = useIsTouchDevice();
 
   // Parents may select a new immutable snapshot object at a timeline midpoint
   // even when its numeric room envelope is unchanged. Stabilise the bounds so
@@ -573,6 +568,14 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     };
   }, [camera, gl]);
 
+  // OrbitControls' zoom is the two-finger pinch's dolly, on only while a finger
+  // is down; every wheel and trackpad has the inertial zoom above (on a
+  // touch-first device both used to zoom one wheel turn).
+  useEffect(() => zoomWhileFingersDown(window, (on) => {
+    const controls = controlsRef.current;
+    if (controls !== null) controls.enableZoom = on;
+  }), []);
+
   useEffect(() => {
     const canvas = gl.domElement;
 
@@ -825,7 +828,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     const distance = camera.position.distanceTo(controls.target);
     const referenceDistance = (limits.minDistance + limits.maxDistance) / 2;
     const speedScale = distance / referenceDistance;
-    const speed = PAN_SPEED * speedScale * delta;
+    const speed = computeKeyboardPanStep(delta, speedScale);
 
     // Apply pan in camera-relative XZ plane
     // Get camera's forward direction projected onto XZ plane
@@ -861,7 +864,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       enabled={suspended ? false : undefined}
       enableDamping={smoothControls}
       dampingFactor={DAMPING_FACTOR}
-      enableZoom={isTouchDevice}
+      enableZoom={false}
       minPolarAngle={MIN_POLAR_ANGLE}
       maxPolarAngle={MAX_POLAR_ANGLE}
       minDistance={limits.minDistance}
@@ -872,31 +875,11 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       mouseButtons={{
         LEFT: -1 as number, // Disabled — reserved for object selection
         MIDDLE: 2, // THREE.MOUSE.PAN
-        RIGHT: (smoothControls ? 0 : -1) as number, // THREE.MOUSE.ROTATE (desktop orbit)
+        RIGHT: 0 as number, // THREE.MOUSE.ROTATE: a mouse's right-drag looks around at every width
       }}
       onStart={markCameraInteractionActive}
       onChange={onControlsChange}
       onEnd={markCameraInteractionSettling}
     />
   );
-}
-
-/**
- * Detect coarse-pointer (touch) devices at mount + on media-query change.
- * Used to selectively enable OrbitControls' built-in pinch-zoom on iPad
- * and iPhone without disturbing the desktop wheel-zoom handler.
- */
-function useIsTouchDevice(): boolean {
-  const [isTouch, setIsTouch] = useState<boolean>(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-    return window.matchMedia("(pointer: coarse)").matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
-    const mq = window.matchMedia("(pointer: coarse)");
-    const handler = (e: MediaQueryListEvent): void => { setIsTouch(e.matches); };
-    mq.addEventListener("change", handler);
-    return () => { mq.removeEventListener("change", handler); };
-  }, []);
-  return isTouch;
 }
