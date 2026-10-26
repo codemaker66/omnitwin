@@ -507,14 +507,26 @@ export function fitView(room: DrawnRoom, area: DrawingArea): DrawingView {
   };
 }
 
-/** Of the places the drawing could stand, the one that draws it largest; null when none has room. */
+/**
+ * How much larger another place must draw the room before the drawing leaves
+ * the first (centred on the page, on the same axis as the switch and the
+ * dock): a balanced page is worth a little size, not a third of it.
+ */
+export const CENTRED_PREFERENCE = 1.15;
+
+/**
+ * Of the places the drawing could stand, the first (the centred one) unless
+ * another draws the room at least CENTRED_PREFERENCE times larger; null when
+ * none has room.
+ */
 export function bestArea(room: DrawnRoom, areas: readonly DrawingArea[]): DrawingArea | null {
   let best: DrawingArea | null = null;
   let scale = -Infinity;
   for (const area of areas) {
     if (area.width <= DRAWING_MARGIN_PX * 2 || area.height <= DRAWING_MARGIN_PX * 2) continue;
     const fitted = fitView(room, area).scale;
-    if (fitted > scale + 1e-9) {
+    const needed = best === null ? scale : scale * CENTRED_PREFERENCE;
+    if (fitted > needed + 1e-9) {
       scale = fitted;
       best = area;
     }

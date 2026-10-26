@@ -5,6 +5,7 @@ import { getCatalogueItemBySlug } from "../catalogue.js";
 import type { PlacedItem } from "../placement.js";
 import { stampSetup } from "../setup-cards.js";
 import {
+  CENTRED_PREFERENCE,
   DRAWING_MARGIN_PX,
   DRAWING_ZOOM,
   GRAND_HALL_CHIMNEYPIECE,
@@ -233,7 +234,7 @@ describe("fitting the drawing to the space the chrome leaves", () => {
     expect(topLeft.y - area.top).toBeCloseTo(area.top + area.height - bottomRight.y, 6);
   });
 
-  it("goes under the slate or beside it, whichever draws the room larger", () => {
+  it("stays centred under the slate unless beside it draws the room much larger", () => {
     const free = { left: 20, top: 20, right: 1346, bottom: 620 };
     const slate = { left: 20, top: 20, right: 360, bottom: 198 };
     const areas = drawingAreas(free, slate, 12);
@@ -243,6 +244,13 @@ describe("fitting the drawing to the space the chrome leaves", () => {
     // On a 1366 laptop the long hall draws larger beside the slate than under it.
     expect(fitView(hall, beside).scale).toBeGreaterThan(fitView(hall, under).scale);
     expect(bestArea(hall, areas)).toEqual(beside);
+    // On a 1600 × 1000 desktop beside the slate draws it only a little larger: it stays centred, under the slate.
+    const desk = drawingAreas({ left: 20, top: 76, right: 1580, bottom: 856 }, { left: 20, top: 20, right: 360, bottom: 183 }, 12);
+    const [deskUnder, deskBeside] = desk;
+    if (deskUnder === undefined || deskBeside === undefined) return;
+    expect(fitView(hall, deskBeside).scale).toBeGreaterThan(fitView(hall, deskUnder).scale);
+    expect(fitView(hall, deskBeside).scale).toBeLessThan(fitView(hall, deskUnder).scale * CENTRED_PREFERENCE);
+    expect(bestArea(hall, desk)).toEqual(deskUnder);
     // No slate in the way: the whole free area.
     expect(drawingAreas(free, null, 12)).toEqual([{ left: 20, top: 20, width: 1326, height: 600 }]);
   });
