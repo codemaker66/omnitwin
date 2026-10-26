@@ -17,9 +17,10 @@ import * as schema from "../db/schema.js";
 // and no alias captures even outerColumn's "table"."column". The PostgreSQL
 // suite proves the fixed queries (correlated-subqueries-postgres.test.ts);
 // this keeps the shape from coming back. It reads the code as TypeScript, not
-// as text, and judges each `sql` template that names a table by hand (FROM or
-// JOIN a plain or quoted name, in any case). A template that interpolates the
-// table itself (`FROM ${proposals}`) is the query builder's and is not judged.
+// as text, and judges each `sql` template that names its own table: by hand
+// (FROM or JOIN a plain or quoted name, in any case), where any interpolated
+// schema column is the outer row's, or by interpolating it (`FROM
+// ${placedObjects}`), where a column of any other table is.
 // ---------------------------------------------------------------------------
 
 const SRC = resolve(import.meta.dirname, "..");
@@ -47,6 +48,17 @@ function columnTable(expression: ts.Expression): string | null {
   return null;
 }
 
+/** The schema table an interpolated `${table}` or `${schema.table}` names, if any. */
+function interpolatedTable(expression: ts.Expression): string | null {
+  if (ts.isIdentifier(expression)) return TABLES.has(expression.text) ? expression.text : null;
+  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression) && expression.expression.text === "schema") {
+    return TABLES.has(expression.name.text) ? expression.name.text : null;
+  }
+  return null;
+}
+
+const ENDS_IN_FROM = /\b(?:FROM|JOIN)\s*"?$/iu;
+
 function judge(fileName: string, text: string): string[] {
   const file = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true);
   const found: string[] = [];
@@ -57,6 +69,22 @@ function judge(fileName: string, text: string): string[] {
         table: (match[1] ?? "").toLowerCase(),
         aliased: match[2] !== undefined && !NOT_AN_ALIAS.has(match[2].toLowerCase()),
       }));
+      // Tables the template interpolates after FROM or JOIN are its own.
+      const { head, templateSpans: spans } = node.template;
+      const before = (index: number): string => (index === 0 ? head.text : spans[index - 1]?.literal.text ?? "");
+      const own = new Set(spans.flatMap((span, index) => {
+        const table = interpolatedTable(span.expression);
+        return table !== null && ENDS_IN_FROM.test(before(index)) ? [table] : [];
+      }));
+      if (own.size > 0 && named.length === 0) {
+        for (const span of spans) {
+          const table = columnTable(span.expression);
+          if (table !== null && !own.has(table)) {
+            const at = `${fileName}:${String(file.getLineAndCharacterOfPosition(span.expression.getStart()).line + 1)}`;
+            found.push(`${at} bare \${${span.expression.getText()}} beside its own ${[...own].join(", ")}`);
+          }
+        }
+      }
       if (named.length > 0) {
         for (const span of node.template.templateSpans) {
           const at = `${fileName}:${String(file.getLineAndCharacterOfPosition(span.expression.getStart()).line + 1)}`;
@@ -90,7 +118,10 @@ describe("subqueries name the outer row by its table", () => {
       ["same table, aliased", "sql`(SELECT count(*) FROM configurations c WHERE c.space_id = ${outerColumn(configurations.spaceId)})`", 0],
       ["values only", "sql`EXISTS (SELECT 1 FROM enquiries e WHERE e.venue_id = ${venueId} AND e.user_id = ${params.data.userId})`", 0],
       ["a function's FROM", "sql`EXTRACT(EPOCH FROM now() - ${configurations.createdAt})`", 0],
-      ["the builder's table", "sql`(SELECT 1 FROM ${placedObjects} WHERE ${placedObjects.configurationId} = ${configurations.id})`", 0],
+      ["the builder's table", "sql`(SELECT 1 FROM ${placedObjects} WHERE ${placedObjects.configurationId} = ${configurations.id})`", 1],
+      ["the builder's table, fixed", "sql`(SELECT 1 FROM ${placedObjects} WHERE ${placedObjects.configurationId} = ${outerColumn(configurations.id)})`", 0],
+      ["the builder's tables, joined", "sql`(SELECT 1 FROM ${referencePhotos} JOIN ${files} ON ${files.id} = ${referencePhotos.fileId} WHERE ${referencePhotos.loadoutId} = ${referenceLoadouts.id})`", 1],
+      ["through the schema's table", "sql`(SELECT 1 FROM ${schema.placedObjects} WHERE ${schema.placedObjects.configurationId} = ${schema.configurations.id})`", 1],
     ];
     for (const [label, code, expected] of cases) {
       expect(judge(`${label}.ts`, `const x = ${code};`), label).toHaveLength(expected);

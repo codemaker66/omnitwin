@@ -34,14 +34,17 @@ The alias matters even with `outerColumn()`: a subquery over the outer row's own
 table, unaliased, takes `"configurations"."space_id"` for its own row and
 compares each row with itself.
 
-`outer-column-guard.test.ts` reads the API's source as TypeScript. In a `sql`
-template that names a table by hand (`FROM name` or `JOIN name`, plain or quoted,
-in any case) it fails on a schema column interpolated without `outerColumn()`
-(`table.column` or `schema.table.column`), and on `outerColumn()` inside an
-unaliased table of the same name. It does not see a table imported under another
-name, and it does not judge templates that interpolate the table itself
-(`FROM ${proposals}`, as `selectDeskProposals` and the dietary retention job do):
-those are correct where Drizzle qualifies the column (a select with a join, a
-WHERE clause, a nested fragment), so prefer the aliased form above for new code.
-Prove a new per-row subquery on real PostgreSQL, as
+`outer-column-guard.test.ts` reads the API's source as TypeScript and judges
+each `sql` template that names its own table. Where the template names it by
+hand (`FROM name` or `JOIN name`, plain or quoted, in any case), it fails on a
+schema column interpolated without `outerColumn()` (`table.column` or
+`schema.table.column`), and on `outerColumn()` inside an unaliased table of the
+same name. Where the template interpolates its own table (`FROM ${proposals}`),
+it fails on a column of any other table interpolated without `outerColumn()`:
+that form renders correctly only while Drizzle happens to qualify the column (a
+select with a join, a WHERE clause), and the "0 pieces" bug comes back if a
+join is removed. `selectDeskProposals` and the dietary retention job use
+`outerColumn()` for that reason, though their SQL is unchanged by it. The guard
+does not see a table imported under another name, or a column passed in as a
+variable. Prove a new per-row subquery on real PostgreSQL, as
 `correlated-subqueries-postgres.test.ts` does.

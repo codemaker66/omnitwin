@@ -8,6 +8,7 @@ import {
   events,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../db/outer-column.js";
 import { sqlStateOf } from "./dietary-memory.js";
 
 // ---------------------------------------------------------------------------
@@ -84,7 +85,7 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
     select max(coalesce(${events.endsAt}, ${events.startsAt}))
     from ${eventConfigurationLinks}
     join ${events} on ${events.id} = ${eventConfigurationLinks.eventId}
-    where ${eventConfigurationLinks.configurationId} = ${configurations.id}
+    where ${eventConfigurationLinks.configurationId} = ${outerColumn(configurations.id)}
       and ${events.deletedAt} is null
   )`;
   // An enquiry filed with this layout whose preferred date is still ahead, or
@@ -95,7 +96,7 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
   const afterEventDay = afterEvent.toISOString().slice(0, 10);
   const upcomingEnquiry = sql`exists (
     select 1 from ${enquiries}
-    where ${enquiries.configurationId} = ${configurations.id}
+    where ${enquiries.configurationId} = ${outerColumn(configurations.id)}
       and ${enquiries.preferredDate} >= ${afterEventDay}::date
   )`;
   const rows = await db
@@ -111,7 +112,7 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
         ${hasNote(configurations.metadata)}
         or exists (
           select 1 from ${configurationSheetSnapshots}
-          where ${configurationSheetSnapshots.configurationId} = ${configurations.id}
+          where ${configurationSheetSnapshots.configurationId} = ${outerColumn(configurations.id)}
             and ${hasNote(configurationSheetSnapshots.payload)}
         )
       )`,
