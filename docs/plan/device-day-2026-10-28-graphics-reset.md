@@ -31,10 +31,12 @@ kind a phone can produce (a bad upload), and the view must simply keep drawing.
 | 5 | `/room/grand-hall?graphicsReset=30` (preview build only) | Walk to the far wall | The same place and view | 10 s |
 | 6 | `/plan?space=grand-hall&graphicsReset=30:error` (WebGPU devices only) | Place a table, select it | Nothing at all: no cover, no message, the room keeps moving as you orbit | (no pause) |
 
-The cover stays until the room has actually drawn again, and that first frame
-recompiles every shader on the device. On the RTX 4090 that took 0.9–2.4 s, so
-expect several seconds on a phone. Write down the seconds either way: they are
-the number this check exists to find.
+The cover stays until the room has actually drawn again, captured walls
+included: the first frame recompiles every shader on the device, and the
+capture is rebuilt for it. With the Grand Hall's capture showing, that took
+5.8–6.5 s on the RTX 4090's machine (26 October), so expect longer on a phone;
+after 15 s the cover lifts even if the capture is still coming back. Write down
+the seconds either way: they are the number this check exists to find.
 
 For 1 and 2, start counting when the hall first appears, not when the page
 starts loading. Without the extra 30 seconds the reset can land during the

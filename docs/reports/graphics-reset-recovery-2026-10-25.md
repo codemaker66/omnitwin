@@ -58,8 +58,12 @@ Where the time goes (planner, WebGPU): the swap itself takes about 150 ms (the
 lost renderer released in 2–3 ms, the new device ready about 120 ms after the
 loss). The first frame then compiles the scene's pipelines in one long task of
 0.8–1.5 s (4.0 s on WebGL2). After the room reappears, a second task of
-2.4–2.9 s compiles the rest of the pipelines and rebuilds the splat draw. That
-is the same cost as the planner's first load. Before the review fixes the
+2.4–2.9 s rebuilds the splat draw. (Corrected 26 October: this said it
+compiled the rest of the pipelines, which was inferred. A CPU profile shows
+the capture's snapshot being rebuilt for the new device, mostly merging and
+bounding 6 M splats on the CPU; until then the room showed without its
+capture. The cover now waits for it:
+[follow-up report](graphics-reset-followup-2026-10-26.md).) Before the review fixes the
 cover lifted before the first frame, so a person saw the canvas blank for
 those seconds.
 

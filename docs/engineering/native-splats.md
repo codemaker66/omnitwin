@@ -105,7 +105,14 @@ activation before any scene effect layered its own, and the current resolution.
 resets its splat arrival counts on `onCreated`. While it restores, frames stop
 and the canvas is covered by "Restoring the 3D view" (`ActivityStatus`). The
 cover stays until the new device has drawn its first frame, because that frame
-compiles every pipeline again.
+compiles every pipeline again; if a captured room was drawn at the loss, it
+stays until the new renderer draws the capture's own snapshot
+(`nativeSceneShowsSplats`), at most 15 s. `NativeSplatScene` rebuilds that
+snapshot from the sources it holds, and the rebuild is CPU work that does not
+depend on the device (measured 26 October on the 6.03 M-splat Grand Hall:
+1.2-1.8 s merging and bounding the sources, 1.0-1.2 s more bounding for the
+sort, 0.35 s of SH); before the cover waited for it, the room showed without
+its capture and then froze for those seconds.
 
 The policy is `lib/native-renderer-recovery.ts`. It waits for a hidden page to
 be shown. A WebGL canvas waits up to 4 s for `webglcontextrestored`; a context
@@ -119,8 +126,9 @@ says it is safe and offers "Continue in 2D", which switches the editor's own
 view mode in place (no reload, same address; not during a timeline preview,
 not yet in the v2 chrome). Anywhere else (a landing, `/room/...`) the view
 defaults to `surface="walk"`, which promises no layout. The cover and the
-stopped card take the scene's own background colour, read at the loss, so the
-dark hall is not covered in cream. The tour (`/tour`, a classic
+stopped card stand in for the scene: the dark stage (#120e0b) when a capture
+is drawn (at eye level it fills the view, over the light shell's clear
+colour), otherwise the scene's own background colour, read at the loss. The tour (`/tour`, a classic
 `WebGLRenderer`) restores in place on the same policy through
 `twin/TwinContextLossWatch.tsx`.
 
@@ -130,8 +138,10 @@ device. Three r186 forwards each one to `renderer.onError` as
 draw is usually followed by good frames. `lib/native-gpu-error-watch.ts`
 reports each distinct message once (`console.warn`; at most five per view;
 F-07's Sentry warning belongs there) and asks for a frame. A frame counts as
-having got through once 250 ms pass with no further error, because errors
-arrive a frame or two after the submission that caused them. Only when 3 s pass
+having got through once 250 ms pass with no further error. An idle WebGPU
+device delivers uncaptured errors only when it is ticked (a submit: 0–1 ms
+after; none in 2 s without, measured 26 October), so a scene's errors arrive
+with its own frames, and the watch's redraw is what keeps them coming. Only when 3 s pass
 with no frame getting through is the view broken. It then gets one fresh device
 by the same swap; the same errors on that device are the scene's own, and the
 view stops with the stopped card. The app's own failures (a resident splat sort
