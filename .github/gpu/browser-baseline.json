@@ -740,6 +740,22 @@
       ],
       "expectedStatus": "skipped",
       "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 3f352fcb62a55bd2f17a-0588accbacaa6669e855 one for one and keeps its expected skip, so the totals (401 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-26",
+      "reason": "The Grand Assembly behind ?assembly=accio (PR #172, goal 03 S5 and S6): three ordinary cases open a saved Grand Hall layout of three rounds of ten on a booted planner with the backend stubbed, where every layout write is refused and recorded. With the flag the layout assembles itself, comes to rest as placed and hands the camera back on its final framing without a single write; Escape snaps it to the true state at once; without the flag the layout simply opens and no replay control appears.",
+      "sourceCommit": "7a136b84e03742e52aeaa7799d16f9ec58606901",
+      "sourceFile": "packages/web/e2e/grand-assembly.spec.ts",
+      "sourceFileGitBlobSha256": "9578910fca1a68841c298be44bc5a7ecb268f2bd2bfc1ce17f911af11efae4d0",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/grand-assembly.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f1c3235dff848630d2ed7b4e6bb9681e4e7991c3b117f8233e17c33e04770137",
+      "caseIds": [
+        "f1c17e56d03862f173b0-4db02b1b18a5e2b83dea",
+        "f1c17e56d03862f173b0-62c265c6c8234b64a9ce",
+        "f1c17e56d03862f173b0-b202453e704508f538aa"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These three cases were absent from sourceRunId, sourceReports and the earlier admissions; they stub the API before transport and play the show in hosted Chromium, so they prove the flag, the hold, the hand-back and that nothing is written, not the show's look or its frame time on a real phone; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -5024,6 +5040,39 @@
       ],
       "project": "chromium",
       "expectedStatus": "skipped"
+    },
+    {
+      "id": "f1c17e56d03862f173b0-4db02b1b18a5e2b83dea",
+      "file": "grand-assembly.spec.ts",
+      "title": "a saved layout that opens assembles itself, rests as placed and hands the camera back where it ended",
+      "suitePath": [
+        "grand-assembly.spec.ts",
+        "Grand Assembly behind ?assembly=accio"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f1c17e56d03862f173b0-62c265c6c8234b64a9ce",
+      "file": "grand-assembly.spec.ts",
+      "title": "Escape snaps it to the true state at once",
+      "suitePath": [
+        "grand-assembly.spec.ts",
+        "Grand Assembly behind ?assembly=accio"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f1c17e56d03862f173b0-b202453e704508f538aa",
+      "file": "grand-assembly.spec.ts",
+      "title": "without the flag the layout simply opens",
+      "suitePath": [
+        "grand-assembly.spec.ts",
+        "Grand Assembly behind ?assembly=accio"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
     }
   ]
 }
