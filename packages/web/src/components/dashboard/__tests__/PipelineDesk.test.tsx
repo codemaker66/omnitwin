@@ -542,6 +542,32 @@ describe("the open deal", () => {
     expect(screen.queryByTestId("deal-confirm-won")).toBeNull();
   });
 
+  it("holds every other change while one saves, so a press is never taken and dropped", async () => {
+    // The desk makes one change at a time. Done stayed pressable while a
+    // follow-up was being added, and the press did nothing at all.
+    let added: (task: unknown) => void = () => undefined;
+    mocks.addFollowUpTask.mockReturnValue(new Promise((resolve) => { added = resolve; }));
+    mocks.updateFollowUpTaskStatus.mockResolvedValue(followUp({ status: "done" }));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    fireEvent.change(panel.getByLabelText("Add a note"), { target: { value: "Wants the piper at seven." } });
+    fireEvent.change(panel.getByLabelText("A follow-up"), { target: { value: "Book the piper" } });
+    fireEvent.click(panel.getByRole("button", { name: "Add" }));
+    expect(await panel.findByRole("button", { name: "Adding…" })).toBeDefined();
+    const done = panel.getByRole("button", { name: "Mark “Send the menu” done" });
+    expect(done).toHaveProperty("disabled", true);
+    expect(panel.getByRole("button", { name: "Add the note" })).toHaveProperty("disabled", true);
+    // The note's words stay editable meanwhile.
+    expect(panel.getByLabelText("Add a note")).toHaveProperty("disabled", false);
+    fireEvent.click(done);
+    expect(mocks.updateFollowUpTaskStatus).not.toHaveBeenCalled();
+    await act(async () => { added(followUp({ id: "task2", title: "Book the piper" })); await Promise.resolve(); });
+    await waitFor(() => { expect(panel.getByRole("button", { name: "Mark “Send the menu” done" })).toHaveProperty("disabled", false); });
+    expect(panel.getByRole("button", { name: "Add the note" })).toHaveProperty("disabled", false);
+    fireEvent.click(panel.getByRole("button", { name: "Mark “Send the menu” done" }));
+    await waitFor(() => { expect(mocks.updateFollowUpTaskStatus).toHaveBeenCalledWith("opp1", "task1", "done"); });
+  });
+
   it("adds a follow-up with its day, marks one done, and keeps a note's words when it fails", async () => {
     mocks.addFollowUpTask.mockResolvedValue(followUp({ id: "task2", title: "Book the piper" }));
     mocks.updateFollowUpTaskStatus.mockResolvedValue(followUp({ status: "done" }));
@@ -554,7 +580,7 @@ describe("the open deal", () => {
     fireEvent.change(panel.getAllByLabelText("Due on").at(-1) as HTMLElement, { target: { value: "2026-10-05" } });
     fireEvent.click(panel.getByRole("button", { name: "Add" }));
     await waitFor(() => { expect(mocks.addFollowUpTask).toHaveBeenCalledWith("opp1", "Book the piper", "2026-10-05T12:00:00.000Z"); });
-    // One change at a time: Done is pressed once the follow-up is said to be added.
+    // One change at a time: Done waits while the follow-up is added.
     expect(await panel.findByText("Follow-up added: Book the piper.")).toBeDefined();
 
     fireEvent.click(panel.getByRole("button", { name: "Mark “Send the menu” done" }));
