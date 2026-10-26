@@ -162,14 +162,45 @@ export function storeShortfall(stock: UsableStock | null, placedItems: readonly 
   if (stock === null) return null;
   const changedIds = new Set(change.add.map((piece) => piece.id));
   const kept = placedItems.filter((piece) => change.removeIds?.has(piece.id) !== true && !changedIds.has(piece.id));
-  const before = placedCounts(placedItems);
-  for (const [identity, count] of placedCounts([...kept, ...change.add])) {
+  return storeShortfallBetween(stock, placedItems, [...kept, ...change.add]);
+}
+
+/**
+ * The first piece taking the layout from `before` to `after` would take past
+ * its usable stock, or null: storeShortfall for a change given as the whole
+ * layout after it (a store action's write).
+ */
+export function storeShortfallBetween(stock: UsableStock | null, before: readonly PlacedItem[], after: readonly PlacedItem[]): StoreShortfall | null {
+  if (stock === null) return null;
+  const was = placedCounts(before);
+  for (const [identity, count] of placedCounts(after)) {
     const usable = stock.get(identity);
-    if (usable !== undefined && count > usable && count > (before.get(identity) ?? 0)) {
+    if (usable !== undefined && count > usable && count > (was.get(identity) ?? 0)) {
       return { catalogueItemId: identity, usable, needed: count };
     }
   }
   return null;
+}
+
+let stockSource: () => UsableStock | null = () => null;
+
+/**
+ * Where every adding commit reads the store's stock (B2, hard): the cards
+ * store registers its reading as it loads stock for staff (lane C), so the
+ * placement store refuses any write past it, whichever control made it.
+ * Unknown until a reading is registered, and unknown never refuses. Returns
+ * the way to take the reading away again.
+ */
+export function registerStoreStock(read: () => UsableStock | null): () => void {
+  stockSource = read;
+  return () => {
+    if (stockSource === read) stockSource = () => null;
+  };
+}
+
+/** The store's usable stock as the planner knows it now, or null when unknown (a guest, or not yet loaded). */
+export function currentStoreStock(): UsableStock | null {
+  return stockSource();
 }
 
 /** The refusal's words, in the planner's name for the piece: "Velvet Banquet Chair: 40 in store, this needs 48". */
