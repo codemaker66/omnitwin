@@ -1,5 +1,5 @@
 import { type BufferGeometry, Color, Group, type Material, Mesh } from "three";
-import { craftedMaterial, type CraftedMaterialId } from "./crafted-materials.js";
+import { craftedMaterial, isFloorShade, isShadowCaster, type CraftedMaterialId } from "./crafted-materials.js";
 import { mergeParts } from "./crafted-geometry.js";
 
 // ---------------------------------------------------------------------------
@@ -65,12 +65,17 @@ export function instantiateCraftedModel(
   const object = new Group();
   object.name = name;
   const owned: OwnedMaterial[] = [];
+  // A piece with a shadow caster casts the sun's shadow with it alone: the
+  // parts that are seen only receive (crafted-materials.ts).
+  const hasCaster = [...geometries.keys()].some(isShadowCaster);
   for (const [id, geometry] of geometries) {
     const material = craftedMaterial(id);
     const mesh = new Mesh(geometry, material);
     mesh.name = `${name}:${id}`;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    const caster = isShadowCaster(id);
+    const shade = isFloorShade(id);
+    mesh.castShadow = caster || (!hasCaster && !shade);
+    mesh.receiveShadow = !caster && !shade;
     object.add(mesh);
     const colour = colourOf(material);
     owned.push({

@@ -1,6 +1,10 @@
-import { barCounterParts, platformParts, roomDividerParts, serveryParts } from "./crafted-cabinets.js";
+import { barCounterParts, roomDividerParts, serveryParts } from "./crafted-cabinets.js";
 import { banquetChairParts } from "./crafted-chairs.js";
+import { chiavariParts } from "./crafted-chiavari.js";
+import { danceFloorPanelParts, stagingDeckParts } from "./crafted-staging.js";
 import {
+  barePoseurParts,
+  bareRoundParts,
   bareTrestleParts,
   ceremonyTableParts,
   clothedRoundParts,
@@ -42,10 +46,12 @@ export interface CraftedSize {
 type CraftedFactory = (size: CraftedSize) => CraftedPart[];
 
 const FACTORIES: Readonly<Record<CraftedFurnitureSlug, CraftedFactory>> = {
+  "chiavari-chair": (size) => chiavariParts(size),
   "burgess-turini-18-3": (size) => banquetChairParts(size, "velvet-coral"),
   "checked-banquet-chair": (size) => banquetChairParts(size, "check-coral"),
   "round-table-6ft-white": (size) => clothedRoundParts(size, "white"),
   "round-table-6ft-black": (size) => clothedRoundParts(size, "black"),
+  "round-table-6ft": (size) => bareRoundParts(size),
   "cake-cutting-table": (size) => clothedRoundParts(size, "white", 29),
   "trestle-4ft-white": (size) => clothedTrestleParts(size, "white"),
   "trestle-4ft-black": (size) => clothedTrestleParts(size, "black"),
@@ -58,9 +64,14 @@ const FACTORIES: Readonly<Record<CraftedFurnitureSlug, CraftedFactory>> = {
   "square-cafe-table-white": (size) => squareCafeParts(size),
   "poseur-table-white": (size) => poseurParts(size, "white"),
   "poseur-table-black": (size) => poseurParts(size, "black"),
+  "poseur-table": (size) => barePoseurParts(size),
   "bar-counter": (size) => barCounterParts(size),
   "servery-unit": (size) => serveryParts(size),
-  "platform": (size) => platformParts(size),
+  "platform": (size) => stagingDeckParts(size),
+  "platform-narrow": (size) => stagingDeckParts(size),
+  "staging-deck-6x4": (size) => stagingDeckParts(size),
+  "staging-deck-6x3": (size) => stagingDeckParts(size),
+  "dancefloor-panel": (size) => danceFloorPanelParts(size),
   "room-divider": (size) => roomDividerParts(size),
 };
 

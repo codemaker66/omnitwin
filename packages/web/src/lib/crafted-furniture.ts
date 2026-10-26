@@ -11,10 +11,12 @@
 // ---------------------------------------------------------------------------
 
 export const CRAFTED_FURNITURE_SLUGS = [
+  "chiavari-chair",
   "burgess-turini-18-3",
   "checked-banquet-chair",
   "round-table-6ft-white",
   "round-table-6ft-black",
+  "round-table-6ft",
   "cake-cutting-table",
   "trestle-4ft-white",
   "trestle-4ft-black",
@@ -27,9 +29,14 @@ export const CRAFTED_FURNITURE_SLUGS = [
   "square-cafe-table-white",
   "poseur-table-white",
   "poseur-table-black",
+  "poseur-table",
   "bar-counter",
   "servery-unit",
   "platform",
+  "platform-narrow",
+  "staging-deck-6x4",
+  "staging-deck-6x3",
+  "dancefloor-panel",
   "room-divider",
 ] as const;
 
