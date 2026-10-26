@@ -92,8 +92,12 @@ export interface PlacementState {
   readonly rotateItemsTo: (rotations: ReadonlyMap<string, number>) => void;
   /** Set several items' uniform scales in one batch (scale tool, scrub). */
   readonly scaleItemsTo: (scales: ReadonlyMap<string, number>) => void;
-  /** Update ghost position and validity. */
-  readonly updateGhost: (x: number, z: number, catalogueItemId: string) => void;
+  /**
+   * Update ghost position and validity. `exact` stands it at (x, z) with no
+   * snaps: the keys' nudges, for a piece whose commit sets it down exactly
+   * where its ghost stands (lib/planner-keymap.ts moveGhostBy).
+   */
+  readonly updateGhost: (x: number, z: number, catalogueItemId: string, options?: { readonly exact?: boolean }) => void;
   /** Rotate ghost by a delta (radians). */
   readonly rotateGhost: (delta: number) => void;
   /** Clear ghost (stop placing). */
@@ -435,11 +439,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     });
   },
 
-  updateGhost: (x: number, z: number, catalogueItemId: string) => {
+  updateGhost: (x: number, z: number, catalogueItemId: string, options = {}) => {
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     const rot = state.ghostRotation;
-    const gridPos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
+    const exact = options.exact === true;
+    const gridPos = state.snapEnabled && !exact ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     const catalogueItem = getCatalogueItem(catalogueItemId);
     // Edge snap + wall snap first (XZ only), then compute surface height
     let finalX = gridPos[0];
@@ -449,7 +454,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // piece's, and would pull the set's chairs through a wall. The truthful ghost pushes the set clear.
     const card = useCatalogueStore.getState().cardParams;
     const wholeSet = card !== null && placesAsCard(card) && cardIsWholeSet(card);
-    if (catalogueItem !== undefined && !wholeSet) {
+    if (catalogueItem !== undefined && !wholeSet && !exact) {
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catalogueItem, rot, state.placedItems, new Set());
       finalX = edgeSnap.x;
       finalZ = edgeSnap.z;

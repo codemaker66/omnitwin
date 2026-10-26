@@ -79,7 +79,7 @@ describe("turning", () => {
 
   it("turns the piece in hand, not a selection held at the same time, the same way a selection turns", () => {
     let frames = 0;
-    const deps = { invalidate: () => { frames += 1; }, cancelGesture: () => undefined, screenUp: SCREEN_UP_NORTH };
+    const deps = { invalidate: () => { frames += 1; }, cancelGesture: () => undefined, screenUp: SCREEN_UP_NORTH, floorMiddle: () => null };
     cleanups.push(registerKeyBindings(selectionKeyBindings(deps)));
     cleanups.push(registerKeyBindings(placingKeyBindings(deps)));
     useSelectionStore.getState().select(tableId);

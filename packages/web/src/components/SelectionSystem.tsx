@@ -128,16 +128,26 @@ function paintHoldRing(ring: HTMLDivElement, progress: number): void {
 
 const _screenForward = new Vector3();
 const _screenUp = new Vector3();
+const _onScreen = new Vector3();
 
 /**
  * The floor direction that runs up the screen: the camera's view and its own
  * up, laid flat. Their sum never vanishes, looking straight down (Plan) or
  * straight ahead (Walk), so an arrow always has a way to go.
  */
-function screenUpOnFloor(cam: Camera): FloorDirection {
+export function screenUpOnFloor(cam: Camera): FloorDirection {
   cam.getWorldDirection(_screenForward);
   _screenUp.setFromMatrixColumn(cam.matrixWorld, 1);
   return { x: _screenForward.x + _screenUp.x, z: _screenForward.z + _screenUp.z };
+}
+
+/** How far from the middle of the view, as a share of each half, a piece still counts as well in view: the chrome covers the edges. */
+const WELL_IN_VIEW = 0.7;
+
+/** Whether a floor point stands in front of the camera and well inside the view, so a key that selects it need not move the camera. */
+function wellInView(cam: Camera, x: number, z: number): boolean {
+  _onScreen.set(x, 0, z).project(cam);
+  return Math.abs(_onScreen.z) < 1 && Math.abs(_onScreen.x) <= WELL_IN_VIEW && Math.abs(_onScreen.y) <= WELL_IN_VIEW;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +328,7 @@ export function SelectionSystem(): null {
       if (at === null || document.elementFromPoint(at.x, at.y) !== gl.domElement) return null;
       return placementFloorPoint(scene, camera, raycaster, gl.domElement.getBoundingClientRect(), at.x, at.y);
     },
+    inView: (x, z) => wellInView(camera, x, z),
   }));
   useEscapeLayer("operation", {
     open: () => isDragging.current || isMarquee.current,

@@ -7,13 +7,19 @@ import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { useCaptionFocusStore } from "../stores/caption-focus-store.js";
+import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { postPlacementNotice } from "../stores/placement-notice-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, type GhostWorld } from "./ghost-truth.js";
+import { judgeCardAt, placePieceInHand } from "./place-in-hand.js";
 import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
+import { TABLE_KIND, stopWords, walkKind, walkOrder, walkStep, walkStops, type WalkCursor, type WalkStop } from "./piece-walk.js";
+import { announcePolitely } from "./planner-announcer.js";
+import { plannerChromeRequested } from "./planner-chrome-flag.js";
 import {
   allPieceIds,
   copyPieces,
@@ -30,9 +36,9 @@ import {
 import { plannerFeatureEnabled } from "./planner-features.js";
 import { withNoteSeeds } from "./note-seeds.js";
 import { planReplace, type ReplaceOptions, type ReplacePlan, type ReplaceResult } from "./replace.js";
-import type { CardParams } from "./setup-cards.js";
+import { describeCard, judgesCard, placesAsCard, seatsInHand, stepCardParams, type CardParams } from "./setup-cards.js";
 import { ROTATION_SNAP_RAD, snapRotation } from "./selection.js";
-import { isSceneFurniturePlacement } from "./table-dressing.js";
+import { isSceneFurniturePlacement, tableClothStyleForCatalogueItem, tableSettingForCatalogueItem } from "./table-dressing.js";
 import { tableGroupSeatCapacity } from "./table-group.js";
 import {
   KEY_PRIORITY,
@@ -121,6 +127,23 @@ function opposite(direction: FloorDirection): FloorDirection {
 
 const ARROW_CHORDS: readonly KeyChord[] = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]
   .map((code) => ({ code, shift: "any", alt: "any" }));
+
+/** + and − (spec 11): a seat more or fewer at the selected tables, or a step of the card in hand. */
+const MORE_CHORDS: readonly KeyChord[] = [{ key: "+" }, { key: "=" }, { code: "NumpadAdd" }];
+const FEWER_CHORDS: readonly KeyChord[] = [{ key: "-" }, { code: "NumpadSubtract" }];
+
+const ENTER_CHORDS: readonly KeyChord[] = [{ code: "Enter" }, { code: "NumpadEnter" }];
+
+/** A symbol by the character typed (Shift as typing it needs), also with AltGr (Ctrl Alt) where a layout keeps it there. */
+function typed(key: string): KeyChord[] {
+  return [{ key, alt: "any" }, { key, mod: true, alt: true }];
+}
+
+/** ] and [ walk the selection's kind; Shift ] and Shift [, typed as } and {, every kind. */
+const WALK_NEXT = typed("]");
+const WALK_PREVIOUS = typed("[");
+const WALK_NEXT_ANY = typed("}");
+const WALK_PREVIOUS_ANY = typed("{");
 
 // ---------------------------------------------------------------------------
 // Edits, each one undo step.
@@ -314,6 +337,12 @@ export const PASTE_OTHER_VENUE = "Copied in another venue · paste it there";
 let lastDuplicate: { readonly offset: FloorOffset; readonly configId: string | null } | null = null;
 /** What Ctrl C holds this session, and where it was copied. */
 let clipboard: { readonly copied: PlannerClipboard; readonly from: CopiedFrom } | null = null;
+/** Where the last walk stood (] and [), so a walk goes on from a stop just removed. */
+let walkCursor: WalkCursor | null = null;
+/** Where the keys aim the piece in hand, and the ghost they left there, so steps smaller than a snap add up. */
+let keyAim: { readonly x: number; readonly z: number; readonly left: readonly [number, number, number] | null } | null = null;
+/** The ghost's words, waiting for the arrows to stop. */
+let ghostWordsTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** The open layout, its room and its venue. */
 function hereNow(): CopiedFrom {
@@ -331,10 +360,14 @@ function pastedWords(items: readonly PlacedItem[]): string {
   return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** Forgets the session's last duplicate offset and clipboard. */
+/** Forgets the session's last duplicate offset and clipboard, where the walk stood and where the keys aimed. */
 export function resetEditingMemoryForTesting(): void {
   lastDuplicate = null;
   clipboard = null;
+  walkCursor = null;
+  keyAim = null;
+  if (ghostWordsTimer !== null) clearTimeout(ghostWordsTimer);
+  ghostWordsTimer = null;
 }
 
 function editingKeys(): boolean {
@@ -506,6 +539,214 @@ export function putDownPieceInHand(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Walking the room (spec §11; QoL B-X2): ] and [ select the next or previous
+// table by number, or piece of the selected piece's kind; Shift ] and
+// Shift [ any piece (lib/piece-walk). The camera brings it into view, its
+// caption is asked to take focus, and its name is said. v2's keys only: in
+// v1 the timeline dock steps its keyframes on [ and ].
+// ---------------------------------------------------------------------------
+
+export const NO_TABLES_TO_WALK = "No tables in the room yet";
+export const NOTHING_TO_WALK = "Nothing in the room yet";
+
+/** The walk's keys hold in v2, with nothing in hand. */
+function walking(): boolean {
+  return typeof window !== "undefined" && plannerChromeRequested(window.location.search) === "v2" && !placing();
+}
+
+/** Eases the camera to a stop not well in view (cockpit-store requestFocus, CockpitCameraFocus), unless Walk holds it. */
+function bringIntoView(stop: WalkStop, inView: ((x: number, z: number) => boolean) | undefined): void {
+  const cockpit = useCockpitStore.getState();
+  if (cockpit.walkMode || inView === undefined || inView(stop.x, stop.z)) return;
+  cockpit.requestFocus(stop.x, stop.z);
+}
+
+/**
+ * ] and [: the stop `step` along, of the selection's kind or, `anyKind`,
+ * of every kind, selected as a click selects it, brought into view, its
+ * caption asked to take focus, and its name said ("Table 4, Round of 10,
+ * 10 seats"). With nothing to walk it says so, and selects nothing.
+ */
+export function walkSelection(step: 1 | -1, anyKind: boolean, inView?: (x: number, z: number) => boolean): boolean {
+  const stops = walkStops(usePlacementStore.getState().placedItems);
+  const ids = selectedIds();
+  const kind = anyKind ? null : walkKind(stops, ids);
+  const order = walkOrder(stops, kind);
+  const stop = walkStep(order, step, ids, walkCursor);
+  if (stop === null) {
+    announcePolitely(kind === TABLE_KIND ? NO_TABLES_TO_WALK : NOTHING_TO_WALK);
+    return false;
+  }
+  walkCursor = { order: order.map((each) => each.pieceId), at: order.indexOf(stop) };
+  useSelectionStore.getState().select(stop.pieceId);
+  bringIntoView(stop, inView);
+  useCaptionFocusStore.getState().requestCaptionFocus(stop.pieceId);
+  announcePolitely(stopWords(stop));
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Placing by keyboard (spec §11, §12; QoL B-06), with a card in hand: + and −
+// step the card as its own stepper does, the arrows move its ghost as they
+// nudge a selection, and Enter sets it down where the ghost stands through
+// the click's own commit (lib/place-in-hand), keeping it in hand. Each is
+// said politely; a refusal says why on the placement notice, as a click's
+// does, and the ghost's own alert.
+// ---------------------------------------------------------------------------
+
+/** How long the ghost's words wait after the last arrow, so a run of presses is said once. */
+export const GHOST_WORDS_DELAY_MS = 500;
+
+/** A card aloud: "Round of 12, 12 seats", "Dance floor, 4.6 m square". */
+export function cardWords(params: CardParams): string {
+  const face = describeCard(params);
+  const seats = seatsInHand(params);
+  const detail = seats > 0 ? `${String(seats)} seat${seats === 1 ? "" : "s"}` : face.size;
+  return detail === "" ? face.name : `${face.name}, ${detail}`;
+}
+
+/** What stops a card stepping further one way. */
+function cardLimitWords(params: CardParams, delta: 1 | -1): string {
+  switch (params.card) {
+    case "dance-floor": return delta > 0 ? "no larger" : "no smaller";
+    case "top-table":
+    case "long-table": return delta > 0 ? "no longer" : "no shorter";
+    case "round":
+    case "piece": return delta > 0 ? "no more seats" : "no fewer seats";
+  }
+}
+
+/** Whether + and − change this card at all: its seats, its panels or its trestles. */
+function cardSteps(params: CardParams): boolean {
+  return stepCardParams(params, 1) !== params || stepCardParams(params, -1) !== params;
+}
+
+/**
+ * + and − with a card in hand: one step of it (catalogue-store
+ * stepArmedCard), said; at a limit, the limit said. False for a card with
+ * nothing to step (a piece with no seats).
+ */
+export function stepCardInHand(delta: 1 | -1): boolean {
+  const before = useCatalogueStore.getState().cardParams;
+  if (before === null || !cardSteps(before)) return false;
+  if (!useCatalogueStore.getState().stepArmedCard(delta)) {
+    announcePolitely(`${cardWords(before)}, ${cardLimitWords(before, delta)}`);
+    return true;
+  }
+  const after = useCatalogueStore.getState().cardParams;
+  if (after !== null) announcePolitely(cardWords(after));
+  return true;
+}
+
+/**
+ * Whether the piece in hand is set down where a pointer's ghost would be
+ * snapped to (a piece placed alone, not as a card), so the keys aim its
+ * ghost as a pointer would; a card's set, a cloth or a place setting goes
+ * down exactly where its ghost stands.
+ */
+function commitSnaps(): boolean {
+  const { selectedItemId, cardParams } = useCatalogueStore.getState();
+  if (selectedItemId === null) return false;
+  if (tableClothStyleForCatalogueItem(selectedItemId) !== null || tableSettingForCatalogueItem(selectedItemId) !== null) return false;
+  return cardParams === null || !placesAsCard(cardParams);
+}
+
+/**
+ * Stands the ghost of the piece in hand at (x, z), render-space: exactly
+ * there where its commit sets it down exactly, else as a pointer there
+ * would. False with nothing in hand.
+ */
+export function standGhostAt(x: number, z: number): boolean {
+  const itemId = useCatalogueStore.getState().selectedItemId;
+  if (itemId === null) return false;
+  usePlacementStore.getState().updateGhost(x, z, itemId, { exact: !commitSnaps() });
+  return usePlacementStore.getState().ghostPosition !== null;
+}
+
+/**
+ * The ghost aloud, once the keys leave it: "Round of 10, 10 seats, fits",
+ * "…, fits, moved 0.12 m", judged as the ghost and the commit judge it
+ * (judgeCardAt). Null for a refusal, which the ghost says itself, once, and
+ * for a piece the ghost claims nothing about.
+ */
+export function ghostWords(): string | null {
+  const { cardParams } = useCatalogueStore.getState();
+  const { ghostPosition, ghostRotation } = usePlacementStore.getState();
+  if (cardParams === null || ghostPosition === null || !placesAsCard(cardParams) || !judgesCard(cardParams)) return null;
+  const origin = { x: ghostPosition[0], y: ghostPosition[1], z: ghostPosition[2] };
+  const { verdict } = judgeCardAt(cardParams, origin, ghostRotation, editWorld(), useGhostVerdictStore.getState().verdict?.state);
+  if (verdict.state === "refused") return null;
+  const moved = Math.round(verdict.pushedM * 100) / 100;
+  const fits = verdict.state === "pushed" && moved > 0 ? `fits, moved ${moved.toFixed(2)} m` : "fits";
+  return `${cardWords(cardParams)}, ${fits}`;
+}
+
+function sayGhostSoon(): void {
+  if (ghostWordsTimer !== null) clearTimeout(ghostWordsTimer);
+  ghostWordsTimer = setTimeout(() => {
+    ghostWordsTimer = null;
+    const words = ghostWords();
+    if (words !== null) announcePolitely(words);
+  }, GHOST_WORDS_DELAY_MS);
+}
+
+/** The middle of the visible floor, render-space; null with no floor in sight. */
+type FloorMiddle = () => { readonly x: number; readonly z: number } | null;
+
+function standGhostAtFloorMiddle(floorMiddle: FloorMiddle): boolean {
+  const middle = floorMiddle();
+  return middle !== null && standGhostAt(middle.x, middle.z);
+}
+
+/** The ghost one nudge on from where the keys last aimed it (or from where it stands, if anything else has moved it since). */
+function nudgeGhost(ghost: readonly [number, number, number], direction: FloorDirection, metres: number): boolean {
+  const from = keyAim !== null && keyAim.left === ghost ? keyAim : { x: ghost[0], z: ghost[2] };
+  const x = from.x + toRenderSpace(direction.x * metres);
+  const z = from.z + toRenderSpace(direction.z * metres);
+  if (!standGhostAt(x, z)) return false;
+  keyAim = { x, z, left: usePlacementStore.getState().ghostPosition };
+  return true;
+}
+
+/**
+ * An arrow with a card in hand: its ghost one nudge along the floor
+ * (nudgeMetres, arrowFloorDirection); steps smaller than a snap add up for
+ * a piece its commit snaps. With no ghost yet, the first press shows it at
+ * the middle of the visible floor. Its words follow once the arrows stop.
+ */
+export function moveGhostBy(direction: FloorDirection, metres: number, floorMiddle: FloorMiddle): boolean {
+  const ghost = usePlacementStore.getState().ghostPosition;
+  const moved = ghost === null ? standGhostAtFloorMiddle(floorMiddle) : nudgeGhost(ghost, direction, metres);
+  if (moved) sayGhostSoon();
+  return moved;
+}
+
+/**
+ * Enter with a card in hand: set down where its ghost stands through the
+ * click's own commit (placePieceInHand: the judge, the store's stock, the
+ * venue's caps, one undo step), kept in hand, and what was set down said.
+ * A refusal sets nothing down and says why on the placement notice. With no
+ * ghost yet, the press shows it at the middle of the visible floor instead,
+ * so nothing is set down unseen.
+ */
+export function placeInHandByKey(deps: Pick<PlacingKeyDeps, "invalidate" | "floorMiddle">): boolean {
+  if (!placing()) return false;
+  if (usePlacementStore.getState().ghostPosition === null) {
+    if (!standGhostAtFloorMiddle(deps.floorMiddle)) return false;
+    const words = ghostWords();
+    if (words !== null) announcePolitely(words);
+    return true;
+  }
+  const before = new Set(usePlacementStore.getState().placedItems.map((piece) => piece.id));
+  placePieceInHand(deps.invalidate);
+  const placed = usePlacementStore.getState().placedItems;
+  const added = placed.find((piece) => !before.has(piece.id));
+  const stop = added === undefined ? undefined : walkStops(placed).find((each) => each.pieces.some((piece) => piece.id === added.id));
+  if (stop !== undefined) announcePolitely(`Placed ${stopWords(stop)}`);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // The scene's bindings (registered by SelectionSystem and PlacementGhost).
 // ---------------------------------------------------------------------------
 
@@ -518,6 +759,14 @@ export interface SceneKeyDeps {
   readonly screenUp: () => FloorDirection;
   /** The floor point under the pointer, render-space, for a paste; null off the floor. */
   readonly pointerFloor?: () => { readonly x: number; readonly z: number } | null;
+  /** Whether a floor point, render-space, stands well inside the view; absent, the walk never moves the camera. */
+  readonly inView?: (x: number, z: number) => boolean;
+}
+
+/** What the keys for the piece in hand need from the scene (registered by PlacementGhost). */
+export interface PlacingKeyDeps extends Pick<SceneKeyDeps, "invalidate" | "screenUp"> {
+  /** The middle of the visible floor, render-space, where a ghost with no pointer to follow stands; null with no floor in sight. */
+  readonly floorMiddle: FloorMiddle;
 }
 
 /** Asks for a frame after an edit, or declines the key when there was nothing to edit. */
@@ -554,12 +803,28 @@ export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
       run: () => { deps.cancelGesture(); return afterEdit(deps, removeSelection()); },
     },
     {
-      keys: [{ key: "+" }, { key: "=" }, { code: "NumpadAdd" }], priority, when: hasSelection, mutates: true, repeat: true,
+      keys: MORE_CHORDS, priority, when: hasSelection, mutates: true, repeat: true,
       run: () => afterEdit(deps, changeSeatsAtSelectedTables(1)),
     },
     {
-      keys: [{ key: "-" }, { code: "NumpadSubtract" }], priority, when: hasSelection, mutates: true, repeat: true,
+      keys: FEWER_CHORDS, priority, when: hasSelection, mutates: true, repeat: true,
       run: () => afterEdit(deps, changeSeatsAtSelectedTables(-1)),
+    },
+    {
+      keys: WALK_NEXT, priority, when: walking,
+      run: () => { deps.cancelGesture(); return afterEdit(deps, walkSelection(1, false, deps.inView)); },
+    },
+    {
+      keys: WALK_PREVIOUS, priority, when: walking,
+      run: () => { deps.cancelGesture(); return afterEdit(deps, walkSelection(-1, false, deps.inView)); },
+    },
+    {
+      keys: WALK_NEXT_ANY, priority, when: walking,
+      run: () => { deps.cancelGesture(); return afterEdit(deps, walkSelection(1, true, deps.inView)); },
+    },
+    {
+      keys: WALK_PREVIOUS_ANY, priority, when: walking,
+      run: () => { deps.cancelGesture(); return afterEdit(deps, walkSelection(-1, true, deps.inView)); },
     },
     {
       keys: letter("c"), priority, when: hasSelection, mutates: true,
@@ -604,17 +869,51 @@ export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
   ];
 }
 
-/** Keys for the piece in hand: Q, E and R turn it as they turn a selection. */
-export function placingKeyBindings(deps: Pick<SceneKeyDeps, "invalidate">): KeyBinding[] {
-  return [{
-    keys: TURN_CHORDS, priority: KEY_PRIORITY.placing, when: placing,
-    run: (event) => {
-      const delta = turnForKey(event);
-      if (delta === null) return false;
-      usePlacementStore.getState().rotateGhost(delta);
-      deps.invalidate();
+/** A card in hand that the keys aim: not one a drag is carrying, which the pointer holds. */
+function aimingByKey(): boolean {
+  return placing() && !useCatalogueStore.getState().dragActive;
+}
+
+/**
+ * Keys for the piece in hand: Q, E and R turn it as they turn a selection;
+ * + and − step its card; the arrows move its ghost and Enter sets it down
+ * (B-06). Each wins over a selection held at the same time.
+ */
+export function placingKeyBindings(deps: PlacingKeyDeps): KeyBinding[] {
+  const priority = KEY_PRIORITY.placing;
+  return [
+    {
+      keys: TURN_CHORDS, priority, when: placing,
+      run: (event) => {
+        const delta = turnForKey(event);
+        if (delta === null) return false;
+        usePlacementStore.getState().rotateGhost(delta);
+        if (aimingByKey()) sayGhostSoon();
+        deps.invalidate();
+      },
     },
-  }];
+    // Taken even with nothing to do (a card with no seats, no floor in sight), so a press never
+    // reaches a selection held under the piece in hand.
+    {
+      keys: MORE_CHORDS, priority, when: placing, repeat: true,
+      run: () => { stepCardInHand(1); },
+    },
+    {
+      keys: FEWER_CHORDS, priority, when: placing, repeat: true,
+      run: () => { stepCardInHand(-1); },
+    },
+    {
+      keys: ARROW_CHORDS, priority, when: aimingByKey, repeat: true,
+      run: (event) => {
+        const direction = arrowFloorDirection(event.code, deps.screenUp());
+        if (direction !== null && moveGhostBy(direction, nudgeMetres(event), deps.floorMiddle)) deps.invalidate();
+      },
+    },
+    {
+      keys: ENTER_CHORDS, priority, when: aimingByKey, mutates: true,
+      run: () => { if (placeInHandByKey(deps)) deps.invalidate(); },
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------

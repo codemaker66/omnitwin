@@ -82,7 +82,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The pointer resting on the canvas as the piece is put in hand: its ghost waits for the pointer, not the middle of the floor. */
+function pointerRestsOnCanvas(): void {
+  const matches = canvas.matches.bind(canvas);
+  vi.spyOn(canvas, "matches").mockImplementation((selector: string) => selector === ":hover" || matches(selector));
+}
+
 it("places from a direct click without requiring an earlier pointer move", () => {
+  pointerRestsOnCanvas();
   render(<PlacementGhost />);
   expect(usePlacementStore.getState().ghostPosition).toBeNull();
   act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
@@ -266,6 +273,7 @@ it("raises the ghost above a finger the touch arbiter holds to place, and lets i
 });
 
 it("ignores touch moves the arbiter holds, and the click its tap sends afterwards", () => {
+  pointerRestsOnCanvas();
   render(<PlacementGhost />);
   act(() => { useTouchGestureStore.getState().setMode("pending"); });
   act(() => { fireEvent.pointerMove(canvas, { clientX: 50, clientY: 50, pointerType: "touch" }); });

@@ -69,3 +69,23 @@ export function placementFloorPoint(
   const hit = raycaster.intersectObject(floor, false)[0];
   return hit === undefined ? null : { x: hit.point.x, z: hit.point.z };
 }
+
+/** How far down the view each try looks: a view along the floor (Walk, a low orbit) finds it lower than the middle. */
+const VIEW_MIDDLE_TRIES = [0.5, 0.65, 0.8, 0.95] as const;
+
+/**
+ * The middle of the visible floor (card-dock spec §7.1), where a piece armed
+ * with no pointer on the room shows its ghost: the floor point under the
+ * canvas's centre or, where the centre looks over the floor, the first one
+ * found straight down the view from it. Null with no floor in sight.
+ */
+export function viewFloorMiddle(
+  scene: Object3D, camera: Camera, raycaster: Raycaster,
+  rect: { readonly left: number; readonly top: number; readonly width: number; readonly height: number },
+): { readonly x: number; readonly z: number } | null {
+  for (const down of VIEW_MIDDLE_TRIES) {
+    const hit = placementFloorPoint(scene, camera, raycaster, rect, rect.left + rect.width / 2, rect.top + rect.height * down);
+    if (hit !== null) return hit;
+  }
+  return null;
+}

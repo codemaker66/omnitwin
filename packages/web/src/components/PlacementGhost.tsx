@@ -15,7 +15,7 @@ import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { usePlannerKeyBindings } from "../lib/planner-keys.js";
-import { placingKeyBindings, putDownPieceInHand } from "../lib/planner-keymap.js";
+import { placingKeyBindings, putDownPieceInHand, standGhostAt } from "../lib/planner-keymap.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
 import {
   findNearestDiningTable,
@@ -36,13 +36,13 @@ import {
   tableSettingForCatalogueItem,
 } from "../lib/table-dressing.js";
 import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-brush.js";
-import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
+import { placementFloorPoint, viewFloorMiddle } from "../lib/planner-interaction-floor.js";
 import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
 import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, judgesCard, placesAsCard, type CardParams } from "../lib/setup-cards.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
-import { findFurnitureItemId } from "./SelectionSystem.js";
+import { findFurnitureItemId, screenUpOnFloor } from "./SelectionSystem.js";
 import { GhostSet } from "./GhostSet.js";
 
 // ---------------------------------------------------------------------------
@@ -109,6 +109,8 @@ export function PlacementGhost(): React.ReactElement | null {
   const followPointer = useRef<(pointer: PendingPointer) => void>(() => undefined);
   const [warming, setWarming] = useState(false);
   const warmFrames = useRef(0);
+  /** Where the last card's ghost stood when another card took its place in hand, so the next stands there. */
+  const carriedGhost = useRef<readonly [number, number, number] | null>(null);
 
   // Stable ref for invalidate — avoids effect re-runs when invalidate ref changes
   const invalidateRef = useRef(invalidate);
@@ -157,6 +159,8 @@ export function PlacementGhost(): React.ReactElement | null {
   // Raycasting: update ghost on pointer move, place on pointer up (drag) or click.
   // All handlers read selectedItemId from the store (not the closure) to avoid stale values.
   useEffect(() => {
+    const carried = carriedGhost.current;
+    carriedGhost.current = null;
     if (selectedItemId === null) return;
 
     const canvasEl = gl.domElement;
@@ -290,8 +294,13 @@ export function PlacementGhost(): React.ReactElement | null {
       setChairBrushPreview([]);
     }
 
+    /** The last move followed: a move that goes nowhere (a browser's own, after a scroll or a change of layout) leaves a ghost the keys moved where they left it. */
+    let lastMove: { readonly x: number; readonly y: number; readonly buttons: number } | null = null;
+
     function onPointerMove(event: PointerEvent): void {
       if (useCatalogueStore.getState().selectedItemId === null || arbiterHolds(event)) return;
+      if (lastMove !== null && lastMove.x === event.clientX && lastMove.y === event.clientY && lastMove.buttons === event.buttons) return;
+      lastMove = { x: event.clientX, y: event.clientY, buttons: event.buttons };
       pendingPointer.current = {
         x: event.clientX,
         y: event.clientY,
@@ -451,7 +460,19 @@ export function PlacementGhost(): React.ReactElement | null {
     window.addEventListener("blur", onBlur);
     canvasEl.addEventListener("click", onClick);
 
+    // A piece put in hand with no pointer on the room (a digit, the rail, the list; spec §7.1, B-06)
+    // shows its ghost at once, where the last card's stood or at the middle of the visible floor, for
+    // the keys to move. A pointer resting on the canvas leads it from its next move; a drag, from its own.
+    if (!useCatalogueStore.getState().dragActive && usePlacementStore.getState().ghostPosition === null) {
+      const at = carried === null
+        ? (canvasEl.matches(":hover") ? null : viewFloorMiddle(scene, camera, raycaster, rect))
+        : { x: carried[0], z: carried[2] };
+      if (at !== null && standGhostAt(at.x, at.z)) invalidateRef.current();
+    }
+
     return () => {
+      // Another card taking this one's place in hand stands where this one's ghost stood.
+      carriedGhost.current = usePlacementStore.getState().ghostPosition;
       unsubscribeTouch();
       observer?.disconnect();
       window.removeEventListener("resize", remeasure);
@@ -472,10 +493,15 @@ export function PlacementGhost(): React.ReactElement | null {
     };
   }, [selectedItemId, scene, camera, raycaster, gl]);
 
-  // Q, E and R turn the piece in hand as they turn a selection, and win over
-  // a selection held at the same time; Esc puts it down (the planner's tool
-  // keys, lib/planner-keymap.ts). A right-click also puts it down.
-  usePlannerKeyBindings(placingKeyBindings({ invalidate: () => { invalidateRef.current(); } }));
+  // Q, E and R turn the piece in hand as they turn a selection, + and − step
+  // its card, the arrows move its ghost and Enter sets it down, each winning
+  // over a selection held at the same time; Esc puts it down (the planner's
+  // tool keys, lib/planner-keymap.ts). A right-click also puts it down.
+  usePlannerKeyBindings(placingKeyBindings({
+    invalidate: () => { invalidateRef.current(); },
+    screenUp: () => screenUpOnFloor(camera),
+    floorMiddle: () => viewFloorMiddle(scene, camera, raycaster, gl.domElement.getBoundingClientRect()),
+  }));
   useEffect(() => {
     function onContextMenu(event: MouseEvent): void {
       if (useCatalogueStore.getState().selectedItemId !== null) {
