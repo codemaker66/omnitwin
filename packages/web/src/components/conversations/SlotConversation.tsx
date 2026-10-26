@@ -44,7 +44,8 @@ export interface SlotConversationProps {
 
 interface ThreadPage {
   readonly messages: readonly Message[];
-  /** How far the thread has been read with nothing missing. Only a read moves it. */
+  /** How far the thread has been read with nothing missing (the API takes a
+   *  thread's cursors in the order its messages commit). Only a read moves it. */
   readonly cursor: number;
 }
 

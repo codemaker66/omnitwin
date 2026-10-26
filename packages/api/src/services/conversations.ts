@@ -353,12 +353,19 @@ interface MessageSeed {
 }
 
 /** Insert one message and move the thread's counters, or read back the
- *  message the same key already made. */
+ *  message the same key already made. Every caller is inside a transaction.
+ *
+ *  The thread is locked before the insert takes a cursor, so one thread's
+ *  cursors are taken in the order its messages commit. Taken first and locked
+ *  after, two sends could commit out of cursor order: a read between the two
+ *  commits saw the higher cursor and moved past the lower one, and reading on
+ *  from there never fetched that message. */
 async function appendMessage(
   conn: Conn,
   thread: Pick<ThreadRow, "id" | "venueId">,
   seed: MessageSeed,
 ): Promise<{ replay: boolean; row: MessageRow }> {
+  await conn.select({ id: threads.id }).from(threads).where(eq(threads.id, thread.id)).for("update");
   const now = new Date();
   const inserted = await conn
     .insert(messages)
