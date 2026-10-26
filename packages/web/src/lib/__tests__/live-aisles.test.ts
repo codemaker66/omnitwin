@@ -70,6 +70,9 @@ describe("live aisles in the planner's bands", () => {
     });
     const wide = liveAisles(round(0, -HALL.length / 2 + 1.2 + CHAIR_REACH), [], HALL, OPTIONS)[0];
     expect(wide).toMatchObject({ onGangway: true, tone: "sage", words: "1.2 m" });
+    // A guest's preview stores nothing; the venue sees the pinch when it opens the layout.
+    expect(liveAisles(ghost, [], HALL, { ...OPTIONS, reader: "guest" })[0]?.words)
+      .toBe("Gangway 0.95 m · under the 1.1 m guidance · the venue sees this with your layout");
   });
 
   it("flags a pinch across a middle gangway where the design has one", () => {
