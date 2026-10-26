@@ -128,6 +128,9 @@ export const TWIN_COACH_HINT = "Click to move · drag to look · WASD to walk";
 /** The primary CTA out of the twin — into the venue's real planning + enquiry
  *  funnel. Short visible label; the aria label names the venue. */
 export const TWIN_ENQUIRE_LABEL = "Enquire";
+export const TWIN_ENQUIRE_OPENING = "Opening the enquiry form…";
+export const TWIN_ENQUIRE_LOAD_FAILED =
+  "The enquiry form didn't load. Check your connection, then press Enquire again.";
 export function twinEnquireAria(venueName: string): string {
   return `Enquire about hosting at ${venueName}`;
 }

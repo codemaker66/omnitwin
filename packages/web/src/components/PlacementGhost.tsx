@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Object3D, Vector3, type Group } from "three";
+import { Object3D, Vector3, type Camera, type Group } from "three";
 
 /** Reusable vector for the warm-up copy's place ahead of the camera. */
 const _ahead = new Vector3();
@@ -38,6 +38,7 @@ import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
+import { onMainDraw } from "../lib/main-draw-clock.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -47,6 +48,25 @@ export { isCloth, isPoseurTable, isTableSetting } from "../lib/placement-ghost.j
 
 /** Frames the piece in hand is drawn, too small to see, as it is armed: enough for its materials to compile. */
 const WARM_FRAMES = 3;
+/**
+ * Frame updates the warm-up asks for at most. NativeCanvas paces its draws by the GPU's progress, so an
+ * update behind unfinished GPU work draws nothing (lib/main-draw-clock.ts): the warm-up counts draws that
+ * took the ghost in, and asks for updates until it has them, but not forever where nothing draws.
+ */
+const WARM_WAIT_FRAMES = 60;
+
+/**
+ * Whether a frame drawn now would draw any mesh of `group` through `camera`: one shown, under parents all
+ * shown, on a layer the camera sees. A piece's shadow casters live on a layer only the sun's camera sees
+ * (hall-sun.ts), and can arrive before the meshes the view draws.
+ */
+function drawsSomething(group: Object3D, camera: Camera): boolean {
+  let found = false;
+  group.traverseVisible((object) => {
+    if ((object as { readonly isMesh?: boolean }).isMesh === true && object.layers.test(camera.layers)) found = true;
+  });
+  return found;
+}
 const WARM_SCALE = 1e-4;
 /** A click this soon after a touch the arbiter handled is that touch's own compatibility click, ms. */
 const ARBITRATED_CLICK_MS = 700;
@@ -98,6 +118,7 @@ export function PlacementGhost(): React.ReactElement | null {
   const followPointer = useRef<(pointer: PendingPointer) => void>(() => undefined);
   const [warming, setWarming] = useState(false);
   const warmFrames = useRef(0);
+  const warmWaits = useRef(0);
 
   // Stable ref for invalidate — avoids effect re-runs when invalidate ref changes
   const invalidateRef = useRef(invalidate);
@@ -122,6 +143,7 @@ export function PlacementGhost(): React.ReactElement | null {
   useEffect(() => {
     if (selectedItemId === null || dressing) return;
     warmFrames.current = WARM_FRAMES;
+    warmWaits.current = 0;
     setWarming(true);
     invalidateRef.current();
   }, [selectedItemId, dressing]);
@@ -134,14 +156,31 @@ export function PlacementGhost(): React.ReactElement | null {
     }
     if (warmFrames.current === 0) return;
     const group = ghost.current;
-    if (group !== null && usePlacementStore.getState().ghostPosition === null) {
+    // Nothing of the piece to warm here (the chair brush or a cloth draws in its place), or it never drew:
+    // the warm-up ends.
+    if (group === null || warmWaits.current >= WARM_WAIT_FRAMES) {
+      warmFrames.current = 0;
+      setWarming(false);
+      return;
+    }
+    warmWaits.current += 1;
+    if (usePlacementStore.getState().ghostPosition === null) {
       camera.getWorldDirection(_ahead);
       group.position.copy(camera.position).addScaledVector(_ahead, 1);
     }
-    warmFrames.current -= 1;
-    if (warmFrames.current === 0) setWarming(false);
     invalidateRef.current();
   });
+
+  // A warm frame is a draw of the main view that took the ghost in. React shows the ghost a commit after
+  // the piece is armed, its model's meshes can arrive later still, and an update behind unfinished GPU
+  // work draws nothing; counted any earlier, the warm-up warmed nothing and the ghost's shaders compiled
+  // on the first frame of a drag.
+  useEffect(() => onMainDraw(() => {
+    const group = ghost.current;
+    if (warmFrames.current === 0 || group === null || !drawsSomething(group, camera)) return;
+    warmFrames.current -= 1;
+    if (warmFrames.current === 0) setWarming(false);
+  }), [camera]);
 
   // Raycasting: update ghost on pointer move, place on pointer up (drag) or click.
   // All handlers read selectedItemId from the store (not the closure) to avoid stale values.

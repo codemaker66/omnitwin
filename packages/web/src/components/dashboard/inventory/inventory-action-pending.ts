@@ -9,7 +9,7 @@ const PendingActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("reserve"), title: Title, input: InventoryReservationApprovalInputSchema }).strict(),
   z.object({ kind: z.literal("revoke"), title: Title, input: InventoryReservationRevokeInputSchema }).strict(),
   z.object({ kind: z.literal("prepare"), title: Title, input: InventoryRemedyPrepareInputSchema }).strict(),
-  z.object({ kind: z.literal("approve"), title: Title, remedyId: z.string().uuid(), window: InventoryWindowSchema, input: InventoryRemedyApproveInputSchema }).strict(),
+  z.object({ kind: z.literal("approve"), title: Title, remedyId: z.uuid(), window: InventoryWindowSchema, input: InventoryRemedyApproveInputSchema }).strict(),
 ]);
 export type InventoryPendingAction = z.infer<typeof PendingActionSchema>;
 export type InventoryActionResult = { readonly kind: "reservation"; readonly result: ReservationResult }

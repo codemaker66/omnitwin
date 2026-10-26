@@ -39,9 +39,9 @@ import {
 // live in the core, so any future caller gets the same answers HTTP does.
 // ---------------------------------------------------------------------------
 
-const VenueParam = z.object({ venueId: z.string().uuid() });
-const IdParam = z.object({ id: z.string().uuid() });
-const IdempotencyKeyHeader = z.string().uuid();
+const VenueParam = z.object({ venueId: z.uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const IdempotencyKeyHeader = z.uuid();
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });

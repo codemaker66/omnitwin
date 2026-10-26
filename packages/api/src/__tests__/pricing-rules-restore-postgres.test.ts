@@ -195,6 +195,26 @@ describe.skipIf(testUrl === undefined)("pricing rule restore on isolated Postgre
     ]);
   });
 
+  // zod 4 applies a default inside .partial(): an update schema made from the
+  // create one would send currency GBP and isActive true with every patch.
+  it("leaves the currency and the switch of a paused rule as stored when a patch does not send them", async () => {
+    const PAUSED_RULE = "55555555-5555-4555-8555-555555555504";
+    await pool.query(`INSERT INTO pricing_rules (id, venue_id, name, type, amount, currency, is_active, deleted_at)
+      VALUES ($1, $2, 'Saloon hire', 'flat_rate', '900.00', 'EUR', false, NULL)`, [PAUSED_RULE, VENUE]);
+    const res = await server.inject({
+      method: "PATCH", url: `/venues/${VENUE}/pricing/${PAUSED_RULE}`,
+      headers: headers(), payload: { amount: 950 },
+    });
+    expect(res.statusCode).toBe(200);
+    const stored = await pool.query<{ currency: string; is_active: boolean; amount: string }>(
+      "SELECT currency, is_active, amount FROM pricing_rules WHERE id = $1", [PAUSED_RULE],
+    );
+    expect(stored.rows[0]).toEqual({ currency: "EUR", is_active: false, amount: "950.00" });
+    expect((await auditRows(PAUSED_RULE)).map((entry) => entry.metadata)).toEqual([
+      expect.objectContaining({ changedFields: ["amount"] }),
+    ]);
+  });
+
   it("records a create and a delete", async () => {
     const created = await server.inject({
       method: "POST", url: `/venues/${VENUE}/pricing`,

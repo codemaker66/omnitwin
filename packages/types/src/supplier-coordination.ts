@@ -5,7 +5,7 @@ import { sha256Hex, stableCanonicalJson } from "./canonical-layout-snapshot.js";
 import { UserIdSchema } from "./user.js";
 import { VenueIdSchema } from "./venue.js";
 
-const UUID = z.string().uuid();
+const UUID = z.uuid();
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
 
 export const SUPPLIER_COORDINATION_SCHEMA_VERSION = "supplier_coordination.v0";
@@ -64,7 +64,7 @@ export const SupplierCoordinationPackSchema = z.object({
   supplierId: SupplierIdSchema.nullable(),
   title: SupplierCoordinationTextSchema,
   contactName: z.string().trim().min(1).max(160).nullable(),
-  contactEmail: z.string().email().max(255).nullable(),
+  contactEmail: z.email().max(255).nullable(),
   contactPhone: z.string().trim().min(1).max(40).nullable(),
   status: SupplierCoordinationPackStatusSchema,
   sourceSnapshotHash: z.string().regex(SHA256_HEX),
@@ -72,12 +72,12 @@ export const SupplierCoordinationPackSchema = z.object({
   sourceLabel: SupplierCoordinationTextSchema,
   safeStatus: z.literal("supplier_safe_operations_handoff"),
   createdBy: UserIdSchema.nullable(),
-  issuedAt: z.string().datetime().nullable(),
-  acknowledgedAt: z.string().datetime().nullable(),
-  expiresAt: z.string().datetime().nullable(),
-  revokedAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  issuedAt: z.iso.datetime().nullable(),
+  acknowledgedAt: z.iso.datetime().nullable(),
+  expiresAt: z.iso.datetime().nullable(),
+  revokedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type SupplierCoordinationPack = z.infer<typeof SupplierCoordinationPackSchema>;
 
@@ -91,7 +91,7 @@ export const SupplierCoordinationPackItemSchema = z.object({
   arrivalWindow: SupplierCoordinationTextSchema.nullable(),
   sourceRef: z.string().trim().min(1).max(300).nullable(),
   sortOrder: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type SupplierCoordinationPackItem = z.infer<typeof SupplierCoordinationPackItemSchema>;
 
@@ -101,10 +101,10 @@ export const SupplierCoordinationShareTokenSchema = z.object({
   tokenHash: z.string().regex(SHA256_HEX),
   tokenPrefix: z.string().trim().min(6).max(16),
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  expiresAt: z.string().datetime().nullable(),
-  revokedAt: z.string().datetime().nullable(),
-  lastViewedAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime().nullable(),
+  revokedAt: z.iso.datetime().nullable(),
+  lastViewedAt: z.iso.datetime().nullable(),
 }).strict();
 export type SupplierCoordinationShareToken = z.infer<typeof SupplierCoordinationShareTokenSchema>;
 
@@ -114,9 +114,9 @@ export const SupplierAcknowledgementSchema = z.object({
   shareTokenId: SupplierCoordinationShareTokenIdSchema.nullable(),
   status: SupplierAcknowledgementStatusSchema,
   acknowledgedByName: z.string().trim().min(1).max(160).nullable(),
-  acknowledgedByEmail: z.string().email().max(255).nullable(),
+  acknowledgedByEmail: z.email().max(255).nullable(),
   note: SupplierCoordinationTextSchema.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type SupplierAcknowledgement = z.infer<typeof SupplierAcknowledgementSchema>;
 
@@ -134,14 +134,14 @@ export const CreateSupplierCoordinationPackInputSchema = z.object({
   supplierId: SupplierIdSchema.nullable().optional(),
   title: SupplierCoordinationTextSchema.optional(),
   contactName: z.string().trim().min(1).max(160).nullable().optional(),
-  contactEmail: z.string().email().max(255).nullable().optional(),
+  contactEmail: z.email().max(255).nullable().optional(),
   contactPhone: z.string().trim().min(1).max(40).nullable().optional(),
-  expiresAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.iso.datetime().nullable().optional(),
 }).strict().superRefine((input, ctx) => {
   const uniqueIds = new Set(input.supplierInstructionIds);
   if (uniqueIds.size !== input.supplierInstructionIds.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["supplierInstructionIds"],
       message: "Supplier instruction IDs must be unique.",
     });
@@ -150,7 +150,7 @@ export const CreateSupplierCoordinationPackInputSchema = z.object({
 export type CreateSupplierCoordinationPackInput = z.infer<typeof CreateSupplierCoordinationPackInputSchema>;
 
 export const GenerateSupplierCoordinationShareTokenInputSchema = z.object({
-  expiresAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.iso.datetime().nullable().optional(),
   /** A fresh pass replaces this earlier one for the same supplier and event:
    *  its links stop working once the new link exists. */
   supersedesPackId: SupplierCoordinationPackIdSchema.optional(),
@@ -168,12 +168,12 @@ export type SupplierCoordinationShareTokenResult = z.infer<typeof SupplierCoordi
 export const CreateSupplierAcknowledgementInputSchema = z.object({
   status: SupplierAcknowledgementStatusSchema.default("acknowledged"),
   acknowledgedByName: z.string().trim().min(1).max(160).nullable().optional(),
-  acknowledgedByEmail: z.string().email().max(255).nullable().optional(),
+  acknowledgedByEmail: z.email().max(255).nullable().optional(),
   note: SupplierCoordinationTextSchema.nullable().optional(),
 }).strict().superRefine((input, ctx) => {
   if ((input.acknowledgedByName ?? null) === null && (input.acknowledgedByEmail ?? null) === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["acknowledgedByName"],
       message: "Supplier acknowledgement requires a name or email.",
     });
@@ -195,7 +195,7 @@ export const SupplierSafeAcknowledgementSchema = z.object({
   status: SupplierAcknowledgementStatusSchema,
   acknowledgedByName: z.string().trim().min(1).max(160).nullable(),
   note: SupplierCoordinationTextSchema.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type SupplierSafeAcknowledgement = z.infer<typeof SupplierSafeAcknowledgementSchema>;
 
@@ -216,7 +216,7 @@ export type SupplierSafeChangeSummary = z.infer<typeof SupplierSafeChangeSummary
  */
 export const SupplierPassChangesSchema = z.object({
   /** When the brief this one replaced was made. */
-  since: z.string().datetime(),
+  since: z.iso.datetime(),
   added: z.array(SupplierCoordinationTextSchema).max(40),
   removed: z.array(SupplierCoordinationTextSchema).max(40),
   changed: z.array(SupplierCoordinationTextSchema).max(40),
@@ -231,15 +231,15 @@ export type SupplierPassContact = z.infer<typeof SupplierPassContactSchema>;
 
 export const SupplierPassDetailsSchema = z.object({
   addressedTo: z.string().trim().min(1).max(160).nullable(),
-  eventStartsAt: z.string().datetime().nullable(),
-  eventEndsAt: z.string().datetime().nullable(),
+  eventStartsAt: z.iso.datetime().nullable(),
+  eventEndsAt: z.iso.datetime().nullable(),
   rooms: z.array(z.string().trim().min(1).max(200)).max(12),
   venueAddress: z.string().trim().min(1).max(500).nullable(),
   venueTimeZone: z.string().trim().min(1).max(100),
   /** When this brief was made from the venue's approved plan. */
-  updatedAt: z.string().datetime(),
+  updatedAt: z.iso.datetime(),
   /** When the venue's plan changed after this brief was made, if it has. */
-  planChangedAt: z.string().datetime().nullable(),
+  planChangedAt: z.iso.datetime().nullable(),
   changesForYou: SupplierPassChangesSchema.nullable(),
   venueContact: SupplierPassContactSchema.nullable(),
 }).strict();
@@ -250,16 +250,16 @@ export const SupplierSafePackViewSchema = z.object({
   venueName: z.string().trim().min(1).max(200).nullable(),
   supplierName: z.string().trim().min(1).max(200).nullable(),
   contactName: z.string().trim().min(1).max(160).nullable(),
-  contactEmail: z.string().email().max(255).nullable(),
+  contactEmail: z.email().max(255).nullable(),
   contactPhone: z.string().trim().min(1).max(40).nullable(),
   status: SupplierCoordinationPackStatusSchema,
   safeStatus: z.literal("supplier_safe_operations_handoff"),
-  issuedAt: z.string().datetime().nullable(),
-  expiresAt: z.string().datetime().nullable(),
+  issuedAt: z.iso.datetime().nullable(),
+  expiresAt: z.iso.datetime().nullable(),
   source: z.object({
     sourceLabel: SupplierCoordinationTextSchema,
     handoffVersion: z.number().int().positive(),
-    compiledAt: z.string().datetime(),
+    compiledAt: z.iso.datetime(),
     snapshotHashPrefix: z.string().regex(/^[a-f0-9]{8,16}$/u),
     sourceDigest: z.string().regex(SHA256_HEX),
   }).strict(),
@@ -308,10 +308,10 @@ export function checkSupplierPassExpiry(expiresAt: Date | null, eventLastMoment:
 
 export const SupplierPassLinkSchema = z.object({
   tokenPrefix: z.string().trim().min(6).max(16),
-  createdAt: z.string().datetime(),
-  expiresAt: z.string().datetime().nullable(),
-  revokedAt: z.string().datetime().nullable(),
-  lastViewedAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime().nullable(),
+  revokedAt: z.iso.datetime().nullable(),
+  lastViewedAt: z.iso.datetime().nullable(),
 }).strict();
 export type SupplierPassLink = z.infer<typeof SupplierPassLinkSchema>;
 
@@ -321,23 +321,23 @@ export const SupplierPassSummarySchema = z.object({
   supplierId: SupplierIdSchema.nullable(),
   supplierName: z.string().trim().min(1).max(200).nullable(),
   contactName: z.string().trim().min(1).max(160).nullable(),
-  contactEmail: z.string().email().max(255).nullable(),
+  contactEmail: z.email().max(255).nullable(),
   contactPhone: z.string().trim().min(1).max(40).nullable(),
   status: SupplierCoordinationPackStatusSchema,
   /** Whether the supplier can open it at this moment. */
   live: z.boolean(),
-  createdAt: z.string().datetime(),
-  issuedAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  issuedAt: z.iso.datetime().nullable(),
   /** The stop date that applies, including the default for a pass made
    *  before every pass carried one. */
-  expiresAt: z.string().datetime().nullable(),
+  expiresAt: z.iso.datetime().nullable(),
   /** True when no stop date was stored and the default is applied. */
   expiryAssumed: z.boolean(),
-  revokedAt: z.string().datetime().nullable(),
+  revokedAt: z.iso.datetime().nullable(),
   /** When the plan this pass was made from was compiled. */
-  builtFromCompiledAt: z.string().datetime(),
+  builtFromCompiledAt: z.iso.datetime(),
   /** When the event's plan was compiled again after this pass was made. */
-  planChangedAt: z.string().datetime().nullable(),
+  planChangedAt: z.iso.datetime().nullable(),
   /** Who made the pass: the contact its page names. */
   madeBy: SupplierPassContactSchema.nullable(),
   items: z.array(z.object({
@@ -345,7 +345,7 @@ export const SupplierPassSummarySchema = z.object({
     arrivalWindow: SupplierCoordinationTextSchema.nullable(),
   }).strict()),
   link: SupplierPassLinkSchema.nullable(),
-  openedAt: z.string().datetime().nullable(),
+  openedAt: z.iso.datetime().nullable(),
   acknowledgements: z.array(SupplierSafeAcknowledgementSchema),
 }).strict();
 export type SupplierPassSummary = z.infer<typeof SupplierPassSummarySchema>;
@@ -375,17 +375,17 @@ export const SupplierPassBoardSchema = z.object({
   venueName: z.string().trim().min(1).max(200).nullable(),
   venueAddress: z.string().trim().min(1).max(500).nullable(),
   venueTimeZone: z.string().trim().min(1).max(100),
-  eventStartsAt: z.string().datetime().nullable(),
-  eventLastMomentAt: z.string().datetime().nullable(),
+  eventStartsAt: z.iso.datetime().nullable(),
+  eventLastMomentAt: z.iso.datetime().nullable(),
   rooms: z.array(z.string().trim().min(1).max(200)).max(12),
-  defaultExpiresAt: z.string().datetime().nullable(),
-  latestExpiresAt: z.string().datetime(),
+  defaultExpiresAt: z.iso.datetime().nullable(),
+  latestExpiresAt: z.iso.datetime(),
   /** Staff, managers and admins issue and withdraw; hallkeepers read. */
   canIssue: z.boolean(),
   /** The compiled plan new passes are made from; null until one exists. */
   handoff: z.object({
     id: HandoffPackIdSchema,
-    compiledAt: z.string().datetime(),
+    compiledAt: z.iso.datetime(),
   }).strict().nullable(),
   /** Who a new pass names as the supplier's contact: the person issuing it. */
   issuer: SupplierPassContactSchema.nullable(),

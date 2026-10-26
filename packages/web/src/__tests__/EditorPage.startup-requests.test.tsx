@@ -19,17 +19,20 @@ vi.mock("../components/editor/SaveSendPanel.js", () => ({ SaveSendPanel: () => n
 vi.mock("../components/editor/MobilePlannerTopBar.js", () => ({ MobilePlannerTopBar: () => null }));
 vi.mock("../components/editor/SubmitForReviewPanel.js", () => ({ SubmitForReviewPanel: () => null }));
 vi.mock("../components/editor/EditorBridge.js", () => ({ EditorBridge: () => null }));
+// A claimed plan joins its live room; these tests are about the requests that open it.
+vi.mock("../components/editor/LayoutLiveLayer.js", () => ({ LayoutLiveLayer: () => null }));
 vi.mock("../components/editor/ObjectNotePanel.js", () => ({ ObjectNotePanel: () => null }));
 vi.mock("../components/editor/EventDetailsPanel.js", () => ({ EventDetailsPanel: () => null }));
 vi.mock("../components/truth/TruthModeIndicator.js", () => ({ TruthModeIndicator: () => null }));
 vi.mock("../hooks/use-media-query.js", () => ({ useIsCoarsePointer: () => false, useIsNarrowViewport: () => false }));
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
   createPublicConfig: vi.fn(),
+  claimConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
 }));
 vi.mock("../api/spaces.js", () => ({ listVenues: vi.fn(), listSpaces: vi.fn(), getSpace: vi.fn(), getVenue: vi.fn() }));
 
@@ -63,10 +66,15 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
   return { promise, resolve, reject };
 }
 
-/** Tracked drafts, oldest first, as the store records them. */
+/** The claim secret the create route gave this browser for a draft. */
+function secretFor(configId: string): string {
+  return `secret-for-${configId}-0123456789abcdef`;
+}
+
+/** Tracked drafts, oldest first, as the store records them, each with its claim secret. */
 function track(...configIds: readonly string[]): void {
   localStorage.setItem("omnitwin_my_configs", JSON.stringify(configIds.map((configId, index) =>
-    ({ configId, createdAt: `2026-09-2${String(index)}T10:00:00.000Z` }))));
+    ({ configId, createdAt: `2026-09-2${String(index)}T10:00:00.000Z`, claimSecret: secretFor(configId) }))));
 }
 
 function lookupSignal(configId: string): AbortSignal | undefined {
@@ -83,7 +91,9 @@ function LeavePlanner(): ReactElement {
   return <button type="button" onClick={() => { void navigate("/elsewhere"); }}>Leave planner</button>;
 }
 
-function renderPlanner(entry = "/plan"): void {
+// These cases exercise the tracked-draft lookups for the Reception Room, the /plan
+// default until 26 Oct 2026; naming the room keeps them about the lookups, not the default.
+function renderPlanner(entry = "/plan?space=reception-room"): void {
   render(
     <MemoryRouter initialEntries={[entry]}>
       <Location />
@@ -222,6 +232,11 @@ describe("opening the chosen draft", () => {
     expect(configApi.getConfig).toHaveBeenCalledWith("reception-draft");
     // Only the lookup used the public endpoint.
     expect(configApi.getPublicConfig).toHaveBeenCalledTimes(1);
+    // The draft was made theirs before the authenticated read, which refuses
+    // a plan nobody owns to anyone off the venue floor.
+    expect(configApi.claimConfig).toHaveBeenCalledWith("reception-draft", secretFor("reception-draft"));
+    expect(configApi.claimConfig.mock.invocationCallOrder[0] ?? Infinity)
+      .toBeLessThan(configApi.getConfig.mock.invocationCallOrder[0] ?? -Infinity);
   });
 
   it("reads the room and venue while the draft is created, then does not read the room again", async () => {
@@ -236,5 +251,116 @@ describe("opening the chosen draft", () => {
     await waitFor(() => { expect(useEditorStore.getState().space?.id).toBe(reception.id); });
     expect(location()).toBe("/plan/created");
     expect(spacesApi.getSpace).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Release audit, batch C: a signed-in person's new plan was created ownerless,
+// so a client's saves were refused and a member of staff's plan stayed out of
+// their lists and open to the preview sweep. It is claimed as it is created.
+describe("a signed-in person's new plan", () => {
+  const client = { id: "client-1", email: "client@example.test", name: "Client", role: "client", platformRole: "none" as const, venueId: null };
+
+  it("is claimed as soon as it is created, so it saves to their account", async () => {
+    useAuthStore.getState().setUser(client);
+    configApi.createPublicConfig.mockResolvedValue({ ...draft("created", reception, { revision: 1, objects: [] }), claimSecret: secretFor("created") });
+    configApi.claimConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [], isPublicPreview: false, userId: client.id }));
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.claimConfig).toHaveBeenCalledWith("created", secretFor("created"));
+    await waitFor(() => { expect(useEditorStore.getState()).toMatchObject({ configId: "created", isPublicPreview: false }); });
+  });
+
+  it("leaves a guest's new plan a public draft", async () => {
+    configApi.createPublicConfig.mockResolvedValue({ ...draft("created", reception, { revision: 1, objects: [] }), claimSecret: secretFor("created") });
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.claimConfig).not.toHaveBeenCalled();
+    expect(useEditorStore.getState()).toMatchObject({ configId: "created", isPublicPreview: true });
+  });
+
+  it("still opens the plan, as a public draft, when the claim is refused", async () => {
+    useAuthStore.getState().setUser(client);
+    configApi.createPublicConfig.mockResolvedValue({ ...draft("created", reception, { revision: 1, objects: [] }), claimSecret: secretFor("created") });
+    configApi.claimConfig.mockRejectedValue(new ApiError(409, "Configuration is already claimed", "ALREADY_CLAIMED"));
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    await waitFor(() => { expect(configApi.claimConfig).toHaveBeenCalledWith("created", secretFor("created")); });
+    expect(useEditorStore.getState()).toMatchObject({ configId: "created", isPublicPreview: true });
+  });
+
+  it("keeps the secret only with this browser's own draft, and spends it on the claim", async () => {
+    useAuthStore.getState().setUser(client);
+    configApi.createPublicConfig.mockResolvedValue({ ...draft("created", reception, { revision: 1, objects: [] }), claimSecret: secretFor("created") });
+    configApi.claimConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [], isPublicPreview: false, userId: client.id }));
+    renderPlanner();
+    await waitFor(() => { expect(useEditorStore.getState().isPublicPreview).toBe(false); });
+    const tracked = JSON.parse(localStorage.getItem("omnitwin_my_configs") ?? "[]") as { configId: string; claimSecret?: string }[];
+    expect(tracked).toContainEqual(expect.objectContaining({ configId: "created" }));
+    expect(tracked.find((entry) => entry.configId === "created")?.claimSecret).toBeUndefined();
+  });
+
+  // Release audit public-surface-1: a draft this browser cannot claim (one
+  // made before claim secrets) would open as a plan the account may not save.
+  it("does not reopen a draft this browser cannot claim, and starts a plan of their own", async () => {
+    useAuthStore.getState().setUser(client);
+    localStorage.setItem("omnitwin_my_configs", JSON.stringify([{ configId: "reception-draft", createdAt: "2026-09-20T10:00:00.000Z" }]));
+    configApi.getPublicConfig.mockResolvedValue(draft("reception-draft", reception));
+    configApi.createPublicConfig.mockResolvedValue({ ...draft("created", reception, { revision: 1, objects: [] }), claimSecret: secretFor("created") });
+    configApi.claimConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [], isPublicPreview: false, userId: client.id }));
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.getPublicConfig).not.toHaveBeenCalled();
+    expect(configApi.claimConfig).not.toHaveBeenCalledWith("reception-draft", expect.anything());
+  });
+});
+
+// planner-qol A-X3: a claimed draft is private, so the public lookup could not
+// see it, and every visit to /plan made and claimed another empty plan. A
+// signed-in person's own empty, recent plan opens again; "Start a new plan"
+// (?new=1) always makes a fresh one.
+describe("a signed-in person coming back to /plan", () => {
+  const planner = { id: "planner-9", email: "planner9@example.test", name: "Planner", role: "client", platformRole: "none" as const, venueId: null };
+  const recently = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+  const ownEmpty = (extra: Partial<Configuration> = {}): Configuration =>
+    draft("own-plan", reception, { userId: planner.id, isPublicPreview: false, objects: [], updatedAt: recently, ...extra });
+  /** A tracked draft of this browser's that was claimed, so it holds no secret. */
+  const trackClaimed = (configId: string): void => {
+    localStorage.setItem("omnitwin_my_configs", JSON.stringify([{ configId, createdAt: "2026-10-26T08:00:00.000Z" }]));
+  };
+
+  beforeEach(() => {
+    useAuthStore.getState().setUser(planner);
+    configApi.createPublicConfig.mockResolvedValue({ ...draft("created", reception, { revision: 1, objects: [] }), claimSecret: secretFor("created") });
+    configApi.claimConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [], isPublicPreview: false, userId: planner.id }));
+  });
+
+  it("opens their own empty plan for the room again rather than making another", async () => {
+    trackClaimed("own-plan");
+    configApi.getConfig.mockResolvedValue(ownEmpty());
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/own-plan"); });
+    expect(configApi.createPublicConfig).not.toHaveBeenCalled();
+    expect(configApi.claimConfig).not.toHaveBeenCalled();
+  });
+
+  it("makes a fresh plan for Start a new plan, and leaves the request off the address", async () => {
+    trackClaimed("own-plan");
+    configApi.getConfig.mockResolvedValue(ownEmpty());
+    renderPlanner("/plan?new=1");
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.createPublicConfig).toHaveBeenCalledTimes(1);
+    expect(configApi.getConfig).not.toHaveBeenCalledWith("own-plan");
+  });
+
+  it.each([
+    ["a plan with pieces on it", { objects: draft("x", reception).objects ?? [] }],
+    ["a plan last changed over a week ago", { updatedAt: "2026-09-01T10:00:00.000Z" }],
+    ["someone else's plan", { userId: "someone-else" }],
+  ] as const)("does not reopen %s, and makes a new one", async (_case, extra) => {
+    trackClaimed("own-plan");
+    configApi.getConfig.mockResolvedValue(ownEmpty(extra));
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.createPublicConfig).toHaveBeenCalledTimes(1);
   });
 });
