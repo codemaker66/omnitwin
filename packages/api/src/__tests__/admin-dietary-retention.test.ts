@@ -13,7 +13,8 @@ process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
 process.env["CLERK_SECRET_KEY"] = "sk_test_not_a_real_clerk_secret_key";
 
-const RESULT = { dryRun: false, layouts: 2, sheets: 3, actionLog: 5 };
+const RESULT = { dryRun: false, layouts: 2, sheets: 3, actionLog: 5,
+  pieceNotes: { layouts: 1, pieces: 4, revisions: 2, sheets: 1, actionLog: 3, opsTasks: 1 } };
 
 const removeLapsedDietaryNotes = vi.fn();
 vi.mock("../services/dietary-retention.js", () => ({
@@ -81,6 +82,7 @@ describe("POST /admin/cleanup", () => {
     expect(body.dietaryNotes).toEqual(RESULT);
     expect(body.rememberedNotes).toEqual({ dryRun: false, removed: 1 });
     expect(body.message).toContain("removed the allergy note from 2 layout(s) and 3 event sheet(s) past their retention, and from 5 logged change(s)");
+    expect(body.message).toContain("removed the notes on single pieces from 1 layout(s)");
     expect(body.message).toContain("removed 1 remembered note(s) unused for the agreed period");
     expect(removeUnusedRememberedNotes.mock.calls[0]?.[1]).toBeUndefined();
     // The real pass: no dry run and no storage step.

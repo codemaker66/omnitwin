@@ -338,6 +338,84 @@ describe.skipIf(target === undefined)("dietary note retention on migrated Postgr
     expect(await db.select().from(schema.actionLog).where(inArray(schema.actionLog.id, legacy))).toEqual(after);
   });
 
+  /** A layout's pieces and every copy of their notes: the piece, its save
+   *  history, an issued sheet's plan and rows, the log and a setup task. */
+  async function pieceNotes(f: { configId: string }, note: string) {
+    const assetId = randomUUID();
+    await db.insert(schema.assetDefinitions).values({ id: assetId, name: "TEST ONLY round", category: "table", widthM: "1.8", depthM: "1.8", heightM: "0.75" });
+    const [piece] = await db.insert(schema.placedObjects).values({
+      configurationId: f.configId, assetDefinitionId: assetId, positionX: "1", positionY: "0", positionZ: "1",
+      coordinateWriteToken: randomUUID(), metadata: { notes: note, displayLabel: "Table 5" },
+    }).returning({ id: schema.placedObjects.id });
+    if (piece === undefined) throw new Error("piece fixture missing");
+    await db.insert(schema.configurationLayoutRevisions).values({ configurationId: f.configId, revision: 1, source: "authenticated_batch",
+      payload: { objects: [{ id: piece.id, metadata: { notes: note, displayLabel: "Table 5" } }] } });
+    const sheetId = randomUUID();
+    await db.insert(schema.configurationSheetSnapshots).values({ id: sheetId, configurationId: f.configId, version: 2, sourceHash: "b".repeat(64),
+      payload: { floorPlan: { objects: [{ objectId: piece.id, label: "Table 5", note }] },
+        phases: [{ phase: "setup", zones: [{ zone: "main", rows: [{ key: "round", qty: 1, notes: note }] }] }] } });
+    const logId = randomUUID();
+    await db.insert(schema.actionLog).values({ id: logId, configurationId: f.configId, batchId: randomUUID(), revision: 1, submittedBy: randomUUID(),
+      actor: { kind: "operator" }, intent: "object.update", provenance: { surface: "planner" }, recordedTs: daysBefore(40),
+      payload: { label: "Edit note", added: [], removed: [], updated: [{ id: piece.id, before: { notes: "" }, after: { notes: note } }] },
+      inverse: { label: "Edit note", added: [], removed: [], updated: [{ id: piece.id, before: { notes: note }, after: { notes: "" } }] } });
+    const [pack] = await db.insert(schema.handoffPacks).values({ configId: f.configId, snapshotId: sheetId, snapshotHash: "b".repeat(64),
+      sourceLabel: "TEST ONLY", summary: "TEST ONLY pack" }).returning({ id: schema.handoffPacks.id });
+    if (pack === undefined) throw new Error("pack fixture missing");
+    const [task] = await db.insert(schema.opsTasks).values({ handoffPackId: pack.id, kind: "setup", title: "Set 1 x Round",
+      detail: `Place in Main during Setup. Notes: ${note}` }).returning({ id: schema.opsTasks.id });
+    if (task === undefined) throw new Error("task fixture missing");
+    return { pieceId: piece.id, sheetId, logId, taskId: task.id };
+  }
+
+  async function pieceCopies(f: { configId: string }, ids: { pieceId: string; sheetId: string; logId: string; taskId: string }) {
+    const [piece] = await db.select().from(schema.placedObjects).where(eq(schema.placedObjects.id, ids.pieceId));
+    const [revision] = await db.select().from(schema.configurationLayoutRevisions).where(eq(schema.configurationLayoutRevisions.configurationId, f.configId));
+    const [sheet] = await db.select().from(schema.configurationSheetSnapshots).where(eq(schema.configurationSheetSnapshots.id, ids.sheetId));
+    const [logged] = await db.select().from(schema.actionLog).where(eq(schema.actionLog.id, ids.logId));
+    const [task] = await db.select().from(schema.opsTasks).where(eq(schema.opsTasks.id, ids.taskId));
+    return { piece, revision, sheet, logged, task };
+  }
+
+  it("removes a piece's note from every copy on the layout's date, keeps its label, and records it once", async () => {
+    const lapsed = await layout({ events: [daysBefore(DIETARY_NOTE_DAYS_AFTER_EVENT + 1)] });
+    const recent = await layout({ events: [daysBefore(DIETARY_NOTE_DAYS_AFTER_EVENT - 1)] });
+    const lapsedIds = await pieceNotes(lapsed, "SECRET-PIECE seat 4 peanut");
+    const recentIds = await pieceNotes(recent, "SECRET-PIECE seat 9 sesame");
+    const before = await pieceCopies(lapsed, lapsedIds);
+
+    const rehearsal = await removeLapsedDietaryNotes(db, { now: NOW, dryRun: true });
+    expect(rehearsal.pieceNotes.layouts).toBeGreaterThanOrEqual(1);
+    expect(await pieceCopies(lapsed, lapsedIds)).toEqual(before);
+
+    const pass = await removeLapsedDietaryNotes(db, { now: NOW });
+    expect(pass.pieceNotes.layouts).toBeGreaterThanOrEqual(1);
+    const after = await pieceCopies(lapsed, lapsedIds);
+    expect(after.piece?.metadata).toEqual({ displayLabel: "Table 5" });
+    expect(after.revision?.payload).toEqual({ objects: [{ id: lapsedIds.pieceId, metadata: { displayLabel: "Table 5" } }] });
+    expect(after.sheet?.payload).toEqual({ floorPlan: { objects: [{ objectId: lapsedIds.pieceId, label: "Table 5" }] },
+      phases: [{ phase: "setup", zones: [{ zone: "main", rows: [{ key: "round", qty: 1, notes: "" }] }] }] });
+    // The version a printed copy checks against is unchanged.
+    expect(after.sheet?.sourceHash).toBe("b".repeat(64));
+    expect(after.task?.detail).toBe("Place in Main during Setup.");
+    expect(JSON.stringify(after)).not.toContain("SECRET-PIECE");
+    expect(JSON.stringify(after.logged)).toContain("notesRedacted");
+
+    const audit = await db.select().from(schema.generalAuditLog).where(eq(schema.generalAuditLog.targetId, lapsed.configId));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.action).toBe("retention.piece_notes_removed");
+    expect(audit[0]?.metadata).toEqual({ pieces: 1, revisions: 1, sheets: 1, actionLog: 1, opsTasks: 1 });
+    expect(JSON.stringify(audit)).not.toContain("SECRET-PIECE");
+
+    // Inside its period, every copy stays.
+    expect(JSON.stringify(await pieceCopies(recent, recentIds))).toContain("SECRET-PIECE seat 9 sesame");
+
+    // A second pass finds nothing and records nothing more.
+    await removeLapsedDietaryNotes(db, { now: NOW });
+    expect(await pieceCopies(lapsed, lapsedIds)).toEqual(after);
+    expect(await db.select().from(schema.generalAuditLog).where(eq(schema.generalAuditLog.targetId, lapsed.configId))).toHaveLength(1);
+  });
+
   it("changes nothing on a dry run, and nothing more on a second pass", async () => {
     const f = await layout({ events: [daysBefore(90)] });
     const rehearsal = await removeLapsedDietaryNotes(db, { now: NOW, dryRun: true });

@@ -10,6 +10,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { sqlStateOf } from "./dietary-memory.js";
+import { NO_PIECE_NOTES, pieceNotesHeld, removeLapsedPieceNotes, type PieceNoteCounts } from "./piece-note-retention.js";
 
 // ---------------------------------------------------------------------------
 // Retention for guests' allergy notes (fix-first item 18).
@@ -39,10 +40,9 @@ import { sqlStateOf } from "./dietary-memory.js";
 //     preferred date still ahead or within the after-event period.
 // Only the free-text note goes. The counts per diet are not about anyone in
 // particular and stay with the layout and its sheets. A planner's note on a
-// single piece (placed_objects.metadata.notes, copied into the sheet's rows
-// and, since T-669, onto its plan) is not covered: it is an operational note
-// that can still mention an allergy ("Table 5: nut allergy"), and whether such
-// notes count as health text is an open decision, not a rule this job applies.
+// single piece ("Table 5: nut allergy") goes on the same date, from every
+// copy of it (services/piece-note-retention.ts, Blake's decision of
+// 19 October 2026).
 //
 // The action log (action_log) is append-only, with this one exception. An
 // Event details save logged the note in its payload and inverse, so the log
@@ -89,6 +89,8 @@ export interface DietaryRetentionResult {
   readonly sheets: number;
   /** Action log entries whose copy was (or would be) removed. */
   readonly actionLog: number;
+  /** Planners' notes on single pieces, by where they were copied. */
+  readonly pieceNotes: PieceNoteCounts;
 }
 
 type NoteColumn =
@@ -109,7 +111,8 @@ function redactedEntry(column: typeof actionLog.payload | typeof actionLog.inver
     else ${column} end`;
 }
 
-/** The layouts whose note has outlived its purpose at `now`. */
+/** The layouts whose notes have outlived their purpose at `now` and that
+ *  still hold one: the allergy note, or a piece's note in any of its copies. */
 async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string[]> {
   const afterEvent = new Date(now.getTime() - DIETARY_NOTE_DAYS_AFTER_EVENT * DAY_MS);
   const withoutEvent = new Date(now.getTime() - DIETARY_NOTE_DAYS_WITHOUT_EVENT * DAY_MS);
@@ -167,6 +170,7 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
           where ${configurationSheetSnapshots.configurationId} = ${configurations.id}
             and ${hasNote(configurationSheetSnapshots.payload)}
         )
+        or ${pieceNotesHeld(configurations.id)}
       )`,
     ));
   return rows.map((row) => row.id);
@@ -206,12 +210,13 @@ async function removeLapsed(db: Database, options: DietaryRetentionOptions): Pro
   };
   // Every logged copy, whatever its layout's dates.
   const logged = or(hasNote(actionLog.payload), hasNote(actionLog.inverse));
+  const pieceNotes = ids.length === 0 ? NO_PIECE_NOTES : await removeLapsedPieceNotes(db, ids, dryRun);
 
   if (dryRun) {
     const layouts = lapsed === null ? [] : await db.select({ id: configurations.id }).from(configurations).where(lapsed.layouts);
     const sheets = lapsed === null ? [] : await db.select({ id: configurationSheetSnapshots.id }).from(configurationSheetSnapshots).where(lapsed.sheets);
     const entries = await db.select({ id: actionLog.id }).from(actionLog).where(logged);
-    return { dryRun, layouts: layouts.length, sheets: sheets.length, actionLog: entries.length };
+    return { dryRun, layouts: layouts.length, sheets: sheets.length, actionLog: entries.length, pieceNotes };
   }
 
   const clearedLayouts = lapsed === null ? [] : await db.update(configurations)
@@ -234,5 +239,5 @@ async function removeLapsed(db: Database, options: DietaryRetentionOptions): Pro
     .where(logged)
     .returning({ id: actionLog.id });
 
-  return { dryRun, layouts: clearedLayouts.length, sheets: clearedSheets.length, actionLog: clearedEntries.length };
+  return { dryRun, layouts: clearedLayouts.length, sheets: clearedSheets.length, actionLog: clearedEntries.length, pieceNotes };
 }
