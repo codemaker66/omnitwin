@@ -25,7 +25,7 @@
 // detail fade in, or a detail tile waits to be copied to the GPU.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Color, Vector3, type BufferGeometry, type Intersection, type Material, type Mesh, type Raycaster, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
@@ -54,6 +54,8 @@ import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVAT
 import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
 import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
+import { nativeFramePrecompile } from "../../lib/native-frame-composer.js";
+import { requestNativePrecompile } from "../../lib/native-precompile.js";
 import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
 import { createHallSection, parseSectionPreset, SECTION_PRESETS, sectionRoomLine, type HallSection, type SectionPreset } from "./hall-section.js";
 import { sectionCapGeometry } from "./hall-relief-section.js";
@@ -489,6 +491,49 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       environment.dispose();
     };
   }, [environment, invalidate, scene]);
+
+  // The room's pipelines, for its reflection capture and the planner's scene
+  // pass, compiled before either first draws them (F-01): drawn first, each
+  // compiled synchronously on the GPU process's frame thread, and the screen
+  // presented nothing for 2.6-3.7 s on arrival. The view holds its frames
+  // while this runs (lib/native-precompile.ts).
+  useLayoutEffect(() => {
+    const renderer = getNativeRenderer(gl);
+    const roomGroup = room.current;
+    if (renderer === null || roomGroup === null) return undefined;
+    let live = true;
+    // Read after each await: the effect may have been torn down meanwhile.
+    const stillMounted = (): boolean => live;
+    void requestNativePrecompile(renderer, async (signal) => {
+      if (!stillMounted()) return;
+      if (environment !== null) {
+        // Installed as the first frame would (the frame loop below): the
+        // scene's materials are built against the texture they keep.
+        if (prepared.current !== environment) {
+          prepared.current = environment;
+          scene.environment = environment.prepare();
+          scene.environmentIntensity = resources.mood.reflections;
+        }
+        // What a capture draws that the view may not: the chandeliers lit and
+        // shown, the panes away (the capture below).
+        const fittings = chandelierGroup.current;
+        const fittingsShown = fittings?.visible ?? false;
+        const paneMesh = panes.current;
+        const panesShown = paneMesh?.visible ?? false;
+        if (fittings !== null) fittings.visible = true;
+        if (paneMesh !== null) paneMesh.visible = false;
+        try {
+          await environment.compile(roomGroup, signal);
+        } finally {
+          if (fittings !== null) fittings.visible = fittingsShown;
+          if (paneMesh !== null) paneMesh.visible = panesShown;
+        }
+      }
+      const scenePass = nativeFramePrecompile(renderer);
+      if (stillMounted() && !signal.aborted && scenePass !== null) await scenePass(signal);
+    });
+    return () => { live = false; };
+  }, [environment, gl, resources, scene]);
 
   // Without the reflection map the chandeliers' metal leans on its own light.
   useEffect(() => {

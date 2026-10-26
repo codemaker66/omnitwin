@@ -57,6 +57,7 @@ import { getNativeRenderer, nativeRendererGpuString } from "../../lib/native-ren
 import { isSoftwareRenderer } from "../grand-hall/hall-finish.js";
 import { CameraPoseWatch, MotionBloom } from "../../lib/motion-bloom.js";
 import { registerNativeFrameComposer } from "../../lib/native-frame-composer.js";
+import { compileEach, compileWithin } from "../../lib/native-precompile.js";
 import type { RenderProfile } from "../../lib/render-quality.js";
 import { sceneGrade } from "../../lib/scene-grade.js";
 import { watchViewHand } from "../../lib/view-hand.js";
@@ -85,6 +86,8 @@ export class PausableBloomNode extends BloomNode {
 
 interface BuiltPipeline {
   readonly pipeline: RenderPipeline;
+  /** The scene pass, whose pipelines compile ahead of its first draw. */
+  readonly scenePass: ReturnType<typeof pass>;
   /** The pipeline's bloom, or null for a profile without it. */
   readonly bloom: PausableBloomNode | null;
   readonly dispose: () => void;
@@ -164,7 +167,7 @@ export function buildPlannerPipeline(
       const pipeline = new RenderPipeline(renderer);
       pipeline.outputColorTransform = false;
       pipeline.outputNode = vec4(vec3(occlusionPass.getTextureNode().r), 1);
-      return { pipeline, bloom: null, dispose: () => { pipeline.dispose(); for (const item of owned) item.dispose(); } };
+      return { pipeline, scenePass, bloom: null, dispose: () => { pipeline.dispose(); for (const item of owned) item.dispose(); } };
     }
   }
 
@@ -203,6 +206,7 @@ export function buildPlannerPipeline(
   }
   return {
     pipeline,
+    scenePass,
     bloom: glow,
     dispose: () => {
       pipeline.dispose();
@@ -250,6 +254,14 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
     let weight = 1;
     // A paused frame stays on screen until the next one: draw it once the hand leaves.
     const hand = glow === null ? null : watchViewHand(gl.domElement, () => { if (weight < 1) invalidate(); });
+    // The scene pass's pipelines for what the scene holds, compiled ahead of
+    // their first draw (lib/native-precompile.ts, F-01): its own target and
+    // MRT, every visible piece with the view's own camera, in view or not.
+    const precompile = async (signal: AbortSignal): Promise<void> => {
+      if (isSoftwareRenderer(nativeRendererGpuString(native))) return;
+      await compileWithin(native, built.scenePass.renderTarget, built.scenePass.getMRT(), signal,
+        () => compileEach(native, scene, camera, scene, signal));
+    };
     const release = registerNativeFrameComposer(native, () => {
       // A software rasteriser (a virtual machine, a headless browser) would run
       // every pass on the CPU, seconds a frame, so it draws the scene plainly,
@@ -269,7 +281,7 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
         if (motion.returning || cameraMoved) invalidate();
       }
       built.pipeline.render();
-    });
+    }, precompile);
     invalidate();
     return () => {
       release();
