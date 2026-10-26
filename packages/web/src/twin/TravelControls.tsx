@@ -35,6 +35,9 @@ import { pickTravelTarget, travelKeyToDirection, WASD_CONE_COS } from "./travel.
 const CLICK_SLOP_PX = 4;
 /** Reticle floats just above the floor plane to avoid z-fighting the ring. */
 const RETICLE_FLOOR_OFFSET_M = 1.32;
+/** On the canvas while a click is taken as travel: names the viewpoint it
+ *  travels from. e2e/twin-tour.spec.ts waits on it before clicking the stage. */
+const WALK_READY_ATTRIBUTE = "data-walk-ready";
 
 export interface TravelControlsProps {
   readonly enabled: boolean;
@@ -129,7 +132,8 @@ export function TravelControls({
   stepRef.current = stepInDirection;
 
   // Pointer effect: reticle preview + click-to-travel. Re-subscribes per node
-  // (its closure needs fresh here/neighbors); suppressed mid-hop via the ref.
+  // (its closure needs fresh here/neighbors) and per hop edge (the readiness
+  // attribute follows `hopping`); the handlers read the ref mid-hop.
   useEffect(() => {
     if (!enabled) {
       return;
@@ -141,6 +145,12 @@ export function TravelControls({
       const rect = element.getBoundingClientRect();
       const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
       const ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1);
+      // Aim with the pose the camera holds now. three refreshes matrixWorld
+      // only when it renders, and the walk's pose writes land in effects that
+      // run after R3F's first frame (InitialLookRig's ?look= seed among them),
+      // so the last rendered matrix can still face the default −Z: a click in
+      // that gap used to find no viewpoint and was dropped.
+      camera.updateMatrixWorld();
       return scratchDir
         .set(ndcX, ndcY, 0.5)
         .unproject(camera)
@@ -215,12 +225,26 @@ export function TravelControls({
     element.addEventListener("pointermove", onPointerMove);
     element.addEventListener("pointerdown", onPointerDown);
     element.addEventListener("click", onClick);
+    // Readiness, stated on the element that takes the click and set beside the
+    // listener so the two cannot disagree: while this names a viewpoint, a
+    // click on the stage is taken as travel from it. The HUD is React DOM and
+    // paints in the viewer's first commit; this scene mounts later (R3F renders
+    // its children only once it has measured the canvas), and a click before
+    // then reaches no listener. Withdrawn mid-hop, when clicks are ignored, by
+    // the effect after the render that starts the hop (the click guard reads a
+    // ref set in that render), so wait on it at rest, never to detect a hop.
+    if (hopping) {
+      element.removeAttribute(WALK_READY_ATTRIBUTE);
+    } else {
+      element.setAttribute(WALK_READY_ATTRIBUTE, currentNode.id);
+    }
     return () => {
       element.removeEventListener("pointermove", onPointerMove);
       element.removeEventListener("pointerdown", onPointerDown);
       element.removeEventListener("click", onClick);
+      element.removeAttribute(WALK_READY_ATTRIBUTE);
     };
-  }, [enabled, gl, camera, invalidate, currentNode, neighbors, nodesById, onTravel]);
+  }, [enabled, hopping, gl, camera, invalidate, currentNode, neighbors, nodesById, onTravel]);
 
   // Held-key tracking + first step. Stable (keyed on `enabled` only) so a
   // keyup is never dropped across the pointer effect's per-node churn.
