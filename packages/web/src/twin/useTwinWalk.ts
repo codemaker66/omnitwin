@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import type { TwinManifest } from "@omnitwin/types";
 import {
   stepSpring,
@@ -7,6 +6,7 @@ import {
   type SpringState,
 } from "../lib/springs.js";
 import { prefersReducedMotion } from "./reduced-motion.js";
+import { useTwinSearchParams } from "./twin-search-params.js";
 
 // -----------------------------------------------------------------------------
 // useTwinWalk — the hop state machine for the twin walkthrough.
@@ -63,7 +63,7 @@ export interface TwinWalk {
 }
 
 export function useTwinWalk(manifest: TwinManifest): TwinWalk {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, editSearchParams] = useTwinSearchParams();
 
   const nodeIds = useMemo(
     () => new Set(manifest.nodes.map((node) => node.id)),
@@ -120,21 +120,20 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
     }
   }, []);
 
-  /** Set ?node= while preserving any other params the page carries. */
+  /** Set ?node= while preserving every other param as the address stands now
+   *  (a hop lands long after the closure that began it; see twin-search-params). */
   const writeNodeParam = useCallback(
     (id: string, mode: "push" | "replace") => {
-      setSearchParams(
-        (previous) => {
-          const next = new URLSearchParams(previous);
-          next.set("node", id);
-          return next;
+      editSearchParams(
+        (params) => {
+          params.set("node", id);
         },
         // Commit a visited node before Back can return to the prior URL while
         // the router still renders that prior location. Canonicalisation stays async.
         { replace: mode === "replace", flushSync: mode === "push" },
       );
     },
-    [setSearchParams],
+    [editSearchParams],
   );
 
   /** Land on a node: end any hop, swap state, optionally write the URL. */
