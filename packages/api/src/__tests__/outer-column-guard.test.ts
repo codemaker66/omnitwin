@@ -99,6 +99,9 @@ describe("subqueries name the outer row by its table", () => {
 
   it("holds across the API's source", () => {
     const found = sourceFiles(SRC).flatMap((path) => judge(relative(SRC, path), readFileSync(path, "utf8")));
-    expect(found).toEqual([]);
+    expect(
+      found,
+      "Name the outer row with outerColumn() from db/outer-column.ts and alias the subquery's own tables; see .claude/gotchas/drizzle-single-table-subquery-columns.md",
+    ).toEqual([]);
   });
 });
