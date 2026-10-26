@@ -4,10 +4,11 @@ import { resolve } from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
 import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
+import { configurationRoutes } from "../routes/configurations.js";
 import { hallkeeperSheetRoutes } from "../routes/hallkeeper-sheet.js";
 import { InternalDemoNameSchema } from "../services/internal-demo-review.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
@@ -46,6 +47,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
     server = Fastify();
+    await server.register(configurationRoutes, { db, prefix: "/configurations" });
     await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
     await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
     await server.ready();
@@ -81,8 +83,11 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
   async function state(f: Fixture) {
     const [config] = await db.select().from(schema.configurations).where(eq(schema.configurations.id, f.configId));
     const snapshots = await db.select().from(schema.configurationSheetSnapshots).where(eq(schema.configurationSheetSnapshots.configurationId, f.configId));
-    const history = await db.select().from(schema.configurationReviewHistory).where(eq(schema.configurationReviewHistory.configurationId, f.configId));
-    const audit = await db.select().from(schema.generalAuditLog).where(eq(schema.generalAuditLog.targetId, f.configId));
+    // In the order written: without an order, PostgreSQL may return rows in any.
+    const history = await db.select().from(schema.configurationReviewHistory).where(eq(schema.configurationReviewHistory.configurationId, f.configId))
+      .orderBy(asc(schema.configurationReviewHistory.createdAt));
+    const audit = await db.select().from(schema.generalAuditLog).where(eq(schema.generalAuditLog.targetId, f.configId))
+      .orderBy(asc(schema.generalAuditLog.createdAt));
     return { config, snapshots, history, audit };
   }
 
@@ -117,6 +122,59 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(saved.audit[1]).toMatchObject({ actorUserId: f.userId, metadata: { notifyTeam: false, eventIds: [f.eventId], transition: "approved" } });
     expect((await assembleSheetDataV2(db, f.configId, "http://127.0.0.1"))?.payload.floorPlan?.objects).toHaveLength(1);
     expect(email).not.toHaveBeenCalled();
+  });
+
+  /** The fixture's layout, owned instead by someone on another venue's team.
+   *  Anyone may plan in a venue's room, so another venue's team can. */
+  async function ownedElsewhere(f: Fixture, role: string): Promise<Fixture> {
+    const elsewhere = randomUUID(), owner = randomUUID();
+    await db.insert(schema.venues).values({ id: elsewhere, name: "Another venue", slug: elsewhere, address: "Test only" });
+    await db.insert(schema.users).values({ id: owner, venueId: elsewhere, name: "Another team", email: `${owner}@demo.invalid`, role });
+    await db.update(schema.configurations).set({ userId: owner }).where(eq(schema.configurations.id, f.configId));
+    const token = { id: owner, name: "Another team", email: `${owner}@demo.invalid`, role, venueId: elsewhere };
+    return { ...f, userId: owner, headers: { authorization: `Bearer ${JSON.stringify(token)}` } };
+  }
+
+  it.each(["staff", "manager", "admin"])("leaves the venue's side of a review to the venue when another venue's %s owns the layout", async role => {
+    const venue = await fixture();
+    const owner = await ownedElsewhere(venue, role);
+    // The owner submits as its planner; taking it into review, deciding and
+    // archiving are the venue's.
+    expect((await post(owner, "submit")).statusCode).toBe(200);
+    expect((await post(owner, "start-review")).statusCode).toBe(409);
+    expect((await post(venue, "start-review")).statusCode).toBe(200);
+    for (const [action, payload] of [["approve", {}], ["reject", { note: "Not this one." }], ["request-changes", { note: "Move the bar." }]] as const) {
+      expect((await post(owner, action, payload)).statusCode, action).toBe(409);
+    }
+    expect((await post(venue, "approve")).statusCode).toBe(200);
+    expect((await post(owner, "archive")).statusCode).toBe(409);
+    const saved = await state(venue);
+    expect(saved.config?.reviewStatus).toBe("approved");
+    expect(saved.snapshots[0]?.approvedBy).toBe(venue.userId);
+    expect(saved.history.map(row => [row.toStatus, row.changedBy])).toEqual([
+      ["submitted", owner.userId], ["under_review", venue.userId], ["approved", venue.userId],
+    ]);
+  });
+
+  it("holds a submitted layout against another venue's admin who owns it, and leaves this venue's admin its fix", async () => {
+    const venue = await fixture();
+    const owner = await ownedElsewhere(venue, "admin");
+    expect((await post(owner, "submit")).statusCode).toBe(200);
+    const rename = (who: Fixture, name: string) => server.inject({ method: "PATCH", url: `/configurations/${venue.configId}`, headers: who.headers, payload: { name } });
+    const held = await rename(owner, "Changed behind the review");
+    expect(held.statusCode).toBe(409);
+    expect(held.json()).toMatchObject({ code: "CONFIG_LOCKED", reviewStatus: "submitted" });
+    // Someone with no part in the layout is refused, and not told its state.
+    for (const role of ["admin", "staff"]) {
+      const stranger = randomUUID();
+      const token = { id: stranger, name: "Stranger", email: `${stranger}@demo.invalid`, role, venueId: randomUUID() };
+      const refused = await rename({ ...venue, headers: { authorization: `Bearer ${JSON.stringify(token)}` } }, "Not theirs");
+      expect(refused.statusCode, role).toBe(403);
+      expect(refused.body, role).not.toContain("submitted");
+    }
+    // This venue's admin can still make an emergency fix.
+    expect((await rename(venue, "Fixed by the venue")).statusCode).toBe(200);
+    expect((await state(venue)).config?.name).toBe("Fixed by the venue");
   });
 
   async function approvedFixture() {

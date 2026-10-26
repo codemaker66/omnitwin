@@ -65,9 +65,12 @@ function isReviewState(s: string): s is ConfigurationReviewState {
 // ---------------------------------------------------------------------------
 
 // The venue side of a configuration review. The routes gate on
-// canAccessResource, which is canManageVenue, so this list must match the
-// venue floor minus the hallkeeper (who reads reviews but performs none).
-// A role the route admits and this table refuses is a half-granted write.
+// canAccessResource (the layout's owner, or canManageVenue) and judge the role
+// the user holds at the layout's venue: another venue's team who own a layout
+// there are its planner (reviewRole in routes/configuration-reviews.ts). So
+// this list must match the venue floor minus the hallkeeper (who reads reviews
+// but performs none). A role the route admits and this table refuses is a
+// half-granted write.
 //
 // Exported because the pending-review QUEUE must be the same set. A role that
 // may approve, reject or archive a review but cannot list the queue holding it

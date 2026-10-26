@@ -15,8 +15,8 @@ import {
   type ConfigurationReviewStatus,
 } from "@omnitwin/types";
 import { canTransition, isVenueReviewRole } from "../state-machines/config-review.js";
-import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canAccessResource } from "../utils/query.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
+import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { sendEmailAsync } from "../services/email.js";
 import {
   configApproved,
@@ -67,8 +67,18 @@ import {
 // request-changes / start-review / archive) additionally gate on the
 // state machine's role-aware canTransition — the route layer performs
 // the HTTP-specific permission check, the state machine decides
-// structural + role legality.
+// structural + role legality, for the role the user holds at the
+// layout's venue (reviewRole).
 // ---------------------------------------------------------------------------
+
+/** The role a user takes in a layout's review. canAccessResource admits a
+ *  layout's owner before it looks at the venue, and anyone may plan in a
+ *  venue's room, so a venue role counts at its own venue only: elsewhere the
+ *  owner is the layout's planner, who submits and withdraws it, and the venue
+ *  reviews it. */
+function reviewRole(user: JwtUser, venueId: string): string {
+  return isVenueReviewRole(user.role) && !canManageVenue(user, venueId) ? "client" : user.role;
+}
 
 const ConfigIdParam = z.object({ configId: z.uuid() });
 const VersionParam = z.object({
@@ -405,7 +415,7 @@ export async function configurationReviewRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    if (!canTransition(config.reviewStatus, "submitted", request.user.role)) {
+    if (!canTransition(config.reviewStatus, "submitted", reviewRole(request.user, config.venueId))) {
       return reply.status(409).send({
         error: `Cannot submit from state '${config.reviewStatus}'`,
         code: "INVALID_TRANSITION",
@@ -516,7 +526,7 @@ export async function configurationReviewRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    if (!canTransition(config.reviewStatus, "under_review", request.user.role)) {
+    if (!canTransition(config.reviewStatus, "under_review", reviewRole(request.user, config.venueId))) {
       return reply.status(409).send({
         error: `Cannot start review from state '${config.reviewStatus}'`,
         code: "INVALID_TRANSITION",
@@ -561,7 +571,7 @@ export async function configurationReviewRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    if (!canTransition(config.reviewStatus, "approved", request.user.role)) {
+    if (!canTransition(config.reviewStatus, "approved", reviewRole(request.user, config.venueId))) {
       return reply.status(409).send({
         error: `Cannot approve from state '${config.reviewStatus}'`,
         code: "INVALID_TRANSITION",
@@ -710,7 +720,7 @@ export async function configurationReviewRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    if (!canTransition(config.reviewStatus, "rejected", request.user.role)) {
+    if (!canTransition(config.reviewStatus, "rejected", reviewRole(request.user, config.venueId))) {
       return reply.status(409).send({
         error: `Cannot reject from state '${config.reviewStatus}'`,
         code: "INVALID_TRANSITION",
@@ -780,7 +790,7 @@ export async function configurationReviewRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    if (!canTransition(config.reviewStatus, "changes_requested", request.user.role)) {
+    if (!canTransition(config.reviewStatus, "changes_requested", reviewRole(request.user, config.venueId))) {
       return reply.status(409).send({
         error: `Cannot request changes from state '${config.reviewStatus}'`,
         code: "INVALID_TRANSITION",
@@ -846,7 +856,7 @@ export async function configurationReviewRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    if (!canTransition(config.reviewStatus, "withdrawn", request.user.role)) {
+    if (!canTransition(config.reviewStatus, "withdrawn", reviewRole(request.user, config.venueId))) {
       return reply.status(409).send({
         error: `Cannot withdraw from state '${config.reviewStatus}'`,
         code: "INVALID_TRANSITION",
@@ -885,7 +895,7 @@ export async function configurationReviewRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    if (!canTransition(config.reviewStatus, "archived", request.user.role)) {
+    if (!canTransition(config.reviewStatus, "archived", reviewRole(request.user, config.venueId))) {
       return reply.status(409).send({
         error: `Cannot archive from state '${config.reviewStatus}'`,
         code: "INVALID_TRANSITION",
@@ -981,7 +991,7 @@ export async function configurationReviewRoutes(
     const available: ConfigurationReviewStatus[] = [];
     for (const target of CONFIGURATION_REVIEW_STATUSES) {
       if (target === config.reviewStatus) continue;
-      if (canTransition(config.reviewStatus, target, request.user.role)) {
+      if (canTransition(config.reviewStatus, target, reviewRole(request.user, config.venueId))) {
         available.push(target);
       }
     }
