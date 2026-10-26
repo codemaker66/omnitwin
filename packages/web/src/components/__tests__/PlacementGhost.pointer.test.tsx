@@ -215,7 +215,7 @@ describe("a card's set warms as a piece does", () => {
   });
 
   it("leaves the set where GhostSet stands it", () => {
-    const set = armedSet();
+    const { set } = armedSet();
     set.visible = true;
     runFrame();
     expect(set.position.toArray()).toEqual([0, 0, 0]);
