@@ -5,6 +5,7 @@ import { placedItemToEditor } from "../../../components/editor/EditorBridge.js";
 import { currentFurniturePresentation } from "../../presentation-channel.js";
 import {
   EMPTY_ROOM,
+  HOLD_CAP_MS,
   HOLD_LIMIT_MS,
   requestAssemblyReplay,
   resetAssemblyRecallForTests,
@@ -101,6 +102,46 @@ describe("Layout Recall: a saved layout that opens assembles itself", () => {
     takeHold();
     act(() => { vi.advanceTimersByTime(HOLD_LIMIT_MS * 3); });
     expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+  });
+
+  it("keeps the hold while the Assembly's stage or code is still on its way, however slow the first load", () => {
+    vi.useFakeTimers();
+    const { rerender } = renderHook(({ stage, coming }) => { useAssemblyRecall(true, stage, false, coming); }, {
+      initialProps: { stage: false, coming: true },
+    });
+    openLayout("config-a");
+    act(() => { vi.advanceTimersByTime(HOLD_LIMIT_MS * 3); });
+    expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+    expect(request()).toMatchObject({ configId: "config-a", reason: "open" });
+    rerender({ stage: true, coming: false });
+    expect(request()).toMatchObject({ configId: "config-a", reason: "open" });
+  });
+
+  it("gives the Assembly the whole limit to take the hold once its stage is there", () => {
+    vi.useFakeTimers();
+    const { rerender } = renderHook(({ stage, coming }) => { useAssemblyRecall(true, stage, false, coming); }, {
+      initialProps: { stage: false, coming: true },
+    });
+    openLayout("config-a");
+    act(() => { vi.advanceTimersByTime(HOLD_LIMIT_MS - 100); });
+    rerender({ stage: true, coming: false });
+    act(() => { vi.advanceTimersByTime(HOLD_LIMIT_MS - 1); });
+    expect(request()).toMatchObject({ configId: "config-a" });
+    expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+    act(() => { vi.advanceTimersByTime(2); });
+    expect(request()).toBeNull();
+    expect(currentFurniturePresentation()).toBeNull();
+  });
+
+  it("still never hides a layout for good: a stage that never arrives lets it go at the cap", () => {
+    vi.useFakeTimers();
+    renderHook(() => { useAssemblyRecall(true, false, false, true); });
+    openLayout("config-a");
+    act(() => { vi.advanceTimersByTime(HOLD_CAP_MS - 1); });
+    expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+    act(() => { vi.advanceTimersByTime(2); });
+    expect(currentFurniturePresentation()).toBeNull();
+    expect(request()).toBeNull();
   });
 
   it("replays the open layout on request", () => {

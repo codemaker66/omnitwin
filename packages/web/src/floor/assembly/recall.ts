@@ -39,10 +39,22 @@ export const useAssemblyRecallStore = create<RecallState>()(() => ({ request: nu
 /** The empty room: every piece hidden while the room is readied. */
 export const EMPTY_ROOM: PresentationFrame = { pieces: new Map(), others: "hidden" };
 
-/** The longest a hold waits for the Assembly to take it over, ms (a slow first load fetches its code too). */
+/** The longest a hold waits for the Assembly to take it over once nothing it needs is still on its way, ms. */
 export const HOLD_LIMIT_MS = 8000;
 
+/**
+ * The longest a hold waits in all while the Assembly's stage or code is still
+ * on its way, ms. A phone's cold first load can take longer than HOLD_LIMIT_MS
+ * to draw the hall and fetch the Assembly, and letting the hold lapse then
+ * would drop the Assembly with it.
+ */
+export const HOLD_CAP_MS = 45_000;
+
 let holdTimer: ReturnType<typeof setTimeout> | null = null;
+/** When the current hold began (Date.now()). */
+let holdSince = 0;
+/** Whether the Assembly's stage or code is still on its way (set by the planner). */
+let stageComing = false;
 let nonce = 0;
 /** Whether this device asks for the Assembly (set by the planner while it is mounted). */
 let asked = false;
@@ -56,15 +68,36 @@ function clearHoldTimer(): void {
   holdTimer = null;
 }
 
-/** Hold the room empty until the Assembly takes it over, or for HOLD_LIMIT_MS at most. */
+/** Let the hold lapse after `ms`, unless the Assembly's stage or code is still on its way (up to HOLD_CAP_MS). */
+function armHoldTimer(ms: number): void {
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    const waited = Date.now() - holdSince;
+    if (stageComing && waited < HOLD_CAP_MS) {
+      armHoldTimer(Math.min(HOLD_LIMIT_MS, HOLD_CAP_MS - waited));
+      return;
+    }
+    releaseHold();
+    useAssemblyRecallStore.setState({ request: null });
+  }, ms);
+}
+
+/** Hold the room empty until the Assembly takes it over, or for HOLD_LIMIT_MS once nothing is on its way. */
 export function holdRoomEmpty(): void {
   clearHoldTimer();
   publishFurniturePresentation(EMPTY_ROOM);
-  holdTimer = setTimeout(() => {
-    holdTimer = null;
-    releaseHold();
-    useAssemblyRecallStore.setState({ request: null });
-  }, HOLD_LIMIT_MS);
+  holdSince = Date.now();
+  armHoldTimer(HOLD_LIMIT_MS);
+}
+
+function setStageComing(next: boolean): void {
+  if (stageComing === next) return;
+  stageComing = next;
+  // Everything has arrived: the Assembly gets the whole limit from now to take the hold over.
+  if (!next && holdTimer !== null) {
+    clearHoldTimer();
+    armHoldTimer(HOLD_LIMIT_MS);
+  }
 }
 
 /** The Assembly owns the room from here: the hold no longer lapses on its own. */
@@ -117,8 +150,10 @@ export function consumeAssemblyRequest(request: AssemblyRequest): void {
  * The planner's side of Layout Recall. `wanted`: this device asks for the
  * Assembly. `stage`: the drawn Grand Hall is there to play in (the Assembly
  * is mounted). `elsewhere`: the open room is known not to be one it plays in.
+ * `coming`: the Assembly may still play here, but its stage or its code is
+ * still on its way, so a hold waits for it (up to HOLD_CAP_MS).
  */
-export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: boolean): void {
+export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: boolean, coming = false): void {
   useEffect(() => {
     if (!wanted) return undefined;
     asked = true;
@@ -130,6 +165,7 @@ export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: bo
     else if (unannounced !== null && unannounced === open.configId) announce(unannounced);
     return () => {
       asked = false;
+      stageComing = false;
       // Leaving the planner: the next time it opens a layout, that is an opening again.
       announced = null;
       unannounced = null;
@@ -144,11 +180,17 @@ export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: bo
     releaseHold();
     useAssemblyRecallStore.setState({ request: null });
   }, [elsewhere, stage, wanted]);
+
+  useEffect(() => {
+    setStageComing(wanted && coming);
+  }, [coming, wanted]);
 }
 
 /** Tests: forget every opening and hold. */
 export function resetAssemblyRecallForTests(): void {
   clearHoldTimer();
+  holdSince = 0;
+  stageComing = false;
   asked = false;
   announced = null;
   unannounced = null;

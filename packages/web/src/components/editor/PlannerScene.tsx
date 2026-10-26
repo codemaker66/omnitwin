@@ -88,8 +88,9 @@ import { useAssemblyRecall } from "../../floor/assembly/recall.js";
 import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
 
 // The Grand Assembly (goal 03, S6), behind `?assembly=accio` (floor/assembly/flag.ts):
-// loaded only where a device asks for it.
-const GrandAssembly = lazy(() => import("../../floor/assembly/GrandAssembly.js"));
+// loaded only where a device asks for it, and fetched as soon as it does.
+const loadGrandAssembly = () => import("../../floor/assembly/GrandAssembly.js");
+const GrandAssembly = lazy(loadGrandAssembly);
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -465,9 +466,22 @@ export function PlannerScene(): ReactElement {
   // (The drawn hall is never shown under the timeline's frozen preview.)
   const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
   const [assemblyCamera, setAssemblyCamera] = useState(false);
-  // A room known not to be the drawn Grand Hall lets a held layout go at once;
-  // the hall itself may take a moment to be drawn (its capture resolving first).
-  useAssemblyRecall(assemblyAsked, assemblyStage, space !== null && !realHall);
+  // The Assembly's code is fetched the moment this device asks for it, so it is
+  // there by the time the hall is drawn.
+  const [assemblyCodeReady, setAssemblyCodeReady] = useState(false);
+  useEffect(() => {
+    if (!assemblyAsked) return undefined;
+    let current = true;
+    void loadGrandAssembly().then(() => { if (current) setAssemblyCodeReady(true); }, () => undefined);
+    return () => { current = false; };
+  }, [assemblyAsked]);
+  // A room known not to be the drawn Grand Hall lets a held layout go at once.
+  // While the room is still unknown, or the hall is drawn but the Assembly's code
+  // is still arriving (a phone's cold first load), a held layout waits for it.
+  const assemblyElsewhere = space !== null && !realHall;
+  const assemblyComing = assemblyAsked && !walkMode && !assemblyElsewhere
+    && (space === null || (hallDrawn && !assemblyCodeReady));
+  useAssemblyRecall(assemblyAsked, assemblyStage, assemblyElsewhere, assemblyComing);
   const hallSetting = useMemo(() => (typeof window === "undefined" ? "none" : hallSettingRequested(window.location.search)), []);
   // A capture that fails behind the drawn hall changes nothing on screen: the
   // camera and a walk of the drawn hall carry on.

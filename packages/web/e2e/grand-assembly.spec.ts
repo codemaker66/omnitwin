@@ -80,12 +80,13 @@ function nearFinalFraming(position: readonly number[] | null): boolean {
 test.describe.configure({ mode: "default" });
 
 test.describe("Grand Assembly behind ?assembly=accio", () => {
-  test.setTimeout(150_000);
+  // A cold first load also fetches the Assembly's code; the hold waits for it.
+  test.setTimeout(210_000);
 
   test("a saved layout that opens assembles itself, rests as placed and hands the camera back where it ended", async ({ page }) => {
     const writes = await openSavedGrandHallLayout(page, "?assembly=accio");
     const replay = page.locator(".assembly-replay");
-    await expect(replay).toHaveAttribute("data-playing", "true", { timeout: 60_000 });
+    await expect(replay).toHaveAttribute("data-playing", "true", { timeout: 90_000 });
     await expect(replay).toHaveAttribute("data-playing", "false", { timeout: 90_000 });
     await expect(replay).toBeEnabled();
     // Handed back on its final framing, and it stays there.
