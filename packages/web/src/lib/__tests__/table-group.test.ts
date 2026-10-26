@@ -5,9 +5,12 @@ import {
   createTableGroup,
   rearrangeTableGroup,
   seatCapacity,
+  tableGroupSeatCapacity,
+  tableOwnChairs,
+  ungroupedKeepingTables,
 } from "../table-group.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
-import { resetPlacedIdCounter } from "../placement.js";
+import { createPlacedItem, resetPlacedIdCounter } from "../placement.js";
 import type { PlacedItem } from "../placement.js";
 import { toRenderSpace } from "../../constants/scale.js";
 import type { ChairPlacement } from "../table-group.js";
@@ -217,6 +220,77 @@ describe("createTableGroup", () => {
 // ---------------------------------------------------------------------------
 
 describe("rearrangeTableGroup", () => {
+  /** Two rounds of eight joined by Group (Ctrl G): one groupId over both tables and all their chairs. */
+  function groupedPair(): readonly PlacedItem[] {
+    const joined = [...createTableGroup(ROUND_TABLE_ID, -3, 0, 0, 8), ...createTableGroup(ROUND_TABLE_ID, 3, 0, 0, 8)];
+    return joined.map((item) => ({ ...item, groupId: "grouped-by-hand" }));
+  }
+
+  it("re-rings only its own table's chairs in a group made with Group, and keeps the other table and its chairs", () => {
+    const pair = groupedPair();
+    const [left] = pair;
+    const right = pair.find((item, i) => i > 0 && item.catalogueItemId === ROUND_TABLE_ID);
+    if (left === undefined || right === undefined) throw new Error("no pair");
+    const rightChairs = pair.filter((item) => item.id !== right.id && item.x > 0);
+    expect(tableOwnChairs(left, pair)).toHaveLength(8);
+    expect(tableOwnChairs(right, pair)).toHaveLength(8);
+    expect(tableGroupSeatCapacity(left, pair)).toBe(tableGroupSeatCapacity(right, pair));
+
+    const after = rearrangeTableGroup(left.id, 9, pair);
+    expect(after).toHaveLength(19);
+    expect(after.find((item) => item.id === right.id)).toEqual(right);
+    for (const chair of rightChairs) expect(after.find((item) => item.id === chair.id)).toEqual(chair);
+    expect(tableOwnChairs(left, after)).toHaveLength(9);
+    expect(after.every((item) => item.groupId === "grouped-by-hand")).toBe(true);
+  });
+
+  it("keeps any other piece grouped with the table", () => {
+    const group = createTableGroup(ROUND_TABLE_ID, 0, 0, 0, 4);
+    const [table, chair] = group;
+    const lecternId = getCatalogueItemBySlug("lectern")?.id;
+    if (table === undefined || chair === undefined || lecternId === undefined) throw new Error("no fixture");
+    const lectern: PlacedItem = { ...chair, id: "grouped-lectern", catalogueItemId: lecternId, x: 3, z: 0 };
+    const after = rearrangeTableGroup(table.id, 6, [...group, lectern]);
+    expect(after.find((item) => item.id === "grouped-lectern")).toEqual(lectern);
+  });
+
+  it("keeps all 25 panels of a dance floor grouped with a round when the round takes a seat more (QoL B-03)", () => {
+    const panelId = getCatalogueItemBySlug("dancefloor-panel")?.id;
+    if (panelId === undefined) throw new Error("no panel");
+    const round = createTableGroup(ROUND_TABLE_ID, -5, 0, 0, 8);
+    const panels = Array.from({ length: 25 }, (_, i) => ({ ...createPlacedItem(panelId, (i % 5) * 0.91, Math.floor(i / 5) * 0.91, 0, null), id: `panel-${String(i)}` }));
+    const grouped = [...round, ...panels].map((item) => ({ ...item, groupId: "round-and-floor" }));
+    const [table] = grouped;
+    if (table === undefined) throw new Error("no round");
+    const after = rearrangeTableGroup(table.id, 9, grouped);
+    for (const panel of grouped.filter((item) => item.catalogueItemId === panelId)) expect(after.find((item) => item.id === panel.id)).toEqual(panel);
+    expect(tableOwnChairs(table, after)).toHaveLength(9);
+  });
+
+  it("ungroupedKeepingTables changes nothing for a lone table with its own chairs (QoL B-03)", () => {
+    const group = createTableGroup(ROUND_TABLE_ID, 0, 0, 0, 6);
+    const ids = new Set(group.map((item) => item.id));
+    expect(ungroupedKeepingTables(ids, group)).toBe(group);
+  });
+
+  it("ungroupedKeepingTables splits a group of two tables back into two table groups, each with its own chairs, and lets anything else go", () => {
+    const lecternId = getCatalogueItemBySlug("lectern")?.id;
+    if (lecternId === undefined) throw new Error("no lectern");
+    const joined = [...createTableGroup(ROUND_TABLE_ID, -3, 0, 0, 8), ...createTableGroup(ROUND_TABLE_ID, 3, 0, 0, 8)]
+      .map((item) => ({ ...item, groupId: "joined" }));
+    const lectern = { ...createPlacedItem(lecternId, 0, 4, 0, "joined"), id: "joined-lectern" };
+    const all = [...joined, lectern];
+    let next = 0;
+    const after = ungroupedKeepingTables(new Set([lectern.id]), all, () => { next += 1; return `split-${String(next)}`; });
+    expect(after.find((item) => item.id === "joined-lectern")?.groupId).toBeNull();
+    const left = after.filter((item) => item.x < 0);
+    const right = after.filter((item) => item.x > 0 && item.id !== "joined-lectern");
+    expect(new Set(left.map((item) => item.groupId))).toEqual(new Set(["joined"]));
+    expect(new Set(right.map((item) => item.groupId))).toEqual(new Set(["split-1"]));
+    expect(left).toHaveLength(9);
+    expect(right).toHaveLength(9);
+  });
+
   it("replaces chairs while keeping the table", () => {
     const group = createTableGroup(ROUND_TABLE_ID, 0, 0, 0, 4);
     const first = group[0];

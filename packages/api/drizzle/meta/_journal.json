@@ -694,6 +694,13 @@
       "when": 1792508400000,
       "tag": "0101_sheet_ticks_per_event",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1792540800000,
+      "tag": "0102_configuration_claim_secrets",
+      "breakpoints": true
     }
   ]
 }
