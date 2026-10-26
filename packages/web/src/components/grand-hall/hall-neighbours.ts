@@ -229,7 +229,7 @@ export function firstFloorUrl(): string {
 /** Coordinates outside this box mean a malformed file, metres (the building is about 31 by 25 m). */
 const PLAN_LIMIT = 40;
 
-const coordinate = z.number().finite().gte(-PLAN_LIMIT).lte(PLAN_LIMIT);
+const coordinate = z.number().gte(-PLAN_LIMIT).lte(PLAN_LIMIT);
 const ring = z.array(z.tuple([coordinate, coordinate])).min(3).max(4000);
 const polygon = z.object({ id: z.string().min(1), outline: ring, holes: z.array(ring).max(200), source: z.string().min(1) });
 const residual = z.object({ metres: z.number(), median: z.number().nonnegative(), p90: z.number().nonnegative() });

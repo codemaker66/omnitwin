@@ -65,8 +65,8 @@ export const RuntimeCompositionDecisionV0Schema = z
     decisionId: z.string().trim().min(1).max(160).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
-    decidedAt: z.string().datetime({ offset: true }),
+    runtimePackageId: z.uuid(),
+    decidedAt: z.iso.datetime({ offset: true }),
     decidedBy: z.string().trim().min(1).max(160),
     decision: RuntimeCompositionDecisionSchema,
     lcc2Manifest: z.object({
@@ -102,14 +102,14 @@ export const RuntimeCompositionDecisionV0Schema = z
     if (record.decision === "serve_manifest_room_sog_chunks") {
       if (record.lcc2Manifest.authority !== "not_runtime_authoritative") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["lcc2Manifest", "authority"],
           message: "Direct chunk-serving decisions must keep the LCC2 graph non-authoritative at runtime.",
         });
       }
       if (record.guardrails.lcc2DirectLoaderEnabled) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["guardrails", "lcc2DirectLoaderEnabled"],
           message: "Direct chunk-serving decisions cannot enable the LCC2 direct loader.",
         });
@@ -120,7 +120,7 @@ export const RuntimeCompositionDecisionV0Schema = z
     for (const [index, chunk] of record.runtimeLoading.servedRoomChunks.entries()) {
       if (chunk.role !== "room_chunk") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["runtimeLoading", "servedRoomChunks", index, "role"],
           message: "Served runtime chunks must be room chunks.",
         });
@@ -130,14 +130,14 @@ export const RuntimeCompositionDecisionV0Schema = z
     for (const [index, chunk] of record.runtimeLoading.excludedChunks.entries()) {
       if (chunk.role !== "environment_chunk") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["runtimeLoading", "excludedChunks", index, "role"],
           message: "Excluded chunks must be environment chunks.",
         });
       }
       if (servedNames.has(chunk.fileName)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["runtimeLoading", "excludedChunks", index, "fileName"],
           message: "A chunk cannot be both served and excluded.",
         });
@@ -146,7 +146,7 @@ export const RuntimeCompositionDecisionV0Schema = z
 
     if (record.runtimeLoading.visualAssetUrlsExpectedCount !== record.runtimeLoading.servedRoomChunks.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["runtimeLoading", "visualAssetUrlsExpectedCount"],
         message: "visualAssetUrlsExpectedCount must match the served room chunk count.",
       });
@@ -158,7 +158,7 @@ export const RuntimeCompositionDecisionV0Schema = z
     );
     if (record.runtimeLoading.loadedSplatsExpected !== servedSplats) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["runtimeLoading", "loadedSplatsExpected"],
         message: "loadedSplatsExpected must equal the sum of served room chunk splats.",
       });
@@ -166,7 +166,7 @@ export const RuntimeCompositionDecisionV0Schema = z
 
     if (record.lcc2Manifest.totalSplats !== servedSplats) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["lcc2Manifest", "totalSplats"],
         message: "The LCC2 room total must equal the served room chunk splat total.",
       });
@@ -187,7 +187,7 @@ export type RuntimeFrontierSplatFormat = z.infer<
 
 const RuntimeCompositionAssetIdentityV1Schema = z
   .object({
-    assetVersionId: z.string().uuid(),
+    assetVersionId: z.uuid(),
     fileName: z
       .string()
       .trim()
@@ -331,7 +331,7 @@ function validateHierarchyAssetMetadata(
 ): void {
   if (!asset.fileName.endsWith(`.${expectedFormat}`)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: [...path, "fileName"],
       message: `Runtime asset filename must use the selected .${expectedFormat} format.`,
     });
@@ -339,7 +339,7 @@ function validateHierarchyAssetMetadata(
 
   if (asset.sourceHierarchySha256 !== hierarchySha256) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: [...path, "sourceHierarchySha256"],
       message:
         "Runtime asset hierarchy hash must match the decision hierarchy hash.",
@@ -348,7 +348,7 @@ function validateHierarchyAssetMetadata(
 
   if (expectedLevel !== null && asset.hierarchyLevel !== expectedLevel) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: [...path, "hierarchyLevel"],
       message:
         "Frontier asset hierarchyLevel must match the selected frontier level.",
@@ -365,7 +365,7 @@ function validateHierarchyAssetRanges(
   for (const [rangeIndex, range] of asset.nodeRanges.entries()) {
     if (range.start !== expectedStart) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: [...path, "nodeRanges", rangeIndex, "start"],
         message:
           "Node ranges must provide ordered, contiguous coverage beginning at zero.",
@@ -373,7 +373,7 @@ function validateHierarchyAssetRanges(
     }
     if (hierarchyLevelForNodePath(range.nodePath) !== asset.hierarchyLevel) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: [...path, "nodeRanges", rangeIndex, "nodePath"],
         message: "Node path depth must match the asset hierarchyLevel.",
       });
@@ -383,7 +383,7 @@ function validateHierarchyAssetRanges(
 
   if (expectedStart !== asset.gaussianCount) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: [...path, "gaussianCount"],
       message:
         "Asset gaussianCount must equal the sum of its hierarchy node ranges.",
@@ -421,7 +421,7 @@ function rejectDuplicateAssetField(
     const firstIndex = firstIndexByValue.get(value);
     if (firstIndex !== undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: [...record.path, field],
         message: `Duplicate runtime asset ${field}; first occurrence is asset ${String(firstIndex)}.`,
       });
@@ -444,15 +444,15 @@ const RuntimeCompositionDecisionV1ShapeSchema = z
     roomSlug: TradesHallRuntimeRoomSlugSchema,
     runtimePackage: z
       .object({
-        runtimePackageId: z.string().uuid(),
+        runtimePackageId: z.uuid(),
         revision: z.number().int().positive(),
         /** SHA-256 of the versioned canonical package content: manifest,
          *  declared asset IDs, evidence status, and runtime status. */
         contentDigest: z.string().regex(SHA256_HEX),
-        primaryVisualAssetVersionId: z.string().uuid(),
+        primaryVisualAssetVersionId: z.uuid(),
       })
       .strict(),
-    decidedAt: z.string().datetime({ offset: true }),
+    decidedAt: z.iso.datetime({ offset: true }),
     decidedBy: z.string().trim().min(1).max(160),
     decision: z.literal("serve_reviewed_fixed_frontier"),
     hierarchy: z
@@ -512,7 +512,7 @@ function addCompositionIssue(
   path: RuntimeAssetPath,
   message: string,
 ): void {
-  ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path], message });
+  ctx.addIssue({ code: "custom", path: [...path], message });
 }
 
 function requireCompositionEquality(

@@ -34,12 +34,12 @@ export async function postActionBatch(
  *  of failing cleanly, which would escape the api client's error contract. */
 export const AuditEntrySchema = z.object({
   ordinal: z.number().int().nonnegative(),
-  id: z.string().uuid(),
-  batchId: z.string().uuid(),
+  id: z.uuid(),
+  batchId: z.uuid(),
   revision: z.number().int().nonnegative(),
   /** The authenticated principal the SERVER observed at ingestion —
    *  distinct from the client-reported actor blob below. */
-  submittedBy: z.string().uuid(),
+  submittedBy: z.uuid(),
   actor: ActionActorSchema,
   intent: z.string().min(1),
   payload: BoundedJsonValueSchema,

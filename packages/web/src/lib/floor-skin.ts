@@ -51,7 +51,7 @@ export const FloorSkinManifestSchema = z.object({
   // Tiles size the floor geometry, so each must lie inside the grid it cuts.
   manifest.tiles.forEach((tile, index) => {
     if (tile.col0 + tile.cols > manifest.grid.widthPx || tile.row0 + tile.rows > manifest.grid.heightPx) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["tiles", index], message: "A floor-skin tile lies outside its grid." });
+      context.addIssue({ code: "custom", path: ["tiles", index], message: "A floor-skin tile lies outside its grid." });
     }
   });
 });
