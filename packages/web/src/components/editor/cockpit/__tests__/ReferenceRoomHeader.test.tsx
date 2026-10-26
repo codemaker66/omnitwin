@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { getVenue, type VenueDetail } from "../../../../api/spaces.js";
-import { useEditorStore } from "../../../../stores/editor-store.js";
+import { useEditorStore, type EditorSaveConflict } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import { ReferenceRoomHeader } from "../ReferenceRoomHeader.js";
@@ -64,6 +64,11 @@ afterEach(() => {
   useEditorStore.setState({ saveToServer: originalSave, reloadAfterConflict: originalReload, saveConflict: null });
   useLayoutTimelinePreviewStore.getState().clear();
 });
+
+const CHANGED_ELSEWHERE: EditorSaveConflict = {
+  expectedRevision: 1, currentRevision: 2, message: "Changed",
+  changedBy: null, changedAt: null, byYou: false, theirChange: null,
+};
 
 function showHeader(): void {
   render(<MemoryRouter><ReferenceRoomHeader /></MemoryRouter>);
@@ -157,7 +162,7 @@ describe("ReferenceRoomHeader", () => {
   });
 
   it("checks the live preview lock even before React replaces the prior click handler", () => {
-    useEditorStore.setState({ saveError: "Changed elsewhere", saveConflict: { expectedRevision: 1, currentRevision: 2, message: "Changed" } });
+    useEditorStore.setState({ saveError: "Changed elsewhere", saveConflict: CHANGED_ELSEWHERE });
     showHeader();
     const recovery = screen.getByRole("button", { name: "Reload layout" });
     act(() => {
@@ -170,7 +175,7 @@ describe("ReferenceRoomHeader", () => {
   });
 
   it("reloads a conflicted layout instead of resending a stale revision, respecting preview lock", () => {
-    useEditorStore.setState({ saveError: "Changed elsewhere", saveConflict: { expectedRevision: 1, currentRevision: 2, message: "Changed" } });
+    useEditorStore.setState({ saveError: "Changed elsewhere", saveConflict: CHANGED_ELSEWHERE });
     showHeader();
     expect(screen.getByRole("status").textContent).toBe("Reload layout");
     fireEvent.click(screen.getByRole("button", { name: "Reload layout" }));

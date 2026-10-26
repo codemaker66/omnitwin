@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LiveOp } from "@omnitwin/types";
 import type { Configuration, PlacedObject } from "../../../api/configurations.js";
-import { placedObjectToEditor, setEditorLiveHooks, useEditorStore, type EditorObject } from "../../../stores/editor-store.js";
+import { placedObjectToEditor, setEditorAutosaveRequester, setEditorLiveHooks, useEditorStore, type EditorObject } from "../../../stores/editor-store.js";
 import { useLayoutLiveStore } from "../../../stores/layout-live-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { LIVE_SEND_INTERVAL_MS, LayoutLiveClient, chunkOps, type LiveSocket } from "../live-client.js";
@@ -311,6 +311,37 @@ describe("incoming", () => {
     socket.receive({ type: "live.ops", seq: 1, connectionId: "c-alex", userId: "u-alex", name: "Alex Murray", ops: [put(editor(T2, 8))] });
     await vi.advanceTimersByTimeAsync(16_500);
     expect(useLayoutLiveStore.getState().overlay.size).toBe(0);
+    h.client.stop();
+  });
+});
+
+describe("a conflict the person has not settled", () => {
+  it("is never merged by the room: joining and later commits only update the version they choose against", async () => {
+    const requested = vi.fn();
+    setEditorAutosaveRequester(requested);
+    const mine = [editor(T1, 10), editor(T2, 2), editor(T3, 3)];
+    useEditorStore.setState({
+      objects: mine, isDirty: true,
+      saveConflict: { expectedRevision: 2, currentRevision: 3, message: "changed", changedBy: null, changedAt: null, byYou: false, theirChange: null },
+    });
+    const h = harness();
+    h.fetchConfig.mockResolvedValueOnce(config(3, [wire(T1, 1), wire(T2, 20), wire(T3, 3)]));
+    const socket = await joined(h);
+    expect(useEditorStore.getState().objects).toEqual(mine);
+    expect(useEditorStore.getState().configRevision).toBe(2);
+
+    h.fetchConfig.mockResolvedValueOnce(config(4, [wire(T1, 1), wire(T2, 40), wire(T3, 3)]));
+    socket.receive({ type: "layout.changed", revision: 4, actorUserId: "u-alex" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const state = useEditorStore.getState();
+    expect(state.objects).toEqual(mine);
+    expect(state).toMatchObject({ configRevision: 2, isDirty: true });
+    expect(state.saveConflict).toMatchObject({ currentRevision: 4, changedBy: null });
+    expect(state.saveConflict?.theirChange?.moved).toHaveLength(1);
+    // Held is settled, not busy: no retry loop, no save asked for.
+    expect(h.fetchConfig).toHaveBeenCalledTimes(2);
+    expect(requested).not.toHaveBeenCalled();
+    setEditorAutosaveRequester(null);
     h.client.stop();
   });
 });
