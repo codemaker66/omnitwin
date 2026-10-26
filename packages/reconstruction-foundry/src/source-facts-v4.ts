@@ -80,7 +80,7 @@ export type UniversalSourceFactsV4ReceiptFileIdentity = z.infer<
 
 const SourceIdentityBaseSchema = z.object({
   path: FoundryRelativePathSchema,
-  sizeBytes: z.number().int().safe().nonnegative(),
+  sizeBytes: z.number().int().int().nonnegative(),
   sha256: z.string().regex(SHA256_HEX),
 }).strict();
 
@@ -130,7 +130,7 @@ const InspectionSchema = z.object({
   coverage: z.enum(["none", "physical_header", "container_header", "container_header_and_json", "complete_container_structure", "complete_stream"]),
 }).strict().superRefine((value, ctx) => {
   if ((value.state === "established") !== (value.category === "established")) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["category"], message: "inspection state and category must agree" });
+    ctx.addIssue({ code: "custom", path: ["category"], message: "inspection state and category must agree" });
   }
 });
 
@@ -163,7 +163,7 @@ const MediaSourceSchema = SourceIdentityBaseSchema.extend({
   ),
 }).strict().superRefine((source, ctx) => {
   if (JSON.stringify(source.receiptCandidateInputTypes) !== JSON.stringify(canonicalMediaReceiptCandidates(source.receiptCandidateInputTypes))) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["receiptCandidateInputTypes"], message: "media receipt candidates must be unique and canonically ordered" });
+    ctx.addIssue({ code: "custom", path: ["receiptCandidateInputTypes"], message: "media receipt candidates must be unique and canonically ordered" });
   }
 });
 
@@ -178,16 +178,16 @@ const MediaContainerAssetSchema = z.object({
   unknowns: z.array(UnknownFactSchema),
 }).strict().superRefine((asset, ctx) => {
   if ((asset.inspection.state === "established") !== (asset.facts !== null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facts"], message: "media facts must match inspection state" });
+    ctx.addIssue({ code: "custom", path: ["facts"], message: "media facts must match inspection state" });
   }
   if (JSON.stringify(asset.unknowns) !== JSON.stringify(FOUNDRY_MEDIA_CONTAINER_UNKNOWNS)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["unknowns"], message: "media unknowns must match V4 coverage" });
+    ctx.addIssue({ code: "custom", path: ["unknowns"], message: "media unknowns must match V4 coverage" });
   }
   if (asset.inspection.state === "established") {
     const factsFormat = asset.facts?.format;
     const expectedInputType = factsFormat === "iso_bmff" ? "video" : "generic_image";
     if (asset.inspection.category !== "established" || asset.inspection.code !== "MEDIA_CONTAINER_FORMAT_FACTS_ESTABLISHED" || asset.inspection.coverage !== "complete_container_structure" || asset.format !== factsFormat || asset.source.inputType !== expectedInputType || asset.facts?.container.sourceSizeBytes !== asset.source.sizeBytes) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection"], message: "established media inspection fields are inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["inspection"], message: "established media inspection fields are inconsistent" });
     }
     return;
   }
@@ -204,7 +204,7 @@ const MediaContainerAssetSchema = z.object({
         ? "drone_media"
         : null;
   if (asset.format !== "media_container" || asset.facts !== null || expectedFailedInputType === null || asset.source.inputType !== expectedFailedInputType || !FOUNDRY_MEDIA_CONTAINER_SOURCE_FACTS_FAILURE_CODES.includes(code) || expectedCategory === undefined || expectedCategory === "cancelled" || asset.inspection.category !== expectedCategory || asset.inspection.coverage !== "none") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection"], message: "failed media inspection fields are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["inspection"], message: "failed media inspection fields are inconsistent" });
   }
 });
 
@@ -238,10 +238,10 @@ const PolicySchema = z.object({
 
 const MediaLimitsSchema = z.record(
   z.string().trim().min(1).max(120),
-  z.number().int().safe().nonnegative(),
+  z.number().int().int().nonnegative(),
 ).superRefine((limits, ctx) => {
   if (JSON.stringify(limits) !== JSON.stringify(FOUNDRY_MEDIA_CONTAINER_SOURCE_FACTS_LIMITS)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "media limits must match the immutable inspector profile" });
+    ctx.addIssue({ code: "custom", message: "media limits must match the immutable inspector profile" });
   }
 });
 
@@ -335,7 +335,7 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
   const paths = value.assets.map((asset) => asset.source.path);
   const sorted = [...paths].sort(compareText);
   if (new Set(paths).size !== paths.length || paths.some((path, index) => path !== sorted[index])) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["assets"], message: "V4 asset paths must be unique and sorted" });
+    ctx.addIssue({ code: "custom", path: ["assets"], message: "V4 asset paths must be unique and sorted" });
   }
   const expectedSummary = value.state === "available"
     ? {
@@ -355,13 +355,13 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
         blockedSourceCount: value.affectedSources.length,
       };
   if (expectedSummary.untargetedFileCount < 0 || JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["summary"], message: "V4 summary does not match artifact contents" });
+    ctx.addIssue({ code: "custom", path: ["summary"], message: "V4 summary does not match artifact contents" });
   }
   if (value.state === "unavailable") {
     const blockedPaths = value.affectedSources.map((source) => source.path);
     const sortedBlocked = [...blockedPaths].sort(compareText);
     if (new Set(blockedPaths).size !== blockedPaths.length || blockedPaths.some((path, index) => path !== sortedBlocked[index])) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["affectedSources"], message: "V4 affected sources must be unique and sorted" });
+      ctx.addIssue({ code: "custom", path: ["affectedSources"], message: "V4 affected sources must be unique and sorted" });
     }
   }
   const usesPye57 = value.assets.some((asset) =>
@@ -369,10 +369,10 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
   );
   const expectedProbe = usesPye57 ? "local_pye57_read_only" : "none";
   if (value.policy.metadataProbe !== expectedProbe || value.policy.externalProcess !== expectedProbe) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["policy", "metadataProbe"], message: "V4 metadata probe policy contradicts attached E57 evidence" });
+    ctx.addIssue({ code: "custom", path: ["policy", "metadataProbe"], message: "V4 metadata probe policy contradicts attached E57 evidence" });
   }
   if (value.factsSha256 !== artifactDigest(value)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["factsSha256"], message: "V4 facts digest does not match canonical payload" });
+    ctx.addIssue({ code: "custom", path: ["factsSha256"], message: "V4 facts digest does not match canonical payload" });
   }
 }
 

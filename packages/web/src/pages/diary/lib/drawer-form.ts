@@ -200,7 +200,7 @@ function mapTimes(form: DrawerForm, fields: readonly (keyof DrawerForm)[]): Time
 
 interface SchemaIssue {
   readonly code: string;
-  readonly path: readonly (string | number)[];
+  readonly path: readonly PropertyKey[];
   readonly message: string;
 }
 

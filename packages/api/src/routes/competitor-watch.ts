@@ -54,9 +54,9 @@ import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check
 // deals lost and say who won. Every query names the venue in the path.
 // ---------------------------------------------------------------------------
 
-const VenueParam = z.object({ venueId: z.string().uuid() });
-const CompetitorParam = z.object({ venueId: z.string().uuid(), competitorId: z.string().uuid() });
-const CaptureParam = CompetitorParam.extend({ captureId: z.string().uuid() });
+const VenueParam = z.object({ venueId: z.uuid() });
+const CompetitorParam = z.object({ venueId: z.uuid(), competitorId: z.uuid() });
+const CaptureParam = CompetitorParam.extend({ captureId: z.uuid() });
 const ContextQuery = z.object({ year: z.coerce.number().int().min(2000).max(2100) }).strict();
 
 const ROLE_WORDS: Readonly<Record<string, string>> = { admin: "an administrator", manager: "a manager" };
@@ -73,7 +73,7 @@ function sendRefusal(reply: FastifyReply, result: WatchRefusal): FastifyReply {
   return reply.status(result.status).send({ error: result.error, code: result.code });
 }
 
-function badRequest(reply: FastifyReply, issues: z.ZodIssue[]): FastifyReply {
+function badRequest(reply: FastifyReply, issues: z.core.$ZodIssue[]): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: issues });
 }
 

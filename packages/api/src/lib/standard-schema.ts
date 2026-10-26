@@ -1,16 +1,16 @@
 import type { StandardSchemaWithJSON } from "@modelcontextprotocol/server";
-import type { ZodType, ZodTypeDef } from "zod";
+import type { ZodType } from "zod";
 
 // ---------------------------------------------------------------------------
-// A Zod 3 schema as the MCP SDK's tool input contract (T-649).
+// A Zod schema as the MCP SDK's tool input contract (T-649).
 //
 // @modelcontextprotocol/server v2 accepts any Standard Schema that can also
 // describe itself as JSON Schema: it advertises the JSON Schema in
 // `tools/list` and calls `validate` on every `tools/call` before the handler
-// runs. This repository pins Zod 3.24, which has no JSON Schema converter, so
-// the adapter pairs a Zod schema (the validator — the runtime boundary, and
-// the source of the handler's argument types) with a JSON Schema document
-// written beside it (what the model reads). Only Zod decides what reaches a
+// runs. The adapter pairs a Zod schema (the validator — the runtime boundary,
+// and the source of the handler's argument types) with a JSON Schema document
+// written beside it (what the model reads), a contract written for the model
+// rather than generated from the validator. Only Zod decides what reaches a
 // handler; the public-mcp tests hold the two to the same accept/reject cases.
 // ---------------------------------------------------------------------------
 
@@ -18,7 +18,7 @@ import type { ZodType, ZodTypeDef } from "zod";
 export type JsonSchemaDocument = Readonly<Record<string, unknown>>;
 
 export function zodToolSchema<Output, Input>(
-  schema: ZodType<Output, ZodTypeDef, Input>,
+  schema: ZodType<Output, Input>,
   jsonSchema: JsonSchemaDocument,
 ): StandardSchemaWithJSON<Input, Output> {
   // A fresh copy per call: the SDK may annotate what it is handed.

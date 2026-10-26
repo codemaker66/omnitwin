@@ -48,6 +48,9 @@ async function attachCanvasScreenshot(page: Page, testInfo: TestInfo, name: stri
   await testInfo.attach(name, { body: screenshot, contentType: "image/png" });
 }
 
+// Since 26 Oct 2026 a bare /plan opens the Grand Hall (Blake); these cases name the
+// Reception Room (?space=reception-room) to keep proving its runtime package. The title
+// keeps its old wording so the reviewed browser inventory's case identities stand.
 test.describe("CARD A1: /plan Reception Room runtime default", () => {
   // Laptop-class evidence viewport. The runtime chip must be VISIBLE here,
   // not merely present in the DOM (it truncates, never hides — CARD A1).
@@ -62,7 +65,7 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     });
 
     const startedAt = Date.now();
-    await page.goto("/plan");
+    await page.goto("/plan?space=reception-room");
 
     const topbar = page.getByRole("banner", { name: "Room and save status" });
     await expect(topbar).toBeVisible({ timeout: 15_000 });
@@ -105,7 +108,7 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     await Promise.all([
       page.waitForResponse((response) => response.url().includes("/splats/trades-hall/reception-room/")
         && response.status() === 503),
-      page.goto("/plan", { waitUntil: "domcontentloaded" }),
+      page.goto("/plan?space=reception-room", { waitUntil: "domcontentloaded" }),
     ]);
     await expect(page.locator(".cockpit-stage")).toHaveAttribute("data-resolve-phase", "unavailable");
     const caption = page.getByTestId("room-resolve-caption");
@@ -138,7 +141,7 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
       void route.fulfill({ json: { data: receptionRuntimePackage(origin) } });
     });
 
-    await page.goto("/plan");
+    await page.goto("/plan?space=reception-room");
 
     const topbar = page.getByRole("banner", { name: "Room and save status" });
     await expect(topbar).toBeVisible({ timeout: 15_000 });

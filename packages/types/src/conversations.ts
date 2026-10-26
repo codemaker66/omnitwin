@@ -29,8 +29,8 @@ import { RecordObservationSchema, SlotObservationSchema } from "./observations.j
 // their screen said so, acknowledged when they pressed.
 // ---------------------------------------------------------------------------
 
-const UUID = z.string().uuid();
-const IsoInstant = z.string().datetime({ offset: true });
+const UUID = z.uuid();
+const IsoInstant = z.iso.datetime({ offset: true });
 
 export const THREAD_AUDIENCES = ["staff-private", "client-facing"] as const;
 export const ThreadAudienceSchema = z.enum(THREAD_AUDIENCES);

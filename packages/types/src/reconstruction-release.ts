@@ -126,7 +126,7 @@ export const ReconstructionReleaseManifestSchema = z
     files: z.array(ReconstructionReleaseFileSchema).min(1),
     fileCount: z.number().int().positive(),
     totalBytes: z.number().int().positive(),
-    generatedAt: z.string().datetime({ offset: true }),
+    generatedAt: z.iso.datetime({ offset: true }),
   })
   .strict()
   .superRefine((manifest, ctx) => {
@@ -134,7 +134,7 @@ export const ReconstructionReleaseManifestSchema = z
     const uniquePaths = new Set(paths);
     if (uniquePaths.size !== paths.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["files"],
         message: "Release file paths must be unique.",
       });
@@ -143,7 +143,7 @@ export const ReconstructionReleaseManifestSchema = z
     const caseFoldedPaths = paths.map((path) => path.toLowerCase());
     if (new Set(caseFoldedPaths).size !== caseFoldedPaths.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["files"],
         message: "Release file paths must remain unique on case-insensitive filesystems.",
       });
@@ -152,7 +152,7 @@ export const ReconstructionReleaseManifestSchema = z
     const sortedPaths = [...paths].sort(comparePaths);
     if (paths.some((path, index) => path !== sortedPaths[index])) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["files"],
         message: "Release files must be sorted by path.",
       });
@@ -165,7 +165,7 @@ export const ReconstructionReleaseManifestSchema = z
       sourceManifest[0].sha256 !== manifest.sourceManifestSha256
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["sourceManifestSha256"],
         message: "sourceManifestSha256 must identify the sole manifest.json inventory entry.",
       });
@@ -173,7 +173,7 @@ export const ReconstructionReleaseManifestSchema = z
 
     if (manifest.fileCount !== manifest.files.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["fileCount"],
         message: "fileCount must equal the inventory length.",
       });
@@ -182,7 +182,7 @@ export const ReconstructionReleaseManifestSchema = z
     const totalBytes = manifest.files.reduce((total, file) => total + file.sizeBytes, 0);
     if (!Number.isSafeInteger(totalBytes) || manifest.totalBytes !== totalBytes) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["totalBytes"],
         message: "totalBytes must equal the safe-integer sum of inventory bytes.",
       });
@@ -190,7 +190,7 @@ export const ReconstructionReleaseManifestSchema = z
 
     if (manifest.releaseDigest !== computeReconstructionReleaseDigest(manifest.files)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["releaseDigest"],
         message: "releaseDigest must match the deterministic file inventory digest.",
       });
@@ -262,7 +262,7 @@ export const ReconstructionQaReportSchema = ReconstructionQaReportMaterialSchema
     RECONSTRUCTION_QA_CHECK_KEYS.some((key) => !seen.has(key))
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["checks"],
       message: "QA reports must contain every deterministic check exactly once.",
     });
@@ -273,7 +273,7 @@ export const ReconstructionQaReportSchema = ReconstructionQaReportMaterialSchema
     : "failed";
   if (report.outcome !== expectedOutcome) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["outcome"],
       message: "QA outcome must reflect the complete check set.",
     });
@@ -290,7 +290,7 @@ export const ReconstructionQaReportSchema = ReconstructionQaReportMaterialSchema
   };
   if (report.reportDigest !== computeReconstructionQaReportDigest(material)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["reportDigest"],
       message: "reportDigest must match the deterministic QA material.",
     });
@@ -329,7 +329,7 @@ export const ReconstructionReleaseReviewerAuthoritySchema = z.enum(
 );
 
 const reviewInputFields = {
-  releaseId: z.string().uuid(),
+  releaseId: z.uuid(),
   releaseDigest: ReconstructionReleaseSha256Schema,
   qaReportDigest: ReconstructionReleaseSha256Schema,
   decision: z.enum(["approved", "rejected"]),
@@ -355,14 +355,14 @@ function requirePublicApprovalEvidence(
   if (review.decision !== "approved" || review.targetExposure !== "public") return;
   if (review.transformArtifactRef === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["transformArtifactRef"],
       message: "Public approval requires an exact TransformArtifact evidence reference.",
     });
   }
   if (review.sceneAuthorityMapRef === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["sceneAuthorityMapRef"],
       message: "Public approval requires an exact Scene Authority Map evidence reference.",
     });
@@ -380,10 +380,10 @@ export type ReconstructionReleaseReviewInput = z.infer<
 export const ReconstructionReleaseReviewMaterialSchema = z
   .object({
     ...reviewInputFields,
-    id: z.string().uuid(),
-    reviewerUserId: z.string().uuid(),
+    id: z.uuid(),
+    reviewerUserId: z.uuid(),
     reviewerAuthority: ReconstructionReleaseReviewerAuthoritySchema,
-    reviewedAt: z.string().datetime({ offset: true }),
+    reviewedAt: z.iso.datetime({ offset: true }),
   })
   .strict()
   .superRefine(requirePublicApprovalEvidence);
@@ -401,10 +401,10 @@ export function computeReconstructionReleaseReviewDigest(
 export const ReconstructionReleaseReviewSchema = z
   .object({
     ...reviewInputFields,
-    id: z.string().uuid(),
-    reviewerUserId: z.string().uuid(),
+    id: z.uuid(),
+    reviewerUserId: z.uuid(),
     reviewerAuthority: ReconstructionReleaseReviewerAuthoritySchema,
-    reviewedAt: z.string().datetime({ offset: true }),
+    reviewedAt: z.iso.datetime({ offset: true }),
     reviewDigest: ReconstructionReleaseSha256Schema,
   })
   .strict()
@@ -428,7 +428,7 @@ export const ReconstructionReleaseReviewSchema = z
     };
     if (review.reviewDigest !== computeReconstructionReleaseReviewDigest(material)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewDigest"],
         message: "reviewDigest must match the exact review material.",
       });
@@ -440,11 +440,11 @@ export type ReconstructionReleaseReview = z.infer<
 
 export const ReconstructionReleaseAttestationMetadataSchema = z
   .object({
-    id: z.string().uuid(),
-    releaseId: z.string().uuid(),
+    id: z.uuid(),
+    releaseId: z.uuid(),
     releaseDigest: ReconstructionReleaseSha256Schema,
     qaReportDigest: ReconstructionReleaseSha256Schema,
-    reviewId: z.string().uuid(),
+    reviewId: z.uuid(),
     reviewDigest: ReconstructionReleaseSha256Schema,
     format: z.literal("dsse_in_toto_v1"),
     algorithm: z.literal("ed25519"),
@@ -453,8 +453,8 @@ export const ReconstructionReleaseAttestationMetadataSchema = z
     statementSha256: ReconstructionReleaseSha256Schema,
     envelopeSha256: ReconstructionReleaseSha256Schema,
     r2Key: ReconstructionReleaseObjectPathSchema,
-    verifiedAt: z.string().datetime({ offset: true }),
-    verifiedBy: z.string().uuid(),
+    verifiedAt: z.iso.datetime({ offset: true }),
+    verifiedBy: z.uuid(),
   })
   .strict();
 export type ReconstructionReleaseAttestationMetadata = z.infer<
@@ -548,7 +548,7 @@ export const ReconstructionDsseEnvelopeSchema = z
     const keyIds = envelope.signatures.map((signature) => signature.keyid);
     if (new Set(keyIds).size !== keyIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["signatures"],
         message: "A DSSE envelope may contain at most one signature per key ID.",
       });
@@ -570,15 +570,15 @@ export const ReconstructionReleaseSigningStatementSchema = z
       schemaVersion: z.literal(RECONSTRUCTION_ATTESTATION_PREDICATE_SCHEMA_VERSION),
       venueSlug: RuntimeSlugSchema,
       releaseKind: ReconstructionReleaseKindSchema,
-      releaseId: z.string().uuid(),
+      releaseId: z.uuid(),
       releaseDigest: ReconstructionReleaseSha256Schema,
       sourceManifestSha256: ReconstructionReleaseSha256Schema,
       releaseManifestSha256: ReconstructionReleaseSha256Schema,
       qaReportDigest: ReconstructionReleaseSha256Schema,
-      reviewId: z.string().uuid(),
+      reviewId: z.uuid(),
       reviewDigest: ReconstructionReleaseSha256Schema,
-      reviewedAt: z.string().datetime({ offset: true }),
-      reviewerUserId: z.string().uuid(),
+      reviewedAt: z.iso.datetime({ offset: true }),
+      reviewerUserId: z.uuid(),
       decision: z.literal("approved"),
       targetExposure: z.literal("public"),
       visualEvidence: z.array(ReconstructionVisualEvidenceSchema).min(1),
@@ -596,7 +596,7 @@ export const ReconstructionReleaseSigningStatementSchema = z
       statement.subject[0].digest.sha256 !== predicate.releaseDigest
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["subject", 0],
         message: "The in-toto subject must identify the exact digest-addressed reconstruction release.",
       });
@@ -610,10 +610,10 @@ export const ReconstructionReleaseSigningPayloadSchema = z
   .object({
     schemaVersion: z.literal(RECONSTRUCTION_SIGNING_PAYLOAD_SCHEMA_VERSION),
     payloadType: z.literal(RECONSTRUCTION_DSSE_PAYLOAD_TYPE),
-    releaseId: z.string().uuid(),
+    releaseId: z.uuid(),
     releaseDigest: ReconstructionReleaseSha256Schema,
     qaReportDigest: ReconstructionReleaseSha256Schema,
-    reviewId: z.string().uuid(),
+    reviewId: z.uuid(),
     reviewDigest: ReconstructionReleaseSha256Schema,
     statement: ReconstructionReleaseSigningStatementSchema,
     payloadUtf8: z.string().min(1),
@@ -635,7 +635,7 @@ export const ReconstructionReleaseSigningPayloadSchema = z
       payload.reviewDigest !== predicate.reviewDigest
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["statement"],
         message: "Signing payload identity must match its exact persisted statement evidence.",
       });
@@ -647,7 +647,7 @@ export const ReconstructionReleaseSigningPayloadSchema = z
       );
     } catch {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payloadUtf8"],
         message: "Signing payload UTF-8 text must contain the exact serialized in-toto Statement.",
       });
@@ -658,7 +658,7 @@ export const ReconstructionReleaseSigningPayloadSchema = z
         stableCanonicalJson(CanonicalJsonValueSchema.parse(payload.statement))
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["statement"],
         message: "The parsed exact payload bytes must equal the supplied in-toto Statement.",
       });
@@ -666,21 +666,21 @@ export const ReconstructionReleaseSigningPayloadSchema = z
     const exactBytes = signingPayloadUtf8Bytes(payload.payloadUtf8);
     if (payload.payloadBase64 !== canonicalBase64(exactBytes)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payloadBase64"],
         message: "Signing payload base64 must encode the exact serialized statement bytes.",
       });
     }
     if (payload.payloadSha256 !== sha256Hex(exactBytes)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payloadSha256"],
         message: "Signing payload digest must hash the exact serialized statement bytes.",
       });
     }
     if (payload.payloadByteLength !== exactBytes.byteLength) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payloadByteLength"],
         message: "Signing payload byte length must match the exact serialized statement bytes.",
       });
@@ -692,7 +692,7 @@ export type ReconstructionReleaseSigningPayload = z.infer<
 
 export const ReconstructionReleaseAttestationVerificationInputSchema = z
   .object({
-    reviewId: z.string().uuid(),
+    reviewId: z.uuid(),
     envelope: ReconstructionDsseEnvelopeSchema,
     idempotencyKey: z.string().trim().min(8).max(160).regex(/^[A-Za-z0-9._:-]+$/u),
   })
@@ -736,28 +736,28 @@ function validateRegistrationBindings(
   const expectedPrefix = `candidates/${registration.manifest.venueSlug}/${registration.manifest.releaseDigest}`;
   if (registration.candidateR2Prefix !== expectedPrefix) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["candidateR2Prefix"],
       message: "Candidate storage must use the release's digest-addressed private prefix.",
     });
   }
   if (registration.candidateManifestR2Key !== `${expectedPrefix}/release-manifest.json`) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["candidateManifestR2Key"],
       message: "Candidate manifest key must identify release-manifest.json under the private prefix.",
     });
   }
   if (registration.qaReport.releaseDigest !== registration.manifest.releaseDigest) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["qaReport", "releaseDigest"],
       message: "QA report release digest must match the registered manifest.",
     });
   }
   if (registration.qaReport.sourceManifestSha256 !== registration.manifest.sourceManifestSha256) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["qaReport", "sourceManifestSha256"],
       message: "QA report source manifest digest must match the registered manifest.",
     });
@@ -775,10 +775,10 @@ export type ReconstructionReleaseRegistrationInput = z.infer<
 export const ReconstructionReleaseRegistrationSchema = z
   .object({
     ...registrationInputFields,
-    id: z.string().uuid(),
+    id: z.uuid(),
     state: ReconstructionReleaseStateSchema,
-    registeredBy: z.string().uuid(),
-    registeredAt: z.string().datetime({ offset: true }),
+    registeredBy: z.uuid(),
+    registeredAt: z.iso.datetime({ offset: true }),
   })
   .strict()
   .superRefine((registration, ctx) => {
@@ -788,7 +788,7 @@ export const ReconstructionReleaseRegistrationSchema = z
       : "machine_qa_failed";
     if (registration.state !== expectedState) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["state"],
         message: "Initial release state must reflect its machine-QA outcome.",
       });
@@ -799,12 +799,12 @@ export type ReconstructionReleaseRegistration = z.infer<
 >;
 
 const publicationInputFields = {
-  releaseId: z.string().uuid(),
+  releaseId: z.uuid(),
   releaseDigest: ReconstructionReleaseSha256Schema,
   qaReportDigest: ReconstructionReleaseSha256Schema,
-  reviewId: z.string().uuid(),
+  reviewId: z.uuid(),
   reviewDigest: ReconstructionReleaseSha256Schema,
-  attestationId: z.string().uuid(),
+  attestationId: z.uuid(),
   attestationEnvelopeSha256: ReconstructionReleaseSha256Schema,
   idempotencyKey: z.string().trim().min(8).max(160).regex(/^[A-Za-z0-9._:-]+$/u),
   note: z.string().trim().min(20).max(2000),
@@ -820,17 +820,17 @@ export type ReconstructionReleasePublicationInput = z.infer<
 export const ReconstructionReleasePublicationSchema = z
   .object({
     ...publicationInputFields,
-    id: z.string().uuid(),
+    id: z.uuid(),
     candidateR2Prefix: ReconstructionReleaseObjectPathSchema,
     publicR2Prefix: ReconstructionReleaseObjectPathSchema,
     publicManifestR2Key: ReconstructionReleaseObjectPathSchema,
-    publicManifestUrl: z.string().url(),
+    publicManifestUrl: z.url(),
     manifestSha256: ReconstructionReleaseSha256Schema,
     fileCount: z.number().int().positive(),
     totalBytes: z.number().int().positive(),
-    publishedBy: z.string().uuid(),
-    publishedAt: z.string().datetime({ offset: true }),
-    verifiedAt: z.string().datetime({ offset: true }),
+    publishedBy: z.uuid(),
+    publishedAt: z.iso.datetime({ offset: true }),
+    verifiedAt: z.iso.datetime({ offset: true }),
   })
   .strict()
   .superRefine((publication, ctx) => {
@@ -838,14 +838,14 @@ export const ReconstructionReleasePublicationSchema = z
       `releases/sha256/${publication.releaseDigest.slice(0, 2)}/${publication.releaseDigest}`;
     if (publication.publicR2Prefix !== expectedPrefix) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["publicR2Prefix"],
         message: "Public storage must use the immutable digest-addressed release prefix.",
       });
     }
     if (publication.publicManifestR2Key !== `${expectedPrefix}/manifest.json`) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["publicManifestR2Key"],
         message: "Public manifest must be manifest.json inside the immutable release prefix.",
       });
@@ -857,7 +857,7 @@ export const ReconstructionReleasePublicationSchema = z
         !url.pathname.endsWith(`/${publication.publicManifestR2Key}`)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["publicManifestUrl"],
           message: "Public manifest URL must be HTTPS and identify the declared public object key.",
         });
@@ -867,7 +867,7 @@ export const ReconstructionReleasePublicationSchema = z
     }
     if (Date.parse(publication.verifiedAt) < Date.parse(publication.publishedAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["verifiedAt"],
         message: "Public publication readback verification cannot precede publication.",
       });
@@ -882,12 +882,12 @@ export const ReconstructionReleaseChannelSchema = z
     venueSlug: RuntimeSlugSchema,
     releaseKind: ReconstructionReleaseKindSchema,
     channel: z.literal("production"),
-    activeReleaseId: z.string().uuid().nullable(),
+    activeReleaseId: z.uuid().nullable(),
     activeReleaseDigest: ReconstructionReleaseSha256Schema.nullable(),
-    activePublicationId: z.string().uuid().nullable(),
+    activePublicationId: z.uuid().nullable(),
     revision: z.number().int().nonnegative(),
-    updatedBy: z.string().uuid().nullable(),
-    updatedAt: z.string().datetime({ offset: true }),
+    updatedBy: z.uuid().nullable(),
+    updatedAt: z.iso.datetime({ offset: true }),
   })
   .strict()
   .superRefine((channel, ctx) => {
@@ -899,14 +899,14 @@ export const ReconstructionReleaseChannelSchema = z
     const populated = activeValues.filter((value) => value !== null).length;
     if (populated !== 0 && populated !== activeValues.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["activeReleaseId"],
         message: "Production channel active release identity must be wholly null or wholly populated.",
       });
     }
     if (channel.revision === 0 && populated !== 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["revision"],
         message: "An unmodified production channel cannot already identify an active release.",
       });
@@ -917,11 +917,11 @@ export type ReconstructionReleaseChannel = z.infer<
 >;
 
 const channelTransitionFields = {
-  targetReleaseId: z.string().uuid(),
+  targetReleaseId: z.uuid(),
   targetReleaseDigest: ReconstructionReleaseSha256Schema,
-  targetPublicationId: z.string().uuid(),
+  targetPublicationId: z.uuid(),
   expectedRevision: z.number().int().nonnegative(),
-  expectedActiveReleaseId: z.string().uuid().nullable(),
+  expectedActiveReleaseId: z.uuid().nullable(),
   idempotencyKey: z.string().trim().min(8).max(160).regex(/^[A-Za-z0-9._:-]+$/u),
   reason: z.string().trim().min(20).max(2000),
 } as const;
@@ -936,13 +936,13 @@ export type ReconstructionReleasePromoteInput = z.infer<
 export const ReconstructionReleaseRollbackInputSchema = z
   .object({
     ...channelTransitionFields,
-    expectedActiveReleaseId: z.string().uuid(),
+    expectedActiveReleaseId: z.uuid(),
   })
   .strict()
   .superRefine((rollback, ctx) => {
     if (rollback.targetReleaseId === rollback.expectedActiveReleaseId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetReleaseId"],
         message: "Rollback target must differ from the currently active release.",
       });
@@ -954,23 +954,23 @@ export type ReconstructionReleaseRollbackInput = z.infer<
 
 export const ReconstructionReleaseChannelEventSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.uuid(),
     venueSlug: RuntimeSlugSchema,
     releaseKind: ReconstructionReleaseKindSchema,
     channel: z.literal("production"),
     action: z.enum(["promote", "rollback"]),
-    fromReleaseId: z.string().uuid().nullable(),
+    fromReleaseId: z.uuid().nullable(),
     fromReleaseDigest: ReconstructionReleaseSha256Schema.nullable(),
-    fromPublicationId: z.string().uuid().nullable(),
-    toReleaseId: z.string().uuid(),
+    fromPublicationId: z.uuid().nullable(),
+    toReleaseId: z.uuid(),
     toReleaseDigest: ReconstructionReleaseSha256Schema,
-    toPublicationId: z.string().uuid(),
+    toPublicationId: z.uuid(),
     expectedRevision: z.number().int().nonnegative(),
     resultingRevision: z.number().int().positive(),
-    actorUserId: z.string().uuid(),
+    actorUserId: z.uuid(),
     idempotencyKey: z.string().trim().min(8).max(160).regex(/^[A-Za-z0-9._:-]+$/u),
     reason: z.string().trim().min(20).max(2000),
-    createdAt: z.string().datetime({ offset: true }),
+    createdAt: z.iso.datetime({ offset: true }),
   })
   .strict()
   .superRefine((event, ctx) => {
@@ -978,28 +978,28 @@ export const ReconstructionReleaseChannelEventSchema = z
     const populatedFrom = from.filter((value) => value !== null).length;
     if (populatedFrom !== 0 && populatedFrom !== from.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["fromReleaseId"],
         message: "Channel-event source identity must be wholly null or wholly populated.",
       });
     }
     if (event.action === "rollback" && populatedFrom !== from.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["fromReleaseId"],
         message: "Rollback events require an active source release.",
       });
     }
     if (event.resultingRevision !== event.expectedRevision + 1) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["resultingRevision"],
         message: "Channel events must advance the compare-and-swap revision exactly once.",
       });
     }
     if (event.fromReleaseId !== null && event.fromReleaseId === event.toReleaseId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["toReleaseId"],
         message: "Channel transitions must change the active release.",
       });
@@ -1013,7 +1013,7 @@ export const ReconstructionReleaseChannelConflictSchema = z
   .object({
     code: z.literal("REVISION_CONFLICT"),
     currentRevision: z.number().int().nonnegative(),
-    currentReleaseId: z.string().uuid().nullable(),
+    currentReleaseId: z.uuid().nullable(),
   })
   .strict();
 export type ReconstructionReleaseChannelConflict = z.infer<
@@ -1022,7 +1022,7 @@ export type ReconstructionReleaseChannelConflict = z.infer<
 
 export const ReconstructionReleaseListItemSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.uuid(),
     venueSlug: RuntimeSlugSchema,
     releaseKind: ReconstructionReleaseKindSchema,
     releaseDigest: ReconstructionReleaseSha256Schema,
@@ -1037,27 +1037,27 @@ export const ReconstructionReleaseListItemSchema = z
     published: z.boolean(),
     active: z.boolean(),
     state: ReconstructionReleaseStateSchema,
-    registeredAt: z.string().datetime({ offset: true }),
+    registeredAt: z.iso.datetime({ offset: true }),
   })
   .strict()
   .superRefine((item, ctx) => {
     if ((item.latestReviewDecision === null) !== (item.latestReviewTargetExposure === null)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["latestReviewDecision"],
         message: "Latest review decision and target exposure must be present together.",
       });
     }
     if (item.active && (!item.published || item.state !== "active")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["active"],
         message: "Active releases must be published and use the active state.",
       });
     }
     if (item.published && !item.attested) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["published"],
         message: "Published releases require a verified detached attestation.",
       });
@@ -1098,7 +1098,7 @@ export const ReconstructionReleaseDetailSchema = z
         review.qaReportDigest !== qaReportDigest
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviews", index],
           message: "Every review must bind the detail's exact release and QA digests.",
         });
@@ -1117,7 +1117,7 @@ export const ReconstructionReleaseDetailSchema = z
         review.targetExposure !== "public"
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["attestations", index],
           message: "Attestations must bind an approved public review of this exact release and QA report.",
         });
@@ -1145,7 +1145,7 @@ export const ReconstructionReleaseDetailSchema = z
         attestation.envelopeSha256 !== publication.attestationEnvelopeSha256
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["publication"],
           message: "Publication must bind this release, its public approval, and its verified attestation.",
         });
@@ -1160,7 +1160,7 @@ export const ReconstructionReleaseDetailSchema = z
         detail.state !== "active"
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["productionChannel"],
           message: "An active channel pointer must identify this exact published release.",
         });
@@ -1177,12 +1177,12 @@ export const ReconstructionReleasePublicActiveDescriptorSchema = z
     venueSlug: RuntimeSlugSchema,
     releaseKind: ReconstructionReleaseKindSchema,
     channel: z.literal("production"),
-    releaseId: z.string().uuid(),
+    releaseId: z.uuid(),
     releaseDigest: ReconstructionReleaseSha256Schema,
-    publicationId: z.string().uuid(),
+    publicationId: z.uuid(),
     manifestSha256: ReconstructionReleaseSha256Schema,
-    manifestUrl: z.string().url(),
-    assetBaseUrl: z.string().url(),
+    manifestUrl: z.url(),
+    assetBaseUrl: z.url(),
     channelRevision: z.number().int().positive(),
   })
   .strict()
@@ -1192,7 +1192,7 @@ export const ReconstructionReleasePublicActiveDescriptorSchema = z
       const assetBaseUrl = new URL(descriptor.assetBaseUrl);
       if (manifestUrl.protocol !== "https:" || assetBaseUrl.protocol !== "https:") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["manifestUrl"],
           message: "Active public release URLs must use HTTPS.",
         });
@@ -1200,14 +1200,14 @@ export const ReconstructionReleasePublicActiveDescriptorSchema = z
       const normalizedBase = descriptor.assetBaseUrl.replace(/\/+$/u, "");
       if (descriptor.manifestUrl !== `${normalizedBase}/manifest.json`) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["manifestUrl"],
           message: "Active manifest URL must resolve from the exact immutable asset base.",
         });
       }
       if (!assetBaseUrl.pathname.endsWith(`/${descriptor.releaseDigest}`)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assetBaseUrl"],
           message: "Active asset base must end with the release digest.",
         });

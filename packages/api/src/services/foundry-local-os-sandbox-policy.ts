@@ -30,11 +30,11 @@ function domainDigest(domain: string, value: unknown): string {
 const HardLimitSchema = z
   .object({
     maximumCpuCores: z.number().int().positive().max(64),
-    maximumMemoryBytes: z.number().int().safe().positive(),
+    maximumMemoryBytes: z.number().int().int().positive(),
     memorySwapMode: z.literal("disabled_equal_to_memory"),
     maximumPids: z.number().int().positive().max(1_024),
     maximumPerProcessOpenFiles: z.number().int().positive().max(65_536),
-    maximumFileBytes: z.number().int().safe().positive(),
+    maximumFileBytes: z.number().int().int().positive(),
     maximumPersistedStdoutBytes: z.literal(0),
     maximumPersistedStderrBytes: z.literal(0),
     maximumPerProcessCpuSeconds: z.number().int().positive().max(86_400),
@@ -46,7 +46,7 @@ const HardLimitSchema = z
   .superRefine((limits, ctx) => {
     if (limits.maximumFileBytes > limits.maximumMemoryBytes) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["maximumFileBytes"],
         message: "sandbox file limit must not exceed its hard memory limit",
       });
@@ -56,7 +56,7 @@ const HardLimitSchema = z
         limits.maximumObservedWallClockSeconds
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["terminationGraceSeconds"],
         message: "sandbox termination grace must be shorter than its wall deadline",
       });
@@ -124,7 +124,7 @@ export const FoundryLocalOsSandboxPolicyV0Schema = PolicyPayloadSchema.extend({
     const { policySha256: _policySha256, ...payload } = policy;
     if (policy.policySha256 !== computeFoundryLocalOsSandboxPolicySha256(payload)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["policySha256"],
         message: "local OS sandbox policy digest must match its exact payload",
       });
@@ -145,17 +145,17 @@ const SourceBindingSchema = z
   .object({
     assetId: RuntimeManifestKeySchema,
     sourceRawSha256: RuntimeSha256Schema,
-    sourceByteLength: z.number().int().safe().positive(),
+    sourceByteLength: z.number().int().int().positive(),
     sourceVersion: z.string().trim().min(1).max(240),
   })
   .strict();
 
 const OutputReservationSchema = z
   .object({
-    reservationId: z.string().uuid(),
+    reservationId: z.uuid(),
     reservationSha256: RuntimeSha256Schema,
     outputSlot: z.literal("normalized_mesh_glb"),
-    maximumOutputBytes: z.number().int().safe().positive(),
+    maximumOutputBytes: z.number().int().int().positive(),
   })
   .strict();
 
@@ -173,8 +173,8 @@ const InstanceSpecPayloadSchema = z
         markerSha256: RuntimeSha256Schema,
       })
       .strict(),
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     attemptOrdinal: z.literal(1),
     fencingToken: z.string().regex(/^[1-9][0-9]*$/u),
     subjectId: RuntimeManifestKeySchema,
@@ -200,7 +200,7 @@ const InstanceSpecPayloadSchema = z
     authorizedOutputPrefix: z.string().min(1).max(1_024),
     isolatedOutputPrefix: z.string().min(1).max(1_024),
     cpuCores: z.number().int().positive().max(64),
-    memoryBytes: z.number().int().safe().positive(),
+    memoryBytes: z.number().int().int().positive(),
     scratchGiB: z.number().int().positive().max(1_000_000),
     maximumRuntimeSeconds: z.number().int().positive().max(86_400),
     hardLimits: HardLimitSchema,
@@ -246,7 +246,7 @@ export const FoundryLocalOsSandboxInstanceSpecV0Schema =
           computeFoundryLocalOsSandboxInstanceSpecSha256(payload)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["instanceSpecSha256"],
           message: "local OS sandbox instance digest must match its exact payload",
         });

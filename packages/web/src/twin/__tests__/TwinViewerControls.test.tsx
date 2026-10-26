@@ -42,12 +42,13 @@ describe("TwinViewerControls", () => {
     cleanup();
   });
 
-  it("opens the in-twin enquiry modal from the Enquire button", () => {
+  it("opens the in-twin enquiry modal from the Enquire button", async () => {
     renderControls();
     // No modal until asked.
     expect(screen.queryByTestId("twin-enquiry-form")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /enquire about hosting/i }));
-    expect(screen.getByTestId("twin-enquiry-form")).toBeTruthy();
+    // The form loads on demand (it is not on the twin's first load), then opens.
+    expect(await screen.findByTestId("twin-enquiry-form")).toBeTruthy();
   });
 
   it("copies the link and announces it politely on share", async () => {
