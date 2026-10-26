@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { gpuReading, isWeakDesktopGpu, probeGpu, readGpu, resetGpuProbeForTests, type GpuAdapterFacts } from "../gpu-class.js";
+import { gpuProbeSettled, gpuReading, isWeakDesktopGpu, probeGpu, readGpu, resetGpuProbeForTests, subscribeGpuProbe, type GpuAdapterFacts } from "../gpu-class.js";
 
 const adapter = (facts: Partial<GpuAdapterFacts>): Parameters<typeof isWeakDesktopGpu>[0] => ({
   api: "webgpu",
@@ -14,6 +14,9 @@ describe("isWeakDesktopGpu", () => {
     expect(isWeakDesktopGpu(adapter({ vendor: "intel", architecture: "xe-hpg" }))).toBe(false);
     expect(isWeakDesktopGpu(adapter({ vendor: "intel", architecture: "gen-12hp" }))).toBe(false);
     expect(isWeakDesktopGpu(adapter({ vendor: "intel", architecture: "", description: "Intel(R) Arc(TM) A770 Graphics" }))).toBe(false);
+    expect(isWeakDesktopGpu(adapter({ vendor: "intel", architecture: "", description: "Intel(R) Arc(TM) B580 Graphics" }))).toBe(false);
+    // Meteor Lake's integrated graphics take the Arc name without a card's model.
+    expect(isWeakDesktopGpu(adapter({ vendor: "intel", architecture: "xe-lpg", description: "Intel(R) Arc(TM) Graphics" }))).toBe(true);
   });
 
   it("goes by the adapter's description where the browser gives one", () => {
@@ -21,6 +24,8 @@ describe("isWeakDesktopGpu", () => {
     expect(isWeakDesktopGpu(adapter({ vendor: "amd", architecture: "rdna-2", description: "AMD Radeon(TM) Graphics" }))).toBe(true);
     expect(isWeakDesktopGpu(adapter({ vendor: "amd", architecture: "rdna-2", description: "" }))).toBe(false);
     expect(isWeakDesktopGpu(adapter({ vendor: "amd", architecture: "rdna-3", description: "AMD Radeon RX 7900 XTX" }))).toBe(false);
+    expect(isWeakDesktopGpu(adapter({ vendor: "amd", architecture: "gcn-5", description: "AMD Radeon Vega 8 Graphics" }))).toBe(true);
+    expect(isWeakDesktopGpu(adapter({ vendor: "amd", architecture: "gcn-5", description: "Radeon Vega Frontier Edition" }))).toBe(false);
   });
 
   it("leaves discrete and Apple graphics on the desktop profile", () => {
@@ -85,5 +90,25 @@ describe("probeGpu", () => {
     await first;
     expect(gpuReading()).toMatchObject({ api: "webgpu", adapter: { vendor: "nvidia" } });
     expect(asked).toBe(1);
+  });
+
+  it("tells its subscribers when the adapter answers, so the planner can mount its canvas", async () => {
+    let answer: (value: { info: { vendor: string } }) => void = () => undefined;
+    Object.defineProperty(navigator, "gpu", { configurable: true, value: { requestAdapter: () => new Promise((resolve) => { answer = resolve; }) } });
+    let told = 0;
+    const stop = subscribeGpuProbe(() => { told += 1; });
+    const probe = probeGpu();
+    expect(gpuProbeSettled()).toBe(false);
+    answer({ info: { vendor: "intel" } });
+    await probe;
+    expect(gpuProbeSettled()).toBe(true);
+    expect(told).toBe(1);
+    stop();
+  });
+
+  it("answers at once where there is no WebGPU, so nothing waits on it", () => {
+    expect("gpu" in navigator).toBe(false);
+    void probeGpu();
+    expect(gpuProbeSettled()).toBe(true);
   });
 });

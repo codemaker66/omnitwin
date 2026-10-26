@@ -32,10 +32,15 @@ export type GpuReading =
 /** How long the probe waits for an adapter before leaving the device as it is, ms. */
 export const GPU_PROBE_TIMEOUT_MS = 400;
 
-/** Intel's discrete cards (Arc): its architectures for them end in HPG ("high performance graphics"). */
-const INTEL_DISCRETE = /hpg|12hp|alchemist|battlemage|\barc\b/iu;
-/** Adapter descriptions of integrated graphics, where the browser gives one. */
-const INTEGRATED_DESCRIPTION = /intel.*(?:uhd|hd graphics|iris)|radeon\(tm\) graphics|radeon vega/iu;
+/**
+ * Intel's discrete cards: architectures ending in HPG ("high performance
+ * graphics"), or an Arc card's model (A770, B580). "Intel(R) Arc(TM) Graphics"
+ * without one is the integrated graphics of Meteor Lake and after (Xe-LPG).
+ */
+const INTEL_DISCRETE_ARCHITECTURE = /hpg|12hp|alchemist|battlemage/iu;
+const INTEL_DISCRETE_MODEL = /\barc\b.*\b[ab]\d{3}\b/iu;
+/** Adapter descriptions of integrated graphics, where the browser gives one ("Radeon Vega 8 Graphics" is an APU's). */
+const INTEGRATED_DESCRIPTION = /intel.*(?:uhd|hd graphics|iris)|radeon\(tm\) graphics|radeon vega \d+ graphics/iu;
 
 /**
  * Whether a desktop (a fine pointer) should start on the office profile:
@@ -47,7 +52,7 @@ export function isWeakDesktopGpu(reading: GpuReading): boolean {
   if (reading.api !== "webgpu") return false;
   const { vendor, architecture, description, fallback } = reading.adapter;
   if (fallback || INTEGRATED_DESCRIPTION.test(description)) return true;
-  return /intel/iu.test(vendor) && !INTEL_DISCRETE.test(`${architecture} ${description}`);
+  return /intel/iu.test(vendor) && !INTEL_DISCRETE_ARCHITECTURE.test(architecture) && !INTEL_DISCRETE_MODEL.test(description);
 }
 
 interface ProbeAdapter {
@@ -63,12 +68,11 @@ function isProbeGpu(value: unknown): value is ProbeGpu {
   return typeof value === "object" && value !== null && "requestAdapter" in value && typeof value.requestAdapter === "function";
 }
 
+const browserGpu = (): unknown => (typeof navigator === "undefined" ? undefined : (navigator as { readonly gpu?: unknown }).gpu);
+const browserWebgl2 = (): boolean => typeof WebGL2RenderingContext !== "undefined";
+
 /** Reads the browser's graphics: its adapter's facts, WebGL2 only, or unknown (no answer in time). */
-export async function readGpu(
-  gpu: unknown = typeof navigator === "undefined" ? undefined : (navigator as { readonly gpu?: unknown }).gpu,
-  webgl2 = typeof WebGL2RenderingContext !== "undefined",
-  timeoutMs = GPU_PROBE_TIMEOUT_MS,
-): Promise<GpuReading> {
+export async function readGpu(gpu: unknown = browserGpu(), webgl2 = browserWebgl2(), timeoutMs = GPU_PROBE_TIMEOUT_MS): Promise<GpuReading> {
   if (!isProbeGpu(gpu)) return webgl2 ? { api: "webgl2" } : { api: "unknown" };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<"late">((resolve) => { timer = setTimeout(() => { resolve("late"); }, timeoutMs); });
@@ -91,14 +95,35 @@ export async function readGpu(
 
 let settled: GpuReading | null = null;
 let probing: Promise<GpuReading> | null = null;
+const listeners = new Set<() => void>();
 
-/** Starts the probe once per page (repeat calls share it). */
+function settle(reading: GpuReading): GpuReading {
+  settled = reading;
+  for (const listener of [...listeners]) listener();
+  return reading;
+}
+
+/**
+ * Starts the probe once per page (repeat calls share it). Without WebGPU it
+ * answers at once; otherwise within GPU_PROBE_TIMEOUT_MS.
+ */
 export function probeGpu(): Promise<GpuReading> {
-  probing ??= readGpu().then((reading) => {
-    settled = reading;
-    return reading;
-  });
+  if (probing !== null) return probing;
+  const gpu = browserGpu();
+  probing = isProbeGpu(gpu)
+    ? readGpu(gpu).then(settle)
+    : Promise.resolve(settle(browserWebgl2() ? { api: "webgl2" } : { api: "unknown" }));
   return probing;
+}
+
+/** Whether the probe has answered: useSyncExternalStore's snapshot, with subscribeGpuProbe. */
+export function gpuProbeSettled(): boolean {
+  return settled !== null;
+}
+
+export function subscribeGpuProbe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
 }
 
 /** The probe's answer if it has come, else unknown. */
@@ -110,4 +135,5 @@ export function gpuReading(): GpuReading {
 export function resetGpuProbeForTests(): void {
   settled = null;
   probing = null;
+  listeners.clear();
 }

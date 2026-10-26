@@ -130,7 +130,8 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
   // A desktop on integrated graphics or WebGL2 (lib/gpu-class.ts): the
   // desktop's temporal anti-aliasing and bloom, without occlusion (twelve
   // samples a pixel at half resolution), within a budget of about a 1080p
-  // screen at a ratio of 1.1.
+  // screen at a ratio of 1.1. Like every budget it stops at a ratio of 1; below
+  // that only the governor goes, to 0.75, if frames are slow.
   office: {
     name: "office",
     maxPixelRatio: 2,
