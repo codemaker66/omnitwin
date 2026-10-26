@@ -31,19 +31,19 @@ export const ANALYTICS_SNAPSHOT_TYPES = [
   "room_utilisation",
 ] as const;
 
-export const RevenueScenarioIdSchema = z.string().uuid();
+export const RevenueScenarioIdSchema = z.uuid();
 export type RevenueScenarioId = z.infer<typeof RevenueScenarioIdSchema>;
 
-export const PricingAssumptionIdSchema = z.string().uuid();
+export const PricingAssumptionIdSchema = z.uuid();
 export type PricingAssumptionId = z.infer<typeof PricingAssumptionIdSchema>;
 
-export const ComfortConstraintIdSchema = z.string().uuid();
+export const ComfortConstraintIdSchema = z.uuid();
 export type ComfortConstraintId = z.infer<typeof ComfortConstraintIdSchema>;
 
-export const ScenarioComparisonIdSchema = z.string().uuid();
+export const ScenarioComparisonIdSchema = z.uuid();
 export type ScenarioComparisonId = z.infer<typeof ScenarioComparisonIdSchema>;
 
-export const AnalyticsSnapshotIdSchema = z.string().uuid();
+export const AnalyticsSnapshotIdSchema = z.uuid();
 export type AnalyticsSnapshotId = z.infer<typeof AnalyticsSnapshotIdSchema>;
 
 export const RevenueScenarioStatusSchema = z.enum(REVENUE_SCENARIO_STATUSES);
@@ -80,7 +80,7 @@ export const PricingAssumptionInputSchema = z.object({
   key: z.string().trim().min(1).max(120),
   label: SafeCommercialTextSchema,
   valueMinor: MinorUnitAmountSchema.nullable().optional(),
-  valueNumber: z.number().finite().nullable().optional(),
+  valueNumber: z.number().nullable().optional(),
   valueText: SafeCommercialTextSchema.nullable().optional(),
   source: SafeCommercialTextSchema,
 }).strict();
@@ -89,8 +89,8 @@ export type PricingAssumptionInput = z.infer<typeof PricingAssumptionInputSchema
 export const ComfortConstraintInputSchema = z.object({
   constraintType: ComfortConstraintTypeSchema,
   label: SafeCommercialTextSchema,
-  threshold: z.number().finite().nullable().optional(),
-  actualValue: z.number().finite().nullable().optional(),
+  threshold: z.number().nullable().optional(),
+  actualValue: z.number().nullable().optional(),
   status: ComfortConstraintStatusSchema,
   reviewRequired: z.boolean(),
   note: SafeCommercialTextSchema.nullable().optional(),
@@ -114,12 +114,12 @@ export const RevenueScenarioSchema = z.object({
   comfortStatus: ComfortConstraintStatusSchema,
   reviewGateCount: z.number().int().nonnegative(),
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).superRefine((scenario, ctx) => {
   if (scenario.estimatedMarginMinor !== scenario.estimatedRevenueMinor - scenario.estimatedCostMinor) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["estimatedMarginMinor"],
       message: "estimatedMarginMinor must equal estimatedRevenueMinor - estimatedCostMinor exactly",
     });
@@ -130,14 +130,14 @@ export type RevenueScenario = z.infer<typeof RevenueScenarioSchema>;
 export const PricingAssumptionSchema = PricingAssumptionInputSchema.extend({
   id: PricingAssumptionIdSchema,
   revenueScenarioId: RevenueScenarioIdSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type PricingAssumption = z.infer<typeof PricingAssumptionSchema>;
 
 export const ComfortConstraintSchema = ComfortConstraintInputSchema.extend({
   id: ComfortConstraintIdSchema,
   revenueScenarioId: RevenueScenarioIdSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type ComfortConstraint = z.infer<typeof ComfortConstraintSchema>;
 
@@ -153,14 +153,14 @@ export const ScenarioComparisonSchema = z.object({
   comfortDeltaLabel: SafeCommercialTextSchema,
   reviewGateDelta: z.number().int().min(-10_000).max(10_000),
   recommendationStatus: ComfortConstraintStatusSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type ScenarioComparison = z.infer<typeof ScenarioComparisonSchema>;
 
 export const AnalyticsSnapshotPayloadSchema = z.object({
   generatedFrom: SafeCommercialTextSchema,
   notes: z.array(SafeCommercialTextSchema).max(20),
-  values: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
 }).strict();
 export type AnalyticsSnapshotPayload = z.infer<typeof AnalyticsSnapshotPayloadSchema>;
 
@@ -169,8 +169,8 @@ export const AnalyticsSnapshotSchema = z.object({
   venueId: VenueIdSchema,
   snapshotType: AnalyticsSnapshotTypeSchema,
   payload: AnalyticsSnapshotPayloadSchema,
-  generatedAt: z.string().datetime(),
-  createdAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type AnalyticsSnapshot = z.infer<typeof AnalyticsSnapshotSchema>;
 
@@ -218,7 +218,7 @@ export const PipelineSummarySchema = z.object({
   proposalCount: z.number().int().nonnegative(),
   acceptedProposalCount: z.number().int().nonnegative(),
   conversionPercent: PercentSchema,
-  proposalStatusCounts: z.record(z.number().int().nonnegative()),
+  proposalStatusCounts: z.record(z.string(), z.number().int().nonnegative()),
 }).strict();
 export type PipelineSummary = z.infer<typeof PipelineSummarySchema>;
 
@@ -233,11 +233,11 @@ export const RoomUtilisationRowSchema = z.object({
 export type RoomUtilisationRow = z.infer<typeof RoomUtilisationRowSchema>;
 
 export const VenueDashboardAnalyticsSchema = z.object({
-  generatedAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
   currency: CurrencySchema,
   pipelineValueMinor: AggregateMinorUnitAmountSchema,
   enquiryConversionPercent: PercentSchema,
-  proposalStatusCounts: z.record(z.number().int().nonnegative()),
+  proposalStatusCounts: z.record(z.string(), z.number().int().nonnegative()),
   roomUtilisation: z.array(RoomUtilisationRowSchema),
   revenueScenarios: z.array(RevenueScenarioSchema),
   comfortFloorWarnings: z.array(SafeCommercialTextSchema),

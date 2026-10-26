@@ -40,6 +40,8 @@ vi.mock("@react-three/drei", async () => {
   const { OrbitControls } = await import("three-stdlib");
   interface ControlProps {
     readonly target?: [number, number, number]; readonly enabled?: boolean; readonly enableDamping: boolean; readonly dampingFactor: number;
+    readonly enableZoom?: boolean;
+    readonly mouseButtons?: OrbitControlsImpl["mouseButtons"];
     readonly minDistance: number; readonly maxDistance: number; readonly onChange?: () => void;
   }
   return { OrbitControls: React.forwardRef<OrbitControlsImpl, ControlProps>((props, ref) => {
@@ -57,6 +59,13 @@ vi.mock("@react-three/drei", async () => {
       controls.maxDistance = props.maxDistance;
       harness.controls = controls;
     }, [controls, props]);
+    // R3F applies a primitive's prop when its value changes, never again on a re-render.
+    React.useLayoutEffect(() => {
+      if (props.enableZoom !== undefined) controls.enableZoom = props.enableZoom;
+    }, [controls, props.enableZoom]);
+    React.useLayoutEffect(() => {
+      if (props.mouseButtons !== undefined) controls.mouseButtons = props.mouseButtons;
+    }, [controls, props.mouseButtons]);
     React.useEffect(() => {
       const onChange = (): void => { harness.invalidate(); props.onChange?.(); };
       controls.addEventListener("change", onChange);
@@ -134,5 +143,53 @@ describe("the orbit camera's damping", () => {
     expect(run, "the coast takes many frames").toBeGreaterThan(10);
     expect(run, "and then the loop rests").toBeLessThan(400);
     expect(controls().getAzimuthalAngle()).toBeCloseTo(goal, 2);
+  });
+});
+
+describe("the orbit camera's zoom", () => {
+  function finger(type: string, pointerId: number): PointerEvent {
+    return new PointerEvent(type, { pointerType: "touch", pointerId });
+  }
+
+  it("leaves every wheel to the inertial zoom and zooms the controls only while a finger is down", () => {
+    render(<CameraRig dimensions={dimensions} />);
+    expect(controls().enableZoom, "no finger: the controls never zoom a wheel").toBe(false);
+
+    act(() => { window.dispatchEvent(finger("pointerdown", 1)); window.dispatchEvent(finger("pointerdown", 2)); });
+    expect(controls().enableZoom, "two fingers down: the pinch dollies").toBe(true);
+
+    act(() => { window.dispatchEvent(finger("pointerup", 1)); window.dispatchEvent(finger("pointerup", 2)); });
+    expect(controls().enableZoom, "the last finger lifted").toBe(false);
+  });
+});
+
+describe("the orbit camera's mouse", () => {
+  /** A mouse drag of 120 px across the canvas with one button held; returns how far the view turned (rad). */
+  function mouseDrag(button: number): number {
+    const canvas = harness.canvas;
+    if (canvas === null) throw new Error("Missing canvas");
+    const before = controls().getAzimuthalAngle();
+    const at = (type: string, x: number, buttons: number): PointerEvent =>
+      new PointerEvent(type, { pointerType: "mouse", pointerId: 1, button, buttons, clientX: x, clientY: 400, bubbles: true });
+    act(() => {
+      canvas.dispatchEvent(at("pointerdown", 600, 1 << (button === 2 ? 1 : 0)));
+      document.dispatchEvent(at("pointermove", 720, 1 << (button === 2 ? 1 : 0)));
+      document.dispatchEvent(at("pointerup", 720, 0));
+    });
+    framesUntilRest(400);
+    act(() => { controls().update(); });
+    return Math.abs(controls().getAzimuthalAngle() - before);
+  }
+
+  // A wide window runs smooth controls; a compact one (1099 px or narrower) runs lean ones.
+  it.each([["a wide window", true], ["a compact window", false]])("looks around on a right-drag in %s, and a left-drag stays the marquee's", (_width, smooth) => {
+    // happy-dom lays nothing out; OrbitControls turns by the drag over the canvas height.
+    Object.defineProperty(harness.canvas, "clientHeight", { configurable: true, value: 1000 });
+    render(<CameraRig dimensions={dimensions} smoothControls={smooth} />);
+    framesUntilRest(400);
+    act(() => { controls().update(); });
+
+    expect(mouseDrag(0), "the left button turns nothing").toBeLessThan(1e-6);
+    expect(mouseDrag(2), "the right button looks around").toBeGreaterThan(0.2);
   });
 });

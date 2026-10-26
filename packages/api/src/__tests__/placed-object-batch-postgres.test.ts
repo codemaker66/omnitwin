@@ -83,10 +83,11 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
       role: "planner", platformRole: "none", venueId: null })}` };
   }
 
-  async function configuration(options: { guest?: boolean } = {}): Promise<string> {
+  async function configuration(options: { guest?: boolean; owner?: string } = {}): Promise<string> {
     const id = randomUUID();
     await db.insert(schema.configurations).values({ id, spaceId, venueId, name: "TEST ONLY batch layout",
-      layoutStyle: "dinner-banquet", userId: options.guest === true ? null : ownerId, isPublicPreview: options.guest === true });
+      layoutStyle: "dinner-banquet", userId: options.guest === true ? null : options.owner ?? ownerId,
+      isPublicPreview: options.guest === true });
     return id;
   }
 
@@ -207,6 +208,211 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
     // The guard itself is intact: a coordinate write without a new token fails.
     await expect(pool.query("UPDATE placed_objects SET position_x = position_x + 1 WHERE configuration_id = $1", [configId]))
       .rejects.toMatchObject({ code: "23514" });
+  });
+
+  describe("a save that meets a newer revision says who made it and when, to those who may know", () => {
+    // Elaine (venue staff) makes the newer revisions. The venue's manager may
+    // join the layout's live room and is told her name; a client who owns a
+    // layout may not join it and is told only the time, or their own name.
+    const colleagueId = randomUUID();
+    const colleagueEmail = `${colleagueId}@batch.invalid`;
+    const managerId = randomUUID();
+    const clientId = randomUUID();
+    interface Headers { readonly authorization: string }
+
+    function headersFor(id: string, role: string, userVenueId: string | null): Headers {
+      return { authorization: `Bearer ${JSON.stringify({ id, email: `${id}@batch.invalid`,
+        role, platformRole: "none", venueId: userVenueId })}` };
+    }
+    const colleague = (): Headers => headersFor(colleagueId, "staff", venueId);
+    const manager = (): Headers => headersFor(managerId, "manager", venueId);
+    const client = (): Headers => headersFor(clientId, "client", null);
+
+    async function post(configId: string, expectedRevision: number, headers: Headers | null,
+      objects: readonly PlacedObjectBatchItem[] = [item(0)]) {
+      return server.inject({ method: "POST",
+        url: headers === null ? `/public/configurations/${configId}/objects/batch` : `/configurations/${configId}/objects/batch`,
+        headers: headers === null ? {} : { authorization: headers.authorization }, payload: { expectedRevision, objects } });
+    }
+
+    async function saved(configId: string, expectedRevision: number, headers: Headers,
+      objects: readonly PlacedObjectBatchItem[] = [item(0)]): Promise<number> {
+      const response = await post(configId, expectedRevision, headers, objects);
+      expect(response.statusCode, response.body).toBe(200);
+      return response.json<{ data: { revision: number } }>().data.revision;
+    }
+
+    async function conflict(configId: string, expectedRevision: number, headers: Headers | null) {
+      const response = await post(configId, expectedRevision, headers);
+      expect(response.statusCode, response.body).toBe(409);
+      return { body: response.json<{ code: string; details: Record<string, unknown> }>(), raw: response.body };
+    }
+
+    async function revisionRow(configId: string, revision: number) {
+      const [row] = await db.select().from(schema.configurationLayoutRevisions)
+        .where(and(eq(schema.configurationLayoutRevisions.configurationId, configId),
+          eq(schema.configurationLayoutRevisions.revision, revision)));
+      if (row === undefined) throw new Error("Missing revision row");
+      return row;
+    }
+
+    beforeAll(async () => {
+      await db.insert(schema.users).values([
+        { id: colleagueId, name: "Elaine Account-Name", displayName: "  Elaine  ", email: colleagueEmail, role: "staff", venueId },
+        { id: managerId, name: "Morag Manager", email: `${managerId}@batch.invalid`, role: "manager", venueId },
+        { id: clientId, name: "Fiona Client", email: `${clientId}@batch.invalid`, role: "client" },
+      ]);
+    });
+
+    it("names the colleague to the venue's floor team by display name, never by email, with the revision's own time", async () => {
+      const configId = await configuration();
+      const mine = await saved(configId, 1, manager());
+      await saved(configId, mine, colleague(), [item(0), item(1)]);
+
+      const { body, raw } = await conflict(configId, mine, manager());
+      const row = await revisionRow(configId, mine + 1);
+      expect(body.code).toBe("REVISION_CONFLICT");
+      expect(body.details).toEqual({
+        expectedRevision: mine,
+        currentRevision: mine + 1,
+        changedBy: { userId: colleagueId, name: "Elaine" },
+        changedAt: row.createdAt.toISOString(),
+      });
+      expect(raw).not.toContain(colleagueEmail);
+      expect(raw).not.toContain("Account-Name");
+    });
+
+    it("falls back to the account name when the display name is blank", async () => {
+      const configId = await configuration();
+      await db.update(schema.users).set({ displayName: "   " }).where(eq(schema.users.id, colleagueId));
+      try {
+        const mine = await saved(configId, 1, manager());
+        await saved(configId, mine, colleague(), []);
+        const { body } = await conflict(configId, mine, manager());
+        expect(body.details["changedBy"]).toEqual({ userId: colleagueId, name: "Elaine Account-Name" });
+      } finally {
+        await db.update(schema.users).set({ displayName: "  Elaine  " }).where(eq(schema.users.id, colleagueId));
+      }
+    });
+
+    it("tells a client who owns the layout when the venue's staff changed it, never who", async () => {
+      const configId = await configuration({ owner: clientId });
+      const mine = await saved(configId, 1, client());
+      await saved(configId, mine, colleague(), [item(0), item(1)]);
+
+      const { body, raw } = await conflict(configId, mine, client());
+      const row = await revisionRow(configId, mine + 1);
+      expect(row.actorUserId).toBe(colleagueId);
+      expect(body.details).toEqual({
+        expectedRevision: mine,
+        currentRevision: mine + 1,
+        changedBy: null,
+        changedAt: row.createdAt.toISOString(),
+      });
+      expect(raw).not.toContain(colleagueId);
+      expect(raw).not.toContain("Elaine");
+      expect(raw).not.toContain(colleagueEmail);
+    });
+
+    it("names the client's own newer revision as theirs, so another tab can say so", async () => {
+      const configId = await configuration({ owner: clientId });
+      const first = await saved(configId, 1, client());
+      await saved(configId, first, client(), [item(0), item(1)]);
+
+      const { body } = await conflict(configId, first, client());
+      expect(body.details["changedBy"]).toEqual({ userId: clientId, name: "Fiona Client" });
+      expect(body.details["changedAt"]).toBe((await revisionRow(configId, first + 1)).createdAt.toISOString());
+    });
+
+    it("says nothing it does not know: a revision with no row has no author or time", async () => {
+      // A new layout sits at revision 1 with no revision row; a client
+      // claiming a later base meets the 409 with both facts unknown.
+      const configId = await configuration();
+      const { body } = await conflict(configId, 4, authHeaders());
+      expect(body.details).toEqual({ expectedRevision: 4, currentRevision: 1, changedBy: null, changedAt: null });
+    });
+
+    it("tells an anonymous guest when, never who, even when a named colleague made it", async () => {
+      const configId = await configuration({ guest: true });
+      const first = await save(configId, 1, [item(0)], true);
+      await saved(configId, first.revision, colleague(), [item(0), item(1)]);
+      expect((await revisionRow(configId, first.revision + 1)).actorUserId).toBe(colleagueId);
+      const { body, raw } = await conflict(configId, first.revision, null);
+      expect(raw).not.toContain(colleagueId);
+      expect(raw).not.toContain("Elaine");
+      const row = await revisionRow(configId, first.revision + 1);
+      expect(body.details).toEqual({
+        expectedRevision: first.revision,
+        currentRevision: first.revision + 1,
+        changedBy: null,
+        changedAt: row.createdAt.toISOString(),
+      });
+    });
+
+    describe("when the newer revision commits between the route's revision check and its write", () => {
+      // Elaine's write is made first and left uncommitted, so the save's
+      // pre-check still reads the old revision and passes; its guarded UPDATE
+      // then waits behind her transaction and, re-evaluated once she commits,
+      // matches no row: the in-transaction conflict branch, under the same
+      // disclosure rule. (Her write goes first because the configurations
+      // triggers take a lock before the row's: the other order deadlocks.)
+      async function raceElaine(caller: Headers, owner?: string) {
+        const configId = await configuration(owner === undefined ? {} : { owner });
+        const mine = await saved(configId, 1, caller);
+        const elaine = await pool.connect();
+        try {
+          await elaine.query("BEGIN");
+          await elaine.query("UPDATE configurations SET revision = revision + 1, updated_at = now() WHERE id = $1", [configId]);
+          await elaine.query(
+            "INSERT INTO configuration_layout_revisions (configuration_id, revision, source, actor_user_id, payload) VALUES ($1, $2, 'authenticated_batch', $3, '{}'::jsonb)",
+            [configId, mine + 1, colleagueId]);
+          const pending = post(configId, mine, caller);
+          // Only a save that has passed the pre-check waits behind her.
+          const deadline = Date.now() + 8_000;
+          for (;;) {
+            const waiting = await pool.query<{ waiting: number }>(
+              "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+              [applicationName]);
+            if ((waiting.rows[0]?.waiting ?? 0) > 0) break;
+            if (Date.now() > deadline) throw new Error("The save never reached its guarded write");
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          await elaine.query("COMMIT");
+          const response = await pending;
+          expect(response.statusCode, response.body).toBe(409);
+          return { body: response.json<{ details: Record<string, unknown> }>(), raw: response.body, mine, configId };
+        } catch (err) {
+          await elaine.query("ROLLBACK").catch(() => undefined);
+          throw err;
+        } finally {
+          elaine.release();
+        }
+      }
+
+      it("names Elaine to the venue's manager", async () => {
+        const { body, mine, configId } = await raceElaine(manager());
+        expect(body.details).toEqual({
+          expectedRevision: mine,
+          currentRevision: mine + 1,
+          changedBy: { userId: colleagueId, name: "Elaine" },
+          changedAt: (await revisionRow(configId, mine + 1)).createdAt.toISOString(),
+        });
+        // Nothing of the refused save was written.
+        expect(await stored(configId)).toHaveLength(1);
+      });
+
+      it("withholds her from the client who owns the layout, and keeps the time", async () => {
+        const { body, raw, mine, configId } = await raceElaine(client(), clientId);
+        expect(body.details).toEqual({
+          expectedRevision: mine,
+          currentRevision: mine + 1,
+          changedBy: null,
+          changedAt: (await revisionRow(configId, mine + 1)).createdAt.toISOString(),
+        });
+        expect(raw).not.toContain(colleagueId);
+        expect(raw).not.toContain("Elaine");
+      });
+    });
   });
 
   it("saves guest preview batches through the same full-sync path", async () => {

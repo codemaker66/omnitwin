@@ -69,7 +69,7 @@ export const ProtectedPremisesSchema = z.object({
     communication: ProcedureBriefingSchema.optional(),
   }).optional(),
   /** ISO-8601 time of the team's security briefing for this event. */
-  briefingAt: z.string().datetime().optional(),
+  briefingAt: z.iso.datetime().optional(),
   doorSupervision: z.object({
     /** true: arranged; false: not arranged; absent: not set. */
     arranged: z.boolean().optional(),

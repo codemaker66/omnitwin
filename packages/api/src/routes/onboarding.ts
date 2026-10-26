@@ -24,12 +24,12 @@ import type { Database } from "../db/client.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 import { OnboardingConflict, prepareWorkspaceInvitation, settleCancelledMembership } from "../services/workspace-invitations.js";
 
-const WorkspaceIdParam = z.object({ workspaceId: z.string().uuid() });
-const ProjectIdParam = z.object({ projectId: z.string().uuid() });
-const EntitlementIdParam = z.object({ entitlementId: z.string().uuid() });
+const WorkspaceIdParam = z.object({ workspaceId: z.uuid() });
+const ProjectIdParam = z.object({ projectId: z.uuid() });
+const EntitlementIdParam = z.object({ entitlementId: z.uuid() });
 
 type WorkspaceMembershipRow = typeof workspaceMemberships.$inferSelect;
-const InvitationParam = WorkspaceIdParam.extend({ membershipId: z.string().uuid() });
+const InvitationParam = WorkspaceIdParam.extend({ membershipId: z.uuid() });
 
 function providerVerificationStatusFor(input: WorkspaceEntitlementInput): ProviderVerificationStatus {
   if (input.providerVerified) return "provider_verified";

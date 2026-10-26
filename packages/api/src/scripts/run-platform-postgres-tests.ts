@@ -16,6 +16,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/client-search-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
+  // A Diary move reaches its event: dates, phases, sheet times and retention (release audit batch A).
+  "src/__tests__/diary-move-reaches-event-postgres.test.ts",
   "src/__tests__/hold-promotion-postgres.test.ts",
   // The bind (migration 0090): zero holds or inks without an event.
   "src/__tests__/booking-event-bind-postgres.test.ts",
@@ -30,6 +32,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/proposal-links-postgres.test.ts",
   "src/__tests__/proposal-next-version-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
+  // A signed-in person's new plan: refused unclaimed, theirs once claimed (batch C).
+  "src/__tests__/claim-new-draft-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",

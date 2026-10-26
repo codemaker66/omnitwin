@@ -30,12 +30,12 @@ export const PlanViewTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
 export const PlanViewFootprintSchema = z.object({
   name: z.string().min(1).max(200),
   category: z.string().min(1).max(50),
-  x: z.number().finite(),
-  z: z.number().finite(),
-  rotationY: z.number().finite(),
-  scale: z.number().finite().positive(),
-  widthM: z.number().finite().positive(),
-  depthM: z.number().finite().positive(),
+  x: z.number(),
+  z: z.number(),
+  rotationY: z.number(),
+  scale: z.number().positive(),
+  widthM: z.number().positive(),
+  depthM: z.number().positive(),
   collisionType: z.enum(["box", "cylinder"]),
 });
 export type PlanViewFootprint = z.infer<typeof PlanViewFootprintSchema>;
@@ -57,11 +57,11 @@ export const PlanViewSchema = z.object({
   /** The organiser's own name for the plan; null while it is the default. */
   planName: z.string().min(1).max(200).nullable(),
   provenance: z.literal(VISITOR_PLAN_PROVENANCE),
-  lastChangedAt: z.string().datetime(),
+  lastChangedAt: z.iso.datetime(),
   /** When this link stops working, unless the organiser stops it sooner. */
-  linkExpiresAt: z.string().datetime(),
+  linkExpiresAt: z.iso.datetime(),
   /** Real metres on the floor plane (x across, z down the page). */
-  outline: z.array(z.object({ x: z.number().finite(), z: z.number().finite() })).min(3).max(1000),
+  outline: z.array(z.object({ x: z.number(), z: z.number() })).min(3).max(1000),
   objects: z.array(PlanViewFootprintSchema).max(2000),
   items: z.array(PlanViewItemSchema).max(2000),
 });
@@ -69,10 +69,10 @@ export type PlanView = z.infer<typeof PlanViewSchema>;
 
 /** A working link as its organiser sees it. The token itself is shown once. */
 export const PlanViewLinkSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   prefix: z.string().min(4).max(16),
-  createdAt: z.string().datetime(),
-  expiresAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime(),
 });
 export type PlanViewLink = z.infer<typeof PlanViewLinkSchema>;
 

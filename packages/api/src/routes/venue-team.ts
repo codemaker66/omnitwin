@@ -38,8 +38,8 @@ import { formatCalendarDay, venueTeamInvitation } from "../services/email-templa
 // names who sent an invitation made here.
 // ---------------------------------------------------------------------------
 
-const VenueParams = z.object({ venueId: z.string().uuid() });
-const InvitationParams = VenueParams.extend({ invitationId: z.string().uuid() });
+const VenueParams = z.object({ venueId: z.uuid() });
+const InvitationParams = VenueParams.extend({ invitationId: z.uuid() });
 
 const INVITATION_CREATED = "venue_team.invitation_created";
 const INVITATION_CANCELLED = "venue_team.invitation_cancelled";

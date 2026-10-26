@@ -1,4 +1,5 @@
 import type { BufferGeometry } from "three";
+import { craftedDetail } from "./crafted-detail.js";
 import { gridSurface, type Vec3 } from "./crafted-geometry.js";
 
 // ---------------------------------------------------------------------------
@@ -45,7 +46,7 @@ export function poseurCover(size: PoseurSize): BufferGeometry {
   // shallow arch.
   const faceReach = footReach * 0.62;
   const arch = 0.035;
-  const segments = 160;
+  const segments = craftedDetail().level === "full" ? 160 : 96;
 
   interface Ring {
     readonly radiusAt: (lobe: number) => number;

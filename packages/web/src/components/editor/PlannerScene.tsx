@@ -31,6 +31,7 @@ import { XrayToggle } from "../XrayToggle.js";
 import { MeasurementTool } from "../MeasurementTool.js";
 import { TapeMeasure } from "../TapeMeasure.js";
 import { PlacementGhost } from "../PlacementGhost.js";
+import { WarmPieceInHand } from "../WarmPlacedVariants.js";
 import { PlannerInteractionFloor } from "./PlannerInteractionFloor.js";
 import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
@@ -429,8 +430,13 @@ export function PlannerScene(): ReactElement {
   // attribute. Still-mounted URLs retain their draws; a recreated renderer
   // must draw them again before progress can settle.
   const [rendererGeneration, setRendererGeneration] = useState(0);
+  // A 3D view on its couldn't-start or stopped card: no arrival may open over
+  // it as if the room were still opening, whichever layout it opens for.
+  const [canvasUnavailable, setCanvasUnavailable] = useState(false);
+  const markCanvasUnavailable = useCallback(() => { setCanvasUnavailable(true); }, []);
   const handleCanvasCreated = useCallback(() => {
     setRendererGeneration((generation) => generation + 1);
+    setCanvasUnavailable(false);
   }, []);
   const arrivals = useChunkArrivals(splatUrls.join("|"), rendererGeneration);
   const totalChunks = splatUrls.length;
@@ -450,7 +456,7 @@ export function PlannerScene(): ReactElement {
   // Once entered (or bypassed), later refinements never cover the workspace.
   const showArrival = arrivalKey !== null && roomSlug === "grand-hall" && !timelinePreviewActive
     && sceneLayerMode !== "mesh"
-    && !enteredRooms.has(arrivalKey) && !captureFailed
+    && !enteredRooms.has(arrivalKey) && !captureFailed && !canvasUnavailable
     && (splatStatus === "loading" || hasAsset);
   const meshVisible = !timelinePreviewActive && (!hasAsset || captureFailed || sceneLayerMode !== "splat");
   const splatActive = !timelinePreviewActive && hasAsset && !captureFailed && sceneLayerMode !== "mesh";
@@ -580,6 +586,7 @@ export function PlannerScene(): ReactElement {
         {hallSkyAsked && <HallOpeningHour />}
         <Canvas
           onCreated={handleCanvasCreated}
+          onUnavailable={markCanvasUnavailable}
           shadows={furnitureLighting === "panorama-shadow" || skyLit ? "percentage" : false}
           frameloop="demand"
           dpr={canvasDpr}
@@ -667,6 +674,7 @@ export function PlannerScene(): ReactElement {
             <MeasurementTool />
             <TapeMeasure />
             <PlacementGhost />
+            <WarmPieceInHand />
             <SelectionSystem />
             <FurnitureMotion />
             <CockpitSceneOverlays renderGeometry={renderSceneOverlays} />

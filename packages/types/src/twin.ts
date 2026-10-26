@@ -51,8 +51,8 @@ export const TwinScanNodeSchema = z.object({
    *  light — the crossfade never pops. Absent = identity (old bundles parse). */
   exposure: z
     .object({
-      gain: z.number().finite(),
-      wb: z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]),
+      gain: z.number(),
+      wb: z.tuple([z.number(), z.number(), z.number()]),
     })
     .optional(),
 });
@@ -109,7 +109,7 @@ export const TwinManifestSchema = z
       z.tuple([z.literal(256), z.literal(1024)]),
       z.tuple([z.literal(512), z.literal(4096), z.literal(8192)]),
     ]),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     nodes: z.array(TwinScanNodeSchema).min(1),
     edges: z.array(TwinNavEdgeSchema),
     /** The node the walk opens on — the venue's hero viewpoint. Absent (or an
@@ -120,9 +120,9 @@ export const TwinManifestSchema = z
      *  Angles in degrees; applied only when the walk opens on entryNodeId. */
     entryLook: z
       .object({
-        yawDeg: z.number().finite(),
-        pitchDeg: z.number().finite(),
-        fovDeg: z.number().finite(),
+        yawDeg: z.number(),
+        pitchDeg: z.number(),
+        fovDeg: z.number(),
       })
       .optional(),
     /** Optional dollhouse mesh — bundles without one keep working (Phase 2). */
@@ -136,7 +136,7 @@ export const TwinManifestSchema = z
     const lods: readonly number[] = manifest.lods;
     if (lods.length !== expected.length || expected.some((lod, i) => lods[i] !== lod)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["lods"],
         message: `${manifest.imagery} bundles must declare lods [${expected.join(", ")}]`,
       });

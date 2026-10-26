@@ -14,7 +14,7 @@ import { canEverReadRoomDay } from "../utils/query.js";
 // link proof and the anonymisation live in services/room-day.ts.
 // ---------------------------------------------------------------------------
 
-const EventParam = z.object({ eventId: z.string().uuid() });
+const EventParam = z.object({ eventId: z.uuid() });
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
