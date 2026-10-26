@@ -7,7 +7,7 @@ import {
   tableGroupPlanningFootprint,
   tableGroupPlanningRadius,
 } from "./table-group.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG, DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "./furniture-defaults.js";
+import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairSlug } from "./furniture-defaults.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { countLabel } from "./count-label.js";
 import type { PublishedCapacityAnswer, PublishedFormat } from "./planner-truth.js";
@@ -165,19 +165,21 @@ export function planTheatreFill(
 }
 
 /** The fill a style places with the planner's own furniture: 6 ft rounds set
- *  for the catalogue's recorded seats, or Turini chairs in rows. */
+ *  for the catalogue's recorded seats (each seat the event's chair, through the
+ *  table group), or rows of `rowChairSlug`, the event's chair unless named. */
 export function planAutoFill(
   style: AutoFillStyle,
   guests: number,
   roomWidthM: number,
   roomLengthM: number,
+  rowChairSlug: string = plannerChairSlug(),
 ): AutoFillPlan | null {
   if (style === "dinner-rounds") {
     const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
     if (table === undefined) return null;
     return planBanquetFill(table, guests, banquetSeatsPerTable(table), roomWidthM, roomLengthM);
   }
-  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chair = getCatalogueItemBySlug(rowChairSlug);
   return chair === undefined ? null : planTheatreFill(chair, guests, roomWidthM, roomLengthM);
 }
 
