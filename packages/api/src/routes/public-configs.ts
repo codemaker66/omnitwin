@@ -279,7 +279,7 @@ export async function publicConfigRoutes(
         .returning({ revision: configurations.revision });
 
       if (advanced === undefined) {
-        const [current] = await tx.select({ revision: configurations.revision })
+        const [current] = await tx.select({ revision: configurations.revision, reviewStatus: configurations.reviewStatus })
           .from(configurations)
           .where(and(
             eq(configurations.id, configId),
@@ -287,6 +287,11 @@ export async function publicConfigRoutes(
             isNull(configurations.deletedAt),
           ))
           .limit(1);
+        // A review begun since the check holds the plan: that, not a newer
+        // version, is why nothing was saved.
+        if (current !== undefined && lockedFor(current.reviewStatus) !== null) {
+          return { status: "locked" as const, reviewStatus: current.reviewStatus };
+        }
         return {
           status: "conflict" as const,
           currentRevision: current?.revision ?? config.revision,
@@ -313,6 +318,9 @@ export async function publicConfigRoutes(
       };
     });
 
+    if (saveResult.status === "locked") {
+      return reply.status(409).send(lockedFor(saveResult.reviewStatus));
+    }
     if (saveResult.status === "conflict") {
       const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
         { discloseActor: false, callerUserId: null, log: request.log });
@@ -391,6 +399,12 @@ export async function publicConfigRoutes(
       .returning();
 
     if (updated === undefined) {
+      const [now] = await db.select({ reviewStatus: configurations.reviewStatus })
+        .from(configurations)
+        .where(and(eq(configurations.id, params.data.configId), eq(configurations.isPublicPreview, true), isNull(configurations.deletedAt)))
+        .limit(1);
+      const lockedNow = now === undefined ? null : lockedFor(now.reviewStatus);
+      if (lockedNow !== null) return reply.status(409).send(lockedNow);
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
     reply.header("ETag", configurationRevisionEtag(updated.revision));

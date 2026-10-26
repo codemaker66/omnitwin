@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -432,6 +432,47 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
     const revisions = await db.select().from(schema.configurationLayoutRevisions)
       .where(eq(schema.configurationLayoutRevisions.configurationId, configId));
     expect(revisions.map((revision) => revision.revision).sort()).toEqual([2, 3]);
+  });
+
+  /** Begins a review of the plan, uncommitted, sends a guest write (which
+   *  passes its check, the review not yet seen, then waits behind it), and
+   *  commits the review: it began between the write's check and its write. */
+  async function racedWithSubmit(configId: string, write: () => Promise<LightMyRequestResponse>): Promise<LightMyRequestResponse> {
+    const holder = await pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("UPDATE configurations SET review_status = 'submitted' WHERE id = $1", [configId]);
+      const writing = write();
+      for (let tries = 0; ; tries += 1) {
+        const waiting = await pool.query<{ waiting: string }>(
+          "SELECT count(*) AS waiting FROM pg_stat_activity WHERE datname = current_database() AND application_name = $1 AND wait_event_type = 'Lock'",
+          [applicationName],
+        );
+        if (Number(waiting.rows[0]?.waiting ?? 0) > 0) break;
+        if (tries > 200) throw new Error("the guest write never waited for the review");
+        await new Promise((resolve) => { setTimeout(resolve, 10); });
+      }
+      await holder.query("COMMIT");
+      return await writing;
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+    }
+  }
+
+  it("says a review begun during a guest write holds the plan, not that a newer version came", async () => {
+    const configId = await configuration({ guest: true });
+    const first = await save(configId, 1, [item(0)], true);
+    const batch = await racedWithSubmit(configId, () => server.inject({ method: "POST",
+      url: `/public/configurations/${configId}/objects/batch`, payload: { expectedRevision: first.revision, objects: [] } }));
+    expect(batch.statusCode, batch.body).toBe(409);
+    expect(batch.json()).toMatchObject({ code: "CONFIG_LOCKED", reviewStatus: "submitted" });
+    expect(await stored(configId)).toHaveLength(1);
+    await db.update(schema.configurations).set({ reviewStatus: "draft" }).where(eq(schema.configurations.id, configId));
+    const thumbnail = await racedWithSubmit(configId, () => server.inject({ method: "POST",
+      url: `/public/configurations/${configId}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,iVBORw0KGgo=" } }));
+    expect(thumbnail.statusCode, thumbnail.body).toBe(409);
+    expect(thumbnail.json()).toMatchObject({ code: "CONFIG_LOCKED", reviewStatus: "submitted" });
   });
 
   it("holds a guest plan in review still, as it holds a signed-in planner's", async () => {
