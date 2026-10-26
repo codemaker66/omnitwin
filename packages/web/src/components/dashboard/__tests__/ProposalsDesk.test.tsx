@@ -726,10 +726,11 @@ describe("the ledger and the open proposal", () => {
     fireEvent.click(panel.getByTestId("withdraw-confirm-button"));
     await panel.findByRole("alert");
     await waitFor(() => { expect(screen.getByTestId("proposals-summary").textContent).toBe("Nothing is waiting on you."); });
-    await act(async () => { await Promise.resolve(); });
+    // Nor the proposal twice: the refusal's own read of it is on its way, and
+    // said. It goes out once the render that asks for it is drawn, and the
+    // list's answer can be drawn in that same render.
+    await waitFor(() => { expect(mocks.getDeskProposal.mock.calls.length).toBe(proposalReads + 1); });
     expect(mocks.listProposalDesk.mock.calls.length).toBe(listReads + 1);
-    // Nor the proposal twice: the refusal's own read of it is on its way, and said.
-    expect(mocks.getDeskProposal.mock.calls.length).toBe(proposalReads + 1);
     expect(panel.getByText("Refreshing the proposal…")).toBeDefined();
     await act(async () => { answer(existing[0]); await Promise.resolve(); });
     expect(await panel.findByText("Accepted", { selector: ".enq-chip" })).toBeDefined();
