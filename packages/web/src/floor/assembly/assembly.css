@@ -14,18 +14,24 @@
   padding: 9px 16px 10px;
   border: 1px solid rgba(201, 138, 91, 0.38);
   border-radius: 999px;
-  background: rgba(19, 17, 16, 0.72);
+  background: rgba(19, 17, 16, 0.88);
   color: var(--house-text-1, #f4efe6);
   font: 500 13px/1.2 Inter, system-ui, sans-serif;
   letter-spacing: 0.01em;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   cursor: pointer;
   transition: opacity 220ms ease, background-color 160ms ease, border-color 160ms ease, transform 90ms ease;
 }
 
+/* On a phone the cockpit's bottom dock lies over the canvas's lowest band (the
+   shell carries its height as --cockpit-bottom-height), so the pill rests just
+   above it, where a thumb can reach it. */
+.cockpit-shell.is-mobile .assembly-replay {
+  left: max(16px, env(safe-area-inset-left));
+  bottom: calc(var(--cockpit-bottom-height, 96px) + 12px + env(safe-area-inset-bottom, 0px));
+}
+
 .assembly-replay:hover {
-  background: rgba(27, 25, 23, 0.86);
+  background: rgba(27, 25, 23, 0.94);
   border-color: rgba(220, 164, 117, 0.6);
 }
 
