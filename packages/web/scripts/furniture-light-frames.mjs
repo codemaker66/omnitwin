@@ -73,10 +73,13 @@ const POSES = {
   chair: [[2.35, 1.05, 1.55], [1.62, 0.45, 0.62]],
   // Toward the window wall (−z), over the floor where the sun and the moon fall.
   windows: [[1.5, 2.4, 4.6], [-2.0, 0.2, -1.5]],
-  // Low over the chairs of the window-side row, where the summer morning sun
-  // falls (June 08:30: light enters at 2-4 m and lands 1-4 m into the room):
-  // the shadow proof, feet and legs close up.
-  sunchair: [[3.1, 1.05, -0.7], [1.5, 0.22, -2.5]],
+  // The shadow proof: June 08:30's sun lays a strip across the floor from the
+  // middle window (x ≈ −0.25, from the wall to z ≈ 0, read off the plan view),
+  // through the east chair of the window row's third round. From the side,
+  // the chair and its shadow on the boards; against the light, the shadows
+  // running toward the viewer.
+  sunchair: [[1.25, 1.05, -1.85], [-0.4, 0.25, -3.05]],
+  sunback: [[-0.15, 0.95, -0.55], [-0.35, 0.3, -3.2]],
   // The wedding layout (--layout wedding): across the dance floor to the top table and the bar.
   wedding: [[7.6, 3.3, -1.4], [-1.2, 0.4, 3.6]],
   dance: [[3.4, 1.7, 0.9], [-0.2, 0.1, 3.6]],
