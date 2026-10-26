@@ -118,7 +118,7 @@ crafted pieces, so the planner downloads no furniture GLB.
   per page and shared, never disposed.
 - **Shading.** Materials draw front faces only. The open cloth sheets (linen,
   damask, the black cloth, spandex, the stage skirt) cast from both faces
-  wherever what is seen casts (a piece without a caster), as the drape
+  wherever what is seen casts (a piece built without a caster: no catalogue piece is), as the drape
   casters do, or a skirt's shadow breaks into strips. Lathe profiles may be
   written either way up.
 - **Metric UVs.** UVs are in metres and each map's repeat is its real tile size,

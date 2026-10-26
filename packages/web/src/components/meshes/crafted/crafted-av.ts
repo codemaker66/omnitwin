@@ -219,10 +219,15 @@ export function handheldMicParts(size: AvSize): CraftedPart[] {
 export function lapelMicParts(size: AvSize): CraftedPart[] {
   const { width, depth, height } = size;
   const packH = height * 0.8;
+  const pack = aoBox([width * 0.8, packH, depth * 0.45], [0, packH / 2, 0]);
+  const lead = aoRod([width * 0.18, packH, 0], [width * 0.18, height, 0], 0.008);
   return [
-    { material: "plastic-dark", geometry: roundedBox([width * 0.8, packH, depth * 0.45], 0.006, [0, packH / 2, 0], { segments: 2 }) },
-    { material: "steel-black", geometry: post([width * 0.18, 0], packH, height - 0.004, 0.003, 0.003, 8) },
-    { material: "steel-black", geometry: roundedBox([0.008, 0.012, 0.008], 0.003, [width * 0.18, height - 0.006, 0], { segments: 1 }) },
+    ...baked([
+      { material: "plastic-dark", geometry: roundedBox([width * 0.8, packH, depth * 0.45], 0.006, [0, packH / 2, 0], { segments: 2 }) },
+      { material: "steel-black", geometry: post([width * 0.18, 0], packH, height - 0.004, 0.003, 0.003, 8) },
+      { material: "steel-black", geometry: roundedBox([0.008, 0.012, 0.008], 0.003, [width * 0.18, height - 0.006, 0], { segments: 1 }) },
+    ], [pack]),
+    { material: "shadow-caster", geometry: casterGeometry([pack, lead], { inset: 0.001, minimum: 0.008 }) },
   ];
 }
 
