@@ -23,6 +23,7 @@ import {
 import {
   bookings,
   eventPlanNotifications,
+  events,
   requestStatusHistory,
   requests,
   spaces,
@@ -394,12 +395,24 @@ export async function createRequestCore(
     }
   }
 
+  const eventId = input.eventId ?? null;
+  if (eventId !== null) {
+    const [event] = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.venueId, venueId), isNull(events.deletedAt)))
+      .limit(1);
+    if (event === undefined) {
+      return deny(400, "EVENT_NOT_IN_VENUE", "That event is not one of this venue's events.");
+    }
+  }
+
   return insertRequest(db, actor, {
     venueId,
     roomId: room.id,
     roomName: room.name,
     bookingId,
-    eventId: input.eventId ?? null,
+    eventId,
     kind: input.kind,
     quantity: input.quantity ?? null,
     urgency: input.urgency,

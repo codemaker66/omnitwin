@@ -338,6 +338,22 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect("code" in made && made.code).toBe("ROOM_NOT_IN_VENUE");
   });
 
+  it("refuses an event that belongs to a different venue, and names one of its own", async () => {
+    const f = await fixture();
+    const theirs = randomUUID(), ours = randomUUID();
+    await db.insert(schema.events).values([
+      { id: theirs, venueId: f.otherVenueId, createdBy: f.outsider.id, name: "Someone else's dinner" },
+      { id: ours, venueId: f.venueId, createdBy: f.admin.id, name: "The Smith wedding" },
+    ]);
+    const refused = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { bookingId: null, eventId: theirs }));
+    expect("status" in refused && refused.status).toBe(400);
+    expect("code" in refused && refused.code).toBe("EVENT_NOT_IN_VENUE");
+    expect(await db.select({ id: schema.requests.id }).from(schema.requests).where(eq(schema.requests.eventId, theirs))).toEqual([]);
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { bookingId: null, eventId: ours }));
+    if (!("request" in made)) throw new Error("expected a request");
+    expect(made.request.eventId).toBe(ours);
+  });
+
   it("walks the ladder and stamps each step", async () => {
     const f = await fixture();
     const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
