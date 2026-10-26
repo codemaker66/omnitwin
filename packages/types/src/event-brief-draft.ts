@@ -91,7 +91,7 @@ export const EventBriefDraftValuesSchema = z.object({
   serviceModel: BRIEF.serviceModel.nullable(),
   accessibilityRequirements: z.array(EventArchitectAccessibilityRequirementSchema).max(3).superRefine((values, ctx) => {
     if (new Set(values).size !== values.length) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Each accessibility requirement appears once." });
+      ctx.addIssue({ code: "custom", message: "Each accessibility requirement appears once." });
     }
   }),
   planningPrompt: BRIEF.planningPrompt,
@@ -160,7 +160,7 @@ export const EventBriefDraftSchema = z.object({
   evidenceStatus: z.literal("unverified"),
   /** Nothing runs automatically: a person fills the form and generates. */
   runState: z.literal("not_run"),
-  generatedAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
 }).strict().superRefine((draft, ctx) => {
   // A value held back as unsupported is left unset, never kept as a clamped
   // or substituted value beside it.
@@ -168,7 +168,7 @@ export const EventBriefDraftSchema = z.object({
     if (!holdsBackField(item)) continue;
     if (item.field !== null && item.field !== "accessibilityRequirements" && draft.brief[item.field] !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["brief", item.field],
         message: `A field listed as unsupported (${item.field}) must be left unset.`,
       });
@@ -189,7 +189,7 @@ export type EventBriefExtractionSource = z.infer<typeof EventBriefExtractionSour
 
 const ExtractedText = z.string().max(4000).nullable();
 
-function extractedField<T extends z.ZodTypeAny>(value: T) {
+function extractedField<T extends z.ZodType>(value: T) {
   return z.object({
     value: value.nullable(),
     source: EventBriefExtractionSourceSchema,

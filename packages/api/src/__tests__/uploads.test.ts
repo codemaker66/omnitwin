@@ -28,8 +28,8 @@ const staffToken = (venueId: string | null = CTX_ID): string =>
 const clientToken = (): string =>
   signToken({ id: "u3", email: "client@test.com", role: "client", venueId: null });
 
-const CTX_ID = "00000000-0000-0000-0000-000000000001";
-const OTHER_CTX_ID = "00000000-0000-0000-0000-000000000002";
+const CTX_ID = "00000000-0000-4000-8000-000000000001";
+const OTHER_CTX_ID = "00000000-0000-4000-8000-000000000002";
 
 const basePayload = {
   filename: "photo.jpg",

@@ -42,7 +42,7 @@ interface RunInspectRuntimeControlCoordinatePairIntakeOptions {
   ) => void;
 }
 
-function formatValidationIssues(issues: readonly { readonly path: readonly (string | number)[]; readonly message: string }[]): readonly string[] {
+function formatValidationIssues(issues: readonly { readonly path: readonly PropertyKey[]; readonly message: string }[]): readonly string[] {
   return issues.map((issue) => {
     const path = issue.path.length === 0 ? "<root>" : issue.path.map(String).join(".");
     return `${path}: ${issue.message}`;

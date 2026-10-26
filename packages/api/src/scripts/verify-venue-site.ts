@@ -16,7 +16,7 @@ import { TRADES_HALL_SITE, TRADES_HALL_VENUE_SLUG, siteAgreement } from "../lib/
 
 const VenueListSchema = z.object({
   data: z.array(z.object({
-    id: z.string().uuid(),
+    id: z.uuid(),
     slug: z.string(),
     latitude: z.number().nullable().optional(),
     longitude: z.number().nullable().optional(),

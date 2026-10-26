@@ -17,7 +17,7 @@ const { buildServer } = await import("../index.js");
 // is what matters to test here.
 // ---------------------------------------------------------------------------
 
-const FAKE_CONFIG_ID = "00000000-0000-0000-0000-000000000001";
+const FAKE_CONFIG_ID = "00000000-0000-4000-8000-000000000001";
 
 function adminToken(): string {
   return JSON.stringify({

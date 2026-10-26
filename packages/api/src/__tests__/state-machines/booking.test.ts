@@ -17,7 +17,7 @@ import { canTransitionProposal, canTransitionQuote } from "../../state-machines/
 import { canTransition } from "../../state-machines/enquiry.js";
 import { canManageCommercial } from "../../utils/query.js";
 
-const VENUE = "00000000-0000-0000-0000-0000000000a0";
+const VENUE = "00000000-0000-4000-8000-0000000000a0";
 
 // ---------------------------------------------------------------------------
 // Booking state machine — role policy layer (T-488; Canon §1/§3).
