@@ -16,6 +16,14 @@
  * ------------------------------------------------------------------------- */
 
 /* -- The menu's key ----------------------------------------------------------- */
+/* The anchor reaches 8 px past the key, up to the dock's top edge and to the left, without moving it:
+   the menu then stands 8 px above the dock, its edge 8 px left of the key's, as frame 20 has it. */
+.pc-workspace-anchor {
+  display: inline-flex;
+  margin: -8px 0 0 -8px;
+  padding: 8px 0 0 8px;
+}
+
 .pc-workspace-key { gap: 6px; padding-right: 9px; }
 
 .pc-workspace-key__chevron {
@@ -123,11 +131,13 @@
   --pc-workspace-well: color-mix(in srgb, black 22%, transparent);
   --pc-workspace-edge: color-mix(in srgb, var(--house-cream) 12%, transparent);
   --pc-workspace-wash: color-mix(in srgb, var(--house-cream) 3%, transparent);
+  /* The zone ends above the dock, but the rail stands on the dock: lift the panel clear of the whole stack. */
+  --pc-workspace-lift: max(0px, calc(var(--pc-above-stack, 88px) - var(--pc-above-dock, 88px)));
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* Within the zone, and never under the dock stack (the rail stands above the dock it is measured from). */
-  max-height: min(100%, calc(100dvh - var(--pc-left-top, 198px) - var(--pc-above-stack, 88px)));
+  margin-bottom: var(--pc-workspace-lift);
+  max-height: calc(100% - var(--pc-workspace-lift));
   overflow: hidden;
   pointer-events: auto;
   animation: pc-workspace-in var(--house-motion-deliberate) var(--house-ease-out);
@@ -388,7 +398,7 @@
   letter-spacing: 0;
 }
 
-.pc-workspace .lens-panel__field--inline { grid-template-columns: minmax(0, 1fr) 112px; }
+.pc-workspace .lens-panel__field--inline { grid-template-columns: minmax(0, 1fr) 128px; }
 
 .pc-workspace .lens-panel__input {
   min-height: 36px;

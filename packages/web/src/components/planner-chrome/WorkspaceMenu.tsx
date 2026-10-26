@@ -82,19 +82,22 @@ function WorkspaceMenuKey(): ReactElement {
 
   return (
     <>
-      <Key
-        ref={triggerRef}
-        label={name}
-        tip={`${name} workspace`}
-        on={state.open || panelOpen}
-        expanded={state.open}
-        trailing={<ChevronDown className="pc-icon pc-workspace-key__chevron" aria-hidden="true" />}
-        className="pc-workspace-key"
-        data-testid="planner-workspace-menu"
-        data-workspace={workspace}
-        {...state.triggerProps}
-        onPress={state.toggle}
-      />
+      {/* The menu opens from this key's own edge (frame 20), not from the far end of the dock it sits in. */}
+      <span className="pc-workspace-anchor" data-pc-popover-anchor="">
+        <Key
+          ref={triggerRef}
+          label={name}
+          tip={`${name} workspace`}
+          on={state.open || panelOpen}
+          expanded={state.open}
+          trailing={<ChevronDown className="pc-icon pc-workspace-key__chevron" aria-hidden="true" />}
+          className="pc-workspace-key"
+          data-testid="planner-workspace-menu"
+          data-workspace={workspace}
+          {...state.triggerProps}
+          onPress={state.toggle}
+        />
+      </span>
       <Popover state={state} label="Workspaces" align="start" side="above" chrome="workspace-menu" className="pc-workspace-menu">
         <div className="pc-workspace-menu__section">
           <div className="pc-workspace-menu__head" aria-hidden="true">
