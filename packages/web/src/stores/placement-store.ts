@@ -29,6 +29,7 @@ import {
 import { applySeatShortfallFix, type SeatShortfallFixResult } from "../lib/seat-shortfall.js";
 import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
 import { postPlacementNotice } from "./placement-notice-store.js";
+import { currentStoreStock, storeShortfallBetween, storeShortfallWords } from "../lib/card-stock.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 import { useCatalogueStore } from "./catalogue-store.js";
@@ -224,6 +225,19 @@ function capPassedBy(before: readonly PlacedItem[], after: readonly PlacedItem[]
   return null;
 }
 
+/**
+ * Blake's B2, hard: whether writing `after` over `before` would take a piece
+ * past the store's stock (lib/card-stock currentStoreStock, registered for
+ * staff); when it would, the refusal is posted in the store's words and the
+ * caller writes nothing. Unknown stock never refuses.
+ */
+function refusedByStore(before: readonly PlacedItem[], after: readonly PlacedItem[]): boolean {
+  const shortfall = storeShortfallBetween(currentStoreStock(), before, after);
+  if (shortfall === null) return false;
+  postPlacementNotice(storeShortfallWords(shortfall));
+  return true;
+}
+
 /** New tables take the lowest free numbers (Q-46), behind tableNumbers. */
 function numberNew(placedItems: readonly PlacedItem[], pieces: readonly PlacedItem[]): readonly PlacedItem[] {
   return plannerFeatureEnabled("tableNumbers") ? withTableNumbers(placedItems, pieces) : pieces;
@@ -286,7 +300,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     );
     const [item] = numberNew(state.placedItems, [createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY)]);
     if (item === undefined) return;
-    set({ placedItems: [...state.placedItems, item] });
+    const next = [...state.placedItems, item];
+    if (refusedByStore(state.placedItems, next)) return;
+    set({ placedItems: next });
     announcePlaced([item.id]);
   },
 
@@ -326,7 +342,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return createPlacedItem(catalogueItemId, point.x, point.z, point.rotationY, null, surfaceY);
     });
     if (newItems.length === 0) return [];
-    set({ placedItems: [...state.placedItems, ...newItems] });
+    const next = [...state.placedItems, ...newItems];
+    if (refusedByStore(state.placedItems, next)) return [];
+    set({ placedItems: next });
     const ids = newItems.map((item) => item.id);
     announcePlaced(ids);
     return ids;
@@ -639,7 +657,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return chairY !== item.y ? { ...item, y: chairY } : item;
     });
     const numbered = numberNew(state.placedItems, adjusted);
-    set({ placedItems: [...state.placedItems, ...numbered] });
+    const next = [...state.placedItems, ...numbered];
+    if (refusedByStore(state.placedItems, next)) return;
+    set({ placedItems: next });
     announcePlaced(numbered.map((item) => item.id));
   },
 
@@ -658,7 +678,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     // As they stand: a card's set comes settled where it was judged (lib/place-in-hand), a copy at its original's heights.
     const numbered = numberNew(state.placedItems, pieces);
-    set({ placedItems: [...state.placedItems, ...numbered] });
+    const next = [...state.placedItems, ...numbered];
+    if (refusedByStore(state.placedItems, next)) return [];
+    set({ placedItems: next });
     const ids = numbered.map((piece) => piece.id);
     announcePlaced(ids);
     return ids;
@@ -677,6 +699,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       postPlacementNotice(atCap);
       return [];
     }
+    if (refusedByStore(state.placedItems, [...changed, ...joining])) return [];
     const edited = numberEdited(changed, new Set(changes.keys()));
     const numbered = numberNew(edited, joining);
     set({ placedItems: [...edited, ...numbered] });
@@ -714,7 +737,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       postPlacementNotice(refusalChip(verdict.obstacle));
       return false;
     }
-    set({ placedItems: [...state.placedItems.filter((piece) => piece.groupId !== groupId), ...resized] });
+    const next = [...state.placedItems.filter((piece) => piece.groupId !== groupId), ...resized];
+    if (refusedByStore(state.placedItems, next)) return false;
+    set({ placedItems: next });
     announcePlaced(added.map((piece) => piece.id));
     return true;
   },
@@ -735,6 +760,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
     });
+    if (refusedByStore(state.placedItems, adjusted)) return;
     set({ placedItems: numberEdited(adjusted, new Set([tableId])) });
   },
 
@@ -791,6 +817,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       (item) => !isSceneFurniturePlacement(item),
     );
     const numbered = numberNew(retainedApplicators, placedItems);
+    if (refusedByStore(state.placedItems, [...retainedApplicators, ...numbered])) return null;
     set({ placedItems: [...retainedApplicators, ...numbered] });
     announcePlaced(numbered.map((item) => item.id));
     return plan;
@@ -814,6 +841,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const retainedApplicators = get().placedItems.filter(
       (item) => !isSceneFurniturePlacement(item),
     );
+    if (refusedByStore(get().placedItems, [...retainedApplicators, ...placedItems])) return null;
     set({ placedItems: [...retainedApplicators, ...placedItems] });
     announcePlaced(placedItems.map((item) => item.id));
     return plan;
@@ -830,6 +858,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     });
     if (fix === null) return null;
     // One write, so the editor history records one step and one undo takes it back.
+    if (refusedByStore(get().placedItems, fix.placedItems)) return null;
     set({ placedItems: [...fix.placedItems] });
     announcePlaced(fix.addedIds);
     return fix;

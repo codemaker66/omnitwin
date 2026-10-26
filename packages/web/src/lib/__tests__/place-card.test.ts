@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
-import { stockIdentity } from "../card-stock.js";
+import { cardNeeds, registerStoreStock, stockIdentity } from "../card-stock.js";
 import { createGhostWorld, judgeGhost } from "../ghost-truth.js";
 import { judgeCardAt, placeCardAt, placePieceInHand } from "../place-in-hand.js";
 import { computeSurfaceHeight, resetPlacedIdCounter, type PlacedItem } from "../placement.js";
@@ -139,9 +139,17 @@ describe("the truthful ghost at the commit (truthfulGhost)", () => {
     expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/^Won't fit · would overlap the round/u);
   });
 
-  it("without the switch, sets the stamp down as asked", () => {
+  it("judges a set card whatever the switch says: the card dock's own (QoL B-01)", () => {
     placeCardAt(params("round"), { x: 0, z: 0 }, 0);
-    placeCardAt(params("round"), { x: 0, z: CHAIR_REACH }, 0);
+    expect(placeCardAt(params("round"), { x: 0, z: CHAIR_REACH }, 0)).toEqual([]);
+    expect(tables()).toHaveLength(1);
+  });
+
+  it("without the switch, sets a piece card's stamp down as asked", () => {
+    setPlannerFeaturesForTesting({ setupCards: true });
+    const poseur = params("piece:poseur-table");
+    placeCardAt(poseur, { x: 0, z: 0 }, 0);
+    placeCardAt(poseur, { x: 0, z: 0.1 }, 0);
     expect(tables()).toHaveLength(2);
   });
 });
@@ -211,6 +219,46 @@ describe("one stamp for the ghost and the commit", () => {
   });
 });
 
+describe("the store's stock on every adding commit (B2 hard; QoL B-X1)", () => {
+  let unregister: () => void = () => undefined;
+  afterEach(() => { unregister(); });
+
+  /** The stock identity of the one table a Round of 10 needs. */
+  function roundIdentity(): string {
+    const table = [...cardNeeds(params("round"))].find(([, count]) => count === 1)?.[0];
+    if (table === undefined) throw new Error("no round in the card");
+    return table;
+  }
+
+  it("places the one Round of 10 the store holds, puts the card down with the reason, and refuses another", () => {
+    unregister = registerStoreStock(() => new Map([[roundIdentity(), 1]]));
+    useCatalogueStore.getState().armCard("round");
+    usePlacementStore.setState({ ghostPosition: [0, 0, 0] });
+    expect(placePieceInHand(() => undefined)).toHaveLength(11);
+    expect(useCatalogueStore.getState().armedCardId).toBeNull();
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe("None left in store · Round of 10");
+    useCatalogueStore.getState().armCard("round");
+    usePlacementStore.setState({ ghostPosition: [-6, 0, 0] });
+    const before = placed();
+    expect(placePieceInHand(() => undefined)).toEqual([]);
+    expect(placed()).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/: 1 in store, this needs 2$/u);
+  });
+
+  it("refuses a table set down the old way past the store (the chair dialog's commit), and never refuses unknown stock", () => {
+    const round = getCatalogueItemBySlug("round-table-6ft-white");
+    if (round === undefined) throw new Error("no round");
+    unregister = registerStoreStock(() => new Map([[roundIdentity(), 1]]));
+    usePlacementStore.getState().placeTableGroup(round.id, 0, 0, 0, 10);
+    const before = placed();
+    usePlacementStore.getState().placeTableGroup(round.id, 6, 0, 0, 10);
+    expect(placed()).toBe(before);
+    unregister();
+    usePlacementStore.getState().placeTableGroup(round.id, 6, 0, 0, 10);
+    expect(tables()).toHaveLength(2);
+  });
+});
+
 describe("a card set down as a card, whichever chrome armed it (Q-07, Q-13)", () => {
   it("sets every set card down whole in one write with no chair dialog, the switches as shipped", () => {
     for (const card of ["round", "top-table", "long-table", "dance-floor"] as const) {
@@ -221,6 +269,23 @@ describe("a card set down as a card, whichever chrome armed it (Q-07, Q-13)", ()
       expect(writes, card).toBe(1);
       expect(useChairDialogStore.getState().pending, card).toBeNull();
     }
+  });
+
+  it("keeps v1's chair dialog for a dining table with the card dock on, until its seats ride on the card", () => {
+    const round = getCatalogueItemBySlug("round-table-6ft-white");
+    if (round === undefined) throw new Error("no round");
+    setPlannerFeaturesForTesting({ setupCards: true });
+    useCatalogueStore.getState().selectItem(round.id);
+    usePlacementStore.setState({ ghostPosition: [0, 0, 0] });
+    placePieceInHand(() => undefined);
+    expect(placed()).toHaveLength(0);
+    expect(useChairDialogStore.getState().pending).toMatchObject({ catalogueItemId: round.id });
+    useChairDialogStore.getState().clearDialog();
+    setPlannerFeaturesForTesting({ setupCards: true, seatsOnTheCard: true });
+    useCatalogueStore.getState().selectItem(round.id);
+    usePlacementStore.setState({ ghostPosition: [0, 0, 0] });
+    expect(placePieceInHand(() => undefined).length).toBeGreaterThan(1);
+    expect(useChairDialogStore.getState().pending).toBeNull();
   });
 
   it("still asks the chair dialog for a dining table picked from v1's list while the card dock is off", () => {
