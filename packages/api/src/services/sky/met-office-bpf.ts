@@ -108,7 +108,7 @@ export class MetOfficeBpfClient {
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 
-  private async getJson<T>(stage: string, path: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>): Promise<T> {
+  private async getJson<T>(stage: string, path: string, schema: z.ZodType<T>): Promise<T> {
     if (!this.options.budget.tryConsume(this.options.now())) {
       throw new UpstreamError("quota_exhausted", stage, null, ["daily call budget reached on this server"]);
     }

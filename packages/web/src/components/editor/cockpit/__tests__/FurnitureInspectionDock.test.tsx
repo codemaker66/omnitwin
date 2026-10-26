@@ -5,11 +5,12 @@ import { createPlacedItem } from "../../../../lib/placement.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../../stores/selection-store.js";
 import { useFurnitureInspectionStore } from "../../../../stores/furniture-inspection-store.js";
-import { GENERATED_FURNITURE_SLUGS } from "../../../meshes/generated/generatedFurnitureRegistry.js";
+import { GENERATED_FURNITURE_SLUGS, type GeneratedFurnitureSlug } from "../../../meshes/generated/generatedFurnitureRegistry.js";
 import {
   FurnitureInspectionDock,
   GeneratedFurnitureProxyBadge,
   selectedGeneratedFurniture,
+  type SelectedGeneratedFurniture,
 } from "../FurnitureInspectionDock.js";
 
 function catalogueId(slug: string): string {
@@ -18,9 +19,16 @@ function catalogueId(slug: string): string {
   return item.id;
 }
 
-const IMPORTED_PROXY_SLUGS: ReadonlySet<string> = new Set([
-  "trestle-6ft", "poseur-table-black", "poseur-table-white", "platform", "bar-counter",
-]);
+/**
+ * A selection the dock is handed directly: since T-675 every catalogue piece
+ * is drawn crafted, so no placed item resolves to a generated proxy, but the
+ * dock itself still behaves as it did for one.
+ */
+function generatedSelection(slug: GeneratedFurnitureSlug, x: number): SelectedGeneratedFurniture {
+  const catalogueItem = CATALOGUE_ITEMS.find((candidate) => candidate.slug === slug);
+  if (catalogueItem === undefined) throw new Error(`missing catalogue fixture ${slug}`);
+  return { placed: createPlacedItem(catalogueItem.id, x, 0), catalogueItem, slug };
+}
 
 afterEach(() => {
   cleanup();
@@ -30,21 +38,11 @@ afterEach(() => {
 });
 
 describe("selectedGeneratedFurniture", () => {
-  it.each(GENERATED_FURNITURE_SLUGS.filter((slug) => !IMPORTED_PROXY_SLUGS.has(slug)))(
-    "resolves a UUID-backed selected %s proxy",
-    (slug) => {
-      const placed = createPlacedItem(catalogueId(slug), 1, 2);
-
-      expect(placed.catalogueItemId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-      );
-      expect(selectedGeneratedFurniture([placed], new Set([placed.id]))?.slug)
-        .toBe(slug);
-    },
-  );
-
-  it.each([...IMPORTED_PROXY_SLUGS])("does not offer generated-part controls for imported %s", (slug) => {
+  it.each([...GENERATED_FURNITURE_SLUGS])("offers no generated-part controls for %s, which is drawn crafted", (slug) => {
     const placed = createPlacedItem(catalogueId(slug), 1, 2);
+    expect(placed.catalogueItemId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
     expect(selectedGeneratedFurniture([placed], new Set([placed.id]))).toBeNull();
   });
 
@@ -63,9 +61,8 @@ describe("selectedGeneratedFurniture", () => {
 
 describe("FurnitureInspectionDock", () => {
   it("keeps explode and part selection in presentation-only inspection state", () => {
-    const placed = createPlacedItem(catalogueId("round-table-6ft"), 0, 0);
-    const selection = selectedGeneratedFurniture([placed], new Set([placed.id]));
-    if (selection === null) throw new Error("expected generated table selection");
+    const selection = generatedSelection("round-table-6ft", 0);
+    const placed = selection.placed;
 
     render(<FurnitureInspectionDock selection={selection} />);
     expect(screen.getByText("Planning visual — not measured venue evidence")).toBeTruthy();
@@ -89,13 +86,8 @@ describe("FurnitureInspectionDock", () => {
   });
 
   it("clears an active presentation when selection moves to another generated item", () => {
-    const first = createPlacedItem(catalogueId("platform-narrow"), 0, 0);
-    const second = createPlacedItem(catalogueId("lectern"), 2, 0);
-    const firstSelection = selectedGeneratedFurniture([first], new Set([first.id]));
-    const secondSelection = selectedGeneratedFurniture([second], new Set([second.id]));
-    if (firstSelection === null || secondSelection === null) {
-      throw new Error("expected generated selection fixtures");
-    }
+    const firstSelection = generatedSelection("platform-narrow", 0);
+    const secondSelection = generatedSelection("lectern", 2);
     const view = render(<FurnitureInspectionDock selection={firstSelection} />);
     fireEvent.click(screen.getByRole("button", { name: "Inspect generated parts" }));
     act(() => {
@@ -113,15 +105,9 @@ describe("FurnitureInspectionDock", () => {
 });
 
 describe("GeneratedFurnitureProxyBadge", () => {
-  it("does not describe imported bar/platform models as component proxies", () => {
-    usePlacementStore.setState({ placedItems: [...IMPORTED_PROXY_SLUGS].map((slug) => createPlacedItem(catalogueId(slug), 0, 0)) });
-    render(<GeneratedFurnitureProxyBadge />);
-    expect(screen.queryByTestId("generated-furniture-proxy-badge")).toBeNull();
-  });
-
-  it("stays absent when no generated proxy is placed", () => {
+  it("stays absent for every catalogue piece, each drawn crafted rather than by an AI-generated stand-in", () => {
     usePlacementStore.setState({
-      placedItems: [createPlacedItem(catalogueId("black-table-cloth"), 0, 0)],
+      placedItems: CATALOGUE_ITEMS.map((item, index) => createPlacedItem(item.id, index * 2, 0)),
     });
 
     render(<GeneratedFurnitureProxyBadge />);
@@ -129,7 +115,8 @@ describe("GeneratedFurnitureProxyBadge", () => {
     expect(screen.queryByTestId("generated-furniture-proxy-badge")).toBeNull();
   });
 
-  // Blake, 26 Oct 2026: nobody sees the stand-in line (T-674, QoL F-15).
+  // Blake, 26 Oct 2026: nobody sees the stand-in line (T-674, QoL F-15), even if a
+  // generated model ever came back into the catalogue.
   it("shows nobody a stand-in line, even with every generated model placed", () => {
     usePlacementStore.setState({
       placedItems: GENERATED_FURNITURE_SLUGS.map((slug, index) => (

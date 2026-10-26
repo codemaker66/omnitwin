@@ -17,18 +17,18 @@ const CreateVenueBody = z.object({
   name: z.string().trim().min(1).max(200),
   slug: z.string().trim().min(1).max(100).regex(/^[a-z0-9-]+$/),
   address: z.string().trim().min(1).max(500),
-  logoUrl: z.string().url().nullable().optional(),
+  logoUrl: z.url().nullable().optional(),
   brandColour: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 });
 
 const UpdateVenueBody = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   address: z.string().trim().min(1).max(500).optional(),
-  logoUrl: z.string().url().nullable().optional(),
+  logoUrl: z.url().nullable().optional(),
   brandColour: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 });
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 // ---------------------------------------------------------------------------
 // Public projections

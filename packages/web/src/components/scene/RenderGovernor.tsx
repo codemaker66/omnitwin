@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { addAfterEffect, addEffect, useFrame, useThree } from "@react-three/fiber";
-import { FrameGovernor, displayRateFrom, rebuildDue, type StepKind } from "../../lib/render-governor.js";
+import { FrameGovernor, SwapSettle, displayRateFrom, governorWarmWindows, rebuildDue, type StepKind } from "../../lib/render-governor.js";
 import { nextQualityRung, rebuildsPipeline, type QualityRung, type RenderProfile } from "../../lib/render-quality.js";
 import { onMainDraw } from "../../lib/main-draw-clock.js";
 import { getNativeRenderer, nativeRendererGpuString } from "../../lib/native-renderer.js";
+import { watchViewHand } from "../../lib/view-hand.js";
 import { isSoftwareRenderer } from "../grand-hall/hall-finish.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
@@ -21,8 +22,6 @@ export interface RenderGovernorProbe {
 
 /** How often a waiting rebuild looks for a still view, ms. */
 const STILL_CHECK_MS = 200;
-/** A wheel turn holds the view this long, ms: zooming arrives as separate ticks. */
-const WHEEL_HOLD_MS = 300;
 
 declare global {
   interface Window {
@@ -64,17 +63,24 @@ export interface RenderGovernorProps {
  * the pipeline, whose compile would stall a gesture, so it waits for a still
  * view, and frames are not judged meanwhile. Off on software rasterisers,
  * where every frame is slow by nature and the scene is already drawn plainly.
+ * With the lean motion pipeline a phone is judged from its first window
+ * (governorWarmWindows). After a
+ * graphics reset hands the planner a new renderer, frames are not judged
+ * until the new device has compiled what it draws (SwapSettle).
  */
 export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorProps): null {
   const gl = useThree((state) => state.gl);
   const get = useThree((state) => state.get);
   // One governor for the visit: the quality it gives up stays given up.
-  const [governor] = useState(() => new FrameGovernor());
+  const [governor] = useState(() => new FrameGovernor({ warmWindows: governorWarmWindows(profile) }));
   const counts = useRef({ updates: 0, draws: 0, heldBack: 0 });
   const waiting = useRef<{ rung: QualityRung | null }>({ rung: null });
   const software = useRef<boolean | null>(null);
   const latest = useRef({ profile, baseRatio, enabled });
   latest.current = { profile, baseRatio, enabled };
+  const [swap] = useState(() => new SwapSettle());
+  /** The renderer whose draws are being judged, to tell a replacement from a first mount. */
+  const judgedRenderer = useRef<object | null>(null);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return undefined;
@@ -97,6 +103,11 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
   useEffect(() => onMainDraw((startedAt) => { drawnAt.current = startedAt; }), []);
 
   useEffect(() => {
+    if (judgedRenderer.current !== null && judgedRenderer.current !== gl) {
+      governor.interrupt();
+      swap.begin(performance.now());
+    }
+    judgedRenderer.current = gl;
     const tally = counts.current;
     const wait = waiting.current;
     let passStartedAt = 0;
@@ -111,23 +122,8 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
     let heldBackSinceDraw = false;
     let waitingSince = 0;
     let stillCheck = 0;
-    // A hand on the view: a pointer down on the canvas (a finger, the mouse,
-    // a pen: orbit, pinch, a furniture drag, a box), the camera's own gesture,
-    // or a wheel turned a moment ago.
-    const canvas = gl.domElement;
-    const pointersDown = new Set<number>();
-    let lastWheelAt = -Infinity;
+    const hand = watchViewHand(gl.domElement);
     let handOffSince: number | null = null;
-    const pressed = (event: PointerEvent): void => { pointersDown.add(event.pointerId); };
-    const released = (event: PointerEvent): void => { pointersDown.delete(event.pointerId); };
-    // A release the page never hears (over a disabled control) ends with the buttons.
-    const moved = (event: PointerEvent): void => { if (event.buttons === 0) pointersDown.delete(event.pointerId); };
-    const wheeled = (): void => { lastWheelAt = performance.now(); };
-    canvas.addEventListener("pointerdown", pressed);
-    window.addEventListener("pointerup", released, true);
-    window.addEventListener("pointercancel", released, true);
-    window.addEventListener("pointermove", moved, true);
-    canvas.addEventListener("wheel", wheeled, { passive: true });
     const isSoftware = (): boolean => {
       if (software.current === null) {
         const native = getNativeRenderer(gl);
@@ -141,9 +137,7 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
       const rung = wait.rung;
       if (rung === null) return;
       const now = performance.now();
-      const handOn = pointersDown.size > 0 || now - lastWheelAt < WHEEL_HOLD_MS
-        || useCockpitStore.getState().cameraInteractionActive;
-      if (handOn) handOffSince = null;
+      if (hand.isOn(now)) handOffSince = null;
       else handOffSince ??= now;
       if (!rebuildDue(now, waitingSince, lastFrameAt, handOffSince)) return;
       window.clearInterval(stillCheck);
@@ -204,7 +198,7 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
         stoppedSinceDraw = false;
         heldBackSinceDraw = false;
         // A step still waiting to apply would be judged on frames it has not touched.
-        if (interval !== null && paced && wait.rung === null && !document.hidden && !isSoftware()) observe(interval, work);
+        if (interval !== null && paced && wait.rung === null && !document.hidden && !isSoftware() && swap.admit(interval, drewAt)) observe(interval, work);
       }
       if (get().internal.frames === 0) stoppedSinceDraw = true;
     });
@@ -213,13 +207,9 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
       unsubscribeEnd();
       window.clearInterval(stillCheck);
       wait.rung = null;
-      canvas.removeEventListener("pointerdown", pressed);
-      window.removeEventListener("pointerup", released, true);
-      window.removeEventListener("pointercancel", released, true);
-      window.removeEventListener("pointermove", moved, true);
-      canvas.removeEventListener("wheel", wheeled);
+      hand.dispose();
     };
-  }, [get, gl, governor]);
+  }, [get, gl, governor, swap]);
 
   // The display's own rate, read from a burst of animation frames while the planner draws nothing.
   useEffect(() => {

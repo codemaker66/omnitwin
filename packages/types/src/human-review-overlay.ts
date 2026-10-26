@@ -113,7 +113,7 @@ export const HumanReviewOverlaySchema = z.object({
 
   if (expiresAt !== null && !Number.isNaN(reviewedAt) && !Number.isNaN(expiresAt) && expiresAt <= reviewedAt) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["expiresAt"],
       message: "expiresAt must be later than reviewedAt.",
     });
@@ -124,7 +124,7 @@ export const HumanReviewOverlaySchema = z.object({
     overlay.affectedClaims.length === 0
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["affectedClaims"],
       message: "Claim review decisions must name at least one affected claim.",
     });
@@ -135,7 +135,7 @@ export const HumanReviewOverlaySchema = z.object({
     !overlay.affectedEvidence.some((reference) => reference.refType === "review_gate")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["affectedEvidence"],
       message: "Gate review decisions must reference a review gate.",
     });
