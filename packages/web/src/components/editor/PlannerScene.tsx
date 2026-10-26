@@ -14,6 +14,7 @@ import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import { CameraRig } from "../CameraRig.js";
 import { InteriorCamera } from "../rooms/InteriorCamera.js";
 import { roomSplatBundle, walkPoseForBundle } from "../../data/room-splat-bundles.js";
+import { deviceDayGovernorOff } from "../../data/device-day-splat-bundles.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { GrandHallRoom } from "../GrandHallRoom.js";
 import { RoomLighting } from "../RoomLighting.js";
@@ -284,11 +285,12 @@ export function PlannerScene(): ReactElement {
   const profileDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
   // A device that cannot hold its frame rate gives up quality, a rung at a
   // time, cheapest to lose first (lib/render-governor.ts); `?governor=off`
-  // measures without it in development.
+  // measures without it in development, and with a device-day cut anywhere.
   const governorGiven = useRenderGovernorStore((s) => s.given);
   const governed = useMemo(() => governedRender(renderProfile, profileDpr, governorGiven), [renderProfile, profileDpr, governorGiven]);
   const governorEnabled = renderProfile.name !== "off"
-    && !(import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("governor") === "off");
+    && !(import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("governor") === "off")
+    && !deviceDayGovernorOff();
   const canvasDpr = governed.pixelRatio;
   const canvasGl = useMemo(plannerCanvasGlOptions, []);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
