@@ -24,14 +24,14 @@ import { lockFirstResponse, stampFirstResponse } from "../services/enquiry-funne
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 const CreateEnquiryBody = z.object({
-  configurationId: z.string().uuid(),
-  venueId: z.string().uuid(),
-  spaceId: z.string().uuid(),
+  configurationId: z.uuid(),
+  venueId: z.uuid(),
+  spaceId: z.uuid(),
   name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email().max(255),
+  email: z.string().trim().check(z.email()).max(255),
   eventType: z.string().trim().max(100).nullable().optional(),
   preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   estimatedGuests: z.number().int().nonnegative().nullable().optional(),
@@ -40,7 +40,7 @@ const CreateEnquiryBody = z.object({
 
 const UpdateEnquiryBody = z.object({
   name: z.string().trim().min(1).max(200).optional(),
-  email: z.string().trim().email().max(255).optional(),
+  email: z.string().trim().check(z.email()).max(255).optional(),
   eventType: z.string().trim().max(100).nullable().optional(),
   preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   estimatedGuests: z.number().int().nonnegative().nullable().optional(),
@@ -79,7 +79,7 @@ const StatusFilterQuery = z.object({
   status: z.enum(ENQUIRY_STATES).optional(),
   states: EnquiryStatesParam.optional(),
   order: z.enum(ENQUIRY_LIST_ORDERS).default("updated_asc"),
-  venueId: z.string().uuid().optional(),
+  venueId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 }).refine((query) => query.status === undefined || query.states === undefined, {

@@ -82,6 +82,11 @@ interface MaterialAppearance {
 interface MaterialShadows {
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
+  /**
+   * The layers the template meshes drew on (a mask): a shadow stand-in on the
+   * caster layer alone (hall-sun.ts) stays out of the view in its batch too.
+   */
+  readonly layers: number;
 }
 
 const noRaycast: Object3D["raycast"] = () => undefined;
@@ -191,6 +196,7 @@ export function harvestVariant(root: Object3D): HarvestedVariant {
         shadowsByKey.set(key, {
           castShadow: (shadows?.castShadow ?? false) || mesh.castShadow,
           receiveShadow: (shadows?.receiveShadow ?? false) || mesh.receiveShadow,
+          layers: (shadows?.layers ?? 0) | mesh.layers.mask,
         });
         parts.push({ geometry, materialKey: key, matrix });
       }
@@ -290,6 +296,7 @@ export function createEditableInstancePool(
     mesh.frustumCulled = false;
     mesh.castShadow = shadows.castShadow;
     mesh.receiveShadow = shadows.receiveShadow;
+    mesh.layers.mask = shadows.layers;
     mesh.raycast = noRaycast;
     meshes.push(mesh);
   }
@@ -544,6 +551,7 @@ function DirectInstanceBatch({
   itemScale,
   castShadow,
   receiveShadow,
+  layers,
   setNonPickable,
 }: {
   readonly geometry: BufferGeometry;
@@ -552,6 +560,7 @@ function DirectInstanceBatch({
   readonly itemScale: number;
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
+  readonly layers: number;
   readonly setNonPickable: (mesh: InstancedMesh | null) => void;
 }): React.ReactElement {
   const meshRef = useRef<InstancedMesh | null>(null);
@@ -561,6 +570,11 @@ function DirectInstanceBatch({
     meshRef.current = mesh;
     setNonPickable(mesh);
   }, [setNonPickable]);
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (mesh !== null) mesh.layers.mask = layers;
+  }, [layers]);
 
   useLayoutEffect(() => {
     const mesh = meshRef.current;
@@ -745,6 +759,7 @@ export function InstancedFurnitureLayer({
               itemScale={itemScale}
               castShadow={shadows.castShadow}
               receiveShadow={shadows.receiveShadow}
+              layers={shadows.layers}
               setNonPickable={setNonPickable}
             />
           );

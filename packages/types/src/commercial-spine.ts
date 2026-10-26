@@ -7,15 +7,15 @@ import { OpportunityLostToSchema } from "./competitor-watch.js";
 
 export const COMMERCIAL_SPINE_SCHEMA_VERSION = "venviewer.commercial-spine.v1";
 
-export const ClientAccountIdSchema = z.string().uuid();
-export const ContactIdSchema = z.string().uuid();
-export const OpportunityIdSchema = z.string().uuid();
-export const OpportunityStatusHistoryIdSchema = z.string().uuid();
-export const ActivityIdSchema = z.string().uuid();
-export const FollowUpTaskIdSchema = z.string().uuid();
-export const ProposalShareTokenIdSchema = z.string().uuid();
-export const ProposalCommentIdSchema = z.string().uuid();
-export const PackageSelectionIdSchema = z.string().uuid();
+export const ClientAccountIdSchema = z.uuid();
+export const ContactIdSchema = z.uuid();
+export const OpportunityIdSchema = z.uuid();
+export const OpportunityStatusHistoryIdSchema = z.uuid();
+export const ActivityIdSchema = z.uuid();
+export const FollowUpTaskIdSchema = z.uuid();
+export const ProposalShareTokenIdSchema = z.uuid();
+export const ProposalCommentIdSchema = z.uuid();
+export const PackageSelectionIdSchema = z.uuid();
 
 export type ClientAccountId = z.infer<typeof ClientAccountIdSchema>;
 export type ContactId = z.infer<typeof ContactIdSchema>;
@@ -83,7 +83,7 @@ const SafeCommercialTextSchema = z.string().max(4000).superRefine((text, ctx) =>
   const claim = findUnsupportedProposalClaim(text);
   if (claim !== null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: `Unsupported claim phrase "${claim}" is not allowed in commercial copy`,
     });
   }
@@ -104,7 +104,7 @@ const RequiredClientTextSchema = ClientTextSchema.refine(
   "Text is required",
 );
 
-const IsoDateTimeSchema = z.string().datetime();
+const IsoDateTimeSchema = z.iso.datetime();
 const DateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const ClientAccountSchema = z.object({
@@ -126,7 +126,7 @@ export const ContactSchema = z.object({
   venueId: VenueIdSchema,
   clientAccountId: ClientAccountIdSchema.nullable(),
   name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email().max(255),
+  email: z.string().trim().check(z.email()).max(255),
   phone: z.string().trim().max(50).nullable(),
   roleLabel: z.string().trim().max(120).nullable(),
   sourceEnquiryId: EnquiryIdSchema.nullable(),
@@ -218,7 +218,7 @@ export const ProposalCommentSchema = z.object({
   shareTokenId: ProposalShareTokenIdSchema.nullable(),
   kind: ProposalCommentKindSchema,
   authorName: z.string().trim().max(200).nullable(),
-  authorEmail: z.string().trim().email().max(255).nullable(),
+  authorEmail: z.string().trim().check(z.email()).max(255).nullable(),
   // The client's words as written, or the venue's, guarded when written
   // (VenueReplyBodySchema).
   body: ClientTextSchema,
@@ -266,6 +266,9 @@ export const CreateOpportunitySchema = z.object({
 export type CreateOpportunity = z.infer<typeof CreateOpportunitySchema>;
 
 export const UpdateOpportunitySchema = CreateOpportunitySchema.omit({ venueId: true }).partial().extend({
+  // zod 4 applies a default inside .partial(), so a patch that leaves the
+  // currency out would reset it to GBP; an unsent currency stays as stored.
+  currency: CreateOpportunitySchema.shape.currency.unwrap().optional(),
   stage: OpportunityStageSchema.optional(),
   note: SafeCommercialTextSchema.nullable().optional(),
   /** Who won, given only when the deal is marked lost (the competitor watch). */
@@ -294,7 +297,7 @@ export type UpdateFollowUpTask = z.infer<typeof UpdateFollowUpTaskSchema>;
 /** What a client writes through their link, in their own words. */
 export const CreateProposalCommentSchema = z.object({
   authorName: z.string().trim().max(200).nullable().optional(),
-  authorEmail: z.string().trim().email().max(255).nullable().optional(),
+  authorEmail: z.string().trim().check(z.email()).max(255).nullable().optional(),
   body: RequiredClientTextSchema,
   kind: ProposalCommentKindSchema.default("comment"),
 });
@@ -318,6 +321,6 @@ export type CreatePackageSelection = z.infer<typeof CreatePackageSelectionSchema
 export const CrmPipelineSummarySchema = z.object({
   opportunities: z.array(OpportunitySchema),
   todayTasks: z.array(FollowUpTaskSchema),
-  stageCounts: z.record(z.number().int().nonnegative()),
+  stageCounts: z.record(z.string(), z.number().int().nonnegative()),
 });
 export type CrmPipelineSummary = z.infer<typeof CrmPipelineSummarySchema>;

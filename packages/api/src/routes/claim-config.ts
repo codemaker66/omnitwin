@@ -9,7 +9,7 @@ import { authenticate } from "../middleware/auth.js";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
 
 // ---------------------------------------------------------------------------
 // Plugin — claim a public preview configuration

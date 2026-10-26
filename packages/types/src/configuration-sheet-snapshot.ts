@@ -33,7 +33,7 @@ import { HallkeeperSheetV2Schema } from "./hallkeeper-v2.js";
 // state exists.
 // ---------------------------------------------------------------------------
 
-export const ConfigurationSheetSnapshotIdSchema = z.string().uuid();
+export const ConfigurationSheetSnapshotIdSchema = z.uuid();
 export type ConfigurationSheetSnapshotId = z.infer<
   typeof ConfigurationSheetSnapshotIdSchema
 >;
@@ -55,25 +55,25 @@ export const ConfigurationSheetSnapshotSchema = z.object({
   /** Full HallkeeperSheetV2 JSON — frozen at snapshot creation time. */
   payload: HallkeeperSheetV2Schema,
   /** Diagram thumbnail URL captured at snapshot creation (null in tests). */
-  diagramUrl: z.string().url().nullable(),
+  diagramUrl: z.url().nullable(),
   /**
    * Retired: the API always sends null. Sheet PDFs can carry health notes,
    * so they are served only by the signed-in /hallkeeper/:configId/sheet
    * route and are never stored at a public URL. The field stays nullable on
    * the wire so clients built before the change keep parsing.
    */
-  pdfUrl: z.string().url().nullable(),
+  pdfUrl: z.url().nullable(),
   /**
    * sha256 hex digest of the canonicalised extraction input (sorted
    * placements + metadata). Idempotency key: re-submit with the same
    * hash → return this snapshot instead of inserting a new row.
    */
   sourceHash: SourceHashSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
   /** Null for system-automatic creation (e.g. migration backfill). */
   createdBy: UserIdSchema.nullable(),
   /** Approval timestamps — denormalised from configurations for hot-path reads. */
-  approvedAt: z.string().datetime().nullable(),
+  approvedAt: z.iso.datetime().nullable(),
   approvedBy: UserIdSchema.nullable(),
 });
 export type ConfigurationSheetSnapshot = z.infer<

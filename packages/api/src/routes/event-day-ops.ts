@@ -27,9 +27,9 @@ import {
 } from "../services/event-day-ops.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 
-const EventIdParam = z.object({ id: z.string().uuid() });
-const IssueParam = z.object({ id: z.string().uuid(), issueId: z.string().uuid() });
-const OpsTaskIdParam = z.object({ id: z.string().uuid() });
+const EventIdParam = z.object({ id: z.uuid() });
+const IssueParam = z.object({ id: z.uuid(), issueId: z.uuid() });
+const OpsTaskIdParam = z.object({ id: z.uuid() });
 
 type FastifyRequestUser = Parameters<typeof canAccessInternalEvent>[0];
 type EventRow = typeof events.$inferSelect;

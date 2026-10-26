@@ -110,21 +110,21 @@ export const FoundryPipelineWorkerBindingV0Schema = z
   .superRefine((binding, ctx) => {
     if (binding.profile.operationClass !== OPERATION_BY_ROLE[binding.role]) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["profile", "operationClass"],
         message: "worker profile operation does not match its trusted pipeline role",
       });
     }
     if (binding.gpuCount === 0 && binding.minimumGpuVramGiB !== 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["minimumGpuVramGiB"],
         message: "CPU worker bindings cannot request GPU VRAM",
       });
     }
     if (binding.resumable && binding.checkpoint === "none") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checkpoint"],
         message: "resumable worker bindings require checkpoints",
       });
@@ -152,7 +152,7 @@ export const FoundryReconstructionRecipeOptionsV0Schema = z
       options.hdAppearance !== "rights_gated_training"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["buildNeuralRepresentation"],
         message: "neural scene optimization requires the explicit rights-gated training mode",
       });
@@ -192,7 +192,7 @@ const FoundryRecipeOutputSchema = z
           : "candidate";
     if (output.namespace !== expectedNamespace) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["namespace"],
         message: "derivative class must use its isolated output namespace",
       });
@@ -205,7 +205,7 @@ const FoundryRecipeOutputSchema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["mayEnterMeasuredGeometry"],
         message:
           "only fused captured geometry and operational-mesh outputs can enter measured-geometry review",
@@ -255,7 +255,7 @@ function validateRecipePayload(
       })
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["workerProfileSha256s"],
         message: "worker profile digests must be unique and sorted",
       });
@@ -263,7 +263,7 @@ function validateRecipePayload(
     const stageIds = new Set(recipe.stages.map((stage) => stage.id));
     if (recipe.outputs.some((output) => !stageIds.has(output.stageId))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["outputs"],
         message: "every recipe output must belong to a declared stage",
       });
@@ -287,7 +287,7 @@ export const FoundryReconstructionRecipeV0Schema =
       if (!parsed.success) return;
       if (recipe.recipeSha256 !== computeFoundryReconstructionRecipeSha256(parsed.data)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["recipeSha256"],
           message: "reconstruction recipe digest must match its exact payload",
         });

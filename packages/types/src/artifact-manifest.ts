@@ -128,7 +128,7 @@ export const ArtifactManifestV0Schema = z.object({
       manifest.exportSafety === "blocked")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["exportSafety"],
       message: "Public-facing artifacts require public export safety or claim review.",
     });
@@ -136,7 +136,7 @@ export const ArtifactManifestV0Schema = z.object({
 
   if (manifest.exposureTier === "internal_only" && manifest.exportSafety === "safe_for_public_marketing") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["exportSafety"],
       message: "Internal-only artifacts cannot be marked safe for public marketing.",
     });
