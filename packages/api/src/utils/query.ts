@@ -1,4 +1,4 @@
-import { FORWARD_BOOK_RECORD_ROLES, PRICING_WRITE_ROLES as PRICE_SETTER_ROLES } from "@omnitwin/types";
+import { FORWARD_BOOK_RECORD_ROLES, PRICING_WRITE_ROLES as PRICE_SETTER_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -125,6 +125,9 @@ const INVENTORY_READ_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "
 /** Adjusting counted stock. Narrow on purpose: this moves real numbers. */
 const INVENTORY_WRITE_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
 
+/** Who invites the venue's team (canManageVenueTeam). */
+const VENUE_TEAM_INVITER_ROLE_SET: ReadonlySet<string> = new Set(VENUE_TEAM_INVITER_ROLES);
+
 /** Reading what the venue's AI use has cost (T-656): money, so its managers and admins. */
 const AI_USAGE_READ_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
 
@@ -210,6 +213,19 @@ export function canReadClients(
   venueId: string,
 ): boolean {
   return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
+/**
+ * The venue's team: seeing who has access, inviting people and cancelling an
+ * invitation. Venue administrators only (Blake, 24 October 2026), any role
+ * including another administrator; VENUE_TEAM_INVITER_ROLES in @omnitwin/types
+ * is that decision, read by the web's Team tab too.
+ */
+export function canManageVenueTeam(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, VENUE_TEAM_INVITER_ROLE_SET);
 }
 
 /** Reading the venue's AI usage and spend (T-656): its managers and admins. */

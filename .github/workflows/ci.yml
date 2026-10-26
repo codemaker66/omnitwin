@@ -326,10 +326,11 @@ jobs:
         # hallkeeper-timing-postgres, requests-postgres,
         # protected-premises-postgres, forward-book-postgres,
         # supplier-records-kept-postgres, enquiry-funnel-postgres and
-        # enquiry-funnel-migration-postgres, hallkeeper-progress-postgres and
-        # correlated-subqueries-postgres skip without their URLs; each
-        # migrates its own database and names it in its guard. The 0100
-        # migration test empties its database first, so it is never shared.
+        # enquiry-funnel-migration-postgres, hallkeeper-progress-postgres,
+        # venue-team-postgres and correlated-subqueries-postgres skip without
+        # their URLs; each migrates its own database and names it in its
+        # guard. The 0100 migration test empties its database first, so it is
+        # never shared.
         env:
           PGPASSWORD: postgres
         run: >-
@@ -343,6 +344,7 @@ jobs:
           --command="CREATE DATABASE venviewer_enquiry_funnel_test"
           --command="CREATE DATABASE venviewer_enquiry_funnel_migration_test"
           --command="CREATE DATABASE venviewer_progress_test"
+          --command="CREATE DATABASE venviewer_venue_team_test"
           --command="CREATE DATABASE venviewer_subquery_test"
 
       - name: Test (Vitest)
@@ -362,6 +364,7 @@ jobs:
           VENVIEWER_ENQUIRY_FUNNEL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_enquiry_funnel_test
           VENVIEWER_ENQUIRY_FUNNEL_MIGRATION_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_enquiry_funnel_migration_test
           VENVIEWER_PROGRESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_progress_test
+          VENVIEWER_VENUE_TEAM_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_venue_team_test
           VENVIEWER_SUBQUERY_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_subquery_test
         run: pnpm test
 
