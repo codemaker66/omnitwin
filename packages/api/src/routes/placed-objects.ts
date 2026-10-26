@@ -26,6 +26,7 @@ import {
   loadRevisionChange,
   revisionConflictBody,
 } from "../lib/configuration-revision.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -414,8 +415,17 @@ export async function placedObjectRoutes(
         objects: txResults,
         revision: advanced.revision,
       };
+    }).catch((error: unknown) => {
+      // A deadlock or serialisation failure rolled the whole save back. A
+      // submit locks the layout's row before migration 0058's global lock,
+      // which this save takes first, so the two can deadlock.
+      const pgCode = lockConflictOf(error);
+      if (pgCode === null) throw error;
+      request.log.warn({ event: "placed_objects.batch.retry", configId, pgCode }, "layout save met a lock conflict");
+      return { status: "retry" as const };
     });
 
+    if (saveResult.status === "retry") return reply.status(409).send(RETRY_ANSWER);
     if (saveResult.status === "locked") {
       return reply.status(409).send(configLockedBody(saveResult.reviewStatus));
     }

@@ -11,7 +11,7 @@ import { configurations, spaces, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { configLockedBody, editableAtWrite, lockHolds, requireEditableConfig } from "../middleware/require-editable-config.js";
-import { RETRY_ANSWER } from "../utils/sql-state.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
 import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { configurationRevisionEtag } from "../lib/configuration-revision.js";
@@ -274,14 +274,24 @@ export async function configurationRoutes(
       }
     }
 
-    const [updated] = await db.update(configurations)
+    const rows = await db.update(configurations)
       .set(updateData)
       .where(and(
         eq(configurations.id, params.data.id),
         isNull(configurations.deletedAt),
         editableAtWrite(request.user, config.venueId),
       ))
-      .returning();
+      .returning()
+      .catch((error: unknown) => {
+        // A deadlock with a submit (it locks the row before migration 0058's
+        // global lock, which this write takes first): nothing was written.
+        const pgCode = lockConflictOf(error);
+        if (pgCode === null) throw error;
+        request.log.warn({ event: "configurations.patch.retry", configId: params.data.id, pgCode }, "layout write met a lock conflict");
+        return null;
+      });
+    if (rows === null) return reply.status(409).send(RETRY_ANSWER);
+    const [updated] = rows;
 
     if (updated === undefined) {
       // A review begun since the check holds the layout, or it is gone (or

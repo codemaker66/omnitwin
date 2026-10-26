@@ -40,6 +40,7 @@ import {
 import { pendingReviewFacts } from "../services/pending-review-facts.js";
 import { internalDemoReviewScope, InternalDemoReviewForbiddenError, recordSuppressedReviewNotifications } from "../services/internal-demo-review.js";
 import { incrementCounter } from "../observability/metrics.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { emit as emitEvent } from "../observability/event-bus.js";
 import {
   endReviewSession,
@@ -464,6 +465,13 @@ export async function configurationReviewRoutes(
           error: "Another submission is in progress for this configuration. Please refresh and try again.",
           code: "SNAPSHOT_CONFLICT",
         });
+      }
+      // A deadlock with a write that took migration 0058's global lock before
+      // this submit's snapshot needed it: nothing was submitted.
+      const pgCode = lockConflictOf(err);
+      if (pgCode !== null) {
+        request.log.warn({ event: "configuration_reviews.submit.retry", configId: config.id, pgCode }, "submit met a lock conflict");
+        return reply.status(409).send(RETRY_ANSWER);
       }
       throw err;
     }

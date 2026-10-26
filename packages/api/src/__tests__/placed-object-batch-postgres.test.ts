@@ -562,6 +562,55 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
     expect((snapshot?.payload as { floorPlan?: { objects?: unknown[] } } | undefined)?.floorPlan?.objects).toHaveLength(1);
   });
 
+  it.each(["batch", "rename"] as const)("asks a %s that deadlocks with the real submit to try again, never writing behind it", async (write) => {
+    // The submit locks the layout's row, then takes migration 0058's global
+    // lock for its snapshot; a write takes the lock first, then waits for the
+    // row. Staged so both wait at once: the holder keeps the row while the
+    // submit queues for it and the write takes the lock and queues behind.
+    const configId = await configuration();
+    const first = await save(configId, 1, [item(0)]);
+    const before = await stored(configId);
+    const [only] = before;
+    if (only === undefined) throw new Error("the first save stored its object");
+    const holder = await pool.connect();
+    let submitted: LightMyRequestResponse;
+    let written: LightMyRequestResponse;
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [configId]);
+      const submitting = server.inject({ method: "POST", url: `/configurations/${configId}/review/submit`,
+        headers: authHeaders(), payload: {} });
+      await waitForLockWaiters(1, "the submit never waited for the row");
+      const writing = write === "batch"
+        ? server.inject({ method: "POST", url: `/configurations/${configId}/objects/batch`, headers: authHeaders(),
+          payload: { expectedRevision: first.revision, objects: [{ ...item(0, { positionX: 5 }), id: only.id }] } })
+        : server.inject({ method: "PATCH", url: `/configurations/${configId}`, headers: authHeaders(),
+          payload: { name: "TEST ONLY renamed in review" } });
+      await waitForLockWaiters(2, "the write never waited behind the submit");
+      await holder.query("COMMIT");
+      [submitted, written] = await Promise.all([submitting, writing]);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+    }
+    expect([submitted.statusCode, written.statusCode], `${submitted.body} ${written.body}`).not.toContain(500);
+    const [row] = await db.select({ reviewStatus: schema.configurations.reviewStatus, name: schema.configurations.name,
+      revision: schema.configurations.revision }).from(schema.configurations).where(eq(schema.configurations.id, configId));
+    if (submitted.statusCode === 200) {
+      // The write lost: asked to try again (or, once the lock is shared,
+      // told the review holds the layout), and the layout is as submitted.
+      expect(written.statusCode, written.body).toBe(409);
+      expect(["RETRY", "CONFIG_LOCKED"]).toContain(written.json<{ code: string }>().code);
+      expect(row).toEqual({ reviewStatus: "submitted", name: "TEST ONLY batch layout", revision: first.revision });
+      expect(await stored(configId)).toEqual(before);
+    } else {
+      // The submit lost: it is asked to try again, and the draft took the write.
+      expect(submitted.statusCode, submitted.body).toBe(409);
+      expect(submitted.json<{ code: string }>().code).toBe("RETRY");
+      expect(row?.reviewStatus).toBe("draft");
+    }
+  });
+
   it("still lets the layout's venue admin write through a review", async () => {
     const configId = await configuration();
     const first = await save(configId, 1, [item(0)]);
