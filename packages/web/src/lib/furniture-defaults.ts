@@ -18,7 +18,10 @@ export const PLANNER_CHAIR_BY_EVENT: Readonly<Record<PlannerEventKind, string>> 
 /** The chair before the planner has asked what the event is: the one it always set. */
 export const UNASKED_PLANNER_CHAIR_SLUG = "burgess-turini-18-3";
 
-const PLANNER_CHAIRS: ReadonlySet<string> = new Set([UNASKED_PLANNER_CHAIR_SLUG, ...Object.values(PLANNER_CHAIR_BY_EVENT)]);
+/** Every chair the planner sets by itself, the unasked one first: the chairs a setup card's picture can show. */
+export const PLANNER_CHAIR_SLUGS: readonly string[] = [...new Set([UNASKED_PLANNER_CHAIR_SLUG, ...Object.values(PLANNER_CHAIR_BY_EVENT)])];
+
+const PLANNER_CHAIRS: ReadonlySet<string> = new Set(PLANNER_CHAIR_SLUGS);
 
 /** Whether the planner sets this chair by itself for some event (legacy and imported chairs are kept, never copied). */
 export function isPlannerChair(slug: string): boolean {

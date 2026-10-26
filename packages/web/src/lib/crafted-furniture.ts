@@ -15,6 +15,7 @@ import {
   CRAFTED_PREVIEW_VERSION,
   type CraftedFurnitureSlug,
 } from "../components/meshes/crafted/crafted-slugs.js";
+import { plannerChairSlug } from "./furniture-defaults.js";
 import type { CardParams } from "./setup-cards.js";
 
 // The list and the previews' folder are the furniture rebuild's to change (components/meshes/crafted/crafted-slugs).
@@ -38,26 +39,36 @@ export function craftedFurniturePreviewUrl(slug: string): string | null {
  * previews, by scripts/render-setup-previews.mjs. Each card has its own folder
  * beside the pieces', `/models/furniture/setup-<card>/<version>/`, so the
  * version sits where the immutable cache rule (vercel.json) reads it.
+ * setup-v2: the rebuilt furniture (T-675), each seated look on each chair the
+ * planner sets (the Chiavari at a wedding, the Turini otherwise).
  */
-export const SETUP_PREVIEW_VERSION = "setup-v1";
+export const SETUP_PREVIEW_VERSION = "setup-v2";
+
+/** A chair's word in a picture's name. */
+const PICTURE_CHAIR: Readonly<Record<string, string>> = {
+  "chiavari-chair": "chiavari",
+  "burgess-turini-18-3": "turini",
+};
 
 /**
- * The look a setup card's picture shows: its colourway, and for Top and Long
- * table whether it sets down one trestle or a set. The counts are the card's
+ * The look a setup card's picture shows: its colourway, for Top and Long
+ * table whether it sets down one trestle or a set, and the chair it seats
+ * (the event's, plannerChairSlug, unless named). The counts are the card's
  * text. Null for a piece card, whose picture is its crafted preview.
  */
-export function setupCardLook(params: CardParams): string | null {
+export function setupCardLook(params: CardParams, chairSlug: string = plannerChairSlug()): string | null {
+  const chair = PICTURE_CHAIR[chairSlug] ?? chairSlug;
   switch (params.card) {
-    case "round": return params.colourway;
+    case "round": return `${params.colourway}-${chair}`;
     case "top-table":
-    case "long-table": return `${params.colourway}-${params.trestles > 1 ? "set" : "one"}`;
+    case "long-table": return `${params.colourway}-${params.trestles > 1 ? "set" : "one"}-${chair}`;
     case "dance-floor": return "floor";
     case "piece": return null;
   }
 }
 
-/** The picture of what this setup card sets down, as its parameters stand; null for a piece card. */
-export function setupCardPreviewUrl(params: CardParams): string | null {
-  const look = setupCardLook(params);
+/** The picture of what this setup card sets down, as its parameters and the chair stand; null for a piece card. */
+export function setupCardPreviewUrl(params: CardParams, chairSlug: string = plannerChairSlug()): string | null {
+  const look = setupCardLook(params, chairSlug);
   return look === null ? null : `/models/furniture/setup-${params.card}/${SETUP_PREVIEW_VERSION}/${look}.webp`;
 }
