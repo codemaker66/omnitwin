@@ -5,7 +5,7 @@
  * veil is the room scrim (no blur); the panels are the chrome's lacquer, their
  * drawings copper ink (EventKindInk). The panels' mass moves on springs that
  * EventKindPicker writes as custom properties: --ekp-ink (the drawing, 0 to
- * 1), --ekp-lift (pointer or focus on it), --ekp-pick (chosen) and --ekp-away
+ * 1), --ekp-lift (in hand: focused, which the keys move and a mouse carries), --ekp-pick (chosen) and --ekp-away
  * (another was chosen). The sheet's fade and rise are CSS on the motion tokens.
  * ------------------------------------------------------------------------- */
 
@@ -397,7 +397,8 @@
   padding: 8px 8px 8px 16px;
   border: 1px solid var(--house-hairline-hover);
   border-radius: var(--house-radius-surface);
-  background: linear-gradient(180deg, var(--house-lacquer-top), var(--house-lacquer-bottom));
+  /* The lacquer over the room's own near-black, so nothing it covers (the phone's provenance strip) reads through. */
+  background: linear-gradient(180deg, var(--house-lacquer-top), var(--house-lacquer-bottom)), rgb(var(--house-scrim-room));
   box-shadow: var(--house-shadow-e2);
   color: var(--house-text-1);
   font: 400 14px / 1.4 var(--house-sans);

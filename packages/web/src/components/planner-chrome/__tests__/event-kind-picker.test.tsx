@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useLayoutEffect, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventKindName, EventKindPicker } from "../EventKindPicker.js";
 import {
@@ -199,6 +200,62 @@ describe("never over someone's work", () => {
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("button", { name: "Say what the event is" })).toBeNull();
+  });
+});
+
+/**
+ * Stands in for the arrival's welcome closing over the question. The welcome is the later top-layer dialog and
+ * holds the focus; PlannerArrival closes it in its layout cleanup, and the browser hands focus back to the panel
+ * in hand inside the commit that removes the welcome, while React's own events are paused.
+ */
+function WelcomeClosingOver(): ReactElement {
+  useLayoutEffect(() => () => {
+    document.querySelector<HTMLElement>("[data-testid=event-kind-wedding]")?.focus();
+  }, []);
+  return <a href="/">Venviewer home</a>;
+}
+
+describe("the panel in hand", () => {
+  it("rises when focus comes back to it as the arrival's welcome closes", () => {
+    reducedMotion(true);
+    openDraft();
+    const { rerender } = render(<><EventKindPicker /><WelcomeClosingOver /></>);
+    const wedding = within(question()).getByRole("button", { name: /^Wedding/u });
+    expect(wedding.style.getPropertyValue("--ekp-lift")).toBe("1");
+    // The welcome opens over the question and takes the focus.
+    act(() => { screen.getByRole("link", { name: "Venviewer home" }).focus(); });
+    expect(wedding.style.getPropertyValue("--ekp-lift")).toBe("0");
+    rerender(<EventKindPicker />);
+    expect(document.activeElement).toBe(wedding);
+    expect(wedding.style.getPropertyValue("--ekp-lift")).toBe("1");
+  });
+
+  it("stays in hand when the pointer passes over it and leaves", () => {
+    reducedMotion(true);
+    openDraft();
+    renderPlanner();
+    const wedding = within(question()).getByRole("button", { name: /^Wedding/u });
+    fireEvent.pointerEnter(wedding, { pointerType: "mouse" });
+    fireEvent.pointerLeave(wedding, { pointerType: "mouse" });
+    expect(document.activeElement).toBe(wedding);
+    expect(wedding.style.getPropertyValue("--ekp-lift")).toBe("1");
+  });
+
+  it("is carried by the mouse, one panel at a time, and a touch does not move it", () => {
+    reducedMotion(true);
+    openDraft();
+    renderPlanner();
+    const dialog = question();
+    const wedding = within(dialog).getByRole("button", { name: /^Wedding/u });
+    const corporate = within(dialog).getByRole("button", { name: /^Corporate event/u });
+    const other = within(dialog).getByRole("button", { name: /^Something else/u });
+    fireEvent.pointerEnter(corporate, { pointerType: "mouse" });
+    expect(document.activeElement).toBe(corporate);
+    expect(corporate.style.getPropertyValue("--ekp-lift")).toBe("1");
+    expect(wedding.style.getPropertyValue("--ekp-lift")).toBe("0");
+    fireEvent.pointerEnter(other, { pointerType: "touch" });
+    expect(document.activeElement).toBe(corporate);
+    expect(other.style.getPropertyValue("--ekp-lift")).toBe("0");
   });
 });
 

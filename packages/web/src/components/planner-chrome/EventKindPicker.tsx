@@ -40,7 +40,7 @@ import "./event-kind-picker.css";
 
 /** The ink drawing itself in: critically damped (ζ = 1), about a second, never past a line. */
 const INK_SPRING: SpringConfig = { stiffness: 36, damping: 12 };
-/** A panel rising to the pointer or the focus: quick, one soft overshoot (ζ ≈ 0.67). */
+/** A panel rising as it comes into hand (focus, moved by the keys or carried by a mouse): quick, one soft overshoot (ζ ≈ 0.67). */
 const LIFT_SPRING: SpringConfig = { stiffness: 320, damping: 24 };
 /** The pick: the chosen panel comes forward as the others fall away (ζ ≈ 0.88). */
 const PICK_SPRING: SpringConfig = { stiffness: 220, damping: 26 };
@@ -67,10 +67,28 @@ interface PanelProps {
 
 function EventKindPanel({ kind, index, drawn, chosen, leaving, onPick, register }: PanelProps): ReactElement {
   const ref = useRef<HTMLButtonElement | null>(null);
-  const [lifted, setLifted] = useState(false);
+  const [focused, setFocused] = useState(false);
   const words = EVENT_KIND_WORDS[kind];
   useSpringCssVariable(ref, "--ekp-ink", drawn ? 1 : 0, INK_SPRING, SPRING_OPTIONS);
-  useSpringCssVariable(ref, "--ekp-lift", lifted && leaving === null ? 1 : 0, LIFT_SPRING, SPRING_OPTIONS);
+  useSpringCssVariable(ref, "--ekp-lift", focused && leaving === null ? 1 : 0, LIFT_SPRING, SPRING_OPTIONS);
+
+  // One panel is in hand at a time: the focused one, which the keys move and a mouse carries. It is read from
+  // the button's own focus, not React's onFocus. When the arrival's welcome closes over the question, the
+  // browser hands focus back to this panel inside the commit that removes the welcome, while React's events
+  // are paused, so onFocus never hears it.
+  useEffect(() => {
+    const node = ref.current;
+    if (node === null) return undefined;
+    const rise = (): void => { setFocused(true); };
+    const settle = (): void => { setFocused(false); };
+    node.addEventListener("focus", rise);
+    node.addEventListener("blur", settle);
+    setFocused(document.activeElement === node);
+    return () => {
+      node.removeEventListener("focus", rise);
+      node.removeEventListener("blur", settle);
+    };
+  }, []);
   useSpringCssVariable(ref, "--ekp-pick", leaving === kind ? 1 : 0, PICK_SPRING, SPRING_OPTIONS);
   useSpringCssVariable(ref, "--ekp-away", leaving !== null && leaving !== kind ? 1 : 0, PICK_SPRING, SPRING_OPTIONS);
   return (
@@ -84,10 +102,10 @@ function EventKindPanel({ kind, index, drawn, chosen, leaving, onPick, register 
         aria-label={`${words.title}: ${words.line}${chosen ? ", chosen now" : ""}`}
         aria-keyshortcuts={String(index + 1)}
         disabled={leaving !== null}
-        onPointerEnter={() => { setLifted(true); }}
-        onPointerLeave={() => { setLifted(false); }}
-        onFocus={() => { setLifted(true); }}
-        onBlur={() => { setLifted(false); }}
+        onPointerEnter={(event) => {
+          // A touch has no hover; a mouse or pen over a panel takes it in hand.
+          if (event.pointerType === "mouse" || event.pointerType === "pen") event.currentTarget.focus({ preventScroll: true });
+        }}
         onClick={() => { onPick(kind); }}
       >
         <span className="ekp-art"><EventKindInk kind={kind} /></span>

@@ -114,7 +114,13 @@ share) is never made to try.
   the room for it. You can change it any time."
 - **The panels.** Three tall panels on a laptop or desktop, and three wide panels stacked on a phone. Each has
   full-bleed art, a title in Newsreader, one true line in Inter and a key hint (1, 2, 3; hidden on touch).
-- **Motion, on springs.** Hover or focus lifts a panel on a spring (the house spring core). A pick grows the chosen
+- **One panel in hand.** The focused panel is the one in hand: the keys move it, and a mouse or pen carries it (the
+  panel under the pointer takes the focus; a touch has no hover and does not). It lifts on a spring and shows its
+  key, so there is never more than one lifted panel. Focus is read from the button itself, not React's onFocus: when
+  the Grand Hall's welcome opens over the question (on previews, and once the captured hall is public) and then
+  closes, the browser hands focus back to the panel in hand inside the commit that removes the welcome, while
+  React's events are paused.
+- **Motion, on springs.** Coming into hand lifts a panel on a spring (the house spring core). A pick grows the chosen
   panel while the other two fall away and the scrim lifts. Reduced motion uses opacity only.
 - **Skip.** A "Not sure yet" text button sits under the panels.
 - **The receipt.** It sits at the top centre, under the tool pill. It never covers the deck, where the next tap (Lay
@@ -170,10 +176,11 @@ share) is never made to try.
   - a fresh layout asks;
   - 2 picks Corporate, and Lay out offers Theatre;
   - a reload keeps the answer and does not ask;
-  - a layout with furniture never asks.
-- **Frames for Blake:**
+  - after the Grand Hall's welcome, the first panel is in hand and the keys answer;
+  - (a layout with furniture never asks: unit-tested.)
+- **Frames for Blake,** on the product host, so the founder hold applies as on venviewer.com (the drawn hall, no
+  capture notice):
   - 1366 × 768;
   - 1600 × 1000;
-  - a phone at 393 × 852;
-  - reduced motion.
+  - a phone at 393 × 852.
 - **After deploy:** the live flow on venviewer.com.

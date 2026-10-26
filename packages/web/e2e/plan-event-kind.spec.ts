@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { CONFIG_ID, settleCockpit, stubPlannerBootstrap } from "./support/plan-bootstrap.js";
+import { API, CONFIG_ID, GRAND_HALL_SPACE, VENUE, settleCockpit, stubPlannerBootstrap } from "./support/plan-bootstrap.js";
 
 // ---------------------------------------------------------------------------
 // "What are you planning?" (T-674, Blake 26 Oct 2026).
@@ -8,8 +8,9 @@ import { CONFIG_ID, settleCockpit, stubPlannerBootstrap } from "./support/plan-b
 // answer sets up the room for it (Lay out's starting shape here) and is kept,
 // so the layout never asks again. The rest of the suite runs on a device told
 // not to ask (playwright.config.ts); these cases turn it back on with
-// ?event-question=on. The room is the stubbed, uncaptured one: the question
-// owes nothing to the captured layer.
+// ?event-question=on. The first two use the stubbed, uncaptured room (the
+// question owes nothing to the captured layer); the third opens the Grand
+// Hall, whose welcome stands over the question while the captured hall arrives.
 // ---------------------------------------------------------------------------
 
 test.describe("the first-open event question", () => {
@@ -50,5 +51,32 @@ test.describe("the first-open event question", () => {
     await settleCockpit(page);
     await expect(page.getByRole("button", { name: "The event: Wedding. Change it" })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "What are you planning?" })).toHaveCount(0);
+  });
+
+  test("after the Grand Hall's welcome, the first panel is in hand and the keys answer", async ({ page }) => {
+    test.setTimeout(180_000);
+    // A new Grand Hall layout: the welcome opens over the question while the captured hall is on its way,
+    // and the hall's requests are held so the welcome waits for "Open planner".
+    const grandConfig = {
+      id: "e2e-event-kind-grand-hall", spaceId: GRAND_HALL_SPACE.id, venueId: VENUE.id, userId: null,
+      name: "Grand Hall layout", isPublicPreview: true, revision: 1, objects: [],
+    };
+    await page.route("**/splats/**", () => { /* held: the welcome stays until it is answered */ });
+    await page.route(`${API}/public/configurations/${grandConfig.id}`, (route) => { void route.fulfill({ json: { data: grandConfig } }); });
+    await page.route(`${API}/venues/${VENUE.id}/spaces/${GRAND_HALL_SPACE.id}`, (route) => {
+      void route.fulfill({ json: { data: GRAND_HALL_SPACE } });
+    });
+    await page.goto(`/plan/${grandConfig.id}?event-question=on`);
+    const welcome = page.getByRole("dialog", { name: "Opening the Grand Hall" });
+    await expect(welcome).toBeVisible({ timeout: 90_000 });
+    await welcome.getByRole("button", { name: /Open planner/u }).click();
+
+    // The browser hands focus back to the panel in hand as the welcome closes; it must show it, not only hold it.
+    const question = page.getByRole("dialog", { name: "What are you planning?" });
+    const wedding = question.getByRole("button", { name: "Wedding: Round tables and gold Chiavari chairs" });
+    await expect(wedding).toBeFocused();
+    await expect(wedding.locator(".ekp-key")).toHaveCSS("opacity", "1");
+    await page.keyboard.press("2");
+    await expect(page.getByText("Set up for a corporate event: rows of seats and the venue's pink chairs.")).toBeVisible();
   });
 });
