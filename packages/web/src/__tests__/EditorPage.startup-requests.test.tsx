@@ -19,6 +19,8 @@ vi.mock("../components/editor/SaveSendPanel.js", () => ({ SaveSendPanel: () => n
 vi.mock("../components/editor/MobilePlannerTopBar.js", () => ({ MobilePlannerTopBar: () => null }));
 vi.mock("../components/editor/SubmitForReviewPanel.js", () => ({ SubmitForReviewPanel: () => null }));
 vi.mock("../components/editor/EditorBridge.js", () => ({ EditorBridge: () => null }));
+// A claimed plan joins its live room; these tests are about the requests that open it.
+vi.mock("../components/editor/LayoutLiveLayer.js", () => ({ LayoutLiveLayer: () => null }));
 vi.mock("../components/editor/ObjectNotePanel.js", () => ({ ObjectNotePanel: () => null }));
 vi.mock("../components/editor/EventDetailsPanel.js", () => ({ EventDetailsPanel: () => null }));
 vi.mock("../components/truth/TruthModeIndicator.js", () => ({ TruthModeIndicator: () => null }));
@@ -27,6 +29,7 @@ vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
   createPublicConfig: vi.fn(),
+  claimConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
   parseRevisionConflict: vi.fn(() => null),
@@ -222,6 +225,11 @@ describe("opening the chosen draft", () => {
     expect(configApi.getConfig).toHaveBeenCalledWith("reception-draft");
     // Only the lookup used the public endpoint.
     expect(configApi.getPublicConfig).toHaveBeenCalledTimes(1);
+    // The draft was made theirs before the authenticated read, which refuses
+    // a plan nobody owns to anyone off the venue floor.
+    expect(configApi.claimConfig).toHaveBeenCalledWith("reception-draft");
+    expect(configApi.claimConfig.mock.invocationCallOrder[0] ?? Infinity)
+      .toBeLessThan(configApi.getConfig.mock.invocationCallOrder[0] ?? -Infinity);
   });
 
   it("reads the room and venue while the draft is created, then does not read the room again", async () => {
@@ -236,5 +244,40 @@ describe("opening the chosen draft", () => {
     await waitFor(() => { expect(useEditorStore.getState().space?.id).toBe(reception.id); });
     expect(location()).toBe("/plan/created");
     expect(spacesApi.getSpace).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Release audit, batch C: a signed-in person's new plan was created ownerless,
+// so a client's saves were refused and a member of staff's plan stayed out of
+// their lists and open to the preview sweep. It is claimed as it is created.
+describe("a signed-in person's new plan", () => {
+  const client = { id: "client-1", email: "client@example.test", name: "Client", role: "client", platformRole: "none" as const, venueId: null };
+
+  it("is claimed as soon as it is created, so it saves to their account", async () => {
+    useAuthStore.getState().setUser(client);
+    configApi.createPublicConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [] }));
+    configApi.claimConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [], isPublicPreview: false, userId: client.id }));
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.claimConfig).toHaveBeenCalledWith("created");
+    await waitFor(() => { expect(useEditorStore.getState()).toMatchObject({ configId: "created", isPublicPreview: false }); });
+  });
+
+  it("leaves a guest's new plan a public draft", async () => {
+    configApi.createPublicConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [] }));
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    expect(configApi.claimConfig).not.toHaveBeenCalled();
+    expect(useEditorStore.getState()).toMatchObject({ configId: "created", isPublicPreview: true });
+  });
+
+  it("still opens the plan, as a public draft, when the claim is refused", async () => {
+    useAuthStore.getState().setUser(client);
+    configApi.createPublicConfig.mockResolvedValue(draft("created", reception, { revision: 1, objects: [] }));
+    configApi.claimConfig.mockRejectedValue(new ApiError(409, "Configuration is already claimed", "ALREADY_CLAIMED"));
+    renderPlanner();
+    await waitFor(() => { expect(location()).toBe("/plan/created"); });
+    await waitFor(() => { expect(configApi.claimConfig).toHaveBeenCalledWith("created"); });
+    expect(useEditorStore.getState()).toMatchObject({ configId: "created", isPublicPreview: true });
   });
 });

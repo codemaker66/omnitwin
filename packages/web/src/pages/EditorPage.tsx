@@ -22,7 +22,7 @@ import {
   buildPlannerTruthSummary,
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
-import { getPublicConfig, type Configuration } from "../api/configurations.js";
+import { claimConfig, getPublicConfig, type Configuration } from "../api/configurations.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
@@ -147,6 +147,18 @@ async function findReusablePublicConfig(
     if (config !== null && config.isPublicPreview && config.spaceId === spaceId) return config;
   }
   return null;
+}
+
+/** Makes an ownerless draft the signed-in person's own through the claim
+ *  route the sign-in dialog uses (release audit, batch C). False, with the
+ *  draft left a public draft, when the claim is refused or does not arrive. */
+async function claimOwnDraft(configId: string): Promise<boolean> {
+  try {
+    await claimConfig(configId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -291,10 +303,25 @@ export function EditorPage(): React.ReactElement {
         if (reusableConfig !== null) {
           // A guest's page loads it through the public endpoint just read.
           if (!isAuthenticated) handOffPublicConfiguration(reusableConfig);
+          // A signed-in person's page reads and saves through the authenticated
+          // routes, which refuse a plan nobody owns to anyone off the venue
+          // floor, so the draft becomes theirs before it opens.
+          else await claimOwnDraft(reusableConfig.id);
+          if (!isCurrent()) return;
           void navigate({ pathname: `/plan/${reusableConfig.id}`, search }, { replace: true });
           return;
         }
         const newConfigId = await useEditorStore.getState().createPublicConfig(space.id, isCurrent);
+        // The same for a new plan: created through the public route, it is
+        // claimed at once, so it saves to the person's account and is never
+        // left ownerless for the preview sweep. A failed claim leaves it a
+        // public draft, exactly as before. Committing the draft has already
+        // cleaned up this effect, so the guard is the same route and account
+        // (ownsRoute), as for the navigation below.
+        if (isAuthenticated && ownsRoute() && await claimOwnDraft(newConfigId)
+          && ownsRoute() && useEditorStore.getState().configId === newConfigId) {
+          useEditorStore.setState({ isPublicPreview: false });
+        }
         // Committing this draft changes storeConfigId and cleans up the effect.
         // That self-settlement may still navigate, but only for the same route,
         // account and exact created document; superseding contexts cannot.
