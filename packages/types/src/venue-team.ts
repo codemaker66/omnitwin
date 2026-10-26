@@ -52,11 +52,11 @@ export const InviteVenueTeamMemberSchema = z.object({
 }).strict();
 export type InviteVenueTeamMember = z.infer<typeof InviteVenueTeamMemberSchema>;
 
-const IsoDateTimeSchema = z.string().datetime();
+const IsoDateTimeSchema = z.iso.datetime();
 
 /** Someone who already has access at the venue. */
 export const VenueTeamMemberSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
   email: z.string(),
   role: UserRoleSchema,
@@ -66,7 +66,7 @@ export type VenueTeamMember = z.infer<typeof VenueTeamMemberSchema>;
 
 /** A grant waiting for its person to sign in with that email. */
 export const VenueTeamInvitationSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   email: z.string(),
   role: UserRoleSchema,
   invitedAt: IsoDateTimeSchema,
