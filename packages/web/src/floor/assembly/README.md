@@ -83,6 +83,12 @@ plays it also if we want to see it again." (`flag.ts`, remembered per device in
   layer in the planner's Escape order) goes straight to the end at once:
   every piece snaps to its saved transform, with the camera at the final
   framing. A press on the room is swallowed so it doesn't also select.
+- **Presses as it ends:** the control answers its own presses, by pointer or
+  by key, in the held ending too, and hurrying a show that has already played
+  to its end brings the planner back at once; a press on the room then does
+  the same. For 600 ms after the room is given back (`REPLAY_SETTLE_MS`) the
+  control at rest lets a press go: a hurried show can end under a press
+  already on its way to the Skip, which must not start the show again.
 - **Clock:** the show advances by each frame's time, at most 0.25 s a frame,
   so a slow renderer still plays it in about its own time.
 - **Cancel:** any real change to the layout (`sameLayout`), another layout
@@ -112,13 +118,18 @@ through `requestAssemblyReplay()`.
   - the final framing inside the orbit's limits with no chandelier mid-frame;
   - skip, cancel and reduced motion;
   - the flag's three modes, and the control's three states;
+  - the Skip through the director, stepped frame by frame
+    (`GrandAssembly.test.tsx`): four times the pace, the second press on the
+    final framing, a press as the show comes to rest by pointer or by key, no
+    replay from a press just after it, and presses on the room;
   - recall, including a layout open before the planner's code loaded, the
     first-open rule and the seen list;
   - the channel's byte-exact restore through the real instanced layer and shadows.
 - **e2e:** `e2e/grand-assembly.spec.ts` on the real `/plan` route: it plays,
   rests, hands the camera back and writes nothing; Escape; with no flag it
-  plays the first time, the Skip hurries it to its end, and it then opens as
-  placed.
+  plays the first time, the Skip hurries it to its end (every state the
+  control shows is recorded and read afterwards, so a slow renderer's timing
+  cannot decide it), and it then opens as placed.
 - **Capture (development only):** `capture-bridge.ts` installs
   `window.__assembly` on the planner lab, driven by
   `scripts/assembly-capture.mjs` (clip, look, measure) with the frame loop

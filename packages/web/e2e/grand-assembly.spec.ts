@@ -10,14 +10,16 @@ import { grandHallDinner180 } from "../src/floor/assembly/fixture.js";
 // A saved Grand Hall layout assembles itself the first time it opens on a
 // device (`?assembly=accio`: every time), comes to rest as placed and hands
 // the camera back on its final framing; Escape snaps it to the true state; the
-// visible Skip plays it on at speed, then sends it to its end; once seen, it
-// opens as placed. Nothing is written back while it plays. The control's
+// visible Skip plays it on at speed to its end; once seen, it opens as placed.
+// Nothing is written back while it plays. The control's
 // `data-playing` and `data-fast` are the honesty surface the assertions key off.
 // ---------------------------------------------------------------------------
 
 declare global {
   interface Window {
     __venPerf?: { gl: WebGLRenderer | WebGPURenderer; scene: Scene; camera: Camera };
+    /** Every state the Assembly's control has shown since the test began watching it. */
+    __assemblyControl?: string[];
   }
 }
 
@@ -114,12 +116,27 @@ test.describe("Grand Assembly behind ?assembly=accio", () => {
     await openSavedGrandHallLayout(page, "");
     const control = page.locator(".assembly-replay");
     await expect(control).toHaveAttribute("data-playing", "true", { timeout: 90_000 });
-    // The visible Skip: the first press plays the show on at speed, the second goes straight to the end.
+    // Every state the control shows from here, read once the show is over: on CI's software renderer the hurried
+    // show lasts only a few of the test's own steps. (The Skip's second press, and a press as the show comes to
+    // rest, are stepped frame by frame in GrandAssembly.test.tsx.)
+    await control.evaluate((element) => {
+      const shown: string[] = [];
+      const note = (): void => {
+        shown.push(`${element.getAttribute("data-playing") ?? ""} ${element.getAttribute("data-fast") ?? ""} ${element.textContent ?? ""}`);
+      };
+      note();
+      new MutationObserver(note).observe(element, { attributes: true, childList: true, characterData: true, subtree: true });
+      window.__assemblyControl = shown;
+    });
+    // The visible Skip: the show plays on at speed to its end, comes to rest as placed, and stays there.
     await control.click();
-    await expect(control).toHaveAttribute("data-fast", "true");
-    await expect(control).toHaveText("Skip to the end");
-    await control.click();
-    await expect(control).toHaveAttribute("data-playing", "false", { timeout: 5_000 });
+    await expect(control).toHaveAttribute("data-playing", "false", { timeout: 90_000 });
+    await page.waitForTimeout(2_000);
+    const shown = await page.evaluate(() => window.__assemblyControl ?? []);
+    expect(shown).toContain("true true Skip to the end");
+    const rested = shown.findIndex((state) => state.startsWith("false"));
+    expect(rested).toBeGreaterThan(shown.indexOf("true true Skip to the end"));
+    expect(shown.slice(rested).every((state) => state === "false false Replay the assembly")).toBe(true);
     // Seen on this device now: the next open is the layout as placed.
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForSelector("canvas", { timeout: 30_000 });

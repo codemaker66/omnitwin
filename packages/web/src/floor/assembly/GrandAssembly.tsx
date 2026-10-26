@@ -189,7 +189,7 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   const returnPlanner = useCallback((): void => {
     ending.current = null;
     useCockpitStore.getState().setCameraInteractionActive(false);
-    useAssemblyRecallStore.setState({ active: false, fast: false });
+    useAssemblyRecallStore.setState({ active: false, fast: false, restedAt: performance.now() });
   }, []);
   const onCameraRef = useRef(onCamera);
   onCameraRef.current = onCamera;
@@ -386,6 +386,8 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   useEscapeLayer("operation", { open: () => stage.current.kind !== "idle" || ending.current !== null, onEscape: skip });
   useEffect(() => useAssemblyRecallStore.subscribe((state, previous) => {
     if (state.skipNonce !== previous.skipNonce) skip();
+    // Hurrying a show that has already played to its end (its held ending) ends it there.
+    else if (state.fast && !previous.fast && stage.current.kind === "idle") skip();
   }), [skip]);
   useEffect(() => {
     const canvasHost = (): HTMLElement | null => get().gl.domElement.parentElement;
@@ -396,13 +398,14 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
       event.preventDefault();
     };
     const down = (event: PointerEvent): void => {
+      // The Skip control answers its own presses, in the held ending too: taken here first, a press on it
+      // brought the planner back and left the control, now at rest, to read its click as a replay.
+      if (event.target instanceof Element && event.target.closest(".assembly-replay") !== null) return;
       if (stage.current.kind === "idle") {
         // A press during the held ending brings the planner back and is the planner's own.
         if (ending.current !== null) returnPlanner();
         return;
       }
-      // The Skip control answers its own presses.
-      if (event.target instanceof Element && event.target.closest(".assembly-replay") !== null) return;
       // A press is a skip: the first plays the show on at speed, a second goes straight to the end.
       if (useAssemblyRecallStore.getState().fast) skip();
       else speedUpAssembly();

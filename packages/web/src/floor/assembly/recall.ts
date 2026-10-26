@@ -37,9 +37,13 @@ interface RecallState {
   readonly fast: boolean;
   /** Bumped to send the show straight to its end (the Skip's second press). */
   readonly skipNonce: number;
+  /** When the Assembly last gave the room back (`performance.now()`): the control settles at rest from here. */
+  readonly restedAt: number;
 }
 
-export const useAssemblyRecallStore = create<RecallState>()(() => ({ request: null, active: false, fast: false, skipNonce: 0 }));
+export const useAssemblyRecallStore = create<RecallState>()(() => ({
+  request: null, active: false, fast: false, skipNonce: 0, restedAt: Number.NEGATIVE_INFINITY,
+}));
 
 /** Layouts this device has watched assemble, or furnished itself: the first-open rule passes them by. */
 const SEEN_KEY = "venviewer.assembly.seen";
@@ -252,5 +256,5 @@ export function resetAssemblyRecallForTests(): void {
   nonce = 0;
   try { window.localStorage.removeItem(SEEN_KEY); } catch { /* none to forget */ }
   publishFurniturePresentation(null);
-  useAssemblyRecallStore.setState({ request: null, active: false, fast: false, skipNonce: 0 });
+  useAssemblyRecallStore.setState({ request: null, active: false, fast: false, skipNonce: 0, restedAt: Number.NEGATIVE_INFINITY });
 }

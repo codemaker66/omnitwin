@@ -444,6 +444,9 @@ const placedObjectsTest = test.extend({ launchOptions: captureLaunchOptions });
 
 placedObjectsTest.describe("Editor with placed objects", () => {
   placedObjectsTest.beforeEach(async ({ page }) => {
+    // The planner at rest: the Grand Assembly, which plays a furnished Grand Hall layout the first time it opens
+    // on a device with the chrome stepped back (grand-assembly.spec.ts), is turned off on this one (flag.ts).
+    await page.addInitScript(() => { window.localStorage.setItem("venviewer.assembly", "off"); });
     await mockConfigLoad(page, MOCK_CONFIG_WITH_OBJECTS);
   });
 
