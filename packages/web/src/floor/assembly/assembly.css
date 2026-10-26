@@ -22,12 +22,13 @@
   transition: opacity 220ms ease, background-color 160ms ease, border-color 160ms ease, transform 90ms ease;
 }
 
-/* On a phone the cockpit's bottom dock lies over the canvas's lowest band (the
-   shell carries its height as --cockpit-bottom-height), so the pill rests just
-   above it, where a thumb can reach it. */
+/* On a phone the planner's dock (VerticalToolbox's mobile dock) floats over the
+   canvas's lowest band: 10 px above the client's event dock or the cockpit's
+   bottom bar, whichever the shell has, and at least 74 px tall. The pill rests
+   12 px above it (10 + 74 + 12 = 96), where a thumb can reach it. */
 .cockpit-shell.is-mobile .assembly-replay {
   left: max(16px, env(safe-area-inset-left));
-  bottom: calc(var(--cockpit-bottom-height, 96px) + 12px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--client-event-dock-height, var(--cockpit-bottom-height, 0px)) + env(safe-area-inset-bottom, 0px) + 96px);
 }
 
 .assembly-replay:hover {
