@@ -10,7 +10,8 @@ import {
 import { configurations, spaces, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { requireEditableConfig } from "../middleware/require-editable-config.js";
+import { configLockedBody, editableAtWrite, lockHolds, requireEditableConfig } from "../middleware/require-editable-config.js";
+import { RETRY_ANSWER } from "../utils/sql-state.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
 import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { configurationRevisionEtag } from "../lib/configuration-revision.js";
@@ -275,12 +276,25 @@ export async function configurationRoutes(
 
     const [updated] = await db.update(configurations)
       .set(updateData)
-      .where(eq(configurations.id, params.data.id))
+      .where(and(
+        eq(configurations.id, params.data.id),
+        isNull(configurations.deletedAt),
+        editableAtWrite(request.user, config.venueId),
+      ))
       .returning();
 
-    if (updated !== undefined) {
-      reply.header("ETag", configurationRevisionEtag(updated.revision));
+    if (updated === undefined) {
+      // A review begun since the check holds the layout, or it is gone (or
+      // its review moved on and back while this saved: try again).
+      const [now] = await db.select({ reviewStatus: configurations.reviewStatus })
+        .from(configurations)
+        .where(and(eq(configurations.id, params.data.id), isNull(configurations.deletedAt)))
+        .limit(1);
+      if (now === undefined) return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+      return reply.status(409).send(lockHolds(request.user, config.venueId, now.reviewStatus)
+        ? configLockedBody(now.reviewStatus) : RETRY_ANSWER);
     }
+    reply.header("ETag", configurationRevisionEtag(updated.revision));
     return { data: updated };
   });
 

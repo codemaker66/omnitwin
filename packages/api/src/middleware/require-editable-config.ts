@@ -1,10 +1,14 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, inArray, isNull, type SQL } from "drizzle-orm";
 import {
+  CONFIGURATION_REVIEW_STATUSES,
+  ConfigurationReviewStatusSchema,
   isPlannerEditable,
   type ConfigurationReviewStatus,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
+
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 import { configurations } from "../db/schema.js";
 import { canAccessResource } from "../utils/query.js";
 import { isPlatformAdmin, type JwtUser } from "./auth.js";
@@ -31,6 +35,51 @@ import { isPlatformAdmin, type JwtUser } from "./auth.js";
  *  layout there is its planner, and waits for its review like one. */
 export function canOverrideReviewLock(user: Pick<JwtUser, "role" | "venueId" | "platformRole">, venueId: string): boolean {
   return isPlatformAdmin(user) || (user.role === "admin" && user.venueId === venueId);
+}
+
+/** What the lock answers whoever it holds back. */
+export function configLockedBody<Status extends string>(status: Status): { error: string; code: "CONFIG_LOCKED"; reviewStatus: Status } {
+  return {
+    error: `Configuration is locked for editing in state '${status}'. Withdraw the submission to edit, or request an admin override.`,
+    code: "CONFIG_LOCKED",
+    reviewStatus: status,
+  };
+}
+
+/** Whether the lock holds this user back from a layout of this venue in this state. */
+export function lockHolds(user: Pick<JwtUser, "role" | "venueId" | "platformRole">, venueId: string, reviewStatus: string): boolean {
+  if (canOverrideReviewLock(user, venueId)) return false;
+  const status = ConfigurationReviewStatusSchema.safeParse(reviewStatus);
+  return !status.success || !isPlannerEditable(status.data);
+}
+
+const EDITABLE_STATUSES = CONFIGURATION_REVIEW_STATUSES.filter(isPlannerEditable);
+
+/** The lock as a condition on a write to the layout's own row. The preHandler
+ *  checks before the route runs, and a submit can commit between that check
+ *  and the write, so the write itself also names an editable state: a review
+ *  begun meanwhile still holds the layout. None for whoever may override. */
+export function editableAtWrite(user: Pick<JwtUser, "role" | "venueId" | "platformRole">, venueId: string): SQL | undefined {
+  return canOverrideReviewLock(user, venueId) ? undefined : inArray(configurations.reviewStatus, EDITABLE_STATUSES);
+}
+
+/** The lock for a write that leaves the layout's own row alone (one placed
+ *  object): holds the layout's state to the end of the caller's transaction
+ *  (FOR SHARE, so a submit waits for this write, and this write for a submit
+ *  under way) and says whether the user may write now. A transaction, never
+ *  the pool: on the pool the hold would end before the write. */
+export async function holdEditable(
+  tx: Transaction,
+  configId: string,
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+): Promise<{ readonly status: "editable" } | { readonly status: "not_found" } | { readonly status: "locked"; readonly reviewStatus: string }> {
+  const [row] = await tx.select({ reviewStatus: configurations.reviewStatus, venueId: configurations.venueId })
+    .from(configurations)
+    .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+    .limit(1)
+    .for("share");
+  if (row === undefined) return { status: "not_found" };
+  return lockHolds(user, row.venueId, row.reviewStatus) ? { status: "locked", reviewStatus: row.reviewStatus } : { status: "editable" };
 }
 
 interface RequireEditableConfigOptions {
@@ -128,11 +177,7 @@ export function requireEditableConfig(
 
     if (isPlannerEditable(status)) return;
 
-    return reply.status(409).send({
-      error: `Configuration is locked for editing in state '${status}'. Withdraw the submission to edit, or request an admin override.`,
-      code: "CONFIG_LOCKED",
-      reviewStatus: status,
-    });
+    return reply.status(409).send(configLockedBody(status));
   };
 }
 
@@ -239,11 +284,5 @@ export async function checkConfigEditable(
   const status = row.reviewStatus as ConfigurationReviewStatus;
   if (isPlannerEditable(status)) return { ok: true };
 
-  return {
-    ok: false,
-    status: 409,
-    error: `Configuration is locked for editing in state '${status}'. Withdraw the submission to edit, or request an admin override.`,
-    code: "CONFIG_LOCKED",
-    reviewStatus: status,
-  };
+  return { ok: false, status: 409, ...configLockedBody(status) };
 }

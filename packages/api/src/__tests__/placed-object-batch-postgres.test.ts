@@ -3,12 +3,18 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { syncPlacedObjectBatch, type PlacedObjectBatchItem, type PlacedObjectRow } from "../lib/placed-object-batch.js";
+import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
+import { configurationRoutes } from "../routes/configurations.js";
 import { placedObjectRoutes } from "../routes/placed-objects.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
+
+// A real submit, without its emails.
+const email = vi.hoisted(() => vi.fn());
+vi.mock("../services/email.js", () => ({ sendEmailAsync: email }));
 
 // Never load .env or fall back to DATABASE_URL: the migrated, disposable
 // platform cluster only, so migration 0044's coordinate-write trigger is real.
@@ -128,6 +134,8 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
       { id: tableId, name: "TEST ONLY table", category: "table", widthM: "1.8", depthM: "1.8", heightM: "0.75" },
     ]);
     server = Fastify();
+    await server.register(configurationRoutes, { db, prefix: "/configurations" });
+    await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
     await server.register(placedObjectRoutes, { db, prefix: "/configurations/:configId/objects" });
     await server.register(publicConfigRoutes, { db, prefix: "/public" });
     await server.ready();
@@ -434,22 +442,40 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
     expect(revisions.map((revision) => revision.revision).sort()).toEqual([2, 3]);
   });
 
-  /** Begins a review of the plan, uncommitted, sends a guest write (which
-   *  passes its check, the review not yet seen, then waits behind it), and
-   *  commits the review: it began between the write's check and its write. */
+  /** How many of this suite's connections wait for a lock. */
+  async function lockWaiters(): Promise<number> {
+    const waiting = await pool.query<{ waiting: string }>(
+      "SELECT count(*) AS waiting FROM pg_stat_activity WHERE datname = current_database() AND application_name = $1 AND wait_event_type = 'Lock'",
+      [applicationName],
+    );
+    return Number(waiting.rows[0]?.waiting ?? 0);
+  }
+
+  async function waitForLockWaiters(count: number, why: string): Promise<void> {
+    for (let tries = 0; (await lockWaiters()) < count; tries += 1) {
+      if (tries > 200) throw new Error(why);
+      await new Promise((resolve) => { setTimeout(resolve, 10); });
+    }
+  }
+
+  /** Begins a review of the plan as one UPDATE of its status, uncommitted,
+   *  sends a write (which passes its check, the review not yet seen, then
+   *  waits behind it, unless it writes straight past), and commits the
+   *  review: it began between the write's check and its write. The UPDATE
+   *  takes migration 0058's global lock before the row, as a write does; the
+   *  real submit locks the row first (the next tests). */
   async function racedWithSubmit(configId: string, write: () => Promise<LightMyRequestResponse>): Promise<LightMyRequestResponse> {
     const holder = await pool.connect();
     try {
       await holder.query("BEGIN");
       await holder.query("UPDATE configurations SET review_status = 'submitted' WHERE id = $1", [configId]);
       const writing = write();
-      for (let tries = 0; ; tries += 1) {
-        const waiting = await pool.query<{ waiting: string }>(
-          "SELECT count(*) AS waiting FROM pg_stat_activity WHERE datname = current_database() AND application_name = $1 AND wait_event_type = 'Lock'",
-          [applicationName],
-        );
-        if (Number(waiting.rows[0]?.waiting ?? 0) > 0) break;
-        if (tries > 200) throw new Error("the guest write never waited for the review");
+      let settled = false;
+      const markSettled = (): void => { settled = true; };
+      void writing.then(markSettled, markSettled);
+      for (let tries = 0; !settled; tries += 1) {
+        if (await lockWaiters() > 0) break;
+        if (tries > 200) throw new Error("the write never waited for the review");
         await new Promise((resolve) => { setTimeout(resolve, 10); });
       }
       await holder.query("COMMIT");
@@ -473,6 +499,87 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
       url: `/public/configurations/${configId}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,iVBORw0KGgo=" } }));
     expect(thumbnail.statusCode, thumbnail.body).toBe(409);
     expect(thumbnail.json()).toMatchObject({ code: "CONFIG_LOCKED", reviewStatus: "submitted" });
+  });
+
+  it("holds a signed-in planner's layout for a review begun during any of its writes", async () => {
+    const configId = await configuration();
+    const first = await save(configId, 1, [item(0)]);
+    const [only] = await stored(configId);
+    if (only === undefined) throw new Error("the first save stored its object");
+    const headers = authHeaders();
+    const writes: Record<string, () => Promise<LightMyRequestResponse>> = {
+      batch: () => server.inject({ method: "POST", url: `/configurations/${configId}/objects/batch`, headers,
+        payload: { expectedRevision: first.revision, objects: [{ ...item(0, { positionX: 5 }), id: only.id }] } }),
+      add: () => server.inject({ method: "POST", url: `/configurations/${configId}/objects`, headers,
+        payload: { assetDefinitionId: chairId, positionX: 2, positionY: 0, positionZ: 2 } }),
+      move: () => server.inject({ method: "PATCH", url: `/configurations/${configId}/objects/${only.id}`, headers,
+        payload: { positionX: 3 } }),
+      remove: () => server.inject({ method: "DELETE", url: `/configurations/${configId}/objects/${only.id}`, headers }),
+      rename: () => server.inject({ method: "PATCH", url: `/configurations/${configId}`, headers,
+        payload: { name: "TEST ONLY renamed in review" } }),
+    };
+    const answers: Record<string, string> = {};
+    for (const [name, write] of Object.entries(writes)) {
+      await db.update(schema.configurations).set({ reviewStatus: "draft" }).where(eq(schema.configurations.id, configId));
+      const raced = await racedWithSubmit(configId, write);
+      const refusal = raced.statusCode === 409 ? raced.json<{ code: string; reviewStatus: string }>() : null;
+      answers[name] = refusal === null ? String(raced.statusCode) : `409 ${refusal.code} ${refusal.reviewStatus}`;
+    }
+    const held = "409 CONFIG_LOCKED submitted";
+    expect(answers).toEqual({ batch: held, add: held, move: held, remove: held, rename: held });
+    expect(await stored(configId)).toEqual([only]);
+    const [kept] = await db.select({ name: schema.configurations.name, revision: schema.configurations.revision })
+      .from(schema.configurations).where(eq(schema.configurations.id, configId));
+    expect(kept).toEqual({ name: "TEST ONLY batch layout", revision: first.revision });
+  });
+
+  it("makes a review wait for a single-object write that already holds the layout", async () => {
+    const configId = await configuration();
+    const blocker = await pool.connect();
+    let added: LightMyRequestResponse;
+    let submitted: LightMyRequestResponse;
+    try {
+      await blocker.query("BEGIN");
+      // Holds the write's insert back once the write has taken the layout.
+      await blocker.query("LOCK TABLE placed_objects IN SHARE MODE");
+      const adding = server.inject({ method: "POST", url: `/configurations/${configId}/objects`, headers: authHeaders(),
+        payload: { assetDefinitionId: chairId, positionX: 2, positionY: 0, positionZ: 2 } });
+      await waitForLockWaiters(1, "the write never reached its insert");
+      const submitting = server.inject({ method: "POST", url: `/configurations/${configId}/review/submit`,
+        headers: authHeaders(), payload: {} });
+      await waitForLockWaiters(2, "the review did not wait for the write holding the layout");
+      await blocker.query("COMMIT");
+      [added, submitted] = await Promise.all([adding, submitting]);
+    } finally {
+      await blocker.query("ROLLBACK").catch(() => undefined);
+      blocker.release();
+    }
+    expect(added.statusCode, added.body).toBe(201);
+    expect(submitted.statusCode, submitted.body).toBe(200);
+    // The review froze the layout as the write left it.
+    const [snapshot] = await db.select({ payload: schema.configurationSheetSnapshots.payload })
+      .from(schema.configurationSheetSnapshots).where(eq(schema.configurationSheetSnapshots.configurationId, configId));
+    expect((snapshot?.payload as { floorPlan?: { objects?: unknown[] } } | undefined)?.floorPlan?.objects).toHaveLength(1);
+  });
+
+  it("still lets the layout's venue admin write through a review", async () => {
+    const configId = await configuration();
+    const first = await save(configId, 1, [item(0)]);
+    await db.update(schema.configurations).set({ reviewStatus: "submitted" }).where(eq(schema.configurations.id, configId));
+    const admin = randomUUID();
+    await db.insert(schema.users).values({ id: admin, venueId, name: "Batch venue admin", email: `${admin}@batch.invalid`, role: "admin" });
+    const headers = { authorization: `Bearer ${JSON.stringify({ id: admin, email: `${admin}@batch.invalid`,
+      role: "admin", platformRole: "none", venueId })}` };
+    const fixed = await server.inject({ method: "POST", url: `/configurations/${configId}/objects/batch`, headers,
+      payload: { expectedRevision: first.revision, objects: [] } });
+    expect(fixed.statusCode, fixed.body).toBe(200);
+    const added = await server.inject({ method: "POST", url: `/configurations/${configId}/objects`, headers,
+      payload: { assetDefinitionId: chairId, positionX: 2, positionY: 0, positionZ: 2 } });
+    expect(added.statusCode, added.body).toBe(201);
+    const renamed = await server.inject({ method: "PATCH", url: `/configurations/${configId}`, headers,
+      payload: { name: "TEST ONLY fixed by the venue" } });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(await stored(configId)).toHaveLength(1);
   });
 
   it("holds a guest plan in review still, as it holds a signed-in planner's", async () => {
