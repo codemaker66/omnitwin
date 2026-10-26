@@ -548,6 +548,23 @@ test.describe("SS++ hardening visual regression", () => {
     await expect(page.getByRole("heading", { name: "More rooms", exact: true })).toBeVisible();
     await expect(page.getByTestId("room-card-south-gallery")).toBeVisible();
     await expect(page.getByRole("row", { name: /The South Gallery/u })).toBeAttached();
+    // The front door resolves in (RoomsHomePage.css, "resolve-in on load"): the
+    // hero and the rail rise from opacity 0 over 620 ms after the first frame,
+    // and the photographs decode on their own clock. toBeVisible() counts an
+    // element at opacity 0 as visible, so the waits above pass on a dark band
+    // under the header, and a capture taken there (13,706 bytes on master
+    // 7f415b2e) failed the smoke's 15,000-byte floor. Capture the finished page.
+    await expect(page.locator(".rooms__hero")).toHaveCSS("opacity", "1");
+    await expect(page.locator(".rooms__rail")).toHaveCSS("opacity", "1");
+    await page.evaluate(async () => {
+      const inFrame = [...document.images].filter((image) => {
+        const box = image.getBoundingClientRect();
+        return box.bottom > 0 && box.top < window.innerHeight && box.right > 0 && box.left < window.innerWidth;
+      });
+      // decode() rejects for a broken image, so a missing photograph fails here,
+      // at the image, rather than later as a small screenshot.
+      await Promise.all(inFrame.map((image) => image.decode()));
+    });
     await attachScreenshotSmoke(page, "sspp-public-room-route.png");
     expect(pageErrors).toEqual([]);
   });

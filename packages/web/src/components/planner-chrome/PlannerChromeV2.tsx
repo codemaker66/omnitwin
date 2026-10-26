@@ -4,6 +4,7 @@ import { useLayoutLiveRoom } from "../editor/LayoutLiveLayer.js";
 import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { ChromeShell } from "./ChromeShell.js";
 import { DockStack } from "./DockStack.js";
+import { Receipt } from "./Receipt.js";
 import { LayOutPanel } from "./LayOutPanel.js";
 import { RoomStage } from "./RoomStage.js";
 import { Slate } from "./Slate.js";
@@ -27,6 +28,7 @@ export function PlannerChromeV2(): ReactElement {
       <ChromeShell
         room={<RoomStage />}
         slate={<Slate />}
+        aboveDock={<Receipt />}
         dock={<DockStack />}
         right={right === "lay-out" ? <LayOutPanel /> : null}
       />

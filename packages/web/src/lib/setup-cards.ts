@@ -226,6 +226,40 @@ export function seatsInHand(params: CardParams): number {
   }
 }
 
+/**
+ * Whether a card sets down a whole set rather than one piece alone: every
+ * card but a piece with no seats. A set takes the grid only as it follows the
+ * pointer; one piece also takes the single piece's edge, wall and line snaps.
+ */
+export function cardIsWholeSet(params: CardParams): boolean {
+  return params.card !== "piece" || seatsInHand(params) > 0;
+}
+
+/**
+ * Whether the card in hand is set down as a card, its whole stamp in one
+ * step with no chair dialog: a set card (Round, Top table, Long table, Dance
+ * floor) always, from v2's rail as from v1's list (Q-07, Q-13); a piece card
+ * once the card dock is on (setupCards), a dining table's only once its
+ * seats ride on the card (seatsOnTheCard), else the old way, through the
+ * chair dialog. The ghost, the snaps and the commit all ask this.
+ */
+export function placesAsCard(params: CardParams): boolean {
+  if (params.card !== "piece") return true;
+  if (!plannerFeatureEnabled("setupCards")) return false;
+  // A dining table from v1's list keeps its chair dialog until its seats ride on the card (Q-07, Q-12).
+  return params.seats === null || plannerFeatureEnabled("seatsOnTheCard");
+}
+
+/**
+ * Whether the card in hand is judged with every body, before the drop and
+ * at the commit (the truthful ghost, Q-05): a set card always, as the card
+ * dock's own, from v2's rail as from v1's list; a piece card behind
+ * truthfulGhost.
+ */
+export function judgesCard(params: CardParams): boolean {
+  return params.card !== "piece" || plannerFeatureEnabled("truthfulGhost");
+}
+
 /** Card copy: metres to one place, "4.6"; whole figures plainly, "2". */
 function cardMetres(metres: number): string {
   const tenths = Math.round(metres * 10) / 10;
@@ -478,6 +512,37 @@ export function resizeDanceFloor(
     const base = spare.shift() ?? { ...read.first, id: newId() };
     return { ...base, x: read.first.x + offset.x, z: read.first.z + offset.z, y: grid.y, rotationY: grid.rotationY, groupId: read.first.groupId };
   });
+}
+
+/** A dance floor drawn by press-drag: its panels a side and its centre, render-space. */
+export interface DrawnDanceFloor {
+  readonly cols: number;
+  readonly rows: number;
+  readonly x: number;
+  readonly z: number;
+}
+
+/**
+ * A dance floor drawn by press-drag (Q-08a): whole panels from the press to
+ * the pointer, 2 to 12 a side, its near corner held at the press, turned as
+ * the piece in hand is turned. Null until the drag is half a panel long, so
+ * a click is still a click.
+ */
+export function drawnDanceFloor(
+  start: { readonly x: number; readonly z: number },
+  end: { readonly x: number; readonly z: number },
+  rotationY: number,
+): DrawnDanceFloor | null {
+  const panel = getCatalogueItemBySlug(DANCE_FLOOR_PANEL_SLUG);
+  if (panel === undefined) return null;
+  const size = toRenderSpace(panel.width);
+  const local = unturned(end.x - start.x, end.z - start.z, rotationY);
+  if (Math.max(Math.abs(local.x), Math.abs(local.z)) < size / 2) return null;
+  const cols = clamp(Math.abs(local.x) / size, DANCE_FLOOR_PANELS);
+  const rows = clamp(Math.abs(local.z) / size, DANCE_FLOOR_PANELS);
+  const towards = (value: number): number => (value < 0 ? -1 : 1);
+  const centre = turned((towards(local.x) * cols * size) / 2, (towards(local.z) * rows * size) / 2, rotationY);
+  return { cols, rows, x: start.x + centre.x, z: start.z + centre.z };
 }
 
 /**

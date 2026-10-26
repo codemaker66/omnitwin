@@ -3,6 +3,7 @@ import { Mesh, MeshBasicMaterial, type Object3D, type Texture } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createPlacedItem, type PlacedItem } from "../../lib/placement.js";
+import { PLANNER_CHROME_STORAGE_KEY } from "../../lib/planner-chrome-flag.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
@@ -71,6 +72,20 @@ function placeSelected(items: readonly PlacedItem[]): void {
 }
 
 describe("furniture nameplate textures", () => {
+  it("shows no plate over the item in hand under the new chrome, whose caption says it (T-671 slice 11′)", () => {
+    window.history.replaceState(null, "", "/plan?chrome=v2");
+    try {
+      const tables = [labelledTable("Table 1", -5), labelledTable("Table 2", 5)];
+      usePlacementStore.setState({ placedItems: tables });
+      mounted = mountInStubRoot(<PlacedFurniture />);
+      act(() => { useSelectionStore.getState().select(tables[1]?.id ?? ""); });
+      expect(plateTextures(mounted.scene)).toEqual([]);
+    } finally {
+      window.history.replaceState(null, "", "/");
+      window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
+    }
+  });
+
   it("shows a plate only over the items in hand", () => {
     const tables = [labelledTable("Table 1", -5), labelledTable("Table 2", 5)];
     usePlacementStore.setState({ placedItems: tables });

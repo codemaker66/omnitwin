@@ -6,6 +6,7 @@ import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
+import { replaceWith } from "./replace-with.js";
 import { storeRefusalFor } from "./store-figures.js";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,11 @@ import { storeRefusalFor } from "./store-figures.js";
  */
 export function armOrCancel(card: CardId): boolean {
   const cards = useCardsStore.getState();
+  // Replace mode (the caption's Replace…): the card replaces the selection instead of arming.
+  if (cards.replacing !== null) {
+    replaceWith(card);
+    return false;
+  }
   // B2 hard: a card the store has none left of does not arm, and the hint says why.
   const refusal = useCatalogueStore.getState().armedCardId === card ? null : storeRefusalFor(card);
   if (refusal !== null) {

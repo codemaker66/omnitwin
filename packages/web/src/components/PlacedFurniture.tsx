@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   CanvasTexture,
@@ -891,10 +892,12 @@ export function PlacedFurniture(): React.ReactElement {
   // Nameplates are for the item in hand: at their size, a plate over every
   // labelled table covers the very layout it describes. The layers list
   // names every table.
+  // Under the new chrome the caption speaks for the item in hand, so it gets no plate (T-671 slice 11′).
+  const chromeV2 = useMemo(() => plannerChromeRequested(window.location.search) === "v2", []);
   const canRenderNameplate = useCallback((placedId: string): boolean => (
     !cameraInteractionActive
-    && (selectedIds.has(placedId) || cameraReferenceItemIds.has(placedId))
-  ), [cameraInteractionActive, cameraReferenceItemIds, selectedIds]);
+    && ((selectedIds.has(placedId) && !chromeV2) || cameraReferenceItemIds.has(placedId))
+  ), [cameraInteractionActive, cameraReferenceItemIds, selectedIds, chromeV2]);
 
   const activeReferenceItemId = useMemo(() => {
     if (activeReferenceId === null) return null;

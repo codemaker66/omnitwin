@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { PlannerScene } from "../editor/PlannerScene.js";
 import { MarkupPersistence } from "../MarkupPersistence.js";
+import { Caption } from "./Caption.js";
 import { usePlannerRoomDimensions } from "../../hooks/use-planner-room-dimensions.js";
 import "../../App.css";
 import "./shell.css";
@@ -19,6 +20,7 @@ export function RoomStage(): ReactElement {
   return (
     <div className="pc-room-stage venviewer-planner-shell" data-testid="planner-room-stage">
       <PlannerScene />
+      <Caption />
       <MarkupPersistence />
     </div>
   );

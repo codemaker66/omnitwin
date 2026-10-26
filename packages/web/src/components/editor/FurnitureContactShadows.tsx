@@ -30,6 +30,13 @@ import { getCatalogueItem, type CatalogueItem } from "../../lib/catalogue.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
 import { toRenderSpace } from "../../constants/scale.js";
 import type { PlacedItem } from "../../lib/placement.js";
+import {
+  HIDDEN_MATRIX,
+  currentFurniturePresentation,
+  presentedPiece,
+  subscribeFurniturePresentation,
+  type PresentationFrame,
+} from "../../floor/presentation-channel.js";
 
 /** How far a shadow reaches beyond its footprint, metres. */
 const SPREAD = 0.28;
@@ -133,8 +140,13 @@ const rotation = new Quaternion();
 const size = new Vector3();
 const UP = new Vector3(0, 1, 0);
 
-/** Writes every placed piece's shadow into the buffers; returns how many. */
-function fillShadows(buffers: ShadowBuffers, items: readonly PlacedItem[]): number {
+/**
+ * Writes every placed piece's shadow into the buffers; returns how many.
+ * While a reveal plays (floor/presentation-channel.ts) a piece's shadow lies
+ * where the reveal draws it, as dark and as wide as it says; the store is
+ * never written, and the frame after release writes every shadow as placed.
+ */
+function fillShadows(buffers: ShadowBuffers, items: readonly PlacedItem[], frame: PresentationFrame | null): number {
   let count = 0;
   for (const placed of items) {
     if (count >= buffers.mesh.instanceMatrix.count) break;
@@ -142,13 +154,22 @@ function fillShadows(buffers: ShadowBuffers, items: readonly PlacedItem[]): numb
     if (item === undefined) continue;
     const shape = contactShadowShape(item, placed);
     if (shape === null) continue;
-    position.set(placed.x, placed.y + LIFT, placed.z);
-    rotation.setFromAxisAngle(UP, placed.rotationY);
-    size.set((shape.halfWidth + SPREAD) * 2, 1, (shape.halfDepth + SPREAD) * 2);
-    matrix.compose(position, rotation, size);
-    buffers.mesh.setMatrixAt(count, matrix);
-    buffers.shape.setXYZW(count, shape.halfWidth, shape.halfDepth, shape.corner, 0);
-    buffers.look.setXY(count, shape.strength, shape.under);
+    const shown = frame === null ? null : presentedPiece(frame, placed.id);
+    const presented = shown === null || shown === "hidden" ? null : shown;
+    const spread = presented?.shadowSpread ?? 1;
+    if (shown === "hidden" || (presented !== null && presented.shadow <= 0)) {
+      buffers.mesh.setMatrixAt(count, HIDDEN_MATRIX);
+      buffers.look.setXY(count, 0, 0);
+    } else {
+      const darkness = Math.min(1, presented?.shadow ?? 1);
+      position.set(presented?.shadowX ?? placed.x, placed.y + LIFT, presented?.shadowZ ?? placed.z);
+      rotation.setFromAxisAngle(UP, presented?.shadowYaw ?? placed.rotationY);
+      size.set((shape.halfWidth * spread + SPREAD) * 2, 1, (shape.halfDepth * spread + SPREAD) * 2);
+      matrix.compose(position, rotation, size);
+      buffers.mesh.setMatrixAt(count, matrix);
+      buffers.look.setXY(count, shape.strength * darkness, shape.under * darkness);
+    }
+    buffers.shape.setXYZW(count, shape.halfWidth * spread, shape.halfDepth * spread, shape.corner, 0);
     count += 1;
   }
   buffers.mesh.count = count;
@@ -183,10 +204,17 @@ export function FurnitureContactShadows(): ReactElement | null {
     previous.current = null;
   }, []);
 
+  const latest = useRef(items);
+  latest.current = items;
   useEffect(() => {
-    fillShadows(buffers, items);
+    fillShadows(buffers, items, currentFurniturePresentation());
     invalidate();
   }, [buffers, invalidate, items]);
+
+  // A reveal's frames, published before the frame renders (the publisher invalidates).
+  useEffect(() => subscribeFurniturePresentation((frame) => {
+    fillShadows(buffers, latest.current, frame);
+  }), [buffers]);
 
   return <primitive object={buffers.mesh} />;
 }
