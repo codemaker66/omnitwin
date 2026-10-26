@@ -1,10 +1,12 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PerspectiveCamera } from "three";
+import { PerspectiveCamera, Vector3 } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { RootState } from "@react-three/fiber";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { computeCameraTarget, computeDefaultCameraPosition } from "../../lib/camera-rig.js";
+import type { ReactElement } from "react";
 
 // ---------------------------------------------------------------------------
 // The orbit camera's damping settles on frames it asks for, and only while
@@ -16,6 +18,7 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 const harness = vi.hoisted(() => ({
   camera: null as PerspectiveCamera | null,
   canvas: null as HTMLCanvasElement | null,
+  size: { width: 1600, height: 1000 },
   controls: null as OrbitControlsImpl | null,
   frames: new Set<(state: RootState, delta: number) => void>(),
   invalidate: vi.fn(),
@@ -25,7 +28,7 @@ vi.mock("@react-three/fiber", async () => {
   return {
     useThree: <T,>(selector?: (state: { camera: PerspectiveCamera | null; gl: { domElement: HTMLCanvasElement | null }; controls: OrbitControlsImpl | null; invalidate: () => void; size: { width: number; height: number } }) => T) => {
       const state = { camera: harness.camera, gl: { domElement: harness.canvas },
-        controls: harness.controls, invalidate: harness.invalidate, size: { width: 1600, height: 1000 } };
+        controls: harness.controls, invalidate: harness.invalidate, size: harness.size };
       return selector === undefined ? state : selector(state);
     },
     useFrame: (callback: (state: RootState, delta: number) => void) => {
@@ -104,6 +107,7 @@ function controls(): OrbitControlsImpl {
 beforeEach(() => {
   useCockpitStore.getState().reset();
   useBookmarkStore.setState({ tour: null, transition: null, pendingNavigationId: null, activeReferenceId: null });
+  harness.size = { width: 1600, height: 1000 };
   harness.camera = new PerspectiveCamera(55, 1600 / 1000, 0.1, 200);
   harness.camera.position.set(0, 14, 18);
   harness.canvas = document.createElement("canvas");
@@ -191,5 +195,58 @@ describe("the orbit camera's mouse", () => {
 
     expect(mouseDrag(0), "the left button turns nothing").toBeLessThan(1e-6);
     expect(mouseDrag(2), "the right button looks around").toBeGreaterThan(0.2);
+  });
+});
+
+describe("the orbit camera across a resize (A-04)", () => {
+  /** Renders the rig at a new canvas size, as a window resize, browser zoom or rotation does. */
+  function resize(rerender: (ui: ReactElement) => void, width: number, height: number, room = dimensions): void {
+    harness.size = { width, height };
+    rerender(<CameraRig dimensions={room} />);
+    framesUntilRest(400);
+  }
+
+  it("keeps a view the user has moved, across a resize and a portrait crossing", () => {
+    const { rerender } = render(<CameraRig dimensions={dimensions} />);
+    framesUntilRest(400);
+    act(() => { controls().update(); });
+    // An orbit and a pan of the target, as a hand gives them.
+    act(() => { controls().setAzimuthalAngle(controls().getAzimuthalAngle() + 0.5); });
+    framesUntilRest(400);
+    act(() => { controls().target.x += 1.5; controls().update(); });
+    framesUntilRest(400);
+    // Damping decays an orbit's remainder by a fraction an update: let it run out, so what follows is the resize's alone.
+    act(() => { for (let index = 0; index < 400; index++) controls().update(); });
+    const position = harness.camera?.position.clone();
+    const target = controls().target.clone();
+
+    resize(rerender, 1300, 1000);
+    expect(harness.camera?.position.distanceTo(position ?? new Vector3())).toBeLessThan(1e-6);
+    expect(controls().target.distanceTo(target)).toBeLessThan(1e-6);
+
+    resize(rerender, 800, 1000);
+    expect(harness.camera?.position.distanceTo(position ?? new Vector3()), "a portrait window keeps the view").toBeLessThan(1e-6);
+    expect(controls().target.distanceTo(target), "and the orbit target it was looking at").toBeLessThan(1e-6);
+  });
+
+  it("fits the opening view to a resize while the camera has not moved", () => {
+    const { rerender } = render(<CameraRig dimensions={dimensions} />);
+    framesUntilRest(400);
+    resize(rerender, 800, 1000);
+    const [x, y, z] = computeDefaultCameraPosition(dimensions, 0.8);
+    const [tx, ty, tz] = computeCameraTarget(dimensions, 0.8);
+    expect(harness.camera?.position.distanceTo(new Vector3(x, y, z))).toBeLessThan(1e-3);
+    expect(controls().target.distanceTo(new Vector3(tx, ty, tz)), "with the orbit target to match").toBeLessThan(1e-6);
+  });
+
+  it("opens a new room on its own opening view, however the last one was moved", () => {
+    const { rerender } = render(<CameraRig dimensions={dimensions} />);
+    framesUntilRest(400);
+    act(() => { controls().setAzimuthalAngle(controls().getAzimuthalAngle() + 0.5); });
+    framesUntilRest(400);
+    const room = { width: 14, length: 9, height: 5 };
+    resize(rerender, 1600, 1000, room);
+    const [x, y, z] = computeDefaultCameraPosition(room, 1.6);
+    expect(harness.camera?.position.distanceTo(new Vector3(x, y, z))).toBeLessThan(1e-3);
   });
 });
