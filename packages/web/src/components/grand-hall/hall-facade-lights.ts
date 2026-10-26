@@ -76,8 +76,8 @@ function fail(reason: string): never {
   throw new Error(`Grand Hall facade lights: ${reason}`);
 }
 
-const coordinate = z.number().finite().min(-COORDINATE_LIMIT).max(COORDINATE_LIMIT);
-const halfExtent = z.number().finite().min(-10).max(10);
+const coordinate = z.number().min(-COORDINATE_LIMIT).max(COORDINATE_LIMIT);
+const halfExtent = z.number().min(-10).max(10);
 
 const lightSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]{1,40}:[a-z0-9.:-]{1,40}$/u),
@@ -89,7 +89,7 @@ const lightSchema = z.object({
   centre: z.tuple([coordinate, coordinate, coordinate]),
   along: z.tuple([halfExtent, halfExtent, halfExtent]),
   up: z.tuple([halfExtent, halfExtent, halfExtent]),
-  span: z.tuple([z.number().finite().min(0).max(40), z.number().finite().positive().max(40)]),
+  span: z.tuple([z.number().min(0).max(40), z.number().positive().max(40)]),
 }).strict();
 
 const count = z.number().int().nonnegative();

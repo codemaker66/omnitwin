@@ -17,7 +17,7 @@ const { buildServer } = await import("../index.js");
 // is what matters to test here.
 // ---------------------------------------------------------------------------
 
-const FAKE_CONFIG_ID = "00000000-0000-0000-0000-000000000001";
+const FAKE_CONFIG_ID = "00000000-0000-4000-8000-000000000001";
 
 function adminToken(): string {
   return JSON.stringify({
@@ -56,11 +56,21 @@ describe("POST /configurations/:configId/claim", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("authenticated request with valid UUID passes auth + validation", async () => {
+  it("returns 400 without the creating browser's claim secret", async () => {
     const res = await server.inject({
       method: "POST",
       url: `/configurations/${FAKE_CONFIG_ID}/claim`,
       headers: { authorization: `Bearer ${adminToken()}` },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("authenticated request with valid UUID and a claim secret passes auth + validation", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/configurations/${FAKE_CONFIG_ID}/claim`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { claimSecret: "a".repeat(43) },
     });
     expect(res.statusCode).not.toBe(401);
     expect(res.statusCode).not.toBe(400);

@@ -113,6 +113,14 @@ describe("MobilePlannerTopBar plan as a PDF", () => {
     expect(screen.queryByRole("button", { name: "Send your plan" })).toBeNull();
   });
 
+  // The guest enquiry route accepts only a guest's draft (public preview); a plan
+  // saved to an account goes to the venue through its review instead (QoL E-01).
+  it("does not offer the guest enquiry for a plan saved to an account", () => {
+    useEditorStore.setState({ isPublicPreview: false });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Send to Events Team" })).toBeNull();
+  });
+
   it("is not offered before anything is placed", () => {
     useEditorStore.setState({ objects: [] });
     render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);

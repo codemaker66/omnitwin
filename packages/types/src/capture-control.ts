@@ -192,7 +192,7 @@ export const CaptureControlSourceRecordSchema = z
       CAPTURE_CONTROL_SOURCE_CLASS_AUTHORITY_LEVELS[record.sourceClass];
     if (!allowedAuthorityLevels.includes(record.poseAuthorityLevel)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["poseAuthorityLevel"],
         message:
           "Capture control source class cannot claim this pose authority level.",
@@ -204,7 +204,7 @@ export const CaptureControlSourceRecordSchema = z
     for (const [index, alignmentMethod] of record.alignmentMethods.entries()) {
       if (!allowedAlignmentMethods.includes(alignmentMethod)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["alignmentMethods", index],
           message:
             "Capture control source class cannot claim this alignment method.",
@@ -216,7 +216,7 @@ export const CaptureControlSourceRecordSchema = z
     const needsReviewerRole = reviewRoleQaStatuses.includes(record.qaStatus);
     if (needsReviewerRole && record.reviewerRole === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewerRole"],
         message: "Reviewed or review-gated capture control sources need a reviewer role.",
       });
@@ -224,7 +224,7 @@ export const CaptureControlSourceRecordSchema = z
 
     if (!needsReviewerRole && record.reviewerRole !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewerRole"],
         message:
           "Only reviewed or review-gated capture control sources may carry a reviewer role.",
@@ -243,7 +243,7 @@ function validateCaptureControlRoom(
   if (venueSlug !== TRADES_HALL_VENUE_SLUG) return;
   if (isTradesHallRuntimeRoomSlug(roomSlug)) return;
   ctx.addIssue({
-    code: z.ZodIssueCode.custom,
+    code: "custom",
     path: ["roomSlug"],
     message: "Unsupported Trades Hall room slug.",
   });
@@ -263,7 +263,7 @@ export const CaptureControlSourceRegistrationSchema = z
     id: z.string(),
     venueSlug: RuntimeSlugSchema,
     roomSlug: RuntimeSlugSchema,
-    runtimePackageId: z.string().uuid().nullable(),
+    runtimePackageId: z.uuid().nullable(),
     transformArtifactId: RuntimeManifestKeySchema.nullable(),
     sourceId: z.string().trim().min(1).max(160).regex(SAFE_ID),
     sourceClass: CaptureControlSourceClassSchema,
@@ -281,28 +281,28 @@ export const CaptureControlSourceRegistrationSchema = z
 
     if (row.source.sourceId !== row.sourceId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["sourceId"],
         message: "sourceId must match source.sourceId.",
       });
     }
     if (row.source.sourceClass !== row.sourceClass) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["sourceClass"],
         message: "sourceClass must match source.sourceClass.",
       });
     }
     if (row.source.poseAuthorityLevel !== row.poseAuthorityLevel) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["poseAuthorityLevel"],
         message: "poseAuthorityLevel must match source.poseAuthorityLevel.",
       });
     }
     if (row.source.qaStatus !== row.qaStatus) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["qaStatus"],
         message: "qaStatus must match source.qaStatus.",
       });
@@ -312,7 +312,7 @@ export const CaptureControlSourceRegistrationSchema = z
       !sourceReferencesTransformArtifact(row.source, row.transformArtifactId)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["source", "transformArtifactRefs"],
         message: "Linked transform artifacts must be referenced by the source record.",
       });
@@ -326,7 +326,7 @@ export const RegisterCaptureControlSourceRecordInputSchema = z
   .object({
     venueSlug: RuntimeSlugSchema,
     roomSlug: RuntimeSlugSchema,
-    runtimePackageId: z.string().uuid().nullable().optional(),
+    runtimePackageId: z.uuid().nullable().optional(),
     transformArtifactId: RuntimeManifestKeySchema.nullable().optional(),
     source: CaptureControlSourceRecordSchema,
     reviewNote: z.string().trim().max(2000).nullable().optional(),
@@ -339,7 +339,7 @@ export const RegisterCaptureControlSourceRecordInputSchema = z
     const runtimePackageId = input.runtimePackageId ?? null;
     if (transformArtifactId !== null && runtimePackageId === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["runtimePackageId"],
         message: "A transform-linked capture control source needs a runtime package id.",
       });
@@ -349,7 +349,7 @@ export const RegisterCaptureControlSourceRecordInputSchema = z
       !sourceReferencesTransformArtifact(input.source, transformArtifactId)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["source", "transformArtifactRefs"],
         message: "Linked transform artifacts must be referenced by the source record.",
       });
@@ -363,7 +363,7 @@ export const CaptureControlSourceRecordQuerySchema = z
   .object({
     venue: RuntimeSlugSchema.default(TRADES_HALL_VENUE_SLUG),
     room: RuntimeSlugSchema.optional(),
-    runtimePackageId: z.string().uuid().optional(),
+    runtimePackageId: z.uuid().optional(),
     transformArtifactId: RuntimeManifestKeySchema.optional(),
   })
   .strict()
@@ -373,7 +373,7 @@ export const CaptureControlSourceRecordQuerySchema = z
     }
     if (query.transformArtifactId !== undefined && query.runtimePackageId === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["runtimePackageId"],
         message: "Filtering by transform artifact requires runtimePackageId.",
       });
@@ -386,9 +386,9 @@ export type CaptureControlSourceRecordQuery = z.infer<
 export const CaptureControlRegistrationReportSchema = z
   .object({
     schemaVersion: z.literal("venviewer.capture-control-registration-report.v0"),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     mode: z.enum(["dry_run", "registered"]),
-    apiUrl: z.string().url(),
+    apiUrl: z.url(),
     payloadFile: z.string().trim().min(1),
     payload: z.object({
       venueSlug: RuntimeSlugSchema,
@@ -397,13 +397,13 @@ export const CaptureControlRegistrationReportSchema = z
       sourceClass: CaptureControlSourceClassSchema,
       poseAuthorityLevel: CapturePoseAuthorityLevelSchema,
       qaStatus: CaptureControlQaStatusSchema,
-      runtimePackageId: z.string().uuid().nullable(),
+      runtimePackageId: z.uuid().nullable(),
       transformArtifactId: RuntimeManifestKeySchema.nullable(),
       staleWhen: z.array(CaptureControlStalenessTriggerSchema),
     }).strict(),
     preflight: z.object({
-      payloadRuntimePackageId: z.string().uuid().nullable(),
-      latestRuntimePackageId: z.string().uuid().nullable(),
+      payloadRuntimePackageId: z.uuid().nullable(),
+      latestRuntimePackageId: z.uuid().nullable(),
       latestRuntimePackageRuntimeStatus: RuntimePackageStatusSchema.nullable(),
       latestRuntimePackageEvidenceStatus: AssetEvidenceStatusSchema.nullable(),
       runtimePackageMatchesLatest: z.boolean().nullable(),
@@ -414,11 +414,11 @@ export const CaptureControlRegistrationReportSchema = z
       sourceId: z.string().trim().min(1).max(160).regex(SAFE_ID),
       qaStatus: CaptureControlQaStatusSchema,
       registeredBy: z.string().nullable(),
-      createdAt: z.string().datetime(),
-      updatedAt: z.string().datetime(),
+      createdAt: z.iso.datetime(),
+      updatedAt: z.iso.datetime(),
     }).strict().nullable(),
     roomStatus: z.object({
-      latestCaptureControlSourceRecordId: z.string().uuid().nullable(),
+      latestCaptureControlSourceRecordId: z.uuid().nullable(),
       latestCaptureControlSourceId: z.string().trim().min(1).max(160).regex(SAFE_ID).nullable(),
       latestCaptureControlSourceClass: CaptureControlSourceClassSchema.nullable(),
       latestCaptureControlPoseAuthorityLevel: CapturePoseAuthorityLevelSchema.nullable(),
@@ -441,14 +441,14 @@ export const CaptureControlRegistrationReportSchema = z
     if (report.mode === "dry_run") {
       if (report.registration !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["registration"],
           message: "Dry-run reports cannot include a registration row.",
         });
       }
       if (report.roomStatus !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["roomStatus"],
           message: "Dry-run reports cannot include room-status readback.",
         });
@@ -458,14 +458,14 @@ export const CaptureControlRegistrationReportSchema = z
     if (report.mode === "registered") {
       if (report.registration === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["registration"],
           message: "Registered reports must include the persisted capture-control row.",
         });
       }
       if (report.roomStatus === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["roomStatus"],
           message: "Registered reports must include room-status readback.",
         });
@@ -476,7 +476,7 @@ export const CaptureControlRegistrationReportSchema = z
     const latestPackageId = report.preflight.latestRuntimePackageId;
     if (report.payload.runtimePackageId !== payloadPackageId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "payloadRuntimePackageId"],
         message: "Preflight payload runtime package id must match the report payload.",
       });
@@ -487,21 +487,21 @@ export const CaptureControlRegistrationReportSchema = z
       : latestPackageId !== null && payloadPackageId === latestPackageId;
     if (report.preflight.runtimePackageMatchesLatest !== expectedMatch) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "runtimePackageMatchesLatest"],
         message: "runtimePackageMatchesLatest must reflect payload/latest runtime package identity.",
       });
     }
     if (expectedMatch === false && !report.preflight.runtimePackageDriftAllowed) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "runtimePackageDriftAllowed"],
         message: "Runtime package drift reports require the explicit drift override.",
       });
     }
     if (report.guardrails.runtimePackageDriftAllowed !== report.preflight.runtimePackageDriftAllowed) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["guardrails", "runtimePackageDriftAllowed"],
         message: "Guardrail drift override must match preflight drift override.",
       });
@@ -509,14 +509,14 @@ export const CaptureControlRegistrationReportSchema = z
     if (report.registration !== null) {
       if (report.registration.sourceId !== report.payload.sourceId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["registration", "sourceId"],
           message: "Registered source id must match the report payload source id.",
         });
       }
       if (report.registration.qaStatus !== report.payload.qaStatus) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["registration", "qaStatus"],
           message: "Registered QA status must match the report payload QA status.",
         });
@@ -526,7 +526,7 @@ export const CaptureControlRegistrationReportSchema = z
         report.roomStatus.latestCaptureControlSourceRecordId !== report.registration.captureControlSourceId
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["roomStatus", "latestCaptureControlSourceRecordId"],
           message: "Room-status readback source record id must match the registered capture-control row.",
         });
@@ -534,28 +534,28 @@ export const CaptureControlRegistrationReportSchema = z
       if (report.roomStatus !== null) {
         if (report.roomStatus.latestCaptureControlSourceId !== report.registration.sourceId) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["roomStatus", "latestCaptureControlSourceId"],
             message: "Room-status source id must match the registered capture-control source id.",
           });
         }
         if (report.roomStatus.latestCaptureControlSourceClass !== report.payload.sourceClass) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["roomStatus", "latestCaptureControlSourceClass"],
             message: "Room-status source class must match the report payload source class.",
           });
         }
         if (report.roomStatus.latestCaptureControlPoseAuthorityLevel !== report.payload.poseAuthorityLevel) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["roomStatus", "latestCaptureControlPoseAuthorityLevel"],
             message: "Room-status pose authority must match the report payload pose authority.",
           });
         }
         if (report.roomStatus.latestCaptureControlQaStatus !== report.registration.qaStatus) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["roomStatus", "latestCaptureControlQaStatus"],
             message: "Room-status QA status must match the registered capture-control QA status.",
           });
@@ -567,7 +567,7 @@ export const CaptureControlRegistrationReportSchema = z
       !report.guardrails.staleReadbackAllowed
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["guardrails", "staleReadbackAllowed"],
         message: "Stale capture-control readback reports require the explicit stale-readback override.",
       });
@@ -593,17 +593,17 @@ export type CaptureControlRegistrationReportInspectionStatus = z.infer<
 export const CaptureControlRegistrationReportInspectionSchema = z
   .object({
     schemaVersion: z.literal("venviewer.capture-control-registration-report-inspection.v0"),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     inspectedReportFile: z.string().trim().min(1),
-    inspectedReportGeneratedAt: z.string().datetime().nullable(),
+    inspectedReportGeneratedAt: z.iso.datetime().nullable(),
     status: CaptureControlRegistrationReportInspectionStatusSchema,
     liveRegistrationReady: z.boolean(),
     mode: z.enum(["dry_run", "registered"]).nullable(),
     venueSlug: RuntimeSlugSchema.nullable(),
     roomSlug: RuntimeSlugSchema.nullable(),
     sourceId: z.string().trim().min(1).max(160).regex(SAFE_ID).nullable(),
-    reportRuntimePackageId: z.string().uuid().nullable(),
-    reportLatestRuntimePackageId: z.string().uuid().nullable(),
+    reportRuntimePackageId: z.uuid().nullable(),
+    reportLatestRuntimePackageId: z.uuid().nullable(),
     reportRuntimePackageMatchesLatest: z.boolean().nullable(),
     reportRuntimePackageDriftAllowed: z.boolean().nullable(),
     reportStaleReadbackAllowed: z.boolean().nullable(),
@@ -614,7 +614,7 @@ export const CaptureControlRegistrationReportInspectionSchema = z
   .superRefine((inspection, ctx) => {
     if (inspection.liveRegistrationReady && inspection.status !== "ready_for_live_registration") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["status"],
         message: "Only ready_for_live_registration inspections may set liveRegistrationReady.",
       });
@@ -622,14 +622,14 @@ export const CaptureControlRegistrationReportInspectionSchema = z
     if (inspection.status === "ready_for_live_registration") {
       if (!inspection.liveRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveRegistrationReady"],
           message: "Ready inspections must set liveRegistrationReady.",
         });
       }
       if (inspection.mode !== "dry_run") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["mode"],
           message: "Ready inspections must come from dry-run reports.",
         });
@@ -641,49 +641,49 @@ export const CaptureControlRegistrationReportInspectionSchema = z
         inspection.inspectedReportGeneratedAt === null
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["status"],
           message: "Ready inspections must include report target identity.",
         });
       }
       if (inspection.blockers.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Ready inspections cannot include blockers.",
         });
       }
       if (inspection.reportRuntimePackageId === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageId"],
           message: "Ready inspections must be scoped to a runtime package.",
         });
       }
       if (inspection.reportLatestRuntimePackageId !== inspection.reportRuntimePackageId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportLatestRuntimePackageId"],
           message: "Ready inspections require the payload runtime package to match latest loadable package.",
         });
       }
       if (inspection.reportRuntimePackageMatchesLatest !== true) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageMatchesLatest"],
           message: "Ready inspections require runtimePackageMatchesLatest true.",
         });
       }
       if (inspection.reportRuntimePackageDriftAllowed !== false) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageDriftAllowed"],
           message: "Ready inspections cannot use runtime-package drift override.",
         });
       }
       if (inspection.reportStaleReadbackAllowed !== false) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportStaleReadbackAllowed"],
           message: "Ready inspections cannot use stale-readback override.",
         });
@@ -694,7 +694,7 @@ export const CaptureControlRegistrationReportInspectionSchema = z
       inspection.blockers.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Not-ready inspections must include at least one blocker.",
       });
@@ -702,21 +702,21 @@ export const CaptureControlRegistrationReportInspectionSchema = z
     if (inspection.status === "registered_report_verified") {
       if (inspection.liveRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveRegistrationReady"],
           message: "Registered reports are audit evidence, not live-registration authorization.",
         });
       }
       if (inspection.mode !== "registered") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["mode"],
           message: "Registered report inspections must cite registered mode.",
         });
       }
       if (inspection.blockers.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Registered report inspections must state why they are not live-registration-ready.",
         });
@@ -725,14 +725,14 @@ export const CaptureControlRegistrationReportInspectionSchema = z
     if (inspection.status === "invalid_report") {
       if (inspection.liveRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveRegistrationReady"],
           message: "Invalid reports cannot be live-registration-ready.",
         });
       }
       if (inspection.blockers.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Invalid report inspections must include validation blockers.",
         });

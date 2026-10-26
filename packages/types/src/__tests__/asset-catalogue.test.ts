@@ -4,6 +4,8 @@ import {
   assetDisplayName,
   getCanonicalAssetById,
   getCanonicalAssetBySlug,
+  seatBaseSlug,
+  seatsFor,
 } from "../asset-catalogue.js";
 import { FURNITURE_CATEGORIES } from "../furniture.js";
 
@@ -147,6 +149,38 @@ describe("the names a guest reads (assetDisplayName)", () => {
         expect(asset.plainName).not.toBe(asset.name);
         expect(asset.plainName).not.toMatch(/\d+\/\d+/u);
       }
+    }
+  });
+});
+
+describe("seatsFor — seat truth", () => {
+  it("sets the 6 ft round for ten, eight to twelve", () => {
+    expect(seatsFor({ slug: "round-table-6ft" })).toEqual({ default: 10, min: 8, max: 12 });
+  });
+
+  it("gives every cloth and finish variant its base piece's seats", () => {
+    for (const asset of CANONICAL_ASSETS) {
+      const base = seatBaseSlug(asset.slug);
+      if (base === asset.slug) continue;
+      expect(getCanonicalAssetBySlug(base)).toBeDefined();
+      expect(seatsFor(asset)).toEqual(seatsFor({ slug: base }));
+    }
+  });
+
+  it("seats nobody at chairs, poseurs, service tables, staging or AV", () => {
+    for (const slug of ["burgess-turini-18-3", "poseur-table-white", "cake-cutting-table", "ceremony-table", "dancefloor-panel", "lectern"]) {
+      expect(seatsFor({ slug })).toBeNull();
+    }
+  });
+
+  it("only seats tables, and every range holds its default", () => {
+    for (const asset of CANONICAL_ASSETS) {
+      const seats = seatsFor(asset);
+      if (seats === null) continue;
+      expect(asset.category).toBe("table");
+      expect(seats.min).toBeGreaterThanOrEqual(1);
+      expect(seats.min).toBeLessThanOrEqual(seats.default);
+      expect(seats.default).toBeLessThanOrEqual(seats.max);
     }
   });
 });

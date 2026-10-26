@@ -75,7 +75,7 @@ const ConfigurationResponseSchema = z.object({
   revision: z.number().int().min(1),
   // Keep the server timestamp for saved-state display after a clean reopen.
   // Older responses may omit it; never substitute the browser's load time.
-  updatedAt: z.string().datetime({ offset: true }).optional(),
+  updatedAt: z.iso.datetime({ offset: true }).optional(),
   objects: z.array(PlacedObjectResponseSchema).optional(),
   // Event-level metadata (special instructions, day-of contact, phase
   // deadlines, access notes). Absent on legacy rows, null on cleared rows,
@@ -96,6 +96,15 @@ const ConfigurationResponseSchema = z.object({
 });
 
 export type Configuration = z.infer<typeof ConfigurationResponseSchema>;
+
+// A new public plan comes back with the secret that lets this browser, and
+// only this browser, claim it into an account later (migration 0102). An API
+// from before 0102 sends none, and the plan then stays a public draft.
+const CreatedPublicConfigurationSchema = ConfigurationResponseSchema.extend({
+  claimSecret: z.string().min(16).optional(),
+});
+
+export type CreatedPublicConfiguration = z.infer<typeof CreatedPublicConfigurationSchema>;
 
 const PlacedObjectArraySchema = z.array(PlacedObjectResponseSchema);
 
@@ -157,8 +166,8 @@ export type GuestEnquiryInput = GuestEnquiry;
 // Public endpoints (no auth)
 // ---------------------------------------------------------------------------
 
-export async function createPublicConfig(spaceId: string, name?: string): Promise<Configuration> {
-  return api.post("/public/configurations", { spaceId, name }, true, ConfigurationResponseSchema);
+export async function createPublicConfig(spaceId: string, name?: string): Promise<CreatedPublicConfiguration> {
+  return api.post("/public/configurations", { spaceId, name }, true, CreatedPublicConfigurationSchema);
 }
 
 export async function publicBatchSave(
@@ -210,8 +219,10 @@ export async function getConfigSummaries(configIds: readonly string[]): Promise<
   return api.get(`/configurations/summaries?ids=${ids}`, z.array(ConfigurationSummarySchema));
 }
 
-export async function claimConfig(configId: string): Promise<Configuration> {
-  return api.post(`/configurations/${configId}/claim`, undefined, undefined, ConfigurationResponseSchema);
+/** Claims a public plan into the signed-in account with the secret its
+ *  creating browser was given; lib/planner-claim.ts is the caller. */
+export async function claimConfig(configId: string, claimSecret: string): Promise<Configuration> {
+  return api.post(`/configurations/${configId}/claim`, { claimSecret }, undefined, ConfigurationResponseSchema);
 }
 
 export async function authBatchSave(
@@ -272,7 +283,7 @@ export interface ConfigMetadataInput {
   readonly instructions?: EventInstructions | null;
 }
 
-const PatchConfigResponseSchema = z.object({ id: z.string() }).passthrough();
+const PatchConfigResponseSchema = z.object({ id: z.string() }).loose();
 
 export async function patchConfigMetadata(
   configId: string,

@@ -35,7 +35,7 @@ export type {
 } from "@omnitwin/types";
 
 const AfterWrite = z.object({ watch: CompetitorWatchSchema });
-const AfterAdd = AfterWrite.extend({ id: z.string().uuid() });
+const AfterAdd = AfterWrite.extend({ id: z.uuid() });
 const AfterChange = AfterWrite.extend({ checkReset: z.boolean() });
 const AfterRun = AfterWrite.extend({ run: PageCheckRunSchema });
 

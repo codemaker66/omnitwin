@@ -52,11 +52,11 @@ import { canReadDiary } from "../utils/query.js";
 // file only parses, delegates, publishes, and shapes replies.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 /** GET /bookings reads exactly one enquiry's bookings: a missing, malformed,
  *  repeated or unknown parameter is a 400, never a wider read. */
-const EnquiryBookingsQuery = z.object({ enquiryId: z.string().uuid() }).strict();
+const EnquiryBookingsQuery = z.object({ enquiryId: z.uuid() }).strict();
 
 /** Far above the bookings any one enquiry holds; the list is never paged. */
 const ENQUIRY_BOOKINGS_LIMIT = 100;
@@ -106,7 +106,7 @@ export { serializeBooking } from "../services/booking-mutations.js";
 // resend across EITHER transport replays the recorded outcome instead of
 // re-executing. Keyless requests take the exact pre-T-538 path.
 
-const IdempotencyKeyValue = z.string().uuid();
+const IdempotencyKeyValue = z.uuid();
 
 type IdempotencyHeader =
   | { readonly kind: "absent" }
