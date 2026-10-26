@@ -354,6 +354,19 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(made.request.eventId).toBe(ours);
   });
 
+  it("refuses a booking that is not part of the event the request names", async () => {
+    const f = await fixture();
+    const [bound] = await db.select({ eventId: schema.bookings.eventId }).from(schema.bookings).where(eq(schema.bookings.id, f.bookingId));
+    if (bound?.eventId === null || bound?.eventId === undefined) throw new Error("the fixture booking is bound to its event");
+    const another = randomUUID();
+    await db.insert(schema.events).values({ id: another, venueId: f.venueId, createdBy: f.admin.id, name: "Another dinner" });
+    const refused = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { eventId: another }));
+    expect("code" in refused && refused.code).toBe("BOOKING_NOT_ON_EVENT");
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { eventId: bound.eventId }));
+    if (!("request" in made)) throw new Error("expected a request");
+    expect(made.request.eventId).toBe(bound.eventId);
+  });
+
   it("walks the ladder and stamps each step", async () => {
     const f = await fixture();
     const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
