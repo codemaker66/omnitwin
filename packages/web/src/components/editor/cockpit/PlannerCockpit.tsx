@@ -15,6 +15,7 @@ import { CLIENT_SIDE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SceneOutliner } from "./SceneOutliner.js";
 import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
+import { EventKindPicker } from "../../planner-chrome/EventKindPicker.js";
 import "./PlannerCockpit.css";
 import "./ReferenceViewer.css";
 
@@ -106,6 +107,8 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
       {/* Phones and tablets have no right dock: a chosen lens rises as a
           bottom sheet instead (it portals itself above the planner chrome). */}
       {mobile ? <LensSheet key="lens-sheet" /> : null}
+      {/* "What are you planning?" on a new layout's first open (T-674); it portals itself into the top layer. */}
+      <EventKindPicker key="event-kind" eventLinked={hasLinkedEvent} />
     </div>
   );
 }

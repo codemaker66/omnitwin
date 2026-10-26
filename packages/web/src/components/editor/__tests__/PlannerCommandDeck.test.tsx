@@ -16,6 +16,7 @@ import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useAutoFillRequestStore } from "../../../stores/auto-fill-request-store.js";
+import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { PlannerCommandDeck } from "../PlannerCommandDeck.js";
 import { GRAND_HALL_ARRIVAL } from "../../../lib/planner-room-arrival.js";
 import { sampleCameraTour } from "../../../lib/camera-tour.js";
@@ -24,6 +25,7 @@ function resetPlannerStores(): void {
   useEditorStore.getState().reset();
   useCockpitStore.getState().reset();
   useAutoFillRequestStore.setState({ requested: null });
+  usePlannerEventStore.getState().setEventKind(null);
   useCatalogueStore.setState({
     drawerOpen: false,
     selectedItemId: null,
@@ -181,6 +183,28 @@ describe("PlannerCommandDeck", () => {
 
     expect(usePlacementStore.getState().placedItems).toHaveLength(0);
     expect(useAutoFillRequestStore.getState().requested).toBe("dinner-rounds");
+  });
+
+  it("lays out rows of seats once the planner knows it is a corporate event (T-674)", () => {
+    usePlannerEventStore.getState().setEventKind("corporate");
+    render(<PlannerCommandDeck />);
+    const layOut = screen.getByTestId("planner-command-action-auto-fill");
+    expect(layOut.getAttribute("aria-label")).toBe("Lay out rows of seats for your guests");
+    fireEvent.click(layOut);
+    expect(useAutoFillRequestStore.getState().requested).toBe("theatre");
+    expect(useCockpitStore.getState().activeMode).toBe("guests");
+  });
+
+  it("keeps Lay out on round tables for a wedding and for something else (T-674)", () => {
+    for (const kind of ["wedding", "other"] as const) {
+      usePlannerEventStore.getState().setEventKind(kind);
+      render(<PlannerCommandDeck />);
+      const layOut = screen.getByTestId("planner-command-action-auto-fill");
+      expect(layOut.getAttribute("aria-label")).toBe("Lay out tables and seats for your guests");
+      fireEvent.click(layOut);
+      expect(useAutoFillRequestStore.getState().requested).toBe("dinner-rounds");
+      cleanup();
+    }
   });
 
   it("hides auto-fill once the floor has furniture", () => {

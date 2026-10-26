@@ -36,6 +36,8 @@ import {
 } from "../../lib/furniture-semantics.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 import { countLabel } from "../../lib/count-label.js";
+import { layOutStyleFor } from "../../lib/event-kind-record.js";
+import { usePlannerEventStore } from "../../stores/planner-event-store.js";
 
 interface CommandAction {
   readonly id: string;
@@ -159,6 +161,8 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     [undoEntry, redoEntry, undoAvailable, redoAvailable],
   );
   const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
+  // Lay out starts with the event's shape: rows of seats for a corporate event, round tables otherwise (T-674).
+  const layOutStyle = usePlannerEventStore((s) => layOutStyleFor(s.eventKind));
   const sceneSource = useCockpitStore((s) => s.sceneSource);
   const layerMode = useCockpitStore((s) => s.layerMode);
   const space = useEditorStore((s) => s.space);
@@ -409,15 +413,16 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     // it places it (redteam fix-first 15). Undo-safe; tune from there.
     if (placedItems.length === 0) {
       const forGuests = plannedGuestCount !== null && plannedGuestCount > 0 ? plannedGuestCount : 0;
+      const what = layOutStyle === "theatre" ? "rows of seats" : "tables and seats";
       emptyActions.splice(1, 0, {
         id: "auto-fill",
         label: "Lay out",
         ariaLabel: forGuests > 0
-          ? `Lay out tables and seats for ${countLabel(forGuests, "guest")}`
-          : "Lay out tables and seats for your guests",
+          ? `Lay out ${what} for ${countLabel(forGuests, "guest")}`
+          : `Lay out ${what} for your guests`,
         icon: <LayoutGrid size={16} aria-hidden="true" />,
         onClick: () => {
-          useAutoFillRequestStore.getState().request("dinner-rounds");
+          useAutoFillRequestStore.getState().request(layOutStyle);
           useCockpitStore.getState().setMode("guests");
         },
       });
@@ -446,6 +451,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     hasClearedDrawing,
     markupActive,
     markupStrokeCount,
+    layOutStyle,
     linenTableCount,
     placedItems.length,
     plannedGuestCount,
