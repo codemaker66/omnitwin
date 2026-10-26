@@ -31,6 +31,7 @@ import { XrayToggle } from "../XrayToggle.js";
 import { MeasurementTool } from "../MeasurementTool.js";
 import { TapeMeasure } from "../TapeMeasure.js";
 import { PlacementGhost } from "../PlacementGhost.js";
+import { WarmPieceInHand } from "../WarmPlacedVariants.js";
 import { PlannerInteractionFloor } from "./PlannerInteractionFloor.js";
 import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
@@ -663,6 +664,7 @@ export function PlannerScene(): ReactElement {
             <MeasurementTool />
             <TapeMeasure />
             <PlacementGhost />
+            <WarmPieceInHand />
             <SelectionSystem />
             <FurnitureMotion />
             <CockpitSceneOverlays renderGeometry={renderSceneOverlays} />
