@@ -235,6 +235,17 @@ export function cardIsWholeSet(params: CardParams): boolean {
   return params.card !== "piece" || seatsInHand(params) > 0;
 }
 
+/**
+ * Whether the card in hand is set down as a card, its whole stamp in one
+ * step with no chair dialog: a set card (Round, Top table, Long table, Dance
+ * floor) always, from v2's rail as from v1's list (Q-07, Q-13); a piece card
+ * once the card dock is on (setupCards), else the old way, through the chair
+ * dialog. The ghost, the snaps and the commit all ask this.
+ */
+export function placesAsCard(params: CardParams): boolean {
+  return params.card !== "piece" || plannerFeatureEnabled("setupCards");
+}
+
 /** Card copy: metres to one place, "4.6"; whole figures plainly, "2". */
 function cardMetres(metres: number): string {
   const tenths = Math.round(metres * 10) / 10;
