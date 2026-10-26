@@ -121,6 +121,55 @@ interface GuestEnquiryModalProps {
   readonly onClose: () => void;
 }
 
+// The guest's draft, kept for this tab (planner-qol E-08): closing the form,
+// on purpose or by a stray click, never loses what was typed, and the next
+// send starts from the name and email given last time. Session storage only,
+// so nothing outlives the tab, and a failure to store changes nothing else.
+interface EnquiryDraft {
+  readonly email: string;
+  readonly phone: string;
+  readonly name: string;
+  readonly eventDate: string;
+  readonly eventType: string;
+  readonly guestCount: string;
+  readonly message: string;
+}
+
+const EMPTY_DRAFT: EnquiryDraft = { email: "", phone: "", name: "", eventDate: "", eventType: "", guestCount: "", message: "" };
+const DRAFT_KEY_PREFIX = "venviewer.enquiry-draft.";
+const CONTACT_KEY = "venviewer.enquiry-contact";
+
+function readStored(key: string): Partial<Record<keyof EnquiryDraft, string>> {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    const parsed: unknown = raw === null ? null : JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return {};
+    const out: Partial<Record<keyof EnquiryDraft, string>> = {};
+    for (const field of Object.keys(EMPTY_DRAFT) as (keyof EnquiryDraft)[]) {
+      const value = (parsed as Record<string, unknown>)[field];
+      if (typeof value === "string") out[field] = value.slice(0, 2000);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function storeJson(key: string, value: object | null): void {
+  try {
+    if (value === null) window.sessionStorage.removeItem(key);
+    else window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Best-effort: private browsing or a full store keeps the form working.
+  }
+}
+
+/** The draft for this plan, over the contact details of the last send. */
+function initialDraft(configId: string): EnquiryDraft {
+  const contact = readStored(CONTACT_KEY);
+  return { ...EMPTY_DRAFT, email: contact.email ?? "", phone: contact.phone ?? "", name: contact.name ?? "", ...readStored(DRAFT_KEY_PREFIX + configId) };
+}
+
 const VISUALLY_HIDDEN: React.CSSProperties = {
   position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap",
 };
@@ -199,13 +248,14 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const venueId = useEditorStore((state) => state.venueId);
   const venue = usePlannerVenueIdentity(venueId);
   const venueName = venue.known ? venue.name : null;
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
-  const [eventDate, setEventDate] = useState("");
-  const [eventType, setEventType] = useState("");
-  const [guestCount, setGuestCount] = useState("");
-  const [message, setMessage] = useState("");
+  const [draft] = useState(() => initialDraft(configId));
+  const [email, setEmail] = useState(draft.email);
+  const [phone, setPhone] = useState(draft.phone);
+  const [name, setName] = useState(draft.name);
+  const [eventDate, setEventDate] = useState(draft.eventDate);
+  const [eventType, setEventType] = useState(draft.eventType);
+  const [guestCount, setGuestCount] = useState(draft.guestCount);
+  const [message, setMessage] = useState(draft.message);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -215,7 +265,20 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   // change the layout the venue is reading.
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const emailRef = useRef<HTMLInputElement>(null);
+  const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
+
+  // Every keystroke is kept for this plan until the enquiry is sent.
+  useEffect(() => {
+    if (submitted) return;
+    storeJson(DRAFT_KEY_PREFIX + configId, { email, phone, name, eventDate, eventType, guestCount, message });
+  }, [configId, submitted, email, phone, name, eventDate, eventType, guestCount, message]);
+
+  // Sent: the reader is taken to the answer (planner-qol E-X6), which the
+  // status region below also announces.
+  useEffect(() => {
+    if (submitted) successHeadingRef.current?.focus();
+  }, [submitted]);
 
   // Auto-focus email on open
   useEffect(() => {
@@ -266,6 +329,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         guestCount: guestCount !== "" ? parseInt(guestCount, 10) : undefined,
         message: message.trim() !== "" ? message.trim() : undefined,
       });
+      storeJson(DRAFT_KEY_PREFIX + configId, null);
+      storeJson(CONTACT_KEY, { email: email.trim(), phone: phone.trim(), name: name.trim() });
       setSubmitted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong — please try again");
@@ -276,7 +341,10 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
 
   // Escape closes it wherever focus is, through the planner's one keyboard
   // owner, and while it is open the planner's shortcuts leave the room alone.
-  useEscapeLayer("modal", { open: true, onEscape: onClose });
+  // Not while the enquiry is on its way (planner-qol E-X1): closing then would
+  // hide whether it arrived. The draft is kept either way.
+  const close = useCallback((): void => { if (!isSubmitting) onClose(); }, [isSubmitting, onClose]);
+  useEscapeLayer("modal", { open: true, onEscape: close });
 
   const layoutSummary = getLayoutSummary();
 
@@ -325,7 +393,10 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             </svg>
           </div>
 
-          <h2 id="enquiry-success-title" style={{
+          <span role="status" aria-live="polite" aria-atomic="true" style={VISUALLY_HIDDEN}>
+            {`Layout sent. ${venueName ?? "The venue's events team"} will reply to ${email}.`}
+          </span>
+          <h2 id="enquiry-success-title" ref={successHeadingRef} tabIndex={-1} style={{ outline: "none",
             fontSize: 26, fontWeight: 700, color: "#f5f5f5",
             fontFamily: "'Playfair Display', serif", marginBottom: 8,
           }}>
@@ -392,7 +463,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         zIndex: 200, fontFamily: "'Inter', system-ui, sans-serif",
         animation: "omni-enq-overlay 0.3s ease forwards",
       }}
-      onClick={onClose}
+      onClick={close}
       role="dialog"
       aria-modal="true"
       aria-labelledby="enquiry-form-title"
