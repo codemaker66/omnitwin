@@ -19,6 +19,7 @@ import {
   fillConsequence,
   fillConsequenceLine,
   fillOverActionLabel,
+  fillOverDoneLine,
   planAutoFill,
   planRoomFill,
   publishedFigureFor,
@@ -56,8 +57,8 @@ export interface AutoFillPromptProps {
   readonly style: AutoFillStyle;
   /** The venue's published figures for the open room. */
   readonly published: PublishedCapacityAnswer;
-  /** Called with what was placed. */
-  readonly onPlaced: (plan: AutoFillPlan) => void;
+  /** Called with what was placed and, for a fill over a laid floor, the line saying what it did to the rounds there. */
+  readonly onPlaced: (plan: AutoFillPlan, doneLine: string | null) => void;
   readonly onCancel: () => void;
 }
 
@@ -126,7 +127,8 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
       const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
       if (chair !== undefined) placed = placement.autoArrangeTheatre(chair.id, guests);
     }
-    if (placed !== null) onPlaced(placed);
+    if (placed === null) return;
+    onPlaced(placed, consequence !== null && placed.style === "dinner-rounds" ? fillOverDoneLine(placed, consequence) : null);
   };
 
   const describedBy = [figure !== null ? hintId : null, plan !== null ? basisId : null]

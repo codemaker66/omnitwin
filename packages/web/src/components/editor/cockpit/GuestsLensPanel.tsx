@@ -214,7 +214,12 @@ export function GuestsLensPanel(): ReactElement {
   const fillOver = plannerFeatureEnabled("fillKeepOuts");
   const buildable = AUTO_FILL_STYLES.filter((option) => canLayOut(option.style, floorEmpty, fillOver));
   const [choosing, setChoosing] = useState<AutoFillStyle | null>(null);
-  const [filled, setFilled] = useState<{ readonly plan: AutoFillPlan; readonly after: readonly PlacedItem[] } | null>(null);
+  const [filled, setFilled] = useState<{
+    readonly plan: AutoFillPlan;
+    /** What a fill over a laid floor did to the rounds there, said in place of "Placed …" (planner-qol C-02). */
+    readonly doneLine: string | null;
+    readonly after: readonly PlacedItem[];
+  } | null>(null);
   const choiceRefs = useRef(new Map<AutoFillStyle, HTMLButtonElement>());
   const resultRef = useRef<HTMLDivElement>(null);
 
@@ -231,9 +236,9 @@ export function GuestsLensPanel(): ReactElement {
     if (fillCurrent !== null) resultRef.current?.focus({ preventScroll: true });
   }, [fillCurrent]);
 
-  const onPlaced = (plan: AutoFillPlan): void => {
+  const onPlaced = (plan: AutoFillPlan, doneLine: string | null): void => {
     setChoosing(null);
-    setFilled({ plan, after: usePlacementStore.getState().placedItems });
+    setFilled({ plan, doneLine, after: usePlacementStore.getState().placedItems });
   };
   const onBack = (): void => {
     const style = choosing;
@@ -296,7 +301,7 @@ export function GuestsLensPanel(): ReactElement {
           />
         ) : fillCurrent !== null ? (
           <div className="auto-fill__result" ref={resultRef} tabIndex={-1} data-testid="auto-fill-result">
-            <p className="auto-fill__placed" data-testid="auto-fill-placed">{autoFillPlacedLine(fillCurrent.plan)}</p>
+            <p className="auto-fill__placed" data-testid="auto-fill-placed">{fillCurrent.doneLine ?? autoFillPlacedLine(fillCurrent.plan)}</p>
             {fillShort !== null && <p className="auto-fill__short" data-testid="auto-fill-result-short">{fillShort}</p>}
           </div>
         ) : buildable.length > 0 ? (

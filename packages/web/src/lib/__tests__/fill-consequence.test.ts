@@ -8,6 +8,7 @@ import {
   fillConsequence,
   fillConsequenceLine,
   fillOverActionLabel,
+  fillOverDoneLine,
   fillOverReceipt,
   grandHallExits,
   planRoomFill,
@@ -88,14 +89,57 @@ describe("what a fill over a laid floor says before it lays", () => {
       .toBe("Moves 4 rounds. Each round is set for 10: Table 4 had 12.");
   });
 
-  it("sets a scaled round back to the standard size the spacing assumed, and says so (C-X6)", () => {
-    const placed = rounds(2).map((piece) => (piece.label === "Table 2" ? { ...piece, scale: 1.2 } : piece));
+  it("sets a scaled round, table and chairs, back to the standard size the spacing assumed, and says so (C-X6)", () => {
+    const two = rounds(2);
+    const table2 = two.find((piece) => piece.label === "Table 2");
+    // The inspector scales a round as a whole: its table and its chairs.
+    const placed = two.map((piece) => (piece.groupId === table2?.groupId ? { ...piece, scale: 1.2 } : piece));
     const fill = planFor(placed, 20);
     const consequence = fillConsequence(placed, fill.refillIds, fill.plan, noNotes);
     expect(consequence?.resized).toEqual(["Table 2"]);
     expect(consequence === null ? "" : fillConsequenceLine(consequence)).toBe("Moves 2 rounds. Table 2 goes back to the standard size.");
-    const laid = refillPieces(placed, fill.refillIds, fill.plan);
-    expect(laid.find((piece) => piece.label === "Table 2")?.scale).toBeUndefined();
+    const round2 = refillPieces(placed, fill.refillIds, fill.plan).filter((piece) => piece.groupId === table2?.groupId);
+    expect(round2).toHaveLength(11);
+    // Said outright, never left out: the editor bridge reads a missing scale as the piece's old one.
+    for (const piece of round2) expect(piece.scale).toBe(1);
+  });
+
+  it("keeps a round where it stands when the same fill is asked for again, rather than saying it moves", () => {
+    const placed = rounds(14);
+    const first = planFor(placed, 80);
+    const laid = [...placed.filter((piece) => !first.refillIds.has(piece.id)), ...refillPieces(placed, first.refillIds, first.plan)];
+    const again = planFor(laid, 80);
+    const consequence = fillConsequence(laid, again.refillIds, again.plan, noNotes);
+    expect(consequence).toMatchObject({ moved: 0, kept: 8, added: 0, removed: [] });
+    expect(consequence === null ? "" : fillConsequenceLine(consequence)).toBe("Keeps every round where it is.");
+  });
+
+  it("names the note on a chair of a round taken away", () => {
+    const placed = rounds(14);
+    const table12 = placed.find((piece) => piece.label === "Table 12");
+    const chair = placed.find((piece) => piece.groupId === table12?.groupId && piece.id !== table12.id);
+    const fill = planFor(placed, 80);
+    const consequence = fillConsequence(placed, fill.refillIds, fill.plan, (id) => id === chair?.id);
+    expect(consequence?.removedWithNotes).toEqual(["Table 12"]);
+  });
+
+  it("names a note on a chair a round set for fewer seats leaves behind", () => {
+    const twelve = stamp("round", 6, 0, { seats: 12 }).map((piece, p) => (p === 0 ? { ...piece, label: "Table 4" } : piece));
+    const placed = [...rounds(3), ...twelve];
+    // A round keeps its first ten seats; the eleventh and twelfth go.
+    const lastChair = twelve[twelve.length - 1];
+    const fill = planFor(placed, 40);
+    const consequence = fillConsequence(placed, fill.refillIds, fill.plan, (id) => id === lastChair?.id);
+    expect(consequence?.chairNotesGoing).toEqual([{ name: "Table 4", notes: 1 }]);
+    expect(consequence === null ? "" : fillConsequenceLine(consequence))
+      .toBe("Moves 4 rounds. A chair taken from Table 4 has a note, which goes with it. Each round is set for 10: Table 4 had 12.");
+  });
+
+  it("counts unnamed rounds together rather than naming each \"a round\"", () => {
+    const placed = [...stamp("round", -3, 0, { seats: 12 }), ...stamp("round", 3, 0, { seats: 12 })];
+    const fill = planFor(placed, 20);
+    const consequence = fillConsequence(placed, fill.refillIds, fill.plan, noNotes);
+    expect(consequence === null ? "" : fillConsequenceLine(consequence)).toContain("Each round is set for 10: 2 unnamed rounds had 12.");
   });
 
   it("counts only the rounds it sets anew: a dance floor kept where it is is not mentioned", () => {
@@ -116,6 +160,14 @@ describe("what a fill over a laid floor says before it lays", () => {
 describe("Fill over a laid floor's button and receipt", () => {
   it("seats rather than places", () => {
     expect(fillOverActionLabel(planFor(rounds(6), 110).plan)).toBe("Seat 110 at 11 tables");
+  });
+
+  it("tells the lens what it did once laid, not that it placed", () => {
+    const placed = rounds(14);
+    const fill = planFor(placed, 80);
+    const consequence = fillConsequence(placed, fill.refillIds, fill.plan, noNotes);
+    if (consequence === null) throw new Error("no consequence");
+    expect(fillOverDoneLine(fill.plan, consequence)).toBe("Seated 80 at 8 tables: moved 8 rounds and took away 6.");
   });
 
   it("posts a receipt one Undo takes back", () => {

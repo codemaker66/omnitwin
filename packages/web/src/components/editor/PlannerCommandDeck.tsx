@@ -412,7 +412,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
       emptyActions.splice(1, 0, {
         id: "lay-out",
         label: "Lay out",
-        ariaLabel: "Lay out the banquet rounds again, keeping everything else",
+        ariaLabel: "Lay out banquet rounds, keeping everything else on the floor",
         icon: <LayoutGrid size={16} aria-hidden="true" />,
         onClick: () => {
           useAutoFillRequestStore.getState().request("dinner-rounds");

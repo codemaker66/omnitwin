@@ -859,11 +859,25 @@ function refilledRounds(placedItems: readonly PlacedItem[], refillIds: ReadonlyS
   return { refilled, oldTables };
 }
 
+/** A refilled round's pieces other than its table, in the order refillPieces reuses them for the plan's chairs. */
+function roundSeats(refilled: readonly PlacedItem[], table: PlacedItem): readonly PlacedItem[] {
+  return refilled.filter((placed) => placed.groupId === table.groupId && placed.id !== table.id);
+}
+
+/**
+ * A reused piece at the standard size the plan's spacing assumed (planner-qol
+ * C-X6), said outright: the editor bridge reads a missing scale as the
+ * piece's old one, so leaving it out would put the old size back.
+ */
+function atStandardSize(piece: PlacedItem): PlacedItem {
+  return piece.scale === undefined ? piece : { ...piece, scale: 1 };
+}
+
 /**
  * The round groups a fill plan sets down, reusing the refilled tables' ids,
  * names, cloths and chairs' ids in refill order; tables beyond those are new.
- * A reused table is set at the standard size the plan's spacing assumed
- * (planner-qol C-X6). Render-space, ready for the placement store.
+ * A reused round, table and chairs, is set at the standard size the plan's
+ * spacing assumed (C-X6). Render-space, ready for the placement store.
  */
 export function refillPieces(
   placedItems: readonly PlacedItem[],
@@ -882,12 +896,11 @@ export function refillPieces(
       return;
     }
     const groupId = old.groupId;
-    const oldChairs = refilled.filter((placed) => placed.groupId === groupId && placed.id !== old.id);
-    const { scale: _scale, ...standard } = old;
-    pieces.push({ ...standard, x: table.x, z: table.z, y: table.y, rotationY: table.rotationY });
+    const oldChairs = roundSeats(refilled, old);
+    pieces.push({ ...atStandardSize(old), x: table.x, z: table.z, y: table.y, rotationY: table.rotationY });
     chairs.forEach((chair, c) => {
       const reuse = oldChairs[c];
-      pieces.push(reuse === undefined ? { ...chair, groupId } : { ...reuse, x: chair.x, z: chair.z, y: chair.y, rotationY: chair.rotationY });
+      pieces.push(reuse === undefined ? { ...chair, groupId } : { ...atStandardSize(reuse), x: chair.x, z: chair.z, y: chair.y, rotationY: chair.rotationY });
     });
   });
   return pieces;
@@ -895,20 +908,31 @@ export function refillPieces(
 
 /** What a fill over a laid floor does to the rounds already there, said before it does it (planner-qol C-02). */
 export interface FillConsequence {
-  /** Rounds already placed that the fill sets anew at its spots, keeping their names, notes and cloths. */
+  /** Rounds already placed that the fill sets at another spot, keeping their names, notes and cloths. */
   readonly moved: number;
+  /** Rounds already placed that keep the spot they stand on (the same fill asked for again). */
+  readonly kept: number;
   /** New rounds beyond those. */
   readonly added: number;
   /** Rounds the plan has no spot for, taken away with their chairs: their names, or "a round" unnamed. */
   readonly removed: readonly string[];
-  /** Of those, the ones with a note on them. */
+  /** Of those, the ones with a note on the table or one of its chairs. */
   readonly removedWithNotes: readonly string[];
-  /** Moved rounds whose seats change to the plan's, with the seats they had. */
+  /** Reused rounds set for fewer seats, where chairs taken away have notes: how many notes go from each. */
+  readonly chairNotesGoing: readonly { readonly name: string; readonly notes: number }[];
+  /** Reused rounds whose seats change to the plan's, with the seats they had. */
   readonly reseated: readonly { readonly name: string; readonly had: number }[];
-  /** Moved rounds of a non-standard size, set back to the standard one. */
+  /** Reused rounds of a non-standard size, table or chairs, set back to the standard one. */
   readonly resized: readonly string[];
   readonly seatsPerTable: number;
 }
+
+/** A round with no name, as the consequence names it. */
+const UNNAMED_ROUND = "a round";
+
+/** How near its spot a reused round must already stand to count as kept: a millimetre, and no turn. */
+const SAME_SPOT_M = 0.001;
+const SAME_TURN_RAD = 1e-6;
 
 /**
  * The consequence of laying `plan` over `placedItems`, as refillPieces will
@@ -925,23 +949,38 @@ export function fillConsequence(
   if (oldTables.length === 0) return null;
   const nameOf = (table: PlacedItem): string => {
     const label = (table.label ?? "").trim();
-    return label === "" ? "a round" : label;
+    return label === "" ? UNNAMED_ROUND : label;
   };
-  const chairsAt = (table: PlacedItem): number => refilled.filter((placed) => (
-    placed.groupId === table.groupId && placed.id !== table.id && getCatalogueItem(placed.catalogueItemId)?.category === "chair"
-  )).length;
-  const moved = oldTables.slice(0, plan.tables.length);
+  const seatsOf = (table: PlacedItem): readonly PlacedItem[] => roundSeats(refilled, table);
+  const chairsAt = (table: PlacedItem): number => seatsOf(table)
+    .filter((placed) => getCatalogueItem(placed.catalogueItemId)?.category === "chair").length;
+  const reused = oldTables.slice(0, plan.tables.length);
   const removed = oldTables.slice(plan.tables.length);
+  const moved = reused.filter((table, i) => {
+    const spot = plan.tables[i];
+    return spot === undefined
+      || Math.abs(toRealWorld(table.x) - spot.xM) > SAME_SPOT_M
+      || Math.abs(toRealWorld(table.z) - spot.zM) > SAME_SPOT_M
+      || Math.abs(table.rotationY - spot.rotationY) > SAME_TURN_RAD;
+  }).length;
   return {
-    moved: moved.length,
+    moved,
+    kept: reused.length - moved,
     added: Math.max(0, plan.tables.length - oldTables.length),
     removed: removed.map(nameOf),
-    removedWithNotes: removed.filter((table) => hasNote(table.id)).map(nameOf),
-    reseated: moved.flatMap((table) => {
+    removedWithNotes: removed.filter((table) => [table, ...seatsOf(table)].some((piece) => hasNote(piece.id))).map(nameOf),
+    // refillPieces reuses a round's first seatsPerTable seats; the rest go.
+    chairNotesGoing: reused.flatMap((table) => {
+      const notes = seatsOf(table).slice(plan.seatsPerTable).filter((piece) => hasNote(piece.id)).length;
+      return notes === 0 ? [] : [{ name: nameOf(table), notes }];
+    }),
+    reseated: reused.flatMap((table) => {
       const had = chairsAt(table);
       return had === plan.seatsPerTable ? [] : [{ name: nameOf(table), had }];
     }),
-    resized: moved.filter((table) => (table.scale ?? 1) !== 1).map(nameOf),
+    resized: reused
+      .filter((table) => [table, ...seatsOf(table).slice(0, plan.seatsPerTable)].some((piece) => (piece.scale ?? 1) !== 1))
+      .map(nameOf),
     seatsPerTable: plan.seatsPerTable,
   };
 }
@@ -1014,25 +1053,64 @@ function sentence(words: string): string {
  * reset to the plan's; sizes set back to the standard one.
  */
 export function fillConsequenceLine(consequence: FillConsequence): string {
-  const changes = [
-    consequence.moved > 0 ? `moves ${countLabel(consequence.moved, "round")}` : null,
-    consequence.added > 0 ? `adds ${String(consequence.added)}` : null,
-    consequence.removed.length > 0 ? `takes away ${String(consequence.removed.length)}` : null,
-  ].filter((part): part is string => part !== null);
-  const sentences = [sentence(namesList(changes))];
+  const changes = fillChanges(consequence, "ahead");
+  const sentences = [sentence(changes.length > 0 ? namesList(changes) : "keeps every round where it is")];
   const noted = consequence.removedWithNotes;
   if (noted.length > 0) {
     sentences.push(sentence(noted.length === 1
-      ? `${namesList(noted)} has a note, which goes with it`
-      : `${namesList(noted)} have notes, which go with them`));
+      ? `${roundsList(noted)} has a note, which goes with it`
+      : `${roundsList(noted)} have notes, which go with them`));
+  }
+  const chairNotes = consequence.chairNotesGoing;
+  if (chairNotes.length > 0) {
+    const from = roundsList(chairNotes.map(({ name }) => name));
+    sentences.push(sentence(chairNotes.reduce((sum, { notes }) => sum + notes, 0) === 1
+      ? `a chair taken from ${from} has a note, which goes with it`
+      : `chairs taken from ${from} have notes, which go with them`));
   }
   if (consequence.reseated.length > 0) {
-    sentences.push(sentence(`each round is set for ${String(consequence.seatsPerTable)}: ${namesList(consequence.reseated.map(({ name, had }) => `${name} had ${String(had)}`))}`));
+    sentences.push(sentence(`each round is set for ${String(consequence.seatsPerTable)}: ${namesList(reseatedParts(consequence.reseated))}`));
   }
   if (consequence.resized.length > 0) {
-    sentences.push(sentence(`${namesList(consequence.resized)} ${consequence.resized.length === 1 ? "goes" : "go"} back to the standard size`));
+    sentences.push(sentence(`${roundsList(consequence.resized)} ${consequence.resized.length === 1 ? "goes" : "go"} back to the standard size`));
   }
   return sentences.join(" ");
+}
+
+/** What the Guests lens says once a fill over a laid floor is laid: "Seated 30 at 3 tables: moved 3 rounds and took away 2." */
+export function fillOverDoneLine(plan: BanquetFillPlan, consequence: FillConsequence): string {
+  const seated = `seated ${plan.chairs.toLocaleString("en-GB")} at ${countLabel(plan.tableCount, "table")}`;
+  const changes = fillChanges(consequence, "done");
+  return sentence(changes.length > 0 ? `${seated}: ${namesList(changes)}` : seated);
+}
+
+/** The fill's changes to the rounds there, said before it lays ("moves 3 rounds") or after ("moved 3 rounds"). */
+function fillChanges(consequence: FillConsequence, when: "ahead" | "done"): readonly string[] {
+  const [moves, adds, takesAway] = when === "ahead" ? ["moves", "adds", "takes away"] : ["moved", "added", "took away"];
+  return [
+    consequence.moved > 0 ? `${moves} ${countLabel(consequence.moved, "round")}` : null,
+    consequence.added > 0 ? `${adds} ${String(consequence.added)}` : null,
+    consequence.removed.length > 0 ? `${takesAway} ${String(consequence.removed.length)}` : null,
+  ].filter((part): part is string => part !== null);
+}
+
+/** Rounds named in a sentence, the unnamed counted together: "Table 3 and 2 unnamed rounds". */
+function roundsList(names: readonly string[]): string {
+  const unnamed = names.filter((name) => name === UNNAMED_ROUND).length;
+  if (unnamed < 2) return namesList(names);
+  return namesList([...names.filter((name) => name !== UNNAMED_ROUND), `${String(unnamed)} unnamed rounds`]);
+}
+
+/** "Table 4 had 12", the unnamed counted together by the seats they had: "2 unnamed rounds had 12". */
+function reseatedParts(reseated: FillConsequence["reseated"]): readonly string[] {
+  const parts: string[] = [];
+  const unnamed = new Map<number, number>();
+  for (const { name, had } of reseated) {
+    if (name === UNNAMED_ROUND) unnamed.set(had, (unnamed.get(had) ?? 0) + 1);
+    else parts.push(`${name} had ${String(had)}`);
+  }
+  for (const [had, count] of unnamed) parts.push(`${count === 1 ? UNNAMED_ROUND : `${String(count)} unnamed rounds`} had ${String(had)}`);
+  return parts;
 }
 
 /** The spacing the fill used, in the trade's words. */
