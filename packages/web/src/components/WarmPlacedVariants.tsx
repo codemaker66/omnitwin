@@ -15,10 +15,10 @@
 // planner keeps every pipeline it compiles (lib/pipeline-retention.ts), so the
 // drop finds them ready. A table brings its seats, so they are warmed with it.
 //
-// It relies on our three patch (patches/three@0.186.0.patch, Instance.js):
-// three r186 named each mesh's instance-matrix buffer after its node id, which
-// made every InstancedMesh's vertex shader its own code, so a warmed batch
-// never shared a program with the layer's. Named once for all, they do.
+// It relies on our three patch (patches/three@0.186.0.patch, WGSLNodeBuilder):
+// three r186 named each uniform buffer after its node id, which made every
+// InstancedMesh's vertex shader its own code, so a warmed batch never shared a
+// program with the layer's. Numbered in each shader's own order, they do.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useLayoutEffect, useRef, useState, type ReactElement } from "react";

@@ -1077,47 +1077,53 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..bc8b9cf61ce6bd57e6092c389d5c59d5
  	} )();
  
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 8cbb77a7bd36c6a89d397f18f8758fc60ff8146e..006ca50d6721a52fbbf8526de06c99747cbf33b7 100644
+index 8cbb77a7bd36c6a89d397f18f8758fc60ff8146e..0d5e5f9e8f43ceb96dbdc2892fdb36d5fca60d3a 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
-@@ -18871,7 +18871,9 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+@@ -82752,7 +82752,11 @@ class WGSLNodeBuilder extends NodeBuilder {
  
- 		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
+ 				uniformGPU = buffer;
  
--			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
-+			// Named, so every InstancedMesh's vertex shader is the same code and shares one program: named
-+			// after its node id, the buffer gave each new mesh a shader of its own to compile.
-+			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).setName( 'instanceMatrices' ).element( instanceIndex );
+-				uniformNode.name = name ? name : 'NodeBuffer_' + uniformNode.id;
++				// Numbered in the order this shader declares its buffers, not by node id: the code is then the
++				// same for every mesh drawn with one material, so they share one program, and a shader holding
++				// two buffers still names them apart. (Venviewer patch: by node id, every InstancedMesh's
++				// vertex shader was code of its own and compiled on its own.)
++				uniformNode.name = name ? name : 'NodeBuffer_' + ( this.nodeBufferDeclarations = ( this.nodeBufferDeclarations || 0 ) + 1 );
  
- 		} else {
+ 			} else {
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index fda563ffd328b99dc693d884f51fd39beb530a47..99415f946c6f3d314d669dd57de1a535a0b4c2c6 100644
+index fda563ffd328b99dc693d884f51fd39beb530a47..8e0eb5dd59dd7cb312a1a3c0cb291e324f65faa3 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
-@@ -18871,7 +18871,9 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+@@ -82752,7 +82752,11 @@ class WGSLNodeBuilder extends NodeBuilder {
  
- 		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
+ 				uniformGPU = buffer;
  
--			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
-+			// Named, so every InstancedMesh's vertex shader is the same code and shares one program: named
-+			// after its node id, the buffer gave each new mesh a shader of its own to compile.
-+			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).setName( 'instanceMatrices' ).element( instanceIndex );
+-				uniformNode.name = name ? name : 'NodeBuffer_' + uniformNode.id;
++				// Numbered in the order this shader declares its buffers, not by node id: the code is then the
++				// same for every mesh drawn with one material, so they share one program, and a shader holding
++				// two buffers still names them apart. (Venviewer patch: by node id, every InstancedMesh's
++				// vertex shader was code of its own and compiled on its own.)
++				uniformNode.name = name ? name : 'NodeBuffer_' + ( this.nodeBufferDeclarations = ( this.nodeBufferDeclarations || 0 ) + 1 );
  
- 		} else {
+ 			} else {
  
-diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
-index 2723fa918f28e286b33fdc9e4627c1d8c23b6a9c..b41e24f354cf6649b011c76af2efc48c90e216cd 100644
---- a/src/nodes/accessors/Instance.js
-+++ b/src/nodes/accessors/Instance.js
-@@ -42,7 +42,9 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+index 141480f7109eec5162b8d1dcff4ac551b9a31f91..24e4666ba140716c8a761eed3b9ebf67887a2291 100644
+--- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
++++ b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+@@ -1395,7 +1395,11 @@ class WGSLNodeBuilder extends NodeBuilder {
  
- 		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
+ 				uniformGPU = buffer;
  
--			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
-+			// Named, so every InstancedMesh's vertex shader is the same code and shares one program: named
-+			// after its node id, the buffer gave each new mesh a shader of its own to compile.
-+			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).setName( 'instanceMatrices' ).element( instanceIndex );
+-				uniformNode.name = name ? name : 'NodeBuffer_' + uniformNode.id;
++				// Numbered in the order this shader declares its buffers, not by node id: the code is then the
++				// same for every mesh drawn with one material, so they share one program, and a shader holding
++				// two buffers still names them apart. (Venviewer patch: by node id, every InstancedMesh's
++				// vertex shader was code of its own and compiled on its own.)
++				uniformNode.name = name ? name : 'NodeBuffer_' + ( this.nodeBufferDeclarations = ( this.nodeBufferDeclarations || 0 ) + 1 );
  
- 		} else {
+ 			} else {
  
