@@ -324,7 +324,8 @@ export function MobilePlannerTopBar({
           </button>
         ) : null}
 
-        {objectCount > 0 && configId !== null ? (
+        {/* A guest's draft only: a plan saved to an account goes through its review (QoL E-01). */}
+        {isPublicPreview && objectCount > 0 && configId !== null ? (
           <button
             type="button"
             style={{
