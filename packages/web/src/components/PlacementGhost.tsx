@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Object3D, Vector3, type Group } from "three";
+import { Object3D, Vector3, type Camera, type Group } from "three";
 
 /** Reusable vector for the warm-up copy's place ahead of the camera. */
 const _ahead = new Vector3();
@@ -55,11 +55,15 @@ const WARM_FRAMES = 3;
  */
 const WARM_WAIT_FRAMES = 60;
 
-/** Whether a frame drawn now would draw any mesh of `group`: one shown, under parents all shown. */
-function drawsSomething(group: Object3D): boolean {
+/**
+ * Whether a frame drawn now would draw any mesh of `group` through `camera`: one shown, under parents all
+ * shown, on a layer the camera sees. A piece's shadow casters live on a layer only the sun's camera sees
+ * (hall-sun.ts), and can arrive before the meshes the view draws.
+ */
+function drawsSomething(group: Object3D, camera: Camera): boolean {
   let found = false;
   group.traverseVisible((object) => {
-    if ((object as { readonly isMesh?: boolean }).isMesh === true) found = true;
+    if ((object as { readonly isMesh?: boolean }).isMesh === true && object.layers.test(camera.layers)) found = true;
   });
   return found;
 }
@@ -173,10 +177,10 @@ export function PlacementGhost(): React.ReactElement | null {
   // on the first frame of a drag.
   useEffect(() => onMainDraw(() => {
     const group = ghost.current;
-    if (warmFrames.current === 0 || group === null || !drawsSomething(group)) return;
+    if (warmFrames.current === 0 || group === null || !drawsSomething(group, camera)) return;
     warmFrames.current -= 1;
     if (warmFrames.current === 0) setWarming(false);
-  }), []);
+  }), [camera]);
 
   // Raycasting: update ghost on pointer move, place on pointer up (drag) or click.
   // All handlers read selectedItemId from the store (not the closure) to avoid stale values.
