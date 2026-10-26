@@ -9,6 +9,7 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 import { canReadInternalEventData } from "../../../lib/event-access.js";
 import { floorCategoryLabel, floorNames, floorSummaryLine, inFloorNameOrder, withFloorNames } from "../../../lib/floor-names.js";
 import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
+import { CAPTURED_LAYER_FALLBACK_STATUS } from "../../../lib/runtime-package-resolution.js";
 import { getGroupMemberIds, type PlacedItem } from "../../../lib/placement.js";
 import { dispatchPlannerToolbarCommand } from "../../../lib/planner-toolbar-events.js";
 import { referenceEntryMatches, referenceSceneEntries, referenceSceneSummary, type ReferenceSceneEntry } from "../../../lib/reference-scene-model.js";
@@ -90,9 +91,10 @@ export function SceneOutliner({ className = "" }: { readonly className?: string 
       <header className="reference-panel-heading"><ListTree size={15} aria-hidden="true" /><h2>On the floor</h2><span className="reference-count" aria-label={countLabel(summary.objects, "piece")}>{summary.objects}</span></header>
       <label className="reference-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="Find a table or piece" placeholder="Find a table or piece" value={search} onChange={(event) => { setSearch(event.target.value); }} /></label>
       <div className="reference-panel-scroll">
-        {/* Staff always; anyone while a captured layer is actually shown, so its honest status
-            (e.g. "staged from source — not yet registered") reaches the person looking at it. */}
-        {(locked || staff || gaussianSplatsAvailable()) && <details className="reference-tree-category reference-architecture" open>
+        {/* Staff always; anyone else only while a captured layer is actually mounted (its evidence label,
+            e.g. "staged from source — not yet registered", replaces the no-capture fallback in the store), so
+            the honest status reaches the person looking at it and a procedural room shows no capture row. */}
+        {(locked || staff || (gaussianSplatsAvailable() && runtime !== CAPTURED_LAYER_FALLBACK_STATUS)) && <details className="reference-tree-category reference-architecture" open>
           <summary><ChevronDown size={13} /><Building2 size={14} /><span>The room</span></summary>
           <div className="reference-capture-label"><span>{locked ? previewRuntime === null ? "Room preview unavailable" : "Frozen room outline" : "Room capture"}</span><small>{locked ? previewRuntime === null ? previewMessage ?? "No frozen room snapshot" : "Historical layout preview" : captureNote(runtime)}</small></div>
         </details>}
