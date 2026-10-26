@@ -235,7 +235,7 @@ describe("the clipboard remembers where it was copied (QoL B-X10)", () => {
     pointer = { x: 4, z: 0 };
     ctrl("KeyV");
     expect(tables()).toHaveLength(2);
-    expect(usePlacementNoticeStore.getState().notice?.text).toBe("Pasted 1 table from the Grand Hall");
+    expect(usePlacementNoticeStore.getState().notice).toMatchObject({ text: "Pasted 1 table from the Grand Hall", undo: true });
   });
 
   it("refuses a paste into another venue's layout, and takes the key", () => {
