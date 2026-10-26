@@ -226,9 +226,8 @@ describe("drawAhead", () => {
     let settled = false;
     const done = drawAhead(native, () => { native.draw("bloom"); native.draw("resolve"); }).then(() => { settled = true; });
     expect(native._pipelines.built).toEqual([{ subject: "bloom", async: true }, { subject: "resolve", async: true }]);
-    expect(Object.hasOwn(native._pipelines, "updateForRender"), "the draw path is three's own again").toBe(false);
     native.draw("final");
-    expect(native._pipelines.built.at(-1)).toEqual({ subject: "final", async: false });
+    expect(native._pipelines.built.at(-1), "after the frame, the draw path builds as three's does").toEqual({ subject: "final", async: false });
 
     native._pipelines.compiles[0]?.();
     await Promise.resolve();
@@ -240,8 +239,34 @@ describe("drawAhead", () => {
 
   it("gives the draw path back when the frame throws", async () => {
     const native = renderer();
-    await expect(drawAhead(native, () => { throw new Error("lost"); })).rejects.toThrow("lost");
-    expect(Object.hasOwn(native._pipelines, "updateForRender")).toBe(false);
+    await expect(drawAhead(native, () => { native.draw("bloom"); throw new Error("lost"); })).rejects.toThrow("lost");
+    native.draw("final");
+    expect(native._pipelines.built).toEqual([{ subject: "bloom", async: true }, { subject: "final", async: false }]);
+  });
+
+  it("draws ahead again on a renderer it has drawn ahead on before", async () => {
+    const native = renderer();
+    const first = drawAhead(native, () => { native.draw("bloom"); });
+    native._pipelines.compiles[0]?.();
+    await first;
+    const second = drawAhead(native, () => { native.draw("resolve"); });
+    native._pipelines.compiles[1]?.();
+    await second;
+    expect(native._pipelines.built).toEqual([{ subject: "bloom", async: true }, { subject: "resolve", async: true }]);
+  });
+
+  it("leaves a draw path that is not r186's alone, and draws nothing ahead", async () => {
+    class Later extends Pipelines {
+      override updateForRender(subject: string): void {
+        this.getForRender(subject, null);
+      }
+    }
+    const pipelines = new Later();
+    let drew = false;
+    await drawAhead({ _pipelines: pipelines }, () => { drew = true; });
+    expect(drew).toBe(false);
+    pipelines.updateForRender("final");
+    expect(pipelines.built).toEqual([{ subject: "final", async: false }]);
   });
 
   it("stops waiting the moment it is aborted", async () => {

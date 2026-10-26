@@ -218,13 +218,41 @@ interface DrawPipelines {
   getForRender(renderObject: object, promises?: Promise<unknown>[] | null): unknown;
 }
 
-/** three r186's private Pipelines, whose updateForRender its draw path calls for each object it draws; null without one. */
-function drawPipelines(renderer: object): DrawPipelines | null {
+/** Where a routed draw path sends the pipelines it lacks: null builds them as three does. */
+interface DrawRoute {
+  pending: Promise<unknown>[] | null;
+}
+
+const routes = new WeakMap<object, DrawRoute>();
+
+/** r186's draw path, minified or not: `updateForRender(renderObject) { this.getForRender(renderObject); }`. */
+const R186_UPDATE_FOR_RENDER = /\.getForRender\(\s*[\w$]+\s*\)/u;
+
+/**
+ * Routes `pipelines`' updateForRender through a DrawRoute, once and for good:
+ * a property added and deleted again around each frame drawn ahead would turn
+ * an object every draw reads into a slow dictionary in V8. Outside a frame
+ * drawn ahead the route builds as three's own line does. Null when the draw
+ * path is not r186's one line (a three bump): nothing is then drawn ahead.
+ */
+function drawRoute(pipelines: DrawPipelines): DrawRoute | null {
+  const update: unknown = Reflect.get(pipelines, "updateForRender");
+  if (typeof update !== "function" || !R186_UPDATE_FOR_RENDER.test(Function.prototype.toString.call(update))) return null;
+  const route: DrawRoute = { pending: null };
+  Object.defineProperty(pipelines, "updateForRender", {
+    configurable: true,
+    writable: true,
+    value: (renderObject: object): void => { pipelines.getForRender(renderObject, route.pending); },
+  });
+  routes.set(pipelines, route);
+  return route;
+}
+
+/** The routed draw path of three r186's private Pipelines (drawRoute); null without one. */
+function routedDrawPath(renderer: object): DrawRoute | null {
   const pipelines: unknown = Reflect.get(renderer, "_pipelines");
-  if (typeof pipelines !== "object" || pipelines === null) return null;
-  return typeof Reflect.get(pipelines, "updateForRender") === "function" && typeof Reflect.get(pipelines, "getForRender") === "function"
-    ? pipelines as DrawPipelines
-    : null;
+  if (typeof pipelines !== "object" || pipelines === null || typeof Reflect.get(pipelines, "getForRender") !== "function") return null;
+  return routes.get(pipelines) ?? drawRoute(pipelines as DrawPipelines);
 }
 
 /**
@@ -236,23 +264,17 @@ function drawPipelines(renderer: object): DrawPipelines | null {
  * own. Resolves once the pipelines are built, or as soon as `signal` aborts.
  * This reaches what compileAsync cannot: the post passes' materials, which
  * their chain builds only as its first frame draws. A renderer without
- * r186's Pipelines draws nothing ahead; its frames compile as they draw.
+ * r186's draw path draws nothing ahead; its frames compile as they draw.
  */
 export async function drawAhead(renderer: object, draw: () => void, signal: AbortSignal | null = null): Promise<void> {
-  const pipelines = drawPipelines(renderer);
-  if (pipelines === null || signal?.aborted === true) return;
+  const route = routedDrawPath(renderer);
+  if (route === null || signal?.aborted === true) return;
   const pending: Promise<unknown>[] = [];
-  const own = Object.getOwnPropertyDescriptor(pipelines, "updateForRender");
-  Object.defineProperty(pipelines, "updateForRender", {
-    configurable: true,
-    writable: true,
-    value: (renderObject: object): void => { pipelines.getForRender(renderObject, pending); },
-  });
+  route.pending = pending;
   try {
     draw();
   } finally {
-    if (own === undefined) Reflect.deleteProperty(pipelines, "updateForRender");
-    else Object.defineProperty(pipelines, "updateForRender", own);
+    route.pending = null;
   }
   const built = Promise.all(pending.map((compile) => compile.catch(() => undefined))).then(() => undefined);
   if (signal === null) {
