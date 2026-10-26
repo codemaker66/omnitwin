@@ -13,13 +13,16 @@
 // renderer's render target and MRT while it builds each shader, so the job
 // sets them for its whole run. NativeCanvas therefore holds its frame loop
 // ("never") while any job is pending and runs the jobs one at a time, after
-// the hold has taken effect; the frames resume once the queue is empty. A job
+// the hold has taken effect; the frames resume once the queue is empty. What
+// compileAsync cannot reach (the post passes' materials, built by their chain
+// as it draws its first frame) a job draws one frame ahead of, into a target
+// of its own, its pipelines built off that thread (drawAhead). A job
 // that has not settled by PRECOMPILE_JOB_LIMIT_MS (a device lost mid-compile,
 // a driver hang) is aborted: it puts the renderer's target and MRT back, and
 // the view draws on, compiling what is left as it draws (slowly, not never).
 // ---------------------------------------------------------------------------
 
-import type { Camera, Object3D, Scene } from "three";
+import type { Camera, LightShadow, Object3D, Scene } from "three";
 
 /**
  * Compiles one set of pipelines; resolves when they are built (or given up).
@@ -209,4 +212,81 @@ export async function compileEach(
     issued?.();
   }
   await Promise.all(compiles);
+}
+
+interface DrawPipelines {
+  getForRender(renderObject: object, promises?: Promise<unknown>[] | null): unknown;
+}
+
+/** three r186's private Pipelines, whose updateForRender its draw path calls for each object it draws; null without one. */
+function drawPipelines(renderer: object): DrawPipelines | null {
+  const pipelines: unknown = Reflect.get(renderer, "_pipelines");
+  if (typeof pipelines !== "object" || pipelines === null) return null;
+  return typeof Reflect.get(pipelines, "updateForRender") === "function" && typeof Reflect.get(pipelines, "getForRender") === "function"
+    ? pipelines as DrawPipelines
+    : null;
+}
+
+/**
+ * Draws one frame ahead: runs `draw` (a frame's renders, synchronously) with
+ * the renderer's draw path building each pipeline it lacks as compileAsync
+ * does, off the GPU process's main thread. r186 draws an object only once
+ * its pipeline is ready (Renderer._renderObjectDirect), so those draws are
+ * skipped and the frame is not one to show: draw it into a target of its
+ * own. Resolves once the pipelines are built, or as soon as `signal` aborts.
+ * This reaches what compileAsync cannot: the post passes' materials, which
+ * their chain builds only as its first frame draws. A renderer without
+ * r186's Pipelines draws nothing ahead; its frames compile as they draw.
+ */
+export async function drawAhead(renderer: object, draw: () => void, signal: AbortSignal | null = null): Promise<void> {
+  const pipelines = drawPipelines(renderer);
+  if (pipelines === null || signal?.aborted === true) return;
+  const pending: Promise<unknown>[] = [];
+  const own = Object.getOwnPropertyDescriptor(pipelines, "updateForRender");
+  Object.defineProperty(pipelines, "updateForRender", {
+    configurable: true,
+    writable: true,
+    value: (renderObject: object): void => { pipelines.getForRender(renderObject, pending); },
+  });
+  try {
+    draw();
+  } finally {
+    if (own === undefined) Reflect.deleteProperty(pipelines, "updateForRender");
+    else Object.defineProperty(pipelines, "updateForRender", own);
+  }
+  const built = Promise.all(pending.map((compile) => compile.catch(() => undefined))).then(() => undefined);
+  if (signal === null) {
+    await built;
+    return;
+  }
+  let settle: () => void = () => undefined;
+  const aborted = new Promise<void>((resolve) => { settle = resolve; });
+  signal.addEventListener("abort", settle, { once: true });
+  try {
+    await Promise.race([built, aborted]);
+  } finally {
+    signal.removeEventListener("abort", settle);
+  }
+}
+
+/**
+ * Runs `draw` with each shadow map that draws on request (autoUpdate off)
+ * holding its pending request, and hands the requests back after. A frame
+ * drawn ahead skips its draws, so a map it drew would be left empty and its
+ * request spent (the hall sun's, hall-sun.ts); maps that draw every frame
+ * draw again in the next.
+ */
+export function withoutShadowMapDraws<T>(root: Object3D, draw: () => T): T {
+  const held: LightShadow[] = [];
+  root.traverse((object) => {
+    const shadow = (object as { readonly shadow?: LightShadow }).shadow;
+    if (shadow === undefined || shadow.autoUpdate || !shadow.needsUpdate) return;
+    shadow.needsUpdate = false;
+    held.push(shadow);
+  });
+  try {
+    return draw();
+  } finally {
+    for (const shadow of held) shadow.needsUpdate = true;
+  }
 }

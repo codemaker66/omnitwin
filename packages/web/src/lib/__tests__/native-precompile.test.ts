@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Group, Mesh, PerspectiveCamera, Scene, type Camera, type Object3D } from "three";
+import { DirectionalLight, Group, Mesh, PerspectiveCamera, Scene, type Camera, type Object3D } from "three";
 import {
-  clearNativePrecompiles, compileEach, compileWithin, nativePrecompilePending, requestNativePrecompile, runNativePrecompiles,
-  subscribeNativePrecompile,
+  clearNativePrecompiles, compileEach, compileWithin, drawAhead, nativePrecompilePending, requestNativePrecompile, runNativePrecompiles,
+  subscribeNativePrecompile, withoutShadowMapDraws,
 } from "../native-precompile.js";
 
 function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
@@ -199,5 +199,81 @@ describe("compileWithin", () => {
     work.resolve();
     await done;
     expect(native.target).toBe("elsewhere");
+  });
+});
+
+describe("drawAhead", () => {
+  /** r186's Pipelines in miniature: the draw path's updateForRender builds a pipeline synchronously; getForRender builds it into `promises` when given them. */
+  class Pipelines {
+    readonly built: { readonly subject: string; readonly async: boolean }[] = [];
+    readonly compiles: (() => void)[] = [];
+    getForRender(subject: string, promises: Promise<void>[] | null = null): void {
+      this.built.push({ subject, async: promises !== null });
+      if (promises !== null) promises.push(new Promise<void>((resolve) => { this.compiles.push(resolve); }));
+    }
+    updateForRender(subject: string): void {
+      this.getForRender(subject);
+    }
+  }
+
+  function renderer(): { readonly _pipelines: Pipelines; draw(subject: string): void } {
+    const pipelines = new Pipelines();
+    return { _pipelines: pipelines, draw(subject) { pipelines.updateForRender(subject); } };
+  }
+
+  it("builds the frame's pipelines asynchronously, resolves once they are built, and gives the draw path back", async () => {
+    const native = renderer();
+    let settled = false;
+    const done = drawAhead(native, () => { native.draw("bloom"); native.draw("resolve"); }).then(() => { settled = true; });
+    expect(native._pipelines.built).toEqual([{ subject: "bloom", async: true }, { subject: "resolve", async: true }]);
+    expect(Object.hasOwn(native._pipelines, "updateForRender"), "the draw path is three's own again").toBe(false);
+    native.draw("final");
+    expect(native._pipelines.built.at(-1)).toEqual({ subject: "final", async: false });
+
+    native._pipelines.compiles[0]?.();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    native._pipelines.compiles[1]?.();
+    await done;
+    expect(settled).toBe(true);
+  });
+
+  it("gives the draw path back when the frame throws", async () => {
+    const native = renderer();
+    await expect(drawAhead(native, () => { throw new Error("lost"); })).rejects.toThrow("lost");
+    expect(Object.hasOwn(native._pipelines, "updateForRender")).toBe(false);
+  });
+
+  it("stops waiting the moment it is aborted", async () => {
+    const native = renderer();
+    const controller = new AbortController();
+    const done = drawAhead(native, () => { native.draw("stuck"); }, controller.signal);
+    controller.abort();
+    await expect(done).resolves.toBeUndefined();
+  });
+
+  it("draws nothing ahead on a renderer without r186's draw path", async () => {
+    let drew = false;
+    await drawAhead({}, () => { drew = true; });
+    expect(drew).toBe(false);
+  });
+});
+
+describe("withoutShadowMapDraws", () => {
+  it("holds each on-request map's pending draw through the frame and hands it back", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight();
+    sun.shadow.autoUpdate = false;
+    sun.shadow.needsUpdate = true;
+    const lamp = new DirectionalLight();
+    lamp.shadow.autoUpdate = false;
+    lamp.shadow.needsUpdate = false;
+    const live = new DirectionalLight();
+    live.shadow.needsUpdate = true;
+    scene.add(sun, lamp, live);
+
+    const during = withoutShadowMapDraws(scene, () => [sun.shadow.needsUpdate, lamp.shadow.needsUpdate, live.shadow.needsUpdate]);
+    expect(during, "only a pending on-request map is held").toEqual([false, false, true]);
+    expect([sun.shadow.needsUpdate, lamp.shadow.needsUpdate, live.shadow.needsUpdate]).toEqual([true, false, true]);
   });
 });
