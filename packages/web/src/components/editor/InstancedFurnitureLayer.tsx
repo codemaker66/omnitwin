@@ -18,6 +18,7 @@ import {
   normalizedFurniturePresentationScale,
 } from "../FurnitureProxy.js";
 import { GltfFurnitureTemplateContext } from "../meshes/GltfFurnitureTemplateContext.js";
+import { isFloorShadeMaterial } from "../meshes/crafted/crafted-materials.js";
 import { isImportedFurnitureMaterial } from "../../lib/gltf-furniture-instance.js";
 import { furnitureMaterialParts } from "../../lib/gltf-furniture-parts.js";
 import { composeFurnitureMotion, furnitureMotionPose, subscribeFurnitureSettleFrames, type FurnitureMotionPose } from "../../lib/furniture-motion.js";
@@ -260,6 +261,13 @@ export interface EditableInstancePool {
   readonly slots: { items: readonly PlacedItem[] | null; readonly byId: Map<string, number> };
   /** Items drawn as a reveal presents them (floor/presentation-channel.ts), not as placed. */
   readonly presented: Set<string>;
+  /**
+   * The batches that shade the floor under each foot (crafted-materials.ts).
+   * They share the pieces' transforms, so while a reveal moves or hides the
+   * pieces they are not drawn: a moving piece's shade belongs on the floor,
+   * where FurnitureContactShadows draws it as the reveal presents it.
+   */
+  readonly floorShades: readonly InstancedMesh[];
 }
 
 const WRITTEN_STRIDE = 5;
@@ -308,6 +316,7 @@ export function createEditableInstancePool(
     settling: new Set(),
     slots: { items: null, byId: new Map() },
     presented: new Set(),
+    floorShades: meshes.filter((mesh) => !Array.isArray(mesh.material) && isFloorShadeMaterial(mesh.material)),
   };
 }
 
@@ -458,14 +467,19 @@ export function drawEditablePresentation(
   itemScale: number,
   frame: PresentationFrame | null,
 ): boolean {
-  if (frame === null && pool.presented.size === 0) return false;
+  if (frame === null && pool.presented.size === 0) {
+    for (const mesh of pool.floorShades) mesh.visible = true;
+    return false;
+  }
   const count = Math.min(items.length, pool.capacity);
   let first = pool.capacity;
   let last = -1;
+  let presenting = false;
   for (let index = 0; index < count; index += 1) {
     const item = items[index];
     if (item === undefined) continue;
     const shown = frame === null ? null : presentedPiece(frame, item.id);
+    if (shown !== null) presenting = true;
     if (shown === null) {
       if (!pool.presented.delete(item.id)) continue;
       composeEditableSlot(pool, index, item, editableInstanceScale(item, itemScale), null);
@@ -488,6 +502,7 @@ export function drawEditablePresentation(
   }
   // Items gone from the list since they were presented are not drawn at all.
   if (frame === null) pool.presented.clear();
+  for (const mesh of pool.floorShades) mesh.visible = !presenting;
   if (last < 0) return false;
   uploadEditableSlots(pool, first, last);
   return true;

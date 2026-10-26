@@ -96,10 +96,17 @@ crafted pieces, so the planner downloads no furniture GLB.
 - **Contact.** Each foot leaves a soft spot of shade on the boards (the
   `contact` part, unlit, blended, never cast), which no shadow map is fine
   enough to draw: every leg reads as standing on the floor in any light, under
-  the sun's normal offset as under the chandeliers, which cast no shadows.
+  the sun's normal offset as under the chandeliers, which cast no shadows. It
+  shares its piece's instance transforms, so while a reveal (the Grand
+  Assembly) moves or hides a batch's pieces, that batch's shade is not drawn
+  and `FurnitureContactShadows` grounds them as the reveal presents them.
 - **Detail.** A phone draws each piece with fewer segments round its turned and
   bent parts and fewer cloth samples (`crafted-detail.ts`): same footprint,
-  same caster, same materials. The level is fixed for the page.
+  same caster, same materials. So does a software rasteriser (SwiftShader,
+  llvmpipe), read once from a released probe WebGL context the hall's way
+  (`classifyDevice` "poster"): every triangle costs its CPU in every pass. On
+  SwiftShader the Grand Assembly's show then plays in 34.6 s against master's
+  40.2 s (45.0 s at full detail). The level is fixed for the page.
 - **Ownership.** Each size of each piece is built once and its geometry shared
   by every copy (`crafted-registry.ts`, a cache of at most 48 sizes); another
   copy takes under 1 ms, which matters to the chair brush's preview and the

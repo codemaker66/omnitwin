@@ -1,3 +1,4 @@
+import { classifyDevice, getGpuRenderer } from "../../../lib/device-tier.js";
 import { readRenderDeviceContext, selectRenderProfile } from "../../../lib/render-quality.js";
 
 // ---------------------------------------------------------------------------
@@ -5,7 +6,9 @@ import { readRenderDeviceContext, selectRenderProfile } from "../../../lib/rende
 //
 // A hall seats hundreds of chairs, so a phone draws each piece with fewer
 // segments round its turned and bent parts: the silhouette, the materials and
-// the shadow casters stay the same, only the curvature is coarser. The level
+// the shadow casters stay the same, only the curvature is coarser. So does a
+// software rasteriser (SwiftShader, llvmpipe: a blocklisted GPU, a virtual
+// machine, a remote desktop), where every triangle costs the CPU each pass. The level
 // is fixed for the page (the device's render profile), so the shared
 // geometry cache never holds two levels of one piece; tests and the preview
 // studio may set it before the first build.
@@ -36,10 +39,29 @@ const DETAIL: Readonly<Record<CraftedDetailLevel, CraftedDetail>> = {
 
 let chosen: CraftedDetailLevel | null = null;
 
-/** The detail level for this device: phones draw lean, everything else full. */
+/**
+ * Whether this browser rasterises in software, read once from a probe WebGL
+ * context's renderer string (the hall's own test, hall-finish.ts) and released
+ * at once. False wherever there is no WebGL to ask.
+ */
+function softwareRasteriser(): boolean {
+  if (typeof document === "undefined" || typeof WebGL2RenderingContext === "undefined") return false;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    if (gl === null) return false;
+    const gpu = getGpuRenderer(gl);
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    return gpu !== null && classifyDevice(gpu) === "poster";
+  } catch {
+    return false;
+  }
+}
+
+/** The detail level for this device: phones and software rasterisers draw lean, everything else full. */
 function deviceLevel(): CraftedDetailLevel {
   const profile = selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV));
-  return profile.name === "phone" || profile.name === "off" ? "lean" : "full";
+  if (profile.name === "phone" || profile.name === "off") return "lean";
+  return softwareRasteriser() ? "lean" : "full";
 }
 
 /** The detail crafted furniture is drawn at on this page. */

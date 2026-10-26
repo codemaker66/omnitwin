@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Box3, type BufferGeometry, Layers, type Material, Mesh, type Object3D, Texture } from "three";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
 import {
   CRAFTED_FURNITURE_SLUGS,
@@ -422,6 +422,39 @@ describe("crafted occlusion", () => {
 });
 
 describe("crafted detail", () => {
+  it.each([
+    ["Google SwiftShader", "lean"],
+    ["ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)", "lean"],
+    ["llvmpipe (LLVM 17.0.6, 256 bits)", "lean"],
+    ["ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0, D3D11)", "full"],
+  ] as const)("reads the browser's rasteriser once: %s draws %s", async (gpu, level) => {
+    const lost = vi.fn();
+    const probe = {
+      getExtension: (name: string) => (name === "WEBGL_debug_renderer_info" ? { UNMASKED_RENDERER_WEBGL: 0x9246 } : name === "WEBGL_lose_context" ? { loseContext: lost } : null),
+      getParameter: (parameter: number) => (parameter === 0x9246 ? gpu : null),
+    };
+    const create = document.createElement.bind(document);
+    // Only its presence is read: WebGL 2 exists in this browser.
+    vi.stubGlobal("WebGL2RenderingContext", {});
+    const spy = vi.spyOn(document, "createElement").mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const element = create(tag, options);
+      if (tag === "canvas") Object.defineProperty(element, "getContext", { value: () => probe });
+      return element;
+    });
+    try {
+      vi.resetModules();
+      const fresh = await import("../crafted-detail.js");
+      expect(fresh.craftedDetail().level).toBe(level);
+      // The probe's context is released at once, and asked only once a page.
+      expect(lost).toHaveBeenCalledTimes(1);
+      fresh.craftedDetail();
+      expect(lost).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("draws a phone's chairs leaner, with the same footprint and a caster still", () => {
     const measure = (level: "full" | "lean"): { seen: number; caster: number; width: number } => {
       setCraftedDetailLevel(level);
