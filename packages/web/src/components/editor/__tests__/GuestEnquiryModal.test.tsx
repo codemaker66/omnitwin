@@ -1,11 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import type { VenueDetail } from "../../../api/spaces.js";
 
-const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn(), createLink: vi.fn(), listLinks: vi.fn(), flush: vi.fn() }));
 vi.mock("../../../api/spaces.js", () => ({ getVenue: mocks.getVenue }));
 vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.submit }));
+vi.mock("../../../api/plan-view.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../api/plan-view.js")>()),
+  createPlanViewLink: mocks.createLink,
+  listPlanViewLinks: mocks.listLinks,
+}));
+vi.mock("../EditorBridge.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../EditorBridge.js")>()),
+  flushAutoSave: mocks.flush,
+}));
 
 const { GuestEnquiryModal } = await import("../GuestEnquiryModal.js");
 import { useEditorStore } from "../../../stores/editor-store.js";
@@ -15,6 +24,9 @@ import { GRAND_HALL_RENDER_DIMENSIONS } from "../../../constants/scale.js";
 import { CATALOGUE_ITEMS } from "../../../lib/catalogue.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import * as plannerTruthFixtures from "../cockpit/__tests__/planner-truth-fixtures.js";
+
+// Drafts persist per tab (E-08), so no test inherits another's typing.
+beforeEach(() => { sessionStorage.clear(); });
 
 /** Round tables on the floor, which the venue's figures read as a dinner. */
 function withRounds(count: number): PlacedItem[] {
@@ -194,5 +206,148 @@ describe("GuestEnquiryModal on a touch screen", () => {
     const viewport = /<meta name="viewport" content="([^"]*)"/u.exec(html)?.[1];
     expect(viewport).toContain("width=device-width");
     expect(viewport).not.toMatch(/maximum-scale|user-scalable\s*=\s*no/u);
+  });
+});
+
+// planner-qol E-10: "Copy layout link" handed out /plan/<id>, an anonymous
+// plan's edit capability, so whoever the guest sent it to could change the
+// layout the venue is reading. After sending, the guest shares a view-only link.
+describe("GuestEnquiryModal shares a view-only link after sending", () => {
+  const venueRooms: VenueDetail = {
+    id: "venue-share", name: "Share Rooms", slug: "share-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+  let written: string[] = [];
+
+  beforeEach(() => {
+    resetStores();
+    written = [];
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(venueRooms);
+    mocks.submit.mockResolvedValue({});
+    mocks.flush.mockResolvedValue(true);
+    mocks.listLinks.mockResolvedValue([]);
+    mocks.createLink.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111", prefix: "tokenpre", token: "tokenprefix0123456789abcdefghijklmnopqrstuv",
+      createdAt: "2026-10-26T12:00:00.000Z", expiresAt: "2026-11-25T12:00:00.000Z",
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: (text: string) => { written.push(text); return Promise.resolve(); } },
+    });
+    useEditorStore.setState({ configId: "cfg-1", venueId: venueRooms.id, isPublicPreview: true });
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function send(): Promise<void> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Share Rooms events team.");
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await screen.findByText("Share Rooms will reply to");
+  }
+
+  it("copies a view-only link, never the planner address", async () => {
+    await send();
+    expect(screen.queryByText(/Copy layout link/u)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Copy a view-only link" }));
+    expect(await screen.findByRole("button", { name: "View-only link copied" })).toBeTruthy();
+    expect(mocks.flush).toHaveBeenCalled();
+    expect(mocks.createLink).toHaveBeenCalledWith("cfg-1");
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatch(/\/plan-view\/tokenprefix/u);
+    expect(written[0]).not.toMatch(/\/plan\/cfg-1/u);
+    expect(screen.getByText(/Nobody can change the plan through it\./u)).toBeTruthy();
+  });
+
+  it("offers no public link for a plan already saved to an account", async () => {
+    useEditorStore.setState({ isPublicPreview: false });
+    await send();
+    expect(screen.queryByRole("button", { name: /view-only link/u })).toBeNull();
+    expect(mocks.createLink).not.toHaveBeenCalled();
+  });
+});
+
+// planner-qol E-08, E-X1 and E-X6: what the guest types survives a close,
+// the form cannot be closed while the enquiry is on its way, and the answer
+// takes focus and is announced.
+describe("GuestEnquiryModal keeps the guest's work", () => {
+  const rooms: VenueDetail = {
+    id: "venue-keep", name: "Keep Rooms", slug: "keep-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    mocks.listLinks.mockResolvedValue([]);
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: true });
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function open(onClose: () => void = () => { /* noop */ }): Promise<void> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={onClose} />);
+    await screen.findByText("Your details are shared only with the Keep Rooms events team.");
+  }
+
+  it("keeps what was typed when the form is closed and opened again", async () => {
+    const onClose = vi.fn();
+    await open(onClose);
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.change(screen.getByLabelText("Guest count"), { target: { value: "120" } });
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    await open();
+    expect(screen.getByLabelText<HTMLInputElement>(/email/iu).value).toBe("guest@example.test");
+    expect(screen.getByLabelText<HTMLInputElement>("Guest count").value).toBe("120");
+  });
+
+  it("starts the next send from the contact details given last time, with the sent draft gone", async () => {
+    mocks.submit.mockResolvedValue({});
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.change(screen.getByLabelText("Guest count"), { target: { value: "80" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await screen.findByText("Keep Rooms will reply to");
+    cleanup();
+
+    await open();
+    expect(screen.getByLabelText<HTMLInputElement>(/email/iu).value).toBe("guest@example.test");
+    expect(screen.getByLabelText<HTMLInputElement>("Guest count").value).toBe("");
+  });
+
+  it("does not close while the enquiry is on its way, then shows the answer", async () => {
+    let arrive!: (value: unknown) => void;
+    mocks.submit.mockReturnValue(new Promise((resolve) => { arrive = resolve; }));
+    const onClose = vi.fn();
+    await open(onClose);
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect(await screen.findByText("Sending your layout…")).toBeTruthy();
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(onClose).not.toHaveBeenCalled();
+    arrive({});
+    expect(await screen.findByText("Keep Rooms will reply to")).toBeTruthy();
+  });
+
+  it("takes focus to the answer and announces it", async () => {
+    mocks.submit.mockResolvedValue({});
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    const heading = await screen.findByRole("heading", { name: "Layout sent" });
+    await waitFor(() => { expect(document.activeElement).toBe(heading); });
+    expect(screen.getAllByRole("status").some((region) => region.textContent === "Layout sent. Keep Rooms will reply to guest@example.test.")).toBe(true);
   });
 });
