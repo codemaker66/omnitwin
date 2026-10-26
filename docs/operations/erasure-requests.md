@@ -89,8 +89,18 @@ Take a Neon snapshot first, as for any hand change to production.
    it within 14 days.
 3. Close the entry in the erasure log with the date.
 
-## When the service ships
+## The erasure route
 
-The erasure service (`POST /people/:personId/erase`, venue-scoped, administrators and managers only) and the
-nightly 24-month pass do sections 2 and 3 in one transaction, with a dry run. This page then shrinks to steps 1
-and 4.
+`POST /people/:personId/erase` (the venue's administrators and managers; another venue's person is not found)
+does sections 2 and 3 in one transaction for a person **with no booking**, and writes a `people.erased` row to
+`general_audit_log` with the counts. It covers:
+- the person and every record merged into them;
+- their contact points;
+- the merge snapshots;
+- their enquiries at the venue, with the venue's email receipts for them;
+- the guest lead, when no other enquiry uses the address;
+- their comments on the venue's proposals.
+
+A person with a confirmed booking or a live provisional one is refused (`PERSON_HAS_BOOKING`): handle that by hand
+as above. An account, if they have one, is still by hand (step 3's last item). The nightly 24-month pass is
+next; until it ships, nothing is automatically deleted at 24 months, and the first record falls due in 2028.

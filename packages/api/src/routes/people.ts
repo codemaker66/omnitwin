@@ -17,7 +17,8 @@ import {
 import type { Database } from "../db/client.js";
 import { contacts } from "../db/schema.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
-import { canManageCommercial } from "../utils/query.js";
+import { canErasePeople, canManageCommercial } from "../utils/query.js";
+import { eraseLockedPerson } from "../services/people-erasure.js";
 import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import {
   adoptLegacyMirror,
@@ -252,6 +253,43 @@ export async function peopleRoutes(
     );
     if (profile === null) return reply.status(404).send(PERSON_NOT_FOUND);
     return { data: profile };
+  });
+
+  // POST /people/:personId/erase — a person's erasure request, from the
+  // venue's administrators and managers (people-privacy-5). One transaction;
+  // a refusal changes nothing. A person with a booking the venue must keep
+  // is refused: docs/operations/erasure-requests.md covers what is left.
+  server.post("/:personId/erase", { preHandler: [authenticate] }, async (request, reply) => {
+    const scope = peopleScope(request.user);
+    if (!scope.ok) return reply.status(403).send(FORBIDDEN);
+    const params = PersonParams.safeParse(request.params);
+    if (!params.success) return reply.status(400).send(INVALID_ID);
+    const actor = request.user;
+
+    const outcome = await db.transaction(async (tx) => {
+      const lock = await lockPerson(tx, scope.venueId, params.data.personId);
+      if (lock.state === "merged") return { kind: "merged", mergedIntoId: lock.mergedIntoId } as const;
+      if (lock.state !== "live") return { kind: "not_found" } as const;
+      if (!canErasePeople(actor, lock.row.venueId)) return { kind: "forbidden" } as const;
+      const erased = await eraseLockedPerson(tx, lock.row, { actorUserId: actor.id, now: new Date() });
+      if (!erased.ok) return { kind: erased.refusal } as const;
+      return { kind: "erased", personId: lock.row.id, counts: erased.counts } as const;
+    });
+
+    switch (outcome.kind) {
+      case "not_found": return reply.status(404).send(PERSON_NOT_FOUND);
+      case "merged": return reply.status(409).send(mergedPerson(outcome.mergedIntoId));
+      case "forbidden":
+        return reply.status(403).send({ error: "Only the venue's administrators and managers can erase a person", code: "FORBIDDEN" });
+      case "has_booking":
+        return reply.status(409).send({
+          error: "This person has a booking the venue keeps for six years after the event, so they cannot be erased here",
+          code: "PERSON_HAS_BOOKING",
+        });
+      case "erased":
+        request.log.info({ event: "people.erased", personId: outcome.personId, ...outcome.counts }, "person erased");
+        return { data: { personId: outcome.personId, counts: outcome.counts } };
+    }
   });
 
   server.patch("/:personId", { preHandler: [authenticate] }, async (request, reply) => {
