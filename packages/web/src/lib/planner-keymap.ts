@@ -293,14 +293,41 @@ export function ungroupSelection(): boolean {
 // copies the copies one more pitch along.
 // ---------------------------------------------------------------------------
 
-/** Where the last Ctrl D put its copies this session: a repeat goes the same way. */
-let lastDuplicateOffset: FloorOffset | null = null;
-/** What Ctrl C holds this session. */
-let clipboard: PlannerClipboard | null = null;
+/** Where pieces were copied: the layout, its room and its venue (QoL B-X10). */
+interface CopiedFrom {
+  readonly configId: string | null;
+  readonly spaceId: string | null;
+  readonly roomName: string | null;
+  readonly venueId: string | null;
+}
+
+/** A paste into another venue's layout is refused with this. */
+export const PASTE_OTHER_VENUE = "Copied in another venue · paste it there";
+
+/** Where the last Ctrl D put its copies, in which layout: a repeat in the same layout goes the same way. */
+let lastDuplicate: { readonly offset: FloorOffset; readonly configId: string | null } | null = null;
+/** What Ctrl C holds this session, and where it was copied. */
+let clipboard: { readonly copied: PlannerClipboard; readonly from: CopiedFrom } | null = null;
+
+/** The open layout, its room and its venue. */
+function hereNow(): CopiedFrom {
+  const { configId, space } = useEditorStore.getState();
+  return { configId, spaceId: space?.id ?? null, roomName: space?.name ?? null, venueId: space?.venueId ?? null };
+}
+
+/** "3 tables", "1 table", "4 pieces": what a paste set down, by its tables where it has any. */
+function pastedWords(items: readonly PlacedItem[]): string {
+  const tables = items.filter((item) => {
+    const catalogue = getCatalogueItem(item.catalogueItemId);
+    return catalogue !== undefined && isDiningTableItem(catalogue);
+  }).length;
+  const [count, noun] = tables > 0 ? [tables, "table"] : [items.length, "piece"];
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
 
 /** Forgets the session's last duplicate offset and clipboard. */
 export function resetEditingMemoryForTesting(): void {
-  lastDuplicateOffset = null;
+  lastDuplicate = null;
   clipboard = null;
 }
 
@@ -329,9 +356,12 @@ function landEdit(plan: EditPlan): FloorOffset | null {
 export function duplicateSelection(): boolean {
   const ids = selectedIds();
   if (ids.size === 0) return false;
-  const offset = landEdit(planDuplicate(ids, editWorld(), lastDuplicateOffset));
+  const { configId } = hereNow();
+  // The last offset is the open layout's only: another layout starts afresh.
+  const last = lastDuplicate !== null && lastDuplicate.configId === configId ? lastDuplicate.offset : null;
+  const offset = landEdit(planDuplicate(ids, editWorld(), last));
   if (offset === null) return false;
-  lastDuplicateOffset = offset;
+  lastDuplicate = { offset, configId };
   return true;
 }
 
@@ -339,14 +369,27 @@ export function duplicateSelection(): boolean {
 export function copySelection(): boolean {
   const copied = copyPieces(selectedIds(), usePlacementStore.getState().placedItems);
   if (copied === null) return false;
-  clipboard = copied;
+  clipboard = { copied, from: hereNow() };
   return true;
 }
 
-/** Ctrl V: the clipboard set down centred on the floor point under the pointer. */
+/**
+ * Ctrl V: the clipboard set down centred on the floor point under the
+ * pointer. Copied in another room, the receipt says where from ("Pasted 3
+ * tables from the Grand Hall"); copied in another venue, it is refused.
+ */
 export function pasteAt(at: { readonly x: number; readonly z: number } | null): boolean {
   if (clipboard === null || at === null) return false;
-  return landEdit(planPaste(clipboard, at, editWorld())) !== null;
+  const here = hereNow();
+  const { copied, from } = clipboard;
+  if (from.venueId !== null && here.venueId !== null && from.venueId !== here.venueId) {
+    postPlacementNotice(PASTE_OTHER_VENUE);
+    return true;
+  }
+  const plan = planPaste(copied, at, editWorld());
+  if (landEdit(plan) === null || !plan.ok) return false;
+  if (from.spaceId !== here.spaceId && from.roomName !== null) postPlacementNotice(`Pasted ${pastedWords(plan.items)} from the ${from.roomName}`);
+  return true;
 }
 
 /** Whether the page has text selected, which Ctrl C copies before any piece. */

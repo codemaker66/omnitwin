@@ -40,7 +40,9 @@ import {
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
+import { judgesCard } from "../lib/setup-cards.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import {
@@ -598,7 +600,8 @@ export function SelectionSystem(): null {
       if (outcome.kind === "tap") {
         if (outcome.armed) {
           // On a placed piece where the card's set could not stand, the tap picks the piece instead (Q-05; lib/place-in-hand).
-          placeInHandAt(outcome.x, outcome.y, plannerFeatureEnabled("truthfulGhost") ? interactionTargetAt(outcome.x, outcome.y).itemId : null);
+          const card = useCatalogueStore.getState().cardParams;
+          placeInHandAt(outcome.x, outcome.y, card !== null && judgesCard(card) ? interactionTargetAt(outcome.x, outcome.y).itemId : null);
         } else {
           const found = interactionTargetAt(outcome.x, outcome.y);
           if (found.itemId !== null) useSelectionStore.getState().select(found.itemId);
@@ -1211,7 +1214,11 @@ export function SelectionSystem(): null {
       const catItem = getCatalogueItem(item.catalogueItemId);
       if (catItem === undefined) return;
 
-      if (isDiningTableItem(catItem) && catItem.tableShape !== null) {
+      if (isDiningTableItem(catItem) && catItem.tableShape !== null && plannerChromeRequested(window.location.search) === "v2") {
+        // v2 mounts no chair dialog: the table is selected, and its caption holds its seats (QoL B-01).
+        useSelectionStore.getState().select(placedId);
+        invalidateRef.current();
+      } else if (isDiningTableItem(catItem) && catItem.tableShape !== null) {
         // Double-click on table in a group → edit chair count
         useChairDialogStore.getState().showDialog({
           catalogueItemId: item.catalogueItemId,

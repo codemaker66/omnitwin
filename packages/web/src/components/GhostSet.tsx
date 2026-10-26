@@ -15,8 +15,7 @@ import {
 } from "../lib/ghost-truth.js";
 import { judgeCardAt, settledStamp } from "../lib/place-in-hand.js";
 import type { PlacedItem } from "../lib/placement.js";
-import { plannerFeatureEnabled } from "../lib/planner-features.js";
-import { describeCard, seatsInHand, stampSetup, type CardParams } from "../lib/setup-cards.js";
+import { describeCard, judgesCard, seatsInHand, stampSetup, type CardParams } from "../lib/setup-cards.js";
 import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
@@ -28,7 +27,7 @@ import "./ghost-set.css";
 // ---------------------------------------------------------------------------
 // GhostSet — the truthful ghost (card-dock spec §7.2–7.5, Q-05): the whole
 // set a card will set down (setup-cards placesAsCard), judged behind
-// truthfulGhost (without it, the set as set down, claiming nothing), worked
+// judgesCard (a set card always; else the set as set down, claiming nothing), worked
 // out by the same function as the commit (lib/place-in-hand judgeCardAt), so
 // what it shows is what is set down: turned as the piece in hand is turned,
 // each piece at the height of the surface under it, judged with every body
@@ -253,8 +252,8 @@ export function GhostSet({ params, warming, fromCardDrag }: GhostSetProps): Reac
     const key = `${String(pose[0])}|${String(pose[2])}|${String(placement.ghostRotation)}`;
     if (current === null || key === judged.current.key) return;
     const origin = { x: pose[0], z: pose[2], y: pose[1] };
-    // Judged under truthfulGhost; otherwise the set stands where the commit will set it down, and claims nothing.
-    const judgedCard = plannerFeatureEnabled("truthfulGhost")
+    // Judged as the commit judges it (setup-cards judgesCard); otherwise the set stands where it will be set down, and claims nothing.
+    const judgedCard = judgesCard(params)
       ? judgeCardAt(params, origin, placement.ghostRotation, current, judged.current.verdict?.state, ghostIds())
       : null;
     const verdict = judgedCard?.verdict ?? null;

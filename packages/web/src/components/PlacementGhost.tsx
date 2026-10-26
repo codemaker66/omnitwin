@@ -39,9 +39,8 @@ import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-bru
 import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
-import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
-import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, placesAsCard, type CardParams } from "../lib/setup-cards.js";
+import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, judgesCard, placesAsCard, type CardParams } from "../lib/setup-cards.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
 import { findFurnitureItemId } from "./SelectionSystem.js";
 import { GhostSet } from "./GhostSet.js";
@@ -413,7 +412,8 @@ export function PlacementGhost(): React.ReactElement | null {
       // Touch taps and a direct click need not have a preceding pointer move.
       usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
       // On a placed piece where the card's set could not stand, the click picks the piece instead (Q-05; lib/place-in-hand).
-      placeAtGhost(plannerFeatureEnabled("truthfulGhost") ? placedPieceAt(event.clientX, event.clientY) : null);
+      const card = useCatalogueStore.getState().cardParams;
+      placeAtGhost(card !== null && judgesCard(card) ? placedPieceAt(event.clientX, event.clientY) : null);
     }
 
     function onPointerCancel(): void {
@@ -592,7 +592,7 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // --- The truthful ghost: the card's whole set, judged with every body (Q-05) ---
   const brushing = catalogueItem.category === "chair" && chairBrushPreview.length > 1;
-  // A card set down as a card shows that set, whichever chrome armed it (setup-cards placesAsCard); judged under truthfulGhost.
+  // A card set down as a card shows that set, whichever chrome armed it (setup-cards placesAsCard), judged as the commit is (judgesCard).
   if (cardParams !== null && !brushing && placesAsCard(cardParams)) {
     return <GhostSet params={cardParams} warming={warming} fromCardDrag={fromCardDrag} />;
   }

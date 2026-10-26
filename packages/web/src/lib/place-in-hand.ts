@@ -12,14 +12,14 @@
 // ---------------------------------------------------------------------------
 
 import { getCatalogueItem } from "./catalogue.js";
-import { storeShortfall, storeShortfallWords, type UsableStock } from "./card-stock.js";
+import { currentStoreStock, placedCounts, storeRefuses, storeShortfall, storeShortfallWords, type UsableStock } from "./card-stock.js";
 import { CLOTH_SNAP_DISTANCE_RENDER, findNearestDiningTable, findNearestTable } from "./cloth-snap.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { atVerdict, createGhostWorld, judgeGhost, refusalChip, type GhostState, type GhostVerdict, type GhostWorld } from "./ghost-truth.js";
 import { settleOnSurfaces, type PlacedItem } from "./placement.js";
 import { capReachedFor } from "./placement-cap.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
-import { placesAsCard, seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
+import { describeCard, judgesCard, placesAsCard, seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
 import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { tableClothStyleForCatalogueItem, tableDressingTargetIds, tableSettingForCatalogueItem } from "./table-dressing.js";
@@ -88,7 +88,7 @@ function roomWorld(): GhostWorld {
 export interface PlaceInHandOptions {
   /** The placed piece under the pointer or finger, if any. */
   readonly pieceUnderPointer?: string | null;
-  /** Usable stock (lib/card-stock), for staff; null or absent never refuses. */
+  /** Usable stock (lib/card-stock), for staff: absent reads the store's as registered (currentStoreStock); null never refuses. */
   readonly stock?: UsableStock | null;
 }
 
@@ -96,10 +96,10 @@ export interface PlaceInHandOptions {
  * A click or tap on a placed piece with a card in hand (spec §7.1): it picks
  * the piece and puts the card down, with no refusal, where the set could not
  * be set down anyway. A set that fits where the pointer lands (seen past a
- * chair back) is set down instead. Behind truthfulGhost.
+ * chair back) is set down instead. Wherever the card is judged (judgesCard).
  */
 function pickInstead(pieceId: string | null, params: CardParams, origin: CardOrigin, rotationY: number): boolean {
-  if (pieceId === null || !plannerFeatureEnabled("truthfulGhost")) return false;
+  if (pieceId === null || !judgesCard(params)) return false;
   if (judgeCardAt(params, origin, rotationY, roomWorld(), useGhostVerdictStore.getState().verdict?.state).verdict.state !== "refused") return false;
   useCatalogueStore.getState().disarm();
   usePlacementStore.getState().clearGhost();
@@ -171,7 +171,14 @@ export function placePieceInHand(invalidate: () => void, options: PlaceInHandOpt
   }
 
   if (card !== null) {
-    const ids = placeCardAt(card, { x, z, y }, placeState.ghostRotation, { stock: options.stock ?? null });
+    const stock = options.stock === undefined ? currentStoreStock() : options.stock;
+    const ids = placeCardAt(card, { x, z, y }, placeState.ghostRotation, { stock });
+    // The card goes down once the store has none left for another (B2): "None left in store · Round of 10".
+    if (ids.length > 0 && storeRefuses(card, stock, placedCounts(usePlacementStore.getState().placedItems))) {
+      useCatalogueStore.getState().disarm();
+      usePlacementStore.getState().clearGhost();
+      postPlacementNotice(`None left in store · ${describeCard(card).name}`);
+    }
     invalidate();
     return ids;
   }
@@ -216,9 +223,10 @@ export function placeCardAt(
   rotationY: number,
   options: { readonly stock?: UsableStock | null } = {},
 ): readonly string[] {
+  const stock = options.stock === undefined ? currentStoreStock() : options.stock;
   const placeState = usePlacementStore.getState();
   let pieces: readonly PlacedItem[];
-  if (plannerFeatureEnabled("truthfulGhost")) {
+  if (judgesCard(params)) {
     const judged = judgeCardAt(params, origin, rotationY, roomWorld(), useGhostVerdictStore.getState().verdict?.state);
     if (judged.verdict.state === "refused") {
       postPlacementNotice(refusalChip(judged.verdict.obstacle));
@@ -229,7 +237,7 @@ export function placeCardAt(
     pieces = settledStamp(params, origin, rotationY, placeState.placedItems);
   }
   if (pieces.length === 0) return [];
-  const shortfall = storeShortfall(options.stock ?? null, placeState.placedItems, { add: pieces });
+  const shortfall = storeShortfall(stock, placeState.placedItems, { add: pieces });
   if (shortfall !== null) {
     postPlacementNotice(storeShortfallWords(shortfall));
     return [];
