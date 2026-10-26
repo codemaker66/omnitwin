@@ -1,0 +1,236 @@
+/* ---------------------------------------------------------------------------
+ * THE RAIL AND ITS CARDS (T-671, slice 12′; card-dock spec §2–4, §13).
+ *
+ * The rail: lacquer, 52 px, joined to the dock's top edge, 6 px inner
+ * padding, mini-cards 40 px tall on a paper mat. Armed: raised 6 px with a
+ * 3 px copper notch on its top and the mat outlined in copper. Hover only
+ * colours a card (120 ms); a press presses it (.97). Hidden on phones (the
+ * phone cards are slice 20′).
+ * ------------------------------------------------------------------------- */
+
+.pc-rail-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  pointer-events: auto;
+}
+
+.pc-rail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 52px;
+  padding: 6px;
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.pc-rail__cards {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pc-rail__more { flex: none; margin-left: 2px; }
+
+.pc-railcard {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  min-width: 108px;
+  max-width: 132px;
+  padding: 0 10px 0 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--house-forest-ink-1);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--house-motion-hover) var(--house-ease-out),
+    transform var(--house-motion-reveal) var(--house-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-railcard:hover { background: color-mix(in srgb, var(--house-forest-ink-1) 8%, transparent); }
+}
+
+.pc-railcard:active { transform: scale(0.97); }
+
+.pc-railcard:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+.pc-railcard__mat {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--house-paper);
+}
+
+.pc-railcard__mat img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+
+.pc-railcard__words {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pc-railcard__name {
+  overflow: hidden;
+  font: 500 12px/1.2 var(--house-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pc-railcard__meta {
+  color: var(--house-forest-ink-3);
+  font: 400 11px/1.2 var(--house-sans);
+  white-space: nowrap;
+}
+
+/* The "×N" sits on the picture's corner, clear of the name however long. */
+.pc-railcard__art {
+  position: relative;
+  flex: none;
+}
+
+.pc-railcard__pip {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  min-width: 18px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: var(--house-forest-deep);
+  box-shadow: 0 0 0 1.5px var(--house-forest-edge);
+  color: var(--house-copper-lit);
+  font: 600 11px/1 var(--house-sans);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Armed: raised, a copper notch on top, the mat outlined in copper. */
+.pc-railcard.is-armed {
+  background: color-mix(in srgb, var(--house-forest-ink-1) 8%, transparent);
+  transform: translateY(-6px);
+}
+
+.pc-railcard.is-armed::before {
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 16px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--house-copper-lit);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.pc-railcard.is-armed .pc-railcard__mat {
+  box-shadow: inset 0 0 0 1.5px var(--house-copper-lit);
+}
+
+/* In flight: its slot shows a dashed outline. */
+.pc-railcard.is-in-flight {
+  outline: 1px dashed color-mix(in srgb, var(--house-cream) 60%, transparent);
+  outline-offset: -1px;
+}
+
+/* The token that follows a lifted card over the rail. */
+.pc-rail__token {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--house-paper);
+  box-shadow: var(--house-shadow-e2);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(var(--pc-token-x, 0px), var(--pc-token-y, 0px)) translate(-50%, -50%) rotate(4deg);
+}
+
+.pc-rail__token.is-shown { opacity: 1; }
+
+/* The first-arms hint, 12 px above the rail. */
+.pc-rail__hint {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--house-bg-0) 88%, transparent);
+  color: var(--house-forest-ink-2);
+  font: 400 12px/1.3 var(--house-sans);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.pc-rail__hint b { color: var(--house-forest-ink-1); font-weight: 600; }
+
+@media (max-width: 767px) {
+  .pc-rail-wrap { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-railcard { transition: none; }
+  .pc-railcard:active { transform: none; }
+}
+
+.pc-railcard.is-missing { opacity: 0.55; cursor: default; }
+
+/* -- The seats meter: 3 px at the joint between the rail and the dock --------- */
+.pc-meter {
+  position: relative;
+  height: 3px;
+  background-color: color-mix(in srgb, var(--house-forest-ink-1) 10%, var(--house-lacquer-bottom));
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 0 calc(var(--pc-meter-over, 1) * 100%),
+      var(--house-plane-attention) calc(var(--pc-meter-over, 1) * 100%) calc(max(var(--pc-meter-fill, 0), var(--pc-meter-hand, 0)) * 100%),
+      transparent calc(max(var(--pc-meter-fill, 0), var(--pc-meter-hand, 0)) * 100%)
+    ),
+    linear-gradient(
+      to right,
+      var(--house-accent-copper-bright) 0 calc(var(--pc-meter-fill, 0) * 100%),
+      color-mix(in srgb, var(--house-cream) 40%, transparent) calc(var(--pc-meter-fill, 0) * 100%) calc(var(--pc-meter-hand, 0) * 100%),
+      transparent calc(var(--pc-meter-hand, 0) * 100%)
+    );
+  pointer-events: none;
+}
+
+.pc-meter.is-full::after {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--house-sage-lit);
+  content: "";
+}

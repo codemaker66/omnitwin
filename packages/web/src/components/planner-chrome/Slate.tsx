@@ -1,4 +1,4 @@
-import { Suspense, lazy, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { Check, ChevronDown } from "lucide-react";
@@ -14,6 +14,7 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
 import { canFreezePhaseLayoutForVenue } from "../editor/cockpit/PhaseLayoutSnapshotAction.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
@@ -289,10 +290,13 @@ export function Slate(): ReactElement {
   const roomName = space?.name ?? "The room";
   const guests = event?.guestCount ?? null;
   const roomSlug = space?.slug ?? null;
-  const plane = useMemo(
-    () => (walk ? null : planeFacts({ items, guests, roomSlug })),
-    [guests, items, roomSlug, walk],
-  );
+  const figures = useMemo(() => planeFacts({ items, guests, roomSlug }), [guests, items, roomSlug]);
+  const plane = walk ? null : figures;
+  // The seats meter on the dock's edge reads the same figures, in Walk too.
+  useEffect(() => {
+    usePlannerChromeStore.getState().setFigures({ guests: figures.guests, seats: figures.seats, limit: figures.limit });
+  }, [figures]);
+  useEffect(() => () => { usePlannerChromeStore.getState().setFigures(null); }, []);
   const acts = useMemo(() => {
     if (graph === null || space === null) return [];
     return actsInRoom(graph, space.id, facts.configId).map((act) => (actsSet[act.id] === true ? { ...act, state: "this" as const } : act));

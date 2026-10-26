@@ -1,6 +1,7 @@
-import { type KeyboardEvent, type ReactElement } from "react";
+import { useEffect, type KeyboardEvent, type ReactElement } from "react";
 import { PenLine, Plus, Redo2, Ruler, Undo2 } from "lucide-react";
 import { canRedo, canUndo, redoLabel, undoLabel } from "../../lib/editor-history.js";
+import { useCardsStore } from "../../stores/cards-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
@@ -20,16 +21,16 @@ import "./dock.css";
 // state: Plan · Room · Walk | Add · Lay out · Measure · Draw | Undo · Redo.
 // A key that cannot act stays where it is, dimmed, and says why. The views
 // move on Shift 1 2 3 (plain digits are the cards'), and only where the room
-// has set views; Undo and Redo are named for what they would do. The hour
-// chip (slice 10), the staff workspace menu (slice 18) and the rail with its
-// meter on the top edge (slice 12′) join this bar later.
+// has set views; Add (A) opens the catalogue above the rail; Undo and Redo
+// are named for what they would do. The hour chip (slice 10) and the staff
+// workspace menu (slice 18) join this bar later; the rail sits on its top
+// edge (DockStack).
 // ---------------------------------------------------------------------------
 
 /** The dock's words, in order: no two share a stem (spec 4.1, "Lay out" never beside "Layout"). */
 export const DOCK_LABELS = ["Plan", "Room", "Walk", "Add", "Lay out", "Measure", "Draw", "Undo", "Redo"] as const;
 
 const NO_SET_VIEWS = "Only the Grand Hall has set views so far";
-const ADD_WAITS = "Opens with the furniture cards";
 const LEAVE_WALK = "Leave Walk first";
 
 export function Dock(): ReactElement {
@@ -40,6 +41,13 @@ export function Dock(): ReactElement {
   const tool = useToolStore((state) => state.activeTool);
   const layingOut = usePlannerChromeStore((state) => state.right === "lay-out");
   const history = useEditorStore((state) => state.history);
+  const catalogueOpen = useCardsStore((state) => state.catalogueOpen);
+  // The keymap's A (and F) put the add tool in hand; in this chrome Add is the catalogue, so A opens it and A again closes it.
+  useEffect(() => {
+    if (tool !== "add") return;
+    useCardsStore.getState().toggleCatalogue();
+    useToolStore.getState().setTool("select");
+  }, [tool]);
   const view = walking ? "walk" : preset === "walk" ? null : preset;
   const undoName = undoLabel(history);
   const redoName = redoLabel(history);
@@ -86,7 +94,16 @@ export function Dock(): ReactElement {
       </div>
       <KeySeparator />
       <div className="pc-dock__group" role="group" aria-label="Making">
-        <Key label="Add" icon={<Plus className="pc-icon" aria-hidden="true" />} shortcut={["A"]} disabledReason={ADD_WAITS} />
+        <Key
+          label="Add"
+          icon={<Plus className="pc-icon" aria-hidden="true" />}
+          on={catalogueOpen}
+          marked
+          expanded={catalogueOpen}
+          shortcut={["A"]}
+          disabledReason={walking ? LEAVE_WALK : undefined}
+          onPress={() => { useCardsStore.getState().toggleCatalogue(); }}
+        />
         <Key
           label="Lay out"
           icon={<LayOutGlyph />}
