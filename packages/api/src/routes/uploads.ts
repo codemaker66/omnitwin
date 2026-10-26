@@ -5,7 +5,8 @@ import { randomUUID } from "node:crypto";
 import { files, spaces, enquiries, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
-import { canManageVenue } from "../utils/query.js";
+import { canManageVenue, canWritePricing } from "../utils/query.js";
+import { competitorVenueOf } from "../services/competitor-watch-data.js";
 import type { Env } from "../env.js";
 
 // ---------------------------------------------------------------------------
@@ -19,7 +20,9 @@ const ALLOWED_CONTENT_TYPES = [
   "application/pdf",
 ] as const;
 
-const UPLOAD_CONTEXTS = ["venue", "space", "asset", "enquiry", "loadout", "public_marketing"] as const;
+// competitor_watch: a screenshot or brochure kept with a price capture; its
+// context id is the competitor's, scoped to the people who set prices.
+const UPLOAD_CONTEXTS = ["venue", "space", "asset", "enquiry", "loadout", "public_marketing", "competitor_watch"] as const;
 const UPLOAD_VISIBILITIES = ["private", "public"] as const;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
@@ -34,14 +37,14 @@ const PresignedBody = z.object({
   contentType: z.enum(ALLOWED_CONTENT_TYPES),
   contentLengthBytes: z.number().int().positive(),
   context: z.enum(UPLOAD_CONTEXTS),
-  contextId: z.string().uuid(),
+  contextId: z.uuid(),
   visibility: z.enum(UPLOAD_VISIBILITIES).default("private"),
   sha256: z.string().regex(SHA256_HEX).optional(),
 }).superRefine((body, ctx) => {
   const maxBytes = maxBytesForContentType(body.contentType);
   if (body.contentLengthBytes > maxBytes) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["contentLengthBytes"],
       message: `File exceeds ${formatBytes(maxBytes)} limit for ${body.contentType}`,
     });
@@ -49,7 +52,7 @@ const PresignedBody = z.object({
 
   if (!filenameMatchesContentType(body.filename, body.contentType)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["filename"],
       message: "Filename extension does not match content type",
     });
@@ -57,7 +60,7 @@ const PresignedBody = z.object({
 
   if (body.context === "public_marketing" && body.visibility !== "public") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["visibility"],
       message: "public_marketing uploads must be explicitly public",
     });
@@ -65,7 +68,7 @@ const PresignedBody = z.object({
 
   if (body.context !== "public_marketing" && body.visibility === "public") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["visibility"],
       message: "Only public_marketing uploads may request public visibility",
     });
@@ -74,7 +77,7 @@ const PresignedBody = z.object({
 
 const ListFilesParams = z.object({
   context: z.enum(UPLOAD_CONTEXTS),
-  contextId: z.string().uuid(),
+  contextId: z.uuid(),
 });
 
 /** Extract file extension from content type. */
@@ -242,6 +245,13 @@ export async function resolveUploadScope(
     const allowed = enq.userId === user.id || canManageVenue(user, enq.venueId);
     if (!allowed) return null;
     return { venueId: enq.venueId, keyPrefix: `private/venues/${enq.venueId}/enquiries/${contextId}`, visibility };
+  }
+
+  if (context === "competitor_watch") {
+    // The competitor's venue, and only those who keep its watch.
+    const venueId = await competitorVenueOf(db, contextId);
+    if (venueId === null || !canWritePricing(user, venueId)) return null;
+    return { venueId, keyPrefix: `private/venues/${venueId}/competitor-watch/${contextId}`, visibility };
   }
 
   return null;

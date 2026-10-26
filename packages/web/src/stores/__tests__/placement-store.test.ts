@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { usePlacementStore } from "../placement-store.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { subscribeFurniturePlaced, usePlacementStore } from "../placement-store.js";
+import { usePlacementNoticeStore } from "../placement-notice-store.js";
+import { capReachedLine } from "../../lib/placement-cap.js";
+import { createTableGroup } from "../../lib/table-group.js";
+import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
+import { setLayoutTimelineMutationLock } from "../../lib/layout-timeline-preview-lock.js";
 import {
   resetPlacedIdCounter,
   GRID_SPACING_RENDER,
@@ -698,7 +703,7 @@ describe("table group integrity", () => {
     }
   });
 
-  it("ungroups a partially selected table ring as a whole group", () => {
+  it("never strips a lone table ring of its chairs on ungroup, whichever member is selected (QoL B-03)", () => {
     const store = usePlacementStore.getState();
     store.placeTableGroup(tableId, 0, 0, 0, 6);
     const initialItems = usePlacementStore.getState().placedItems;
@@ -711,11 +716,37 @@ describe("table group integrity", () => {
 
     usePlacementStore.getState().ungroupItems(new Set([firstChair.id]));
 
+    expect(usePlacementStore.getState().placedItems).toBe(initialItems);
+  });
+
+  it("ungroups a lectern from the table grouped with it, the table keeping its chairs (QoL B-03)", () => {
+    const lectern = getCatalogueItemBySlug("lectern");
+    if (lectern === undefined) throw new Error("Expected a lectern");
+    const store = usePlacementStore.getState();
+    store.placeTableGroup(tableId, 0, 0, 0, 6);
+    store.placeItem(lectern.id, GRID_SPACING_RENDER * 6, GRID_SPACING_RENDER * 6);
+    const table = usePlacementStore.getState().placedItems.find((item) => item.catalogueItemId === tableId);
+    const stand = usePlacementStore.getState().placedItems.find((item) => item.catalogueItemId === lectern.id);
+    if (table === undefined || stand === undefined) throw new Error("Expected a table and a lectern");
+    usePlacementStore.getState().groupItems(new Set([table.id, stand.id]));
+    const grouped = usePlacementStore.getState().placedItems.find((item) => item.id === table.id)?.groupId ?? null;
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === stand.id)?.groupId).toBe(grouped);
+
+    usePlacementStore.getState().ungroupItems(new Set([table.id]));
+
     const after = usePlacementStore.getState().placedItems;
-    for (const id of groupIds) {
-      const item = after.find((candidate) => candidate.id === id);
-      expect(item?.groupId).toBeNull();
-    }
+    expect(after.find((item) => item.id === stand.id)?.groupId).toBeNull();
+    expect(after.filter((item) => item.groupId === grouped)).toHaveLength(7);
+  });
+
+  it("never joins two tables in one group (QoL B-03)", () => {
+    const store = usePlacementStore.getState();
+    store.placeTableGroup(tableId, 0, 0, 0, 4);
+    store.placeTableGroup(tableId, GRID_SPACING_RENDER * 8, 0, 0, 4);
+    const before = usePlacementStore.getState().placedItems;
+    const tables = before.filter((item) => item.catalogueItemId === tableId);
+    usePlacementStore.getState().groupItems(new Set(tables.map((item) => item.id)));
+    expect(usePlacementStore.getState().placedItems).toBe(before);
   });
 
   it("regroups an existing table ring without leaving chairs behind", () => {
@@ -856,6 +887,153 @@ describe("clearTableSetting", () => {
 
     usePlacementStore.getState().clearTableSetting(id);
 
+    expect(usePlacementStore.getState().placedItems).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The planner's first ten seconds (redteam fix-first 15)
+// ---------------------------------------------------------------------------
+
+const capped = getCatalogueItemBySlug("platform-narrow");
+const whiteRoundId = getCatalogueItemBySlug("round-table-6ft-white")?.id ?? "missing-white-round";
+
+function listenForPlaced(): { readonly calls: (readonly string[])[]; readonly stop: () => void } {
+  const calls: (readonly string[])[] = [];
+  const stop = subscribeFurniturePlaced((ids) => { calls.push(ids); });
+  return { calls, stop };
+}
+
+describe("an item at the venue's cap says why nothing was placed", () => {
+  beforeEach(() => { usePlacementNoticeStore.getState().dismiss(); });
+  afterEach(() => { usePlacementNoticeStore.getState().dismiss(); });
+
+  it("places the one the venue has, then says it is already placed", () => {
+    if (capped === undefined || capped.maxCount === null) throw new Error("the narrow platform has a cap");
+    usePlacementStore.getState().placeItem(capped.id, 0, 0);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+    expect(usePlacementNoticeStore.getState().notice).toBeNull();
+
+    const before = usePlacementStore.getState().placedItems;
+    usePlacementStore.getState().placeItem(capped.id, 4, 4);
+    expect(usePlacementStore.getState().placedItems).toBe(before);
+    expect(usePlacementNoticeStore.getState().notice?.text)
+      .toBe("The venue has one of these, and it is already placed; move it to use it elsewhere.");
+  });
+
+  it("refuses a table group at the cap with the same line", () => {
+    if (capped === undefined) throw new Error("no capped item");
+    usePlacementStore.getState().placeItem(capped.id, 0, 0);
+    usePlacementStore.getState().placeTableGroup(capped.id, 4, 4, 0, 8);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(capReachedLine(1));
+  });
+
+  it("gives the ghost the same plain reason", () => {
+    if (capped === undefined) throw new Error("no capped item");
+    usePlacementStore.getState().placeItem(capped.id, 0, 0);
+    usePlacementStore.getState().updateGhost(4, 4, capped.id);
+    expect(usePlacementStore.getState().ghostValid).toBe(false);
+    expect(usePlacementStore.getState().ghostInvalidReason).toBe(capReachedLine(1));
+  });
+});
+
+describe("auto-fill counts in the Grand Hall (21 × 10.5 m)", () => {
+  beforeEach(() => {
+    useRoomDimensionsStore.setState({ dimensions: { width: 21, length: 10.5, height: 7 } });
+  });
+
+  it("places 14 rounds of ten for 220 guests, not 8 of eight, and returns what the room takes", () => {
+    const heard = listenForPlaced();
+    const plan = usePlacementStore.getState().autoArrangeBanquet(whiteRoundId, 220, 10);
+    heard.stop();
+    const counts = seatingCountsFromPlacedItems(usePlacementStore.getState().placedItems);
+    expect(counts.roundTables).toBe(14);
+    expect(counts.chairs).toBe(140);
+    expect(plan).toMatchObject({ tableCount: 14, chairs: 140, roomForSeats: 140, meetsTarget: false });
+    expect(heard.calls).toHaveLength(1);
+    expect(heard.calls[0]).toHaveLength(154);
+  });
+
+  it("places exactly the whole tables 100 guests need", () => {
+    const plan = usePlacementStore.getState().autoArrangeBanquet(whiteRoundId, 100, 10);
+    expect(seatingCountsFromPlacedItems(usePlacementStore.getState().placedItems)).toEqual({ roundTables: 10, banquetTables: 0, chairs: 100 });
+    expect(plan?.meetsTarget).toBe(true);
+  });
+
+  it("returns the theatre rows it placed", () => {
+    const heard = listenForPlaced();
+    const plan = usePlacementStore.getState().autoArrangeTheatre(automaticChairId, 220);
+    heard.stop();
+    expect(plan).toMatchObject({ chairs: 224, rows: 16, meetsTarget: true });
+    expect(usePlacementStore.getState().placedItems).toHaveLength(224);
+    expect(heard.calls).toHaveLength(1);
+  });
+
+  it("places nothing and returns null while a timeline preview holds the layout", () => {
+    setLayoutTimelineMutationLock(true);
+    try {
+      expect(usePlacementStore.getState().autoArrangeBanquet(whiteRoundId, 80, 10)).toBeNull();
+      expect(usePlacementStore.getState().autoArrangeTheatre(automaticChairId, 80)).toBeNull();
+      expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+    } finally {
+      setLayoutTimelineMutationLock(false);
+    }
+  });
+});
+
+describe("fillSeatShortfall", () => {
+  beforeEach(() => {
+    useRoomDimensionsStore.setState({ dimensions: { width: 21, length: 10.5, height: 7 } });
+  });
+
+  const eightRoundsOfEight = (): void => {
+    const positions = [-6.435, -2.145, 2.145, 6.435].flatMap((x) => [[x, -2.145], [x, 2.145]] as const);
+    usePlacementStore.setState({ placedItems: positions.flatMap(([x, z]) => [...createTableGroup(whiteRoundId, x, z, 0, 8)]) });
+  };
+
+  it("adds the 16 chairs 80 guests need at the tables, in one write, announced once", () => {
+    eightRoundsOfEight();
+    let writes = 0;
+    const unsubscribe = usePlacementStore.subscribe((state, previous) => {
+      if (state.placedItems !== previous.placedItems) writes += 1;
+    });
+    const heard = listenForPlaced();
+    const fix = usePlacementStore.getState().fillSeatShortfall(80);
+    heard.stop();
+    unsubscribe();
+
+    expect(fix?.offer).toMatchObject({ kind: "chairs", chairs: 16, tables: 8 });
+    expect(seatingCountsFromPlacedItems(usePlacementStore.getState().placedItems).chairs).toBe(80);
+    expect(writes).toBe(1);
+    expect(heard.calls).toEqual([fix?.addedIds]);
+  });
+
+  it("adds tables for the rest once the tables are full", () => {
+    usePlacementStore.setState({ placedItems: [...createTableGroup(whiteRoundId, 0, 0, 0, 10)] });
+    const fix = usePlacementStore.getState().fillSeatShortfall(26);
+    expect(fix?.offer).toMatchObject({ kind: "tables", tables: 2, chairs: 16 });
+    const counts = seatingCountsFromPlacedItems(usePlacementStore.getState().placedItems);
+    expect(counts).toEqual({ roundTables: 3, banquetTables: 0, chairs: 26 });
+  });
+
+  it("changes nothing when every guest is seated or nothing fits", () => {
+    eightRoundsOfEight();
+    const before = usePlacementStore.getState().placedItems;
+    expect(usePlacementStore.getState().fillSeatShortfall(64)).toBeNull();
+    expect(usePlacementStore.getState().fillSeatShortfall(0)).toBeNull();
+    expect(usePlacementStore.getState().placedItems).toBe(before);
+  });
+
+  it("changes nothing while a timeline preview holds the layout", () => {
+    eightRoundsOfEight();
+    const before = usePlacementStore.getState().placedItems;
+    setLayoutTimelineMutationLock(true);
+    try {
+      expect(usePlacementStore.getState().fillSeatShortfall(80)).toBeNull();
+    } finally {
+      setLayoutTimelineMutationLock(false);
+    }
     expect(usePlacementStore.getState().placedItems).toBe(before);
   });
 });

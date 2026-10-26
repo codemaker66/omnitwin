@@ -103,7 +103,9 @@ describe.skipIf(testUrl === undefined)("pricing rule restore on isolated Postgre
   }
 
   it("brings a deleted rule back as it was, and it reads again", async () => {
-    const before = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing/${RULE}` });
+    // Prices are read by the venue's commercial team; staff reads them here.
+    const asStaff = headers(VENUE, "staff", STAFF_ID);
+    const before = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing/${RULE}`, headers: asStaff });
     expect(before.statusCode).toBe(404);
 
     const res = await server.inject({
@@ -113,9 +115,9 @@ describe.skipIf(testUrl === undefined)("pricing rule restore on isolated Postgre
     expect(res.statusCode).toBe(200);
     expect(await row(RULE)).toEqual({ deleted_at: null, is_active: true });
 
-    const after = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing/${RULE}` });
+    const after = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing/${RULE}`, headers: asStaff });
     expect(after.statusCode).toBe(200);
-    const list = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing` });
+    const list = await server.inject({ method: "GET", url: `/venues/${VENUE}/pricing`, headers: asStaff });
     const listed = list.json<{ data: { id: string }[] }>().data.map((rule) => rule.id);
     expect([...listed].sort()).toEqual([LIVE_RULE, RULE].sort());
   });
@@ -190,6 +192,26 @@ describe.skipIf(testUrl === undefined)("pricing rule restore on isolated Postgre
     expect(history.statusCode).toBe(200);
     expect(history.json<{ data: unknown[] }>().data).toEqual([
       { action: "updated", at: expect.any(String) as string, by: "Moira Stewart", summary: "Changed \"Reception hire\": amount." },
+    ]);
+  });
+
+  // zod 4 applies a default inside .partial(): an update schema made from the
+  // create one would send currency GBP and isActive true with every patch.
+  it("leaves the currency and the switch of a paused rule as stored when a patch does not send them", async () => {
+    const PAUSED_RULE = "55555555-5555-4555-8555-555555555504";
+    await pool.query(`INSERT INTO pricing_rules (id, venue_id, name, type, amount, currency, is_active, deleted_at)
+      VALUES ($1, $2, 'Saloon hire', 'flat_rate', '900.00', 'EUR', false, NULL)`, [PAUSED_RULE, VENUE]);
+    const res = await server.inject({
+      method: "PATCH", url: `/venues/${VENUE}/pricing/${PAUSED_RULE}`,
+      headers: headers(), payload: { amount: 950 },
+    });
+    expect(res.statusCode).toBe(200);
+    const stored = await pool.query<{ currency: string; is_active: boolean; amount: string }>(
+      "SELECT currency, is_active, amount FROM pricing_rules WHERE id = $1", [PAUSED_RULE],
+    );
+    expect(stored.rows[0]).toEqual({ currency: "EUR", is_active: false, amount: "950.00" });
+    expect((await auditRows(PAUSED_RULE)).map((entry) => entry.metadata)).toEqual([
+      expect.objectContaining({ changedFields: ["amount"] }),
     ]);
   });
 

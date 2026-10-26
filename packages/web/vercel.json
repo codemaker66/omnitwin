@@ -426,6 +426,14 @@
       "destination": "/index.html"
     },
     {
+      "source": "/events",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/events/",
+      "destination": "/index.html"
+    },
+    {
       "source": "/events/:eventId",
       "destination": "/index.html"
     },
@@ -559,6 +567,14 @@
     },
     {
       "source": "/account/allergy-notes/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/plan-view/:token",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/plan-view/:token/",
       "destination": "/index.html"
     }
   ],

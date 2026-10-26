@@ -208,7 +208,7 @@ export const FoundryProviderRequestProfileV0Schema = z
   .superRefine((profile, ctx) => {
     if (Date.parse(profile.reviewedAt) >= Date.parse(profile.expiresAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["expiresAt"],
         message: "provider request profile must expire after review",
       });
@@ -218,7 +218,7 @@ export const FoundryProviderRequestProfileV0Schema = z
       profile.providerKind === "local_cuda";
     if (local !== (profile.target.targetKind === "local_worker")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["target"],
         message: "local providers require a local target and remote providers require a remote pool",
       });
@@ -296,7 +296,7 @@ export type FoundryExecutionSubjectBindingV0 = z.infer<
 
 const SubmitLineageInputSchema = z
   .object({
-    submitCommandId: z.string().uuid(),
+    submitCommandId: z.uuid(),
     submitProviderRequestAuthorizationSha256: RuntimeSha256Schema,
   })
   .strict();
@@ -304,10 +304,10 @@ const SubmitLineageInputSchema = z
 export const FoundryProviderRequestCommandInputV0Schema = z
   .object({
     commandKind: FoundryProviderCommandKindV0Schema,
-    commandId: z.string().uuid(),
+    commandId: z.uuid(),
     commandSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     attemptOrdinal: z.literal(1),
     fencingToken: PositiveFenceSchema,
     stageIds: z
@@ -319,7 +319,7 @@ export const FoundryProviderRequestCommandInputV0Schema = z
     clientRequestId: RuntimeManifestKeySchema,
     providerCommandRef: FoundryProviderCommandRefSchema.nullable(),
     submitLineage: SubmitLineageInputSchema.nullable(),
-    stopIntentId: z.string().uuid().nullable(),
+    stopIntentId: z.uuid().nullable(),
   })
   .strict()
   .superRefine((command, ctx) => {
@@ -328,7 +328,7 @@ export const FoundryProviderRequestCommandInputV0Schema = z
       (command.stopIntentId !== null)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stopIntentId"],
         message: "a stop intent is required only for provider stop",
       });
@@ -336,7 +336,7 @@ export const FoundryProviderRequestCommandInputV0Schema = z
     if (command.commandKind === "provider_submit") {
       if (command.providerCommandRef !== null || command.submitLineage !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           message: "provider submit forbids a provider reference and submit lineage",
         });
       }
@@ -345,13 +345,13 @@ export const FoundryProviderRequestCommandInputV0Schema = z
     if (command.commandKind === "provider_reconcile") {
       if (command.submitLineage === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["submitLineage"],
           message: "provider reconciliation requires immutable submit authorization lineage",
         });
       } else if (command.submitLineage.submitCommandId === command.commandId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["submitLineage", "submitCommandId"],
           message: "provider reconciliation cannot identify itself as the submit command",
         });
@@ -360,7 +360,7 @@ export const FoundryProviderRequestCommandInputV0Schema = z
     }
     if (command.providerCommandRef === null || command.submitLineage !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "poll, checkpoint, and stop require an exact provider reference and forbid submit lineage",
       });
     }
@@ -388,7 +388,7 @@ export const FoundryProviderResourceRequestV0Schema = z
   .superRefine((resources, ctx) => {
     if (resources.gpuCount === 0 && resources.minimumGpuVramGiB !== 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["minimumGpuVramGiB"],
         message: "CPU requests cannot require GPU VRAM",
       });
@@ -407,7 +407,7 @@ export const FoundryProviderResourceLimitV0Schema = z
   .superRefine((resources, ctx) => {
     if (resources.gpuCount === 0 && resources.perGpuVramGiB !== 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["perGpuVramGiB"],
         message: "CPU capacity cannot advertise GPU VRAM",
       });
@@ -474,7 +474,7 @@ export const FoundryProviderAuthorizedStageV0Schema = z
     ] as const) {
       if (!isUnique(stage[field])) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [field],
           message: `${field} must not contain duplicates`,
         });
@@ -482,7 +482,7 @@ export const FoundryProviderAuthorizedStageV0Schema = z
     }
     if (stage.resumable && stage.checkpoint === "none") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["resumable"],
         message: "a resumable stage must define a checkpoint contract",
       });
@@ -491,8 +491,8 @@ export const FoundryProviderAuthorizedStageV0Schema = z
 
 const ExecutionIdentitySchema = z
   .object({
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     attemptOrdinal: z.literal(1),
     fencingToken: PositiveFenceSchema,
     executionSubjectSha256: RuntimeSha256Schema,
@@ -622,7 +622,7 @@ export const FoundryProviderActionV0Schema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("provider_reconcile"),
       providerCommandRef: FoundryProviderCommandRefSchema.nullable(),
-      submitCommandId: z.string().uuid(),
+      submitCommandId: z.uuid(),
       submitProviderRequestAuthorizationSha256: RuntimeSha256Schema,
     })
     .strict(),
@@ -642,7 +642,7 @@ export const FoundryProviderActionV0Schema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("provider_stop"),
       providerCommandRef: FoundryProviderCommandRefSchema,
-      stopIntentId: z.string().uuid(),
+      stopIntentId: z.uuid(),
     })
     .strict(),
 ]);
@@ -653,7 +653,7 @@ export const FoundryProviderRequestAuthorizationV0Schema = z
     schemaVersion: z.literal(FOUNDRY_PROVIDER_REQUEST_AUTHORIZATION_V0),
     authority: z.literal("none"),
     commandKind: FoundryProviderCommandKindV0Schema,
-    commandId: z.string().uuid(),
+    commandId: z.uuid(),
     commandSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     preparedAt: FoundryUtcInstantSchema,
     execution: ExecutionIdentitySchema,
@@ -677,7 +677,7 @@ export const FoundryProviderRequestAuthorizationV0Schema = z
   .superRefine((authorization, ctx) => {
     if (authorization.commandKind !== authorization.action.kind) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["action", "kind"],
         message: "action kind must match the durable command kind",
       });
@@ -689,7 +689,7 @@ export const FoundryProviderRequestAuthorizationV0Schema = z
         authorization.requestIdentity.providerIdempotencyKey
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requestIdentity", "resourceMarker"],
         message: "provider resource marker must bind the exact subject and idempotency identity",
       });
@@ -701,7 +701,7 @@ export const FoundryProviderRequestAuthorizationV0Schema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stages"],
         message: "stage runtime must not exceed the authorized wall-clock budget",
       });
@@ -722,7 +722,7 @@ export const FoundryProviderRequestAuthorizationV0Schema = z
     }
     if (invalidDependency) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stages"],
         message: "stage dependencies must reference declared stages and must not self-reference",
       });
@@ -745,7 +745,7 @@ export const FoundryProviderRequestAuthorizationV0Schema = z
       );
       if (graphHasCycle) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["stages"],
           message: "stage dependency graph must be acyclic",
         });
@@ -771,7 +771,7 @@ export const FoundryProviderRequestAuthorizationV0Schema = z
         );
         if (maximumCriticalPath > authorization.runtime.maximumWallClockSeconds) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["stages"],
             message: "stage critical path must not exceed the authorized wall-clock budget",
           });
@@ -860,7 +860,7 @@ export function deriveFoundryProviderIdempotencyKey(
   attemptId: string,
 ): string {
   const subject = RuntimeSha256Schema.parse(executionSubjectSha256).slice(7, 23);
-  const attempt = z.string().uuid().parse(attemptId).replaceAll("-", "").slice(0, 16);
+  const attempt = z.uuid().parse(attemptId).replaceAll("-", "").slice(0, 16);
   return `foundry-${subject}-${attempt}`;
 }
 
@@ -871,7 +871,7 @@ export function deriveFoundryProviderClientRequestId(
   const kind = FoundryProviderCommandKindV0Schema.parse(commandKind).slice(
     "provider_".length,
   );
-  const id = z.string().uuid().parse(commandId).replaceAll("-", "");
+  const id = z.uuid().parse(commandId).replaceAll("-", "");
   return `foundry-${kind}-${id}`;
 }
 

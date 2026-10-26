@@ -336,6 +336,26 @@ describe("WhenRibbon", () => {
     expect(screen.queryByTestId("when-ribbon-confirm")).toBeNull();
   });
 
+  it("keyboard: Escape puts a held hour back, so the Enter after it moves nothing", async () => {
+    getCalendarMock.mockResolvedValue(
+      calendarFixture([
+        booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT, kind: "hold", state: "hold" }),
+      ]),
+    );
+    moveBookingMock.mockResolvedValue({});
+    renderRibbon();
+
+    const ingot = await screen.findByTestId("when-ribbon-ingot");
+    fireEvent.keyDown(ingot, { key: "ArrowRight" });
+    const escape = new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true });
+    act(() => { ingot.dispatchEvent(escape); });
+    expect(escape.defaultPrevented).toBe(true);
+    fireEvent.keyDown(ingot, { key: "Enter" });
+
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(moveBookingMock).not.toHaveBeenCalled();
+  });
+
   it("keyboard: an ink move demands the confirm step before any PATCH — ink resists", async () => {
     getCalendarMock.mockResolvedValue(
       calendarFixture([booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT })]),

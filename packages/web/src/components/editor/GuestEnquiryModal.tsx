@@ -14,6 +14,7 @@ import {
 } from "../../lib/planner-truth.js";
 import { roomPhrase } from "../../lib/unrecorded-ask.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { isValidEmail } from "../../lib/email-validation.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 
@@ -65,6 +66,13 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
       border-radius: 10px; color: #f0f0f0; outline: none;
       transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    }
+    /* iOS Safari zooms into any field set under 16px when it takes focus, and
+       leaves the planner zoomed after the form closes (planner-qol E-X2). On
+       a touch screen the fields are 16px; pinch zoom stays (no maximum-scale
+       on the viewport, WCAG 1.4.4). */
+    @media (pointer: coarse) {
+      .omni-enq-input { font-size: 16px; }
     }
     .omni-enq-input::placeholder { color: rgba(255,255,255,0.25); }
     .omni-enq-input:focus {
@@ -200,9 +208,9 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
     }
   }, [configId]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent): void => {
-    if (e.key === "Escape") onClose();
-  }, [onClose]);
+  // Escape closes it wherever focus is, through the planner's one keyboard
+  // owner, and while it is open the planner's shortcuts leave the room alone.
+  useEscapeLayer("modal", { open: true, onEscape: onClose });
 
   const layoutSummary = getLayoutSummary();
 
@@ -236,7 +244,6 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             textAlign: "center",
           }}
           onClick={(e) => { e.stopPropagation(); }}
-          onKeyDown={handleKeyDown}
         >
           {/* Animated check circle */}
           <div style={{ marginBottom: 20 }}>
@@ -356,7 +363,6 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           animation: "omni-enq-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }}
         onClick={(e) => { e.stopPropagation(); }}
-        onKeyDown={handleKeyDown}
       >
         {/* Gold accent bar */}
         <div style={{

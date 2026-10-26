@@ -16,10 +16,16 @@
 // The walls cast their full height whatever the cutaway shows, and their
 // glazing lets the sun through (the atlas marks it): the cutaway is a way of
 // looking, not a hole in the roof, so the sun reaches the floor only through
-// the windows, as it does in the real room.
+// the windows, as it does in the real room. The walls cast as solids
+// (hallSunCasterParts): the scanned relief is a single surface, whose top
+// stands up to 5 cm behind the ceiling's edge and whose ends miss each other
+// in the corners, and through those slits the moon drew thin bright lines
+// across the floor and the tables; the walls' bodies, as thick as the real
+// walls and open only at the windows and doors (hall-wall-body.ts), close
+// them.
 // ---------------------------------------------------------------------------
 
-import { DirectionalLight, Matrix4, Vector3, type LightShadow } from "three";
+import { DirectionalLight, Matrix4, Vector3, type BufferGeometry, type LightShadow } from "three";
 import { shadow } from "three/tsl";
 import type { Node, ShadowNode } from "three/webgpu";
 
@@ -46,6 +52,36 @@ const MARGIN = 0.35;
  * see. Visible surfaces that sample a map cannot also be drawn into it.
  */
 export const HALL_SUN_CASTER_LAYER = 9;
+
+/** One of the room's stand-ins on the caster layer. */
+export interface SunCasterPart {
+  readonly key: string;
+  readonly geometry: BufferGeometry;
+  /** The walls' relief: the light passes where the atlas marks glazing (createHallCasterMaterials). */
+  readonly glazed: boolean;
+}
+
+/** The room's parts that cast: its geometry by material, as GrandHallModel builds it. */
+export interface HallCasterSources {
+  /** The ceiling, the dome and the windows' bars and outer reveals (hall-geometry.ts; its floor casts nothing). */
+  readonly room: ReadonlyMap<string, BufferGeometry>;
+  /** The walls' relief. */
+  readonly walls: ReadonlyMap<string, BufferGeometry>;
+  /** The doors' leaves, which cast shut: the cutaway is a way of looking, as everywhere else. */
+  readonly doors: ReadonlyMap<string, BufferGeometry>;
+  /** The walls' bodies (hall-wall-body.ts), uncut: their full height, through their real thickness. */
+  readonly body: BufferGeometry;
+}
+
+/** What the room casts the sun's and the moon's shadow with, in a stable order. */
+export function hallSunCasterParts(sources: HallCasterSources): SunCasterPart[] {
+  const glazed = (key: string): boolean => key === "wallPhoto" || key === "wallPhotoGloss";
+  return [
+    ...[...sources.room, ...sources.walls].map(([key, geometry]) => ({ key, geometry, glazed: glazed(key) })),
+    ...[...sources.doors].map(([key, geometry]) => ({ key, geometry, glazed: false })),
+    { key: "body", geometry: sources.body, glazed: false },
+  ].filter(({ key }) => key !== "floor");
+}
 
 export interface HallSun {
   readonly light: DirectionalLight;

@@ -13,7 +13,8 @@ import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
-import { ROTATION_SNAP_RAD } from "../lib/selection.js";
+import { usePlannerKeyBindings } from "../lib/planner-keys.js";
+import { placingKeyBindings, putDownPieceInHand } from "../lib/planner-keymap.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
 import {
   findNearestDiningTable,
@@ -35,6 +36,8 @@ import {
 } from "../lib/table-dressing.js";
 import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-brush.js";
 import { findPlacementFloor } from "../lib/planner-interaction-floor.js";
+import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
+import { postPlacementNotice } from "../stores/placement-notice-store.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -204,7 +207,13 @@ export function PlacementGhost(): React.ReactElement | null {
 
       // Seated dining tables request chairs; service/standing tables place directly.
       const item = getCatalogueItem(catState.selectedItemId);
-      if (item === undefined || placeState.ghostInvalidReason === "Maximum reached for this item") return;
+      if (item === undefined) return;
+      // Every piece the venue has is already on the floor: say so, near the tap.
+      const atCap = capReachedFor(catState.selectedItemId, placeState.placedItems.map((p) => p.catalogueItemId));
+      if (atCap !== null) {
+        postPlacementNotice(atCap);
+        return;
+      }
 
       if (item.tableShape !== null && isDiningTableItem(item)) {
         useChairDialogStore.getState().showDialog({
@@ -328,38 +337,19 @@ export function PlacementGhost(): React.ReactElement | null {
     };
   }, [selectedItemId, scene, camera, raycaster, gl]);
 
-  // Escape or right-click cancels placement
+  // Q, E and R turn the piece in hand as they turn a selection, and win over
+  // a selection held at the same time; Esc puts it down (the planner's tool
+  // keys, lib/planner-keymap.ts). A right-click also puts it down.
+  usePlannerKeyBindings(placingKeyBindings({ invalidate: () => { invalidateRef.current(); } }));
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.code === "Escape" && useCatalogueStore.getState().selectedItemId !== null) {
-        useCatalogueStore.getState().clearSelection();
-        usePlacementStore.getState().clearGhost();
-        return;
-      }
-      // Q/E rotate ghost during placement
-      if (event.code === "KeyQ" && !event.ctrlKey && !event.metaKey && useCatalogueStore.getState().selectedItemId !== null) {
-        usePlacementStore.getState().rotateGhost(ROTATION_SNAP_RAD);
-        invalidateRef.current();
-        return;
-      }
-      if (event.code === "KeyE" && !event.ctrlKey && !event.metaKey && useCatalogueStore.getState().selectedItemId !== null) {
-        usePlacementStore.getState().rotateGhost(-ROTATION_SNAP_RAD);
-        invalidateRef.current();
-      }
-    }
     function onContextMenu(event: MouseEvent): void {
       if (useCatalogueStore.getState().selectedItemId !== null) {
         event.preventDefault();
-        useCatalogueStore.getState().clearSelection();
-        usePlacementStore.getState().clearGhost();
+        putDownPieceInHand();
       }
     }
-    window.addEventListener("keydown", onKeyDown);
     window.addEventListener("contextmenu", onContextMenu);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("contextmenu", onContextMenu);
-    };
+    return () => { window.removeEventListener("contextmenu", onContextMenu); };
   }, []);
 
   if (selectedItemId === null || ghostPosition === null) return null;
@@ -466,8 +456,9 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // --- Normal furniture ghost ---
   const ghostColor = ghostValid ? PLACEMENT_COLOR_VALID : PLACEMENT_COLOR_INVALID;
+  const atCapReason = catalogueItem.maxCount !== null && ghostInvalidReason === capReachedLine(catalogueItem.maxCount);
   const showConstraintSkin = !ghostValid &&
-    ghostInvalidReason !== "Maximum reached for this item" &&
+    !atCapReason &&
     ghostInvalidReason !== "Unknown catalogue item";
 
   if (catalogueItem.category === "chair" && chairBrushPreview.length > 1) {

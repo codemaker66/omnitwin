@@ -44,8 +44,8 @@ import {
   selectEventArchitectCandidate,
 } from "../services/event-architect.js";
 
-const RunParamsSchema = z.object({ runId: z.string().uuid() }).strict();
-const CandidateParamsSchema = z.object({ candidateId: z.string().uuid() }).strict();
+const RunParamsSchema = z.object({ runId: z.uuid() }).strict();
+const CandidateParamsSchema = z.object({ candidateId: z.uuid() }).strict();
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });

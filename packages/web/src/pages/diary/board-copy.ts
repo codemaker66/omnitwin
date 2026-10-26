@@ -8,9 +8,25 @@
 // "1st option", "2nd option", "Joint 1st", "Confirmed". The internal words
 // (pencil, ink, prospect, ladder position) never reach the screen: a hold is
 // provisional, an ink is confirmed, and a prospect is "Interest only".
+//
+// A viewing (migration 0100) is a show-round: someone is shown a room. It is
+// "Viewing" on a label and "the viewing" inside a sentence, and it is never a
+// commitment of the date (Blake, 19 October 2026).
 // ---------------------------------------------------------------------------
 
-import { occasionLabel } from "@omnitwin/types";
+import { occasionLabel, type BookingLostReason } from "@omnitwin/types";
+
+/** Why a booking was lost, in the words the person marking it chooses from
+ *  (Blake, 19 October 2026). */
+const LOST_REASON_WORDS: Readonly<Record<BookingLostReason, string>> = {
+  price: "Price",
+  date_taken: "Date taken by someone else",
+  room_unsuitable: "Room or capacity didn't suit",
+  chose_elsewhere: "Chose another venue",
+  plans_changed: "Plans changed or cancelled",
+  no_reply: "Stopped replying",
+  other: "Other",
+};
 
 /** "Week of Mon, 21 Sept 2026" → "the week of Mon, 21 Sept 2026", so a
  *  range title reads inside a sentence; a day's title stands as it is. */
@@ -200,6 +216,7 @@ export const BOARD_COPY = {
     hold: "Provisional",
     prospect: "Interest only",
     internal_block: "House block",
+    viewing: "Viewing",
     phase: "Occupancy footprint",
   } as const,
 
@@ -225,17 +242,30 @@ export const BOARD_COPY = {
     createTitle: "New booking",
     editTitle: "Booking details",
     convertTitle: "Hold a date for this enquiry",
+    /** The drawer opened from an enquiry, booking a viewing instead. */
+    viewingTitle: "Book a viewing for this enquiry",
     close: "Close",
     cancel: "Discard",
     submit: {
       create: "Add to the diary",
       edit: "Save changes",
       convert: "Hold the date",
+      viewing: "Book the viewing",
     } as const,
     convertNote: (name: string): string =>
       `A provisional date for ${name}. The enquiry stays in review.`,
+    viewingNote: (name: string): string =>
+      `A viewing of a room for ${name}. It does not hold the date, and the enquiry stays in review.`,
+    /** What the drawer opened from an enquiry books: a hold, as it always
+     *  has, or a viewing for the same enquiry. */
+    convertChoice: {
+      legend: "For this enquiry",
+      hold: "Hold a date",
+      viewing: "Book a viewing",
+    } as const,
     hygieneLegend: "Keeping the hold current",
     ownerNote: "You will own this hold.",
+    viewingOwnerNote: "You will host this viewing.",
     /** What a field needs, in plain words (roadmap N3). The schema's own
      *  words ("endsAt must be after startsAt", "Invalid uuid") never reach
      *  the booker; its hold requirements already read plainly and pass as
@@ -288,6 +318,7 @@ export const BOARD_COPY = {
     created: (title: string): string => `Added ${title} to the diary.`,
     saved: (title: string): string => `Saved ${title}.`,
     converted: (title: string): string => `Held a provisional date for ${title}.`,
+    viewingBooked: (title: string): string => `Booked a viewing: ${title}.`,
     transitioned: (title: string, action: string): string => `${action}: ${title}.`,
     /** The booking's next step, under its facts (roadmap N3). */
     transitionsTitle: "Next step",
@@ -400,6 +431,17 @@ export const BOARD_COPY = {
       hold: "the provisional hold",
       prospect: "the interest",
       internal_block: "the house block",
+      viewing: "the viewing",
+    },
+    /** A viewing's only exit is being called off: it says so in its own
+     *  words, never "the booking" (migration 0100). */
+    cancelViewing: "Cancel the viewing",
+    /** Marking a booking lost may say why, from a short fixed list (Blake,
+     *  19 October 2026); unchosen, the booking is still marked lost. */
+    lostReason: {
+      label: "Why it was lost (optional)",
+      none: "No reason chosen",
+      words: LOST_REASON_WORDS,
     },
     promoted: (titles: readonly string[]): string => `${listNames(titles)} ${titles.length === 1 ? "becomes" : "become"} 1st option.`,
     free: (titles: readonly string[]): string => `${listNames(titles)}, 1st option, can then be confirmed.`,
@@ -417,6 +459,10 @@ export const BOARD_COPY = {
     hold: "Make it provisional",
     ink: "Confirm it",
     internal_block: "Make it a house block",
+    // Never offered: no booking can become a viewing (the matrix lists no
+    // move into one, and the API refuses it). A viewing is booked as its
+    // own booking, which is what this says.
+    viewing: "Book a viewing as its own booking",
     released: "Release",
     expired: "Mark expired",
     cancelled: "Cancel the booking",
@@ -492,6 +538,11 @@ export const BOARD_COPY = {
         term: "House block & interest only",
         detail:
           "A house block reserves venue time. Interest only never holds the room.",
+      },
+      {
+        term: "Viewing",
+        detail:
+          "A room shown to an enquirer. It never holds the date; the Diary warns when it falls during a confirmed booking, its set-up or clearing, or a house block.",
       },
       {
         term: "The tray",

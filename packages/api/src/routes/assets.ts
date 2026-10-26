@@ -158,7 +158,7 @@ class RuntimeProfileMemberUpstreamTimeoutError extends Error {
 }
 
 const RuntimeAssetParamsSchema = z.object({
-  assetVersionId: z.string().uuid(),
+  assetVersionId: z.uuid(),
   fileName: z.string().min(1).max(255).optional(),
 }).strict();
 const RuntimeProfileMemberParamsSchema = z.object({

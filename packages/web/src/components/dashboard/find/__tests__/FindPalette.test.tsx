@@ -165,7 +165,9 @@ describe("Find in the staff header", () => {
     const find = openFind();
     const pages = within(find).getAllByRole("option").map((option) => option.getAttribute("aria-label")?.split(",")[0]);
     expect(pages).toEqual(["Plan", "Diary", "Hallkeeper", "Rota", "Enquiries", "Pipeline", "Pending reviews",
-      "Executive analytics", "Proposals", "Clients", "Reference loadouts", "Venue settings"]);
+      "Executive analytics", "Proposals", "Pricing", "Clients", "Reference loadouts", "Venue settings"]);
+    fireEvent.change(field(), { target: { value: "room hire" } });
+    expect(activeOption()).toBe("Pricing, page, Rates, and who changed them when");
     fireEvent.change(field(), { target: { value: "quotes" } });
     expect(activeOption()).toBe("Proposals, page, Proposals and their versions");
     fireEvent.keyDown(field(), { key: "Enter" });
@@ -342,17 +344,15 @@ describe("Find in the staff header", () => {
     }
   });
 
-  it("offers sales dates and pages, and never searches the clients its role is refused", async () => {
+  it("offers sales the client search too, since the Clients desk admits it (People Book design §6.7)", async () => {
+    mocks.search.mockResolvedValue(HENDERSON);
     useAuthStore.setState({ user: person("sales") });
     renderShell();
     openFind();
-    expect(field().getAttribute("placeholder")).toBe("A date or a page");
-    expect(screen.getByText("Dates and pages.")).toBeDefined();
+    expect(field().getAttribute("placeholder")).toBe("A name, a date or a page");
     fireEvent.change(field(), { target: { value: "henderson" } });
-    expect(screen.getByText("Nothing found for “henderson”.")).toBeDefined();
-    await new Promise((resolve) => { setTimeout(resolve, 300); });
-    expect(mocks.search).not.toHaveBeenCalled();
-    expect(screen.queryByRole("option", { name: /Clients/u })).toBeNull();
+    expect(await screen.findByRole("option", { name: /^Ailsa Henderson/u })).toBeDefined();
+    expect(mocks.search).toHaveBeenCalledWith("henderson");
   });
 
   it("tells a hallkeeper it finds people and layouts, not the commercial record", () => {
@@ -479,7 +479,8 @@ describe("Find in the staff header", () => {
   });
 
   it("says when nothing is found in a region that was already there", () => {
-    useAuthStore.setState({ user: person("sales") });
+    // No client search for an account without a venue, so the answer is immediate.
+    useAuthStore.setState({ user: { ...person("staff"), venueId: null } });
     renderShell();
     openFind();
     const region = screen.getAllByRole("status").find((element) => element.classList.contains("find__said"));

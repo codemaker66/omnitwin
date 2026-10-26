@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TwinManifest } from "@omnitwin/types";
-import { useLiveSearchParams } from "../hooks/use-live-search-params.js";
 import {
   stepSpring,
   type SpringConfig,
   type SpringState,
 } from "../lib/springs.js";
 import { prefersReducedMotion } from "./reduced-motion.js";
+import { useTwinSearchParams } from "./twin-search-params.js";
 
 // -----------------------------------------------------------------------------
 // useTwinWalk — the hop state machine for the twin walkthrough.
@@ -21,9 +21,7 @@ import { prefersReducedMotion } from "./reduced-motion.js";
 // walk the visited nodes; an external param change (back button, hand-edited
 // URL) swaps nodes instantly with no spring. The origin's entry is never
 // replaced mid-hop — replacing it would clobber the node the visitor came
-// from and break walking backward. Every write builds on the address as it
-// stands when the write happens, so a hop landing from a frame loop started
-// renders ago keeps whatever ?mode= the visitor chose while it was in flight.
+// from and break walking backward.
 //
 // Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 9).
 // -----------------------------------------------------------------------------
@@ -65,7 +63,7 @@ export interface TwinWalk {
 }
 
 export function useTwinWalk(manifest: TwinManifest): TwinWalk {
-  const { searchParams, latest, write } = useLiveSearchParams();
+  const [searchParams, editSearchParams] = useTwinSearchParams();
 
   const nodeIds = useMemo(
     () => new Set(manifest.nodes.map((node) => node.id)),
@@ -122,16 +120,18 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
     }
   }, []);
 
-  /** Set ?node= while preserving every other param the address carries now. */
+  /** Set ?node= while preserving every other param as the address stands now
+   *  (a hop lands long after the closure that began it; see twin-search-params). */
   const writeNodeParam = useCallback(
     (id: string, mode: "push" | "replace") => {
-      const next = latest();
-      next.set("node", id);
-      // Commit a visited node before Back can return to the prior URL while
-      // the router still renders that prior location. Canonicalisation stays async.
-      write(next, { replace: mode === "replace", flushSync: mode === "push" });
+      editSearchParams((params) => {
+        params.set("node", id);
+        // Commit a visited node before Back can return to the prior URL while
+        // the router still renders that prior location. Canonicalisation stays async.
+        return { replace: mode === "replace", flushSync: mode === "push" };
+      });
     },
-    [latest, write],
+    [editSearchParams],
   );
 
   /** Land on a node: end any hop, swap state, optionally write the URL. */
@@ -199,8 +199,7 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
 
   // URL → walk. A valid external param change (back/forward, hand-edited URL)
   // is an instant, springless swap; a missing or unknown param is
-  // canonicalised back to the node underfoot without adding history, unless
-  // a newer address already names a node and its render is still to come.
+  // canonicalised back to the node underfoot without adding history.
   useEffect(() => {
     const param = searchParams.get("node");
     if (param !== null && nodeIds.has(param)) {
@@ -209,12 +208,8 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
       }
       return;
     }
-    const pending = latest().get("node");
-    if (pending !== null && nodeIds.has(pending)) {
-      return;
-    }
     writeNodeParam(currentIdRef.current, "replace");
-  }, [searchParams, nodeIds, arriveAt, latest, writeNodeParam]);
+  }, [searchParams, nodeIds, arriveAt, writeNodeParam]);
 
   // Never leave a frame loop running after unmount.
   useEffect(() => cancelHopLoop, [cancelHopLoop]);

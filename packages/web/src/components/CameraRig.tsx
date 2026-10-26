@@ -20,7 +20,6 @@ import { finishPlannerShowcaseTour, plannerShowcaseStillCurrent } from "../lib/p
 import {
   HUMAN_POV_TARGET_DISTANCE_M,
   computeHumanPovLookAngles,
-  isHumanPovExitKey,
   isHumanPovPointerButton,
   type HumanPovLookAngles,
 } from "../lib/human-pov-camera.js";
@@ -30,7 +29,6 @@ import {
   MAX_POLAR_ANGLE,
   MIN_POLAR_ANGLE,
   PAN_KEYS,
-  PAN_SPEED,
   ZOOM_FRICTION,
   ZOOM_IMPULSE,
   ZOOM_VELOCITY_THRESHOLD,
@@ -38,12 +36,15 @@ import {
   computeDefaultCameraPosition,
   computeDistanceLimits,
   computeKeyboardPanDirection,
+  computeKeyboardPanStep,
   computePanBounds,
   computeZoomFrameScale,
   isCameraKeyboardInputLocked,
   isCameraKeyboardPanSuspendedByPlannerState,
+  zoomWhileFingersDown,
   type CameraKeyboardPlannerState,
 } from "../lib/camera-rig.js";
+import { useEscapeLayer, usePlannerKeyBindings } from "../lib/planner-keys.js";
 
 export {
   DAMPING_FACTOR,
@@ -91,14 +92,6 @@ function readCameraKeyboardPlannerState(): CameraKeyboardPlannerState {
 
 function isCameraKeyboardPanSuspended(): boolean {
   return isCameraKeyboardPanSuspendedByPlannerState(readCameraKeyboardPlannerState());
-}
-
-function onKeyUp(event: KeyboardEvent): void {
-  keyboardKeys.delete(event.code);
-}
-
-function onBlur(): void {
-  keyboardKeys.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -171,12 +164,6 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   const humanPovEuler = useRef(new Euler(0, 0, 0, "YXZ"));
   const humanPovForward = useRef(new Vector3());
 
-  // Touch devices (iPad, iPhone) don't have a scroll wheel — the custom
-  // inertial-wheel zoom below is desktop-only. Enabling OrbitControls' own
-  // zoom on coarse-pointer devices wires pinch-to-zoom through the same
-  // control surface used by orbit/pan, so two-finger gestures work out of
-  // the box. Desktop wheel remains owned by the custom inertial handler.
-  const isTouchDevice = useIsTouchDevice();
 
   // Parents may select a new immutable snapshot object at a timeline midpoint
   // even when its numeric room envelope is unchanged. Stabilise the bounds so
@@ -384,67 +371,49 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     });
   }, []);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      if (suspendedRef.current) return;
+  // Keys (T-671 slice 5), through the planner's one keyboard owner. The
+  // arrows pan the orbit camera while nothing is selected (with a selection
+  // they nudge it, and in Walk they walk); W A S D no longer pan.
+  usePlannerKeyBindings([{
+    keys: [...PAN_KEYS].map((code) => ({ code })),
+    repeat: true,
+    when: () => !suspendedRef.current && !useCockpitStore.getState().walkMode && !isCameraKeyboardPanSuspended(),
+    run: (event) => {
+      keyboardKeys.add(event.code);
+      invalidateRef.current();
+    },
+    release: (event) => {
+      if (event === null) keyboardKeys.clear();
+      else keyboardKeys.delete(event.code);
+    },
+  }]);
+  useEffect(() => () => { keyboardKeys.clear(); }, []);
+
+  // Esc on the camera's own moves, each before anything else steps back: it
+  // stops Present and hands control straight back; it stops a bookmark move
+  // where it is (a camera move must never lock input behind an animation);
+  // and it leaves the person's-eye view, restoring the planner's pose.
+  useEscapeLayer("operation", {
+    open: () => {
+      if (suspendedRef.current) return false;
       const store = useBookmarkStore.getState();
-
-      // Escape cancels a cinematic tour and hands control straight back.
-      if (event.code === "Escape" && store.tour !== null) {
-        event.preventDefault();
+      return store.tour !== null
+        || (store.transition !== null && store.activeReferenceId === null)
+        || humanPovActiveRef.current || humanPovRestorePoseRef.current !== null || store.activeReferenceId !== null;
+    },
+    onEscape: () => {
+      const store = useBookmarkStore.getState();
+      if (store.tour !== null) {
         finishPlannerShowcaseTour(store.tour);
-        invalidateRef.current();
-        return;
-      }
-
-      // Escape also cancels an in-flight bookmark transition: the camera
-      // stops at its current (presentation) pose and control returns
-      // instantly — a camera move must never lock input behind a
-      // non-interruptible animation. Reference (POV) transitions keep the
-      // exit-key path below, which also restores the saved planner pose.
-      if (event.code === "Escape" && store.transition !== null && store.activeReferenceId === null) {
-        event.preventDefault();
+      } else if (store.transition !== null && store.activeReferenceId === null) {
         useBookmarkStore.setState({ transition: null, pendingNavigationId: null });
-        invalidateRef.current();
-        return;
-      }
-
-      const canExitHumanPov =
-        humanPovActiveRef.current ||
-        humanPovRestorePoseRef.current !== null ||
-        store.activeReferenceId !== null;
-
-      if (isHumanPovExitKey(event.code) && canExitHumanPov) {
-        event.preventDefault();
-        event.stopPropagation();
-        useBookmarkStore.setState({
-          pendingNavigationId: null,
-          transition: null,
-        });
+      } else {
+        useBookmarkStore.setState({ pendingNavigationId: null, transition: null });
         leaveHumanPovMode(true);
-        return;
       }
-
-      if (PAN_KEYS.has(event.code)) {
-        if (isCameraKeyboardInputLocked(event.target) || isCameraKeyboardPanSuspended()) {
-          keyboardKeys.delete(event.code);
-          return;
-        }
-        keyboardKeys.add(event.code);
-        invalidateRef.current();
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-      keyboardKeys.clear();
-    };
-  }, [leaveHumanPovMode]);
+      invalidateRef.current();
+    },
+  });
 
   // Reusable vectors to avoid per-frame allocation
   const panDelta = useRef(new Vector3());
@@ -598,6 +567,14 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       canvas.removeEventListener("wheel", onWheel);
     };
   }, [camera, gl]);
+
+  // OrbitControls' zoom is the two-finger pinch's dolly, on only while a finger
+  // is down; every wheel and trackpad has the inertial zoom above (on a
+  // touch-first device both used to zoom one wheel turn).
+  useEffect(() => zoomWhileFingersDown(window, (on) => {
+    const controls = controlsRef.current;
+    if (controls !== null) controls.enableZoom = on;
+  }), []);
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -797,11 +774,14 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       return;
     }
 
-    // Keep rendering while damping settles after orbit/pan
+    // Keep rendering while damping settles after orbit/pan. An update that
+    // still moves the camera fires "change", which re-arms these frames and
+    // asks for the next one; an update that moves nothing lets the loop rest
+    // (a pose set in code leaves nothing to damp, and on a software-rendered
+    // device each needless frame costs a quarter of a second).
     if (smoothControls && dampingFrames.current > 0) {
       dampingFrames.current--;
       controls.update();
-      invalidate();
     }
 
     // Inertial zoom — apply velocity then decay via friction
@@ -848,7 +828,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     const distance = camera.position.distanceTo(controls.target);
     const referenceDistance = (limits.minDistance + limits.maxDistance) / 2;
     const speedScale = distance / referenceDistance;
-    const speed = PAN_SPEED * speedScale * delta;
+    const speed = computeKeyboardPanStep(delta, speedScale);
 
     // Apply pan in camera-relative XZ plane
     // Get camera's forward direction projected onto XZ plane
@@ -884,7 +864,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       enabled={suspended ? false : undefined}
       enableDamping={smoothControls}
       dampingFactor={DAMPING_FACTOR}
-      enableZoom={isTouchDevice}
+      enableZoom={false}
       minPolarAngle={MIN_POLAR_ANGLE}
       maxPolarAngle={MAX_POLAR_ANGLE}
       minDistance={limits.minDistance}
@@ -895,31 +875,11 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       mouseButtons={{
         LEFT: -1 as number, // Disabled — reserved for object selection
         MIDDLE: 2, // THREE.MOUSE.PAN
-        RIGHT: (smoothControls ? 0 : -1) as number, // THREE.MOUSE.ROTATE (desktop orbit)
+        RIGHT: 0 as number, // THREE.MOUSE.ROTATE: a mouse's right-drag looks around at every width
       }}
       onStart={markCameraInteractionActive}
       onChange={onControlsChange}
       onEnd={markCameraInteractionSettling}
     />
   );
-}
-
-/**
- * Detect coarse-pointer (touch) devices at mount + on media-query change.
- * Used to selectively enable OrbitControls' built-in pinch-zoom on iPad
- * and iPhone without disturbing the desktop wheel-zoom handler.
- */
-function useIsTouchDevice(): boolean {
-  const [isTouch, setIsTouch] = useState<boolean>(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-    return window.matchMedia("(pointer: coarse)").matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
-    const mq = window.matchMedia("(pointer: coarse)");
-    const handler = (e: MediaQueryListEvent): void => { setIsTouch(e.matches); };
-    mq.addEventListener("change", handler);
-    return () => { mq.removeEventListener("change", handler); };
-  }, []);
-  return isTouch;
 }

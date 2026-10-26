@@ -7,6 +7,7 @@ import {
   listPendingProgress,
   partitionReplay,
   resolveReplayDisposition,
+  type QueuedProgressOp,
   type ReplayResult,
 } from "../lib/progress-sync-queue.js";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -36,7 +37,7 @@ import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspac
 import { ProtectedPremisesBlock } from "../components/hallkeeper/ProtectedPremisesBlock.js";
 import { PaperCopyStamp, paperCopyLine, usePrintedAt } from "../components/hallkeeper/PaperCopyStamp.js";
 import { formatSheetTimes } from "../components/hallkeeper/sheet-facts.js";
-import { ActivityStatus } from "../components/shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import "../styles/hallkeeper-register.css";
 import "./hallkeeper-sheet.css";
 
@@ -70,6 +71,9 @@ interface DownloadNotice {
 
 const APPROVED_SNAPSHOT_UNAVAILABLE = "The approved setup sheet is unavailable.";
 const NO_PERMISSION = "You don't have permission to view this event's sheet.";
+/** A sheet opened without an event, on a layout that serves several, keeps
+ *  checks no Day Board line counts; it says so rather than look like tonight's. */
+const UNTIED_CHECKS = "This layout serves more than one event and this sheet wasn't opened from one, so these checks won't count on Today's rooms. To check off a room for an event, open it from";
 const ApprovedSnapshotErrorSchema = z.object({ code: z.literal("APPROVED_SNAPSHOT_UNAVAILABLE") });
 
 async function isApprovedSnapshotUnavailable(response: Response): Promise<boolean> {
@@ -79,6 +83,58 @@ async function isApprovedSnapshotUnavailable(response: Response): Promise<boolea
   } catch {
     return false;
   }
+}
+
+/** A layout's ticks for the event the sheet was opened for: ticks belong to an
+ *  event, so a layout reused from an earlier event never arrives already set.
+ *  With no event named, the server keeps to the layout's only event, if any. */
+function progressUrl(configId: string, eventId: string | null | undefined): string {
+  const query = eventId === null || eventId === undefined ? "" : `?eventId=${encodeURIComponent(eventId)}`;
+  return `${API_URL}/hallkeeper/${configId}/progress${query}`;
+}
+
+/** The event a queued tick belongs to. A tick queued before ticks carried an
+ *  event has none recorded; it was made on the sheet now open, so it is that
+ *  sheet's. */
+function eventOf(op: QueuedProgressOp, sheetEventId: string | null): string | null {
+  return op.eventId === undefined ? sheetEventId : op.eventId;
+}
+
+/** A queued tick made on this sheet: the same layout and the same event. */
+function onSheet(op: QueuedProgressOp, configId: string, sheetEventId: string | null): boolean {
+  return op.configId === configId && eventOf(op, sheetEventId) === sheetEventId;
+}
+
+/** Where the server keeps this sheet's ticks: an event, or null for the
+ *  layout's own eventless ticks; and how many events the layout is linked to. */
+interface TickScope {
+  readonly eventId: string | null;
+  readonly linkedEvents: number;
+}
+
+const ProgressResponseSchema = z.object({ data: z.object({
+  checked: z.record(z.string(), z.string()),
+  // Absent from an API older than ticks per event.
+  eventId: z.uuid().nullable().optional(),
+  linkedEvents: z.number().int().nonnegative().optional(),
+}) });
+
+/** The sheet's shared checks and their scope (null from an older API), or
+ *  null when the server would not give them. */
+async function readProgress(
+  configId: string,
+  eventId: string | null,
+  headers: Readonly<Record<string, string>>,
+): Promise<{ readonly checks: CheckMap; readonly scope: TickScope | null } | null> {
+  const progressRes = await fetch(progressUrl(configId, eventId), { headers });
+  if (!progressRes.ok) return null;
+  const { data } = ProgressResponseSchema.parse(await progressRes.json());
+  const loaded: Record<string, boolean> = {};
+  for (const key of Object.keys(data.checked)) {
+    loaded[key] = true;
+  }
+  const scope = data.eventId === undefined ? null : { eventId: data.eventId, linkedEvents: data.linkedEvents ?? 0 };
+  return { checks: loaded, scope };
 }
 
 /**
@@ -146,10 +202,21 @@ export function HallkeeperPage(): React.ReactElement {
   const downloadOperationRef = useRef(0);
   const activeConfigRef = useRef(configId);
   activeConfigRef.current = configId;
+  const activeEventRef = useRef(eventId);
+  activeEventRef.current = eventId;
   const checksRef = useRef<CheckMap>({});
   const operationVersions = useRef(new Map<string, number>());
   const [progressUnavailable, setProgressUnavailable] = useState(false);
   const [progressNotice, setProgressNotice] = useState<string | null>(null);
+  const progressReloadRef = useRef(0);
+  const [checksReloading, setChecksReloading] = useState(false);
+  // A reload that also failed says so: otherwise the retry looks like it did nothing.
+  const [checksReloadFailed, setChecksReloadFailed] = useState(false);
+  // Where the server said this sheet's ticks are kept, pinned for its writes
+  // and queued ticks, so a link added mid-setup cannot move them. Until the
+  // first read (or from an older API) the sheet's own ?eventId= stands.
+  const [tickScope, setTickScope] = useState<TickScope | null>(null);
+  const writeEventId = tickScope === null ? eventId : tickScope.eventId;
 
   // --- Fetch sheet data + progress in parallel ---
   const loadData = useCallback(() => {
@@ -165,6 +232,9 @@ export function HallkeeperPage(): React.ReactElement {
     checksRef.current = {};
     setProgressUnavailable(false);
     setProgressNotice(null);
+    setChecksReloading(false);
+    setChecksReloadFailed(false);
+    setTickScope(null);
     setHighlightedRowKey(null);
     setPendingCount(0);
     fetchCountRef.current += 1;
@@ -198,18 +268,14 @@ export function HallkeeperPage(): React.ReactElement {
         setData(sheetJson.data);
 
         try {
-          const progressRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
-          if (progressRes.ok) {
-            const progressJson = z.object({ data: z.object({ checked: z.record(z.string()) }) }).parse(await progressRes.json());
-            if (!isCurrent()) return;
-            const loaded: Record<string, boolean> = {};
-            for (const key of Object.keys(progressJson.data.checked)) {
-              loaded[key] = true;
-            }
-            checksRef.current = loaded;
-            setChecks(loaded);
-          } else if (isCurrent()) {
+          const loaded = await readProgress(configId, eventId, headers);
+          if (!isCurrent()) return;
+          if (loaded === null) {
             setProgressUnavailable(true);
+          } else {
+            checksRef.current = loaded.checks;
+            setChecks(loaded.checks);
+            setTickScope(loaded.scope);
           }
         } catch {
           if (isCurrent()) setProgressUnavailable(true);
@@ -223,7 +289,7 @@ export function HallkeeperPage(): React.ReactElement {
         if (isCurrent()) setLoading(false);
       }
     })();
-  }, [configId, eventQuery]);
+  }, [configId, eventId, eventQuery]);
 
   useEffect(() => {
     loadData();
@@ -232,6 +298,41 @@ export function HallkeeperPage(): React.ReactElement {
       downloadOperationRef.current += 1;
     };
   }, [loadData]);
+
+  // "Reload checks" asks again for the shared checks only. The sheet already
+  // on screen stays whatever happens: on poor signal a hallkeeper must never
+  // lose the copy in hand to a second read of the sheet that fails.
+  const reloadChecks = useCallback(() => {
+    if (configId === undefined) return;
+    progressReloadRef.current += 1;
+    const thisReload = progressReloadRef.current;
+    const sheetFetch = fetchCountRef.current;
+    const isCurrent = (): boolean => mountedRef.current && thisReload === progressReloadRef.current
+      && sheetFetch === fetchCountRef.current && activeConfigRef.current === configId;
+    setChecksReloading(true);
+    void (async () => {
+      try {
+        const token = await getAuthToken();
+        if (!isCurrent()) return;
+        const headers: Record<string, string> = {};
+        if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+        const loaded = await readProgress(configId, eventId, headers);
+        if (!isCurrent()) return;
+        // Still unavailable: the sheet and the notice stay, and the notice
+        // says the reload failed too.
+        if (loaded === null) { setChecksReloadFailed(true); return; }
+        checksRef.current = loaded.checks;
+        setChecks(loaded.checks);
+        setTickScope(loaded.scope);
+        setProgressUnavailable(false);
+        setChecksReloadFailed(false);
+      } catch {
+        if (isCurrent()) setChecksReloadFailed(true);
+      } finally {
+        if (isCurrent()) setChecksReloading(false);
+      }
+    })();
+  }, [configId, eventId]);
 
   // --- Toggle with optimistic UI + offline-resilient server PATCH ---
   //
@@ -248,10 +349,10 @@ export function HallkeeperPage(): React.ReactElement {
   const handleToggle = useCallback((rowKey: string) => {
     if (configId === undefined || progressUnavailable) return;
     const wasChecked = checksRef.current[rowKey] === true;
-    const operationKey = `${configId}|${rowKey}`;
+    const operationKey = `${configId}|${writeEventId ?? ""}|${rowKey}`;
     const operationVersion = (operationVersions.current.get(operationKey) ?? 0) + 1;
     operationVersions.current.set(operationKey, operationVersion);
-    const isCurrent = (): boolean => activeConfigRef.current === configId
+    const isCurrent = (): boolean => activeConfigRef.current === configId && activeEventRef.current === eventId
       && operationVersions.current.get(operationKey) === operationVersion;
     const rollback = (): void => {
       if (!isCurrent()) return;
@@ -272,7 +373,7 @@ export function HallkeeperPage(): React.ReactElement {
         const token = await getAuthToken();
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
-        const res = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, {
+        const res = await fetch(progressUrl(configId, writeEventId), {
           method: "PATCH", headers, body: JSON.stringify({ rowKey, checked: desiredChecked }),
         });
         result = { ok: res.ok, status: res.status };
@@ -296,16 +397,18 @@ export function HallkeeperPage(): React.ReactElement {
       // optimistic UI and queue the intent for replay on reconnect.
       try {
         if (operationVersions.current.get(operationKey) !== operationVersion) return;
-        await enqueueProgress(configId, rowKey, desiredChecked);
+        await enqueueProgress(configId, rowKey, desiredChecked, writeEventId);
         const pending = await listPendingProgress();
-        if (activeConfigRef.current === configId) setPendingCount(pending.filter((op) => op.configId === configId).length);
+        if (activeConfigRef.current === configId && activeEventRef.current === eventId) {
+          setPendingCount(pending.filter((op) => onSheet(op, configId, writeEventId)).length);
+        }
       } catch {
         // IDB unreachable — last-resort rollback so the UI doesn't
         // show a check that's neither on the server nor in IDB.
         rollback();
       }
     })().finally(finishWrite);
-  }, [configId, progressUnavailable, beginProgressWrite]);
+  }, [configId, eventId, writeEventId, progressUnavailable, beginProgressWrite]);
 
   // Serialize drains for each sheet while allowing a newly opened sheet
   // to sync even when the previous sheet still has a request in flight.
@@ -332,7 +435,12 @@ export function HallkeeperPage(): React.ReactElement {
       void (async () => {
         try {
           const queued = (await listPendingProgress()).filter((op) => op.configId === configId);
-          if (activeConfigRef.current === configId) setPendingCount(queued.length);
+          const showCount = (ops: readonly QueuedProgressOp[]): void => {
+            if (activeConfigRef.current === configId && activeEventRef.current === eventId) {
+              setPendingCount(ops.filter((op) => onSheet(op, configId, writeEventId)).length);
+            }
+          };
+          showCount(queued);
           if (queued.length === 0) {
             return;
           }
@@ -342,43 +450,56 @@ export function HallkeeperPage(): React.ReactElement {
           const headers: Record<string, string> = { "Content-Type": "application/json" };
           if (token !== null) headers["Authorization"] = `Bearer ${token}`;
 
-          // Authoritative server truth. If we can't read it, bail and
-          // keep the queue intact rather than guessing and dropping edits.
-          let serverChecked: Set<string>;
-          try {
-            const stateRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
-            if (!stateRes.ok) return;
-            const stateJson = (await stateRes.json()) as { data: { checked: Record<string, string> } };
-            serverChecked = new Set(Object.keys(stateJson.data.checked));
-          } catch {
-            return;
+          // Ticks belong to an event, so each event's queued ticks are
+          // reconciled against that event's own server truth and replayed
+          // into it — including ops queued on another of this layout's sheets.
+          // A tick queued before ticks carried an event goes to this sheet's.
+          const byEvent = new Map<string, { readonly eventId: string | null; readonly ops: QueuedProgressOp[] }>();
+          for (const op of queued) {
+            const opEventId = eventOf(op, writeEventId);
+            const group = byEvent.get(opEventId ?? "") ?? { eventId: opEventId, ops: [] };
+            group.ops.push(op);
+            byEvent.set(opEventId ?? "", group);
           }
 
-          const { replay, converged } = partitionReplay(queued, serverChecked);
-
-          // Server already satisfies these — safe to drop, no network.
-          for (const op of converged) {
-            await ackProgress(op.configId, op.rowKey);
-          }
-
-          // Server still differs — replay each desired checked state.
-          for (const op of replay) {
-            let result: ReplayResult;
+          for (const { eventId: scopeEventId, ops } of byEvent.values()) {
+            // Authoritative server truth. If we can't read it, leave this
+            // event's ops queued rather than guessing and dropping edits.
+            let serverChecked: Set<string>;
             try {
-              const res = await fetch(`${API_URL}/hallkeeper/${op.configId}/progress`, {
-                method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey, checked: op.desiredChecked }),
-              });
-              result = { ok: res.ok, status: res.status };
+              const stateRes = await fetch(progressUrl(configId, scopeEventId), { headers });
+              if (!stateRes.ok) continue;
+              const stateJson = (await stateRes.json()) as { data: { checked: Record<string, string> } };
+              serverChecked = new Set(Object.keys(stateJson.data.checked));
             } catch {
-              result = { ok: false, status: null };
+              continue;
             }
-            if (resolveReplayDisposition(result) === "ack") {
-              await ackProgress(op.configId, op.rowKey);
+
+            const { replay, converged } = partitionReplay(ops, serverChecked);
+
+            // Server already satisfies these — safe to drop, no network.
+            for (const op of converged) {
+              await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
+            }
+
+            // Server still differs — replay each desired checked state.
+            for (const op of replay) {
+              let result: ReplayResult;
+              try {
+                const res = await fetch(progressUrl(op.configId, scopeEventId), {
+                  method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey, checked: op.desiredChecked }),
+                });
+                result = { ok: res.ok, status: res.status };
+              } catch {
+                result = { ok: false, status: null };
+              }
+              if (resolveReplayDisposition(result) === "ack") {
+                await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
+              }
             }
           }
 
-          const remaining = await listPendingProgress();
-          if (activeConfigRef.current === configId) setPendingCount(remaining.filter((op) => op.configId === configId).length);
+          showCount(await listPendingProgress());
         } catch {
           // Don't surface — flush failures are silent ops noise.
         } finally {
@@ -399,7 +520,7 @@ export function HallkeeperPage(): React.ReactElement {
     return () => {
       window.removeEventListener("online", flush);
     };
-  }, [configId]);
+  }, [configId, eventId, writeEventId]);
 
   const handleDownload = useCallback(() => {
     if (configId === undefined || downloadBusy) return;
@@ -504,7 +625,13 @@ export function HallkeeperPage(): React.ReactElement {
         {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
         {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
         {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
-        {progressUnavailable && <div className="hk-notice" role="alert">Shared checks could not be loaded. The layout is available; reload before changing checks. <button className="hk-text-button" onClick={loadData}>Reload checks</button></div>}
+        {progressUnavailable && <div className="hk-notice" role="alert">{checksReloadFailed ? "Shared checks still could not be loaded." : "Shared checks could not be loaded."} The layout is available; reload before changing checks. <button type="button" className="hk-text-button" onClick={reloadChecks} disabled={checksReloading} aria-busy={checksReloading}>
+          {checksReloading && <ActivityIndicator size={14} />}
+          {checksReloading ? "Reloading checks…" : "Reload checks"}
+        </button></div>}
+        {tickScope !== null && tickScope.eventId === null && tickScope.linkedEvents > 0 && <div className="hk-notice" role="status">
+          {UNTIED_CHECKS} <Link className="hk-text-button" to="/hallkeeper/today">{"Today's rooms"}</Link>.
+        </div>}
         {progressNotice !== null && <div className="hk-notice" role="alert">{progressNotice}</div>}
         {downloadNotice !== null && <div className={`hk-notice hk-notice-${downloadNotice.kind}`} role={downloadNotice.kind === "error" ? "alert" : "status"}>{downloadNotice.message}</div>}
       </>}

@@ -671,8 +671,8 @@ describe("EnquiriesView decisions", () => {
 
     // The room and the date as the approval email names them.
     const confirm = screen.getByRole("group", { name: "Approve Client 5’s enquiry?" });
-    expect(within(confirm).getByText("Approving emails priya@lumen.example to say the enquiry for the Grand Hall "
-      + "on Thursday 5 November 2026 is approved, with a link to their layout.")).toBeDefined();
+    expect(within(confirm).getByText("Approving emails priya@lumen.example to say you would like to take the enquiry for the Grand Hall "
+      + "on Thursday 5 November 2026 further, with a link to their layout. It does not book or hold a date.")).toBeDefined();
     // No Diary is read for a reader the desk was given none for.
     expect(mocks.getCalendar).not.toHaveBeenCalled();
     expect(mocks.transitionEnquiry).not.toHaveBeenCalled();
@@ -1035,7 +1035,7 @@ describe("EnquiriesView in the Diary", () => {
     const send = within(confirm).getByRole("button", { name: "Approve and email" });
     const described = (send.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent);
     expect(described).toEqual([
-      "Approving emails elaine@fraser.example to say the enquiry for the Grand Hall on Friday 14 May 2027 is approved.",
+      "Approving emails elaine@fraser.example to say you would like to take the enquiry for the Grand Hall on Friday 14 May 2027 further. It does not book or hold a date.",
       said,
     ]);
   });

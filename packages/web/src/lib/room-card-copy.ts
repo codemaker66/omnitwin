@@ -1,7 +1,8 @@
-import {
-  roomSplatServedSplats,
-  type GeneratedRoomSplatBundle,
-} from "../data/room-splat-bundles.js";
+import type { RoomCardMeasures } from "../data/room-card-facts.js";
+
+// The cards read the small facts module, not the splat manifest: importing the
+// manifest here put its 215 KB of tile digests on the front door's first load.
+// A full bundle satisfies RoomCardMeasures, so the walk's callers are unaffected.
 
 // ---------------------------------------------------------------------------
 // What a room card on the front door is allowed to say.
@@ -15,7 +16,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Width by depth by height in metres, from the room's derived frame. */
-export function footprint(bundle: GeneratedRoomSplatBundle): string {
+export function footprint(bundle: RoomCardMeasures): string {
   const [width, height, depth] = bundle.extentM;
   return `${width.toFixed(1)} × ${depth.toFixed(1)} × ${height.toFixed(1)} m`;
 }
@@ -24,8 +25,8 @@ export function footprint(bundle: GeneratedRoomSplatBundle): string {
  * The served level's count, not the sum over every staged level: a visitor
  * sees the finest level alone, which is the whole reconstruction.
  */
-export function splatLine(bundle: GeneratedRoomSplatBundle): string {
-  return `${roomSplatServedSplats(bundle.roomSlug).toLocaleString("en-GB")} splats`;
+export function splatLine(bundle: RoomCardMeasures): string {
+  return `${bundle.finestLevelSplats.toLocaleString("en-GB")} splats`;
 }
 
 /**
@@ -38,7 +39,7 @@ export function splatLine(bundle: GeneratedRoomSplatBundle): string {
  * the venue's 7 m, so it stays "in review" with the count alone. A closed room
  * prints only the count too; its state line says why.
  */
-export function measuredLine(bundle: GeneratedRoomSplatBundle, walkable: boolean): string {
+export function measuredLine(bundle: RoomCardMeasures, walkable: boolean): string {
   if (bundle.alignmentConfidence === "confident" && walkable) {
     return `${footprint(bundle)} · ${splatLine(bundle)}`;
   }
@@ -60,7 +61,7 @@ export function measuredLine(bundle: GeneratedRoomSplatBundle, walkable: boolean
  * still prints no dimensions (measuredLine and the card both withhold them).
  * Only the words a visitor reads have changed.
  */
-export function stateLine(_bundle: GeneratedRoomSplatBundle, walkable: boolean): string | null {
+export function stateLine(_bundle: RoomCardMeasures, walkable: boolean): string | null {
   if (!walkable) return "Photographs only for now";
   return null;
 }

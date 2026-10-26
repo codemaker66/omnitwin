@@ -4,6 +4,7 @@ import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { buildLayoutPathKey } from "@omnitwin/types";
 import {
   configurations,
+  configurationClaimSecrets,
   configurationLayoutRevisions,
   layoutAliases,
   placedObjects,
@@ -14,6 +15,7 @@ import type { Database } from "../db/client.js";
 import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
 import { emit } from "../observability/event-bus.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
+import { generateClaimSecret, hashClaimSecret } from "../services/configuration-claim-secrets.js";
 import {
   validatePlacementsInPolygon,
   loadSpacePolygon,
@@ -21,32 +23,38 @@ import {
 } from "../lib/placement-validation.js";
 import {
   configurationRevisionEtag,
+  loadRevisionChange,
   revisionConflictBody,
 } from "../lib/configuration-revision.js";
+import {
+  generateVisitorPlanPdf,
+  loadVisitorPlan,
+  visitorPlanFilename,
+} from "../services/visitor-plan-pdf.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
 
 const CreatePublicConfigBody = z.object({
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   name: z.string().trim().min(1).max(200).default("Untitled Layout"),
 });
 
 const BatchObjectItem = z.object({
-  id: z.string().uuid().optional(),
-  assetDefinitionId: z.string().uuid(),
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
-  positionZ: z.number().finite(),
-  rotationX: z.number().finite().default(0),
-  rotationY: z.number().finite().default(0),
-  rotationZ: z.number().finite().default(0),
+  id: z.uuid().optional(),
+  assetDefinitionId: z.uuid(),
+  positionX: z.number(),
+  positionY: z.number(),
+  positionZ: z.number(),
+  rotationX: z.number().default(0),
+  rotationY: z.number().default(0),
+  rotationZ: z.number().default(0),
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const BatchBody = z.object({
@@ -108,16 +116,28 @@ export async function publicConfigRoutes(
       return hit !== undefined;
     });
 
-    const [config] = await db.insert(configurations).values({
-      spaceId: parsed.data.spaceId,
-      venueId: space.venueId,
-      userId: null,
-      name: parsed.data.name,
-      layoutStyle: "custom",
-      isPublicPreview: true,
-      visibility: "public",
-      shortCode,
-    }).returning();
+    // The plan and its claim secret are written together: the secret goes to
+    // this browser alone, and is what lets it claim the plan into an account
+    // later (migration 0102). Only its hash is stored.
+    const claimSecret = generateClaimSecret();
+    const config = await db.transaction(async (tx) => {
+      const [inserted] = await tx.insert(configurations).values({
+        spaceId: parsed.data.spaceId,
+        venueId: space.venueId,
+        userId: null,
+        name: parsed.data.name,
+        layoutStyle: "custom",
+        isPublicPreview: true,
+        visibility: "public",
+        shortCode,
+      }).returning();
+      if (inserted === undefined) return undefined;
+      await tx.insert(configurationClaimSecrets).values({
+        configurationId: inserted.id,
+        secretHash: hashClaimSecret(claimSecret),
+      });
+      return inserted;
+    });
 
     if (config === undefined) {
       return reply.status(500).send({ error: "Insert returned no row", code: "INSERT_FAILED" });
@@ -150,7 +170,7 @@ export async function publicConfigRoutes(
     }
 
     reply.header("ETag", configurationRevisionEtag(config.revision));
-    return reply.status(201).send({ data: config });
+    return reply.status(201).send({ data: { ...config, claimSecret } });
   });
 
   // POST /public/configurations/:configId/objects/batch — save objects to preview config
@@ -183,8 +203,11 @@ export async function publicConfigRoutes(
     }
 
     if (config.revision !== parsed.data.expectedRevision) {
+      // When, never who: an anonymous caller is not told who edited.
+      const change = await loadRevisionChange(db, params.data.configId, config.revision,
+        { discloseActor: false, callerUserId: null, log: request.log });
       reply.header("ETag", configurationRevisionEtag(config.revision));
-      return reply.status(409).send(revisionConflictBody(parsed.data.expectedRevision, config.revision));
+      return reply.status(409).send(revisionConflictBody(parsed.data.expectedRevision, config.revision, change));
     }
 
     // Verify all referenced assetDefinitionIds exist before touching the DB.
@@ -278,9 +301,11 @@ export async function publicConfigRoutes(
     });
 
     if (saveResult.status === "conflict") {
+      const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
+        { discloseActor: false, callerUserId: null, log: request.log });
       reply.header("ETag", configurationRevisionEtag(saveResult.currentRevision));
       return reply.status(409).send(
-        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision),
+        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision, change),
       );
     }
 
@@ -394,5 +419,37 @@ export async function publicConfigRoutes(
 
     reply.header("ETag", configurationRevisionEtag(config.revision));
     return { data: { ...config, objects } };
+  });
+
+  // GET /public/configurations/:configId/plan.pdf — the visitor's plan, to send on
+  //
+  // Fix-first item 11: an organiser with no account can hand the plan to
+  // someone else. The organiser's own browser asks with the id it already
+  // holds, under exactly the GET rule above (a live public preview). The PDF
+  // it gets back is read-only by nature and carries no configuration id,
+  // short code or planner URL, no prices, and the line "Drawn by a visitor;
+  // not reviewed by the venue." (services/visitor-plan-pdf.ts). Drawing is
+  // CPU work, so the hourly limit sits below the batch save's.
+  server.get("/configurations/:configId/plan.pdf", {
+    config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+  }, async (request, reply) => {
+    const params = ConfigIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
+    }
+
+    const plan = await loadVisitorPlan(db, params.data.configId);
+    if (plan === null) {
+      return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
+    }
+
+    const pdf = await generateVisitorPlanPdf(plan);
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header("Content-Disposition", `attachment; filename="${visitorPlanFilename(plan.roomName)}"`)
+      // A guest plan keeps changing; a cached copy would send yesterday's layout.
+      .header("Cache-Control", "no-store")
+      .header("Content-Length", pdf.length)
+      .send(pdf);
   });
 }

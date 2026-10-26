@@ -8,6 +8,12 @@ const mocks = vi.hoisted(() => ({
   createProposalVersion: vi.fn(),
   transitionProposal: vi.fn(),
   createProposalShareToken: vi.fn(),
+  listPlanViewLinks: vi.fn(),
+}));
+// A visitor's view-only links list the plan's working links; no network here.
+vi.mock("../../../../api/plan-view.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../../api/plan-view.js")>(),
+  listPlanViewLinks: mocks.listPlanViewLinks,
 }));
 vi.mock("../../../../api/proposals.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../../api/proposals.js")>();
@@ -26,7 +32,10 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useShareStore } from "../../../../stores/share-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
-import { CATALOGUE_ITEMS } from "../../../../lib/catalogue.js";
+import { useRoomDimensionsStore } from "../../../../stores/room-dimensions-store.js";
+import { CATALOGUE_ITEMS, getCatalogueItemBySlug } from "../../../../lib/catalogue.js";
+import { createTableGroup } from "../../../../lib/table-group.js";
+import { seatingCountsFromPlacedItems } from "../../../../lib/seating-counts.js";
 import type { PlacedItem } from "../../../../lib/placement.js";
 
 const CONFIG_ID = "11111111-1111-4111-8111-111111111111";
@@ -40,10 +49,12 @@ beforeEach(() => {
   mocks.createProposalVersion.mockReset();
   mocks.transitionProposal.mockReset();
   mocks.createProposalShareToken.mockReset();
+  mocks.listPlanViewLinks.mockReset();
+  mocks.listPlanViewLinks.mockResolvedValue([]);
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
   useShareStore.getState().reset();
-  useEditorStore.setState({ configId: null });
+  useEditorStore.getState().reset();
   useAuthStore.getState().logout();
 });
 
@@ -51,6 +62,7 @@ afterEach(() => { cleanup(); });
 
 describe("ShareLensPanel", () => {
   it("renders a client-safe preview built from the live layout", () => {
+    signInStaff();
     useCockpitStore.getState().setPlannedGuestCount(120);
     render(<ShareLensPanel />);
     expect(screen.getByTestId("share-lens-panel")).toBeTruthy();
@@ -62,6 +74,8 @@ describe("ShareLensPanel", () => {
   });
 
   it("states what is placed and the seat shortfall, with a way forward", () => {
+    // The venue's own share (a visitor sees what is placed, below).
+    signInStaff();
     const round = CATALOGUE_ITEMS.find((c) => c.category === "table" && c.tableShape === "round");
     const chair = CATALOGUE_ITEMS.find((c) => c.category === "chair");
     if (round === undefined || chair === undefined) throw new Error("catalogue fixture missing");
@@ -79,10 +93,80 @@ describe("ShareLensPanel", () => {
     expect(screen.getByTestId("share-lens-panel").textContent).not.toMatch(/seating for 220/i);
   });
 
-  it("blocks share creation until staff sign-in", () => {
+  it("tells a visitor only what is placed, never seating taken from the guest count", () => {
+    // Integration check, 17 Oct 2026: "Seating for 220 across 8 round tables"
+    // headed the visitor's Share lens with 64 chairs placed.
+    useCockpitStore.getState().setPlannedGuestCount(220);
+    useEditorStore.setState({ space: {
+      id: "s1", venueId: "v1", name: "Grand Hall", slug: "grand-hall",
+      widthM: "21", lengthM: "10", heightM: "7",
+      floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10 }, { x: 0, y: 10 }],
+    } });
     render(<ShareLensPanel />);
-    expect(screen.getByTestId("share-precondition").textContent).toMatch(/sign in as venue staff/i);
+    const panel = screen.getByTestId("share-lens-panel");
+    expect(panel.textContent).not.toMatch(/220|Seating for/u);
+    expect(screen.queryByTestId("share-layout-summary")).toBeNull();
+    expect(screen.getByText("Placed in the Grand Hall")).toBeTruthy();
+  });
+
+  it("gives an anonymous organiser a way to send the plan, never a staff sign-in", () => {
+    render(<ShareLensPanel />);
+    const panel = screen.getByTestId("share-lens-panel");
+    expect(panel.textContent).not.toMatch(/sign in as venue staff/iu);
+    expect(screen.queryByTestId("share-precondition")).toBeNull();
+    // The proposal chain stays staff-only.
     expect(screen.queryByTestId("share-create")).toBeNull();
+    expect(screen.queryByTestId("share-title")).toBeNull();
+    expect(screen.queryByTestId("share-message")).toBeNull();
+    expect(screen.getByTestId("visitor-share-explainer").textContent)
+      .toMatch(/no prices, and says it was drawn by a visitor and not reviewed by the venue/u);
+    // Not saved yet: say what happens next instead of offering a dead button.
+    expect(screen.getByTestId("visitor-pdf-unavailable").textContent)
+      .toBe("Your plan saves as you work. Once it has saved, it can be sent as a PDF.");
+    expect(screen.getByTestId("visitor-share-venue").textContent).toMatch(/Send to Events Team/u);
+  });
+
+  it("offers a saved guest plan as a PDF, with its consequence stated", () => {
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: true });
+    useEditorStore.getState().addObject("test-chair", 0, 0, 0);
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("visitor-pdf-prepare").textContent).toBe("Prepare the PDF");
+    expect(screen.getByTestId("visitor-pdf-consequence").textContent).toMatch(/Nothing is emailed/u);
+    expect(screen.queryByTestId("share-create")).toBeNull();
+  });
+
+  it("asks for furniture before a PDF of an empty saved plan", () => {
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: true, objects: [] });
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("visitor-pdf-unavailable").textContent).toBe("Place some furniture first; the PDF shows your layout.");
+    expect(screen.queryByTestId("visitor-pdf-prepare")).toBeNull();
+  });
+
+  it("offers a view-only link beside the PDF, its consequences stated before it is made", async () => {
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: true });
+    useEditorStore.getState().addObject("test-chair", 0, 0, 0);
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("visitor-link-make").textContent).toBe("Copy a view-only link");
+    expect(screen.getByTestId("visitor-link-consequence").textContent).toMatch(/without prices, and cannot change it/u);
+    expect(screen.getByTestId("visitor-link-retention").textContent)
+      .toBe("It works for 30 days unless you stop it, and the plan is kept while it works.");
+    await waitFor(() => { expect(mocks.listPlanViewLinks).toHaveBeenCalledWith(CONFIG_ID, expect.any(AbortSignal)); });
+  });
+
+  it("asks for a saved plan before a link, as it does before a PDF", () => {
+    render(<ShareLensPanel />);
+    expect(screen.getByTestId("visitor-link-unavailable").textContent)
+      .toBe("Once your plan has saved, it can be sent as a view-only link.");
+    expect(screen.queryByTestId("visitor-link-make")).toBeNull();
+    expect(mocks.listPlanViewLinks).not.toHaveBeenCalled();
+  });
+
+  it("keeps the proposal chain for a signed-in account's own (claimed) plan", () => {
+    useAuthStore.getState().setUser({ id: "u2", email: "client@example.test", role: "client", platformRole: "none", venueId: null, name: "Client" });
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: false });
+    render(<ShareLensPanel />);
+    expect(screen.queryByTestId("visitor-pdf")).toBeNull();
+    expect(screen.getByTestId("share-precondition")).toBeTruthy();
   });
 
   it("asks to save the layout when signed in without a saved configuration", () => {
@@ -136,5 +220,33 @@ describe("ShareLensPanel", () => {
     await waitFor(() => { expect(screen.getByTestId("share-error")).toBeTruthy(); });
     expect(screen.getByTestId("share-error").textContent).toMatch(/couldn't create the share link/i);
     expect(screen.queryByTestId("share-url")).toBeNull();
+  });
+
+  it("says how many seats the plan is short and offers one tap to add them", () => {
+    const round = getCatalogueItemBySlug("round-table-6ft-white");
+    if (round === undefined) throw new Error("no 6 ft round");
+    useRoomDimensionsStore.setState({ dimensions: { width: 21, length: 10.5, height: 7 } });
+    const positions = [-6.435, -2.145, 2.145, 6.435].flatMap((x) => [[x, -2.145], [x, 2.145]] as const);
+    usePlacementStore.setState({ placedItems: positions.flatMap(([x, z]) => [...createTableGroup(round.id, x, z, 0, 8)]) });
+    useCockpitStore.getState().setPlannedGuestCount(80);
+    // The shortfall belongs to the staff lens; a visitor's states only what is placed.
+    signInStaff();
+
+    render(<ShareLensPanel />);
+    // The Share summary states the shortfall once; the fix itself adds no second statement.
+    expect(screen.getByTestId("share-layout-summary").textContent).toContain("16 seats short of 80 guests");
+    expect(screen.queryByTestId("share-seat-fix-statement")).toBeNull();
+    fireEvent.click(screen.getByTestId("share-seat-fix-action"));
+    expect(seatingCountsFromPlacedItems(usePlacementStore.getState().placedItems).chairs).toBe(80);
+    expect(screen.getByTestId("share-seat-fix-done").textContent).toBe("Added 16 chairs at 8 tables.");
+    expect(screen.queryByTestId("share-seat-fix-statement")).toBeNull();
+  });
+
+  it("offers no seat fix when every guest has a seat", () => {
+    useCockpitStore.getState().setPlannedGuestCount(120);
+    signInStaff();
+    render(<ShareLensPanel />);
+    expect(screen.queryByTestId("share-seat-fix-action")).toBeNull();
+    expect(screen.queryByTestId("share-seat-fix-statement")).toBeNull();
   });
 });

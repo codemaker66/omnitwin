@@ -250,6 +250,9 @@ export function EditorBridge(): null {
     return () => { setEditorAutosaveRequester(null); };
   }, []);
 
+  // Back online with unsaved work: send it without waiting for a gesture.
+  useEffect(() => watchReconnectAutosave(() => isAuthenticated.current), []);
+
   // Track whether we're currently pushing from editor→placement to avoid feedback loops
   const syncing = useRef(false);
 
@@ -353,12 +356,31 @@ export function setAutoSaveDelayOverride(delayMs: number | null): void {
   autosaveDelayOverrideMs = delayMs;
 }
 
-export function scheduleAutoSave(isAuthenticated: boolean): void {
+/** A network that has just come back may drop again at once: wait a moment,
+ *  but not the full debounce, before sending what waited for it. */
+const AUTOSAVE_RECONNECT_MS = 1000;
+
+export function scheduleAutoSave(isAuthenticated: boolean, delayMs?: number): void {
   if (bridgeSaveTimer !== null) clearTimeout(bridgeSaveTimer);
   bridgeSaveTimer = setTimeout(
     () => { attemptAutoSave(isAuthenticated); },
-    autosaveDelayOverrideMs ?? AUTOSAVE_DEBOUNCE_MS,
+    delayMs ?? autosaveDelayOverrideMs ?? AUTOSAVE_DEBOUNCE_MS,
   );
+}
+
+/**
+ * Save again when the browser comes back online with unsaved work. While
+ * offline the autosave tick is skipped (it could only fail), so this is what
+ * sends the work that waited. A layout with a conflict waits for the person's
+ * choice, and a view-only one would only be refused again. Returns the
+ * unsubscribe.
+ */
+export function watchReconnectAutosave(isAuthenticated: () => boolean): () => void {
+  return useEditorStore.subscribe((state, previous) => {
+    if (!state.isOnline || previous.isOnline) return;
+    if (!state.isDirty || state.configId === null || state.saveConflict !== null || state.lockReason !== null) return;
+    scheduleAutoSave(isAuthenticated(), AUTOSAVE_RECONNECT_MS);
+  });
 }
 
 /** The debounce has already elapsed; decide what to do with the tick.
@@ -377,6 +399,12 @@ function attemptAutoSave(isAuthenticated: boolean): void {
     bridgeSaveTimer = setTimeout(() => { attemptAutoSave(isAuthenticated); }, AUTOSAVE_RETRY_MS);
     return;
   }
+  // Offline the save can only fail; watchReconnectAutosave sends it on return.
+  if (!state.isOnline) return;
+  // A conflict waits for the person's choice ("Keep mine" saves). Saving now
+  // could only meet it again: a request per edit, the conflict refetched and
+  // re-raised each time, and a guest's hourly save allowance spent on it.
+  if (state.saveConflict !== null) return;
   if (state.isDirty && state.configId !== null) {
     void state.saveToServer(isAuthenticated);
   }

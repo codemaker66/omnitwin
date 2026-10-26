@@ -149,6 +149,9 @@ const ProposalPreviewPage = lazyWithPreload(() =>
 const SupplierPortalPage = lazy(() =>
   cockpitImport(() => import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage }))),
 );
+const PlanViewPage = lazy(() =>
+  cockpitImport(() => import("./pages/PlanViewPage.js").then((m) => ({ default: m.PlanViewPage }))),
+);
 const SheetCheckPage = lazy(() =>
   cockpitImport(() => import("./pages/SheetCheckPage.js").then((m) => ({ default: m.SheetCheckPage }))),
 );
@@ -333,8 +336,18 @@ function devFixtureRoutes(): readonly RouteObject[] {
   const PlannerLabPage = lazy(() =>
     cockpitImport(() => import("./pages/PlannerLabPage.js").then((m) => ({ default: m.PlannerLabPage }))),
   );
+  // Through cockpitImport, as the planner itself loads: its Inter comes with it.
+  const PlannerChromeFixturePage = lazy(() =>
+    cockpitImport(() => import("./pages/PlannerChromeFixturePage.js").then((m) => ({ default: m.PlannerChromeFixturePage }))),
+  );
 
   return [
+    {
+      // T-671 slice 4: every shared primitive of the planner's new chrome over
+      // a room (`?bg=` a same-origin frame), for review and the contrast audit.
+      path: "/dev/planner-chrome",
+      element: withSuspense(<PlannerChromeFixturePage />),
+    },
     {
       // Dev smoke route for T-087: proves the production renderer stack imports
       // the first-party Three.js r186 Gaussian addon and its native renderer.
@@ -710,6 +723,13 @@ export const router = createBrowserRouter([
     // by the API through a stored hash and returns only supplier-scoped data.
     path: "/supplier-share/:token",
     element: withSuspense(<SupplierPortalPage />),
+  },
+  {
+    // A visitor's plan through a view-only link (fix-first item 11). Public —
+    // the token is resolved by the API through a stored hash, reads only, and
+    // never reveals the plan's id or planner address.
+    path: "/plan-view/:token",
+    element: withSuspense(<PlanViewPage />),
   },
   {
     // The page a printed hallkeeper sheet's QR code opens. Public — it answers

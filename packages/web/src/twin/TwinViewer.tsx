@@ -10,7 +10,7 @@ import {
   type ReactElement,
 } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ActivityIndicator } from "../components/shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
@@ -82,12 +82,17 @@ import {
   TWIN_MODE_PLAN_LABEL,
   TWIN_MODE_WALK_LABEL,
   TWIN_SURFACE_LABEL,
+  TWIN_DETAIL_LOADING_LINE,
+  TWIN_VIEW_RETRY_LOADING_LINE,
   TWIN_VIEWER_ROLE,
   TWIN_TOUR_LABEL,
-  twinNodeLabel,
+  twinNodeLabelVenue,
+  twinOpeningViewLine,
   twinViewerLabel,
   twinViewpointAnnouncement,
+  whereStanding,
 } from "./twin-copy.js";
+import { lookUpRoom } from "./shell/twin-rooms.js";
 import { prefersReducedMotion } from "./reduced-motion.js";
 import { TwinCoachHint } from "./TwinCoachHint.js";
 import { TwinViewerControls } from "./TwinViewerControls.js";
@@ -98,6 +103,7 @@ import { warmEquirectBase } from "./useEquirectTexture.js";
 import { useTwinPrefetch } from "./useTwinPrefetch.js";
 import { useTwinWalk } from "./useTwinWalk.js";
 import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
+import { useTwinGraphicsRecovery } from "./TwinContextLossWatch.js";
 
 // -----------------------------------------------------------------------------
 // TwinViewer — the walkable pano viewer (Twin Phase 1, Task 9).
@@ -1111,6 +1117,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   // The element the fullscreen button takes fullscreen — the viewer root, so
   // the canvas AND the HUD stay inside the fullscreen surface.
   const viewerRef = useRef<HTMLDivElement>(null);
+  // The browser can take the canvas's graphics away (a backgrounded phone, a
+  // driver reset); this brings them back, or gives the tour a new canvas.
+  const graphics = useTwinGraphicsRecovery();
   // Dollhouse warm gating (finding [33]): only desktops with memory headroom
   // pay the ~7 MB glb speculatively; everyone else waits for intent so a
   // walk-only mobile visitor never downloads it.
@@ -1613,6 +1622,10 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     stages.push({ node: targetNode, opacity: walk.progress, renderOrder: 1 });
   }
 
+  // Where the visitor stands, for the HUD label: the confirmed room or the
+  // viewpoint number (twin-copy.ts whereStanding).
+  const currentWhere = whereStanding(walk.currentId);
+
   return (
     <div
       ref={viewerRef}
@@ -1627,11 +1640,13 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     >
       <div className="vv-twin-canvas">
       <Canvas
+        key={graphics.canvasKey}
         frameloop="demand"
         dpr={[1, 2]}
         gl={{ powerPreference: "high-performance" }}
         camera={{ fov: 75, near: 0.1, far: 200 }}
       >
+        {graphics.watch}
         {mode === "walk" ? (
           <>
             {/* Order matters: the look seed must land before WalkControls
@@ -1797,13 +1812,36 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           )
         )}
       </Canvas>
+      {graphics.notice}
       </div>
+      {/* The opening wait, named. Until the first panorama is on stage the
+          canvas holds black (its opacity is 0); the live walk measured 4 s of
+          it on a desktop and 8 s or more on a phone, with only a small pill
+          that a phone's clipped label hid. While nothing is on screen the
+          stage says, centred, what it is waiting for; once the preview is
+          up, the pill under the label carries the rest. Mounted only while
+          that work is outstanding (the shimmer phase), so a failure or a
+          finished view stops it. */}
+      {shimmerPhase !== "done" && !stageLive && panoFailure === null && (
+        <div
+          data-testid="twin-load-shimmer"
+          className={
+            shimmerPhase === "fading"
+              ? "vv-twin-opening vv-twin-opening--out"
+              : "vv-twin-opening"
+          }
+        >
+          <ActivityStatus variant="panel">
+            {twinOpeningViewLine(lookUpRoom(walk.currentId)?.name ?? null)}
+          </ActivityStatus>
+        </div>
+      )}
       <p className="vv-twin-work-in-progress">{TWIN_TOUR_LABEL}</p>
       <div className="vv-twin-viewer-content">
       {/* Polite arrival announcement — where the walk just moved to (finding
           [10]). Keyed span so identical text still re-announces on revisit. */}
       <p className="vv-sr-only" aria-live="polite" data-testid="twin-live-region">
-        {twinViewpointAnnouncement(walk.currentId, manifest.nodes.length)}
+        {twinViewpointAnnouncement(walk.currentId)}
       </p>
 
       {/* Settle vignette — deepens a few percent in motion, relaxes on arrival.
@@ -1831,10 +1869,17 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
 
       <div className="vv-twin-node-label" data-testid="twin-node-label">
         {/* Keyed span: node changes remount the text through a 200 ms fade. */}
+        {/* Reads as twinNodeLabel: the venue, then where the visitor stands
+            (the room where it is confirmed, else the viewpoint number). */}
         <span key={walk.currentId} className="vv-twin-node-label-text">
-          {twinNodeLabel(walk.currentId, manifest.name)}
+          {currentWhere === null ? manifest.name : (
+            <>
+              <span className="vv-twin-node-label-venue">{twinNodeLabelVenue(manifest.name)}</span>
+              {currentWhere}
+            </>
+          )}
         </span>
-        {shimmerPhase !== "done" && (
+        {shimmerPhase !== "done" && stageLive && mode === "walk" && (
           <span
             role="status"
             data-testid="twin-load-shimmer"
@@ -1843,7 +1888,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 ? "vv-twin-load-shimmer vv-twin-load-shimmer--out"
                 : "vv-twin-load-shimmer"
             }
-          ><ActivityIndicator size={24} /> Opening view…</span>
+          ><ActivityIndicator size={24} /> {retryingPanoRef.current === walk.currentId
+            ? TWIN_VIEW_RETRY_LOADING_LINE
+            : TWIN_DETAIL_LOADING_LINE}</span>
         )}
         {mode === "walk" && panoFailure?.nodeId === walk.currentId && (
           <div className="vv-twin-load-error" role="status">

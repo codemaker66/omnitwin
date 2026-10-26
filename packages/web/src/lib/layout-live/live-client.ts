@@ -15,8 +15,8 @@ import {
 } from "../../stores/editor-store.js";
 import { useLayoutLiveStore } from "../../stores/layout-live-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
-import { getCatalogueItem } from "../catalogue.js";
 import { observeServerNow } from "../clock-offset.js";
+import { nounFor } from "../layout-change-summary.js";
 import {
   EMPTY_OVERLAY,
   applyRemoteOps,
@@ -102,13 +102,6 @@ export interface LayoutLiveClientOptions {
 
 function firstName(name: string): string {
   return name.trim().split(/\s+/u)[0] ?? name;
-}
-
-function nounFor(object: EditorObject | undefined): string {
-  if (object === undefined) return "item";
-  const item = getCatalogueItem(object.assetDefinitionId);
-  if (item === undefined) return "item";
-  return item.tableShape !== null ? "table" : item.name.toLowerCase();
 }
 
 interface OpsFrame {

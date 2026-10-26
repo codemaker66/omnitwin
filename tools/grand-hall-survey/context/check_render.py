@@ -43,6 +43,8 @@ rep = {"vertices": nv, "triangles": len(I), "bytes": len(blob), "gzip": len(gzip
 GROUND = meta["bands"]["ground_disc_y"]
 R0 = meta["parameters"]["radius"]
 HX, HZ = meta["parameters"]["rect_half_x"], meta["parameters"]["rect_half_z"]
+# The street side of the cut (the hall's window wall's outer face); models before it had the cut symmetric.
+FZ = meta["parameters"].get("rect_front_z", -HZ)
 
 # ------------------------------------------------------------ normals / orientation
 A, Bv, Cv = V[I[:, 0]], V[I[:, 1]], V[I[:, 2]]
@@ -80,8 +82,9 @@ on_rim &= np.abs(np.hypot(p1[:, 0], p1[:, 2]) - R0) < 0.05
 
 
 def on_rect(p):
-    return ((np.abs(np.abs(p[:, 0]) - HX) < 0.02) & (np.abs(p[:, 2]) <= HZ + 0.02)) | \
-           ((np.abs(np.abs(p[:, 2]) - HZ) < 0.02) & (np.abs(p[:, 0]) <= HX + 0.02))
+    inz = (p[:, 2] >= FZ - 0.02) & (p[:, 2] <= HZ + 0.02)
+    return ((np.abs(np.abs(p[:, 0]) - HX) < 0.02) & inz) | \
+           (((np.abs(p[:, 2] - HZ) < 0.02) | (np.abs(p[:, 2] - FZ) < 0.02)) & (np.abs(p[:, 0]) <= HX + 0.02))
 
 
 on_cut = on_rect(p0) & on_rect(p1)
@@ -163,7 +166,7 @@ nh = Nn[walls][:, [0, 2]]
 ymid = (V[Iw][:, :, 1].min(1) + V[Iw][:, :, 1].max(1)) / 2
 hout = hm_at(cen[:, 0] + 0.3 * nh[:, 0], cen[:, 2] + 0.3 * nh[:, 1])
 hin = hm_at(cen[:, 0] - 0.3 * nh[:, 0], cen[:, 2] - 0.3 * nh[:, 1])
-test = ~((np.abs(cen[:, 0]) <= HX + 0.4) & (np.abs(cen[:, 2]) <= HZ + 0.4))
+test = ~((np.abs(cen[:, 0]) <= HX + 0.4) & (cen[:, 2] >= FZ - 0.4) & (cen[:, 2] <= HZ + 0.4))
 out_ok = (np.nan_to_num(hout, nan=-99) < ymid) & (hin > ymid)
 rep["walls_outward_by_heightmap_probe"] = f"{int((out_ok & test).sum())}/{int(test.sum())}"
 bad_w = test & ~out_ok
@@ -176,9 +179,9 @@ ymin, ymax = np.nanmin(HM), np.nanmax(HM)
 g = np.where(np.isnan(HM), 0, 40 + 215 * (HM - ymin) / (ymax - ymin))
 img = Image.fromarray(g.astype(np.uint8)).convert("RGB")
 d = ImageDraw.Draw(img)
-rc = [(-HX, -HZ), (HX, -HZ), (HX, HZ), (-HX, HZ), (-HX, -HZ)]
+rc = [(-HX, FZ), (HX, FZ), (HX, HZ), (-HX, HZ), (-HX, FZ)]
 d.line([topdown(x, z) for x, z in rc], fill=(255, 140, 0), width=3)
-d.line([topdown(-HX, -HZ), topdown(HX, -HZ)], fill=(230, 0, 0), width=6)       # window wall, faces -z
+d.line([topdown(-HX, FZ), topdown(HX, FZ)], fill=(230, 0, 0), width=6)       # window wall, faces -z
 cr = 26.0
 d.ellipse([topdown(-cr, -cr), topdown(cr, cr)], outline=(0, 160, 255), width=2)
 nx, nz = float(np.array([0, 1]) @ np.array(meta["frame"]["plus_x_unit_EN"])), float(np.array([0, 1]) @ np.array(meta["frame"]["plus_z_unit_EN"]))
@@ -232,7 +235,7 @@ rep["opposite_facade_first_z_above_10m (x, z)"] = fz
 # ------------------------------------------------------------ clamped buildings (from the build raster)
 wk = np.load(OUT / "_work.npz")
 y_raw, RR, PXr, PZr = wk["y_raw"], wk["RR"], wk["PX"], wk["PZ"]
-incut = (np.abs(PXr) <= HX) & (np.abs(PZr) <= HZ)
+incut = (np.abs(PXr) <= HX) & (PZr >= FZ) & (PZr <= HZ)
 m_cl = (y_raw > 0.0) & (RR < 26.0) & ~incut
 lab_, n_ = ndi.label(m_cl)
 cl_list = []
@@ -248,15 +251,15 @@ for k in range(1, n_ + 1):
                         max_above_pavement=round(float(y_raw[mk].max()) + 3.79, 1)))
 cl_list.sort(key=lambda c: -c["area_m2"])
 rep["clamped_regions"] = cl_list
-ws = m_cl & (PZr < -HZ)
-rep["clamped_cells_in_front_of_window_wall (z<-5.95)"] = dict(
+ws = m_cl & (PZr < FZ)
+rep[f"clamped_cells_in_front_of_window_wall (z<{FZ})"] = dict(
     count=int(ws.sum()), min_z=round(float(PZr[ws].min()), 1) if ws.any() else None,
     max_above_pav=round(float(y_raw[ws].max() + 3.79), 1) if ws.any() else None)
 # sectors of the clamp ring (x, z quadrants) with what was removed
 ring = m_cl
 sect = {}
-for name, msk in {"behind (+z>5.95)": PZr > HZ, "front (z<-5.95)": PZr < -HZ,
-                  "+x side (|z|<=5.95)": (PXr > HX) & (np.abs(PZr) <= HZ), "-x side (|z|<=5.95)": (PXr < -HX) & (np.abs(PZr) <= HZ)}.items():
+for name, msk in {f"behind (+z>{HZ})": PZr > HZ, f"front (z<{FZ})": PZr < FZ,
+                  "+x side": (PXr > HX) & (PZr >= FZ) & (PZr <= HZ), "-x side": (PXr < -HX) & (PZr >= FZ) & (PZr <= HZ)}.items():
     mm = ring & msk
     sect[name] = dict(area_m2=round(float(mm.sum() * 0.25), 1),
                       max_above_pavement=round(float(y_raw[mm].max() + 3.79), 1) if mm.any() else None)
@@ -342,7 +345,7 @@ def render_view(cam, tgt, fname, W_=1600, H_=1000, near=0.3):
 
 
     d.line([proj((x, 0.0, z)) for x, z in rc], fill=(255, 140, 0), width=2)
-    d.line([proj((-HX, 0.0, -HZ)), proj((HX, 0.0, -HZ))], fill=(230, 0, 0), width=4)
+    d.line([proj((-HX, 0.0, FZ)), proj((HX, 0.0, FZ))], fill=(230, 0, 0), width=4)
     d.text((12, 12), f"camera {tuple(float(v) for v in cam)} -> {tuple(float(v) for v in tgt)}, vfov 45; sun true az {az_true:.0f} alt {alt:.0f}; Lambert + shadow map",
            fill=(20, 20, 20))
     d.text((12, 28), "orange = hall site cut at floor level y=0; red = window wall; the hall model fills the hole", fill=(20, 20, 20))

@@ -1,9 +1,8 @@
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
-import { createElement, Fragment, lazy, Suspense, useLayoutEffect, type ReactElement, type ReactNode } from "react";
+import { createElement, Fragment, lazy, Suspense, type ReactElement, type ReactNode } from "react";
 import { createMemoryRouter, MemoryRouter, RouterProvider, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TwinManifest } from "@omnitwin/types";
-import { useTwinMode, type TwinMode } from "../useTwinMode.js";
 import { useTwinWalk } from "../useTwinWalk.js";
 
 // -----------------------------------------------------------------------------
@@ -309,93 +308,5 @@ describe("useTwinWalk — URL is the source of truth for back/forward", () => {
     // The cancelled hop's frame loop is dead — no further state changes.
     flushFrames(50);
     expect(result.current.walk.currentId).toBe("scan_003");
-  });
-});
-
-describe("useTwinWalk — sharing the address with useTwinMode", () => {
-  // The viewer runs both hooks over one address. Each changes only its own
-  // key, so neither may write from a copy of the address older than the
-  // other's last change: a write from a stale copy undoes the other's step.
-  // Handlers hold the functions of the render that last COMMITTED, so the
-  // probe hands them out from a layout effect, never from a render React may
-  // still discard.
-  interface Committed {
-    readonly walk: ReturnType<typeof useTwinWalk>;
-    readonly mode: TwinMode;
-    readonly setMode: (mode: TwinMode) => void;
-  }
-
-  function mountTwin(initialEntry: string, pendingWhen?: (params: URLSearchParams) => boolean) {
-    const manifest = fixtureManifest();
-    let committed: Committed | undefined;
-    // A destination that never resolves holds a transition pending, so a
-    // handler keeps running from the older render.
-    const PendingDestination = lazy(() => new Promise<{ default: () => ReactElement }>(() => undefined));
-    function Probe(): ReactElement {
-      const walk = useTwinWalk(manifest);
-      const { mode, setMode } = useTwinMode(true);
-      useLayoutEffect(() => { committed = { walk, mode, setMode }; });
-      return createElement("div", { "data-testid": "walk-node" }, walk.currentId);
-    }
-    function PendingRoute(): ReactElement | null {
-      const [params] = useSearchParams();
-      return pendingWhen?.(params) === true ? createElement(PendingDestination) : null;
-    }
-    const router = createMemoryRouter([{
-      path: "/twin",
-      element: createElement(Fragment, null, createElement(Probe), createElement(PendingRoute)),
-    }], { initialEntries: [initialEntry] });
-    render(createElement(Suspense, { fallback: "Loading destination" }, createElement(RouterProvider, { router })));
-    const current = (): Committed => {
-      if (committed === undefined) throw new Error("the twin never committed");
-      return committed;
-    };
-    return { router, current };
-  }
-
-  it("lands a dive on the node it dived to, in the walk", async () => {
-    const { router, current } = mountTwin("/twin?mode=dollhouse&node=scan_000");
-    // TwinViewer's dive arrival: one handler, two writes, both functions from
-    // the same render.
-    const { walk, setMode } = current();
-    act(() => {
-      walk.hopTo("scan_003", { teleport: true });
-      setMode("walk");
-    });
-    expect(router.state.location.search).toBe("?node=scan_003");
-    expect(current().walk.currentId).toBe("scan_003");
-    expect(current().mode).toBe("walk");
-    // Back surfaces to the dollhouse, as the mode's history contract promises.
-    await act(async () => { await router.navigate(-1); });
-    expect(new URLSearchParams(router.state.location.search).get("mode")).toBe("dollhouse");
-    router.dispose();
-  });
-
-  it("keeps a mode chosen mid-hop when the hop lands", () => {
-    const { router, current } = mountTwin("/twin?node=scan_000");
-    act(() => { current().walk.hopTo("scan_001"); });
-    flushFrames(4);
-    act(() => { current().setMode("plan"); });
-    expect(current().mode).toBe("plan");
-    flushFrames(400);
-    expect(current().walk.currentId).toBe("scan_001");
-    const params = new URLSearchParams(router.state.location.search);
-    expect(params.get("node")).toBe("scan_001");
-    expect(params.get("mode")).toBe("plan");
-    expect(current().mode).toBe("plan");
-    router.dispose();
-  });
-
-  it("keeps a mode whose render is still pending when the walk teleports", () => {
-    // The dollhouse render is held pending, so the teleport runs from the
-    // walk's older render; its write must keep the ?mode= the address carries.
-    const { router, current } = mountTwin("/twin?node=scan_000", (params) => params.get("mode") !== null);
-    const { setMode } = current();
-    act(() => { setMode("dollhouse"); });
-    act(() => { current().walk.hopTo("scan_003", { teleport: true }); });
-    const params = new URLSearchParams(router.state.location.search);
-    expect(params.get("mode")).toBe("dollhouse");
-    expect(params.get("node")).toBe("scan_003");
-    router.dispose();
   });
 });

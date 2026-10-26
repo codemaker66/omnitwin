@@ -27,6 +27,18 @@ describe("frozen floor plan geometry", () => {
   it("retains real-metre outline without synthesizing furniture", () => {
     expect(HallkeeperFloorPlanSchema.parse(plan)).toEqual(plan);
   });
+  it("keeps a planner's table name and note on an object, and still reads plans frozen without them", () => {
+    const object = {
+      objectId: "11111111-1111-4111-8111-111111111111", assetDefinitionId: "22222222-2222-4222-8222-222222222222",
+      name: "6ft Round Table", category: "table", x: 0, z: 0, rotationY: 0, scale: 1, widthM: 1.83, depthM: 1.83,
+      collisionType: "cylinder",
+    } as const;
+    const named = { ...plan, objects: [{ ...object, label: "Table 5", note: "Peanut allergy, seat 4" }] };
+    expect(HallkeeperFloorPlanSchema.parse(named)).toEqual(named);
+    expect(HallkeeperFloorPlanSchema.parse({ ...plan, objects: [object] })).toEqual({ ...plan, objects: [object] });
+    expect(HallkeeperFloorPlanSchema.safeParse({ ...plan, objects: [{ ...object, label: "L".repeat(81) }] }).success).toBe(false);
+    expect(HallkeeperFloorPlanSchema.safeParse({ ...plan, objects: [{ ...object, note: "N".repeat(501) }] }).success).toBe(false);
+  });
   it.each([
     { ...plan, coordinateSpace: "legacy_render_v0" },
     { ...plan, outline: [{ x: 0, z: 0 }, { x: 0, z: 1 }, { x: 0, z: 2 }] },
@@ -76,7 +88,7 @@ describe("ManifestRowV2Schema", () => {
 
 describe("RowPositionSchema", () => {
   const VALID = {
-    objectId: "00000000-0000-0000-0000-000000000001",
+    objectId: "00000000-0000-4000-8000-000000000001",
     x: 5.5,
     z: -3.2,
     rotationY: 1.5708,
@@ -108,9 +120,9 @@ describe("ManifestRowV2Schema — positions", () => {
       ...SAMPLE_ROW,
       qty: 3,
       positions: [
-        { objectId: "00000000-0000-0000-0000-00000000000a", x: 1, z: 2, rotationY: 0 },
-        { objectId: "00000000-0000-0000-0000-00000000000b", x: 3, z: 4, rotationY: 0 },
-        { objectId: "00000000-0000-0000-0000-00000000000c", x: 5, z: 6, rotationY: 0 },
+        { objectId: "00000000-0000-4000-8000-00000000000a", x: 1, z: 2, rotationY: 0 },
+        { objectId: "00000000-0000-4000-8000-00000000000b", x: 3, z: 4, rotationY: 0 },
+        { objectId: "00000000-0000-4000-8000-00000000000c", x: 5, z: 6, rotationY: 0 },
       ],
     });
     expect(parsed.success).toBe(true);
@@ -180,7 +192,7 @@ describe("TimingSchema", () => {
 describe("HallkeeperSheetV2Schema — full roundtrip", () => {
   const SAMPLE: unknown = {
     config: {
-      id: "00000000-0000-0000-0000-000000000001",
+      id: "00000000-0000-4000-8000-000000000001",
       name: "Anderson Reception",
       guestCount: 120,
       layoutStyle: "dinner-rounds",

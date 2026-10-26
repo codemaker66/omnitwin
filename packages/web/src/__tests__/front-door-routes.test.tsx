@@ -41,6 +41,12 @@ describe("the retired home pages", () => {
   });
 });
 
+// The not-found page's tab title and robots tag are written by its effect,
+// which React runs in a task of its own after the commit. The first visit to
+// this lazy page commits outside act(), when its chunk lands, and findBy* hands
+// control back on the DOM alone, which on a busy runner can be before that task
+// (master run 39374059163 read the front door's title here). So what the effect
+// writes is waited for, never read at the instant the page appears.
 describe("a link that goes nowhere", () => {
   it("says so, and offers the composer, the front door and the hall's telephone", async () => {
     const router = createMemoryRouter(routes, { initialEntries: ["/an-old-link-that-has-moved"] });
@@ -61,11 +67,12 @@ describe("a link that goes nowhere", () => {
     const router = createMemoryRouter(routes, { initialEntries: ["/an-old-link-that-has-moved"] });
     render(<RouterProvider router={router} />);
     await screen.findByTestId("not-found", {}, FIRST_RENDER);
-    expect(robots()).toBe("noindex");
+    await waitFor(() => { expect(robots()).toBe("noindex"); });
     expect(document.head.querySelectorAll('meta[name="robots"]')).toHaveLength(1);
     await act(async () => { await router.navigate("/"); });
     expect(await screen.findByRole("heading", { name: "Grand Hall", level: 1 }, FIRST_RENDER)).toBeTruthy();
-    expect(robots()).toBeNull();
+    // The tag leaves in the effect's cleanup, which trails the commit the same way.
+    await waitFor(() => { expect(robots()).toBeNull(); });
     router.dispose();
   });
 });

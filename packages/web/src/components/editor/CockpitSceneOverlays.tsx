@@ -42,6 +42,7 @@ import {
 } from "../../lib/cockpit-scene-overlay-model.js";
 
 import { annotationSafeArea, placeSceneAnnotations, rectanglesOverlap, type AnnotationMeasure, type AnnotationRect } from "../../lib/cockpit-scene-annotation-layout.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import "./CockpitSceneAnnotations.css";
 
 // ---------------------------------------------------------------------------
@@ -432,6 +433,9 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     dirty.current = true;
     invalidate();
   };
+  // An open annotation's details are a popover: Escape folds them and hands
+  // focus back to the annotation that opened them (dismiss does both).
+  useEscapeLayer("popover", { open: selected !== null, onEscape: dismiss });
 
   useEffect(() => {
     selectedRef.current = null;
@@ -552,9 +556,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
 
   return <Html calculatePosition={HTML_ORIGIN} onOcclude={KEEP_SCREEN_LAYER_VISIBLE} zIndexRange={[18, 18]}>
     <div ref={rootRef} className="scene-annotations" style={{ width: size.width, height: size.height }} data-layout="packed"
-      onPointerDown={(event) => { event.stopPropagation(); }}
-      onKeyUp={(event) => { event.stopPropagation(); }}
-      onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape") { event.preventDefault(); dismiss(); } }}>
+      onPointerDown={(event) => { event.stopPropagation(); }}>
       <svg className="scene-annotations__leaders" width={size.width} height={size.height} aria-hidden="true">
         {annotations.map((annotation) => <line key={annotation.id} stroke={annotation.color} ref={(element) => { if (element === null) lines.current.delete(annotation.id); else lines.current.set(annotation.id, element); }} />)}
       </svg>

@@ -16,8 +16,9 @@ import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 
 const renderer = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("@react-three/fiber", () => ({ useThree: () => renderer.value }));
+vi.mock("../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../api/configurations.js", () => ({
-  publicBatchSave: vi.fn(), authBatchSave: vi.fn(), parseRevisionConflict: vi.fn(() => null),
+  publicBatchSave: vi.fn(), authBatchSave: vi.fn(),
 }));
 vi.mock("../../api/action-log.js", () => ({ postActionBatch: vi.fn() }));
 
@@ -259,7 +260,7 @@ describe("SelectionSystem pointer history through EditorBridge", () => {
     now += 1_500;
     pointer("pointerMove", 240, 180);
     const beforeRotation = useEditorStore.getState().objects;
-    act(() => { fireEvent.keyDown(window, { code: "KeyR" }); });
+    act(() => { fireEvent.keyDown(window, { code: "KeyR", key: "r" }); });
     const final = useEditorStore.getState().objects;
     pointer("pointerMove", 250, 150);
     expect(useEditorStore.getState().objects).toBe(final);
@@ -268,6 +269,26 @@ describe("SelectionSystem pointer history through EditorBridge", () => {
     expect(useEditorStore.getState().objects).toEqual(beforeRotation);
     act(() => { useEditorStore.getState().undo(); });
     expect(useEditorStore.getState().objects).toEqual(between);
+    act(() => { useEditorStore.getState().undo(); });
+    expect(useEditorStore.getState().objects).toEqual(initial);
+  });
+
+  // T-671 slice 5: arrows nudge the selection, and each nudge is its own undo
+  // step (spec 11), so holding an arrow and then undoing walks back one press
+  // at a time. The fixture's camera looks north, so Up moves the table north.
+  it("nudges with the arrows, one undo step a press, the table with its chairs", () => {
+    render(<><SelectionSystem /><EditorBridge /></>);
+    const initial = useEditorStore.getState().objects;
+    const tableZ = (): number => usePlacementStore.getState().placedItems[0]?.z ?? Number.NaN;
+    const startZ = tableZ();
+    act(() => { fireEvent.keyDown(window, { code: "ArrowUp", key: "ArrowUp" }); });
+    act(() => { fireEvent.keyDown(window, { code: "ArrowUp", key: "ArrowUp", repeat: true }); });
+    act(() => { fireEvent.keyDown(window, { code: "ArrowUp", key: "ArrowUp", shiftKey: true }); });
+    expect(tableZ()).toBeCloseTo(startZ - 1.2);
+    expect(useEditorStore.getState().history.past).toHaveLength(3);
+    act(() => { useEditorStore.getState().undo(); });
+    expect(tableZ()).toBeCloseTo(startZ - 0.2);
+    act(() => { useEditorStore.getState().undo(); });
     act(() => { useEditorStore.getState().undo(); });
     expect(useEditorStore.getState().objects).toEqual(initial);
   });

@@ -199,15 +199,26 @@ function blockExtent(block: PositionedBlock): { startMs: number; endMs: number }
   return { startMs, endMs };
 }
 
+/**
+ * Whether a block takes the room for a changeover and the booked share.
+ * Interest only never blocks and exits are history. A viewing is a show-round
+ * (migration 0100), not a set-up: the server's turnaround check measures only
+ * confirmed occupancies, and a viewing between two confirmed functions must
+ * not split their gap into two unchecked ones and hide a short changeover. It
+ * never makes a date look busy either, so it is not booked time.
+ */
+function occupiesRoom(block: PositionedBlock): boolean {
+  const { entry } = block;
+  return entry.status === "active" && entry.kind !== "prospect" && entry.kind !== "viewing";
+}
+
 export function laneGaps(
   blocks: readonly PositionedBlock[],
   rules: readonly CalendarTurnaroundRule[] | undefined,
   spaceId: string,
 ): readonly LaneGap[] {
-  // Prospects never block, exits are history — neither takes part in a
-  // changeover. Everything else occupies the room.
   const occupants = blocks
-    .filter((block) => block.entry.status === "active" && block.entry.kind !== "prospect")
+    .filter(occupiesRoom)
     .map((block) => ({ block, extent: blockExtent(block) }))
     .sort((a, b) => a.extent.startMs - b.extent.startMs || (a.block.entry.id < b.block.entry.id ? -1 : 1));
 
@@ -261,15 +272,15 @@ export function gapFit(
     : { kind: "short", byMinutes: rule.minutes - gap.minutes };
 }
 
-/** Booked share of a range on one lane: the union of active, non-prospect
- *  occupancy extents clipped to the range, over the range's length. Pure
- *  arithmetic from the diary — never advice. */
+/** Booked share of a range on one lane: the union of the occupancy extents
+ *  that take the room (occupiesRoom) clipped to the range, over the range's
+ *  length. Pure arithmetic from the diary — never advice. */
 export function laneUtilisation(
   blocks: readonly PositionedBlock[],
   range: { readonly fromMs: number; readonly toMs: number },
 ): number {
   const spans = blocks
-    .filter((block) => block.entry.status === "active" && block.entry.kind !== "prospect")
+    .filter(occupiesRoom)
     .map((block) => blockExtent(block))
     .map((extent) => ({
       startMs: Math.max(extent.startMs, range.fromMs),

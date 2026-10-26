@@ -79,7 +79,7 @@ def ub(b):
 
 PZN = ub(102.96)   # planner -z -> grid bearing 102.96 (unit E, N)
 PX = ub(192.96)    # planner +x
-Z_OUT = -5.915     # planner z of the window wall's outer face
+Z_OUT = -6.245     # planner z of the window wall's outer face (the room's plane, 5.295, and the wall's 0.95 m)
 FLOOR_DSM = -0.30 + 3.79   # DSM height of the hall floor
 
 

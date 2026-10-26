@@ -1,10 +1,12 @@
-import type { Event } from "@sentry/react";
+import type { Breadcrumb, Event } from "@sentry/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   initBrowserSentry,
   parseSentrySampleRate,
   readBrowserSentryConfig,
+  scrubSentryBreadcrumb,
   scrubSentryEvent,
+  withoutQuery,
 } from "../observability/sentry.js";
 
 describe("browser Sentry config", () => {
@@ -79,6 +81,61 @@ describe("browser Sentry event scrubber", () => {
   });
 });
 
+describe("browser Sentry breadcrumbs and search terms", () => {
+  it("cuts the query and fragment from a url, and leaves one with neither alone", () => {
+    expect(withoutQuery("/clients/search?q=Aileen")).toBe("/clients/search?[redacted]");
+    expect(withoutQuery("https://api.example.test/people/search?q=0141%20496%200000#top"))
+      .toBe("https://api.example.test/people/search?[redacted]");
+    expect(withoutQuery("/auth/callback#access_token=fictional")).toBe("/auth/callback#[redacted]");
+    expect(withoutQuery("/dashboard#view?q=Aileen")).toBe("/dashboard#[redacted]");
+    expect(withoutQuery("/clients/search")).toBe("/clients/search");
+  });
+
+  it("keeps a client search term out of a fetch breadcrumb", () => {
+    const breadcrumb: Breadcrumb = {
+      category: "fetch",
+      type: "http",
+      level: "info",
+      data: { method: "GET", url: "https://api.example.test/clients/search?q=Aileen", status_code: 200 },
+    };
+
+    const scrubbed = scrubSentryBreadcrumb(breadcrumb);
+    expect(JSON.stringify(scrubbed)).not.toContain("Aileen");
+    expect(scrubbed).toEqual({
+      category: "fetch",
+      type: "http",
+      level: "info",
+      data: { method: "GET", url: "https://api.example.test/clients/search?[redacted]", status_code: 200 },
+    });
+  });
+
+  it("does the same for an xhr breadcrumb", () => {
+    const scrubbed = scrubSentryBreadcrumb({
+      category: "xhr",
+      type: "http",
+      data: { method: "GET", url: "/clients/search?q=aileen%40example.test", status_code: 200 },
+    });
+    expect(scrubbed.data?.["url"]).toBe("/clients/search?[redacted]");
+  });
+
+  it("keeps the query out of a navigation breadcrumb's from and to", () => {
+    const scrubbed = scrubSentryBreadcrumb({
+      category: "navigation",
+      data: { from: "/dashboard?view=search&q=Aileen", to: "/clients?q=Aileen#top" },
+    });
+    expect(JSON.stringify(scrubbed)).not.toContain("Aileen");
+    expect(scrubbed.data).toEqual({ from: "/dashboard?[redacted]", to: "/clients?[redacted]" });
+  });
+
+  it("leaves a breadcrumb with no url, and the caller's breadcrumb, as they were", () => {
+    const click: Breadcrumb = { category: "ui.click", message: "button.find" };
+    expect(scrubSentryBreadcrumb(click)).toEqual({ category: "ui.click", message: "button.find" });
+    const original: Breadcrumb = { category: "fetch", data: { url: "/clients/search?q=Aileen" } };
+    scrubSentryBreadcrumb(original);
+    expect(original.data?.["url"]).toBe("/clients/search?q=Aileen");
+  });
+});
+
 describe("browser Sentry event scrubber and guests' allergy notes", () => {
   it("scrubs the note from the error message, breadcrumbs and contexts, and keeps the rest", () => {
     const note = "Table 4: severe sesame allergy";
@@ -111,6 +168,7 @@ describe("browser Sentry loading", () => {
     const scope = { setTag: vi.fn(), setContext: vi.fn() };
     const sdk = {
       init: vi.fn(),
+      browserApiErrorsIntegration: vi.fn((options: object) => ({ name: "BrowserApiErrors", options })),
       captureException: vi.fn(),
       withScope: vi.fn((callback: (value: typeof scope) => void) => {
         callback(scope);
@@ -133,7 +191,23 @@ describe("browser Sentry loading", () => {
       environment: "production",
       sendDefaultPii: false,
       beforeSend: sentry.scrubSentryErrorEvent,
+      beforeBreadcrumb: sentry.scrubSentryBreadcrumb,
     }));
+  });
+
+  it("stops wrapping animation frames and event listeners, and keeps every other default", async () => {
+    const { sentry, sdk } = await loadWithSdk();
+
+    await sentry.initBrowserSentry({ MODE: "production", VITE_SENTRY_DSN: DSN });
+
+    const options = sdk.init.mock.calls[0]?.[0] as { integrations: (defaults: { name: string }[]) => { name: string }[] };
+    const defaults = [{ name: "InboundFilters" }, { name: "BrowserApiErrors" }, { name: "Breadcrumbs" }];
+    const chosen = options.integrations(defaults);
+    expect(chosen.map((integration) => integration.name)).toEqual(["InboundFilters", "BrowserApiErrors", "Breadcrumbs"]);
+    expect(sdk.browserApiErrorsIntegration).toHaveBeenCalledWith({ requestAnimationFrame: false, eventTarget: false });
+    expect(chosen[1]).toBe(sdk.browserApiErrorsIntegration.mock.results[0]?.value);
+    expect(chosen[0]).toBe(defaults[0]);
+    expect(chosen[2]).toBe(defaults[2]);
   });
 
   it("reports boundary errors with a trimmed component stack", async () => {

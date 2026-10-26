@@ -1,15 +1,17 @@
 import { useCallback, useEffect } from "react";
-import { useLiveSearchParams } from "../hooks/use-live-search-params.js";
+import { useTwinSearchParams } from "./twin-search-params.js";
 
 // -----------------------------------------------------------------------------
 // useTwinMode — the walk ⇄ dollhouse ⇄ plan mode machine (Phase 2, Task 5).
 //
 // The URL (?mode=) is the machine's single source of truth: mode is DERIVED
 // from the search params on every render, never mirrored into component
-// state. useTwinWalk writes ?node= into the same address, so both hooks build
-// each write on the address as it stands at that moment (useLiveSearchParams)
-// and each preserves the other's key, even when a dive makes both writes in
-// one handler or a hop lands from a frame loop started renders ago.
+// state. It shares the query with useTwinWalk's ?node=, and both write
+// through useTwinSearchParams, which edits the address as the router holds it
+// at that moment, so neither write can drop the other's key. (React Router's
+// functional setSearchParams form cannot promise that: its updater sees the
+// params of the render that made the setter, which T-674 measured going
+// stale under a hop landing and the dive.)
 //
 // History contract: entering or leaving dollhouse pushes exactly one entry
 // (the browser back button is the natural "surface from the dollhouse");
@@ -34,49 +36,48 @@ function parseMode(param: string | null, hasMesh: boolean): TwinMode {
 }
 
 export function useTwinMode(hasMesh: boolean): TwinModeState {
-  const { searchParams, latest, write } = useLiveSearchParams();
+  const [searchParams, editSearchParams] = useTwinSearchParams();
   const param = searchParams.get("mode");
   const mode = parseMode(param, hasMesh);
 
   // Canonicalise: walk is spelt by ABSENCE. A present param that parses to
   // walk (invalid value, explicit "walk", or a mesh-less bundle) is dropped
   // without adding history, preserving every other param (?node= included).
-  // A newer address that already chose a real mode is left to its render.
   useEffect(() => {
-    if (param === null || parseMode(param, hasMesh) !== "walk") {
-      return;
+    if (param !== null && parseMode(param, hasMesh) === "walk") {
+      editSearchParams((params) => {
+        const now = params.get("mode");
+        if (now === null || parseMode(now, hasMesh) !== "walk") {
+          return null; // the address moved on before this ran
+        }
+        params.delete("mode");
+        return { replace: true };
+      });
     }
-    const params = latest();
-    const now = params.get("mode");
-    if (now !== null && parseMode(now, hasMesh) === "walk") {
-      params.delete("mode");
-      write(params, { replace: true });
-    }
-  }, [param, hasMesh, latest, write]);
+  }, [param, hasMesh, editSearchParams]);
 
+  // Decided from the address as it stands when the visitor asks, not from
+  // the last render: two quick presses must not both read the old mode, which
+  // would replace the first press's history entry or push a second one.
   const setMode = useCallback(
     (next: TwinMode) => {
-      if (!hasMesh && next !== "walk") {
-        return;
-      }
-      // Decided from the address as it stands, which a pending navigation
-      // may already have moved past this render's mode.
-      const params = latest();
-      const current = parseMode(params.get("mode"), hasMesh);
-      if (next === current) {
-        return;
-      }
-      if (next === "walk") {
-        params.delete("mode");
-      } else {
-        params.set("mode", next);
-      }
-      // Crossing the dollhouse boundary is a navigation (push once); every
-      // other switch is a view tweak (replace).
-      const crossesDollhouse = (current === "dollhouse") !== (next === "dollhouse");
-      write(params, { replace: !crossesDollhouse });
+      editSearchParams((params) => {
+        const now = parseMode(params.get("mode"), hasMesh);
+        if (next === now || (!hasMesh && next !== "walk")) {
+          return null;
+        }
+        if (next === "walk") {
+          params.delete("mode");
+        } else {
+          params.set("mode", next);
+        }
+        // Crossing the dollhouse boundary is a navigation (push once); every
+        // other switch is a view tweak (replace).
+        const crossesDollhouse = (now === "dollhouse") !== (next === "dollhouse");
+        return { replace: !crossesDollhouse };
+      });
     },
-    [hasMesh, latest, write],
+    [hasMesh, editSearchParams],
   );
 
   return { mode, setMode };

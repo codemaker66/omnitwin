@@ -11,6 +11,8 @@
 // development build compare profiles on one machine.
 // ---------------------------------------------------------------------------
 
+import { plannerFeatureEnabled } from "./planner-features.js";
+
 export type RenderProfileName = "off" | "phone" | "tablet" | "desktop";
 
 export type AntiAlias = "temporal" | "fxaa" | "none";
@@ -46,6 +48,13 @@ export interface RenderProfile {
   readonly sceneSamples: number;
   readonly ambientOcclusion: AmbientOcclusionSettings | null;
   readonly bloom: BloomSettings | null;
+  /**
+   * Whether bloom is drawn while the view moves. A phone's slowed CPU spends
+   * about half of each frame encoding bloom's twelve passes (perf study, 25
+   * Oct 2026), so phones skip them while a hand is on the view or the camera
+   * moves, and the glow returns once the view is still (lib/motion-bloom.ts).
+   */
+  readonly bloomInMotion: boolean;
   /** Extra frames drawn after the last change so temporal anti-aliasing converges. */
   readonly convergenceFrames: number;
   /** Darkening at the frame's corners, 0 to 1. */
@@ -63,6 +72,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
     sceneSamples: 4,
     ambientOcclusion: null,
     bloom: null,
+    bloomInMotion: true,
     convergenceFrames: 0,
     vignette: 0,
   },
@@ -74,6 +84,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
     sceneSamples: 4,
     ambientOcclusion: null,
     bloom: BLOOM,
+    bloomInMotion: false,
     convergenceFrames: 0,
     vignette: 0.22,
   },
@@ -85,6 +96,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
     sceneSamples: 0,
     ambientOcclusion: { resolutionScale: 0.5, radius: 0.45, samples: 8, intensity: 0.85 },
     bloom: BLOOM,
+    bloomInMotion: true,
     convergenceFrames: 0,
     vignette: 0.22,
   },
@@ -96,6 +108,7 @@ export const RENDER_PROFILES: Readonly<Record<RenderProfileName, RenderProfile>>
     sceneSamples: 0,
     ambientOcclusion: { resolutionScale: 0.5, radius: 0.5, samples: 12, intensity: 0.9 },
     bloom: BLOOM,
+    bloomInMotion: true,
     convergenceFrames: 16,
     vignette: 0.22,
   },
@@ -108,7 +121,16 @@ export interface RenderDeviceContext {
   readonly shortSide: number;
   /** `?render=` from the page's address, honoured in development builds. */
   readonly override: string | null;
+  /**
+   * Whether a profile may pause bloom in motion (the `leanMotionPipeline`
+   * switch, lib/planner-features.ts). Absent or false, every profile draws
+   * bloom in motion as before.
+   */
+  readonly leanMotion?: boolean;
 }
+
+/** The phone profile as it was before bloom paused in motion: the way back. */
+const PHONE_WITH_BLOOM_IN_MOTION: RenderProfile = { ...RENDER_PROFILES.phone, bloomInMotion: true };
 
 function isProfileName(value: string): value is RenderProfileName {
   return value === "off" || value === "phone" || value === "tablet" || value === "desktop";
@@ -116,9 +138,11 @@ function isProfileName(value: string): value is RenderProfileName {
 
 /** The profile for a device: phones and tablets by pointer and screen size. */
 export function selectRenderProfile(device: RenderDeviceContext): RenderProfile {
-  if (device.override !== null && isProfileName(device.override)) return RENDER_PROFILES[device.override];
-  if (!device.coarsePointer) return RENDER_PROFILES.desktop;
-  return device.shortSide < 600 ? RENDER_PROFILES.phone : RENDER_PROFILES.tablet;
+  const named = device.override !== null && isProfileName(device.override) ? device.override
+    : !device.coarsePointer ? "desktop"
+    : device.shortSide < 600 ? "phone" : "tablet";
+  if (named === "phone" && device.leanMotion !== true) return PHONE_WITH_BLOOM_IN_MOTION;
+  return RENDER_PROFILES[named];
 }
 
 /**
@@ -160,19 +184,23 @@ export function rebuildsPipeline(rung: QualityRung): boolean {
  * ambient occlusion, the resolution in quarter steps to 1.5, bloom, then the
  * resolution to 1. Frames held up by the CPU give up passes, each a chain of
  * draws to encode (bloom's mip chain costs a slowed phone nearly half its
- * render), and keep their pixels, which cost the CPU nothing.
+ * render), and keep their pixels, which cost the CPU nothing. A profile that
+ * pauses bloom in motion never gives it up: the frames judged are drawn while
+ * the view moves, without it, so giving it up would cost the still view its
+ * glow and gain nothing.
  */
 export function nextQualityRung(profile: RenderProfile, baseRatio: number, given: readonly QualityRung[], held: "cpu" | "gpu"): QualityRung | null {
   const open = (rung: QualityRung): boolean => !given.includes(rung);
+  const bloomOpen = profile.bloom !== null && profile.bloomInMotion && open("bloom");
   if (held === "cpu") {
-    if (profile.bloom !== null && open("bloom")) return "bloom";
+    if (bloomOpen) return "bloom";
     if (profile.ambientOcclusion !== null && open("ambientOcclusion")) return "ambientOcclusion";
     return null;
   }
   const ratio = baseRatio - given.filter((rung) => rung === "resolution").length * RESOLUTION_STEP;
   if (profile.ambientOcclusion !== null && open("ambientOcclusion")) return "ambientOcclusion";
   if (ratio - RESOLUTION_STEP >= 1.5 - 1e-6) return "resolution";
-  if (profile.bloom !== null && open("bloom")) return "bloom";
+  if (bloomOpen) return "bloom";
   if (ratio - RESOLUTION_STEP >= 1 - 1e-6) return "resolution";
   return null;
 }
@@ -221,5 +249,6 @@ export function readRenderDeviceContext(development: boolean): RenderDeviceConte
     coarsePointer: window.matchMedia("(pointer: coarse)").matches,
     shortSide: Math.min(window.screen.width, window.screen.height),
     override,
+    leanMotion: plannerFeatureEnabled("leanMotionPipeline"),
   };
 }

@@ -162,3 +162,27 @@
   .pl-task-form button { grid-column: 1 / -1; justify-self: start; }
   .pl-row__next { white-space: normal; }
 }
+
+/* Who won a lost deal (the competitor watch): the venue set, another by name,
+   or not said, and any figure the client gave, kept as theirs, unverified. */
+.pl-lost-to { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; border: 0; }
+.pl-lost-to legend { margin-bottom: 8px; padding: 0; color: var(--enq-forest-ink); font-size: 14px; font-weight: 600; }
+.pl-lost-to .pl-reasons { margin: 0; }
+.pl-lost-to .pl-reason { min-height: 44px; }
+.pl-lost-to input:not([type="radio"]) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+  background: var(--enq-forest-deep);
+  color: var(--enq-forest-ink);
+  color-scheme: dark;
+  font: inherit;
+  font-size: 14.5px;
+}
+.pl-client-figure { display: grid; gap: 8px; }
+.pl-basis { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--enq-forest-ink); font-size: 14px; cursor: pointer; }
+.pl-basis input { width: 18px; height: 18px; margin: 0; accent-color: var(--enq-cream); }
+.enq-timeline .pl-lost-detail { display: block; margin: 2px 0; color: var(--enq-forest-ink); font-size: 13.5px; line-height: 1.45; }

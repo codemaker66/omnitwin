@@ -19,7 +19,12 @@
          Not preloaded: Chrome holds rendering for font preloads in <head>, and
          on the front door they delayed first paint and the app's own download
          more than they saved (measured 2026-09-24, docs/sessions). -->
-    <link rel="stylesheet" href="/src/styles/fonts/site.css" />
+    <!-- site-slim.css is site.css with each Latin face split in two: the
+         characters the site's copy uses in a cut-down file, everything else in
+         Google's original (src/styles/fonts/slim, scripts/slim-site-fonts.py).
+         Same outlines, kerning and hinting; the front door fetches the small
+         file. -->
+    <link rel="stylesheet" href="/src/styles/fonts/site-slim.css" />
     <title>Trades Hall of Glasgow — weddings and events</title>
     <script>
       // The front door's largest paint is its Grand Hall photograph, which the
@@ -36,6 +41,10 @@
         document.head.appendChild(heroPreload);
       }
     </script>
+    <!-- The build writes the home route's chunk preloads here, before the page's
+         stylesheet links so the script does not wait for them
+         (src/lib/home-route-preload-plugin.ts). -->
+    <!-- home-route-preload -->
     <!-- Static social/meta card: link scrapers (WhatsApp, iMessage, Instagram,
          Facebook) do not execute JavaScript, so the shared-link first
          impression must live here, not in the client-side route effects.
