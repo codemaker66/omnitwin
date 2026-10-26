@@ -69,6 +69,13 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       border-radius: 10px; color: #f0f0f0; outline: none;
       transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
     }
+    /* iOS Safari zooms into any field set under 16px when it takes focus, and
+       leaves the planner zoomed after the form closes (planner-qol E-X2). On
+       a touch screen the fields are 16px; pinch zoom stays (no maximum-scale
+       on the viewport, WCAG 1.4.4). */
+    @media (pointer: coarse) {
+      .omni-enq-input { font-size: 16px; }
+    }
     .omni-enq-input::placeholder { color: rgba(255,255,255,0.25); }
     .omni-enq-input:focus {
       border-color: rgba(201, 138, 91,0.4); background: rgba(255,255,255,0.06);

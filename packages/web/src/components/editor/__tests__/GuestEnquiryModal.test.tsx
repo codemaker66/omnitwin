@@ -178,6 +178,34 @@ describe("GuestEnquiryModal names the layout's own venue", () => {
   });
 });
 
+// planner-qol E-X2: iOS Safari zooms into a field set under 16px and leaves
+// the planner zoomed after the form closes. On a touch screen every field is
+// 16px, read from the stylesheet the modal installs.
+describe("GuestEnquiryModal on a touch screen", () => {
+  it("sets every field at 16px or more for a coarse pointer, so iOS does not zoom in", () => {
+    const style = document.getElementById("omni-enquiry-modal");
+    expect(style).not.toBeNull();
+    const sheet = (style as HTMLStyleElement).sheet;
+    expect(sheet).not.toBeNull();
+    const coarse = [...(sheet?.cssRules ?? [])].filter((rule): rule is CSSMediaRule =>
+      rule instanceof CSSMediaRule && rule.conditionText.replace(/\s+/gu, "") === "(pointer:coarse)");
+    const sizes = coarse.flatMap((media) => [...media.cssRules])
+      .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === ".omni-enq-input")
+      .map((rule) => Number.parseFloat(rule.style.fontSize));
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(16);
+  });
+
+  it("keeps pinch zoom: the page's viewport never forbids zooming", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const html = await fs.readFile(path.resolve("index.html"), "utf-8");
+    const viewport = /<meta name="viewport" content="([^"]*)"/u.exec(html)?.[1];
+    expect(viewport).toContain("width=device-width");
+    expect(viewport).not.toMatch(/maximum-scale|user-scalable\s*=\s*no/u);
+  });
+});
+
 // planner-qol E-10: "Copy layout link" handed out /plan/<id>, an anonymous
 // plan's edit capability, so whoever the guest sent it to could change the
 // layout the venue is reading. After sending, the guest shares a view-only link.
