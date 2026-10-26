@@ -14,7 +14,7 @@ import { z } from "zod";
 // history. The public rule itself is publicRoomAnswer in booking.ts.
 // ---------------------------------------------------------------------------
 
-const IsoInstantSchema = z.string().datetime({ offset: true });
+const IsoInstantSchema = z.iso.datetime({ offset: true });
 
 /** Who may record or clear a room's check: the venue's own admin or manager.
  *  It is the venue's word about its own book, so a Venviewer platform
@@ -27,8 +27,8 @@ export const FORWARD_BOOK_NOTE_MAX_LENGTH = 500;
 
 /** One record that a room's forward book is on the Diary, as staff read it. */
 export const ForwardBookCheckSchema = z.object({
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
+  id: z.uuid(),
+  spaceId: z.uuid(),
   recordedAt: IsoInstantSchema,
   /** The name of the person who recorded it, as it was when they did. */
   recordedByName: z.string(),
@@ -41,7 +41,7 @@ export type ForwardBookCheck = z.infer<typeof ForwardBookCheckSchema>;
 
 /** A room and where its record stands. */
 export const RoomForwardBookSchema = z.object({
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   name: z.string(),
   /** The standing record: while it exists, the room's dates are public. */
   current: ForwardBookCheckSchema.nullable(),
@@ -67,7 +67,7 @@ const NoteSchema = z
   .transform((value) => (value === "" ? null : value));
 
 export const RecordForwardBookCheckSchema = z.object({
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   note: NoteSchema.nullable().optional().transform((value) => value ?? null),
 }).strict();
 export type RecordForwardBookCheck = z.input<typeof RecordForwardBookCheckSchema>;

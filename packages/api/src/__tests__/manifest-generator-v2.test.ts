@@ -230,9 +230,9 @@ describe("generateManifestV2 — totals", () => {
 });
 
 describe("generateManifestV2 — per-row positions", () => {
-  const UUID_A = "00000000-0000-0000-0000-00000000000a";
-  const UUID_B = "00000000-0000-0000-0000-00000000000b";
-  const UUID_C = "00000000-0000-0000-0000-00000000000c";
+  const UUID_A = "00000000-0000-4000-8000-00000000000a";
+  const UUID_B = "00000000-0000-4000-8000-00000000000b";
+  const UUID_C = "00000000-0000-4000-8000-00000000000c";
 
   it("emits one position per non-accessory placement, none per accessory", () => {
     const placed: readonly ManifestObjectV2[] = [
@@ -269,8 +269,8 @@ describe("generateManifestV2 — per-row positions", () => {
 });
 
 describe("generateManifestV2 — per-row notes", () => {
-  const UUID_A = "00000000-0000-0000-0000-00000000000a";
-  const UUID_B = "00000000-0000-0000-0000-00000000000b";
+  const UUID_A = "00000000-0000-4000-8000-00000000000a";
+  const UUID_B = "00000000-0000-4000-8000-00000000000b";
 
   it("row notes carry the planner's annotation", () => {
     const placed: readonly ManifestObjectV2[] = [

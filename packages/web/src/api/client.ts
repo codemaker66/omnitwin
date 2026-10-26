@@ -1,4 +1,4 @@
-import type { ZodType, ZodTypeDef } from "zod";
+import type { ZodType } from "zod";
 import { API_URL } from "../config/env.js";
 import { getTokenGetter } from "./auth-bridge.js";
 
@@ -74,7 +74,7 @@ interface RequestOptions {
   readonly keepEnvelope?: boolean;
 }
 
-type ResponseSchema<T> = ZodType<T, ZodTypeDef, unknown>;
+type ResponseSchema<T> = ZodType<T>;
 
 function objectField(value: unknown, key: string): unknown {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;

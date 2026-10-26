@@ -36,7 +36,7 @@ import { VenueIdSchema } from "./venue.js";
 //   ask and the released count, never a new promise.
 // ---------------------------------------------------------------------------
 
-const UUID = z.string().uuid();
+const UUID = z.uuid();
 
 export const RequestIdSchema = UUID;
 export type RequestId = z.infer<typeof RequestIdSchema>;
@@ -190,7 +190,7 @@ export function summariseRequest(request: {
 
 // --- The row ---------------------------------------------------------------
 
-const IsoInstant = z.string().datetime({ offset: true });
+const IsoInstant = z.iso.datetime({ offset: true });
 
 export const VenueRequestSchema = z.object({
   id: RequestIdSchema,

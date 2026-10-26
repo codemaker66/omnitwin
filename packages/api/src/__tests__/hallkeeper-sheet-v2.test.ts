@@ -12,7 +12,7 @@ process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 // were inverted on 2026-04-10 as part of punch list #4.
 // ---------------------------------------------------------------------------
 
-const FAKE_CONFIG_ID = "00000000-0000-0000-0000-000000000001";
+const FAKE_CONFIG_ID = "00000000-0000-4000-8000-000000000001";
 
 function mockToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
   return JSON.stringify(payload);
