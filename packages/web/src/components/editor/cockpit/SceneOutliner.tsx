@@ -1,13 +1,18 @@
 import { useMemo, useState, type ReactElement } from "react";
-import { Armchair, Box, Building2, ChevronDown, Circle, Layers3, Plus, Search } from "lucide-react";
+import { Armchair, Box, Building2, ChevronDown, Circle, Link2, ListTree, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
+import { canReadInternalEventData } from "../../../lib/event-access.js";
+import { floorCategoryLabel, floorNames, floorSummaryLine, inFloorNameOrder, withFloorNames } from "../../../lib/floor-names.js";
+import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
 import { getGroupMemberIds, type PlacedItem } from "../../../lib/placement.js";
 import { dispatchPlannerToolbarCommand } from "../../../lib/planner-toolbar-events.js";
-import { referenceCategoryLabel, referenceEntryMatches, referenceSceneEntries, referenceSceneSummary, type ReferenceSceneEntry } from "../../../lib/reference-scene-model.js";
+import { referenceEntryMatches, referenceSceneEntries, referenceSceneSummary, type ReferenceSceneEntry } from "../../../lib/reference-scene-model.js";
+import { countLabel } from "../../../lib/count-label.js";
 import "./ReferencePanels.css";
 
 interface OutlinerCategoryProps {
@@ -28,17 +33,17 @@ function OutlinerCategory({ category, entries, selectedIds, locked, searching }:
   const Icon = category === "chair" ? Armchair : category === "table" ? Circle : Box;
   return (
     <details className="reference-tree-category" key={`${category}-${String(searching)}`} open={searching || category === "table"}>
-      <summary><ChevronDown size={13} /><Icon size={14} /><span>{referenceCategoryLabel(category)}</span><span className="reference-count">{entries.length}</span></summary>
+      <summary><ChevronDown size={13} /><Icon size={14} /><span>{floorCategoryLabel(category)}</span><span className="reference-count">{entries.length}</span></summary>
       <ul className="reference-tree-items">
         {entries.map((entry) => (
           <li key={entry.item.id}>
             <button type="button" className="reference-tree-item" disabled={locked} aria-pressed={selectedIds.has(entry.item.id)}
               data-furniture-id={entry.item.id}
               aria-label={entry.label}
-              title={entry.item.groupId === null ? entry.label : `${entry.label} · selects its furniture group`}
+              title={entry.item.groupId === null ? entry.label : `${entry.label} · selects its table and seats`}
               onClick={() => { selectEntry(entry); }}>
               <Icon size={12} /><span>{entry.shortLabel}</span>
-              {entry.item.groupId !== null && <Layers3 size={12} className="reference-tree-group" aria-label="Grouped furniture" />}
+              {entry.item.groupId !== null && <Link2 size={12} className="reference-tree-group" aria-label="Moves with its table and seats" />}
             </button>
           </li>
         ))}
@@ -54,6 +59,11 @@ function outlinerSignature(items: readonly PlacedItem[]): readonly (string | nul
   return items.flatMap((item) => [item.id, item.catalogueItemId, item.label ?? null, item.groupId]);
 }
 
+/** What the capture row says, and to whom: staff only (spec 4.3, F-46). */
+function captureNote(runtime: string): string {
+  return gaussianSplatsAvailable() ? runtime : "Photographed room · coming soon";
+}
+
 export function SceneOutliner({ className = "" }: { readonly className?: string }): ReactElement {
   const signature = usePlacementStore(useShallow((state) => outlinerSignature(state.placedItems)));
   // Items as of the latest listed change; the tree reads no position fields.
@@ -64,9 +74,11 @@ export function SceneOutliner({ className = "" }: { readonly className?: string 
   const previewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
   const previewMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
   const runtime = useCockpitStore((state) => state.runtimeAssetStatus);
+  const staff = useAuthStore((state) => canReadInternalEventData(state));
   const [search, setSearch] = useState("");
   const locked = previewMode !== "inactive";
-  const entries = useMemo(() => referenceSceneEntries(locked ? previewItems : items), [items, locked, previewItems]);
+  const listed = locked ? previewItems : items;
+  const entries = useMemo(() => inFloorNameOrder(withFloorNames(referenceSceneEntries(listed), floorNames(listed))), [listed]);
   const summary = useMemo(() => referenceSceneSummary(entries), [entries]);
   const filtered = useMemo(() => entries.filter((entry) => referenceEntryMatches(entry, search)), [entries, search]);
   const categories = [...new Set(entries.map((entry) => entry.category))].sort((a, b) => {
@@ -74,22 +86,22 @@ export function SceneOutliner({ className = "" }: { readonly className?: string 
     return priority(a) - priority(b) || a.localeCompare(b);
   });
   return (
-    <aside className={`reference-panel reference-scene-outliner ${className}`} aria-label="Scene layers" data-testid="reference-scene-outliner">
-      <header className="reference-panel-heading"><Layers3 size={15} /><h2>Layers</h2><span className="reference-count">{summary.objects}</span></header>
-      <label className="reference-search"><Search size={14} /><input type="search" aria-label="Search scene objects" placeholder="Search layers" value={search} onChange={(event) => { setSearch(event.target.value); }} /></label>
+    <aside className={`reference-panel reference-scene-outliner ${className}`} aria-label="On the floor" data-testid="reference-scene-outliner">
+      <header className="reference-panel-heading"><ListTree size={15} aria-hidden="true" /><h2>On the floor</h2><span className="reference-count" aria-label={countLabel(summary.objects, "piece")}>{summary.objects}</span></header>
+      <label className="reference-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="Find a table or piece" placeholder="Find a table or piece" value={search} onChange={(event) => { setSearch(event.target.value); }} /></label>
       <div className="reference-panel-scroll">
-        <details className="reference-tree-category reference-architecture" open>
-          <summary><ChevronDown size={13} /><Building2 size={14} /><span>Architecture</span></summary>
-          <div className="reference-capture-label"><span>{locked ? previewRuntime === null ? "Room preview unavailable" : "Frozen room outline" : "Room capture"}</span><small>{locked ? previewRuntime === null ? previewMessage ?? "No frozen room snapshot" : "Historical layout preview" : runtime}</small></div>
-        </details>
+        {(locked || staff) && <details className="reference-tree-category reference-architecture" open>
+          <summary><ChevronDown size={13} /><Building2 size={14} /><span>The room</span></summary>
+          <div className="reference-capture-label"><span>{locked ? previewRuntime === null ? "Room preview unavailable" : "Frozen room outline" : "Room capture"}</span><small>{locked ? previewRuntime === null ? previewMessage ?? "No frozen room snapshot" : "Historical layout preview" : captureNote(runtime)}</small></div>
+        </details>}
         <div className="reference-section-caption">{locked ? "Phase furniture · read only" : "Furniture"}</div>
         {categories.map((category) => {
           const matching = filtered.filter((entry) => entry.category === category);
           return matching.length === 0 ? null : <OutlinerCategory key={category} category={category} entries={matching} selectedIds={locked ? new Set<string>() : selectedIds} locked={locked} searching={search.trim().length > 0} />;
         })}
-        {filtered.length === 0 && <p className="reference-muted">{entries.length === 0 ? "No furniture in this layout." : "No matching objects."}</p>}
+        {filtered.length === 0 && <p className="reference-muted">{entries.length === 0 ? "Nothing on the floor yet." : "Nothing matches that name."}</p>}
       </div>
-      <footer className="reference-panel-footer"><span>{summary.tables} tables · {summary.chairs} chairs · {summary.groups} groups</span>
+      <footer className="reference-panel-footer"><span>{floorSummaryLine(summary, staff)}</span>
         <button type="button" className="reference-action" disabled={locked} onClick={() => { if (useLayoutTimelinePreviewStore.getState().mode === "inactive") dispatchPlannerToolbarCommand("open-furniture"); }}><Plus size={14} />Add furniture</button>
       </footer>
     </aside>
