@@ -735,6 +735,7 @@ describe("the ledger and the open proposal", () => {
     await act(async () => { answer(existing[0]); await Promise.resolve(); });
     expect(await panel.findByText("Accepted", { selector: ".enq-chip" })).toBeDefined();
     expect(mocks.listProposalDesk.mock.calls.length).toBe(listReads + 1);
+    expect(mocks.getDeskProposal.mock.calls.length).toBe(proposalReads + 1);
     expect(panel.queryByText("Refreshing the proposal…")).toBeNull();
   });
 
