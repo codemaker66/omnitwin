@@ -5,13 +5,14 @@ import { API, CONFIG_ID, GRAND_HALL_SPACE, PLAN_CONFIG, VENUE, stubPlannerBootst
 import { grandHallDinner180 } from "../src/floor/assembly/fixture.js";
 
 // ---------------------------------------------------------------------------
-// E2E: the Grand Assembly (goal 03, S5 Layout Recall + S6) behind its flag.
+// E2E: the Grand Assembly (goal 03, S5 Layout Recall + S6), on for everyone.
 //
-// A saved Grand Hall layout opened with `?assembly=accio` assembles itself,
-// comes to rest as placed and hands the camera back on its final framing;
-// Escape snaps it to the true state; without the flag nothing assembles.
-// Nothing is written back while it plays. The replay control's
-// `data-playing` is the honesty surface the assertions key off.
+// A saved Grand Hall layout assembles itself the first time it opens on a
+// device (`?assembly=accio`: every time), comes to rest as placed and hands
+// the camera back on its final framing; Escape snaps it to the true state; the
+// visible Skip plays it on at speed, then sends it to its end; once seen, it
+// opens as placed. Nothing is written back while it plays. The control's
+// `data-playing` and `data-fast` are the honesty surface the assertions key off.
 // ---------------------------------------------------------------------------
 
 declare global {
@@ -79,6 +80,9 @@ function nearFinalFraming(position: readonly number[] | null): boolean {
 // The drawn hall and the show are GPU and CPU heavy: one at a time.
 test.describe.configure({ mode: "default" });
 
+// Since 26 Oct 2026 the Assembly is on for everyone: a layout plays the first time it opens on a device, and
+// ?assembly=accio plays it on every open. The describe keeps its old title so the reviewed inventory's case
+// identities stand.
 test.describe("Grand Assembly behind ?assembly=accio", () => {
   // A cold first load also fetches the Assembly's code; the hold waits for it.
   test.setTimeout(210_000);
@@ -106,9 +110,21 @@ test.describe("Grand Assembly behind ?assembly=accio", () => {
     expect(nearFinalFraming(await cameraPosition(page))).toBe(true);
   });
 
-  test("without the flag the layout simply opens", async ({ page }) => {
+  test("with no flag a layout plays the first time it opens, the Skip hurries it to its end, and it then opens as placed", async ({ page }) => {
     await openSavedGrandHallLayout(page, "");
+    const control = page.locator(".assembly-replay");
+    await expect(control).toHaveAttribute("data-playing", "true", { timeout: 90_000 });
+    // The visible Skip: the first press plays the show on at speed, the second goes straight to the end.
+    await control.click();
+    await expect(control).toHaveAttribute("data-fast", "true");
+    await expect(control).toHaveText("Skip to the end");
+    await control.click();
+    await expect(control).toHaveAttribute("data-playing", "false", { timeout: 5_000 });
+    // Seen on this device now: the next open is the layout as placed.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector("canvas", { timeout: 30_000 });
+    await expect(control).toHaveText("Replay the assembly", { timeout: 60_000 });
     await page.waitForTimeout(3_000);
-    await expect(page.locator(".assembly-replay")).toHaveCount(0);
+    await expect(control).toHaveAttribute("data-playing", "false");
   });
 });
