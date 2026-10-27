@@ -479,7 +479,7 @@ export async function revalidateLayoutLiveRooms(db: Database, hub: LayoutLiveHub
     const rows = await readCurrentSocketUsers(db, connections.map((connection) => connection.user.userId));
     for (const connection of connections) {
       // An unlinked Clerk account (offboarded) is revoked like a missing row.
-      const user = currentAuthority(rows.get(connection.user.userId), { userId: connection.user.userId, clerkId: null });
+      const user = currentAuthority(rows.get(connection.user.userId), { userId: connection.user.userId, clerkId: connection.clerkId });
       const admitted = config !== undefined && user !== null && canJoinLayoutLive(
         { userId: connection.user.userId, role: user.role, venueId: user.venueId, platformRole: user.platformRole },
         { ownerUserId: config.userId, venueId: config.venueId },
@@ -645,7 +645,7 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
           // refusal is silent — the auto-save protocol is unchanged for them.
           void resolveLayoutLiveUser(db, configId, resolved).then((liveUser) => {
             if (liveUser === null || closed || socket.readyState !== 1) return;
-            liveConnection = hub.join(configId, socket, liveUser);
+            liveConnection = hub.join(configId, socket, liveUser, resolved.clerkId ?? null);
           }).catch((err: unknown) => {
             request.log.warn({ err, configId }, "layout-live join failed");
           });

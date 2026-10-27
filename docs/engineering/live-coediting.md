@@ -101,9 +101,16 @@ Code: `packages/web/src/lib/layout-live/` (pure core and the socket client),
   than revoking all.
 - **Every flush acts with the person's current role** (release audit configs-4):
   `persistAutoSaveSnapshot` reads the users row `FOR SHARE` inside its transaction
-  (`ws/socket-identity.ts`). A missing row, an unlinked or relinked Clerk account,
-  a move or a demotion refuses the flush with `FORBIDDEN` and closes the socket; a
-  venue admin demoted to staff meets the review lock.
+  (`ws/socket-identity.ts`) and judges the write with that role and venue
+  (`canManageConfiguration`). A missing row or an unlinked or relinked Clerk
+  account refuses the flush with `FORBIDDEN` and closes the socket, as does a move
+  or a demotion that leaves the person unable to manage the layout (its owner who
+  moves venue still can); a venue admin demoted to staff meets the review lock.
+  A test-mode token names no Clerk account, so the seeded people (no `clerk_id`)
+  are held to their row's role and venue alone. A Clerk account deleted by the
+  `user.deleted` webhook is recorded in `general_audit_log` and never links a row
+  again, so a screen reconnecting with a token issued before the deletion is
+  refused.
 - **Public-preview guests** keep single-person planning; the client never opens
   the live room for a public draft.
 - The hub drops a client frame silently when it is malformed, over 128 KB or over

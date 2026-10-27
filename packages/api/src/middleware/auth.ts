@@ -3,7 +3,7 @@ import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
 import { and, asc, eq, gt, isNull, notExists, or, sql } from "drizzle-orm";
 import { PlatformRoleSchema, USER_ROLES, type PlatformRole } from "@omnitwin/types";
-import { onboardingAuditEvents, userInvitations, users, venues, workspaceMemberships, workspaces } from "../db/schema.js";
+import { generalAuditLog, onboardingAuditEvents, userInvitations, users, venues, workspaceMemberships, workspaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -220,6 +220,26 @@ async function findLinkedUserWithoutPendingInvitation(
     platformRole: sanitizePlatformRole(user.platformRole), venueId: user.venueId };
 }
 
+/**
+ * The audit record of a Clerk account's deletion. Clerk never gives a
+ * deleted account's id to another, so the deletion is final: the user.deleted
+ * webhook unlinks the local row and writes this, and a token that account
+ * was issued before it was deleted never links a row again (release audit
+ * events-diary-5: a Diary screen reconnecting with such a token would
+ * otherwise re-link its row by email and stay open for hours).
+ */
+export const CLERK_ACCOUNT_DELETED = { action: "clerk.user_deleted", targetType: "clerk_user" } as const;
+
+/** Whether the user.deleted webhook has recorded this Clerk account. */
+export async function clerkAccountDeleted(db: Pick<Database, "select">, clerkId: string): Promise<boolean> {
+  const [row] = await db.select({ id: generalAuditLog.id }).from(generalAuditLog).where(and(
+    eq(generalAuditLog.targetType, CLERK_ACCOUNT_DELETED.targetType),
+    eq(generalAuditLog.targetId, clerkId),
+    eq(generalAuditLog.action, CLERK_ACCOUNT_DELETED.action),
+  )).limit(1);
+  return row !== undefined;
+}
+
 export async function getUserByClerkId(
   db: Database,
   clerkId: string,
@@ -242,6 +262,9 @@ export async function getUserByClerkId(
       : [];
     let user = byClerk ?? byEmail;
     if (user !== undefined && user.clerkId !== null && user.clerkId !== clerkId) return null;
+    // Read after the row's lock: an unlink the webhook has committed is
+    // seen with the deletion record it wrote in the same transaction.
+    if (await clerkAccountDeleted(tx, clerkId)) return null;
 
     const now = new Date();
     let invitation = await findPendingInvitation(tx, normalizedEmail, now);

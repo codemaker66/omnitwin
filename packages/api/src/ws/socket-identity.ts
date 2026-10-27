@@ -38,12 +38,13 @@ interface UserRow {
 
 /**
  * The row's authority, or null when the row no longer answers for this
- * socket: deleted, unlinked from Clerk (offboarded), or linked to another
- * Clerk account than the one the socket signed in with. An unknown platform
- * role reads as none.
+ * socket: deleted, or, for a socket that signed in through Clerk, unlinked
+ * from that account (offboarded) or linked to another. A test-mode socket
+ * names no Clerk account, so its row (the seeded people have none) is read
+ * as it stands. An unknown platform role reads as none.
  */
 export function currentAuthority(row: UserRow | undefined, identity: SocketIdentity): CurrentSocketUser | null {
-  if (row === undefined || row.clerkId === null) return null;
+  if (row === undefined) return null;
   if (identity.clerkId !== null && row.clerkId !== identity.clerkId) return null;
   const platformRole = PlatformRoleSchema.safeParse(row.platformRole);
   return { role: row.role, venueId: row.venueId, platformRole: platformRole.success ? platformRole.data : "none" };

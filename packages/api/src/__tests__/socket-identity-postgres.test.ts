@@ -7,8 +7,12 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
-import { registerAutoSave } from "../ws/auto-save.js";
+import { getUserByClerkId } from "../middleware/auth.js";
+import { databasePersistence, processClerkWebhookEvent } from "../routes/webhooks.js";
+import { registerAutoSave, revalidateLayoutLiveRooms } from "../ws/auto-save.js";
 import { DiaryLiveHub, MAX_CONNECTION_AGE_MS, recheckDiaryConnections, registerDiaryLive } from "../ws/diary-live.js";
+import { LayoutLiveHub } from "../ws/layout-live.js";
+import { readCurrentSocketUser } from "../ws/socket-identity.js";
 
 // ---------------------------------------------------------------------------
 // An open socket acts with the role its person holds now (release audit
@@ -25,6 +29,9 @@ import { DiaryLiveHub, MAX_CONNECTION_AGE_MS, recheckDiaryConnections, registerD
 // and review checks.
 // /ws/diary: every command, and every heartbeat, reads the person again; any
 // change refuses the command with its own 403 ack and ends the connection.
+// A test-mode token (no Clerk account) is held to its row alone, as the seeded
+// people of the live e2e stacks are; a Clerk account deleted by the webhook
+// never links its row again, so a reconnect with an older token is refused.
 // Never reads DATABASE_URL or an env file.
 // ---------------------------------------------------------------------------
 
@@ -139,9 +146,16 @@ describe.skipIf(target === undefined)("open sockets act with their person's curr
   }
 
   async function person(venueId: string, role: string) {
-    const id = randomUUID(), clerkId = `user_${randomUUID()}`;
-    await db.insert(schema.users).values({ id, clerkId, venueId, name: "Socket person", email: `${id}@socket.invalid`, role });
-    return { id, clerkId, token: JSON.stringify({ id, role, platformRole: "none", venueId, clerkId }) };
+    const id = randomUUID(), clerkId = `user_${randomUUID()}`, email = `${id}@socket.invalid`;
+    await db.insert(schema.users).values({ id, clerkId, venueId, name: "Socket person", email, role });
+    return { id, clerkId, email, token: JSON.stringify({ id, role, platformRole: "none", venueId, clerkId }) };
+  }
+
+  /** A person as seed.ts makes the live e2e people: no Clerk account, and a test-mode token naming none. */
+  async function seededPerson(venueId: string, role: string) {
+    const id = randomUUID();
+    await db.insert(schema.users).values({ id, clerkId: null, venueId, name: "Seeded person", email: `${id}@socket.invalid`, role });
+    return { id, token: JSON.stringify({ id, role, platformRole: "none", venueId }) };
   }
 
   async function change(userId: string, how: UserChange, otherVenueId: string): Promise<void> {
@@ -300,6 +314,64 @@ describe.skipIf(target === undefined)("open sockets act with their person's curr
     expect(await movedClient.next("diary.ack")).toMatchObject({ status: 403 });
     staysClient.send({ type: "ping" });
     expect(await staysClient.next("pong")).toMatchObject({ type: "pong" });
+  });
+
+  it("keeps a seeded person with no Clerk account at work on both sockets and in the live room", async () => {
+    const f = await venueWithLayout();
+    const seeded = await seededPerson(f.venueId, "staff");
+    const layout = await autoSaveSocket(f.configId, seeded.token);
+    layout.send({ type: "delete_object", expectedRevision: 5, objectId: f.objectId });
+    layout.send({ type: "flush" });
+    expect(await layout.next("error")).toMatchObject({ code: "REVISION_CONFLICT" });
+
+    const diary = await diarySocket(seeded.token);
+    diary.send(blockCommand(f.venueId, f.spaceId));
+    expect(await diary.next("diary.ack")).toMatchObject({ outcome: "applied" });
+
+    const hub = new LayoutLiveHub();
+    hub.join(f.configId, { send: () => undefined, close: () => undefined }, { userId: seeded.id, name: "Seeded", role: "staff" });
+    expect(await revalidateLayoutLiveRooms(db, hub)).toBe(0);
+  });
+
+  it("the layout room's re-check ends an offboarded person's membership and keeps a colleague's", async () => {
+    const f = await venueWithLayout();
+    const leaving = await person(f.venueId, "staff");
+    const stays = await person(f.venueId, "staff");
+    const hub = new LayoutLiveHub();
+    const revokedHere: string[] = [];
+    for (const who of [leaving, stays]) {
+      hub.join(f.configId, { send: (text: string) => { if (text.includes("live.revoked")) revokedHere.push(who.id); }, close: () => undefined },
+        { userId: who.id, name: "Member", role: "staff" }, who.clerkId);
+    }
+    await change(leaving.id, "offboarded", f.otherVenueId);
+    expect(await revalidateLayoutLiveRooms(db, hub)).toBe(1);
+    expect(revokedHere).toEqual([leaving.id]);
+  });
+
+  it("a Clerk account the webhook deleted never links its row again, so its open screen cannot come back", async () => {
+    const f = await venueWithLayout();
+    const staff = await person(f.venueId, "staff");
+    const client = await diarySocket(staff.token);
+    const identity = { userId: staff.id, clerkId: staff.clerkId };
+
+    await processClerkWebhookEvent({ type: "user.deleted", data: { id: staff.clerkId } }, databasePersistence(db));
+    expect(await readCurrentSocketUser(db, identity, { lock: false })).toBeNull();
+    client.send(blockCommand(f.venueId, f.spaceId));
+    expect(await client.next("diary.ack")).toMatchObject({ outcome: "rejected", status: 403 });
+    await client.closed();
+
+    // The screen reconnects with a token Clerk issued before the deletion:
+    // the sign-in that token carries links nothing, and the row stays unlinked.
+    expect(await getUserByClerkId(db, staff.clerkId, staff.email)).toBeNull();
+    const [row] = await db.select({ clerkId: schema.users.clerkId }).from(schema.users).where(eq(schema.users.id, staff.id));
+    expect(row).toEqual({ clerkId: null });
+    expect(await readCurrentSocketUser(db, identity, { lock: false })).toBeNull();
+
+    // A repeated delivery of the webhook records the deletion once.
+    await processClerkWebhookEvent({ type: "user.deleted", data: { id: staff.clerkId } }, databasePersistence(db));
+    const records = await db.select({ id: schema.generalAuditLog.id }).from(schema.generalAuditLog)
+      .where(eq(schema.generalAuditLog.targetId, staff.clerkId));
+    expect(records).toHaveLength(1);
   });
 
   it("ends a connection older than the maximum age however busy it is", () => {
