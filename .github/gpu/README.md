@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 404 cases. Four hosted CPU shards execute
-399 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 405 cases. Four hosted CPU shards execute
+400 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -148,10 +148,17 @@ saved Grand Hall layout that assembles itself, comes to rest as placed and
 hands the camera back on its final framing without writing anything, Escape
 snapping it to the true state, and the layout simply opening without the flag
 (`grand-assembly.spec.ts`); this changes the inventory from 401 to 404 and the
-CPU partition from 396 to 399. Later that day the Assembly went on for everyone
-(Blake), so its third case is restated one for one: with no flag a layout plays
-the first time it opens, the visible Skip hurries it to its end, and after a
-reload it opens as placed. The totals are unchanged.
+CPU partition from 396 to 399. The next, on 26 October 2026, adds one
+ordinary case for phone touch on the planner (PR #196, card-dock lane P): real
+CDP touches on a phone-sized planner with the API stubbed, where a quick swipe
+with a round in hand turns the view and places nothing, a quick tap places one,
+a hold, a slide and a lift place it with the camera still, a still finger on a
+placed round lifts and carries it, and two fingers walk and zoom
+(`planner-touch-arbiter.spec.ts`); this changes the inventory from 404 to 405
+and the CPU partition from 399 to 400. Also on 26 October the Assembly went on
+for everyone (Blake), so its third case is restated one for one: with no flag a
+layout plays the first time it opens, the visible Skip hurries it to its end,
+and after a reload it opens as placed. The totals are unchanged.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

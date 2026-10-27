@@ -91,7 +91,9 @@ function LeavePlanner(): ReactElement {
   return <button type="button" onClick={() => { void navigate("/elsewhere"); }}>Leave planner</button>;
 }
 
-function renderPlanner(entry = "/plan"): void {
+// These cases exercise the tracked-draft lookups for the Reception Room, the /plan
+// default until 26 Oct 2026; naming the room keeps them about the lookups, not the default.
+function renderPlanner(entry = "/plan?space=reception-room"): void {
   render(
     <MemoryRouter initialEntries={[entry]}>
       <Location />

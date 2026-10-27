@@ -5,6 +5,7 @@ import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { governedRender, profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
+import { gpuProbeSettled, probeGpu, subscribeGpuProbe } from "../../lib/gpu-class.js";
 import { RenderGovernor } from "../scene/RenderGovernor.js";
 import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
@@ -55,6 +56,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
@@ -97,6 +99,12 @@ const GrandAssembly = lazy(loadGrandAssembly);
  * Computes render dimensions from room geometry polygon data.
  * Falls back to Grand Hall dimensions if no space is loaded.
  */
+// Which graphics draw the planner decides a desktop's profile (lib/gpu-class.ts).
+// Asked as the planner's code arrives, so the answer is usually in while the
+// layout and the room are still loading; the canvas waits for it (400 ms at
+// most), as a profile changed after the first frame would compile it twice.
+void probeGpu();
+
 const COMPACT_PLANNER_MAX_VIEWPORT_WIDTH = 1099;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
 
@@ -155,7 +163,10 @@ declare global {
 }
 
 function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean {
-  return event.pointerType === "touch" || event.button === 1 || event.button === 2;
+  // With the touch arbiter a finger is the camera's only once it orbits or
+  // pinches, which CameraRig marks; a finger placing or lifting is not.
+  if (event.pointerType === "touch") return !plannerFeatureEnabled("touchArbiter");
+  return event.button === 1 || event.button === 2;
 }
 
 function plannerTouchLookEnabled(): boolean {
@@ -268,9 +279,11 @@ export function PlannerScene(): ReactElement {
   const layoutFurnished = useEditorStore((s) => s.objects.length > 0);
   const viewportWidth = usePlannerViewportWidth();
   const nativeDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
-  // One render profile per page (phone, tablet or desktop); phones and tablets
-  // draw within a pixel budget instead of their full native density.
-  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), []);
+  // One render profile per page (phone, tablet, desktop or office); phones and
+  // tablets draw within a pixel budget instead of their full native density.
+  // Chosen once the graphics probe has answered, before the canvas exists.
+  const gpuKnown = useSyncExternalStore(subscribeGpuProbe, gpuProbeSettled, () => true);
+  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), [gpuKnown]);
   const profileDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
   // A device that cannot hold its frame rate gives up quality, a rung at a
   // time, cheapest to lose first (lib/render-governor.ts); `?governor=off`
@@ -577,6 +590,16 @@ export function PlannerScene(): ReactElement {
     clearCameraInteractionTimer();
     useCockpitStore.getState().setCameraInteractionActive(false);
   }, [clearCameraInteractionTimer]);
+
+  // Until the graphics probe answers (lib/gpu-class.ts): the host and the arrival, no canvas yet.
+  if (!gpuKnown) {
+    return (
+      <PlannerCanvasBoundary>
+        <div className="planner-scene-canvas-host" />
+        {showArrival && <PlannerArrival onEnter={enterRoom} />}
+      </PlannerCanvasBoundary>
+    );
+  }
 
   return (
     <PlannerCanvasBoundary>

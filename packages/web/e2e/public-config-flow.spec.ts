@@ -354,11 +354,11 @@ test.describe("Grand Hall public blank draft", () => {
 
     const inspector = page.getByRole("complementary", { name: "Furniture inspector" });
     await expect(inspector).toBeVisible();
-    for (const label of ["Tables", "Placed chairs", "Objects"]) {
-      await expect(inspector.locator("dl > div").filter({ has: page.getByText(label, { exact: true }) })
-        .locator("dd")).toHaveText("0");
-    }
-    await expect(inspector.getByRole("button", { name: "Add furniture", exact: true })).toBeEnabled();
+    // An empty floor says once where to start, with no zeros (QoL A-15).
+    await expect(inspector.getByText("Nothing on the floor yet. Add a table, or lay out for your guests.")).toBeVisible();
+    await expect(inspector.locator("dl")).toHaveCount(0);
+    await expect(inspector.getByRole("button", { name: "Add a table", exact: true })).toBeEnabled();
+    await expect(inspector.getByRole("button", { name: "Lay out tables and seats for your guests", exact: true })).toBeEnabled();
     await expect(page.getByTestId("save-send-panel")).not.toBeAttached();
   });
 });

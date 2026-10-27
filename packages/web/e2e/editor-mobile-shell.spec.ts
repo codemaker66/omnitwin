@@ -273,11 +273,13 @@ test.describe("3D planner mobile shell", () => {
       const tools = page.getByRole("toolbar", { name: "Planner tools" });
       await expect(tools).toBeVisible();
       expectWithinViewport(await tools.boundingBox(), viewport);
-      for (const name of ["Select", "Move", "Rotate", "Scale", "Measure"]) {
+      for (const name of ["Select", "Move", "Rotate", "Measure"]) {
         const tool = tools.getByRole("button", { name, exact: true });
         await expect(tool).toBeVisible();
         expectWithinViewport(await tool.boundingBox(), viewport);
       }
+      // Catalogue pieces have real sizes, so Scale is gone (spec D10, QoL B-07).
+      await expect(tools.getByRole("button", { name: "Scale", exact: true })).toHaveCount(0);
       // The current reference viewer discloses extra tools instead of using
       // the retired full-height rail. Verify the real controls remain usable.
       const more = page.getByRole("button", { name: "More planner tools", exact: true });

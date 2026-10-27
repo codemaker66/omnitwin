@@ -759,6 +759,20 @@
     },
     {
       "date": "2026-10-26",
+      "reason": "Phone touch on the planner (PR #196, card-dock lane P, Q-01): one ordinary case drives real CDP touches on a booted phone-sized planner with the backend stubbed and an uncaptured room centred on the origin. A quick swipe with a round in hand turns the view and places nothing; a quick tap places exactly one; a hold, a slide and a lift place it with the camera still; a still finger on a placed round lifts and carries it; two fingers walk and zoom and place nothing.",
+      "sourceCommit": "3dc6fb66ce034e159d2df4a2e3306247298c299f",
+      "sourceFile": "packages/web/e2e/planner-touch-arbiter.spec.ts",
+      "sourceFileGitBlobSha256": "34f02f86e656014fb39e327723d9b3a9daa07cf82efa5387c397d6ec33bd1643",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/planner-touch-arbiter.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f06c9e4c9c6e966efe630bba24a2e5fb5e4dab0e63e4efe7081c04fc3769b3b2",
+      "caseIds": [
+        "5596f33d6d2d5857ecfb-063336bbdae863fd1fe2"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; it switches the touch arbiter on with ?pf= and stubs the API before transport, so it proves the gestures in Chromium's emulated touch, not on a real phone's touch screen or GPU; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-26",
       "reason": "The Grand Assembly on for everyone (Blake, 26 Oct 2026: 'On for everyone now'): the case f1c17e56d03862f173b0-b202453e704508f538aa ('without the flag the layout simply opens') is restated as 'with no flag a layout plays the first time it opens, the Skip hurries it to its end, and it then opens as placed', because without the flag a layout now plays the first time it opens on a device. The case opens the same stubbed saved layout with no flag, presses the visible Skip once so the show plays on at speed to its end, records every state the control shows and requires that it came to rest without starting again, reloads, and holds the layout as placed.",
       "sourceCommit": "6b4e6f786cd6ecadffb2d596ddc26cab80b0135f",
       "sourceFile": "packages/web/e2e/grand-assembly.spec.ts",
@@ -769,7 +783,7 @@
         "f1c17e56d03862f173b0-bf9fe7baa65eb50ddff8"
       ],
       "expectedStatus": "passed",
-      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity f1c17e56d03862f173b0-b202453e704508f538aa one for one, so the totals (404 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. It proves the default, the Skip hurrying the show to its end and the per-device first-open rule in hosted Chromium, not the show's look or its frame time on a real phone; the Skip's second press and presses as the show comes to rest are stepped frame by frame in the unit suite (GrandAssembly.test.tsx). The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity f1c17e56d03862f173b0-b202453e704508f538aa one for one, so the totals (405 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. It proves the default, the Skip hurrying the show to its end and the per-device first-open rule in hosted Chromium, not the show's look or its frame time on a real phone; the Skip's second press and presses as the show comes to rest are stepped frame by frame in the unit suite (GrandAssembly.test.tsx). The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -5084,6 +5098,17 @@
       "suitePath": [
         "grand-assembly.spec.ts",
         "Grand Assembly behind ?assembly=accio"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5596f33d6d2d5857ecfb-063336bbdae863fd1fe2",
+      "file": "planner-touch-arbiter.spec.ts",
+      "title": "a swipe looks, a tap and a hold place, a hold lifts, two fingers walk",
+      "suitePath": [
+        "planner-touch-arbiter.spec.ts",
+        "the touch arbiter on a phone"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

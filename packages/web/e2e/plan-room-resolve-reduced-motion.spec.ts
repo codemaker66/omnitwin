@@ -44,7 +44,7 @@ test.describe("CARD A2 reduced motion", () => {
 
     await stubPlannerBootstrap(page);
 
-    await page.goto("/plan?capture=1");
+    await page.goto("/plan?capture=1&space=reception-room");
 
     await expect
       .poll(() => readPhase(page), { timeout: 20_000, message: "waiting for developing" })

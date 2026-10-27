@@ -95,23 +95,31 @@ export function televisionParts(size: AvSize): CraftedPart[] {
     // The mount behind the panel and the two uprights.
     { material: "steel-black", geometry: roundedBox([uprightX * 2 + 0.08, 0.36, 0.03], 0.004, [0, centre, -0.04], { segments: 1 }) },
   ];
+  // The base's rails ride on the castors and the uprights rise from the rails, so only the castors touch the floor.
+  const rail = 0.06;
+  const castors: { x: number; z: number; radius: number }[] = [];
   for (const side of [-1, 1] as const) {
     const x = side * uprightX;
-    parts.push({ material: "aluminium", geometry: roundedBox([0.06, centre + 0.22, 0.035], 0.006, [x, (centre + 0.22) / 2, -0.06], { segments: 1, grain: "y" }) });
-    parts.push(rod("steel-black", [[x, 0.06, -baseHalf], [x, 0.06, baseHalf]], 0.022, radial));
+    parts.push({ material: "aluminium", geometry: roundedBox([0.06, centre + 0.22 - rail, 0.035], 0.006, [x, rail + (centre + 0.22 - rail) / 2, -0.06], { segments: 1, grain: "y" }) });
+    parts.push(rod("steel-black", [[x, rail, -baseHalf], [x, rail, baseHalf]], 0.022, radial));
     for (const z of [-baseHalf, baseHalf]) {
-      parts.push({ material: "rubber", geometry: post([x, z], 0, 0.06, 0.03, 0.03, radial) });
+      parts.push({ material: "rubber", geometry: post([x, z], 0, rail, 0.03, 0.03, radial) });
+      castors.push({ x, z, radius: 0.05 });
     }
   }
   parts.push(rod("steel-black", [[-uprightX, 0.07, -0.06], [uprightX, 0.07, -0.06]], 0.018, radial));
   const boxes = [aoBox([screenW, screenH, 0.05], [0, centre, 0])];
   const caster = casterGeometry([
     aoBox([screenW, screenH, 0.05], [0, centre, 0]),
-    aoBox([0.05, centre, 0.03], [-uprightX, centre / 2, -0.06]),
-    aoBox([0.05, centre, 0.03], [uprightX, centre / 2, -0.06]),
-    aoBox([uprightX * 2 + 0.06, 0.05, depth - 0.06], [0, 0.06, 0]),
+    aoBox([0.05, centre - rail, 0.03], [-uprightX, rail + (centre - rail) / 2, -0.06]),
+    aoBox([0.05, centre - rail, 0.03], [uprightX, rail + (centre - rail) / 2, -0.06]),
+    aoBox([uprightX * 2 + 0.06, 0.05, depth - 0.06], [0, rail, 0]),
   ], { inset: 0.003 });
-  return [...baked(parts, boxes), { material: "shadow-caster", geometry: caster }];
+  return [
+    ...baked(parts, boxes),
+    { material: "contact", geometry: contactSpots(castors) },
+    { material: "shadow-caster", geometry: caster },
+  ];
 }
 
 /** A tall microphone stand: a tripod base, a chrome tube and the clip at its head. */
@@ -166,7 +174,8 @@ export function projectorParts(size: AvSize): CraftedPart[] {
     { material: "screen-glass", geometry: turned(post([0, 0], 0.028, 0.0305, 0.026, 0.026, detail.radial + 6), [width * 0.25, height / 2 + 0.006, -depth / 2 + 0.03]) },
   ];
   for (const x of [-width * 0.38, width * 0.38]) {
-    for (const z of [-depth * 0.35, depth * 0.35]) parts.push({ material: "rubber", geometry: post([x, z], 0, 0.008, 0.012, 0.012, 10) });
+    // Up into the body, which stands on them 12 mm clear of the table.
+    for (const z of [-depth * 0.35, depth * 0.35]) parts.push({ material: "rubber", geometry: post([x, z], 0, 0.013, 0.012, 0.012, 10) });
   }
   return [
     ...baked(parts, [aoBox([width, height, depth], [0, height / 2, 0])], 0.4),
@@ -212,6 +221,7 @@ export function handheldMicParts(size: AvSize): CraftedPart[] {
   return [
     { material: "plastic-dark", geometry: lathe([[0, 0], [r * 0.7, 0], [r * 0.75, 0.01], [r, height - grille * 2.1], [r * 1.05, height - grille * 1.9], [0, height - grille * 1.9]], radial) },
     { material: "chrome", geometry: lathe([[0, height - grille * 1.95], [grille * 0.9, height - grille * 1.8], [grille, height - grille], [grille * 0.85, height - grille * 0.35], [0, height]], radial) },
+    { material: "contact", geometry: contactSpots([{ x: 0, z: 0, radius: r + 0.02 }]) },
     { material: "shadow-caster", geometry: casterGeometry([aoRod([0, 0, 0], [0, height, 0], r * 1.8)], { inset: 0.001, minimum: 0.012 }) },
   ];
 }
@@ -228,6 +238,7 @@ export function lapelMicParts(size: AvSize): CraftedPart[] {
       { material: "steel-black", geometry: post([width * 0.18, 0], packH, height - 0.004, 0.003, 0.003, 8) },
       { material: "steel-black", geometry: roundedBox([0.008, 0.012, 0.008], 0.003, [width * 0.18, height - 0.006, 0], { segments: 1 }) },
     ], [pack]),
+    { material: "contact", geometry: contactSpots([{ x: 0, z: 0, radius: Math.max(width * 0.8, depth * 0.45) / 2 + 0.02 }]) },
     { material: "shadow-caster", geometry: casterGeometry([pack, lead], { inset: 0.001, minimum: 0.008 }) },
   ];
 }
@@ -242,6 +253,7 @@ export function tableMicParts(size: AvSize): CraftedPart[] {
     { material: "plastic-dark", geometry: lathe([[0, 0], [baseR, 0], [baseR, 0.012], [baseR * 0.7, 0.03], [0, 0.03]], radial + 6) },
     { material: "steel-black", geometry: tube({ points: neck, radius: 0.005, tension: 0.4, segmentsPerMetre: 60, radialSegments: radial }) },
     { material: "steel-black", geometry: post([0, 0.032], height - 0.03, height, 0.01, 0.008, radial) },
+    { material: "contact", geometry: contactSpots([{ x: 0, z: 0, radius: baseR + 0.025 }]) },
     { material: "shadow-caster", geometry: casterGeometry([aoBox([baseR * 1.8, 0.03, baseR * 1.8], [0, 0.015, 0]), aoRod(neck[0] ?? [0, 0, 0], neck[3] ?? [0, 0, 0], 0.012)], { inset: 0.001, minimum: 0.01 }) },
   ];
 }

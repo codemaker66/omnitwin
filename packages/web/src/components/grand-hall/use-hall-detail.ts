@@ -24,8 +24,13 @@ export interface HallDetailHandle {
 /** What a test may give the layer in place of the network and the worker. */
 export type HallDetailSeams = Pick<HallDetailOptions, "decoder" | "fetchBytes" | "fetchIndex" | "now">;
 
-/** The walls' detail layer for `slots` (the device's: hall-finish.ts) and photographs at `quality`. */
-export function useHallDetail(slots: number, quality: number, invalidate: () => void, seams: HallDetailSeams = {}): HallDetailHandle {
+/**
+ * The walls' detail layer for `slots` (the device's: hall-finish.ts) and photographs at `quality`. `renderer` is a
+ * key only: the layer fills its slot array by GPU copy alone and lets the decoded bytes go, so a new renderer (after
+ * a graphics reset, NativeCanvas) needs a new layer that streams the tiles again.
+ */
+export function useHallDetail(slots: number, quality: number, invalidate: () => void, seams: HallDetailSeams = {},
+  renderer: object | null = null): HallDetailHandle {
   const { decoder, fetchBytes, fetchIndex, now } = seams;
   const handle = useMemo(() => {
     const layer = new HallDetailLayer({
@@ -34,7 +39,7 @@ export function useHallDetail(slots: number, quality: number, invalidate: () => 
       ...(fetchIndex === undefined ? {} : { fetchIndex }), ...(now === undefined ? {} : { now }),
     });
     return { layer, wake: new DetailWake(invalidate) };
-  }, [decoder, fetchBytes, fetchIndex, invalidate, now, quality, slots]);
+  }, [decoder, fetchBytes, fetchIndex, invalidate, now, quality, renderer, slots]);
 
   useEffect(() => {
     const { layer, wake } = handle;
