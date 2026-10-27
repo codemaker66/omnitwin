@@ -204,15 +204,35 @@ export function errorLogSerializer(err: unknown): SerializedError {
  */
 export type ScrubbableTransaction = Parameters<NonNullable<NodeOptions["beforeSendTransaction"]>>[0];
 
-/** Span / trace attribute keys whose value is, or contains, a URL. */
-const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target"];
+/** Span / trace attribute keys whose value is, or contains, a URL. The
+ *  Fastify span writes the request url, query included, to `url.path`. */
+const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target", "url.path"];
 
-/** Span / trace attribute keys that hold a bare query string. */
-const QUERY_ATTRIBUTE_KEYS: readonly string[] = ["url.query", "http.query"];
+/** Span / trace attribute keys that hold a bare query string, or the caller's
+ *  address: node-core records the first X-Forwarded-For entry (behind Railway,
+ *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. */
+const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
+  "url.query", "http.query",
+  "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
+];
+
+/** Request headers that carry a credential or the caller's address. */
+const DROPPED_REQUEST_HEADERS: readonly string[] = [
+  "authorization", "cookie",
+  "x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip",
+];
+
+function dropRequestHeaders(headers: Record<string, string> | undefined): void {
+  if (headers === undefined) return;
+  for (const key of Object.keys(headers)) {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- header bags are open-ended records
+    if (DROPPED_REQUEST_HEADERS.includes(key.toLowerCase())) delete headers[key];
+  }
+}
 
 function scrubAttributes(data: Record<string, unknown> | undefined): void {
   if (data === undefined) return;
-  for (const key of QUERY_ATTRIBUTE_KEYS) {
+  for (const key of DROPPED_ATTRIBUTE_KEYS) {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- attribute bags are open-ended records
     delete data[key];
   }
@@ -239,10 +259,7 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
     if (event.request.url !== undefined) {
       event.request.url = withoutQuery(event.request.url);
     }
-    if (event.request.headers !== undefined) {
-      delete event.request.headers["authorization"];
-      delete event.request.headers["cookie"];
-    }
+    dropRequestHeaders(event.request.headers);
   }
   return templateCapabilityPathsDeep(event);
 }
@@ -285,6 +302,11 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
       event.request.url = withoutQuery(event.request.url);
     }
     delete event.request.query_string;
+    // The SDK keeps an incoming request's body on its transaction (the
+    // http integration's maxIncomingRequestBodySize, "medium" by default):
+    // an enquiry's name, email, phone and allergy note.
+    event.request.data = undefined;
+    dropRequestHeaders(event.request.headers);
   }
   scrubAttributes(event.contexts?.trace?.data);
   for (const span of event.spans ?? []) {

@@ -42,6 +42,27 @@ describe("templateCapabilityPaths", () => {
     expect(templateCapabilityPaths(input)).toBe(input);
   });
 
+  it("templates whatever the case, as the router matches paths", () => {
+    expect(templateCapabilityPaths("https://venviewer.com/Proposal-Share/tok_SECRET123")).toBe("https://venviewer.com/Proposal-Share/:token");
+    expect(templateCapabilityPaths("/PLAN-VIEW/tok_SECRET123")).toBe("/PLAN-VIEW/:token");
+  });
+
+  const LAYOUT = "2b9f1c3e-5d8a-4c1b-9e7f-0a1b2c3d4e5f";
+  it.each([
+    [`/configurations/${LAYOUT}/claim`, "/configurations/:token/claim"],
+    [`https://api.venviewer.com/configurations/${LAYOUT}/objects/batch`, "https://api.venviewer.com/configurations/:token/objects/batch"],
+    [`wss://api.venviewer.com/ws/configurations/${LAYOUT}`, "wss://api.venviewer.com/ws/configurations/:token"],
+    [`/hallkeeper/${LAYOUT}`, "/hallkeeper/:token"],
+    [`/blueprint/${LAYOUT.toUpperCase()}`, "/blueprint/:token"],
+  ])("templates a layout's id in %s", (input, expected) => {
+    expect(templateCapabilityPaths(input)).toBe(expected);
+  });
+
+  it.each(["/configurations/summaries", "/configurations/reviews", "/hallkeeper/today", "/hallkeeper/walkthrough", "/blueprint"])(
+    "keeps the route named in words, %s",
+    (input) => { expect(templateCapabilityPaths(input)).toBe(input); },
+  );
+
   it("templates every url in a message and keeps the words around them", () => {
     expect(templateCapabilityPaths(`GET https://api.venviewer.com/proposal-share/${TOKEN}/approve failed (from /plan-view/${TOKEN}), retrying`))
       .toBe("GET https://api.venviewer.com/proposal-share/:token/approve failed (from /plan-view/:token), retrying");

@@ -14,11 +14,12 @@ import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction } from "./redact.js"
 //   2. Init BEFORE Fastify routes register so the instrumentation
 //      patches the HTTP layer before any handler runs.
 //   3. Scrub PII — we never send `request.user.email`, the caller's IP
-//      address or planner notes to Sentry. The beforeSend hook strips
-//      request bodies; query strings and capability tokens are scrubbed
-//      everywhere (error events, breadcrumbs, transactions and their
-//      spans), because the search routes carry a name, email or phone in
-//      `?q=` and a share link's token opens what it shares.
+//      address or planner notes to Sentry. Request bodies are dropped from
+//      error events and transactions; query strings, capability tokens and
+//      the caller's address are scrubbed everywhere (error events,
+//      breadcrumbs, transactions and their spans), because the search
+//      routes carry a name, email or phone in `?q=` and a share link's
+//      token opens what it shares.
 //   4. One capture path: the error normaliser's 5xx hook. The SDK's own
 //      Fastify integration keeps tracing and captures nothing.
 // ---------------------------------------------------------------------------
@@ -60,12 +61,12 @@ export interface FastifyIntegrationOptions {
 /**
  * One capture path. With tracing on, the SDK's own Fastify integration also
  * captures what a route handler throws, judged before the error handler has
- * set the status (still 200 then): each 5xx a second time beside the
- * normaliser's hook (on 18 Oct 2026 the stored event was the integration's,
- * without the hook's route tags), and the errors that answer 400 or 404,
- * which the normaliser keeps out on purpose. The normaliser's 5xx hook
- * (`buildSentryCapture`) is the API's one capture path; the integration keeps
- * its tracing and captures nothing.
+ * set the status (still 200 then). It captured each 5xx first, so the SDK
+ * dropped the normaliser hook's capture of the same error and the stored
+ * event lacked the hook's route tags (seen 18 Oct 2026); and it captured the
+ * errors that answer 400 or 404, which the normaliser keeps out on purpose.
+ * The normaliser's 5xx hook (`buildSentryCapture`) is the API's one capture
+ * path; the integration keeps its tracing and captures nothing.
  */
 export function withOneCapturePath(
   makeFastifyIntegration: (options: FastifyIntegrationOptions) => Integration,

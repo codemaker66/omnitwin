@@ -6,6 +6,11 @@
 // it through the public routes. Error reports, breadcrumbs, spans and request
 // logs keep the route and lose that segment, which becomes ":token". Paths
 // such as /dashboard/proposals are left alone.
+//
+// A layout's id is also the segment after /configurations/ (the claim, the
+// planner's own reads and saves, its live channel), /hallkeeper/ and
+// /blueprint/: there it is templated when it is an id (a uuid), so the
+// routes named in words (/configurations/summaries, /hallkeeper/today) stay.
 // ---------------------------------------------------------------------------
 
 /** The path prefixes, without slashes, whose next segment is a capability. */
@@ -20,21 +25,36 @@ export const CAPABILITY_PATH_PREFIXES: readonly string[] = [
   "public/configurations",
 ];
 
+/** The path prefixes whose next segment is a layout's id when it is a uuid. */
+export const LAYOUT_ID_PATH_PREFIXES: readonly string[] = ["configurations", "hallkeeper", "blueprint"];
+
 /** What a capability segment reads as once templated. */
 export const CAPABILITY_SEGMENT_MARKER = ":token";
+
+function alternation(prefixes: readonly string[]): string {
+  return prefixes.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|");
+}
 
 // The prefix must start a path segment and be followed by "/", so
 // /floor-plan/x, /plan-views/x and /proposals/x are not mistaken for one.
 // The segment stops where a path, query, fragment, quote, bracket or
 // separator would, so text around a url (and a JSON string's escapes) stays.
+// Case-insensitive, as the router matches paths: /Proposal-Share/x opens it.
+const SEGMENT_END = "/?#\\s\"'`<>()[\\]{},;\\\\";
 const CAPABILITY_SEGMENT = new RegExp(
-  `(/(?:${CAPABILITY_PATH_PREFIXES.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")})/)[^/?#\\s"'\`<>()[\\]{},;\\\\]+`,
-  "gu",
+  `(/(?:${alternation(CAPABILITY_PATH_PREFIXES)})/)[^${SEGMENT_END}]+`,
+  "giu",
+);
+const LAYOUT_ID_SEGMENT = new RegExp(
+  `(/(?:${alternation(LAYOUT_ID_PATH_PREFIXES)})/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=[${SEGMENT_END}]|$)`,
+  "giu",
 );
 
 /** The same text with every capability segment in it replaced by ":token". */
 export function templateCapabilityPaths(text: string): string {
-  return text.replace(CAPABILITY_SEGMENT, `$1${CAPABILITY_SEGMENT_MARKER}`);
+  return text
+    .replace(CAPABILITY_SEGMENT, `$1${CAPABILITY_SEGMENT_MARKER}`)
+    .replace(LAYOUT_ID_SEGMENT, `$1${CAPABILITY_SEGMENT_MARKER}`);
 }
 
 function isPlainRecord(value: object): value is Record<string, unknown> {

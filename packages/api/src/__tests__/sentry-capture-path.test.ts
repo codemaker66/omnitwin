@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { Writable } from "node:stream";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { registerErrorNormalizer } from "../middleware/error-normalizer.js";
 import { apiLoggerOptions } from "../observability/health-redaction.js";
 import { buildSentryCapture, initSentry } from "../observability/sentry.js";
@@ -20,9 +20,14 @@ import { buildSentryCapture, initSentry } from "../observability/sentry.js";
 // ---------------------------------------------------------------------------
 
 const TOKEN = "tok_SECRET_share_0123456789";
+/** The visitor, as Railway's proxy reports them in X-Forwarded-For. */
+const VISITOR_IP = "203.0.113.77";
+const GUEST_EMAIL = "jane.guest@example.com";
+const NOTE = "Severe peanut allergy";
 
 interface SentEvent {
   readonly level?: string;
+  readonly transaction?: string;
   readonly tags?: Record<string, string>;
   readonly contexts?: Record<string, unknown>;
   readonly request?: { readonly url?: string };
@@ -30,20 +35,21 @@ interface SentEvent {
   readonly exception?: { readonly values?: readonly { readonly value?: string; readonly mechanism?: { readonly type?: string } }[] };
 }
 
-/** The error events in the envelopes received so far (an envelope is
+/** The items of one type in the envelopes received so far (an envelope is
  *  newline-separated JSON: its header, then item header and payload pairs). */
-function eventsIn(envelopes: readonly string[]): { event: SentEvent; raw: string }[] {
-  const events: { event: SentEvent; raw: string }[] = [];
+function itemsIn(envelopes: readonly string[], type: "event" | "transaction"): { event: SentEvent; raw: string }[] {
+  const items: { event: SentEvent; raw: string }[] = [];
   for (const envelope of envelopes) {
     const lines = envelope.split("\n").filter((line) => line.trim() !== "");
     for (let index = 1; index + 1 < lines.length; index += 2) {
       const header = JSON.parse(lines[index] ?? "{}") as { type?: string };
       const payload = lines[index + 1] ?? "{}";
-      if (header.type === "event") events.push({ event: JSON.parse(payload) as SentEvent, raw: payload });
+      if (header.type === type) items.push({ event: JSON.parse(payload) as SentEvent, raw: payload });
     }
   }
-  return events;
+  return items;
 }
+const eventsIn = (envelopes: readonly string[]): { event: SentEvent; raw: string }[] => itemsIn(envelopes, "event");
 
 describe("the API's errors in Sentry", () => {
   const envelopes: string[] = [];
@@ -71,6 +77,9 @@ describe("the API's errors in Sentry", () => {
       SENTRY_TRACES_SAMPLE_RATE: 1,
     } as const;
 
+    // The SDK's transport honours http_proxy; the stand-in ingest is local.
+    vi.stubEnv("http_proxy", "");
+    vi.stubEnv("HTTP_PROXY", "");
     // As index.ts: Sentry before Fastify, so its instrumentation sees the server.
     await initSentry(env);
     flush = (await import("@sentry/node")).flush;
@@ -87,6 +96,7 @@ describe("the API's errors in Sentry", () => {
     server.get("/missing", () => { throw Object.assign(new Error("No such proposal"), { statusCode: 404 }); });
     server.post("/invalid", (request) => z.object({ guests: z.number() }).parse(request.body));
     server.post("/proposal-share/:token/approve", () => { throw new Error("approval could not be stored"); });
+    server.get("/clients/search", () => ({ data: [] }));
     await server.listen({ port: 0, host: "127.0.0.1" });
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
   }, 60_000);
@@ -94,13 +104,15 @@ describe("the API's errors in Sentry", () => {
   async function call(method: string, path: string, body?: unknown): Promise<number> {
     const response = await fetch(`${base}${path}`, {
       method,
-      ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+      headers: { "x-forwarded-for": VISITOR_IP, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     await response.arrayBuffer();
     return response.status;
   }
 
   afterAll(async () => {
+    vi.unstubAllEnvs();
     await server?.close();
     await new Promise<void>((resolve) => { ingest?.close(() => { resolve(); }); });
   });
@@ -109,7 +121,8 @@ describe("the API's errors in Sentry", () => {
     expect(await call("GET", "/boom")).toBe(500);
     expect(await call("GET", "/missing")).toBe(404);
     expect(await call("POST", "/invalid", { guests: "many" })).toBe(400);
-    expect(await call("POST", `/proposal-share/${TOKEN}/approve`)).toBe(500);
+    expect(await call("POST", `/proposal-share/${TOKEN}/approve`, { name: "Jane Guest", email: GUEST_EMAIL, dietary: NOTE })).toBe(500);
+    expect(await call("GET", `/clients/search?q=${encodeURIComponent(GUEST_EMAIL)}`)).toBe(200);
     expect(await flush(5_000)).toBe(true);
 
     const events = eventsIn(envelopes);
@@ -122,7 +135,7 @@ describe("the API's errors in Sentry", () => {
     }
   });
 
-  it("sends neither the visitor's IP address nor the share token, in events or transactions", () => {
+  it("sends neither the visitor's IP address, the share token nor the request body, in events or transactions", () => {
     const approval = eventsIn(envelopes).find(({ event }) => event.tags?.["route.url"] === "/proposal-share/:token/approve");
     expect(approval).toBeDefined();
     // The request id joins the event to its log line; no address beside it.
@@ -130,9 +143,18 @@ describe("the API's errors in Sentry", () => {
     expect(approval?.event.user?.ip_address).toBeUndefined();
     expect(approval?.event.request?.url).toBe(`${base}/proposal-share/:token/approve`);
     expect(approval?.raw).not.toContain(TOKEN);
-    // Nor anywhere else: transactions, their spans and every other envelope.
-    expect(envelopes.some((envelope) => envelope.includes("\"type\":\"transaction\""))).toBe(true);
-    expect(envelopes.join("\n")).not.toContain(TOKEN);
+    // Nor in the approval's transaction and its spans.
+    const transaction = itemsIn(envelopes, "transaction").find(({ event }) => event.transaction === "POST /proposal-share/:token/approve");
+    expect(transaction).toBeDefined();
+    expect(transaction?.raw).not.toContain(TOKEN);
+    expect(transaction?.raw).not.toContain(VISITOR_IP);
+    expect(itemsIn(envelopes, "transaction").some(({ event }) => event.transaction === "GET /clients/search")).toBe(true);
+    // Nor anywhere else: no envelope holds the token, the visitor's address,
+    // the request body (the guest's email and allergy note) or the search term.
+    const everything = envelopes.join("\n");
+    for (const secret of [TOKEN, VISITOR_IP, GUEST_EMAIL, encodeURIComponent(GUEST_EMAIL), "jane.guest", "peanut"]) {
+      expect(everything).not.toContain(secret);
+    }
   });
 
   it("keeps the share token out of the request log", () => {
