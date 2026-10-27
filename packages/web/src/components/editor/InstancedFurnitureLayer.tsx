@@ -18,6 +18,7 @@ import {
   normalizedFurniturePresentationScale,
 } from "../FurnitureProxy.js";
 import { GltfFurnitureTemplateContext } from "../meshes/GltfFurnitureTemplateContext.js";
+import { isFloorShadeMaterial } from "../meshes/crafted/crafted-materials.js";
 import { isImportedFurnitureMaterial } from "../../lib/gltf-furniture-instance.js";
 import { furnitureMaterialParts } from "../../lib/gltf-furniture-parts.js";
 import { composeFurnitureMotion, furnitureMotionPose, subscribeFurnitureSettleFrames, type FurnitureMotionPose } from "../../lib/furniture-motion.js";
@@ -82,6 +83,11 @@ interface MaterialAppearance {
 interface MaterialShadows {
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
+  /**
+   * The layers the template meshes drew on (a mask): a shadow stand-in on the
+   * caster layer alone (hall-sun.ts) stays out of the view in its batch too.
+   */
+  readonly layers: number;
 }
 
 const noRaycast: Object3D["raycast"] = () => undefined;
@@ -191,6 +197,7 @@ export function harvestVariant(root: Object3D): HarvestedVariant {
         shadowsByKey.set(key, {
           castShadow: (shadows?.castShadow ?? false) || mesh.castShadow,
           receiveShadow: (shadows?.receiveShadow ?? false) || mesh.receiveShadow,
+          layers: (shadows?.layers ?? 0) | mesh.layers.mask,
         });
         parts.push({ geometry, materialKey: key, matrix });
       }
@@ -254,6 +261,13 @@ export interface EditableInstancePool {
   readonly slots: { items: readonly PlacedItem[] | null; readonly byId: Map<string, number> };
   /** Items drawn as a reveal presents them (floor/presentation-channel.ts), not as placed. */
   readonly presented: Set<string>;
+  /**
+   * The batches that shade the floor under each foot (crafted-materials.ts).
+   * They share the pieces' transforms, so while a reveal moves or hides the
+   * pieces they are not drawn: a moving piece's shade belongs on the floor,
+   * where FurnitureContactShadows draws it as the reveal presents it.
+   */
+  readonly floorShades: readonly InstancedMesh[];
 }
 
 const WRITTEN_STRIDE = 5;
@@ -290,6 +304,7 @@ export function createEditableInstancePool(
     mesh.frustumCulled = false;
     mesh.castShadow = shadows.castShadow;
     mesh.receiveShadow = shadows.receiveShadow;
+    mesh.layers.mask = shadows.layers;
     mesh.raycast = noRaycast;
     meshes.push(mesh);
   }
@@ -301,6 +316,7 @@ export function createEditableInstancePool(
     settling: new Set(),
     slots: { items: null, byId: new Map() },
     presented: new Set(),
+    floorShades: meshes.filter((mesh) => !Array.isArray(mesh.material) && isFloorShadeMaterial(mesh.material)),
   };
 }
 
@@ -451,14 +467,19 @@ export function drawEditablePresentation(
   itemScale: number,
   frame: PresentationFrame | null,
 ): boolean {
-  if (frame === null && pool.presented.size === 0) return false;
+  if (frame === null && pool.presented.size === 0) {
+    for (const mesh of pool.floorShades) mesh.visible = true;
+    return false;
+  }
   const count = Math.min(items.length, pool.capacity);
   let first = pool.capacity;
   let last = -1;
+  let presenting = false;
   for (let index = 0; index < count; index += 1) {
     const item = items[index];
     if (item === undefined) continue;
     const shown = frame === null ? null : presentedPiece(frame, item.id);
+    if (shown !== null) presenting = true;
     if (shown === null) {
       if (!pool.presented.delete(item.id)) continue;
       composeEditableSlot(pool, index, item, editableInstanceScale(item, itemScale), null);
@@ -481,6 +502,7 @@ export function drawEditablePresentation(
   }
   // Items gone from the list since they were presented are not drawn at all.
   if (frame === null) pool.presented.clear();
+  for (const mesh of pool.floorShades) mesh.visible = !presenting;
   if (last < 0) return false;
   uploadEditableSlots(pool, first, last);
   return true;
@@ -544,6 +566,7 @@ function DirectInstanceBatch({
   itemScale,
   castShadow,
   receiveShadow,
+  layers,
   setNonPickable,
 }: {
   readonly geometry: BufferGeometry;
@@ -552,6 +575,7 @@ function DirectInstanceBatch({
   readonly itemScale: number;
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
+  readonly layers: number;
   readonly setNonPickable: (mesh: InstancedMesh | null) => void;
 }): React.ReactElement {
   const meshRef = useRef<InstancedMesh | null>(null);
@@ -561,6 +585,11 @@ function DirectInstanceBatch({
     meshRef.current = mesh;
     setNonPickable(mesh);
   }, [setNonPickable]);
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (mesh !== null) mesh.layers.mask = layers;
+  }, [layers]);
 
   useLayoutEffect(() => {
     const mesh = meshRef.current;
@@ -745,6 +774,7 @@ export function InstancedFurnitureLayer({
               itemScale={itemScale}
               castShadow={shadows.castShadow}
               receiveShadow={shadows.receiveShadow}
+              layers={shadows.layers}
               setNonPickable={setNonPickable}
             />
           );

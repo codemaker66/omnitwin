@@ -54,7 +54,7 @@ import { LEGACY_RENDER_COORDINATE_SPACE, REAL_METRE_COORDINATE_SPACE } from "../
 
 const VALID_PAYLOAD: Record<string, unknown> = {
   config: {
-    id: "00000000-0000-0000-0000-000000000001",
+    id: "00000000-0000-4000-8000-000000000001",
     name: "Anderson Wedding Reception",
     guestCount: 120,
     layoutStyle: "dinner-rounds",
@@ -117,7 +117,7 @@ describe("parseStoredSnapshotPayload", () => {
             isAccessory: false,
             notes: "",
             positions: [{
-              objectId: "00000000-0000-0000-0000-000000000001",
+              objectId: "00000000-0000-4000-8000-000000000001",
               x: 12,
               z: -8,
               rotationY: 0.5,
@@ -250,7 +250,7 @@ describe("buildSheetApproval", () => {
 
 
 describe("resolveApprovedSnapshotPayload", () => {
-  const configId = "00000000-0000-0000-0000-000000000001";
+  const configId = "00000000-0000-4000-8000-000000000001";
   const stamp = { version: 3, approvedAt: "2026-04-17T14:30:00.000Z", approverName: "Catherine Tait" };
   const snapshot = {
     payload: { ...VALID_PAYLOAD, approval: stamp },

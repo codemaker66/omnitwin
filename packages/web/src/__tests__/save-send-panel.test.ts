@@ -4,12 +4,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // SaveSendPanel + GuestEnquiryModal tests
 // ---------------------------------------------------------------------------
 
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
 }));
@@ -387,9 +387,12 @@ describe("GuestEnquiryModal retail polish — source-grep", () => {
     return { raw, codeOnly };
   }
 
-  it("copies planner links and resolves legacy catalogue slugs in the success summary", async () => {
+  it("shares a view-only link, never the planner address, and resolves legacy catalogue slugs in the success summary", async () => {
+    // planner-qol E-10: /plan/<id> is an anonymous plan's edit capability, so
+    // the success screen copies a view-only link made by the shared hook.
     const { codeOnly } = await readSource("src/components/editor/GuestEnquiryModal.tsx");
-    expect(codeOnly).toContain("/plan/${configId}");
+    expect(codeOnly).toContain("useVisitorPlanLinks(configId)");
+    expect(codeOnly).not.toContain("/plan/${configId}");
     expect(codeOnly).toContain("c.slug === item.catalogueItemId");
     expect(codeOnly).not.toContain("/editor/${configId}");
   });

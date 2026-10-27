@@ -10,7 +10,7 @@ let server: FastifyInstance;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
-const CONFIG_ID = "00000000-0000-0000-0000-000000000050";
+const CONFIG_ID = "00000000-0000-4000-8000-000000000050";
 
 // ---------------------------------------------------------------------------
 // POST /public/enquiries — guest enquiry submission

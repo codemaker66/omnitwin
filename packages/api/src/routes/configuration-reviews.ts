@@ -70,9 +70,9 @@ import {
 // structural + role legality.
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
 const VersionParam = z.object({
-  configId: z.string().uuid(),
+  configId: z.uuid(),
   version: z.coerce.number().int().positive(),
 });
 

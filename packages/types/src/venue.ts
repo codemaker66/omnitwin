@@ -4,7 +4,7 @@ import { z } from "zod";
 // Venue ID — UUID v4
 // ---------------------------------------------------------------------------
 
-export const VenueIdSchema = z.string().uuid();
+export const VenueIdSchema = z.uuid();
 
 export type VenueId = z.infer<typeof VenueIdSchema>;
 
@@ -85,7 +85,7 @@ export const VenueSchema = z.object({
   name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
   address: z.string().trim().min(1, "Address must not be empty").max(500, "Address must be at most 500 characters"),
   slug: VenueSlugSchema,
-  logoUrl: z.string().url("Logo URL must be a valid URL").nullable(),
+  logoUrl: z.url("Logo URL must be a valid URL").nullable(),
   brandColour: BrandColourSchema,
   /**
    * IANA timezone identifier. Drives the venue's operational clock for
@@ -94,8 +94,8 @@ export const VenueSchema = z.object({
    * rollout overrides per-venue at creation.
    */
   timezone: TimezoneSchema.default(DEFAULT_VENUE_TIMEZONE),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
-  updatedAt: z.string().datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
+  createdAt: z.iso.datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
+  updatedAt: z.iso.datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
 });
 
 export type Venue = z.infer<typeof VenueSchema>;
@@ -108,7 +108,7 @@ export const CreateVenueSchema = z.object({
   name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
   address: z.string().trim().min(1, "Address must not be empty").max(500, "Address must be at most 500 characters"),
   slug: VenueSlugSchema,
-  logoUrl: z.string().url("Logo URL must be a valid URL").nullable(),
+  logoUrl: z.url("Logo URL must be a valid URL").nullable(),
   brandColour: BrandColourSchema,
   timezone: TimezoneSchema.default(DEFAULT_VENUE_TIMEZONE),
 });

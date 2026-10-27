@@ -245,7 +245,13 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
       try {
         const { currentStatus, internalDemoReviewEligible } = await getAvailableTransitions(configId);
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated by cleanup closure
-        if (!cancelled) { setReviewStatus(currentStatus); setDemoEligible(internalDemoReviewEligible); setEligibilityConfigId(configId); }
+        if (!cancelled) {
+          setReviewStatus(currentStatus);
+          // The editor's view-only reason follows the review state too.
+          useEditorStore.getState().setReviewStatus(configId, currentStatus);
+          setDemoEligible(internalDemoReviewEligible);
+          setEligibilityConfigId(configId);
+        }
       } catch {
         // Silent — the panel degrades to "not available" state instead
         // of blocking the editor on a transient network hiccup. User can
@@ -293,6 +299,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
         const result = await submitReviewWithNotifications(configId, eligibleHere ? notifyTeam : undefined);
         if (!isCurrentEditorSession(session) || submitOperation.current !== operation) return;
         setReviewStatus(result.reviewStatus);
+        useEditorStore.getState().setReviewStatus(configId, result.reviewStatus);
         if (result.notificationPolicy === "suppressed_demo") setCompletion("Submitted for internal demo review. Team notifications were suppressed.");
       } catch (err) {
         if (isCurrentEditorSession(session) && submitOperation.current === operation) {
@@ -315,6 +322,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
         const next = await withdrawConfigurationReview(configId);
         if (!isCurrentEditorSession(session) || submitOperation.current !== operation) return;
         setReviewStatus(next);
+        useEditorStore.getState().setReviewStatus(configId, next);
       } catch (err) {
         if (isCurrentEditorSession(session) && submitOperation.current === operation) {
           setError(err instanceof Error ? err.message : "Failed to withdraw");

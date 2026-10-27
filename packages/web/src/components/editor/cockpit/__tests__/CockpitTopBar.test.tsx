@@ -53,11 +53,18 @@ describe("CockpitTopBar", () => {
     expect(screen.getByText("BF")).toBeTruthy();
   });
 
-  it("opens the Layers menu and toggles an overlay in the cockpit store", () => {
+  it("shows the room capture's state to staff only, never the engineering words", () => {
     renderTopBar();
-    expect(screen.queryByRole("menu", { name: /layers/i })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /layers/i }));
-    const menu = screen.getByRole("menu", { name: /layers/i });
+    expect(screen.queryByTestId("cockpit-runtime-chip")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/runtime asset|splat/iu);
+  });
+
+  it("opens the planning overlays menu and toggles an overlay in the cockpit store", () => {
+    renderTopBar();
+    expect(screen.queryByRole("menu", { name: "Planning overlays" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /layers/iu })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Planning overlays" }));
+    const menu = screen.getByRole("menu", { name: "Planning overlays" });
     expect(useCockpitStore.getState().overlayVisibility.densityHeatmap).toBe(true);
     fireEvent.click(within(menu).getByRole("menuitemcheckbox", { name: /density heatmap/i }));
     expect(useCockpitStore.getState().overlayVisibility.densityHeatmap).toBe(false);

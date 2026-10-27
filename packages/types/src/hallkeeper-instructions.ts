@@ -44,7 +44,7 @@ export const DayOfContactSchema = z.object({
   name: z.string().min(1).max(120),
   role: z.string().max(120).default(""),
   phone: z.string().max(40).default(""),
-  email: z.string().email().max(255).or(z.literal("")).default(""),
+  email: z.email().max(255).or(z.literal("")).default(""),
 });
 export type DayOfContact = z.infer<typeof DayOfContactSchema>;
 
@@ -60,7 +60,7 @@ export type DayOfContact = z.infer<typeof DayOfContactSchema>;
 export const PhaseDeadlineSchema = z.object({
   phase: SetupPhaseSchema,
   /** ISO-8601 datetime this phase must be complete by. */
-  deadline: z.string().datetime(),
+  deadline: z.iso.datetime(),
   /** Optional short justification ("boss arrives early", "AV check"). */
   reason: z.string().max(200).default(""),
 });
@@ -145,7 +145,7 @@ export const ConfigurationMetadataSchema = z.object({
    * written by the planner with the layout (packages/web lib/gangway-review-record).
    */
   gangwayReview: GangwayReviewSchema.optional(),
-}).passthrough();
+}).loose();
 export type ConfigurationMetadata = z.infer<typeof ConfigurationMetadataSchema>;
 
 // ---------------------------------------------------------------------------
@@ -169,7 +169,7 @@ export const PlacedObjectMetadataSchema = z.object({
   groupId: z.string().nullable().optional(),
   displayLabel: z.string().max(80).optional(),
   notes: z.string().max(500).optional(),
-}).passthrough();
+}).loose();
 export type PlacedObjectMetadata = z.infer<typeof PlacedObjectMetadataSchema>;
 
 // ---------------------------------------------------------------------------

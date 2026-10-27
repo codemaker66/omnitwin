@@ -8,19 +8,23 @@ import { getUserByClerkId, normalizeAuthEmail } from "../middleware/auth.js";
 import { evictClerkEmailCacheEntry } from "../middleware/clerk-email.js";
 
 const ClerkEmailAddressSchema = z.object({
-  email_address: z.string().email(),
+  email_address: z.email(),
   id: z.string().min(1),
   verification: z.object({ status: z.string().optional() }).nullable().optional(),
 });
 
+// A bound lets zod stop at an over-long list instead of reporting every bad
+// entry in it (GHSA-mrhx-c7xc-m3w5); no Clerk account comes near it.
+const CLERK_LIST_MAX = 100;
+
 const ClerkUserDataSchema = z.object({
   id: z.string().min(1),
-  email_addresses: z.array(ClerkEmailAddressSchema),
+  email_addresses: z.array(ClerkEmailAddressSchema).max(CLERK_LIST_MAX),
   primary_email_address_id: z.string().nullable(),
   first_name: z.string().nullable(),
   last_name: z.string().nullable(),
-  phone_numbers: z.array(z.object({ phone_number: z.string() })),
-  public_metadata: z.record(z.unknown()),
+  phone_numbers: z.array(z.object({ phone_number: z.string() })).max(CLERK_LIST_MAX),
+  public_metadata: z.record(z.string(), z.unknown()),
   username: z.string().nullable().optional(),
 });
 
@@ -38,7 +42,8 @@ const SupportedClerkWebhookEventSchema = z.discriminatedUnion("type", [
 
 const ClerkWebhookEnvelopeSchema = z.object({
   type: z.string().min(1),
-  data: z.unknown(),
+  // Optional as under zod 3: an event type we ignore is ignored, data or not.
+  data: z.unknown().optional(),
 });
 
 type ClerkUserData = z.infer<typeof ClerkUserDataSchema>;
@@ -47,7 +52,7 @@ export type SupportedClerkWebhookEvent = z.infer<typeof SupportedClerkWebhookEve
 export type ParsedClerkWebhookPayload =
   | { readonly kind: "supported"; readonly event: SupportedClerkWebhookEvent }
   | { readonly kind: "ignored"; readonly type: string }
-  | { readonly kind: "invalid"; readonly issues: readonly z.ZodIssue[] };
+  | { readonly kind: "invalid"; readonly issues: readonly z.core.$ZodIssue[] };
 
 export interface ClerkUserUpdate {
   readonly email?: string;

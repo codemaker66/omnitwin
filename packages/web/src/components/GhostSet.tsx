@@ -1,6 +1,6 @@
 import { Html } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { BufferAttribute, BufferGeometry, Object3D, Vector3, type Group } from "three";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
@@ -150,15 +150,21 @@ export interface GhostSetProps {
   readonly warming: boolean;
   /** Whether the card was dragged out (the chip's second line says what letting go does). */
   readonly fromCardDrag: boolean;
+  /** Told the set's group as it mounts and unmounts (PlacementGhost's warm-up waits until it is drawn). */
+  readonly groupRef?: (group: Group | null) => void;
 }
 
 const _ahead = new Vector3();
 
-export function GhostSet({ params, warming, fromCardDrag }: GhostSetProps): ReactElement {
+export function GhostSet({ params, warming, fromCardDrag, groupRef }: GhostSetProps): ReactElement {
   const { camera, gl, invalidate } = useThree();
   const ghostRotation = usePlacementStore((state) => state.ghostRotation);
   const hasGhost = usePlacementStore((state) => state.ghostPosition !== null);
-  const group = useRef<Group>(null);
+  const group = useRef<Group | null>(null);
+  const setGroup = useCallback((node: Group | null) => {
+    group.current = node;
+    groupRef?.(node);
+  }, [groupRef]);
   const pieceGroups = useRef<(Object3D | null)[]>([]);
   const hairline = useMemo(() => {
     const built = new BufferGeometry();
@@ -287,7 +293,7 @@ export function GhostSet({ params, warming, fromCardDrag }: GhostSetProps): Reac
   const warmedSkin = refusing || warming;
   return (
     <>
-      <group ref={group} scale={hasGhost ? 1 : 1e-4} visible={hasGhost || warming} name="placement-ghost-set">
+      <group ref={setGroup} scale={hasGhost ? 1 : 1e-4} visible={hasGhost || warming} name="placement-ghost-set">
         {pieces.map(({ piece, item }, i) => (
           <group
             key={piece.id}

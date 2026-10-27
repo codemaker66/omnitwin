@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
 import {
   clientAccounts,
   configurations,
@@ -107,11 +108,11 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     email: users.email,
     phone: users.phone,
     configurationCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND deleted_at IS NULL)`
-      : sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)`,
+      ? sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${outerColumn(users.id)} AND deleted_at IS NULL)`
+      : sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${outerColumn(users.id)} AND venue_id = ${venueId} AND deleted_at IS NULL)`,
     enquiryCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id})`
-      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})`,
+      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${outerColumn(users.id)})`
+      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${outerColumn(users.id)} AND venue_id = ${venueId})`,
   })
     .from(users)
     .where(and(match.where(userName, users.organizationName, users.email), venueUsers))
@@ -129,8 +130,8 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     phone: guestLeads.phone,
     name: guestLeads.name,
     enquiryCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email})`
-      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`,
+      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${outerColumn(guestLeads.email)})`
+      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${outerColumn(guestLeads.email)} AND venue_id = ${venueId})`,
     convertedToUserId: guestLeads.convertedToUserId,
   })
     .from(guestLeads)

@@ -273,12 +273,14 @@ describe("timeline preview action isolation", () => {
   it.each(["desktop", "mobile"] as const)("does not open the %s enquiry modal after the original editor session was replaced", async (surface) => {
     const save = deferred<boolean>();
     mocks.flushAutoSave.mockReturnValueOnce(save.promise);
+    // The guest enquiry is offered on a guest's draft only (QoL E-01).
+    useEditorStore.setState({ isPublicPreview: true });
     render(surface === "desktop" ? <SaveSendPanel /> : <MobilePlannerTopBar mode="3d" onModeChange={() => undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
     await act(async () => {
       useEditorStore.getState().reset();
       // Returning to the same ID is still a new editing session.
-      useEditorStore.setState({ configId: CONFIG_ID, objects: [object], isPublicPreview: false });
+      useEditorStore.setState({ configId: CONFIG_ID, objects: [object], isPublicPreview: true });
       save.resolve(true);
       await save.promise;
     });
@@ -337,6 +339,8 @@ describe("timeline preview action isolation", () => {
   });
 
   it("keeps desktop and mobile Send visible but disabled in a cross-phase preview", () => {
+    // The guest enquiry is offered on a guest's draft only (QoL E-01).
+    useEditorStore.setState({ isPublicPreview: true });
     const desktop = render(<SaveSendPanel />);
     act(() => { enterCrossPhasePreview(); });
     const desktopSend = screen.getByRole("button", { name: "Send to Events Team" });
