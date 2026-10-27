@@ -136,12 +136,49 @@ async function seedAuthenticatedPlanner(page: Page): Promise<void> {
   });
 }
 
+/** The venue's own hallkeeper: the person whose ticks the checklist records. */
+async function seedAuthenticatedHallkeeper(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
+      value: {
+        id: "e2e-user-hallkeeper",
+        email: "hallkeeper@e2e.test",
+        role: "hallkeeper",
+        venueId: "00000000-0000-4000-8000-0000000000e2",
+        name: "E2E Hallkeeper",
+      },
+      writable: false,
+    });
+  });
+}
+
 async function seedUnauthenticatedE2E(page: Page): Promise<void> {
   await page.addInitScript(() => {
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
     Object.defineProperty(window, "__OMNITWIN_SEED_USER__", { value: null, writable: false });
   });
 }
+
+// ---------------------------------------------------------------------------
+// The venue's hallkeeper ticks the checklist
+// ---------------------------------------------------------------------------
+
+test.describe("Hallkeeper Page — the venue's hallkeeper", () => {
+  test("clicking a row toggles its checkbox (aria-checked)", async ({ page }) => {
+    await seedAuthenticatedHallkeeper(page);
+    await mockSheetData(page);
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    const row = page.getByRole("checkbox", { name: /Stage Platform/ });
+    await expect(row).toHaveAttribute("aria-checked", "false");
+    await expect(row).not.toHaveAttribute("aria-readonly", "true");
+    const saved = page.waitForResponse((response) => response.url() === `${API}/hallkeeper/${CONFIG_ID}/progress`
+      && response.request().method() === "PATCH");
+    await row.click();
+    expect((await saved).ok()).toBe(true);
+    await expect(row).toHaveAttribute("aria-checked", "true");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Hallkeeper page — full-data render tests
@@ -233,14 +270,19 @@ test.describe("Hallkeeper Page", () => {
     }
   });
 
-  test("clicking a row toggles its checkbox (aria-checked)", async ({ page }) => {
+  // Release audit tenancy-f-2: the checklist is the venue crew's record. The
+  // planner who owns the layout reads it and ticks nothing (the API refuses
+  // their writes too); the hallkeeper's own ticking is below.
+  test("the planner reads the checklist and ticks nothing", async ({ page }) => {
+    const patches: string[] = [];
+    page.on("request", (request) => { if (request.method() === "PATCH") patches.push(request.url()); });
     const row = page.getByRole("checkbox", { name: /Stage Platform/ });
     await expect(row).toHaveAttribute("aria-checked", "false");
-    const saved = page.waitForResponse((response) => response.url() === `${API}/hallkeeper/${CONFIG_ID}/progress`
-      && response.request().method() === "PATCH");
+    await expect(row).toHaveAttribute("aria-readonly", "true");
     await row.click();
-    expect((await saved).ok()).toBe(true);
-    await expect(row).toHaveAttribute("aria-checked", "true");
+    await expect(row).toHaveAttribute("aria-checked", "false");
+    await expect(page.getByText("The venue's team ticks these as they set the room.")).toBeVisible();
+    expect(patches).toEqual([]);
   });
 
   // -------------------------------------------------------------------------
