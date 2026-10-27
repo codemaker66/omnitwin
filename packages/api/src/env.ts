@@ -198,7 +198,7 @@ const EnvSchema = z.object({
     ] as const) {
       if (env[field] === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [field],
           message: `${field} is required in production (private uploads must never share the publicly served bucket)`,
         });
@@ -276,7 +276,7 @@ const EnvSchema = z.object({
   const privateUploadsR2Set = privateUploadsR2Fields.filter((field) => field !== undefined).length;
   if (privateUploadsR2Set > 0 && privateUploadsR2Set < privateUploadsR2Fields.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["PRIVATE_UPLOADS_R2_BUCKET"],
       message: "Private-upload R2 configuration is incomplete — set PRIVATE_UPLOADS_R2_ACCOUNT_ID, PRIVATE_UPLOADS_R2_ACCESS_KEY_ID, PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY, and PRIVATE_UPLOADS_R2_BUCKET together or none",
     });
@@ -291,7 +291,7 @@ const EnvSchema = z.object({
     ].includes(env.PRIVATE_UPLOADS_R2_BUCKET)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["PRIVATE_UPLOADS_R2_BUCKET"],
       message: "Private uploads require a dedicated private bucket distinct from the public upload, runtime-profile and Foundry buckets",
     });
@@ -307,7 +307,7 @@ const EnvSchema = z.object({
     ].includes(env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["PRIVATE_UPLOADS_R2_ACCESS_KEY_ID"],
       message: "Private uploads require their own R2 token, scoped to the private bucket, not another bucket's token",
     });

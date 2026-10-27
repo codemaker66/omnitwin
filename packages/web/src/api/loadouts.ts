@@ -36,7 +36,7 @@ export type LoadoutPhoto = z.infer<typeof LoadoutPhotoSchema>;
 // A photo as the loadout read returns it: a five-minute signed URL, or null
 // when the API has no private storage configured.
 const LoadoutDetailPhotoSchema = LoadoutPhotoSchema.extend({
-  readUrl: z.string().url().nullable(),
+  readUrl: z.url().nullable(),
 });
 
 export type LoadoutDetailPhoto = z.infer<typeof LoadoutDetailPhotoSchema>;
