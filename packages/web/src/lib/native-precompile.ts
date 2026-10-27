@@ -58,6 +58,17 @@ function queueFor(renderer: object): Queue {
   return queue;
 }
 
+/**
+ * `?precompile=off` turns compiling ahead off for the page, in production
+ * builds too: nothing is queued or held, and each pipeline compiles as it is
+ * first drawn, as before F-01. It measures an arrival before and after on a
+ * real device from one deployment (device day), and is the way out should a
+ * device's asynchronous pipeline builds misbehave.
+ */
+function switchedOff(): boolean {
+  return typeof window !== "undefined" && new URLSearchParams(window.location.search).get("precompile") === "off";
+}
+
 /** Hands an error on to the page without unwinding the caller: the queue must go on, or the frames stay held. */
 function rethrowLater(error: unknown): void {
   setTimeout(() => { throw error; });
@@ -77,8 +88,10 @@ function notify(queue: Queue): void {
  * Queues `job` for `renderer`'s view; resolves once it has run (whatever its
  * outcome: a precompile is a warm-up, and the frames after it compile what it
  * missed). A renderer without a NativeCanvas running its queue never runs it.
+ * Under `?precompile=off` it queues nothing and resolves at once.
  */
 export function requestNativePrecompile(renderer: object, job: NativePrecompileJob): Promise<void> {
+  if (switchedOff()) return Promise.resolve();
   const queue = queueFor(renderer);
   return new Promise<void>((resolve) => {
     queue.jobs.push({ job, done: resolve });
@@ -251,6 +264,20 @@ export async function compileEach(
   await Promise.all(compiles);
 }
 
+/**
+ * drawAhead leans on four internals of three r186's WebGPURenderer. Each is
+ * pinned by a test ("three r186's internals that drawAhead relies on", in
+ * native-precompile.test.ts), so a three bump that changes one fails there
+ * rather than quietly drawing nothing ahead, which would bring back the
+ * arrival's synchronous compiles and its frozen screen:
+ * - `Renderer._pipelines`, the renderer's private Pipelines;
+ * - `Renderer._renderObjectDirect`, which runs `_pipelines.updateForRender(renderObject)`
+ *   and draws only once `_pipelines.isReady(renderObject)`;
+ * - `Pipelines.updateForRender(renderObject)`, the draw path: `this.getForRender(renderObject)`;
+ * - `Pipelines.getForRender(renderObject, promises)`, which hands `promises` to
+ *   `backend.createRenderPipeline`, where WebGPUPipelineUtils builds with
+ *   `device.createRenderPipelineAsync` and pushes the build's promise.
+ */
 interface DrawPipelines {
   getForRender(renderObject: object, promises?: Promise<unknown>[] | null): unknown;
 }

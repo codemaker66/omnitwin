@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectionalLight, Group, Mesh, PerspectiveCamera, Scene, type Camera, type Object3D } from "three";
+import { WebGPURenderer } from "three/webgpu";
 import {
   clearNativePrecompiles, compileEach, compileWithin, drawAhead, nativePrecompilePending, requestNativePrecompile, runNativePrecompiles,
   subscribeNativePrecompile, withoutShadowMapDraws,
@@ -136,6 +137,21 @@ describe("the native precompile queue", () => {
     expect(nativePrecompilePending(one)).toBe(true);
     expect(nativePrecompilePending(other)).toBe(false);
     await runNativePrecompiles(one);
+  });
+
+  it("queues nothing and holds nothing under ?precompile=off, the arrival as before F-01", async () => {
+    const page = window.location.href;
+    window.history.replaceState(null, "", "/plan/layout?precompile=off");
+    try {
+      const renderer = {};
+      let ran = false;
+      await requestNativePrecompile(renderer, () => { ran = true; return Promise.resolve(); });
+      expect(nativePrecompilePending(renderer)).toBe(false);
+      await runNativePrecompiles(renderer);
+      expect(ran).toBe(false);
+    } finally {
+      window.history.replaceState(null, "", page);
+    }
   });
 });
 
@@ -291,30 +307,6 @@ describe("drawAhead", () => {
     expect(native._pipelines.built).toEqual([{ subject: "bloom", async: true }, { subject: "resolve", async: true }]);
   });
 
-  it("routes three r186's own draw path", async () => {
-    const specifier = "three/src/renderers/common/Pipelines.js";
-    const loaded: unknown = await import(/* @vite-ignore */ specifier);
-    if (typeof loaded !== "object" || loaded === null || !("default" in loaded) || typeof loaded.default !== "function") {
-      throw new Error("three no longer ships its Pipelines where drawAhead expects it");
-    }
-    const pipelines: unknown = Reflect.construct(loaded.default, [{}, {}, { destroyProgram: (): void => undefined }]);
-    if (typeof pipelines !== "object" || pipelines === null) throw new Error("three's Pipelines changed shape");
-    const built: boolean[] = [];
-    // Only whether the draw path asks for promises is of interest, not three's build.
-    Object.defineProperty(pipelines, "getForRender", {
-      configurable: true, writable: true,
-      value: (_renderObject: object, promises: Promise<unknown>[] | null = null): void => { built.push(promises !== null); },
-    });
-    const draw = (): void => {
-      const update: unknown = Reflect.get(pipelines, "updateForRender");
-      if (typeof update !== "function") throw new Error("three's Pipelines has no updateForRender");
-      Reflect.apply(update, pipelines, [{}]);
-    };
-    await drawAhead({ _pipelines: pipelines }, draw);
-    draw();
-    expect(built, "ahead: asynchronously; after: as three builds").toEqual([true, false]);
-  });
-
   it("leaves a draw path that is not r186's alone, and draws nothing ahead", async () => {
     class Later extends Pipelines {
       override updateForRender(subject: string): void {
@@ -341,6 +333,69 @@ describe("drawAhead", () => {
     let drew = false;
     await drawAhead({}, () => { drew = true; });
     expect(drew).toBe(false);
+  });
+});
+
+describe("three r186's internals that drawAhead relies on", () => {
+  // Each pins one internal named beside drawAhead (native-precompile.ts). A three
+  // bump that changes one must fail here: drawAhead would otherwise draw nothing
+  // ahead without a word, and the arrival would compile as it draws (a frozen screen).
+
+  /** The source of `name`, on `owner` or its prototypes, as the three that ships has it. */
+  function source(owner: unknown, name: string): string {
+    const method: unknown = typeof owner === "object" && owner !== null ? Reflect.get(owner, name) : undefined;
+    if (typeof method !== "function") throw new Error(`three no longer has ${name}: drawAhead would draw nothing ahead`);
+    return Function.prototype.toString.call(method);
+  }
+
+  it("the renderer keeps its Pipelines at _pipelines, draws through its updateForRender, and draws only once isReady", () => {
+    const renderer = new WebGPURenderer();
+    expect(Object.hasOwn(renderer, "_pipelines"), "Renderer._pipelines").toBe(true);
+    expect(source(renderer, "_renderObjectDirect")).toMatch(
+      /this\._pipelines\.updateForRender\(\s*([\w$]+)\s*\);[\s\S]*?if\s*\(\s*this\._pipelines\.isReady\(\s*\1\s*\)\s*\)\s*\{\s*this\.backend\.draw\(\s*\1\b/u,
+    );
+  });
+
+  it("Pipelines' draw path hands a frame drawn ahead's promises to the backend, and builds as three does after", async () => {
+    // three's own Pipelines, from its source: the renderer that ships makes its one in init, on a device.
+    const specifier = "three/src/renderers/common/Pipelines.js";
+    const loaded: unknown = await import(/* @vite-ignore */ specifier);
+    const made: unknown = typeof loaded === "object" && loaded !== null ? Reflect.get(loaded, "default") : undefined;
+    if (typeof made !== "function") throw new Error("three no longer ships its Pipelines where drawAhead expects it");
+    const asked: boolean[] = [];
+    const backend = {
+      createProgram: (): void => undefined,
+      createRenderPipeline: (_renderObject: object, promises: Promise<unknown>[] | null): void => {
+        asked.push(promises !== null);
+        promises?.push(Promise.resolve());
+      },
+      needsRenderUpdate: (): boolean => false,
+      getRenderCacheKey: (): string => "",
+    };
+    const pipelines: unknown = Reflect.construct(made, [backend, {}, { createProgram: (): void => undefined }]);
+    let shaders = 0;
+    const draw = (): void => {
+      shaders += 1;
+      const code = String(shaders);
+      const renderObject = { material: { name: "" }, getNodeBuilderState: () => ({ vertexShader: `vertex ${code}`, fragmentShader: `fragment ${code}` }) };
+      const update: unknown = typeof pipelines === "object" && pipelines !== null ? Reflect.get(pipelines, "updateForRender") : undefined;
+      if (typeof update !== "function") throw new Error("three's Pipelines has no updateForRender");
+      Reflect.apply(update, pipelines, [renderObject]);
+    };
+    await drawAhead({ _pipelines: pipelines }, draw);
+    draw();
+    expect(asked, "ahead: asynchronously; after: as three builds").toEqual([true, false]);
+  });
+
+  it("the WebGPU backend builds a pipeline it is given promises for with createRenderPipelineAsync, and hands the build back", () => {
+    const backend = new WebGPURenderer().backend;
+    expect(source(backend, "createRenderPipeline")).toMatch(
+      /^createRenderPipeline\(\s*([\w$]+)\s*,\s*([\w$]+)\s*\)\s*\{\s*this\.pipelineUtils\.createRenderPipeline\(\s*\1\s*,\s*\2\s*\);?\s*\}$/u,
+    );
+    const utils: unknown = Reflect.get(backend, "pipelineUtils");
+    expect(source(utils, "createRenderPipeline")).toMatch(
+      /^createRenderPipeline\(\s*[\w$]+\s*,\s*([\w$]+)\s*\)[\s\S]*?if\s*\(\s*\1\s*===\s*null\s*\)\s*\{[^}]*?\.createRenderPipeline\([\s\S]*?\.createRenderPipelineAsync\([\s\S]*?\1\.push\(/u,
+    );
   });
 });
 
