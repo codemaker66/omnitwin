@@ -11,6 +11,7 @@ import {
   tableGroupPlanningFootprint,
   tableGroupPlanningRadius,
   tableGroupSeatCapacity,
+  tableOwnChairs,
 } from "./table-group.js";
 import { BANQUET_CHAIR_CLEARANCE_M } from "./auto-fill.js";
 import { countLabel } from "./count-label.js";
@@ -78,12 +79,8 @@ function seatedTables(placedItems: readonly PlacedItem[]): SeatedTable[] {
     if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined || !isDiningTableItem(item) || item.tableShape === null) continue;
-    const chairs = placed.groupId === null ? 0 : placedItems.filter((other) => (
-      other.groupId === placed.groupId
-      && other.id !== placed.id
-      && isSceneFurniturePlacement(other)
-      && getCatalogueItem(other.catalogueItemId)?.category === "chair"
-    )).length;
+    // Its own chairs: a group made with Group can hold other tables and theirs.
+    const chairs = tableOwnChairs(placed, placedItems).length;
     const limit = Math.min(banquetSeatsPerTable(item), tableGroupSeatCapacity(placed, placedItems));
     tables.push({ placed, item, chairs, limit });
   }
@@ -224,7 +221,7 @@ function planShortfall(input: SeatShortfallInput): Planned | null {
   if (spare >= short) return chairsOffer(short);
 
   const table = commonestTable(tables);
-  const seats = table === null ? 0 : banquetSeatsPerTable(table);
+  const seats = table === null ? 0 : banquetSeatsPerTable(table, input.chairSlug);
   const tablesNeeded = seats > 0 ? Math.ceil(short / seats) : 0;
   const spots = table === null || seats === 0 ? [] : freeTableSpots(input, table, seats, tablesNeeded);
   const tablesOffer = (item: CatalogueItem, count: number, chairs: number): Planned => ({
@@ -272,7 +269,7 @@ export function applySeatShortfallFix(input: SeatShortfallInput): SeatShortfallF
     const extra = offer.chairs % offer.tables;
     planned.spots.slice(0, offer.tables).forEach((spot, index) => {
       const chairs = base + (index < extra ? 1 : 0);
-      items.push(...createTableGroup(offer.tableItemId, toRenderSpace(spot.x), toRenderSpace(spot.z), 0, chairs));
+      items.push(...createTableGroup(offer.tableItemId, toRenderSpace(spot.x), toRenderSpace(spot.z), 0, chairs, 0, undefined, "around", input.chairSlug));
     });
   }
 

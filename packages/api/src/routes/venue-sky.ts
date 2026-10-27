@@ -22,7 +22,7 @@ import { SkyUnavailableError, type VenueSkyService } from "../services/sky/sky-s
 // venue. A body is `{ data: VenueSky }` (packages/types/src/venue-sky.ts).
 // ---------------------------------------------------------------------------
 
-const VenueIdParam = z.object({ venueId: z.string().uuid() });
+const VenueIdParam = z.object({ venueId: z.uuid() });
 
 const EARLIEST_AT = Date.UTC(2000, 0, 1);
 const LATEST_AT = Date.UTC(2100, 0, 1);

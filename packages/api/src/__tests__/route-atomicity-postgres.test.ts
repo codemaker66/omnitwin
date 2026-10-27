@@ -9,6 +9,7 @@ import { claimConfigRoutes } from "../routes/claim-config.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { quoteRoutes } from "../routes/quotes.js";
 import { proposalRoutes } from "../routes/proposals.js";
+import { hashClaimSecret } from "../services/configuration-claim-secrets.js";
 
 // Opt-in, isolated PostgreSQL only. Never consult DATABASE_URL or load .env.
 // This fixture exercises real row locks/rollback and the actual route handlers;
@@ -30,6 +31,8 @@ const USER_A = "33333333-3333-4333-8333-333333333333";
 const USER_B = "44444444-4444-4444-8444-444444444444";
 const QUOTE = "55555555-5555-4555-8555-555555555555";
 const PROPOSAL = "66666666-6666-4666-8666-666666666666";
+/** The creating browser's claim secret for CONFIG (migration 0102). */
+const CLAIM_SECRET = "fixture-claim-secret-0123456789abcdefghijklmno";
 
 function headers(id = USER_A, platformRole: "none" | "admin" = "none"): { authorization: string } {
   return { authorization: `Bearer ${JSON.stringify({ id, email: "fixture@example.test", role: "staff", platformRole, venueId: VENUE })}` };
@@ -40,7 +43,8 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
   let server: FastifyInstance;
   const fixtureSchema = `route_atomicity_${randomUUID().replaceAll("-", "")}`;
   const tables: PgTable[] = [schema.configurations, schema.enquiries, schema.quotes,
-    schema.quoteLineItems, schema.proposals, schema.proposalVersions];
+    schema.quoteLineItems, schema.proposals, schema.proposalVersions,
+    schema.configurationClaimSecrets, schema.eventConfigurationLinks, schema.handoffPacks];
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: testUrl, application_name: fixtureSchema, max: 8,
@@ -70,8 +74,9 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
   });
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE configurations, enquiries, quotes, quote_line_items, proposals, proposal_versions");
+    await pool.query("TRUNCATE configurations, enquiries, quotes, quote_line_items, proposals, proposal_versions, configuration_claim_secrets, event_configuration_links, handoff_packs");
     await pool.query("INSERT INTO configurations (id, venue_id, is_public_preview, visibility) VALUES ($1, $2, true, 'public')", [CONFIG, VENUE]);
+    await pool.query("INSERT INTO configuration_claim_secrets (configuration_id, secret_hash) VALUES ($1, $2)", [CONFIG, hashClaimSecret(CLAIM_SECRET)]);
     await pool.query("INSERT INTO enquiries (configuration_id) VALUES ($1)", [CONFIG]);
     await pool.query("INSERT INTO quotes (id, venue_id, status, subtotal_minor, total_minor) VALUES ($1, $2, 'draft', 10000, 10000)", [QUOTE, VENUE]);
     await pool.query("INSERT INTO quote_line_items (quote_id, description, quantity, unit_amount_minor, line_total_minor, sort_order) VALUES ($1, 'Base', 1, 10000, 10000, 0)", [QUOTE]);
@@ -103,31 +108,35 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     try { await run(client); } finally { await client.query("ROLLBACK"); client.release(); }
   }
 
-  it("allows exactly one concurrent claimant and links enquiries to that winner", async () => {
+  it("lets exactly one of two concurrent claims with the secret win, and moves no enquiry", async () => {
     await withBlocker(async (client) => {
       await client.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [CONFIG]);
       const responses = Promise.all([USER_A, USER_B].map((id) => server.inject({
-        method: "POST", url: `/configurations/${CONFIG}/claim`, headers: headers(id),
+        method: "POST", url: `/configurations/${CONFIG}/claim`, headers: headers(id), payload: { claimSecret: CLAIM_SECRET },
       })));
       await waitForBlockedQueries(2);
       await client.query("COMMIT");
       const completed = await responses;
       expect(completed.map((r) => r.statusCode).sort()).toEqual([200, 409]);
-      const result = await pool.query<{ owner: string; enquiry_owner: string }>(
+      const result = await pool.query<{ owner: string; enquiry_owner: string | null }>(
         "SELECT c.user_id AS owner, e.user_id AS enquiry_owner FROM configurations c JOIN enquiries e ON e.configuration_id = c.id WHERE c.id = $1", [CONFIG]);
-      expect(result.rows[0]?.owner).toBe(result.rows[0]?.enquiry_owner);
       expect([USER_A, USER_B]).toContain(result.rows[0]?.owner);
+      // A guest's enquiry was sent to the venue alone; a claim never hands it on.
+      expect(result.rows[0]?.enquiry_owner).toBeNull();
+      // The secret is spent.
+      expect((await pool.query("SELECT 1 FROM configuration_claim_secrets WHERE configuration_id = $1", [CONFIG])).rowCount).toBe(0);
     });
   });
 
-  it("rolls back ownership when enquiry linking fails", async () => {
-    await installFailure("enquiries", "UPDATE");
+  it("rolls back ownership when spending the secret fails, and keeps the secret", async () => {
+    await installFailure("configuration_claim_secrets", "DELETE");
     try {
-      const response = await server.inject({ method: "POST", url: `/configurations/${CONFIG}/claim`, headers: headers() });
+      const response = await server.inject({ method: "POST", url: `/configurations/${CONFIG}/claim`, headers: headers(), payload: { claimSecret: CLAIM_SECRET } });
       expect(response.statusCode).toBe(500);
       const result = await pool.query<{ user_id: string | null; is_public_preview: boolean }>("SELECT user_id, is_public_preview FROM configurations WHERE id = $1", [CONFIG]);
       expect(result.rows[0]).toEqual({ user_id: null, is_public_preview: true });
-    } finally { await pool.query("DROP TRIGGER reject_write ON enquiries"); }
+      expect((await pool.query("SELECT 1 FROM configuration_claim_secrets WHERE configuration_id = $1", [CONFIG])).rowCount).toBe(1);
+    } finally { await pool.query("DROP TRIGGER reject_write ON configuration_claim_secrets"); }
   });
 
   it("rejects a delayed anonymous thumbnail write once its preview is claimed", async () => {
@@ -246,7 +255,7 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     } }).then((r) => r);
   }
 
-  async function installFailure(table: "enquiries" | "proposal_versions", operation: "INSERT" | "UPDATE"): Promise<void> {
+  async function installFailure(table: "configuration_claim_secrets" | "proposal_versions", operation: "INSERT" | "DELETE"): Promise<void> {
     await pool.query("CREATE OR REPLACE FUNCTION reject_fixture_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected fixture write failure'; END $$");
     await pool.query(`CREATE TRIGGER reject_write BEFORE ${operation} ON ${table} FOR EACH ROW EXECUTE FUNCTION reject_fixture_write()`);
   }

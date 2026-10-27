@@ -104,7 +104,8 @@ export function Popover({ state, label, align = "end", side = "below", chrome, c
     const trigger = triggerRef.current;
     if (panel === null || trigger === null) return;
     const place = (): void => {
-      const bar = (trigger.closest(".pc-lacquer") ?? trigger).getBoundingClientRect();
+      // A surface that carries more than its bar (the slate with its plane) marks itself as the anchor.
+      const bar = (trigger.closest("[data-pc-popover-anchor]") ?? trigger.closest(".pc-lacquer") ?? trigger).getBoundingClientRect();
       if (side === "below") panel.style.setProperty("--pc-popover-top", `${String(Math.round(bar.bottom + POPOVER_GAP_PX))}px`);
       else panel.style.setProperty("--pc-popover-bottom", `${String(Math.round(window.innerHeight - bar.top + POPOVER_GAP_PX))}px`);
       if (align === "end") panel.style.setProperty("--pc-popover-right", `${String(Math.round(window.innerWidth - bar.right))}px`);

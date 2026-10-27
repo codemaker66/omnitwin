@@ -312,3 +312,24 @@ export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
     return transitioning;
   },
 }));
+
+/**
+ * The walls as the planner names them (T-671 slice 7): Cut hands them back to
+ * the camera, which lowers the ones facing it; Full stands every wall up at
+ * full opacity, with any lock cleared (setMode clears them).
+ */
+export function setWallsFull(full: boolean): void {
+  const store = useVisibilityStore.getState();
+  if (!full) {
+    store.setMode("auto-3");
+    return;
+  }
+  store.setMode("manual");
+  const walls = { ...store.walls };
+  const wallOpacity = { ...store.wallOpacity };
+  for (const key of WALL_KEYS) {
+    walls[key] = true;
+    wallOpacity[key] = 1;
+  }
+  useVisibilityStore.setState({ walls, wallOpacity });
+}

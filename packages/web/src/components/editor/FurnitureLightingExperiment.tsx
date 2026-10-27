@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Color, Object3D } from "three";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { HALL_SUN_CASTER_LAYER } from "../grand-hall/hall-sun.js";
 import {
   createFurnitureLightProbe,
   furnitureShadowFrame,
@@ -36,6 +37,8 @@ export function FurnitureLightingExperiment({ shadows }: { readonly shadows: boo
         shadow-camera-bottom={frame.bottom}
         shadow-camera-near={frame.near}
         shadow-camera-far={frame.far}
+        // Furniture casts with its stand-ins on the caster layer (crafted-model.ts).
+        shadow-camera-layers-mask={1 | (1 << HALL_SUN_CASTER_LAYER)}
         shadow-bias={-0.00002}
         shadow-normalBias={0.005}
         shadow-radius={2}

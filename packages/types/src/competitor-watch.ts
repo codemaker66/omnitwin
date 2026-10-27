@@ -270,10 +270,10 @@ export const CaptureCreateSchema = z.object({
     .refine((list) => new Set(list).size === list.length, "Each item once"),
   includesNote: z.string().trim().max(400).nullable(),
   vat: VatStatementSchema,
-  evidenceFileId: z.string().uuid().nullable(),
+  evidenceFileId: z.uuid().nullable(),
   note: z.string().trim().max(1000).nullable(),
   /** The capture this figure replaces, for the same competitor. */
-  supersedesId: z.string().uuid().nullable(),
+  supersedesId: z.uuid().nullable(),
 }).strict();
 export type CaptureCreate = z.infer<typeof CaptureCreateSchema>;
 export type CaptureCreateInput = z.input<typeof CaptureCreateSchema>;
@@ -293,16 +293,16 @@ export type PageCheckPermission = z.infer<typeof PageCheckPermissionSchema>;
  * report, unverified.
  */
 export const OpportunityLostToSchema = z.object({
-  competitorId: z.string().uuid().nullable(),
+  competitorId: z.uuid().nullable(),
   otherName: z.string().trim().min(1).max(160).nullable(),
   clientFigureMinor: z.number().int().min(1).max(100_000_000).nullable(),
   clientFigureBasis: PriceBasisSchema.nullable(),
 }).strict().superRefine((value, ctx) => {
   if ((value.competitorId === null) === (value.otherName === null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["competitorId"], message: "Name one venue: from the set, or another by name" });
+    ctx.addIssue({ code: "custom", path: ["competitorId"], message: "Name one venue: from the set, or another by name" });
   }
   if ((value.clientFigureMinor === null) !== (value.clientFigureBasis === null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["clientFigureBasis"], message: "A figure needs its basis: a head, or in total" });
+    ctx.addIssue({ code: "custom", path: ["clientFigureBasis"], message: "A figure needs its basis: a head, or in total" });
   }
 });
 export type OpportunityLostTo = z.infer<typeof OpportunityLostToSchema>;
@@ -310,7 +310,7 @@ export type OpportunityLostTo = z.infer<typeof OpportunityLostToSchema>;
 /** Who won, as a deal's timeline tells it. */
 export const DealLostToSchema = z.object({
   name: z.string(),
-  competitorId: z.string().uuid().nullable(),
+  competitorId: z.uuid().nullable(),
   clientFigureMinor: z.number().int().positive().nullable(),
   clientFigureBasis: PriceBasisSchema.nullable(),
   currency: z.string().length(3),
@@ -334,11 +334,11 @@ export const PAGE_CHECK_OUTCOMES = [
 export const PageCheckOutcomeSchema = z.enum(PAGE_CHECK_OUTCOMES);
 export type PageCheckOutcome = z.infer<typeof PageCheckOutcomeSchema>;
 
-const InstantSchema = z.string().datetime({ offset: true });
+const InstantSchema = z.iso.datetime({ offset: true });
 
 export const CompetitorCaptureSchema = z.object({
-  id: z.string().uuid(),
-  competitorId: z.string().uuid(),
+  id: z.uuid(),
+  competitorId: z.uuid(),
   sourceUrl: z.string(),
   sourceKind: CaptureSourceKindSchema,
   seenOn: DateOnlySchema,
@@ -353,11 +353,11 @@ export const CompetitorCaptureSchema = z.object({
   includes: z.array(CaptureIncludeSchema),
   includesNote: z.string().nullable(),
   vat: VatStatementSchema,
-  evidenceFileId: z.string().uuid().nullable(),
+  evidenceFileId: z.uuid().nullable(),
   note: z.string().nullable(),
-  supersedesId: z.string().uuid().nullable(),
+  supersedesId: z.uuid().nullable(),
   /** The newer capture that replaced this one, if any. */
-  supersededById: z.string().uuid().nullable(),
+  supersededById: z.uuid().nullable(),
   sourceGoneAt: InstantSchema.nullable(),
   sourceGoneByName: z.string().nullable(),
   freshness: CaptureFreshnessSchema,
@@ -394,7 +394,7 @@ export const CompetitorLossesSchema = z.object({
 export type CompetitorLosses = z.infer<typeof CompetitorLossesSchema>;
 
 export const CompetitorSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
   website: z.string().nullable(),
   pricePageUrl: z.string().nullable(),
@@ -426,8 +426,8 @@ export const CompetitorWatchSchema = z.object({
 export type CompetitorWatch = z.infer<typeof CompetitorWatchSchema>;
 
 export const MarketContextLineSchema = z.object({
-  captureId: z.string().uuid(),
-  competitorId: z.string().uuid(),
+  captureId: z.uuid(),
+  competitorId: z.uuid(),
   competitorName: z.string(),
   tier: CompetitorTierSchema,
   packageName: z.string(),
@@ -460,11 +460,11 @@ export const MarketContextSchema = z.object({
 export type MarketContext = z.infer<typeof MarketContextSchema>;
 
 /** The set by name, for choosing who won a lost deal. */
-export const CompetitorNamesSchema = z.array(z.object({ id: z.string().uuid(), name: z.string() }));
+export const CompetitorNamesSchema = z.array(z.object({ id: z.uuid(), name: z.string() }));
 export type CompetitorNames = z.infer<typeof CompetitorNamesSchema>;
 
 export const PageCheckResultSchema = z.object({
-  competitorId: z.string().uuid(),
+  competitorId: z.uuid(),
   outcome: z.union([PageCheckOutcomeSchema, z.enum(["not_due", "not_allowed"])]),
   nextCheckAfter: InstantSchema.nullable(),
 });

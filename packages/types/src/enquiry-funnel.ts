@@ -22,7 +22,7 @@ import { UserIdSchema } from "./user.js";
 // since 5 February 2026; Blake, 19 October 2026).
 // ---------------------------------------------------------------------------
 
-const IsoInstantSchema = z.string().datetime({ offset: true });
+const IsoInstantSchema = z.iso.datetime({ offset: true });
 
 // ---------------------------------------------------------------------------
 // The first substantive reply
@@ -99,7 +99,7 @@ export const FirstResponseSchema = z.object({
 export type FirstResponse = z.infer<typeof FirstResponseSchema>;
 
 export const RecordFirstResponseResultSchema = z.object({
-  enquiryId: z.string().uuid(),
+  enquiryId: z.uuid(),
   firstResponse: FirstResponseSchema,
   /** False when the enquiry already had an earlier (or the same) reply. */
   changed: z.boolean(),

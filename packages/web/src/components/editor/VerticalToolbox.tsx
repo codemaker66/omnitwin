@@ -19,7 +19,7 @@ import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
-import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js";
+import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
 import { useMarkupStore, MARKUP_COLOR_VALUES, type MarkupColor } from "../../stores/markup-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
@@ -1632,25 +1632,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
     usePlacementStore.getState().toggleSnap();
   }, []);
 
+  // Full stands every wall up; Cut hands them back to the camera.
   const handleToggleAllWalls = useCallback(() => {
-    const store = useVisibilityStore.getState();
-    if (store.mode === "manual") {
-      // Switch back to auto — camera controls walls again
-      store.setMode("auto-3");
-    } else {
-      // Switch to manual with all walls up, locks cleared
-      store.setMode("manual");
-      const allUp: Record<string, boolean> = {};
-      const allOpacity: Record<string, number> = {};
-      for (const key of WALL_KEYS) {
-        allUp[key] = true;
-        allOpacity[key] = 1;
-      }
-      useVisibilityStore.setState({
-        walls: allUp as Record<typeof WALL_KEYS[number], boolean>,
-        wallOpacity: allOpacity as Record<typeof WALL_KEYS[number], number>,
-      });
-    }
+    setWallsFull(useVisibilityStore.getState().mode !== "manual");
   }, []);
 
   const handleGenerateSheet = useCallback(() => {

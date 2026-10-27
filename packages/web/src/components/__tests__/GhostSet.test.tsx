@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { type ReactNode } from "react";
+import type { Group } from "three";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { createGhostWorld, judgeGhost } from "../../lib/ghost-truth.js";
 import { judgeCardAt, placeCardAt } from "../../lib/place-in-hand.js";
@@ -58,6 +59,19 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   setPlannerFeaturesForTesting(null);
+});
+
+describe("the set's group, for PlacementGhost's warm-up", () => {
+  it("is handed over as the set mounts, and taken back as it goes", () => {
+    const groupRef = vi.fn<(group: Group | null) => void>();
+    const { unmount } = render(<GhostSet params={round()} warming fromCardDrag={false} groupRef={groupRef} />);
+    // The page draws the set's group as an element; in the canvas R3F hands over the three Group in its place.
+    const handed: unknown = groupRef.mock.calls[0]?.[0];
+    if (!(handed instanceof Element)) throw new Error("no group handed over");
+    expect(handed.getAttribute("name")).toBe("placement-ghost-set");
+    unmount();
+    expect(groupRef).toHaveBeenLastCalledWith(null);
+  });
 });
 
 describe("the truthful ghost's set", () => {

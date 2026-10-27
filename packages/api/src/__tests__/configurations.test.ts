@@ -19,8 +19,8 @@ function signToken(payload: { id: string; email: string; role: string; venueId: 
   return JSON.stringify(payload);
 }
 
-const VENUE_ID = "00000000-0000-0000-0000-000000000001";
-const SPACE_ID = "00000000-0000-0000-0000-000000000010";
+const VENUE_ID = "00000000-0000-4000-8000-000000000001";
+const SPACE_ID = "00000000-0000-4000-8000-000000000010";
 const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: VENUE_ID });
 const clientToken = (): string => signToken({ id: "u3", email: "client@test.com", role: "client", venueId: null });
 
@@ -54,7 +54,7 @@ describe("GET /configurations/:id", () => {
   it("returns 401 without auth", async () => {
     const res = await server.inject({
       method: "GET",
-      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
     });
     expect(res.statusCode).toBe(401);
   });
@@ -148,7 +148,7 @@ describe("PATCH /configurations/:id", () => {
   it("returns 401 without auth", async () => {
     const res = await server.inject({
       method: "PATCH",
-      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
       payload: { name: "Updated" },
     });
     expect(res.statusCode).toBe(401);
@@ -157,7 +157,7 @@ describe("PATCH /configurations/:id", () => {
   it("returns 400 for invalid state value", async () => {
     const res = await server.inject({
       method: "PATCH",
-      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
       headers: { authorization: `Bearer ${adminToken()}` },
       payload: { state: "archived" },
     });
@@ -167,7 +167,7 @@ describe("PATCH /configurations/:id", () => {
   it("accepts valid state transition (draft/published)", async () => {
     const res = await server.inject({
       method: "PATCH",
-      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
       headers: { authorization: `Bearer ${adminToken()}` },
       payload: { state: "published" },
     });
@@ -177,7 +177,7 @@ describe("PATCH /configurations/:id", () => {
   it("accepts a well-formed instructions metadata block", async () => {
     const res = await server.inject({
       method: "PATCH",
-      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
       headers: { authorization: `Bearer ${adminToken()}` },
       payload: {
         metadata: {
@@ -197,7 +197,7 @@ describe("PATCH /configurations/:id", () => {
   it("rejects a malformed instructions block (non-ISO deadline)", async () => {
     const res = await server.inject({
       method: "PATCH",
-      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
       headers: { authorization: `Bearer ${adminToken()}` },
       payload: {
         metadata: {
@@ -213,7 +213,7 @@ describe("PATCH /configurations/:id", () => {
   it("accepts null metadata to clear instructions", async () => {
     const res = await server.inject({
       method: "PATCH",
-      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
       headers: { authorization: `Bearer ${adminToken()}` },
       payload: { metadata: null },
     });
@@ -229,7 +229,7 @@ describe("DELETE /configurations/:id", () => {
   it("returns 401 without auth", async () => {
     const res = await server.inject({
       method: "DELETE",
-      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
     });
     expect(res.statusCode).toBe(401);
   });
