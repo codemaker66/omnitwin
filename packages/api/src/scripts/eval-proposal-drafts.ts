@@ -328,7 +328,7 @@ async function main(): Promise<void> {
       const made = await generateAIDraft(adapter, { useCase: "proposal_draft", context }, OPERATOR_EVALUATION);
       draft = made.body;
       blocked = made.blockedUnsafeClaims;
-      withheld = made.withheldCommitments;
+      withheld = made.withheldCommitments ?? [];
     } catch (err) {
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     }

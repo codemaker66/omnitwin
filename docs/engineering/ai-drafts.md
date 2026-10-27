@@ -72,46 +72,69 @@ A draft never states a price, availability or capacity: only the venue's team
 confirms these, from the quote, the Diary and the venue's sourced figures.
 
 - **The rules** (`buildAIDraftInstructions`) tell the model so for every use
-  case, and to say the events team will confirm any of them it is asked about.
+  case: no amount of money other than the client's own budget, repeated as
+  theirs and never judged; never whether a date, time or room is free, held or
+  booked; never how many a room holds or whether a group fits. Where the
+  context or the client asks, the draft says the events team will confirm it.
 - **The check after the model** (`withholdDraftCommitments` in
   `packages/types/src/ai-draft-commitments.ts`) reads the draft line by line
   and sentence by sentence, and takes out each sentence that states one ("£65
-  per head", "the Grand Hall is free on the 17th", "it seats 200", "we can
-  comfortably accommodate your guests"). It is written for precision: the
-  topic without a claim stays ("the team will confirm prices and
-  availability", "your 150 guests"), as do a clause of the client's own words
-  ("you asked whether the 17th is free", "their budget is around £12,000") and
-  a claim asked about ("the team will confirm whether the Saloon is free").
-  The client's words cover only their clause: in "the client asked about the
-  deposit; it is £500" the second clause is taken out.
-- **Taking out and refusing read alike.** The sentences are split losslessly,
-  the text is read again until nothing more is found, and `AIDraftSchema`
-  refuses a body that still holds a claim by the same reading, so a draft the
-  check passes is one the schema accepts. `createReviewGatedAIDraft` applies it
-  to every draft.
-- **The draft says what was taken out** (`withheldCommitments`), and both draft
-  surfaces say it in words: "A sentence that seemed to give a price was taken
-  out, as only the team confirms that."
+  per head", "the Grand Hall is free on the 17th", "it seats 200", "Capacity:
+  200 seated"). The topic without a claim stays ("the team will confirm prices
+  and availability", "your 150 guests").
+- **Three things are not the draft's claim, and nothing else excuses one:**
+  - the client's budget figure, said as theirs ("their budget is around
+    £12,000", "Budget: £10,000");
+  - words in quotation marks (Client asked: "Is the Saloon free on the 17th?");
+  - a date, room or size asked about, a few words after "whether", "if" or
+    "confirm which" ("the team will confirm whether the Saloon is free"),
+    unless the sentence also answers it.
+
+  Words about the client never excuse the rest of a sentence. The first
+  version excused a clause that held "you asked" or "budget", and the release
+  review showed that hid 210 of 248 known claims once framed as an answer
+  ("as you asked, room hire is £4,500"), which is how a model most often
+  states one. A figure that is not the client's budget, such as another
+  venue's quote, is taken out.
+- **Where it runs.** `createReviewGatedAIDraft` makes the wording safe, then
+  takes the claims out of the words as they will be shown, for every draft.
+  It is not checked again where a draft is read: the web and the API deploy
+  apart, and a page open since an earlier build would otherwise refuse drafts
+  a later check passed.
+- **The draft says what was taken out** (`withheldCommitments`, present only
+  when something was), and both draft surfaces say it in words: "Wording that
+  seemed to give a price was taken out, as only the team confirms that."
 - **A draft that is nothing else** is no draft: with fewer than 12 words left
-  (a greeting and a sign-off), the call answers 502, the composer says it could
-  not be written, and the call stays recorded.
+  (a greeting and a sign-off), the call answers 502, the composer says it
+  could not be written, and the call stays recorded. The ledger records the
+  model's own outcome, so a call whose draft the check refused is an answered
+  call (`ok`) at what it cost.
 
-How well it reads text it has not seen is measured on three sentence sets
-written by agents that never saw the patterns, each run once before it was
-used (`__tests__/ai-draft-blind-sets.ts`). On those first runs it took out 7
-of 160 sentences that made no claim and found 104 of 160 claims: 34 of 60,
-then 35 of 50 and 35 of 50, so tuning on one set did not much raise the next.
-It finds about two claims in three that are phrased in a new way. The rules
-are the first guard and the person who reads every draft before it is used is
-the last; this check sits between them and does not replace either. All three
-sets now pass, with the tuned, held-out and review sets, as regression tests.
-None was written by venue staff. The live evaluation (`eval:proposal-drafts`)
-records `withheldCommitments` per draft and `withWithheldCommitments` in its
-summary, so the first run with a key measures how often Claude still states one.
+How well it reads text it has not seen is measured on sentence sets written
+by agents that never saw the patterns, each run once before it was used
+(`__tests__/ai-draft-blind-sets.ts`). On the current design's set, which asked
+for claims stated in answer to the client, it took out 2 of 60 sentences that
+made no claim and found 41 of 60 claims: 19 of 20 prices, 12 of 20 dates and
+rooms, 10 of 20 sizes. The first design's three sets read 104 of 160 on their
+bare sentences, but that design hid most claims framed as answers. It finds
+about two claims in three phrased in a new way, and nearly every price. The
+rules are the first guard and the person who reads every draft before it is
+used is the last; this check sits between them and does not replace either.
+All four sets now pass, with the tuned, held-out and review sets, as
+regression tests, as do the review's framings of every known claim. None was
+written by venue staff. The live evaluation (`eval:proposal-drafts`) records
+`withheldCommitments` per draft and `withWithheldCommitments` in its summary:
+how often Claude stated a claim the check knows, a lower bound on how often it
+states one.
 
-`withheldCommitments` is a new field on the draft response. The web parses
-drafts strictly, so a web build from before it refuses a response that has it:
-deploy the web and the API from the same commit, the web first.
+Every pattern is bounded and each sentence is read once: hostile
+8,000-character drafts (runs of stops, quotation marks, claims or clauses)
+take under 70 ms, and the time grows with the length.
+
+**Deploying.** `withheldCommitments` is a new field. A web build from before
+it reads every draft that took nothing out; one that took something out it
+refuses, after the call is made and charged. AI is off in production until
+switch-on, so deploy the web and the API from the same commit before then.
 
 ## Checks
 

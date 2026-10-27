@@ -272,7 +272,7 @@ describe("what a draft may not say (L6)", () => {
     "tells the model, for %s, that only the team confirms a price, availability or capacity",
     (useCase) => {
       const rules = buildAIDraftInstructions({ useCase, context: {} });
-      expect(rules).toContain("Never state a price, a cost, a fee, a deposit, a discount or any amount of money");
+      expect(rules).toContain("Never state a price, a cost, a fee, a deposit, a discount or any amount of money, other than the client's own budget, which you may repeat as theirs but never judge");
       expect(rules).toContain("never say whether a date, a time or a room is available, free, held, booked or confirmed");
       expect(rules).toContain("never say how many people a room seats, holds or can take, or that it is big enough");
       expect(rules).toContain("say the events team will confirm it");
@@ -297,7 +297,7 @@ describe("what a draft may not say (L6)", () => {
   it("records nothing withheld from a draft that states none", async () => {
     const draft = await generateAIDraft(answering("Dear Elaine, thank you for your enquiry about your 150 guests."),
       { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
-    expect(draft.withheldCommitments).toEqual([]);
+    expect(draft.withheldCommitments).toBeUndefined();
     expect(draft.body).toBe("Dear Elaine, thank you for your enquiry about your 150 guests.");
   });
 
@@ -322,6 +322,21 @@ describe("what a draft may not say (L6)", () => {
     ].join("\n");
     const draft = await generateAIDraft(answering(words), { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
     expect(draft.body).toBe(words);
-    expect(draft.withheldCommitments).toEqual([]);
+    expect(draft.withheldCommitments).toBeUndefined();
+  });
+
+  // Release review: words about the client excused a claim stated in answer
+  // ("as you asked, room hire is £4,500"); now only the client's budget
+  // figure, a quotation and a claim asked about are not the draft's own.
+  it("takes out a claim stated in answer to the client, and keeps their budget", async () => {
+    const draft = await generateAIDraft(answering([
+      "Dear Elaine,",
+      "",
+      "Thank you for sharing your budget of £10,000. As you asked, room hire is £4,500. Our events team will confirm whether the Saloon is free on the 14th.",
+      "",
+      "The Events Team",
+    ].join("\n")), { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
+    expect(draft.body).toBe("Dear Elaine,\n\nThank you for sharing your budget of £10,000. Our events team will confirm whether the Saloon is free on the 14th.\n\nThe Events Team");
+    expect(draft.withheldCommitments).toEqual(["price"]);
   });
 });

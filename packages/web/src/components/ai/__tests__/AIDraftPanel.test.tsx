@@ -46,7 +46,6 @@ function draft(): AIDraft {
     title: "Truth Mode explanation draft",
     body: "Planning explanation for staff review.",
     blockedUnsafeClaims: [],
-    withheldCommitments: [],
     safeLanguageApplied: false,
     humanReviewRequired: true,
     provenance: "ai_generated",
@@ -116,7 +115,7 @@ describe("AIDraftPanel", () => {
   it.each([
     [new ApiError(422, "No event details", "NOTHING_TO_DRAFT_FROM"), "There is nothing to draft from yet: no event details or words from the guest. Continue with manual review."],
     [new ApiError(404, "Enquiry not found", "NOT_FOUND"), "A draft is made only for the venue you work at. Continue with manual review."],
-    [new ApiError(502, "AI draft generation failed", "AI_DRAFT_GENERATION_FAILED"), "AI draft generation is unavailable. Continue with manual review."],
+    [new ApiError(502, "AI draft generation failed", "AI_DRAFT_GENERATION_FAILED"), "The draft could not be written. Continue with manual review."],
   ])("says why a server-built draft did not come (%s)", async (error, words) => {
     getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
     const request = vi.fn(() => Promise.reject(error));
@@ -133,7 +132,7 @@ describe("AIDraftPanel", () => {
     render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ selectedTarget: "Grand Hall" }} />);
     fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
     expect((await screen.findByTestId("ai-draft-withheld")).textContent)
-      .toBe("A sentence that seemed to say how many a room holds was taken out, as only the team confirms that.");
+      .toBe("Wording that seemed to say how many a room holds was taken out, as only the team confirms that.");
     cleanup();
     createAIDraftMock.mockResolvedValueOnce(draft());
     render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ selectedTarget: "Grand Hall" }} />);

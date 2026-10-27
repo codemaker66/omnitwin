@@ -7,11 +7,17 @@ import type { AIDraftCommitmentKind } from "../ai-draft-commitments.js";
 // patterns read text they had not seen. The patterns were then changed with
 // the set in view, so each set now passes and shows only that the change took.
 //
-// Across the three first runs: 7 of 160 clean sentences taken out, and 104 of
-// 160 claims found. Tuning on one set did not raise the next set's first run
-// much (34 of 60, then 35 of 50, then 35 of 50): the patterns find about two
-// claims in three that are phrased in a way they have not met. The draft's
-// rules and the person who reads every draft are the other guards.
+// BLIND_1 to BLIND_3 measured the first design: 7 of 160 clean sentences taken
+// out, and 104 of 160 claims found (34 of 60, then 35 of 50 and 35 of 50, so
+// tuning on one set did not much raise the next). The release review then
+// showed that design excused most claims written as an answer to the client
+// ("as you asked, room hire is £4,500"), which these bare sentences did not
+// test, so its real reach was lower. BLIND_4 measured the design that replaced
+// it, on a set that asked for such answers: 2 of 60 clean sentences taken out,
+// 41 of 60 claims found (price 19 of 20, availability 12 of 20, capacity 10 of
+// 20). The patterns find about two claims in three phrased in a way they have
+// not met, and nearly every price. The draft's rules and the person who reads
+// every draft are the other guards.
 // ---------------------------------------------------------------------------
 
 export interface BlindSentenceSet {
@@ -22,6 +28,10 @@ export interface BlindSentenceSet {
   readonly firstRun: string;
   readonly clean: readonly string[];
   readonly dirty: readonly (readonly [AIDraftCommitmentKind, string])[];
+  /** Clean as written for the set, but naming an amount of money that is not
+   *  the client's own budget (another venue's quote), which the draft's rules
+   *  forbid since the release review: taken out on purpose. */
+  readonly takenOutByTheRule?: readonly string[];
 }
 
 export const BLIND_1: BlindSentenceSet = {
@@ -53,7 +63,6 @@ export const BLIND_1: BlindSentenceSet = {
     "Florist to fit the garlands along the gallery rail before 3pm; no tape on the plasterwork, please.",
     "Print \"Reserved\" cards for the two family tables nearest the stage.",
     "Client says they've already booked rooms at a nearby hotel for out-of-town guests.",
-    "You said the other venue quoted you £12,500; our events team will send our own figures separately.",
     "Their own charity gala sold out within a week last year, they told us, so numbers may well climb.",
     "Per the couple's timeline, guests should be seated by 1.45pm for a 2pm ceremony.",
     "The client was very complimentary about the Saloon chandeliers after the viewing.",
@@ -151,6 +160,9 @@ export const BLIND_1: BlindSentenceSet = {
     ["capacity", "The Reception Room works well for groups of up to 40."],
     ["capacity", "Supplier brief: room holds 180 max, so plan the bar for that."],
     ["capacity", "The Saloon is a squeeze above 100, but your 80 will be very comfortable."],
+  ],
+  takenOutByTheRule: [
+    "You said the other venue quoted you £12,500; our events team will send our own figures separately.",
   ],
 };
 
@@ -313,7 +325,6 @@ export const BLIND_3: BlindSentenceSet = {
     "A dinner of that size would normally need around six waiting staff, which the team will confirm.",
     "Our wedding brochure is available to download, along with photographs of each room.",
     "The client's preferred timings are 7pm until 1am, subject to the team's confirmation.",
-    "Internal: client mentioned a competitor's quote of £40 per head; we have not offered any comparison.",
     "We'll ask the team to check the diary for the dates you've listed and come back to you.",
     "The Lower Hall has its own entrance from the side street, which some clients find convenient.",
     "Client asked: 'Is the Saloon free on 3rd May?' This has not been answered yet.",
@@ -372,6 +383,139 @@ export const BLIND_3: BlindSentenceSet = {
     ["capacity", "The Grand Hall would be too small for 500 guests."],
     ["capacity", "Summary: the client's group of 45 is within the Reception Room's limit."],
   ],
+  takenOutByTheRule: [
+    "Internal: client mentioned a competitor's quote of £40 per head; we have not offered any comparison.",
+  ],
 };
 
-export const BLIND_SETS: readonly BlindSentenceSet[] = [BLIND_1, BLIND_2, BLIND_3];
+export const BLIND_4: BlindSentenceSet = {
+  name: "BLIND_4",
+  written: "Written after the release review rewrote what is excused (only the client's budget figure, a quotation and a claim asked about), from a brief that named no claim form but asked for claims stated in answer to the client.",
+  firstRun: "2 of 60 clean sentences taken out (both the client's own spend, in wordings then unknown); 41 of 60 claims found (price 19 of 20, availability 12 of 20, capacity 10 of 20).",
+  clean: [
+    "Thank you for your enquiry about the Grand Hall; our events team will confirm the hire fee once they have looked at your plans.",
+    "I've passed your preferred date of Saturday 12 June 2027 to the events team, who will let you know whether it can be offered.",
+    "You mentioned a budget of around £8,000, and the team will bear that in mind when they put together a proposal.",
+    "Could you tell us roughly how many guests you're expecting, including any children?",
+    "The events team will confirm which of our rooms would suit a party of the size you've described.",
+    "You said you'd love the Saloon for about 80 people, so I've shared that with the team to look at.",
+    "I'm not able to quote a figure in this email, but a full costing will follow from the events team.",
+    "Please don't treat this message as confirmation that any date or room has been held for you.",
+    "Is your date fixed, or would you be open to other weekends in the spring?",
+    "Our chef can adapt every course for vegan, coeliac and nut-free guests.",
+    "There is a lift to the Grand Hall as well as the main staircase, with accessible toilets on the same floor.",
+    "You asked for drinks at 6.30pm, dinner at 7.30pm and the band from 9pm until 11.30pm, and I've noted those timings.",
+    "A dedicated event coordinator will look after you from the first walk-round through to the end of the night.",
+    "How many people a room can take depends on the layout, so the team will go through the options with you.",
+    "Whether the Lower Hall would work for your numbers is something the events team will confirm.",
+    "Summary: wedding enquiry, client estimates 150 guests, budget stated by client as £12,000, prefers late spring.",
+    "Client wrote: 'Our budget is about £20 a head for food, is that realistic?'",
+    "Action for the events team: check the diary for 3 December 2027 and send the client a quote.",
+    "Your note that you can spend up to £15,000 in total has been passed on to the team.",
+    "We'll send you floor plans of the Reception Room and the Saloon so you can picture the space.",
+    "The deposit and payment schedule will be set out by the events team in their proposal.",
+    "I can't say from here whether the Saloon is free that weekend, but the team will check and come back to you.",
+    "Whether your 300 guests could be seated together in the Grand Hall is a question our events team will answer directly.",
+    "You asked for a 'ballpark figure'; the events team will send costs once they know a little more about your plans.",
+    "Client asked if the Lower Hall can hold 250 standing; team to confirm.",
+    "Enquiry notes: client's budget is £60 per head and they mentioned a Friday in November.",
+    "I've noted your first choice of 19/12/2026 and your back-up of 13 November.",
+    "Pricing, dates and room sizes are always confirmed in writing by our events team.",
+    "Would you prefer a seated three-course dinner or a standing buffet with bowl food?",
+    "The Reception Room has tall sash windows and an open fireplace, which makes it a lovely setting for winter drinks.",
+    "Our events team usually replies within two working days, and their reply will cover costs and dates.",
+    "You told us around 40 colleagues will attend the away day, with a 9am start and a 4pm finish.",
+    "Setting up the room usually takes our team a couple of hours before guests arrive.",
+    "Are any of your guests wheelchair users, so that we can plan step-free routes for them?",
+    "Client's ceiling is £7,500 all in, per their email of 14 October.",
+    "We'd be glad to show you round the Grand Hall and the Saloon, and the team will suggest a few times for a visit.",
+    "I'll ask the events team to look at your numbers and recommend a layout.",
+    "Canap\u00e9s can be served during the drinks reception, followed by your choice of starter, main and dessert.",
+    "Client says: 'We'd like the Saloon on the 5th of June if it's going.'",
+    "Your enquiry mentions 180 day guests and a further 60 in the evening, which I've shared with the team.",
+    "Nothing about cost has been confirmed yet; the events team will be in touch with a tailored quote.",
+    "Cloakroom, bar and security staffing will all be covered in the plan our coordinator sends you.",
+    "Client mentioned a 2pm ceremony and wants to know if a 1am finish is possible; for the team to answer.",
+    "Before the team can confirm anything, could you let us know whether the event is seated or standing?",
+    "Once they have your final numbers, the team will confirm whether the Grand Hall or the Lower Hall would be the better fit.",
+    "You mentioned you were working to a budget of roughly £3,500 for the drinks reception.",
+    "We'll come back to you about dates as soon as the events team has checked the diary.",
+    "Internal: charity dinner, 120 guests (their estimate), wants a quote and dates; nothing promised.",
+    "Our kitchen uses local beef, salmon and seasonal vegetables wherever it can.",
+    "Do you have a rough figure in mind for the evening, so the team can tailor their suggestions?",
+    "There is a drop-off point at the main entrance, and the nearest car park is a short walk away.",
+    "I can't confirm how many guests the Reception Room seats, but the events team will tell you when they reply.",
+    "Thanks for sending your timings: arrival at 12 noon, speeches at 4.15pm and carriages at midnight.",
+    "Should your chosen date not work out, the team will be happy to suggest alternatives.",
+    "Client budget: £4k\u2013£5k (their figure, not ours); asked about the Saloon and the Reception Room.",
+    "Your 25th anniversary party sounds wonderful, and we'd love to help make it special.",
+    "Our coordinators can recommend florists, photographers and bands they've worked with over the past 20 years.",
+    "The Grand Hall has a wooden dance floor and a gallery looking down over the room.",
+    "You asked whether 20 March 2027 is free; the events team will check that for you and reply directly.",
+    "If your numbers change, just let us know and the team will take that into account.",
+  ],
+  dirty: [
+    ["price", "Hire of the Grand Hall is £3,200 for an evening event, excluding catering."],
+    ["price", "Our day delegate rate starts from £48 per person and includes lunch and refreshments."],
+    ["price", "With your budget of £6,000 you'd have about £1,500 left once the room hire is paid."],
+    ["price", "To answer your question about cost, the Saloon is usually around £900 for an afternoon."],
+    ["price", "There's no room hire charge at all if you choose our wedding package."],
+    ["price", "Note for team: told client drinks pkg is £28pp, wine upgrade extra."],
+    ["price", "The Reception Room works out cheaper than the Saloon, so it may sit better with your budget."],
+    ["price", "We'd ask for a £500 deposit, with the balance due eight weeks before the event."],
+    ["price", "If you'd like to bring your own wine, corkage is charged at £15 a bottle."],
+    ["price", "I'm afraid the minimum spend on a Saturday in December is 10k."],
+    ["price", "Our three-course wedding breakfast is £75 per head, so for your 120 guests that would be £9,000."],
+    ["price", "We can extend the bar until 1am free of charge."],
+    ["price", "Your £5,000 budget should comfortably cover the Lower Hall and a buffet supper."],
+    ["price", "Prices for the Saloon begin at roughly two thousand pounds, though the team will confirm the final figure."],
+    ["price", "Hi Mrs Pettigrew, the total for the evening comes to £4,350 including VAT."],
+    ["price", "Canap\u00e9s are £3.50 each, or £12 a head for a selection of four."],
+    ["price", "Adding the Reception Room for drinks won't cost you more than £2,000."],
+    ["price", "Registered charities get £250 off the room hire, so you'd qualify for that."],
+    ["price", "Grand Hall = 3k + VAT on a Friday, client happy."],
+    ["price", "Since the room fee is only £800, most of your budget could go on food and drink."],
+    ["availability", "The Grand Hall is free on Saturday 12 June 2027, so that date would work for you."],
+    ["availability", "I'm afraid the Saloon is already booked on the evening of 19.12.26."],
+    ["availability", "We've pencilled you in for 20/03/2027 in the Reception Room."],
+    ["availability", "I've placed a provisional hold on the Lower Hall for you until Friday."],
+    ["availability", "Unfortunately June 2027 is now fully booked across all our rooms."],
+    ["availability", "Good news: the 5th is still open for the Saloon."],
+    ["availability", "Lower Hall avail 3 Dec, no clash in diary."],
+    ["availability", "That Saturday has gone, but the following weekend is clear in the Grand Hall."],
+    ["availability", "In answer to your question, yes, the Reception Room is available on 13 November from 6pm."],
+    ["availability", "There's nothing in the diary for the Saloon on Friday 3 December 2027, so you'd have it to yourselves."],
+    ["availability", "We can't offer the Grand Hall on Christmas Eve as it's taken by a private party."],
+    ["availability", "Your date is secured, and we'll send the contract in the next few days."],
+    ["availability", "The Saloon looks to be available that weekend, though I'd double-check with the team."],
+    ["availability", "We're holding the 30th of May for you for seven days."],
+    ["availability", "Summary: client wants 18/11/27, Grand Hall confirmed free, awaiting deposit."],
+    ["availability", "Only two Saturdays are left in April 2027, so it would be worth deciding soon."],
+    ["availability", "The morning slot is free, but the Grand Hall is booked from 3pm for a wedding."],
+    ["availability", "I'm pleased to say we can accommodate your preferred date of the twelfth of June."],
+    ["availability", "Another couple has asked about the same Saturday, but it isn't booked yet."],
+    ["availability", "Sorry, the Lower Hall isn't free at any point in the week of 14 February."],
+    ["capacity", "The Grand Hall seats up to 300 for a dinner."],
+    ["capacity", "Your 180 guests will fit comfortably in the Saloon."],
+    ["capacity", "The Reception Room can't take more than 60 standing."],
+    ["capacity", "With 250 guests you'd be over the limit for the Lower Hall."],
+    ["capacity", "Max 120 theatre style in Saloon, per our plans."],
+    ["capacity", "There's plenty of room for a group of your size in the Grand Hall."],
+    ["capacity", "The Saloon is too small for a seated dinner of that size, I'm afraid."],
+    ["capacity", "In reply to your question, the Lower Hall holds around 150 for a standing reception."],
+    ["capacity", "The Grand Hall is roughly twice the size of the Saloon, so it would take all 200 of your guests easily."],
+    ["capacity", "Note: 90 pax seated OK in Reception Room."],
+    ["capacity", "Ten tables of ten would sit nicely in the Reception Room."],
+    ["capacity", "Hi Mr Fairbairn, yes, the Saloon will take your 80 delegates in a classroom layout."],
+    ["capacity", "For a cabaret layout, the Grand Hall would hold about 220 people."],
+    ["capacity", "I don't think the Reception Room would hold more than 40 for a seated lunch."],
+    ["capacity", "Your numbers are well within what the Lower Hall can manage."],
+    ["capacity", "Fire regulations limit the Saloon to 140 people at any one time."],
+    ["capacity", "We could squeeze 160 into the Grand Hall if you're happy with long banqueting tables."],
+    ["capacity", "Even with a dance floor and a band, there would still be space for all 350 of your evening guests."],
+    ["capacity", "The Lower Hall is the largest of our rooms and the only one big enough for 400."],
+    ["capacity", "Summary: client asked about 130 seated; told them the Saloon fits that number."],
+  ],
+};
+
+export const BLIND_SETS: readonly BlindSentenceSet[] = [BLIND_1, BLIND_2, BLIND_3, BLIND_4];

@@ -33,14 +33,19 @@ type AIDraftPanelProps = DraftSource & {
 };
 
 /** Why no draft came, in the panel's words. A server-built draft can be
- *  refused for what it would be drawn from; anything else is the AI being
- *  unavailable, and the work carries on by hand. */
+ *  refused for what it would be drawn from; a draft can fail to be written
+ *  (the AI did not answer, or its words could not be shown once a price,
+ *  availability or capacity was taken out); anything else is the AI being
+ *  unavailable. The work carries on by hand. */
 function failureWords(error: unknown): string {
   if (error instanceof ApiError && error.status === 422 && error.code === "NOTHING_TO_DRAFT_FROM") {
     return "There is nothing to draft from yet: no event details or words from the guest. Continue with manual review.";
   }
   if (error instanceof ApiError && error.status === 404) {
     return "A draft is made only for the venue you work at. Continue with manual review.";
+  }
+  if (error instanceof ApiError && error.status === 502) {
+    return "The draft could not be written. Continue with manual review.";
   }
   return "AI draft generation is unavailable. Continue with manual review.";
 }
@@ -96,6 +101,7 @@ export function AIDraftPanel({
   if (status.kind !== "ready" || !status.configured) return null;
 
   const disabled = draftState.kind === "loading";
+  const withheld = draftState.kind === "ready" ? withheldWords(draftState.draft.withheldCommitments) : null;
 
   return (
     <section className="ai-draft-panel" aria-label={`${title} AI draft panel`}>
@@ -142,9 +148,9 @@ export function AIDraftPanel({
               Unsupported certainty was removed.
             </p>
           )}
-          {draftState.draft.withheldCommitments.length > 0 && (
+          {withheld !== null && (
             <p className="ai-draft-panel__note" data-testid="ai-draft-withheld">
-              {withheldWords(draftState.draft.withheldCommitments)}
+              {withheld}
             </p>
           )}
         </div>

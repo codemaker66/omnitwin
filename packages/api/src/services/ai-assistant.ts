@@ -5,7 +5,6 @@ import {
   createReviewGatedAIDraft,
   stableCanonicalJson,
   draftLeftAfterWithholding,
-  withholdDraftCommitments,
   type AIAssistantStatus,
   type AIDraft,
   type AIDraftUseCase,
@@ -287,7 +286,7 @@ export function buildAIDraftInstructions(input: CreateAIDraftRequest): string {
     // Plan 19, L6: only the venue's team confirms these. The draft is also
     // checked after it is written, and a sentence that states one is taken
     // out (withholdDraftCommitments in @omnitwin/types).
-    "Never state a price, a cost, a fee, a deposit, a discount or any amount of money; never say whether a date, a time or a room is available, free, held, booked or confirmed; and never say how many people a room seats, holds or can take, or that it is big enough. Only the venue's events team confirms these. Where the context or the client asks about one of them, say the events team will confirm it.",
+    "Never state a price, a cost, a fee, a deposit, a discount or any amount of money, other than the client's own budget, which you may repeat as theirs but never judge (never say what it will cover); never say whether a date, a time or a room is available, free, held, booked or confirmed; and never say how many people a room seats, holds or can take, or that it is big enough. Only the venue's events team confirms these. Where the context or the client asks about one of them, say the events team will confirm it.",
     // A client's own words reach the context verbatim, so the context is
     // read as data: what it asks for can be answered, but it cannot rewrite
     // these rules or make the draft confirm what the venue has not.
@@ -417,11 +416,9 @@ export async function generateAIDraft(
     prompt: buildAIDraftPrompt(parsed),
     context: parsed.context,
   }, attribution);
-  if (!draftLeftAfterWithholding(withholdDraftCommitments(body))) {
-    throw new AIDraftNotProducedError("Once its price, availability or capacity claims were out, too little of the draft was left");
-  }
+  let draft: AIDraft;
   try {
-    return createReviewGatedAIDraft({
+    draft = createReviewGatedAIDraft({
       useCase: parsed.useCase,
       title: titleForAIDraft(parsed.useCase),
       body,
@@ -429,8 +426,12 @@ export async function generateAIDraft(
       generatedAt: now.toISOString(),
     });
   } catch (error) {
-    // The model's words could not be made a draft the schema holds: no draft, said so.
+    // Nothing left once the claims were out, or words the draft cannot hold: no draft, said so.
     if (error instanceof ZodError) throw new AIDraftNotProducedError("The model's words could not be made a draft that can be shown");
     throw error;
   }
+  if (!draftLeftAfterWithholding({ text: draft.body, withheld: draft.withheldCommitments ?? [] })) {
+    throw new AIDraftNotProducedError("Once its price, availability or capacity claims were out, too little of the draft was left");
+  }
+  return draft;
 }

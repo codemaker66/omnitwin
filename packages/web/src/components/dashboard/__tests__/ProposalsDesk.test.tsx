@@ -4489,7 +4489,7 @@ describe("Draft the message with AI", () => {
   const draft = (overrides: Record<string, unknown> = {}, drewOn: Record<string, boolean> = DREW_ON): Record<string, unknown> => ({
     draft: {
       schemaVersion: "ai_assistant.v0", useCase: "proposal_draft", title: "Proposal draft", body: BODY,
-      blockedUnsafeClaims: [], withheldCommitments: [], safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated",
+      blockedUnsafeClaims: [], safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated",
       evidenceStatus: "unverified", sendState: "draft_only", generatedAt: NOW, digest: "c".repeat(64), ...overrides,
     },
     drewOn,
@@ -4753,7 +4753,7 @@ describe("Draft the message with AI", () => {
     // Plan 19, L6: what the server took out of the model's words is said, calmly.
     block = await drafted(element, draft({ withheldCommitments: ["price", "availability"] }));
     expect(within(block).getByTestId("ai-draft-withheld").textContent)
-      .toBe("Sentences that seemed to give a price or say whether a date or room is free were taken out, as only the team confirms these.");
+      .toBe("Wording that seemed to give a price or say whether a date or room is free was taken out, as only the team confirms these.");
     expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
   });
 
