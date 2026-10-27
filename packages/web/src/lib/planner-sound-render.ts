@@ -232,7 +232,7 @@ export function soundingLengthMs(samples: Float32Array, sampleRate = 48000, floo
 }
 
 /** In-place radix-2 FFT over a power-of-two length. */
-function fft(re: Float64Array, im: Float64Array): void {
+export function fft(re: Float64Array, im: Float64Array): void {
   const n = re.length;
   for (let i = 1, j = 0; i < n; i += 1) {
     let bit = n >> 1;
