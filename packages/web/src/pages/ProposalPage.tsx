@@ -12,6 +12,7 @@ import {
 } from "../api/proposals.js";
 import { ProposalDocument } from "../components/proposal/ProposalDocument.js";
 import { ClientDeposit, type DepositReturn } from "../components/proposal/ClientDeposit.js";
+import { ClientContract } from "../components/proposal/ClientContract.js";
 import {
   commentAuthor, conversation, documentMoney, documentTitle, venueLongDate,
 } from "../components/proposal/proposal-document-format.js";
@@ -165,7 +166,8 @@ export function ProposalPage(): ReactElement {
         decision={(
           <>
             <Decision proposal={state.proposal} token={hasToken ? token : null} shareCode={shareCode ?? null} onAnswered={read} />
-            {/* Once accepted, what the venue asks for next: the deposit. */}
+            {/* Once accepted, what the venue asks for next: the contract to sign, and the deposit. */}
+            {hasToken && state.proposal.status === "accepted" && <ClientContract token={token} />}
             {hasToken && state.proposal.status === "accepted" && <ClientDeposit token={token} returned={depositReturn} />}
           </>
         )}

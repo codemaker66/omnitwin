@@ -227,3 +227,18 @@
 .pr-deposit .enq-next__hint { margin: 8px 0 0; }
 .pr-deposit .enq-actions { margin-top: 12px; }
 .pr-deposit__in-force .enq-actions { margin-top: 14px; }
+
+/* The contract on an accepted proposal (Plan 19 L5). */
+.pr-contract__version { margin: 0; color: var(--enq-forest-ink); font-size: 15px; }
+.pr-contract__signature { margin: 6px 0 0; color: var(--enq-forest-ink-2); font-size: 14px; line-height: 1.5; }
+.pr-contract__latest[data-signed="true"] .pr-contract__signature { color: var(--enq-forest-ink); }
+.pr-contract__record { display: grid; gap: 6px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--enq-forest-rule); border-radius: 3px; font-size: 13px; }
+.pr-contract__record div { display: grid; grid-template-columns: minmax(110px, 150px) 1fr; gap: 10px; }
+.pr-contract__record dt { color: var(--enq-forest-ink-3); }
+.pr-contract__record dd { margin: 0; color: var(--enq-forest-ink-2); overflow-wrap: anywhere; }
+.pr-contract__record code { font-size: 12px; }
+.pr-contract .enq-next__hint { margin: 8px 0 0; }
+.pr-contract .enq-actions { margin-top: 12px; }
+.pr-contract__earlier { margin-top: 12px; color: var(--enq-forest-ink-2); font-size: 13.5px; }
+.pr-contract__earlier summary { min-height: 32px; cursor: pointer; }
+.pr-contract__earlier ul { margin: 6px 0 0; padding-left: 18px; }

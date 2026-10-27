@@ -62,11 +62,15 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   changeProposalLayout: mocks.changeProposalLayout,
 }));
 vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
-// An accepted proposal reads its deposit (Plan 19 L5); deposits are off here.
+// An accepted proposal reads its contract and deposit (Plan 19 L5): none here.
 vi.mock("../../../api/deposits.js", () => ({
   getProposalDeposit: () => Promise.resolve({ availability: "off", requests: [] }),
   requestProposalDeposit: vi.fn(),
   cancelProposalDeposit: vi.fn(),
+}));
+vi.mock("../../../api/contracts.js", () => ({
+  getProposalContract: () => Promise.resolve({ acceptedVersion: null, clientEmail: null, versions: [] }),
+  prepareProposalContract: vi.fn(),
 }));
 vi.mock("../../../api/ai-assistant.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../api/ai-assistant.js")>(),

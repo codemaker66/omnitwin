@@ -51,6 +51,7 @@ import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
 import { proposalDepositRoutes, proposalShareDepositRoutes } from "./routes/deposits.js";
+import { proposalContractRoutes, proposalShareContractRoutes } from "./routes/contracts.js";
 import { depositPaymentsFrom } from "./services/payments/deposit-gateway.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
@@ -584,6 +585,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // Deposits on an accepted proposal (Plan 19 L5), Stripe test mode only.
   await server.register(proposalDepositRoutes, { db, payments: depositPayments, prefix: "/proposals" });
   await server.register(proposalShareDepositRoutes, { db, payments: depositPayments, prefix: "/proposal-share" });
+  // The contract and its simple electronic signature (Plan 19 L5).
+  await server.register(proposalContractRoutes, { db, prefix: "/proposals" });
+  await server.register(proposalShareContractRoutes, { db, prefix: "/proposal-share" });
   await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 

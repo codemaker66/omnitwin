@@ -25,6 +25,11 @@ vi.mock("../api/deposits.js", () => ({
   getShareDeposit: mockGetShareDeposit,
   startShareDepositCheckout: vi.fn(),
 }));
+// And its contract; none prepared here.
+vi.mock("../api/contracts.js", () => ({
+  getShareContract: () => Promise.resolve(null),
+  signShareContract: vi.fn(),
+}));
 
 vi.mock("../api/proposals.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/proposals.js")>();

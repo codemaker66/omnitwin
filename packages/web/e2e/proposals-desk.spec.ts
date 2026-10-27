@@ -403,6 +403,11 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
         } } });
         return;
       }
+      // No contract prepared on the desk here; the client's email is held.
+      if (rest === "/contract" && method === "GET") {
+        void route.fulfill({ json: { data: { acceptedVersion: current.sentVersion, clientEmail: "ada@example.test", versions: [] } } });
+        return;
+      }
       // Deposits as the routes keep them: one in force, figured from the
       // accepted version's total (a half penny rounding up), withdrawn while unpaid.
       if (rest === "/deposit" && method === "GET") {
