@@ -271,7 +271,7 @@ let referenceRoomConstant: number | null = null;
  *   - added contents raise R and lower any room's value;
  *   - a small, lightly absorbing room has less total absorption than the
  *     hall, so a stronger diffuse field, and is above 1 (the galleries are
- *     about 1.7), though its tail is shorter.
+ *     about 1.6), though its tail is shorter.
  */
 export function reverberantGain(room: RoomAcoustics, contents: BandValues): number {
   referenceRoomConstant ??= roomConstant(ROOM_ACOUSTICS["grand-hall"], NO_CONTENTS);

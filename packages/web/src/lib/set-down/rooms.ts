@@ -12,12 +12,14 @@
 import type { SurfaceMaterialId } from "./acoustic-data.js";
 import type { BandValues } from "./bands.js";
 import {
+  HALL_DOME,
   HALL_DOORS,
   HALL_ELEVATION,
   HALL_HEIGHT,
   HALL_LENGTH,
   HALL_OPENINGS,
   HALL_WIDTH,
+  domeHeightAt,
   isWindow,
   openingTop,
   type HallOpening,
@@ -70,24 +72,59 @@ function surface(material: SurfaceMaterialId, areaM2: number, role: RoomSurface[
 // The Grand Hall, from components/grand-hall/hall-spec.ts
 // ---------------------------------------------------------------------------
 
-/** The dome's radius, as data/room-geometries.ts has it (EST). */
-const DOME_RADIUS_M = 3.5;
-/** The dome is taken as a hemisphere on a drum this tall (EST). */
-const DOME_DRUM_M = 1.5;
+/** Rings the dome's profile is integrated in; halving it moves neither figure by 0.01 %. */
+const DOME_STEPS = 1024;
+
+/** The dome above the ceiling plane, from its scanned profile. */
+export interface DomeGeometry {
+  /** The air above the ceiling plane, m3. */
+  readonly volumeM3: number;
+  /** The dome's inner face, from the gilt foot ring to the crown plate, m2. */
+  readonly surfaceM2: number;
+  /** The hole it leaves in the ceiling, m2. */
+  readonly openingM2: number;
+}
+
+/**
+ * Integrates the scanned dome (HALL_DOME, domeHeightAt in hall-spec.ts) as a
+ * surface of revolution in `steps` rings from the crown to the foot ring: the
+ * volume by the midpoint rule on 2 pi r (h(r) - ceiling) dr, the inner face
+ * as a stack of conical frusta, which stays exact where the band drops
+ * vertically to the foot.
+ */
+export function domeGeometry(steps: number = DOME_STEPS): DomeGeometry {
+  const n = Math.max(1, Math.floor(steps));
+  const foot = HALL_DOME.footRadius;
+  const dr = foot / n;
+  let volumeM3 = 0;
+  let surfaceM2 = 0;
+  let r0 = 0;
+  let h0 = domeHeightAt(0);
+  for (let i = 1; i <= n; i += 1) {
+    const mid = (i - 0.5) * dr;
+    volumeM3 += 2 * Math.PI * mid * (domeHeightAt(mid) - HALL_HEIGHT) * dr;
+    const r1 = i * dr;
+    const h1 = domeHeightAt(r1);
+    surfaceM2 += Math.PI * (r0 + r1) * Math.hypot(r1 - r0, h1 - h0);
+    r0 = r1;
+    h0 = h1;
+  }
+  return { volumeM3, surfaceM2, openingM2: Math.PI * foot * foot };
+}
 /**
  * The mahogany dado's height: the top of its cap rail, as the scan measures it
  * (HALL_ELEVATION.dadoTop, 1.95 m; ruling R12 replaced the plan's 1.2 m).
  */
 const DADO_BAND_M = HALL_ELEVATION.dadoTop;
 /**
- * The width of each of a window's two velour curtains, flat (EST). The plan's
- * 0.9 m gave 31 m2 of velour and an empty hall over 2.6 s at 1 kHz, outside
- * the 2.0-2.6 s the plan's test sets. With the scanned dado, widths from about
- * 0.94 to 1.39 m meet that and keep the hall's mid band over three times the
- * galleries'; 1.05 m gives 36 m2 of velour and 2.49 s at 1 kHz. (The research
- * estimate assumed 45 m2.)
+ * The width of each of a window's two velour curtains, flat (EST), as the plan
+ * sets it: 31 m2 of velour, and 2.53 s at 1 kHz in the empty hall, inside the
+ * plan's 2.0-2.6 s. (Before the dome was integrated from the scan, its EST
+ * volume put the hall over 2.6 s and this was raised to 1.05 m; with the
+ * scanned dome, widths from 0.9 to about 1.23 m pass, so the plan's figure
+ * stands. The research estimate assumed 45 m2.)
  */
-const CURTAIN_WIDTH_M = 1.05;
+const CURTAIN_WIDTH_M = 0.9;
 
 /** The clear area of an opening; an arched window adds its semicircular head. */
 function openingArea(opening: HallOpening): number {
@@ -103,10 +140,8 @@ function grandHall(): RoomAcoustics {
   const doors = HALL_OPENINGS.filter((opening) => doorIds.has(opening.id));
 
   const floor = HALL_LENGTH * HALL_WIDTH;
-  const domeOpening = Math.PI * DOME_RADIUS_M * DOME_RADIUS_M;
-  // A hemisphere's inner face plus the drum's wall.
-  const dome = 2 * Math.PI * DOME_RADIUS_M * DOME_RADIUS_M + 2 * Math.PI * DOME_RADIUS_M * DOME_DRUM_M;
-  const volume = floor * HALL_HEIGHT + (2 / 3) * Math.PI * DOME_RADIUS_M ** 3 + domeOpening * DOME_DRUM_M;
+  const dome = domeGeometry();
+  const volume = floor * HALL_HEIGHT + dome.volumeM3;
 
   const perimeter = 2 * (HALL_LENGTH + HALL_WIDTH);
   const glazing = windows.reduce((sum, opening) => sum + openingArea(opening), 0);
@@ -125,8 +160,8 @@ function grandHall(): RoomAcoustics {
     volumeM3: volume,
     surfaces: [
       surface("oak-boards-joists", floor, "floor"),
-      surface("plaster-lath", floor - domeOpening, "ceiling"),
-      surface("plaster-masonry", dome, "ceiling"),
+      surface("plaster-lath", floor - dome.openingM2, "ceiling"),
+      surface("plaster-masonry", dome.surfaceM2, "ceiling"),
       surface("hardwood-panelling", dado, "wall"),
       surface("hardwood-panelling", upperWall / 2, "wall"),
       surface("plaster-masonry", upperWall / 2, "wall"),
@@ -136,7 +171,7 @@ function grandHall(): RoomAcoustics {
     ],
     calibration: UNCALIBRATED,
     source:
-      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; dome r 3.5 m on a 1.5 m drum (EST); dado to the scanned 1.95 m cap rail; curtains 2 x 1.05 m a window (EST)",
+      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; the scanned dome (HALL_DOME, domeHeightAt), integrated; dado to the scanned 1.95 m cap rail; curtains 2 x 0.9 m a window (EST)",
   };
 }
 

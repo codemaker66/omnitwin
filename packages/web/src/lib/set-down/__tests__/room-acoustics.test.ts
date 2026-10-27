@@ -11,7 +11,7 @@ import {
   roomAcousticsFor,
   roomState,
 } from "../room-acoustics.js";
-import { ROOM_ACOUSTICS, ROOM_PLANS, type RoomAcoustics, type RoomSlug } from "../rooms.js";
+import { ROOM_ACOUSTICS, ROOM_PLANS, domeGeometry, type RoomAcoustics, type RoomSlug } from "../rooms.js";
 
 const NO_CONTENTS: BandValues = [0, 0, 0, 0, 0, 0, 0];
 const BANDS = [0, 1, 2, 3, 4, 5, 6] as const;
@@ -40,9 +40,30 @@ function midBand(rt: BandValues): number {
 }
 
 describe("Trades Hall rooms", () => {
-  it("gives the Grand Hall about 1,647 m3 with its dome", () => {
-    expect(GRAND_HALL.volumeM3).toBeGreaterThan(1640);
-    expect(GRAND_HALL.volumeM3).toBeLessThan(1655);
+  it("gives the Grand Hall its scanned volume, dome included", () => {
+    // 21.135 x 10.59 x 6.7 m = 1,499.59 m3 under the coffers, plus 50.10 m3 in
+    // the dome: the integral of 2 pi r (domeHeightAt(r) - 6.7) from 0 to the
+    // 3.32 m foot ring, by adaptive quadrature (scipy quad) outside this code,
+    // agreeing with the review's own integration of about 50 m3.
+    const scanned = 21.135 * 10.59 * 6.7 + 50.1;
+    expect(Math.abs(GRAND_HALL.volumeM3 - scanned) / scanned).toBeLessThan(0.015);
+  });
+
+  it("integrates the scanned dome finely enough that halving the step moves it under 0.5 %", () => {
+    const fine = domeGeometry();
+    const finer = domeGeometry(2048);
+    expect(Math.abs(finer.volumeM3 - fine.volumeM3) / fine.volumeM3).toBeLessThan(0.005);
+    expect(Math.abs(finer.surfaceM2 - fine.surfaceM2) / fine.surfaceM2).toBeLessThan(0.005);
+    // Independent figures: 50.10 m3 (quadrature) and 54.44 m2 (65,536 frusta).
+    expect(fine.volumeM3).toBeCloseTo(50.1, 1);
+    expect(fine.surfaceM2).toBeCloseTo(54.44, 1);
+    expect(fine.openingM2).toBeCloseTo(Math.PI * 3.32 * 3.32, 9);
+    const ceiling = GRAND_HALL.surfaces.find((surface) => surface.material === "plaster-lath");
+    expect(ceiling?.areaM2).toBeCloseTo(21.135 * 10.59 - fine.openingM2, 9);
+    const dome = GRAND_HALL.surfaces.filter(
+      (surface) => surface.material === "plaster-masonry" && surface.role === "ceiling",
+    );
+    expect(dome.map((surface) => surface.areaM2)).toEqual([fine.surfaceM2]);
   });
 
   it("puts the empty Grand Hall, curtains included, between 2.0 and 2.6 s at 1 kHz", () => {
