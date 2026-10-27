@@ -264,11 +264,15 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
     // Only a change of stage asks; the context it compares with is read here.
   }, [selectedStatus]);
 
-  // The plan as it was submitted, read once per review opened.
+  // The plan as it was submitted, read once per review opened. Read again,
+  // the plan on screen stays until the new one arrives, and a decision made
+  // meanwhile names it: the API refuses it if a newer one was submitted.
   useEffect(() => {
     if (selectedId === null) return;
     let current = true;
-    setSnapshot({ id: selectedId, state: { status: "loading" } });
+    setSnapshot((previous) => previous.id === selectedId && previous.state.status === "ready"
+      ? previous
+      : { id: selectedId, state: { status: "loading" } });
     void getLatestSnapshot(selectedId)
       .then((envelope) => {
         if (!current) return;
@@ -411,7 +415,7 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
   const explainDepartureRef = useRef(explainDeparture);
   useEffect(() => { explainDepartureRef.current = explainDeparture; });
 
-  const reportMovedOn = async (entry: PendingReviewEntry): Promise<void> => {
+  const reportMovedOn = async (entry: PendingReviewEntry, sameMoment: boolean): Promise<void> => {
     try {
       const now = await getAvailableTransitions(entry.id);
       // The plan is read again too: the version judged may have been replaced.
@@ -419,7 +423,9 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
       if (now.currentStatus === entry.reviewStatus) {
         if (selectedIdRef.current === entry.id) {
           setConfirming(null);
-          setMovedNotice({ id: entry.id, message: "This review changed while it was open here, so your decision was not recorded. It has been read again; look it over before deciding." });
+          setMovedNotice({ id: entry.id, message: sameMoment
+            ? "Another change reached this review at the same moment, so your decision was not recorded. The review itself has not moved; you can make it again."
+            : "This review changed while it was open here, so your decision was not recorded. It has been read again; look it over before deciding." });
           setContextVersion((version) => version + 1);
         }
         return;
@@ -482,7 +488,7 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
       }
     } catch (error: unknown) {
       if (reviewMovedOn(error)) {
-        await reportMovedOn(entry);
+        await reportMovedOn(entry, error instanceof ApiError && error.code === "RETRY");
       } else if (selectedIdRef.current === entry.id) {
         setFailure({ id: entry.id, message: FAILURE_WORDS[move] });
       } else {

@@ -668,6 +668,51 @@ describe("decisions say who hears, and what happened", () => {
     await waitFor(() => { expect(mocks.rejectLayout).toHaveBeenLastCalledWith(CONFIG_ID, "Still not for this room.", newer.id); });
   });
 
+  it("keeps the plan on screen while it is read again, and a decision made meanwhile names it", async () => {
+    const newer: SnapshotEnvelope = { ...snapshotEnvelope(), id: "00000000-0000-4000-8000-000000007006", version: 3 };
+    const reread = deferred<SnapshotEnvelope>();
+    mocks.listPendingReviews.mockResolvedValue([pendingReview({ reviewStatus: "under_review" })]);
+    mocks.getAvailableTransitions.mockResolvedValue(IN_REVIEW);
+    // Each refusal reads the plan again; the read after the second one finds version 3.
+    mocks.getLatestSnapshot.mockResolvedValueOnce(snapshotEnvelope()).mockReturnValueOnce(reread.promise).mockResolvedValue(newer);
+    mocks.rejectLayout.mockRejectedValueOnce(new ApiError(409, "A newer version was submitted", "SNAPSHOT_CONFLICT"))
+      .mockRejectedValueOnce(new ApiError(409, "A newer version was submitted", "SNAPSHOT_CONFLICT"));
+    render(<ReviewsView />);
+    await openReview();
+    expect(await screen.findByText(/^Version 2/u)).toBeDefined();
+    const reject = async (note: string): Promise<void> => {
+      fireEvent.click(await screen.findByRole("button", { name: "Reject…" }));
+      const confirm = screen.getByTestId("review-confirm-rejected");
+      fireEvent.change(within(confirm).getByLabelText("Why it cannot be approved"), { target: { value: note } });
+      fireEvent.click(within(confirm).getByRole("button", { name: "Reject" }));
+    };
+    await reject("Not for this room.");
+    await screen.findByTestId("review-moved-on");
+    await waitFor(() => { expect(mocks.getLatestSnapshot).toHaveBeenCalledTimes(2); });
+
+    // The plan is still being read again: version 2 stays, and a decision
+    // names it, so the API refuses it rather than deciding on whatever is newest.
+    expect(screen.getByText(/^Version 2/u)).toBeDefined();
+    await reject("Still not for this room.");
+    await waitFor(() => { expect(mocks.rejectLayout).toHaveBeenCalledTimes(2); });
+    expect(mocks.rejectLayout).toHaveBeenLastCalledWith(CONFIG_ID, "Still not for this room.", SNAPSHOT_ID);
+    await act(async () => { reread.resolve(snapshotEnvelope()); await reread.promise; });
+    expect(await screen.findByText(/^Version 3/u)).toBeDefined();
+  });
+
+  it("says a decision met another change at the same moment, not that the review moved, when nothing moved", async () => {
+    mocks.listPendingReviews.mockResolvedValue([pendingReview({ reviewStatus: "under_review" })]);
+    mocks.getAvailableTransitions.mockResolvedValue(IN_REVIEW);
+    mocks.approveLayout.mockRejectedValueOnce(new ApiError(409, "Someone else changed this at the same moment. Please try again.", "RETRY"));
+    render(<ReviewsView />);
+    await openReview();
+    fireEvent.click(await screen.findByRole("button", { name: "Approve…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve and email" }));
+    expect((await screen.findByTestId("review-moved-on")).textContent)
+      .toBe("Another change reached this review at the same moment, so your decision was not recorded. The review itself has not moved; you can make it again.");
+    expect(screen.queryByText(/Approval did not save/u)).toBeNull();
+  });
+
   it("reads the queue again quietly when the tab is looked at, and says where an open review went", async () => {
     mocks.listPendingReviews
       .mockResolvedValueOnce([pendingReview(), pendingReview({ id: SECOND_ID, name: "Late submission", stageSince: "2026-06-19T09:30:00.000Z" })])
