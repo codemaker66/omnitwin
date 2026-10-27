@@ -83,8 +83,12 @@ confirms these, from the quote, the Diary and the venue's sourced figures.
   `packages/types/src/ai-draft-commitments.ts`) reads the draft line by line
   and sentence by sentence, and takes out every sentence whose words have a
   claim's shape ("£65 per head", "the Grand Hall is free on the 17th", "it
-  seats 200", "Capacity: 200 seated"). The topic without a claim's shape stays
-  ("the team will confirm the details", "your 150 guests", "6.30pm").
+  seats 200", "Capacity: 200 seated", "we can offer a discount"). The topic
+  without a claim's shape stays ("the team will confirm the details", "your
+  150 guests", "6.30pm", "asks about a discount"). An answer left on its own
+  once the claim before it is out goes with it ("It is.", "Yes, it can.",
+  "I'm afraid not."), on its line or the next; a sentence that only begins
+  like one ("It is a beautiful room") stays.
 - **Nothing excuses a claim's shape.** Three reviews (27 October 2026) tried
   exemptions in turn, and each let the draft's own claims through in the way
   a model writes them when it answers: a clause holding "you asked" or
@@ -92,8 +96,10 @@ confirms these, from the quote, the Diary and the venue's sourced figures.
   hire is £4,500"); a question excused its answer in the next sentence ("you
   asked whether the 17th is free. It is."); quotation marks, "if" and a
   venue price beside the word "budget" did the same. The rule the model is
-  given matches the check, so a draft that keeps it loses nothing; the cost is
-  that a summary does not repeat the client's figure or question word for
+  given matches the check, so a draft that keeps it should rarely lose a
+  sentence; when one that makes no claim has a claim's shape it goes too
+  (the blind sets record how often), and the draft says what kind of wording
+  went. A summary does not repeat the client's figure or question word for
   word (the enquiry shows both).
 - **Where it runs.** `createReviewGatedAIDraft` makes the wording safe, then
   takes the claims out of the words as they will be shown, for every draft.

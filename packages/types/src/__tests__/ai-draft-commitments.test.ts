@@ -407,8 +407,90 @@ describe("what the rule asks for stays, and what it forbids goes, however it is 
 
   it("takes the question out with its answer, so nothing of the claim is left", () => {
     const kept = withholdDraftCommitments("Dear Elaine,\n\nYou asked whether the Grand Hall is free on the 17th. I'm pleased to say it is.\n\nThe Events Team");
-    expect(kept.text).not.toMatch(/Grand Hall|17th/u);
+    expect(kept.text).toBe("Dear Elaine,\n\nThe Events Team");
     expect(kept.withheld).toEqual(["availability"]);
+  });
+
+  // Release review, fourth round: once the claim was out, the bare answer
+  // to it stayed ("It is.", "It can, comfortably."), saying it for the claim.
+  it.each([
+    ["You asked whether the 17th is free. It is. We look forward to hearing from you.", "We look forward to hearing from you."],
+    ["You asked whether the Saloon can seat 120.\nIt can, comfortably.\nWe look forward to hearing from you.", "We look forward to hearing from you."],
+    ["Is the Saloon free on the 14th? Yes! Do let us know.", "Do let us know."],
+    ["Can the Saloon take 120? I'm afraid not. Do let us know.", "Do let us know."],
+    ["Is the Grand Hall free on the 17th?\n\nGood news: it is.\n\nWith best wishes,", "With best wishes,"],
+    ["The 17th is free. It is, and we would love to host you. Do let us know.", "Do let us know."],
+  ])("takes out the answer left after a claim: %s", (draft, left) => {
+    expect(withholdDraftCommitments(draft).text).toBe(left);
+  });
+
+  it.each([
+    ["The 17th is free. It is a beautiful room with high ceilings.", "It is a beautiful room with high ceilings."],
+    ["The Saloon seats 90. Yes, we'd love to show you round.", "Yes, we'd love to show you round."],
+    ["Is parking easy? It is. Do let us know.", "Is parking easy? It is. Do let us know."],
+  ])("keeps what only looks like an answer, or answers no claim: %s", (draft, left) => {
+    expect(withholdDraftCommitments(draft).text).toBe(left);
+  });
+
+  // Release review, fourth round: carve-outs for times, dates and opening
+  // hours hid claims, and topic words a summary uses were taken out as claims.
+  it.each([
+    ["capacity", "The Grand Hall seats 180 to 220."],
+    ["capacity", "The hall holds 150-200 standing."],
+    ["capacity", "The Saloon seats between 80 and 100 for dinner."],
+    ["capacity", "The Saloon is too small to seat 120."],
+    ["capacity", "The Saloon would be a squeeze for 120."],
+    ["capacity", "That's too many for the Saloon."],
+    ["capacity", "For 150 guests you'd need the Grand Hall."],
+    ["capacity", "There's room for everyone in the Saloon."],
+    ["capacity", "Max 220 seated."],
+    ["capacity", "The Saloon easily seats 120."],
+    ["availability", "The Grand Hall is free for the 17th."],
+    ["availability", "The Saloon is free from 2pm on the day."],
+    ["availability", "The hall is free all day on Saturday."],
+    ["availability", "The Saloon is free next Saturday."],
+    ["availability", "The Grand Hall is available from the 14th."],
+    ["availability", "June is open to bookings."],
+    ["availability", "Provisional hold until Friday."],
+    ["availability", "Your wedding on 14 June is confirmed."],
+    ["price", "Room hire is 2,000 to 3,000 depending on the day."],
+    ["price", "Room hire is 2,000-3,000 for the evening."],
+    ["price", "We'll keep the menu well within your budget."],
+    ["price", "Complimentary on-site parking is included."],
+    ["price", "Parking is complimentary."],
+    ["price", "Parking is included in the room hire."],
+    ["price", "There's a midweek discount."],
+    ["price", "Fridays are cheaper."],
+    ["price", "The corkage fee is waived for weddings."],
+    ["price", "We'll waive the corkage."],
+  ] as const)("finds a %s claim a carve-out hid, or said in its giving words: %s", (kind, sentence) => {
+    expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain(kind);
+  });
+
+  it.each([
+    "Asks about a discount for a Friday.",
+    "The events team will let you know about discounts.",
+    "Asks about complimentary parking.",
+    "Asks about cheaper options midweek.",
+    "Asks what is included in the room hire.",
+    "Asks about the special rate for charities.",
+    "Asks how provisional holds work.",
+    "Asks about the maximum capacity of the Saloon.",
+    "No date has been confirmed.",
+    "Nothing for your event has been confirmed yet.",
+    "The client asked us to hold off until their budget is agreed.",
+    "It is clear that the client wants a relaxed evening.",
+    "That's taken care of.",
+    "Set-up easily takes two hours.",
+    "There's room for questions at the end.",
+    "There's space for 20 minutes of speeches.",
+    "There's room for 10 to 15 minutes of questions.",
+    "The corridor is too tight for a wheelchair.",
+    "They expect up to 150 guests.",
+    "Thursdays open to you for viewings.",
+    "Max 2 cars per booking in the courtyard.",
+  ])("leaves alone a topic named, not a claim made: %s", (sentence) => {
+    expect(findDraftCommitments(sentence)).toEqual([]);
   });
 });
 
@@ -528,6 +610,9 @@ describe("taking the claims out of a draft", () => {
     expect(withholdDraftCommitments("a) The hall seats 200. Arrival at 6pm.").text).toBe("a) Arrival at 6pm.");
     expect(withholdDraftCommitments("> The hall seats 200. Arrival at 6pm.").text).toBe("> Arrival at 6pm.");
     expect(withholdDraftCommitments("The hall holds 200 max. We look forward to hearing from you.").text).toBe("We look forward to hearing from you.");
+    // Fourth round: a title is not a list marker; a numeral is.
+    expect(withholdDraftCommitments("Mrs. Smith asked whether the 17th is free. She would like a reply soon.").text).toBe("She would like a reply soon.");
+    expect(withholdDraftCommitments("iv) The hall seats 200. Arrival at 6pm.").text).toBe("iv) Arrival at 6pm.");
   });
 
   it("changes nothing in a draft that makes no claim", () => {

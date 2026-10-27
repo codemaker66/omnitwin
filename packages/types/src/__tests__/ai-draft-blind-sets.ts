@@ -223,6 +223,8 @@ export const BLIND_2: BlindSentenceSet = {
     "AV handoff: the client wants a \"big screen\" for the slideshow, visible from the back of the Grand Hall.",
     "Free-flow Prosecco was mentioned in their email; they'd like to discuss options at the viewing.",
     "Our quotation will set out each item separately, so you can see exactly what's included.",
+    // Taken out while "a discount" alone was a claim; a topic asked about since the third review.
+    "Client asked: \"Is there any discount for a Friday in January?\" \u2014 passed to the sales team to answer.",
   ],
   dirty: [
     ["price", "The Grand Hall hire for a Saturday evening comes to £4,500 plus VAT."],
@@ -279,7 +281,6 @@ export const BLIND_2: BlindSentenceSet = {
   takenOutByTheRule: [
     "You asked whether the Grand Hall is free on Saturday 17 May \u2014 our events team will check the diary and confirm with you directly.",
     "Client mentioned a budget of 'roughly £12k, including drinks', but said there's some flexibility.",
-    "Client asked: \"Is there any discount for a Friday in January?\" \u2014 passed to the sales team to answer.",
     "The client said their last event elsewhere \"cost over £20k\", so they're comparing a few quotes.",
     "Internal summary: client is a registered charity and asked whether we offer reduced rates.",
     "The client quoted a competitor's offer of \"10% off midweek\" and asked whether we could match it.",

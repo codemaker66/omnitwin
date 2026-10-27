@@ -339,7 +339,8 @@ describe("what a draft may not say (L6)", () => {
       "",
       "The Events Team",
     ].join("\n")), { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
-    expect(draft.body).toBe("Dear Elaine,\n\nIt is.\nOur events team will confirm the details with you, and we look forward to helping you plan the day.\n\nThe Events Team");
+    // The bare answer goes with the claim it answered (release review, fourth round).
+    expect(draft.body).toBe("Dear Elaine,\n\nOur events team will confirm the details with you, and we look forward to helping you plan the day.\n\nThe Events Team");
     expect(draft.withheldCommitments).toEqual(["price", "availability"]);
   });
 });
