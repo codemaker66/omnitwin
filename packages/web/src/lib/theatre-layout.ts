@@ -54,6 +54,15 @@ const DEFAULT_AISLE_M = 1.1;
 const DEFAULT_STAGE_DEPTH_M = 2.4;
 const DEFAULT_WALL_CLEARANCE_M = 0.7;
 
+/** The default theatre spacing, metres, so the planner can say what it used. */
+export const THEATRE_SPACING = {
+  seatPitchM: DEFAULT_SEAT_PITCH_M,
+  rowPitchM: DEFAULT_ROW_PITCH_M,
+  aisleM: DEFAULT_AISLE_M,
+  stageDepthM: DEFAULT_STAGE_DEPTH_M,
+  wallClearanceM: DEFAULT_WALL_CLEARANCE_M,
+} as const;
+
 /**
  * Plan a theatre seating block for a room. Pure. The stage sits at one end of
  * the room's longer axis; every chair faces it. Rows are placed front-to-back

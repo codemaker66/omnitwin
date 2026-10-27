@@ -1,12 +1,17 @@
 // ---------------------------------------------------------------------------
 // Planner tools — the pure model behind the tool pill.
 //
-// Five explicit hands: Select, Move, Rotate, Scale, Measure. Select and Move
+// Four explicit hands: Select, Move, Rotate, Measure. Select and Move
 // share drag semantics (direct manipulation is the point — a separate Move
 // tool exists so the intent can be declared, not because dragging should ever
-// stop working in Select). Rotate and Scale turn what used to be
-// keyboard-only (Q/E) or entirely absent into drags around the object's own
-// centre. Measure is the existing two-click tape, promoted into the pill.
+// stop working in Select). Rotate turns what used to be keyboard-only (Q/E)
+// into a drag around the piece's own centre. Measure is the existing
+// two-click tape, promoted into the pill.
+//
+// Scale is no longer a hand (spec D10, QoL B-07): catalogue pieces are the
+// hall's own stock at their real size, and a 6 ft round drawn at 150 % would
+// carry chairs the hall's round cannot. The scale maths below stays for the
+// selection system's legacy path and the readout of stored scales.
 //
 // Everything here is geometry and formatting — no store reads, no React —
 // so the drag maths and the readout strings are testable to the millimetre.
@@ -14,26 +19,31 @@
 
 import { snapRotation } from "./selection.js";
 
-export type PlannerTool = "select" | "move" | "rotate" | "scale" | "measure";
+/**
+ * Every tool the planner can hold; stores/tool-store.ts owns which. The dock's
+ * five are Select, Add, Lay out, Measure and Draw (spec 4.2). Move, Rotate and
+ * Scale are the pill's hands, and leave with the pill (T-671 slice 8, D10).
+ */
+export type PlannerTool = "select" | "add" | "layout" | "measure" | "draw" | "move" | "rotate" | "scale";
+
+/** The pill's four hands. */
+export type PillTool = "select" | "move" | "rotate" | "measure";
 
 export interface PlannerToolMeta {
-  readonly id: PlannerTool;
+  readonly id: PillTool;
   readonly label: string;
   /** One-line tooltip. Mentions a key only where a real binding exists. */
   readonly hint: string;
 }
 
 /**
- * Pill order. No new letter shortcuts: digits jump to bookmarks, WASD pans
- * the camera, Q/E nudge rotation — the planner's keyboard is already spoken
- * for. M (measure) and Escape (back to Select) are the only bindings, both
- * pre-existing behaviours routed through the tool store.
+ * Pill order. The pill's keys are the planner keymap's (lib/planner-keymap.ts):
+ * M for Measure, Esc and V back to Select.
  */
 export const PLANNER_TOOLS: readonly PlannerToolMeta[] = [
   { id: "select", label: "Select", hint: "Select — click, shift-click, or drag a box" },
   { id: "move", label: "Move", hint: "Move — drag furniture; settles onto the grid" },
   { id: "rotate", label: "Rotate", hint: "Rotate — drag around the piece; 15° steps, Shift for free" },
-  { id: "scale", label: "Scale", hint: "Scale — drag outward from the centre; Shift for free" },
   { id: "measure", label: "Measure", hint: "Measure — two clicks lay a tape in metres (M)" },
 ] as const;
 

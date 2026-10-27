@@ -5,6 +5,7 @@ import { referenceLoadouts, referencePhotos, files, spaces, venues } from "../db
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
+import { outerColumn } from "../utils/outer-column.js";
 import type { Env } from "../env.js";
 import { readUrlForUpload } from "./uploads.js";
 
@@ -12,8 +13,8 @@ import { readUrlForUpload } from "./uploads.js";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const SpaceParams = z.object({ venueId: z.string().uuid(), spaceId: z.string().uuid() });
-const LoadoutParams = z.object({ venueId: z.string().uuid(), spaceId: z.string().uuid(), id: z.string().uuid() });
+const SpaceParams = z.object({ venueId: z.uuid(), spaceId: z.uuid() });
+const LoadoutParams = z.object({ venueId: z.uuid(), spaceId: z.uuid(), id: z.uuid() });
 
 const CreateLoadoutBody = z.object({
   name: z.string().trim().min(1).max(500),
@@ -72,8 +73,10 @@ export async function referenceLoadoutRoutes(
       name: referenceLoadouts.name,
       description: referenceLoadouts.description,
       createdAt: referenceLoadouts.createdAt,
-      photoCount: sql<number>`(SELECT count(*)::int FROM reference_photos rp JOIN files f ON f.id = rp.file_id AND f.context = 'loadout' AND f.context_id = reference_loadouts.id WHERE rp.loadout_id = reference_loadouts.id)`,
-      coverFileKey: sql<string | null>`(SELECT f.file_key FROM reference_photos rp JOIN files f ON f.id = rp.file_id AND f.context = 'loadout' AND f.context_id = reference_loadouts.id WHERE rp.loadout_id = reference_loadouts.id ORDER BY rp.sort_order LIMIT 1)`,
+      // Only photos uploaded into this loadout's own scope count or cover it;
+      // the outer row is named in full (outerColumn) inside each subquery.
+      photoCount: sql<number>`(SELECT count(*)::int FROM reference_photos rp JOIN files f ON f.id = rp.file_id AND f.context = 'loadout' AND f.context_id = ${outerColumn(referenceLoadouts.id)} WHERE rp.loadout_id = ${outerColumn(referenceLoadouts.id)})`,
+      coverFileKey: sql<string | null>`(SELECT f.file_key FROM reference_photos rp JOIN files f ON f.id = rp.file_id AND f.context = 'loadout' AND f.context_id = ${outerColumn(referenceLoadouts.id)} WHERE rp.loadout_id = ${outerColumn(referenceLoadouts.id)} ORDER BY rp.sort_order LIMIT 1)`,
     })
       .from(referenceLoadouts)
       .where(and(

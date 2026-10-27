@@ -6,6 +6,11 @@
 export interface NativeRendererLifecycle {
   readonly settled: Promise<void>;
   cancel(): void;
+  /**
+   * Cancel, and resolve once this renderer's resources are actually released.
+   * A replacement drawing on the same canvas must not start before then.
+   */
+  retire(): Promise<void>;
 }
 
 interface NativeRendererLifecycleOptions {
@@ -51,6 +56,11 @@ export function createNativeRendererLifecycle({
     cancel() {
       cancelled = true;
       if (finished) void release();
+    },
+    retire() {
+      cancelled = true;
+      // Unfinished init releases at its own end, which `settled` includes.
+      return finished ? release() : settled;
     },
   };
 }

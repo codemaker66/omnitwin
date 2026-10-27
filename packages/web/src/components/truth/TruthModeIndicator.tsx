@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useId, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Info, ShieldQuestion, X } from "lucide-react";
 import { TRUTH_MODE_TOKENS } from "@omnitwin/types";
 import type { TruthModeSceneSummary } from "../../lib/truth-mode-summary.js";
@@ -12,6 +12,7 @@ import { EvidenceChip } from "../evidence/EvidenceChip.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { countLabel } from "../../lib/count-label.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 
 export interface TruthModeIndicatorProps {
   readonly summary: TruthModeSceneSummary;
@@ -205,6 +206,7 @@ function TruthModeFrame({ embedded, issueLabel, cameraInteractionActive, childre
 
 export function TruthModeIndicator({ summary, embedded = false }: TruthModeIndicatorProps): ReactElement {
   const [open, setOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const detailsId = useId();
   const issueCount = summary.knownIssues.length;
@@ -220,23 +222,14 @@ export function TruthModeIndicator({ summary, embedded = false }: TruthModeIndic
   const fullRuntimeLabel = summary.measuredRuntimeAssetsLoaded ? "Measured runtime loaded" : "Measured runtime not loaded";
   const fullIssueLabel = issueCount > 0 ? countLabel(issueCount, "known issue") : "No known issues";
 
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+  // Escape folds the summary away and hands focus back to its toggle.
+  useEscapeLayer("panel", { open, onEscape: () => { setOpen(false); }, returnFocusTo: toggleRef });
 
   return (
     <TruthModeFrame embedded={embedded} issueLabel={collapsedIssueLabel} cameraInteractionActive={cameraInteractionActive}>
       <div style={embedded ? { ...contentStyle, width: "100%" } : contentStyle}>
         <button
+          ref={toggleRef}
           type="button"
           data-testid="truth-mode-toggle"
           aria-label={open ? "Hide Truth Mode summary" : "Open Truth Mode summary"}

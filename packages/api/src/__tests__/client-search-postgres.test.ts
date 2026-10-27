@@ -28,6 +28,9 @@ if (target !== undefined) {
   }
 }
 
+/** Registered by migration 0067; present in every migrated database. */
+const CHAIR = "7f1fb7a2-5210-57b1-9108-11255c059520";
+
 interface Found {
   readonly contacts: readonly { readonly id: string; readonly name: string; readonly accountName: string | null }[];
   readonly accounts: readonly { readonly name: string }[];
@@ -115,6 +118,24 @@ describe.skipIf(target === undefined)("client search on the migrated disposable 
     expect(found).toMatchObject({ contacts: [], accounts: [], deals: [], proposals: [] });
   });
 
+  it("lets sales search the clients, with the commercial record, and open the desk's lists", async () => {
+    const found = await search("henderson", "sales");
+    expect(found.contacts.map((contact) => contact.name)).toEqual(["Ailsa Henderson"]);
+    expect(found.deals).toHaveLength(1);
+    for (const url of ["/clients/recent", "/clients/upcoming"]) {
+      expect((await server.inject({ method: "GET", url, headers: bearer("sales") })).statusCode, url).toBe(200);
+    }
+  });
+
+  it("still refuses the Clients desk to planners, clients and caterers", async () => {
+    for (const role of ["planner", "client", "caterer"]) {
+      for (const url of ["/clients/search?q=henderson", "/clients/recent", "/clients/upcoming",
+        `/clients/${randomUUID()}/profile`, `/clients/leads/${randomUUID()}/profile`]) {
+        expect((await server.inject({ method: "GET", url, headers: bearer(role) })).statusCode, `${role} ${url}`).toBe(403);
+      }
+    }
+  });
+
   it("lets a platform admin search every venue", async () => {
     const found = await search("henderson", "admin", null, "admin");
     expect(found.contacts.map((row) => row.name)).toEqual(expect.arrayContaining(["Ailsa Henderson", "Morag Henderson"]));
@@ -180,6 +201,11 @@ describe.skipIf(target === undefined)("client search on the migrated disposable 
     expect(rows.map((row) => row.guestName)).toEqual(["Today", "In a month"]);
     const lead = await pool.query<{ id: string }>("SELECT id FROM guest_leads WHERE email = $1", [email]);
     expect(rows.every((row) => row.leadId === lead.rows[0]?.id)).toBe(true);
+    // Sales opens that lead's profile, as the desk's upcoming list links to it.
+    const leadProfile = await server.inject({
+      method: "GET", url: `/clients/leads/${lead.rows[0]?.id ?? ""}/profile`, headers: bearer("sales"),
+    });
+    expect(leadProfile.statusCode).toBe(200);
     // Another venue's staff see none of them.
     const other = await server.inject({ method: "GET", url: "/clients/upcoming", headers: bearer("staff", otherVenueId) });
     expect(other.json<{ data: unknown[] }>().data).toEqual([]);
@@ -189,5 +215,65 @@ describe.skipIf(target === undefined)("client search on the migrated disposable 
     const found = await search("%%");
     expect(found.contacts).toEqual([]);
     expect(found.accounts).toEqual([]);
+  });
+
+  it("counts each person's own layouts and enquiries, and each layout's own objects", async () => {
+    // A correlated count names its outer row in full: a bare "id" or "email"
+    // inside the subquery is the counted table's own column (VENVIEWER-API-1).
+    const db = drizzle(pool, { schema });
+    const [room] = await db.insert(schema.spaces).values({
+      venueId, name: "Counting room", slug: `counting-${randomUUID()}`, widthM: "10", lengthM: "10", heightM: "3", floorPlanOutline: [],
+    }).returning({ id: schema.spaces.id });
+    const spaceId = room?.id ?? "";
+    const kirsty = randomUUID();
+    const ewan = randomUUID();
+    await db.insert(schema.users).values([
+      { id: kirsty, email: `kirsty-${kirsty}@search.invalid`, name: "Kirsty Tallyman", role: "client" },
+      { id: ewan, email: `ewan-${ewan}@search.invalid`, name: "Ewan Tallyman", role: "client" },
+    ]);
+    const layout = async (userId: string, objects: number): Promise<string> => {
+      const [row] = await db.insert(schema.configurations).values({
+        venueId, spaceId, userId, name: `Layout ${randomUUID().slice(0, 8)}`, layoutStyle: "custom",
+      }).returning({ id: schema.configurations.id });
+      const id = row?.id ?? "";
+      for (let index = 0; index < objects; index++) {
+        await db.insert(schema.placedObjects).values({
+          configurationId: id, assetDefinitionId: CHAIR, positionX: String(index), positionY: "0", positionZ: "0",
+          sortOrder: index, coordinateWriteToken: randomUUID(),
+        });
+      }
+      return id;
+    };
+    const kirstyFirst = await layout(kirsty, 3);
+    const kirstySecond = await layout(kirsty, 0);
+    await layout(ewan, 1);
+    const enquiry = (email: string, userId: string | null): Promise<unknown> => pool.query(
+      "INSERT INTO enquiries (venue_id, space_id, user_id, name, email, guest_email, state) VALUES ($1, $2, $3, 'Counted', $4, $5, 'submitted')",
+      [venueId, spaceId, userId, email, userId === null ? email : null],
+    );
+    await enquiry(`kirsty-${kirsty}@search.invalid`, kirsty);
+    const morven = `morven-${randomUUID()}@search.invalid`;
+    const callum = `callum-${randomUUID()}@search.invalid`;
+    await pool.query("INSERT INTO guest_leads (email, name) VALUES ($1, 'Morven Tallyman'), ($2, 'Callum Tallyman')", [morven, callum]);
+    await enquiry(morven, null);
+    await enquiry(morven, null);
+    await enquiry(callum, null);
+
+    const found = await search("tallyman");
+    const people = (found.users as readonly { id: string; configurationCount: number; enquiryCount: number }[])
+      .map(({ id, configurationCount, enquiryCount }) => ({ id, configurationCount, enquiryCount }));
+    expect(people).toEqual(expect.arrayContaining([
+      { id: kirsty, configurationCount: 2, enquiryCount: 1 },
+      { id: ewan, configurationCount: 1, enquiryCount: 0 },
+    ]));
+    const leads = (found.guestLeads as readonly { email: string; enquiryCount: number }[])
+      .map(({ email, enquiryCount }) => ({ email, enquiryCount }));
+    expect(leads).toEqual(expect.arrayContaining([{ email: morven, enquiryCount: 2 }, { email: callum, enquiryCount: 1 }]));
+
+    const profile = await server.inject({ method: "GET", url: `/clients/${kirsty}/profile`, headers: bearer("staff") });
+    expect(profile.statusCode).toBe(200);
+    const layouts = profile.json<{ data: { configurations: { id: string; objectCount: number }[] } }>().data.configurations
+      .map(({ id, objectCount }) => ({ id, objectCount }));
+    expect(layouts).toEqual(expect.arrayContaining([{ id: kirstyFirst, objectCount: 3 }, { id: kirstySecond, objectCount: 0 }]));
   });
 });

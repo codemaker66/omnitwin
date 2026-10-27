@@ -269,10 +269,11 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     const rows = f.frozen.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows));
     const [first] = rows;
     if (first === undefined) throw new Error("The approved fixture must have a row");
-    // One mark on the approved sheet's row, one left on a row it does not have.
+    // One mark on the approved sheet's row, one left on a row it does not have,
+    // both for the event the Day Board asks about (ticks belong to an event).
     await db.insert(schema.hallkeeperProgress).values([
-      { configId: f.configId, rowKey: first.key, checkedBy: f.userId },
-      { configId: f.configId, rowKey: "furniture|Centre|Removed trestle|0", checkedBy: f.userId },
+      { configId: f.configId, eventId: f.eventId, rowKey: first.key, checkedBy: f.userId },
+      { configId: f.configId, eventId: f.eventId, rowKey: "furniture|Centre|Removed trestle|0", checkedBy: f.userId },
     ]);
     const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}`, headers: f.headers });
     expect(response.statusCode).toBe(200);

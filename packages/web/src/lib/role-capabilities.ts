@@ -15,12 +15,13 @@
 // checks it alongside these sets rather than finding it inside them.
 // ---------------------------------------------------------------------------
 
+import { VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+
 /** Mirrors `canManageVenue` — the base "works this venue's floor" capability. */
 export const VENUE_FLOOR_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
 
 /** Mirrors `canAdministerVenue` — the venue record and its spaces. Pricing-rule
- *  writes are narrower in the API (`PRICING_WRITE_ROLES`: admin and manager);
- *  the only web editor for them is the platform-admin Admin panel. */
+ *  writes are narrower (`PRICING_WRITE_ROLES` below: admin and manager). */
 export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
 
 /**
@@ -31,6 +32,22 @@ export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
  * the whole set may open the tab. #24 does not narrow it.
  */
 export const COMMERCIAL_ROLES = ["admin", "manager", "staff", "sales"] as const;
+
+/**
+ * The Pricing tab: `GET /venues/:venueId/pricing-desk` reads
+ * `canManageCommercial` (`routes/pricing-desk.ts`), so the commercial team
+ * reads the price list and who changed each rate; the hallkeeper, who does
+ * not see prices (goal 18 decision 6b), is not offered it.
+ */
+export const PRICING_READ_ROLES = COMMERCIAL_ROLES;
+
+/**
+ * Who sets a price, sees the desk's edit controls and its suggestions: the
+ * API's `PRICING_WRITE_ROLES` (`canWritePricing`), read from the one list in
+ * @omnitwin/types so the two cannot drift. Everyone else on the desk is told
+ * who can.
+ */
+export { PRICING_WRITE_ROLES } from "@omnitwin/types";
 
 /**
  * The Analytics tab. What it opens is `ExecutiveAnalyticsView`, whose only
@@ -44,13 +61,14 @@ export const COMMERCIAL_ROLES = ["admin", "manager", "staff", "sales"] as const;
 export const ANALYTICS_ROLES = COMMERCIAL_ROLES;
 
 /**
- * The Clients desk: its search, recent and upcoming lists and the client and
- * guest profiles gate on `canManageVenue` (`routes/clients.ts`), so sales and
- * planner are refused — both were being offered the tab. The commercial
- * record inside it (contacts, organisations, deals, proposals) is further
- * limited to the roles `canManageCommercial` admits.
+ * The Clients desk. Mirrors `canReadClients` (`utils/query.ts`): its search,
+ * recent and upcoming lists and the client and guest profiles admit the venue
+ * floor and sales (People Book design §6.7, approved 18 October 2026); planner,
+ * client and caterer are refused. The commercial record inside it (contacts,
+ * organisations, deals, proposals) is further limited to the roles
+ * `canManageCommercial` admits, so a hallkeeper still finds none of it.
  */
-export const CLIENT_SEARCH_ROLES = VENUE_FLOOR_ROLES;
+export const CLIENT_SEARCH_ROLES = ["admin", "manager", "staff", "hallkeeper", "sales"] as const;
 
 /**
  * The pending-review queue. Mirrors `VENUE_REVIEW_ROLES` in the API's
@@ -109,6 +127,16 @@ export const WORKSPACE_ROLES = ["admin", "manager", "staff", "sales", "hallkeepe
  * exactly that set: admin, manager, staff and sales.
  */
 export const CRM_PIPELINE_ROLES = COMMERCIAL_ROLES;
+
+/**
+ * The Team tab: who has access at the venue, inviting people and cancelling
+ * an invitation. Mirrors `canManageVenueTeam` (`utils/query.ts`), which reads
+ * the same list from @omnitwin/types (Blake, 24 October 2026: the venue's
+ * administrators invite, any role; managers and staff do not). A platform
+ * admin passes that gate as it passes every venue gate, so each consumer
+ * checks `platformRole` beside this set.
+ */
+export const TEAM_TAB_ROLES: readonly string[] = VENUE_TEAM_INVITER_ROLES;
 
 /** A caterer is event-scoped: it reaches an event through a share, never a venue surface. */
 export const EVENT_SCOPED_ROLES = ["caterer"] as const;

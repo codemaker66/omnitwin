@@ -36,8 +36,8 @@ import {
   summarizeRevenueScenarios,
 } from "../services/revenue-analytics.js";
 
-const IdParam = z.object({ id: z.string().uuid() });
-const AnalyticsQuery = z.object({ venueId: z.string().uuid().optional() });
+const IdParam = z.object({ id: z.uuid() });
+const AnalyticsQuery = z.object({ venueId: z.uuid().optional() });
 
 type RevenueScenarioRow = typeof revenueScenarios.$inferSelect;
 type PricingAssumptionRow = typeof pricingAssumptions.$inferSelect;

@@ -11,7 +11,7 @@ import { initBrowserSentry } from "./observability/sentry.js";
 import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
 import { registerPushWorker } from "./lib/push-worker.js";
 import { appendFontBuildStyle, fontBuildFor } from "./lib/self-hosted-fonts.js";
-import siteFontsFirefoxWindows from "./styles/fonts/site.firefox-windows.css?inline";
+import siteFontsFirefoxWindows from "./styles/fonts/site-slim.firefox-windows.css?inline";
 import "./global.css";
 
 // ---------------------------------------------------------------------------
@@ -92,3 +92,14 @@ void initBrowserSentry();
 // The push worker (goal 19 S7): registered after the root is up, harmless
 // where the browser has no push. It caches nothing and answers no fetch.
 registerPushWorker();
+
+// Planner work kept on this device past its age goes, for everyone who uses
+// this browser, including drafts whose layouts are never opened again. It
+// runs a while after the page has settled, from its own module, so no route's
+// first load carries the planner's draft code (the walkable twin's byte
+// budget, e2e/twin-performance). Reading a draft checks its age too, so a
+// stale one is never restored in the meantime.
+const PLANNER_DRAFT_SWEEP_DELAY_MS = 30_000;
+window.setTimeout(() => {
+  void import("./lib/planner-draft-storage.js").then(({ sweepExpiredPlannerDrafts }) => { sweepExpiredPlannerDrafts(); });
+}, PLANNER_DRAFT_SWEEP_DELAY_MS);

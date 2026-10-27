@@ -5,6 +5,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlannerVenueIdentity } from "../../hooks/use-planner-venue-identity.js";
 import { usePlannerTruth } from "../../hooks/use-planner-truth.js";
+import { formatLinkUntil, useVisitorPlanLinks } from "../../hooks/use-visitor-plan-links.js";
 import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
 import {
   guestsAbovePublished,
@@ -14,8 +15,10 @@ import {
 } from "../../lib/planner-truth.js";
 import { roomPhrase } from "../../lib/unrecorded-ask.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { isValidEmail } from "../../lib/email-validation.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
+import { PLAN_LINK_CONSEQUENCE } from "./VisitorPlanLinkActions.js";
 
 // ---------------------------------------------------------------------------
 // GuestEnquiryModal — premium conversion moment
@@ -66,6 +69,13 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       border-radius: 10px; color: #f0f0f0; outline: none;
       transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
     }
+    /* iOS Safari zooms into any field set under 16px when it takes focus, and
+       leaves the planner zoomed after the form closes (planner-qol E-X2). On
+       a touch screen the fields are 16px; pinch zoom stays (no maximum-scale
+       on the viewport, WCAG 1.4.4). */
+    @media (pointer: coarse) {
+      .omni-enq-input { font-size: 16px; }
+    }
     .omni-enq-input::placeholder { color: rgba(255,255,255,0.25); }
     .omni-enq-input:focus {
       border-color: rgba(201, 138, 91,0.4); background: rgba(255,255,255,0.06);
@@ -111,26 +121,164 @@ interface GuestEnquiryModalProps {
   readonly onClose: () => void;
 }
 
+// The guest's draft, kept for this tab (planner-qol E-08): closing the form,
+// on purpose or by a stray click, never loses what was typed, and the next
+// send starts from the name and email given last time. Session storage only,
+// so nothing outlives the tab, and a failure to store changes nothing else.
+interface EnquiryDraft {
+  readonly email: string;
+  readonly phone: string;
+  readonly name: string;
+  readonly eventDate: string;
+  readonly eventType: string;
+  readonly guestCount: string;
+  readonly message: string;
+}
+
+const EMPTY_DRAFT: EnquiryDraft = { email: "", phone: "", name: "", eventDate: "", eventType: "", guestCount: "", message: "" };
+const DRAFT_KEY_PREFIX = "venviewer.enquiry-draft.";
+const CONTACT_KEY = "venviewer.enquiry-contact";
+
+function readStored(key: string): Partial<Record<keyof EnquiryDraft, string>> {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    const parsed: unknown = raw === null ? null : JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return {};
+    const out: Partial<Record<keyof EnquiryDraft, string>> = {};
+    for (const field of Object.keys(EMPTY_DRAFT) as (keyof EnquiryDraft)[]) {
+      const value = (parsed as Record<string, unknown>)[field];
+      if (typeof value === "string") out[field] = value.slice(0, 2000);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function storeJson(key: string, value: object | null): void {
+  try {
+    if (value === null) window.sessionStorage.removeItem(key);
+    else window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Best-effort: private browsing or a full store keeps the form working.
+  }
+}
+
+/** The draft for this plan, over the contact details of the last send. */
+function initialDraft(configId: string): EnquiryDraft {
+  const contact = readStored(CONTACT_KEY);
+  return { ...EMPTY_DRAFT, email: contact.email ?? "", phone: contact.phone ?? "", name: contact.name ?? "", ...readStored(DRAFT_KEY_PREFIX + configId) };
+}
+
+const VISUALLY_HIDDEN: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap",
+};
+const LINK_HINT: React.CSSProperties = {
+  fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.5, margin: "8px 0 0",
+};
+
+/**
+ * The success screen's share action, in this dialog's own style: a view-only
+ * link (its own token, which can only read) made by the shared hook that the
+ * Share lens and the phone sheet use, never the planner address.
+ */
+function ViewOnlyLink({ configId }: { readonly configId: string }): React.ReactElement {
+  // Mounted only on the success screen, so the plan's links are read only
+  // after the enquiry has gone, never each time the form opens.
+  const links = useVisitorPlanLinks(configId);
+  const { state } = links;
+  const made = state.phase === "made" ? state : null;
+  const making = state.phase === "making";
+  const failed = state.phase === "error";
+  const copied = made?.copied === true;
+  return (
+    <div style={{ marginBottom: 10 }} data-testid="enquiry-view-link">
+      <button
+        type="button"
+        disabled={making}
+        aria-busy={making}
+        style={{
+          width: "100%", padding: "13px 20px", fontSize: 14, fontWeight: 600,
+          fontFamily: "'Inter', system-ui, sans-serif",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          background: copied ? "rgba(34,197,94,0.12)" : failed ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.05)",
+          border: `1px solid ${copied ? "rgba(34,197,94,0.3)" : failed ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.1)"}`,
+          borderRadius: 12, cursor: making ? "progress" : "pointer",
+          color: copied ? "#22c55e" : failed ? "#ef4444" : "rgba(255,255,255,0.7)",
+          transition: "background 0.25s ease, border-color 0.25s ease, color 0.25s ease",
+          letterSpacing: 0.2,
+        }}
+        onClick={() => { if (made === null) links.make(); else links.copyAgain(); }}
+      >
+        {making && <ActivityIndicator size={16} />}
+        {making ? "Making the link…"
+          : made !== null ? (made.copied ? "View-only link copied" : "Copy the view-only link")
+            : failed ? "Try again" : "Copy a view-only link"}
+      </button>
+      <span role="status" aria-live="polite" aria-atomic="true" style={VISUALLY_HIDDEN}>
+        {made === null ? "" : made.copied ? "View-only link copied" : "View-only link made"}
+      </span>
+      {state.phase === "idle" && <p style={LINK_HINT}>{PLAN_LINK_CONSEQUENCE}</p>}
+      {state.phase === "error" && <p role="alert" style={{ ...LINK_HINT, color: "#ef4444" }}>{state.message}</p>}
+      {made !== null && (
+        <>
+          {!made.copied && (
+            <input
+              className="omni-enq-input"
+              style={{ marginTop: 8 }}
+              type="text"
+              readOnly
+              value={made.url}
+              aria-label="View-only link"
+              onFocus={(event) => { event.currentTarget.select(); }}
+            />
+          )}
+          <p style={LINK_HINT}>
+            Works until {formatLinkUntil(made.expiresAt)} unless you stop it. Nobody can change the plan through it.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps): React.ReactElement {
   // The venue this layout belongs to, never a hard-coded one: another venue's
   // guest must not be told that Trades Hall will reply (T-635 N5, item 1).
   const venueId = useEditorStore((state) => state.venueId);
   const venue = usePlannerVenueIdentity(venueId);
   const venueName = venue.known ? venue.name : null;
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
-  const [eventDate, setEventDate] = useState("");
-  const [eventType, setEventType] = useState("");
-  const [guestCount, setGuestCount] = useState("");
-  const [message, setMessage] = useState("");
+  const [draft] = useState(() => initialDraft(configId));
+  const [email, setEmail] = useState(draft.email);
+  const [phone, setPhone] = useState(draft.phone);
+  const [name, setName] = useState(draft.name);
+  const [eventDate, setEventDate] = useState(draft.eventDate);
+  const [eventType, setEventType] = useState(draft.eventType);
+  const [guestCount, setGuestCount] = useState(draft.guestCount);
+  const [message, setMessage] = useState(draft.message);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
-  const [copied, setCopied] = useState<"idle" | "success" | "fail">("idle");
+  // A view-only link, never the planner address (planner-qol E-10): /plan/<id>
+  // is an anonymous plan's edit capability, so whoever was sent it could
+  // change the layout the venue is reading.
+  const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const emailRef = useRef<HTMLInputElement>(null);
+  const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
+
+  // Every keystroke is kept for this plan until the enquiry is sent.
+  useEffect(() => {
+    if (submitted) return;
+    storeJson(DRAFT_KEY_PREFIX + configId, { email, phone, name, eventDate, eventType, guestCount, message });
+  }, [configId, submitted, email, phone, name, eventDate, eventType, guestCount, message]);
+
+  // Sent: the reader is taken to the answer (planner-qol E-X6), which the
+  // status region below also announces.
+  useEffect(() => {
+    if (submitted) successHeadingRef.current?.focus();
+  }, [submitted]);
 
   // Auto-focus email on open
   useEffect(() => {
@@ -181,6 +329,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         guestCount: guestCount !== "" ? parseInt(guestCount, 10) : undefined,
         message: message.trim() !== "" ? message.trim() : undefined,
       });
+      storeJson(DRAFT_KEY_PREFIX + configId, null);
+      storeJson(CONTACT_KEY, { email: email.trim(), phone: phone.trim(), name: name.trim() });
       setSubmitted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong — please try again");
@@ -189,20 +339,12 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
     }
   }, [configId, email, phone, name, eventDate, eventType, guestCount, message, emailValid]);
 
-  const handleCopy = useCallback(async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/plan/${configId}`);
-      setCopied("success");
-      setTimeout(() => { setCopied("idle"); }, 2500);
-    } catch {
-      setCopied("fail");
-      setTimeout(() => { setCopied("idle"); }, 2500);
-    }
-  }, [configId]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent): void => {
-    if (e.key === "Escape") onClose();
-  }, [onClose]);
+  // Escape closes it wherever focus is, through the planner's one keyboard
+  // owner, and while it is open the planner's shortcuts leave the room alone.
+  // Not while the enquiry is on its way (planner-qol E-X1): closing then would
+  // hide whether it arrived. The draft is kept either way.
+  const close = useCallback((): void => { if (!isSubmitting) onClose(); }, [isSubmitting, onClose]);
+  useEscapeLayer("modal", { open: true, onEscape: close });
 
   const layoutSummary = getLayoutSummary();
 
@@ -236,7 +378,6 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             textAlign: "center",
           }}
           onClick={(e) => { e.stopPropagation(); }}
-          onKeyDown={handleKeyDown}
         >
           {/* Animated check circle */}
           <div style={{ marginBottom: 20 }}>
@@ -252,7 +393,10 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             </svg>
           </div>
 
-          <h2 id="enquiry-success-title" style={{
+          <span role="status" aria-live="polite" aria-atomic="true" style={VISUALLY_HIDDEN}>
+            {`Layout sent. ${venueName ?? "The venue's events team"} will reply to ${email}.`}
+          </span>
+          <h2 id="enquiry-success-title" ref={successHeadingRef} tabIndex={-1} style={{ outline: "none",
             fontSize: 26, fontWeight: 700, color: "#f5f5f5",
             fontFamily: "'Playfair Display', serif", marginBottom: 8,
           }}>
@@ -281,27 +425,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             {layoutSummary}
           </div>
 
-          {/* Copy link button */}
-          <button
-            type="button"
-            style={{
-              width: "100%", padding: "13px 20px", fontSize: 14, fontWeight: 600,
-              fontFamily: "'Inter', system-ui, sans-serif",
-              background: copied === "success"
-                ? "rgba(34,197,94,0.12)"
-                : copied === "fail"
-                  ? "rgba(239,68,68,0.12)"
-                  : "rgba(255,255,255,0.05)",
-              border: `1px solid ${copied === "success" ? "rgba(34,197,94,0.3)" : copied === "fail" ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.1)"}`,
-              borderRadius: 12, cursor: "pointer",
-              color: copied === "success" ? "#22c55e" : copied === "fail" ? "#ef4444" : "rgba(255,255,255,0.7)",
-              transition: "background 0.25s ease, border-color 0.25s ease, color 0.25s ease", marginBottom: 10,
-              letterSpacing: 0.2,
-            }}
-            onClick={() => { void handleCopy(); }}
-          >
-            {copied === "success" ? "Copied to clipboard" : copied === "fail" ? "Couldn\u2019t copy \u2014 try manually" : "Copy layout link"}
-          </button>
+          {/* A view-only link to share the plan: it can only read */}
+          {isPublicPreview && <ViewOnlyLink configId={configId} />}
 
           {/* Close */}
           <button
@@ -338,7 +463,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         zIndex: 200, fontFamily: "'Inter', system-ui, sans-serif",
         animation: "omni-enq-overlay 0.3s ease forwards",
       }}
-      onClick={onClose}
+      onClick={close}
       role="dialog"
       aria-modal="true"
       aria-labelledby="enquiry-form-title"
@@ -356,7 +481,6 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           animation: "omni-enq-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }}
         onClick={(e) => { e.stopPropagation(); }}
-        onKeyDown={handleKeyDown}
       >
         {/* Gold accent bar */}
         <div style={{

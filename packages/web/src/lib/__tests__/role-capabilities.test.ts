@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INVENTORY_ADJUSTER_ROLES, USER_ROLES } from "@omnitwin/types";
+import { INVENTORY_ADJUSTER_ROLES, USER_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
 import {
   ANALYTICS_ROLES,
   CLIENT_SEARCH_ROLES,
@@ -11,7 +11,10 @@ import {
   EVENT_WRITE_ROLES,
   INVENTORY_WRITE_ROLES,
   PLANNER_ROLES,
+  PRICING_READ_ROLES,
+  PRICING_WRITE_ROLES,
   REVIEW_QUEUE_ROLES,
+  TEAM_TAB_ROLES,
   VENUE_DAY_ROLES,
   VENUE_FLOOR_ROLES,
   VENUE_MEMBER_ROLES,
@@ -22,7 +25,7 @@ import {
   hasRole,
 } from "../role-capabilities.js";
 import { NAV_ITEMS, canShowNavItem } from "../../components/dashboard/DashboardLayout.js";
-import { canOpenDashboardView } from "../../pages/DashboardPage.js";
+import { canOpenDashboardView, dashboardViewFromSearchValue } from "../../pages/DashboardPage.js";
 import { getDefaultRoute } from "../role-routing.js";
 import { canReadInternalEventData } from "../event-access.js";
 
@@ -90,15 +93,33 @@ describe("nav offers are reachable", () => {
     expect(canOpenDashboardView("analytics", "sales", "none")).toBe(true);
   });
 
-  it("offers the Clients desk only to the roles /clients admits", () => {
-    // routes/clients.ts gates its search and lists on canManageVenue, so
-    // sales and planner were being offered a tab that answers 403.
-    expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper"]);
+  it("offers the Pricing desk to the commercial team that /pricing-desk admits, and never the hallkeeper", () => {
+    // routes/pricing-desk.ts reads the list with canManageCommercial; the
+    // hallkeeper does not see prices (decision 6b). Who may change a price
+    // is the one list the API's canWritePricing reads.
+    expect([...PRICING_READ_ROLES]).toEqual([...COMMERCIAL_ROLES]);
+    expect([...PRICING_WRITE_ROLES]).toEqual(["admin", "manager"]);
+    for (const role of USER_ROLES) {
+      expect(canOpenDashboardView("pricing", role, "none"), `pricing for ${role}`)
+        .toBe(hasRole(COMMERCIAL_ROLES, role));
+    }
+    expect(canOpenDashboardView("pricing", "hallkeeper", "none")).toBe(false);
+    expect(canOpenDashboardView("pricing", "sales", "none")).toBe(true);
+    const pricingItem = NAV_ITEMS.find((item) => item.view === "pricing");
+    expect(pricingItem?.label).toBe("Pricing");
+    if (pricingItem === undefined) throw new Error("Pricing tab missing");
+    expect(canShowNavItem(pricingItem, "hallkeeper", "none")).toBe(false);
+    expect(canShowNavItem(pricingItem, "manager", "none")).toBe(true);
+  });
+
+  it("offers the Clients desk to the roles /clients admits, sales included", () => {
+    // routes/clients.ts gates on canReadClients: the venue floor and the commercial team (People Book design §6.7).
+    expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper", "sales"]);
     for (const role of USER_ROLES) {
       expect(canOpenDashboardView("search", role, "none"), `search for ${role}`)
-        .toBe(hasRole(VENUE_FLOOR_ROLES, role));
+        .toBe(hasRole(VENUE_FLOOR_ROLES, role) || hasRole(COMMERCIAL_ROLES, role));
     }
-    expect(canOpenDashboardView("search", "sales", "none")).toBe(false);
+    expect(canOpenDashboardView("search", "sales", "none")).toBe(true);
     expect(canOpenDashboardView("search", "planner", "none")).toBe(false);
   });
 
@@ -140,6 +161,41 @@ describe("nav offers are reachable", () => {
     if (stock !== undefined) {
       expect(canShowNavItem(stock, "staff", "admin")).toBe(false);
       expect(canShowNavItem(stock, "admin", "admin")).toBe(true);
+    }
+  });
+
+  it("offers the Team tab to exactly the roles canManageVenueTeam admits", () => {
+    // routes/venue-team.ts gates on canManageVenueTeam, which reads the one
+    // list in @omnitwin/types (Blake, 24 October 2026: the venue's
+    // administrators invite; managers and staff do not). A platform admin
+    // passes that gate at any venue.
+    expect(TEAM_TAB_ROLES).toBe(VENUE_TEAM_INVITER_ROLES);
+    expect([...TEAM_TAB_ROLES]).toEqual(["admin"]);
+    expect(dashboardViewFromSearchValue("team")).toBe("team");
+    const team = NAV_ITEMS.find((item) => item.view === "team");
+    expect(team?.label).toBe("Team");
+    if (team === undefined) throw new Error("Team tab missing");
+
+    for (const role of USER_ROLES) {
+      expect(canOpenDashboardView("team", role, "none"), `team for ${role}`).toBe(role === "admin");
+    }
+    expect(canShowNavItem(team, "admin", "none")).toBe(true);
+    for (const role of ["manager", "staff", "hallkeeper", "sales"]) {
+      expect(canShowNavItem(team, role, "none"), `${role} is offered Team`).toBe(false);
+      expect(canOpenDashboardView("team", role, "none"), `${role} opens Team`).toBe(false);
+    }
+    // A platform admin passes whatever its venue role; an operator does not.
+    for (const role of ["admin", "manager", "staff"]) {
+      expect(canShowNavItem(team, role, "admin"), `${role} as platform admin`).toBe(true);
+    }
+    expect(canShowNavItem(team, "staff", "operator")).toBe(false);
+
+    // Offered exactly where it opens, for every role and platform role.
+    for (const role of ALL_ROLES) {
+      for (const platformRole of ["none", "operator", "admin"] as const) {
+        expect(canShowNavItem(team, role, platformRole), `${String(role)} (platformRole ${platformRole})`)
+          .toBe(canOpenDashboardView("team", role, platformRole));
+      }
     }
   });
 
@@ -226,7 +282,7 @@ describe("the capability sets themselves", () => {
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES,
       DIARY_ROLES, VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES,
       ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
-      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES,
+      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES, TEAM_TAB_ROLES,
     ]) {
       expect(hasRole(set, "caterer")).toBe(false);
     }
@@ -238,7 +294,7 @@ describe("the capability sets themselves", () => {
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES, DIARY_ROLES,
       VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES, CRM_PIPELINE_ROLES,
       ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
-      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES,
+      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES, TEAM_TAB_ROLES,
     ]) {
       for (const role of set) {
         expect(vocabulary.has(role), `${role} is not in USER_ROLES`).toBe(true);

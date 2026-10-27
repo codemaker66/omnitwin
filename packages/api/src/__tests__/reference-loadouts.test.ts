@@ -19,15 +19,15 @@ function signToken(payload: { id: string; email: string; role: string; venueId: 
   return JSON.stringify(payload);
 }
 
-const VENUE_ID = "00000000-0000-0000-0000-000000000001";
-const SPACE_ID = "00000000-0000-0000-0000-000000000010";
-const LOADOUT_ID = "00000000-0000-0000-0000-000000000060";
-const PHOTO_ID = "00000000-0000-0000-0000-000000000070";
-const FILE_ID = "00000000-0000-0000-0000-000000000080";
+const VENUE_ID = "00000000-0000-4000-8000-000000000001";
+const SPACE_ID = "00000000-0000-4000-8000-000000000010";
+const LOADOUT_ID = "00000000-0000-4000-8000-000000000060";
+const PHOTO_ID = "00000000-0000-4000-8000-000000000070";
+const FILE_ID = "00000000-0000-4000-8000-000000000080";
 const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: VENUE_ID });
 const staffToken = (): string => signToken({ id: "u2", email: "staff@test.com", role: "staff", venueId: VENUE_ID });
 const clientToken = (): string => signToken({ id: "u3", email: "client@test.com", role: "client", venueId: null });
-const otherStaff = (): string => signToken({ id: "u4", email: "other@test.com", role: "staff", venueId: "00000000-0000-0000-0000-999999999999" });
+const otherStaff = (): string => signToken({ id: "u4", email: "other@test.com", role: "staff", venueId: "00000000-0000-4000-8000-999999999999" });
 
 const BASE_URL = `/venues/${VENUE_ID}/spaces/${SPACE_ID}/loadouts`;
 

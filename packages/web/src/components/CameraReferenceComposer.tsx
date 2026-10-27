@@ -17,6 +17,7 @@ import {
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
+import { useEscapeLayer } from "../lib/planner-keys.js";
 import "./CameraReferenceComposer.css";
 
 const GOLD = "#c98a5b";
@@ -218,16 +219,9 @@ export function CameraReferenceComposer(): React.ReactElement | null {
     };
   }, [draft]);
 
-  useEffect(() => {
-    if (draft === null) return;
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape") closeDraft();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [draft, closeDraft]);
+  // A label being drafted is an operation in progress: Escape discards it
+  // before it steps back anything else, wherever focus is.
+  useEscapeLayer("operation", { open: draft !== null, onEscape: closeDraft });
 
   const panelPosition = useMemo<CSSProperties>(() => {
     if (draft === null) return {};

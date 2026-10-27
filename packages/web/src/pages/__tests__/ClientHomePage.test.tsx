@@ -108,7 +108,7 @@ describe("the client's home", () => {
     expect(within(plans).getByRole("link", { name: /Rounds of ten/ }).getAttribute("href")).toBe(`/plan/${PLAN_ID}?eventId=${NEXT_ID}`);
     expect(within(plans).getByText(/For Winter dinner/)).toBeTruthy();
     expect(within(plans).getByRole("link", { name: /Long tables idea/ }).getAttribute("href")).toBe(`/plan/${LONE_PLAN_ID}`);
-    expect(within(plans).getByRole("link", { name: "Start a new plan" }).getAttribute("href")).toBe("/plan");
+    expect(within(plans).getByRole("link", { name: "Start a new plan" }).getAttribute("href")).toBe("/plan?new=1");
     expect(screen.getByText("Dates, times and guest numbers are as the venue team holds them.")).toBeTruthy();
     // The account's own name, and the way out, are on the sheet.
     expect(screen.getByText("Morag Reid")).toBeTruthy();

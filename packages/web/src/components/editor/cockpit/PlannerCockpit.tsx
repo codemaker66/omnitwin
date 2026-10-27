@@ -2,6 +2,7 @@ import { type ReactElement } from "react";
 import { App as Editor3D } from "../../../App.js";
 import { CockpitNavRail } from "./CockpitNavRail.js";
 import { CockpitRightDock } from "./CockpitRightDock.js";
+import { LensSheet } from "./LensSheet.js";
 import { WhenRibbon } from "./WhenRibbon.js";
 import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
@@ -14,7 +15,6 @@ import { CLIENT_SIDE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SceneOutliner } from "./SceneOutliner.js";
 import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
-import { GeneratedFurnitureProxyBadge } from "./FurnitureInspectionDock.js";
 import "./PlannerCockpit.css";
 import "./ReferenceViewer.css";
 
@@ -48,7 +48,7 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
     >
       {mobile ? null : <div className="reference-left-dock" key="left-dock">
         <CockpitNavRail />
-        <div className="reference-left-content"><ReferenceRoomHeader /><SceneOutliner /><GeneratedFurnitureProxyBadge /></div>
+        <div className="reference-left-content"><ReferenceRoomHeader /><SceneOutliner /></div>
       </div>}
       {/* T-615: the stage is the planner's <main>, and the landmark belongs
           here rather than on the shell in EditorPage. A <main> wrapped around
@@ -103,6 +103,9 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
           rests while a phase preview holds the stage. */}
       {mobile || timelinePreviewActive || !hasLinkedEvent || !(canViewBookingTime || clientSide) ? null : <details className="reference-when-ribbon"><summary>{clientSide ? "Your time" : "Booking time"}</summary><WhenRibbon /></details>}
       <CockpitBottom key="room-layout-timeline" initiallyCollapsed={!mobile} />
+      {/* Phones and tablets have no right dock: a chosen lens rises as a
+          bottom sheet instead (it portals itself above the planner chrome). */}
+      {mobile ? <LensSheet key="lens-sheet" /> : null}
     </div>
   );
 }

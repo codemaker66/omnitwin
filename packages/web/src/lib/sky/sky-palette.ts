@@ -13,9 +13,17 @@
 // aerosol extinction at three wavelengths along the Kasten–Young air mass,
 // normalised to the sun overhead, so it whitens by noon and reddens toward
 // the horizon on its own.
+//
+// The night's two keyframes (−12° and −18°) come from the street's night look
+// (night-looks.ts): a dark violet over the Merchant City rather than a navy.
+// `night` follows the sun with them, from −3° to −10°, the hall's own
+// Dusk-to-Night mood: it carries the city's night light, windows, haze and
+// the sky's city glow. The street lamps light round the hall's −3° Dusk mood,
+// each at its own altitude (hall-street-light.ts).
 // -----------------------------------------------------------------------------
 
 import { Color } from "three";
+import { activeStreetNightLook, type StreetNightLook } from "./night-looks.js";
 
 /** A colour in the renderer's linear working space. */
 export type Rgb = readonly [number, number, number];
@@ -33,8 +41,10 @@ export interface SkyPalette {
   readonly glowStrength: number;
   /** Stars' visibility, 0–1 (the city's glow caps it). */
   readonly stars: number;
-  /** Warm street-light glow along the night horizon, 0–1. */
+  /** The city's glow along the night horizon, 0–1 (the night span). */
   readonly cityGlow: number;
+  /** The city's night, 0 above −3° of sun and 1 by −10° (the hall's Dusk-to-Night mood). */
+  readonly night: number;
 }
 
 interface Keyframe {
@@ -46,8 +56,8 @@ interface Keyframe {
   readonly glowStrength: number;
 }
 
-/** Keyframes by the sun's true altitude, highest first (sRGB hex). */
-const KEYFRAMES: readonly Keyframe[] = [
+/** Keyframes by the sun's true altitude from day to the blue hour, highest first (sRGB hex). */
+const DAY_KEYFRAMES: readonly Keyframe[] = [
   { altitude: 50, zenith: "#2c6bc6", horizonSun: "#d6e5f3", horizonAway: "#cddff0", glow: "#fff7e8", glowStrength: 0.55 },
   { altitude: 25, zenith: "#3474c9", horizonSun: "#dbe6f0", horizonAway: "#cfdeee", glow: "#fff1dc", glowStrength: 0.6 },
   { altitude: 12, zenith: "#447ec8", horizonSun: "#e8ddc8", horizonAway: "#c9d7e7", glow: "#ffe5b8", glowStrength: 0.7 },
@@ -57,9 +67,23 @@ const KEYFRAMES: readonly Keyframe[] = [
   { altitude: -3, zenith: "#3a5089", horizonSun: "#d67056", horizonAway: "#9288b0", glow: "#f07b4f", glowStrength: 0.85 },
   { altitude: -5, zenith: "#2b3d71", horizonSun: "#a5625f", horizonAway: "#5f6792", glow: "#c46b50", glowStrength: 0.6 },
   { altitude: -8, zenith: "#1b2a53", horizonSun: "#5b4b64", horizonAway: "#303b63", glow: "#6b4b56", glowStrength: 0.35 },
-  { altitude: -12, zenith: "#111b38", horizonSun: "#2e2f4b", horizonAway: "#1f2747", glow: "#2f2b41", glowStrength: 0.15 },
-  { altitude: -18, zenith: "#0a1125", horizonSun: "#1c2034", horizonAway: "#181e34", glow: "#1c1e2f", glowStrength: 0 },
 ];
+
+const keyframeCache = new Map<StreetNightLook, readonly Keyframe[]>();
+
+/** The day's keyframes and the look's night: −12° and −18°. */
+function keyframesFor(look: StreetNightLook): readonly Keyframe[] {
+  let frames = keyframeCache.get(look);
+  if (frames === undefined) {
+    frames = [
+      ...DAY_KEYFRAMES,
+      { altitude: -12, ...look.sky12, glow: "#2f2b41", glowStrength: 0.15 },
+      { altitude: -18, ...look.sky18, glow: "#1c1e2f", glowStrength: 0 },
+    ];
+    keyframeCache.set(look, frames);
+  }
+  return frames;
+}
 
 const scratchA = new Color();
 const scratchB = new Color();
@@ -77,15 +101,15 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 /** The two keyframes around an altitude and the smoothed share of the lower one. */
-function bracket(sunAltitude: number): { upper: Keyframe; lower: Keyframe; t: number } {
-  const first = KEYFRAMES[0];
-  const last = KEYFRAMES[KEYFRAMES.length - 1];
+function bracket(sunAltitude: number, keyframes: readonly Keyframe[]): { upper: Keyframe; lower: Keyframe; t: number } {
+  const first = keyframes[0];
+  const last = keyframes[keyframes.length - 1];
   if (first === undefined || last === undefined) throw new Error("sky palette has no keyframes");
   if (sunAltitude >= first.altitude) return { upper: first, lower: first, t: 0 };
   if (sunAltitude <= last.altitude) return { upper: last, lower: last, t: 0 };
-  for (let index = 0; index < KEYFRAMES.length - 1; index++) {
-    const a = KEYFRAMES[index];
-    const b = KEYFRAMES[index + 1];
+  for (let index = 0; index < keyframes.length - 1; index++) {
+    const a = keyframes[index];
+    const b = keyframes[index + 1];
     if (a === undefined || b === undefined) continue;
     if (sunAltitude <= a.altitude && sunAltitude >= b.altitude) {
       // Smooth within each span so the colours change without corners.
@@ -95,9 +119,15 @@ function bracket(sunAltitude: number): { upper: Keyframe; lower: Keyframe; t: nu
   return { upper: last, lower: last, t: 0 };
 }
 
-/** The sky's palette for the sun's true altitude in degrees. */
-export function skyPalette(sunAltitude: number): SkyPalette {
-  const { upper, lower, t } = bracket(sunAltitude);
+/** The city's night for the sun's true altitude: 0 above −3°, 1 by −10°. */
+export function nightFor(sunAltitude: number): number {
+  return smoothstep(-3, -10, sunAltitude);
+}
+
+/** The sky's palette for the sun's true altitude in degrees, in a night look. */
+export function skyPalette(sunAltitude: number, look: StreetNightLook = activeStreetNightLook()): SkyPalette {
+  const { upper, lower, t } = bracket(sunAltitude, keyframesFor(look));
+  const night = nightFor(sunAltitude);
   return {
     zenith: mixHex(upper.zenith, lower.zenith, t),
     horizonSun: mixHex(upper.horizonSun, lower.horizonSun, t),
@@ -105,7 +135,8 @@ export function skyPalette(sunAltitude: number): SkyPalette {
     glow: mixHex(upper.glow, lower.glow, t),
     glowStrength: upper.glowStrength + (lower.glowStrength - upper.glowStrength) * t,
     stars: smoothstep(-7, -15, sunAltitude) * 0.85,
-    cityGlow: smoothstep(-4, -11, sunAltitude),
+    cityGlow: night,
+    night,
   };
 }
 

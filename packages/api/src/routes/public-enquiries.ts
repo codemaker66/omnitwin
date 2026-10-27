@@ -4,16 +4,22 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
   VENVIEWER_PRICING_ENQUIRY_TYPE,
+  attributeEnquiry,
+  isBookingEnquiry,
   occasionLabel,
   occasionPhrase,
+  type EnquiryAttributionRecord,
   type EnquirySource,
 } from "@omnitwin/types";
-import { eq, and, isNull, asc } from "drizzle-orm";
-import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users, venues } from "../db/schema.js";
+import { eq, and, isNull, asc, inArray, sql } from "drizzle-orm";
+import { enquiries, enquiryStatusHistory, configurations, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
+import { acquisitionContextFor, funnelBrowserSignalsEnabled, recordEnquiryEngagement } from "../services/enquiry-funnel.js";
+import { linkEnquiryToPerson, type LinkOutcome } from "../services/people-link.js";
+import { sqlStateOf } from "../utils/sql-state.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -43,6 +49,11 @@ function twinPublicVenueSlugs(): readonly string[] {
     .filter((slug) => slug.length > 0);
 }
 
+/** Who is emailed a new web enquiry: the people who sell, so a lead reaches
+ *  them the moment it lands, and the venue's hallkeepers, as before (Blake,
+ *  18 October 2026). Office staff and admins keep the in-app notice. */
+const ENQUIRY_EMAIL_ROLES = ["sales", "manager", "hallkeeper"] as const;
+
 /** How a notice says where an enquiry came from, when it names no room. */
 const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
   website: "from the website",
@@ -50,7 +61,22 @@ const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
   planner: "from the planner",
   phone: "by phone",
   email: "by email",
+  listing: "through a listing site",
+  assistant: "through an AI assistant",
 };
+
+/**
+ * What a failure to find an enquiry's person may say in a log: its class and
+ * its SQLSTATE (drizzle wraps the driver's error as the cause). Never its
+ * message, which drizzle builds from the query's parameters, the guest's
+ * email among them.
+ */
+function linkFailureOf(error: unknown): { errorName: string; pgCode: string | null } {
+  return {
+    errorName: error instanceof Error ? error.name : typeof error,
+    pgCode: sqlStateOf(error),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Plugin — public guest enquiry submission
@@ -87,6 +113,8 @@ export async function publicEnquiryRoutes(
       configurationId: string | null;
       roomName: string | null;
       venuePath: boolean;
+      /** The venue's database slug when the path named it. */
+      venueSlug: string | null;
     };
 
     if (parsed.data.configurationId !== undefined) {
@@ -114,6 +142,7 @@ export async function publicEnquiryRoutes(
         configurationId: parsed.data.configurationId,
         roomName: space.name,
         venuePath: false,
+        venueSlug: null,
       };
     } else {
       // venueSlug path. A room the guest names (roomSlug) is filed as their
@@ -157,8 +186,8 @@ export async function publicEnquiryRoutes(
         request.log.warn({ event: "enquiry.room_unknown", venueId: venue.id, roomSlug }, "enquiry named a room the venue does not have");
       }
       anchor = named === undefined
-        ? { venueId: venue.id, spaceId: flagship.id, configurationId: null, roomName: null, venuePath: true }
-        : { venueId: venue.id, spaceId: named.id, configurationId: null, roomName: named.name, venuePath: true };
+        ? { venueId: venue.id, spaceId: flagship.id, configurationId: null, roomName: null, venuePath: true, venueSlug: slug }
+        : { venueId: venue.id, spaceId: named.id, configurationId: null, roomName: named.name, venuePath: true, venueSlug: slug };
     }
 
     // Two senders ride this route without booking this venue's rooms: the
@@ -180,61 +209,149 @@ export async function publicEnquiryRoutes(
       : accessRequest || pricingEnquiry ? "website"
         : parsed.data.source ?? "walkthrough";
 
-    // Create enquiry with guest fields, status: submitted (skip draft).
-    const displayName = parsed.data.name ?? parsed.data.email;
-    const [enquiry] = await db.insert(enquiries).values({
-      configurationId: anchor.configurationId,
-      venueId: anchor.venueId,
-      spaceId: anchor.spaceId,
-      userId: null,
-      guestEmail: parsed.data.email,
-      guestPhone: parsed.data.phone ?? null,
-      guestName: parsed.data.name ?? null,
-      state: "submitted",
-      name: displayName,
-      email: parsed.data.email,
-      preferredDate: parsed.data.eventDate ?? null,
-      eventType: parsed.data.eventType ?? null,
-      estimatedGuests: parsed.data.guestCount ?? null,
-      message: parsed.data.message ?? null,
-      source,
-      roomChosen: anchor.roomName !== null,
-    }).returning();
-
-    if (enquiry === undefined) {
-      return reply.status(500).send({ error: "Failed to create enquiry", code: "INTERNAL_ERROR" });
+    // Where the person found the venue (migration 0100), when the page sent
+    // it: only the referring site's host and three cleaned UTM tags are kept,
+    // with the channel they name. Read only once the privacy notice describes
+    // it (funnelBrowserSignalsEnabled); until then whatever a page sends is
+    // ignored and the columns stay empty.
+    const browserSignals = funnelBrowserSignalsEnabled();
+    let attribution: EnquiryAttributionRecord | null = null;
+    if (browserSignals && parsed.data.attribution !== undefined) {
+      const venueSlug = anchor.venueSlug ?? (await db.select({ slug: venues.slug }).from(venues)
+        .where(eq(venues.id, anchor.venueId)).limit(1))[0]?.slug ?? null;
+      attribution = attributeEnquiry(parsed.data.attribution, acquisitionContextFor(venueSlug));
     }
 
-    // Write status history: guest submission (changedBy is null for guests)
-    await db.insert(enquiryStatusHistory).values({
-      enquiryId: enquiry.id,
-      fromStatus: "draft",
-      toStatus: "submitted",
-      changedBy: null,
-      note: "Guest submission",
+    // The enquiry (status: submitted, skipping draft), its status history and
+    // the guest lead are written together or not at all; the person the
+    // enquiry came from is found or made in the same transaction, in a
+    // savepoint of its own (below). The guest is not signed in and
+    // can be anyone, so nothing they send is trusted to choose a person: the
+    // enquiry finds the venue's one live person who holds its email, however
+    // it was typed, or makes them, locked on the venue and the email so two
+    // at once make one person. An email two people share (a couple) links
+    // neither and makes no third. The answer below is the same whichever
+    // happened, so it never says whether an email is known. An access request
+    // or a Venviewer pricing enquiry rides this route without being one of
+    // the venue's clients, so it is neither linked nor made a person, as the
+    // People Book's backfill (0098) leaves those out.
+    const displayName = parsed.data.name ?? parsed.data.email;
+    const engagement = browserSignals ? parsed.data.engagement ?? [] : [];
+    const stored = await db.transaction(async (tx) => {
+      const [enquiry] = await tx.insert(enquiries).values({
+        configurationId: anchor.configurationId,
+        venueId: anchor.venueId,
+        spaceId: anchor.spaceId,
+        userId: null,
+        guestEmail: parsed.data.email,
+        guestPhone: parsed.data.phone ?? null,
+        guestName: parsed.data.name ?? null,
+        state: "submitted",
+        name: displayName,
+        email: parsed.data.email,
+        preferredDate: parsed.data.eventDate ?? null,
+        eventType: parsed.data.eventType ?? null,
+        estimatedGuests: parsed.data.guestCount ?? null,
+        message: parsed.data.message ?? null,
+        source,
+        roomChosen: anchor.roomName !== null,
+        ...(attribution === null ? {} : {
+          referrerHost: attribution.referrerHost,
+          utmSource: attribution.utmSource,
+          utmMedium: attribution.utmMedium,
+          utmCampaign: attribution.utmCampaign,
+          acquisitionChannel: attribution.acquisitionChannel,
+        }),
+      }).returning();
+      if (enquiry === undefined) return null;
+
+      // A guest submission is attributed to nobody (changedBy is null).
+      await tx.insert(enquiryStatusHistory).values({
+        enquiryId: enquiry.id,
+        fromStatus: "draft",
+        toStatus: "submitted",
+        changedBy: null,
+        note: "Guest submission",
+      });
+
+      // Finding the person enriches the enquiry; the enquiry is the venue's
+      // business record. So the link runs in a savepoint: should it fail, it
+      // is rolled back alone (its advisory lock with it, which is safe, as
+      // nothing it guarded was written) and the enquiry, its history and its
+      // lead are still kept, with no person. Create-from-enquiry links it
+      // when the team works it.
+      let link: LinkOutcome | null = null;
+      let linkFailure: { errorName: string; pgCode: string | null } | null = null;
+      if (isBookingEnquiry(parsed.data.eventType)) {
+        try {
+          link = await tx.transaction((savepoint) => linkEnquiryToPerson(savepoint, {
+            id: enquiry.id,
+            venueId: enquiry.venueId,
+            contactId: null,
+            email: parsed.data.email,
+            name: parsed.data.name ?? null,
+            phone: parsed.data.phone ?? null,
+          }, { ownerUserId: null, whenShared: "leave" }));
+        } catch (error) {
+          linkFailure = linkFailureOf(error);
+        }
+      }
+
+      // The guest lead is written once, by the first enquiry from that exact
+      // email, and never changed afterwards. It names no venue, so updating
+      // it let any venue's enquiry overwrite the name and phone another
+      // venue's guest gave.
+      await tx.execute(sql`
+        INSERT INTO guest_leads (email, phone, name, first_enquiry_id)
+        SELECT ${parsed.data.email}::text, ${parsed.data.phone ?? null}::text, ${parsed.data.name ?? null}::text, ${enquiry.id}::uuid
+        WHERE NOT EXISTS (SELECT 1 FROM guest_leads WHERE email = ${parsed.data.email}::text)
+      `);
+
+      // What happened before the person sent it (a 30-second walk of the
+      // twin), attached to this enquiry and nothing else, under the same rule
+      // as attribution. Like the link it enriches the enquiry, so it runs in a
+      // savepoint of its own: should it fail, it is rolled back alone and the
+      // enquiry is kept, never turned into a failed submission the guest
+      // would send again.
+      let engagementFailure: { errorName: string; pgCode: string | null } | null = null;
+      if (engagement.length > 0) {
+        try {
+          await tx.transaction((savepoint) => recordEnquiryEngagement(savepoint, {
+            venueId: anchor.venueId,
+            enquiryId: enquiry.id,
+            spaceId: anchor.roomName === null ? null : anchor.spaceId,
+            kinds: engagement,
+          }));
+        } catch (error) {
+          engagementFailure = linkFailureOf(error);
+        }
+      }
+      return { enquiry, link, linkFailure, engagementFailure };
     });
 
-    // Create or update guest_leads record
-    const [existingLead] = await db.select()
-      .from(guestLeads)
-      .where(eq(guestLeads.email, parsed.data.email))
-      .limit(1);
-
-    if (existingLead === undefined) {
-      await db.insert(guestLeads).values({
-        email: parsed.data.email,
-        phone: parsed.data.phone ?? null,
-        name: parsed.data.name ?? null,
-        firstEnquiryId: enquiry.id,
-      });
-    } else {
-      // Update with latest contact info
-      const updateData: Record<string, unknown> = { updatedAt: new Date() };
-      if (parsed.data.phone !== undefined) updateData["phone"] = parsed.data.phone;
-      if (parsed.data.name !== undefined) updateData["name"] = parsed.data.name;
-      await db.update(guestLeads)
-        .set(updateData)
-        .where(eq(guestLeads.id, existingLead.id));
+    if (stored === null) {
+      return reply.status(500).send({ error: "Failed to create enquiry", code: "INTERNAL_ERROR" });
+    }
+    const { enquiry, link, linkFailure, engagementFailure } = stored;
+    // Ids, the outcome and a failure's class and SQLSTATE only: never the
+    // guest's email, name or phone, nor an error's message.
+    if (link !== null) {
+      request.log.info(
+        { event: "enquiry.person_linked", enquiryId: enquiry.id, venueId: anchor.venueId, outcome: link.outcome },
+        "enquiry.person_linked",
+      );
+    }
+    if (linkFailure !== null) {
+      request.log.error(
+        { event: "enquiry.person_link_failed", enquiryId: enquiry.id, venueId: anchor.venueId, ...linkFailure },
+        "enquiry kept without a person: finding or making its person failed",
+      );
+    }
+    if (engagementFailure !== null) {
+      request.log.error(
+        { event: "enquiry.engagement_failed", enquiryId: enquiry.id, venueId: anchor.venueId, ...engagementFailure },
+        "enquiry kept without its engagement: recording it failed",
+      );
     }
 
     // Notify hallkeeper(s) of the venue
@@ -285,7 +402,10 @@ export async function publicEnquiryRoutes(
           event: "enquiry.notification_failed",
           enquiryId: enquiry.id,
           venueId: anchor.venueId,
-          error: err instanceof Error ? err.message : String(err),
+          // Under `err` so the logger's error serializer owns the policy: a
+          // drizzle failure's message carries the notification's parameters
+          // (the guest's name or email), which `error: err.message` would log.
+          err,
         },
         "enquiry stored but the in-app notification could not be written",
       );
@@ -311,19 +431,27 @@ export async function publicEnquiryRoutes(
       });
     }
 
-    const hallkeepers = await db.select({ id: users.id, email: users.email })
+    // ENQUIRY_EMAIL_ROLES at this venue, one email per inbox.
+    const venueRecipients = await db.select({ id: users.id, email: users.email })
       .from(users)
-      .where(and(eq(users.venueId, anchor.venueId), eq(users.role, "hallkeeper")));
+      .where(and(eq(users.venueId, anchor.venueId), inArray(users.role, [...ENQUIRY_EMAIL_ROLES])));
+    const seenInboxes = new Set<string>();
+    const announced = venueRecipients.filter((user) => {
+      const inbox = user.email.trim().toLowerCase();
+      if (seenInboxes.has(inbox)) return false;
+      seenInboxes.add(inbox);
+      return true;
+    });
 
-    // A venue with no hallkeeper user is the silent-revenue-leak case: the
+    // A venue with none of those users is the silent-revenue-leak case: the
     // enquiry is stored, this loop runs zero times, and the guest still gets a
     // 201 saying the events team has it. Fall back to a configured address so a
     // lead can never reach nobody, and log loudly when there is no one at all.
     const fallbackRaw = process.env["ENQUIRY_FALLBACK_EMAIL"] ?? "";
     const fallback = fallbackRaw.trim();
     const recipients: readonly { id: string; email: string }[] =
-      hallkeepers.length > 0
-        ? hallkeepers
+      announced.length > 0
+        ? announced
         : fallback !== ""
           ? [{ id: "fallback", email: fallback }]
           : [];
@@ -331,7 +459,7 @@ export async function publicEnquiryRoutes(
     if (recipients.length === 0) {
       request.log.error(
         { enquiryId: enquiry.id, venueId: anchor.venueId },
-        "enquiry stored but NOT announced: venue has no hallkeeper user and ENQUIRY_FALLBACK_EMAIL is unset",
+        "enquiry stored but NOT announced: venue has no sales, manager or hallkeeper user and ENQUIRY_FALLBACK_EMAIL is unset",
       );
     }
 

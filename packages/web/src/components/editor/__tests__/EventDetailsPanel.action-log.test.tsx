@@ -114,6 +114,31 @@ describe("event details save actions", () => {
     expect(loggedIntents()).toEqual([]); // B's log carries no fabricated A-record
   });
 
+  it("a save that lands after the sheet is closed and reopened logs what the server held before it, not nothing", async () => {
+    let releasePatch: (() => void) | undefined;
+    patchMock.mockImplementationOnce(
+      () => new Promise<object>((resolve) => { releasePatch = () => { resolve({}); }; }),
+    );
+    const { rerender } = render(<EventDetailsPanel open onClose={() => undefined} />);
+    const textarea = await screen.findByDisplayValue("Old text");
+
+    fireEvent.change(textarea, { target: { value: "New text" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => { expect(patchMock).toHaveBeenCalledTimes(1); });
+
+    // Escape and Close work during a save; reopening starts a fresh read,
+    // which is still in flight when the PATCH lands.
+    getConfigMock.mockImplementationOnce(() => new Promise(() => undefined));
+    rerender(<EventDetailsPanel open={false} onClose={() => undefined} />);
+    rerender(<EventDetailsPanel open onClose={() => undefined} />);
+
+    if (releasePatch === undefined) throw new Error("patch was never started");
+    releasePatch();
+    await waitFor(() => { expect(loggedIntents()).toEqual(["event.details.update"]); });
+    const inverse = useActionLogStore.getState().entries[0]?.inverse as { instructions: { specialInstructions: string } | null };
+    expect(inverse.instructions?.specialInstructions).toBe("Old text");
+  });
+
   it("a failed save logs nothing", async () => {
     patchMock.mockRejectedValueOnce(new Error("server down"));
     const textarea = await openPanelAndAwaitHydration();

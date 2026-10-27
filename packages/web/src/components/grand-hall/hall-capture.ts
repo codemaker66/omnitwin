@@ -32,6 +32,22 @@ export class HallEnvironmentCapture {
   }
 
   /**
+   * The environment texture before the first capture: the void, filtered
+   * into the target every capture refills. Installed as the scene's
+   * environment before the room's first frame, so its materials are built
+   * against the texture they keep. Installing a new texture with the first
+   * capture made three rebuild every material of the scene pass once more, a
+   * frame after the capture: 2.2-3.0 s of main thread at 4x CPU on the phone
+   * profile, on master as on the branch (review R2, 23 October 2026).
+   */
+  prepare(): Texture {
+    if (this.target === null) {
+      this.target = this.generator.fromScene(this.stage, 0, 0.05, 60, { size: CAPTURE_SIZE, position: HALL_CAPTURE_POINT, renderTarget: null });
+    }
+    return this.target.texture;
+  }
+
+  /**
    * Captures `room` (whatever it shows right now) and returns the filtered
    * environment texture, which stays the same object across captures.
    */

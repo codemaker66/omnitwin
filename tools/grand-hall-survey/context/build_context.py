@@ -70,7 +70,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 P = dict(
     radius=260.0, spacing=3.0, level_anchor_y=0.0, ground_y=-3.79,
     dsm_to_y=0.30 - 3.79, median_px=3,
-    clamp_radius=45.0, clamp_inner_radius=26.0, clamp_front_z=-24.0, clamp_y=0.0, rect_half_x=11.2, rect_half_z=5.95,
+    clamp_radius=45.0, clamp_inner_radius=26.0, clamp_front_z=-24.0, clamp_y=0.0, rect_half_x=11.2, rect_half_z=5.95, rect_front_z=-6.24,
     tol_near=0.5, tol_far=2.0, area_near=6.0, area_far=40.0, near_r=80.0, far_r=260.0,
     rim_step_deg=1.5, terrain_cut_y=-1.0, terrain_sigma=3.0,
     tree_max_area=1000.0, tree_min_residual=0.2, tree_max_height=22.0, frame_bearing_deg=102.96, centre_local=[3.0, 8.0],
@@ -216,7 +216,10 @@ log(f"area filter: removed {n_open} small raised features, filled {n_close} smal
 OUTL, CUTL = -1, -2
 lab = band.copy()
 lab[RR > P["radius"]] = OUTL
-incut = (np.abs(PX) <= P["rect_half_x"]) & (np.abs(PZ) <= P["rect_half_z"])
+# The cut-out for the hall: |x| <= rect_half_x, from the street face (rect_front_z, the window wall's outer face at
+# -6.245, its 0.95 m thickness; a centimetre grid puts the cut 5 mm under the wall's foot, never a crack in front of
+# it) to rect_half_z behind.
+incut = (np.abs(PX) <= P["rect_half_x"]) & (PZ >= P["rect_front_z"]) & (PZ <= P["rect_half_z"])
 lab[incut] = CUTL
 for it in range(100):
     a, b_, c, d = lab[:-1, :-1], lab[:-1, 1:], lab[1:, :-1], lab[1:, 1:]
@@ -371,9 +374,9 @@ for ch in chains:
 
 # ---------------------------------------------------------------- 7 snapping
 R0 = P["radius"]
-HX, HZ = P["rect_half_x"], P["rect_half_z"]
-RC = np.array([[-HX, -HZ], [HX, -HZ], [HX, HZ], [-HX, HZ]])
-SEGL = np.array([2 * HX, 2 * HZ, 2 * HX, 2 * HZ])
+HX, HZ, FZ = P["rect_half_x"], P["rect_half_z"], P["rect_front_z"]
+RC = np.array([[-HX, FZ], [HX, FZ], [HX, HZ], [-HX, HZ]])
+SEGL = np.array([2 * HX, HZ - FZ, 2 * HX, HZ - FZ])
 SCUM = np.concatenate([[0], np.cumsum(SEGL)])
 PER = SCUM[-1]
 
@@ -855,7 +858,7 @@ doc = {
         "rule": "band b>=1 is where the smoothed DSM (planner y) >= first_level_y + (b-1)*spacing; caps sit at that level; "
                 "band 0 is the ground disc at the hall pavement level (terrain below it is flattened onto it)",
     },
-    "site_cut": "nothing emitted inside |x|<=11.2, |z|<=5.95; the solids cut by it are left open there (the hall model fills it)",
+    "site_cut": f"nothing emitted inside |x|<={P['rect_half_x']}, {P['rect_front_z']}<=z<={P['rect_half_z']} (the street face: the hall's window wall's outer face); the solids cut by it are left open there (the hall model fills it)",
     "clamp": f"within {P['clamp_inner_radius']} m of the origin, and within {P['clamp_radius']} m where planner z > {P['clamp_front_z']} (all but the blocks across Glassford Street), y = min(y, 0) before banding",
     "rim": "solids crossing the 260 m circle are closed with section walls on the circle; the ground disc rim is open",
     "bbox_m": {"min": f32.min(0).round(2).tolist(), "max": f32.max(0).round(2).tolist(), "order": "x, y, z"},

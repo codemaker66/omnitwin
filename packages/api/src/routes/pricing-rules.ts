@@ -1,10 +1,11 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { eq, and, isNotNull, isNull } from "drizzle-orm";
+import { PricingAdviceKeySchema } from "@omnitwin/types";
 import { pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAdministerVenue, canWritePricing } from "../utils/query.js";
+import { canAdministerVenue, canManageCommercial, canWritePricing } from "../utils/query.js";
 import { calculatePrice } from "../services/price-calculator.js";
 import type { PricingRuleInput } from "../services/price-calculator.js";
 import {
@@ -18,17 +19,30 @@ function refusePricingWrite(reply: FastifyReply): FastifyReply {
   return reply.status(403).send({ error: pricingWriteRefusal(), code: "FORBIDDEN" });
 }
 
+// Reading a price (Blake, 17 October 2026): the venue's prices, and above all
+// a dated rate born from a Pricing desk suggestion, are the venue's own
+// commercial team's (canManageCommercial: admin, manager, staff, sales; a
+// platform admin too). Suggestions are advice, never exposed; a visitor is
+// asked to enquire for a quote and never shown a price. The refusal names no
+// rule, amount or date, and comes before any lookup, so it says nothing about
+// whether the venue or the rule exists.
+const PRICE_READ_REFUSAL = "The price list is kept by the venue's own team.";
+
+function refusePricingRead(reply: FastifyReply): FastifyReply {
+  return reply.status(403).send({ error: PRICE_READ_REFUSAL, code: "FORBIDDEN" });
+}
+
 // ---------------------------------------------------------------------------
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const VenueIdParam = z.object({ venueId: z.string().uuid() });
-const RuleIdParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid() });
+const VenueIdParam = z.object({ venueId: z.uuid() });
+const RuleIdParam = z.object({ venueId: z.uuid(), id: z.uuid() });
 
 const PRICING_TYPES = ["flat_rate", "per_hour", "per_head", "tiered"] as const;
 
 const EstimateBody = z.object({
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -37,8 +51,12 @@ const EstimateBody = z.object({
 
 const TierSchema = z.object({ upTo: z.number().positive(), amount: z.number().nonnegative() });
 
+/** A calendar date that exists: "2027-02-30" is refused here, not by Postgres. */
+const CalendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value, { message: "Not a calendar date" });
+
 const CreateRuleBody = z.object({
-  spaceId: z.string().uuid().nullable().optional(),
+  spaceId: z.uuid().nullable().optional(),
   name: z.string().trim().min(1).max(200),
   type: z.enum(PRICING_TYPES),
   amount: z.number().nonnegative(),
@@ -46,25 +64,52 @@ const CreateRuleBody = z.object({
   minHours: z.number().int().positive().nullable().optional(),
   minGuests: z.number().int().positive().nullable().optional(),
   tiers: z.array(TierSchema).nullable().optional(),
-  dayOfWeekModifiers: z.record(z.number().positive()).nullable().optional(),
-  seasonalModifiers: z.record(z.number().positive()).nullable().optional(),
-  validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  dayOfWeekModifiers: z.record(z.string(), z.number().positive()).nullable().optional(),
+  seasonalModifiers: z.record(z.string(), z.number().positive()).nullable().optional(),
+  validFrom: CalendarDate.nullable().optional(),
+  validTo: CalendarDate.nullable().optional(),
   isActive: z.boolean().default(true),
   // The time of day the rule is for (0089): "HH:MM", both or neither. An
   // until not after its from runs past midnight ("19:00" to "00:30").
   appliesFrom: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
   appliesUntil: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
+  // The Pricing desk's suggestion this rate follows, if any: kept in the
+  // change's record, never stored on the rule.
+  adviceKey: PricingAdviceKeySchema.nullable().optional(),
 });
+const DATE_ORDER_MESSAGE = "validFrom comes on or before validTo";
+function datesInOrder(body: { validFrom?: string | null; validTo?: string | null }): boolean {
+  const from = body.validFrom ?? null;
+  const to = body.validTo ?? null;
+  return from === null || to === null || from <= to;
+}
 const WINDOW_PAIR_MESSAGE = "appliesFrom and appliesUntil go together: both, or neither";
 function windowIsPaired(body: { appliesFrom?: string | null; appliesUntil?: string | null }): boolean {
   return ((body.appliesFrom ?? null) === null) === ((body.appliesUntil ?? null) === null);
 }
-const CreateRuleBodyChecked = CreateRuleBody.refine(windowIsPaired, { message: WINDOW_PAIR_MESSAGE, path: ["appliesUntil"] });
+const CreateRuleBodyChecked = CreateRuleBody
+  .refine(windowIsPaired, { message: WINDOW_PAIR_MESSAGE, path: ["appliesUntil"] })
+  .refine(datesInOrder, { message: DATE_ORDER_MESSAGE, path: ["validTo"] });
+
+/** A suggestion's key names one of this venue's rates, or it is not kept. */
+async function adviceKeyIsThisVenues(db: Database, venueId: string, adviceKey: string | null | undefined): Promise<boolean> {
+  if (adviceKey === null || adviceKey === undefined) return true;
+  const ruleId = adviceKey.slice(0, 36);
+  const [rule] = await db.select({ id: pricingRules.id }).from(pricingRules)
+    .where(and(eq(pricingRules.id, ruleId), eq(pricingRules.venueId, venueId)))
+    .limit(1);
+  return rule !== undefined;
+}
+const ADVICE_KEY_MESSAGE = "That suggestion is not one of this venue's";
 // A patch may send one side when the other is already stored; the handler
 // judges the pair as it will be stored.
 
-const UpdateRuleBody = CreateRuleBody.partial();
+// zod 4 applies a default inside .partial(): a patch that left these out would
+// reset the currency to GBP and switch a disabled rule back on.
+const UpdateRuleBody = CreateRuleBody.partial().extend({
+  currency: CreateRuleBody.shape.currency.unwrap().optional(),
+  isActive: CreateRuleBody.shape.isActive.unwrap().optional(),
+});
 
 // A delete marks the rule and switches it off; the admin's Undo sends back
 // whether it was on.
@@ -80,12 +125,13 @@ export async function pricingRuleRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  // GET /venues/:venueId/pricing — public
-  server.get("/", async (request, reply) => {
+  // GET /venues/:venueId/pricing — the venue's commercial team only
+  server.get("/", { preHandler: [authenticate] }, async (request, reply) => {
     const params = VenueIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
     }
+    if (!canManageCommercial(request.user, params.data.venueId)) return refusePricingRead(reply);
 
     // Verify venue is active — prevents leaking pricing for soft-deleted venues
     const [venueCheck] = await db.select({ id: venues.id }).from(venues)
@@ -103,15 +149,17 @@ export async function pricingRuleRoutes(
       ))
       .orderBy(pricingRules.createdAt);
 
+    reply.header("Cache-Control", "private, no-store");
     return { data: rows };
   });
 
-  // GET /venues/:venueId/pricing/:id — public
-  server.get("/:id", async (request, reply) => {
+  // GET /venues/:venueId/pricing/:id — the venue's commercial team only
+  server.get("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = RuleIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
+    if (!canManageCommercial(request.user, params.data.venueId)) return refusePricingRead(reply);
 
     // Verify venue is active
     const [venueCheck] = await db.select({ id: venues.id }).from(venues)
@@ -133,6 +181,7 @@ export async function pricingRuleRoutes(
       return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
     }
 
+    reply.header("Cache-Control", "private, no-store");
     return { data: rule };
   });
 
@@ -180,6 +229,9 @@ export async function pricingRuleRoutes(
         return reply.status(404).send({ error: "Space not found in this venue", code: "NOT_FOUND" });
       }
     }
+    if (!await adviceKeyIsThisVenues(db, params.data.venueId, parsed.data.adviceKey)) {
+      return reply.status(400).send({ error: ADVICE_KEY_MESSAGE, code: "VALIDATION_ERROR" });
+    }
 
     const rule = await db.transaction(async (tx) => {
       const [created] = await tx.insert(pricingRules).values({
@@ -201,7 +253,9 @@ export async function pricingRuleRoutes(
       appliesUntil: parsed.data.appliesUntil ?? null,
       }).returning();
       if (created === undefined) throw new Error("Pricing rule insert returned no row");
-      await recordPricingRuleChange(tx, { kind: "created", actorUserId: request.user.id, before: null, after: created });
+      await recordPricingRuleChange(tx, {
+        kind: "created", actorUserId: request.user.id, before: null, after: created, adviceKey: parsed.data.adviceKey ?? null,
+      });
       return created;
     });
 
@@ -230,6 +284,9 @@ export async function pricingRuleRoutes(
       if (space === undefined) {
         return reply.status(404).send({ error: "Space not found in this venue", code: "NOT_FOUND" });
       }
+    }
+    if (!await adviceKeyIsThisVenues(db, params.data.venueId, parsed.data.adviceKey)) {
+      return reply.status(400).send({ error: ADVICE_KEY_MESSAGE, code: "VALIDATION_ERROR" });
     }
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
@@ -265,12 +322,20 @@ export async function pricingRuleRoutes(
         updateData["appliesFrom"] = next.appliesFrom;
         updateData["appliesUntil"] = next.appliesUntil;
       }
+      // The dates are judged as they will be stored, one side sent or both.
+      const dates = {
+        validFrom: parsed.data.validFrom === undefined ? existing.validFrom : parsed.data.validFrom,
+        validTo: parsed.data.validTo === undefined ? existing.validTo : parsed.data.validTo,
+      };
+      if (!datesInOrder(dates)) return "dates_out_of_order" as const;
       const [updated] = await tx.update(pricingRules)
         .set(updateData)
         .where(eq(pricingRules.id, existing.id))
         .returning();
       if (updated === undefined) throw new Error("Pricing rule update returned no row");
-      await recordPricingRuleChange(tx, { kind: "updated", actorUserId: request.user.id, before: existing, after: updated });
+      await recordPricingRuleChange(tx, {
+        kind: "updated", actorUserId: request.user.id, before: existing, after: updated, adviceKey: parsed.data.adviceKey ?? null,
+      });
       return updated;
     });
 
@@ -279,6 +344,9 @@ export async function pricingRuleRoutes(
     }
     if (outcome === "unpaired_window") {
       return reply.status(400).send({ error: WINDOW_PAIR_MESSAGE, code: "VALIDATION_ERROR" });
+    }
+    if (outcome === "dates_out_of_order") {
+      return reply.status(400).send({ error: DATE_ORDER_MESSAGE, code: "VALIDATION_ERROR" });
     }
     return { data: outcome };
   });
@@ -355,12 +423,19 @@ export async function pricingRuleRoutes(
     return { data: restored };
   });
 
-  // POST /venues/:venueId/pricing/estimate — public price calculator
-  server.post("/estimate", async (request, reply) => {
+  // POST /venues/:venueId/pricing/estimate — the venue's commercial team only.
+  // It prices a window from every active rule, dated and suggestion-born rates
+  // included, so stepping through dates would map the venue's high-demand
+  // days and their raised totals. Its one caller is the staff planner's office
+  // ribbon, which shows no price line when refused. A price a client may ever
+  // see would be a deliberate projection without dated or suggested rates,
+  // not this route.
+  server.post("/estimate", { preHandler: [authenticate] }, async (request, reply) => {
     const params = VenueIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
     }
+    if (!canManageCommercial(request.user, params.data.venueId)) return refusePricingRead(reply);
 
     const parsed = EstimateBody.safeParse(request.body);
     if (!parsed.success) {
@@ -427,6 +502,7 @@ export async function pricingRuleRoutes(
       guestCount: parsed.data.guestCount,
     });
 
+    reply.header("Cache-Control", "private, no-store");
     return { data: result };
   });
 }

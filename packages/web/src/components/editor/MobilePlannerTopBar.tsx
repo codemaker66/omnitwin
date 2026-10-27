@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FileText } from "lucide-react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
@@ -7,33 +8,15 @@ import {
   deriveEditorSaveStatus,
 } from "../../lib/editor-save-status.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
+import { VisitorPlanPdfSheet } from "./VisitorPlanPdfSheet.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
+import { useOnlineStatus } from "../../hooks/use-online-status.js";
 
 interface MobilePlannerTopBarProps {
   readonly mode: "3d" | "2d";
   readonly onModeChange: (mode: "3d" | "2d") => void;
-}
-
-function useOnlineStatus(): boolean {
-  const [online, setOnline] = useState<boolean>(() => {
-    if (typeof navigator === "undefined") return true;
-    return navigator.onLine;
-  });
-
-  useEffect(() => {
-    const onOnline = (): void => { setOnline(true); };
-    const onOffline = (): void => { setOnline(false); };
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
-    return () => {
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
-    };
-  }, []);
-
-  return online;
 }
 
 const topBarStyle: React.CSSProperties = {
@@ -135,6 +118,22 @@ const sendStyle: React.CSSProperties = {
   boxShadow: "0 8px 18px rgba(122,31,42,0.2)",
 };
 
+// The plan-as-PDF control sits beside Send: the same 44 px pill height, the
+// bar's own ink, quieter than Send because asking the venue is the main act.
+const planPdfStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 44,
+  height: 44,
+  padding: 0,
+  borderRadius: 999,
+  border: "1px solid rgba(36,25,19,0.14)",
+  background: "rgba(36,25,19,0.06)",
+  color: "#241913",
+  cursor: "pointer",
+};
+
 function segmentButtonStyle(active: boolean): React.CSSProperties {
   return {
     minHeight: 44,
@@ -165,6 +164,7 @@ export function MobilePlannerTopBar({
   const saveConflict = useEditorStore((s) => s.saveConflict);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const timelinePreviewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
   const timelinePreviewActive = timelinePreviewMode !== "inactive";
@@ -180,6 +180,7 @@ export function MobilePlannerTopBar({
     : configName ?? (configId === null ? "Unsaved layout" : "Loading layout…");
   const online = useOnlineStatus();
   const [showEnquiry, setShowEnquiry] = useState(false);
+  const [showPlanPdf, setShowPlanPdf] = useState(false);
   const [sending, setSending] = useState(false);
   const mountedRef = useRef(true);
 
@@ -229,9 +230,19 @@ export function MobilePlannerTopBar({
       });
   };
 
+  // A guest plan (no account) can go to anyone as a PDF or a view-only link;
+  // phones have no Share lens, so the bar offers it beside Send (fix-first
+  // item 11).
+  const canSendPlanPdf = isPublicPreview && objectCount > 0 && configId !== null;
+
   return (
     <>
-      <div data-testid="mobile-planner-topbar" style={topBarStyle}>
+      <div
+        data-testid="mobile-planner-topbar"
+        style={canSendPlanPdf
+          ? { ...topBarStyle, gridTemplateColumns: "minmax(0, 1fr) auto auto auto" }
+          : topBarStyle}
+      >
         <div style={titleStyle}>
           <div data-testid="mobile-planner-room-name" style={roomStyle}>{roomName}</div>
           <div data-testid="mobile-planner-layout-name" style={layoutStyle}>{layoutName}</div>
@@ -277,7 +288,25 @@ export function MobilePlannerTopBar({
           </button>
         </div>
 
-        {objectCount > 0 && configId !== null ? (
+        {canSendPlanPdf ? (
+          <button
+            type="button"
+            style={{ ...planPdfStyle, opacity: timelinePreviewActive ? 0.68 : 1 }}
+            aria-label="Send your plan"
+            aria-haspopup="dialog"
+            onClick={() => { if (!timelinePreviewActive) setShowPlanPdf(true); }}
+            disabled={timelinePreviewActive}
+            title={timelinePreviewActive
+              ? "Exit the room timeline preview to send this plan."
+              : "Send your plan to someone as a PDF or a view-only link"}
+            data-testid="mobile-plan-pdf"
+          >
+            <FileText size={20} aria-hidden="true" />
+          </button>
+        ) : null}
+
+        {/* A guest's draft only: a plan saved to an account goes through its review (QoL E-01). */}
+        {isPublicPreview && objectCount > 0 && configId !== null ? (
           <button
             type="button"
             style={{
@@ -296,6 +325,14 @@ export function MobilePlannerTopBar({
           </button>
         ) : null}
       </div>
+
+      {showPlanPdf && configId !== null ? (
+        <VisitorPlanPdfSheet
+          configId={configId}
+          roomName={space?.name ?? "Room"}
+          onClose={() => { setShowPlanPdf(false); }}
+        />
+      ) : null}
 
       {showEnquiry && configId !== null ? (
         <GuestEnquiryModal

@@ -1,28 +1,37 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, desc, inArray, isNull, sql } from "drizzle-orm";
-import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, venues } from "../db/schema.js";
+import {
+  ENQUIRY_FUNNEL_FIELDS,
+  FIRST_RESPONSE_BACKDATING_ROLES,
+  FIRST_RESPONSE_FUTURE_SKEW_MS,
+  FIRST_RESPONSE_REPORT_WINDOW_DAYS,
+  RecordFirstResponseSchema,
+  type RecordFirstResponseResult,
+} from "@omnitwin/types";
+import { enquiries, enquiryStatusHistory, configurations, generalAuditLog, pricingRules, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource, canManageCommercial, canManageVenue } from "../utils/query.js";
+import { canAccessResource, canManageCommercial, canManageVenue, isVenueCommercialMember } from "../utils/query.js";
 import { canTransition, enquiryKind, ENQUIRY_STATES, isCustomerMove } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
+import { lockFirstResponse, stampFirstResponse } from "../services/enquiry-funnel.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 const CreateEnquiryBody = z.object({
-  configurationId: z.string().uuid(),
-  venueId: z.string().uuid(),
-  spaceId: z.string().uuid(),
+  configurationId: z.uuid(),
+  venueId: z.uuid(),
+  spaceId: z.uuid(),
   name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email().max(255),
+  email: z.string().trim().check(z.email()).max(255),
   eventType: z.string().trim().max(100).nullable().optional(),
   preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   estimatedGuests: z.number().int().nonnegative().nullable().optional(),
@@ -31,7 +40,7 @@ const CreateEnquiryBody = z.object({
 
 const UpdateEnquiryBody = z.object({
   name: z.string().trim().min(1).max(200).optional(),
-  email: z.string().trim().email().max(255).optional(),
+  email: z.string().trim().check(z.email()).max(255).optional(),
   eventType: z.string().trim().max(100).nullable().optional(),
   preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   estimatedGuests: z.number().int().nonnegative().nullable().optional(),
@@ -70,7 +79,7 @@ const StatusFilterQuery = z.object({
   status: z.enum(ENQUIRY_STATES).optional(),
   states: EnquiryStatesParam.optional(),
   order: z.enum(ENQUIRY_LIST_ORDERS).default("updated_asc"),
-  venueId: z.string().uuid().optional(),
+  venueId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 }).refine((query) => query.status === undefined || query.states === undefined, {
@@ -88,6 +97,26 @@ const StatusFilterQuery = z.object({
 function canWorkEnquiry(user: JwtUser, enquiry: { readonly userId: string | null; readonly venueId: string }): boolean {
   return canAccessResource(user, enquiry.userId, enquiry.venueId) || canManageCommercial(user, enquiry.venueId);
 }
+
+type EnquiryRow = typeof enquiries.$inferSelect;
+type CustomerEnquiry = Omit<EnquiryRow, (typeof ENQUIRY_FUNNEL_FIELDS)[number]>;
+
+const FUNNEL_FIELDS: ReadonlySet<string> = new Set(ENQUIRY_FUNNEL_FIELDS);
+
+/**
+ * An enquiry as its reader may see it. When and how the venue first replied,
+ * and where the person was found, are the venue's own measurements (migration
+ * 0100): its team and Venviewer's admins read the whole row, and the
+ * enquiry's customer reads it without them.
+ */
+function asSeenBy(user: JwtUser, row: EnquiryRow): EnquiryRow | CustomerEnquiry {
+  if (isPlatformAdmin(user) || canManageVenue(user, row.venueId) || canManageCommercial(user, row.venueId)) return row;
+  return Object.fromEntries(Object.entries(row).filter(([field]) => !FUNNEL_FIELDS.has(field))) as CustomerEnquiry;
+}
+
+/** Who may date a reported reply further back than the report window. */
+const BACKDATING_ROLES: ReadonlySet<string> = new Set(FIRST_RESPONSE_BACKDATING_ROLES);
+const DAY_MS = 86_400_000;
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -151,7 +180,7 @@ export async function enquiryRoutes(
         ? [desc(enquiries.createdAt), desc(enquiries.id)]
         : [enquiries.updatedAt]));
 
-    const page = paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
+    const page = paginate(rows.map((row) => asSeenBy(user, row)), total, { limit: query.data.limit, offset: query.data.offset });
     return { ...page, meta: { ...page.meta, order: query.data.order } };
   });
 
@@ -174,7 +203,7 @@ export async function enquiryRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    return { data: enquiry };
+    return { data: asSeenBy(request.user, enquiry) };
   });
 
   // POST /enquiries — authenticated, create enquiry linked to configuration
@@ -217,7 +246,7 @@ export async function enquiryRoutes(
       state: "draft",
     }).returning();
 
-    return reply.status(201).send({ data: enquiry });
+    return reply.status(201).send({ data: enquiry === undefined ? enquiry : asSeenBy(request.user, enquiry) });
   });
 
   // PATCH /enquiries/:id — owner (if draft) or admin
@@ -263,7 +292,7 @@ export async function enquiryRoutes(
       .where(eq(enquiries.id, params.data.id))
       .returning();
 
-    return { data: updated };
+    return { data: updated === undefined ? updated : asSeenBy(request.user, updated) };
   });
 
   // POST /enquiries/:id/transition — state machine transition
@@ -342,6 +371,21 @@ export async function enquiryRoutes(
         changedBy: request.user.id,
         note: parsed.data.note ?? null,
       });
+      // A decision is emailed to the guest below, so it is a reply Venviewer
+      // sends itself: the enquiry's first unless an earlier one is recorded.
+      if (parsed.data.status === "approved" || parsed.data.status === "rejected") {
+        await stampFirstResponse(tx, {
+          enquiryId: row.id,
+          venueId: row.venueId,
+          at: "now",
+          // The venue's team replied; a Venviewer operator who decided for
+          // the venue is not one of them, so the reply names nobody.
+          byUserId: isVenueCommercialMember(request.user, row.venueId) ? request.user.id : null,
+          channel: "decision",
+        });
+        const [stamped] = await tx.select().from(enquiries).where(eq(enquiries.id, row.id)).limit(1);
+        return stamped ?? row;
+      }
       return row;
     });
     if (updated === null) return reply.status(409).send(ENQUIRY_STATUS_CHANGED);
@@ -382,7 +426,136 @@ export async function enquiryRoutes(
       }
     }
 
-    return { data: updated };
+    return { data: asSeenBy(request.user, updated) };
+  });
+
+  // POST /enquiries/:id/first-response — someone on the venue's team reports
+  // a reply made outside Venviewer (an email from the venue's own mailbox, a
+  // call, a meeting): the enquiry's first reply when it is earlier than the
+  // one recorded (migration 0100). `respondedAt` defaults to now and may not
+  // be before the enquiry arrived or later than now; `respondedBy` defaults to
+  // the person reporting and must be on the venue's team. Every report is kept
+  // in the audit log, including one that changes nothing, so the stamp's
+  // history can be read back even though only the earliest is on the enquiry.
+  server.post("/:id/first-response", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const parsed = RecordFirstResponseSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    const [enquiry] = await db.select({
+      id: enquiries.id,
+      venueId: enquiries.venueId,
+      state: enquiries.state,
+      createdAt: enquiries.createdAt,
+    }).from(enquiries).where(eq(enquiries.id, params.data.id)).limit(1);
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
+    }
+    if (!isVenueCommercialMember(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    if (enquiry.state === "draft") {
+      return reply.status(422).send({
+        error: "This enquiry has not been sent yet, so there is no reply to record.",
+        code: "ENQUIRY_NOT_SENT",
+      });
+    }
+
+    // The enquiry reached the venue when it was sent: a draft a customer kept
+    // before sending it was not yet the venue's to answer.
+    const [sent] = await db.select({ at: sql<string | null>`min(${enquiryStatusHistory.createdAt})` })
+      .from(enquiryStatusHistory)
+      .where(and(eq(enquiryStatusHistory.enquiryId, enquiry.id), eq(enquiryStatusHistory.toStatus, "submitted")));
+    const sentAt = sent?.at ?? null;
+    const arrivedAt = sentAt === null ? enquiry.createdAt : new Date(sentAt);
+
+    const respondedAt = parsed.data.respondedAt === undefined ? null : new Date(parsed.data.respondedAt);
+    if (respondedAt !== null && respondedAt.getTime() > Date.now() + FIRST_RESPONSE_FUTURE_SKEW_MS) {
+      return reply.status(422).send({ error: "A reply cannot be later than now.", code: "FIRST_RESPONSE_IN_FUTURE" });
+    }
+    // Reply time is what the team is judged on, so a reply dated well into
+    // the past is the venue's admin's or manager's to record.
+    if (respondedAt !== null && Date.now() - respondedAt.getTime() > FIRST_RESPONSE_REPORT_WINDOW_DAYS * DAY_MS
+      && !BACKDATING_ROLES.has(request.user.role)) {
+      return reply.status(422).send({
+        error: `A reply more than ${String(FIRST_RESPONSE_REPORT_WINDOW_DAYS)} days ago is recorded by the venue's admin or manager.`,
+        code: "FIRST_RESPONSE_TOO_OLD",
+      });
+    }
+    if (respondedAt !== null && respondedAt.getTime() < arrivedAt.getTime()) {
+      return reply.status(422).send({
+        error: "A reply cannot be earlier than the enquiry it answers.",
+        code: "FIRST_RESPONSE_BEFORE_ENQUIRY",
+      });
+    }
+
+    const respondedBy = parsed.data.respondedBy ?? request.user.id;
+    if (respondedBy !== request.user.id) {
+      const [person] = await db.select({ role: users.role, venueId: users.venueId })
+        .from(users).where(eq(users.id, respondedBy)).limit(1);
+      if (person === undefined || !isVenueCommercialMember(person, enquiry.venueId)) {
+        return reply.status(422).send({
+          error: "Name someone on this venue's team as the person who replied.",
+          code: "RESPONDER_NOT_AT_VENUE",
+        });
+      }
+    }
+
+    const stamped = await db.transaction(async (tx) => {
+      // The reply it may replace, read under the row's lock, so the audit
+      // says exactly what this report displaced.
+      const previous = await lockFirstResponse(tx, enquiry.id, enquiry.venueId);
+      const result = await stampFirstResponse(tx, {
+        enquiryId: enquiry.id,
+        venueId: enquiry.venueId,
+        at: respondedAt ?? "now",
+        byUserId: respondedBy,
+        channel: parsed.data.channel,
+      });
+      await tx.insert(generalAuditLog).values({
+        actorUserId: request.user.id,
+        action: "enquiry.first_response_reported",
+        targetType: "enquiry",
+        targetId: enquiry.id,
+        summary: result.changed
+          ? "Recorded the enquiry's first reply."
+          : "Reported a reply no earlier than the enquiry's first, which stands.",
+        metadata: {
+          channel: parsed.data.channel,
+          respondedAt: respondedAt?.toISOString() ?? null,
+          respondedBy,
+          changed: result.changed,
+          previous: previous === null ? null : {
+            at: previous.at.toISOString(),
+            byUserId: previous.byUserId,
+            channel: previous.channel,
+            recordedAt: previous.recordedAt.toISOString(),
+          },
+        },
+      });
+      return result;
+    });
+    // The enquiry was read at this venue, after it arrived, with a time no
+    // earlier than its arrival, so it holds a reply now unless it moved away.
+    if (stamped.stamp === null) {
+      return reply.status(409).send({ error: "The enquiry changed while the reply was being recorded. Open it again.", code: "ENQUIRY_CHANGED" });
+    }
+    const data: RecordFirstResponseResult = {
+      enquiryId: enquiry.id,
+      firstResponse: {
+        at: stamped.stamp.at.toISOString(),
+        byUserId: stamped.stamp.byUserId,
+        channel: stamped.stamp.channel,
+        recordedAt: stamped.stamp.recordedAt.toISOString(),
+      },
+      changed: stamped.changed,
+    };
+    return { data };
   });
 
   // GET /enquiries/:id/history — status change history
@@ -427,9 +600,14 @@ export async function enquiryRoutes(
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
 
-    // A quote is a price: the enquirer and the roles that work the pipeline
-    // see it; a hallkeeper, who can open the enquiry, does not (decision 6b).
-    if (enquiry.userId !== request.user.id && !canManageCommercial(request.user, enquiry.venueId)) {
+    // A quote is a price worked from every active rule, dated and
+    // suggestion-born rates included, so only the roles that work the pipeline
+    // see it (Blake, 17 October 2026). The enquirer asks for a quote and the
+    // venue's team sends one; owning the enquiry, whose date and guests its
+    // owner may change while it is a draft, never turns this into a price
+    // calculator. A hallkeeper, who can open the enquiry, does not see it
+    // either (decision 6b).
+    if (!canManageCommercial(request.user, enquiry.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -468,6 +646,7 @@ export async function enquiryRoutes(
       guestCount: enquiry.estimatedGuests ?? 0,
     });
 
+    reply.header("Cache-Control", "private, no-store");
     return { data: result };
   });
 

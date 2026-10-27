@@ -2,10 +2,11 @@ import { useEffect, useMemo, useCallback } from "react";
 import { useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { BufferGeometry, Float32BufferAttribute, Raycaster, Vector2 } from "three";
+import { TriangleAlert } from "lucide-react";
 import { useMeasurementStore, type Measurement } from "../stores/measurement-store.js";
-import { useToolStore } from "../stores/tool-store.js";
 import {
   type Point3,
+  FIRE_EXIT_MINIMUM_M,
   formatDistance,
   getMeasurementColor,
   computeMidpoint,
@@ -41,6 +42,15 @@ const dotStyle: React.CSSProperties = {
 // Sub-components
 // ---------------------------------------------------------------------------
 
+/** What a measurement says to a screen reader: the distance and, when it is
+ *  narrower than an exit route, that fact in words rather than a glyph. */
+export function measurementName(distance: number, belowExitWidth: boolean): string {
+  const metres = formatDistance(distance);
+  return belowExitWidth
+    ? `${metres} · narrower than the ${FIRE_EXIT_MINIMUM_M.toFixed(2)} m an exit route needs`
+    : metres;
+}
+
 /** Renders a single completed measurement: line + midpoint label + endpoint dots. */
 function MeasurementLine({ measurement }: { readonly measurement: Measurement }): React.ReactElement {
   const { pointA, pointB, distance } = measurement;
@@ -71,16 +81,24 @@ function MeasurementLine({ measurement }: { readonly measurement: Measurement })
       {/* Distance label at midpoint */}
       <group position={[midpoint[0], midpoint[1], midpoint[2]]}>
         <Html center style={{ pointerEvents: "none" }}>
-          <div style={{
-            ...labelStyle,
-            background: warning ? "rgba(220, 30, 30, 0.9)" : "rgba(30, 30, 30, 0.85)",
-            color: "white",
-            boxShadow: warning
-              ? "0 2px 8px rgba(220,30,30,0.4)"
-              : "0 2px 8px rgba(0,0,0,0.2)",
-          }}>
+          <div
+            role="note"
+            aria-label={measurementName(distance, warning)}
+            data-testid="measurement-label"
+            style={{
+              ...labelStyle,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              background: warning ? "rgba(220, 30, 30, 0.9)" : "rgba(30, 30, 30, 0.85)",
+              color: "white",
+              boxShadow: warning
+                ? "0 2px 8px rgba(220,30,30,0.4)"
+                : "0 2px 8px rgba(0,0,0,0.2)",
+            }}
+          >
             {formatDistance(distance)}
-            {warning && " ⚠"}
+            {warning && <TriangleAlert size={12} strokeWidth={2} aria-hidden="true" />}
           </div>
         </Html>
       </group>
@@ -126,11 +144,11 @@ function PendingDot({ position }: { readonly position: Point3 }): React.ReactEle
 /**
  * Measurement tool — R3F component (must be inside Canvas).
  *
- * When active (M key toggles):
+ * When active (M takes up the tape):
  * - Left-click on any surface → places a measurement point
  * - First click sets the start point (yellow dot)
  * - Second click completes the measurement (line + label)
- * - Escape cancels pending point
+ * - Esc lets go of the first point, then puts the tape away
  * - Green line if distance >= 1.05m, red if below fire exit minimum
  *
  * All completed measurements persist until cleared.
@@ -181,26 +199,9 @@ export function MeasurementTool(): React.ReactElement {
     return () => { canvas.removeEventListener("click", handleClick); };
   }, [active, gl, handleClick]);
 
-  // Keyboard shortcuts: M to toggle, Escape to cancel pending
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-
-      if (event.code === "KeyM") {
-        // Route through the tool store so the pill, the M key and legacy
-        // paths agree on one authoritative mode.
-        const toolStore = useToolStore.getState();
-        toolStore.setTool(toolStore.activeTool === "measure" ? "select" : "measure");
-        invalidate();
-      } else if (event.code === "Escape") {
-        useMeasurementStore.getState().cancelPending();
-        invalidate();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, [invalidate]);
+  // M and Esc are the planner's tool keys (lib/planner-keymap.ts): M takes up
+  // the tape through the tool store; Esc lets go of a first point, then puts
+  // the tape away. The store subscription above asks for the frame.
 
   return (
     <group name="measurement-tool">

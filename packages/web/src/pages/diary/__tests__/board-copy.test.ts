@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BOOKING_KINDS, BOOKING_LOST_REASONS, VALID_BOOKING_TRANSITIONS } from "@omnitwin/types";
 import { BOARD_COPY } from "../board-copy.js";
 
 // ---------------------------------------------------------------------------
@@ -63,6 +64,38 @@ describe("board copy claim guard", () => {
 
   it("turnaround checks admit when they are not checked", () => {
     expect(BOARD_COPY.conflicts.turnaround.not_checked.toLowerCase()).toContain("not checked");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 0100 (Blake, 19 October 2026): a viewing is "Viewing" on a label
+// and "the viewing" in a sentence, never a commitment; a loss may say why,
+// from a short fixed list in plain words.
+// ---------------------------------------------------------------------------
+describe("viewings and lost reasons, in the board's words", () => {
+  it("names a viewing on a label and inside a sentence", () => {
+    expect(BOARD_COPY.legend.viewing).toBe("Viewing");
+    expect(BOARD_COPY.ending.what.viewing).toBe("the viewing");
+    expect(BOARD_COPY.ending.cancelViewing).toBe("Cancel the viewing");
+  });
+
+  it("gives every booking kind its legend, its sentence and a move's words", () => {
+    for (const kind of BOOKING_KINDS) {
+      expect(BOARD_COPY.legend[kind], kind).toMatch(/\S/u);
+      expect(BOARD_COPY.ending.what[kind], kind).toMatch(/^the /u);
+      expect(BOARD_COPY.transitions[kind], kind).toMatch(/\S/u);
+    }
+    // Nothing transitions into a viewing; its move's words say what to do instead.
+    expect(Object.values(VALID_BOOKING_TRANSITIONS).some((targets) => targets.includes("viewing"))).toBe(false);
+    expect(BOARD_COPY.transitions.viewing).toBe("Book a viewing as its own booking");
+  });
+
+  it("says each lost reason in plain words", () => {
+    expect(BOOKING_LOST_REASONS.map((reason) => BOARD_COPY.ending.lostReason.words[reason])).toEqual([
+      "Price", "Date taken by someone else", "Room or capacity didn't suit", "Chose another venue",
+      "Plans changed or cancelled", "Stopped replying", "Other",
+    ]);
+    expect(BOARD_COPY.ending.lostReason.label).toBe("Why it was lost (optional)");
   });
 });
 

@@ -116,11 +116,12 @@ describe("PlacementGhost table-dressing preview wiring", () => {
   it("keeps contextual dressing application ahead of standalone placement", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
+    // Every way a piece is put down (a click, a drag, a tap, a lift) goes through lib/place-in-hand.ts.
     const source = await fs.readFile(
-      path.resolve("src/components/PlacementGhost.tsx"),
+      path.resolve("src/lib/place-in-hand.ts"),
       "utf-8",
     );
-    const placeAtGhost = source.slice(source.indexOf("function placeAtGhost(): void"));
+    const placeAtGhost = source.slice(source.indexOf("export function placePieceInHand("));
     const dressingBranch = placeAtGhost.indexOf("if (clothStyle !== null || tableSetting !== null)");
     const standalonePlacement = placeAtGhost.indexOf("placeState.placeItem(");
 

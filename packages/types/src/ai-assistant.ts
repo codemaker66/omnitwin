@@ -47,7 +47,7 @@ export type AIDraftEvidenceStatus = z.infer<typeof AIDraftEvidenceStatusSchema>;
 export const AIDraftSendStateSchema = z.enum(AI_DRAFT_SEND_STATES);
 export type AIDraftSendState = z.infer<typeof AIDraftSendStateSchema>;
 
-export const AIDraftContextSchema = z.record(CanonicalJsonValueSchema);
+export const AIDraftContextSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type AIDraftContext = z.infer<typeof AIDraftContextSchema>;
 
 export const CreateAIDraftRequestSchema = z.object({
@@ -73,7 +73,7 @@ export const AIDraftSchema = z.object({
     const unsafe = findUnsafePublicClaim(text);
     if (unsafe !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: `Unsafe public/client claim phrase "${unsafe}" is not allowed in AI draft output.`,
       });
     }
@@ -84,7 +84,7 @@ export const AIDraftSchema = z.object({
   provenance: z.literal("ai_generated"),
   evidenceStatus: z.literal("unverified"),
   sendState: z.literal("draft_only"),
-  generatedAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
   digest: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 export type AIDraft = z.infer<typeof AIDraftSchema>;

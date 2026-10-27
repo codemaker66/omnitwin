@@ -219,7 +219,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     await throttleTo50Mbps(page);
 
     const startedAt = Date.now();
-    await page.goto("/plan?capture=1");
+    await page.goto("/plan?capture=1&space=reception-room");
 
     // The canvas and pending resolve state must appear inside the existing
     // 15 s local limit. This does not claim that no capture bytes have arrived
@@ -297,7 +297,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
       void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
     });
 
-    await page.goto("/plan?capture=1", { waitUntil: "domcontentloaded" });
+    await page.goto("/plan?capture=1&space=reception-room", { waitUntil: "domcontentloaded" });
 
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 60_000});
     await expect
@@ -320,7 +320,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
       void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
     });
 
-    await page.goto("/plan");
+    await page.goto("/plan?space=reception-room");
     await page.waitForFunction(
       () => document.querySelector("[data-resolve-phase]")?.getAttribute("data-resolve-phase") === "resolved",
       undefined, { timeout: 180_000 },
@@ -359,19 +359,20 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
   });
 
   // Quarantined under T-560: on this dev GPU class, ANY large camera teleport
-  // across the full splat (walk entry by click, walk exit by Escape) can wedge
-  // the GL thread natively and non-deterministically — empty JS stack, starved
-  // evaluates, minutes-long. Production hardware performs the same teleports
-  // fine (the live /room spawns are the standing proof). The exit's store
-  // mechanics are unit-covered; this case re-arms when T-560 resolves.
-  test.fixme("walk exit: Escape returns to plan view (T-560 GL teleport wedge)", async ({ page }) => {
+  // across the full splat (walk entry by click) can wedge the GL thread
+  // natively and non-deterministically — empty JS stack, starved evaluates,
+  // minutes-long. Production hardware performs the same teleports fine (the
+  // live /room spawns are the standing proof). Esc never leaves Walk (spec
+  // 4.5, T-671 slice 5; unit-covered in CanvasLayerControls and the keymap);
+  // this case re-arms when T-560 resolves.
+  test.fixme("walk stays on Escape (T-560 GL teleport wedge on the walk entry)", async ({ page }) => {
     await stubPlannerBootstrap(page);
-    await page.goto("/plan");
+    await page.goto("/plan?space=reception-room");
     await page.evaluate(() => { window.__setWalkMode?.(true); });
     await page.keyboard.press("Escape");
     await expect
       .poll(() => page.evaluate(() => window.__walkDebug?.walkMode ?? null), { timeout: 15_000 })
-      .toBe(false);
+      .toBe(true);
   });
 
 });

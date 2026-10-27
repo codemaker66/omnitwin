@@ -4,6 +4,7 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useHallTimeStore } from "../../../../stores/hall-time-store.js";
 import { useHallViewStore } from "../../../../stores/hall-view-store.js";
 import { HallViewControls } from "../HallViewControls.js";
+import { registerEscapeLayer } from "../../../../lib/planner-keys.js";
 
 /** Noon BST on midsummer's day 2026. */
 const MIDSUMMER_NOON = Date.UTC(2026, 5, 21, 11, 0);
@@ -109,10 +110,10 @@ describe("HallViewControls under the real sky", () => {
     const button = renderUnderSky();
     fireEvent.click(button);
     const dialog = screen.getByRole("dialog", { name: "Time of day" });
-    // The planner's own Escape (back to Select, clear the selection, leave a
-    // saved viewpoint or the walk) listens on window.
+    // The planner's own Escape (clear the selection) sits below a popover in
+    // the one Escape order.
     const planner = vi.fn();
-    window.addEventListener("keydown", planner);
+    const stopPlanner = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: planner });
     try {
       const now = within(dialog).getByRole("button", { name: "Now" });
       now.focus();
@@ -126,7 +127,7 @@ describe("HallViewControls under the real sky", () => {
       fireEvent.keyDown(button, { key: "Escape", code: "Escape" });
       expect(planner).toHaveBeenCalledTimes(1);
     } finally {
-      window.removeEventListener("keydown", planner);
+      stopPlanner();
     }
   });
 

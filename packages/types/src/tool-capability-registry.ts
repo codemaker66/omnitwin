@@ -120,7 +120,7 @@ export const ToolCapabilityRecordSchema = z.object({
   if (record.status === "verified") {
     if (record.installedVersion === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["installedVersion"],
         message: "Verified tools require an installed version.",
       });
@@ -128,7 +128,7 @@ export const ToolCapabilityRecordSchema = z.object({
 
     if (record.verificationFixtureRef === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["verificationFixtureRef"],
         message: "Verified tools require a verification fixture reference.",
       });
@@ -136,7 +136,7 @@ export const ToolCapabilityRecordSchema = z.object({
 
     if (record.verifiedAt === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["verifiedAt"],
         message: "Verified tools require a verification timestamp.",
       });
@@ -144,7 +144,7 @@ export const ToolCapabilityRecordSchema = z.object({
 
     if (!hasVerificationFixtureEvidence) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceRefs"],
         message: "Verified tools require verification fixture evidence.",
       });
@@ -158,7 +158,7 @@ export const ToolCapabilityRecordSchema = z.object({
     record.publicExposureAllowed
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["publicExposureAllowed"],
       message: "Unverified, false, and research-only tools cannot allow public exposure.",
     });
@@ -173,7 +173,7 @@ export const ToolCapabilityRecordSchema = z.object({
     record.publicExposureAllowed
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["publicExposureAllowed"],
       message: "Public exposure requires a license status that permits the scoped use.",
     });

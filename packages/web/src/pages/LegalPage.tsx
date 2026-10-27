@@ -84,8 +84,9 @@ const ORIGINAL_EDITION = { text: LAST_UPDATED, iso: "2026-08-15" } as const;
 
 /** The privacy policy's own date: it changed when the dietary note gained its
  *  retention rule (fix-first item 18) and, the same day, the choice to have
- *  it remembered ("ask once, then remember"). */
-const PRIVACY_UPDATED = { text: "17 October 2026", iso: "2026-10-17" } as const;
+ *  it remembered ("ask once, then remember"); and on 26 October, when it said
+ *  how long deleted data stays in the database's backups (T-068). */
+const PRIVACY_UPDATED = { text: "26 October 2026", iso: "2026-10-26" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
  *  retention pass and the planner also read. */
@@ -450,6 +451,11 @@ const PRIVACY: LegalDocument = {
               detail:
                 "Kept only for as long as our hosting and error-monitoring providers retain them under their standard settings. We do not take separate copies of them.",
             },
+            {
+              term: "Backups",
+              detail:
+                "The database keeps a seven-day history it can be restored from and a daily copy that is kept for 14 days, so that a mistake or a failure does not lose anyone's booking. Something deleted under these rules is gone from the backups 14 days later. If the service is ever restored from a backup, anything deleted since that backup is deleted again before the service reopens.",
+            },
           ],
         },
         {
@@ -718,6 +724,10 @@ const TERMS: LegalDocument = {
         {
           kind: "p",
           text: "The city drawn round the Grand Hall in the planner, and the rooftop heights used to work out when the sun reaches its windows, are made from the Scottish Government's open LiDAR survey. Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0. That data is published under the Open Government Licence v3.0, and its reuse is governed by that licence, not by these terms.",
+        },
+        {
+          kind: "p",
+          text: "The street lamps drawn round the hall at night stand where Glasgow City Council's open street lighting data places them. Contains public sector information licensed under the Open Government Licence v3.0. Street lighting: Glasgow City Council. Contains OS data © Crown copyright and database right 2026.",
         },
         {
           kind: "links",

@@ -115,7 +115,7 @@ export const ResidualCompositionPolicySchema = z
   .superRefine((policy, ctx) => {
     if (policy.mode === "alpha_over" && policy.semanticClass === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["semanticClass"],
         message: "alpha_over residual composition requires an approved semantic class",
       });

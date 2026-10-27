@@ -1,3 +1,4 @@
+import { seatsFor } from "@omnitwin/types";
 import { toRenderSpace, toRealWorld } from "../constants/scale.js";
 import type { CatalogueItem } from "./catalogue.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
@@ -244,6 +245,8 @@ export function createTableGroup(
   tableRotationY: number,
   chairCount: number,
   y: number = 0,
+  newId: () => string = generatePlacedId,
+  chairSide: "around" | "back" = "around",
 ): readonly PlacedItem[] {
   const tableItem = getCatalogueItem(catalogueItemId);
   if (
@@ -254,16 +257,53 @@ export function createTableGroup(
   const chairItem = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
   if (chairItem === undefined) return [];
 
-  const groupId = generatePlacedId(); // Reuse ID generator for group IDs
+  const groupId = newId(); // Reuse ID generator for group IDs
 
-  const table = createPlacedItem(catalogueItemId, tableX, tableZ, tableRotationY, groupId, y);
+  const table = createPlacedItem(catalogueItemId, tableX, tableZ, tableRotationY, groupId, y, newId());
 
-  const chairPositions = computeChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount);
+  const chairPositions = chairSide === "back"
+    ? computeSideChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount)
+    : computeChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount);
   const chairs = chairPositions.map((pos) =>
-    createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, y),
+    createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, y, newId()),
   );
 
   return [table, ...chairs];
+}
+
+/**
+ * Chairs along one long side of a rectangular table only: the back (+Z
+ * before turning), facing the table, as a top table seats its guests to look
+ * out over the room. Centred, pitch-spaced, never more than the side holds.
+ */
+export function computeSideChairPositions(
+  tableX: number,
+  tableZ: number,
+  tableItem: CatalogueItem,
+  tableRotY: number,
+  chairCount: number,
+  tableScale?: number,
+): readonly ChairPlacement[] {
+  if (!isDiningTableItem(tableItem) || tableItem.tableShape !== "rectangular" || chairCount <= 0) return [];
+  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  if (chair === undefined) return [];
+  const scale = normalizeFurnitureScale(tableScale);
+  const perSide = Math.max(0, Math.floor((tableItem.width * scale) / seatPitch(chair)));
+  const count = Math.min(Math.floor(chairCount), perSide);
+  const pitch = toRenderSpace(seatPitch(chair));
+  const offset = (toRenderSpace(tableItem.depth) * scale) / 2 + toRenderSpace(chair.depth) / 2 + toRenderSpace(CHAIR_GAP_M);
+  const cos = Math.cos(tableRotY);
+  const sin = Math.sin(tableRotY);
+  const chairs: ChairPlacement[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const localX = (i - (count - 1) / 2) * pitch;
+    chairs.push({
+      x: tableX + localX * cos + offset * sin,
+      z: tableZ - localX * sin + offset * cos,
+      rotationY: tableRotY,
+    });
+  }
+  return chairs;
 }
 
 /**
@@ -292,28 +332,27 @@ export function rearrangeTableGroup(
   const groupId = table.groupId;
   // The default applies only to new slots. Existing slots retain their exact
   // asset identity, including groups mixing legacy, imported and scaled chairs.
-  const existingChairs = placedItems.filter((p) => (
-    p.groupId === groupId
-    && p.id !== table.id
-    && isSceneFurniturePlacement(p)
-    && getCatalogueItem(p.catalogueItemId)?.category === "chair"
-  ));
-  const others = placedItems.filter(
-    (p) => p.groupId !== groupId || !isSceneFurniturePlacement(p),
-  );
+  // Only this table's own chairs are re-rung: a group made with Group can hold
+  // other tables and their chairs, and any other piece, which all stay.
+  const existingChairs = tableOwnChairs(table, placedItems);
+  const replaced = new Set([table.id, ...existingChairs.map((chair) => chair.id)]);
+  const others = placedItems.filter((p) => !replaced.has(p.id));
 
   const footprint = tableGroupChairFootprint(table, placedItems, newChairCount > existingChairs.length);
 
-  // Compute new chair positions without creating a fresh groupId
-  const chairPositions = computeChairPositions(
-    table.x,
-    table.z,
-    tableItem,
-    table.rotationY,
-    newChairCount,
-    table.scale,
-    footprint,
-  );
+  // Compute new chair positions without creating a fresh groupId; a top
+  // table's trestle keeps its chairs along its back.
+  const chairPositions = tableChairSide(table, placedItems) === "back"
+    ? computeSideChairPositions(table.x, table.z, tableItem, table.rotationY, newChairCount, table.scale)
+    : computeChairPositions(
+      table.x,
+      table.z,
+      tableItem,
+      table.rotationY,
+      newChairCount,
+      table.scale,
+      footprint,
+    );
 
   const newChairs: PlacedItem[] = chairPositions.map((pos, i) => ({
     ...(existingChairs[i] ?? createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, table.y)),
@@ -327,6 +366,71 @@ export function rearrangeTableGroup(
   return [...others, table, ...newChairs];
 }
 
+/**
+ * The chairs that belong to `table`: the chairs of its group nearer to it
+ * than to any other dining table of the group (a tie goes to the table placed
+ * first). A table group holds one table, but a group made with Group can hold
+ * several, each with its own chairs.
+ */
+export function tableOwnChairs(table: PlacedItem, placedItems: readonly PlacedItem[]): readonly PlacedItem[] {
+  if (table.groupId === null) return [];
+  const group = placedItems.filter((p) => p.groupId === table.groupId && isSceneFurniturePlacement(p));
+  const tables = diningTablesAmong(group);
+  const chairs = group.filter((p) => p.id !== table.id && getCatalogueItem(p.catalogueItemId)?.category === "chair");
+  if (tables.length <= 1) return chairs;
+  return chairs.filter((chair) => {
+    let owner = tables[0];
+    let nearest = Infinity;
+    for (const candidate of tables) {
+      const distance = Math.hypot(candidate.x - chair.x, candidate.z - chair.z);
+      if (distance < nearest) {
+        nearest = distance;
+        owner = candidate;
+      }
+    }
+    return owner?.id === table.id;
+  });
+}
+
+/** The dining tables among placed pieces. */
+export function diningTablesAmong(pieces: readonly PlacedItem[]): readonly PlacedItem[] {
+  return pieces.filter((p) => {
+    const item = getCatalogueItem(p.catalogueItemId);
+    return item !== undefined && isDiningTableItem(item) && isSceneFurniturePlacement(p);
+  });
+}
+
+/**
+ * The pieces with the groups holding `ids` broken (Ungroup, Ctrl Shift G),
+ * no table broken from its chairs: each dining table keeps its own chairs
+ * (tableOwnChairs) in a group of their own, the old group where it held one
+ * table, and every other piece leaves. The same array when nothing would
+ * change: a lone table with its own chairs, which keeps them.
+ */
+export function ungroupedKeepingTables(
+  ids: ReadonlySet<string>,
+  placedItems: readonly PlacedItem[],
+  newId: () => string = generatePlacedId,
+): readonly PlacedItem[] {
+  const groupIds = new Set(placedItems.filter((p) => ids.has(p.id) && p.groupId !== null).map((p) => p.groupId));
+  const next = new Map<string, string | null>();
+  for (const groupId of groupIds) {
+    const members = placedItems.filter((p) => p.groupId === groupId);
+    const tables = diningTablesAmong(members);
+    for (const [i, table] of tables.entries()) {
+      const keep = tables.length === 1 || i === 0 ? groupId : newId();
+      next.set(table.id, keep);
+      for (const chair of tableOwnChairs(table, placedItems)) next.set(chair.id, keep);
+    }
+    for (const member of members) if (!next.has(member.id)) next.set(member.id, null);
+  }
+  if ([...next].every(([id, groupId]) => placedItems.find((p) => p.id === id)?.groupId === groupId)) return placedItems;
+  return placedItems.map((p) => {
+    const groupId = next.get(p.id);
+    return groupId === undefined || groupId === p.groupId ? p : { ...p, groupId };
+  });
+}
+
 /** Conservative dimensions of saved chairs, including the default only for new slots. */
 export function tableGroupChairFootprint(
   table: PlacedItem,
@@ -338,8 +442,7 @@ export function tableGroupChairFootprint(
     width: includeNewChairs ? defaultChair?.width ?? 0 : 0,
     depth: includeNewChairs ? defaultChair?.depth ?? 0 : 0,
   };
-  for (const placed of placedItems) {
-    if (table.groupId === null || placed.groupId !== table.groupId || !isSceneFurniturePlacement(placed)) continue;
+  for (const placed of tableOwnChairs(table, placedItems)) {
     const catalogue = getCatalogueItem(placed.catalogueItemId);
     if (catalogue?.category !== "chair") continue;
     const scale = normalizeFurnitureScale(placed.scale);
@@ -349,14 +452,34 @@ export function tableGroupChairFootprint(
   return footprint;
 }
 
+/**
+ * Where a placed table's chairs sit: all along its back (a top table's
+ * trestle, computeSideChairPositions), or round it. Read from the chairs
+ * themselves, so a saved layout needs no field for it.
+ */
+export function tableChairSide(table: PlacedItem, placedItems: readonly PlacedItem[]): "around" | "back" {
+  const item = getCatalogueItem(table.catalogueItemId);
+  if (item?.tableShape !== "rectangular" || table.groupId === null) return "around";
+  const sin = Math.sin(table.rotationY);
+  const cos = Math.cos(table.rotationY);
+  let chairs = 0;
+  // Its own chairs (tableOwnChairs): another table of a group made with Group keeps its own side.
+  for (const placed of tableOwnChairs(table, placedItems)) {
+    // The chair's offset from the table in the table's own frame (+Z is its back).
+    if ((placed.x - table.x) * sin + (placed.z - table.z) * cos <= 0) return "around";
+    chairs += 1;
+  }
+  return chairs > 0 ? "back" : "around";
+}
+
 /** Editing retains existing assets; an increased count must also fit new Turini chairs. */
 export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
   const catalogue = getCatalogueItem(table.catalogueItemId);
   if (catalogue === undefined) return 0;
-  const existingCount = table.groupId === null ? 0 : placedItems.filter((item) => (
-    item.groupId === table.groupId && isSceneFurniturePlacement(item)
-    && getCatalogueItem(item.catalogueItemId)?.category === "chair"
-  )).length;
+  if (tableChairSide(table, placedItems) === "back") {
+    return computeSideChairPositions(0, 0, catalogue, 0, Number.MAX_SAFE_INTEGER, table.scale).length;
+  }
+  const existingCount = tableOwnChairs(table, placedItems).length;
   const existingCapacity = seatCapacity(catalogue, table.scale, tableGroupChairFootprint(table, placedItems, false));
   const expandedCapacity = seatCapacity(catalogue, table.scale, tableGroupChairFootprint(table, placedItems, true));
   return Math.max(Math.min(existingCount, existingCapacity), expandedCapacity > existingCount ? expandedCapacity : 0);
@@ -375,4 +498,44 @@ export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: nu
     }
   }
   return { width: toRealWorld(halfWidth * 2), depth: toRealWorld(halfDepth * 2) };
+}
+
+/**
+ * Radius in metres of a round table group: from the table's centre to the
+ * outer corners of its chairs. Chairs around a round table face its centre,
+ * so each back edge sits at the table's radius + the gap + the chair's depth,
+ * and its corners half a chair-width either side. Layout spacing between
+ * rounds is measured between these circles.
+ */
+export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: number): number {
+  const tableRadius = table.width / 2;
+  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  if (chair === undefined || table.tableShape !== "round" || chairCount <= 0) return tableRadius;
+  return Math.max(tableRadius, Math.hypot(tableRadius + CHAIR_GAP_M + chair.depth, chair.width / 2));
+}
+
+/**
+ * The seats a dining table is set for at a banquet: `seatsFor`'s default
+ * (seat truth, card-dock spec §17.2), never more than fit around it. A table
+ * seat truth does not know is set for as many as fit.
+ */
+export function banquetSeatsPerTable(table: CatalogueItem): number {
+  const fit = seatCapacity(table);
+  if (fit === 0) return 0;
+  return Math.max(1, Math.min(fit, seatsFor(table)?.default ?? fit));
+}
+
+/**
+ * The stepper's range at a table: seat truth's range, held to what
+ * physically fits (`physicalMax`, from seatCapacity or tableGroupSeatCapacity),
+ * and the count it starts at. A table seat truth does not know runs 1 to fit.
+ */
+export function chairCountRange(table: CatalogueItem, physicalMax: number): { readonly min: number; readonly max: number; readonly initial: number } {
+  const fit = Math.max(0, Math.floor(physicalMax));
+  if (fit === 0) return { min: 0, max: 0, initial: 0 };
+  const seats = seatsFor(table);
+  if (seats === null) return { min: 1, max: fit, initial: fit };
+  const max = Math.min(seats.max, fit);
+  const min = Math.min(seats.min, max);
+  return { min, max, initial: Math.min(max, Math.max(min, seats.default)) };
 }

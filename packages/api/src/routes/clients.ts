@@ -6,7 +6,8 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canManageCommercial, canManageVenue } from "../utils/query.js";
+import { canManageCommercial, canReadClients } from "../utils/query.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { contactProfile, searchClients } from "../services/client-search.js";
 
 // ---------------------------------------------------------------------------
@@ -14,9 +15,9 @@ import { contactProfile, searchClients } from "../services/client-search.js";
 // ---------------------------------------------------------------------------
 
 const SearchQuery = z.object({ q: z.string().trim().min(2).max(200) });
-const UserIdParam = z.object({ userId: z.string().uuid() });
-const LeadIdParam = z.object({ leadId: z.string().uuid() });
-const ContactIdParam = z.object({ contactId: z.string().uuid() });
+const UserIdParam = z.object({ userId: z.uuid() });
+const LeadIdParam = z.object({ leadId: z.uuid() });
+const ContactIdParam = z.object({ contactId: z.uuid() });
 
 /** The enquiries that are still live: new, in review, or approved. */
 const LIVE_ENQUIRY_STATES = ["submitted", "under_review", "approved"] as const;
@@ -48,15 +49,15 @@ export async function clientRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  // GET /clients/search?q=... — the venue floor, or a platform admin. Typo
-  // tolerant; see services/client-search.ts.
+  // GET /clients/search?q=... — the venue floor and sales (canReadClients), or
+  // a platform admin. Typo tolerant; see services/client-search.ts.
   server.get("/search", { preHandler: [authenticate] }, async (request, reply) => {
     const query = SearchQuery.safeParse(request.query);
     if (!query.success) {
       return reply.status(400).send({ error: "Query must be at least 2 characters", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -95,7 +96,7 @@ export async function clientRoutes(
       return reply.status(400).send({ error: "Invalid user ID", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -141,8 +142,8 @@ export async function clientRoutes(
     const configs = await db.select({
       id: configurations.id,
       name: configurations.name,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${configurations.spaceId})`,
-      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects WHERE configuration_id = ${configurations.id})`,
+      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${outerColumn(configurations.spaceId)})`,
+      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects WHERE configuration_id = ${outerColumn(configurations.id)})`,
       createdAt: configurations.createdAt,
     })
       .from(configurations)
@@ -157,7 +158,7 @@ export async function clientRoutes(
       state: enquiries.state,
       eventType: enquiries.eventType,
       preferredDate: enquiries.preferredDate,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${outerColumn(enquiries.spaceId)})`,
       // False when the guest named no room: spaceName is then where the
       // enquiry is filed, not what they asked for (migration 0079).
       roomChosen: enquiries.roomChosen,
@@ -184,7 +185,7 @@ export async function clientRoutes(
       return reply.status(400).send({ error: "Invalid lead ID", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -247,7 +248,7 @@ export async function clientRoutes(
 
   // GET /clients/recent — last 20 enquiries with contact info
   server.get("/recent", { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -267,7 +268,7 @@ export async function clientRoutes(
   // GET /clients/upcoming — the clients whose events come next: live
   // enquiries whose date is today or within the year ahead, soonest first.
   server.get("/upcoming", { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     const upcoming = await db.select(enquiryClientColumns)

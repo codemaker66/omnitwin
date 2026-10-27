@@ -178,7 +178,12 @@ const BoardBlock = memo(function BoardBlock({
     msToX(clampedEnd, range, pxPerHour) - left,
     MIN_BLOCK_WIDTH,
   );
-  const chip = rankChip(block, width);
+  // A viewing says what it is on its face, so its quiet colour is never the
+  // only cue; its label already names it, so the label does not repeat it.
+  // The word sits on the face's second line, not beside the title: a viewing
+  // is usually an hour, too narrow for both on one line.
+  const viewingWord = block.entry.kind === "viewing" ? BOARD_COPY.legend.viewing : null;
+  const chip = viewingWord === null ? rankChip(block, width) : null;
   const option = rankChip(block, Number.POSITIVE_INFINITY);
   const isActive = block.entry.status === "active";
   const descriptor: DragBlockDescriptor = {
@@ -188,6 +193,7 @@ const BoardBlock = memo(function BoardBlock({
     startMs: block.startMs,
     endMs: block.endMs,
     isInk: block.entry.kind === "ink",
+    isViewing: block.entry.kind === "viewing",
   };
   const handlers = isActive ? handlersFor(descriptor) : { onClick: () => { onOpenBlock?.(block.entry.id); } };
   const timeLabel = `${formatWallTime(block.startMs)}–${formatWallTime(block.endMs)}`;
@@ -243,8 +249,9 @@ const BoardBlock = memo(function BoardBlock({
           <span className="diary-block-time">{timeLabel}</span>
           {/* The face's second line: a near decision before the client, and
               the conflict's word beside it, in the flow so it covers nothing. */}
-          {((decision !== null || faceParts.length > 0) && width >= FACE_MIN_WIDTH) || severity !== undefined ? (
+          {viewingWord !== null || ((decision !== null || faceParts.length > 0) && width >= FACE_MIN_WIDTH) || severity !== undefined ? (
             <span className="diary-block-note">
+              {viewingWord === null ? null : <span className="diary-block-chip">{viewingWord}</span>}
               {width < FACE_MIN_WIDTH ? null : decision !== null ? (
                 <span className="diary-block-decision">{decision}</span>
               ) : faceParts.length > 0 ? (

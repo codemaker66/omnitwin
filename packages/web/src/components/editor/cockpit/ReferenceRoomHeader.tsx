@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Building2, Check, Save } from "lucide-react";
+import { Building2, Check, CloudOff, Save } from "lucide-react";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
@@ -8,6 +8,27 @@ import { ActivityIndicator } from "../../shared/Activity.js";
 import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-preview-lock.js";
 import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identity.js";
 import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../../lib/event-access.js";
+import { useOnlineStatus } from "../../../hooks/use-online-status.js";
+
+interface HeaderSaveState {
+  readonly configId: string | null;
+  readonly saving: boolean;
+  readonly dirty: boolean;
+  readonly saveError: string | null;
+  readonly conflicted: boolean;
+  readonly online: boolean;
+}
+
+/** The header's one line about the layout. It never says "saved" while the
+ *  browser is offline with changes the server has not had (QoL D-03). */
+export function headerSaveLabel(state: HeaderSaveState): string {
+  if (state.configId === null) return "No saved layout";
+  if (state.saving) return "Saving…";
+  if (state.conflicted) return "Reload layout";
+  if (!state.online && (state.dirty || state.saveError !== null)) return "Offline · not saved yet";
+  if (state.saveError !== null) return "Retry save";
+  return state.dirty ? "Save layout" : "Layout saved";
+}
 
 /** Room identity and the real save state, outside the camera's sightline. */
 export function ReferenceRoomHeader(): ReactElement {
@@ -29,7 +50,9 @@ export function ReferenceRoomHeader(): ReactElement {
   const homePath = operational ? "/diary" : authenticated && customer && eventId !== null ? customerEventPath(eventId) : "/";
   const homeLabel = operational ? "diary" : authenticated && customer && eventId !== null ? "event details" : "home";
   const previewLocked = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
-  const saveLabel = configId === null ? "No saved layout" : saving ? "Saving layout" : saveConflict !== null ? "Reload layout" : saveError !== null ? "Retry save" : dirty ? "Save layout" : "Layout saved";
+  const online = useOnlineStatus();
+  const offlineUnsaved = !online && (dirty || saveError !== null);
+  const saveLabel = headerSaveLabel({ configId, saving, dirty, saveError, conflicted: saveConflict !== null, online });
   return (
     <header className="reference-room-header" aria-label="Room and save status">
       <Link to={homePath} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${homeLabel}`}>
@@ -42,14 +65,14 @@ export function ReferenceRoomHeader(): ReactElement {
         </span>
       </Link>
       <button type="button" className="reference-save" disabled={saving || previewLocked || configId === null}
-        aria-label={saveLabel} title={previewLocked ? "Return to the saved plan before saving" : saveLabel}
+        aria-label={saveLabel} title={previewLocked ? "Return to the saved plan before saving" : offlineUnsaved ? "The connection has dropped. Press to save once it is back." : saveLabel}
         aria-busy={saving} onClick={() => {
           if (isLayoutTimelineMutationLocked()) return;
           const editor = useEditorStore.getState();
           if (editor.saveConflict !== null) void editor.reloadAfterConflict(authenticated);
           else void editor.saveToServer(authenticated);
         }}>
-        {saving ? <ActivityIndicator size={18} /> : !dirty && saveError === null && saveConflict === null ? <Check size={16} aria-hidden /> : <Save size={16} aria-hidden />}
+        {saving ? <ActivityIndicator size={18} /> : offlineUnsaved ? <CloudOff size={16} aria-hidden /> : !dirty && saveError === null && saveConflict === null ? <Check size={16} aria-hidden /> : <Save size={16} aria-hidden />}
       </button>
       <span className="reference-save-status" role="status">{saveLabel}</span>
     </header>

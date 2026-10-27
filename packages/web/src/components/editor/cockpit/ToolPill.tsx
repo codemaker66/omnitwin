@@ -1,10 +1,9 @@
-import { useMemo, useRef, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import {
   MousePointer2,
   Move,
   RotateCw,
   Ruler,
-  Scaling,
   type LucideIcon,
 } from "lucide-react";
 import { useToolStore } from "../../../stores/tool-store.js";
@@ -16,35 +15,32 @@ import {
   PLANNER_TOOLS,
   formatDegrees,
   formatMetres,
-  formatScale,
   scrubRotation,
-  scrubScale,
+  type PillTool,
   type PlannerTool,
 } from "../../../lib/planner-tools.js";
 import { isSceneFurniturePlacement } from "../../../lib/table-dressing.js";
-import { normalizeFurnitureScale } from "../../../lib/furniture-scale.js";
 import "./ToolPill.css";
 
 // ---------------------------------------------------------------------------
-// ToolPill — the five hands, top-centre over the stage.
+// ToolPill — the four hands, top-centre over the stage. Scale is not one of
+// them: catalogue pieces keep their real size (spec D10, QoL B-07).
 //
-// Pointer-first by design: the planner's keyboard is already spoken for
-// (digits jump bookmarks, WASD pans, Q/E nudge rotation), so the pill adds
-// no new letter bindings — M and Escape both route through the tool store
-// from where they already lived.
+// Pointer-first by design: the pill adds no letter bindings of its own. M
+// and Esc are the planner keymap's (lib/planner-keymap.ts) and reach the pill
+// through the tool store, the planner's one tool state.
 //
-// The value chip is the tabular readout ("135°", "×1.25", "3.20 m") and the
-// fine instrument: a horizontal scrub on the number adjusts the selection in
-// 1° / 1% steps, where the drag gestures deliberately snap coarse. Scrubs
+// The value chip is the tabular readout ("135°", "3.20 m") and the fine
+// instrument: a horizontal scrub on the turn adjusts the selection in 1°
+// steps, where the drag gestures deliberately snap coarse. Scrubs
 // are fenced with history epochs exactly like drags, so one scrub = one
 // undo entry.
 // ---------------------------------------------------------------------------
 
-const TOOL_ICONS: Readonly<Record<PlannerTool, LucideIcon>> = {
+const TOOL_ICONS: Readonly<Record<PillTool, LucideIcon>> = {
   select: MousePointer2,
   move: Move,
   rotate: RotateCw,
-  scale: Scaling,
   measure: Ruler,
 };
 
@@ -55,18 +51,15 @@ interface ScrubSession {
   readonly initial: ReadonlyMap<string, number>;
 }
 
-/** The chip's meaning depends on the hand: rotation, scale, or tape length. */
+/** The chip's meaning depends on the hand: rotation or tape length. */
 function idleChipValue(tool: PlannerTool): string | null {
-  if (tool === "rotate" || tool === "scale") {
+  if (tool === "rotate") {
     const selectedIds = useSelectionStore.getState().selectedIds;
     const placedItems = usePlacementStore.getState().placedItems;
     const primary = placedItems.find(
       (item) => selectedIds.has(item.id) && isSceneFurniturePlacement(item),
     );
-    if (primary === undefined) return null;
-    return tool === "rotate"
-      ? formatDegrees(primary.rotationY)
-      : formatScale(normalizeFurnitureScale(primary.scale));
+    return primary === undefined ? null : formatDegrees(primary.rotationY);
   }
   if (tool === "measure") {
     const measurements = useMeasurementStore.getState().measurements;
@@ -95,8 +88,13 @@ export function ToolPill(): ReactElement | null {
     [liveValue, activeTool, selectedIds, placedItems, measurementCount],
   );
 
-  const scrubbable = (activeTool === "rotate" || activeTool === "scale") && chipValue !== null;
+  const scrubbable = activeTool === "rotate" && chipValue !== null;
 
+  // No control sets the retired Scale hand any more; if anything still does,
+  // the pill hands back Select rather than leave an invisible resize armed.
+  useEffect(() => {
+    if (activeTool === "scale") setTool("select");
+  }, [activeTool, setTool]);
 
   const scrubTargets = (): ReadonlyMap<string, number> => {
     const ids = useSelectionStore.getState().selectedIds;
@@ -104,10 +102,7 @@ export function ToolPill(): ReactElement | null {
     const initial = new Map<string, number>();
     for (const item of items) {
       if (!ids.has(item.id) || !isSceneFurniturePlacement(item)) continue;
-      initial.set(
-        item.id,
-        activeTool === "rotate" ? item.rotationY : normalizeFurnitureScale(item.scale),
-      );
+      initial.set(item.id, item.rotationY);
     }
     return initial;
   };
@@ -130,12 +125,11 @@ export function ToolPill(): ReactElement | null {
     const next = new Map<string, number>();
     let readout: string | null = null;
     for (const [id, initial] of session.initial) {
-      const value = activeTool === "rotate" ? scrubRotation(initial, dx) : scrubScale(initial, dx);
+      const value = scrubRotation(initial, dx);
       next.set(id, value);
-      readout ??= activeTool === "rotate" ? formatDegrees(value) : formatScale(value);
+      readout ??= formatDegrees(value);
     }
-    if (activeTool === "rotate") placement.rotateItemsTo(next);
-    else placement.scaleItemsTo(next);
+    placement.rotateItemsTo(next);
     useToolStore.getState().setLiveValue(readout);
   };
 

@@ -698,6 +698,78 @@
       ],
       "expectedStatus": "skipped",
       "limits": "This is reviewed inventory admission, not execution evidence. These eight cases were absent from sourceRunId, sourceReports and the earlier admissions; they self-gate (skipped) unless E2E_LAYOUT_LIVE=1 provides the live stack, exactly as diary-live.spec.ts does, so the hosted CPU shards record them as skips and every executed case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-18",
+      "reason": "The planner on a phone (PR #118, T-661): the touch-placement case 0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c ('a table chosen above the expanded schedule is placed and saved through touch') is restated as 'a signed-out visitor places and saves a table through touch', because the event schedule card is no longer shown to anonymous visitors, so there is no expanded schedule to place above; the case still places a table by touch and proves it saved.",
+      "sourceCommit": "db84dad2cd972b257ce6e8a0095ff91d7c7b1f6a",
+      "sourceFile": "packages/web/e2e/editor-mobile-shell.spec.ts",
+      "sourceFileGitBlobSha256": "c62a7abbc56a9398f67f561f2633a50a2357ce789371f726c40b93aafa816f04",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f07d342940edf52a7c6e09df5b4b1eca1d3ea986b8877321ca8684d69c13ade9",
+      "caseIds": [
+        "0566ce7e918d6e1cf20c-15fe0152b3208f80750d"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-18",
+      "reason": "The planner on a phone (PR #118, T-661): the layout case 098b539f18aead5c39f5-f4847f7a36ef5d419a55 ('Plan navigation and capacity controls clear the event schedule and command deck') is restated as 'Plan navigation and capacity controls clear the view mode and command deck', because a visitor no longer has the event schedule card; the case still proves the plan navigation and capacity controls clear the controls they sit beside.",
+      "sourceCommit": "db84dad2cd972b257ce6e8a0095ff91d7c7b1f6a",
+      "sourceFile": "packages/web/e2e/public-config-flow.spec.ts",
+      "sourceFileGitBlobSha256": "82ffc67fc936292809da2491eef32b6bc7070e62c590e4c9e72ba1566cae57c2",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f07d342940edf52a7c6e09df5b4b1eca1d3ea986b8877321ca8684d69c13ade9",
+      "caseIds": [
+        "098b539f18aead5c39f5-4002f671ea2c5386d172"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 098b539f18aead5c39f5-f4847f7a36ef5d419a55 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-21",
+      "reason": "One keyboard owner for the planner (PR #159, T-671 slice 5): the skipped walk case 3f352fcb62a55bd2f17a-0588accbacaa6669e855 ('walk exit: Escape returns to plan view (T-560 GL teleport wedge)') is restated as 'walk stays on Escape (T-560 GL teleport wedge on the walk entry)', because Escape no longer leaves Walk (the approved design's one Escape order steps back the operation, popover, panel and selection, never the view); the case stays test.fixme for the same T-560 wedge on the walk entry.",
+      "sourceCommit": "3acc3b9b8460aac1b89bb6e78812ab4cbbd790ae",
+      "sourceFile": "packages/web/e2e/plan-room-resolve.spec.ts",
+      "sourceFileGitBlobSha256": "608647c124a73544a45c3a79a45400837c9e5d675946e90f9cf9543a5a368903",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "95dd204d46eb6b0d92bab72329a1408f52dab74ee90ab1a8ce1d624bb8f88b06",
+      "caseIds": [
+        "3f352fcb62a55bd2f17a-57d7982324e643088dc0"
+      ],
+      "expectedStatus": "skipped",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 3f352fcb62a55bd2f17a-0588accbacaa6669e855 one for one and keeps its expected skip, so the totals (401 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-26",
+      "reason": "The Grand Assembly behind ?assembly=accio (PR #172, goal 03 S5 and S6): three ordinary cases open a saved Grand Hall layout of three rounds of ten on a booted planner with the backend stubbed, where every layout write is refused and recorded. With the flag the layout assembles itself, comes to rest as placed and hands the camera back on its final framing without a single write; Escape snaps it to the true state at once; without the flag the layout simply opens and no replay control appears.",
+      "sourceCommit": "7a136b84e03742e52aeaa7799d16f9ec58606901",
+      "sourceFile": "packages/web/e2e/grand-assembly.spec.ts",
+      "sourceFileGitBlobSha256": "9578910fca1a68841c298be44bc5a7ecb268f2bd2bfc1ce17f911af11efae4d0",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/grand-assembly.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f1c3235dff848630d2ed7b4e6bb9681e4e7991c3b117f8233e17c33e04770137",
+      "caseIds": [
+        "f1c17e56d03862f173b0-4db02b1b18a5e2b83dea",
+        "f1c17e56d03862f173b0-62c265c6c8234b64a9ce",
+        "f1c17e56d03862f173b0-b202453e704508f538aa"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These three cases were absent from sourceRunId, sourceReports and the earlier admissions; they stub the API before transport and play the show in hosted Chromium, so they prove the flag, the hold, the hand-back and that nothing is written, not the show's look or its frame time on a real phone; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-10-26",
+      "reason": "Phone touch on the planner (PR #196, card-dock lane P, Q-01): one ordinary case drives real CDP touches on a booted phone-sized planner with the backend stubbed and an uncaptured room centred on the origin. A quick swipe with a round in hand turns the view and places nothing; a quick tap places exactly one; a hold, a slide and a lift place it with the camera still; a still finger on a placed round lifts and carries it; two fingers walk and zoom and place nothing.",
+      "sourceCommit": "3dc6fb66ce034e159d2df4a2e3306247298c299f",
+      "sourceFile": "packages/web/e2e/planner-touch-arbiter.spec.ts",
+      "sourceFileGitBlobSha256": "34f02f86e656014fb39e327723d9b3a9daa07cf82efa5387c397d6ec33bd1643",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/planner-touch-arbiter.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f06c9e4c9c6e966efe630bba24a2e5fb5e4dab0e63e4efe7081c04fc3769b3b2",
+      "caseIds": [
+        "5596f33d6d2d5857ecfb-063336bbdae863fd1fe2"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; it switches the touch arbiter on with ?pf= and stubs the API before transport, so it proves the gestures in Chromium's emulated touch, not on a real phone's touch screen or GPU; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -777,9 +849,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c",
+      "id": "0566ce7e918d6e1cf20c-15fe0152b3208f80750d",
       "file": "editor-mobile-shell.spec.ts",
-      "title": "a table chosen above the expanded schedule is placed and saved through touch",
+      "title": "a signed-out visitor places and saves a table through touch",
       "suitePath": [
         "editor-mobile-shell.spec.ts",
         "Small phone canvas placement"
@@ -953,9 +1025,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "098b539f18aead5c39f5-f4847f7a36ef5d419a55",
+      "id": "098b539f18aead5c39f5-4002f671ea2c5386d172",
       "file": "public-config-flow.spec.ts",
-      "title": "Plan navigation and capacity controls clear the event schedule and command deck",
+      "title": "Plan navigation and capacity controls clear the view mode and command deck",
       "suitePath": [
         "public-config-flow.spec.ts",
         "Editor with placed objects"
@@ -2157,9 +2229,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "3f352fcb62a55bd2f17a-0588accbacaa6669e855",
+      "id": "3f352fcb62a55bd2f17a-57d7982324e643088dc0",
       "file": "plan-room-resolve.spec.ts",
-      "title": "walk exit: Escape returns to plan view (T-560 GL teleport wedge)",
+      "title": "walk stays on Escape (T-560 GL teleport wedge on the walk entry)",
       "suitePath": [
         "plan-room-resolve.spec.ts",
         "CARD A2: the room resolves over the blueprint"
@@ -4982,6 +5054,50 @@
       ],
       "project": "chromium",
       "expectedStatus": "skipped"
+    },
+    {
+      "id": "f1c17e56d03862f173b0-4db02b1b18a5e2b83dea",
+      "file": "grand-assembly.spec.ts",
+      "title": "a saved layout that opens assembles itself, rests as placed and hands the camera back where it ended",
+      "suitePath": [
+        "grand-assembly.spec.ts",
+        "Grand Assembly behind ?assembly=accio"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f1c17e56d03862f173b0-62c265c6c8234b64a9ce",
+      "file": "grand-assembly.spec.ts",
+      "title": "Escape snaps it to the true state at once",
+      "suitePath": [
+        "grand-assembly.spec.ts",
+        "Grand Assembly behind ?assembly=accio"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f1c17e56d03862f173b0-b202453e704508f538aa",
+      "file": "grand-assembly.spec.ts",
+      "title": "without the flag the layout simply opens",
+      "suitePath": [
+        "grand-assembly.spec.ts",
+        "Grand Assembly behind ?assembly=accio"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5596f33d6d2d5857ecfb-063336bbdae863fd1fe2",
+      "file": "planner-touch-arbiter.spec.ts",
+      "title": "a swipe looks, a tap and a hold place, a hold lifts, two fingers walk",
+      "suitePath": [
+        "planner-touch-arbiter.spec.ts",
+        "the touch arbiter on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
     }
   ]
 }

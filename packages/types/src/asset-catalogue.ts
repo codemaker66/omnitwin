@@ -36,6 +36,13 @@ export interface CanonicalAsset {
   readonly slug: string;
   /** Human-readable name — shown in UI, stored in DB, used for hallkeeper sheet. */
   readonly name: string;
+  /**
+   * The words a guest reads, only where `name` is a maker's model reference
+   * ("Burgess Turini 18/3"). The planner shows it and the visitor's plan
+   * prints it; `name` stays the stock identity the database, inventory and
+   * hallkeeper sheet use. See `assetDisplayName`.
+   */
+  readonly plainName?: string;
   /** FurnitureCategory enum value. */
   readonly category: FurnitureCategory;
   /** Dimensions in real-world metres. */
@@ -91,7 +98,7 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     category: "table",
     widthM: 1.83, depthM: 1.83, heightM: 0.76,
     seatCount: 10, collisionType: "cylinder", tableShape: "round",
-    maxCount: null, subtitle: "1.8m round \u00B7 seats up to 12", color: "#c4a882",
+    maxCount: null, subtitle: "1.8m round \u00B7 seats 10", color: "#c4a882",
     equipmentTags: [],
   },
   {
@@ -103,7 +110,7 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     category: "table",
     widthM: 1.83, depthM: 0.76, heightM: 0.74,
     seatCount: null, collisionType: "box", tableShape: "rectangular",
-    maxCount: null, subtitle: "1.8m \u00D7 0.76m \u00B7 seats up to 20", color: "#b89b72",
+    maxCount: null, subtitle: "1.8m \u00D7 0.76m \u00B7 seats 6", color: "#b89b72",
     equipmentTags: [],
   },
   {
@@ -113,7 +120,7 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     category: "table",
     widthM: 1.22, depthM: 0.76, heightM: 0.74,
     seatCount: null, collisionType: "box", tableShape: "rectangular",
-    maxCount: null, subtitle: "1.2m \u00D7 0.76m \u00B7 seats up to 12", color: "#b89b72",
+    maxCount: null, subtitle: "1.2m \u00D7 0.76m \u00B7 seats 4", color: "#b89b72",
     equipmentTags: [],
   },
   {
@@ -167,6 +174,8 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     id: "7f1fb7a2-5210-57b1-9108-11255c059520",
     slug: "burgess-turini-18-3",
     name: "Burgess Turini 18/3",
+    // The velvet sibling of the Checked Banquet Chair (crafted-chairs.ts).
+    plainName: "Velvet Banquet Chair",
     category: "chair",
     // Manufacturer's standard 18/3 specifications, identified by Blake.
     // The supplied Rodin model is generated presentation geometry.
@@ -702,4 +711,69 @@ export function getCanonicalAssetById(id: string): CanonicalAsset | undefined {
 
 export function getCanonicalAssetBySlug(slug: string): CanonicalAsset | undefined {
   return bySlug.get(slug);
+}
+
+/**
+ * The name a guest reads for a catalogue item, as the planner shows it: its
+ * `plainName` where the catalogue name is a maker's model reference, else
+ * the stored name. An item outside the canonical catalogue keeps the name it
+ * was stored with.
+ */
+export function assetDisplayName(id: string, storedName: string): string {
+  return byId.get(id)?.plainName ?? storedName;
+}
+
+// ---------------------------------------------------------------------------
+// Seat truth (card-dock spec §17.2, Q-09)
+//
+// One reader for how many people a dining table is set for: the cards, the
+// seat stepper, Lay out, the plane and the hallkeeper sheet all ask
+// `seatsFor`. `seatCount` above stays as it is, because the API sums it as
+// a capacity fallback and the seed writes it to the database.
+//
+// Figures are covers at the planner's 0.6 m pitch with the default chair,
+// never more than `seatCapacity` (packages/web/src/lib/table-group.ts) fits.
+// They are planning figures, not Trades Hall's own; the hall may set its own.
+// ---------------------------------------------------------------------------
+
+/** How many a dining table is set for by default, and how far + and − may take it. */
+export interface SeatRange {
+  readonly default: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+/** Seats by base piece. */
+const DINING_SEATS: Readonly<Record<string, SeatRange>> = {
+  "round-table-6ft": { default: 10, min: 8, max: 12 },
+  // Three a side; the ends take one each.
+  "trestle-6ft": { default: 6, min: 2, max: 8 },
+  "trestle-4ft": { default: 4, min: 2, max: 6 },
+  "round-cafe-table-white": { default: 4, min: 2, max: 6 },
+  "square-cafe-table-white": { default: 4, min: 2, max: 4 },
+};
+
+/** Cloth and finish variants take their base piece's seats. */
+const DINING_SEAT_BASE: Readonly<Record<string, string>> = {
+  "round-table-6ft-black": "round-table-6ft",
+  "round-table-6ft-white": "round-table-6ft",
+  "trestle-6ft-black": "trestle-6ft",
+  "trestle-6ft-white": "trestle-6ft",
+  "trestle-6ft-wooden": "trestle-6ft",
+  "trestle-4ft-black": "trestle-4ft",
+  "trestle-4ft-white": "trestle-4ft",
+};
+
+/** The base piece whose seats a catalogue piece takes (itself when it has no base). */
+export function seatBaseSlug(slug: string): string {
+  return Object.hasOwn(DINING_SEAT_BASE, slug) ? DINING_SEAT_BASE[slug] ?? slug : slug;
+}
+
+/**
+ * The seats a catalogue piece is set for, or null when it is not seated
+ * dining (chairs, poseurs, the cake and ceremony tables, staging, AV).
+ */
+export function seatsFor(item: { readonly slug: string }): SeatRange | null {
+  const base = seatBaseSlug(item.slug);
+  return Object.hasOwn(DINING_SEATS, base) ? DINING_SEATS[base] ?? null : null;
 }

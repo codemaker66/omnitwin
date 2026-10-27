@@ -52,8 +52,8 @@ type LayoutVariantRow = typeof layoutVariants.$inferSelect;
 type EventConfigurationLinkRow = typeof eventConfigurationLinks.$inferSelect;
 type PhaseLayoutSnapshotRow = typeof phaseLayoutSnapshots.$inferSelect;
 
-const IdParam = z.object({ id: z.string().uuid() });
-const EventIdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const EventIdParam = z.object({ id: z.uuid() });
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({
@@ -80,6 +80,53 @@ function grantsCustomerParticipation(
     { role: owner.role, venueId: owner.venueId, platformRole: platformRole.success ? platformRole.data : "none" },
     venueId,
   );
+}
+
+type EventLinkTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+type LinkableLayout =
+  | { readonly ok: true; readonly id: string }
+  | { readonly ok: false; readonly status: 403 | 404 | 409; readonly body: { readonly error: string; readonly code: string } };
+
+/**
+ * May this layout be linked to the event? Both link routes ask, inside the
+ * transaction that writes the link. The layout's row is read under a share
+ * lock: a claim (routes/claim-config.ts) locks the same row for update and
+ * refuses a layout with an event link, so a claim and a link never both pass
+ * on a stale read; whichever comes second waits and sees the other's result.
+ * A layout owned by a client account is refused, because owning a linked
+ * layout is what admits a client to the event (grantsCustomerParticipation).
+ */
+async function lockLinkableLayout(
+  tx: EventLinkTransaction,
+  user: FastifyRequest["user"],
+  configurationId: string,
+  eventVenueId: string,
+  venueMismatchError: string,
+): Promise<LinkableLayout> {
+  const [config] = await tx.select({ id: configurations.id, userId: configurations.userId, venueId: configurations.venueId })
+    .from(configurations)
+    .where(and(eq(configurations.id, configurationId), isNull(configurations.deletedAt)))
+    .limit(1)
+    .for("share");
+  if (config === undefined) return { ok: false, status: 404, body: { error: "Configuration not found", code: "NOT_FOUND" } };
+  if (!canAccessResource(user, config.userId, config.venueId)) {
+    return { ok: false, status: 403, body: { error: "Insufficient permissions", code: "FORBIDDEN" } };
+  }
+  if (config.venueId !== eventVenueId) {
+    return { ok: false, status: 409, body: { error: venueMismatchError, code: "CONFIGURATION_VENUE_MISMATCH" } };
+  }
+  if (config.userId !== null) {
+    const [owner] = await tx.select({ role: users.role, venueId: users.venueId, platformRole: users.platformRole })
+      .from(users).where(eq(users.id, config.userId)).limit(1);
+    if (owner !== undefined && grantsCustomerParticipation(owner, eventVenueId)) {
+      return { ok: false, status: 409, body: {
+        error: "This layout belongs to a client account, and linking it would give that client access to the event schedule",
+        code: "CONFIGURATION_OWNER_IS_CUSTOMER",
+      } };
+    }
+  }
+  return { ok: true, id: config.id };
 }
 
 function toIso(value: Date): string {
@@ -519,25 +566,15 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
     const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
-    if (parsed.data.configurationId !== undefined && parsed.data.configurationId !== null) {
-      const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId }).from(configurations)
-        .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
-        .limit(1);
-      if (config === undefined) {
-        return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
-      }
-      if (!canAccessResource(request.user, config.userId, config.venueId)) {
-        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-      }
-      if (config.venueId !== eventRow.venueId) {
-        return reply.status(409).send({
-          error: "A layout variant configuration must belong to the event venue",
-          code: "CONFIGURATION_VENUE_MISMATCH",
-        });
-      }
-    }
-
+    const configurationId = parsed.data.configurationId ?? null;
     const created = await db.transaction(async (tx) => {
+      // A variant's layout is linked to the event like any other (release
+      // audit public-surface-1): the same checks, under the same lock.
+      if (configurationId !== null) {
+        const layout = await lockLinkableLayout(tx, request.user, configurationId, eventRow.venueId,
+          "A layout variant configuration must belong to the event venue");
+        if (!layout.ok) return layout;
+      }
       const [variant] = await tx.insert(layoutVariants).values({
         eventId: eventRow.id,
         configurationId: parsed.data.configurationId ?? null,
@@ -548,16 +585,17 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
       }).returning();
       if (variant === undefined) return null;
 
-      if (parsed.data.configurationId !== undefined && parsed.data.configurationId !== null) {
+      if (configurationId !== null) {
         await tx.insert(eventConfigurationLinks).values({
           eventId: eventRow.id,
-          configurationId: parsed.data.configurationId,
+          configurationId,
           layoutVariantId: variant.id,
           linkType: "variant_configuration",
         });
       }
       return variant;
     });
+    if (created !== null && "ok" in created) return reply.status(created.status).send(created.body);
 
     if (created === null) {
       return reply.status(500).send({ error: "Failed to create layout variant", code: "LAYOUT_VARIANT_CREATE_FAILED" });
@@ -587,62 +625,38 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
     const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
-    const [config] = await db.select().from(configurations)
-      .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
-      .limit(1);
-    if (config === undefined) {
-      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
-    }
-    if (!canAccessResource(request.user, config.userId, config.venueId)) {
-      return forbidden(reply);
-    }
-    if (config.venueId !== eventRow.venueId) {
-      return reply.status(409).send({
-        error: "A linked configuration must belong to the event venue",
-        code: "CONFIGURATION_VENUE_MISMATCH",
-      });
-    }
-    if (config.userId !== null) {
-      const [owner] = await db.select({
-        role: users.role,
-        venueId: users.venueId,
-        platformRole: users.platformRole,
-      }).from(users).where(eq(users.id, config.userId)).limit(1);
-      if (owner !== undefined && grantsCustomerParticipation(owner, eventRow.venueId)) {
-        return reply.status(409).send({
-          error: "This layout belongs to a client account, and linking it would give that client access to the event schedule",
-          code: "CONFIGURATION_OWNER_IS_CUSTOMER",
-        });
-      }
-    }
+    const outcome = await db.transaction(async (tx) => {
+      const layout = await lockLinkableLayout(tx, request.user, parsed.data.configurationId, eventRow.venueId,
+        "A linked configuration must belong to the event venue");
+      if (!layout.ok) return layout;
+      const [inserted] = await tx.insert(eventConfigurationLinks).values({
+        eventId: eventRow.id,
+        configurationId: layout.id,
+        linkType: parsed.data.linkType,
+      }).onConflictDoNothing({
+        target: [
+          eventConfigurationLinks.eventId,
+          eventConfigurationLinks.configurationId,
+          eventConfigurationLinks.linkType,
+        ],
+      }).returning();
+      if (inserted !== undefined) return { ok: true as const, created: true, link: inserted };
+      const [existing] = await tx.select().from(eventConfigurationLinks)
+        .where(and(
+          eq(eventConfigurationLinks.eventId, eventRow.id),
+          eq(eventConfigurationLinks.configurationId, layout.id),
+          eq(eventConfigurationLinks.linkType, parsed.data.linkType),
+        ))
+        .limit(1);
+      return existing === undefined ? null : { ok: true as const, created: false, link: existing };
+    });
 
-    const [inserted] = await db.insert(eventConfigurationLinks).values({
-      eventId: eventRow.id,
-      configurationId: config.id,
-      linkType: parsed.data.linkType,
-    }).onConflictDoNothing({
-      target: [
-        eventConfigurationLinks.eventId,
-        eventConfigurationLinks.configurationId,
-        eventConfigurationLinks.linkType,
-      ],
-    }).returning();
-
-    if (inserted !== undefined) {
-      return reply.status(201).send({ data: serializeConfigurationLink(inserted) });
-    }
-
-    const [existing] = await db.select().from(eventConfigurationLinks)
-      .where(and(
-        eq(eventConfigurationLinks.eventId, eventRow.id),
-        eq(eventConfigurationLinks.configurationId, config.id),
-        eq(eventConfigurationLinks.linkType, parsed.data.linkType),
-      ))
-      .limit(1);
-    if (existing === undefined) {
+    if (outcome === null) {
       return reply.status(500).send({ error: "Failed to link configuration", code: "EVENT_CONFIGURATION_LINK_FAILED" });
     }
-    return { data: serializeConfigurationLink(existing) };
+    if (!outcome.ok) return reply.status(outcome.status).send(outcome.body);
+    if (outcome.created) return reply.status(201).send({ data: serializeConfigurationLink(outcome.link) });
+    return { data: serializeConfigurationLink(outcome.link) };
   });
 
   server.get("/:id/phase-graph", { preHandler: [authenticate] }, async (request, reply) => {
@@ -687,21 +701,31 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
       return eventPhaseSpaceMismatch(reply);
     }
 
-    const [updated] = await db.update(eventPhases).set({
-      spaceId: parsed.data.spaceId === undefined ? joined.phase.spaceId : parsed.data.spaceId,
-      name: parsed.data.name ?? joined.phase.name,
-      startsAt: parsed.data.startsAt === undefined ? joined.phase.startsAt : dateOrNull(parsed.data.startsAt),
-      durationMinutes: parsed.data.durationMinutes ?? joined.phase.durationMinutes,
-      guestCount: parsed.data.guestCount === undefined ? joined.phase.guestCount : parsed.data.guestCount,
-      opsTasksCount: parsed.data.opsTasksCount ?? joined.phase.opsTasksCount,
-      reviewGatesCount: parsed.data.reviewGatesCount ?? joined.phase.reviewGatesCount,
-      densityStatus: parsed.data.densityStatus ?? joined.phase.densityStatus,
-      densityLabel: parsed.data.densityLabel ?? joined.phase.densityLabel,
-      staffConflictsStatus: parsed.data.staffConflictsStatus ?? joined.phase.staffConflictsStatus,
-      staffConflictsLabel: parsed.data.staffConflictsLabel ?? joined.phase.staffConflictsLabel,
-      notes: parsed.data.notes === undefined ? joined.phase.notes : parsed.data.notes,
-      updatedAt: new Date(),
-    }).where(eq(eventPhases.id, params.data.id)).returning();
+    // Written from the phase as it stands under its event's lock, the lock a
+    // Diary move takes when it shifts phases (movePhasesWithBooking): a move
+    // that lands between this request's first read and its write is kept, not
+    // written over with the time read before it.
+    const updated = await db.transaction(async (tx) => {
+      await tx.select({ id: events.id }).from(events).where(eq(events.id, joined.event.id)).limit(1).for("no key update");
+      const [current] = await tx.select().from(eventPhases).where(eq(eventPhases.id, params.data.id)).limit(1);
+      if (current === undefined) return undefined;
+      const [written] = await tx.update(eventPhases).set({
+        spaceId: parsed.data.spaceId === undefined ? current.spaceId : parsed.data.spaceId,
+        name: parsed.data.name ?? current.name,
+        startsAt: parsed.data.startsAt === undefined ? current.startsAt : dateOrNull(parsed.data.startsAt),
+        durationMinutes: parsed.data.durationMinutes ?? current.durationMinutes,
+        guestCount: parsed.data.guestCount === undefined ? current.guestCount : parsed.data.guestCount,
+        opsTasksCount: parsed.data.opsTasksCount ?? current.opsTasksCount,
+        reviewGatesCount: parsed.data.reviewGatesCount ?? current.reviewGatesCount,
+        densityStatus: parsed.data.densityStatus ?? current.densityStatus,
+        densityLabel: parsed.data.densityLabel ?? current.densityLabel,
+        staffConflictsStatus: parsed.data.staffConflictsStatus ?? current.staffConflictsStatus,
+        staffConflictsLabel: parsed.data.staffConflictsLabel ?? current.staffConflictsLabel,
+        notes: parsed.data.notes === undefined ? current.notes : parsed.data.notes,
+        updatedAt: new Date(),
+      }).where(eq(eventPhases.id, params.data.id)).returning();
+      return written;
+    });
 
     if (updated === undefined) {
       return reply.status(500).send({ error: "Failed to update event phase", code: "EVENT_PHASE_UPDATE_FAILED" });

@@ -32,7 +32,7 @@ export interface SlotSheetChoice {
 export type SlotSheetState =
   /** The booking has no event, so no layout can exist. Since the bind
    *  (migration 0090) every provisional and confirmed booking has its event,
-   *  so on the board this is the venue's own house block. */
+   *  so on the board this is the venue's own house block or a viewing. */
   | { readonly kind: "no-event"; readonly message: string; readonly nextAction: string }
   /** Attached to an event, but no layout for this room is linked. */
   | { readonly kind: "no-layout"; readonly message: string; readonly nextAction: string; readonly eventId: string }
@@ -50,7 +50,7 @@ export type SlotSheetState =
 
 export interface SlotSheetInput {
   readonly eventId: string | null;
-  /** What the slot is: a house block never has a sheet. */
+  /** What the slot is: a house block or a viewing never has a sheet. */
   readonly bookingKind?: BookingKind;
   readonly roomName: string;
   readonly layouts: readonly LinkedLayoutChoice[];
@@ -69,8 +69,16 @@ export function describeSlotSheet(input: SlotSheetInput): SlotSheetState {
 
   if (eventId === null) {
     // A provisional or confirmed booking is born with its event (the bind),
-    // so there is nothing for anyone to link: a house block simply has no
-    // sheet, and any other booking without an event is the office's to see.
+    // so there is nothing for anyone to link: a house block or a viewing
+    // (never part of an event, migration 0100) simply has no sheet, and any
+    // other booking without an event is the office's to see.
+    if (input.bookingKind === "viewing") {
+      return {
+        kind: "no-event",
+        message: "A viewing has no setup sheet.",
+        nextAction: "See the viewing in the Diary.",
+      };
+    }
     return input.bookingKind === "internal_block"
       ? {
         kind: "no-event",

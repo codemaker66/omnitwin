@@ -15,6 +15,7 @@ import { useEditorStore } from "../../../stores/editor-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
+import { useAutoFillRequestStore } from "../../../stores/auto-fill-request-store.js";
 import { PlannerCommandDeck } from "../PlannerCommandDeck.js";
 import { GRAND_HALL_ARRIVAL } from "../../../lib/planner-room-arrival.js";
 import { sampleCameraTour } from "../../../lib/camera-tour.js";
@@ -22,6 +23,7 @@ import { sampleCameraTour } from "../../../lib/camera-tour.js";
 function resetPlannerStores(): void {
   useEditorStore.getState().reset();
   useCockpitStore.getState().reset();
+  useAutoFillRequestStore.setState({ requested: null });
   useCatalogueStore.setState({
     drawerOpen: false,
     selectedItemId: null,
@@ -155,10 +157,7 @@ describe("PlannerCommandDeck", () => {
     },
   );
 
-  it("auto-fills the room with a banquet grid from the blank state", () => {
-    const table = getCatalogueItemBySlug("round-table-6ft-white");
-    expect(table).toBeDefined();
-    if (table === undefined) return;
+  it("asks how many guests in the Guests lens before it places anything", () => {
     useRoomDimensionsStore.setState({ dimensions: { width: 40, length: 20, height: 7 } });
 
     render(<PlannerCommandDeck />);
@@ -166,28 +165,22 @@ describe("PlannerCommandDeck", () => {
 
     fireEvent.click(screen.getByTestId("planner-command-action-auto-fill"));
 
-    const items = usePlacementStore.getState().placedItems;
-    const tables = items.filter((i) => i.catalogueItemId === table.id);
-    expect(tables.length).toBeGreaterThan(0);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+    expect(useCockpitStore.getState().activeMode).toBe("guests");
+    expect(useAutoFillRequestStore.getState().requested).toBe("dinner-rounds");
   });
 
-  it("auto-fills FOR the planner's guest count, not the whole room", () => {
-    const table = getCatalogueItemBySlug("round-table-6ft-white");
-    if (table === undefined) return;
-    useRoomDimensionsStore.setState({ dimensions: { width: 60, length: 30, height: 7 } }); // large room
+  it("names the guest count it will ask about when one is set", () => {
     useCockpitStore.getState().setPlannedGuestCount(24);
 
     render(<PlannerCommandDeck />);
-    expect(screen.getByTestId("planner-command-action-auto-fill").textContent).toMatch(/Auto-fill 24/);
+    const layOut = screen.getByTestId("planner-command-action-auto-fill");
+    expect(layOut.textContent).toBe("Lay out");
+    expect(layOut.getAttribute("aria-label")).toBe("Lay out tables and seats for 24 guests");
     fireEvent.click(screen.getByTestId("planner-command-action-auto-fill"));
 
-    const items = usePlacementStore.getState().placedItems;
-    const tables = items.filter((i) => i.catalogueItemId === table.id);
-    const chairs = items.filter((i) => i.catalogueItemId !== table.id);
-    // 24 guests ÷ 8 per table ≈ 3 tables — a small layout, not a packed 60×30 room.
-    expect(tables.length).toBeLessThanOrEqual(6);
-    expect(chairs.length).toBeGreaterThanOrEqual(24);
-    expect(chairs.every((item) => item.catalogueItemId === getCatalogueItemBySlug("burgess-turini-18-3")?.id)).toBe(true);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+    expect(useAutoFillRequestStore.getState().requested).toBe("dinner-rounds");
   });
 
   it("hides auto-fill once the floor has furniture", () => {
@@ -200,7 +193,17 @@ describe("PlannerCommandDeck", () => {
     expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
   });
 
-  it("starts a cinematic showcase tour from the command deck", () => {
+  it("names its commands in the venue's words: Lay out, Draw and Present (F-15)", () => {
+    render(<PlannerCommandDeck />);
+    const deck = screen.getByTestId("planner-command-deck");
+    expect(screen.getByRole("button", { name: "Lay out tables and seats for your guests" }).textContent).toBe("Lay out");
+    expect(screen.getByRole("button", { name: "Draw on the floor" }).textContent).toBe("Draw");
+    expect(screen.getByTestId("planner-command-action-showcase").textContent).toBe("Present");
+    const words = [deck.textContent ?? "", ...[...deck.querySelectorAll("[aria-label],[title]")].flatMap((node) => [node.getAttribute("aria-label") ?? "", node.getAttribute("title") ?? ""])].join(" ");
+    expect(words).not.toMatch(/auto-fill|laser|showcase|cinematic/iu);
+  });
+
+  it("starts the Present tour from the command deck", () => {
     useRoomDimensionsStore.setState({ dimensions: { width: 42, length: 21, height: 7 } });
 
     render(<PlannerCommandDeck />);
@@ -231,7 +234,11 @@ describe("PlannerCommandDeck", () => {
     useBookmarkStore.getState().clearTour();
     useCockpitStore.setState({ sceneSource: { ...source, captureSource: "package" } });
     view.rerender(<PlannerCommandDeck />);
-    expect(screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase").disabled).toBe(true);
+    const present = screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase");
+    expect(present.disabled).toBe(true);
+    // A disabled control says why, in its name and its tooltip (spec 13 rule 6).
+    expect(present.getAttribute("aria-label")).toBe("Present is not ready for this view of the room yet");
+    expect(present.getAttribute("title")).toBe("Present is not ready for this view of the room yet");
     fireEvent.click(screen.getByTestId("planner-command-action-showcase"));
     expect(useBookmarkStore.getState().tour).toBeNull();
     useCockpitStore.setState({ sceneSource: { ...source, configId: "another" } });

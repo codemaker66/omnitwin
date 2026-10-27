@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "venviewer.slim-site-fonts.v1",
+  "generator": "packages/web/scripts/slim-site-fonts.py",
+  "tools": {
+    "fonttools": "4.64.0"
+  },
+  "coreCodepoints": "U+0020-007E, U+00A0, U+00A3, U+00A7, U+00A9, U+00AB, U+00B0-00B2, U+00B7, U+00BB, U+00BD, U+00C5, U+00D7-00D8, U+00E6, U+00E9, U+00F6-00F7, U+2009, U+2010, U+2013-2015, U+2018-201F, U+2022, U+2026, U+2032-2033, U+2191, U+2193, U+2212",
+  "files": {
+    "fraunces-italic-latin-core.woff2": {
+      "from": "fraunces-italic-latin.woff2",
+      "sourceSha256": "04a14ea380db53a35a3ec651934b21061234685bb604d30aac82663b5d9e539b",
+      "sourceBytes": 149720,
+      "bytes": 115704,
+      "sha256": "f2a9e4ec9ac3e79b9591a8a8fdc0f0bf764817308175e1048382ffd6e4892fc7",
+      "declaredWeights": [
+        300.0,
+        700.0
+      ]
+    },
+    "fraunces-normal-latin-core.woff2": {
+      "from": "fraunces-normal-latin.woff2",
+      "sourceSha256": "7e744849028e2219e2aa1bc467dc4032980dc4487c9c3da3010081cd72d3b103",
+      "sourceBytes": 121016,
+      "bytes": 91552,
+      "sha256": "89e502a0a608b3d904b39ab47b3bec09404fa0738a80ababdc8eb000dd931b80",
+      "declaredWeights": [
+        300.0,
+        700.0
+      ]
+    },
+    "geist-mono-normal-latin.firefox-windows-core.woff2": {
+      "from": "geist-mono-normal-latin.firefox-windows.woff2",
+      "sourceSha256": "c9b2702d0ff5865fcf7ed9442ec95888830b0065682ca4f2b44e2fa3b3a4f269",
+      "sourceBytes": 23156,
+      "bytes": 16708,
+      "sha256": "99dac70eab9aadb1aa249c651eb7d05ce721c9a5beb5c7bcb92e028ebbec0ecd",
+      "declaredWeights": [
+        400.0,
+        500.0
+      ]
+    },
+    "geist-mono-normal-latin-core.woff2": {
+      "from": "geist-mono-normal-latin.woff2",
+      "sourceSha256": "684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc",
+      "sourceBytes": 23128,
+      "bytes": 16780,
+      "sha256": "60dd2f3f5302195a2c6f2ce648708890783fa1c5b50ceee5b4d05db597e901d5",
+      "declaredWeights": [
+        400.0,
+        500.0
+      ]
+    },
+    "geist-normal-latin.firefox-windows-core.woff2": {
+      "from": "geist-normal-latin.firefox-windows.woff2",
+      "sourceSha256": "49f46fee70346a0520f20763e5a41807ddfc33268d7010657affe031179aa0b4",
+      "sourceBytes": 29304,
+      "bytes": 21940,
+      "sha256": "1ea5597362e47aefa4e5dad547d73bbeb9d908989827807e2174f239f30b83c3",
+      "declaredWeights": [
+        300.0,
+        600.0
+      ]
+    },
+    "geist-normal-latin-core.woff2": {
+      "from": "geist-normal-latin.woff2",
+      "sourceSha256": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+      "sourceBytes": 29400,
+      "bytes": 22028,
+      "sha256": "755fea3511d97af8c00d4b83e17773659dde38caf09f3e16e86ce56642297d12",
+      "declaredWeights": [
+        300.0,
+        600.0
+      ]
+    },
+    "newsreader-italic-latin-core.woff2": {
+      "from": "newsreader-italic-latin.woff2",
+      "sourceSha256": "2bf0dbb1a4a052fffcc447bdab56b12049ee804a8a0d1ee04f5e76a6ab89166a",
+      "sourceBytes": 63292,
+      "bytes": 45044,
+      "sha256": "493ce5aafed968fd5fbdc5de9834a82c4efeaf4e999ce08ad37641f67af13753",
+      "declaredWeights": [
+        400.0,
+        400.0
+      ]
+    },
+    "newsreader-normal-latin-core.woff2": {
+      "from": "newsreader-normal-latin.woff2",
+      "sourceSha256": "6e4f2958c3a7c4a80acde4e5a679abe7e01bc1e30b92be3c7a8b696ef401d101",
+      "sourceBytes": 132000,
+      "bytes": 98052,
+      "sha256": "fe39831eeed1adf70ab8bae3f6823a943c2d96545f834586ef41a613240e73d2",
+      "declaredWeights": [
+        300.0,
+        600.0
+      ]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 import { Cuboid, Sparkles, Layers3, Footprints, type LucideIcon } from "lucide-react";
 import { COCKPIT_LAYER_MODES, type CockpitLayerMode } from "../../../lib/cockpit-modes.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -9,17 +9,21 @@ import { TRADES_HALL_RUNTIME_ROOMS } from "../../../lib/runtime-package-resoluti
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../../shared/FloatingWidgetFrame.js";
 import "./CanvasLayerControls.css";
 import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js";
-import { interiorInputBlocked } from "../../rooms/interior-camera-input.js";
 import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
 import { useModelledGrandHall } from "../../grand-hall/hall-space.js";
 import { HallViewControls } from "./HallViewControls.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
+import { canReadInternalEventData } from "../../../lib/event-access.js";
 
-const SPLAT_WORK_IN_PROGRESS = "Gaussian splats · Work in progress";
+// The photographed room is held back in production. Staff are told it is
+// coming; a guest or client is shown no control that cannot work, and none of
+// the engineering words (spec §13 rule 4, F-15).
+const CAPTURE_COMING_SOON = "Photographed room · coming soon";
 
 const LAYER_META: Readonly<Record<CockpitLayerMode, { readonly label: string; readonly Icon: LucideIcon }>> = {
-  mesh: { label: "Mesh", Icon: Cuboid },
-  splat: { label: "Splat", Icon: Sparkles },
-  hybrid: { label: "Hybrid", Icon: Layers3 },
+  mesh: { label: "Model", Icon: Cuboid },
+  splat: { label: "Capture", Icon: Sparkles },
+  hybrid: { label: "Combined", Icon: Layers3 },
 };
 
 const LAYER_CONTROLS_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
@@ -46,7 +50,7 @@ const LAYER_CONTROLS_AVOID_SELECTORS = [
 ] as const;
 
 /**
- * Mesh / Splat / Hybrid renderer toggle, docked over the stage. Drives the
+ * Model / Capture / Combined view toggle, docked over the stage. Drives the
  * cockpit store's layer mode, which the scene reads to choose between the
  * procedural mesh and the measured Gaussian-splat capture.
  */
@@ -83,7 +87,8 @@ export function HallViewSheetControls({ onViewChosen }: { readonly onViewChosen:
   );
 }
 
-export function CanvasLayerControls({ embedded = false }: { readonly embedded?: boolean }): ReactElement {
+export function CanvasLayerControls({ embedded = false }: { readonly embedded?: boolean }): ReactElement | null {
+  const staff = useAuthStore((state) => canReadInternalEventData(state));
   const layerMode = useCockpitStore((s) => s.layerMode);
   const splatsAvailable = gaussianSplatsAvailable();
   const visibleLayerMode = splatsAvailable ? layerMode : "mesh";
@@ -95,45 +100,33 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
   const walkDisabled = !splatsAvailable || !walkAvailable || povActive;
   const modelledHall = useModelledGrandHall();
 
-  // Escape leaves the room. Listening only while walking keeps this from
-  // shadowing the rig's own Escape duties (tours, POV exit), none of which
-  // can be active at the same time as walk.
-  useEffect(() => {
-    if (!walkMode) return;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.code !== "Escape" || event.defaultPrevented || interiorInputBlocked("planner", event.target)) return;
-      event.preventDefault();
-      recordPlannerArrivalChoice();
-      useCockpitStore.getState().setWalkMode(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, [walkMode]);
+  // Esc never leaves Walk (spec 4.5; T-671 slice 5): a reflexive Esc steps
+  // back one layer in the planner's one Escape order and never ejects you
+  // from the room. The view switch here leaves it.
 
   const controls = (
     <div className="cockpit-layer-controls" role="group" aria-label="Room view">
       {COCKPIT_LAYER_MODES.map((mode) => {
         const meta = LAYER_META[mode];
         const Icon = meta.Icon;
-        const label = embedded ? ({ mesh: "Model", splat: "Capture", hybrid: "Combined" } as const)[mode] : meta.label;
         const unavailable = !splatsAvailable && mode !== "mesh";
         return <button key={mode} type="button" aria-pressed={mode === visibleLayerMode}
-          disabled={unavailable} title={unavailable ? SPLAT_WORK_IN_PROGRESS : undefined}
+          disabled={unavailable} title={unavailable ? CAPTURE_COMING_SOON : undefined}
           className={mode === visibleLayerMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
           onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setLayerMode(mode); }}>
-          <Icon size={14} aria-hidden />{label}
+          <Icon size={14} aria-hidden />{meta.label}
         </button>;
       })}
       <span className="cockpit-layer-controls__divider" aria-hidden />
       <button type="button" aria-pressed={splatsAvailable && walkMode} className={splatsAvailable && walkMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
         disabled={walkDisabled} data-testid="planner-walk-toggle"
-        title={!splatsAvailable ? SPLAT_WORK_IN_PROGRESS : walkDisabled ? "This room has no available interior view, or a saved viewpoint is active" : "Switch between interior and orbit navigation"}
+        title={!splatsAvailable ? CAPTURE_COMING_SOON : walkDisabled ? "This room has no interior view yet, or a saved view is open" : "Switch between the interior and the view from above"}
         onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setWalkMode(!walkMode); }}>
         <Footprints size={14} aria-hidden />{embedded ? "Interior" : "Walk"}
       </button>
     </div>
   );
-  const notice = !splatsAvailable && <p className="cockpit-layer-controls__notice">{SPLAT_WORK_IN_PROGRESS}</p>;
+  const notice = !splatsAvailable && <p className="cockpit-layer-controls__notice">{CAPTURE_COMING_SOON}</p>;
   // The Grand Hall is drawn as the real room, so it is always walkable and has
   // its own views and light; its capture is an extra, where one may be shown.
   if (embedded && modelledHall) {
@@ -143,11 +136,14 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
       </div>
     );
   }
+  // Without the capture there is one view and nothing to choose: only staff
+  // see the held-back controls, with the reason.
+  if (!splatsAvailable && !staff) return null;
   if (embedded) return <div className="reference-layer-controls" data-testid="planner-layer-controls">{controls}{notice}</div>;
   return (
     <FloatingWidgetFrame
       id="planner-layer-controls"
-      title="Visual layer"
+      title="Room view"
       compactLabel={LAYER_META[visibleLayerMode].label}
       strategy="fixed"
       testId="planner-layer-controls"
@@ -160,7 +156,7 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
       zIndex={32}
       autoCompact={cameraInteractionActive}
     >
-      <div className="cockpit-layer-controls" role="group" aria-label="Visual layer">
+      <div className="cockpit-layer-controls" role="group" aria-label="Room view">
         {COCKPIT_LAYER_MODES.map((mode) => {
           const meta = LAYER_META[mode];
           const Icon = meta.Icon;
@@ -172,7 +168,7 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
               type="button"
               aria-pressed={active}
               disabled={unavailable}
-              title={unavailable ? SPLAT_WORK_IN_PROGRESS : undefined}
+              title={unavailable ? CAPTURE_COMING_SOON : undefined}
               className={active ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
               onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setLayerMode(mode); }}
             >
@@ -188,9 +184,9 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
           className={splatsAvailable && walkMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
           disabled={walkDisabled}
           title={
-            !splatsAvailable ? SPLAT_WORK_IN_PROGRESS : walkDisabled
+            !splatsAvailable ? CAPTURE_COMING_SOON : walkDisabled
               ? (povActive
-                ? "Leave the POV reference before walking the room"
+                ? "Leave the saved view before walking the room"
                 : "This room's capture has no walk data yet")
               : (walkMode ? "Back to plan view (Esc)" : "Stand in the room at eye level")
           }

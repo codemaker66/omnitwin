@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
 import {
   clientAccounts,
   configurations,
@@ -44,14 +45,14 @@ export function containsPattern(query: string): string {
   return `%${query.replace(/[\\%_]/gu, (character) => `\\${character}`)}%`;
 }
 
-interface Matcher {
+export interface Matcher {
   /** True when any of the columns matches. */
   readonly where: (...columns: readonly (AnyPgColumn | SQL)[]) => SQL;
   /** How well the best of the columns matches, for ordering (1 for a substring). */
   readonly rank: (...columns: readonly (AnyPgColumn | SQL)[]) => SQL<number>;
 }
 
-function matcher(query: string): Matcher {
+export function matcher(query: string): Matcher {
   const pattern = containsPattern(query);
   const lowered = query.toLowerCase();
   const fuzzy = query.length >= FUZZY_MIN_LENGTH;
@@ -78,7 +79,7 @@ export interface ClientSearchResults {
     id: string; name: string; spaceName: string | null; userName: string | null; createdAt: Date;
   }[];
   readonly contacts: readonly {
-    id: string; name: string; email: string; phone: string | null; accountName: string | null;
+    id: string; name: string; email: string | null; phone: string | null; accountName: string | null;
   }[];
   readonly accounts: readonly { id: string; name: string; accountType: string; primaryContactId: string | null }[];
   readonly deals: readonly {
@@ -107,11 +108,11 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     email: users.email,
     phone: users.phone,
     configurationCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND deleted_at IS NULL)`
-      : sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)`,
+      ? sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${outerColumn(users.id)} AND deleted_at IS NULL)`
+      : sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${outerColumn(users.id)} AND venue_id = ${venueId} AND deleted_at IS NULL)`,
     enquiryCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id})`
-      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})`,
+      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${outerColumn(users.id)})`
+      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${outerColumn(users.id)} AND venue_id = ${venueId})`,
   })
     .from(users)
     .where(and(match.where(userName, users.organizationName, users.email), venueUsers))
@@ -129,8 +130,8 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     phone: guestLeads.phone,
     name: guestLeads.name,
     enquiryCount: venueId === null
-      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email})`
-      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`,
+      ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${outerColumn(guestLeads.email)})`
+      : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${outerColumn(guestLeads.email)} AND venue_id = ${venueId})`,
     convertedToUserId: guestLeads.convertedToUserId,
   })
     .from(guestLeads)
@@ -232,7 +233,7 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
 
 export interface ContactProfile {
   readonly contact: {
-    id: string; venueId: string; name: string; email: string; phone: string | null; roleLabel: string | null;
+    id: string; venueId: string; name: string; email: string | null; phone: string | null; roleLabel: string | null;
     sourceEnquiryId: string | null; createdAt: Date;
     account: { id: string; name: string } | null;
   };
