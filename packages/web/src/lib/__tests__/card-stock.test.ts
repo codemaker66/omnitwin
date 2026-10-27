@@ -99,6 +99,14 @@ describe("usable stock", () => {
     const clothedOnly = usableStock(inventory([record("round-table-6ft-white", 12), record("round-table-6ft-black", 20)]));
     expect(clothedOnly.get(id("round-table-6ft"))).toBe(20);
   });
+
+  it("takes the pink chair's own record, else a record kept under the Turini, never their sum", () => {
+    const both = usableStock(inventory([record("pink-chair", 230), record("burgess-turini-18-3", 40)]));
+    expect(both.get(id("pink-chair"))).toBe(230);
+    expect(both.has(id("burgess-turini-18-3"))).toBe(false);
+    const turiniOnly = usableStock(inventory([record("burgess-turini-18-3", 40)]));
+    expect(turiniOnly.get(id("pink-chair"))).toBe(40);
+  });
 });
 
 describe("a card's store figure", () => {

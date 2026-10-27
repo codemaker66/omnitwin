@@ -72,7 +72,9 @@ export function seatCapacity(table: CatalogueItem, scale?: number, chairFootprin
 }
 
 // ---------------------------------------------------------------------------
-// Chair position computation (pure)
+// Chair position computation: pure but for the chair, which defaults to the
+// event's (plannerChairSlug reads the planner-event store), so a memo that
+// calls these without naming the chair must depend on the event.
 // ---------------------------------------------------------------------------
 
 export interface ChairPlacement {
@@ -555,10 +557,11 @@ export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: numbe
 /**
  * The seats a dining table is set for at a banquet: `seatsFor`'s default
  * (seat truth, card-dock spec §17.2), never more than fit around it. A table
- * seat truth does not know is set for as many as fit.
+ * seat truth does not know is set for as many as fit. Fit is judged with the
+ * chair named, or the event's.
  */
-export function banquetSeatsPerTable(table: CatalogueItem): number {
-  const fit = seatCapacity(table);
+export function banquetSeatsPerTable(table: CatalogueItem, chairSlug?: string): number {
+  const fit = seatCapacity(table, undefined, chairSlug === undefined ? undefined : getCatalogueItemBySlug(chairSlug));
   if (fit === 0) return 0;
   return Math.max(1, Math.min(fit, seatsFor(table)?.default ?? fit));
 }
