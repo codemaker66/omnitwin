@@ -8,17 +8,20 @@ import type { AIDraftCommitmentKind } from "@omnitwin/types";
 // ---------------------------------------------------------------------------
 
 const WITHHELD_WORDS: Readonly<Record<AIDraftCommitmentKind, string>> = {
-  price: "gave a price",
-  availability: "said whether a date or room is free",
-  capacity: "said how many a room holds",
+  price: "give a price",
+  availability: "say whether a date or room is free",
+  capacity: "say how many a room holds",
 };
 
 /** What was taken out of an AI draft, in a sentence; null when nothing was.
- *  Only the venue's team confirms a price, availability or capacity (L6). */
+ *  The check reads the shape of the words, so it says what a sentence seemed
+ *  to do, not what the AI meant. Only the venue's team confirms these (L6). */
 export function withheldWords(kinds: readonly AIDraftCommitmentKind[]): string | null {
   if (kinds.length === 0) return null;
   const parts = kinds.map((kind) => WITHHELD_WORDS[kind]);
   const last = parts[parts.length - 1] ?? "";
-  const list = parts.length === 1 ? last : `${parts.slice(0, -1).join(", ")} and ${last}`;
-  return `It ${list}, which only the team confirms, so ${kinds.length === 1 ? "that part was" : "those parts were"} taken out.`;
+  const list = parts.length === 1 ? last : `${parts.slice(0, -1).join(", ")} or ${last}`;
+  return kinds.length === 1
+    ? `A sentence that seemed to ${list} was taken out, as only the team confirms that.`
+    : `Sentences that seemed to ${list} were taken out, as only the team confirms these.`;
 }

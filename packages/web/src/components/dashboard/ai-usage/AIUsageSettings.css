@@ -4,6 +4,8 @@
    the allowance line above it. */
 
 .ai-usage {
+  /* A grid item may shrink below its table's width on a narrow phone. */
+  min-width: 0;
   display: grid;
   gap: 18px;
   padding: 24px 26px 26px;
@@ -69,6 +71,21 @@
 
 .ai-usage__bar[data-full="true"] span {
   background: var(--reg-attention);
+}
+
+/* The table scrolls within the sheet on the narrowest phones, never the page. */
+.ai-usage__scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ai-usage__head h3:focus {
+  outline: none;
+}
+
+.ai-usage__head h3:focus-visible {
+  outline: 2px solid var(--reg-focus);
+  outline-offset: 2px;
 }
 
 .ai-usage__table {
@@ -184,5 +201,26 @@
 @media (prefers-reduced-motion: reduce) {
   .ai-usage__bar span {
     transition: none;
+  }
+}
+
+.ai-usage__table th:last-child,
+.ai-usage__table td:last-child {
+  padding-right: 0;
+}
+
+/* The narrowest phones keep every column, cost included, in view. */
+@media (max-width: 420px) {
+  .ai-usage {
+    padding: 20px 18px 22px;
+  }
+
+  .ai-usage__table {
+    font-size: 14px;
+  }
+
+  .ai-usage__table th,
+  .ai-usage__table td {
+    padding-right: 8px;
   }
 }

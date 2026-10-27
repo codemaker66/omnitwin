@@ -1,9 +1,10 @@
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import {
   AIAssistantStatusSchema,
   CreateAIDraftRequestSchema,
   createReviewGatedAIDraft,
   stableCanonicalJson,
+  draftLeftAfterWithholding,
   withholdDraftCommitments,
   type AIAssistantStatus,
   type AIDraft,
@@ -416,14 +417,20 @@ export async function generateAIDraft(
     prompt: buildAIDraftPrompt(parsed),
     context: parsed.context,
   }, attribution);
-  if (withholdDraftCommitments(body).text === "") {
-    throw new AIDraftNotProducedError("Every sentence of the draft stated a price, availability or capacity");
+  if (!draftLeftAfterWithholding(withholdDraftCommitments(body))) {
+    throw new AIDraftNotProducedError("Once its price, availability or capacity claims were out, too little of the draft was left");
   }
-  return createReviewGatedAIDraft({
-    useCase: parsed.useCase,
-    title: titleForAIDraft(parsed.useCase),
-    body,
-    context: parsed.context,
-    generatedAt: now.toISOString(),
-  });
+  try {
+    return createReviewGatedAIDraft({
+      useCase: parsed.useCase,
+      title: titleForAIDraft(parsed.useCase),
+      body,
+      context: parsed.context,
+      generatedAt: now.toISOString(),
+    });
+  } catch (error) {
+    // The model's words could not be made a draft the schema holds: no draft, said so.
+    if (error instanceof ZodError) throw new AIDraftNotProducedError("The model's words could not be made a draft that can be shown");
+    throw error;
+  }
 }

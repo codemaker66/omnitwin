@@ -74,26 +74,44 @@ confirms these, from the quote, the Diary and the venue's sourced figures.
 - **The rules** (`buildAIDraftInstructions`) tell the model so for every use
   case, and to say the events team will confirm any of them it is asked about.
 - **The check after the model** (`withholdDraftCommitments` in
-  `packages/types/src/ai-draft-commitments.ts`) reads the draft sentence by
-  sentence and takes out each sentence that states one ("£65 per head", "the
-  Grand Hall is free on the 17th", "it seats 200", "we can comfortably
-  accommodate your guests"). Sentences about the topic without a claim stay
-  ("the team will confirm prices and availability", "your 150 guests").
-  `createReviewGatedAIDraft` applies it to every draft, and `AIDraftSchema`
-  refuses a body that still holds a claim.
+  `packages/types/src/ai-draft-commitments.ts`) reads the draft line by line
+  and sentence by sentence, and takes out each sentence that states one ("£65
+  per head", "the Grand Hall is free on the 17th", "it seats 200", "we can
+  comfortably accommodate your guests"). It is written for precision: the
+  topic without a claim stays ("the team will confirm prices and
+  availability", "your 150 guests"), as do a clause of the client's own words
+  ("you asked whether the 17th is free", "their budget is around £12,000") and
+  a claim asked about ("the team will confirm whether the Saloon is free").
+  The client's words cover only their clause: in "the client asked about the
+  deposit; it is £500" the second clause is taken out.
+- **Taking out and refusing read alike.** The sentences are split losslessly,
+  the text is read again until nothing more is found, and `AIDraftSchema`
+  refuses a body that still holds a claim by the same reading, so a draft the
+  check passes is one the schema accepts. `createReviewGatedAIDraft` applies it
+  to every draft.
 - **The draft says what was taken out** (`withheldCommitments`), and both draft
-  surfaces say it in words: "It gave a price, which only the team confirms,
-  so that part was taken out."
-- **A draft that is nothing else** is no draft: 502, the composer says it could
+  surfaces say it in words: "A sentence that seemed to give a price was taken
+  out, as only the team confirms that."
+- **A draft that is nothing else** is no draft: with fewer than 12 words left
+  (a greeting and a sign-off), the call answers 502, the composer says it could
   not be written, and the call stays recorded.
 
-The patterns are tested on 73 tuned sentences and 31 written before the
-patterns first ran on them (all 31 read right on that first run; one was
-missed after a later change and then fixed, so that set is no longer unseen).
-All were written by the developing agent, not venue staff. The live
-evaluation (`eval:proposal-drafts`) now records `withheldCommitments` per
-draft and `withWithheldCommitments` in its summary, so the next run with a key
-measures how often Claude still states one.
+How well it reads text it has not seen is measured on three sentence sets
+written by agents that never saw the patterns, each run once before it was
+used (`__tests__/ai-draft-blind-sets.ts`). On those first runs it took out 7
+of 160 sentences that made no claim and found 104 of 160 claims: 34 of 60,
+then 35 of 50 and 35 of 50, so tuning on one set did not much raise the next.
+It finds about two claims in three that are phrased in a new way. The rules
+are the first guard and the person who reads every draft before it is used is
+the last; this check sits between them and does not replace either. All three
+sets now pass, with the tuned, held-out and review sets, as regression tests.
+None was written by venue staff. The live evaluation (`eval:proposal-drafts`)
+records `withheldCommitments` per draft and `withWithheldCommitments` in its
+summary, so the first run with a key measures how often Claude still states one.
+
+`withheldCommitments` is a new field on the draft response. The web parses
+drafts strictly, so a web build from before it refuses a response that has it:
+deploy the web and the API from the same commit, the web first.
 
 ## Checks
 

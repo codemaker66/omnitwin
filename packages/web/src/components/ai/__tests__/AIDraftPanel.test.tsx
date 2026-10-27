@@ -133,7 +133,7 @@ describe("AIDraftPanel", () => {
     render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ selectedTarget: "Grand Hall" }} />);
     fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
     expect((await screen.findByTestId("ai-draft-withheld")).textContent)
-      .toBe("It said how many a room holds, which only the team confirms, so that part was taken out.");
+      .toBe("A sentence that seemed to say how many a room holds was taken out, as only the team confirms that.");
     cleanup();
     createAIDraftMock.mockResolvedValueOnce(draft());
     render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ selectedTarget: "Grand Hall" }} />);

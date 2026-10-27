@@ -301,8 +301,27 @@ describe("what a draft may not say (L6)", () => {
     expect(draft.body).toBe("Dear Elaine, thank you for your enquiry about your 150 guests.");
   });
 
-  it("gives no draft when every sentence states one", async () => {
+  it("gives no draft when every sentence states one, or a greeting and a sign-off are all that is left", async () => {
     await expect(generateAIDraft(answering("The date is free. The room seats 200. It costs £900."),
       { useCase: "enquiry_summary", context: {} }, ATTRIBUTION)).rejects.toBeInstanceOf(AIDraftNotProducedError);
+    await expect(generateAIDraft(answering("Dear Elaine,\n\nThe Grand Hall is free on the 17th.\n\nWith best wishes,\nThe Events Team"),
+      { useCase: "proposal_draft", context: {} }, ATTRIBUTION)).rejects.toBeInstanceOf(AIDraftNotProducedError);
+  });
+
+  // Release review, 27 October 2026: the first splitter lost every word before
+  // a full stop inside a sentence ("6.30pm"), on every draft.
+  it("keeps a clean draft whole, times, quotes and the client's own figures included", async () => {
+    const words = [
+      "Dear Elaine,",
+      "",
+      "Thank you for your note. Drinks would be from 6.30pm and dinner at 7.30pm, as you described.",
+      'You wrote "we\'d love something relaxed and warm." You mentioned a budget of around £10,000, and the team will talk it through with you.',
+      "Our events team will confirm availability and prices when they reply.",
+      "",
+      "The Events Team",
+    ].join("\n");
+    const draft = await generateAIDraft(answering(words), { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
+    expect(draft.body).toBe(words);
+    expect(draft.withheldCommitments).toEqual([]);
   });
 });

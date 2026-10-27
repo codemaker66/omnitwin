@@ -94,6 +94,8 @@ describe("the venue's AI use", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("AI use could not be loaded.");
     getAIUsage.mockResolvedValueOnce(summary());
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); await Promise.resolve(); });
+    // The button is gone while it reads again; focus waits on the heading, not the page.
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "AI drafting" }));
     expect(await screen.findByTestId("ai-usage-allowance")).toBeTruthy();
     expect(getAIUsage).toHaveBeenCalledTimes(2);
   });

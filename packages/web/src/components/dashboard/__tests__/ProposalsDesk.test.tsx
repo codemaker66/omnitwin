@@ -4753,7 +4753,7 @@ describe("Draft the message with AI", () => {
     // Plan 19, L6: what the server took out of the model's words is said, calmly.
     block = await drafted(element, draft({ withheldCommitments: ["price", "availability"] }));
     expect(within(block).getByTestId("ai-draft-withheld").textContent)
-      .toBe("It gave a price and said whether a date or room is free, which only the team confirms, so those parts were taken out.");
+      .toBe("Sentences that seemed to give a price or say whether a date or room is free were taken out, as only the team confirms these.");
     expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
   });
 

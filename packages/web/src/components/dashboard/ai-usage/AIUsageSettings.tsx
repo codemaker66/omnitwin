@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import type { AIUsageSummary } from "@omnitwin/types";
 import { getAIUsage } from "../../../api/ai-usage.js";
 import { ActivityStatus } from "../../shared/Activity.js";
@@ -29,6 +29,7 @@ export interface AIUsageSettingsProps {
 
 export function AIUsageSettings({ venueId }: AIUsageSettingsProps): ReactElement {
   const titleId = useId();
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [reloadCount, setReloadCount] = useState(0);
 
@@ -49,7 +50,7 @@ export function AIUsageSettings({ venueId }: AIUsageSettingsProps): ReactElement
   return (
     <section className="ai-usage" data-register="ivory" aria-labelledby={titleId} data-testid="ai-usage">
       <header className="ai-usage__head">
-        <h3 id={titleId}>AI drafting</h3>
+        <h3 id={titleId} ref={headingRef} tabIndex={-1}>AI drafting</h3>
         <p>
           What the venue&apos;s AI drafts and briefs have cost, against its monthly allowance. A draft that would go
           over the allowance is not written.
@@ -61,7 +62,11 @@ export function AIUsageSettings({ venueId }: AIUsageSettingsProps): ReactElement
       {load.status === "error" && (
         <div className="ai-usage__error">
           <p role="alert">AI use could not be loaded.</p>
-          <button type="button" className="ai-usage__quiet" onClick={() => { setReloadCount((count) => count + 1); }}>
+          <button type="button" className="ai-usage__quiet" onClick={() => {
+            // The button goes while it reads again: focus waits on the section's heading.
+            headingRef.current?.focus();
+            setReloadCount((count) => count + 1);
+          }}>
             Try again
           </button>
         </div>
@@ -98,27 +103,29 @@ function AIUsageReport({ summary }: { readonly summary: AIUsageSummary }): React
       {thisMonth === undefined || thisMonth.features.length === 0 ? (
         <p className="ai-usage__empty">No AI drafts or briefs yet in {monthName}.</p>
       ) : (
-        <table className="ai-usage__table">
-          <caption>{monthName}, by feature</caption>
-          <thead>
-            <tr>
-              <th scope="col">Feature</th>
-              <th scope="col">Calls</th>
-              <th scope="col">Not answered</th>
-              <th scope="col">Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {thisMonth.features.map((feature) => (
-              <tr key={feature.feature}>
-                <th scope="row">{featureWords(feature.feature)}</th>
-                <td>{feature.calls.toLocaleString("en-GB")}</td>
-                <td>{unansweredCalls(feature).toLocaleString("en-GB")}</td>
-                <td>{moneyWords(feature.costMicroUsd)}</td>
+        <div className="ai-usage__scroll">
+          <table className="ai-usage__table">
+            <caption>{monthName}, by feature</caption>
+            <thead>
+              <tr>
+                <th scope="col">Feature</th>
+                <th scope="col">Calls</th>
+                <th scope="col">Not answered</th>
+                <th scope="col">Cost</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {thisMonth.features.map((feature) => (
+                <tr key={feature.feature}>
+                  <th scope="row">{featureWords(feature.feature)}</th>
+                  <td>{feature.calls.toLocaleString("en-GB")}</td>
+                  <td>{unansweredCalls(feature).toLocaleString("en-GB")}</td>
+                  <td>{moneyWords(feature.costMicroUsd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {earlier.length > 0 && (

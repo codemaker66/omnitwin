@@ -1205,7 +1205,10 @@ export {
 export {
   AI_DRAFT_COMMITMENT_KINDS,
   AIDraftCommitmentKindSchema,
+  draftLeftAfterWithholding,
   findDraftCommitments,
+  MIN_WORDS_LEFT_AFTER_WITHHOLDING,
+  sentencesOf,
   withholdDraftCommitments,
   type AIDraftCommitment,
   type AIDraftCommitmentKind,
