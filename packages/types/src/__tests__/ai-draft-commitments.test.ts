@@ -420,6 +420,12 @@ describe("what the rule asks for stays, and what it forbids goes, however it is 
     ["Can the Saloon take 120? I'm afraid not. Do let us know.", "Do let us know."],
     ["Is the Grand Hall free on the 17th?\n\nGood news: it is.\n\nWith best wishes,", "With best wishes,"],
     ["The 17th is free. It is, and we would love to host you. Do let us know.", "Do let us know."],
+    ["Is the Saloon free on the 14th? Yes, absolutely. Do let us know.", "Do let us know."],
+    ["Is the Saloon free on the 14th? Happily, yes. Do let us know.", "Do let us know."],
+    ["You asked whether the 17th is free. It certainly is. Do let us know.", "Do let us know."],
+    ["You asked whether the 17th is free. Very much so. Do let us know.", "Do let us know."],
+    ["Is the Saloon free on the 14th? Sure. Do let us know.", "Do let us know."],
+    ["You asked whether the 17th is free. Sadly not. Do let us know.", "Do let us know."],
   ])("takes out the answer left after a claim: %s", (draft, left) => {
     expect(withholdDraftCommitments(draft).text).toBe(left);
   });
@@ -428,6 +434,9 @@ describe("what the rule asks for stays, and what it forbids goes, however it is 
     ["The 17th is free. It is a beautiful room with high ceilings.", "It is a beautiful room with high ceilings."],
     ["The Saloon seats 90. Yes, we'd love to show you round.", "Yes, we'd love to show you round."],
     ["Is parking easy? It is. Do let us know.", "Is parking easy? It is. Do let us know."],
+    ["The 17th is free. Not yet, but soon we will have photos.", "Not yet, but soon we will have photos."],
+    ["The 17th is free. So: what happens next is a visit.", "So: what happens next is a visit."],
+    ["The 17th is free. Not at all \u2014 it was a pleasure to meet you.", "Not at all \u2014 it was a pleasure to meet you."],
   ])("keeps what only looks like an answer, or answers no claim: %s", (draft, left) => {
     expect(withholdDraftCommitments(draft).text).toBe(left);
   });
@@ -467,7 +476,59 @@ describe("what the rule asks for stays, and what it forbids goes, however it is 
     expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain(kind);
   });
 
+  // Final verification: narrowing to the words that give a claim first lost
+  // these everyday forms of it, which the earlier patterns found.
   it.each([
+    ["price", "It's cheaper on a Friday."],
+    ["price", "Weekdays are usually cheaper."],
+    ["price", "The Saloon is also cheaper."],
+    ["price", "It's more expensive on a Saturday."],
+    ["price", "It's included in the price."],
+    ["price", "It's all included in the room hire."],
+    ["price", "Parking's complimentary."],
+    ["price", "There's complimentary parking for all guests."],
+    ["price", "Parking is usually complimentary."],
+    ["price", "We have a special rate for Fridays."],
+    ["price", "We have a reduced rate for charities."],
+    ["price", "A discount is available for registered charities."],
+    ["price", "We'd happily waive corkage."],
+    ["price", "We can waive room hire on Fridays."],
+    ["price", "Room hire's waived when you book dinner."],
+    ["availability", "Your wedding in the Saloon is confirmed."],
+    ["availability", "Your booking for the Saloon has been confirmed."],
+    ["availability", "Your event next Saturday is confirmed."],
+    ["availability", "The Grand Hall is taken up with a wedding that weekend."],
+    ["availability", "The diary is clear from 2pm on the 17th."],
+    ["availability", "The 17th is clear of other bookings."],
+    ["availability", "The 17th has a provisional hold."],
+    ["availability", "We can fit you in for your preferred date."],
+    ["capacity", "The Grand Hall can host weddings of up to 220 guests."],
+    ["capacity", "We can accommodate groups of up to 120 people."],
+    ["capacity", "There's plenty of room for your 150 guests."],
+    ["capacity", "150 would take the Saloon to maximum capacity."],
+    ["price", "Our special rate for charities makes the Saloon very good value."],
+    ["price", "Fridays come with a discount."],
+    ["price", "Midweek dates come in cheaper."],
+    ["price", "Tea and coffee, included in the day delegate rate, are served at 10am."],
+    ["capacity", "There's ample space for your wedding breakfast and a dance floor."],
+    ["capacity", "The Reception Room is too small for us."],
+    ["capacity", "The Saloon would be too small for dancing."],
+    ["availability", "Saturdays free for you to choose from: the 5th and the 12th."],
+  ] as const)("finds a %s claim in its everyday words: %s", (kind, sentence) => {
+    expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain(kind);
+  });
+
+  it("takes every kind out of a draft written in everyday words", () => {
+    const made = withholdDraftCommitments("Dear Elaine,\n\nThank you for your note. Your booking for the Saloon has been confirmed, and we can accommodate groups of up to 120 people. It's included in the price, and we'd happily waive corkage. The diary is clear from 2pm on the 17th.\n\nThe Events Team");
+    expect(made).toEqual({ text: "Dear Elaine,\n\nThank you for your note.\n\nThe Events Team", withheld: ["price", "availability", "capacity"] });
+  });
+
+  it.each([
+    "Asks what's included in the price.",
+    "Client asks whether a Friday would work for a smaller party.",
+    "Client is planning a party of up to 150 guests.",
+    "Is Thursday free for you to visit?",
+    "Let us know if Thursday would be free for you to visit.",
     "Asks about a discount for a Friday.",
     "The events team will let you know about discounts.",
     "Asks about complimentary parking.",
