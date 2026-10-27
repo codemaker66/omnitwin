@@ -3,7 +3,7 @@
 What happens after a client accepts a proposal: the venue asks for a deposit, which is paid on Stripe Checkout in
 **test mode only**, and prepares a contract, which the client signs with a simple electronic signature
 (Electronic Communications Act 2000 s.7). Built 27 October 2026 in PRs #269 (schema, gateway, webhook), #273
-(deposit flow) and the two after it (contract signature; acceptance tests), then corrected after an independent
+(deposit flow), #283 (contract signature) and #284 (acceptance tests), then corrected after an independent
 adversarial review the same day.
 
 ## Where it lives
