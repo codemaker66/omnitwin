@@ -26,7 +26,7 @@ import { canAccessResource } from "../utils/query.js";
 // Append-only by code contract: this file has no update or delete surface.
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
 
 const ReadQuery = z.object({
   after: z.coerce.number().int().nonnegative().default(0),

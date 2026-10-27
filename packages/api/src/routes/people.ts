@@ -64,11 +64,11 @@ import {
 // them now (409 MERGED).
 // ---------------------------------------------------------------------------
 
-const PersonParams = z.object({ personId: z.string().uuid() });
-const OrganisationParams = z.object({ organisationId: z.string().uuid() });
-const PointParams = PersonParams.extend({ pointId: z.string().uuid() });
-const PairParams = PersonParams.extend({ otherPersonId: z.string().uuid() });
-const MergeParams = z.object({ mergeId: z.string().uuid() });
+const PersonParams = z.object({ personId: z.uuid() });
+const OrganisationParams = z.object({ organisationId: z.uuid() });
+const PointParams = PersonParams.extend({ pointId: z.uuid() });
+const PairParams = PersonParams.extend({ otherPersonId: z.uuid() });
+const MergeParams = z.object({ mergeId: z.uuid() });
 
 const FORBIDDEN = { error: "Only the venue's commercial team can use the People Book", code: "FORBIDDEN" } as const;
 const INVALID_ID = { error: "Invalid ID", code: "VALIDATION_ERROR" } as const;

@@ -32,7 +32,7 @@ import { canManageCommercial } from "../utils/query.js";
 // sent) and recorded in the AI usage ledger with what it cost.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 export async function proposalMessageDraftRoutes(
   server: FastifyInstance,

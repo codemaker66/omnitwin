@@ -12,9 +12,9 @@ import { InventoryAssessmentResponseSchema, InventoryReservationHistoryResponseS
 const apiUrl = process.env["INVENTORY_LIVE_API_URL"] ?? "";
 const manifestPath = process.env["INVENTORY_RESERVATIONS_FIXTURE"];
 const evidenceDir = process.env["INVENTORY_RESERVATIONS_EVIDENCE"];
-const FixtureSchema = z.object({ venueId: z.string().uuid(), otherVenueId: z.string().uuid(), adminId: z.string().uuid(), secondAdminId: z.string().uuid(),
-  chairId: z.string().uuid(), window: z.object({ startsAt: z.string(), endsAt: z.string() }),
-  rooms: z.array(z.object({ eventId: z.string().uuid(), spaceId: z.string().uuid(), quantity: z.number() })) });
+const FixtureSchema = z.object({ venueId: z.uuid(), otherVenueId: z.uuid(), adminId: z.uuid(), secondAdminId: z.uuid(),
+  chairId: z.uuid(), window: z.object({ startsAt: z.string(), endsAt: z.string() }),
+  rooms: z.array(z.object({ eventId: z.uuid(), spaceId: z.uuid(), quantity: z.number() })) });
 const fixture = manifestPath === undefined ? null : FixtureSchema.parse(JSON.parse(readFileSync(manifestPath, "utf8")));
 test.skip(fixture === null || !/^http:\/\/127\.0\.0\.1:\d+$/u.test(apiUrl), "Requires the isolated reservations fixture/API on loopback");
 test.describe.configure({ mode: "serial" });

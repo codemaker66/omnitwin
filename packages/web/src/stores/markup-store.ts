@@ -48,16 +48,16 @@ const MIN_WIDTH = 0.012;
 const MAX_WIDTH = 0.08;
 
 const markupPointSchema = z.object({
-  x: z.number().finite(),
-  z: z.number().finite(),
+  x: z.number(),
+  z: z.number(),
 });
 
 const markupStrokeSchema = z.object({
   id: z.string().min(1),
   color: z.enum(MARKUP_COLOR_VALUES),
-  width: z.number().finite().min(MIN_WIDTH).max(MAX_WIDTH),
+  width: z.number().min(MIN_WIDTH).max(MAX_WIDTH),
   points: z.array(markupPointSchema).min(MIN_STROKE_POINTS).max(MAX_POINTS_PER_STROKE),
-  createdAtMs: z.number().finite().nonnegative(),
+  createdAtMs: z.number().nonnegative(),
 });
 
 const persistedMarkupSchema = z.object({

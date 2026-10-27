@@ -18,6 +18,7 @@
 
 import { describe, it, expect } from "vitest";
 import { CATALOGUE_ITEMS } from "../lib/catalogue.js";
+import { CRAFTED_PREVIEW_VERSION } from "../lib/crafted-furniture.js";
 
 async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
   const fs = await import("node:fs/promises");
@@ -50,7 +51,7 @@ describe("CatalogueItem meshUrl field (#28)", () => {
       // The supplied model stays catalogued; the picker shows the crafted render.
       expect(imported.find((item) => item.slug === slug)).toMatchObject({
         meshUrl: `/models/furniture/${slug}/v1/model.glb`,
-        thumbnailUrl: `/models/furniture/${slug}/crafted-v2/preview.webp`,
+        thumbnailUrl: `/models/furniture/${slug}/${CRAFTED_PREVIEW_VERSION}/preview.webp`,
         width: 1.22, depth: 0.76, height: 0.74,
         dimensionStatus: "approximate", tableShape: "rectangular",
       });

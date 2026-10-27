@@ -36,6 +36,8 @@ import {
 } from "../../lib/furniture-semantics.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 import { countLabel } from "../../lib/count-label.js";
+import { canLayOut } from "../../lib/auto-fill.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 
 interface CommandAction {
   readonly id: string;
@@ -93,6 +95,7 @@ function makeButton(action: CommandAction): React.ReactElement {
       className={`planner-command-deck__button planner-command-deck__button--${action.tone ?? "default"}`}
       onClick={action.onClick}
       disabled={action.disabled === true}
+      title={action.disabled === true ? action.ariaLabel : undefined}
     >
       {action.icon}
       <span>{action.label}</span>
@@ -229,7 +232,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
           {
             id: "undo-stroke",
             label: "Undo stroke",
-            ariaLabel: "Undo last laser stroke",
+            ariaLabel: "Undo the last line drawn",
             icon: <Ungroup size={16} aria-hidden="true" />,
             onClick: () => { useMarkupStore.getState().undoStroke(); },
             disabled: markupStrokeCount === 0 && !hasClearedDrawing,
@@ -237,7 +240,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
           {
             id: "clear-drawing",
             label: "Clear",
-            ariaLabel: "Clear laser diagram",
+            ariaLabel: "Clear the drawing",
             tone: "danger",
             icon: <Trash2 size={16} aria-hidden="true" />,
             onClick: () => { useMarkupStore.getState().clearStrokes(); },
@@ -371,8 +374,8 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
       },
       {
         id: "draw",
-        label: "Laser",
-        ariaLabel: "Start floor drawing",
+        label: "Draw",
+        ariaLabel: "Draw on the floor",
         icon: <PenLine size={16} aria-hidden="true" />,
         onClick: () => { dispatchPlannerToolbarCommand("open-markup"); },
       },
@@ -390,8 +393,10 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
       ...historyActions(history),
       {
         id: "showcase",
-        label: "Showcase",
-        ariaLabel: showcaseTour === null ? "Showcase is unavailable for this room view" : "Play a cinematic fly-through of the room",
+        label: "Present",
+        ariaLabel: showcaseTour === null
+          ? "Present is not ready for this view of the room yet"
+          : "Present: play the room as your guests will see it",
         icon: <Clapperboard size={16} aria-hidden="true" />,
         disabled: showcaseTour === null,
         onClick: () => {
@@ -400,18 +405,32 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
       },
     ];
 
-    // Offer a banquet fill only on a blank floor, so it can never overwrite
-    // work in progress. It asks "How many guests?" first, in the Guests lens,
-    // beside the venue's published figure, and says what it will place before
-    // it places it (redteam fix-first 15). Undo-safe; tune from there.
+    // Offer a banquet fill on a blank floor; with Fill over the layout (Q-10),
+    // on any floor as "Lay out", since it re-plans the rounds and keeps
+    // everything else (canLayOut). It asks "How many guests?" first, in the
+    // Guests lens, beside the venue's published figure, and says what it will
+    // place before it places it (redteam fix-first 15). Undo-safe.
+    const layOutOver = placedItems.length > 0 && canLayOut("dinner-rounds", false, plannerFeatureEnabled("fillKeepOuts"));
+    if (layOutOver) {
+      emptyActions.splice(1, 0, {
+        id: "lay-out",
+        label: "Lay out",
+        ariaLabel: "Lay out banquet rounds, keeping everything else on the floor",
+        icon: <LayoutGrid size={16} aria-hidden="true" />,
+        onClick: () => {
+          useAutoFillRequestStore.getState().request("dinner-rounds");
+          useCockpitStore.getState().setMode("guests");
+        },
+      });
+    }
     if (placedItems.length === 0) {
       const forGuests = plannedGuestCount !== null && plannedGuestCount > 0 ? plannedGuestCount : 0;
       emptyActions.splice(1, 0, {
         id: "auto-fill",
-        label: forGuests > 0 ? `Auto-fill ${forGuests.toLocaleString("en-GB")}` : "Auto-fill",
+        label: "Lay out",
         ariaLabel: forGuests > 0
-          ? `Auto-fill a banquet layout for ${countLabel(forGuests, "guest")}`
-          : "Auto-fill the room with banquet tables",
+          ? `Lay out tables and seats for ${countLabel(forGuests, "guest")}`
+          : "Lay out tables and seats for your guests",
         icon: <LayoutGrid size={16} aria-hidden="true" />,
         onClick: () => {
           useAutoFillRequestStore.getState().request("dinner-rounds");
@@ -425,8 +444,10 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
         title: "Arrange the room",
         detail: placedItems.length === 0
           ? (plannedGuestCount !== null && plannedGuestCount > 0
-            ? `Auto-fill for ${countLabel(plannedGuestCount, "guest")}, or add furniture.`
-            : "Auto-fill a banquet layout, or add furniture.")
+            ? `Lay out for ${countLabel(plannedGuestCount, "guest")}, or add furniture.`
+            : "Lay out for your guests, or add furniture.")
+          : layOutOver
+          ? "Lay out the rounds again, add furniture or draw setup notes."
           : "Add furniture or draw setup notes.",
         metric: placedItems.length === 0
           ? "No furniture placed"

@@ -58,13 +58,15 @@ afterEach(() => {
 });
 
 describe("ToolPill", () => {
-  it("renders the five hands with Select pressed", () => {
+  it("renders the four hands with Select pressed, and no Scale (B-07)", () => {
     render(<ToolPill />);
     const pill = screen.getByTestId("planner-tool-pill");
     expect(pill).toBeTruthy();
-    for (const id of ["select", "move", "rotate", "scale", "measure"]) {
+    for (const id of ["select", "move", "rotate", "measure"]) {
       expect(screen.getByTestId(`planner-tool-${id}`)).toBeTruthy();
     }
+    expect(screen.queryByTestId("planner-tool-scale")).toBeNull();
+    expect(pill.textContent).not.toMatch(/scale/iu);
     expect(screen.getByTestId("planner-tool-select").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("planner-tool-move").getAttribute("aria-pressed")).toBe("false");
   });
@@ -105,12 +107,14 @@ describe("ToolPill", () => {
     expect(screen.getByTestId("planner-tool-value").textContent).toBe("90°");
   });
 
-  it("Scale + a selected table → the chip reads its multiplier", () => {
+  it("hands back Select if anything still arms the retired Scale hand, and resizes nothing", () => {
     usePlacementStore.setState({ placedItems: [placeTable("t1", 0, 1.25)] });
     useSelectionStore.getState().select("t1");
     useToolStore.getState().setTool("scale");
     render(<ToolPill />);
-    expect(screen.getByTestId("planner-tool-value").textContent).toBe("×1.25");
+    expect(useToolStore.getState().activeTool).toBe("select");
+    expect(screen.queryByTestId("planner-tool-value")).toBeNull();
+    expect(usePlacementStore.getState().placedItems[0]?.scale).toBe(1.25);
   });
 
   it("Measure shows the last tape length", () => {
@@ -136,19 +140,5 @@ describe("ToolPill", () => {
 
     fireEvent.pointerUp(chip, { pointerId: 1, clientX: 190 });
     expect(useToolStore.getState().liveValue).toBeNull();
-  });
-
-  it("scrubbing in Scale writes clamped hundredth steps", () => {
-    usePlacementStore.setState({ placedItems: [placeTable("t1", 0, 1)] });
-    useSelectionStore.getState().select("t1");
-    useToolStore.getState().setTool("scale");
-    render(<ToolPill />);
-
-    const chip = screen.getByTestId("planner-tool-value");
-    fireEvent.pointerDown(chip, { pointerId: 1, clientX: 100 });
-    fireEvent.pointerMove(chip, { pointerId: 1, clientX: 140 }); // +40 px → +0.20
-    const item = usePlacementStore.getState().placedItems[0];
-    expect(item?.scale).toBeCloseTo(1.2, 6);
-    fireEvent.pointerUp(chip, { pointerId: 1, clientX: 140 });
   });
 });

@@ -288,7 +288,7 @@ async function replayMerge(tx: PeopleTx, venueId: string, mergedId: string, surv
   return resultOf(record, { survivorId, mergedId }, moves.data, snapshot.data.removed, true);
 }
 
-const IdRowsSchema = z.array(z.object({ id: z.string().uuid() }));
+const IdRowsSchema = z.array(z.object({ id: z.uuid() }));
 
 /** The ids a DELETE or UPDATE … RETURNING id wrote. */
 async function idsWritten(tx: PeopleTx, statement: SQL): Promise<string[]> {

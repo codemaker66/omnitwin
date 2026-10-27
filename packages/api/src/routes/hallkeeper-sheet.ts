@@ -38,7 +38,7 @@ import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 // opens, which tells anyone holding the paper only whether it is current.
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
 const DownloadQuery = z.object({ download: z.enum(["true", "false"]).default("false") });
 /** Which event the hallkeeper arrived from. A layout can be reused across
  *  events; without this the sheet has to guess which one's hour to print, and
@@ -46,7 +46,7 @@ const DownloadQuery = z.object({ download: z.enum(["true", "false"]).default("fa
  *  Optional: a sheet opened directly still renders, on the union of its links,
  *  and so does one carrying an eventId this configuration is not linked to —
  *  see `resolveTiming`, which is where that contract is enforced. */
-const SheetEventQuery = z.object({ eventId: z.string().uuid().optional() });
+const SheetEventQuery = z.object({ eventId: z.uuid().optional() });
 
 /** Ignore an unparseable eventId rather than 400 — the sheet is still useful
  *  without it, and a hallkeeper with a stale link should see the room, not an

@@ -52,10 +52,10 @@ import {
 // route that changes it. Broadening means a new thread.
 // ---------------------------------------------------------------------------
 
-const VenueParam = z.object({ venueId: z.string().uuid() });
-const IdParam = z.object({ id: z.string().uuid() });
-const EventParam = z.object({ eventId: z.string().uuid() });
-const IdempotencyKeyHeader = z.string().uuid();
+const VenueParam = z.object({ venueId: z.uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const EventParam = z.object({ eventId: z.uuid() });
+const IdempotencyKeyHeader = z.uuid();
 const AfterQuery = z.object({ after: z.coerce.number().int().min(0).default(0) }).strict();
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
