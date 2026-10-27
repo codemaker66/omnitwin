@@ -227,8 +227,8 @@ export const PrepareBookingTimeMoveSchema = z.object({
   bookingId: z.uuid(),
   startsAt: MoveInstant,
   endsAt: MoveInstant,
-  /** Why, in the asker's words: shown with the decision. */
-  reason: Words.optional(),
+  /** Why, in the asker's words: shown with the decision. A NUL is not text PostgreSQL keeps. */
+  reason: Words.refine((value) => !value.includes("\u0000"), { message: "must not contain a NUL character" }).optional(),
 }).strict().refine((value) => Date.parse(value.endsAt) > Date.parse(value.startsAt), {
   message: "endsAt must be after startsAt",
   path: ["endsAt"],

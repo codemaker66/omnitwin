@@ -77,6 +77,10 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  -- An update that changes nothing changes nothing (a bulk erasure meets rows already erased).
+  IF to_jsonb(NEW) = to_jsonb(OLD) THEN
+    RETURN NEW;
+  END IF;
   -- Erasing the reason, at any time, and nothing else with it.
   IF NEW.reason IS DISTINCT FROM OLD.reason THEN
     IF NEW.reason IS NOT NULL OR (to_jsonb(NEW) - 'reason') <> (to_jsonb(OLD) - 'reason') THEN

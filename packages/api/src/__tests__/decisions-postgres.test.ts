@@ -341,6 +341,10 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
       .rejects.toThrow(/only ever erased/u);
     await pool.query("UPDATE decisions SET reason = NULL WHERE id = $1", [decision.id]);
     expect(await readDecision(db, v.staff, decision.id)).toMatchObject({ ok: true, value: { decision: { reason: null, status: "declined" } } });
+    // Second review: a bulk erasure meets rows already erased, which change nothing and pass.
+    await prepared(v, id, at(16), at(20));
+    await pool.query("UPDATE decisions SET reason = NULL WHERE venue_id = $1", [v.venueId]);
+    await pool.query("UPDATE decisions SET reason = NULL WHERE venue_id = $1", [v.venueId]);
   });
 
   it("keeps a decision with more in its way than it can list readable, with the rest counted", async () => {
@@ -357,7 +361,10 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const decision = await prepared(v, id, at(0, 1), at(23, 31), v.hallkeeper);
     const consequences = move(decision)?.consequences ?? [];
     expect(consequences).toHaveLength(30);
-    expect(consequences.at(-1)).toMatchObject({ kind: "more", severity: "blocking" });
+    // The rest are counted, and what was not checked is still said.
+    expect(consequences.at(-2)).toMatchObject({ kind: "more", severity: "blocking" });
+    expect(consequences.at(-1)).toMatchObject({ kind: "not_checked" });
+    expect(decision.missingFacts).toContain("No turnaround rule covers every booking next to it, so some gaps are not checked.");
     expect(move(decision)?.executable).toBe(false);
     expect(await kept(decision.id)).not.toContain("Incorporation");
     // The venue's list and the decision still read, and it can be taken back.
@@ -403,8 +410,16 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const lunch = await ink(v, "Lunch", at(10), at(12, 10, 10));
     await ink(v, "Afternoon tea", at(13), at(15));
     const worse = await prepared(v, lunch, at(10, 10, 30), at(12, 10, 55));
-    expect(move(worse)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 5 minutes /u) })]);
+    expect(move(worse)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 5 minutes .*, down from 50; /u) })]);
     expect(worse.recommendedOptionId).toBe("keep");
+    // Second review: a move that makes a short turnaround longer is what the move is for, not a shortfall.
+    const better = await venue();
+    await turnaround(better, 60);
+    const late = await ink(better, "Lunch", at(10), at(12, 10, 55));
+    await ink(better, "Afternoon tea", at(13), at(15));
+    const longer = await prepared(better, late, at(10), at(12, 10, 10));
+    expect(move(longer)?.consequences).toEqual([]);
+    expect(longer).toMatchObject({ recommendedOptionId: "move", question: null });
 
     // A two-day conference, one event; day one moved half an hour after breakfast.
     const other = await venue();
@@ -417,12 +432,12 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     expect(move(sibling)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 30 minutes /u) })]);
   });
 
-  it("blocks a move into a room closure, and a hold the Diary would not move", async () => {
+  it("warns of a room closure, which the Diary allows and the approver decides, and blocks a hold the Diary would not move", async () => {
     const v = await venue();
     await entry(v, "internal_block", "Closed: ceiling repairs", at(15), at(17));
     const id = await ink(v, "Crawford wedding", at(10), at(12));
     const closed = await prepared(v, id, at(15), at(16));
-    expect(move(closed)).toMatchObject({ executable: false, consequences: [expect.objectContaining({ kind: "room_closed", severity: "blocking" })] });
+    expect(move(closed)).toMatchObject({ executable: true, recommended: false, consequences: [expect.objectContaining({ kind: "room_closed", severity: "warning" })] });
     expect(await kept(closed.id)).not.toContain("ceiling");
 
     // A hold without its decision date, owner and next action.
@@ -436,8 +451,13 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const v = await venue();
     const id = await ink(v, "Crawford wedding", at(14), at(18));
     const decision = await prepared(v, id, at(15), at(19));
-    const again = await prepareBookingTimeMove(db, v.sales, { bookingId: id, startsAt: at(15).toISOString(), endsAt: at(19).toISOString() }, NOW);
+    // The same person, the same reason, the Diary as it was: the one standing.
+    const again = await prepareBookingTimeMove(db, v.staff, { bookingId: id, startsAt: at(15).toISOString(), endsAt: at(19).toISOString(), reason: "The client asked for a later start" }, NOW);
     expect(again).toMatchObject({ ok: true, status: 200, replay: true, value: { id: decision.id } });
+    // Someone else asking is their own request, with their own reason.
+    const theirs = await prepareBookingTimeMove(db, v.sales, { bookingId: id, startsAt: at(15).toISOString(), endsAt: at(19).toISOString(), reason: "The band asked" }, NOW);
+    expect(theirs).toMatchObject({ ok: true, status: 201, value: { reason: "The band asked", preparedBy: v.sales.id } });
+    expect(theirs.ok && theirs.value.id).not.toBe(decision.id);
     const other = await prepared(v, id, at(16), at(20));
     // The answer names the decision shown: the other decision's digest is refused.
     expect(await decideDecision(db, v.admin, other.id, choose(decision, "move"), NOW)).toMatchObject({ ok: false, status: 409, code: "DECISION_MISMATCH" });
@@ -445,6 +465,61 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     expect((await updateBookingCore(db, v.staff, id, { notes: "Florist arrives at noon" })).ok).toBe(true);
     expect(await decideDecision(db, v.admin, decision.id, choose(decision, "keep"), NOW)).toMatchObject({ ok: true, value: { status: "declined" } });
     expect(await history(v, decision.id)).toEqual(["prepared", "declined"]);
+  });
+
+  it("prepares the same move afresh once the Diary has changed, rather than answering with the old one", async () => {
+    const v = await venue();
+    const id = await ink(v, "Crawford wedding", at(10), at(12));
+    const first = await prepared(v, id, at(15), at(17));
+    expect(move(first)?.consequences).toEqual([]);
+    await ink(v, "Spring gala", at(16), at(20));
+    const again = await prepared(v, id, at(15), at(17));
+    expect(again.id).not.toBe(first.id);
+    expect(move(again)).toMatchObject({ executable: false, consequences: [expect.objectContaining({ kind: "ink_double_book" })] });
+  });
+
+  it("keeps a revision the asker's, says nothing is left when the Diary already moved it, and answers a stale decision's retry as the first time", async () => {
+    const v = await venue();
+    const id = await ink(v, "Crawford wedding", at(14), at(18));
+    const asked = await prepared(v, id, at(15), at(19), v.sales);
+    expect((await updateBookingCore(db, v.staff, id, { notes: "Florist arrives at noon" })).ok).toBe(true);
+    const stale = await decideDecision(db, v.admin, asked.id, choose(asked, "move"), NOW);
+    if (stale.ok) throw new Error("expected stale");
+    const revised = DecisionSchema.parse((stale.details as { revised: unknown }).revised);
+    // The revision is still the asker's: theirs to withdraw, in their words, and the approver is in its history.
+    expect(revised).toMatchObject({ preparedBy: v.sales.id, reason: asked.reason });
+    const read = await readDecision(db, v.sales, revised.id);
+    expect(read.ok && read.value.history[0]?.detail).toMatchObject({ revisedBy: v.admin.id, supersedes: asked.id });
+    // Deciding the stale one again is answered as the first time, with the revision as it stands.
+    const retry = await decideDecision(db, v.admin, asked.id, choose(asked, "move"), NOW);
+    expect(retry).toMatchObject({ ok: false, status: 409, code: "DECISION_STALE", replay: true, details: { revised: { id: revised.id } } });
+    // Someone moves it in the Diary to exactly the asked times: nothing is left to decide.
+    expect((await updateBookingCore(db, v.staff, id, { startsAt: at(15).toISOString(), endsAt: at(19).toISOString() })).ok).toBe(true);
+    const done = await decideDecision(db, v.admin, revised.id, choose(revised, "move"), NOW);
+    expect(done).toMatchObject({ ok: false, status: 409, code: "NO_CHANGE" });
+    expect(await commands(id)).toBe(0);
+    expect(await withdrawDecision(db, v.sales, revised.id, NOW)).toMatchObject({ ok: false, code: "DECISION_CLOSED" });
+  });
+
+  it("carries a phase of no length a day before, and is not made stale by bookings the move does not meet", async () => {
+    const v = await venue();
+    const wedding = await entry(v, "ink", "Crawford wedding", at(14), at(18));
+    if (wedding.eventId === null) throw new Error("the wedding has no event");
+    // A delivery noted at a moment, exactly a day before.
+    await phase(wedding.eventId, v.spaceId, at(14, 9), 0);
+    const decision = await prepared(v, wedding.id, at(15), at(19));
+    expect(decision.assumptions).toContain("1 of its event's timed phases move with it, as the Diary moves them.");
+    // No turnaround rule: a pair of bookings elsewhere in the window changes nothing about the move.
+    await ink(v, "Breakfast", at(7, 11), at(8, 11));
+    await ink(v, "Brunch", at(10, 11), at(11, 11));
+    expect(await decideDecision(db, v.staff, decision.id, choose(decision, "move"), NOW)).toMatchObject({ ok: true, value: { status: "executed" } });
+  });
+
+  it("prepares a move for a booking the Diary holds in the year 9999", async () => {
+    const v = await venue();
+    const far = await ink(v, "Far future", new Date("9999-12-31T10:00:00.000Z"), new Date("9999-12-31T12:00:00.000Z"));
+    const decision = await prepared(v, far, at(15), at(19));
+    expect(move(decision)?.executable).toBe(true);
   });
 
   it("reads the booking's title from the Diary when a decision is read", async () => {
@@ -507,6 +582,7 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
       expect((await ask({ startsAt: "9999-12-30T10:00:00.000Z", endsAt: "9999-12-30T12:00:00.000Z" })).statusCode).toBe(400);
       expect((await ask({ startsAt: "0001-01-02T10:00:00.000Z", endsAt: "0001-01-02T12:00:00.000Z" })).statusCode).toBe(400);
       expect((await ask({ reason: "a".repeat(501) })).statusCode).toBe(400);
+      expect((await ask({ reason: "A reason with a \u0000 in it" })).statusCode).toBe(400);
       // A character outside the basic plane is two code units, and one character: the reason keeps it whole.
       const whole = await ask({ reason: `${"a".repeat(499)}\u{1F37E}` });
       expect(whole.statusCode).toBe(201);

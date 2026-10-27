@@ -24,8 +24,10 @@ language model never prepares, approves or executes one.
 ## The first decision: moving a booking (M2's first)
 
 `POST /decisions/booking-time-moves { bookingId, startsAt, endsAt, reason? }`
-prepares from what the Diary holds; the same move asked for again while one
-stands is answered with it. Times are between the years 2000 and 2199.
+prepares from what the Diary holds. The same person asking for the same move
+again, for the same reason, while the Diary is as it was, is answered with the
+decision that stands; anyone else's request is their own. Times are between
+the years 2000 and 2199.
 
 - **The phases that move with it** are the ones the Diary's move carries: its
   event's phases in the booking's room from a day before the booking until it
@@ -35,16 +37,22 @@ stands is answered with it. Times are between the years 2000 and 2199.
   since makes it stale.
 - **Its consequences** come from the Diary's own conflict engine
   (`services/calendar-conflicts.ts`), run on the room's bookings and phases a
-  day either side, with and without the move. A consequence is any finding
-  after the move that was not there, word for word, before: a confirmed
-  booking in the way (blocking), a hold it would overlap, less turnaround
-  either side, a gap that gets shorter, the same event's other day (warnings),
-  or a pair no turnaround rule covers (not checked). Two more come from the
-  Diary's rules the engine does not weigh: a room closure at the new time,
-  and a live hold the Diary's update would refuse to move without its
-  decision date, owner and next action (both blocking).
+  day either side, with and without the move. A consequence is a finding
+  after the move between a pair the engine did not find before, or a
+  turnaround that gets shorter (with its figure before): a confirmed booking
+  in the way (blocking), a hold it would overlap, too little turnaround either
+  side, the same event's other day (warnings). A turnaround the move makes
+  longer is not one: that is what the move is for. Whether every gap is
+  covered by a turnaround rule is said too ("not fully checked"), without a
+  count, so an unrelated booking in the window does not make the decision
+  stale.
+- Two more come from outside the engine: a live hold the Diary's update would
+  refuse to move without its decision date, owner and next action (blocking,
+  by the Diary's own check), and a room closure at the new time (a warning:
+  the engine does not weigh a closure, and the Diary lets a booking move into
+  one, so the approver decides).
 - At most 30 are listed, blocking first; the rest are counted ("And 12 more
-  like those above").
+  like those above"), and the "not fully checked" note is never counted away.
 - **Move** is executable unless something blocks it, and recommended only with
   no warnings. Its mutation is the Diary's `booking.update`, with a command id
   minted when it was prepared.
@@ -78,13 +86,17 @@ known to work at its venue):
 
 1. A decided decision answers the same choice as it did the first time, a
    refusal included (`Idempotency-Replay: true`), and refuses another (409
-   `DECISION_CLOSED`).
+   `DECISION_CLOSED`). A superseded one answers with the decision that
+   replaced it, as it stands.
 2. "Keep" declines, with nothing to check.
 3. The booking is read again, locked, and the move's consequences worked out
    again. If the booking, the phases moving with it or the consequences
    changed, or the decision expired (a day, or the booking's start if
    sooner), **nothing executes**: the decision is superseded by a revised one,
-   which is returned (409 `DECISION_STALE`, `details.revised`).
+   which is returned (409 `DECISION_STALE`, `details.revised`). The revision
+   is still the asker's (theirs to withdraw, in their words); the approver who
+   found it stale is in its history. If the booking is already at the asked
+   times, nothing is left to decide (409 `NO_CHANGE`).
 4. The move runs as `updateBookingCore` with the prepared booking state as its
    precondition, and is recorded in the `diary_commands` ledger under the
    decision's command id. If the venue's own rules refuse it, nothing changes
@@ -95,9 +107,10 @@ known to work at its venue):
    history.
 
 An executed move is announced to the live Diary after commit (`diary.changed`),
-as its own writes are. Not covered: a hold pencilled into the new time in the
-instant between the last read and the move is not seen; a confirmed booking
-there is refused by the database's own no-overlap rule.
+as its own writes are. Not covered: what another person writes to the room in
+the instant between the last read and the move is not seen (a hold pencilled
+into the new time, a booking next to it, a phase added to the event); a
+confirmed booking there is refused by the database's own no-overlap rule.
 
 ## The decision history, and what is kept
 
@@ -117,6 +130,12 @@ booking's title is read from the Diary when the decision is read
 text that can name someone, is in its own column, which can be erased (set to
 null) at any time and nothing else with it. Preparing is limited to 30 a
 minute a person.
+
+**Deploy order.** Drizzle applies only migrations later, by their journal
+time, than the last one applied. `0105_decisions` is later than the release
+queue's 0103 (#258) and 0104 (#262): deployed before them, it would make
+theirs be skipped without an error. Merge it after both, or give it a later
+journal time at its merge slot.
 
 ## The rest of goal 09, as of 27 October 2026
 
