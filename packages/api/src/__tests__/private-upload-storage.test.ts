@@ -25,7 +25,7 @@ import type { JwtUser } from "../middleware/auth.js";
 // ---------------------------------------------------------------------------
 
 interface RecordedCommand {
-  readonly kind: "put" | "get";
+  readonly kind: "put" | "get" | "delete";
   readonly input: { readonly Bucket: string; readonly Key: string };
 }
 
@@ -42,6 +42,8 @@ interface RecordedSigning {
 
 const s3 = vi.hoisted(() => ({
   commands: [] as RecordedCommand[],
+  /** Commands sent, with the access key of the client that sent them. */
+  sent: [] as { readonly accessKeyId: string; readonly input: RecordedCommand["input"] }[],
   clients: [] as FakeClientConfig[],
   signings: [] as RecordedSigning[],
 }));
@@ -52,6 +54,10 @@ vi.mock("@aws-sdk/client-s3", () => {
     constructor(config: FakeClientConfig) {
       this.config = config;
       s3.clients.push(config);
+    }
+    send(command: { readonly input: RecordedCommand["input"] }): Promise<Record<string, never>> {
+      s3.sent.push({ accessKeyId: this.config.credentials.accessKeyId, input: command.input });
+      return Promise.resolve({});
     }
   }
   class PutObjectCommand {
@@ -68,7 +74,14 @@ vi.mock("@aws-sdk/client-s3", () => {
       s3.commands.push({ kind: "get", input });
     }
   }
-  return { S3Client, PutObjectCommand, GetObjectCommand };
+  class DeleteObjectCommand {
+    readonly input: RecordedCommand["input"];
+    constructor(input: RecordedCommand["input"]) {
+      this.input = input;
+      s3.commands.push({ kind: "delete", input });
+    }
+  }
+  return { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand };
 });
 
 // A deterministic stand-in for SigV4 that records which endpoint, bucket,
@@ -92,6 +105,7 @@ vi.mock("@aws-sdk/s3-request-presigner", () => ({
 const {
   UPLOAD_CONTEXTS,
   buildScopedFileKey,
+  deleteUploadObject,
   resolveUploadScope,
   uploadRoutes,
   uploadStorageFor,
@@ -199,6 +213,7 @@ beforeEach(() => {
   vi.stubEnv("NODE_ENV", "test");
   s3.commands.length = 0;
   s3.signings.length = 0;
+  s3.sent.length = 0;
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -260,6 +275,24 @@ const PRIVATE_PRESIGN = {
   context: "venue",
   contextId: VENUE_ID,
 } as const;
+
+describe("deleting an upload's object (the orphan cleanup)", () => {
+  const privateKey = `private/venues/${VENUE_ID}/loadouts/${LOADOUT_ID}/abandoned.jpg`;
+
+  it("deletes a private key from the private bucket, with the private token", async () => {
+    expect(await deleteUploadObject(BOTH_BUCKETS, privateKey, "private")).toBe(true);
+    expect(s3.commands.filter((command) => command.kind === "delete").map((command) => command.input))
+      .toEqual([{ Bucket: PRIVATE_BUCKET, Key: privateKey }]);
+    expect(s3.sent).toEqual([{ accessKeyId: PRIVATE_R2.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID, input: { Bucket: PRIVATE_BUCKET, Key: privateKey } }]);
+  });
+
+  it("deletes nothing, and says so, without the private bucket or when the key's prefix disagrees", async () => {
+    expect(await deleteUploadObject(PUBLIC_ONLY, privateKey, "private")).toBe(false);
+    expect(await deleteUploadObject(BOTH_BUCKETS, privateKey, "public")).toBe(false);
+    expect(await deleteUploadObject(BOTH_BUCKETS, `public/marketing/${VENUE_ID}/x.jpg`, "private")).toBe(false);
+    expect(s3.sent).toEqual([]);
+  });
+});
 
 describe("POST /uploads/presigned", () => {
   it("signs a private upload for the private bucket with the private token", async () => {

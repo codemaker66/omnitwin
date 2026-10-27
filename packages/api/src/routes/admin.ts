@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
-import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/cleanup.js";
+import { cleanupPreviewConfigurations, cleanupOrphanedFiles, type UploadObjectStore } from "../services/cleanup.js";
 import {
   DEFAULT_SNAPSHOT_RETENTION,
   pruneArchivedConfigSnapshots,
@@ -79,9 +79,15 @@ export class SentryVerificationError extends Error {
 
 export async function adminRoutes(
   server: FastifyInstance,
-  opts: { db: Database; pageFetcher?: PageFetcher },
+  opts: {
+    db: Database;
+    pageFetcher?: PageFetcher;
+    /** Where orphaned uploads' objects are deleted; without it, orphans wait. */
+    uploadObjects?: UploadObjectStore;
+  },
 ): Promise<void> {
   const { db } = opts;
+  const uploadObjects: UploadObjectStore = opts.uploadObjects ?? { remove: () => Promise.resolve(false) };
   const pageFetcher = opts.pageFetcher ?? createHttpsPageFetcher();
 
   // POST /admin/cleanup — trigger manual cleanup of stale preview configs,
@@ -91,13 +97,15 @@ export async function adminRoutes(
     preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => {
     const deletedConfigs = await cleanupPreviewConfigurations(db);
-    const deletedFiles = await cleanupOrphanedFiles(db);
+    const orphanedFiles = await cleanupOrphanedFiles(db, uploadObjects);
+    const deletedFiles = orphanedFiles.deleted;
     const dietaryNotes = await removeLapsedDietaryNotes(db);
     const rememberedNotes = await removeUnusedRememberedNotes(db);
     return {
       data: {
         deletedConfigs,
         deletedFiles,
+        keptOrphanedFiles: orphanedFiles.kept,
         dietaryNotes,
         rememberedNotes,
         message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `

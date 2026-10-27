@@ -8,6 +8,7 @@ import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.
 import { canManageVenue, canWritePricing } from "../utils/query.js";
 import { competitorVenueOf } from "../services/competitor-watch-data.js";
 import type { Env } from "../env.js";
+import type { UploadObjectStore } from "../services/cleanup.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -132,6 +133,11 @@ export function publicUrlForVisibility(env: Env, key: string, visibility: Upload
 // uploads are refused rather than written where r2.dev would publish them.
 // ---------------------------------------------------------------------------
 
+/** The settings the upload buckets are reached with. */
+export type UploadStorageEnv = Pick<Env,
+  | "R2_ACCOUNT_ID" | "R2_ACCESS_KEY_ID" | "R2_SECRET_ACCESS_KEY" | "R2_BUCKET_NAME"
+  | "PRIVATE_UPLOADS_R2_ACCOUNT_ID" | "PRIVATE_UPLOADS_R2_ACCESS_KEY_ID" | "PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY" | "PRIVATE_UPLOADS_R2_BUCKET">;
+
 export interface UploadStorage {
   readonly accountId: string;
   readonly accessKeyId: string;
@@ -147,7 +153,7 @@ const VISIBILITY_KEY_PREFIX: Readonly<Record<UploadVisibility, string>> = {
 /** The bucket a key of this visibility is written to and read from, or null
  *  when that storage is not configured or the key's prefix disagrees with
  *  the visibility. */
-export function uploadStorageFor(env: Env, visibility: UploadVisibility, key: string): UploadStorage | null {
+export function uploadStorageFor(env: UploadStorageEnv, visibility: UploadVisibility, key: string): UploadStorage | null {
   if (!key.startsWith(VISIBILITY_KEY_PREFIX[visibility])) return null;
 
   if (visibility === "private") {
@@ -261,6 +267,27 @@ export async function readUrlForUpload(
   if (storage === null) return null;
   if (visibility === "public") return publicUrlForVisibility(env, fileKey, "public");
   return createSignedReadUrl(storage, fileKey);
+}
+
+/**
+ * Deletes a stored upload's object from the bucket its visibility routes to.
+ * True once the object is gone (S3 and R2 answer success for a key that is
+ * already absent, so a retry is safe); false when that storage is not
+ * configured or the key's prefix disagrees with its visibility. A provider
+ * error rejects.
+ */
+export async function deleteUploadObject(env: UploadStorageEnv, fileKey: string, visibility: UploadVisibility): Promise<boolean> {
+  const storage = uploadStorageFor(env, visibility, fileKey);
+  if (storage === null) return false;
+  const s3 = await getS3Client(storage);
+  const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+  await s3.send(new DeleteObjectCommand({ Bucket: storage.bucket, Key: fileKey }));
+  return true;
+}
+
+/** The orphan cleanup's view of the buckets (services/cleanup.ts). */
+export function uploadObjectStore(env: UploadStorageEnv): UploadObjectStore {
+  return { remove: (fileKey, visibility) => deleteUploadObject(env, fileKey, visibility) };
 }
 
 // ---------------------------------------------------------------------------

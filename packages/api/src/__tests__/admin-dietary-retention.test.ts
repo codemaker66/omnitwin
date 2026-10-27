@@ -26,7 +26,7 @@ vi.mock("../services/dietary-memory.js", async (importOriginal) => ({
 }));
 vi.mock("../services/cleanup.js", () => ({
   cleanupPreviewConfigurations: () => Promise.resolve(0),
-  cleanupOrphanedFiles: () => Promise.resolve(0),
+  cleanupOrphanedFiles: () => Promise.resolve({ deleted: 0, kept: 0 }),
 }));
 
 const { buildServer } = await import("../index.js");

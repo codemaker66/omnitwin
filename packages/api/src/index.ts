@@ -23,7 +23,7 @@ import { configurationRoutes } from "./routes/configurations.js";
 import { placedObjectRoutes } from "./routes/placed-objects.js";
 import { actionLogRoutes } from "./routes/action-log.js";
 import { enquiryRoutes } from "./routes/enquiries.js";
-import { uploadRoutes } from "./routes/uploads.js";
+import { uploadObjectStore, uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { pricingDeskRoutes } from "./routes/pricing-desk.js";
 import { competitorWatchRoutes } from "./routes/competitor-watch.js";
@@ -501,7 +501,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(clientRoutes, { db, prefix: "/clients" });
   // A client's remembered allergy notes, for their own account only.
   await server.register(dietaryMemoryRoutes, { db, prefix: "/account/dietary-notes" });
-  await server.register(adminRoutes, { db, prefix: "/admin" });
+  await server.register(adminRoutes, { db, uploadObjects: uploadObjectStore(env), prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(adminReconstructionFoundryRoutes, {
