@@ -248,7 +248,16 @@ describe("CockpitSceneOverlays", () => {
     useCockpitStore.getState().setMode("flow");
     render(<CockpitSceneOverlays />);
     expect(screen.getAllByRole("button", { name: /Distinct warning/ })).toHaveLength(12);
-    expect(screen.getByText("13 planning annotations · scroll for all")).toBeTruthy();
+    expect(screen.getByText("13 planning notes · scroll for all")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Planning notes in the room" })).toBeTruthy();
+  });
+
+  it("counts one planning note as one, in the planner's words", () => {
+    // The Lighting lens shows its one placeholder note alone.
+    useCockpitStore.getState().setMode("lighting");
+    const { container } = render(<CockpitSceneOverlays />);
+    expect(screen.getByText("1 planning note · scroll for all")).toBeTruthy();
+    expect(container.textContent).not.toMatch(/annotation/iu);
   });
 
   it("defers to a portalled modal and restores the selected details after it closes", async () => {
