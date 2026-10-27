@@ -97,9 +97,11 @@ function gates(currentStatus: string, availableTransitions: string[], internalDe
 const TO_START = gates("submitted", ["under_review", "withdrawn"]);
 const IN_REVIEW = gates("under_review", ["approved", "rejected", "changes_requested", "withdrawn"]);
 
+const SNAPSHOT_ID = "00000000-0000-4000-8000-000000007005";
+
 function snapshotEnvelope(): SnapshotEnvelope {
   return {
-    id: "00000000-0000-4000-8000-000000007005",
+    id: SNAPSHOT_ID,
     configurationId: CONFIG_ID,
     version: 2,
     payload: {
@@ -476,7 +478,7 @@ describe("decisions say who hears, and what happened", () => {
     expect(mocks.approveLayout).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Approve and email" }));
-    await waitFor(() => { expect(mocks.approveLayout).toHaveBeenCalledWith(CONFIG_ID); });
+    await waitFor(() => { expect(mocks.approveLayout).toHaveBeenCalledWith(CONFIG_ID, undefined, undefined, SNAPSHOT_ID); });
     const recorded = await screen.findByTestId("review-recorded");
     expect(recorded.textContent).toBe("Reception Room review pack");
     expect(screen.getByText("Approved. The planner and your hallkeepers are being emailed.")).toBeDefined();
@@ -519,7 +521,7 @@ describe("decisions say who hears, and what happened", () => {
     expect(send).toHaveProperty("disabled", false);
     fireEvent.click(send);
 
-    await waitFor(() => { expect(mocks.requestChanges).toHaveBeenCalledWith(CONFIG_ID, "Widen the aisle by the stage."); });
+    await waitFor(() => { expect(mocks.requestChanges).toHaveBeenCalledWith(CONFIG_ID, "Widen the aisle by the stage.", SNAPSHOT_ID); });
     expect(await screen.findByText("Back with Fiona Grant for changes. It returns to To start when it is submitted again.")).toBeDefined();
     expect(row("Reception Room review pack").getAttribute("aria-label")).toContain("With planner");
     expect(screen.getByRole("button", { name: "With planner, 1" })).toBeDefined();
@@ -541,7 +543,7 @@ describe("decisions say who hears, and what happened", () => {
     fireEvent.click(choice);
     expect(screen.getByTestId("approve-consequence").textContent).toBe("Approving records the decision. Nobody is emailed.");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    await waitFor(() => { expect(mocks.approveLayout).toHaveBeenCalledWith(CONFIG_ID, undefined, false); });
+    await waitFor(() => { expect(mocks.approveLayout).toHaveBeenCalledWith(CONFIG_ID, undefined, false, SNAPSHOT_ID); });
     expect(await screen.findByText("Approved. Nobody was emailed.")).toBeDefined();
   });
 
@@ -637,6 +639,33 @@ describe("decisions say who hears, and what happened", () => {
     await act(async () => { reread.resolve(TO_START); await reread.promise; });
     await waitFor(() => { expect(screen.getByRole("button", { name: "Start review" })).toHaveProperty("disabled", false); });
     expect(screen.getByRole("button", { name: "Start review" })).toBe(start);
+  });
+
+  it("names the version it shows with a decision, and reads the plan again when a newer one was sent", async () => {
+    // Another reviewer sent it back, and its planner sent version 3, while version 2 was open here.
+    const newer: SnapshotEnvelope = { ...snapshotEnvelope(), id: "00000000-0000-4000-8000-000000007006", version: 3 };
+    mocks.listPendingReviews.mockResolvedValue([pendingReview({ reviewStatus: "under_review" })]);
+    mocks.getAvailableTransitions.mockResolvedValue(IN_REVIEW);
+    mocks.getLatestSnapshot.mockResolvedValueOnce(snapshotEnvelope()).mockResolvedValue(newer);
+    mocks.rejectLayout.mockRejectedValueOnce(new ApiError(409, "A newer version was submitted", "SNAPSHOT_CONFLICT"))
+      .mockResolvedValue("rejected");
+    render(<ReviewsView />);
+    await openReview();
+    expect(await screen.findByText(/^Version 2/u)).toBeDefined();
+    fireEvent.click(await screen.findByRole("button", { name: "Reject…" }));
+    const confirm = screen.getByTestId("review-confirm-rejected");
+    fireEvent.change(within(confirm).getByLabelText("Why it cannot be approved"), { target: { value: "Not for this room." } });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Reject" }));
+
+    expect((await screen.findByTestId("review-moved-on")).textContent).toContain("your decision was not recorded");
+    expect(mocks.rejectLayout).toHaveBeenCalledWith(CONFIG_ID, "Not for this room.", SNAPSHOT_ID);
+    // The plan on screen is the version the planner sent since; a decision now names it.
+    expect(await screen.findByText(/^Version 3/u)).toBeDefined();
+    fireEvent.click(await screen.findByRole("button", { name: "Reject…" }));
+    const again = screen.getByTestId("review-confirm-rejected");
+    fireEvent.change(within(again).getByLabelText("Why it cannot be approved"), { target: { value: "Still not for this room." } });
+    fireEvent.click(within(again).getByRole("button", { name: "Reject" }));
+    await waitFor(() => { expect(mocks.rejectLayout).toHaveBeenLastCalledWith(CONFIG_ID, "Still not for this room.", newer.id); });
   });
 
   it("reads the queue again quietly when the tab is looked at, and says where an open review went", async () => {

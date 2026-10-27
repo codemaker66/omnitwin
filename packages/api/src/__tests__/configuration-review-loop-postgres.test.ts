@@ -17,8 +17,11 @@ import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
 //   - a layout the venue sent back (changes requested) or declined
 //     (rejected) is edited and submitted again, and approved;
 //   - a withdrawn layout is edited and submitted again;
-//   - a review move judged from a state another move has since left writes
-//     nothing and sends nothing.
+//   - a review move judged from a state another move has since left, or a
+//     decision judged on a version since replaced, writes nothing and sends
+//     nothing;
+//   - the venue's every answer reaches the planner, and the sheet carries
+//     the heading the venue approved.
 // Never reads DATABASE_URL or an env file.
 // ---------------------------------------------------------------------------
 
@@ -140,10 +143,15 @@ describe.skipIf(target === undefined)("the layout review loop on migrated Postgr
     return { config, snapshots, history: history.map(row => `${row.fromStatus}→${row.toStatus}`), objects };
   }
 
+  /** The idempotency keys of the emails of one kind sent so far. */
+  function emailKeys(kind: string): string[] {
+    return email.mock.calls.flatMap(([, options]) =>
+      options.idempotencyKey?.startsWith(`${kind}:`) === true ? [options.idempotencyKey] : []);
+  }
+
   /** The idempotency keys of the "submitted" emails sent to the venue so far. */
   function submittedEmailKeys(): string[] {
-    return email.mock.calls.flatMap(([, options]) =>
-      options.idempotencyKey?.startsWith("config-submitted:") === true ? [options.idempotencyKey] : []);
+    return emailKeys("config-submitted");
   }
 
   async function approvedSheetVersion(f: Fixture): Promise<number | null> {
@@ -225,6 +233,56 @@ describe.skipIf(target === undefined)("the layout review loop on migrated Postgr
       .toMatchObject({ created: false, reviewStatus: "draft", notificationPolicy: "not_sent_no_change" });
     expect((await state(f)).history).toEqual(["draft→submitted"]);
     expect(email).not.toHaveBeenCalled();
+  });
+
+  it("a layout renamed and set for more guests while it was sent back is a new version, and the sheet says so", async () => {
+    const f = await fixture();
+    await expectReview(f, "planner", "submit");
+    await expectReview(f, "staff", "start-review");
+    await expectReview(f, "staff", "request-changes", { note: "For 140 guests, and call it the Gala" });
+    // Nothing in the room moves: only the heading the sheet freezes.
+    const edited = await server.inject({ method: "PATCH", url: `/configurations/${f.configId}`,
+      headers: headers(f, "planner"), payload: { name: "TEST ONLY the Gala", guestCount: 140 } });
+    expect(edited.statusCode, edited.body).toBe(200);
+
+    const resubmitted = await expectReview(f, "planner", "submit");
+    expect(resubmitted.json<{ data: { created: boolean; snapshot: { version: number } } }>().data)
+      .toMatchObject({ created: true, snapshot: { version: 2 } });
+    await expectReview(f, "staff", "start-review");
+    await expectReview(f, "staff", "approve");
+    const sheet = await assembleSheetDataV2(db, f.configId, "http://127.0.0.1");
+    expect(sheet?.payload.approval?.version).toBe(2);
+    expect(sheet?.payload.config).toMatchObject({ name: "TEST ONLY the Gala", guestCount: 140 });
+  });
+
+  it("a draft renamed since its latest version goes to the venue as a new one", async () => {
+    const f = await fixture();
+    await expectReview(f, "planner", "submit");
+    await db.update(schema.configurations).set({ reviewStatus: "draft" }).where(eq(schema.configurations.id, f.configId));
+    const renamed = await server.inject({ method: "PATCH", url: `/configurations/${f.configId}`,
+      headers: headers(f, "planner"), payload: { name: "TEST ONLY review loop, renamed" } });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    const again = await expectReview(f, "planner", "submit");
+    expect(again.json<{ data: { created: boolean; reviewStatus: string; snapshot: { version: number } } }>().data)
+      .toMatchObject({ created: true, reviewStatus: "submitted", snapshot: { version: 2 } });
+  });
+
+  it.each([
+    ["request-changes", "config-changes-requested"],
+    ["reject", "config-rejected"],
+  ] as const)("the venue's second %s on a version sent back unchanged is emailed too", async (action, kind) => {
+    const f = await fixture();
+    await expectReview(f, "planner", "submit");
+    await expectReview(f, "staff", "start-review");
+    await expectReview(f, "staff", action, { note: "First note" });
+    await expectReview(f, "planner", "submit", { note: "It stays as it is" });
+    await expectReview(f, "staff", "start-review");
+    await expectReview(f, "staff", action, { note: "Second note" });
+    // One email per answer, under its own key: the second is not swallowed
+    // as a repeat of the first, though both are on version 1.
+    await expect.poll(() => emailKeys(kind).length).toBe(2);
+    expect(new Set(emailKeys(kind)).size).toBe(2);
+    expect((await state(f)).snapshots.map(row => row.version)).toEqual([1]);
   });
 
   it("only the planner's side may send it again: the hallkeeper may not", async () => {
@@ -374,5 +432,78 @@ describe.skipIf(target === undefined)("the layout review loop on migrated Postgr
     expect(response.statusCode, response.body).toBe(409);
     expect((await state(f)).config?.reviewStatus).toBe("approved");
     expect(await approvedSheetVersion(f)).toBe(1);
+  });
+
+  it.each([
+    { action: "approve", payload: {} },
+    { action: "reject", payload: { note: "Not this one" } },
+    { action: "request-changes", payload: { note: "Revise" } },
+  ] as const)("$action judged on a version since sent back and replaced writes nothing; on the new one it is recorded", async ({ action, payload }) => {
+    const f = await fixture();
+    const first = await expectReview(f, "planner", "submit");
+    const judged = first.json<{ data: { snapshot: { id: string } } }>().data.snapshot.id;
+    await expectReview(f, "staff", "start-review");
+    // While version 1 is open on one reviewer's desk, another sends it back,
+    // the planner moves the chair and sends version 2, and the other starts it.
+    await expectReview(f, "staff", "request-changes", { note: "Move the chair" });
+    expect((await moveChair(f, 7.5, await revision(f))).statusCode).toBe(200);
+    const second = await expectReview(f, "planner", "submit");
+    const current = second.json<{ data: { snapshot: { id: string; version: number } } }>().data.snapshot;
+    expect(current.version).toBe(2);
+    await expectReview(f, "staff", "start-review");
+    const before = await state(f);
+    email.mockClear();
+
+    const stale = await review(f, "staff", action, { ...payload, snapshotId: judged });
+    expect(stale.statusCode, stale.body).toBe(409);
+    expect(stale.json<{ code: string; currentStatus: string }>()).toMatchObject({ code: "SNAPSHOT_CONFLICT", currentStatus: "under_review" });
+    const after = await state(f);
+    expect(after.config?.reviewStatus).toBe("under_review");
+    expect(after.history).toEqual(before.history);
+    expect(after.snapshots.map(row => row.approvedAt)).toEqual([null, null]);
+    expect(email).not.toHaveBeenCalled();
+
+    await expectReview(f, "staff", action, { ...payload, snapshotId: current.id });
+    expect((await state(f)).history.length).toBe(before.history.length + 1);
+  });
+
+  /** Waits until this many sessions of this pool wait on a lock. */
+  async function lockWaiters(count: number): Promise<void> {
+    for (let attempt = 0; ; attempt += 1) {
+      const { rows } = await pool.query<{ waiting: number }>(
+        "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+        [applicationName]);
+      if ((rows[0]?.waiting ?? 0) >= count) return;
+      if (attempt >= 400) throw new Error(`${String(count)} sessions never waited at once`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  it("an approve and a reject that deadlock at migration 0058's global lock: one is recorded, the other is asked to try again", async () => {
+    const f = await fixture();
+    await expectReview(f, "planner", "submit");
+    await expectReview(f, "staff", "start-review");
+    email.mockClear();
+    const [approve, reject] = await holding(async (holder) => {
+      // The approve queues for the row first; the reject's UPDATE takes the
+      // global lock, then queues behind it. Released, the approve holds the
+      // row and needs the global lock for its first write: a deadlock.
+      await holder.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [f.configId]);
+      const approving = review(f, "staff", "approve");
+      await lockWaiters(1);
+      const rejecting = review(f, "staff", "reject", { note: "Not this one" });
+      await lockWaiters(2);
+      await holder.query("COMMIT");
+      return Promise.all([approving, rejecting]);
+    });
+
+    expect([approve.statusCode, reject.statusCode].sort(), `${approve.body} ${reject.body}`).toEqual([200, 409]);
+    const loser = approve.statusCode === 409 ? approve : reject;
+    expect(loser.json<{ code: string }>().code).toBe("RETRY");
+    const winner = approve.statusCode === 200 ? "approved" : "rejected";
+    const saved = await state(f);
+    expect(saved.config?.reviewStatus).toBe(winner);
+    expect(saved.history).toEqual(["draft→submitted", "submitted→under_review", `under_review→${winner}`]);
+    expect(saved.snapshots.map(row => row.approvedAt !== null)).toEqual([winner === "approved"]);
   });
 });

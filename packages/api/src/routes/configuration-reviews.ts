@@ -40,6 +40,7 @@ import {
 import { pendingReviewFacts } from "../services/pending-review-facts.js";
 import { internalDemoReviewScope, InternalDemoReviewForbiddenError, recordSuppressedReviewNotifications } from "../services/internal-demo-review.js";
 import { incrementCounter } from "../observability/metrics.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { emit as emitEvent } from "../observability/event-bus.js";
 import {
   endReviewSession,
@@ -82,8 +83,16 @@ const OptionalNoteBody = z.object({
 
 const ReviewNotificationBody = OptionalNoteBody.extend({ notifyTeam: z.boolean().default(true) });
 
+/** The submitted version the reviewer read. Sent with a decision, it must
+ *  still be the latest when the decision lands: a layout sent back and
+ *  submitted again meanwhile is never decided on the version before it. */
+const judgedSnapshotId = z.uuid().optional();
+
+const ApproveBody = ReviewNotificationBody.extend({ snapshotId: judgedSnapshotId });
+
 const RequiredNoteBody = z.object({
   note: z.string().trim().min(1, "note is required").max(2000),
+  snapshotId: judgedSnapshotId,
 });
 
 // ---------------------------------------------------------------------------
@@ -312,10 +321,26 @@ function fireEmail(
 //      holds the state the move was judged from
 //   2. INSERT a row into configuration_review_history
 //
-// Returns false, having written nothing, when another move reached the
-// review first; the route then answers with sendReviewMoved before any
-// email of its own.
+// A move that is not recorded writes nothing, and its route answers with
+// sendNotMoved before any email of its own.
 // ---------------------------------------------------------------------------
+
+/** How a review move ended: recorded, with its history row's id; refused
+ *  because another move left the state it was judged from, or a newer
+ *  version was submitted after the one judged; or rolled back whole by
+ *  PostgreSQL for a lock conflict, to be tried again. */
+type TransitionOutcome =
+  | { readonly kind: "moved"; readonly historyId: string }
+  | { readonly kind: "moved_on" }
+  | { readonly kind: "superseded" }
+  | { readonly kind: "retry" };
+
+class SupersededDecisionError extends Error {
+  constructor() {
+    super("A newer version was submitted after the one judged");
+    this.name = "SupersededDecisionError";
+  }
+}
 
 interface ExecuteTransitionInput {
   readonly db: Database;
@@ -325,9 +350,11 @@ interface ExecuteTransitionInput {
   readonly note: string | null;
   readonly extraColumns?: Partial<typeof configurations.$inferInsert>;
   readonly deferCounter?: boolean;
+  /** The snapshot the decision was judged on, when the client sent one. */
+  readonly judgedSnapshotId?: string;
 }
 
-async function executeTransition(input: ExecuteTransitionInput): Promise<boolean> {
+async function executeTransition(input: ExecuteTransitionInput): Promise<TransitionOutcome> {
   // CONSISTENCY BOUNDARY: the state change and its audit-history row
   // must commit atomically. Before this transaction, a failure of
   // the history insert would leave the state advanced but with NO
@@ -338,37 +365,53 @@ async function executeTransition(input: ExecuteTransitionInput): Promise<boolean
   // two writes — safe for Postgres default isolation (READ COMMITTED).
   //
   // The UPDATE is a compare-and-set on the state the route judged the
-  // move from (read without a lock). An approve that commits meanwhile
-  // holds the row while it writes; this UPDATE waits for it, then reads
-  // the row again under READ COMMITTED, finds 'approved' and matches
-  // nothing. Without the state in the WHERE clause, a reject would have
-  // overwritten an approval whose emails were already on their way.
-  const moved = await input.db.transaction(async (tx) => {
-    const updated = await tx.update(configurations)
-      .set({
-        reviewStatus: input.toStatus,
-        reviewNote: input.note,
-        updatedAt: new Date(),
-        ...input.extraColumns,
-      })
-      .where(and(
-        eq(configurations.id, input.config.id),
-        eq(configurations.reviewStatus, input.config.reviewStatus),
-        isNull(configurations.deletedAt),
-      ))
-      .returning({ id: configurations.id });
-    if (updated.length === 0) return false;
+  // move from (read without a lock): when another move changed the review
+  // first, READ COMMITTED checks the committed row again before writing it,
+  // and this UPDATE matches nothing. Without the state in the WHERE clause,
+  // a reject would have overwritten an approval whose emails were already
+  // on their way. An approve locks the row before its first write takes
+  // migration 0058's global lock, which this UPDATE takes before the row,
+  // so the two can deadlock: PostgreSQL rolls one back whole, and that one
+  // is asked to try again.
+  let outcome: TransitionOutcome;
+  try {
+    outcome = await input.db.transaction(async (tx): Promise<TransitionOutcome> => {
+      const updated = await tx.update(configurations)
+        .set({
+          reviewStatus: input.toStatus,
+          reviewNote: input.note,
+          updatedAt: new Date(),
+          ...input.extraColumns,
+        })
+        .where(and(
+          eq(configurations.id, input.config.id),
+          eq(configurations.reviewStatus, input.config.reviewStatus),
+          isNull(configurations.deletedAt),
+        ))
+        .returning({ id: configurations.id });
+      if (updated.length === 0) return { kind: "moved_on" };
+      // Read under the row this UPDATE now holds: a submit locks the row
+      // before it adds a version, so none lands between here and commit.
+      if (input.judgedSnapshotId !== undefined
+        && (await getLatestSnapshot(tx, input.config.id))?.id !== input.judgedSnapshotId) {
+        throw new SupersededDecisionError();
+      }
 
-    await appendReviewHistory(tx, {
-      configurationId: input.config.id,
-      fromStatus: input.config.reviewStatus,
-      toStatus: input.toStatus,
-      changedBy: input.changedBy,
-      note: input.note,
+      const historyId = await appendReviewHistory(tx, {
+        configurationId: input.config.id,
+        fromStatus: input.config.reviewStatus,
+        toStatus: input.toStatus,
+        changedBy: input.changedBy,
+        note: input.note,
+      });
+      return { kind: "moved", historyId };
     });
-    return true;
-  });
-  if (!moved) return false;
+  } catch (err) {
+    if (err instanceof SupersededDecisionError) return { kind: "superseded" };
+    if (lockConflictOf(err) !== null) return { kind: "retry" };
+    throw err;
+  }
+  if (outcome.kind !== "moved") return outcome;
 
   // Business-level observability. Post-commit so we never emit a
   // counter for a transition that was rolled back by the transaction.
@@ -378,24 +421,49 @@ async function executeTransition(input: ExecuteTransitionInput): Promise<boolean
     from: input.config.reviewStatus,
     to: input.toStatus,
   });
-  return true;
+  return outcome;
 }
 
 /**
  * The answer to a move that another reached first: where the review now
  * stands, as the same 409 a move judged from that state gets, so the desk
- * says the review changed and that this decision was not recorded.
+ * says the review changed and that this decision was not recorded. A
+ * decision judged on a version since replaced gets SNAPSHOT_CONFLICT, the
+ * approve's own answer when the version changes under it.
  */
-async function sendReviewMoved(db: Database, reply: FastifyReply, configId: string): Promise<FastifyReply> {
+async function sendReviewMoved(
+  db: Database,
+  reply: FastifyReply,
+  configId: string,
+  why: "moved_on" | "superseded" = "moved_on",
+): Promise<FastifyReply> {
   const now = await loadConfig(db, configId);
   if (now === null) {
     return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
   }
-  return reply.status(409).send({
-    error: `The review moved to '${now.reviewStatus}' before this change was saved`,
-    code: "INVALID_TRANSITION",
-    currentStatus: now.reviewStatus,
-  });
+  return reply.status(409).send(why === "superseded"
+    ? {
+      error: "A newer version was submitted after the one read here. Read it before deciding.",
+      code: "SNAPSHOT_CONFLICT",
+      currentStatus: now.reviewStatus,
+    }
+    : {
+      error: `The review moved to '${now.reviewStatus}' before this change was saved`,
+      code: "INVALID_TRANSITION",
+      currentStatus: now.reviewStatus,
+    });
+}
+
+/** The answer to a move executeTransition did not record. */
+function sendNotMoved(
+  db: Database,
+  reply: FastifyReply,
+  configId: string,
+  outcome: Exclude<TransitionOutcome, { readonly kind: "moved" }>,
+): Promise<FastifyReply> | FastifyReply {
+  if (outcome.kind !== "retry") return sendReviewMoved(db, reply, configId, outcome.kind);
+  reply.log.warn({ event: "configuration_reviews.move.retry", configId }, "review move met a lock conflict");
+  return reply.status(409).send(RETRY_ANSWER);
 }
 
 // ---------------------------------------------------------------------------
@@ -478,9 +546,9 @@ export async function configurationReviewRoutes(
           changedBy: request.user.id,
           note: note !== undefined && note.length > 0 ? note : null,
           extraColumns: { submittedAt: at }, deferCounter: true });
-        // Unreachable while this transaction holds the row: say so as a
-        // conflict, which rolls the new snapshot back with it.
-        if (!moved) throw new SnapshotConflictError(config.id);
+        // Holding the row, only a lock conflict at this write can stop it:
+        // say so as a conflict, which rolls the new snapshot back with it.
+        if (moved.kind !== "moved") throw new SnapshotConflictError(config.id);
         if (scope !== null) await recordSuppressedReviewNotifications(tx, {
           configurationId: config.id, snapshotId: result.snapshot.id,
           actorUserId: request.user.id, eventIds: scope, transition: "submitted",
@@ -583,7 +651,7 @@ export async function configurationReviewRoutes(
       changedBy: request.user.id,
       note: null,
     });
-    if (!moved) return sendReviewMoved(db, reply, config.id);
+    if (moved.kind !== "moved") return sendNotMoved(db, reply, config.id, moved);
 
     return { data: { reviewStatus: "under_review" as const } };
   });
@@ -600,7 +668,7 @@ export async function configurationReviewRoutes(
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
-    const body = ReviewNotificationBody.safeParse(request.body ?? {});
+    const body = ApproveBody.safeParse(request.body ?? {});
     if (!body.success) {
       return reply.status(400).send({ error: "Invalid body", code: "VALIDATION_ERROR", details: body.error.issues });
     }
@@ -628,6 +696,10 @@ export async function configurationReviewRoutes(
         error: "Cannot approve a configuration with no snapshot",
         code: "NO_SNAPSHOT",
       });
+    }
+    // The transaction below holds this version as the latest to commit.
+    if (body.data.snapshotId !== undefined && body.data.snapshotId !== latest.id) {
+      return sendReviewMoved(db, reply, config.id, "superseded");
     }
 
     const note = body.data.note?.trim();
@@ -658,6 +730,12 @@ export async function configurationReviewRoutes(
       }
       if (err instanceof SnapshotAlreadyApprovedError) {
         return reply.status(409).send({ error: "Snapshot already approved", code: "SNAPSHOT_ALREADY_APPROVED" });
+      }
+      // A deadlock with a move that took migration 0058's global lock before
+      // this approve's first write needed it: nothing was approved.
+      if (lockConflictOf(err) !== null) {
+        request.log.warn({ event: "configuration_reviews.approve.retry", configId: config.id }, "approve met a lock conflict");
+        return reply.status(409).send(RETRY_ANSWER);
       }
       throw err;
     }
@@ -777,10 +855,13 @@ export async function configurationReviewRoutes(
       toStatus: "rejected",
       changedBy: request.user.id,
       note: body.data.note,
+      judgedSnapshotId: body.data.snapshotId,
     });
-    if (!moved) return sendReviewMoved(db, reply, config.id);
+    if (moved.kind !== "moved") return sendNotMoved(db, reply, config.id, moved);
 
-    // Notify planner with the reviewer's note so they know why.
+    // Notify planner with the reviewer's note so they know why. Keyed by this
+    // decision: a layout sent back unchanged keeps its version, and the
+    // venue's next answer on it is a new email, not a repeat of this one.
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
     const ctx = await loadReviewEmailContext(db, config, request.user);
     const latest = await getLatestSnapshot(db, config.id);
@@ -790,7 +871,7 @@ export async function configurationReviewRoutes(
         db,
         request.log,
         ctx.planner.email,
-        `config-rejected:${config.id}:v${String(snapshotVersion)}:${ctx.planner.id}`,
+        `config-rejected:${moved.historyId}:${ctx.planner.id}`,
         configRejected({
           eventName: config.name,
           venueName: ctx.venueName,
@@ -848,10 +929,12 @@ export async function configurationReviewRoutes(
       toStatus: "changes_requested",
       changedBy: request.user.id,
       note: body.data.note,
+      judgedSnapshotId: body.data.snapshotId,
     });
-    if (!moved) return sendReviewMoved(db, reply, config.id);
+    if (moved.kind !== "moved") return sendNotMoved(db, reply, config.id, moved);
 
-    // Notify planner with the list of requested changes.
+    // Notify planner with the list of requested changes, keyed by this
+    // decision as the rejection's email is.
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
     const ctx = await loadReviewEmailContext(db, config, request.user);
     const latest = await getLatestSnapshot(db, config.id);
@@ -861,7 +944,7 @@ export async function configurationReviewRoutes(
         db,
         request.log,
         ctx.planner.email,
-        `config-changes-requested:${config.id}:v${String(snapshotVersion)}:${ctx.planner.id}`,
+        `config-changes-requested:${moved.historyId}:${ctx.planner.id}`,
         configChangesRequested({
           eventName: config.name,
           venueName: ctx.venueName,
@@ -917,7 +1000,7 @@ export async function configurationReviewRoutes(
       changedBy: request.user.id,
       note: note !== undefined && note.length > 0 ? note : null,
     });
-    if (!moved) return sendReviewMoved(db, reply, config.id);
+    if (moved.kind !== "moved") return sendNotMoved(db, reply, config.id, moved);
 
     return { data: { reviewStatus: "withdrawn" as const } };
   });
@@ -956,7 +1039,7 @@ export async function configurationReviewRoutes(
       changedBy: request.user.id,
       note: null,
     });
-    if (!moved) return sendReviewMoved(db, reply, config.id);
+    if (moved.kind !== "moved") return sendNotMoved(db, reply, config.id, moved);
 
     return { data: { reviewStatus: "archived" as const } };
   });
