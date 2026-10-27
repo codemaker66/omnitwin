@@ -49,6 +49,8 @@ import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
+import { depositPaymentsFrom } from "./services/payments/deposit-gateway.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
@@ -514,6 +516,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     prefix: "/admin/reconstruction-foundry/derivative-rights",
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
+  // Deposits (Plan 19 L5): off without the Stripe variables; refused, with a
+  // logged reason, for any key that is not a test key (env.ts refuses it at
+  // startup first).
+  const depositPayments = depositPaymentsFrom(env);
+  if (depositPayments.status === "refused") server.log.error({ event: "stripe.payments_refused", reason: depositPayments.reason }, "Deposits are refused");
+  await server.register(stripeWebhookRoutes, { db, payments: depositPayments, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
   await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
