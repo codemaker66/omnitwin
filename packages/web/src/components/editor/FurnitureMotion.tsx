@@ -2,13 +2,19 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Matrix4, type Object3D } from "three";
 import {
+  DROP_HEIGHT,
   clearAllFurnitureSettles,
   composeFurnitureMotion,
   dropInFurniture,
   furnitureMotionPose,
+  landingDelays,
+  massForCategory,
   publishFurnitureSettleFrame,
+  setFurnitureMassResolver,
   stepFurnitureSettles,
+  type LandingPiece,
 } from "../../lib/furniture-motion.js";
+import { getCatalogueItem } from "../../lib/catalogue.js";
 import { subscribeFurniturePlaced, usePlacementStore } from "../../stores/placement-store.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 
@@ -64,11 +70,26 @@ export function FurnitureMotion(): null {
     };
   }, []);
 
-  // Newly placed pieces come down onto the floor, each from a slightly
-  // different height so a set never lands in lockstep.
+  // How heavy each piece is, read from the catalogue when it starts to move:
+  // staging, the dance floor and AV neither lean nor dip.
+  useEffect(() => setFurnitureMassResolver((id) => {
+    const item = usePlacementStore.getState().placedItems.find((candidate) => candidate.id === id);
+    return massForCategory(item === undefined ? undefined : getCatalogueItem(item.catalogueItemId)?.category);
+  }), []);
+
+  // Newly placed pieces are set down onto the floor: a set lands in order,
+  // its table and then its chairs round it, and a whole Lay out ripples out
+  // from its middle.
   useEffect(() => subscribeFurniturePlaced((ids) => {
     if (prefersReducedMotion()) return;
-    ids.forEach((id, index) => { dropInFurniture(id, 0.11 + ((index * 7919) % 13) * 0.005); });
+    const placed = new Map(usePlacementStore.getState().placedItems.map((item) => [item.id, item]));
+    const pieces = ids.flatMap((id): LandingPiece[] => {
+      const item = placed.get(id);
+      if (item === undefined) return [];
+      return [{ id, x: item.x, z: item.z, groupId: item.groupId, isTable: getCatalogueItem(item.catalogueItemId)?.category === "table" }];
+    });
+    const delays = landingDelays(pieces);
+    for (const id of ids) dropInFurniture(id, DROP_HEIGHT, delays.get(id) ?? 0);
     invalidate();
   }), [invalidate]);
 

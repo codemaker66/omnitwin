@@ -10,28 +10,41 @@
 // engine uses):
 //
 // - the grid settle: the difference between where the hand left an object
-//   and where it snapped, decaying to zero through the gridSettle spring;
-// - the carry: while a hand moves a piece it leans a little back from the
-//   way it travels, as anything carried lags behind its handle;
-// - the landing: let go, it swings through upright and settles in a couple
-//   of soft rocks, and gives a small squash as it sets its weight down;
-// - the drop-in: a newly placed piece comes down from a hand's width above
-//   the floor and lands the same way.
+//   and where it snapped, decaying to zero on a detent (gridSettle), so a
+//   precise placement lands exactly, with no overshoot to read as a wobble;
+// - the carry: while a hand moves a piece it rises a little off the floor
+//   (it is in hand) and leans a little back from the way it travels, as
+//   anything carried lags behind its handle; a hand held still sets it down;
+// - the landing: let go, it comes down onto the floor and stands upright,
+//   and dips as it takes its weight only as hard as it was moving: a careful
+//   nudge lands without a dip, a quick throw with about one per cent;
+// - the drop-in: a newly placed piece is set down from just above the floor
+//   and arrives at speed rather than being lowered; a set lands in order,
+//   the table first and then its chairs round it, and a whole Lay out
+//   ripples out from its middle (landingDelays);
+// - weight: staging, the dance floor and AV neither lean nor dip, a table
+//   barely leans, a chair rocks (FurnitureMass).
 //
 // The lean pivots on the piece's base and the squash keeps its volume, so it
 // never lifts off or sinks through the floor. Interruption rule: grabbing an
 // object mid-settle clears its settle offset first, snapping the visual to
-// store truth before the grab offset is measured; its lean carries on.
+// store truth before the grab offset is measured; its lean carries on, and a
+// piece caught on its way down goes back into the hand.
 // ---------------------------------------------------------------------------
 
 import { Matrix4, Quaternion, Vector3 } from "three";
+import type { FurnitureCategory } from "@omnitwin/types";
 import { SPRING_PRESETS, isSpringSettled, stepSpring, type SpringState } from "./springs.js";
 
+/** How a piece carries its weight: a chair rocks, a table barely leans, staging and AV do neither. */
+export type FurnitureMass = "light" | "table" | "heavy";
+
 interface MotionChannel {
+  readonly mass: FurnitureMass;
   /** Grid settle offset, metres, decaying to zero. */
   readonly x: SpringState;
   readonly z: SpringState;
-  /** Height above the floor while dropping in, metres. */
+  /** Height above the floor, metres: in hand, or on the way down. */
   readonly lift: SpringState;
   /** Vertical squash: −0.05 is five per cent lower (and wider). */
   readonly squash: SpringState;
@@ -40,21 +53,39 @@ interface MotionChannel {
   readonly leanZ: SpringState;
   leanTargetX: number;
   leanTargetZ: number;
-  /** Seconds since the hand last moved it: a paused hand lets it stand up again. */
+  /** How high the hand holds it, metres; 0 once it is let go. */
+  liftTarget: number;
+  /** The hand's speed as it last carried the piece, metres a second, fading while the hand rests. */
+  carrySpeed: number;
+  /** Seconds since the hand last moved it: a paused hand lets it stand up, and then sets it down. */
   sinceCarry: number;
-  /** A drop-in that has not yet touched down. */
+  /** On its way down to the floor. */
   dropping: boolean;
+  /** A newly placed piece: its touchdown dip follows its speed onto the floor. */
+  dropIn: boolean;
+  /** The dip a let-go piece takes as it touches down, as a squash velocity. */
+  pendingDip: number;
+  /** Seconds a drop-in waits for its turn before it starts down. */
+  delay: number;
 }
 
-/** The lean while carried, radians per metre a second, and its most (about 4°) in any direction. */
+/** The lean while carried, radians per metre a second. */
 const LEAN_PER_SPEED = 0.04;
-const LEAN_MOST = 0.07;
-/** The squash's downward speed as a piece is set down (a peak of about 3.5 per cent). */
-const SET_DOWN_SQUASH = 1.35;
-/** A new piece starts this high above the floor, metres. */
-const DROP_HEIGHT = 0.14;
-/** Below this a drop-in has landed, metres. */
-const LANDED = 0.004;
+/** The most a carried piece leans in any direction, radians: about 3° for a chair, 1.7° for a table. */
+const LEAN_MOST: Readonly<Record<FurnitureMass, number>> = { light: 0.05, table: 0.03, heavy: 0 };
+/** How far off the floor a carried piece is held, metres: enough to read as in hand. */
+const CARRY_LIFT: Readonly<Record<FurnitureMass, number>> = { light: 0.03, table: 0.03, heavy: 0.015 };
+/** A hand held still this long sets the piece down where it is, seconds; a hesitation keeps it in hand. */
+const HOLD_STILL = 0.4;
+/** The let-go dip at the fastest throw, as a squash velocity (a dip of about one per cent), and the hand speed that earns all of it, m/s. */
+const RELEASE_DIP = 0.5;
+const RELEASE_DIP_SPEED = 1.5;
+/** A drop-in's dip as it touches down at 0.6 m/s or faster, as a squash velocity (about one per cent). */
+const TOUCHDOWN_DIP = 0.55;
+/** A new piece starts this high above the floor, metres: just above it, as a hand sets it down. */
+export const DROP_HEIGHT = 0.05;
+/** The set-down aims this far below the floor and stops at contact, metres, so a piece arrives at speed. */
+const SET_DOWN_AIM = -0.03;
 /** A motion's first step, seconds: one display frame. */
 const FIRST_STEP = 1 / 60;
 /** The longest step a moving piece takes, seconds: a dropped frame, never a pause. */
@@ -64,10 +95,33 @@ const channels = new Map<string, MotionChannel>();
 /** Whether the last step left anything moving; if not, the frame loop may have slept since. */
 let movedLastStep = false;
 
+/** The weight class of a catalogue category: staging, the dance floor (a stage piece) and AV are heavy. */
+export function massForCategory(category: FurnitureCategory | undefined): FurnitureMass {
+  if (category === "stage" || category === "av" || category === "lighting") return "heavy";
+  if (category === "table" || category === "lectern") return "table";
+  return "light";
+}
+
+const lightByDefault = (): FurnitureMass => "light";
+let resolveMass: (id: string) => FurnitureMass = lightByDefault;
+
+/**
+ * Tell the motion how heavy each piece is (the planner installs this from the
+ * catalogue; FurnitureMotion). A piece's weight is read once, when it starts
+ * to move. Returns the uninstall.
+ */
+export function setFurnitureMassResolver(resolve: (id: string) => FurnitureMass): () => void {
+  resolveMass = resolve;
+  return () => {
+    if (resolveMass === resolve) resolveMass = lightByDefault;
+  };
+}
+
 function channel(id: string): MotionChannel {
   const existing = channels.get(id);
   if (existing !== undefined) return existing;
   const created: MotionChannel = {
+    mass: resolveMass(id),
     x: { value: 0, velocity: 0 },
     z: { value: 0, velocity: 0 },
     lift: { value: 0, velocity: 0 },
@@ -76,8 +130,13 @@ function channel(id: string): MotionChannel {
     leanZ: { value: 0, velocity: 0 },
     leanTargetX: 0,
     leanTargetZ: 0,
+    liftTarget: 0,
+    carrySpeed: 0,
     sinceCarry: 0,
     dropping: false,
+    dropIn: false,
+    pendingDip: 0,
+    delay: 0,
   };
   channels.set(id, created);
   return created;
@@ -96,16 +155,25 @@ export function beginFurnitureSettle(id: string, offsetX: number, offsetZ: numbe
 
 /**
  * A hand is carrying these pieces at (velocityX, velocityZ) metres a second:
- * their tops lean back from the way they travel. Call on each move.
+ * they rise into the hand and their tops lean back from the way they travel.
+ * Call on each move.
  */
 export function carryFurniture(ids: Iterable<string>, velocityX: number, velocityZ: number): void {
   const speed = Math.hypot(velocityX, velocityZ);
-  const scale = speed * LEAN_PER_SPEED > LEAN_MOST ? LEAN_MOST / speed : LEAN_PER_SPEED;
   for (const id of ids) {
     const motion = channel(id);
+    const most = LEAN_MOST[motion.mass];
+    const scale = speed * LEAN_PER_SPEED > most ? most / speed : LEAN_PER_SPEED;
     motion.leanTargetX = -velocityX * scale;
     motion.leanTargetZ = -velocityZ * scale;
+    motion.carrySpeed = speed;
     motion.sinceCarry = 0;
+    // In hand, even if it was caught on its way down.
+    motion.liftTarget = CARRY_LIFT[motion.mass];
+    motion.dropping = false;
+    motion.dropIn = false;
+    motion.pendingDip = 0;
+    motion.delay = 0;
   }
 }
 
@@ -141,22 +209,107 @@ export function measureCarry(previous: CarrySpeed, dx: number, dz: number, nowMs
   };
 }
 
-/** The hand has let go: the pieces swing upright and set their weight down. */
+/** The let-go dip for a hand moving at `speed` m/s: none for a careful nudge, about one per cent for a throw. */
+function releaseDip(mass: FurnitureMass, speed: number): number {
+  if (mass === "heavy") return 0;
+  return RELEASE_DIP * Math.min(1, speed / RELEASE_DIP_SPEED);
+}
+
+/**
+ * The hand has let go: the pieces come down onto the floor, stand upright and
+ * take their weight. A piece a resting hand has already set down has nothing
+ * left to move, so it starts no motion.
+ */
 export function releaseFurniture(ids: Iterable<string>): void {
   for (const id of ids) {
-    const motion = channel(id);
+    const motion = channels.get(id);
+    if (motion === undefined) continue;
     motion.leanTargetX = 0;
     motion.leanTargetZ = 0;
-    motion.squash.velocity -= SET_DOWN_SQUASH;
+    motion.liftTarget = 0;
+    const dip = releaseDip(motion.mass, motion.carrySpeed);
+    motion.carrySpeed = 0;
+    if (motion.lift.value > 0) {
+      // Held off the floor: it comes down, and takes its weight as it touches.
+      motion.dropping = true;
+      motion.dropIn = false;
+      motion.pendingDip = dip;
+      motion.delay = 0;
+    } else {
+      motion.squash.velocity -= dip;
+    }
   }
 }
 
-/** A newly placed piece comes down onto the floor; `height` defaults to a hand's width. */
-export function dropInFurniture(id: string, height: number = DROP_HEIGHT): void {
+/**
+ * A newly placed piece is set down onto the floor from `height` (just above
+ * it by default), starting after `delaySeconds`: the order a set or a whole
+ * layout lands in (landingDelays). It waits just above the floor for its turn.
+ */
+export function dropInFurniture(id: string, height: number = DROP_HEIGHT, delaySeconds = 0): void {
   const motion = channel(id);
   motion.lift.value = height;
   motion.lift.velocity = 0;
+  motion.liftTarget = 0;
   motion.dropping = true;
+  motion.dropIn = true;
+  motion.pendingDip = 0;
+  motion.delay = Math.max(0, delaySeconds);
+}
+
+/** A newly placed piece, for working out the order its set or layout lands in. */
+export interface LandingPiece {
+  readonly id: string;
+  readonly x: number;
+  readonly z: number;
+  /** The set it belongs to (a table and its chairs), or null for a piece on its own. */
+  readonly groupId: string | null;
+  readonly isTable: boolean;
+}
+
+/** How long a whole layout's ripple takes to reach its outermost set, seconds. */
+const RIPPLE = 0.24;
+/** Between one chair of a set and the next, seconds. */
+const SET_STAGGER = 0.012;
+
+/**
+ * When each newly placed piece starts down, seconds. A set lands in order:
+ * its table first, then its chairs round it one by one. Several sets placed
+ * at once (a Lay out) ripple out from the middle of the layout, the
+ * outermost starting RIPPLE later, so the room fills rather than falls as
+ * one slab. A single set or piece starts at once.
+ */
+export function landingDelays(pieces: readonly LandingPiece[]): ReadonlyMap<string, number> {
+  const sets = new Map<string, LandingPiece[]>();
+  for (const piece of pieces) {
+    const key = piece.groupId ?? `piece:${piece.id}`;
+    const set = sets.get(key);
+    if (set === undefined) sets.set(key, [piece]);
+    else set.push(piece);
+  }
+  const centres = [...sets.values()].map((set) => {
+    const anchor = set.find((piece) => piece.isTable);
+    if (anchor !== undefined) return { set, x: anchor.x, z: anchor.z };
+    return {
+      set,
+      x: set.reduce((sum, piece) => sum + piece.x, 0) / set.length,
+      z: set.reduce((sum, piece) => sum + piece.z, 0) / set.length,
+    };
+  });
+  const middleX = centres.reduce((sum, centre) => sum + centre.x, 0) / Math.max(1, centres.length);
+  const middleZ = centres.reduce((sum, centre) => sum + centre.z, 0) / Math.max(1, centres.length);
+  const farthest = centres.reduce((most, centre) => Math.max(most, Math.hypot(centre.x - middleX, centre.z - middleZ)), 0);
+  const delays = new Map<string, number>();
+  for (const { set, x, z } of centres) {
+    const start = farthest > 0 ? (Math.hypot(x - middleX, z - middleZ) / farthest) * RIPPLE : 0;
+    const tables = set.filter((piece) => piece.isTable);
+    const rest = set
+      .filter((piece) => !piece.isTable)
+      .sort((a, b) => Math.atan2(a.z - z, a.x - x) - Math.atan2(b.z - z, b.x - x));
+    tables.forEach((piece) => { delays.set(piece.id, start); });
+    rest.forEach((piece, index) => { delays.set(piece.id, start + (tables.length > 0 ? index + 1 : index) * SET_STAGGER); });
+  }
+  return delays;
 }
 
 /** Drop one object's settle (grab-interrupt) — visual snaps to store truth; its lean carries on. */
@@ -237,10 +390,25 @@ export function composeFurnitureMotion(pose: FurnitureMotionPose, baseX: number,
 }
 
 function atRest(motion: MotionChannel): boolean {
-  return isSpringSettled(motion.x, 0) && isSpringSettled(motion.z, 0)
+  return !motion.dropping && motion.liftTarget === 0
+    && isSpringSettled(motion.x, 0) && isSpringSettled(motion.z, 0)
     && isSpringSettled(motion.lift, 0) && isSpringSettled(motion.squash, 0, 0.0005)
     && motion.leanTargetX === 0 && motion.leanTargetZ === 0
     && isSpringSettled(motion.leanX, 0, 0.0005) && isSpringSettled(motion.leanZ, 0, 0.0005);
+}
+
+/** The piece has reached the floor: it stops there and takes its weight. */
+function touchDown(motion: MotionChannel): void {
+  const speed = Math.abs(motion.lift.velocity);
+  motion.dropping = false;
+  motion.lift.value = 0;
+  motion.lift.velocity = 0;
+  if (motion.mass !== "heavy") {
+    // The weight arrives: one quick dip, and nothing left to rock.
+    motion.squash.velocity -= motion.dropIn ? TOUCHDOWN_DIP * Math.min(1, speed / 0.6) : motion.pendingDip;
+  }
+  motion.dropIn = false;
+  motion.pendingDip = 0;
 }
 
 /**
@@ -263,29 +431,36 @@ export function stepFurnitureSettles(frameDeltaSeconds: number): readonly string
   const dtSeconds = movedLastStep ? Math.min(frameDeltaSeconds, LONGEST_STEP) : FIRST_STEP;
   const live: string[] = [];
   for (const [id, motion] of channels) {
-    // A hand that has paused lets the piece stand up again.
+    // A hand that has paused lets the piece stand up again, and soon sets it down.
     motion.sinceCarry += dtSeconds;
-    if (motion.sinceCarry > 0.08 && (motion.leanTargetX !== 0 || motion.leanTargetZ !== 0)) {
+    if (motion.sinceCarry > 0.08) {
       const fade = Math.exp(-dtSeconds * 9);
-      motion.leanTargetX = Math.abs(motion.leanTargetX) < 1e-4 ? 0 : motion.leanTargetX * fade;
-      motion.leanTargetZ = Math.abs(motion.leanTargetZ) < 1e-4 ? 0 : motion.leanTargetZ * fade;
+      if (motion.leanTargetX !== 0 || motion.leanTargetZ !== 0) {
+        motion.leanTargetX = Math.abs(motion.leanTargetX) < 1e-4 ? 0 : motion.leanTargetX * fade;
+        motion.leanTargetZ = Math.abs(motion.leanTargetZ) < 1e-4 ? 0 : motion.leanTargetZ * fade;
+      }
+      motion.carrySpeed = motion.carrySpeed < 1e-3 ? 0 : motion.carrySpeed * fade;
+    }
+    if (motion.sinceCarry > HOLD_STILL && motion.liftTarget > 0) {
+      motion.liftTarget = 0;
+      motion.dropping = true;
+      motion.pendingDip = 0;
     }
     stepSpring(motion.x, 0, dtSeconds, SPRING_PRESETS.gridSettle);
     stepSpring(motion.z, 0, dtSeconds, SPRING_PRESETS.gridSettle);
-    stepSpring(motion.leanX, motion.leanTargetX, dtSeconds, SPRING_PRESETS.furnitureLean);
-    stepSpring(motion.leanZ, motion.leanTargetZ, dtSeconds, SPRING_PRESETS.furnitureLean);
-    stepSpring(motion.squash, 0, dtSeconds, SPRING_PRESETS.furnitureSquash);
+    stepSpring(motion.leanX, motion.leanTargetX, dtSeconds, SPRING_PRESETS.furnitureLeanSettle);
+    stepSpring(motion.leanZ, motion.leanTargetZ, dtSeconds, SPRING_PRESETS.furnitureLeanSettle);
+    stepSpring(motion.squash, 0, dtSeconds, SPRING_PRESETS.furnitureSettleSquash);
     if (motion.dropping) {
-      stepSpring(motion.lift, 0, dtSeconds, SPRING_PRESETS.furnitureDrop);
-      if (motion.lift.value < LANDED) {
-        // Touchdown: the weight arrives, and a whisper of a rock.
-        motion.dropping = false;
-        motion.squash.velocity -= SET_DOWN_SQUASH * Math.min(1, Math.abs(motion.lift.velocity) / 0.6);
-        motion.lift.value = 0;
-        motion.lift.velocity = 0;
-        motion.leanX.velocity += 0.12;
-        motion.leanZ.velocity -= 0.08;
+      if (motion.delay > 0) {
+        motion.delay = Math.max(0, motion.delay - dtSeconds);
+      } else {
+        // Contact is a constraint: aimed below the floor, it stops at the floor, at speed.
+        stepSpring(motion.lift, SET_DOWN_AIM, dtSeconds, SPRING_PRESETS.furnitureSetDown);
+        if (motion.lift.value <= 0) touchDown(motion);
       }
+    } else if (motion.liftTarget > 0 || motion.lift.value !== 0) {
+      stepSpring(motion.lift, motion.liftTarget, dtSeconds, SPRING_PRESETS.gridSettle);
     }
     if (atRest(motion)) channels.delete(id);
     else live.push(id);
