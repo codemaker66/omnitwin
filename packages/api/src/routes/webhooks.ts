@@ -4,7 +4,7 @@ import { Webhook } from "svix";
 import { z } from "zod";
 import { generalAuditLog, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { CLERK_ACCOUNT_DELETED, clerkAccountDeleted, getUserByClerkId, normalizeAuthEmail } from "../middleware/auth.js";
+import { CLERK_ACCOUNT_DELETED, clerkAccountDeleted, getUserByClerkId, lockClerkAccount, normalizeAuthEmail } from "../middleware/auth.js";
 import { evictClerkEmailCacheEntry } from "../middleware/clerk-email.js";
 
 const ClerkEmailAddressSchema = z.object({
@@ -178,6 +178,7 @@ export function databasePersistence(db: Database): ClerkWebhookPersistence {
       // One transaction: the row is never unlinked without the record that
       // keeps the deleted account from linking it again (auth.ts).
       await db.transaction(async (tx) => {
+        await lockClerkAccount(tx, clerkId);
         await tx.update(users).set({ clerkId: null, updatedAt }).where(eq(users.clerkId, clerkId));
         if (await clerkAccountDeleted(tx, clerkId)) return;
         await tx.insert(generalAuditLog).values({ ...CLERK_ACCOUNT_DELETED, actorUserId: null, targetId: clerkId,

@@ -230,6 +230,13 @@ async function findLinkedUserWithoutPendingInvitation(
  */
 export const CLERK_ACCOUNT_DELETED = { action: "clerk.user_deleted", targetType: "clerk_user" } as const;
 
+/** Serialises linking and unlinking one Clerk account: a sign-in that would
+ *  link it and the user.deleted webhook. A sign-in takes it after its email's
+ *  lock and before any users row; the webhook before its unlink. */
+export async function lockClerkAccount(db: Pick<Database, "execute">, clerkId: string): Promise<void> {
+  await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`clerk-account:${clerkId}`}, 0))`);
+}
+
 /** Whether the user.deleted webhook has recorded this Clerk account. */
 export async function clerkAccountDeleted(db: Pick<Database, "select">, clerkId: string): Promise<boolean> {
   const [row] = await db.select({ id: generalAuditLog.id }).from(generalAuditLog).where(and(
@@ -256,14 +263,16 @@ export async function getUserByClerkId(
     // A second first-login request observes the committed account instead of
     // losing an invitation race or creating a duplicate local identity.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedEmail}))`);
+    // A deletion of this account under way finishes first, or waits for us.
+    await lockClerkAccount(tx, clerkId);
     const [byClerk] = await tx.select().from(users).where(eq(users.clerkId, clerkId)).limit(1).for("update");
     const [byEmail] = byClerk === undefined
       ? await tx.select().from(users).where(eq(users.email, normalizedEmail)).limit(1).for("update")
       : [];
     let user = byClerk ?? byEmail;
     if (user !== undefined && user.clerkId !== null && user.clerkId !== clerkId) return null;
-    // Read after the row's lock: an unlink the webhook has committed is
-    // seen with the deletion record it wrote in the same transaction.
+    // Read under the account's lock: a deletion has either committed its
+    // record, or waits until this sign-in has committed and then unlinks it.
     if (await clerkAccountDeleted(tx, clerkId)) return null;
 
     const now = new Date();

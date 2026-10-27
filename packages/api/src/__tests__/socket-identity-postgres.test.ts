@@ -68,10 +68,12 @@ describe.skipIf(target === undefined)("open sockets act with their person's curr
   let db: Database;
   let server: FastifyInstance;
   const opened: Client[] = [];
+  const applicationName = `socket_identity_${randomUUID()}`;
 
   beforeAll(async () => {
     if (target === undefined) throw new Error("Explicit test database required");
-    pool = new Pool({ connectionString: target, max: 6, options: "-c statement_timeout=15000 -c lock_timeout=12000" });
+    pool = new Pool({ connectionString: target, max: 6, application_name: applicationName,
+      options: "-c statement_timeout=15000 -c lock_timeout=12000" });
     expect((await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name)
       .toBe("venviewer_platform_test");
     db = drizzle(pool, { schema });
@@ -372,6 +374,47 @@ describe.skipIf(target === undefined)("open sockets act with their person's curr
     const records = await db.select({ id: schema.generalAuditLog.id }).from(schema.generalAuditLog)
       .where(eq(schema.generalAuditLog.targetId, staff.clerkId));
     expect(records).toHaveLength(1);
+  });
+
+  /** Waits until this many sessions of this pool wait on a lock, or `done` says to stop. */
+  async function lockWaiters(count: number, done: () => boolean = () => false): Promise<void> {
+    for (let attempt = 0; !done(); attempt += 1) {
+      const { rows } = await pool.query<{ waiting: number }>(
+        "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+        [applicationName]);
+      if ((rows[0]?.waiting ?? 0) >= count) return;
+      if (attempt >= 400) throw new Error(`${String(count)} sessions never waited at once`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  it("a first sign-in racing the account's deletion waits for it, and links nothing", async () => {
+    const f = await venueWithLayout();
+    // A row the account was never linked to, as an invited person's is.
+    const id = randomUUID(), email = `${id}@socket.invalid`, clerkId = `user_${randomUUID()}`;
+    await db.insert(schema.users).values({ id, clerkId: null, venueId: f.venueId, name: "Never linked", email, role: "staff" });
+    const holder = await pool.connect();
+    try {
+      // Pause the real webhook between its unlink and its commit: it waits to
+      // write the deletion record, holding the account's lock.
+      await holder.query("BEGIN");
+      await holder.query("LOCK TABLE general_audit_log IN SHARE MODE");
+      const deleting = processClerkWebhookEvent({ type: "user.deleted", data: { id: clerkId } }, databasePersistence(db));
+      await lockWaiters(1);
+      const signingIn = getUserByClerkId(db, clerkId, email);
+      let answered = false;
+      void signingIn.finally(() => { answered = true; });
+      await lockWaiters(2, () => answered);
+      expect(answered, "the sign-in answered without waiting for the deletion under way").toBe(false);
+      await holder.query("ROLLBACK");
+      await deleting;
+      expect(await signingIn).toBeNull();
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+    }
+    const [row] = await db.select({ clerkId: schema.users.clerkId }).from(schema.users).where(eq(schema.users.id, id));
+    expect(row).toEqual({ clerkId: null });
   });
 
   it("ends a connection older than the maximum age however busy it is", () => {
