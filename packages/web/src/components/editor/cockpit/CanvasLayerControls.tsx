@@ -12,6 +12,7 @@ import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js
 import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
 import { useModelledGrandHall } from "../../grand-hall/hall-space.js";
 import { HallViewControls } from "./HallViewControls.js";
+import { HallPresent } from "./HallPresent.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { canReadInternalEventData } from "../../../lib/event-access.js";
 
@@ -83,6 +84,7 @@ export function HallViewSheetControls({ onViewChosen }: { readonly onViewChosen:
   return (
     <div className="hall-view-sheet" data-testid="hall-view-sheet">
       <HallViewControls captureAvailable={splatsAvailable && walkAvailable} povActive={povActive} moodLabels onViewChosen={onViewChosen} />
+      <HallPresent onPresented={onViewChosen} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import {
   Armchair,
   Camera,
@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { useAutoFillRequestStore } from "../../stores/auto-fill-request-store.js";
-import { buildPlannerShowcaseTour } from "../../lib/planner-showcase.js";
+import { pressPlannerPresent, presentName, usePlannerPresent } from "./planner-present.js";
 import { canRedo, canUndo, redoLabel, undoLabel } from "../../lib/editor-history.js";
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
@@ -28,7 +28,6 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
-import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import {
   canApplyTableLinenToItem,
@@ -43,7 +42,7 @@ interface CommandAction {
   readonly ariaLabel: string;
   readonly tone?: "primary" | "danger";
   readonly icon: ReactNode;
-  readonly onClick: () => void;
+  readonly onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   readonly disabled?: boolean;
 }
 
@@ -159,14 +158,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     [undoEntry, redoEntry, undoAvailable, redoAvailable],
   );
   const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
-  const sceneSource = useCockpitStore((s) => s.sceneSource);
-  const layerMode = useCockpitStore((s) => s.layerMode);
-  const space = useEditorStore((s) => s.space);
-  const configId = useEditorStore((s) => s.configId);
-  const dimensions = useRoomDimensionsStore((s) => s.dimensions);
-  const showcaseTour = useMemo(() => buildPlannerShowcaseTour({
-    dimensions, configId, spaceId: space?.id ?? null, roomSlug: space?.slug ?? null, layerMode, sceneSource,
-  }), [dimensions, configId, space?.id, space?.slug, layerMode, sceneSource]);
+  const present = usePlannerPresent();
 
   const selectedItems = useMemo(
     () => placedItems.filter((item) => selectedIds.has(item.id)),
@@ -392,14 +384,11 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
       {
         id: "showcase",
         label: "Present",
-        ariaLabel: showcaseTour === null
-          ? "Present is not ready for this view of the room yet"
-          : "Present: play the room as your guests will see it",
+        ariaLabel: presentName(present),
         icon: <Clapperboard size={16} aria-hidden="true" />,
-        disabled: showcaseTour === null,
-        onClick: () => {
-          if (showcaseTour !== null) useBookmarkStore.getState().startTour(showcaseTour);
-        },
+        disabled: present.kind === "unavailable",
+        // A click from the keys (Enter or Space) has no pointer behind it: detail 0.
+        onClick: (event) => { pressPlannerPresent(event.detail === 0); },
       },
     ];
 
@@ -449,6 +438,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     linenTableCount,
     placedItems.length,
     plannedGuestCount,
+    present,
     selectedCatalogue,
     selectedCount,
     selectedIdSet,
@@ -457,7 +447,6 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     selectedLinenTableIds,
     selectedTableIds,
     snapEnabled,
-    showcaseTour,
     tableCount,
   ]);
 
