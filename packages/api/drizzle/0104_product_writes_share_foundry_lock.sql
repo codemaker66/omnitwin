@@ -1,6 +1,7 @@
 -- Product writes share the foundry's global lock (T-677, 27 October 2026).
--- 0103, after 0102; the release queue confirms the number at the merge slot
--- (renumber the tag AND the journal `when`).
+-- 0104, after #258's 0103 (the release queue's numbering, 27 October); the
+-- queue confirms the number at the merge slot (renumber the tag AND the journal
+-- `when`).
 --
 -- 0058 put fdv1_root_trigger (each statement) on 57 tables and fdv1_public_guard
 -- (each row) on the 18 product tables among them, both taking the global

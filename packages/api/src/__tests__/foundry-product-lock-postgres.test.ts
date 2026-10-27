@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
-// Migration 0103 on the migrated platform database: product writes take the
+// Migration 0104 on the migrated platform database: product writes take the
 // foundry's global lock shared, so they no longer wait for one another or
 // deadlock a review submit, while the kill switch and the foundry's own
 // tables still take it exclusively and order against every product write.
