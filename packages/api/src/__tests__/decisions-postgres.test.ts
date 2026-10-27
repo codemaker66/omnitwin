@@ -113,8 +113,16 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     return row.id;
   }
 
-  async function turnaround(v: Venue, minutes: number): Promise<void> {
-    await db.insert(schema.turnaroundRules).values({ venueId: v.venueId, spaceId: v.spaceId, name: "Room turnaround", minutes });
+  async function turnaround(v: Venue, minutes: number, eventType: string | null = null): Promise<void> {
+    await db.insert(schema.turnaroundRules).values({ venueId: v.venueId, spaceId: v.spaceId, name: eventType === null ? "Room turnaround" : `${eventType} turnaround`, minutes, eventType });
+  }
+
+  async function typed(v: Venue, title: string, startsAt: Date, endsAt: Date, eventType: string): Promise<string> {
+    const [row] = await insertBoundBookings(db, [{
+      id: randomUUID(), venueId: v.venueId, spaceId: v.spaceId, kind: "ink", title, eventType, createdBy: v.admin.id, startsAt, endsAt,
+    }]);
+    if (row === undefined) throw new Error("fixture booking not written");
+    return row.id;
   }
 
   async function booking(id: string) {
@@ -357,6 +365,8 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
       startsAt: at(12, day), endsAt: at(13, day),
     })));
     const id = await ink(v, "Crawford wedding", new Date(Date.UTC(2030, 3, 5, 10)), new Date(Date.UTC(2030, 3, 5, 11)));
+    // A late supper the evening before, with no rule for the gap after it.
+    await ink(v, "Late supper", at(20, 0), at(22, 0));
     // A move a month long, an honest slip of the date: everything is in its way.
     const decision = await prepared(v, id, at(0, 1), at(23, 31), v.hallkeeper);
     const consequences = move(decision)?.consequences ?? [];
@@ -489,7 +499,8 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     // The revision is still the asker's: theirs to withdraw, in their words, and the approver is in its history.
     expect(revised).toMatchObject({ preparedBy: v.sales.id, reason: asked.reason });
     const read = await readDecision(db, v.sales, revised.id);
-    expect(read.ok && read.value.history[0]?.detail).toMatchObject({ revisedBy: v.admin.id, supersedes: asked.id });
+    // Third review: the step is the approver's, taken for the asker.
+    expect(read.ok && read.value.history[0]).toMatchObject({ kind: "prepared", actorUserId: v.admin.id, detail: { askedBy: v.sales.id, supersedes: asked.id } });
     // Deciding the stale one again is answered as the first time, with the revision as it stands.
     const retry = await decideDecision(db, v.admin, asked.id, choose(asked, "move"), NOW);
     expect(retry).toMatchObject({ ok: false, status: 409, code: "DECISION_STALE", replay: true, details: { revised: { id: revised.id } } });
@@ -507,19 +518,149 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     if (wedding.eventId === null) throw new Error("the wedding has no event");
     // A delivery noted at a moment, exactly a day before.
     await phase(wedding.eventId, v.spaceId, at(14, 9), 0);
+    // The evening's reception follows it, and no rule covers the gap.
+    await ink(v, "Evening reception", at(20), at(22));
     const decision = await prepared(v, wedding.id, at(15), at(19));
     expect(decision.assumptions).toContain("1 of its event's timed phases move with it, as the Diary moves them.");
-    // No turnaround rule: a pair of bookings elsewhere in the window changes nothing about the move.
+    expect(move(decision)?.consequences).toEqual([expect.objectContaining({ kind: "not_checked" })]);
+    // Third review: a pair of bookings after the reception is not next to the move, and changes nothing about it.
     await ink(v, "Breakfast", at(7, 11), at(8, 11));
     await ink(v, "Brunch", at(10, 11), at(11, 11));
     expect(await decideDecision(db, v.staff, decision.id, choose(decision, "move"), NOW)).toMatchObject({ ok: true, value: { status: "executed" } });
   });
 
-  it("prepares a move for a booking the Diary holds in the year 9999", async () => {
+  it("reads the turnaround before a set-up the move carries a full day earlier", async () => {
+    // Third review follow-up: the Diary was read only a day before the move,
+    // so a lunch ending as the carried set-up began was not seen.
+    const v = await venue();
+    await turnaround(v, 60);
+    await ink(v, "Lunch", at(11, 9), at(13, 9));
+    const wedding = await entry(v, "ink", "Crawford wedding", at(14), at(18));
+    if (wedding.eventId === null) throw new Error("the wedding has no event");
+    await phase(wedding.eventId, v.spaceId, at(14, 9), 60);
+    const earlier = await prepared(v, wedding.id, at(13), at(17));
+    expect(move(earlier)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 0 minutes /u) })]);
+  });
+
+  it("is made stale by a gap next to the move that no rule covers, and never by one elsewhere", async () => {
+    // A booking pencilled next to where the wedding is going, with no rule for the gap: the approver did not see it.
+    const v = await venue();
+    const id = await ink(v, "Crawford wedding", at(14), at(18));
+    const decision = await prepared(v, id, at(15), at(19));
+    expect(move(decision)?.consequences).toEqual([]);
+    await ink(v, "Breakfast", at(7, 11), at(8, 11));
+    const stale = await decideDecision(db, v.staff, decision.id, choose(decision, "move"), NOW);
+    if (stale.ok) throw new Error("expected stale");
+    expect(stale.code).toBe("DECISION_STALE");
+    expect(move(DecisionSchema.parse((stale.details as { revised: unknown }).revised))?.consequences).toEqual([expect.objectContaining({ kind: "not_checked" })]);
+
+    // Rules for weddings only: a meeting the next morning pairs with the evening's wedding, not with this one.
+    const w = await venue();
+    await turnaround(w, 60, "wedding");
+    const afternoon = await typed(w, "Crawford wedding", at(12), at(16), "wedding");
+    await typed(w, "Lee wedding", at(20), at(23), "wedding");
+    const later = await prepared(w, afternoon, at(13), at(17));
+    expect(move(later)?.consequences).toEqual([]);
+    await ink(w, "Board meeting", at(8, 11), at(9, 11));
+    expect(await decideDecision(db, w.staff, later.id, choose(later, "move"), NOW)).toMatchObject({ ok: true, value: { status: "executed" } });
+  });
+
+  it("finds a turnaround made worse when the booking moves to the other side of its neighbour, and none when it leaves from between two", async () => {
+    // A meeting after a wedding moves to before it: the wedding's own guideline now applies.
+    const v = await venue();
+    await turnaround(v, 60);
+    await turnaround(v, 120, "wedding");
+    await typed(v, "Crawford wedding", at(10), at(12), "wedding");
+    const meeting = await ink(v, "Board meeting", at(12, 10, 30), at(14));
+    const before = await prepared(v, meeting, at(7), at(9, 10, 20));
+    expect(move(before)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", severity: "warning" })]);
+    expect(move(before)?.consequences[0]?.summary).toMatch(/^Only 40 minutes next to the room's use .*; the turnaround guideline is 120 minutes\.$/u);
+    expect(before.recommendedOptionId).toBe("keep");
+
+    // Out from between two bookings: the gap it leaves is longer than either it had.
+    const w = await venue();
+    await turnaround(w, 60);
+    await ink(w, "Lunch", at(10), at(12));
+    const squeezed = await ink(w, "Press call", at(12, 10, 10), at(12, 10, 50));
+    await ink(w, "Afternoon tea", at(12, 10, 59), at(15));
+    const out = await prepared(w, squeezed, at(12, 11), at(13, 11));
+    expect(move(out)?.consequences).toEqual([]);
+    expect(out).toMatchObject({ recommendedOptionId: "move", question: null });
+  });
+
+  it("warns of a closure only where the move puts the booking in more of it", async () => {
+    const v = await venue();
+    await entry(v, "internal_block", "Closed: ceiling repairs", at(15), at(17));
+    const id = await ink(v, "Crawford wedding", at(14), at(16));
+    // An hour in the closure now; half an hour after the move.
+    const less = await prepared(v, id, at(13), at(15, 10, 30));
+    expect(move(less)?.consequences).toEqual([]);
+    // Two hours in it after the move.
+    const more = await prepared(v, id, at(15), at(17));
+    expect(move(more)?.consequences).toEqual([expect.objectContaining({ kind: "room_closed", severity: "warning" })]);
+  });
+
+  it("carries an ended event's phases with its room block, and weighs them no more than the Diary does", async () => {
+    const v = await venue();
+    await turnaround(v, 60);
+    const wedding = await entry(v, "ink", "Crawford wedding", at(14, 8), at(18, 8));
+    if (wedding.eventId === null) throw new Error("the wedding has no event");
+    const block = await entry(v, "internal_block", "Held for the Crawford party", at(10), at(12), wedding.eventId);
+    await phase(wedding.eventId, v.spaceId, at(9), 60);
+    // The event is called off; the block it held stays in the Diary.
+    await pool.query("UPDATE events SET status = 'cancelled' WHERE id = $1", [wedding.eventId]);
+    await ink(v, "Breakfast meeting", at(7), at(8, 10, 30));
+    // Half an hour earlier, its phase would leave no gap after breakfast; the Diary does not weigh a cancelled event's phases.
+    const decision = await prepared(v, block.id, at(9, 10, 30), at(11, 10, 30));
+    expect(decision.assumptions).toContain("1 of its event's timed phases move with it, as the Diary moves them.");
+    expect(move(decision)?.consequences).toEqual([]);
+  });
+
+  it("answers a superseded decision's retry with the decision the revisions came to, and as a replay only for the same choice", async () => {
+    const v = await venue();
+    const id = await ink(v, "Crawford wedding", at(14), at(18));
+    const first = await prepared(v, id, at(15), at(19));
+    expect((await updateBookingCore(db, v.staff, id, { notes: "Florist arrives at noon" })).ok).toBe(true);
+    const once = await decideDecision(db, v.admin, first.id, choose(first, "move"), NOW);
+    if (once.ok) throw new Error("expected stale");
+    const second = DecisionSchema.parse((once.details as { revised: unknown }).revised);
+    expect((await updateBookingCore(db, v.staff, id, { notes: "Florist arrives at one" })).ok).toBe(true);
+    const twice = await decideDecision(db, v.admin, second.id, choose(second, "move"), NOW);
+    if (twice.ok) throw new Error("expected stale");
+    const third = DecisionSchema.parse((twice.details as { revised: unknown }).revised);
+    expect(await decideDecision(db, v.admin, first.id, choose(first, "move"), NOW))
+      .toMatchObject({ ok: false, code: "DECISION_STALE", replay: true, details: { revised: { id: third.id, status: "prepared" } } });
+    const other = await decideDecision(db, v.admin, first.id, choose(first, "keep"), NOW);
+    expect(other).toMatchObject({ ok: false, code: "DECISION_STALE", details: { revised: { id: third.id } } });
+    expect(other.replay).toBeUndefined();
+  });
+
+  it("prepares the same move again when its urgency has changed", async () => {
+    const v = await venue();
+    const id = await ink(v, "Crawford wedding", at(10, 3), at(12, 3));
+    const ask = (now: Date) => prepareBookingTimeMove(db, v.staff, { bookingId: id, startsAt: at(11, 3).toISOString(), endsAt: at(13, 3).toISOString(), reason: "Later" }, now);
+    const first = await ask(NOW);
+    const later = await ask(new Date(NOW.getTime() + 2 * 3_600_000));
+    if (!first.ok || !later.ok) throw new Error("not prepared");
+    expect(first.value.urgency).toBe("soon");
+    expect(later).toMatchObject({ status: 201, value: { urgency: "now" } });
+    expect(later.value.id).not.toBe(first.value.id);
+  });
+
+  it("prepares a move for a booking the Diary holds in the year 9999, and finds what is at the new time", async () => {
     const v = await venue();
     const far = await ink(v, "Far future", new Date("9999-12-31T10:00:00.000Z"), new Date("9999-12-31T12:00:00.000Z"));
     const decision = await prepared(v, far, at(15), at(19));
     expect(move(decision)?.executable).toBe(true);
+    // Third review: the booking was left out of its own window, so nothing at the new time was weighed against it.
+    await ink(v, "Spring gala", at(16), at(20));
+    const onto = await prepared(v, far, at(15), at(19));
+    expect(move(onto)).toMatchObject({ executable: false, consequences: [expect.objectContaining({ kind: "ink_double_book" })] });
+    const hold = await entry(v, "hold", "Far hold", new Date("9999-12-31T10:00:00.000Z"), new Date("9999-12-31T12:00:00.000Z"));
+    const over = await prepared(v, hold.id, at(15), at(19));
+    expect(move(over)?.consequences).toContainEqual(expect.objectContaining({ kind: "hold_overlap", severity: "warning" }));
+    const first = await ink(v, "First of all", new Date("0001-01-01T10:00:00.000Z"), new Date("0001-01-01T12:00:00.000Z"));
+    expect(move(await prepared(v, first, at(15), at(19)))).toMatchObject({ executable: false });
   });
 
   it("reads the booking's title from the Diary when a decision is read", async () => {

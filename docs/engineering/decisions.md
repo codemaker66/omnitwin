@@ -25,8 +25,9 @@ language model never prepares, approves or executes one.
 
 `POST /decisions/booking-time-moves { bookingId, startsAt, endsAt, reason? }`
 prepares from what the Diary holds. The same person asking for the same move
-again, for the same reason, while the Diary is as it was, is answered with the
-decision that stands; anyone else's request is their own. Times are between
+again, for the same reason, while the Diary and the decision's urgency are as
+they were, is answered with the decision that stands; anyone else's request is
+their own. Times are between
 the years 2000 and 2199.
 
 - **The phases that move with it** are the ones the Diary's move carries: its
@@ -34,23 +35,30 @@ the years 2000 and 2199.
   ends, set-up included, except a phase inside another live booking of the
   same event (`phaseMovesWithBooking`, beside the SQL in `event-binding.ts`).
   They are part of what the decision is prepared on: a phase added or moved
-  since makes it stale.
+  since makes it stale. A room block's phases move with it even when its
+  event has been called off, and, as in the Diary's conflict view, they are
+  not weighed against the room's other use.
 - **Its consequences** come from the Diary's own conflict engine
-  (`services/calendar-conflicts.ts`), run on the room's bookings and phases a
-  day either side, with and without the move. A consequence is a finding
-  after the move between a pair the engine did not find before, or a
-  turnaround that gets shorter (with its figure before): a confirmed booking
-  in the way (blocking), a hold it would overlap, too little turnaround either
-  side, the same event's other day (warnings). A turnaround the move makes
-  longer is not one: that is what the move is for. Whether every gap is
-  covered by a turnaround rule is said too ("not fully checked"), without a
-  count, so an unrelated booking in the window does not make the decision
-  stale.
+  (`services/calendar-conflicts.ts`), run with and without the move on the
+  room's bookings and phases from two days before the earlier of the
+  booking's times now and the times asked for to two days after the later
+  (the booking itself always, wherever it is). A
+  consequence is a finding after the move that the engine did not find
+  before, or a turnaround that gets shorter (with its figure before): a
+  confirmed booking in the way (blocking), a hold it would overlap, too little
+  turnaround either side, the same event's other day (warnings). A turnaround
+  is the arriving booking's, whose guideline applies: a booking moved to the
+  other side of its neighbour meets that neighbour's guideline as a new
+  finding, and the gap a booking leaves between two others is not one. A
+  turnaround the move makes longer is not one either: that is what the move
+  is for. A gap next to what moves that no turnaround rule covers is said too
+  ("not fully checked"); a gap elsewhere is not the move's, and does not make
+  the decision stale.
 - Two more come from outside the engine: a live hold the Diary's update would
   refuse to move without its decision date, owner and next action (blocking,
-  by the Diary's own check), and a room closure at the new time (a warning:
-  the engine does not weigh a closure, and the Diary lets a booking move into
-  one, so the approver decides).
+  by the Diary's own check), and a room closure the move puts the booking in
+  more of than now (a warning: the engine does not weigh a closure, and the
+  Diary lets a booking move into one, so the approver decides).
 - At most 30 are listed, blocking first; the rest are counted ("And 12 more
   like those above"), and the "not fully checked" note is never counted away.
 - **Move** is executable unless something blocks it, and recommended only with
@@ -86,16 +94,17 @@ known to work at its venue):
 
 1. A decided decision answers the same choice as it did the first time, a
    refusal included (`Idempotency-Replay: true`), and refuses another (409
-   `DECISION_CLOSED`). A superseded one answers with the decision that
-   replaced it, as it stands.
+   `DECISION_CLOSED`). A superseded one answers with the decision its
+   revisions have come to, as it stands: as a replay to the choice that found
+   it stale, and without one to any other.
 2. "Keep" declines, with nothing to check.
 3. The booking is read again, locked, and the move's consequences worked out
    again. If the booking, the phases moving with it or the consequences
    changed, or the decision expired (a day, or the booking's start if
    sooner), **nothing executes**: the decision is superseded by a revised one,
    which is returned (409 `DECISION_STALE`, `details.revised`). The revision
-   is still the asker's (theirs to withdraw, in their words); the approver who
-   found it stale is in its history. If the booking is already at the asked
+   is still the asker's (theirs to withdraw, in their words); its `prepared`
+   row is the approver's, who found it stale, with the asker as `askedBy`. If the booking is already at the asked
    times, nothing is left to decide (409 `NO_CHANGE`).
 4. The move runs as `updateBookingCore` with the prepared booking state as its
    precondition, and is recorded in the `diary_commands` ledger under the

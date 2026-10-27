@@ -36,7 +36,7 @@ import {
   type MutationActor,
 } from "./booking-mutations.js";
 import {
-  detectCalendarConflicts,
+  detectCalendarConflictsInDetail,
   type ConflictBookingInput,
   type ConflictPhaseInput,
   type ConflictTurnaroundRuleInput,
@@ -50,7 +50,7 @@ import { phaseMovesWithBooking } from "./event-binding.js";
 // Prepare: from what the Diary holds, never from what a screen sends, work out
 // the move's consequences with the Diary's own conflict engine (a confirmed
 // booking in the way, a hold it would overlap, too little turnaround either
-// side, a pair no turnaround rule covers), a hold the Diary's update would
+// side, a gap next to it that no turnaround rule covers), a hold the Diary's update would
 // refuse to move, and a room closed then (the Diary allows that move, so it is
 // a warning); offer "move" and "keep" with a recommendation and its reasons,
 // say what is not worked out, and record it. The event's phases that the Diary's move carries with the
@@ -87,8 +87,10 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 /** How long a prepared decision stands before it must be prepared again. */
 const DECISION_LIFETIME_MS = DAY_MS;
-/** How far either side of a move the Diary is read for its consequences. */
-const NEIGHBOUR_WINDOW_MS = DAY_MS;
+/** How far either side of a move the Diary is read for its consequences: a
+ *  day for the set-up the move carries, and a day before that for the
+ *  turnaround it needs. */
+const NEIGHBOUR_WINDOW_MS = 2 * DAY_MS;
 /** The most consequences a decision lists; the rest are counted. */
 const MAX_CONSEQUENCES = 30;
 /** The longest a decision's sentence is kept. */
@@ -195,7 +197,11 @@ const UNREADABLE = deny(409, "DECISION_UNREADABLE", "This decision was kept in a
 
 export interface Neighbourhood {
   readonly bookings: readonly ConflictBookingInput[];
+  /** The phases the Diary's conflict view weighs: those of events still running. */
   readonly phases: readonly ConflictPhaseInput[];
+  /** The booking's own event's phases when that event has ended: the Diary's
+   *  move carries them, and its conflict view does not weigh them. */
+  readonly endedEventPhases: readonly ConflictPhaseInput[];
   readonly rules: readonly ConflictTurnaroundRuleInput[];
 }
 
@@ -210,6 +216,8 @@ const EARLIEST = Date.parse("0001-01-02T00:00:00.000Z");
 const LATEST = Date.parse("9999-12-30T23:59:59.999Z");
 
 async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: Move): Promise<Neighbourhood> {
+  // One window from before the earlier times to after the later, so every
+  // booking between them is read and no two are taken as neighbours that are not.
   const from = new Date(Math.max(EARLIEST, Math.min(booking.startsAt.getTime(), to.startsAt.getTime()) - NEIGHBOUR_WINDOW_MS));
   const until = new Date(Math.min(LATEST, Math.max(booking.endsAt.getTime(), to.endsAt.getTime()) + NEIGHBOUR_WINDOW_MS));
   // One statement at a time: a transaction's connection runs one query at once.
@@ -217,9 +225,10 @@ async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: Move)
     eq(bookings.venueId, booking.venueId),
     eq(bookings.spaceId, booking.spaceId),
     isNull(bookings.deletedAt),
-    lt(bookings.startsAt, until),
-    gt(bookings.endsAt, from),
+    // The booking itself always, wherever the clamp at the edge of the years puts the window.
+    or(eq(bookings.id, booking.id), and(lt(bookings.startsAt, until), gt(bookings.endsAt, from))),
   )).orderBy(asc(bookings.startsAt), asc(bookings.id));
+  const phaseEnd = sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes})`;
   const phaseRows = await conn.select({
     id: eventPhases.id,
     spaceId: eventPhases.spaceId,
@@ -229,6 +238,7 @@ async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: Move)
     eventId: events.id,
     eventName: events.name,
     eventType: events.eventType,
+    eventStatus: events.status,
   }).from(eventPhases).innerJoin(events, eq(eventPhases.eventId, events.id)).where(and(
     eq(events.venueId, booking.venueId),
     isNull(events.deletedAt),
@@ -238,9 +248,16 @@ async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: Move)
       ? notInArray(events.status, [...EVENT_ENDED_STATUSES])
       : or(notInArray(events.status, [...EVENT_ENDED_STATUSES]), eq(events.id, booking.eventId)),
     eq(eventPhases.spaceId, booking.spaceId),
-    lt(eventPhases.startsAt, until),
-    // A phase of no length counts: the Diary moves it as well.
-    gte(sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes})`, from),
+    or(
+      // A phase of no length counts: the Diary moves it as well.
+      and(lt(eventPhases.startsAt, until), gte(phaseEnd, from)),
+      // The phases the Diary's move would carry, from a day before the booking until it ends.
+      ...(booking.eventId === null ? [] : [and(
+        eq(events.id, booking.eventId),
+        gte(eventPhases.startsAt, new Date(Math.max(EARLIEST, booking.startsAt.getTime() - DAY_MS))),
+        lt(eventPhases.startsAt, booking.endsAt),
+      )]),
+    ),
   )).orderBy(asc(eventPhases.startsAt), asc(eventPhases.id));
   const ruleRows = await conn.select({
     spaceId: turnaroundRules.spaceId,
@@ -254,12 +271,26 @@ async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: Move)
       id: row.id, spaceId: row.spaceId, kind: row.kind, status: row.status, title: row.title, eventType: row.eventType,
       startsAt: row.startsAt, endsAt: row.endsAt, rank: row.rank, jointFlag: row.jointFlag, eventId: row.eventId, deletedAt: row.deletedAt,
     })),
-    phases: phaseRows.flatMap((row) => row.spaceId === null || row.startsAt === null ? [] : [{
-      id: row.id, spaceId: row.spaceId, eventId: row.eventId, eventName: row.eventName, name: row.name, eventType: row.eventType,
-      startsAt: row.startsAt, endsAt: new Date(row.startsAt.getTime() + row.durationMinutes * 60_000),
-    }]),
+    phases: timed(phaseRows.filter((row) => !ended(row.eventStatus))),
+    endedEventPhases: timed(phaseRows.filter((row) => ended(row.eventStatus))),
     rules: ruleRows,
   };
+}
+
+const ENDED: ReadonlySet<string> = new Set(EVENT_ENDED_STATUSES);
+
+function ended(status: string): boolean {
+  return ENDED.has(status);
+}
+
+function timed(rows: readonly {
+  readonly id: string; readonly spaceId: string | null; readonly name: string; readonly startsAt: Date | null; readonly durationMinutes: number;
+  readonly eventId: string; readonly eventName: string; readonly eventType: string | null;
+}[]): ConflictPhaseInput[] {
+  return rows.flatMap((row) => row.spaceId === null || row.startsAt === null ? [] : [{
+    id: row.id, spaceId: row.spaceId, eventId: row.eventId, eventName: row.eventName, name: row.name, eventType: row.eventType,
+    startsAt: row.startsAt, endsAt: new Date(row.startsAt.getTime() + row.durationMinutes * 60_000),
+  }]);
 }
 
 /** The event phases the Diary's move would carry with the booking, by its own rule. */
@@ -268,19 +299,21 @@ export function carriedPhases(world: Neighbourhood, booking: BookingRow): readon
   if (eventId === null) return [];
   const live = world.bookings.filter((entry) => entry.status === "active" && entry.deletedAt === null);
   const move = { bookingId: booking.id, eventId, from: { spaceId: booking.spaceId, startsAt: booking.startsAt, endsAt: booking.endsAt } };
-  return world.phases.filter((phase) => phaseMovesWithBooking(phase, move, live));
+  return [...world.phases, ...world.endedEventPhases].filter((phase) => phaseMovesWithBooking(phase, move, live));
 }
 
 /** The Diary as it would be with the booking moved, and the phases it carries with it. */
 function moved(world: Neighbourhood, booking: BookingRow, to: Move, carried: readonly ConflictPhaseInput[]): Neighbourhood {
   const delta = to.startsAt.getTime() - booking.startsAt.getTime();
   const carriedIds = new Set(carried.map((phase) => phase.id));
+  const shift = (phase: ConflictPhaseInput): ConflictPhaseInput => carriedIds.has(phase.id)
+    ? { ...phase, startsAt: new Date(phase.startsAt.getTime() + delta), endsAt: new Date(phase.endsAt.getTime() + delta) }
+    : phase;
   return {
     ...world,
     bookings: world.bookings.map((entry) => entry.id === booking.id ? { ...entry, startsAt: to.startsAt, endsAt: to.endsAt } : entry),
-    phases: world.phases.map((phase) => carriedIds.has(phase.id)
-      ? { ...phase, startsAt: new Date(phase.startsAt.getTime() + delta), endsAt: new Date(phase.endsAt.getTime() + delta) }
-      : phase),
+    phases: world.phases.map(shift),
+    endedEventPhases: world.endedEventPhases.map(shift),
   };
 }
 
@@ -336,24 +369,39 @@ function listed(found: readonly DecisionConsequence[], limit: number): DecisionC
   return [...kept, { kind: "more", severity: worst, summary: `And ${String(rest.length)} more like those above.`, concerns: [] }];
 }
 
+/** Which conflicts are the same before and after the move. A turnaround is
+ *  the arrival's, after the gap: its guideline is that booking's, so the same
+ *  arrival with a shorter gap is worse whatever comes before it, and an
+ *  arrival on the other side of its neighbour is a new one. Every other
+ *  conflict is its pair's, in either order. */
+function conflictKey(conflict: CalendarConflict): string {
+  return conflict.type === "insufficient_turnaround"
+    ? `${conflict.type}|${conflict.entryIds[1]}`
+    : `${conflict.type}|${[...conflict.entryIds].sort().join(",")}`;
+}
+
+/** How long a booking's times overlap a closure's. */
+function overlapMs(times: Move, block: ConflictBookingInput): number {
+  return Math.max(0, Math.min(times.endsAt.getTime(), block.endsAt.getTime()) - Math.max(times.startsAt.getTime(), block.startsAt.getTime()));
+}
+
 /**
  * What the move brings about that the booking does not have now, or has
- * worse: every conflict the engine finds after the move between a pair it
- * did not find before, or a turnaround that gets shorter (one that gets
- * longer is the move doing its job); a room closure at the new time; and a
- * hold the Diary's update would refuse to move.
+ * worse: every conflict the engine finds after the move that it did not
+ * find before, or a turnaround that gets shorter (one that gets longer is
+ * the move doing its job); more of a room closure than now; and a hold the
+ * Diary's update would refuse to move.
  */
 export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: Move): readonly DecisionConsequence[] {
   const carried = carriedPhases(world, booking);
   const next = moved(world, booking, to, carried);
-  const pairKey = (conflict: CalendarConflict): string => `${conflict.type}|${[...conflict.entryIds].sort().join(",")}`;
-  const before = detectCalendarConflicts({ bookings: world.bookings, phases: world.phases, turnaroundRules: world.rules });
-  const after = detectCalendarConflicts({ bookings: next.bookings, phases: next.phases, turnaroundRules: next.rules });
-  const had = new Map(before.conflicts.map((conflict) => [pairKey(conflict), conflict]));
+  const before = detectCalendarConflictsInDetail({ bookings: world.bookings, phases: world.phases, turnaroundRules: world.rules }).report;
+  const after = detectCalendarConflictsInDetail({ bookings: next.bookings, phases: next.phases, turnaroundRules: next.rules });
+  const had = new Map(before.conflicts.map((conflict) => [conflictKey(conflict), conflict]));
   const ours = new Set([booking.id, ...carried.map((phase) => phase.id)]);
   const found: DecisionConsequence[] = [];
-  for (const conflict of after.conflicts) {
-    const prior = had.get(pairKey(conflict));
+  for (const conflict of after.report.conflicts) {
+    const prior = had.get(conflictKey(conflict));
     let wasMinutes: number | null = null;
     if (prior !== undefined) {
       const was = gapMinutes(prior);
@@ -370,11 +418,12 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
   }
   // A room closed then. The conflict engine does not weigh a closure against a
   // booking, and the Diary lets a booking move into one, so the approver
-  // decides (a viewing's overlap with a closure the engine already lists).
+  // decides (a viewing's overlap with a closure the engine already lists). A
+  // closure the booking is already in is the move's only if it is in more of it.
   if (booking.kind !== "internal_block" && booking.kind !== "viewing") {
     for (const block of next.bookings) {
       if (block.kind !== "internal_block" || block.status !== "active" || block.deletedAt !== null || block.id === booking.id) continue;
-      if (block.startsAt.getTime() < to.endsAt.getTime() && block.endsAt.getTime() > to.startsAt.getTime()) {
+      if (overlapMs(to, block) > overlapMs(booking, block)) {
         found.push({ kind: "room_closed", severity: "warning", summary: `The room is closed then (${span(block.startsAt, block.endsAt)}).`, concerns: [block.id] });
       }
     }
@@ -388,9 +437,10 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
       concerns: [],
     });
   }
-  // Said without the engine's count of gaps, which any booking in the window
-  // changes: only whether every gap is checked is part of the decision.
-  const notChecked: DecisionConsequence[] = after.checks.turnaround.status === "checked" ? [] : [{
+  // Only the gaps either side of what moves: a pair elsewhere in the window
+  // is not the move's, and the decision is not made stale by it.
+  const uncoveredNextToIt = after.uncoveredGaps.some((gap) => [...gap.before, ...gap.after].some((id) => ours.has(id)));
+  const notChecked: DecisionConsequence[] = !uncoveredNextToIt ? [] : [{
     kind: "not_checked",
     severity: "info",
     summary: "Turnaround is not fully checked: no rule covers some of the bookings next to it.",
@@ -528,8 +578,10 @@ async function insertDecision(
     supersedes,
   }).returning();
   if (row === undefined) throw new Error("decision insert returned no row");
-  await appendEvent(conn, row, "prepared", preparedBy, {
-    recommendedOptionId: body.recommendedOptionId, supersedes, ...(revisedBy === null ? {} : { revisedBy }),
+  // Whoever took the step: a revision is prepared when an approver finds the
+  // decision stale, and stays the asker's request.
+  await appendEvent(conn, row, "prepared", revisedBy ?? preparedBy, {
+    recommendedOptionId: body.recommendedOptionId, supersedes, ...(revisedBy === null ? {} : { askedBy: preparedBy }),
   });
   return row;
 }
@@ -573,7 +625,8 @@ export async function prepareBookingTimeMove(
     const existing = standing[0];
     if (existing !== undefined && existing.reason === reason
       && existing.body.basis.subjectDigest === body.basis.subjectDigest
-      && existing.body.basis.consequenceDigest === body.basis.consequenceDigest) {
+      && existing.body.basis.consequenceDigest === body.basis.consequenceDigest
+      && existing.body.urgency === body.urgency) {
       const decision = await shown(tx, existing);
       if (decision !== null) return { ok: true, status: 200, value: decision, replay: true } as const;
     }
@@ -665,6 +718,18 @@ async function after(tx: Tx, row: DecisionRow): Promise<Decision> {
   return decision;
 }
 
+/** The decision a chain of revisions has come to, as it reads now. */
+async function newestRevision(tx: Tx, decisionId: string): Promise<Decision | null> {
+  let id = decisionId;
+  for (let hop = 0; hop < 100; hop += 1) {
+    const [found] = await tx.select().from(decisions).where(eq(decisions.id, id)).limit(1);
+    if (found === undefined) return null;
+    if (found.status !== "superseded" || found.supersededBy === null) return shown(tx, found);
+    id = found.supersededBy;
+  }
+  return null;
+}
+
 /**
  * Decide a prepared decision: the option chosen, by someone who holds the
  * approval for its class at its venue, naming the decision as they read it.
@@ -700,10 +765,15 @@ export async function decideDecision(
       if (row.status !== "prepared") {
         // The same choice made again (a double press, a retry) is answered as it was the first time.
         if (row.status === "superseded" && row.supersededBy !== null) {
-          const [revisedRow] = await tx.select().from(decisions).where(eq(decisions.id, row.supersededBy)).limit(1);
-          const revised = revisedRow === undefined ? null : await shown(tx, revisedRow);
+          const revised = await newestRevision(tx, row.supersededBy);
           if (revised !== null) {
-            return { ...deny(409, "DECISION_STALE", "The Diary changed since this was prepared. Here is the decision that replaced it; nothing was changed.", { revised }), replay: true };
+            const [found] = await tx.select({ detail: decisionEvents.detail }).from(decisionEvents)
+              .where(and(eq(decisionEvents.decisionId, row.id), eq(decisionEvents.kind, "stale"))).limit(1);
+            const sameChoice = found?.detail.optionId === input.optionId;
+            return {
+              ...deny(409, "DECISION_STALE", "The Diary changed since this was prepared. Here is the decision that replaced it; nothing was changed.", { revised }),
+              ...(sameChoice ? { replay: true } : {}),
+            };
           }
         }
         const receipt = row.receipt;
