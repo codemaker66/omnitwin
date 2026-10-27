@@ -370,7 +370,9 @@ jobs:
 
   e2e:
     name: E2E CPU (${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest became Ubuntu 26.04 (from 19 Oct 2026), where Playwright 1.59.1 refuses to
+    # install Chromium ("does not support chromium on ubuntu26.04-x64"). Unpin with a Playwright that supports it.
+    runs-on: ubuntu-24.04
     # Every non-GPU Chromium case executes across isolated single-worker shards.
     # The final browser-gate independently requires the complete CPU/GPU union;
     # excluding the exact GPU file here cannot produce a green release by itself.
