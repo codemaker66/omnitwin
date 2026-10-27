@@ -56,6 +56,7 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
   // not merely present in the DOM (it truncates, never hides — CARD A1).
   test.use({ viewport: { width: 1440, height: 900 } });
 
+  // The title is this case's identity in .github/gpu/browser-baseline.json; the honest fallback is now no capture row for a guest.
   test("uncaptured room: honest fallback over the procedural room", async ({ page }, testInfo) => {
     await stubPlannerBootstrap(page, true);
     let registryRequests = 0;
@@ -69,9 +70,12 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
 
     const topbar = page.getByRole("banner", { name: "Room and save status" });
     await expect(topbar).toBeVisible({ timeout: 15_000 });
-    const runtimeChip = page.getByTestId("reference-scene-outliner").locator(".reference-capture-label");
-    await expect(runtimeChip).toBeVisible();
-    await expect(runtimeChip).toContainText(ATELIER_FALLBACK_COPY);
+    // The capture's state is an engineering fact, for staff only (spec 4.3,
+    // QoL F-15): an anonymous guest sees the list without the capture row.
+    const outliner = page.getByTestId("reference-scene-outliner");
+    await expect(outliner).toBeVisible();
+    await expect(outliner.locator(".reference-capture-label")).toHaveCount(0);
+    await expect(outliner).not.toContainText(ATELIER_FALLBACK_COPY);
     await expect(page.locator("canvas").first()).toBeVisible();
     const interactiveMs = Date.now() - startedAt;
 
