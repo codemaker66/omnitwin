@@ -1,0 +1,292 @@
+// ---------------------------------------------------------------------------
+// The surveyed volume and surfaces of each Trades Hall room, for its echo
+// (T-677).
+//
+// Each room's areas are worked out here from its named source, so a later
+// survey edits one place. Absorption per material comes from acoustic-data.ts;
+// room-acoustics.ts turns these surfaces into reverberation times. Rooms are
+// laid out about their own centre: x along the length, z across the width,
+// as hall-spec.ts frames the Grand Hall.
+// ---------------------------------------------------------------------------
+
+import type { SurfaceMaterialId } from "./acoustic-data.js";
+import type { BandValues } from "./bands.js";
+import {
+  HALL_DOORS,
+  HALL_HEIGHT,
+  HALL_LENGTH,
+  HALL_OPENINGS,
+  HALL_WIDTH,
+  isWindow,
+  openingTop,
+  type HallOpening,
+} from "../../components/grand-hall/hall-spec.js";
+
+export type RoomSlug =
+  | "grand-hall"
+  | "saloon"
+  | "robert-adam-room"
+  | "reception-room"
+  | "north-gallery"
+  | "south-gallery";
+
+export interface RoomSurface {
+  readonly material: SurfaceMaterialId;
+  readonly areaM2: number;
+  readonly role: "floor" | "wall" | "ceiling" | "opening";
+}
+
+export interface RoomAcoustics {
+  readonly slug: string;
+  readonly volumeM3: number;
+  readonly surfaces: readonly RoomSurface[];
+  /** Per-band multiplier on the Eyring time, fitted by the ray tracer (Task 7). */
+  readonly calibration: BandValues;
+  readonly source: string;
+}
+
+/** The floor rectangle a reference layout is set out in, centred on the room. */
+export interface RoomPlan {
+  readonly lengthM: number;
+  readonly widthM: number;
+}
+
+/** Calibration before the tracer fits it: Eyring as calculated. */
+export const UNCALIBRATED: BandValues = [1, 1, 1, 1, 1, 1, 1];
+
+/**
+ * A door the survey has not sized is taken as the Saloon's, 1.6 x 2.6 m, the
+ * only door the plan measures (EST).
+ */
+const HOUSE_DOOR_M2 = 1.6 * 2.6;
+
+function surface(material: SurfaceMaterialId, areaM2: number, role: RoomSurface["role"]): RoomSurface {
+  return { material, areaM2, role };
+}
+
+// ---------------------------------------------------------------------------
+// The Grand Hall, from components/grand-hall/hall-spec.ts
+// ---------------------------------------------------------------------------
+
+/** The dome's radius, as data/room-geometries.ts has it (EST). */
+const DOME_RADIUS_M = 3.5;
+/** The dome is taken as a hemisphere on a drum this tall (EST). */
+const DOME_DRUM_M = 1.5;
+/** Height of the dado band counted as panelling, as the plan sets it. */
+const DADO_BAND_M = 1.2;
+/**
+ * The width of each of a window's two velour curtains, flat (EST). The plan's
+ * 0.9 m gave 31 m2 of velour and an empty hall of 2.66 s at 1 kHz, outside the
+ * 2.0-2.6 s the plan's test sets. Widths from 0.96 to about 1.18 m meet that
+ * and also keep the hall's mid band over three times the galleries'; 1.05 m,
+ * in the middle, gives 36 m2 of velour (the research estimate assumed 45 m2,
+ * which would put the hall under three galleries) and 2.52 s at 1 kHz.
+ */
+const CURTAIN_WIDTH_M = 1.05;
+
+/** The clear area of an opening; an arched window adds its semicircular head. */
+function openingArea(opening: HallOpening): number {
+  const square = opening.width * (opening.head - opening.sill);
+  if (opening.kind !== "arched-window") return square;
+  const radius = opening.width / 2;
+  return square + (Math.PI * radius * radius) / 2;
+}
+
+function grandHall(): RoomAcoustics {
+  const windows = HALL_OPENINGS.filter(isWindow);
+  const doorIds = new Set(HALL_DOORS.map((door) => door.opening));
+  const doors = HALL_OPENINGS.filter((opening) => doorIds.has(opening.id));
+
+  const floor = HALL_LENGTH * HALL_WIDTH;
+  const domeOpening = Math.PI * DOME_RADIUS_M * DOME_RADIUS_M;
+  // A hemisphere's inner face plus the drum's wall.
+  const dome = 2 * Math.PI * DOME_RADIUS_M * DOME_RADIUS_M + 2 * Math.PI * DOME_RADIUS_M * DOME_DRUM_M;
+  const volume = floor * HALL_HEIGHT + (2 / 3) * Math.PI * DOME_RADIUS_M ** 3 + domeOpening * DOME_DRUM_M;
+
+  const perimeter = 2 * (HALL_LENGTH + HALL_WIDTH);
+  const glazing = windows.reduce((sum, opening) => sum + openingArea(opening), 0);
+  const doorArea = doors.reduce((sum, opening) => sum + openingArea(opening), 0);
+  const openingWidths = HALL_OPENINGS.reduce((sum, opening) => sum + opening.width, 0);
+  const dado = (perimeter - openingWidths) * DADO_BAND_M;
+  const upperWall = perimeter * HALL_HEIGHT - glazing - doorArea - dado;
+  // Two curtains a window, each as tall as the window's clear opening.
+  const curtains = windows.reduce(
+    (sum, opening) => sum + 2 * CURTAIN_WIDTH_M * (openingTop(opening) - opening.sill),
+    0,
+  );
+
+  return {
+    slug: "grand-hall",
+    volumeM3: volume,
+    surfaces: [
+      surface("oak-boards-joists", floor, "floor"),
+      surface("plaster-lath", floor - domeOpening, "ceiling"),
+      surface("plaster-masonry", dome, "ceiling"),
+      surface("hardwood-panelling", dado, "wall"),
+      surface("hardwood-panelling", upperWall / 2, "wall"),
+      surface("plaster-masonry", upperWall / 2, "wall"),
+      surface("sash-glazing", glazing, "opening"),
+      surface("timber-door", doorArea, "opening"),
+      surface("velour-drape", curtains, "wall"),
+    ],
+    calibration: UNCALIBRATED,
+    source:
+      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; dome r 3.5 m on a 1.5 m drum (EST); dado band 1.2 m; curtains 2 x 1.05 m a window (EST)",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The other rooms, from the survey facts in the T-677 plan
+// ---------------------------------------------------------------------------
+
+/** Saloon: 11.8 x 7.1 m, ceiling 5.7 m; three leaded windows, marble, one door. */
+function saloon(): RoomAcoustics {
+  const length = 11.8;
+  const width = 7.1;
+  const height = 5.7;
+  const windows = 3 * 2.0 * 3.5;
+  const marble = 2;
+  const door = 1.6 * 2.6;
+  const wall = 2 * (length + width) * height - windows - marble - door;
+  return {
+    slug: "saloon",
+    volumeM3: length * width * height,
+    surfaces: [
+      surface("parquet-timber-subfloor", length * width, "floor"),
+      surface("plaster-lath", length * width, "ceiling"),
+      surface("hardwood-panelling", wall * 0.7, "wall"),
+      surface("plaster-masonry", wall * 0.3, "wall"),
+      surface("marble", marble, "wall"),
+      surface("leaded-glass", windows, "opening"),
+      surface("timber-door", door, "opening"),
+    ],
+    calibration: UNCALIBRATED,
+    source:
+      "survey: 11.8 x 7.1 x 5.7 m; walls 70 % panelling; three 2.0 x 3.5 m leaded windows; marble 2 m2; one 1.6 x 2.6 m door",
+  };
+}
+
+/**
+ * Robert Adam Room: a lower section of 11.2 x 7.6 x 2.9 m open to an upper
+ * section of 9.8 x 5.6 x 2.2 m. The upper section's 5.6 x 2.2 m end is open
+ * to the lower one, so neither side has a wall there. The windows are taken
+ * as sashes (EST).
+ */
+function robertAdamRoom(): RoomAcoustics {
+  const lower = { length: 11.2, width: 7.6, height: 2.9 };
+  const upper = { length: 9.8, width: 5.6, height: 2.2 };
+  const opening = upper.width * upper.height;
+  const lowerWall = 2 * (lower.length + lower.width) * lower.height - opening;
+  const upperWall = (2 * upper.length + upper.width) * upper.height;
+  const windows = 3 * 1.6 * 2.0;
+  const doors = 2 * HOUSE_DOOR_M2;
+  const plan = lower.length * lower.width + upper.length * upper.width;
+  return {
+    slug: "robert-adam-room",
+    volumeM3: lower.length * lower.width * lower.height + upper.length * upper.width * upper.height,
+    surfaces: [
+      surface("oak-boards-joists", plan, "floor"),
+      surface("plaster-masonry", plan, "ceiling"),
+      surface("plaster-masonry", lowerWall + upperWall - windows - doors, "wall"),
+      surface("sash-glazing", windows, "opening"),
+      surface("timber-door", doors, "opening"),
+      surface("velour-drape", 2 * 2.2, "wall"),
+    ],
+    calibration: UNCALIBRATED,
+    source:
+      "survey: 11.2 x 7.6 x 2.9 m open to 9.8 x 5.6 x 2.2 m; three 1.6 x 2.0 m windows; a 2 x 2.2 m velour curtain at the arch; two doors of 1.6 x 2.6 m (EST)",
+  };
+}
+
+/**
+ * The Reception Room's L, as data/room-geometries.ts traces it from the floor
+ * plan (a 9.6 x 7.0 m arm and a 7.3 x 5.0 m arm, 12 m deep), scaled evenly to
+ * the surveyed 100 m2.
+ */
+const RECEPTION_TRACE = { wide: [9.6, 7.0], narrow: [7.3, 5.0] } as const;
+const RECEPTION_AREA_M2 = 100;
+const RECEPTION_MEAN_CEILING_M = 2.8;
+const RECEPTION_SCALE = Math.sqrt(
+  RECEPTION_AREA_M2 /
+    (RECEPTION_TRACE.wide[0] * RECEPTION_TRACE.wide[1] + RECEPTION_TRACE.narrow[0] * RECEPTION_TRACE.narrow[1]),
+);
+
+/** Reception Room: an L of 100 m2 under a 2.8 m mean coved ceiling. */
+function receptionRoom(): RoomAcoustics {
+  // An L's perimeter is its bounding rectangle's.
+  const perimeter =
+    2 * (RECEPTION_TRACE.wide[0] + RECEPTION_TRACE.wide[1] + RECEPTION_TRACE.narrow[1]) * RECEPTION_SCALE;
+  const windows = 4 * 1.2 * 2.4;
+  const glazedDoors = 2 * HOUSE_DOOR_M2;
+  return {
+    slug: "reception-room",
+    volumeM3: RECEPTION_AREA_M2 * RECEPTION_MEAN_CEILING_M,
+    surfaces: [
+      surface("timber-on-slab", RECEPTION_AREA_M2, "floor"),
+      surface("plasterboard-studs", RECEPTION_AREA_M2, "ceiling"),
+      surface("plasterboard-studs", perimeter * RECEPTION_MEAN_CEILING_M - windows - glazedDoors, "wall"),
+      surface("sash-glazing", windows, "opening"),
+      // The glazed doors are taken as glass (EST).
+      surface("sash-glazing", glazedDoors, "opening"),
+      surface("sheer-curtain", 4 * 2.4 * 2.4, "wall"),
+      surface("velour-drape", 4 * 2 * 1.2 * 2.6, "wall"),
+    ],
+    calibration: UNCALIBRATED,
+    source:
+      "survey: an L of 100 m2 (the room-geometries.ts trace, scaled), 2.8 m mean ceiling; four 1.2 x 2.4 m windows with sheers and velour drapes; two glazed doors of 1.6 x 2.6 m (EST)",
+  };
+}
+
+/** A gallery: 11.5 x 4.1 x 2.8 m, carpeted; two sashes, a three-light front window, one door. */
+function gallery(slug: "north-gallery" | "south-gallery"): RoomAcoustics {
+  const length = 11.5;
+  const width = 4.1;
+  const height = 2.8;
+  const windows = 2 * 1.0 * 1.6 + 2.0 * 1.6;
+  const door = HOUSE_DOOR_M2;
+  return {
+    slug,
+    volumeM3: length * width * height,
+    surfaces: [
+      surface("carpet-on-underlay", length * width, "floor"),
+      surface("plaster-masonry", length * width, "ceiling"),
+      surface("plaster-masonry", 2 * (length + width) * height - windows - door, "wall"),
+      surface("sash-glazing", windows, "opening"),
+      surface("timber-door", door, "opening"),
+    ],
+    calibration: UNCALIBRATED,
+    source:
+      "survey: 11.5 x 4.1 x 2.8 m; two 1.0 x 1.6 m sashes and a 2.0 x 1.6 m front window; one door of 1.6 x 2.6 m (EST)",
+  };
+}
+
+export const ROOM_ACOUSTICS: Readonly<Record<RoomSlug, RoomAcoustics>> = {
+  "grand-hall": grandHall(),
+  saloon: saloon(),
+  "robert-adam-room": robertAdamRoom(),
+  "reception-room": receptionRoom(),
+  "north-gallery": gallery("north-gallery"),
+  "south-gallery": gallery("south-gallery"),
+};
+
+/**
+ * Where each room's reference layout is set out: the whole floor, or for the
+ * two-part rooms their main part (the Robert Adam Room's lower section, the
+ * Reception Room's wide arm).
+ */
+export const ROOM_PLANS: Readonly<Record<RoomSlug, RoomPlan>> = {
+  "grand-hall": { lengthM: HALL_LENGTH, widthM: HALL_WIDTH },
+  saloon: { lengthM: 11.8, widthM: 7.1 },
+  "robert-adam-room": { lengthM: 11.2, widthM: 7.6 },
+  "reception-room": {
+    lengthM: RECEPTION_TRACE.wide[0] * RECEPTION_SCALE,
+    widthM: RECEPTION_TRACE.wide[1] * RECEPTION_SCALE,
+  },
+  "north-gallery": { lengthM: 11.5, widthM: 4.1 },
+  "south-gallery": { lengthM: 11.5, widthM: 4.1 },
+};
+
+/** Whether `slug` is one of the surveyed rooms. */
+export function isRoomSlug(slug: string): slug is RoomSlug {
+  return Object.prototype.hasOwnProperty.call(ROOM_ACOUSTICS, slug);
+}
