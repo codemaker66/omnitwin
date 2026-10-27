@@ -36,19 +36,19 @@ export type SurfaceMaterialId =
 
 /** Absorption coefficient of each surface material, per octave band. */
 export const SURFACE_ABSORPTION: Readonly<Record<SurfaceMaterialId, BandValues>> = {
-  "oak-boards-joists": [0.15, 0.11, 0.1, 0.07, 0.06, 0.07, 0.07], // TEXTBOOK James "wooden floor on joists"; roomtreat.com/data/absorption-coefficients
-  "parquet-timber-subfloor": [0.14, 0.11, 0.09, 0.08, 0.06, 0.07, 0.07], // EST blend of James "parquet on counterfloor" and the joist floor
+  "oak-boards-joists": [0.15, 0.11, 0.1, 0.07, 0.06, 0.07, 0.08], // TEXTBOOK James "wooden floor on joists"; roomtreat.com/data/absorption-coefficients; 8 kHz is the research EST
+  "parquet-timber-subfloor": [0.14, 0.11, 0.09, 0.08, 0.06, 0.07, 0.08], // EST blend of James "parquet on counterfloor" and the joist floor; 8 kHz is the research EST
   "timber-on-slab": [0.04, 0.04, 0.07, 0.06, 0.06, 0.07, 0.07], // TEXTBOOK James "parquet fixed in asphalt, on concrete"; RoomTreat
   "carpet-on-underlay": [0.08, 0.12, 0.35, 0.55, 0.7, 0.72, 0.72], // TEXTBOOK James "9 mm tufted on felt underlay" and "thick pile on sponge rubber"
-  "plaster-masonry": [0.02, 0.02, 0.03, 0.04, 0.05, 0.05, 0.05], // TEXTBOOK James "lime cement plaster on masonry wall"
+  "plaster-masonry": [0.02, 0.02, 0.03, 0.04, 0.05, 0.05, 0.06], // TEXTBOOK James "lime cement plaster on masonry wall"; 8 kHz is the research EST
   "plaster-lath": [0.15, 0.12, 0.08, 0.05, 0.04, 0.04, 0.04], // EST between James "plaster on lath, deep air space" and "plaster decorative panels"
-  "plasterboard-studs": [0.29, 0.1, 0.05, 0.04, 0.07, 0.09, 0.09], // TEXTBOOK James, 12 mm on 50 mm battens; RoomTreat
+  "plasterboard-studs": [0.29, 0.1, 0.05, 0.04, 0.07, 0.09, 0.1], // TEXTBOOK James, 12 mm on 50 mm battens; RoomTreat; 8 kHz is the research EST
   "hardwood-panelling": [0.28, 0.22, 0.12, 0.09, 0.08, 0.08, 0.08], // EST from James hardwood panels over 25 mm airspace and 12 mm panelling on battens
   "sash-glazing": [0.25, 0.15, 0.08, 0.05, 0.04, 0.03, 0.03], // EST from James "4 mm glass" and pyroomacoustics "glass_window"
   "leaded-glass": [0.2, 0.15, 0.1, 0.07, 0.05, 0.05, 0.05], // EST, pyroomacoustics "lead_glazing" damped slightly; no measured source
   "velour-drape": [0.08, 0.35, 0.8, 0.98, 0.95, 0.9, 0.9], // EST anchored by LAB Mueller-BBM B300007-01/TB09 (420 g/m2 velour, 100 % fullness, 100 mm off wall)
   "sheer-curtain": [0.02, 0.04, 0.1, 0.25, 0.4, 0.5, 0.5], // EST bracketed by Carnegie sheer fabric NRC and James lightweight curtains
-  marble: [0.01, 0.01, 0.01, 0.01, 0.02, 0.02, 0.02], // TEXTBOOK James, marble chimneypiece
+  marble: [0.01, 0.01, 0.01, 0.01, 0.02, 0.02, 0.03], // TEXTBOOK James, marble chimneypiece; 8 kHz is the research EST
   "timber-door": [0.14, 0.1, 0.06, 0.08, 0.1, 0.1, 0.1], // TEXTBOOK James "solid timber door"
 };
 
@@ -73,10 +73,10 @@ export const OBJECT_ABSORPTION: Readonly<
   "chair-hard": [0.03, 0.03, 0.04, 0.05, 0.06, 0.06, 0.06], // LAB-anchored EST, SP/RISE report 6P10120 (skandiform.se/media/3331/decibel_report.pdf), Carvalho & Pino pews
   "chair-cushioned": [0.04, 0.05, 0.09, 0.13, 0.15, 0.15, 0.15], // EST, frame plus a 0.16 m2 foam cushion; SP padded-chair measurement as upper reference
   "chair-upholstered": [0.08, 0.1, 0.17, 0.24, 0.27, 0.27, 0.27], // EST bracketed by the SP padded chair and James "fully upholstered seats"
-  "table-bare": [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1], // EST, EN 12354-6 hard object A = V^(2/3), frequency independent (research file has 0.05 / 0.06 / 0.08 at 125 / 250 / 500 Hz)
+  "table-bare": [0.05, 0.06, 0.08, 0.1, 0.1, 0.1, 0.1], // EST, EN 12354-6 hard irregular object A = V_obj^(2/3), about 0.1 m2 for 0.03 m3 of solid material; 8 kHz is the research EST
   "round-clothed": [0.1, 0.2, 0.4, 0.5, 0.6, 0.6, 0.6], // EST +-50 %, no published value; 4.1 m2 light cloth skirt at alpha 0.02 to 0.15
   "trestle-clothed": [0.06, 0.12, 0.25, 0.3, 0.35, 0.35, 0.35], // EST scaled from the clothed round table by skirt area
-  "poseur-covered": [0.03, 0.06, 0.12, 0.15, 0.18, 0.18, 0.18], // EST, half the clothed trestle; no source
+  "poseur-covered": [0.03, 0.06, 0.12, 0.15, 0.18, 0.18, 0.18], // EST, half the clothed trestle; no source, no 8 kHz value so 4 kHz repeats
 };
 
 /** Absorption of a hung fabric face, per m2 of face (heavy velour). */

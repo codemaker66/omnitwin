@@ -42,10 +42,14 @@ describe("acoustic data", () => {
     expect(FABRIC_FACE_PER_M2).toEqual(SURFACE_ABSORPTION["velour-drape"]);
   });
 
-  it("repeats the 4 kHz value at 8 kHz for surfaces and objects", () => {
-    for (const row of [...Object.values(SURFACE_ABSORPTION), ...Object.values(OBJECT_ABSORPTION)]) {
-      expect(row[6]).toBe(row[5]);
-    }
+  it("uses the research 8 kHz figures where given and repeats 4 kHz elsewhere", () => {
+    expect(SURFACE_ABSORPTION["oak-boards-joists"][6]).toBe(0.08);
+    expect(SURFACE_ABSORPTION["parquet-timber-subfloor"][6]).toBe(0.08);
+    expect(SURFACE_ABSORPTION["plaster-masonry"][6]).toBe(0.06);
+    expect(SURFACE_ABSORPTION["plasterboard-studs"][6]).toBe(0.1);
+    expect(SURFACE_ABSORPTION.marble[6]).toBe(0.03);
+    expect(OBJECT_ABSORPTION["table-bare"]).toEqual([0.05, 0.06, 0.08, 0.1, 0.1, 0.1, 0.1]);
+    expect(OBJECT_ABSORPTION["poseur-covered"][6]).toBe(OBJECT_ABSORPTION["poseur-covered"][5]);
   });
 
   it("makes every object row non-decreasing from 125 Hz to 1 kHz", () => {
