@@ -10,18 +10,19 @@
 
 .door-clear-notice {
   position: fixed;
-  left: calc(var(--toolbox-offset, 68px) + ((100vw - var(--toolbox-offset, 68px)) / 2));
-  /* Above the placement notice's line, which sits 100 px over the command deck. */
-  bottom: calc(var(--toolbox-bottom, 0px) + max(18px, env(safe-area-inset-bottom)) + 164px);
+  left: 50%;
+  /* Under the tool pill at the top of the room, clear of the view and
+     command bars and the placement line at the bottom. */
+  top: 84px;
   z-index: 40;
   width: max-content;
-  max-width: min(520px, calc(100vw - var(--toolbox-offset, 68px) - 32px));
+  max-width: min(520px, calc(100vw - 32px));
   transform: translateX(-50%);
   pointer-events: none;
 }
 
 .door-clear-notice.is-mobile {
-  left: 50%;
+  top: auto;
   /* Phones: above the bottom toolbar and the placement line's slot. */
   bottom: calc(var(--toolbox-bottom, 0px) + max(14px, env(safe-area-inset-bottom)) + 64px);
   max-width: calc(100vw - 32px);
