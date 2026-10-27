@@ -17,6 +17,13 @@ import { documentFacts, documentMoney, venueLongDate } from "./proposal-document
 // stays.
 // ---------------------------------------------------------------------------
 
+/** Why a signature was refused, for what changed since the page was read. */
+const SIGN_REFUSAL_WORDS: Readonly<Record<string, string>> = {
+  CONTRACT_VERSION_CHANGED: "The venue team changed the contract after you opened this page. The current version is shown above; please read it before signing. Your name is still here.",
+  CONSENT_STATEMENT_CHANGED: "The statement you agree to changed after you opened this page. It is shown above now; please read it before ticking it again.",
+  CONTRACT_NOT_SIGNABLE: "This contract can no longer be signed here. Please contact the venue team.",
+};
+
 type Load =
   | { readonly kind: "loading" }
   | { readonly kind: "error" }
@@ -100,15 +107,16 @@ export function ClientContract({ token }: { readonly token: string }): ReactElem
     setProblem(null);
     setWorking(true);
     setFailure(null);
-    signShareContract(token, { contractVersion: contract.version, documentHash: contract.documentHash, signerName: name.trim(), consent: true })
+    signShareContract(token, {
+      contractVersion: contract.version, documentHash: contract.documentHash, signerName: name.trim(), consent: true, consentStatement: statement,
+    })
       .then(() => { justSigned.current = true; return read(); })
       .catch(async (error: unknown) => {
-        const changed = error instanceof ApiError && error.code === "CONTRACT_VERSION_CHANGED";
-        setFailure(changed
-          ? "The venue team changed the contract after you opened this page. The current version is shown above; please read it before signing. Your name is still here."
-          : "Your signature did not reach the venue team. Nothing was signed. Please try again.");
+        const code = error instanceof ApiError ? error.code : null;
+        setFailure(SIGN_REFUSAL_WORDS[code ?? ""] ?? "Your signature did not reach the venue team. Nothing was signed. Please try again.");
         setConsent(false);
-        if (changed) await read();
+        // Refused for something that changed: the page reads it again and shows it.
+        if (code !== null && code in SIGN_REFUSAL_WORDS) await read();
       })
       .finally(() => { setWorking(false); });
   };
@@ -122,6 +130,8 @@ export function ClientContract({ token }: { readonly token: string }): ReactElem
         <p ref={outcomeRef} tabIndex={-1} className="pd-decision__outcome" role="status" data-testid="contract-signed">
           Signed by {signed.signerName} on {venueLongDate(signed.signedAt) ?? "the day it was signed"}.
         </p>
+      ) : !contract.signable ? (
+        <p className="pd-decision__notice" data-testid="contract-not-signable">This contract can no longer be signed here. Please contact the venue team.</p>
       ) : (
         <form onSubmit={submit} noValidate className="pd-decision__step" data-testid="contract-sign">
           <label className="pd-field" htmlFor={nameId}>
