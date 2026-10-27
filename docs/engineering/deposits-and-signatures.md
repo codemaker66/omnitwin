@@ -3,7 +3,8 @@
 What happens after a client accepts a proposal: the venue asks for a deposit, which is paid on Stripe Checkout in
 **test mode only**, and prepares a contract, which the client signs with a simple electronic signature
 (Electronic Communications Act 2000 s.7). Built 27 October 2026 in PRs #269 (schema, gateway, webhook), #273
-(deposit flow) and the two after it (contract signature; acceptance tests).
+(deposit flow) and the two after it (contract signature; acceptance tests), then corrected after an independent
+adversarial review the same day.
 
 ## Where it lives
 
@@ -35,16 +36,29 @@ What happens after a client accepts a proposal: the venue asks for a deposit, wh
   moments, the largest refund, and the latest decline with its words. The state is derived from those facts
   (`depositPaymentState`), so paid wins over any failure reported late. A payment Stripe reports at another amount or
   currency is `mismatch`, never paid.
-- **One checkout page per request.** Pay reopens a page that is still open. No database lock is held while Stripe is
-  called; the payment row is written under the request's lock only if nothing changed meanwhile, and a spare page is
-  expired at Stripe. Withdrawing a request expires its open pages.
+- **Stripe decides whether a page was paid.** Our record can lag the webhook, so it is never asked alone:
+  - Pay reopens a page that is still open for a while. A lapsing page is closed at Stripe
+    (`closeCheckoutSession` asks Stripe first) before another is opened. If Stripe says it was paid, no second page
+    is opened.
+  - Withdrawing commits first, so no new page opens, then closes each open page at Stripe. Paid as withdrawn answers
+    409 `DEPOSIT_PAID_AS_WITHDRAWN`, and the payment stays on record.
+  - No database lock is held while Stripe is called.
+- **Money held blocks the next request.** A request with a payment that is processing, paid or partly refunded
+  cannot be withdrawn, and no new request is made on the proposal (`DEPOSIT_HELD`) until it is refunded in full.
+- **The client always sees what they paid.** Their link shows the request in force, or else the latest withdrawn
+  request that a payment settled on, read only (`payable: false`). An accepted proposal the team archived shows
+  its deposit and contract read only.
+- **No share token reaches Stripe.** Stripe keeps `success_url` and `cancel_url` and shows the way back on its page,
+  so both are `/deposit-return?outcome=…`. The tab that left keeps the token in session storage and returns to the
+  proposal once (`DepositReturnPage`).
 - **Signatures are evidence and never change.** A contract version is generated from the accepted version, the
   addressed client's name and email, and the venue's terms. Its SHA-256 over canonical JSON is stored with it.
   Signing sends back the version and the hash the page showed; both must still be the latest. The record keeps the
   typed name, the email of record (named in the signed document), the time, the hash, the user agent, the statement
-  word for word, and the link's id and prefix. It keeps **no IP address**: the privacy page says so, and changing
-  that needs the page changed first. A trigger refuses UPDATE, DELETE and TRUNCATE of versions and signatures. A
-  change makes a new version.
+  word for word (the client sends back the statement it showed, and a changed one is refused), and the link's id
+  and prefix. It keeps **no IP address**: the privacy page says so, and changing that needs the page changed first.
+  A trigger refuses UPDATE, DELETE and TRUNCATE of versions and signatures. A change makes a new version. The page
+  and the sign route ask the same question (`signable`), so the page never offers a signature the route refuses.
 - **Paying or signing confirms nothing.** Accepted price, payment, signature and a confirmed booking remain separate
   states (goal 06). Neither flow touches the Diary.
 
@@ -68,3 +82,7 @@ set. CI creates it in the Test job.
   logged administrative step (disable the trigger inside a transaction). Follow-up with the retention passes.
 - A printable copy of the signed contract (the forest panel is hidden in print).
 - Disputes (`charge.dispute.*`) are recorded as events but not shown.
+- A refund that later fails can lower Stripe's `amount_refunded`. Only `charge.refunded` is read, and the largest
+  refund is kept, so a failed refund still reads as refunded. Check it in Stripe.
+- A client who presses Pay on a request that no longer matches its accepted version notifies the team each time
+  (rate-limited to 20 an hour per link).

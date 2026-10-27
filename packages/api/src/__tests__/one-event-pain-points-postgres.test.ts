@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  CONTRACT_CONSENT_STATEMENT,
   PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION,
   contractDocumentDigest,
   proposalVersionPayloadDigest,
@@ -157,7 +158,7 @@ describe.skipIf(paymentsTestUrl === undefined)("goal 06's twelve pain points (th
   it("9. Staff working from the wrong version — the desk names which version of the contract the client signed, and that a newer one awaits signature; a signature on a superseded version is refused", async () => {
     const f = await accepted();
     const first = (await call<StaffContractVersion>("POST", `/proposals/${f.proposalId}/contract`, f.staff, { terms: TERMS, version: 1 })).body.data as StaffContractVersion;
-    expect((await call("POST", `/proposal-share/${f.token}/contract/sign`, {}, { contractVersion: 1, documentHash: first.documentHash, signerName: "Ada Client", consent: true })).status).toBe(201);
+    expect((await call("POST", `/proposal-share/${f.token}/contract/sign`, {}, { contractVersion: 1, documentHash: first.documentHash, signerName: "Ada Client", consent: true, consentStatement: CONTRACT_CONSENT_STATEMENT })).status).toBe(201);
     await call("POST", `/proposals/${f.proposalId}/contract`, f.staff, { terms: `${TERMS}\n3. Music ends at midnight.`, version: 1 });
     const desk = (await call<StaffContractView>("GET", `/proposals/${f.proposalId}/contract`, f.staff)).body.data;
     expect(desk?.versions.map((version) => ({ version: version.version, signedBy: version.signature?.signerName ?? null }))).toEqual([
@@ -165,7 +166,7 @@ describe.skipIf(paymentsTestUrl === undefined)("goal 06's twelve pain points (th
       { version: 1, signedBy: "Ada Client" },
     ]);
     // The client's stale page cannot sign version 1 over version 2.
-    expect((await call("POST", `/proposal-share/${f.token}/contract/sign`, {}, { contractVersion: 1, documentHash: first.documentHash, signerName: "Ada Client", consent: true })).body.code)
+    expect((await call("POST", `/proposal-share/${f.token}/contract/sign`, {}, { contractVersion: 1, documentHash: first.documentHash, signerName: "Ada Client", consent: true, consentStatement: CONTRACT_CONSENT_STATEMENT })).body.code)
       .toBe("CONTRACT_VERSION_CHANGED");
   });
 
