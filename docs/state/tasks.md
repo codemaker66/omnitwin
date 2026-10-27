@@ -5,10 +5,11 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-10-26.
+Updated: 2026-10-27.
 
 ## Latest task notes
 
+- 2026-10-27 T-672 release audit A (cloud session): twelve configs, tenancy, socket, pricing and proposals findings re-confirmed on master; ten fixed in #265 (configs-1, -2, -6: a returned or withdrawn layout goes back to the venue; review moves are compare-and-set), #267 (tenancy-f-2: only the venue's floor ticks a setup sheet), #270 (dash-ops-1: a per-head window no longer drops the hire), #274 (configs-4, events-diary-5: open sockets act with the person's current role) and #276 (proposals-1, -2); configs-3 and -5 already fixed by #260; proposals-3 and configs-7 after v1.0. Each with disposable-PostgreSQL regressions that fail on master. A max-effort review of #265 and #274 added: a decision names the version it judged, each decision's email is its own, a new version when the sheet's heading changes, and a Clerk account deleted by the webhook never links a row again. Open: the auto-save socket's commit cannot land on a migrated database (retire its writes, or a migration); deleting a Clerk account leaves the row's venue role for a new account with the same email. [27 October log](../sessions/2026-10-27.md).
 - 2026-10-26 T-675 started: every piece of furniture rebuilt for Trades Hall (branch `claude/furniture-rebuild-t675`): the venue's photographs put gold Chiavari chairs and ivory damask at every Grand Hall dinner; sun shadows by box and drape casters (4 % of master's triangles in the map, frame unchanged at 180 seats), contact shade and baked occlusion that ground the furniture even without the real sky (`?sky=1`, still under review). [26 October log](../sessions/2026-10-26.md).
 - 2026-10-26 T-673: a fourth flaky case fixed at its cause, test-only (branch `claude/twinpage-dollhouse-flake`): TwinPage.test.tsx's Dollhouse switch failed on 2 of 2 master runs. The click was not dropped; it was overwritten. The walk writes `?node=` from an effect that runs after the commit showing the stage, as a replace built from the mount-time address, so a switch made before it lands is replaced away. The test now waits for the walk's write before switching. The same stale-address write is a product bug (T-674). [26 October log](../sessions/2026-10-26.md).
 
