@@ -64,6 +64,30 @@ const CONTRACT_CHANGED = {
   code: "CONTRACT_VERSION_CHANGED",
 } as const;
 
+const NOT_SIGNABLE = {
+  error: "This contract can no longer be signed on this link. Please contact the venue team.",
+  code: "CONTRACT_NOT_SIGNABLE",
+} as const;
+
+const CONSENT_CHANGED = {
+  error: "The statement you agree to has changed since this page was opened. Please read it again before signing.",
+  code: "CONSENT_STATEMENT_CHANGED",
+} as const;
+
+/**
+ * Whether the latest version can be signed on a link now: the proposal still
+ * accepted, on the version the contract embodies, and the stored document
+ * still what its hash says. The client's page and the sign route both ask
+ * this, so the page never offers a signature the route refuses.
+ */
+function signable(
+  proposal: { readonly status: string; readonly sentVersion: number | null },
+  latest: { readonly proposalVersion: number },
+  document: unknown,
+): boolean {
+  return proposal.status === "accepted" && latest.proposalVersion === proposal.sentVersion && document !== null;
+}
+
 function isUniqueViolation(error: unknown): boolean {
   const code = (error as { code?: unknown; cause?: { code?: unknown } }).code
     ?? (error as { cause?: { code?: unknown } }).cause?.code;
@@ -188,6 +212,7 @@ export async function proposalShareContractRoutes(server: FastifyInstance, opts:
           document,
           documentHash: latest.documentHash,
           signature: signature === undefined ? null : { signerName: signature.signerName, signedAt: signature.signedAt.toISOString() },
+          signable: signable(resolved.proposal, latest, document),
         },
       };
     }
@@ -202,22 +227,21 @@ export async function proposalShareContractRoutes(server: FastifyInstance, opts:
     const body = SignContractSchema.safeParse(request.body);
     if (!body.success) return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: body.error.issues });
     const resolved = await resolveProposalShareToken(db, params.data.token);
-    if (resolved?.presented !== "accepted" || resolved.proposal.status !== "accepted") {
-      return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
-    }
+    if (resolved?.presented !== "accepted") return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
     const { proposal, shareToken } = resolved;
+    if (body.data.consentStatement !== CONTRACT_CONSENT_STATEMENT) return reply.status(409).send(CONSENT_CHANGED);
 
     const latest = await latestContractVersion(db, proposal.id);
     if (latest === undefined) return reply.status(404).send({ error: "There is no contract to sign yet.", code: "NOT_FOUND" });
     if (latest.version !== body.data.contractVersion || latest.documentHash !== body.data.documentHash) {
       return reply.status(409).send(CONTRACT_CHANGED);
     }
-    // Signed only while it still embodies the version the client accepted,
-    // and only if the stored document still is what its hash says.
+    // Signed only while the page could offer it: the proposal still accepted
+    // on the version the contract embodies, the document still its hash.
     const document = storedDocument(latest);
-    if (latest.proposalVersion !== proposal.sentVersion || document === null) {
-      request.log.error({ event: "contract.not_signable", contractVersionId: latest.id }, "a contract no longer matches its accepted version or its hash");
-      return reply.status(409).send(CONTRACT_CHANGED);
+    if (document === null || !signable(proposal, latest, document)) {
+      if (document === null) request.log.error({ event: "contract.document_hash_mismatch", contractVersionId: latest.id }, "a stored contract version no longer matches its hash");
+      return reply.status(409).send(NOT_SIGNABLE);
     }
 
     const agent = request.headers["user-agent"];

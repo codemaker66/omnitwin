@@ -48,7 +48,7 @@ async function serve(page: Page, before: unknown, after: unknown = before, onSig
   });
 }
 
-const unsigned = { version: 1, document: contractDocument(1, TERMS), documentHash: "c".repeat(64), signature: null };
+const unsigned = { version: 1, document: contractDocument(1, TERMS), documentHash: "c".repeat(64), signature: null, signable: true };
 const signed = { ...unsigned, signature: { signerName: "Ada Client", signedAt: "2026-10-27T11:00:00.000Z" } };
 
 test.describe("the contract on an accepted proposal", () => {
@@ -71,12 +71,12 @@ test.describe("the contract on an accepted proposal", () => {
     await contract.getByRole("button", { name: "Sign version 1" }).click();
     await expect(page.getByTestId("contract-signed")).toHaveText("Signed by Ada Client on 27 October 2026.");
     await expect(page.getByTestId("contract-signed")).toBeFocused();
-    expect(sent).toEqual({ contractVersion: 1, documentHash: "c".repeat(64), signerName: "Ada Client", consent: true });
+    expect(sent).toEqual({ contractVersion: 1, documentHash: "c".repeat(64), signerName: "Ada Client", consent: true, consentStatement: STATEMENT });
     expect(errors).toEqual([]);
   });
 
   test("refuses a contract the venue changed while the page was open, shows the new one, and keeps the name", async ({ page }) => {
-    const changed = { version: 2, document: contractDocument(2, `${TERMS}\n4. Music ends at midnight.`), documentHash: "d".repeat(64), signature: null };
+    const changed = { version: 2, document: contractDocument(2, `${TERMS}\n4. Music ends at midnight.`), documentHash: "d".repeat(64), signature: null, signable: true };
     await serve(page, unsigned, changed, () => 409);
     await page.goto(`/proposal-share/${TOKEN}`);
     const contract = page.getByTestId("client-contract");

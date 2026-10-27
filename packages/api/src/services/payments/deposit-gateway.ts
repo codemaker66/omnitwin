@@ -63,8 +63,12 @@ export class WebhookSignatureError extends Error {
 export interface DepositGateway {
   readonly mode: "test" | "live";
   createCheckoutSession(request: CheckoutSessionRequest): Promise<CheckoutSessionCreated>;
-  /** Closes a checkout page so it can no longer be paid. */
-  expireCheckoutSession(sessionId: string): Promise<void>;
+  /**
+   * Makes sure a checkout page can no longer be paid, asking Stripe rather
+   * than our own record: "closed" when it lapsed or is now expired,
+   * "complete" when the client has already paid (or started paying) on it.
+   */
+  closeCheckoutSession(sessionId: string): Promise<"closed" | "complete">;
   /** A PaymentIntent's metadata, to tell whether an event is about one of ours. */
   paymentIntentMetadata(paymentIntentId: string): Promise<Readonly<Record<string, string>> | null>;
   /**
@@ -136,6 +140,8 @@ export class StripeDepositGateway implements DepositGateway {
           product_data: { name: request.description },
         },
       }],
+      // Charged in the quote's own currency only: no price converted for the payer.
+      adaptive_pricing: { enabled: false },
       client_reference_id: request.metadata.deposit_payment_id,
       ...(request.customerEmail === null ? {} : { customer_email: request.customerEmail }),
       success_url: request.successUrl,
@@ -153,8 +159,20 @@ export class StripeDepositGateway implements DepositGateway {
     };
   }
 
-  async expireCheckoutSession(sessionId: string): Promise<void> {
-    await this.stripe.checkout.sessions.expire(sessionId);
+  async closeCheckoutSession(sessionId: string): Promise<"closed" | "complete"> {
+    const session = await this.stripe.checkout.sessions.retrieve(sessionId);
+    if (session.status === "complete") return "complete";
+    if (session.status === "expired") return "closed";
+    try {
+      await this.stripe.checkout.sessions.expire(sessionId);
+      return "closed";
+    } catch (error) {
+      // Completed between the two calls: Stripe says so on a second look.
+      const again = await this.stripe.checkout.sessions.retrieve(sessionId);
+      if (again.status === "complete") return "complete";
+      if (again.status === "expired") return "closed";
+      throw error;
+    }
   }
 
   async paymentIntentMetadata(paymentIntentId: string): Promise<Readonly<Record<string, string>> | null> {

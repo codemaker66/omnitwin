@@ -29,7 +29,7 @@ const DOCUMENT: ContractDocument = {
 const HASH = "c".repeat(64);
 const view = (overrides: Partial<NonNullable<ClientContractView["contract"]>> = {}): ClientContractView => ({
   consentStatement: CONTRACT_CONSENT_STATEMENT,
-  contract: { version: 1, document: DOCUMENT, documentHash: HASH, signature: null, ...overrides },
+  contract: { version: 1, document: DOCUMENT, documentHash: HASH, signature: null, signable: true, ...overrides },
 });
 
 beforeEach(() => { mockGet.mockReset(); mockSign.mockReset(); });
@@ -55,7 +55,7 @@ describe("the client's contract", () => {
     fireEvent.change(screen.getByLabelText("Your full name"), { target: { value: "  Ada Client " } });
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByTestId("sign-contract"));
-    await waitFor(() => { expect(mockSign).toHaveBeenCalledWith(TOKEN, { contractVersion: 1, documentHash: HASH, signerName: "Ada Client", consent: true }); });
+    await waitFor(() => { expect(mockSign).toHaveBeenCalledWith(TOKEN, { contractVersion: 1, documentHash: HASH, signerName: "Ada Client", consent: true, consentStatement: CONTRACT_CONSENT_STATEMENT }); });
     expect((await screen.findByTestId("contract-signed")).textContent).toBe("Signed by Ada Client on 27 October 2026.");
     expect(screen.queryByTestId("contract-sign")).toBeNull();
   });
@@ -86,6 +86,14 @@ describe("the client's contract", () => {
     const box = screen.getByRole("checkbox");
     expect(box instanceof HTMLInputElement && !box.checked).toBe(true);
     expect(screen.getByTestId("sign-contract").textContent).toBe("Sign version 2");
+  });
+
+  it("offers no signature the venue's link can no longer take", async () => {
+    mockGet.mockResolvedValue(view({ signable: false }));
+    render(<ClientContract token={TOKEN} />);
+    expect((await screen.findByTestId("contract-not-signable")).textContent).toContain("can no longer be signed here");
+    expect(screen.getByTestId("contract-document")).toBeTruthy();
+    expect(screen.queryByTestId("contract-sign")).toBeNull();
   });
 
   it("shows nothing when the venue has prepared no contract", async () => {

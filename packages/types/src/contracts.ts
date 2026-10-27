@@ -39,6 +39,10 @@ export const MAX_SIGNATURE_USER_AGENT_LENGTH = 512;
 
 const Sha256Hex = z.string().regex(/^[a-f0-9]{64}$/u, "Hash must be 64 lowercase hex characters");
 
+/** Text PostgreSQL can store: no NUL character, which text and jsonb refuse. */
+const Storable = (max: number) => z.string().trim().min(1).max(max)
+  .refine((value) => !value.includes("\u0000"), "Must not contain a NUL character");
+
 export const ContractDocumentSchema = z.object({
   schemaVersion: z.literal(CONTRACT_DOCUMENT_SCHEMA_VERSION),
   contractVersion: z.number().int().positive(),
@@ -69,17 +73,22 @@ export function sameContractContent(a: ContractDocument, b: ContractDocument): b
 
 /** The venue prepares a version: its terms, against the accepted version the screen showed. */
 export const PrepareContractSchema = z.object({
-  terms: z.string().trim().min(1).max(MAX_CONTRACT_TERMS_LENGTH),
+  terms: Storable(MAX_CONTRACT_TERMS_LENGTH),
   version: z.number().int().positive(),
 }).strict();
 export type PrepareContract = z.infer<typeof PrepareContractSchema>;
 
-/** The client signs the exact version and document their page showed. */
+/**
+ * The client signs the exact version and document their page showed, and
+ * sends back the statement they ticked, so the words kept are the words they
+ * read, even across a release that changes them.
+ */
 export const SignContractSchema = z.object({
   contractVersion: z.number().int().positive(),
   documentHash: Sha256Hex,
-  signerName: z.string().trim().min(1).max(MAX_SIGNER_NAME_LENGTH),
+  signerName: Storable(MAX_SIGNER_NAME_LENGTH),
   consent: z.literal(true),
+  consentStatement: z.string().min(1).max(1_000),
 }).strict();
 export type SignContract = z.infer<typeof SignContractSchema>;
 
@@ -92,6 +101,11 @@ export const ClientContractViewSchema = z.object({
     document: ContractDocumentSchema,
     documentHash: Sha256Hex,
     signature: z.object({ signerName: z.string(), signedAt: IsoDate }).strict().nullable(),
+    /**
+     * Whether it can be signed on this link now: the proposal still accepted
+     * on the version the contract embodies. The sign route asks the same.
+     */
+    signable: z.boolean(),
   }).strict().nullable(),
 }).strict();
 export type ClientContractView = z.infer<typeof ClientContractViewSchema>;

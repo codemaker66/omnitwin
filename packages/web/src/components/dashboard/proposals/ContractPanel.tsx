@@ -60,12 +60,14 @@ function ContractBody({ proposal, view, onChanged }: { readonly proposal: DeskPr
   const [editing, setEditing] = useState(false);
   const latest = view.versions[0] ?? null;
   const earlier = view.versions.slice(1);
-  if (view.clientEmail === null) {
-    return <p className="enq-next__hint">Add the client's email to the deal or the enquiry first: the contract names it, and the signature records it.</p>;
-  }
-  if (view.acceptedVersion === null) {
-    return <p className="enq-next__hint">A contract is prepared once the client has accepted the proposal.</p>;
-  }
+  // What is on record always shows; only preparing a version waits for an
+  // accepted proposal and the client's email.
+  const acceptedVersion = view.acceptedVersion;
+  const blocked = acceptedVersion === null
+    ? "A contract is prepared once the client has accepted the proposal."
+    : view.clientEmail === null
+      ? "Add the client's email to the deal or the enquiry first: the contract names it, and the signature records it."
+      : null;
   return (
     <>
       {latest !== null && (
@@ -77,8 +79,10 @@ function ContractBody({ proposal, view, onChanged }: { readonly proposal: DeskPr
           {latest.signature !== null && <SignatureRecord version={latest} />}
         </div>
       )}
-      {latest === null || editing ? (
-        <PrepareContract proposal={proposal} acceptedVersion={view.acceptedVersion} latest={latest}
+      {blocked !== null || acceptedVersion === null ? (
+        <p className="enq-next__hint" data-testid="contract-blocked">{blocked}</p>
+      ) : latest === null || editing ? (
+        <PrepareContract proposal={proposal} acceptedVersion={acceptedVersion} latest={latest}
           onDone={() => { setEditing(false); onChanged(); }} onCancel={latest === null ? null : () => { setEditing(false); }} />
       ) : (
         <div className="enq-actions">

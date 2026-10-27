@@ -123,10 +123,13 @@ export interface DepositPaymentFacts {
 
 /**
  * The state the facts add up to, whatever order they arrived in. Paid wins
- * over every failure; an amount received that is not the amount asked for is
- * a mismatch for the venue to look at, never "paid".
+ * over every failure; an amount received that is not the amount asked for, or
+ * a payment reported without one, is a mismatch for the venue to look at,
+ * never "paid".
  */
 export function depositPaymentState(facts: DepositPaymentFacts): DepositPaymentState {
+  // Reported paid without an amount: nothing to check it against, so not "paid".
+  if (facts.paidAt !== null && facts.amountReceivedMinor === null) return "mismatch";
   if (facts.amountReceivedMinor !== null
     && (facts.amountReceivedMinor !== facts.amountMinor
       || (facts.currencyReceived !== null && facts.currencyReceived.toUpperCase() !== facts.currency.toUpperCase()))) {
@@ -146,6 +149,14 @@ export function depositPaymentState(facts: DepositPaymentFacts): DepositPaymentS
 
 /** States in which money has moved or is moving: no second attempt is opened. */
 export const DEPOSIT_SETTLING_STATES: readonly DepositPaymentState[] = ["processing", "paid", "partially_refunded", "refunded", "mismatch"];
+
+/**
+ * States in which the client's money is held or on its way. A request with
+ * one cannot be withdrawn, and no new request is made beside it, until it is
+ * refunded in full; a full refund, or a mismatch the team has looked at, can
+ * be withdrawn and asked again.
+ */
+export const DEPOSIT_HOLDING_STATES: readonly DepositPaymentState[] = ["processing", "paid", "partially_refunded"];
 
 /** States in which the attempt's checkout page can still be paid. */
 export const DEPOSIT_PAYABLE_STATES: readonly DepositPaymentState[] = ["open", "declined"];
@@ -219,7 +230,14 @@ export type StaffDepositView = z.infer<typeof StaffDepositViewSchema>;
 /** The client's view: the request in force, if any, and how it stands. */
 export const ClientDepositViewSchema = z.object({
   mode: z.enum(["test", "live"]),
+  /**
+   * The request in force; else the latest withdrawn one that a payment
+   * settled on (paid in the moment it was withdrawn, or refunded), shown read
+   * only so a payment is never hidden from the person who made it.
+   */
   request: DepositRequestViewSchema.nullable(),
+  /** Whether the link can pay now: the proposal still accepted and the request in force. */
+  payable: z.boolean(),
 }).strict();
 export type ClientDepositView = z.infer<typeof ClientDepositViewSchema>;
 

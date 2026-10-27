@@ -63,6 +63,10 @@ describe("a payment's state from what Stripe reported", () => {
     expect(depositPaymentState({ ...paid, amountRefundedMinor: 50_000 })).toBe("refunded");
   });
 
+  it("calls a payment reported without an amount a mismatch, never paid", () => {
+    expect(depositPaymentState({ ...NONE, paidAt: AT })).toBe("mismatch");
+  });
+
   it("calls a payment that is not the amount or currency asked for a mismatch, never paid", () => {
     expect(depositPaymentState({ ...NONE, paidAt: AT, amountReceivedMinor: 40_000, currencyReceived: "GBP" })).toBe("mismatch");
     expect(depositPaymentState({ ...NONE, paidAt: AT, amountReceivedMinor: 50_000, currencyReceived: "EUR" })).toBe("mismatch");

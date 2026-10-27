@@ -46,7 +46,7 @@ const attempt = (state: string, extra: Record<string, unknown> = {}) => ({
 
 async function serve(page: Page, deposit: unknown, onCheckout?: (body: unknown) => void): Promise<void> {
   await page.route(`${API}/proposal-share/${TOKEN}`, (route) => { void route.fulfill({ json: { data: ACCEPTED } }); });
-  await page.route(`${API}/proposal-share/${TOKEN}/deposit`, (route) => { void route.fulfill({ json: { data: { mode: "test", request: deposit } } }); });
+  await page.route(`${API}/proposal-share/${TOKEN}/deposit`, (route) => { void route.fulfill({ json: { data: { mode: "test", request: deposit, payable: true } } }); });
   // No contract prepared here (proposal-contract.spec.ts signs one).
   await page.route(`${API}/proposal-share/${TOKEN}/contract`, (route) => { void route.fulfill({ json: { data: { consentStatement: "I agree.", contract: null } } }); });
   await page.route(`${API}/proposal-share/${TOKEN}/deposit/checkout`, (route) => {
@@ -76,6 +76,11 @@ test.describe("the deposit on an accepted proposal", () => {
     await expect(page).toHaveURL(CHECKOUT);
     await expect(page.getByRole("heading", { name: "Stripe test checkout" })).toBeVisible();
     expect(sent).toEqual({ requestId: REQUEST.id });
+    // Stripe sends the client back to an address without their token; the
+    // tab that left returns them to their proposal.
+    await page.goto("/deposit-return?outcome=returned");
+    await expect(page).toHaveURL(`/proposal-share/${TOKEN}?deposit=returned`);
+    await expect(page.getByTestId("client-deposit")).toBeVisible();
     expect(errors).toEqual([]);
   });
 

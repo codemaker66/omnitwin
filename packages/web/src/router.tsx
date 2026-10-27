@@ -143,6 +143,9 @@ const CaptureIntakePage = lazyWithPreload(() =>
 const ProposalPage = lazy(() =>
   cockpitImport(() => import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage }))),
 );
+const DepositReturnPage = lazy(() =>
+  cockpitImport(() => import("./pages/DepositReturnPage.js").then((m) => ({ default: m.DepositReturnPage }))),
+);
 const ProposalPreviewPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ProposalPreviewPage.js").then((m) => ({ default: m.ProposalPreviewPage }))),
 );
@@ -705,6 +708,12 @@ export const router = createBrowserRouter([
     // the API through a stored hash and returns only client-safe proposal data.
     path: "/proposal-share/:token",
     element: withSuspense(<ProposalPage />),
+  },
+  {
+    // Back from Stripe's payment page (Plan 19 L5). Public, and carries no
+    // share token: the tab that left kept it and returns to the proposal.
+    path: "/deposit-return",
+    element: withSuspense(<DepositReturnPage />),
   },
   {
     // Preview as the client (roadmap X1): the venue's commercial team reads a

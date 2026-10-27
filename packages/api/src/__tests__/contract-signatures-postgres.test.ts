@@ -62,7 +62,7 @@ describe.skipIf(paymentsTestUrl === undefined)("the contract's electronic signat
   const read = (f: AcceptedProposalFixture) => call<ClientContractView>("GET", `/proposal-share/${f.token}/contract`);
   const sign = (f: AcceptedProposalFixture, version: StaffContractVersion, name = "Ada Client", extra: Record<string, unknown> = {}) =>
     call<{ signerName: string; signedAt: string; already: boolean }>("POST", `/proposal-share/${f.token}/contract/sign`, { "user-agent": BROWSER },
-      { contractVersion: version.version, documentHash: version.documentHash, signerName: name, consent: true, ...extra });
+      { contractVersion: version.version, documentHash: version.documentHash, signerName: name, consent: true, consentStatement: CONTRACT_CONSENT_STATEMENT, ...extra });
 
   it("is prepared from the accepted version, naming the client and their email, and hashed", async () => {
     const f = await seedAcceptedProposal(pool);
@@ -89,7 +89,7 @@ describe.skipIf(paymentsTestUrl === undefined)("the contract's electronic signat
     const f = await seedAcceptedProposal(pool);
     const version = (await prepare(f)).body.data as StaffContractVersion;
     const shown = await read(f);
-    expect(shown.body.data).toMatchObject({ consentStatement: CONTRACT_CONSENT_STATEMENT, contract: { version: 1, documentHash: version.documentHash, signature: null } });
+    expect(shown.body.data).toMatchObject({ consentStatement: CONTRACT_CONSENT_STATEMENT, contract: { version: 1, documentHash: version.documentHash, signature: null, signable: true } });
 
     const signed = await sign(f, version, "  Ada Client  ");
     expect(signed.status).toBe(201);
@@ -124,6 +124,23 @@ describe.skipIf(paymentsTestUrl === undefined)("the contract's electronic signat
     expect((await sign(f, version, "Ada Client", { ipAddress: "203.0.113.9" })).status).toBe(400);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM proposal_contract_signatures WHERE contract_version_id = $1", [version.id]);
     expect(rows[0]).toEqual({ n: 0 });
+  });
+
+  it("records only the words the signer was shown: a statement changed since the page opened is refused", async () => {
+    const f = await seedAcceptedProposal(pool);
+    const version = (await prepare(f)).body.data as StaffContractVersion;
+    expect((await sign(f, version, "Ada Client", { consentStatement: "I agree to whatever." })).body.code).toBe("CONSENT_STATEMENT_CHANGED");
+    expect((await sign(f, version, "Ada\u0000Client")).status).toBe(400);
+    expect((await prepare(f, "1. Terms\u0000hidden")).status).toBe(400);
+  });
+
+  it("offers no signature the route would refuse: archived after acceptance, it reads but cannot be signed", async () => {
+    const f = await seedAcceptedProposal(pool);
+    const version = (await prepare(f)).body.data as StaffContractVersion;
+    await pool.query("UPDATE proposals SET status = 'archived' WHERE id = $1", [f.proposalId]);
+    await pool.query("INSERT INTO proposal_status_history (proposal_id, from_status, to_status) VALUES ($1, 'accepted', 'archived')", [f.proposalId]);
+    expect((await read(f)).body.data?.contract).toMatchObject({ version: 1, signable: false, signature: null });
+    expect((await sign(f, version)).body.code).toBe("CONTRACT_NOT_SIGNABLE");
   });
 
   it("keeps the first signature when the same version is signed twice, even at once", async () => {

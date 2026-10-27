@@ -75,4 +75,13 @@ describe("the contract on the desk", () => {
     expect(await screen.findByText(/Add the client's email to the deal or the enquiry first/u)).toBeTruthy();
     expect(screen.queryByTestId("contract-prepare")).toBeNull();
   });
+
+  it("still shows a signed version and its record when a new one cannot be prepared", async () => {
+    mockGet.mockResolvedValue(view([SIGNED], { clientEmail: null }));
+    render(<ContractPanel proposal={PROPOSAL} />);
+    expect((await screen.findByTestId("contract-signature")).textContent).toMatch(/^Signed by Ada Client/u);
+    expect(screen.getByTestId("signature-record")).toBeTruthy();
+    expect(screen.getByTestId("contract-blocked").textContent).toContain("Add the client's email");
+    expect(screen.queryByTestId("contract-change")).toBeNull();
+  });
 });
