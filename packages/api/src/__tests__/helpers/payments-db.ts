@@ -55,7 +55,12 @@ export function stripeSignature(payload: string, secret = TEST_WEBHOOK_SECRET, t
 /** The real gateway's webhook verification; its calls to Stripe are answered here. */
 export class TestDepositGateway extends StripeDepositGateway {
   readonly created: CheckoutSessionRequest[] = [];
+  /** Pages closed through the gateway. */
   readonly expired: string[] = [];
+  /** Pages Stripe would report complete (paid on Stripe, whatever our record says yet). */
+  readonly completed = new Set<string>();
+  /** Set to make the next close fail as if Stripe could not be reached. */
+  failNextClose = false;
   readonly intents = new Map<string, Readonly<Record<string, string>>>();
   failNextCreate = false;
   private sessions = 0;
@@ -75,9 +80,14 @@ export class TestDepositGateway extends StripeDepositGateway {
     return Promise.resolve({ id, url: `https://checkout.stripe.com/c/pay/${id}`, expiresAt: request.expiresAt, livemode: this.mode === "live" });
   }
 
-  override expireCheckoutSession(sessionId: string): Promise<void> {
+  override closeCheckoutSession(sessionId: string): Promise<"closed" | "complete"> {
+    if (this.failNextClose) {
+      this.failNextClose = false;
+      return Promise.reject(new Error("Stripe could not be reached"));
+    }
+    if (this.completed.has(sessionId)) return Promise.resolve("complete");
     this.expired.push(sessionId);
-    return Promise.resolve();
+    return Promise.resolve("closed");
   }
 
   override paymentIntentMetadata(paymentIntentId: string): Promise<Readonly<Record<string, string>> | null> {

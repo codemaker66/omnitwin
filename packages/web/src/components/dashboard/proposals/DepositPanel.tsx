@@ -59,9 +59,15 @@ function DepositBody({ proposal, view, onChanged }: { readonly proposal: DeskPro
   const inForce = view.requests.find((request) => request.cancelledAt === null) ?? null;
   const earlier = view.requests.filter((request) => request !== inForce);
   if (view.availability === "off") {
+    // Records stay readable when deposits are switched off; only asking stops.
     return (
       <>
-        <p className="enq-next__hint">Deposits are not set up for this venue. Once its Stripe account is connected, you ask for one here.</p>
+        {inForce !== null && <InForce proposal={proposal} request={inForce} onChanged={onChanged} />}
+        <p className="enq-next__hint">
+          {inForce === null
+            ? "Deposits are not set up for this venue. Once its Stripe account is connected, you ask for one here."
+            : "Deposits are switched off for this venue just now, so no new one can be asked for."}
+        </p>
         {earlier.length > 0 && <Earlier requests={earlier} />}
       </>
     );

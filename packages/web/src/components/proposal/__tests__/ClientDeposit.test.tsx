@@ -29,7 +29,7 @@ const attempt = (overrides: Partial<DepositPaymentView>): DepositPaymentView => 
   id: "2a6d4f7e-1d0b-4e37-9a38-7b1f2f0c9d11", state: "open", amountMinor: 62_500, currency: "GBP", amountReceivedMinor: null,
   amountRefundedMinor: 0, failureMessage: null, createdAt: "2026-10-27T11:00:00.000Z", paidAt: null, lastEventAt: null, ...overrides,
 });
-const view = (request: DepositRequestView | null): ClientDepositView => ({ mode: "test", request });
+const view = (request: DepositRequestView | null, payable = true): ClientDepositView => ({ mode: "test", request, payable });
 
 let assign: ReturnType<typeof vi.fn>;
 beforeEach(() => {
@@ -42,6 +42,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  window.sessionStorage.clear();
 });
 
 describe("the words", () => {
@@ -82,6 +83,8 @@ describe("the deposit section", () => {
     expect(pay.textContent).toContain("Opening Stripe…");
     await waitFor(() => { expect(assign).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/cs_test_1"); });
     expect(mockStartCheckout).toHaveBeenCalledWith(TOKEN, REQUEST.id);
+    // The tab keeps the token for the way back; Stripe is never given it.
+    expect(window.sessionStorage.getItem("venviewer.deposit-return.token")).toBe(TOKEN);
   });
 
   it("says plainly when Stripe cannot be reached, and Pay works again", async () => {
@@ -92,6 +95,20 @@ describe("the deposit section", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Nothing was charged");
     expect(screen.getByTestId("pay-deposit").hasAttribute("disabled")).toBe(false);
     expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("shows a withdrawn request a payment settled on read only, with no Pay", async () => {
+    mockGetShareDeposit.mockResolvedValue(view({ ...REQUEST, state: "paid", cancelledAt: "2026-10-27T11:06:00.000Z", payments: [attempt({ state: "paid", paidAt: "2026-10-27T11:05:00.000Z" })] }, false));
+    render(<ClientDeposit token={TOKEN} returned={null} />);
+    expect((await screen.findByTestId("deposit-standing")).textContent).toContain("paid on 27 October 2026");
+    expect(screen.queryByTestId("pay-deposit")).toBeNull();
+  });
+
+  it("offers no Pay once the link can no longer pay, even for an unpaid request", async () => {
+    mockGetShareDeposit.mockResolvedValue(view(REQUEST, false));
+    render(<ClientDeposit token={TOKEN} returned={null} />);
+    expect((await screen.findByTestId("client-deposit")).textContent).toContain("A deposit of £625.00");
+    expect(screen.queryByTestId("pay-deposit")).toBeNull();
   });
 
   it("shows a paid deposit without a Pay button", async () => {
