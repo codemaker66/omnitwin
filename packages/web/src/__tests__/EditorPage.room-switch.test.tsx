@@ -20,6 +20,7 @@ vi.mock("../api/spaces.js", async (importOriginal) => {
 });
 
 const { EditorPage } = await import("../pages/EditorPage.js");
+const { roomSwitchState } = await import("../lib/planner-room-switch.js");
 const { useEditorStore } = await import("../stores/editor-store.js");
 const { useAuthStore } = await import("../stores/auth-store.js");
 const spacesApi = await import("../api/spaces.js");
@@ -52,9 +53,41 @@ describe("the slate's room switch", () => {
     expect(await screen.findByTestId("planner-chrome-v2")).toBeTruthy();
 
     await act(async () => {
-      await router.navigate("/plan?space=saloon&chrome=v2", { state: { leavingLayout: "cfg-grand-hall" } });
+      await router.navigate("/plan?space=saloon&chrome=v2", { state: roomSwitchState("cfg-grand-hall") });
     });
 
+    expect(useEditorStore.getState().configId).toBeNull();
+    expect(spacesApi.listVenues).toHaveBeenCalled();
+  });
+
+  it("gives the open layout's work its chance first when the entry is reached another way, and keeps work it cannot keep", async () => {
+    // Unsaved, not kept on this device, and its save cannot be made (no revision to save against).
+    useEditorStore.setState({ isDirty: true, keptOnDevice: false, isOnline: true });
+    // Back, then Forward into the switch's entry while the room was still opening.
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/plan/cfg-grand-hall?chrome=v2", { pathname: "/plan", search: "?space=saloon&chrome=v2", state: { leavingLayout: "cfg-grand-hall", approval: "spent" } }],
+      initialIndex: 0,
+    });
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByTestId("planner-chrome-v2")).toBeTruthy();
+    await act(async () => { await router.navigate(1); });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 20); }); });
+
+    // Its work could be neither saved (the save failed) nor kept here: the layout stays open.
+    expect(useEditorStore.getState().configId).toBe("cfg-grand-hall");
+    expect(useEditorStore.getState().isDirty).toBe(true);
+    expect(spacesApi.listVenues).not.toHaveBeenCalled();
+  });
+
+  it("closes a layout with nothing unsaved however the entry is reached", async () => {
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/plan/cfg-grand-hall?chrome=v2", { pathname: "/plan", search: "?space=saloon&chrome=v2", state: { leavingLayout: "cfg-grand-hall", approval: "spent" } }],
+      initialIndex: 0,
+    });
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByTestId("planner-chrome-v2")).toBeTruthy();
+    await act(async () => { await router.navigate(1); });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 20); }); });
     expect(useEditorStore.getState().configId).toBeNull();
     expect(spacesApi.listVenues).toHaveBeenCalled();
   });
@@ -70,7 +103,7 @@ describe("the slate's room switch", () => {
     expect(useEditorStore.getState().configId).toBe("cfg-grand-hall");
 
     await act(async () => {
-      await router.navigate("/plan?space=saloon&chrome=v2", { state: { leavingLayout: "cfg-another" } });
+      await router.navigate("/plan?space=saloon&chrome=v2", { state: roomSwitchState("cfg-another") });
     });
     expect(useEditorStore.getState().configId).toBe("cfg-grand-hall");
   });

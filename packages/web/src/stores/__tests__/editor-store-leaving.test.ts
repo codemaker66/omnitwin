@@ -5,8 +5,11 @@ import { ApiError } from "../../api/client.js";
 import { signedInPlannerDraftKey } from "../../lib/anonymous-planner-draft.js";
 import { undoLabel } from "../../lib/editor-history.js";
 import { useAuthStore, type AuthUser } from "../auth-store.js";
+import * as actionLogApi from "../../api/action-log.js";
+import { useActionLogStore } from "../action-log-store.js";
 import {
   LAYOUT_CHANGE_SAVE_MS,
+  closeLayout,
   placedObjectToEditor,
   saveBeforeLayoutChange,
   useEditorStore,
@@ -422,6 +425,106 @@ describe("saveBeforeLayoutChange", () => {
     await saveBeforeLayoutChange();
     store().reset();
     expect(store().leftBehind).toMatchObject({ configId: GRAND_HALL_LAYOUT });
+  });
+});
+
+describe("found by the adversarial review", () => {
+  it("does not call the work lost when a flush lands it while the next layout is still loading", async () => {
+    // Over the device cap, so nothing is kept here; the slate's wait failed.
+    const banquet = Array.from({ length: 1001 }, (_, index) => editor(`00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, index % 20));
+    open(banquet, false);
+    store().updateObject(banquet[0]?.id ?? "", { positionX: 0.5 });
+    vi.mocked(configApi.authBatchSave).mockRejectedValueOnce(new ApiError(500, "Server error", "INTERNAL"));
+    expect(await saveBeforeLayoutChange()).toBe("not-kept");
+
+    // "Open the Saloon without them": the load starts; the route unmounting flushes, and that save lands.
+    vi.mocked(configApi.authBatchSave).mockResolvedValueOnce({ objects: banquet.map((object) => wire(object.id, object.positionX)), revision: 3 });
+    const arrives = deferred<configApi.Configuration>();
+    vi.mocked(configApi.getConfig).mockImplementationOnce(() => arrives.promise);
+    const loading = store().loadConfiguration(SALOON_LAYOUT, true);
+    expect(await store().saveToServer(true)).toBe(true);
+    arrives.resolve(saloon());
+    await loading;
+
+    expect(store().configId).toBe(SALOON_LAYOUT);
+    expect(store().leftBehind).toBeNull();
+  });
+
+  it("takes a newer revision that holds exactly this document as this save done, not a conflict", async () => {
+    open(BASE, false);
+    store().updateObject(T1, { positionX: 7.25 });
+    store().addObject(ASSET, 6, 0, 1);
+    const placed = store().objects.find((object) => object.id.startsWith("local-"))?.id ?? "";
+    // An earlier save of this very document landed unheard: the server is at revision 3.
+    vi.mocked(configApi.authBatchSave).mockRejectedValueOnce(new ApiError(409, "Layout changed on the server. Reload before saving again.", "REVISION_CONFLICT",
+      { expectedRevision: 2, currentRevision: 3, changedBy: null, changedAt: null }));
+    vi.mocked(configApi.getConfig).mockResolvedValueOnce(grandHall(3, [wire(T1, 7.25), wire(T2, 2), wire(T3, 3), wire(T5, 6)]));
+
+    expect(await store().saveToServer(true)).toBe(true);
+
+    expect(store()).toMatchObject({ configRevision: 3, isDirty: false, isSaving: false, saveConflict: null, saveError: null });
+    expect(store().objects.map((object) => object.id)).toEqual([T1, T2, T3, T5]);
+    // The undo timeline follows the placed piece to the id the server gave it.
+    expect(JSON.stringify(store().history)).not.toContain(placed);
+    expect(storedDraft()).toBeNull();
+  });
+
+  it("still reports a conflict when the newer revision holds something else", async () => {
+    open(BASE, false);
+    store().updateObject(T1, { positionX: 7.25 });
+    vi.mocked(configApi.authBatchSave).mockRejectedValueOnce(new ApiError(409, "Layout changed on the server. Reload before saving again.", "REVISION_CONFLICT",
+      { expectedRevision: 2, currentRevision: 3, changedBy: null, changedAt: null }));
+    vi.mocked(configApi.getConfig).mockResolvedValueOnce(grandHall(3, [wire(T1, 1), wire(T2, 20), wire(T3, 3)]));
+
+    expect(await store().saveToServer(true)).toBe(false);
+    expect(store().saveConflict).toMatchObject({ expectedRevision: 2, currentRevision: 3 });
+  });
+
+  it("A, B, then A again while A's save is still on its way: no conflict with that save", async () => {
+    vi.useFakeTimers();
+    open(BASE, false);
+    store().updateObject(T1, { positionX: 7.25 });
+    const late = deferred<configApi.BatchSaveResponse>();
+    vi.mocked(configApi.authBatchSave).mockImplementationOnce(() => late.promise);
+    vi.mocked(configApi.getConfig).mockResolvedValueOnce(saloon());
+    const toSaloon = store().loadConfiguration(SALOON_LAYOUT, true);
+    await vi.advanceTimersByTimeAsync(LAYOUT_CHANGE_SAVE_MS);
+    await toSaloon;
+
+    // Back to the Grand Hall before that save has landed: the server still says revision 2.
+    vi.mocked(configApi.getConfig).mockResolvedValueOnce(grandHall(2, BASE_WIRE));
+    await store().loadConfiguration(GRAND_HALL_LAYOUT, true);
+    expect(store()).toMatchObject({ isDirty: true, configRevision: 2 });
+    // Now it lands (revision 3); this page no longer hears it. Its restored copy saves against revision 2.
+    late.resolve(savedGrandHall(3, [wire(T1, 7.25), wire(T2, 2), wire(T3, 3)]));
+    await vi.advanceTimersByTimeAsync(0);
+    vi.mocked(configApi.authBatchSave).mockRejectedValueOnce(new ApiError(409, "Layout changed on the server. Reload before saving again.", "REVISION_CONFLICT",
+      { expectedRevision: 2, currentRevision: 3, changedBy: null, changedAt: null }));
+    vi.mocked(configApi.getConfig).mockResolvedValueOnce(grandHall(3, [wire(T1, 7.25), wire(T2, 2), wire(T3, 3)]));
+
+    expect(await store().saveToServer(true)).toBe(true);
+    expect(store()).toMatchObject({ configRevision: 3, isDirty: false, saveConflict: null });
+  });
+
+  it("sends the action log's unsent tail when the room switch closes a layout whose save failed", async () => {
+    vi.mocked(actionLogApi.postActionBatch).mockClear();
+    useActionLogStore.getState().reset();
+    vi.mocked(configApi.getConfig).mockResolvedValueOnce(grandHall(2, BASE_WIRE));
+    await store().loadConfiguration(GRAND_HALL_LAYOUT, true);
+    store().updateObject(T1, { positionX: 5 });
+    store().bumpHistoryEpoch();
+    store().updateObject(T2, { positionX: 6 });
+    vi.mocked(configApi.authBatchSave).mockRejectedValueOnce(new ApiError(500, "Server error", "INTERNAL"));
+    expect(await saveBeforeLayoutChange()).toBe("kept");
+
+    closeLayout();
+    await vi.waitFor(() => { expect(actionLogApi.postActionBatch).toHaveBeenCalled(); });
+
+    const [configId, batch] = vi.mocked(actionLogApi.postActionBatch).mock.calls[0] ?? [];
+    expect(configId).toBe(GRAND_HALL_LAYOUT);
+    expect(batch?.actions).toHaveLength(2);
+    expect(store().configId).toBeNull();
+    expect(store().leftBehind).toMatchObject({ configId: GRAND_HALL_LAYOUT, kept: true });
   });
 });
 

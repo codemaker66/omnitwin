@@ -53,7 +53,7 @@ import { postActionBatch } from "../api/action-log.js";
 import { isLayoutTimelineMutationLocked, onLayoutTimelineMutationLockChange } from "../lib/layout-timeline-preview-lock.js";
 import { createOneShotHandoff } from "../lib/one-shot-handoff.js";
 import { changedBetween, locallyModifiedIds, rebaseOntoServer } from "../lib/layout-live/live-document.js";
-import { serverHoldsLayout } from "../lib/saved-layout-content.js";
+import { matchSavedLayout, serverHoldsLayout } from "../lib/saved-layout-content.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -576,12 +576,27 @@ function gestureOwnsCurrentDocument(): boolean {
     && activeHistoryGesture.venueId === current.venueId;
 }
 
+/** A save was asked for while no bridge was listening (the load that
+ *  restores kept work finishes before the planner, and its bridge, shows). */
+let autosaveWaiting = false;
+
 /**
  * Register the auto-save scheduler (owned by EditorBridge) so undo/redo
- * can request a debounced save without the store importing the bridge.
+ * can request a debounced save without the store importing the bridge. A
+ * request made while none was registered is handed to the next one.
  */
 export function setEditorAutosaveRequester(requester: (() => void) | null): void {
   autosaveRequester = requester;
+  if (requester !== null && autosaveWaiting) {
+    autosaveWaiting = false;
+    requester();
+  }
+}
+
+/** Ask the bridge for the debounced save, now or as soon as one is listening. */
+function requestAutosave(): void {
+  if (autosaveRequester === null) autosaveWaiting = true;
+  else autosaveRequester();
 }
 
 function currentEpoch(): number {
@@ -999,8 +1014,11 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         outgoing,
       ]);
       if (request !== configurationLoadRequest) return;
-      // Neither saved nor kept here: it is lost with the switch, and the person is told.
-      const lostOnLeaving = outgoingOutcome === "not-kept" ? leftBehindFor(get(), false) : null;
+      // Neither saved nor kept here: it is lost with the switch, and the person
+      // is told. A save that landed after the outgoing check had looked (the
+      // route unmounting flushes too) means nothing was lost after all.
+      const stillUnsaved = get().configId === leaving && get().isDirty;
+      const lostOnLeaving = outgoingOutcome === "not-kept" && stillUnsaved ? leftBehindFor(get(), false) : null;
       // Unsaved work this device kept (another open page's stays that page's).
       const localDraft = await draftNotHeldElsewhere(draftForLoad(config, isAuthenticated));
       if (request !== configurationLoadRequest) return;
@@ -1105,7 +1123,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       void get().loadSpace(config.venueId, config.spaceId);
       // Work kept on this device was meant for the server: send it on, unless
       // it waits for the person's choice.
-      if (restoredDraft !== null && loadConflict === null) autosaveRequester?.();
+      if (restoredDraft !== null && loadConflict === null) requestAutosave();
     } catch (err) {
       if (request !== configurationLoadRequest) return;
       const message = err instanceof Error ? err.message : "Failed to load configuration";
@@ -1270,7 +1288,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     // Notes never touch the placement store, so the bridge's scene
     // subscription cannot schedule the save — request it here, like
     // undo/redo do, or the note sits dirty until the next drag.
-    autosaveRequester?.();
+    requestAutosave();
   },
 
   setObjectDressing: (objectId, patch) => {
@@ -1300,7 +1318,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     notifyLocalChange(s.objects, after);
     // Same as setObjectNotes: dressing text edits are editor-store-only
     // mutations; the scene bridge never sees them, so ask for the save.
-    autosaveRequester?.();
+    requestAutosave();
   },
 
   removeObject: (objectId) => {
@@ -1488,7 +1506,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     });
     conflictServerCopy = null;
     // The rebased edits still need to reach the server.
-    if (options.requestSave !== false) autosaveRequester?.();
+    if (options.requestSave !== false) requestAutosave();
     return { status: "rebased", lostToRemoteDelete: rebased.lostToRemoteDelete };
   },
 
@@ -1535,6 +1553,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     useCockpitStore.getState().setPlannedGuestCount(null);
     conflictServerCopy = null;
     layoutChangeAttempt = null;
+    autosaveWaiting = false;
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.
     // The network is the browser's, not the layout's: it survives too, and so
@@ -1568,7 +1587,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     set(historyStepPatch(step));
     notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
-    autosaveRequester?.();
+    requestAutosave();
   },
 
   redo: () => {
@@ -1582,7 +1601,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     set(historyStepPatch(step));
     notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
-    autosaveRequester?.();
+    requestAutosave();
   },
 
   bumpHistoryEpoch: () => {
@@ -1611,7 +1630,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // The gesture's frames were not written as they came (deriveSaveFacts):
       // keep the finished result on this device now.
       set({ keptOnDevice: keepWorkOnDevice(get()) });
-      if (get().isDirty) autosaveRequester?.();
+      if (get().isDirty) requestAutosave();
     }
   },
 
@@ -1772,6 +1791,11 @@ async function saveDocument(
       try {
         const theirs = await readServerCopy(configId, useAuthPath);
         if (session !== configurationSession || get().configId !== configId) return false;
+        // QoL D-X2, at save time: the newer revision can be this very document,
+        // from a save that landed unheard (sent as the page hid, or before a
+        // switch, then answered to a page or session that had moved on). That
+        // is this save done, not someone else's change.
+        if (theirs !== null && get().objects === objects && adoptAsSaved(theirs, objects, session)) return true;
         if (rebase && theirs !== null) {
           // Live co-editing: keep this person's edits on the objects they
           // touched, take everything else from the newer copy.
@@ -1838,6 +1862,41 @@ async function saveDocument(
 // layout opening in this page gives the open one's unsaved work up to 2 s to
 // reach the server first, and what does not arrive stays on this device.
 // ---------------------------------------------------------------------------
+
+/**
+ * Take the server's copy as this document saved, when it holds exactly what
+ * this save sent: placed pieces take the ids the server gave them, so undo
+ * and the live room keep addressing them. False, changing nothing, otherwise.
+ */
+function adoptAsSaved(theirs: configApi.Configuration, sent: readonly EditorObject[], session: number): boolean {
+  const serverObjects = (theirs.objects ?? []).map(placedObjectToEditor);
+  const idMap = matchSavedLayout(sent, serverObjects, (id) => EDITOR_HISTORY_IDS.isLocalId(id));
+  if (idMap === null || session !== configurationSession) return false;
+  const latest = useEditorStore.getState();
+  const selection = useSelectionStore.getState();
+  if ([...selection.selectedIds].some((id) => idMap.has(id))) {
+    selection.selectMultiple([...selection.selectedIds].map((id) => idMap.get(id) ?? id));
+  }
+  useEditorStore.setState({
+    objects: serverObjects,
+    baseObjects: serverObjects,
+    history: remapHistoryIds(latest.history, idMap),
+    selectedObjectId: latest.selectedObjectId === null ? null : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
+    configRevision: theirs.revision,
+    configName: theirs.name,
+    isDirty: false,
+    isSaving: false,
+    lastSavedAt: theirs.updatedAt === undefined ? new Date() : new Date(theirs.updatedAt),
+    saveError: null,
+    saveErrorCode: null,
+    saveConflict: null,
+    reviewLockRefused: false,
+    ...(latest.leftBehind?.configId === theirs.id ? { leftBehind: null } : {}),
+  });
+  conflictServerCopy = null;
+  liveHooks?.onSaved(theirs.revision, idMap);
+  return true;
+}
 
 /** The undo label of work restored from this device. */
 const RESTORE_LABEL = "Restore changes kept on this device";
@@ -1941,6 +2000,20 @@ export function saveBeforeLayoutChange(timeoutMs: number = LAYOUT_CHANGE_SAVE_MS
   const outcome = settleOutgoingWork(session, timeoutMs, state.keptOnDevice);
   layoutChangeAttempt = { session, objects: state.objects, outcome };
   return outcome;
+}
+
+/**
+ * Close the open layout at a boundary in this page (the slate's room switch),
+ * as a load of another layout would: the open gesture is sealed into the
+ * action log and the log's unsent tail is sent against the last saved
+ * revision, then the editor resets. Its unsaved work should already have had
+ * its chance (saveBeforeLayoutChange); the device copy keeps what did not go.
+ */
+export function closeLayout(): void {
+  const state = useEditorStore.getState();
+  actionEmitter.flush(state.history);
+  if (state.configRevision !== null && !state.isPublicPreview) flushActionLogToServer(state.configRevision);
+  state.reset();
 }
 
 /** The page is going: write its unsaved work to this device now, a pointer

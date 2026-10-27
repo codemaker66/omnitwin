@@ -110,7 +110,9 @@ describe("switching room from the slate", () => {
 
     await settle("saved");
     await waitFor(() => { expect(where()).toBe("/plan?space=saloon&chrome=v2"); });
-    expect(JSON.parse(screen.getByTestId("where").dataset["state"] ?? "null")).toEqual({ leavingLayout: GRAND_HALL_LAYOUT });
+    const state: unknown = JSON.parse(screen.getByTestId("where").dataset["state"] ?? "null");
+    expect(state).toMatchObject({ leavingLayout: GRAND_HALL_LAYOUT });
+    expect(typeof Reflect.get(state as object, "approval")).toBe("string");
   });
 
   it("goes on when the work stays on this device", async () => {

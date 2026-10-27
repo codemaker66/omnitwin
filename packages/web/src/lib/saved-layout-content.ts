@@ -70,7 +70,20 @@ export function serverHoldsLayout(
   stored: readonly EditorObject[],
   isLocalId: (id: string) => boolean,
 ): boolean {
-  if (kept.length !== stored.length) return false;
+  return matchSavedLayout(kept, stored, isLocalId) !== null;
+}
+
+/**
+ * The same comparison, answering which stored piece each piece placed since
+ * became (local id → the server's id); null when the server holds something
+ * else.
+ */
+export function matchSavedLayout(
+  kept: readonly EditorObject[],
+  stored: readonly EditorObject[],
+  isLocalId: (id: string) => boolean,
+): ReadonlyMap<string, string> | null {
+  if (kept.length !== stored.length) return null;
   const storedById = new Map(stored.map((object) => [object.id, object]));
   const unclaimed = new Set(stored.map((object) => object.id));
   const placedSince: EditorObject[] = [];
@@ -80,16 +93,18 @@ export function serverHoldsLayout(
       continue;
     }
     const match = storedById.get(object.id);
-    if (match === undefined || !sameSavedPiece(object, match)) return false;
+    if (match === undefined || !sameSavedPiece(object, match)) return null;
     unclaimed.delete(object.id);
   }
+  const placed = new Map<string, string>();
   for (const object of placedSince) {
     const match = [...unclaimed].find((id) => {
       const candidate = storedById.get(id);
       return candidate !== undefined && sameSavedPiece(object, candidate);
     });
-    if (match === undefined) return false;
+    if (match === undefined) return null;
     unclaimed.delete(match);
+    placed.set(object.id, match);
   }
-  return unclaimed.size === 0;
+  return unclaimed.size === 0 ? placed : null;
 }
