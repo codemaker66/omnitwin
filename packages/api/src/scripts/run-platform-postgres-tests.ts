@@ -56,6 +56,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
   // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
   "src/__tests__/reference-loadouts-postgres.test.ts",
+  // Migration 0103: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
+  "src/__tests__/foundry-product-lock-postgres.test.ts",
 ] as const;
 
 /**
