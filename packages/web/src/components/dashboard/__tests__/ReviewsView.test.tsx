@@ -365,6 +365,28 @@ describe("the decision panel", () => {
     expect(timeline?.textContent).toContain("Catherine Tait started the review.Fri 19 Jun, 10:14");
   });
 
+  it("says when the planner sent the plan again after the venue asked for changes", async () => {
+    mocks.getReviewHistory.mockResolvedValue([
+      historyEntry(),
+      historyEntry({ id: "00000000-0000-4000-8000-000000007006", fromStatus: "submitted", toStatus: "under_review",
+        changedByName: "Catherine Tait", note: null, createdAt: "2026-06-19T09:14:00.000Z" }),
+      historyEntry({ id: "00000000-0000-4000-8000-000000007007", fromStatus: "under_review", toStatus: "changes_requested",
+        changedByName: "Catherine Tait", note: "Move the top table back", createdAt: "2026-06-19T09:30:00.000Z" }),
+      historyEntry({ id: "00000000-0000-4000-8000-000000007008", fromStatus: "changes_requested", toStatus: "submitted",
+        changedByName: "Fiona Grant", note: null, createdAt: "2026-06-19T11:00:00.000Z" }),
+    ]);
+    render(<ReviewsView />);
+    await openReview();
+
+    const timeline = await waitFor(() => {
+      const found = document.querySelector(".enq-timeline");
+      expect(found?.textContent).toContain("Fiona Grant submitted it again for review.");
+      return found;
+    });
+    expect(timeline?.textContent).toContain("Fiona Grant submitted it for review.Fri 19 Jun, 08:00");
+    expect(timeline?.textContent).toContain("Fiona Grant submitted it again for review.Fri 19 Jun, 12:00");
+  });
+
   it("shows the plan as it was submitted: its version, its largest items and a drawing", async () => {
     render(<ReviewsView />);
     await openReview();
@@ -532,13 +554,13 @@ describe("decisions say who hears, and what happened", () => {
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
-  it("asks before withdrawing, and says the review cannot be reopened", async () => {
+  it("asks before withdrawing, and says the planner can send it again", async () => {
     mocks.withdrawReview.mockResolvedValue("withdrawn");
     render(<ReviewsView />);
     await openReview();
     fireEvent.click(await screen.findByRole("button", { name: "Withdraw…" }));
     expect(screen.getByTestId("review-confirm-withdrawn").textContent)
-      .toContain("Withdraw Reception Room review pack from review?The review ends here and cannot be reopened. Nobody is emailed.");
+      .toContain("Withdraw Reception Room review pack from review?The review ends here. The planner can change the layout and send it again. Nobody is emailed.");
     expect(mocks.withdrawReview).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Keep it in review" }));
     expect(screen.queryByTestId("review-confirm-withdrawn")).toBeNull();

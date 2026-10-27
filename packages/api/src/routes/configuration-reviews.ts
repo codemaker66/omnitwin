@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyBaseLogger } from "fastify";
+import type { FastifyInstance, FastifyBaseLogger, FastifyReply } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm";
 import type { Database } from "../db/client.js";
@@ -51,7 +51,7 @@ import {
 // Configuration review routes — the approval workflow on top of
 // /configurations/:id. Mounted under prefix `/configurations`.
 //
-//   POST /:id/review/submit                 planner submits for approval
+//   POST /:id/review/submit                 planner submits (or submits again) for approval
 //   POST /:id/review/start-review           staff claims the review
 //   POST /:id/review/approve                staff approves
 //   POST /:id/review/reject                 staff rejects (note required)
@@ -308,8 +308,13 @@ function fireEmail(
 // route. After the state-machine + access checks, we:
 //
 //   1. UPDATE configurations.review_status (+ any extraColumns the
-//      route supplies, e.g. submittedAt)
+//      route supplies, e.g. submittedAt), only while the review still
+//      holds the state the move was judged from
 //   2. INSERT a row into configuration_review_history
+//
+// Returns false, having written nothing, when another move reached the
+// review first; the route then answers with sendReviewMoved before any
+// email of its own.
 // ---------------------------------------------------------------------------
 
 interface ExecuteTransitionInput {
@@ -322,7 +327,7 @@ interface ExecuteTransitionInput {
   readonly deferCounter?: boolean;
 }
 
-async function executeTransition(input: ExecuteTransitionInput): Promise<void> {
+async function executeTransition(input: ExecuteTransitionInput): Promise<boolean> {
   // CONSISTENCY BOUNDARY: the state change and its audit-history row
   // must commit atomically. Before this transaction, a failure of
   // the history insert would leave the state advanced but with NO
@@ -331,15 +336,28 @@ async function executeTransition(input: ExecuteTransitionInput): Promise<void> {
   //
   // The block is short and does not span network I/O beyond the
   // two writes — safe for Postgres default isolation (READ COMMITTED).
-  await input.db.transaction(async (tx) => {
-    await tx.update(configurations)
+  //
+  // The UPDATE is a compare-and-set on the state the route judged the
+  // move from (read without a lock). An approve that commits meanwhile
+  // holds the row while it writes; this UPDATE waits for it, then reads
+  // the row again under READ COMMITTED, finds 'approved' and matches
+  // nothing. Without the state in the WHERE clause, a reject would have
+  // overwritten an approval whose emails were already on their way.
+  const moved = await input.db.transaction(async (tx) => {
+    const updated = await tx.update(configurations)
       .set({
         reviewStatus: input.toStatus,
         reviewNote: input.note,
         updatedAt: new Date(),
         ...input.extraColumns,
       })
-      .where(eq(configurations.id, input.config.id));
+      .where(and(
+        eq(configurations.id, input.config.id),
+        eq(configurations.reviewStatus, input.config.reviewStatus),
+        isNull(configurations.deletedAt),
+      ))
+      .returning({ id: configurations.id });
+    if (updated.length === 0) return false;
 
     await appendReviewHistory(tx, {
       configurationId: input.config.id,
@@ -348,7 +366,9 @@ async function executeTransition(input: ExecuteTransitionInput): Promise<void> {
       changedBy: input.changedBy,
       note: input.note,
     });
+    return true;
   });
+  if (!moved) return false;
 
   // Business-level observability. Post-commit so we never emit a
   // counter for a transition that was rolled back by the transaction.
@@ -357,6 +377,24 @@ async function executeTransition(input: ExecuteTransitionInput): Promise<void> {
   if (input.deferCounter !== true) incrementCounter("configuration_review_transition_total", {
     from: input.config.reviewStatus,
     to: input.toStatus,
+  });
+  return true;
+}
+
+/**
+ * The answer to a move that another reached first: where the review now
+ * stands, as the same 409 a move judged from that state gets, so the desk
+ * says the review changed and that this decision was not recorded.
+ */
+async function sendReviewMoved(db: Database, reply: FastifyReply, configId: string): Promise<FastifyReply> {
+  const now = await loadConfig(db, configId);
+  if (now === null) {
+    return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+  }
+  return reply.status(409).send({
+    error: `The review moved to '${now.reviewStatus}' before this change was saved`,
+    code: "INVALID_TRANSITION",
+    currentStatus: now.reviewStatus,
   });
 }
 
@@ -379,10 +417,15 @@ export async function configurationReviewRoutes(
   // -------------------------------------------------------------------------
   // POST /:configId/review/submit — planner submits for approval
   //
-  // Idempotent: if the layout is identical to the latest snapshot the
-  // call returns 200 with { created: false }, leaving review_status
-  // untouched. Otherwise a new snapshot is created and review_status
-  // advances to "submitted".
+  // From a draft: idempotent. If the layout is identical to the latest
+  // snapshot the call returns 200 with { created: false }, leaving
+  // review_status untouched. Otherwise a new snapshot is created and
+  // review_status advances to "submitted".
+  //
+  // From changes_requested, rejected or withdrawn the planner is sending
+  // the layout back to the venue, so it always advances to "submitted":
+  // with a new snapshot when they changed it, or with the latest (the
+  // one the venue sent back, never approved) when they did not.
   // -------------------------------------------------------------------------
 
   server.post("/:configId/review/submit", { preHandler: [authenticate] }, async (request, reply) => {
@@ -417,6 +460,7 @@ export async function configurationReviewRoutes(
 
     let snapshot;
     let created: boolean;
+    let submittedAt: Date | null;
     try {
       const result = await db.transaction(async tx => {
         const current = await loadConfig(tx, config.id, true);
@@ -425,21 +469,27 @@ export async function configurationReviewRoutes(
         const scope = body.data.notifyTeam ? null : await internalDemoReviewScope(tx, current, request.user, true);
         if (!body.data.notifyTeam && scope === null) throw new InternalDemoReviewForbiddenError();
         const result = await createSnapshot(tx, { configId: config.id, createdBy: request.user.id, baseUrl });
-        if (result.created) {
-          const note = body.data.note?.trim();
-          await executeTransition({ db: tx, config: current, toStatus: "submitted",
-            changedBy: request.user.id,
-            note: note !== undefined && note.length > 0 ? note : null,
-            extraColumns: { submittedAt: new Date() }, deferCounter: true });
-          if (scope !== null) await recordSuppressedReviewNotifications(tx, {
-            configurationId: config.id, snapshotId: result.snapshot.id,
-            actorUserId: request.user.id, eventIds: scope, transition: "submitted",
-          });
-        }
-        return result;
+        // A draft identical to its latest snapshot stays as it is; a layout
+        // the venue sent back, or its planner withdrew, goes back to them.
+        if (!result.created && current.reviewStatus === "draft") return { ...result, submittedAt: null };
+        const note = body.data.note?.trim();
+        const at = new Date();
+        const moved = await executeTransition({ db: tx, config: current, toStatus: "submitted",
+          changedBy: request.user.id,
+          note: note !== undefined && note.length > 0 ? note : null,
+          extraColumns: { submittedAt: at }, deferCounter: true });
+        // Unreachable while this transaction holds the row: say so as a
+        // conflict, which rolls the new snapshot back with it.
+        if (!moved) throw new SnapshotConflictError(config.id);
+        if (scope !== null) await recordSuppressedReviewNotifications(tx, {
+          configurationId: config.id, snapshotId: result.snapshot.id,
+          actorUserId: request.user.id, eventIds: scope, transition: "submitted",
+        });
+        return { ...result, submittedAt: at };
       });
       snapshot = result.snapshot;
       created = result.created;
+      submittedAt = result.submittedAt;
     } catch (err) {
       if (err instanceof InternalDemoReviewForbiddenError) return reply.status(403).send({ error: err.message, code: "INTERNAL_DEMO_REVIEW_REQUIRED" });
       if (err instanceof ConfigurationNotFoundError) {
@@ -458,14 +508,16 @@ export async function configurationReviewRoutes(
       throw err;
     }
 
-    if (!created) {
+    if (submittedAt === null) {
       return { data: { created: false, snapshot, reviewStatus: config.reviewStatus, notificationPolicy: "not_sent_no_change" } };
     }
 
     incrementCounter("configuration_review_transition_total", { from: config.reviewStatus, to: "submitted" });
 
     // Notify venue staff — one email per staff member, idempotent per
-    // (snapshot, recipient) so a retried submit doesn't double-send.
+    // (submission, recipient) so a retried submit doesn't double-send. A
+    // layout sent again unchanged keeps its snapshot, so the submission's
+    // own time tells the second sending from the first.
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
     if (body.data.notifyTeam) {
     const ctx = await loadReviewEmailContext(db, config, request.user);
@@ -480,7 +532,7 @@ export async function configurationReviewRoutes(
         db,
         request.log,
         recipient.email,
-        `config-submitted:${snapshot.id}:${recipient.id}`,
+        `config-submitted:${snapshot.id}:${String(submittedAt.getTime())}:${recipient.id}`,
         configSubmitted({
           eventName: config.name,
           venueName: ctx.venueName,
@@ -493,7 +545,7 @@ export async function configurationReviewRoutes(
     }
 
     }
-    return { data: { created: true, snapshot, reviewStatus: "submitted" as const,
+    return { data: { created, snapshot, reviewStatus: "submitted" as const,
       notificationPolicy: body.data.notifyTeam ? "team_requested" : "suppressed_demo" } };
   });
 
@@ -524,13 +576,14 @@ export async function configurationReviewRoutes(
       });
     }
 
-    await executeTransition({
+    const moved = await executeTransition({
       db,
       config,
       toStatus: "under_review",
       changedBy: request.user.id,
       note: null,
     });
+    if (!moved) return sendReviewMoved(db, reply, config.id);
 
     return { data: { reviewStatus: "under_review" as const } };
   });
@@ -718,13 +771,14 @@ export async function configurationReviewRoutes(
       });
     }
 
-    await executeTransition({
+    const moved = await executeTransition({
       db,
       config,
       toStatus: "rejected",
       changedBy: request.user.id,
       note: body.data.note,
     });
+    if (!moved) return sendReviewMoved(db, reply, config.id);
 
     // Notify planner with the reviewer's note so they know why.
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
@@ -788,13 +842,14 @@ export async function configurationReviewRoutes(
       });
     }
 
-    await executeTransition({
+    const moved = await executeTransition({
       db,
       config,
       toStatus: "changes_requested",
       changedBy: request.user.id,
       note: body.data.note,
     });
+    if (!moved) return sendReviewMoved(db, reply, config.id);
 
     // Notify planner with the list of requested changes.
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
@@ -855,13 +910,14 @@ export async function configurationReviewRoutes(
     }
 
     const note = body.data.note?.trim();
-    await executeTransition({
+    const moved = await executeTransition({
       db,
       config,
       toStatus: "withdrawn",
       changedBy: request.user.id,
       note: note !== undefined && note.length > 0 ? note : null,
     });
+    if (!moved) return sendReviewMoved(db, reply, config.id);
 
     return { data: { reviewStatus: "withdrawn" as const } };
   });
@@ -893,13 +949,14 @@ export async function configurationReviewRoutes(
       });
     }
 
-    await executeTransition({
+    const moved = await executeTransition({
       db,
       config,
       toStatus: "archived",
       changedBy: request.user.id,
       note: null,
     });
+    if (!moved) return sendReviewMoved(db, reply, config.id);
 
     return { data: { reviewStatus: "archived" as const } };
   });

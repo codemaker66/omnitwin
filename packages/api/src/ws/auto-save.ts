@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import {
+  CONFIGURATION_REVIEW_STATUSES,
   ConfigurationReviewStatusSchema,
   PlatformRoleSchema,
   canJoinLayoutLive,
@@ -25,7 +26,8 @@ import { LayoutLiveHub, type LayoutLiveConnection } from "./layout-live.js";
 const FLUSH_DEBOUNCE_MS = 500;
 /** Live co-editing heartbeat: the Diary's cadence (Canon §15). */
 const LIVE_HEARTBEAT_INTERVAL_MS = 20_000;
-const EDITABLE_REVIEW_STATUSES = ["draft", "changes_requested", "rejected"] as const;
+/** The review lock as the write's own condition: the shared editable set, never a copy of it. */
+const EDITABLE_REVIEW_STATUSES = CONFIGURATION_REVIEW_STATUSES.filter(isPlannerEditable);
 
 export const ObjectDataSchema = z.object({
   id: z.uuid().optional(),
