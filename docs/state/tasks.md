@@ -5,9 +5,11 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-10-26.
+Updated: 2026-10-27.
 
 ## Latest task notes
+
+- 2026-10-27 #139 verified live, with #140 (no task number): the four broken basics from the 17 Oct four-roles review are in production. Event details no longer save blanks over stored details after a failed load; Reload checks keeps the hallkeeper's sheet on screen; the enquiry-approved email and the staff confirm step no longer promise a date; a new web enquiry is also emailed to the venue's sales and manager accounts (Trades Hall has none yet, so nobody new receives it). Live: API 09f87dfd contains 7f415b2e (#139) and a8dfcfd5 (#140), `/health/ready` 100/100 with `0101_sheet_ticks_per_event`; web a0e8d497. Item 6, public price reads, was closed by c1096a08 before #117 merged: every price read answers 401 without a session. Not yet used live: no setup-sheet traffic since the 26 Oct deploy. [18 October log](../sessions/2026-10-18.md).
 
 - 2026-10-26 T-675 started: every piece of furniture rebuilt for Trades Hall (branch `claude/furniture-rebuild-t675`): the venue's photographs put gold Chiavari chairs and ivory damask at every Grand Hall dinner; sun shadows by box and drape casters (4 % of master's triangles in the map, frame unchanged at 180 seats), contact shade and baked occlusion that ground the furniture even without the real sky (`?sky=1`, still under review). [26 October log](../sessions/2026-10-26.md).
 - 2026-10-26 T-673: a fourth flaky case fixed at its cause, test-only (branch `claude/twinpage-dollhouse-flake`): TwinPage.test.tsx's Dollhouse switch failed on 2 of 2 master runs. The click was not dropped; it was overwritten. The walk writes `?node=` from an effect that runs after the commit showing the stage, as a replace built from the mount-time address, so a switch made before it lands is replaced away. The test now waits for the walk's write before switching. The same stale-address write is a product bug (T-674). [26 October log](../sessions/2026-10-26.md).
