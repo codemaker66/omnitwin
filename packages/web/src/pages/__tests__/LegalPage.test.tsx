@@ -80,7 +80,7 @@ describe("every document", () => {
     // Each document carries its own date: the privacy policy changed when the
     // dietary note gained its retention rule; the other two did not.
     const expected = type === "privacy"
-      ? { iso: "2026-10-17", text: "17 October 2026" }
+      ? { iso: "2026-10-26", text: "26 October 2026" }
       : { iso: "2026-08-15", text: "15 August 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
