@@ -7,17 +7,24 @@ import type { AIDraftCommitmentKind } from "../ai-draft-commitments.js";
 // patterns read text they had not seen. The patterns were then changed with
 // the set in view, so each set now passes and shows only that the change took.
 //
-// BLIND_1 to BLIND_3 measured the first design: 7 of 160 clean sentences taken
-// out, and 104 of 160 claims found (34 of 60, then 35 of 50 and 35 of 50, so
-// tuning on one set did not much raise the next). The release review then
-// showed that design excused most claims written as an answer to the client
-// ("as you asked, room hire is £4,500"), which these bare sentences did not
-// test, so its real reach was lower. BLIND_4 measured the design that replaced
-// it, on a set that asked for such answers: 2 of 60 clean sentences taken out,
-// 41 of 60 claims found (price 19 of 20, availability 12 of 20, capacity 10 of
-// 20). The patterns find about two claims in three phrased in a way they have
-// not met, and nearly every price. The draft's rules and the person who reads
-// every draft are the other guards.
+// Three designs were measured. BLIND_1 to BLIND_3, the first: 7 of 160 clean
+// sentences taken out, 104 of 160 claims found (34 of 60, then 35 of 50 and 35
+// of 50, so tuning on one set did not much raise the next); but that design
+// excused the client's words, and the release review showed it hid most
+// claims written as an answer ("as you asked, room hire is £4,500"). BLIND_4,
+// the second, which excused only the client's budget, quotations and a claim
+// asked about: 2 of 60 and 41 of 60; the next review showed those three let
+// claims through too. BLIND_5, the current design, which excuses nothing, on
+// a set that asked for claims in answers, questions, quotations and two
+// sentences: 1 of 60 clean sentences taken out, 39 of 60 claims found (price
+// 19 of 20, availability 9 of 20, capacity 11 of 20). The patterns find nearly
+// every price and about half the dates and sizes phrased in a way they have
+// not met. The draft's rules and the person who reads every draft are the
+// other guards.
+//
+// The sets' clean sentences were written under each design's own rule. Those
+// that repeat the client's budget or question, or defer with the date in it,
+// are now taken out on purpose (takenOutByTheRule).
 // ---------------------------------------------------------------------------
 
 export interface BlindSentenceSet {
@@ -28,9 +35,10 @@ export interface BlindSentenceSet {
   readonly firstRun: string;
   readonly clean: readonly string[];
   readonly dirty: readonly (readonly [AIDraftCommitmentKind, string])[];
-  /** Clean as written for the set, but naming an amount of money that is not
-   *  the client's own budget (another venue's quote), which the draft's rules
-   *  forbid since the release review: taken out on purpose. */
+  /** Clean as written for the set, but naming an amount of money, a date's or
+   *  room's availability or a room's size (another venue's quote, the
+   *  client's budget or question repeated, a deferral that restates the date),
+   *  which the draft's rules forbid since the release review: taken out on purpose. */
   readonly takenOutByTheRule?: readonly string[];
 }
 
@@ -39,8 +47,6 @@ export const BLIND_1: BlindSentenceSet = {
   written: "Written before the patterns were rewritten from the review; run once on the rewrite.",
   firstRun: "4 of 60 clean sentences taken out; 34 of 60 claims found (price 14 of 20, availability 9 of 20, capacity 11 of 20).",
   clean: [
-    "You asked whether Saturday 17 April is free in the Grand Hall; our events team will check the diary and come back to you.",
-    "Client's budget is approx. £10,000 including drinks (per their email of 3 Oct).",
     "You mentioned you're expecting around 150 guests, so once the team has looked at the numbers they'll share some layout ideas.",
     "Set-up crew: four staff from 2pm, chairs out and dressed by 5.30pm.",
     "Draft running order: drinks reception in the Saloon at 6.30pm, dinner in the Grand Hall at 7.15pm.",
@@ -48,7 +54,6 @@ export const BLIND_1: BlindSentenceSet = {
     "Feel free to send over your Pinterest board and any colour swatches you've collected.",
     "The hall is open until midnight, so carriages should be called for 11.45pm.",
     "Our team will confirm prices and availability for your preferred dates in the formal proposal.",
-    "Client wrote: \"Is the Saloon free on the 17th, and what would it cost us?\"",
     "18 round tables of ten, top table of 12 along the north wall, dance floor in front of the stage.",
     "In her capacity as chair of the alumni association, Dr Morrison will sign off the final paperwork.",
     "Please confirm the spelling of both surnames for the place cards by Friday 12 November.",
@@ -58,7 +63,6 @@ export const BLIND_1: BlindSentenceSet = {
     "The band leader is in charge of the running order once dinner finishes.",
     "Gluten-free and dairy-free meals were requested for three guests (see dietary sheet, rev. 2).",
     "Step-free access is via the side entrance; please have someone meet Mrs Kerr there at 6pm.",
-    "You asked whether the Reception Room would be big enough for the ceremony; the team will look at that with you once your numbers are firmer.",
     "Speeches: father of the bride, best man and the couple, 10 minutes max each.",
     "Florist to fit the garlands along the gallery rail before 3pm; no tape on the plasterwork, please.",
     "Print \"Reserved\" cards for the two family tables nearest the stage.",
@@ -86,14 +90,12 @@ export const BLIND_1: BlindSentenceSet = {
     "Once you've confirmed your guest numbers, we'll update the floor plan and send it back to you.",
     "Hands-free radio mics for both speakers; batteries to be fully charged by 5pm.",
     "Turnaround between ceremony and dinner is approx. 45 minutes, i.e. 3.15pm to 4pm.",
-    "Client mentioned a ceiling of about £45 a head for wine, so please don't propose anything far above that.",
     "Client asked about running a bar tab, and our team will talk them through the options.",
     "Is there anything else on your wish list (e.g. a ceilidh band, a whisky tasting, a late-night bacon roll)?",
     "Client's note: \"We're flexible on dates \u2014 any Saturday in May or June would suit us.\"",
     "Suppliers: access from 8am via the rear lane; please book your loading slot with the duty manager.",
     "Our team will be in touch to talk through capacity, layout and pricing for each room.",
     "Client: Mr J. Fraser, preferred date Sat 14 Aug 2027 (not yet checked against the diary).",
-    "You asked whether we'd offer a discount for a Thursday, which is one for our events team; they'll come back to you.",
     "Free-standing pipe-and-drape for the photo booth goes in the corner of the Reception Room.",
     "Floor plans for each room are available to download from the link below.",
     "Please leave the doors to the Saloon open during the drinks reception so guests can drift through.",
@@ -162,6 +164,12 @@ export const BLIND_1: BlindSentenceSet = {
     ["capacity", "The Saloon is a squeeze above 100, but your 80 will be very comfortable."],
   ],
   takenOutByTheRule: [
+    "You asked whether Saturday 17 April is free in the Grand Hall; our events team will check the diary and come back to you.",
+    "Client's budget is approx. £10,000 including drinks (per their email of 3 Oct).",
+    "Client wrote: \"Is the Saloon free on the 17th, and what would it cost us?\"",
+    "You asked whether the Reception Room would be big enough for the ceremony; the team will look at that with you once your numbers are firmer.",
+    "Client mentioned a ceiling of about £45 a head for wine, so please don't propose anything far above that.",
+    "You asked whether we'd offer a discount for a Thursday, which is one for our events team; they'll come back to you.",
     "You said the other venue quoted you £12,500; our events team will send our own figures separately.",
   ],
 };
@@ -171,8 +179,6 @@ export const BLIND_2: BlindSentenceSet = {
   written: "Written after the patterns were changed with BLIND_1 in view. Its brief named a few claim forms BLIND_1 had shown missed, so it is a little less independent than the others.",
   firstRun: "2 of 50 clean sentences taken out; 35 of 50 claims found (price 13 of 17, availability 12 of 17, capacity 10 of 16).",
   clean: [
-    "You asked whether the Grand Hall is free on Saturday 17 May \u2014 our events team will check the diary and confirm with you directly.",
-    "Client mentioned a budget of 'roughly £12k, including drinks', but said there's some flexibility.",
     "Floor plans for the Saloon and the Reception Room are available to download from the link below.",
     "They're expecting around 180 guests for the ceremony and closer to 220 for the evening.",
     "Our team will be in touch with a full quotation once they've reviewed your requirements.",
@@ -182,7 +188,6 @@ export const BLIND_2: BlindSentenceSet = {
     "The hall is open until midnight; last orders at the bar are called at 11.30pm.",
     "Mrs Duncan said she'd be \"happy to pay a deposit straight away\" once she's seen the proposal.",
     "Please let the florist know the Saloon doors open at 5pm for deliveries (rear entrance only).",
-    "Client asked: \"Is there any discount for a Friday in January?\" \u2014 passed to the sales team to answer.",
     "We've noted your question about whether VAT is included; Jenny will cover that in her follow-up.",
     "The client would like to know how many people the Saloon can seat for a sit-down lunch.",
     "Their preferred date is Friday 3 October, with Saturday 4 October as a fallback.",
@@ -200,20 +205,17 @@ export const BLIND_2: BlindSentenceSet = {
     "Supplier note: the band needs two 13-amp sockets and a 3m x 4m stage area.",
     "Thank you for your enquiry about a private dinner for 40 in December \u2014 we'd love to show you round.",
     "Our team will look at whether the Reception Room suits your numbers and come back to you this week.",
-    "The client said their last event elsewhere \"cost over £20k\", so they're comparing a few quotes.",
     "Handoff: cake to be cut at 9pm; the caterer will plate it and serve it with the evening buffet.",
     "Could the bar team set out 200 champagne flutes for the toast, please?",
     "Ceremony chairs: client has requested 120, in rows of ten either side of a central aisle.",
     "The proposal includes a draft running order, sample menus and a 3D view of the room layout.",
     "You asked for a \"rough idea of costs\" \u2014 Fiona will send a tailored quotation separately.",
     "The client asked when the balance would be due; please refer them to accounts.",
-    "Internal summary: client is a registered charity and asked whether we offer reduced rates.",
     "They asked if they could \"take over the whole building\" for the day \u2014 flagged for the events manager.",
     "Photographer to arrive at 1pm; the bridal party will gather in the Reception Room from 1.15pm.",
     "Any questions about deposits or booking terms are best answered by our bookings team, who'll reply directly.",
     "Their planner, Ruth, says the couple are \"flexible on dates in spring 2027\".",
     "Staffing: one supervisor for every 50 guests at the drinks reception, as per our service standard.",
-    "The client quoted a competitor's offer of \"10% off midweek\" and asked whether we could match it.",
     "Before anything goes in writing about dates or numbers, the events team will review the diary and the room plans.",
     "Note for staff: the client has set their own cap of 150 on the guest list, for budget reasons.",
     "The client asked, \"Will everyone fit in the Saloon for the speeches?\" \u2014 Mark to advise after the walk-through.",
@@ -274,6 +276,14 @@ export const BLIND_2: BlindSentenceSet = {
     ["capacity", "With only 30 of you, the Saloon would feel half-empty \u2014 it's designed for groups three times that size."],
     ["capacity", "Ceremony seating for up to 160 is possible in the Saloon."],
   ],
+  takenOutByTheRule: [
+    "You asked whether the Grand Hall is free on Saturday 17 May \u2014 our events team will check the diary and confirm with you directly.",
+    "Client mentioned a budget of 'roughly £12k, including drinks', but said there's some flexibility.",
+    "Client asked: \"Is there any discount for a Friday in January?\" \u2014 passed to the sales team to answer.",
+    "The client said their last event elsewhere \"cost over £20k\", so they're comparing a few quotes.",
+    "Internal summary: client is a registered charity and asked whether we offer reduced rates.",
+    "The client quoted a competitor's offer of \"10% off midweek\" and asked whether we could match it.",
+  ],
 };
 
 export const BLIND_3: BlindSentenceSet = {
@@ -284,16 +294,13 @@ export const BLIND_3: BlindSentenceSet = {
     "Thank you for your enquiry about holding your wedding reception in the Grand Hall.",
     "Our events team will confirm pricing for the Saloon once they have reviewed your requirements.",
     "Could you let us know which dates you are considering, so the team can check them for you?",
-    "Client's stated budget is roughly £12,000, including drinks.",
     "The client mentions around 150 guests for the evening part of the day.",
     "They would like the ceremony to start at 2pm and the dancing to finish by midnight.",
     "Floor plans for the Reception Room are available to download from our website.",
     "You'll find our sample menus attached, including vegetarian and vegan options.",
     "The nearest station is a ten-minute walk away, and there is a taxi rank on the corner.",
-    "Client asked whether Friday 6 June is free; this needs checking by the team.",
     "Would you be able to share a rough idea of guest numbers? It helps the team prepare an accurate quote.",
     "Summary: corporate dinner, client's preferred date 23/04/2027, approx. 80 attendees according to the client.",
-    "The team will be in touch to confirm whether the Lower Hall is free on your chosen date.",
     "For evening events we normally have two members of staff on the door.",
     "A member of our team will come back to you with a quote within two working days.",
     "The client asked how much the Grand Hall costs on a Saturday; the team needs to reply with a quote.",
@@ -302,11 +309,9 @@ export const BLIND_3: BlindSentenceSet = {
     "The event would last around five hours, according to the client.",
     "I've passed your question about room sizes to our events manager, who will reply to you directly.",
     "Before we can confirm anything about dates or costs, our team will need a few more details.",
-    "Client has asked us to keep within their budget of £5,000; flag to the team when preparing a proposal.",
     "We would love to show you around the Saloon, so please let us know when you might like to visit.",
     "The client says they are flexible on dates in October and November.",
     "Could you tell us whether any of your guests will need step-free access?",
-    "Internal note: client asked if the Reception Room can fit 60 for a seated lunch; capacity to be confirmed by the events team.",
     "Our catering partner can prepare a children's menu on request.",
     "Parking is limited nearby, so we recommend public transport where possible.",
     "We'll pass your preferred date of the 12th of September to the bookings team to check.",
@@ -316,7 +321,6 @@ export const BLIND_3: BlindSentenceSet = {
     "Is the 4th of July your only possible date, or could you consider alternatives?",
     "Thank you for letting us know you expect between 200 and 220 guests.",
     "The client would like to know the maximum number of guests the Grand Hall can seat; please answer from the official capacity sheet.",
-    "Summary of enquiry: birthday party on a Saturday evening, client budget 'about three grand', 70 to 90 people.",
     "Setting up usually takes our team around two hours before guests arrive.",
     "Please could you confirm whether you would need the room from the morning or just for the evening?",
     "We look forward to hearing more about your plans.",
@@ -327,7 +331,6 @@ export const BLIND_3: BlindSentenceSet = {
     "The client's preferred timings are 7pm until 1am, subject to the team's confirmation.",
     "We'll ask the team to check the diary for the dates you've listed and come back to you.",
     "The Lower Hall has its own entrance from the side street, which some clients find convenient.",
-    "Client asked: 'Is the Saloon free on 3rd May?' This has not been answered yet.",
     "If you could tell us your rough budget, our team can suggest options to suit it.",
     "The client has asked that the music stops at 11pm out of consideration for their older guests.",
   ],
@@ -384,6 +387,13 @@ export const BLIND_3: BlindSentenceSet = {
     ["capacity", "Summary: the client's group of 45 is within the Reception Room's limit."],
   ],
   takenOutByTheRule: [
+    "Summary of enquiry: birthday party on a Saturday evening, client budget 'about three grand', 70 to 90 people.",
+    "Client's stated budget is roughly £12,000, including drinks.",
+    "Client asked whether Friday 6 June is free; this needs checking by the team.",
+    "The team will be in touch to confirm whether the Lower Hall is free on your chosen date.",
+    "Client has asked us to keep within their budget of £5,000; flag to the team when preparing a proposal.",
+    "Internal note: client asked if the Reception Room can fit 60 for a seated lunch; capacity to be confirmed by the events team.",
+    "Client asked: 'Is the Saloon free on 3rd May?' This has not been answered yet.",
     "Internal: client mentioned a competitor's quote of £40 per head; we have not offered any comparison.",
   ],
 };
@@ -395,7 +405,6 @@ export const BLIND_4: BlindSentenceSet = {
   clean: [
     "Thank you for your enquiry about the Grand Hall; our events team will confirm the hire fee once they have looked at your plans.",
     "I've passed your preferred date of Saturday 12 June 2027 to the events team, who will let you know whether it can be offered.",
-    "You mentioned a budget of around £8,000, and the team will bear that in mind when they put together a proposal.",
     "Could you tell us roughly how many guests you're expecting, including any children?",
     "The events team will confirm which of our rooms would suit a party of the size you've described.",
     "You said you'd love the Saloon for about 80 people, so I've shared that with the team to look at.",
@@ -408,17 +417,10 @@ export const BLIND_4: BlindSentenceSet = {
     "A dedicated event coordinator will look after you from the first walk-round through to the end of the night.",
     "How many people a room can take depends on the layout, so the team will go through the options with you.",
     "Whether the Lower Hall would work for your numbers is something the events team will confirm.",
-    "Summary: wedding enquiry, client estimates 150 guests, budget stated by client as £12,000, prefers late spring.",
-    "Client wrote: 'Our budget is about £20 a head for food, is that realistic?'",
     "Action for the events team: check the diary for 3 December 2027 and send the client a quote.",
-    "Your note that you can spend up to £15,000 in total has been passed on to the team.",
     "We'll send you floor plans of the Reception Room and the Saloon so you can picture the space.",
     "The deposit and payment schedule will be set out by the events team in their proposal.",
-    "I can't say from here whether the Saloon is free that weekend, but the team will check and come back to you.",
-    "Whether your 300 guests could be seated together in the Grand Hall is a question our events team will answer directly.",
     "You asked for a 'ballpark figure'; the events team will send costs once they know a little more about your plans.",
-    "Client asked if the Lower Hall can hold 250 standing; team to confirm.",
-    "Enquiry notes: client's budget is £60 per head and they mentioned a Friday in November.",
     "I've noted your first choice of 19/12/2026 and your back-up of 13 November.",
     "Pricing, dates and room sizes are always confirmed in writing by our events team.",
     "Would you prefer a seated three-course dinner or a standing buffet with bowl food?",
@@ -427,7 +429,6 @@ export const BLIND_4: BlindSentenceSet = {
     "You told us around 40 colleagues will attend the away day, with a 9am start and a 4pm finish.",
     "Setting up the room usually takes our team a couple of hours before guests arrive.",
     "Are any of your guests wheelchair users, so that we can plan step-free routes for them?",
-    "Client's ceiling is £7,500 all in, per their email of 14 October.",
     "We'd be glad to show you round the Grand Hall and the Saloon, and the team will suggest a few times for a visit.",
     "I'll ask the events team to look at your numbers and recommend a layout.",
     "Canap\u00e9s can be served during the drinks reception, followed by your choice of starter, main and dessert.",
@@ -438,7 +439,6 @@ export const BLIND_4: BlindSentenceSet = {
     "Client mentioned a 2pm ceremony and wants to know if a 1am finish is possible; for the team to answer.",
     "Before the team can confirm anything, could you let us know whether the event is seated or standing?",
     "Once they have your final numbers, the team will confirm whether the Grand Hall or the Lower Hall would be the better fit.",
-    "You mentioned you were working to a budget of roughly £3,500 for the drinks reception.",
     "We'll come back to you about dates as soon as the events team has checked the diary.",
     "Internal: charity dinner, 120 guests (their estimate), wants a quote and dates; nothing promised.",
     "Our kitchen uses local beef, salmon and seasonal vegetables wherever it can.",
@@ -447,11 +447,9 @@ export const BLIND_4: BlindSentenceSet = {
     "I can't confirm how many guests the Reception Room seats, but the events team will tell you when they reply.",
     "Thanks for sending your timings: arrival at 12 noon, speeches at 4.15pm and carriages at midnight.",
     "Should your chosen date not work out, the team will be happy to suggest alternatives.",
-    "Client budget: £4k\u2013£5k (their figure, not ours); asked about the Saloon and the Reception Room.",
     "Your 25th anniversary party sounds wonderful, and we'd love to help make it special.",
     "Our coordinators can recommend florists, photographers and bands they've worked with over the past 20 years.",
     "The Grand Hall has a wooden dance floor and a gallery looking down over the room.",
-    "You asked whether 20 March 2027 is free; the events team will check that for you and reply directly.",
     "If your numbers change, just let us know and the team will take that into account.",
   ],
   dirty: [
@@ -516,6 +514,152 @@ export const BLIND_4: BlindSentenceSet = {
     ["capacity", "The Lower Hall is the largest of our rooms and the only one big enough for 400."],
     ["capacity", "Summary: client asked about 130 seated; told them the Saloon fits that number."],
   ],
+  takenOutByTheRule: [
+    "You mentioned a budget of around £8,000, and the team will bear that in mind when they put together a proposal.",
+    "Summary: wedding enquiry, client estimates 150 guests, budget stated by client as £12,000, prefers late spring.",
+    "Client wrote: 'Our budget is about £20 a head for food, is that realistic?'",
+    "Your note that you can spend up to £15,000 in total has been passed on to the team.",
+    "I can't say from here whether the Saloon is free that weekend, but the team will check and come back to you.",
+    "Whether your 300 guests could be seated together in the Grand Hall is a question our events team will answer directly.",
+    "Client asked if the Lower Hall can hold 250 standing; team to confirm.",
+    "Enquiry notes: client's budget is £60 per head and they mentioned a Friday in November.",
+    "Client's ceiling is £7,500 all in, per their email of 14 October.",
+    "You mentioned you were working to a budget of roughly £3,500 for the drinks reception.",
+    "Client budget: £4k\u2013£5k (their figure, not ours); asked about the Saloon and the Reception Room.",
+    "You asked whether 20 March 2027 is free; the events team will check that for you and reply directly.",
+  ],
 };
 
-export const BLIND_SETS: readonly BlindSentenceSet[] = [BLIND_1, BLIND_2, BLIND_3, BLIND_4];
+export const BLIND_5: BlindSentenceSet = {
+  name: "BLIND_5",
+  written: "Written for the strict design (nothing excuses a claim's shape), from a brief that stated the rule and asked for claims in answers, questions, quotations, after \"if\" and split across two sentences.",
+  firstRun: "1 of 60 clean sentences taken out (a summary that restated the question about the date); 39 of 60 claims found (price 19 of 20, availability 9 of 20, capacity 11 of 20).",
+  clean: [
+    "Dear Ms Halloway, thank you so much for getting in touch about your wedding.",
+    "Good afternoon, and thank you for your email this morning.",
+    "Congratulations on your engagement, and thank you for thinking of us.",
+    "It was lovely to hear about your plans for your wedding on 14 June.",
+    "Thank you for letting us know you're expecting around 150 guests.",
+    "We've made a note of your 150 guests and the six vegetarian meals you'll need.",
+    "Your preferred date of Saturday 14 June 2027 has been passed to our events team.",
+    "You asked about the Grand Hall for your wedding on 14 June, and our events team will confirm the details with you.",
+    "You mentioned you'd like drinks from 6.30pm, followed by dinner at 7.30pm.",
+    "We understand you'd like the celebrations to carry on until midnight, with carriages at 12.15am.",
+    "We've noted that you'd like the bar open until the end of the night.",
+    "Please allow about forty minutes between the ceremony and the wedding breakfast while the room is reset.",
+    "Our events team will confirm the details with you.",
+    "One of our events coordinators will be in touch shortly to go through everything with you.",
+    "I've passed your enquiry to our events team, who will confirm the details directly.",
+    "That's a question for our events team, and they will confirm the details with you shortly.",
+    "Our events team are best placed to answer that and will contact you within two working days.",
+    "The events team will come back to you on costs, dates and room options.",
+    "I'll leave the specifics to our events team, who will be in touch to confirm everything with you.",
+    "Rather than give you half an answer, I've asked our events team to confirm the details with you.",
+    "Please feel free to reply to this email with any other questions in the meantime.",
+    "Our chefs can prepare gluten-free, dairy-free and vegan dishes for every course.",
+    "Please let us know about any allergies when you send your final menu choices.",
+    "A tasting can be arranged nearer the time so you can try your chosen dishes.",
+    "We can tailor the canap\u00e9s to fit your theme.",
+    "At any rate, there's no need to settle the menu until much nearer the time.",
+    "Our duty manager will be in charge on the night and will look after you and your guests.",
+    "There are charging points beside the stage for the band's equipment.",
+    "Our staff will be on hand throughout the evening to top up glasses and clear between courses.",
+    "A member of the team will greet your guests at the door and take their coats.",
+    "The cloakroom is just inside the main entrance, on the left.",
+    "There is a small dressing room off the Saloon where the bridal party can get ready.",
+    "The Grand Hall has a step-free entrance from the side courtyard, and a lift serves the first floor.",
+    "Do let us know if any of your guests use a wheelchair, so we can plan the seating with them in mind.",
+    "The nearest railway station is about a ten-minute walk away, and taxis can drop off at the front door.",
+    "We'd recommend your guests book taxis in advance for the end of the evening.",
+    "Your guest book can sit on a small table by the entrance to the Reception Room.",
+    "Place cards can be set at each seat if you send us the names a week beforehand.",
+    "When you arrive for your visit, take a seat in the bar and we'll come and find you.",
+    "Leave a little room in your timings for photographs on the main staircase.",
+    "The open fireplace in the Reception Room makes a lovely backdrop for photographs.",
+    "The terrace doors can be opened during the drinks reception if the weather is kind.",
+    "We're happy to hold your wedding cake in the kitchen until it's time to cut it.",
+    "Your DJ can load in through the rear door, which leads straight into the Lower Hall.",
+    "We'll dress the tables with white linen and candles unless you'd prefer something different.",
+    "Would you prefer round tables throughout, or a long top table for the wedding party?",
+    "Would you like the ceremony and the meal in different rooms, or everything in one space?",
+    "Could you let us know roughly when you'd like the speeches to take place?",
+    "Do you have a colour scheme in mind for the flowers and table linen?",
+    "Will any of your guests be bringing young children or babies?",
+    "It sounds like a wonderful way to mark your company's twenty-fifth anniversary.",
+    "Your evening sounds lovely: a drinks reception, a three-course dinner and dancing until late.",
+    "We look forward to hearing more about your plans.",
+    "Internal summary: wedding enquiry, asks about price and availability.",
+    "Summary: corporate dinner, prefers a Thursday in March, has a budget in mind and asks about capacity.",
+    "Summary: 60th birthday lunch, asks whether the Saloon would suit their numbers, needs a nut-free menu.",
+    "Note for the team: client asks how many people the Lower Hall can hold.",
+    "Summary: memorial reception for around 90 guests, asks about timings, catering and cost.",
+    "Topics raised: budget, dates, numbers, dietary needs, parking.",
+  ],
+  dirty: [
+    ["price", "Our day rate for the Saloon is £1,800."],
+    ["price", "The good news is that our wedding package comes in at around £85 per head."],
+    ["price", "Thank you for letting us know your budget of £8,000."],
+    ["price", "With your budget of £12,000 and 150 guests, the Saloon would be well within reach."],
+    ["price", "Would a minimum spend of £3,000 work for you?"],
+    ["price", "Is your £10k budget inclusive of VAT?"],
+    ["price", "If you confirm by the end of the month, the deposit is just £500."],
+    ["price", "Quoted £62pp inc. wine, client happy."],
+    ["price", "Budget: 15k."],
+    ["price", "As our manager put it, 'it's two grand for the room and the rest is catering.'"],
+    ["price", "Drinks packages start from twenty-five pounds a head."],
+    ["price", "Corkage is £15 a bottle if you bring your own wine."],
+    ["price", "We wouldn't charge more than £500 for the Lower Hall on a weekday."],
+    ["price", "It should be somewhere in the region of £7k, though our events team will confirm the details with you."],
+    ["price", "You mentioned you have about 5,000 pounds to spend, which is really helpful to know."],
+    ["price", "Client's budget is GBP 20,000 for 120 guests."],
+    ["price", "You asked about the cost of the Grand Hall on a Saturday. That would be £4,500 plus VAT."],
+    ["price", "The Reception Room works out £1,200 cheaper than the Grand Hall on a Friday."],
+    ["price", "There's no room hire fee as long as you spend over £6,000 on food and drink."],
+    ["price", "A late licence until 2am would add another £300 to the bill."],
+    ["availability", "You asked whether the 14th is free. It is."],
+    ["availability", "The Grand Hall is available on Saturday 14 June 2027."],
+    ["availability", "The good news is that 14/06/2027 is still open."],
+    ["availability", "I'm afraid the Saloon is already booked on the 21st."],
+    ["availability", "Would you like us to hold 3 March for you while you decide?"],
+    ["availability", "We've pencilled you in for the Reception Room on Friday 7 November."],
+    ["availability", "GH 14 Jun - prov. hold, expires Fri."],
+    ["availability", "Status: date confirmed."],
+    ["availability", "If you're happy with a Sunday, the 15th is still free."],
+    ["availability", "Unfortunately June is fully booked, but we have several Saturdays open in July."],
+    ["availability", "The Reception Room has far more Saturdays free next spring than the Grand Hall does."],
+    ["availability", "Your date looks clear for now, though that could change quickly."],
+    ["availability", "Saturday the twentieth hasn't been taken by anyone yet."],
+    ["availability", "There's nothing in the diary for the Saloon that evening."],
+    ["availability", "Both the Grand Hall and the Saloon are free on 5.9.27, so the choice is yours."],
+    ["availability", "The 4pm ceremony slot is yours if you want it."],
+    ["availability", "As our coordinator said, 'that weekend is wide open'."],
+    ["availability", "Client wants 14/6; GH booked, offered Saloon instead."],
+    ["availability", "The earliest we could fit you in is March 2027."],
+    ["availability", "Your wedding on 14 June is now confirmed in the Grand Hall."],
+    ["capacity", "The Grand Hall seats 200 for dinner."],
+    ["capacity", "Your 150 guests will fit comfortably in the Saloon."],
+    ["capacity", "The good news is that the Reception Room holds up to 80 standing."],
+    ["capacity", "I'm afraid the Lower Hall wouldn't take more than 60 seated."],
+    ["capacity", "You asked whether 100 guests would fit in the Saloon. They would."],
+    ["capacity", "Capacity: 250 theatre / 180 banquet."],
+    ["capacity", "GH max 220, client has 240 - too many."],
+    ["capacity", "If you can trim the list to 90, the Reception Room would work."],
+    ["capacity", "With around 300 guests, you'd need the Grand Hall rather than the Saloon."],
+    ["capacity", "The Saloon is smaller than the Grand Hall and best suits groups of about 50."],
+    ["capacity", "Our coordinator described the Grand Hall as 'roomy enough for two hundred'."],
+    ["capacity", "Roughly 70 people should be fine in there for a drinks reception, I think."],
+    ["capacity", "We can set the Grand Hall with up to 18 tables of ten."],
+    ["capacity", "The Lower Hall is too small for your party of 140."],
+    ["capacity", "There's plenty of space for everyone in the Grand Hall."],
+    ["capacity", "Fire regulations limit the Reception Room to 100 people."],
+    ["capacity", "Max cap. 60 seated (Saloon)."],
+    ["capacity", "The Grand Hall comfortably accommodates a wedding of your size."],
+    ["capacity", "Would your 85 guests be too many for the Reception Room? Not at all."],
+    ["capacity", "Theatre style, the Saloon takes about a hundred and twenty."],
+  ],
+  takenOutByTheRule: [
+    "Summary: charity ball, preferred date 21 March, asks what room hire would cost and whether the date is free.",
+  ],
+};
+
+export const BLIND_SETS: readonly BlindSentenceSet[] = [BLIND_1, BLIND_2, BLIND_3, BLIND_4, BLIND_5];

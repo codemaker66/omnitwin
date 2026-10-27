@@ -20,7 +20,7 @@ import { BLIND_SETS } from "./ai-draft-blind-sets.js";
 //     found them unsafe (33 of 39 clean sentences taken out, 41 of 41 claims
 //     missed). The patterns were rewritten with these in view, so they show
 //     the rewrite answers the review, not how it reads text it has not seen.
-//   BLIND: three sets, each written by a separate agent that never saw the
+//   BLIND: five sets, each written by a separate agent that never saw the
 //     patterns, and each run once before it was seen; ai-draft-blind-sets.ts
 //     records those first runs, which are the measure of text not seen.
 //
@@ -180,15 +180,11 @@ const REVIEW_CLEAN = [
   "It's free for your guests to use the cloakroom.",
   "The hall is open until midnight on Saturdays.",
   "I've blocked out some time on Thursday to call you.",
-  "You mentioned a budget of around £10,000.",
   "Thank you for your enquiry about Saturday 17th June.",
   "Carriages are at midnight, as you described.",
   "The 17th sounds like a lovely date.",
   "Your guests will arrive at 6pm.",
   // The internal summary the review ran end to end.
-  "They ask whether 14 August 2027 is free in the Grand Hall.",
-  "They want to know if the hall can hold 180 for dinner and 220 in the evening.",
-  "Their budget is around £12,000, and they ask whether a discount applies to Fridays.",
   "This layout seats 180 at 18 round tables of ten.",
 ];
 
@@ -234,6 +230,17 @@ const REVIEW_DIRTY: readonly (readonly [AIDraftCommitmentKind, string])[] = [
   ["availability", "Our Saturdays in June are still open."],
 ];
 
+/** Clean as first written, when the client's words, budget and questions were
+ *  excused; the release review's rule forbids a figure, a date's or room's
+ *  availability and a room's size even repeated or asked about, so these are
+ *  taken out now. */
+const TAKEN_OUT_BY_THE_RULE = [
+  "You mentioned a budget of around £10,000.", // REVIEW_CLEAN
+  "They ask whether 14 August 2027 is free in the Grand Hall.", // REVIEW_CLEAN
+  "They want to know if the hall can hold 180 for dinner and 220 in the evening.", // REVIEW_CLEAN
+  "Their budget is around £12,000, and they ask whether a discount applies to Fridays.", // REVIEW_CLEAN
+];
+
 /** Claims the patterns do not catch, kept so a change that starts to is seen. */
 const KNOWN_MISSES = [
   "The date you mentioned is available.",
@@ -270,8 +277,8 @@ describe.each(BLIND_SETS)("$name, now that it has been seen", (set) => {
     expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain(kind);
   });
 
-  it.runIf(takenOut.length > 0).each(takenOut)("takes out another venue's figure: %s", (sentence) => {
-    expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain("price");
+  it.runIf(takenOut.length > 0).each(takenOut)("takes out what the rule forbids, though written as clean: %s", (sentence) => {
+    expect(findDraftCommitments(sentence).length).toBeGreaterThan(0);
   });
 });
 
@@ -346,54 +353,62 @@ describe("words about the client never excuse a claim", () => {
   });
 });
 
-describe("what stays: the team will confirm it, the client's budget, the client's words", () => {
-  // The draft's rules tell the model to say the events team will confirm a
-  // price, a date or a room's size, and allow the client's own budget said as
-  // theirs; a summary may quote what the client wrote.
+describe("what the rule asks for stays, and what it forbids goes, however it is framed", () => {
+  // Release review, 27 October 2026 (third round): every exemption tried (the
+  // client's words, their budget, quotation marks, a question, "whether" or
+  // "if") let the draft's own claims through. Now nothing excuses a claim's
+  // shape, and the rule tells the model to defer without one.
   it.each([
-    "Our events team will confirm whether the Saloon is available on the 14th.",
-    "The team will check if the Grand Hall is free on Saturday 17 May.",
-    "We'll let you know whether the room can seat 120 for dinner.",
-    "Our events team will confirm whether your preferred date of Saturday 17 June is free.",
-    "If you'd like, our events team can confirm whether the 17th is still free.",
-    "The events team will let you know about discounts.",
-    "The team will confirm whether a weekday would be cheaper.",
-    "Our events team will confirm whether a discount applies.",
-    "The team will confirm whether the Grand Hall is big enough for 150 guests.",
-    "The team will be in touch once they've confirmed which room is available.",
-    "The events team will be able to advise on how many guests each room can comfortably seat.",
-    "No date has been confirmed.",
-    "We'll let you know what's included in the price once the team has looked at your plans.",
-    "Internal: client prefers the Saloon; asked about capacity for 120 seated.",
-    "The client asked us to hold off until their budget is agreed.",
-  ])("leaves alone the team's word to come: %s", (sentence) => {
+    "Our events team will confirm the details with you.",
+    "Our events team will confirm prices and availability when they reply.",
+    "The team will check the diary and come back to you about the date and the room.",
+    "We'll come back to you on the figures, the date and the room.",
+    "Could you tell us roughly how many guests you expect?",
+    "The team will look at which rooms suit your plans.",
+    "Summary: asks about price and availability for June 2027; has a budget in mind.",
+    "The client asks about capacity for a seated dinner; the team to confirm.",
+    "Thank you for letting us know your preferred date of Saturday 17 June.",
+    "We'd love to host your wedding for your 150 guests.",
+    "Drinks would be from 6.30pm, and dinner at 7.30pm, as you described.",
+    "Our team is free to talk through the menu whenever suits you.",
+    "Please feel free to bring your own cake.",
+  ])("leaves alone: %s", (sentence) => {
     expect(findDraftCommitments(sentence)).toEqual([]);
   });
 
-  it.each([
-    "Budget: £10,000.",
-    "Client budget: £10,000 including drinks.",
-    "Stated budget: about £12k.",
-    "- Budget: £10,000",
-    "Budget £10,000; guests 150; date Saturday 17 June 2027.",
-    "Client mentions a budget of about £8,000.",
-    "Their budget is around £12,000, with some flexibility.",
-    "They have a budget between £8,000 and £10,000.",
-    "Thank you for sharing your £10k budget with us.",
-    "Client mentioned a ceiling of about £45 a head for wine.",
-    "Client has asked us to keep within their budget of £5,000.",
-  ])("leaves alone the client's own budget: %s", (sentence) => {
-    expect(findDraftCommitments(sentence)).toEqual([]);
+  it.each(TAKEN_OUT_BY_THE_RULE)("takes out what the rule forbids, though first written as clean: %s", (sentence) => {
+    expect(findDraftCommitments(sentence).length).toBeGreaterThan(0);
   });
 
   it.each([
-    'Client asked: "Is the Saloon free on the 17th, and what would it cost us?"',
-    "Client asked: 'Is the Saloon free on 3rd May?' This has not been answered yet.",
-    'The guest\'s message says "we have £10,000 to spend".',
-    "Their question: is the Grand Hall free on 17 June?",
-    "Question from the client: does the Saloon seat 90?",
-  ])("leaves alone the client's words: %s", (sentence) => {
-    expect(findDraftCommitments(sentence)).toEqual([]);
+    ["price", "Budget: £10,000."],
+    ["price", "You mentioned a budget of around £10,000."],
+    ["price", "Your budget of £10,000 comfortably covers dinner for 150."],
+    ["price", "Room hire is the same as your budget of £4,500."],
+    ["price", "Room hire has a ceiling of £4,500."],
+    ["price", "Option A (budget £4,500): the Grand Hall with dinner."],
+    ["price", "If you book by Friday we'll waive the hire fee."],
+    ["price", "If you book two nights we can offer a discount."],
+    ["price", "As our website says, \"room hire is £4,500\"."],
+    ["availability", "Client asked: 'Is the Saloon free on 3rd May?'"],
+    ["availability", "You asked whether the Grand Hall is free on the 17th. I'm pleased to say it is."],
+    ["availability", "Our events team will confirm whether the Saloon is available on the 14th."],
+    ["availability", "If you'd like we can hold the date for you."],
+    ["availability", "What you will find is the hall free on 17 June."],
+    ["availability", "Would the hall be free on 17 June? It would."],
+    ["capacity", "The good news is the Grand Hall seats 220."],
+    ["capacity", "Even if you invite everyone the Grand Hall seats 300."],
+    ["capacity", "Let me explain how the Saloon seats 90 for dinner."],
+    ["capacity", "You asked whether the Saloon can seat 120. It can, comfortably."],
+    ["capacity", "Your '20s theme suits the Grand Hall: it seats 200 and the guests' tables fit."],
+  ] as const)("finds a %s claim in: %s", (kind, sentence) => {
+    expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain(kind);
+  });
+
+  it("takes the question out with its answer, so nothing of the claim is left", () => {
+    const kept = withholdDraftCommitments("Dear Elaine,\n\nYou asked whether the Grand Hall is free on the 17th. I'm pleased to say it is.\n\nThe Events Team");
+    expect(kept.text).not.toMatch(/Grand Hall|17th/u);
+    expect(kept.withheld).toEqual(["availability"]);
   });
 });
 
@@ -506,6 +521,13 @@ describe("taking the claims out of a draft", () => {
       .toBe("Dear Elaine,\r\n\r\nThe Events Team");
     const spaced = "Dear Morgan,\n\n\n\nThank you.   Truly.\n\nThe Events Team";
     expect(withholdDraftCommitments(spaced)).toEqual({ text: spaced, withheld: [] });
+    // Third round: a line that goes adds no blank line; other list markers stay; "max." ends a sentence.
+    expect(withholdDraftCommitments("Occasion: wedding\nCapacity: 200 seated\nGuests: 150").text).toBe("Occasion: wedding\nGuests: 150");
+    expect(withholdDraftCommitments("Occasion: wedding\r\nCapacity: 200 seated\r\nGuests: 150").text).toBe("Occasion: wedding\r\nGuests: 150");
+    expect(withholdDraftCommitments("\u2013 The hall seats 200. Arrival at 6pm.").text).toBe("\u2013 Arrival at 6pm.");
+    expect(withholdDraftCommitments("a) The hall seats 200. Arrival at 6pm.").text).toBe("a) Arrival at 6pm.");
+    expect(withholdDraftCommitments("> The hall seats 200. Arrival at 6pm.").text).toBe("> Arrival at 6pm.");
+    expect(withholdDraftCommitments("The hall holds 200 max. We look forward to hearing from you.").text).toBe("We look forward to hearing from you.");
   });
 
   it("changes nothing in a draft that makes no claim", () => {

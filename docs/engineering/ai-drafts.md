@@ -72,30 +72,29 @@ A draft never states a price, availability or capacity: only the venue's team
 confirms these, from the quote, the Diary and the venue's sourced figures.
 
 - **The rules** (`buildAIDraftInstructions`) tell the model so for every use
-  case: no amount of money other than the client's own budget, repeated as
-  theirs and never judged; never whether a date, time or room is free, held or
-  booked; never how many a room holds or whether a group fits. Where the
-  context or the client asks, the draft says the events team will confirm it.
+  case: no amount of money of any kind, the client's own budget included;
+  never whether a date, time or room is free, held or booked; never how many a
+  room holds or whether a group fits; even when repeating the client, in a
+  question or in quotation marks. Where one of them comes up, the draft says
+  only that the events team will confirm the details; an internal summary
+  names the topic ("asks about price and availability", "has a budget in
+  mind").
 - **The check after the model** (`withholdDraftCommitments` in
   `packages/types/src/ai-draft-commitments.ts`) reads the draft line by line
-  and sentence by sentence, and takes out each sentence that states one ("£65
-  per head", "the Grand Hall is free on the 17th", "it seats 200", "Capacity:
-  200 seated"). The topic without a claim stays ("the team will confirm prices
-  and availability", "your 150 guests").
-- **Three things are not the draft's claim, and nothing else excuses one:**
-  - the client's budget figure, said as theirs ("their budget is around
-    £12,000", "Budget: £10,000");
-  - words in quotation marks (Client asked: "Is the Saloon free on the 17th?");
-  - a date, room or size asked about, a few words after "whether", "if" or
-    "confirm which" ("the team will confirm whether the Saloon is free"),
-    unless the sentence also answers it.
-
-  Words about the client never excuse the rest of a sentence. The first
-  version excused a clause that held "you asked" or "budget", and the release
-  review showed that hid 210 of 248 known claims once framed as an answer
-  ("as you asked, room hire is £4,500"), which is how a model most often
-  states one. A figure that is not the client's budget, such as another
-  venue's quote, is taken out.
+  and sentence by sentence, and takes out every sentence whose words have a
+  claim's shape ("£65 per head", "the Grand Hall is free on the 17th", "it
+  seats 200", "Capacity: 200 seated"). The topic without a claim's shape stays
+  ("the team will confirm the details", "your 150 guests", "6.30pm").
+- **Nothing excuses a claim's shape.** Three reviews (27 October 2026) tried
+  exemptions in turn, and each let the draft's own claims through in the way
+  a model writes them when it answers: a clause holding "you asked" or
+  "budget" hid 210 of 248 known claims framed as answers ("as you asked, room
+  hire is £4,500"); a question excused its answer in the next sentence ("you
+  asked whether the 17th is free. It is."); quotation marks, "if" and a
+  venue price beside the word "budget" did the same. The rule the model is
+  given matches the check, so a draft that keeps it loses nothing; the cost is
+  that a summary does not repeat the client's figure or question word for
+  word (the enquiry shows both).
 - **Where it runs.** `createReviewGatedAIDraft` makes the wording safe, then
   takes the claims out of the words as they will be shown, for every draft.
   It is not checked again where a draft is read: the web and the API deploy
@@ -109,27 +108,30 @@ confirms these, from the quote, the Diary and the venue's sourced figures.
   could not be written, and the call stays recorded. The ledger records the
   model's own outcome, so a call whose draft the check refused is an answered
   call (`ok`) at what it cost.
+- **What is kept is kept as written**: spacing, indentation, list markers and
+  line endings; a line that goes adds no blank line.
 
 How well it reads text it has not seen is measured on sentence sets written
 by agents that never saw the patterns, each run once before it was used
 (`__tests__/ai-draft-blind-sets.ts`). On the current design's set, which asked
-for claims stated in answer to the client, it took out 2 of 60 sentences that
-made no claim and found 41 of 60 claims: 19 of 20 prices, 12 of 20 dates and
-rooms, 10 of 20 sizes. The first design's three sets read 104 of 160 on their
-bare sentences, but that design hid most claims framed as answers. It finds
-about two claims in three phrased in a new way, and nearly every price. The
-rules are the first guard and the person who reads every draft before it is
-used is the last; this check sits between them and does not replace either.
-All four sets now pass, with the tuned, held-out and review sets, as
-regression tests, as do the review's framings of every known claim. None was
-written by venue staff. The live evaluation (`eval:proposal-drafts`) records
-`withheldCommitments` per draft and `withWithheldCommitments` in its summary:
-how often Claude stated a claim the check knows, a lower bound on how often it
-states one.
+for claims in answers, questions, quotations and two sentences, it took out 1
+of 60 sentences that kept the rule and found 39 of 60 claims: 19 of 20 prices,
+9 of 20 dates and rooms, 11 of 20 sizes. Earlier designs read 34 to 41 of 60 on
+their own sets, but excused claims those sets did not frame. It finds nearly
+every price and about half the dates and sizes phrased in a way it has not
+met. The rules are the first guard and the person who reads every draft
+before it is used is the last; this check sits between them and does not
+replace either. All five sets now pass, with the tuned, held-out and review
+sets, as regression tests, as do the reviews' framings of every known claim.
+None was written by venue staff. The live evaluation (`eval:proposal-drafts`)
+records `withheldCommitments` per draft and `withWithheldCommitments` in its
+summary: how often Claude wrote a claim the check knows, a lower bound on how
+often it wrote one.
 
-Every pattern is bounded and each sentence is read once: hostile
-8,000-character drafts (runs of stops, quotation marks, claims or clauses)
-take under 70 ms, and the time grows with the length.
+Every pattern is bounded and each sentence is read once, so time grows
+linearly with the text: an 8,000-character draft of prose, or of runs of
+stops, quotation marks, claims or clauses, takes under 70 ms; one of 4,000
+one-character lines, the worst shape measured, about a second (each line is read by every pattern).
 
 **Deploying.** `withheldCommitments` is a new field. A web build from before
 it reads every draft that took nothing out; one that took something out it

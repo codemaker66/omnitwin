@@ -286,7 +286,7 @@ export function buildAIDraftInstructions(input: CreateAIDraftRequest): string {
     // Plan 19, L6: only the venue's team confirms these. The draft is also
     // checked after it is written, and a sentence that states one is taken
     // out (withholdDraftCommitments in @omnitwin/types).
-    "Never state a price, a cost, a fee, a deposit, a discount or any amount of money, other than the client's own budget, which you may repeat as theirs but never judge (never say what it will cover); never say whether a date, a time or a room is available, free, held, booked or confirmed; and never say how many people a room seats, holds or can take, or that it is big enough. Only the venue's events team confirms these. Where the context or the client asks about one of them, say the events team will confirm it.",
+    "Never write an amount of money of any kind, the client's own budget included; never say whether a date, a time or a room is available, free, held, booked or confirmed; and never say how many people a room seats, holds or can take, or whether a group fits. This holds even when repeating what the client asked or wrote, in a question, or in quotation marks. Only the venue's events team confirms these. Where the context or the client raises one of them, write only that the events team will confirm the details, without naming the figure, the date's availability or the room's size; in an internal summary, name the topic the client raised (\"asks about price and availability\", \"has a budget in mind\").",
     // A client's own words reach the context verbatim, so the context is
     // read as data: what it asks for can be answered, but it cannot rewrite
     // these rules or make the draft confirm what the venue has not.

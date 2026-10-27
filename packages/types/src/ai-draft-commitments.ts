@@ -9,19 +9,23 @@ import { z } from "zod";
 //
 // The draft's rules tell the model so, and that is the first guard; a person
 // reads every draft before it is used, and that is the last. This check sits
-// between them. It takes out a sentence where the words have a claim's shape
+// between them. It takes out every sentence whose words have a claim's shape
 // (an amount of money; a date or room said to be free or taken; "we have held
 // the date for you"; a room that seats a number), and leaves the topic alone
-// ("the team will confirm prices and availability", "your 150 guests",
-// "set-up takes 4 staff"). Three things in a sentence are not the draft's own
-// claim, and nothing else excuses one: the client's budget figure, said as
-// theirs ("their budget is around £10,000"); words in quotation marks; and a
-// date, room or size asked about ("the team will confirm whether the Saloon
-// is free"). Words about the client never excuse the rest of a sentence: a
-// model states a claim most often while answering ("as you asked, room hire
-// is £4,500"). It misses claims phrased in ways it does not know: on a set
-// written by an agent that never saw it, it found 41 of 60 claims on first
-// reading (19 of 20 prices), and took out 2 of 60 sentences that made none.
+// ("the team will confirm the details", "your 150 guests", "set-up takes 4
+// staff").
+//
+// Nothing excuses a claim's shape: not that it repeats the client's words or
+// budget, is in quotation marks, is a question, or follows "whether" or "if".
+// Each such exemption, tried and reviewed in turn (release review, 27 October
+// 2026), let the draft's own claims through in the way a model writes them
+// when it answers ("as you asked, room hire is £4,500"; "you asked whether the
+// 17th is free. It is."). The rule the model is given says the same: no
+// figure, no date's or room's availability and no room's size, even repeated
+// or asked about; to defer, it says the events team will confirm the details.
+// So a draft that keeps the rule loses nothing here. The check misses claims
+// phrased in ways it does not know; __tests__/ai-draft-blind-sets.ts records
+// how many, on sets written by agents that never saw it.
 //
 // It reads a draft line by line and a line sentence by sentence, the same way
 // for finding and for taking out, so what is taken out is exactly what is
@@ -55,10 +59,12 @@ const MONTH = String.raw`(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may
 const WEEKDAY = String.raw`(?:mon|tues|wednes|thurs|fri|satur|sun)days?`;
 const ORDINAL = String.raw`\d{1,2}(?:st|nd|rd|th)`;
 /** A date, as drafts write one: "the 17th", "14 August", "Saturday 17th June", "June 1st", "17 September 2027". */
-const DATE = String.raw`(?:(?:${WEEKDAY}\s+)?(?:the\s+)?(?:${ORDINAL}|\d{1,2})(?:\s+(?:of\s+)?${MONTH})?(?:\s+\d{4})?|${MONTH}\s+(?:${ORDINAL}|\d{1,2})(?:,?\s+\d{4})?|${WEEKDAY})`;
+/** A day of the month in words, as a date is said: "Saturday the twentieth", "the first of June". */
+const WORD_ORDINAL = String.raw`(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty-[a-z]+|thirtieth|thirty-first)`;
+const DATE = String.raw`(?:\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|${WEEKDAY}\s+the\s+${WORD_ORDINAL}|the\s+${WORD_ORDINAL}\s+of\s+${MONTH}|(?:${WEEKDAY}\s+)?(?:the\s+)?(?:${ORDINAL}|\d{1,2})(?:\s+(?:of\s+)?${MONTH})?(?:\s+\d{4})?|${MONTH}\s+(?:${ORDINAL}|\d{1,2})(?:,?\s+\d{4})?|${WEEKDAY})`;
 /** What can be free or taken: a date, a room, the Diary. */
 const SLOT = String.raw`(?:${DATE}|${MONTH}(?:\s+\d{4})?|(?:the\s+|that\s+|this\s+|your\s+)?(?:date|day|slot|evening|night|weekend|afternoon|morning|room|rooms|hall|saloon|suite|venue|diary)|both\s+rooms|it|that|this)`;
-const IS = String.raw`(?:\s*\([^()\n]{1,30}\))?(?:\s+(?:is|are|was|remains|remain|would\s+be|will\s+be|should\s+be|(?:looks|look|seems|appears)(?:\s+to\s+be)?)|'s|\u2019s)`;
+const IS = String.raw`(?:\s*\([^()\n]{1,30}\))?(?:\s+(?:is|are|was|remains|remain|would\s+be|will\s+be|should\s+be|be|(?:looks|look|seems|appears)(?:\s+to\s+be)?)|'s|\u2019s)`;
 /** Free, as availability: followed by nothing, or by when or where, never "free of columns" or "free text". */
 const FREE = String.raw`free(?=\s*(?:$|[.,;:!?()\u2014\u2013]|-\s|on\b|that\b|this\b|then\b|in\b|at\b|for\s+(?:you|your\s+(?:date|day|event|wedding|dinner|party))\b))`;
 /** Open, as availability: never opening hours ("open until midnight", "open to everyone"). */
@@ -67,10 +73,8 @@ const ROOM = String.raw`(?:hall|room|saloon|suite|space|venue|it)`;
 const PEOPLE = String.raw`(?:guests|people|persons|covers|delegates|attendees|pax|seated|standing|theatre|cabaret|classroom|banquet|boardroom|for\s+dinner|for\s+a\s+(?:dinner|reception|ceremony))`;
 const ABOUT = String.raw`(?:all\s+(?:of\s+)?|up\s+to\s+|a\s+maximum\s+of\s+|as\s+many\s+as\s+|over\s+|more\s+than\s+|around\s+|about\s+|approx(?:imately|\.)?\s+|nearly\s+|almost\s+|roughly\s+)?`;
 /** What can follow an amount of money said bare: the end, "for the room", "plus VAT", "altogether". */
-const MONEY_TAIL = String.raw`(?=\s*(?:$|[.,;!?)]|for\b|plus\b|\+|altogether\b|in\s+total\b|incl|inc\b|including\b|exc|excluding\b|ex\b|per\b|a\s+head\b|each\b))`;
+const MONEY_TAIL = String.raw`(?=\s*(?:$|[.,;!?()]|for\b|plus\b|\+|altogether\b|in\s+total\b|incl|inc\b|including\b|exc|excluding\b|ex\b|per\b|a\s+head\b|each\b))`;
 
-/** Not asked as a question: "is the Grand Hall free on 17 June?", "does the Saloon seat 90?". */
-const NOT_ASKED = String.raw`(?<!\b(?:is|are|was|were|does|do|did|can|could|will|would)\s{1,3}(?:the\s{1,3}|your\s{1,3}|our\s{1,3})?(?:[a-z]+\s{1,3})?)`;
 /** Can or cannot: "can", "would", "can't", "won't". */
 const MODAL = String.raw`(?:can|could|will|would|can't|can\u2019t|cannot|can\s+not|couldn't|couldn\u2019t|won't|won\u2019t|will\s+not|wouldn't|wouldn\u2019t|would\s+not)`;
 /** A judgement of what the client's money will buy, which is the team's to make:
@@ -83,7 +87,7 @@ const PATTERNS: Readonly<Record<AIDraftCommitmentKind, readonly RegExp[]>> = {
     new RegExp(String.raw`[£$\u20ac]\s?${NUM}`, "giu"),
     new RegExp(String.raw`\b(?:gbp|usd|eur)\s?${NUM}|\b${NUM}\s?(?:gbp|usd|eur)\b`, "giu"),
     // By its name: "1,800 pounds", "two thousand pounds", "2k for the room".
-    new RegExp(String.raw`\b(?:${NUM}|${WORD_NUM}|(?:a|one|two|three|four|five|six|seven|eight|nine|ten)\s+thousand)\s?(?:pounds?|quid|euros?|dollars?)\b`, "giu"),
+    new RegExp(String.raw`\b(?:${NUM}|${WORD_NUM}|(?:a|one|two|three|four|five|six|seven|eight|nine|ten)\s+thousand|(?:a|one|two|three|four|five|six|seven|eight|nine|ten|a\s+couple\s+of)\s+(?=grand))\s?(?:pounds?|quid|euros?|dollars?|grand)\b`, "giu"),
     new RegExp(String.raw`\b${NUM}\s?k\b${MONEY_TAIL}`, "giu"),
     // A charge per guest: "£65 per head", "65pp", "65 a head".
     new RegExp(String.raw`\b${NUM}${WHOLE}\s?(?:pp\b|per\s+(?:head|person|guest|cover)\b|a\s+head\b)`, "giu"),
@@ -118,8 +122,12 @@ const PATTERNS: Readonly<Record<AIDraftCommitmentKind, readonly RegExp[]>> = {
   availability: [
     // A date or room said to be free, open, booked or taken: "14 August is free in the Grand Hall",
     // "the Grand Hall would be available on that date", "the 17th has already gone".
-    new RegExp(String.raw`\b${SLOT}${IS}\s+(?:still\s+|currently\s+|now\s+|definitely\s+|already\s+|usually\s+|normally\s+|provisionally\s+|tentatively\s+)?(?:not\s+)?(?:available(?!\s+(?:to\s+(?:download|view|see|read|browse|print|share|discuss)|on\s+request|online|here|below|from|in\s+(?:the\s+)?(?:pack|link|brochure)))|unavailable|${FREE}|${OPEN}|booked|fully\s+booked|taken|reserved|clear|gone)\b`, "giu"),
-    new RegExp(String.raw`\b${SLOT}\s+(?:has|have)\s+(?:already\s+)?(?:gone|been\s+taken|been\s+booked)\b`, "giu"),
+    new RegExp(String.raw`\b${SLOT}${IS}\s+(?:still\s+|currently\s+|now\s+|definitely\s+|already\s+|wide\s+|usually\s+|normally\s+|provisionally\s+|tentatively\s+)?(?:not\s+)?(?:available(?!\s+(?:to\s+(?:download|view|see|read|browse|print|share|discuss)|on\s+request|online|here|below|from|in\s+(?:the\s+)?(?:pack|link|brochure)))|unavailable|${FREE}|${OPEN}|booked|fully\s+booked|taken|reserved|clear|gone)\b`, "giu"),
+    new RegExp(String.raw`\b${SLOT}\s+(?:has|have|hasn't|hasn\u2019t|haven't|haven\u2019t|has\s+not|have\s+not)\s+(?:already\s+|yet\s+)?(?:gone|been\s+(?:taken|booked))\b`, "giu"),
+    // Said as a note, or held for the client: "GH 14 Jun - prov. hold", "us to hold 3 March", "Saturdays free next spring".
+    new RegExp(String.raw`\bprov(?:\.|isional)?\s+hold\b|\b(?:us|we)\s+(?:to\s+)?(?:hold|reserve|pencil(?:\s+in)?)\s+(?:${DATE})|\b(?:${WEEKDAY}|dates|days|evenings|weekends)\s+(?:still\s+)?(?:free|open|available)\b|\bgh\s+(?:free|available|open|booked|taken|held)\b`, "giu"),
+    /\bearliest\s+(?:date\s+)?we\s+(?:could|can|would)\s+(?:fit\s+you\s+in|offer\s+you|do|host)\b|\bfit\s+you\s+in\s+(?:on|in|for)\b/giu,
+    /\b(?:wedding|event|booking|dinner|party|reception|conference)\b[^.!?\n]{0,40}?\b(?:is|has\s+been)\s+(?:now\s+)?(?:confirmed|booked|secured|reserved)\b/giu,
     /\b(?:isn't|aren't|wasn't|isn\u2019t|aren\u2019t|wasn\u2019t)\s+(?:available|free|booked|taken)\b/giu,
     /\bwe(?:'re|\u2019re|\s+are)\s+(?:still\s+)?free\s+(?:on|that|this|then)\b/giu,
     /\b(?:we|i)\s+(?:do\s+|still\s+)?(?:have|has)\s+(?:some\s+|good\s+|limited\s+|no\s+)?availability\b/giu,
@@ -135,7 +143,7 @@ const PATTERNS: Readonly<Record<AIDraftCommitmentKind, readonly RegExp[]>> = {
     /\b(?:event|booking|wedding|dinner|date)\s+(?:is\s+|has\s+been\s+)?confirmed\s+(?:for|on)\b/giu,
     /\bno\s+clash(?:es)?\b/giu,
     // Said as a note, or as what is left: "Grand Hall free 21 Nov", "the only Saturday we have left", "more open dates in January".
-    new RegExp(String.raw`${NOT_ASKED}\b(?:hall|saloon|room|suite|date|slot)\s+(?:free|available|open|booked|taken|held)\s+(?:on\s+)?(?:${DATE})`, "giu"),
+    new RegExp(String.raw`\b(?:hall|saloon|room|suite|date|slot)\s+(?:free|available|open|booked|taken|held)\s+(?:on\s+)?(?:${DATE})`, "giu"),
     new RegExp(String.raw`(?:\b(?:hall|saloon|room|suite)|${DATE})\s*[:\u2013\u2014]\s*(?:still\s+)?(?:free|available|open|booked|held|taken|reserved)\b`, "giu"),
     new RegExp(String.raw`\b(?:dates?|days?|${WEEKDAY}|slots?|evenings?|weekends?)\s+(?:that\s+)?(?:we\s+(?:still\s+)?have\s+)?(?:(?:are|is)\s+(?:still\s+)?)?(?:left|remaining)\b`, "giu"),
     /\bconfirmed\s+(?:as\s+)?(?:free|available|open|clear)\b|\bnothing\s+(?:else\s+)?(?:is\s+)?(?:in|booked\s+in|on)\s+(?:the|our)\s+diary\b/giu,
@@ -151,17 +159,17 @@ const PATTERNS: Readonly<Record<AIDraftCommitmentKind, readonly RegExp[]>> = {
     new RegExp(String.raw`\b(?:we|i)(?:(?:'re|\u2019re|\s+are|'m|\u2019m|\s+am)?\s+(?:able|happy|pleased|delighted|glad)\s+to|\s+${MODAL}(?:\s+be\s+able\s+to)?)\s+offer\s+you\s+(?:the\s+)?(?:[a-z]+\s+)?(?:hall|saloon|room|suite|date|day|evening|space)\b(?:[^.!?\n]{0,20}?\b(?:on|for)\s+${DATE})?`, "giu"),
     // The date accepted, or the room given: "17 September 2027 works well for us", "the room is yours on the 17th".
     new RegExp(String.raw`\b(?:${DATE}|(?:that|this|the|your)\s+date)\s+works\s+(?:well\s+|nicely\s+|perfectly\s+)?for\s+us\b`, "giu"),
-    /\b(?:room|hall|saloon|suite|venue|guildhall|date)\s+is\s+(?:all\s+)?yours\b|\b(?:is|are)\s+ours\s+to\s+(?:offer|give)\b/giu,
+    /\b(?:room|hall|saloon|suite|venue|guildhall|date|slot)\s+is\s+(?:all\s+)?yours\b|\b(?:is|are)\s+ours\s+to\s+(?:offer|give)\b/giu,
     /\b(?:nobody|no\s+one|no-one)\s+else\s+(?:has|is\s+(?:using|in|booked|on)|has\s+booked|will\s+be\s+(?:using|in))\b|\byou(?:'d|\u2019d|\s+would|'ll|\u2019ll|\s+will)\s+be\s+the\s+only\s+(?:booking|event|party|wedding)\b/giu,
     // Confirmed by the venue: "we can confirm the date", "I'm happy to confirm the Grand Hall", "your date is confirmed".
     /\b(?:we|i)(?:'m|\u2019m|'re|\u2019re|\s+am|\s+are)?\s+(?:can\s+|could\s+)?(?:now\s+)?(?:happy\s+|pleased\s+|delighted\s+|glad\s+|able\s+)?(?:to\s+)?confirm\s+(?:that\s+)?(?:the|your)\s+(?:date|booking|room|hall|grand\s+hall|saloon|reservation|hold|day|evening)\b/giu,
     /(?<!\bno\s{1,3})\b(?:date|booking|room|hall|reservation|hold)\s+(?:is|has\s+been)\s+(?:now\s+)?(?:confirmed|secured|guaranteed)\b/giu,
     // Said as a summary's label: "Availability: free on 17 June", "Status: held".
-    /\b(?:availability|status|diary)\s*[:\u2013\u2014-]\s*(?:(?:still|currently|now)\s+)?(?:free|available|open|booked|held|taken|reserved|confirmed|pencilled|clear)\b/giu,
+    /\b(?:availability|status|diary)\s*[:\u2013\u2014-]\s*(?:(?:still|currently|now)\s+)?(?:(?:the\s+)?(?:date|room|hall)\s+)?(?:free|available|open|booked|held|taken|reserved|confirmed|pencilled|clear)\b/giu,
   ],
   capacity: [
     // A room that seats, holds or takes a number: "the Grand Hall seats 200", "it holds approx. 200 guests".
-    new RegExp(String.raw`${NOT_ASKED}\b${ROOM}\s+(?:${MODAL}\s+)?(?:only\s+)?(?:comfortably\s+|easily\s+|happily\s+)?(?:seats?|holds?|accommodates?|fits?|takes?|hosts?|caters?\s+(?:for|to)|sleeps?)\s+${ABOUT}${COUNT}${NOT_TIME}`, "giu"),
+    new RegExp(String.raw`\b${ROOM}\s+(?:${MODAL}\s+)?(?:only\s+)?(?:comfortably\s+|easily\s+|happily\s+)?(?:seats?|holds?|accommodates?|fits?|takes?|hosts?|caters?\s+(?:for|to)|sleeps?)\s+${ABOUT}${COUNT}${NOT_TIME}`, "giu"),
     // A capacity given: "a capacity of 180", "180 capacity", "within capacity".
     new RegExp(String.raw`\bcapacity\s+(?:of|is|for)\s+${ABOUT}${NUM}${WHOLE}`, "giu"),
     new RegExp(String.raw`\bcapacity\s+(?:in|of|for)\s+(?:the\s+)?(?:[a-z]+\s+){0,3}?(?:is|of)\s+${ABOUT}${NUM}${WHOLE}`, "giu"),
@@ -177,9 +185,14 @@ const PATTERNS: Readonly<Record<AIDraftCommitmentKind, readonly RegExp[]>> = {
     new RegExp(String.raw`\b(?:capacity|max(?:imum)?(?:\s+capacity)?|seats|seating)\s*[:\u2013\u2014-]\s*${ABOUT}${COUNT}${NOT_TIME}`, "giu"),
     /\bthere(?:'s|\u2019s|\s+is)\s+(?:plenty\s+of\s+|ample\s+|enough\s+)?(?:room|space)\s+for\b/giu,
     // That it fits: "ideal for 200", "perfect for a party of 150", "big enough for everyone", "your guests will fit".
-    new RegExp(String.raw`\b(?:ideal|perfect|works\s+well|suited|suits?|right\s+size)\s+(?:for\s+)?(?:(?:a\s+)?(?:party|parties|group|groups|wedding|dinner)\s+of\s+)?(?:up\s+to\s+)?${COUNT}${NOT_TIME}`, "giu"),
+    new RegExp(String.raw`\b(?:ideal|perfect|works\s+well|suited|suits?|right\s+size)\s+(?:for\s+)?(?:(?:a\s+)?(?:party|parties|group|groups|wedding|dinner)\s+of\s+)?${ABOUT}${COUNT}${NOT_TIME}`, "giu"),
+    // A room's limit or fit said with a number: "max 220", "too many for the Saloon", "70 people should be fine", "up to 18 tables".
+    new RegExp(String.raw`\bmax(?:imum)?\.?\s+(?:cap(?:acity)?\.?\s+)?${COUNT}${NOT_TIME}`, "giu"),
+    /\btoo\s+(?:many|few)\s+for\b/giu,
+    new RegExp(String.raw`\b${COUNT}\s+(?:people|guests|pax|covers)\s+(?:should|would|will|could)\s+(?:be\s+)?(?:fine|ok|okay|no\s+problem|comfortable|easy)\b|\bup\s+to\s+${COUNT}\s+(?:tables|rounds)\b`, "giu"),
+    new RegExp(String.raw`\b${COUNT}\s+(?:guests|people)\b[^.!?\n]{0,40}?\byou(?:'d|\u2019d|\s+would|'ll|\u2019ll|\s+will)\s+need\s+the\b|\b${COUNT}\b[^.!?\n]{0,60}?\b(?:room|hall|saloon|suite)\s+(?:would|will|should|could)\s+(?:work|do)\b`, "giu"),
     /\b(?:big|large|spacious|roomy)\s+enough\s+for\b/giu,
-    /\b(?:comfortably|easily)\s+(?:seat|hold|accommodate|fit|take|host)\b/giu,
+    /\b(?:comfortably|easily)\s+(?:seats?|holds?|accommodates?|fits?|takes?|hosts?)\b/giu,
     /\b(?:guests|people|everyone|everybody|all\s+of\s+you|you\s+all)\s+(?:would|will|could|can|should)\s+(?:all\s+)?(?:easily\s+|comfortably\s+)?fit\b/giu,
     new RegExp(String.raw`\ball\s+${COUNT}\s+of\s+(?:you|them|your\s+guests|the\s+guests|their\s+guests)\s+(?:would|will|could|can|should)\s+(?:all\s+)?(?:easily\s+|comfortably\s+)?(?:fit|be\s+seated|be\s+accommodated)\b`, "giu"),
     new RegExp(String.raw`\bmax(?:imum)?\.?\s+(?:is|of|would\s+be)\s+${ABOUT}${COUNT}${NOT_TIME}`, "giu"),
@@ -209,62 +222,12 @@ const PATTERNS: Readonly<Record<AIDraftCommitmentKind, readonly RegExp[]>> = {
   ],
 };
 
-// What is not the draft's own claim. Kept narrow on purpose: a model states a
-// claim most often while answering the client ("as you asked, room hire is
-// £4,500"), so words about the client never excuse the rest of a sentence.
-//
-// The client's budget, said as theirs: a figure straight after "your budget",
-// "a budget of", "Budget:" ("their budget is around £12,000", "Client budget:
-// £10,000", "a budget between £8,000 and £10,000"), or straight before "their
-// budget" ("your £10k budget"). Any other figure is a price, and what a
-// budget will buy is the team's to judge (BUDGET_JUDGED).
-const WHOSE_BUDGET = String.raw`(?:\b(?:your|their|his|her|the\s+client(?:'s|\u2019s)|the\s+couple(?:'s|\u2019s)|client(?:'s|\u2019s)|guest(?:'s|\u2019s)|stated)\s+(?:(?:total|overall|approximate|rough|maximum|max|working)\s+)?(?:budget|ceiling)|\b(?:have|has|had|gave|gives|given|give|mention(?:s|ed)?|state[sd]?|set|sets|with|working\s+(?:to|with))\s+(?:a|an)\s+(?:(?:total|overall|approximate|rough|maximum|max|working)\s+)?(?:budget|ceiling)|\b(?:client\s+|stated\s+|guest\s+|total\s+)?budget\s*:|(?:^|[;,(\u2014\u2013]\s*)\s*(?:client\s+|stated\s+|guest\s+|total\s+)?budget|\b(?:you|they|he|she|the\s+client|client|the\s+couple)\s+(?:can|could|would\s+like\s+to|want\s+to|wants\s+to|plan\s+to|plans\s+to|hope\s+to|hopes\s+to|are\s+able\s+to|is\s+able\s+to|have\s+to|has\s+to)\s+spend)`;
-const FIGURE = String.raw`[£$\u20ac]?\d[\d,.]{0,12}k?`;
-const BUDGET_BEFORE = new RegExp(String.raw`${WHOSE_BUDGET}(?:\s*(?:[:\u2014\u2013-]|of|is|was|would\s+be|as|stated|given|quoted|by\s+(?:the\s+)?(?:client|couple|guest)|around|about|roughly|approximately|approx\.?|up\s+to|max(?:imum)?|between|under|below|nearer|closer\s+to|in\s+the\s+region\s+of|${FIGURE}\s*(?:and|to|or|-|\u2013)))*\s*["'\u2018\u201c(]?[£$\u20ac]?$`, "iu");
-const BUDGET_AFTER_FIGURE = /^k?\s*(?:total\s+|overall\s+)?budget\b/iu;
-const WHOSE_FIGURE = /\b(?:your|their|his|her|the\s+client(?:'s|\u2019s)|the\s+couple(?:'s|\u2019s))\s+(?:(?:total|overall|approximate|rough|maximum|max)\s+)?[£$\u20ac]?$/iu;
-/** A price claim that names a figure, never excused by a question around it. */
-const NAMES_A_FIGURE = /[\d£$\u20ac]|\b(?:thousand|hundred)\b/iu;
-// An availability or capacity claim asked about, not made: a few words after
-// "whether" or "if", after "asked about", or after "confirm which", "check
-// how many", with no comma or stop between ("the team will confirm whether
-// your preferred date of 17 June is free"). A sentence that also answers the
-// question ("you asked whether the 17th is free, and I'm pleased to say it
-// is") is the draft's claim.
-const ASKED_ABOUT = /(?:\b(?:whether|if)(?:\s+or\s+not)?|\b(?:asked|asking|asks|enquired|enquiring|question|questions)\s+(?:us\s+)?about|\b(?:confirm\w*|check\w*|ask|know|see|find\s+out|work\s+out|tell\s+you|look\w*\s+into|advise|clarify|explain)\s+(?:(?:with|to)\s+you\s+)?(?:(?:on|about|as\s+to)\s+)?(?:exactly\s+)?(?:what(?:'s|\u2019s)?|which|how\s+(?:many|much)|how|when))(?:\s+[^\s,;:.!?\u2014\u2013]+){0,6}\s*$/iu;
-const ANSWERS = /\b(?:it\s+is|it's|it\u2019s|they\s+are|is\s+indeed|yes|good\s+news|(?:pleased|happy|delighted|glad)\s+to\s+(?:say|confirm|tell|report)|(?:i|we)\s+can\s+confirm|(?:i|we)(?:\s+have|'ve|\u2019ve)\s+checked)\b/iu;
-/** How far back from a claim a question's opening or a budget's name is looked for. */
-const LOOK_BACK = 160;
-// Words in quotation marks are someone else's, written as they wrote them:
-// Client asked: "Is the Saloon free on the 17th?". A claim wholly inside a
-// quotation is theirs. An apostrophe inside ("isn't") does not close one.
-const QUOTED = /"[^"\n]{1,300}"|\u201c[^\u201d\n]{1,300}\u201d|(?<=^|[\s(:\u2014\u2013])'(?:[^'\n]|'(?=[a-z])){1,300}'(?![a-z])|\u2018(?:[^\u2019\n]|\u2019(?=[a-z])){1,300}\u2019(?![a-z])/giu;
-
-/** The spans of a line inside quotation marks. */
-function quotedSpans(line: string): readonly (readonly [number, number])[] {
-  return [...line.matchAll(QUOTED)].map((quote) => [quote.index, quote.index + quote[0].length] as const);
-}
-
-/** Whether a claim found at the offset in a sentence is the client's budget or
- *  a question, not the draft's own statement. `answers` is whether the
- *  sentence answers a question, read once for the sentence. */
-function notTheDraftsClaim(sentence: string, answers: boolean, offset: number, claim: AIDraftCommitment): boolean {
-  const from = Math.max(0, offset - LOOK_BACK);
-  const sliced = sentence.slice(from, offset);
-  const before = from > 0 ? sliced.replace(/^\S*\s?/u, "") : sliced;
-  if (claim.kind === "price" && NAMES_A_FIGURE.test(claim.phrase)) {
-    const after = sentence.slice(offset + claim.phrase.length, offset + claim.phrase.length + 30);
-    return BUDGET_BEFORE.test(before) || (BUDGET_AFTER_FIGURE.test(after) && WHOSE_FIGURE.test(before));
-  }
-  return !answers && ASKED_ABOUT.test(before);
-}
-
 // A sentence ends at ., ! or ? (and any closing quote or bracket) before a
 // space or the end of the line. "6.30pm", "12.50", "co.uk", "approx. 150" and
 // "e.g. the Saloon" do not end one. A run of stops is read once from its start,
 // so a long run takes time that grows with it. A list's number ("1. ") is not
 // a sentence.
-const SENTENCE_END = /(?<![.!?])(?<!\b(?:approx|e\.g|i\.e|vs|mr|mrs|ms|dr|st|incl|excl|min|max|tel|ref|cf|ca))(?<!^[ \t]*\d{1,3})[.!?]+["'\u201d\u2019)\]]*(?=\s|$)/giu;
+const SENTENCE_END = /(?<![.!?])(?<!\b(?:approx|e\.g|i\.e|vs|mr|mrs|ms|dr|st|incl|excl|tel|ref|cf|ca))(?<!^[ \t]*\d{1,3})[.!?]+["'\u201d\u2019)\]]*(?=\s|$)/giu;
 
 /** A line in sentences, losslessly: the pieces join back into the line. */
 export function sentencesOf(line: string): readonly string[] {
@@ -305,30 +268,12 @@ function claimsInLine(line: string): readonly Found[] {
     starts.push(at);
     at += sentence.length;
   }
-  const quotes = quotedSpans(line);
-  const quoteStarts = quotes.map(([open]) => open);
-  const inQuote = (start: number, end: number): boolean => {
-    const span = quotes[lastStartAtOrBefore(quoteStarts, start)];
-    return span !== undefined && span[0] < start && end < span[1];
-  };
-  // Whether each sentence answers a question, read once however many claims it holds.
-  const answering = new Map<number, boolean>();
-  const answers = (index: number): boolean => {
-    const known = answering.get(index);
-    if (known !== undefined) return known;
-    const read = ANSWERS.test(sentences[index] ?? "");
-    answering.set(index, read);
-    return read;
-  };
   const found: Found[] = [];
   for (const kind of AI_DRAFT_COMMITMENT_KINDS) {
     for (const pattern of PATTERNS[kind]) {
       for (const match of line.matchAll(pattern)) {
         const claim = { kind, phrase: match[0] };
-        const end = match.index + match[0].length;
-        if (inQuote(match.index, end)) continue;
         const first = lastStartAtOrBefore(starts, match.index);
-        if (notTheDraftsClaim(sentences[first] ?? "", answers(first), match.index - (starts[first] ?? 0), claim)) continue;
         const last = lastStartAtOrBefore(starts, match.index + Math.max(0, match[0].length - 1));
         const spanned: number[] = [];
         for (let index = first; index <= last; index += 1) spanned.push(index);
@@ -366,11 +311,12 @@ function withholdOnce(text: string, withheld: Set<AIDraftCommitmentKind>): strin
     if (kept.trim() === "") return DROPPED;
     if (!out.has(0)) return kept;
     // The first sentence went: the line keeps its indentation and its list marker.
-    const lead = /^[ \t]*(?:[-*\u2022]\s+|\d{1,3}[.)]\s+)?/u.exec(line)?.[0] ?? "";
+    const lead = /^[ \t]*(?:[-*>\u2022\u2013\u2014]\s+|\(?[a-z0-9]{1,3}[.)]\s+)?/iu.exec(line)?.[0] ?? "";
     return lead + kept.trimStart();
   });
-  // A run of blank lines that held a dropped line becomes one blank line, or
-  // none at the start or end of the text.
+  // A line that goes takes nothing else with it, and adds nothing: in a run
+  // of blank lines that held one, one blank line is kept (none at the start
+  // or end of the text), and a run with no blank line keeps none.
   const result: string[] = [];
   let index = 0;
   while (index < lines.length) {
@@ -390,8 +336,9 @@ function withholdOnce(text: string, withheld: Set<AIDraftCommitmentKind>): strin
       else run.push(next);
       end += 1;
     }
+    const blank = run[0];
     if (!dropped) result.push(...run);
-    else if (result.length > 0 && end < lines.length) result.push(run[0] ?? "");
+    else if (blank !== undefined && result.length > 0 && end < lines.length) result.push(blank);
     index = end;
   }
   return result.join("\n");

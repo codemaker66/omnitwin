@@ -272,10 +272,11 @@ describe("what a draft may not say (L6)", () => {
     "tells the model, for %s, that only the team confirms a price, availability or capacity",
     (useCase) => {
       const rules = buildAIDraftInstructions({ useCase, context: {} });
-      expect(rules).toContain("Never state a price, a cost, a fee, a deposit, a discount or any amount of money, other than the client's own budget, which you may repeat as theirs but never judge");
+      expect(rules).toContain("Never write an amount of money of any kind, the client's own budget included");
+      expect(rules).toContain("This holds even when repeating what the client asked or wrote, in a question, or in quotation marks.");
       expect(rules).toContain("never say whether a date, a time or a room is available, free, held, booked or confirmed");
-      expect(rules).toContain("never say how many people a room seats, holds or can take, or that it is big enough");
-      expect(rules).toContain("say the events team will confirm it");
+      expect(rules).toContain("never say how many people a room seats, holds or can take, or whether a group fits");
+      expect(rules).toContain("write only that the events team will confirm the details, without naming the figure, the date's availability or the room's size");
     },
   );
 
@@ -310,12 +311,12 @@ describe("what a draft may not say (L6)", () => {
 
   // Release review, 27 October 2026: the first splitter lost every word before
   // a full stop inside a sentence ("6.30pm"), on every draft.
-  it("keeps a clean draft whole, times, quotes and the client's own figures included", async () => {
+  it("keeps a clean draft whole, times, quotes and the client's guest numbers included", async () => {
     const words = [
       "Dear Elaine,",
       "",
-      "Thank you for your note. Drinks would be from 6.30pm and dinner at 7.30pm, as you described.",
-      'You wrote "we\'d love something relaxed and warm." You mentioned a budget of around £10,000, and the team will talk it through with you.',
+      "Thank you for your note. Drinks would be from 6.30pm and dinner at 7.30pm, as you described, for your 150 guests.",
+      'You wrote "we\'d love something relaxed and warm." You mentioned a budget, and the team will talk it through with you.',
       "Our events team will confirm availability and prices when they reply.",
       "",
       "The Events Team",
@@ -325,18 +326,20 @@ describe("what a draft may not say (L6)", () => {
     expect(draft.withheldCommitments).toBeUndefined();
   });
 
-  // Release review: words about the client excused a claim stated in answer
-  // ("as you asked, room hire is £4,500"); now only the client's budget
-  // figure, a quotation and a claim asked about are not the draft's own.
-  it("takes out a claim stated in answer to the client, and keeps their budget", async () => {
+  // Release review (three rounds): every exemption let claims through in the
+  // way a model writes them when it answers. Nothing excuses a claim's shape:
+  // the client's budget, a question repeated or a deferral that names the date
+  // goes too, and a deferral as the rules ask for it stays.
+  it("takes out a claim stated in answer to the client, the client's figure and a deferral that names the date, and keeps the rest", async () => {
     const draft = await generateAIDraft(answering([
       "Dear Elaine,",
       "",
-      "Thank you for sharing your budget of £10,000. As you asked, room hire is £4,500. Our events team will confirm whether the Saloon is free on the 14th.",
+      "Thank you for sharing your budget of £10,000. As you asked, room hire is £4,500. You asked whether the Saloon is free on the 14th. It is.",
+      "Our events team will confirm whether the Saloon is free on the 14th. Our events team will confirm the details with you, and we look forward to helping you plan the day.",
       "",
       "The Events Team",
     ].join("\n")), { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
-    expect(draft.body).toBe("Dear Elaine,\n\nThank you for sharing your budget of £10,000. Our events team will confirm whether the Saloon is free on the 14th.\n\nThe Events Team");
-    expect(draft.withheldCommitments).toEqual(["price"]);
+    expect(draft.body).toBe("Dear Elaine,\n\nIt is.\nOur events team will confirm the details with you, and we look forward to helping you plan the day.\n\nThe Events Team");
+    expect(draft.withheldCommitments).toEqual(["price", "availability"]);
   });
 });
