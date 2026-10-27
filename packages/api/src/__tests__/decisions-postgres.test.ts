@@ -579,6 +579,31 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     expect(move(evening)?.consequences).toEqual([]);
   });
 
+  it("compares the moved booking's turnaround with its own, not with the day's other booking it touched", async () => {
+    // Final review, second check: a reception touching its ceremony was one
+    // block before the move and apart after it, so the ceremony's 30 minutes
+    // were reported again and the reception's new 40 went unseen.
+    const v = await venue();
+    await turnaround(v, 60);
+    await ink(v, "Early meeting", at(7), at(8, 10, 30));
+    const ceremony = await entry(v, "ink", "Crawford ceremony", at(9), at(12));
+    if (ceremony.eventId === null) throw new Error("the ceremony has no event");
+    const reception = await entry(v, "ink", "Crawford reception", at(12), at(17), ceremony.eventId);
+    await ink(v, "Breakfast", at(8, 11), at(9, 11, 20));
+    const nextDay = await prepared(v, reception.id, at(10, 11), at(15, 11));
+    expect(move(nextDay)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 40 minutes /u) })]);
+
+    // A phase the move lands on, wholly inside it, never ends the moved booking early.
+    const w = await venue();
+    await turnaround(w, 60);
+    const wedding = await entry(w, "ink", "Crawford wedding", at(14), at(18));
+    if (wedding.eventId === null) throw new Error("the wedding has no event");
+    await phase(wedding.eventId, w.spaceId, at(15, 13), 30);
+    await ink(w, "Late supper", at(18, 13, 10), at(20, 13));
+    const onto = await prepared(w, wedding.id, at(14, 13), at(18, 13));
+    expect(move(onto)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 10 minutes /u) })]);
+  });
+
   it("is made stale by a gap next to the move that no rule covers, and never by one elsewhere", async () => {
     // A booking pencilled next to where the wedding is going, with no rule for the gap: the approver did not see it.
     const v = await venue();

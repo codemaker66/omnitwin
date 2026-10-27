@@ -410,7 +410,8 @@ function apartKeysOf(world: Neighbourhood, booking: BookingRow, carried: readonl
 }
 
 /** The room with the moved booking's block of time as only the booking and
- *  the phases it carries, and what touches them; the rest of its event apart. */
+ *  the phases it carries; the rest of its event apart, the same way before
+ *  and after the move, so a block is named by the same entries in both. */
 function weighedApart(world: Neighbourhood, booking: BookingRow, carried: readonly ConflictPhaseInput[], keys: ReadonlyMap<string, string>): Neighbourhood {
   if (keys.size === 0) return world;
   const carriedIds = new Set(carried.map((phase) => phase.id));
@@ -420,14 +421,16 @@ function weighedApart(world: Neighbourhood, booking: BookingRow, carried: readon
   ];
   const from = Math.min(...block.map((entry) => entry.startsAt.getTime()));
   const until = Math.max(...block.map((entry) => entry.endsAt.getTime()));
-  // An entry of the event that meets the block is part of it, as the engine would have it.
-  const meets = (entry: { readonly startsAt: Date; readonly endsAt: Date }): boolean =>
-    block.length > 0 && entry.startsAt.getTime() <= until && entry.endsAt.getTime() >= from;
-  const apart = <T extends { readonly id: string; readonly eventId: string | null; readonly startsAt: Date; readonly endsAt: Date }>(entry: T): T => {
+  // A phase of the event wholly inside the block adds no time to it, and
+  // apart it would end the block early for the engine, which reads each
+  // block against the next to start.
+  const inside = (phase: ConflictPhaseInput): boolean =>
+    block.length > 0 && keys.has(phase.id) && phase.startsAt.getTime() >= from && phase.endsAt.getTime() <= until;
+  const apart = <T extends { readonly id: string; readonly eventId: string | null }>(entry: T): T => {
     const key = keys.get(entry.id);
-    return key === undefined || meets(entry) ? entry : { ...entry, eventId: key };
+    return key === undefined ? entry : { ...entry, eventId: key };
   };
-  return { ...world, bookings: world.bookings.map(apart), phases: world.phases.map(apart) };
+  return { ...world, bookings: world.bookings.map(apart), phases: world.phases.filter((phase) => !inside(phase)).map(apart) };
 }
 
 /** How long a booking's times overlap a closure's. */
@@ -456,11 +459,12 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
     ...[...world.phases, ...world.endedEventPhases].filter((phase) => phase.eventId === booking.eventId).map((phase) => phase.id),
   ]);
   const withinEvent = (ids: readonly string[]): boolean => ids.every((id) => ownEvent.has(id));
-  const had = new Map(before.conflicts.map((conflict) => [conflictKey(conflict), conflict]));
+  const weighed = (conflict: CalendarConflict): boolean => conflict.type !== "insufficient_turnaround" || !withinEvent(conflict.entryIds);
+  const had = new Map(before.conflicts.filter(weighed).map((conflict) => [conflictKey(conflict), conflict]));
   const ours = new Set([booking.id, ...carried.map((phase) => phase.id)]);
   const found: DecisionConsequence[] = [];
   for (const conflict of after.report.conflicts) {
-    if (conflict.type === "insufficient_turnaround" && withinEvent(conflict.entryIds)) continue;
+    if (!weighed(conflict)) continue;
     const prior = had.get(conflictKey(conflict));
     let wasMinutes: number | null = null;
     if (prior !== undefined) {
