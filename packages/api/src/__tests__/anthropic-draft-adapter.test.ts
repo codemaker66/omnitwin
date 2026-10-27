@@ -141,9 +141,9 @@ describe("Anthropic draft response", () => {
   });
 
   it("refuses a draft another model wrote in place of the one asked, however the answer says so", () => {
-    const fallbackBlock = {
-      type: "fallback", from: { model: "claude-opus-5-5" }, to: { model: "claude-opus-4-8" }, trigger: { type: "refusal" },
-    } as unknown as Anthropic.Beta.BetaContentBlock;
+    const fallbackBlock: Anthropic.Beta.BetaFallbackBlock = {
+      type: "fallback", from: { model: "claude-opus-5-5" }, to: { model: "claude-opus-4-8" }, trigger: { type: "refusal", category: null },
+    };
     const base = message([text("Dear Morgan, we can confirm the date.")]);
     const served: Anthropic.Beta.BetaMessage[] = [
       // The API's own signal: a fallback_message entry in usage.iterations.
