@@ -226,6 +226,32 @@
   overflow-wrap: anywhere;
 }
 
+/* -- After acceptance: the contract and the deposit (Plan 19 L5) ---------------- */
+.pd-settle { display: grid; gap: 12px; }
+.pd-settle h2 { margin-bottom: 0; }
+.pd-settle .pd-decision__what { margin: 0; }
+.pd-settle .pd-actions { margin-top: 4px; }
+.pd-settle__loading { margin: 0 0 24px; color: var(--reg-text-2); font-size: 14px; }
+.pd-settle__test {
+  margin: 4px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--reg-rule);
+  color: var(--reg-text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pd-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.pd-link:focus-visible { outline: var(--vv-focus-ring); outline-offset: 3px; }
+
 /* -- The venue team's preview band ---------------------------------------------- */
 .pd-band {
   box-sizing: border-box;

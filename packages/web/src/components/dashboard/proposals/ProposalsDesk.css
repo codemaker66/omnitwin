@@ -211,3 +211,19 @@
   .pr-price { grid-template-columns: minmax(0, 1fr); }
   .pr-price__figure { text-align: left; }
 }
+
+/* The deposit on an accepted proposal (Plan 19 L5). */
+.pr-deposit__basis { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 4px 0 0; padding: 0; border: 0; color: var(--enq-forest-ink-2); font-size: 14px; }
+.pr-deposit__basis label { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; }
+.pr-panel .pr-deposit__basis input { width: 18px; min-height: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--enq-copper, currentColor); }
+.pr-deposit__asked { margin: 0; color: var(--enq-forest-ink); font-size: 15px; font-variant-numeric: tabular-nums; }
+.pr-deposit__state { margin: 6px 0 0; color: var(--enq-forest-ink-2); font-size: 14px; line-height: 1.5; }
+.pr-deposit__in-force[data-state="paid"] .pr-deposit__state,
+.pr-deposit__in-force[data-state="processing"] .pr-deposit__state { color: var(--enq-forest-ink); }
+.pr-deposit__test { margin-top: 12px; }
+.pr-deposit__earlier { margin-top: 12px; color: var(--enq-forest-ink-2); font-size: 13.5px; }
+.pr-deposit__earlier summary { min-height: 32px; cursor: pointer; }
+.pr-deposit__earlier ul { margin: 6px 0 0; padding-left: 18px; }
+.pr-deposit .enq-next__hint { margin: 8px 0 0; }
+.pr-deposit .enq-actions { margin-top: 12px; }
+.pr-deposit__in-force .enq-actions { margin-top: 14px; }

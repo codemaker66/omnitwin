@@ -19,6 +19,13 @@ const {
   mockRespondToProposal: vi.fn(),
 }));
 
+// An accepted proposal reads its deposit (Plan 19 L5); none asked for here.
+const { mockGetShareDeposit } = vi.hoisted(() => ({ mockGetShareDeposit: vi.fn() }));
+vi.mock("../api/deposits.js", () => ({
+  getShareDeposit: mockGetShareDeposit,
+  startShareDepositCheckout: vi.fn(),
+}));
+
 vi.mock("../api/proposals.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/proposals.js")>();
   return {
@@ -96,6 +103,8 @@ beforeEach(() => {
   mockGetProposalShare.mockReset();
   mockGetPublicProposal.mockReset();
   mockRespondToProposal.mockReset();
+  mockGetShareDeposit.mockReset();
+  mockGetShareDeposit.mockResolvedValue(null);
 });
 
 // RTL auto-cleanup is not wired globally in this suite's environment.

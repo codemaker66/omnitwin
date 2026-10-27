@@ -50,6 +50,7 @@ import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
+import { proposalDepositRoutes, proposalShareDepositRoutes } from "./routes/deposits.js";
 import { depositPaymentsFrom } from "./services/payments/deposit-gateway.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
@@ -580,6 +581,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(proposalMessageDraftRoutes, { db, env, aiUsage, prefix: "/proposals" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+  // Deposits on an accepted proposal (Plan 19 L5), Stripe test mode only.
+  await server.register(proposalDepositRoutes, { db, payments: depositPayments, prefix: "/proposals" });
+  await server.register(proposalShareDepositRoutes, { db, payments: depositPayments, prefix: "/proposal-share" });
   await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 

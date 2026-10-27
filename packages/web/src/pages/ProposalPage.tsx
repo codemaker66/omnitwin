@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/client.js";
 import {
   approveProposalShare,
@@ -11,6 +11,7 @@ import {
   type PublicProposal,
 } from "../api/proposals.js";
 import { ProposalDocument } from "../components/proposal/ProposalDocument.js";
+import { ClientDeposit, type DepositReturn } from "../components/proposal/ClientDeposit.js";
 import {
   commentAuthor, conversation, documentMoney, documentTitle, venueLongDate,
 } from "../components/proposal/proposal-document-format.js";
@@ -83,6 +84,10 @@ const UNREAD_WORDS = "Your answer was not taken, because this proposal changed w
 export function ProposalPage(): ReactElement {
   const { shareCode, token } = useParams<{ shareCode?: string; token?: string }>();
   const hasToken = token !== undefined && token.length > 0;
+  // Back from Stripe's payment page (Plan 19 L5): paid, or left before paying.
+  const [search] = useSearchParams();
+  const depositParam = search.get("deposit");
+  const depositReturn: DepositReturn = depositParam === "returned" || depositParam === "left" ? depositParam : null;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   // Words an answer or a message carried when it was refused, kept only when
   // the read that refusal made finds the link closed, so the closed page
@@ -157,7 +162,13 @@ export function ProposalPage(): ReactElement {
       <ProposalDocument
         proposal={state.proposal}
         conversation={hasToken ? <Conversation proposal={state.proposal} token={token} onPosted={read} /> : null}
-        decision={<Decision proposal={state.proposal} token={hasToken ? token : null} shareCode={shareCode ?? null} onAnswered={read} />}
+        decision={(
+          <>
+            <Decision proposal={state.proposal} token={hasToken ? token : null} shareCode={shareCode ?? null} onAnswered={read} />
+            {/* Once accepted, what the venue asks for next: the deposit. */}
+            {hasToken && state.proposal.status === "accepted" && <ClientDeposit token={token} returned={depositReturn} />}
+          </>
+        )}
       />
     </main>
   );

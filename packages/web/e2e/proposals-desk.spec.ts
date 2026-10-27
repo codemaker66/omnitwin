@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { ProposalEvent, ProposalTemplate } from "@omnitwin/types";
+import type { DepositRequestView, ProposalEvent, ProposalTemplate } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry, StaffProposalVersion } from "../src/api/proposals.js";
 import {
   collectAccessibilityAudit,
@@ -25,6 +25,7 @@ const STAFF_ID = "00000000-0000-4000-8000-000000009791";
 const CRAWFORD = "00000000-0000-4000-8000-000000009711";
 const MERCHANTS = "00000000-0000-4000-8000-000000009712";
 const ROBERTSON = "00000000-0000-4000-8000-000000009713";
+const GALA = "00000000-0000-4000-8000-000000009714";
 const TOKEN = "proposals-desk-token";
 /** 10:00 in Glasgow on Tuesday 6 October 2026. */
 const NOW = new Date("2026-10-06T09:00:00.000Z");
@@ -56,6 +57,8 @@ interface Emulator {
   ai: (string | number)[] | null;
   /** Each request for an AI draft of a proposal's message, as sent. */
   readonly aiAsks: { readonly id: string; readonly body: unknown }[];
+  /** Deposit requests by proposal, newest first, as the deposit routes keep them. */
+  readonly deposits: Map<string, DepositRequestView[]>;
 }
 
 function proposal(id: string, title: string, status: string, extra: Partial<DeskProposal> = {}): DeskProposal {
@@ -88,6 +91,8 @@ interface World {
   readonly events?: Readonly<Record<string, ProposalEvent>>;
   /** An AI provider, and what each draft request answers in turn. */
   readonly ai?: readonly (string | number)[];
+  /** An accepted proposal on the desk, with deposits on (Plan 19 L5, Stripe test mode). */
+  readonly accepted?: boolean;
 }
 
 async function openDesk(page: Page, width = 1440, height = 900, world: World = {}): Promise<Emulator> {
@@ -112,6 +117,10 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
         updatedAt: "2026-10-02T11:00:00.000Z",
       })],
       [ROBERTSON, proposal(ROBERTSON, "Spring gala proposal", "draft", { currentVersion: 0, updatedAt: "2026-10-04T09:00:00.000Z" })],
+      ...(world.accepted === true ? [[GALA, proposal(GALA, "Autumn gala proposal", "accepted", {
+        clientName: "Ada Client", eventDate: "2026-12-05", guestCount: 180, eventType: "gala", sentAt: "2026-10-01T10:00:00.000Z",
+        updatedAt: "2026-10-03T12:00:00.000Z", sentVersion: 1, latestTotalMinor: 250_000, latestCurrency: "GBP",
+      })] as const] : []),
     ]),
     versions: new Map([
       [CRAWFORD, [version(CRAWFORD, 1, {
@@ -125,6 +134,10 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
         },
       })]],
       [MERCHANTS, [version(MERCHANTS, 1, { title: "Merchants' dinner proposal" })]],
+      [GALA, [version(GALA, 1, { title: "Autumn gala proposal", quote: {
+        quoteId: null, currency: "GBP", subtotalMinor: 250_000, totalMinor: 250_000,
+        lineItems: [{ description: "Grand Hall hire", quantity: 1, unitAmountMinor: 250_000, lineTotalMinor: 250_000 }],
+      } })]],
     ]),
     history: new Map([[CRAWFORD, [{
       id: "00000000-0000-4000-8000-00000000d001", proposalId: CRAWFORD, fromStatus: "sent", toStatus: "changes_requested", changedBy: null,
@@ -137,6 +150,7 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
     removedTemplates: new Set(),
     ai: world.ai === undefined ? null : [...world.ai],
     aiAsks: [],
+    deposits: new Map(),
   };
 
   // Templates as the route keeps them: one live template per name whatever
@@ -389,6 +403,32 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
         } } });
         return;
       }
+      // Deposits as the routes keep them: one in force, figured from the
+      // accepted version's total (a half penny rounding up), withdrawn while unpaid.
+      if (rest === "/deposit" && method === "GET") {
+        void route.fulfill({ json: { data: { availability: "test", requests: emulator.deposits.get(id) ?? [] } } });
+        return;
+      }
+      if (rest === "/deposit" && method === "POST") {
+        const body = request.postDataJSON() as { basis: "amount" | "percent"; amountMinor?: number; percentBasisPoints?: number };
+        const total = current.latestTotalMinor ?? 0;
+        const amountMinor = body.basis === "percent" ? Math.floor((total * (body.percentBasisPoints ?? 0) + 5_000) / 10_000) : body.amountMinor ?? 0;
+        const made: DepositRequestView = {
+          id: `00000000-0000-4000-8000-0000000d${String((emulator.deposits.get(id) ?? []).length + 1).padStart(4, "0")}`,
+          state: "requested", basis: body.basis, percentBasisPoints: body.percentBasisPoints ?? null, amountMinor, currency: "GBP",
+          quoteTotalMinor: total, proposalVersion: current.sentVersion ?? 1, createdAt: NOW.toISOString(), cancelledAt: null, payments: [],
+        };
+        emulator.deposits.set(id, [made, ...(emulator.deposits.get(id) ?? [])]);
+        void route.fulfill({ status: 201, json: { data: made } });
+        return;
+      }
+      const withdrawn = /^\/deposit\/([0-9a-f-]{36})\/cancel$/u.exec(rest);
+      if (withdrawn !== null && method === "POST") {
+        const requests = (emulator.deposits.get(id) ?? []).map((one) => one.id === withdrawn[1] ? { ...one, state: "cancelled" as const, cancelledAt: NOW.toISOString() } : one);
+        emulator.deposits.set(id, requests);
+        void route.fulfill({ json: { data: requests.find((one) => one.id === withdrawn[1]) } });
+        return;
+      }
       if (rest === "/history") {
         void route.fulfill({ json: { data: [...(emulator.history.get(id) ?? [])].reverse() } });
         return;
@@ -490,6 +530,33 @@ test.describe("Proposals desk", () => {
       name: "proposals desk with a proposal open", path: "/dashboard?view=proposals", problems, maxFocusSteps: 16,
     });
     expectAccessibilityAuditClean(result);
+  });
+
+  test("on an accepted proposal the booker asks for a deposit from the accepted quote, sees it waiting, and withdraws it (Plan 19 L5)", async ({ page }) => {
+    const emulator = await openDesk(page, 1440, 900, { accepted: true });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const problems = watchPageProblems(page);
+    await page.goto(`/dashboard?view=proposals&proposal=${GALA}`);
+    const panel = page.getByRole("region", { name: "Autumn gala proposal" });
+    const deposit = panel.getByTestId("deposit-panel");
+    await expect(deposit.getByRole("heading", { level: 3, name: "Deposit" })).toBeVisible();
+    await expect(deposit.getByTestId("deposit-test-mode")).toContainText("Stripe test mode: no real money moves.");
+
+    await deposit.getByLabel("Percentage", { exact: true }).fill("25");
+    await expect(deposit.getByText("Comes to £625.00 of the £2,500.00 accepted in version 1.")).toBeVisible();
+    await deposit.getByRole("button", { name: "Ask for £625.00" }).click();
+    await expect(deposit.getByTestId("deposit-asked")).toHaveText("£625.00, 25% of version 1's £2,500.00");
+    await expect(deposit.getByTestId("deposit-state")).toHaveText("Waiting for the client. They have not opened the payment page.");
+    expect(emulator.deposits.get(GALA)?.[0]).toMatchObject({ basis: "percent", percentBasisPoints: 2_500, amountMinor: 62_500 });
+
+    const result = await collectAccessibilityAudit(page, {
+      name: "proposals desk with a deposit asked for", path: `/dashboard?view=proposals&proposal=${GALA}`, problems, maxFocusSteps: 16,
+    });
+    expectAccessibilityAuditClean(result);
+
+    await deposit.getByRole("button", { name: "Withdraw the request" }).click();
+    await expect(deposit.getByLabel("Percentage", { exact: true })).toBeVisible();
+    await expect(deposit.getByText("Earlier requests (1)")).toBeVisible();
   });
 
   test("Preview as the client shows the latest version as the client's page draws it, and no client route is called", async ({ page }) => {
