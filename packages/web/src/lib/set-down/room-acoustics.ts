@@ -40,7 +40,9 @@ export interface Absorber {
   readonly z: number;
   /**
    * The piece's surface-area scale (its uniform scale squared), applied to
-   * its per-piece absorption row. Omitted means 1.
+   * its per-piece absorption row. Omitted means 1. EST: a piece's absorption
+   * is taken to grow with its surface area, so a piece drawn twice the size
+   * absorbs four times as much.
    */
   readonly areaScale?: number;
 }
@@ -263,8 +265,13 @@ let referenceRoomConstant: number | null = null;
 
 /**
  * The reverberant field's level against the empty Grand Hall's, as an
- * amplitude: sqrt(4 / R) / sqrt(4 / R_ref) at 1 kHz. The empty Grand Hall is
- * 1; fuller or more absorbent rooms are less.
+ * amplitude: sqrt(4 / R) / sqrt(4 / R_ref) at 1 kHz, where R = A / (1 - mean
+ * alpha). The diffuse field's energy density goes as 4 / R, so:
+ *   - the empty Grand Hall is 1;
+ *   - added contents raise R and lower any room's value;
+ *   - a small, lightly absorbing room has less total absorption than the
+ *     hall, so a stronger diffuse field, and is above 1 (the galleries are
+ *     about 1.7), though its tail is shorter.
  */
 export function reverberantGain(room: RoomAcoustics, contents: BandValues): number {
   referenceRoomConstant ??= roomConstant(ROOM_ACOUSTICS["grand-hall"], NO_CONTENTS);

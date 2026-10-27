@@ -13,6 +13,7 @@ import type { SurfaceMaterialId } from "./acoustic-data.js";
 import type { BandValues } from "./bands.js";
 import {
   HALL_DOORS,
+  HALL_ELEVATION,
   HALL_HEIGHT,
   HALL_LENGTH,
   HALL_OPENINGS,
@@ -55,8 +56,9 @@ export interface RoomPlan {
 export const UNCALIBRATED: BandValues = [1, 1, 1, 1, 1, 1, 1];
 
 /**
- * A door the survey has not sized is taken as the Saloon's, 1.6 x 2.6 m, the
- * only door the plan measures (EST).
+ * A door the survey has not sized is taken as the Saloon's, 1.6 x 2.6 m (EST):
+ * it is the only door the plan measures, and the house's doors are pairs of
+ * that order. A door is a few m2 of a room's hundreds, so the error is small.
  */
 const HOUSE_DOOR_M2 = 1.6 * 2.6;
 
@@ -72,15 +74,18 @@ function surface(material: SurfaceMaterialId, areaM2: number, role: RoomSurface[
 const DOME_RADIUS_M = 3.5;
 /** The dome is taken as a hemisphere on a drum this tall (EST). */
 const DOME_DRUM_M = 1.5;
-/** Height of the dado band counted as panelling, as the plan sets it. */
-const DADO_BAND_M = 1.2;
+/**
+ * The mahogany dado's height: the top of its cap rail, as the scan measures it
+ * (HALL_ELEVATION.dadoTop, 1.95 m; ruling R12 replaced the plan's 1.2 m).
+ */
+const DADO_BAND_M = HALL_ELEVATION.dadoTop;
 /**
  * The width of each of a window's two velour curtains, flat (EST). The plan's
- * 0.9 m gave 31 m2 of velour and an empty hall of 2.66 s at 1 kHz, outside the
- * 2.0-2.6 s the plan's test sets. Widths from 0.96 to about 1.18 m meet that
- * and also keep the hall's mid band over three times the galleries'; 1.05 m,
- * in the middle, gives 36 m2 of velour (the research estimate assumed 45 m2,
- * which would put the hall under three galleries) and 2.52 s at 1 kHz.
+ * 0.9 m gave 31 m2 of velour and an empty hall over 2.6 s at 1 kHz, outside
+ * the 2.0-2.6 s the plan's test sets. With the scanned dado, widths from about
+ * 0.94 to 1.39 m meet that and keep the hall's mid band over three times the
+ * galleries'; 1.05 m gives 36 m2 of velour and 2.49 s at 1 kHz. (The research
+ * estimate assumed 45 m2.)
  */
 const CURTAIN_WIDTH_M = 1.05;
 
@@ -131,7 +136,7 @@ function grandHall(): RoomAcoustics {
     ],
     calibration: UNCALIBRATED,
     source:
-      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; dome r 3.5 m on a 1.5 m drum (EST); dado band 1.2 m; curtains 2 x 1.05 m a window (EST)",
+      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; dome r 3.5 m on a 1.5 m drum (EST); dado to the scanned 1.95 m cap rail; curtains 2 x 1.05 m a window (EST)",
   };
 }
 
@@ -168,9 +173,12 @@ function saloon(): RoomAcoustics {
 
 /**
  * Robert Adam Room: a lower section of 11.2 x 7.6 x 2.9 m open to an upper
- * section of 9.8 x 5.6 x 2.2 m. The upper section's 5.6 x 2.2 m end is open
- * to the lower one, so neither side has a wall there. The windows are taken
- * as sashes (EST).
+ * section of 9.8 x 5.6 x 2.2 m. The upper section's whole 5.6 x 2.2 m end is
+ * taken as open to the lower one (EST: the survey says the two are open to
+ * each other and hangs a curtain at the arch, but does not size the arch), so
+ * neither side has a wall there. The windows are taken as sashes (EST: the
+ * survey gives their size, not their glazing, and the house's windows are
+ * sashes).
  */
 function robertAdamRoom(): RoomAcoustics {
   const lower = { length: 11.2, width: 7.6, height: 2.9 };
@@ -201,7 +209,8 @@ function robertAdamRoom(): RoomAcoustics {
 /**
  * The Reception Room's L, as data/room-geometries.ts traces it from the floor
  * plan (a 9.6 x 7.0 m arm and a 7.3 x 5.0 m arm, 12 m deep), scaled evenly to
- * the surveyed 100 m2.
+ * the surveyed 100 m2 (EST: the survey gives the area, not the arms, so the
+ * perimeter, and with it the wall area, comes from the trace's proportions).
  */
 const RECEPTION_TRACE = { wide: [9.6, 7.0], narrow: [7.3, 5.0] } as const;
 const RECEPTION_AREA_M2 = 100;
@@ -226,7 +235,8 @@ function receptionRoom(): RoomAcoustics {
       surface("plasterboard-studs", RECEPTION_AREA_M2, "ceiling"),
       surface("plasterboard-studs", perimeter * RECEPTION_MEAN_CEILING_M - windows - glazedDoors, "wall"),
       surface("sash-glazing", windows, "opening"),
-      // The glazed doors are taken as glass (EST).
+      // The glazed doors are taken as glass (EST: the survey calls them glazed
+      // but gives no split of glass and frame; glass is most of their face).
       surface("sash-glazing", glazedDoors, "opening"),
       surface("sheer-curtain", 4 * 2.4 * 2.4, "wall"),
       surface("velour-drape", 4 * 2 * 1.2 * 2.6, "wall"),
@@ -237,7 +247,13 @@ function receptionRoom(): RoomAcoustics {
   };
 }
 
-/** A gallery: 11.5 x 4.1 x 2.8 m, carpeted; two sashes, a three-light front window, one door. */
+/**
+ * A gallery: 11.5 x 4.1 x 2.8 m, carpeted; two sashes, a three-light front
+ * window, one door. The walls and ceiling are taken as plasterboard on studs
+ * (EST, ruling R13): the galleries are the 2003 attic fit-out, "two new
+ * meeting rooms on the previously disused top floor" (Craftsman, 2003), and
+ * plaster on masonry gave an implausible 2.45 s at 125 Hz.
+ */
 function gallery(slug: "north-gallery" | "south-gallery"): RoomAcoustics {
   const length = 11.5;
   const width = 4.1;
@@ -249,14 +265,14 @@ function gallery(slug: "north-gallery" | "south-gallery"): RoomAcoustics {
     volumeM3: length * width * height,
     surfaces: [
       surface("carpet-on-underlay", length * width, "floor"),
-      surface("plaster-masonry", length * width, "ceiling"),
-      surface("plaster-masonry", 2 * (length + width) * height - windows - door, "wall"),
+      surface("plasterboard-studs", length * width, "ceiling"),
+      surface("plasterboard-studs", 2 * (length + width) * height - windows - door, "wall"),
       surface("sash-glazing", windows, "opening"),
       surface("timber-door", door, "opening"),
     ],
     calibration: UNCALIBRATED,
     source:
-      "survey: 11.5 x 4.1 x 2.8 m; two 1.0 x 1.6 m sashes and a 2.0 x 1.6 m front window; one door of 1.6 x 2.6 m (EST)",
+      "survey: 11.5 x 4.1 x 2.8 m; plasterboard walls and ceiling of the 2003 attic fit-out (EST); two 1.0 x 1.6 m sashes and a 2.0 x 1.6 m front window; one door of 1.6 x 2.6 m (EST)",
   };
 }
 

@@ -88,6 +88,21 @@ describe("Trades Hall rooms", () => {
       expect(gallery).toBeLessThan(hall / 3);
     }
   });
+
+  it("keeps each gallery's 125 Hz time under 1.5 s", () => {
+    for (const slug of ["north-gallery", "south-gallery"] as const) {
+      expect(reverberationTimes(ROOM_ACOUSTICS[slug], NO_CONTENTS)[0]).toBeLessThan(1.5);
+    }
+  });
+
+  it("panels the Grand Hall's dado to its scanned 1.95 m cap rail", () => {
+    // The perimeter less the openings' widths (15.62 m), times 1.95 m.
+    const expected = (2 * (21.135 + 10.59) - 15.62) * 1.95;
+    const dado = GRAND_HALL.surfaces.filter(
+      (surface) => surface.material === "hardwood-panelling" && Math.abs(surface.areaM2 - expected) < 1e-6,
+    );
+    expect(dado).toHaveLength(1);
+  });
 });
 
 describe("the reference dinner", () => {
@@ -266,17 +281,27 @@ describe("room state", () => {
     expect(roomAcousticsFor({ slug: "saloon", widthM: "7", lengthM: "12", heightM: "5.4" })).toBe(ROOM_ACOUSTICS.saloon);
   });
 
-  it("holds the empty Grand Hall's reverberant gain at 1 and lowers it as contents grow", () => {
+  it("holds the empty Grand Hall's reverberant gain at 1", () => {
     expect(Math.abs(reverberantGain(GRAND_HALL, NO_CONTENTS) - 1)).toBeLessThan(1e-9);
-    const dinner = referenceDinner("grand-hall");
-    const half = roomState(GRAND_HALL, dinner.slice(0, dinner.length / 2)).reverberantGain;
-    const full = roomState(GRAND_HALL, dinner).reverberantGain;
-    expect(half).toBeLessThan(1);
-    expect(full).toBeLessThan(half);
+  });
+
+  it("lowers every room's reverberant gain as contents are added", () => {
     for (const slug of ROOM_SLUGS) {
-      const gain = reverberantGain(ROOM_ACOUSTICS[slug], NO_CONTENTS);
-      expect(Number.isFinite(gain)).toBe(true);
-      expect(gain).toBeGreaterThan(0);
+      const room = ROOM_ACOUSTICS[slug];
+      const dinner = referenceDinner(slug);
+      const empty = roomState(room, []).reverberantGain;
+      const half = roomState(room, dinner.slice(0, Math.floor(dinner.length / 2))).reverberantGain;
+      const full = roomState(room, dinner).reverberantGain;
+      expect(Number.isFinite(full)).toBe(true);
+      expect(half).toBeLessThan(empty);
+      expect(full).toBeLessThan(half);
+    }
+  });
+
+  it("puts a small, lightly absorbing room's reverberant gain above 1", () => {
+    // Less total absorption than the hall means a stronger diffuse field.
+    for (const slug of ["north-gallery", "south-gallery"] as const) {
+      expect(reverberantGain(ROOM_ACOUSTICS[slug], NO_CONTENTS)).toBeGreaterThan(1);
     }
   });
 
